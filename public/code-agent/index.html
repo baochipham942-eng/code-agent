@@ -859,6 +859,13 @@
         line-height: 1.7;
       }
 
+      .download-version {
+        margin: 8px 0 0;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
       .download-card .button {
         width: fit-content;
         margin-top: 18px;
@@ -1265,6 +1272,7 @@
                   <div class="card-label">mac</div>
                   <h3>Agent Neo for mac</h3>
                   <p class="meta" id="download-chip-meta">Apple Silicon（M 系列）· 已 Apple 公证</p>
+                  <p class="download-version" id="download-version" aria-live="polite">最新版本：正在读取</p>
                 </div>
                 <a class="button primary" id="download-button" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable">⬇ 下载 .dmg</a>
                 <p class="download-footnote" id="download-arch-switch" hidden></p>
@@ -1322,6 +1330,24 @@
         }
 
         apply(detectArch());
+      })();
+
+      // 分发页版本号来自同一个 update API。下载链接和可见版本共用来源，
+      // 避免按钮已经指向新版，但页面无法回答"当前展示的是哪个版本"。
+      (function () {
+        var version = document.getElementById('download-version');
+        if (!version || !window.fetch) return;
+        fetch('/api/update?action=check&version=0.0.0&platform=darwin&channel=stable', {
+          headers: { 'Accept': 'application/json' }
+        })
+          .then(function (res) { return res.ok ? res.json() : null; })
+          .then(function (data) {
+            var latest = data && (data.latestVersion || data.version);
+            if (latest) {
+              version.textContent = '最新版本：v' + String(latest).replace(/^v/i, '');
+            }
+          })
+          .catch(function () { /* 保持默认文案 */ });
       })();
     </script>
   </body>

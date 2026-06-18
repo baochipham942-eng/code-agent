@@ -220,6 +220,20 @@ spctl --assess --type execute -vv "/Applications/Agent Neo.app"
 - [ ] Basic functionality works (new session, send message)
 - [ ] Security features work (audit log created)
 - [ ] Hooks configuration loads
+- [ ] Update check behavior is correct:
+  - old installed version shows update to `<version>`
+  - installed `<version>` reports `hasUpdate=false`
+- [ ] App file logs are fresh after launch and smoke:
+  ```bash
+  ls -lt "$HOME/Library/Application Support/code-agent/logs" | head
+  find "$HOME/Library/Application Support/code-agent/logs" -maxdepth 1 -type f -mtime -1 -print
+  ```
+- [ ] Computer Use helper resource usage is sane during idle:
+  ```bash
+  ps -axo pid,pcpu,pmem,comm | rg 'cua-driver|Agent Neo Computer Use|SkyComputerUse'
+  # If a helper stays above ~20% CPU while idle, capture a short sample for triage.
+  sample <pid> 5 -file /tmp/agent-neo-cua-driver.sample.txt
+  ```
 
 ---
 
@@ -268,10 +282,48 @@ git push origin v<version>
 ```bash
 curl "https://agentneo.vercel.app/api/update?action=check&version=0.0.0&platform=darwin&channel=stable"
 curl -I "https://agentneo.vercel.app/api/update?action=download&version=0.0.0&platform=darwin&channel=stable"
+npm run release:post-publish -- --version <version>
 ```
 - [ ] API returns latest version `<version>`
 - [ ] API returns non-empty `releaseNotes`
 - [ ] Download endpoint redirects to the OSS DMG for `<version>`
+- [ ] Distribution page `/code-agent/` has a visible version slot and reads the same update API version
+- [ ] Control-plane `renderer_bundle_rollout`, OSS `renderer-bundle/latest/manifest.json`, OSS `release-record.json`, and app update `latestVersion` all point at `<version>`
+- [ ] Control-plane renderer rollout is not `rollbackToBuiltin=true`
+- [ ] `/api/update?action=health` source is understood:
+  - `github_releases` is an expected functional fallback when Cloud API metadata publish is not configured
+  - use `--require-cloud-api-metadata` only when this release is meant to require the Cloud API publish path
+
+### Verify Server Logs
+
+Export a bounded production log window after smoke traffic, then let the post-publish verifier scan for 5xx and error-level log pollution.
+
+```bash
+# Run from a shell with Vercel access. Keep the window tight to the release smoke.
+vercel logs https://agentneo.vercel.app --since 30m > /tmp/agent-neo-vercel.log
+npm run release:post-publish -- --version <version> --server-log-file /tmp/agent-neo-vercel.log
+```
+
+- [ ] No 5xx entries during release smoke
+- [ ] No error-level `DEP0169` / `url.parse()` deprecation warnings
+- [ ] If logs are not available in the current shell, record that as a permission boundary instead of marking server log audit complete
+
+### Verify Renderer Production Alignment
+
+Use the signed verifier when public keys are available:
+
+```bash
+npm run renderer:verify-production -- --expected-version-from-app-update --include-remote-snapshot
+```
+
+If local public keys are missing and the signed verifier exits before trust verification can complete, keep the failure visible and run the read-only post-publish verifier for alignment:
+
+```bash
+npm run release:post-publish -- --version <version>
+```
+
+- [ ] Signed verifier passes, or the missing public-key boundary is explicitly recorded
+- [ ] Read-only verifier shows app update, control-plane rollout, OSS manifest, and release-record aligned to `<version>`
 
 ---
 

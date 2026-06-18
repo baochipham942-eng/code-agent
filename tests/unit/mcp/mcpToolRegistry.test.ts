@@ -402,4 +402,35 @@ describe('MCPClient lazy search discovery', () => {
       toolCount: 0,
     }]);
   });
+
+  it('discovers lazy cua-driver for Computer Use searches without eager startup', async () => {
+    resetToolSearchService();
+    const client = new MCPClient();
+    client.addServer({
+      name: 'cua-driver',
+      type: 'stdio',
+      command: '/opt/agent-neo/cua-driver',
+      args: ['mcp'],
+      enabled: true,
+      lazyLoad: true,
+    });
+
+    const ensureConnected = vi.spyOn(client, 'ensureConnected').mockImplementation(async (serverName) => {
+      const state = client.getServerState(serverName);
+      if (state) {
+        state.status = 'connected';
+        state.error = undefined;
+      }
+      return true;
+    });
+
+    const discovery = await client.discoverLazyServersForSearch('Computer Use desktop control');
+
+    expect(ensureConnected).toHaveBeenCalledWith('cua-driver');
+    expect(discovery).toEqual([{
+      serverName: 'cua-driver',
+      connected: true,
+      toolCount: 0,
+    }]);
+  });
 });

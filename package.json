@@ -121,6 +121,7 @@
     "release:runtime-assets": "npx tsx scripts/build-runtime-assets.mjs",
     "release:runtime-assets:install": "npx tsx scripts/install-runtime-asset.ts",
     "release:renderer-bundle": "npx tsx scripts/build-renderer-bundle.mjs",
+    "release:post-publish": "node scripts/release-post-publish-verify.mjs",
     "renderer:capability-diff": "npx tsx scripts/renderer-capability-diff.mjs",
     "renderer:manifest-diff": "npx tsx scripts/renderer-manifest-diff.mjs",
     "renderer:release-record": "npx tsx scripts/renderer-release-record.mjs",

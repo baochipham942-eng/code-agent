@@ -178,7 +178,7 @@ describe('control-plane release bundle', () => {
     const postApplyCommands = readFileSync(join(out, 'post-apply-commands.txt'), 'utf8');
     expect(postApplyCommands).toContain(`cd '${process.cwd()}'`);
     expect(postApplyCommands).toContain('vercel deploy --prod --yes');
-    expect(postApplyCommands).toContain('npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000');
+    expect(postApplyCommands).toContain('npm run renderer:verify-production -- --expected-version-from-app-update --include-remote-snapshot --retry-attempts 12 --retry-delay-ms 30000');
     expect(postApplyCommands).not.toContain('BEGIN PRIVATE KEY');
   });
 
@@ -329,6 +329,44 @@ describe('control-plane release bundle', () => {
       keyId: 'production-2026-05-17',
       now: new Date('2026-05-17T00:00:00.000Z'),
     })).toThrow(/must not include env values/);
+  });
+
+  it('rejects ambiguous renderer rollout rollback payloads', () => {
+    const source = makeDir('code-agent-control-plane-release-source-');
+    const out = makeDir('code-agent-control-plane-release-out-');
+    writeSource(source, { version: '2026.05.17', channel: 'stable' });
+    writeJson(join(source, 'renderer-bundle-rollout.json'), {
+      version: '2026.05.17',
+      channel: 'latest',
+      rolloutPercent: 100,
+      rollbackToBuiltin: true,
+      rollbackReason: 'temporary rollback',
+    });
+
+    expect(() => buildControlPlaneReleaseBundle({
+      sourceDir: source,
+      outDir: out,
+      version: '2026.05.17',
+      channel: 'stable',
+      keyId: 'production-2026-05-17',
+      now: new Date('2026-05-17T00:00:00.000Z'),
+    })).toThrow(/rollbackToBuiltin requires rolloutPercent to be omitted or 0/);
+
+    writeJson(join(source, 'renderer-bundle-rollout.json'), {
+      version: '2026.05.17',
+      channel: 'latest',
+      rolloutPercent: 0,
+      rollbackToBuiltin: true,
+    });
+
+    expect(() => buildControlPlaneReleaseBundle({
+      sourceDir: source,
+      outDir: out,
+      version: '2026.05.17',
+      channel: 'stable',
+      keyId: 'production-2026-05-17',
+      now: new Date('2026-05-17T00:00:00.000Z'),
+    })).toThrow(/rollbackToBuiltin requires rollbackReason/);
   });
 
   it('writes rollback commands when previous bundle is provided', () => {

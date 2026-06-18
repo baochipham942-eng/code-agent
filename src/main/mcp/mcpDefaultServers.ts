@@ -212,9 +212,9 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
         CUA_DRIVER_RS_UPDATE_CHECK: '0',
       },
       enabled: cuaEnabled && cuaSupported,
-      // 显式 env 开启的本机底座必须 eager 连接：lazy 的 stdio server
-      // 不拉工具定义，模型在 ToolSearch/注册表里都看不见它
-      lazyLoad: false,
+      // 保持按需启动：cua-driver v0.5.1 空闲时会维持 cursor overlay 主线程刷新，
+      // 启动即连接会让未使用 Computer Use 的普通会话也长期占 CPU。
+      lazyLoad: true,
     },
   ];
 }

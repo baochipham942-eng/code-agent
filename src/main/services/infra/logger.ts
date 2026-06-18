@@ -22,6 +22,8 @@ export enum LogLevel {
 
 /** 获取日志目录 */
 function getLogDir(): string {
+  const configured = process.env.CODE_AGENT_LOG_DIR?.trim();
+  if (configured) return path.resolve(configured);
   return path.join(getUserDataPath(), 'logs');
 }
 

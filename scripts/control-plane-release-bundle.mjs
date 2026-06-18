@@ -399,6 +399,18 @@ function validateRendererBundleRollout(payload, { version }) {
       code: 'invalid_renderer_rollout_rollback',
     });
   }
+  if (payload.rollbackToBuiltin === true) {
+    if (typeof payload.rollbackReason !== 'string' || payload.rollbackReason.trim().length === 0) {
+      throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json rollbackToBuiltin requires rollbackReason', {
+        code: 'missing_renderer_rollout_rollback_reason',
+      });
+    }
+    if (payload.rolloutPercent !== undefined && payload.rolloutPercent !== 0) {
+      throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json rollbackToBuiltin requires rolloutPercent to be omitted or 0', {
+        code: 'invalid_renderer_rollout_rollback_percent',
+      });
+    }
+  }
   return payload;
 }
 
@@ -538,7 +550,7 @@ function buildPostApplyCommands(repoRoot = REPO_ROOT) {
   return [
     `cd ${shellQuote(repoRoot)}`,
     'vercel deploy --prod --yes',
-    'npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000',
+    'npm run renderer:verify-production -- --expected-version-from-app-update --include-remote-snapshot --retry-attempts 12 --retry-delay-ms 30000',
   ].join('\n');
 }
 

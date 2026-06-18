@@ -72,7 +72,7 @@ describe('control-plane env bundle generator', () => {
     const postApplyCommands = readFileSync(join(outDir, 'post-apply-commands.txt'), 'utf8');
     expect(postApplyCommands).toContain(`cd '${process.cwd()}'`);
     expect(postApplyCommands).toContain('vercel deploy --prod --yes');
-    expect(postApplyCommands).toContain('npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000');
+    expect(postApplyCommands).toContain('npm run renderer:verify-production -- --expected-version-from-app-update --include-remote-snapshot --retry-attempts 12 --retry-delay-ms 30000');
     expect(postApplyCommands).not.toContain('BEGIN PRIVATE KEY');
   });
 });

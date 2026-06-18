@@ -71,6 +71,7 @@ export { isHttpStreamableConfig } from './types';
 export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
+const CUA_SEARCH_KEYWORDS = new Set(['computer', 'desktop', 'screen', 'cursor', 'cua', 'driver']);
 
 export interface MCPToolCallOptions {
   timeoutMs?: number;
@@ -611,6 +612,13 @@ export class MCPClient extends EventEmitter {
         config.command,
         ...(config.args || []),
       ].join(' ').toLowerCase();
+
+      if (
+        config.name === CUA_DRIVER_SERVER_NAME &&
+        keywords.some((keyword) => CUA_SEARCH_KEYWORDS.has(keyword))
+      ) {
+        return true;
+      }
 
       return keywords.some((keyword) => haystack.includes(keyword));
     });

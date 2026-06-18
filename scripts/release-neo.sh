@@ -13,6 +13,8 @@ RUN_GATES=1
 CHECK_LOCAL_ENV=0
 WAIT_CI=0
 YES=0
+POST_PUBLISH_VERIFY=0
+POST_PUBLISH_ARGS=()
 
 usage() {
   cat <<'EOF'
@@ -33,6 +35,14 @@ Options:
   --check-local-env
                  Also require local updater and control-plane release env.
   --wait-ci      After pushing the tag, wait for .github/workflows/release.yml.
+  --post-publish-verify
+                 Run read-only production checks after CI/publish has completed.
+  --server-log-file <file>
+                 Vercel log export for --post-publish-verify.
+  --require-server-log-audit
+                 Fail post-publish verify when server logs are not provided.
+  --require-cloud-api-metadata
+                 Fail post-publish verify when update health uses GitHub fallback.
   --repo <repo>  GitHub repo, owner/name. Defaults to origin or GITHUB_REPOSITORY.
   --remote <r>   Git remote to push. Defaults to origin.
   --yes          Do not prompt before --publish.
@@ -85,6 +95,30 @@ while (($# > 0)); do
       ;;
     --wait-ci)
       WAIT_CI=1
+      shift
+      ;;
+    --post-publish-verify)
+      POST_PUBLISH_VERIFY=1
+      shift
+      ;;
+    --server-log-file)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--server-log-file" "$(read_arg_value "$1" "${2:-}")")
+      shift 2
+      ;;
+    --server-log-file=*)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--server-log-file" "${1#*=}")
+      shift
+      ;;
+    --require-server-log-audit)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--require-server-log-audit")
+      shift
+      ;;
+    --require-cloud-api-metadata)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--require-cloud-api-metadata")
       shift
       ;;
     --repo)
@@ -264,6 +298,13 @@ wait_for_ci() {
     --poll-ms 60000
 }
 
+run_post_publish_verify() {
+  if [[ "${POST_PUBLISH_VERIFY}" -ne 1 ]]; then
+    return 0
+  fi
+  run_gate "post-publish production verification" npm run release:post-publish -- --version "${VERSION}" "${POST_PUBLISH_ARGS[@]}"
+}
+
 main() {
   require_command git
   require_command node
@@ -287,7 +328,11 @@ main() {
     verify_worktree_for_publish
     publish_tag_release
     wait_for_ci
-  else
+  fi
+
+  run_post_publish_verify
+
+  if [[ "${PUBLISH}" -ne 1 ]]; then
     log "ready check passed; no tag or push was performed"
   fi
 }

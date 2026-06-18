@@ -40,6 +40,7 @@ const HEALTH_URL: &str = "http://localhost:8180/api/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
+const LOG_DIR_ENV: &str = "CODE_AGENT_LOG_DIR";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
@@ -226,6 +227,14 @@ fn web_server_runtime_env(
     values
 }
 
+fn web_server_log_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(strip_verbatim_prefix)
+        .map(|dir| dir.join("logs"))
+}
+
 fn web_server_node_env() -> &'static str {
     if cfg!(debug_assertions) {
         "development"
@@ -395,6 +404,9 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
 
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
         command.env(key, value.as_os_str());
+    }
+    if let Some(log_dir) = web_server_log_dir(app) {
+        command.env(LOG_DIR_ENV, log_dir.as_os_str());
     }
 
     let child = command.spawn().map_err(|error| {

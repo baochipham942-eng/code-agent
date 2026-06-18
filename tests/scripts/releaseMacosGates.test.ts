@@ -465,6 +465,7 @@ describe('macOS release fail-closed gates', () => {
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages?.['']?.version).toBe(packageJson.version);
     expect(packageJson.scripts['release:neo']).toBe('bash scripts/release-neo.sh');
+    expect(packageJson.scripts['release:post-publish']).toBe('node scripts/release-post-publish-verify.mjs');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('bash scripts/tauri-release-bundle.sh');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:notarize-macos');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:verify-macos');
@@ -475,6 +476,8 @@ describe('macOS release fail-closed gates', () => {
     expect(releaseNeo).toContain('git push "${REMOTE}" main');
     expect(releaseNeo).toContain('git push "${REMOTE}" "${TAG}"');
     expect(releaseNeo).toContain('node scripts/verify-github-workflow-run.mjs');
+    expect(releaseNeo).toContain('--post-publish-verify');
+    expect(releaseNeo).toContain('npm run release:post-publish -- --version "${VERSION}"');
     expect(releaseNeo).toContain('npm run release:security-scan');
     expect(releaseNeo).toContain('tests/scripts/verifyProductionEnv.test.ts');
     expect(releaseNeo).toContain('tests/scripts/releaseMacosGates.test.ts');

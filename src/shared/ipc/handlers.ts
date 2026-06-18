@@ -4,6 +4,7 @@
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
 import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { ServiceApiKey } from '../contract/configService';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
 
@@ -95,14 +96,16 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SETTINGS_TEST_API_KEY]: (provider: string, apiKey: string) => Promise<boolean>;
   [IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS]: () => Promise<{
     brave?: string;
+    firecrawl?: string;
     github?: string;
     openrouter?: string;
     langfuse_public?: string;
     langfuse_secret?: string;
     exa?: string;
     perplexity?: string;
+    tavily?: string;
   }>;
-  [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: { service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity'; apiKey: string }) => Promise<void>;
+  [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: { service: ServiceApiKey; apiKey: string }) => Promise<void>;
   [IPC_CHANNELS.SETTINGS_GET_INTEGRATION]: (integration: string) => Promise<Record<string, string> | null>;
   [IPC_CHANNELS.SETTINGS_SET_INTEGRATION]: (payload: { integration: string; config: Record<string, string> }) => Promise<void>;
 

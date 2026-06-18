@@ -4,7 +4,9 @@
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
+import { getConfigService } from '../../services/core/configService';
 import { WEB_FETCH } from '../../../shared/constants';
+import { scrapeWithFirecrawl } from './firecrawlClient';
 
 const logger = createLogger('FetchDocument');
 
@@ -21,6 +23,10 @@ export interface FetchDocumentResult {
   crossDomainRedirect: boolean;
   statusCode: number;
   fromCache: boolean;
+  provider?: 'firecrawl' | 'native';
+  providerMode?: 'authenticated' | 'keyless';
+  scrapeId?: string;
+  fallbackReason?: string;
 }
 
 // ============================================================================
@@ -95,6 +101,33 @@ export async function fetchDocument(url: string): Promise<FetchDocumentResult> {
     return cached;
   }
 
+  const firecrawlResult = await scrapeWithFirecrawl(url, { configService: getConfigService() });
+  if (firecrawlResult.ok) {
+    const result: FetchDocumentResult = {
+      content: firecrawlResult.markdown,
+      contentType: 'text/markdown',
+      finalUrl: firecrawlResult.finalUrl,
+      crossDomainRedirect: extractDomain(url) !== '' &&
+        extractDomain(firecrawlResult.finalUrl) !== '' &&
+        extractDomain(url) !== extractDomain(firecrawlResult.finalUrl),
+      statusCode: firecrawlResult.statusCode,
+      fromCache: Boolean(firecrawlResult.cached),
+      provider: 'firecrawl',
+      providerMode: firecrawlResult.credentialMode,
+      scrapeId: firecrawlResult.scrapeId,
+    };
+    setCache(url, result);
+    if (result.finalUrl !== url) {
+      setCache(result.finalUrl, result);
+    }
+    return result;
+  }
+
+  logger.info('Firecrawl scrape unavailable, falling back to native fetch', {
+    url,
+    reason: firecrawlResult.error,
+  });
+
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= WEB_FETCH.MAX_RETRIES; attempt++) {
@@ -144,6 +177,8 @@ export async function fetchDocument(url: string): Promise<FetchDocumentResult> {
         crossDomainRedirect,
         statusCode: response.status,
         fromCache: false,
+        provider: 'native',
+        fallbackReason: firecrawlResult.error,
       };
 
       // Cache by both original URL and final URL

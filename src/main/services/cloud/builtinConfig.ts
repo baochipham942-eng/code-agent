@@ -96,7 +96,7 @@ export interface SharedProviderConfig {
   requiredCapability?: string;
 }
 
-export type SharedServiceKeyName = 'brave' | 'exa' | 'openai' | 'perplexity' | 'tavily';
+export type SharedServiceKeyName = 'brave' | 'exa' | 'firecrawl' | 'openai' | 'perplexity' | 'tavily';
 
 /**
  * 团队共享服务 key（先用于联网搜索）。控制面已按 entitlement 过滤，客户端仅把 key
@@ -488,15 +488,13 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     id: 'firecrawl',
     name: 'Firecrawl',
     type: 'http-streamable',
-    enabled: true,  // Enable if FIRECRAWL_API_KEY is set
+    enabled: true,
     config: {
       url: 'https://mcp.firecrawl.dev/v2/mcp',
-      headers: {
-        'Authorization': 'Bearer ${FIRECRAWL_API_KEY}',
-      },
+      headers: {},
     },
-    requiredEnvVars: ['FIRECRAWL_API_KEY'],
-    description: '强大的网页抓取和内容提取，支持批量抓取、搜索和结构化数据提取',
+    requiredEnvVars: [],
+    description: '默认网页数据层；免 key 可试用搜索和网页抓取，配置 Firecrawl key 后额度更稳',
   },
   {
     id: 'tavily',

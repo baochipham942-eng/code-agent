@@ -15,6 +15,7 @@ const logger = createLogger('WebSearch');
 // ============================================================================
 
 export const CLOUD_SEARCH_URL = `${CLOUD_ENDPOINTS.tools}?action=search`;
+export const FIRECRAWL_SEARCH_URL = SEARCH_API_ENDPOINTS.firecrawlSearch;
 export const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
 export const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
 export const PERPLEXITY_API_URL = SEARCH_API_ENDPOINTS.perplexity;
@@ -23,8 +24,10 @@ export const OPENAI_RESPONSES_URL = SEARCH_API_ENDPOINTS.openai;
 
 export const SEARCH_PROVIDER_SETUP_MESSAGE = [
   '当前没有可用的联网搜索源。',
-  '模型 API Key 只负责模型推理；Claude、Gemini、Grok 等模型 key 不会自动启用 WebSearch。',
-  '要启用联网搜索，请在「设置 > Service API Keys」至少配置一个搜索服务 key：',
+  '默认 Firecrawl keyless 搜索可能已被环境变量禁用，或当前运行环境无法访问 Firecrawl。',
+  '模型 API Key 只负责模型推理；Claude、Gemini、Grok 等模型 key 不会自动启用额外搜索源。',
+  '要增强稳定额度或补充多源验证，请在「设置 > Service API Keys」配置搜索服务 key：',
+  '- Firecrawl：默认网页数据层；免 key 可试用搜索和网页读取，配置 key 后额度更稳。',
   '- Brave Search：通用网页搜索，适合作默认共享源。',
   '- OpenAI：Responses web_search；如果使用 NewAPI/relay，需要同时配置 baseUrl。',
   '- EXA：技术文档和语义搜索。',

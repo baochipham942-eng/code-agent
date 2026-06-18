@@ -137,6 +137,10 @@ async function executeFetchAction(
         extractionMode,
         usedModel,
         maxChars,
+        provider: doc.provider ?? 'native',
+        providerMode: doc.providerMode,
+        scrapeId: doc.scrapeId,
+        fallbackReason: doc.fallbackReason,
       },
     };
   } catch (error: unknown) {

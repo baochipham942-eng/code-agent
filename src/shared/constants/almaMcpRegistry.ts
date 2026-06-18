@@ -63,10 +63,10 @@ export const ALMA_MCP_FEATURED_FALLBACK: AlmaMcpFeaturedServerSnapshot[] = [
     id: 'firecrawl',
     name: 'Firecrawl MCP Server',
     category: 'web-scraping',
-    description: '批量网页抓取与结构化数据提取。',
+    description: '免 key 可试用搜索和网页抓取；配置 key 后支持更高额度和完整能力。',
     verified: true,
     installTypes: ['npx', 'self-hosted'],
-    requiredCredentials: ['FIRECRAWL_API_KEY'],
+    requiredCredentials: [],
   },
   {
     id: 'github',

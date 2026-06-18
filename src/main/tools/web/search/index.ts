@@ -29,6 +29,7 @@ export {
   SEARCH_SOURCES,
   getAvailableSources,
   getTavilyKeys,
+  buildUnusedSourcesHint,
 } from './searchStrategies';
 
 export {

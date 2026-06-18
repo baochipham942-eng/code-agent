@@ -26,9 +26,10 @@ For searching local code, use grep or glob.
 Do not repeatedly search or fetch when the current results already answer the question. If you need page contents for top results, prefer auto_extract instead of doing a separate WebFetch loop over every result.
 
 Features:
+- Firecrawl is the default web data layer and works keyless for basic search/scrape, with rate limits.
 - Intelligent source routing: automatically picks 2-3 best-fit sources based on query characteristics
 - mode: "quick" (2 sources, fast) or "research" (3-4 sources, thorough)
-- Parallel search across multiple sources (OpenAI, Perplexity, EXA, Brave, Tavily)
+- Parallel search across multiple sources (Firecrawl, OpenAI, Perplexity, EXA, Brave, Tavily)
 - Domain filtering with allowed_domains / blocked_domains
 - auto_extract: search + fetch + AI extraction in one call
 - recency: filter results by day/week/month
@@ -52,7 +53,7 @@ Features:
       sources: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Specific sources to use: cloud, openai, perplexity, exa, brave, tavily (default: all available)',
+        description: 'Specific sources to use: firecrawl, cloud, openai, perplexity, exa, brave, tavily (default: Firecrawl primary plus available supplements)',
       },
       allowed_domains: {
         type: 'array',

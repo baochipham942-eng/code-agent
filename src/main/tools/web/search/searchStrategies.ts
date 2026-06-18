@@ -27,6 +27,7 @@ import {
   formatAge,
   getSearchErrorCircuitBreakerCooldown,
 } from './searchUtils';
+import { isFirecrawlDefaultEnabled, isFirecrawlHealthy, searchWithFirecrawl } from '../firecrawlClient';
 
 // ============================================================================
 // Intelligent Source Routing
@@ -37,6 +38,7 @@ import {
  * Each source has unique strengths — route to 2-3 instead of all 4 every time.
  *
  * Source strengths:
+ * - firecrawl: default web data layer, keyless search/scrape, good page extraction
  * - perplexity: AI summary, best for Chinese queries, general knowledge
  * - openai: model-native web_search tool, good zero-extra-vendor fallback
  * - exa: Semantic search, excels at technical/academic content
@@ -59,7 +61,7 @@ export function routeSources(
   const isTechnical = /api|sdk|framework|\u5e93|\u6587\u6863|documentation|github/i.test(query);
   const isResearchMode = options.mode === 'research';
 
-  const selected: string[] = [];
+  const selected: string[] = ['firecrawl'];
 
   if (isChinese) {
     selected.push('perplexity');  // Best Chinese AI summary
@@ -89,8 +91,9 @@ export function routeSources(
     }
   }
 
+  const dedupedSelected = Array.from(new Set(selected));
   return {
-    sources: selected,
+    sources: dedupedSelected,
     reason: [
       isChinese && 'chinese',
       isTwitter && 'twitter',
@@ -108,38 +111,44 @@ export function routeSources(
 
 export const SEARCH_SOURCES: SearchSource[] = [
   {
-    name: 'cloud',
+    name: 'firecrawl',
     priority: 1,
+    isAvailable: () => isFirecrawlDefaultEnabled() && isFirecrawlHealthy(),
+    search: searchViaFirecrawl,
+  },
+  {
+    name: 'cloud',
+    priority: 2,
     isAvailable: () => !!(process.env.SUPABASE_URL && typeof window !== 'undefined'), // 仅 Electron 模式
     search: searchViaCloud,
   },
   {
     name: 'perplexity',
-    priority: 2,
+    priority: 3,
     isAvailable: (cs) => !!cs?.getServiceApiKey('perplexity'),
     search: searchViaPerplexity,
   },
   {
     name: 'openai',
-    priority: 3,
+    priority: 4,
     isAvailable: (cs) => !!cs?.getServiceApiKey('openai'),
     search: searchViaOpenAI,
   },
   {
     name: 'exa',
-    priority: 4,
+    priority: 5,
     isAvailable: (cs) => !!cs?.getServiceApiKey('exa'),
     search: searchViaExa,
   },
   {
     name: 'tavily',
-    priority: 5,
+    priority: 6,
     isAvailable: (cs) => getTavilyKeys(cs).length > 0,
     search: searchViaTavily,
   },
   {
     name: 'brave',
-    priority: 6,
+    priority: 7,
     isAvailable: (cs) => !!cs?.getServiceApiKey('brave') || !!process.env.BRAVE_API_KEY,
     search: searchViaBrave,
   },
@@ -160,9 +169,66 @@ export function getAvailableSources(
   return sources.sort((a, b) => a.priority - b.priority);
 }
 
+/**
+ * Premium 搜索源（需用户配置 key），区别于 firecrawl/cloud 这类默认基础设施源。
+ * 仅这些源在"配置了但本次未命中"时值得提示用户可显式指定。
+ */
+const HINTABLE_PREMIUM_SOURCES: readonly string[] = ['perplexity', 'exa', 'brave', 'tavily'];
+
+/**
+ * P2 可发现性：当用户配置了 premium 搜索源、但本次查询的智能路由未命中它们时，
+ * 生成一行软提示，告诉用户可通过 sources 参数针对性检索。
+ * - 用户已显式指定 sources：返回 null（用户已掌控，不打扰）
+ * - 无未命中的 premium 源：返回 null
+ */
+export function buildUnusedSourcesHint(
+  availableSourceNames: string[],
+  usedSourceNames: string[],
+  requestedSources?: string[]
+): string | null {
+  if (requestedSources && requestedSources.length > 0) return null;
+  const used = new Set(usedSourceNames);
+  const unused = availableSourceNames.filter(
+    name => HINTABLE_PREMIUM_SOURCES.includes(name) && !used.has(name)
+  );
+  if (unused.length === 0) return null;
+  return `_提示: 已配置但本次未启用的搜索源: ${unused.join(', ')}。如需针对性检索可指定 sources: ${JSON.stringify([unused[0]])}_`;
+}
+
 // ============================================================================
 // Search Implementations
 // ============================================================================
+
+async function searchViaFirecrawl(
+  query: string,
+  maxResults: number,
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter,
+  recency?: string
+): Promise<SearchSourceResult> {
+  const result = await searchWithFirecrawl(query, maxResults, {
+    configService,
+    includeDomains: domainFilter?.allowed,
+    excludeDomains: domainFilter?.blocked,
+    recency,
+  });
+
+  if (!result.ok) {
+    return { source: 'firecrawl', success: false, error: result.error };
+  }
+
+  return {
+    source: result.credentialMode === 'authenticated' ? 'firecrawl' : 'firecrawl-keyless',
+    success: true,
+    results: result.results.map((item) => ({
+      title: item.title,
+      url: item.url,
+      snippet: item.snippet,
+      age: item.age,
+      source: result.credentialMode === 'authenticated' ? 'firecrawl' : 'firecrawl-keyless',
+    })),
+  };
+}
 
 /**
  * Search via cloud proxy (uses server-side API keys)

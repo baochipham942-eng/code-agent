@@ -68,6 +68,7 @@ describe('architecture debt report', () => {
       'src/main/agent/runtime/contextAssembly/inference.ts',
       'src/main/agent/runtime/conversationRuntime.ts',
       'src/main/agent/subagentExecutor.ts',
+      'src/main/cron/cronService.ts',
       'src/main/ipc/workspace.ipc.ts',
       'src/main/services/core/configService.ts',
       'src/main/services/core/repositories/SessionRepository.ts',

@@ -2,14 +2,16 @@
 // GoalStatusBar - /goal 运行进度状态条
 // ============================================================================
 // 挂在 ChatInput 上方（独立一行，不与 Skill/MCP pill 混排）。
-// goal 运行中（status='running'）时显示：目标 · 已运行时长(实时) · 第 N/M 轮 · token 用量。
+// running：目标 · 已运行时长(实时) · 墙钟剩余 · 第 N/M 轮 · token 用量 · 暂停按钮。
+// paused（③）：整条转 slate 灰 · "目标已暂停" · 冻结时长 · 继续按钮（后端循环在 turn 边界挂起，goal 仍 pending）。
 // 完成/中止后由聊天区的 GoalNoticeMessage 卡片接管，状态条自动隐藏。
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { Target, Loader2 } from 'lucide-react';
+import { Target, Loader2, Pause, Play } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { invokeDomain } from '../../../services/ipcService';
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -22,8 +24,9 @@ function formatElapsed(ms: number): string {
 export const GoalStatusBar: React.FC = () => {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const run = useAppStore((s) => (currentSessionId ? s.goalRuns[currentSessionId] : undefined));
+  const setGoalPaused = useAppStore((s) => s.setGoalPaused);
 
-  // 实时计时器：仅运行中每秒刷新一次
+  // 实时计时器：仅运行中每秒刷新一次（暂停时冻结时长）
   const [now, setNow] = useState(() => Date.now());
   const running = run?.status === 'running';
   useEffect(() => {
@@ -32,8 +35,9 @@ export const GoalStatusBar: React.FC = () => {
     return () => clearInterval(id);
   }, [running]);
 
-  if (run?.status !== 'running') return null;
+  if (run?.status !== 'running' && run?.status !== 'paused') return null;
 
+  const paused = run.status === 'paused';
   const elapsed = formatElapsed(now - run.startedAt);
   // 墙钟剩余（①）：仅当设了时间预算才显示，剩 0 时高亮提醒即将兜底中止
   const remainingMs =
@@ -41,14 +45,27 @@ export const GoalStatusBar: React.FC = () => {
   const gateHint =
     run.lastGate?.gate === 1 ? '验证中…' : run.lastGate?.gate === 2 ? '评审中…' : null;
 
+  const togglePause = () => {
+    if (!currentSessionId) return;
+    const next = !paused;
+    // 后端复用通用 pause/resume：循环在 turn 边界（waitWhilePaused）挂起/释放
+    invokeDomain('domain:agent', next ? 'pause' : 'resume', { sessionId: currentSessionId }).catch(() => {});
+    setGoalPaused(currentSessionId, next);
+  };
+
+  const accent = paused
+    ? 'border-slate-500/30 bg-slate-500/[0.07]'
+    : 'border-sky-500/30 bg-sky-500/[0.07]';
+
   return (
-    <div className="goal-status-bar mx-auto mb-1 flex w-full max-w-3xl items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/[0.07] px-3 py-1.5 text-xs">
-      <Target className="h-3.5 w-3.5 flex-shrink-0 text-sky-400" />
+    <div className={`goal-status-bar mx-auto mb-1 flex w-full max-w-3xl items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${accent}`}>
+      <Target className={`h-3.5 w-3.5 flex-shrink-0 ${paused ? 'text-slate-400' : 'text-sky-400'}`} />
       <span className="truncate text-zinc-300" title={run.goal}>
-        目标进行中：<span className="text-zinc-100">{run.goal}</span>
+        {paused ? '目标已暂停：' : '目标进行中：'}
+        <span className="text-zinc-100">{run.goal}</span>
       </span>
       <span className="ml-auto flex flex-shrink-0 items-center gap-2 text-zinc-400">
-        <Loader2 className="h-3 w-3 animate-spin text-sky-400" />
+        {!paused && <Loader2 className="h-3 w-3 animate-spin text-sky-400" />}
         <span title="已运行时长">⏱ {elapsed}</span>
         {remainingMs !== undefined && (
           <span
@@ -68,7 +85,16 @@ export const GoalStatusBar: React.FC = () => {
             {run.tokensUsed.toLocaleString()}/{run.tokenBudget.toLocaleString()} tok
           </span>
         )}
-        {gateHint && <span className="text-sky-300">{gateHint}</span>}
+        {!paused && gateHint && <span className="text-sky-300">{gateHint}</span>}
+        <button
+          type="button"
+          data-goal-toggle-pause
+          onClick={togglePause}
+          title={paused ? '继续' : '暂停'}
+          className="flex-shrink-0 rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-100"
+        >
+          {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+        </button>
       </span>
     </div>
   );

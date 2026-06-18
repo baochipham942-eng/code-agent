@@ -37,6 +37,23 @@ describe('appStore', () => {
     expect(useAppStore.getState().selectedSwarmAgentId).toBeNull();
   });
 
+  it('setGoalPaused 在 running↔paused 间切换（③ session 内暂停）', () => {
+    const s = useAppStore.getState();
+    s.startGoalRun('sess-pause-1', { goal: '长任务' });
+    s.setGoalPaused('sess-pause-1', true);
+    expect(useAppStore.getState().goalRuns['sess-pause-1']?.status).toBe('paused');
+    s.setGoalPaused('sess-pause-1', false);
+    expect(useAppStore.getState().goalRuns['sess-pause-1']?.status).toBe('running');
+  });
+
+  it('setGoalPaused 不覆盖已完成/中止的 goal', () => {
+    const s = useAppStore.getState();
+    s.startGoalRun('sess-pause-2', { goal: '短任务' });
+    s.finishGoalRun('sess-pause-2', 'met');
+    s.setGoalPaused('sess-pause-2', true);
+    expect(useAppStore.getState().goalRuns['sess-pause-2']?.status).toBe('met');
+  });
+
   it('opens memory settings with an optional detail focus', () => {
     useAppStore.getState().openMemorySettings({
       filename: 'project.md',

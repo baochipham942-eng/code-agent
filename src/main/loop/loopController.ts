@@ -31,6 +31,8 @@ import { getSessionManager } from '../services/infra/sessionManager';
 import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
 import { notificationService } from '../services/infra/notificationService';
 import { createLogger } from '../services/infra/logger';
+import { getSessionAutomationService } from '../services/sessionAutomation';
+import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../shared/contract/sessionAutomation';
 
 const logger = createLogger('LoopController');
 /** 读取最近 assistant 回复时回看的消息条数。 */
@@ -50,6 +52,16 @@ function loopTaskTitle(prompt: string): string {
   return `循环 · ${clipped || '未命名任务'}`;
 }
 
+function formatLoopCadence(state: Pick<LoopRunState, 'intervalMs'>): string {
+  if (!state.intervalMs) return '自定步调';
+  const seconds = Math.round(state.intervalMs / 1000);
+  if (seconds < 60) return `每 ${seconds} 秒`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `每 ${minutes} 分钟`;
+  const hours = Math.round(minutes / 60);
+  return `每 ${hours} 小时`;
+}
+
 export class LoopController {
   private loops = new Map<string, LoopRunState>();
   private aborted = new Set<string>();
@@ -65,12 +77,14 @@ export class LoopController {
       intervalMs: config.intervalMs,
       maxTurns: config.maxTurns && config.maxTurns > 0 ? config.maxTurns : LOOP_DEFAULT_MAX_TURNS,
       until: config.until,
+      handoffPrompt: config.handoffPrompt,
       turn: 0,
       status: 'running',
       startedAt: Date.now(),
     };
     this.loops.set(id, state);
     this.registerTask(state);
+    this.recordAutomationCreated(state);
     void this.runLoop(id);
     return { ...state };
   }
@@ -135,7 +149,12 @@ export class LoopController {
         createdAt: state.startedAt,
         startedAt: state.startedAt,
         progress: { current: 0, total: state.maxTurns, label: '0 轮' },
-        metadata: { loopId: state.id, until: state.until, intervalMs: state.intervalMs },
+        metadata: {
+          loopId: state.id,
+          until: state.until,
+          intervalMs: state.intervalMs,
+          handoffPrompt: state.handoffPrompt,
+        },
       });
     } catch (err) {
       logger.warn(`registerTask failed for ${state.id}:`, err);
@@ -208,6 +227,62 @@ export class LoopController {
       }
     } catch (err) {
       logger.warn(`finalizeTask failed for ${state.id}:`, err);
+    }
+
+    this.recordAutomationFinalized(state, summary, completedAt);
+  }
+
+  private recordAutomationCreated(state: LoopRunState): void {
+    try {
+      void getSessionAutomationService().recordCreated({
+        id: `loop:${state.id}`,
+        sourceSessionId: state.sessionId,
+        type: 'loop',
+        status: 'running',
+        title: loopTaskTitle(state.prompt),
+        cadenceLabel: formatLoopCadence(state),
+        nextRunAt: state.nextRunAt,
+        sourceRefId: state.id,
+        config: {
+          prompt: state.prompt,
+          until: state.until,
+          intervalMs: state.intervalMs,
+          maxTurns: state.maxTurns,
+          ...(state.handoffPrompt ? {
+            handoffPrompt: state.handoffPrompt,
+            nextStage: { prompt: state.handoffPrompt, title: '循环完成后继续' },
+          } : {}),
+        },
+      }).catch((err) => logger.warn(`recordAutomationCreated failed for ${state.id}:`, err));
+    } catch (err) {
+      logger.warn(`recordAutomationCreated failed for ${state.id}:`, err);
+    }
+  }
+
+  private recordAutomationFinalized(state: LoopRunState, summary: string, completedAt: number): void {
+    const event: SessionAutomationEventKind = state.status === 'failed'
+      ? 'failed'
+      : state.status === 'stopped'
+        ? 'cancelled'
+        : 'completed';
+    const status: SessionAutomationStatus = state.status === 'failed'
+      ? 'failed'
+      : state.status === 'stopped'
+        ? 'cancelled'
+        : 'completed';
+    try {
+      void getSessionAutomationService().recordEvent({
+        automationId: `loop:${state.id}`,
+        event,
+        status,
+        recordStatus: status,
+        summary,
+        error: state.error,
+        eventId: `${event}:loop:${state.id}:${completedAt}`,
+        lastRunAt: completedAt,
+      }).catch((err) => logger.warn(`recordAutomationFinalized failed for ${state.id}:`, err));
+    } catch (err) {
+      logger.warn(`recordAutomationFinalized failed for ${state.id}:`, err);
     }
   }
 

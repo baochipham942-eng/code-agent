@@ -1,6 +1,6 @@
 // ============================================================================
 // /loop 斜杠命令解析
-//   /loop [interval] <prompt> [--max-turns <N>] [--until "<软停止条件>"] [--budget <N>]
+//   /loop [interval] <prompt> [--max-turns <N>] [--until "<软停止条件>"] [--handoff "<下一步提示词>"] [--budget <N>]
 //
 // - interval: 形如 30s / 5m / 2h / 1h30m（h/m/s 可组合，需带单位）。
 //   缺省 = 模型自定步调：每轮结束由模型自己决定下次延迟，而非固定间隔。
@@ -16,6 +16,7 @@ export interface ParsedLoopCommand {
   intervalMs?: number;
   maxTurns?: number;
   until?: string;
+  handoffPrompt?: string;
   budget?: number;
 }
 
@@ -24,7 +25,7 @@ export function isLoopCommand(raw: string): boolean {
   return /^\/loop\b/.test(raw.trim());
 }
 
-const FLAG_NAMES = 'max-turns|until|budget';
+const FLAG_NAMES = 'max-turns|until|handoff|then|budget';
 const FIRST_FLAG_RE = new RegExp(`(^|\\s)--(?:${FLAG_NAMES})\\b`);
 const FLAG_VALUE_RE = new RegExp(
   `--(${FLAG_NAMES})\\s+("([^"]*)"|'([^']*)'|((?:(?!\\s--(?:${FLAG_NAMES})\\b).)*))`,
@@ -84,6 +85,8 @@ export function parseLoopCommand(raw: string): ParsedLoopCommand | null {
     const value = (fm[3] ?? fm[4] ?? fm[5] ?? '').trim();
     if (name === 'until') {
       if (value) result.until = value;
+    } else if (name === 'handoff' || name === 'then') {
+      if (value) result.handoffPrompt = value;
     } else if (name === 'max-turns') {
       const n = parseInt(value, 10);
       if (Number.isFinite(n) && n > 0) result.maxTurns = n;

@@ -412,6 +412,33 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
 
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN session_id TEXT', logger);
 
+  // Session Automations 表：把 cron / heartbeat / loop / role wake 按 source session 串回原会话
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_automations (
+      id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      title TEXT NOT NULL,
+      cadence_label TEXT,
+      next_run_at INTEGER,
+      last_run_at INTEGER,
+      source_ref_id TEXT,
+      result_session_id TEXT,
+      config_json TEXT DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (result_session_id) REFERENCES sessions(id) ON DELETE SET NULL
+    )
+  `);
+  safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN cadence_label TEXT', logger);
+  safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN next_run_at INTEGER', logger);
+  safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN last_run_at INTEGER', logger);
+  safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN source_ref_id TEXT', logger);
+  safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN result_session_id TEXT', logger);
+  safeAlter(db, "ALTER TABLE session_automations ADD COLUMN config_json TEXT DEFAULT '{}'", logger);
+
   // Heartbeats 表 (心跳配置)
   db.exec(`
     CREATE TABLE IF NOT EXISTS heartbeats (

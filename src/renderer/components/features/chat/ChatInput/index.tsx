@@ -86,6 +86,7 @@ import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { GoalComposerCard } from './GoalComposerCard';
 import { buildGoalNoticeMessage } from '../goalNotice';
+import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import {
   applyAgentMentionSuggestion,
@@ -898,18 +899,61 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [inputPlaceholder, isProcessing]);
 
   // 定时任务创建统一入口：内联 /schedule 和对话式卡片都走这里（cron:generateFromPrompt → createJob）。
-  const runScheduleCreation = useCallback(async (description: string): Promise<boolean> => {
+  const runScheduleCreation = useCallback(async (
+    description: string,
+    options: { handoffPrompt?: string } = {},
+  ): Promise<boolean> => {
     toast.info('正在解析定时任务…');
     try {
       const draft = await cronClient.generateFromPrompt(description);
-      const job = await cronClient.createJob(draft as unknown as CreateCronJobInput);
+      const input = draft as unknown as CreateCronJobInput;
+      const handoffPrompt = options.handoffPrompt?.trim();
+      const action = input.action.type === 'agent' && currentSessionId
+        ? {
+            ...input.action,
+            context: {
+              ...(input.action.context ?? {}),
+              sourceSessionId: currentSessionId,
+            },
+          }
+        : input.action;
+      const job = await cronClient.createJob({
+        ...input,
+        action,
+        metadata: {
+          ...(input.metadata ?? {}),
+          ...(currentSessionId ? { sourceSessionId: currentSessionId } : {}),
+          createdVia: 'slash_schedule',
+          originalDescription: description,
+          ...(handoffPrompt ? {
+            handoffPrompt,
+            nextStage: { prompt: handoffPrompt, title: '唤醒后继续' },
+          } : {}),
+        },
+      });
+      if (currentSessionId) {
+        const automationType = job.action.type === 'agent' && job.action.context?.heartbeatTask ? 'heartbeat' : 'cron';
+        useSessionStore.getState().addMessage(buildAutomationNoticeMessage({
+          automationId: `${automationType}:${job.id}`,
+          automationType,
+          event: 'created',
+          sourceSessionId: currentSessionId,
+          sourceRefId: job.id,
+          status: job.enabled ? 'active' : 'paused',
+          title: job.name || '未命名自动化',
+          cadenceLabel: formatCronScheduleLabel(job.schedule),
+          nextRunAt: job.nextRunAt,
+          handoffPrompt,
+          nextStage: handoffPrompt ? { prompt: handoffPrompt, title: '唤醒后继续' } : undefined,
+        }));
+      }
       toast.success(`已创建定时任务「${job.name || '未命名'}」，可在「定时任务」面板查看`);
       return true;
     } catch (err) {
       toast.error(`创建定时任务失败：${err instanceof Error ? err.message : '未知错误'}`);
       return false;
     }
-  }, []);
+  }, [currentSessionId]);
 
   const startGoalRun = useCallback(async (
     parsed: ParsedGoalCommand,
@@ -1005,8 +1049,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           intervalMs: parsed.intervalMs,
           maxTurns: parsed.maxTurns,
           until: parsed.until,
+          handoffPrompt: parsed.handoffPrompt,
         });
         useLoopStore.getState().track(state);
+        useSessionStore.getState().addMessage(buildAutomationNoticeMessage({
+          automationId: `loop:${state.id}`,
+          automationType: 'loop',
+          event: 'created',
+          sourceSessionId: currentSessionId,
+          sourceRefId: state.id,
+          status: 'running',
+          title: `循环 · ${parsed.prompt.replace(/\s+/g, ' ').trim().slice(0, 40) || '未命名任务'}`,
+          cadenceLabel: formatLoopIntervalLabel(parsed.intervalMs),
+          nextRunAt: state.nextRunAt,
+          handoffPrompt: parsed.handoffPrompt,
+          nextStage: parsed.handoffPrompt ? { prompt: parsed.handoffPrompt, title: '循环完成后继续' } : undefined,
+        }));
         toast.success(
           parsed.intervalMs
             ? `循环已启动（每 ${Math.round(parsed.intervalMs / 1000)}s 一轮）`
@@ -1448,9 +1506,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {scheduleComposerOpen && (
           <ScheduleComposerCard
             creating={creatingSchedule}
-            onSubmit={async (description) => {
+            onSubmit={async (description, options) => {
               setCreatingSchedule(true);
-              const ok = await runScheduleCreation(description);
+              const ok = await runScheduleCreation(description, options);
               setCreatingSchedule(false);
               if (ok) setScheduleComposerOpen(false);
             }}

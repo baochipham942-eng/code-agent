@@ -24,6 +24,10 @@ const mockSessionManager = vi.hoisted(() => ({
 const mockRunRoleWriteBack = vi.hoisted(() => vi.fn(async () => ({ written: [], skipped: [], historyAppended: true })));
 // advance→goal run（P4）：Electron 路径用落库事件读 goal 终态
 const mockSessionEvents = vi.hoisted(() => ({ getEventsByType: vi.fn(() => [] as Array<{ eventData?: unknown }>) }));
+const mockSessionAutomation = vi.hoisted(() => ({
+  recordCreated: vi.fn(async () => undefined),
+  recordEvent: vi.fn(async () => undefined),
+}));
 
 vi.mock('../../../../src/main/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
@@ -68,6 +72,10 @@ vi.mock('../../../../src/main/task', () => ({
 
 vi.mock('../../../../src/main/services/roleAssets/roleWriteBack', () => ({
   runRoleWriteBack: mockRunRoleWriteBack,
+}));
+
+vi.mock('../../../../src/main/services/sessionAutomation', () => ({
+  getSessionAutomationService: () => mockSessionAutomation,
 }));
 
 vi.mock('../../../../src/main/evaluation/sessionEventService', () => ({
@@ -134,6 +142,8 @@ describe('roleProactivity', () => {
     // 出厂默认 silent（opt-in）：醒来循环类测试通过 settings 显式开启每日简报档
     mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'daily' } } };
     vi.clearAllMocks();
+    mockSessionAutomation.recordCreated.mockClear();
+    mockSessionAutomation.recordEvent.mockClear();
   });
 
   afterEach(async () => {
@@ -430,6 +440,18 @@ describe('roleProactivity', () => {
       await vi.waitFor(async () => {
         const history = await loadRoleHistory(RESEARCHER, 100);
         expect(history.some((l) => l.includes(`${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(event)`))).toBe(true);
+      });
+      await vi.waitFor(() => {
+        expect(mockSessionAutomation.recordCreated).toHaveBeenCalledWith(expect.objectContaining({
+          sourceSessionId: runSessionId,
+          type: 'role_wake',
+          status: 'running',
+        }));
+        expect(mockSessionAutomation.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+          event: 'completed',
+          status: 'completed',
+          resultSessionId: 'event-wake-session',
+        }));
       });
     });
 

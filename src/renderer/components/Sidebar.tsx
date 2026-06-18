@@ -53,6 +53,7 @@ import {
   Check,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import type { SessionAutomationSessionSummary } from '@shared/contract';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
@@ -88,6 +89,7 @@ import {
   setProjectStatus,
   updateProjectGoalStatus,
 } from '../services/projectClient';
+import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import {
   buildSessionSearchText,
   getDisplaySessionTitle,
@@ -581,6 +583,7 @@ export const Sidebar: React.FC = () => {
     [workspaceGroupedSessions],
   );
   const [projectMetaById, setProjectMetaById] = useState<Record<string, SidebarProjectMeta>>({});
+  const [automationSummariesBySessionId, setAutomationSummariesBySessionId] = useState<Record<string, SessionAutomationSessionSummary>>({});
   const [expandedProjectDetails, setExpandedProjectDetails] = useState<Record<string, boolean>>({});
   const [projectDrawerKey, setProjectDrawerKey] = useState<string | null>(null);
   const [collapsingWorkspaces, setCollapsingWorkspaces] = useState<Record<string, boolean>>({});
@@ -590,6 +593,31 @@ export const Sidebar: React.FC = () => {
     [workspaceGroupedSessions],
   );
   const visibleSessionIdsKey = visibleSessionIds.join('\n');
+
+  useEffect(() => {
+    if (visibleSessionIds.length === 0) {
+      setAutomationSummariesBySessionId({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    void sessionAutomationClient.summarizeSessions(visibleSessionIds)
+      .then((summaries) => {
+        if (cancelled) return;
+        setAutomationSummariesBySessionId(summaries ?? {});
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        logger.warn('Failed to load sidebar automation summaries', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        setAutomationSummariesBySessionId({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleSessionIdsKey]);
 
   useEffect(() => {
     if (visibleProjectIds.length === 0) {
@@ -1423,6 +1451,8 @@ export const Sidebar: React.FC = () => {
     const isRenaming = renamingId === session.id;
     const sessionRuntime = sessionRuntimes.get(session.id);
     const backgroundTask = backgroundTaskMap.get(session.id);
+    const automationSummary = automationSummariesBySessionId[session.id];
+    const showAutomationBadge = Boolean(automationSummary?.label && (automationSummary.activeCount > 0 || automationSummary.runningCount > 0));
     // 空会话（0 轮 / 0 消息）没有可回放内容，行内不展示 Replay 入口，避免「新对话」上挂个没用的图标。
     const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
     const status = getSessionStatusPresentation({
@@ -1571,6 +1601,15 @@ export const Sidebar: React.FC = () => {
               {typeLabel && (
                 <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-opacity duration-150 group-hover:opacity-0">
                   {typeLabel}
+                </span>
+              )}
+              {showAutomationBadge && automationSummary && (
+                <span
+                  title={automationSummary.tooltip || '会话自动化'}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-opacity duration-150 group-hover:opacity-0"
+                >
+                  <Clock3 className="h-3 w-3" />
+                  <span>{automationSummary.label}</span>
                 </span>
               )}
               {status.showBadge && (

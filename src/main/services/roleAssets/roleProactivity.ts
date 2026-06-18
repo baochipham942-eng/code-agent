@@ -28,6 +28,8 @@ import type {
 } from '../../../shared/contract/roleAssets';
 import { instantiateRole, appendRoleHistory, loadRoleHistory, listPersistentRoles, isPersistentRole } from './roleAssetService';
 import { runRoleWriteBack } from './roleWriteBack';
+import { getSessionAutomationService } from '../sessionAutomation';
+import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../../shared/contract/sessionAutomation';
 
 const logger = createLogger('RoleProactivity');
 
@@ -211,6 +213,8 @@ export interface WakeRoleOptions {
   sourceSessionId?: string;
   /** event 触发时传入的 run 产出摘要（角色总结 + next steps 的输入） */
   runSummary?: string;
+  /** 角色醒来完成后发回来源会话并触发下一步的显式交接提示词 */
+  handoffPrompt?: string;
   /** 工作目录（项目记忆 key）；不传用当前会话的 */
   workspacePath?: string;
 }
@@ -316,6 +320,31 @@ export async function wakeRole(
       metadata: { roleId, trigger, sourceSessionId: options?.sourceSessionId },
     },
   });
+
+  if (options?.sourceSessionId) {
+    try {
+      await getSessionAutomationService().recordCreated({
+        id: `role_wake:${session.id}`,
+        sourceSessionId: options.sourceSessionId,
+        type: 'role_wake',
+        status: 'running',
+        title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
+        cadenceLabel: trigger === 'event' ? '任务完成后唤醒' : '定时醒来',
+        sourceRefId: session.id,
+        resultSessionId: session.id,
+        config: {
+          roleId,
+          trigger,
+          ...(options.handoffPrompt ? {
+            handoffPrompt: options.handoffPrompt,
+            nextStage: { prompt: options.handoffPrompt, title: '角色唤醒后继续' },
+          } : {}),
+        },
+      });
+    } catch (err) {
+      logger.warn('Role wake automation creation feedback failed', { roleId, sessionId: session.id, error: String(err) });
+    }
+  }
 
   // ---- 步骤 4：跑实例（角色 agent 定义 + 记忆注入 + 迭代数硬约束）----
   // 双路径（web/main 路径分离）：
@@ -434,6 +463,43 @@ export async function wakeRole(
   fireRoleWakeHook(roleId, trigger, decision, session.id, workspacePath).catch(
     (err) => logger.warn('RoleWake hook failed', { roleId, error: String(err) }),
   );
+
+  if (options?.sourceSessionId) {
+    const event: SessionAutomationEventKind = decision === 'silence'
+      ? 'skipped'
+      : decision === 'advance' && advanceGoalStatus === 'met'
+        ? 'stage_ready'
+        : 'completed';
+    const status: SessionAutomationStatus = decision === 'silence'
+      ? 'skipped'
+      : decision === 'advance' && advanceGoalStatus === 'aborted'
+        ? 'failed'
+        : 'completed';
+    try {
+      await getSessionAutomationService().recordEvent({
+        automationId: `role_wake:${session.id}`,
+        event,
+        status,
+        recordStatus: status,
+        resultSessionId: session.id,
+        summary: decision === 'silence'
+          ? '巡检无需行动。'
+          : `[${decision}] ${summary || '角色醒来产出了新内容'}`,
+        eventId: `role_wake:${session.id}:${decision}:${advanceGoalStatus ?? 'none'}`,
+        lastRunAt: Date.now(),
+        configPatch: {
+          decision,
+          advanceGoalStatus,
+          ...(options.handoffPrompt ? {
+            handoffPrompt: options.handoffPrompt,
+            nextStage: { prompt: options.handoffPrompt, title: '角色唤醒后继续' },
+          } : {}),
+        },
+      });
+    } catch (err) {
+      logger.warn('Role wake automation result feedback failed', { roleId, sessionId: session.id, error: String(err) });
+    }
+  }
 
   return { roleId, trigger, status: 'completed', decision, sessionId: session.id, summary, advanceGoalStatus };
 }

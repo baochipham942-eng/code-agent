@@ -18,6 +18,11 @@ const notificationState = vi.hoisted(() => ({
   notifyTaskComplete: vi.fn(),
 }));
 
+const automationState = vi.hoisted(() => ({
+  recordCreated: vi.fn(async () => undefined),
+  recordEvent: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../src/main/task', () => ({
   getTaskManager: () => ({
     getOrCreateCurrentOrchestrator: () => orchestratorState,
@@ -34,6 +39,10 @@ vi.mock('../../src/main/tasks/backgroundTaskLedger', () => ({
 
 vi.mock('../../src/main/services/infra/notificationService', () => ({
   notificationService: notificationState,
+}));
+
+vi.mock('../../src/main/services/sessionAutomation', () => ({
+  getSessionAutomationService: () => automationState,
 }));
 
 vi.mock('../../src/main/services/infra/logger', () => ({
@@ -59,6 +68,8 @@ describe('LoopController meta history', () => {
     ledgerState.upsertTask.mockReset();
     ledgerState.queueNotification.mockReset();
     notificationState.notifyTaskComplete.mockReset();
+    automationState.recordCreated.mockClear();
+    automationState.recordEvent.mockClear();
   });
 
   it('runs loop turns as meta history and disables interactive user questions', async () => {
@@ -118,5 +129,15 @@ describe('LoopController meta history', () => {
       }),
       { force: true },
     );
+    expect(automationState.recordCreated).toHaveBeenCalledWith(expect.objectContaining({
+      id: expect.stringMatching(/^loop:/),
+      sourceSessionId: 'session-1',
+      type: 'loop',
+      status: 'running',
+    }));
+    expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'completed',
+      status: 'completed',
+    }));
   });
 });

@@ -961,9 +961,19 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         e.stopPropagation();
         setSelectedIndex(prev => (prev > 0 ? prev - 1 : filtered.length - 1));
       } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+        const selected = filtered[selectedIndex];
+        const normalizedFilter = filter.trim().replace(/^\//, '').toLowerCase();
+        const shouldSubmitExactCommand =
+          selected.actionKind === 'prefill-leading-command' &&
+          ['goal', 'schedule', 'loop'].includes(selected.commandId ?? selected.id) &&
+          normalizedFilter === (selected.commandId ?? selected.id).toLowerCase();
+        if (shouldSubmitExactCommand) {
+          onClose();
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
-        onSelect(filtered[selectedIndex]);
+        onSelect(selected);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();

@@ -80,6 +80,10 @@ function isVisibleHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
 }
 
+function isRenderableMetaMessage(message: Message): boolean {
+  return Boolean(message.isMeta && message.metadata?.automation);
+}
+
 async function refreshContextHealthForSession(sessionId: string, switchVersion: number): Promise<void> {
   try {
     const health = await ipcService.invoke(IPC_CHANNELS.CONTEXT_HEALTH_GET, sessionId) as ContextHealthState | null;
@@ -188,9 +192,11 @@ export function findReusableNewSessionDraft(params: {
     ? params.sessions.find((session) => session.id === params.currentSessionId) ?? null
     : null;
   const visibleMessages = params.messages.filter(isVisibleHistoryMessage);
+  const hasRenderableMetaMessages = params.messages.some(isRenderableMetaMessage);
   if (
     current &&
     visibleMessages.length === 0 &&
+    !hasRenderableMetaMessages &&
     params.todos.length === 0 &&
     isUntouchedNewSession(current, params.workingDirectory)
   ) {
@@ -642,7 +648,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     addMessage: (message: Message) => {
-      if (message.isMeta) {
+      if (message.isMeta && !isRenderableMetaMessage(message)) {
         set({ streamSnapshot: null });
         return;
       }

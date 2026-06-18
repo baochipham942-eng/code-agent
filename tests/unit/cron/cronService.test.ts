@@ -5,6 +5,13 @@ const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
 }));
 
+const automationState = vi.hoisted(() => ({
+  recordCreated: vi.fn(async () => undefined),
+  recordEvent: vi.fn(async () => undefined),
+  getBySourceRef: vi.fn(() => null),
+  upsert: vi.fn(() => undefined),
+}));
+
 vi.mock('../../../src/main/services/core/databaseService', () => ({
   getDatabase: () => ({
     getDb: () => ({
@@ -16,6 +23,10 @@ vi.mock('../../../src/main/services/core/databaseService', () => ({
       }),
     }),
   }),
+}));
+
+vi.mock('../../../src/main/services/sessionAutomation', () => ({
+  getSessionAutomationService: () => automationState,
 }));
 
 import { CronService } from '../../../src/main/cron/cronService';
@@ -37,6 +48,11 @@ function shellJob(unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks') {
 afterEach(() => {
   dbState.cronRows = [];
   dbState.savedRows = [];
+  automationState.recordCreated.mockClear();
+  automationState.recordEvent.mockClear();
+  automationState.getBySourceRef.mockClear();
+  automationState.getBySourceRef.mockReturnValue(null);
+  automationState.upsert.mockClear();
 });
 
 describe('CronService every schedule units', () => {
@@ -88,6 +104,85 @@ describe('CronService every schedule units', () => {
 
     expect(job.schedule).toMatchObject({ type: 'every', interval: 3, unit: 'days' });
     expect(service.listJobs()).toHaveLength(1);
+    await service.shutdown();
+  });
+
+  it('records source-session automation metadata for slash-created agent schedules', async () => {
+    const service = new CronService();
+
+    const job = await service.createJob({
+      name: '主题页编排巡检',
+      description: '自动巡检主线',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 15, unit: 'minutes' },
+      action: {
+        type: 'agent',
+        agentType: 'default',
+        prompt: '检查线程状态',
+        context: { sourceSessionId: 'source-session-1' },
+      },
+      enabled: true,
+      metadata: {
+        sourceSessionId: 'source-session-1',
+        createdVia: 'slash_schedule',
+      },
+    });
+
+    expect(automationState.recordCreated).toHaveBeenCalledWith(expect.objectContaining({
+      id: `cron:${job.id}`,
+      sourceSessionId: 'source-session-1',
+      type: 'cron',
+      sourceRefId: job.id,
+      cadenceLabel: '每 15 分钟',
+      config: expect.objectContaining({
+        createdVia: 'slash_schedule',
+        actionType: 'agent',
+      }),
+    }));
+    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[11]))).toMatchObject({
+      sourceSessionId: 'source-session-1',
+      createdVia: 'slash_schedule',
+    });
+    await service.shutdown();
+  });
+
+  it('writes a source-session automation message when deleting a slash-created schedule', async () => {
+    const service = new CronService();
+
+    const job = await service.createJob({
+      name: '主题页编排巡检',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 15, unit: 'minutes' },
+      action: {
+        type: 'agent',
+        agentType: 'default',
+        prompt: '检查线程状态',
+        context: { sourceSessionId: 'source-session-1' },
+      },
+      enabled: true,
+      metadata: {
+        sourceSessionId: 'source-session-1',
+        createdVia: 'slash_schedule',
+      },
+    });
+    automationState.recordEvent.mockClear();
+    automationState.upsert.mockClear();
+
+    await service.deleteJob(job.id);
+
+    expect(automationState.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: `cron:${job.id}`,
+      sourceSessionId: 'source-session-1',
+      type: 'cron',
+      sourceRefId: job.id,
+    }));
+    expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'cron',
+      sourceRefId: job.id,
+      event: 'cancelled',
+      status: 'cancelled',
+      summary: '定时任务已删除。',
+    }));
     await service.shutdown();
   });
 });

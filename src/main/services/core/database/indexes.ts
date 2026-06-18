@@ -45,6 +45,8 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_session ON cron_executions(session_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_status ON cron_executions(status)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_scheduled ON cron_executions(scheduled_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_automations_source ON session_automations(source_session_id, status, next_run_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_automations_ref ON session_automations(type, source_ref_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_heartbeats_enabled ON heartbeats(enabled)`);
 
   // Sync optimization: index for finding unsynced sessions

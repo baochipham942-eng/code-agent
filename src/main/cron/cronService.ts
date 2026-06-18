@@ -22,6 +22,13 @@ import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { notificationService } from '../services/infra/notificationService';
+import { getSessionAutomationService } from '../services/sessionAutomation';
+import type {
+  SessionAutomationConfig,
+  SessionAutomationNextStageConfig,
+  SessionAutomationStatus,
+  SessionAutomationType,
+} from '../../shared/contract/sessionAutomation';
 
 const execAsync = promisify(exec);
 
@@ -153,6 +160,77 @@ function normalizeStringRecord(value: unknown): Record<string, string> | undefin
 
 function normalizeUnknownRecord(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined;
+}
+
+function readCronSourceSessionId(definition: CronJobDefinition, action: CronJobAction = definition.action): string | undefined {
+  const metadataSource = definition.metadata?.sourceSessionId;
+  if (typeof metadataSource === 'string' && metadataSource.trim()) return metadataSource;
+  if (action.type === 'agent') {
+    const contextSource = action.context?.sourceSessionId;
+    if (typeof contextSource === 'string' && contextSource.trim()) return contextSource;
+  }
+  return undefined;
+}
+
+function getCronAutomationType(definition: CronJobDefinition, action: CronJobAction = definition.action): SessionAutomationType {
+  return action.type === 'agent' && action.context?.heartbeatTask ? 'heartbeat' : 'cron';
+}
+
+function readAutomationNextStage(value: unknown): SessionAutomationNextStageConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  const prompt = typeof value.prompt === 'string' && value.prompt.trim() ? value.prompt.trim() : undefined;
+  const goal = typeof value.goal === 'string' && value.goal.trim() ? value.goal.trim() : undefined;
+  const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim() : undefined;
+  if (!prompt && !goal && !title) return undefined;
+  return {
+    ...(prompt ? { prompt } : {}),
+    ...(goal ? { goal } : {}),
+    ...(title ? { title } : {}),
+  };
+}
+
+function buildCronAutomationConfig(definition: CronJobDefinition): SessionAutomationConfig {
+  const handoffPrompt =
+    typeof definition.metadata?.handoffPrompt === 'string' && definition.metadata.handoffPrompt.trim()
+      ? definition.metadata.handoffPrompt.trim()
+      : undefined;
+  const nextStage = readAutomationNextStage(definition.metadata?.nextStage);
+  return {
+    createdVia: typeof definition.metadata?.createdVia === 'string' ? definition.metadata.createdVia : 'cron',
+    sourceMessageId: typeof definition.metadata?.sourceMessageId === 'string' ? definition.metadata.sourceMessageId : undefined,
+    scheduleType: definition.scheduleType,
+    actionType: definition.action.type,
+    ...(handoffPrompt ? { handoffPrompt } : {}),
+    ...(nextStage ? { nextStage } : {}),
+  };
+}
+
+function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
+  switch (schedule.type) {
+    case 'every': {
+      const unitLabel: Record<SupportedEveryTimeUnit, string> = {
+        seconds: '秒',
+        minutes: '分钟',
+        hours: '小时',
+        days: '天',
+      };
+      return `每 ${schedule.interval} ${unitLabel[schedule.unit]}`;
+    }
+    case 'at': {
+      const ts = typeof schedule.datetime === 'number' ? schedule.datetime : Date.parse(String(schedule.datetime));
+      return Number.isFinite(ts)
+        ? new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : '一次性';
+    }
+    case 'cron':
+      return schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression;
+    default:
+      return '按配置';
+  }
+}
+
+function isSkippedResult(result: unknown): boolean {
+  return isRecord(result) && result.skipped === true;
 }
 
 function normalizeTags(value: unknown): string[] | undefined {
@@ -487,6 +565,8 @@ export class CronService implements Disposable {
       this.jobs.set(job.id, { definition: job });
     }
 
+    await this.recordAutomationCreated(job);
+
     return job;
   }
 
@@ -522,6 +602,8 @@ export class CronService implements Disposable {
       this.jobs.set(jobId, { definition: updatedJob });
     }
 
+    this.syncAutomationFromJob(updatedJob);
+
     return updatedJob;
   }
 
@@ -543,6 +625,7 @@ export class CronService implements Disposable {
 
     // Remove from database
     await this.deleteJobFromDatabase(jobId);
+    await this.recordAutomationArchived(job.definition);
 
     return true;
   }
@@ -870,6 +953,8 @@ export class CronService implements Disposable {
       // Save execution to database
       await this.saveExecutionToDatabase(execution);
 
+      await this.recordAutomationExecution(definition, execution);
+
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session
       this.notifyAgentExecution(definition, execution);
     }
@@ -1040,9 +1125,14 @@ export class CronService implements Disposable {
     const configService = getConfigService();
     const sessionManager = getSessionManager();
     const currentSessionId = sessionManager.getCurrentSessionId();
+    const sourceSessionId = readCronSourceSessionId(definition, action);
+    const sourceSession = sourceSessionId
+      ? await sessionManager.getSession(sourceSessionId).catch(() => null)
+      : null;
     const currentSession = currentSessionId
       ? await sessionManager.getSession(currentSessionId)
       : null;
+    const baseSession = sourceSession ?? currentSession;
     const settings = configService.getSettings();
     const sessionType = this.getAgentSessionType(action);
     const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
@@ -1050,12 +1140,12 @@ export class CronService implements Disposable {
     return sessionManager.createSession({
       title: this.formatAgentSessionTitle(definition, sessionType),
       modelConfig: resolveSessionDefaultModelConfig({
-        provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
-        model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,
-        temperature: settings.model?.temperature ?? currentSession?.modelConfig.temperature ?? 0.7,
-        maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens,
+        provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
+        model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,
+        temperature: settings.model?.temperature ?? baseSession?.modelConfig.temperature ?? 0.7,
+        maxTokens: settings.model?.maxTokens ?? baseSession?.modelConfig.maxTokens,
       }),
-      workingDirectory: currentSession?.workingDirectory,
+      workingDirectory: baseSession?.workingDirectory,
       type: sessionType,
       origin: {
         kind: originKind,
@@ -1064,11 +1154,142 @@ export class CronService implements Disposable {
         metadata: {
           scheduleType: definition.scheduleType,
           actionType: action.type,
+          sourceSessionId,
         },
       },
+      parentSessionId: sourceSessionId,
       sourceRunId: executionId,
       readOnly: true,
     });
+  }
+
+  private async recordAutomationCreated(definition: CronJobDefinition): Promise<void> {
+    const sourceSessionId = readCronSourceSessionId(definition);
+    if (!sourceSessionId) return;
+    try {
+      const job = this.jobs.get(definition.id);
+      const withRuntimeState = job ? this.withRuntimeScheduleState(job) : definition;
+      await getSessionAutomationService().recordCreated({
+        id: `${getCronAutomationType(definition)}:${definition.id}`,
+        sourceSessionId,
+        type: getCronAutomationType(definition),
+        status: definition.enabled ? 'active' : 'paused',
+        title: definition.name,
+        cadenceLabel: formatCronScheduleLabel(definition.schedule),
+        nextRunAt: withRuntimeState.nextRunAt,
+        sourceRefId: definition.id,
+        config: buildCronAutomationConfig(definition),
+      });
+    } catch (error) {
+      console.error('[CronService] Failed to record automation creation:', error);
+    }
+  }
+
+  private syncAutomationFromJob(definition: CronJobDefinition): void {
+    const sourceSessionId = readCronSourceSessionId(definition);
+    if (!sourceSessionId) return;
+    try {
+      const job = this.jobs.get(definition.id);
+      const withRuntimeState = job ? this.withRuntimeScheduleState(job) : definition;
+      getSessionAutomationService().upsert({
+        id: `${getCronAutomationType(definition)}:${definition.id}`,
+        sourceSessionId,
+        type: getCronAutomationType(definition),
+        status: definition.enabled ? 'active' : 'paused',
+        title: definition.name,
+        cadenceLabel: formatCronScheduleLabel(definition.schedule),
+        nextRunAt: withRuntimeState.nextRunAt,
+        sourceRefId: definition.id,
+        config: buildCronAutomationConfig(definition),
+      });
+    } catch (error) {
+      console.error('[CronService] Failed to sync automation from job:', error);
+    }
+  }
+
+  private async recordAutomationArchived(definition: CronJobDefinition): Promise<void> {
+    const sourceSessionId = readCronSourceSessionId(definition);
+    if (!sourceSessionId) return;
+    try {
+      const service = getSessionAutomationService();
+      if (!service.getBySourceRef(getCronAutomationType(definition), definition.id)) {
+        service.upsert({
+          id: `${getCronAutomationType(definition)}:${definition.id}`,
+          sourceSessionId,
+          type: getCronAutomationType(definition),
+          status: 'active',
+          title: definition.name,
+          cadenceLabel: formatCronScheduleLabel(definition.schedule),
+          sourceRefId: definition.id,
+          config: buildCronAutomationConfig(definition),
+        });
+      }
+      await service.recordEvent({
+        type: getCronAutomationType(definition),
+        sourceRefId: definition.id,
+        event: 'cancelled',
+        status: 'cancelled',
+        summary: '定时任务已删除。',
+        eventId: `cancelled:${definition.id}`,
+      });
+    } catch (error) {
+      console.error('[CronService] Failed to archive automation:', error);
+    }
+  }
+
+  private async recordAutomationExecution(
+    definition: CronJobDefinition,
+    execution: CronJobExecution,
+  ): Promise<void> {
+    const sourceSessionId = readCronSourceSessionId(definition);
+    if (!sourceSessionId) return;
+    try {
+      const service = getSessionAutomationService();
+      const job = this.jobs.get(definition.id);
+      const withRuntimeState = job ? this.withRuntimeScheduleState(job) : definition;
+      const existing = service.getBySourceRef(getCronAutomationType(definition), definition.id);
+      if (!existing) {
+        service.upsert({
+          id: `${getCronAutomationType(definition)}:${definition.id}`,
+          sourceSessionId,
+          type: getCronAutomationType(definition),
+          status: definition.enabled ? 'active' : 'paused',
+          title: definition.name,
+          cadenceLabel: formatCronScheduleLabel(definition.schedule),
+          nextRunAt: withRuntimeState.nextRunAt,
+          sourceRefId: definition.id,
+          config: buildCronAutomationConfig(definition),
+        });
+      }
+      const skipped = execution.status === 'completed' && isSkippedResult(execution.result);
+      const event = skipped ? 'skipped' : execution.status === 'failed' ? 'failed' : 'completed';
+      const eventStatus: SessionAutomationStatus = skipped
+        ? 'skipped'
+        : execution.status === 'failed'
+          ? 'failed'
+          : 'completed';
+      const keepActive = definition.enabled && definition.scheduleType !== 'at';
+      const recordStatus: SessionAutomationStatus = keepActive ? 'active' : eventStatus;
+      await service.recordEvent({
+        type: getCronAutomationType(definition),
+        sourceRefId: definition.id,
+        event,
+        status: eventStatus,
+        recordStatus,
+        resultSessionId: execution.sessionId,
+        summary: skipped
+          ? '当前触发被跳过。'
+          : execution.status === 'failed'
+            ? undefined
+            : '定时任务已完成。',
+        error: execution.error,
+        eventId: `execution:${execution.id}`,
+        nextRunAt: withRuntimeState.nextRunAt,
+        lastRunAt: execution.completedAt,
+      });
+    } catch (error) {
+      console.error('[CronService] Failed to record automation execution:', error);
+    }
   }
 
   private async retryExecution(

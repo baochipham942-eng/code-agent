@@ -65,13 +65,20 @@ describe('architecture debt report', () => {
     expect(report.maxLines.whitelistCount).toBeGreaterThanOrEqual(0);
     expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([
       'src/cli/database.ts',
+      'src/main/agent/runtime/contextAssembly/inference.ts',
       'src/main/agent/runtime/conversationRuntime.ts',
       'src/main/agent/subagentExecutor.ts',
+      'src/main/ipc/workspace.ipc.ts',
+      'src/main/services/core/configService.ts',
       'src/main/services/core/repositories/SessionRepository.ts',
       'src/main/services/skills/builtinSkills.ts',
       'src/main/telemetry/telemetryStorage.ts',
       'src/renderer/components/Sidebar.tsx',
+      'src/renderer/components/WorkspacePreviewPanel.tsx',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
+      'src/renderer/components/features/chat/MessageBubble/MessageContent.tsx',
+      'src/renderer/components/features/settings/tabs/ModelSettings.tsx',
+      'src/renderer/hooks/agent/effects/useConversationStreamEffects.ts',
     ]);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);

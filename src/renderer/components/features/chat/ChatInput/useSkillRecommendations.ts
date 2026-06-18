@@ -23,7 +23,8 @@ const RECOMMEND_DEBOUNCE_MS = 500;
 /** 触发推荐的最短输入长度 */
 const MIN_INPUT_LENGTH = 4;
 /** 最多展示的推荐数 */
-const MAX_RECOMMENDATIONS = 4;
+// 降噪：一次只推最相关的 2 个，避免输入区塞一排技能（旧值 4 实测观感杂乱、黑话多）
+const MAX_RECOMMENDATIONS = 2;
 
 const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
   try {

@@ -1284,12 +1284,13 @@ export const useConversationStreamEffects = ({
         case 'goal_iteration': {
           logHandledEvent();
           if (eventSessionId) {
-            const d = event.data as { turn: number; maxTurns: number; tokensUsed: number; tokenBudget: number };
+            const d = event.data as { turn: number; maxTurns: number; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number };
             useAppStore.getState().updateGoalProgress(eventSessionId, {
               turn: d.turn,
               maxTurns: d.maxTurns,
               tokensUsed: d.tokensUsed,
               tokenBudget: d.tokenBudget,
+              wallClockBudgetMs: d.wallClockBudgetMs,
             });
           }
           break;

@@ -496,6 +496,8 @@ export class ConversationRuntime {
           const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
           const tokensUsedWithSwarm = goalTokensUsedWithSwarm(this.ctx);
           // 观测事件：每轮 goal 进度态（UI 用）
+          // 墙钟已用时间（①）：以 run 起点为基准；闸3 与 UI 剩余时间共用。
+          const elapsedMs = Date.now() - this.ctx.runStartTime;
           this.ctx.onEvent({
             type: 'goal_iteration',
             data: {
@@ -504,9 +506,10 @@ export class ConversationRuntime {
               goalStatus: this.ctx.goalMode.getStatus(),
               tokensUsed: tokensUsedWithSwarm,
               tokenBudget: this.ctx.goalMode.getTokenBudget(),
+              wallClockBudgetMs: this.ctx.goalMode.getWallClockBudgetMs(),
             },
           });
-          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
+          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
             this.ctx.goalMode.markAborted(reason);

@@ -153,6 +153,8 @@ export interface GoalRunState {
   tokensUsed: number;
   /** token 预算 */
   tokenBudget: number;
+  /** 墙钟时间预算（ms）；undefined = 不限时（①，StatusBar 据此显示剩余时间） */
+  wallClockBudgetMs?: number;
   /** 中止原因（status=aborted 时） */
   abortReason?: string;
   /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
@@ -356,8 +358,8 @@ interface AppState {
 
   // /goal 运行态 actions
   setPendingProjectGoalChatSeed: (seed: PendingProjectGoalChatSeed | null) => void;
-  startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number }) => void;
-  updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number }) => void;
+  startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
+  updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string }) => void;
   finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string) => void;
   clearGoalRun: (sessionId: string) => void;
@@ -1009,6 +1011,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           maxTurns: init.maxTurns ?? 0,
           tokensUsed: 0,
           tokenBudget: init.tokenBudget ?? 0,
+          wallClockBudgetMs: init.wallClockBudgetMs,
         },
       },
     })),
@@ -1026,6 +1029,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             maxTurns: data.maxTurns ?? prev.maxTurns,
             tokensUsed: data.tokensUsed ?? prev.tokensUsed,
             tokenBudget: data.tokenBudget ?? prev.tokenBudget,
+            wallClockBudgetMs: data.wallClockBudgetMs ?? prev.wallClockBudgetMs,
           },
         },
       };

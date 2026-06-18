@@ -25,6 +25,7 @@ export const GoalComposerCard: React.FC<GoalComposerCardProps> = ({
   const [pauseConditions, setPauseConditions] = useState('需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。');
   const [maxTurns, setMaxTurns] = useState('');
   const [budget, setBudget] = useState('');
+  const [maxTime, setMaxTime] = useState('');
 
   const draft = useMemo<GoalComposerDraft>(() => ({
     goal,
@@ -34,7 +35,8 @@ export const GoalComposerCard: React.FC<GoalComposerCardProps> = ({
     pauseConditions,
     maxTurns: parsePositiveInteger(maxTurns),
     budget: parsePositiveInteger(budget),
-  }), [acceptance, boundaries, budget, goal, maxTurns, pauseConditions, verify]);
+    wallClockMinutes: parsePositiveInteger(maxTime),
+  }), [acceptance, boundaries, budget, goal, maxTime, maxTurns, pauseConditions, verify]);
 
   const canStart = goal.trim().length > 0 && !submitting;
 
@@ -118,7 +120,7 @@ export const GoalComposerCard: React.FC<GoalComposerCardProps> = ({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <label className="block">
             <span className="mb-1 block text-[10px] text-sky-200/60">轮次上限</span>
             <input
@@ -140,6 +142,18 @@ export const GoalComposerCard: React.FC<GoalComposerCardProps> = ({
               value={budget}
               onChange={(e) => setBudget(e.target.value)}
               placeholder="默认"
+              className="w-full rounded border border-sky-500/30 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-sky-500/50"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] text-sky-200/60">时间上限(分)</span>
+            <input
+              data-goal-field="max-time"
+              type="number"
+              min={1}
+              value={maxTime}
+              onChange={(e) => setMaxTime(e.target.value)}
+              placeholder="不限"
               className="w-full rounded border border-sky-500/30 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-sky-500/50"
             />
           </label>

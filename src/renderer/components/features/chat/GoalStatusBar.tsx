@@ -35,6 +35,9 @@ export const GoalStatusBar: React.FC = () => {
   if (run?.status !== 'running') return null;
 
   const elapsed = formatElapsed(now - run.startedAt);
+  // 墙钟剩余（①）：仅当设了时间预算才显示，剩 0 时高亮提醒即将兜底中止
+  const remainingMs =
+    run.wallClockBudgetMs !== undefined ? run.wallClockBudgetMs - (now - run.startedAt) : undefined;
   const gateHint =
     run.lastGate?.gate === 1 ? '验证中…' : run.lastGate?.gate === 2 ? '评审中…' : null;
 
@@ -47,6 +50,14 @@ export const GoalStatusBar: React.FC = () => {
       <span className="ml-auto flex flex-shrink-0 items-center gap-2 text-zinc-400">
         <Loader2 className="h-3 w-3 animate-spin text-sky-400" />
         <span title="已运行时长">⏱ {elapsed}</span>
+        {remainingMs !== undefined && (
+          <span
+            title="墙钟剩余时间"
+            className={remainingMs <= 60_000 ? 'text-amber-300' : undefined}
+          >
+            剩 {formatElapsed(Math.max(0, remainingMs))}
+          </span>
+        )}
         {run.turn > 0 && (
           <span title="轮次">
             第 {run.turn}{run.maxTurns > 0 ? `/${run.maxTurns}` : ''} 轮

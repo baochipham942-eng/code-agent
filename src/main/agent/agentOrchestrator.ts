@@ -889,6 +889,7 @@ export class AgentOrchestrator {
           reviewCondition: options.goal.review,
           tokenBudget: options.goal.budget,
           maxTurns: options.goal.maxTurns,
+          wallClockBudgetMs: options.goal.wallClockBudgetMs,
           allowSwarm: options.goal.allowSwarm,
         })
       : undefined;

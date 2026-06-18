@@ -24,6 +24,19 @@ describe('/goal command helpers', () => {
     });
   });
 
+  it('parses --max-time into a wall-clock budget in ms（①墙钟）', () => {
+    expect(parseGoalCommand('/goal 跑长任务 --verify "npm test" --max-time 15')).toEqual({
+      goal: '跑长任务',
+      verify: 'npm test',
+      wallClockBudgetMs: 15 * 60_000,
+    });
+  });
+
+  it('goalComposerDraftToParsed 把 wallClockMinutes 转成 ms（①墙钟）', () => {
+    const parsed = goalComposerDraftToParsed({ goal: '改文案', wallClockMinutes: 30 });
+    expect(parsed.wallClockBudgetMs).toBe(30 * 60_000);
+  });
+
   it('parses a review-only soft goal', () => {
     expect(parseGoalCommand("/goal 优化交互 --review '输入框聚焦时不要出现绿色描边'")).toEqual({
       goal: '优化交互',

@@ -29,7 +29,7 @@ export interface SlashTokenMatch {
 export interface PromptCommandCandidateInput {
   name: string;
   description?: string;
-  source: 'file' | 'mcp';
+  source: 'file' | 'mcp' | 'builtin';
   hints: string[];
   scope?: 'user' | 'project';
   serverName?: string;

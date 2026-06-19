@@ -25,6 +25,7 @@ import {
   type PromptCommandInfo,
   type PromptCommandResolution,
 } from '../../../shared/commands/promptCommands';
+import { BUILTIN_PROMPT_COMMANDS } from '../../../shared/commands/builtinPromptCommands';
 
 const logger = createLogger('PromptCommandService');
 
@@ -62,10 +63,12 @@ export class PromptCommandService {
     const byName = new Map<string, PromptCommandInfo>();
 
     // 注册顺序 = 优先级倒序：后写的不覆盖已有的
+    // project 文件 > user 文件 > MCP prompt > builtin（内置兜底，可被同名覆盖）
     const ordered: PromptCommandInfo[] = [
       ...(dirs.project ? await readCommandFiles(dirs.project, 'project') : []),
       ...(await readCommandFiles(dirs.user, 'user')),
       ...this.listMcpPromptCommands(),
+      ...BUILTIN_PROMPT_COMMANDS,
     ];
     for (const command of ordered) {
       if (!byName.has(command.name)) {
@@ -123,10 +126,11 @@ export class PromptCommandService {
       };
     }
 
+    // file 或 builtin：本地模板直接展开，source 如实回传
     return {
       name: command.name,
       prompt: expandPromptTemplate(command.template, invocation.args),
-      source: 'file',
+      source: command.source,
       agent: command.agent,
       model: command.model,
       subtask: command.subtask,

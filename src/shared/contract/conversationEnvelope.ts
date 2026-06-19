@@ -53,7 +53,7 @@ export interface ConversationExecutionIntent {
 
 export interface ComposerPromptCommandSelection {
   name: string;
-  source?: 'file' | 'mcp';
+  source?: 'file' | 'mcp' | 'builtin';
   hints?: string[];
   via?: 'slash_picker' | 'typed_slash';
 }

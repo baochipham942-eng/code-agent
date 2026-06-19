@@ -130,7 +130,13 @@ test('Workbench 可打开 Skills、上下文与 MCP 设置页', async ({ page })
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
 
+  // 右侧 workbench 面板默认折叠；'打开面板'(+) 在 WorkbenchTabs 内，需先展开面板才挂载。
   const addPanelButton = page.getByRole('button', { name: '打开面板' });
+  if (!(await addPanelButton.isVisible().catch(() => false))) {
+    const showTaskPanel = page.getByRole('button', { name: 'Show task panel' });
+    await expect(showTaskPanel).toBeVisible({ timeout: 15_000 });
+    await showTaskPanel.click();
+  }
   await expect(addPanelButton).toBeVisible({ timeout: 15_000 });
 
   await addPanelButton.click();
@@ -140,8 +146,10 @@ test('Workbench 可打开 Skills、上下文与 MCP 设置页', async ({ page })
 
   await addPanelButton.click();
   await page.getByRole('button', { name: '上下文', exact: true }).click();
-  await expect(page.getByText('上下文健康度')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText('Token 分解')).toBeVisible();
+  // fresh-home 无会话上下文数据时面板显示空态；有数据时显示健康度面板。两者都说明上下文 tab 已打开。
+  await expect(
+    page.getByText('上下文健康度').or(page.getByText('暂无上下文数据。')),
+  ).toBeVisible({ timeout: 10_000 });
 
   await page.locator('[title="Session Skills"]').click();
   await page.getByText('在设置中管理 Skill 库').click();
@@ -153,7 +161,8 @@ test('Workbench 可打开 Skills、上下文与 MCP 设置页', async ({ page })
   await expect(settingsDialog.getByText('运行状态与本地桥接')).toBeVisible();
 
   await settingsDialog.getByRole('button', { name: 'Skills' }).click();
-  await expect(settingsDialog.getByRole('heading', { name: /已安装的 Skill 库/ })).toBeVisible({ timeout: 10_000 });
+  // Skills 设置页结构为「已安装 / 发现安装」子 tab；断言稳定的子 tab 标签而非旧 heading 文案。
+  await expect(settingsDialog.getByText('发现安装')).toBeVisible({ timeout: 10_000 });
 });
 
 // ----------------------------------------------------------------------------

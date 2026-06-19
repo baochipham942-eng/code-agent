@@ -283,7 +283,7 @@ span+raw 全量)上报云端,后台脱离用户机器即可复现。剩下的都
 核查结论:
 - `src-tauri/tauri.conf.json` 的 `resources` **不含 `.env`** —— `.env` 不进 app bundle(release 段说法正确,security.md "自动打包"那句是错的)。
 - 没有首启把 `LANGFUSE_*` 种进用户 `~/.code-agent/.env` 的逻辑;`services/cloud/` 也不下发 langfuse key。
-- 故 `LANGFUSE_*` 只在 **dev(林晨)本机** `~/.code-agent/.env`。其他用户全新安装 env 里没有 → `getServiceApiKey` 返回 undefined → Langfuse 不初始化 → **只有 dev 一个人在往 Langfuse 上报**。
+- 故 `LANGFUSE_*` 只在 **dev(产品负责人)本机** `~/.code-agent/.env`。其他用户全新安装 env 里没有 → `getServiceApiKey` 返回 undefined → Langfuse 不初始化 → **只有 dev 一个人在往 Langfuse 上报**。
 
 **但核心能力不受影响**:诊断包(P2)走 app 自己的 authed Supabase client,**覆盖所有登录用户**,不需要 Langfuse key。即"脱离用户机器复现"对全员生效;缺的只是 Langfuse 实时 dashboard 的全员覆盖(只 dev 有)。
 

@@ -1,6 +1,6 @@
 # 游戏生成 Codex 式工作流改造（Game-Gen Codex Workflow）
 
-> Status: 🟡 P0-P2 已实现并验证 · Owner: 林晨 · Created: 2026-06-11 · Updated: 2026-06-11 · Branch: `worktree-game-gen-codex-style`
+> Status: 🟡 P0-P2 已实现并验证 · Owner: 产品负责人 · Created: 2026-06-11 · Updated: 2026-06-11 · Branch: `worktree-game-gen-codex-style`
 > 本文是游戏生成**生成侧工作流**的改造方案。与 `docs/audits/2026-05-07-game-acceptance-architecture.md`（验收侧架构审计，已定 Phase 0-4 迁移计划）互补：审计解决"怎么判卷"，本方案解决"怎么答题"。验收侧的硬规则（§7 Hard Rules：repair 硬上限 2 轮、monotonicity gate、BoN=3、minimum-diff prompt 等）本方案全部继承，不重新发明。
 
 ## 0. 实现现状（as-built，2026-06-11 校准）

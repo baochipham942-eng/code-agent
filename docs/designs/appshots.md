@@ -1,6 +1,6 @@
 # Appshots 设计（窗口快照 → 多模态上下文）
 
-> Status: ✅ Phase 1-4 全部已并入 main（2026-05-26）· Owner: 林晨 · Created: 2026-05-26
+> Status: ✅ Phase 1-4 全部已并入 main（2026-05-26）· Owner: 产品负责人 · Created: 2026-05-26
 > 本文是 Appshots 功能的 SDD spec。**§1 实现状态**记录 as-built 能力；§2 起为设计。
 
 ## 1. 实现状态（as-built，2026-05-26）

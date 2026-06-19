@@ -1,6 +1,6 @@
 # 附件管线 v2 设计（多类型附件 → 摘要 → 模型上下文）
 
-> Status: 🚧 WIP（已落 main commit `162f54f5`，**未经逐行 review，待后续处理**）· Owner: 林晨 · Created: 2026-05-26
+> Status: 🚧 WIP（已落 main commit `162f54f5`，**未经逐行 review，待后续处理**）· Owner: 产品负责人 · Created: 2026-05-26
 > 来源：验收迭代（爸/艾克斯）在 `feat/appshots-p34` worktree 累积的附件处理重构，按意见独立成支后落 main。
 > 本文据 `162f54f5` 的 as-built 代码梳理；`tsc` 通过、自带 5 测试文件 46 例全过，但实现仍可能在 review 后调整。
 

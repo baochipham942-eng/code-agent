@@ -2,7 +2,7 @@
 
 > 状态: accepted（已拍板 2026-06-16）
 > 日期: 2026-06-16
-> 决策者: 林晨（产品负责人拍板）+ Claude（实现）
+> 决策者: 产品负责人（产品负责人拍板）+ Claude（实现）
 > 上游: [ADR-022](022-append-only-event-ledger-spine.md)（Q1=C 混合 / Q2=Y 最小切口，已 accepted）
 >
 > **拍板结果（2026-06-16）：Q1 = P2 读侧逻辑投影（不建物理大表）；Q2 = D2 双写过渡三小步。** 3a 立即按 P2 实施（本分支 `feat/event-ledger-phase3`），3b 按 D2 另起分支再做。

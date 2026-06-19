@@ -1,6 +1,6 @@
 # Task 取消级联（Cancellation Cascading）— 实施计划
 
-> **状态**：草案 v1（2026-05-13，林晨）
+> **状态**：草案 v1（2026-05-13，产品负责人）
 > **范围**：补齐 ESC → 主 agent → subagent → tool 的完整 cancel 传播；区分 `user-cancel` vs `child-error`；接通已存在但零调用的 `initiateShutdown` 四阶段优雅关闭；接通 `AgentTask.saveToDisk` partial 持久化。
 > **风险灯**：🟡 黄（多处现成零件，但 wiring 不完整，且需要触动 spawnAgent / coordinator / shutdownProtocol 三处核心路径）。
 > **优先级**：P0 — Code Agent 的核心差异化能力，决定用户 ESC 后的 trust 边界。99% multi-agent 系统（含 LangChain deepagents / Claude Code 主线）这条没做对，做对了就是 differentiator。
@@ -471,4 +471,4 @@ const idleWatchdog = setInterval(() => {
 
 ---
 
-> v1 完。下一步：林晨 review → 开 Phase 1 commit。
+> v1 完。下一步：产品负责人 review → 开 Phase 1 commit。

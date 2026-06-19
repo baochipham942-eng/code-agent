@@ -223,9 +223,9 @@ describe('pdfGenerateModule (native)', () => {
     });
 
     it('passes author to PDFDocument info', async () => {
-      await run({ title: 'T', content: 'x', author: '林晨' });
+      await run({ title: 'T', content: 'x', author: '测试用户' });
       const opts = pdfDocCtorMock.mock.calls[0][0] as { info: { Author: string } };
-      expect(opts.info.Author).toBe('林晨');
+      expect(opts.info.Author).toBe('测试用户');
     });
   });
 

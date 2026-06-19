@@ -1,6 +1,6 @@
 # Subagent 权限继承 + Deny Rules 级联 — 实施计划
 
-> **状态**：草案 v1（2026-05-13，林晨）
+> **状态**：草案 v1（2026-05-13，产品负责人）
 > **范围**：M2-Task 5 partial — 仅做 `parentContext` 注入 + 用户 deny 规则级联，AgentTask/profile profile-matrix 留待 M2-Task 5 full。
 > **风险灯**：🟢 绿（已是设计完整的方案，只是 4 月 1 日 M2-Task 5 没收口）。
 > **优先级**：P0 — code-agent 当前最重要的差异化安全特性，关系到 plan→build / reviewer→coder / CI 子代理 三大工作流的承诺。

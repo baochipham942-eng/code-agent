@@ -1,6 +1,6 @@
 # 项目空间容器设计（Project Space / P0-2）
 
-> Status: 🚧 设计已拍板，实现中 · Owner: 林晨 · Created: 2026-06-03 · Branch: `feat/project-space`
+> Status: 🚧 设计已拍板，实现中 · Owner: 产品负责人 · Created: 2026-06-03 · Branch: `feat/project-space`
 > 产物中心路线图（`docs/research/2026-06-02-coze-codeg-cumora-competitive-analysis.md`）**最后一个 P0**。
 > 本文是 SDD spec：§1 背景 / §2 已拍板决策 / §3 数据模型 / §4 迁移 / §5 后端 / §6 前端 / §7 与 P4 边界 / §8 范围与排期。
 

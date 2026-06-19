@@ -1,6 +1,6 @@
 # Swarm Goal（P4）+ 主动性合流 设计方案
 
-> 状态：设计定稿（2026-06-03 与林晨拍板 5 决策），待实现
+> 状态：设计定稿（2026-06-03 与产品负责人拍板 5 决策），待实现
 > 日期：2026-06-03
 > 上游：[goal-mode.md](goal-mode.md) §10 P4 预留 / [role-proactivity.md](role-proactivity.md) / [dynamic-workflow.md](../architecture/dynamic-workflow.md)
 > 前置依赖：PR #207（角色主动性）+ PR #208（goal 收尾）已于 2026-06-03 合并
@@ -25,7 +25,7 @@ goal 模式（/goal 三层闸，已 SHIPPED）目前只能套**单 agent**：一
 
 ---
 
-## 2. 拍板决策记录（2026-06-03 与林晨确认）
+## 2. 拍板决策记录（2026-06-03 与产品负责人确认）
 
 | # | 决策点 | 结论 | 理由 |
 |---|--------|------|------|
@@ -252,4 +252,4 @@ export const SWARM_GOAL = {
 - 独立 worktree `feat/swarm-goal`，所有文件操作用 worktree 绝对路径
 - 禁止硬编码：所有数值进 `SWARM_GOAL` 常量块
 - 每个功能点 typecheck + 独立 commit，不跑全量 vitest
-- commit 不 push；E2E 验收报告给林晨后再决定 push + PR
+- commit 不 push；E2E 验收报告给产品负责人后再决定 push + PR

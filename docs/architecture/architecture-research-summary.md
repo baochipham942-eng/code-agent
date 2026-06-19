@@ -2,7 +2,7 @@
 
 > **日期**：2026-04-12
 > **目的**：为 code-agent 的 protocol 层迁移提供完整背景、对比数据和决策依据
-> **作者**：林晨（PM）+ Claude Code 协作分析
+> **作者**：产品负责人（PM）+ Claude Code 协作分析
 > **配套文档**：`protocol-layer-migration-plan.md`（执行清单）
 > **原始数据**：`research-assets/` 目录下的 madge JSON、SVG 图、HTML 图
 

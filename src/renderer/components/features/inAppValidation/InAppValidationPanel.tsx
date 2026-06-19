@@ -62,12 +62,12 @@ const DEMO_STEPS: BrowserInteractionStep[] = [
   },
   {
     label: '输入姓名',
-    action: { type: 'type', text: '林晨' },
+    action: { type: 'type', text: '测试用户' },
   },
   {
     label: '点问好按钮',
     action: { type: 'click-selector', selector: '#greet' },
-    expect: { textVisible: '你好, 林晨!', timeoutMs: 1500 },
+    expect: { textVisible: '你好, 测试用户!', timeoutMs: 1500 },
   },
 ];
 

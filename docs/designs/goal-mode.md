@@ -1,6 +1,6 @@
 # /goal 模式设计（Goal Mode）
 
-> Status: ✅ Shipped（P1-P3 已并入 main）· Owner: 林晨 · Created: 2026-05-23 · Updated: 2026-05-26 · Branch: `feat/goal-mode`（已合并）
+> Status: ✅ Shipped（P1-P3 已并入 main）· Owner: 产品负责人 · Created: 2026-05-23 · Updated: 2026-05-26 · Branch: `feat/goal-mode`（已合并）
 > 本文是 /goal 功能的 SDD spec。**§0 记录 as-built 与原设计的偏差**；§1-§12 为原始设计（保留决策脉络），关键事实点已就地校准到落地实现。
 
 ## 0. 实现现状（as-built，2026-05-26 校准）

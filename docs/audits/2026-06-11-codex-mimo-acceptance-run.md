@@ -1,6 +1,6 @@
 # Codex 式游戏生成 × mimo 实跑报告（2026-06-11）
 
-> Owner: 林晨 · 分支 `worktree-game-gen-codex-style` · 模型 `xiaomi/mimo-v2.5-pro`
+> Owner: 产品负责人 · 分支 `worktree-game-gen-codex-style` · 模型 `xiaomi/mimo-v2.5-pro`
 > 配套方案 `docs/designs/game-gen-codex-workflow.md`，验收侧审计 `docs/audits/2026-05-07-game-acceptance-architecture.md`。
 
 ## TL;DR

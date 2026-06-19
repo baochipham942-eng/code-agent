@@ -1,7 +1,7 @@
 # 对称性应用 Guardrail 设计
 
 **日期**: 2026-05-05
-**Owner**: 林晨 / Claude (Opus 4.7)
+**Owner**: 产品负责人 / Claude (Opus 4.7)
 **状态**: PoC 已落地（provider 列表）；其余 4 个模式待 follow-up
 
 ## 背景

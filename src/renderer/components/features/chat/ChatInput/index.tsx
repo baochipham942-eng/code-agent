@@ -30,7 +30,7 @@ import { ContextUsagePill } from '../ContextUsagePill';
 import { CostDisplay } from '../../../StatusBar/CostDisplay';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
-import { SlashCommandPopover, type SlashCommand } from './SlashCommandPopover';
+import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useChatInputSessionScope } from './useChatInputSessionScope';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
@@ -38,7 +38,6 @@ import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowse
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useComposerStore } from '../../../../stores/composerStore';
-import { useSkillStore } from '../../../../stores/skillStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
@@ -49,7 +48,6 @@ import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import {
   buildCapabilitySemanticSuggestions,
   CapabilitySuggestionStrip,
-  type SkillRecommendationView,
 } from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
@@ -57,7 +55,6 @@ import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import {
   ModelSwitcher,
@@ -100,16 +97,12 @@ import { shouldClearComposerAfterSend } from './utils';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
+import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import {
   clearDebugDraftParamsFromCurrentUrl,
   readDebugDraftFromLocation,
 } from './debugDraftUrl';
-import {
-  buildInlineSkillTokenValue,
-  buildLeadingSlashCommandValue,
-  getTrailingSlashToken,
-  removeTrailingSlashToken,
-} from './slashPickerModel';
+import { getTrailingSlashToken } from './slashPickerModel';
 import { AgentChip } from './AgentChip';
 import {
   applyModelStrategyRecommendationAction,
@@ -249,25 +242,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     installRecommendedSkill,
   } = useSkillRecommendations(currentSessionId, value);
   const capabilityRegistry = useWorkbenchCapabilityRegistry();
-  const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
-  const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
-  const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
-  const setTurnCapabilityScopeMode = useComposerStore((state) => state.setTurnCapabilityScopeMode);
-  const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const capabilitySuggestions = useMemo(
     () => buildCapabilitySemanticSuggestions(value, capabilityRegistry.items),
     [capabilityRegistry.items, value],
   );
   const browserSession = useWorkbenchBrowserSession();
   const buildContext = useComposerStore((state) => state.buildContext);
-  const mountSkill = useSkillStore((state) => state.mountSkill);
-  const setSkillCurrentSession = useSkillStore((state) => state.setCurrentSession);
   const routingMode = useComposerStore((state) => state.routingMode);
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
-  const createSession = useSessionStore((state) => state.createSession);
   const updateSessionEngine = useSessionStore((state) => state.updateSessionEngine);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const currentSessionMemoryMode = useSessionStore((state) =>
@@ -487,207 +472,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSlashFilter,
   });
 
-  const markSkillSelected = useCallback((skillName: string) => {
-    const currentSelectedSkillIds = useComposerStore.getState().selectedSkillIds;
-    setSelectedSkillIds([...new Set([...currentSelectedSkillIds, skillName])]);
-    setValue((prev) => buildInlineSkillTokenValue(prev, skillName));
-    focusComposer();
-  }, [focusComposer, setSelectedSkillIds]);
-
-  const ensureSessionForSkill = useCallback(async (): Promise<string | null> => {
-    if (currentSessionId) return currentSessionId;
-    const session = await createSession('新对话');
-    return session?.id ?? null;
-  }, [createSession, currentSessionId]);
-
-  const selectSkillForCurrentTurn = useCallback(async (input: {
-    skillName: string;
-    libraryId: string;
-    mounted?: boolean;
-    recommendation?: SkillRecommendationView;
-    recommendationAction?: 'mount' | 'install';
-  }): Promise<boolean> => {
-    if (!input.mounted) {
-      const targetSessionId = await ensureSessionForSkill();
-      if (!targetSessionId) {
-        toast.error(`挂载 Skill 失败：无法创建会话`);
-        focusComposer();
-        return false;
-      }
-
-      let mounted: boolean;
-      if (input.recommendation && input.recommendationAction === 'install') {
-        mounted = await installRecommendedSkill(input.recommendation, targetSessionId);
-      } else if (input.recommendation) {
-        mounted = await mountRecommendedSkill(input.recommendation, targetSessionId);
-      } else {
-        setSkillCurrentSession(targetSessionId);
-        mounted = await mountSkill(input.skillName, input.libraryId);
-      }
-
-      if (!mounted) {
-        toast.error(`挂载 Skill 失败：${input.skillName}`);
-        focusComposer();
-        return false;
-      }
-    }
-
-    markSkillSelected(input.skillName);
-    return true;
-  }, [
-    ensureSessionForSkill,
-    focusComposer,
-    installRecommendedSkill,
-    markSkillSelected,
-    mountRecommendedSkill,
-    mountSkill,
-    setSkillCurrentSession,
-  ]);
-
-  const selectWorkbenchCapabilityForCurrentTurn = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
-    setTurnCapabilityScopeMode('manual');
-
-    if (capability.kind === 'skill') {
-      void selectSkillForCurrentTurn({
-        skillName: capability.id,
-        libraryId: capability.libraryId || capability.source || 'unknown',
-        mounted: capability.mounted,
-      });
-      return;
-    }
-
-    if (capability.kind === 'connector') {
-      if (!capability.connected) {
-        toast.warning(capability.blockedReason?.detail || `请先连接 ${capability.label}`);
-        openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
-        focusComposer();
-        return;
-      }
-      const currentSelectedConnectorIds = useComposerStore.getState().selectedConnectorIds;
-      setSelectedConnectorIds([...new Set([...currentSelectedConnectorIds, capability.id])]);
-      setValue((prev) => removeTrailingSlashToken(prev));
-      focusComposer();
-      return;
-    }
-
-    if (capability.status !== 'connected' && capability.status !== 'lazy') {
-      toast.warning(capability.blockedReason?.detail || `请先连接 MCP：${capability.label}`);
-      openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
-      focusComposer();
-      return;
-    }
-    const currentSelectedMcpServerIds = useComposerStore.getState().selectedMcpServerIds;
-    setSelectedMcpServerIds([...new Set([...currentSelectedMcpServerIds, capability.id])]);
-    setValue((prev) => removeTrailingSlashToken(prev));
-    focusComposer();
-  }, [
-    focusComposer,
-    openCapabilitySettingsTarget,
-    selectSkillForCurrentTurn,
-    setSelectedConnectorIds,
-    setSelectedMcpServerIds,
-    setTurnCapabilityScopeMode,
-  ]);
-
-  const handleSlashCommandSelect = useCallback((cmd: SlashCommand) => {
-    setShowSlashPopover(false);
-    setSlashFilter('');
-    if (cmd.actionKind !== 'prefill-prompt') {
-      setPendingPromptCommand(null);
-    }
-
-    if (cmd.actionKind === 'open-agent-command') {
-      openAgentCommand();
-      return;
-    }
-
-    if (cmd.actionKind === 'create-role') {
-      setValue('');
-      void startCreateRoleChat();
-      return;
-    }
-
-    if (cmd.actionKind === 'select-agent' && cmd.agentToken) {
-      if (cmd.agentId) {
-        setActiveAgentId(cmd.agentId);
-        setPendingAgentSelection({
-          id: cmd.agentId,
-          name: cmd.label,
-          token: cmd.agentToken,
-          via: 'slash_picker',
-        });
-      } else {
-        setActiveAgentId(null);
-        setPendingAgentSelection({ id: null, name: 'Default', token: cmd.agentToken, via: 'slash_picker' });
-      }
-      setValue(removeTrailingSlashToken(value));
-      focusComposer();
-      return;
-    }
-
-    if (cmd.actionKind === 'prefill-prompt' && cmd.promptName) {
-      setPendingPromptCommand({
-        name: cmd.promptName,
-        source: cmd.promptSource,
-        hints: cmd.promptHints,
-        via: 'slash_picker',
-      });
-      setValue(buildLeadingSlashCommandValue(value, cmd.promptName));
-      focusComposer();
-      return;
-    }
-
-    if (cmd.id === 'goal') {
-      setValue('');
-      setScheduleComposerOpen(false);
-      setGoalComposerOpen(true);
-      focusComposer();
-      return;
-    }
-
-    if (cmd.actionKind === 'prefill-leading-command' && cmd.commandId) {
-      setValue(buildLeadingSlashCommandValue(value, cmd.commandId));
-      focusComposer();
-      return;
-    }
-
-    if (cmd.actionKind === 'select-skill' && cmd.skillName) {
-      const recommendation = skillRecommendations.find((item) => item.skillName === cmd.skillName);
-      void selectSkillForCurrentTurn({
-        skillName: cmd.skillName,
-        libraryId: cmd.skillLibraryId || 'unknown',
-        mounted: cmd.skillMounted,
-        recommendation,
-        recommendationAction: cmd.skillRecommendationAction,
-      });
-      return;
-    }
-
-    if (cmd.actionKind === 'select-connector' && cmd.connectorId) {
-      const capability = capabilityRegistry.items.find((item) => item.kind === 'connector' && item.id === cmd.connectorId);
-      if (capability) selectWorkbenchCapabilityForCurrentTurn(capability);
-      return;
-    }
-
-    if (cmd.actionKind === 'select-mcp' && cmd.mcpServerId) {
-      const capability = capabilityRegistry.items.find((item) => item.kind === 'mcp' && item.id === cmd.mcpServerId);
-      if (capability) selectWorkbenchCapabilityForCurrentTurn(capability);
-      return;
-    }
-
-    setValue(removeTrailingSlashToken(value));
-    cmd.action();
-    focusComposer();
-  }, [
-    capabilityRegistry.items,
-    focusComposer,
-    openAgentCommand,
+  // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
+  const {
     selectSkillForCurrentTurn,
     selectWorkbenchCapabilityForCurrentTurn,
-    setActiveAgentId,
-    skillRecommendations,
+    handleSlashCommandSelect,
+  } = useChatInputSlashCommands({
     value,
-  ]);
+    currentSessionId,
+    skillRecommendations,
+    mountRecommendedSkill,
+    installRecommendedSkill,
+    capabilityItems: capabilityRegistry.items,
+    openAgentCommand,
+    focusComposer,
+    setValue,
+    setShowSlashPopover,
+    setSlashFilter,
+    setPendingPromptCommand,
+    setPendingAgentSelection,
+    setScheduleComposerOpen,
+    setGoalComposerOpen,
+    setActiveAgentId,
+  });
 
   // 历史命令功能
   const {

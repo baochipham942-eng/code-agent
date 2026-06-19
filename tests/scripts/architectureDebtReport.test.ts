@@ -65,7 +65,6 @@ describe('architecture debt report', () => {
     expect(report.maxLines.whitelistCount).toBeGreaterThanOrEqual(0);
     expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([
       'src/main/agent/runtime/conversationRuntime.ts',
-      'src/main/agent/subagentExecutor.ts',
     ]);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);

@@ -12,6 +12,7 @@ import { estimateTokens } from '../context/tokenEstimator';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import type { ModelRouter } from '../model/modelRouter';
 import { normalizeImageData } from '../utils/imageUtils';
+import type { SubagentContextAnnotation } from '../context/subagentContextStore';
 
 export interface SubagentAttachmentInput {
   type: string;
@@ -142,6 +143,28 @@ export function buildContextSnapshot(
     })),
     truncatedMessages: normalizedMessages.filter((message) => message.content.includes('[truncated]')).length,
   };
+}
+
+/**
+ * 从消息流构造可观测性 annotations 映射（messageId → provenance 注解）。
+ * 仅保留带 category / sourceDetail 的消息，每条挂上当前 agentId。
+ */
+export function buildSnapshotAnnotations(
+  messages: RuntimeMessage[],
+  agentId: string,
+): Record<string, SubagentContextAnnotation> {
+  return Object.fromEntries(
+    messages
+      .filter((message) => message.observation?.category || message.observation?.sourceDetail)
+      .map((message) => [message.id, {
+        category: message.observation?.category,
+        sourceDetail: message.observation?.sourceDetail,
+        agentId,
+        sourceKind: message.observation?.sourceKind,
+        layer: message.observation?.layer,
+        toolCallId: message.observation?.toolCallId,
+      }]),
+  );
 }
 
 export function createRuntimeMessage(

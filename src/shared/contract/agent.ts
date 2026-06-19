@@ -276,7 +276,7 @@ export type AgentEvent =
   | { type: 'agent_complete'; data: null }
   | { type: 'agent_cancelled'; data: null }
   // /goal 自治模式观测事件
-  | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; parentToolUseId?: string } }
+  | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number; parentToolUseId?: string } }
   | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string } }
   // /goal 终态：三闸全过(met) 或 闸3 兜底中止(aborted)。前端据此展示"已完成/已中止"+停表。
   | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; parentToolUseId?: string } }

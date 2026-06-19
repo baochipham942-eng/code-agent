@@ -37,15 +37,17 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      // 索引与 Sidebar 顶部 useState 声明顺序耦合：新增状态筛选下拉的 statusFilterOpen 后，
-      // contextMenu 由 #7 → #8、forcedReviewItems 由 #11 → #12。
+      // 索引与 Sidebar 顶部 useState 声明顺序耦合：contextMenu = #8。
+      // reviewItemsBySessionId 由 #12 → #15：派生会话状态（searchScope / messageSearch×2 /
+      // reviewItems / projectMeta）抽入 useSidebarDerivedSessions hook 后，hook 内 useState 仍按
+      // 渲染顺序计数，reviewItems 排在 replayDialog/renamingId/renameValue + hook 前 3 个 useState 之后。
       if (reactState.forcedContextMenuSession && reactState.useStateCalls === 8) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
           vi.fn(),
         ] as const;
       }
-      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 12) {
+      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 15) {
         return [
           reactState.forcedReviewItemsBySessionId,
           vi.fn(),

@@ -29,7 +29,7 @@ export interface SlashTokenMatch {
 export interface PromptCommandCandidateInput {
   name: string;
   description?: string;
-  source: 'file' | 'mcp';
+  source: 'file' | 'mcp' | 'builtin';
   hints: string[];
   scope?: 'user' | 'project';
   serverName?: string;
@@ -180,9 +180,11 @@ export function createPromptCandidate(command: PromptCommandCandidateInput): Sla
   const slashText = `/${command.name}`;
   const sourceLabel = command.source === 'mcp'
     ? `MCP${command.serverName ? `:${command.serverName}` : ''}`
-    : command.scope === 'project'
-      ? 'Project command'
-      : 'User command';
+    : command.source === 'builtin'
+      ? '内置命令'
+      : command.scope === 'project'
+        ? 'Project command'
+        : 'User command';
   const hintLabel = command.hints.length > 0 ? `参数: ${command.hints.join(' ')}` : '无参数';
   const contentPreview = command.contentPreview?.trim();
   const description = (

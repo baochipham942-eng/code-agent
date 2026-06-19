@@ -1,15 +1,12 @@
-/* eslint-disable max-lines -- 既有贴线文件（taskGate/orphan 接管接入前已 ~990 行），拆分见 docs/audits/god-file-split-roadmap.md */
 // ============================================================================
 // Subagent Executor - Executes subtasks with limited tool access
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import type { ToolCall, ToolDefinition } from '../../shared/contract';
+import type { ToolCall } from '../../shared/contract';
 import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { ModelRouter } from '../model/modelRouter';
-import { resolveToolAlias } from '../services/toolSearch/deferredTools';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
@@ -40,26 +37,29 @@ import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
 import { getPermissionModeManager } from '../permissions/modes';
 import { AgentTask, type SidecarMetadata } from './agentTask';
-import { estimateTokens } from '../context/tokenEstimator';
 import { generateMessageId } from '../../shared/utils/id';
 import { getSubagentContextStore } from '../context/subagentContextStore';
 import { getConfigService } from '../services/core/configService';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
-import type { TelemetryModelCall } from '../../shared/contract/telemetry';
 import {
   buildContextSnapshot,
   buildInferenceMessages,
   buildInitialSubagentMessages,
-  buildModelCompletionSummary,
-  buildModelPromptSummary,
   buildObservation,
+  buildSnapshotAnnotations,
   createRuntimeMessage,
   materializeObservedMessages,
-  stringifyModelContent,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
+import { filterSubagentToolDefs } from './subagentExecutorToolDefs';
+import {
+  buildSubagentModelCall,
+  drainSubagentMessages,
+  recordSubagentTelemetryTurn,
+  type SubagentTelemetryToolCall,
+} from './subagentExecutorTelemetry';
 import {
   createSubagentCancellationLifecycle,
   getChildSubagentExecutionTimeout,
@@ -319,7 +319,7 @@ export class SubagentExecutor {
       explicitParent: !!context.parentContext,
     });
 
-    const allowedToolDefs = this.filterToolDefs(effectiveToolNames, context.toolResolver);
+    const allowedToolDefs = filterSubagentToolDefs(effectiveToolNames, context.toolResolver);
     const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
 
     // P0(G18): 把 buildChildContext 算出的父→子收缩结果真正应用到 pipeline 的
@@ -411,18 +411,7 @@ export class SubagentExecutor {
         context.attachments,
       );
       context.onContextSnapshot?.(latestContextSnapshot);
-      const annotations = Object.fromEntries(
-        effectiveMessages
-          .filter((message) => message.observation?.category || message.observation?.sourceDetail)
-          .map((message) => [message.id, {
-            category: message.observation?.category,
-            sourceDetail: message.observation?.sourceDetail,
-            agentId: observabilityAgentId,
-            sourceKind: message.observation?.sourceKind,
-            layer: message.observation?.layer,
-            toolCallId: message.observation?.toolCallId,
-          }]),
-      );
+      const annotations = buildSnapshotAnnotations(effectiveMessages, observabilityAgentId);
       subagentContextStore.upsert({
         sessionId,
         agentId: observabilityAgentId,
@@ -591,31 +580,14 @@ export class SubagentExecutor {
             ...(context.spawnGuardId ? getSpawnGuard().drainMessages(context.spawnGuardId) : []),
             ...(context.messageDrain ? context.messageDrain() : []),
           ];
-          if (pendingMessages.length > 0) {
-            for (const msg of pendingMessages) {
-              if (msg.type === 'shutdown_request') {
-                // Graceful shutdown: break after current iteration
-                logger.info(`[${config.name}] Received shutdown_request from ${msg.from}`);
-                break;
-              }
-              // Text and other message types: inject into conversation
-              const prefix = msg.type === 'text' ? 'Parent agent message' : `Agent message (${msg.type})`;
-              messages.push(createRuntimeMessage({
-                role: 'user',
-                content: `[${prefix}]: ${msg.payload}`,
-                observation: buildObservation('dependency_carry_over', msg.from, {
-                  sourceKind: 'dependency_carry_over',
-                  layer: 'carry_over',
-                }),
-              }));
-              pushObservabilityMessage({
-                id: generateMessageId(),
-                role: 'user',
-                content: `[${prefix}]: ${msg.payload}`,
-                timestamp: Date.now(),
-              });
-            }
-            logger.info(`[${config.name}] Processed ${pendingMessages.length} queued messages`);
+          const injected = drainSubagentMessages({
+            agentName: config.name,
+            messages,
+            pendingMessages,
+            logger,
+            pushObservabilityMessage,
+          });
+          if (injected > 0) {
             emitContextSnapshot();
           }
         }
@@ -652,19 +624,7 @@ export class SubagentExecutor {
         const telemetryTurnId = generateMessageId();
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;
-        const telemetryToolCalls: Array<{
-          toolCallId: string;
-          name: string;
-          arguments: Record<string, unknown>;
-          resultSummary?: string;
-          success: boolean;
-          error?: string;
-          durationMs: number;
-          timestamp: number;
-          index: number;
-          parallel?: boolean;
-          metadata?: Record<string, unknown>;
-        }> = [];
+        const telemetryToolCalls: SubagentTelemetryToolCall[] = [];
 
         const inferenceStartedAt = Date.now();
         // effectiveSignal 把父 abort + 内部 timeout 都桥接进来；
@@ -695,29 +655,14 @@ export class SubagentExecutor {
         const inferenceDuration = Date.now() - inferenceStartedAt;
         markProgress();
 
-        const responseTextForTokens = [
-          response.content,
-          response.thinking,
-          response.toolCalls?.map((toolCall) => JSON.stringify(toolCall.arguments || {})).join(''),
-        ].filter(Boolean).join('\n');
-        const modelCall: TelemetryModelCall = {
-          id: `mc-${telemetryTurnId}-${currentTelemetryTurnNumber}`,
-          timestamp: Date.now(),
-          provider: context.modelConfig.provider,
-          model: context.modelConfig.model,
-          temperature: context.modelConfig.temperature,
-          maxTokens: context.modelConfig.maxTokens,
-          inputTokens: response.usage?.inputTokens ?? estimateTokens(
-            providerMessages.map((message) => stringifyModelContent(message.content)).join('\n'),
-          ),
-          outputTokens: response.usage?.outputTokens ?? estimateTokens(responseTextForTokens),
-          latencyMs: inferenceDuration,
-          responseType: response.type,
-          toolCallCount: response.toolCalls?.length ?? 0,
-          truncated: !!response.truncated,
-          prompt: buildModelPromptSummary(providerMessages),
-          completion: buildModelCompletionSummary(response),
-        };
+        const modelCall = buildSubagentModelCall({
+          response,
+          providerMessages,
+          modelConfig: context.modelConfig,
+          inferenceDuration,
+          telemetryTurnId,
+          turnNumber: currentTelemetryTurnNumber,
+        });
         outputTokensUsed += modelCall.outputTokens;
         pipeline.recordTokenUsage(pipelineContext, {
           inputTokens: modelCall.inputTokens,
@@ -728,32 +673,19 @@ export class SubagentExecutor {
         });
 
         const persistTelemetryTurn = (assistantResponse: string, thinking?: string): void => {
-          telemetryCollector.recordDetachedTurn({
+          recordSubagentTelemetryTurn(telemetryCollector, {
             sessionId,
             turnId: telemetryTurnId,
             turnNumber: currentTelemetryTurnNumber,
-            userPrompt: currentTelemetryTurnNumber === 1 ? prompt : `Subagent iteration ${currentTelemetryTurnNumber}`,
+            prompt,
             assistantResponse,
             thinking,
             agentId: observabilityAgentId,
             parentTurnId: context.parentToolUseId,
             startTime: telemetryTurnStartedAt,
-            endTime: Date.now(),
-            modelCalls: [modelCall],
+            modelCall,
             toolCalls: telemetryToolCalls,
-            events: [{
-              eventType: 'tool_schema_snapshot',
-              summary: `${toolDefinitions.length} tool schemas available`,
-              data: {
-                tools: toolDefinitions.map((tool) => ({
-                  name: tool.name,
-                  inputSchema: tool.inputSchema,
-                  requiresPermission: tool.requiresPermission,
-                  permissionLevel: tool.permissionLevel,
-                })),
-              },
-              timestamp: telemetryTurnStartedAt,
-            }],
+            toolDefinitions,
           });
         };
 
@@ -1245,31 +1177,6 @@ export class SubagentExecutor {
     };
 
     return this.execute(prompt, config, context);
-  }
-
-  private filterToolDefs(
-    allowedToolNames: string[],
-    resolver: ToolResolver,
-  ): ToolDefinition[] {
-    const defs: ToolDefinition[] = [];
-    const missing: string[] = [];
-    for (const name of allowedToolNames) {
-      // agent 定义里仍用 legacy snake_case 工具名（glob/grep/read_file/list_directory/
-      // web_search 等），而 protocol registry 用 PascalCase 规范名。先过 resolveToolAlias
-      // 归一，否则子代理的核心工具会被整组 strip 掉（"not found in registry"），导致 spawn
-      // 出来的子代理无工具可用、干不成活。这是多 agent 委派"跑不通"的根因之一。
-      const canonical = resolveToolAlias(name);
-      const def = resolver.getDefinition(canonical) ?? resolver.getDefinition(name);
-      if (def) {
-        defs.push(def);
-      } else {
-        missing.push(name);
-      }
-    }
-    if (missing.length > 0) {
-      logger.warn(`filterToolDefs: ${missing.length} tools not found in registry: ${missing.join(', ')}`);
-    }
-    return defs;
   }
 }
 

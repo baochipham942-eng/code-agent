@@ -156,7 +156,7 @@ function deriveCurrentSessionMeta(session: SessionWithMeta, messages: Message[])
 
 export type SessionFilter = 'active' | 'archived' | 'all';
 
-interface CreateSessionOptions {
+export interface CreateSessionOptions {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
 }

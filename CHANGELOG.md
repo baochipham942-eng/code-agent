@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-06-18
+
+### Added
+
+- **Firecrawl default web data layer**: `WebSearch` and `WebFetch` now prefer Firecrawl for public web search/scrape, with keyless mode, authenticated API key support, native fetch fallback, and local/private/raw URL exclusions.
+- **Post-publish release verification**: added `release:post-publish` / `release:neo --post-publish-verify` checks for update metadata, download redirects, landing version slot, renderer rollout, OSS manifests, `release-record.json`, rollback state, and optional Vercel log audit.
+
+### Changed
+
+- Search routing now starts from Firecrawl and adds premium sources by query type; configured but unused premium sources are surfaced as a soft `sources` hint.
+- Chat input recommendations are quieter: skill recommendations are capped at two, capability suggestions at three, and duplicate skill/capability chips are filtered.
+
+### Fixed
+
+- Firecrawl keyless rate limits now show a concrete `FIRECRAWL_API_KEY` setup hint, and repeated Firecrawl transport/HTTP failures trigger a short cooldown instead of adding timeout cost to every request.
+- Non-streaming OpenAI-compatible and Claude tool-call responses now preserve preamble text and ordered `contentParts`, keeping tool blocks in the same order as streaming responses.
+- Models with tool-calling capability no longer get false composer warnings that they cannot handle search tasks.
+- Packaged runtime logging now honors `CODE_AGENT_LOG_DIR`, keeping Tauri and Node webServer log paths aligned for diagnostics.
+
 ## [0.17.1] - 2026-06-17
 
 ### Fixed

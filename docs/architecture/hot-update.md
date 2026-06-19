@@ -311,6 +311,29 @@ Renderer hot-update 的 active bundle 不能压过更新后的 shell 修复。`r
 
 这层只解决"验收不能无限等"；正式发版仍必须用 live evidence 证明 control-plane、`renderer-bundle/latest/manifest.json`、`release-record.json` 和 `/api/update` 的 latestVersion 全部对齐目标版本。
 
+### 2026-06-18 发布后生产验收器
+
+`scripts/release-post-publish-verify.mjs` 把发版完成条件从“tag 已推 / CI 已跑”推进到“线上入口真的指向目标版本”。入口有两种：
+
+```bash
+npm run release:post-publish -- --version <version>
+npm run release:neo -- --version <version> --post-publish-verify
+```
+
+当前验收范围：
+
+| 检查面 | 合同 |
+|------|------|
+| App update | `/api/update?action=check&version=0.0.0&platform=darwin&channel=stable` 的 `latestVersion` 等于目标版本，且 release notes 非空 |
+| Update health | `/api/update?action=health` 必须返回明确 source；`github_releases` 作为 fallback 可用，但可用 `--require-cloud-api-metadata` 升级为失败 |
+| Download redirect | mac arm64 / x64 下载入口应能跳转到目标 release asset |
+| Landing version slot | `/code-agent/` 页面必须展示由 update API 驱动的版本位，避免静态下载页落后 |
+| Renderer rollout | control-plane `renderer_bundle_rollout` envelope、OSS `renderer-bundle/latest/manifest.json`、OSS `release-record.json` 和 app update version 必须对齐目标版本 |
+| Rollback state | control-plane renderer rollout 不得处于 `rollbackToBuiltin=true`，除非本次 release 明确是回滚 |
+| Server logs | 传入 `--server-log-file` 后会审计 5xx、error-level entries 和 `DEP0169 url.parse()` warning；`--require-server-log-audit` 可要求必须提供日志 |
+
+边界：该命令只读生产入口，不上传 artifact、不写 control-plane、不创建 tag。正式发布仍由 `release:neo --publish` 推 main 和 tag 触发 GitHub Actions；生产验收在 CI 完成后执行。
+
 ---
 
 ## 更新流程

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 热更 telemetry 落表逻辑使文件超 1000 行；拆分为后续重构项 */
 // ============================================================================
 // Telemetry Storage - SQLite 持久化层
 // ============================================================================
@@ -6,146 +5,30 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
 import type Database from 'better-sqlite3';
-import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
-import { redactSecrets } from '../security/secretRedaction';
 import type { RendererBundleStatus } from '../../shared/contract/update';
+import {
+  parseTelemetryJson,
+  parseTelemetryTimestamp,
+  guardTelemetryText,
+  prepareRawPayload,
+  guardTelemetryJsonText,
+  stringifyGuardedTelemetry,
+  rowToSession,
+  rowToTurn,
+  rowToModelCall,
+  rowToToolCall,
+  rowToFeedback,
+  rowToRendererBundleAttempt,
+  rowToEvent,
+} from './telemetryStorageParsers';
+// prepareRawPayload 历史上是 telemetryStorage 的公开导出，保持向后兼容。
+export { prepareRawPayload } from './telemetryStorageParsers';
+import { computeComputerSurfaceReliabilitySummary } from './telemetryReliability';
 
 const logger = createLogger('TelemetryStorage');
-const DEFAULT_QUALITY_SIGNALS: QualitySignals = {
-  toolSuccessRate: 0,
-  toolCallCount: 0,
-  retryCount: 0,
-  errorCount: 0,
-  errorRecovered: 0,
-  compactionTriggered: false,
-  circuitBreakerTripped: false,
-  nudgesInjected: 0,
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseStringArrayJson(value: unknown): string[] {
-  if (typeof value !== 'string') return [];
-  const parsed: unknown = JSON.parse(value || '[]');
-  return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string') ? parsed : [];
-}
-
-function parseQualitySignalsJson(value: unknown): QualitySignals {
-  if (typeof value !== 'string') return DEFAULT_QUALITY_SIGNALS;
-  const parsed: unknown = JSON.parse(value || '{}');
-  if (!isRecord(parsed)) return DEFAULT_QUALITY_SIGNALS;
-  return {
-    toolSuccessRate: typeof parsed.toolSuccessRate === 'number' ? parsed.toolSuccessRate : DEFAULT_QUALITY_SIGNALS.toolSuccessRate,
-    toolCallCount: typeof parsed.toolCallCount === 'number' ? parsed.toolCallCount : DEFAULT_QUALITY_SIGNALS.toolCallCount,
-    retryCount: typeof parsed.retryCount === 'number' ? parsed.retryCount : DEFAULT_QUALITY_SIGNALS.retryCount,
-    errorCount: typeof parsed.errorCount === 'number' ? parsed.errorCount : DEFAULT_QUALITY_SIGNALS.errorCount,
-    errorRecovered: typeof parsed.errorRecovered === 'number' ? parsed.errorRecovered : DEFAULT_QUALITY_SIGNALS.errorRecovered,
-    compactionTriggered: typeof parsed.compactionTriggered === 'boolean' ? parsed.compactionTriggered : DEFAULT_QUALITY_SIGNALS.compactionTriggered,
-    circuitBreakerTripped: typeof parsed.circuitBreakerTripped === 'boolean' ? parsed.circuitBreakerTripped : DEFAULT_QUALITY_SIGNALS.circuitBreakerTripped,
-    nudgesInjected: typeof parsed.nudgesInjected === 'number' ? parsed.nudgesInjected : DEFAULT_QUALITY_SIGNALS.nudgesInjected,
-  };
-}
-
-function parseFallbackInfoJson(value: unknown): TelemetryModelCall['fallbackUsed'] {
-  if (typeof value !== 'string' || !value) return undefined;
-  const parsed: unknown = JSON.parse(value);
-  if (!isRecord(parsed)) return undefined;
-  return typeof parsed.from === 'string' && typeof parsed.to === 'string' && typeof parsed.reason === 'string'
-    ? { from: parsed.from, to: parsed.to, reason: parsed.reason }
-    : undefined;
-}
-
-function parseTelemetryJson(value: unknown): unknown {
-  if (typeof value !== 'string' || !value) return undefined;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function parseTelemetryTimestamp(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return Date.now();
-}
-
-const truncate = (value: string | undefined | null, limit: number): string | null => {
-  if (typeof value !== 'string') return null;
-  return value.substring(0, limit);
-};
-
-const guardTelemetryText = (value: string | undefined | null, limit: number): string | null => {
-  if (typeof value !== 'string') return null;
-  return truncate(
-    guardSensitiveText(value, {
-      surface: 'telemetry',
-      mode: 'diagnostic',
-      maxLength: limit * 2
-    }),
-    limit
-  );
-};
-
-/**
- * raw 旁表用:仅做密钥掩码(不跑 PII/注入中和/聚合截断),保留诊断全量。
- * 单条超 PER_PAYLOAD_MAX_BYTES 按字节截断并标记 truncated + 记原始字节长度。
- */
-export const prepareRawPayload = (
-  value: string | undefined | null,
-): { content: string; byteLen: number; truncated: boolean } | null => {
-  if (typeof value !== 'string' || value.length === 0) return null;
-  const masked = redactSecrets(value);
-  const fullBytes = Buffer.byteLength(masked, 'utf8');
-  const cap = TELEMETRY_RAW.PER_PAYLOAD_MAX_BYTES;
-  if (fullBytes <= cap) {
-    return { content: masked, byteLen: fullBytes, truncated: false };
-  }
-  // 按字节安全截断(避免切断多字节字符)
-  const content = Buffer.from(masked, 'utf8').subarray(0, cap).toString('utf8');
-  return { content, byteLen: fullBytes, truncated: true };
-};
-
-const guardTelemetryJsonText = (value: string | undefined | null, limit: number): string | null => {
-  if (typeof value !== 'string') return null;
-  const guarded = guardSensitiveJsonText(value, {
-    surface: 'telemetry',
-    mode: 'diagnostic',
-    maxLength: limit * 2
-  });
-  return truncate(guarded, limit);
-};
-
-const stringifyGuardedTelemetry = (value: unknown): string =>
-  JSON.stringify(
-    guardSensitiveValue(value, {
-      surface: 'telemetry',
-      mode: 'diagnostic',
-      maxLength: 20_000
-    })
-  );
-
-const emptyComputerSurfaceReliabilitySummary = (sessionId: string): ComputerSurfaceReliabilitySummary => ({
-  sessionId,
-  totalActions: 0,
-  successfulActions: 0,
-  failedActions: 0,
-  foregroundFallbackActions: 0,
-  backgroundAxActions: 0,
-  backgroundCgEventActions: 0,
-  byFailureKind: [],
-  byMode: [],
-  recentFailures: []
-});
-
 export class TelemetryStorage {
   private static instance: TelemetryStorage | null = null;
   private stmtCache = new Map<string, Database.Statement>();
@@ -283,7 +166,7 @@ export class TelemetryStorage {
       ).get(sessionId) as Record<string, unknown> | undefined;
 
       if (!row) return null;
-      return this.rowToSession(row);
+      return rowToSession(row);
     } catch (error) {
       logger.error('Failed to get telemetry session:', error);
       return null;
@@ -315,7 +198,7 @@ export class TelemetryStorage {
           LIMIT ?
         `
       ).all(limit) as Record<string, unknown>[];
-      return rows.map((row) => this.rowToSession(row));
+      return rows.map((row) => rowToSession(row));
     } catch (error) {
       logger.error('Failed to get unsynced telemetry sessions:', error);
       return [];
@@ -415,7 +298,7 @@ export class TelemetryStorage {
           LIMIT ?
         `,
       ).all(...(userId ? [userId] : []), limit) as Record<string, unknown>[];
-      return rows.map((row) => this.rowToFeedback(row));
+      return rows.map((row) => rowToFeedback(row));
     } catch (error) {
       logger.error('Failed to get unsynced telemetry feedback:', error);
       return [];
@@ -530,7 +413,7 @@ export class TelemetryStorage {
           LIMIT ?
         `,
       ).all(limit) as Record<string, unknown>[];
-      return rows.map((row) => this.rowToRendererBundleAttempt(row));
+      return rows.map((row) => rowToRendererBundleAttempt(row));
     } catch (error) {
       logger.error('Failed to get unsynced renderer bundle telemetry attempts:', error);
       return [];
@@ -945,7 +828,7 @@ export class TelemetryStorage {
     try {
       if (agentId) {
         const rows = this.getDb().prepare('SELECT * FROM telemetry_turns WHERE session_id = ? AND agent_id = ? ORDER BY start_time ASC').all(sessionId, agentId) as Record<string, unknown>[];
-        return rows.map((row) => this.rowToTurn(row));
+        return rows.map((row) => rowToTurn(row));
       }
       const rows = this.getStmt(
         'get_turns',
@@ -954,7 +837,7 @@ export class TelemetryStorage {
       `
       ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map((row) => this.rowToTurn(row));
+      return rows.map((row) => rowToTurn(row));
     } catch (error) {
       logger.error('Failed to get telemetry turns:', error);
       return [];
@@ -975,7 +858,7 @@ export class TelemetryStorage {
         SELECT * FROM telemetry_model_calls WHERE turn_id = ? ORDER BY timestamp ASC
       `
         ).all(turnId) as Record<string, unknown>[]
-      ).map((r) => this.rowToModelCall(r));
+      ).map((r) => rowToModelCall(r));
 
       const toolCalls = (
         this.getStmt(
@@ -984,7 +867,7 @@ export class TelemetryStorage {
         SELECT * FROM telemetry_tool_calls WHERE turn_id = ? ORDER BY idx ASC
       `
         ).all(turnId) as Record<string, unknown>[]
-      ).map((r) => this.rowToToolCall(r));
+      ).map((r) => rowToToolCall(r));
 
       return { modelCalls, toolCalls };
     } catch (error) {
@@ -1019,9 +902,9 @@ export class TelemetryStorage {
         SELECT * FROM telemetry_events WHERE turn_id = ? ORDER BY timestamp ASC
       `
         ).all(turnId) as Record<string, unknown>[]
-      ).map((r) => this.rowToEvent(r));
+      ).map((r) => rowToEvent(r));
 
-      const turn = this.rowToTurn(turnRow);
+      const turn = rowToTurn(turnRow);
       turn.modelCalls = modelCalls;
       turn.toolCalls = toolCalls;
       turn.events = events;
@@ -1172,7 +1055,7 @@ export class TelemetryStorage {
       `
       ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map((row) => this.rowToToolCall(row));
+      return rows.map((row) => rowToToolCall(row));
     } catch (error) {
       logger.error('Failed to get tool calls by session:', error);
       return [];
@@ -1180,108 +1063,10 @@ export class TelemetryStorage {
   }
 
   getComputerSurfaceReliabilitySummary(sessionId: string): ComputerSurfaceReliabilitySummary {
-    const emptySummary = emptyComputerSurfaceReliabilitySummary(sessionId);
-    if (!this.isDbAvailable()) return emptySummary;
-
-    try {
-      const totals = this.getStmt(
-        'computer_surface_reliability_totals',
-        `
-        SELECT
-          COUNT(*) AS total_actions,
-          SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successful_actions,
-          SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed_actions,
-          SUM(CASE WHEN computer_surface_mode = 'foreground_fallback' THEN 1 ELSE 0 END) AS foreground_fallback_actions,
-          SUM(CASE WHEN computer_surface_mode = 'background_ax' THEN 1 ELSE 0 END) AS background_ax_actions,
-          SUM(CASE WHEN computer_surface_mode IN ('background_cgevent', 'background_cg_event') THEN 1 ELSE 0 END) AS background_cg_event_actions
-        FROM telemetry_tool_calls
-        WHERE session_id = ? AND name = 'computer_use'
-      `
-      ).get(sessionId) as Record<string, unknown> | undefined;
-
-      const byFailureKindRows = this.getStmt(
-        'computer_surface_reliability_failure_kinds',
-        `
-        SELECT computer_surface_failure_kind AS failure_kind, COUNT(*) AS count
-        FROM telemetry_tool_calls
-        WHERE session_id = ?
-          AND name = 'computer_use'
-          AND success = 0
-          AND computer_surface_failure_kind IS NOT NULL
-          AND computer_surface_failure_kind != ''
-        GROUP BY computer_surface_failure_kind
-        ORDER BY count DESC, failure_kind ASC
-      `
-      ).all(sessionId) as Record<string, unknown>[];
-
-      const byModeRows = this.getStmt(
-        'computer_surface_reliability_modes',
-        `
-        SELECT
-          computer_surface_mode AS mode,
-          COUNT(*) AS count,
-          SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed
-        FROM telemetry_tool_calls
-        WHERE session_id = ?
-          AND name = 'computer_use'
-          AND computer_surface_mode IS NOT NULL
-          AND computer_surface_mode != ''
-        GROUP BY computer_surface_mode
-        ORDER BY count DESC, mode ASC
-      `
-      ).all(sessionId) as Record<string, unknown>[];
-
-      const recentFailureRows = this.getStmt(
-        'computer_surface_reliability_recent_failures',
-        `
-        SELECT
-          tool_call_id,
-          timestamp,
-          name,
-          computer_surface_failure_kind,
-          computer_surface_mode,
-          computer_surface_target_app,
-          computer_surface_action,
-          error
-        FROM telemetry_tool_calls
-        WHERE session_id = ? AND name = 'computer_use' AND success = 0
-        ORDER BY timestamp DESC, idx DESC
-        LIMIT 10
-      `
-      ).all(sessionId) as Record<string, unknown>[];
-
-      return {
-        sessionId,
-        totalActions: Number(totals?.total_actions ?? 0),
-        successfulActions: Number(totals?.successful_actions ?? 0),
-        failedActions: Number(totals?.failed_actions ?? 0),
-        foregroundFallbackActions: Number(totals?.foreground_fallback_actions ?? 0),
-        backgroundAxActions: Number(totals?.background_ax_actions ?? 0),
-        backgroundCgEventActions: Number(totals?.background_cg_event_actions ?? 0),
-        byFailureKind: byFailureKindRows.map((row) => ({
-          failureKind: row.failure_kind as string,
-          count: Number(row.count ?? 0)
-        })),
-        byMode: byModeRows.map((row) => ({
-          mode: row.mode as string,
-          count: Number(row.count ?? 0),
-          failed: Number(row.failed ?? 0)
-        })),
-        recentFailures: recentFailureRows.map((row) => ({
-          toolCallId: row.tool_call_id as string,
-          timestamp: Number(row.timestamp ?? 0),
-          name: row.name as string,
-          failureKind: (row.computer_surface_failure_kind as string | null) ?? null,
-          mode: (row.computer_surface_mode as string | null) ?? null,
-          targetApp: (row.computer_surface_target_app as string | null) ?? null,
-          action: (row.computer_surface_action as string | null) ?? null,
-          error: (row.error as string | null) ?? null
-        }))
-      };
-    } catch (error) {
-      logger.error('Failed to get computer surface reliability summary:', error);
-      return emptySummary;
-    }
+    return computeComputerSurfaceReliabilitySummary(
+      { isDbAvailable: () => this.isDbAvailable(), getStmt: (key, sql) => this.getStmt(key, sql) },
+      sessionId,
+    );
   }
 
   getIntentDistribution(sessionId: string): TelemetryIntentStat[] {
@@ -1326,190 +1111,11 @@ export class TelemetryStorage {
       `
       ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map((row) => this.rowToEvent(row));
+      return rows.map((row) => rowToEvent(row));
     } catch (error) {
       logger.error('Failed to get events by session:', error);
       return [];
     }
-  }
-
-  // --------------------------------------------------------------------------
-  // Row Mappers
-  // --------------------------------------------------------------------------
-
-  private rowToSession(row: Record<string, unknown>): TelemetrySession {
-    return {
-      id: row.id as string,
-      userId: row.user_id == null ? null : String(row.user_id),
-      title: row.title as string,
-      modelProvider: row.model_provider as string,
-      modelName: row.model_name as string,
-      workingDirectory: row.working_directory as string,
-      startTime: row.start_time as number,
-      endTime: row.end_time as number | undefined,
-      durationMs: row.duration_ms as number | undefined,
-      turnCount: row.turn_count as number,
-      totalInputTokens: row.total_input_tokens as number,
-      totalOutputTokens: row.total_output_tokens as number,
-      totalTokens: row.total_tokens as number,
-      estimatedCost: row.estimated_cost as number,
-      totalToolCalls: row.total_tool_calls as number,
-      toolSuccessRate: row.tool_success_rate as number,
-      totalErrors: row.total_errors as number,
-      sessionType: (row.session_type as TelemetrySession['sessionType']) ?? undefined,
-      status: row.status as TelemetrySession['status'],
-      agentVersion: (row.agent_version as string | null) ?? undefined,
-      promptVersion: (row.prompt_version as string | null) ?? undefined,
-      toolSchemaVersion: (row.tool_schema_version as string | null) ?? undefined,
-    };
-  }
-
-  private rowToTurn(row: Record<string, unknown>): TelemetryTurn {
-    return {
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      agentId: (row.agent_id as string) || 'main',
-      turnNumber: row.turn_number as number,
-      startTime: row.start_time as number,
-      endTime: row.end_time as number,
-      durationMs: row.duration_ms as number,
-      userPrompt: row.user_prompt as string,
-      userPromptTokens: row.user_prompt_tokens as number,
-      hasAttachments: !!(row.has_attachments as number),
-      attachmentCount: row.attachment_count as number,
-      systemPromptHash: row.system_prompt_hash as string | undefined,
-      agentMode: row.agent_mode as string,
-      activeSkills: parseStringArrayJson(row.active_skills),
-      activeMcpServers: parseStringArrayJson(row.active_mcp_servers),
-      effortLevel: row.effort_level as string,
-      modelCalls: [],
-      toolCalls: [],
-      assistantResponse: row.assistant_response as string,
-      assistantResponseTokens: row.assistant_response_tokens as number,
-      thinkingContent: row.thinking_content as string | undefined,
-      totalInputTokens: row.total_input_tokens as number,
-      totalOutputTokens: row.total_output_tokens as number,
-      events: [],
-      intent: {
-        primary: row.intent_primary as TelemetryTurn['intent']['primary'],
-        secondary: row.intent_secondary as TelemetryTurn['intent']['secondary'],
-        confidence: row.intent_confidence as number,
-        method: row.intent_method as 'rule' | 'llm',
-        keywords: parseStringArrayJson(row.intent_keywords)
-      },
-      outcome: {
-        status: row.outcome_status as TelemetryTurn['outcome']['status'],
-        confidence: row.outcome_confidence as number,
-        method: row.outcome_method as 'rule' | 'llm',
-        signals: parseQualitySignalsJson(row.quality_signals)
-      },
-      compactionOccurred: !!(row.compaction_occurred as number),
-      compactionSavedTokens: row.compaction_saved_tokens as number | undefined,
-      iterationCount: row.iteration_count as number,
-      turnType: (row.turn_type as 'user' | 'iteration') ?? 'user',
-      parentTurnId: row.parent_turn_id as string | undefined
-    };
-  }
-
-  private rowToModelCall(row: Record<string, unknown>): TelemetryModelCall {
-    return {
-      id: row.id as string,
-      timestamp: row.timestamp as number,
-      provider: row.provider as string,
-      model: row.model as string,
-      temperature: row.temperature as number | undefined,
-      maxTokens: row.max_tokens as number | undefined,
-      inputTokens: row.input_tokens as number,
-      outputTokens: row.output_tokens as number,
-      latencyMs: row.latency_ms as number,
-      responseType: row.response_type as TelemetryModelCall['responseType'],
-      toolCallCount: row.tool_call_count as number,
-      truncated: !!(row.truncated as number),
-      error: row.error as string | undefined,
-      fallbackUsed: parseFallbackInfoJson(row.fallback_info),
-      prompt: row.prompt as string | undefined,
-      completion: row.completion as string | undefined
-    };
-  }
-
-  private rowToToolCall(row: Record<string, unknown>): TelemetryToolCall {
-    return {
-      id: row.id as string,
-      toolCallId: row.tool_call_id as string,
-      name: row.name as string,
-      arguments: row.arguments as string,
-      actualArguments: row.actual_arguments as string | undefined,
-      resultSummary: row.result_summary as string,
-      success: !!(row.success as number),
-      error: row.error as string | undefined,
-      errorCategory: row.error_category as TelemetryToolCall['errorCategory'],
-      computerSurfaceFailureKind: row.computer_surface_failure_kind as string | undefined,
-      computerSurfaceMode: row.computer_surface_mode as string | undefined,
-      computerSurfaceTargetApp: row.computer_surface_target_app as string | undefined,
-      computerSurfaceAction: row.computer_surface_action as string | undefined,
-      computerSurfaceAxQualityScore: row.computer_surface_ax_quality_score as number | undefined,
-      computerSurfaceAxQualityGrade: row.computer_surface_ax_quality_grade as string | undefined,
-      durationMs: row.duration_ms as number,
-      timestamp: row.timestamp as number,
-      index: row.idx as number,
-      parallel: !!(row.parallel as number)
-    };
-  }
-
-  private rowToFeedback(row: Record<string, unknown>): TelemetryFeedback {
-    return {
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      turnId: row.turn_id == null ? null : String(row.turn_id),
-      messageId: row.message_id == null ? null : String(row.message_id),
-      rating: row.rating === -1 ? -1 : 1,
-      comment: row.comment == null ? null : String(row.comment),
-      fullContent: parseTelemetryJson(row.full_content),
-      createdAt: row.created_at as number,
-      syncedAt: row.synced_at == null ? null : row.synced_at as number,
-    };
-  }
-
-  private rowToRendererBundleAttempt(row: Record<string, unknown>): TelemetryRendererBundleAttempt {
-    return {
-      id: row.id as string,
-      checkedAt: Number(row.checked_at ?? 0),
-      manifestUrl: row.manifest_url as string,
-      sourceChannel: row.source_channel == null ? null : String(row.source_channel),
-      sourceManifestUrlOverride: !!(row.source_manifest_url_override as number),
-      sourceErrorReason: row.source_error_reason == null ? null : String(row.source_error_reason),
-      sourceErrorMessage: row.source_error_message == null ? null : String(row.source_error_message),
-      sourceErrorTarget: row.source_error_target == null ? null : String(row.source_error_target),
-      currentShellVersion: row.current_shell_version as string,
-      activeVersion: row.active_version == null ? null : String(row.active_version),
-      activeContentHash: row.active_content_hash == null ? null : String(row.active_content_hash),
-      outcome: row.outcome as TelemetryRendererBundleAttempt['outcome'],
-      reason: row.reason == null ? null : String(row.reason),
-      manifestVersion: row.manifest_version == null ? null : String(row.manifest_version),
-      manifestContentHash: row.manifest_content_hash == null ? null : String(row.manifest_content_hash),
-      manifestMinShellVersion: row.manifest_min_shell_version == null ? null : String(row.manifest_min_shell_version),
-      manifestBundleUrl: row.manifest_bundle_url == null ? null : String(row.manifest_bundle_url),
-      requiredShellCapabilitiesCount: Number(row.required_shell_capabilities_count ?? 0),
-      rollbackToBuiltin: !!(row.rollback_to_builtin as number),
-      rollbackReason: row.rollback_reason == null ? null : String(row.rollback_reason),
-      missingShellCapabilities: parseStringArrayJson(row.missing_shell_capabilities),
-      missingRuntimeAssets: parseStringArrayJson(row.missing_runtime_assets),
-      missingResources: parseStringArrayJson(row.missing_resources),
-      diagnostics: parseStringArrayJson(row.diagnostics),
-      errorMessage: row.error_message == null ? null : String(row.error_message),
-      syncedAt: row.synced_at == null ? null : row.synced_at as number,
-    };
-  }
-
-  private rowToEvent(row: Record<string, unknown>): TelemetryTimelineEvent {
-    return {
-      id: row.id as string,
-      timestamp: row.timestamp as number,
-      eventType: row.event_type as string,
-      summary: row.summary as string,
-      data: row.data as string | undefined,
-      durationMs: row.duration_ms as number | undefined
-    };
   }
 }
 

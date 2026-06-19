@@ -302,7 +302,11 @@ run_post_publish_verify() {
   if [[ "${POST_PUBLISH_VERIFY}" -ne 1 ]]; then
     return 0
   fi
-  run_gate "post-publish production verification" npm run release:post-publish -- --version "${VERSION}" "${POST_PUBLISH_ARGS[@]}"
+  local post_publish_cmd=(npm run release:post-publish -- --version "${VERSION}")
+  if ((${#POST_PUBLISH_ARGS[@]} > 0)); then
+    post_publish_cmd+=("${POST_PUBLISH_ARGS[@]}")
+  fi
+  run_gate "post-publish production verification" "${post_publish_cmd[@]}"
 }
 
 main() {

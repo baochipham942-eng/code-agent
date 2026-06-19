@@ -128,6 +128,11 @@ export const GOAL_MODE = {
   NO_PROGRESS_THRESHOLD: 5,
   /** 目标检查点重注入间隔（轮），对齐 GoalTracker 默认值 */
   CHECKPOINT_INTERVAL: 3,
+  /**
+   * 简单 goal（纯软目标、无 verify 命令）的审计重注入间隔（轮）。
+   * 比基础间隔长——轻任务不需要每 3 轮就跑一次重型完成前自检，省 token 又不脱敏。
+   */
+  SIMPLE_CHECKPOINT_INTERVAL: 6,
   /** 闸1 验证命令超时（ms）；测试/构建可能较久，超时即判失败 */
   VERIFY_TIMEOUT_MS: 600_000,
   /** 闸1 验证输出注回模型时的最大字符数（控 token） */

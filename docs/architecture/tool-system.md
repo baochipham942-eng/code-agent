@@ -70,6 +70,27 @@ FOR EACH toolCall:
 
 ---
 
+## 2026-06-18 Firecrawl default web data layer
+
+`WebSearch` / `WebFetch` 的默认公网数据层从“只在用户配好 premium key 后才稳定”调整为“Firecrawl 优先，native/其他源兜底”。它仍然挂在既有网络工具链路上，没有新增第二套搜索工具。
+
+| 能力 | 当前合同 | 关键文件 / 测试 |
+|------|----------|----------------|
+| Firecrawl default | `WebSearch` routing 默认把 `firecrawl` 放在第一优先级；`sources` 显式指定时仍按用户要求过滤 | `searchStrategies.ts`、`webSearch.ts`、`searchStrategies.firecrawl.test.ts` |
+| Keyless/authenticated mode | 无 key 时用 keyless Firecrawl，结果 source 标为 `firecrawl-keyless`；有 `FIRECRAWL_API_KEY` 或 Service API key 时走 authenticated | `firecrawlClient.ts`、`firecrawlUsage.test.ts` |
+| URL eligibility | 公网 HTML/PDF 等页面可走 Firecrawl scrape；localhost、私网、`.local`、`.internal` 和 raw data URL 回 native fetch | `shouldUseFirecrawlForUrl()`、`fetchDocument.firecrawl.test.ts` |
+| Health cooldown | Firecrawl 连续 3 次传输/HTTP 失败后进入 60 秒冷却，冷却期搜索跳过 Firecrawl，fetch 直接走 native fallback；冷却到期自动恢复 | `recordFirecrawlOutcome()`、`firecrawlHealth.test.ts` |
+| Unused source hint | Perplexity/Exa/Brave/Tavily 已配置但未被本轮 routing 命中时，成功输出后追加一行 `sources` 软提示；用户已传 `sources` 时不提示 | `buildUnusedSourcesHint()`、`unusedSourcesHint.test.ts` |
+| Auto-extract fetch | `fetchDocument()` 先尝试 Firecrawl scrape 并缓存 markdown；失败后走原生 fetch，结果带 `fallbackReason` | `fetchDocument.ts`、`fetchDocument.firecrawl.test.ts` |
+
+边界：
+
+- Firecrawl default 可通过 `CODE_AGENT_DISABLE_FIRECRAWL_DEFAULT=1` 或 `CODE_AGENT_WEB_DATA_PRIMARY/PROVIDER=native` 关闭。
+- Firecrawl 不代理本地或私网 URL；这类 URL 保持 native fetch，避免把本机/内网地址交给公网服务。
+- Health cooldown 是本进程短时保护，目标是少吃超时，不是长期供应商状态库。
+
+---
+
 ## 2026-06-17 Tool execution ledger and result recovery
 
 这一轮把工具调用从“执行完给 UI 一个结果”推进到“执行前后都有可审计事件，失败结果有统一恢复动作”。主执行链仍是 `ToolExecutor -> ToolResolver -> handler`，新增内容都是边界层。

@@ -477,7 +477,10 @@ describe('macOS release fail-closed gates', () => {
     expect(releaseNeo).toContain('git push "${REMOTE}" "${TAG}"');
     expect(releaseNeo).toContain('node scripts/verify-github-workflow-run.mjs');
     expect(releaseNeo).toContain('--post-publish-verify');
-    expect(releaseNeo).toContain('npm run release:post-publish -- --version "${VERSION}"');
+    expect(releaseNeo).toContain('local post_publish_cmd=(npm run release:post-publish -- --version "${VERSION}")');
+    expect(releaseNeo).toContain('if ((${#POST_PUBLISH_ARGS[@]} > 0)); then');
+    expect(releaseNeo).toContain('post_publish_cmd+=("${POST_PUBLISH_ARGS[@]}")');
+    expect(releaseNeo).toContain('run_gate "post-publish production verification" "${post_publish_cmd[@]}"');
     expect(releaseNeo).toContain('npm run release:security-scan');
     expect(releaseNeo).toContain('tests/scripts/verifyProductionEnv.test.ts');
     expect(releaseNeo).toContain('tests/scripts/releaseMacosGates.test.ts');

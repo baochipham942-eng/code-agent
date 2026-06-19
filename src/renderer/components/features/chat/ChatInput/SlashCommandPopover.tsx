@@ -177,6 +177,9 @@ function getPromptCommandSourceLabel(command: PromptCommandCandidateInput): stri
   if (command.source === 'mcp') {
     return command.serverName ? `MCP · ${command.serverName}` : 'MCP prompt';
   }
+  if (command.source === 'builtin') {
+    return 'Builtin command';
+  }
   if (command.scope === 'project') {
     return 'Project command';
   }

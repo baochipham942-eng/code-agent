@@ -137,6 +137,11 @@ describe('marketplace install service trust defaults', () => {
         description: 'Inspect current context',
         scope: 'user',
       }),
+      // listCommands 合并内置兜底命令（project > user > mcp > builtin），用户命令之后追加 builtin。
+      expect.objectContaining({
+        name: 'init',
+        source: 'builtin',
+      }),
     ]);
     await expect(enablePlugin('demo@trusted-test')).resolves.toBeUndefined();
 

@@ -19,16 +19,20 @@ import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/set
 import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
 import {
-  DEFAULT_PROVIDER,
   DEFAULT_MODEL,
-  DEFAULT_MODELS,
   MODEL_API_ENDPOINTS,
 } from '../../../shared/constants';
-import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../shared/contract/speech';
+import { DEFAULT_SETTINGS } from './configDefaults';
 import {
-  createDefaultKeybindingsSettings,
-  getKeybindingPlatformFromNodePlatform,
-} from '../../../shared/keybindings';
+  getCloudManagedServiceKeyId,
+  getCloudManagedServiceBaseUrlId,
+  getCloudManagedProviderKeyId,
+  isRecord,
+  parseJsonValue,
+  normalizeStringRecord,
+  normalizeApiKey,
+  normalizeBaseUrl,
+} from './configHelpers';
 
 const logger = createLogger('ConfigService');
 
@@ -36,27 +40,9 @@ const logger = createLogger('ConfigService');
 const CONFIG_WATCH_DEBOUNCE_MS = 500;
 // save() 自身写盘后的静默窗口,避免本进程写入触发热重载回环
 const CONFIG_SELF_WRITE_WINDOW_MS = 1500;
-const CLOUD_MANAGED_SERVICE_KEY_PREFIX = 'cloud-service-key:';
-const CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX = 'serviceBaseUrl.cloud.';
 const SHARED_SEARCH_SERVICE_KEYS = ['brave', 'exa', 'firecrawl', 'openai', 'perplexity', 'tavily'] as const;
-
-function getCloudManagedServiceKeyId(service: ServiceApiKey): string {
-  return `${CLOUD_MANAGED_SERVICE_KEY_PREFIX}${service}`;
-}
-
-function getCloudManagedServiceBaseUrlId(service: ServiceApiKey): `serviceBaseUrl.${string}` {
-  return `${CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX}${service}`;
-}
-
-// 内置 provider 托管 key（控制面登录后下发）。前缀必须与服务 key 区分：
-// 'openai' 既是 provider 又是 service，共用前缀会串台。
-const CLOUD_MANAGED_PROVIDER_KEY_PREFIX = 'cloud-provider-key:';
 // 接受托管 key 的内置 provider 白名单（先开 xiaomi/MiMo；控制面下发清单之外的一律拒收）
 const SHARED_MODEL_PROVIDER_KEYS = ['xiaomi'] as const;
-
-function getCloudManagedProviderKeyId(provider: string): string {
-  return `${CLOUD_MANAGED_PROVIDER_KEY_PREFIX}${provider}`;
-}
 
 const moduleDir = typeof __dirname === 'string'
   ? __dirname
@@ -120,54 +106,6 @@ export function safeLog(message: string, ...args: unknown[]): void {
   logger.info(message, ...args.map(sanitizeForLogging));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseJsonValue(value: string): unknown | undefined {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeStringRecord(value: unknown): Record<string, string> | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const normalized: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item !== 'string') {
-      return null;
-    }
-    normalized[key] = item;
-  }
-  return normalized;
-}
-
-function normalizeApiKey(value?: string): string | undefined {
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
-}
-
-function normalizeBaseUrl(value?: string): string | undefined {
-  const normalized = normalizeApiKey(value);
-  if (!normalized) return undefined;
-  try {
-    const url = new URL(normalized);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
-    return normalized.replace(/\/+$/, '');
-  } catch {
-    return undefined;
-  }
-}
-
 // Load .env file from project root or app resources
 import { app as electronApp } from '../../platform';
 
@@ -208,148 +146,6 @@ loadEnvFile();
 logger.info('SUPABASE_URL from env:', process.env.SUPABASE_URL ? 'SET' : 'NOT SET');
 
 // Default settings
-const DEFAULT_SETTINGS: AppSettings = {
-  models: {
-    default: DEFAULT_PROVIDER,  // 默认主力 provider
-    providers: {
-      deepseek: { enabled: true },
-      claude: { enabled: true },
-      openai: { enabled: false },
-      gemini: { enabled: false },
-      groq: { enabled: false },
-      local: { enabled: true },
-      zhipu: { enabled: true },     // 智谱默认启用 (视觉 + 备用语言)
-      qwen: { enabled: false },
-      moonshot: { enabled: true },  // Kimi K2.5 包月套餐
-      minimax: { enabled: false },
-      perplexity: { enabled: false },
-      grok: { enabled: false },
-      openrouter: { enabled: false },
-      volcengine: { enabled: false },
-      longcat: { enabled: false },
-      xiaomi: { enabled: true },     // 小米 MiMo Token Plan Max 包月套餐
-      custom: { enabled: false, baseUrl: undefined, displayName: 'Custom Provider' },
-    },
-    agentEngines: {},
-    // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
-    routing: {
-      code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
-      vision: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.vision },
-      fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
-      gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
-    },
-    taskStrategy: {
-      mode: 'auto',
-      defaultProfile: 'main',
-      profiles: {
-        fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick, reasoningEffort: 'low', maxTokens: 4096 },
-        main: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat, reasoningEffort: 'medium', maxTokens: 16384 },
-        deep: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.reasoning, reasoningEffort: 'high', maxTokens: 32768 },
-        vision: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.vision, reasoningEffort: 'medium', maxTokens: 4096 },
-      },
-      fallback: {
-        enabled: true,
-        preferSameProvider: true,
-        allowCrossProvider: true,
-      },
-      rules: [
-        {
-          id: 'simple-chat-fast',
-          label: '短问答 / 格式整理',
-          intent: 'simple_chat',
-          enabled: true,
-          profile: 'fast',
-          reason: '短输入、无文件引用时优先用快速任务模型',
-        },
-        {
-          id: 'code-main',
-          label: '代码 / 文件任务',
-          intent: 'coding',
-          enabled: true,
-          profile: 'main',
-          reason: '代码、文件和工具任务使用任务主模型',
-        },
-        {
-          id: 'research-deep',
-          label: '研究 / 规划 / 重构',
-          intent: 'research',
-          enabled: true,
-          profile: 'deep',
-          reason: '复杂规划、研究和重构使用深度任务模型',
-        },
-        {
-          id: 'vision-route',
-          label: '图片 / 视觉输入',
-          intent: 'vision',
-          enabled: true,
-          profile: 'vision',
-          reason: '包含图片时使用视觉任务模型',
-        },
-      ],
-    },
-  },
-  workspace: {
-    recentDirectories: [],
-  },
-  permissions: {
-    autoApprove: {
-      read: true,
-      write: false,
-      execute: false,
-      network: false,
-    },
-    blockedCommands: [
-      'rm -rf /',
-      'rm -rf ~',
-      'sudo rm',
-      ':(){:|:&};:',
-    ],
-    // SECURITY: devModeAutoApprove only enabled in development
-    // In production (packaged app), this is always false
-    devModeAutoApprove: false,
-  },
-  ui: {
-    theme: 'system',
-    fontSize: 14,
-    showToolCalls: true,
-    language: 'zh',
-    disclosureLevel: 'standard',
-  },
-  // 云端 Agent 配置
-  cloud: {
-    enabled: false,
-    endpoint: undefined,
-    apiKey: undefined,
-    warmupOnInit: true,
-  },
-  // GUI Agent 配置
-  guiAgent: {
-    enabled: false,
-    displayWidth: 1920,
-    displayHeight: 1080,
-  },
-  // 原生连接器默认全关
-  connectors: {
-    enabledNative: [],
-  },
-  contextCompression: {
-    enabled: true,
-    warningThreshold: 0.75,
-    criticalThreshold: 0.85,
-    preserveRecentCount: 10,
-    triggerTokens: 100000,
-    compactProvider: 'moonshot',
-    compactModel: DEFAULT_MODELS.compact,
-    auditEnabled: true,
-  },
-  appshots: {
-    enabled: true,
-    targetSession: 'current',
-  },
-  speech: DEFAULT_SPEECH_INPUT_SETTINGS,
-  keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
-};
-
 export class ConfigService implements IReadConfigService {
   private settings: AppSettings = DEFAULT_SETTINGS;
   private configPath: string;

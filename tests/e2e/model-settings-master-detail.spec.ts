@@ -18,7 +18,13 @@ async function openModelSettings(page: Page) {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
 
+  // 右侧 workbench 面板默认折叠；'打开面板'(+) 在 WorkbenchTabs 内，需先展开面板才挂载。
   const addPanelButton = page.getByRole('button', { name: '打开面板' });
+  if (!(await addPanelButton.isVisible().catch(() => false))) {
+    const showTaskPanel = page.getByRole('button', { name: 'Show task panel' });
+    await expect(showTaskPanel).toBeVisible({ timeout: 15_000 });
+    await showTaskPanel.click();
+  }
   await expect(addPanelButton).toBeVisible({ timeout: 15_000 });
   await addPanelButton.click();
   await page.getByRole('button', { name: 'Skills', exact: true }).click();
@@ -38,7 +44,7 @@ test('模型设置页渲染 Master-Detail 布局', async ({ page }) => {
   await expect(dialog.getByPlaceholder('搜索 Provider 或模型...')).toBeVisible({ timeout: 10_000 });
   await expect(dialog.getByRole('button', { name: /新增 \/ 中转站/ })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '诊断' })).toBeVisible();
-  await expect(dialog.getByText(/已配置 · \d+/)).toBeVisible();
+  await expect(dialog.getByText(/已可用 · \d+/)).toBeVisible();
 
   // 右侧详情面板：① 连接 区块（标题与步骤编号同节点，用唯一字段 label 断言）
   await expect(dialog.getByText('接口地址（Base URL）').first()).toBeVisible();

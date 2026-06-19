@@ -126,6 +126,16 @@ export default tseslint.config(
     },
   },
   {
+    // God File 历史白名单：有意为之的数据表/目录，max-lines 不适用（architecture-debt-report 据此豁免）。
+    // builtinSkillsData.ts — 内置 skill 扁平目录（~2960 行纯数据），accessor 逻辑已分离至 builtinSkills.ts。
+    files: [
+      'src/main/services/skills/builtinSkillsData.ts',
+    ],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
+  {
     // Test files still carry historical fixture any/casting noise. Keep pre-commit from
     // failing on tests until they are migrated to stricter typed helpers.
     files: [

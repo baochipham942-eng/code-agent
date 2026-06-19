@@ -67,7 +67,6 @@ describe('architecture debt report', () => {
       'src/main/agent/runtime/contextAssembly/inference.ts',
       'src/main/agent/runtime/conversationRuntime.ts',
       'src/main/agent/subagentExecutor.ts',
-      'src/main/ipc/workspace.ipc.ts',
       'src/renderer/components/Sidebar.tsx',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
     ]);

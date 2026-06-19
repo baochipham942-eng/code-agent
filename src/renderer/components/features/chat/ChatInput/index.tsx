@@ -93,7 +93,6 @@ import {
   getLeadingAgentMentionAutocomplete,
   getPreferredAgentMentionToken,
   isLeadingAgentMentionInput,
-  parseLeadingAgentMentions,
 } from './agentMentionRouting';
 import {
   applyAgentCommandOption,
@@ -104,7 +103,7 @@ import {
 } from './agentCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import { useDragAndDrop } from './useDragAndDrop';
-import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
+import { useChatInputEnvelope } from './useChatInputEnvelope';
 import {
   clearDebugDraftParamsFromCurrentUrl,
   readDebugDraftFromLocation,
@@ -311,100 +310,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return undefined;
   }, [routingMode, selectedDirectAgents, swarmAgents]);
 
-  const buildEnvelope = useCallback((
-    rawContent: string,
-    nextAttachments?: MessageAttachment[],
-    nextRuntimeInputMode?: RuntimeInputMode,
-    preferredAgentIdOverride?: string | null,
-    selectedAgentOverride?: ComposerAgentSelection | null,
-  ): ConversationEnvelope => {
-    const parsedMentions = parseLeadingAgentMentions(rawContent, swarmAgents);
-    const content = parsedMentions ? parsedMentions.content : rawContent.trim();
-    const baseContext = buildContext();
-    const voiceInput = voiceInputContext && rawContent.includes(voiceInputContext.anchor)
-      ? voiceInputContext.metadata
-      : undefined;
-    const preferredAgentId = preferredAgentIdOverride === undefined ? activeAgentId : preferredAgentIdOverride;
-    const hasExplicitAgentSelection = preferredAgentIdOverride !== undefined || activeAgentId !== null;
-    const preferredAgent = preferredAgentId
-      ? agentEntries.find((entry) => entry.id === preferredAgentId) ?? null
-      : null;
-    const promptCommand = pendingPromptCommand && content.startsWith(`/${pendingPromptCommand.name}`)
-      ? pendingPromptCommand
-      : undefined;
-    let selectedAgent: ComposerAgentSelection | undefined;
-    if (selectedAgentOverride !== undefined) {
-      selectedAgent = selectedAgentOverride ?? undefined;
-    } else if (hasExplicitAgentSelection && pendingAgentSelection?.id === preferredAgentId) {
-      selectedAgent = pendingAgentSelection;
-    } else if (hasExplicitAgentSelection && preferredAgent) {
-      selectedAgent = {
-        id: preferredAgent.id,
-        name: preferredAgent.name,
-        token: preferredAgent.name || preferredAgent.id,
-        via: 'agent_chip',
-      };
-    } else if (hasExplicitAgentSelection && preferredAgentId === null) {
-      selectedAgent = { id: null, name: 'Default', token: 'default', via: 'agent_command' };
-    }
-    const nextContext = parsedMentions
-      ? {
-          ...baseContext,
-          ...(preferredAgentId ? { preferredAgentId } : {}),
-          ...(preferredAgent?.name ? { preferredAgentName: preferredAgent.name } : {}),
-          ...(selectedAgent ? { selectedAgent } : {}),
-          ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
-          ...(voiceInput ? { voiceInput } : {}),
-          routing: {
-            mode: 'direct' as const,
-            targetAgentIds: parsedMentions.targetAgentIds,
-          },
-        }
-      : {
-          ...baseContext,
-          ...(preferredAgentId ? { preferredAgentId } : {}),
-          ...(preferredAgent?.name ? { preferredAgentName: preferredAgent.name } : {}),
-          ...(selectedAgent ? { selectedAgent } : {}),
-          ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
-          ...(voiceInput ? { voiceInput } : {}),
-        };
-    const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;
-    const context = browserSessionMode
-      ? {
-          ...nextContext,
-          executionIntent: {
-            ...nextContext.executionIntent,
-            browserSessionSnapshot: buildBrowserSessionIntentSnapshot({
-              mode: browserSessionMode,
-              browserSession,
-            }),
-          },
-        }
-      : nextContext;
-    const runtimeScopedContext = nextRuntimeInputMode
-      ? {
-          ...context,
-          runtimeInput: {
-            mode: nextRuntimeInputMode,
-          },
-        }
-      : context;
-
-    return {
-      content,
-      attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
-      context: runtimeScopedContext,
-    };
-  }, [
-    activeAgentId,
-    agentEntries,
-    browserSession,
-    buildContext,
-    pendingAgentSelection,
-    pendingPromptCommand,
+  const buildEnvelope = useChatInputEnvelope({
     swarmAgents,
+    agentEntries,
+    activeAgentId,
+    browserSession,
     voiceInputContext,
-  ]);
+    buildContext,
+    pendingPromptCommand,
+    pendingAgentSelection,
+  });
 
   // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
   useEffect(() => {

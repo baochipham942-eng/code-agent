@@ -315,4 +315,3 @@ export function rowToEvent(row: Record<string, unknown>): TelemetryTimelineEvent
     durationMs: row.duration_ms as number | undefined
   };
 }
-

@@ -343,6 +343,8 @@ export class AgentLoop {
   }
 
   async run(userMessage: string): Promise<void> {
+    // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
+    this.toolEngine.resetRepairGate();
     return this.conversationRuntime.run(userMessage);
   }
 

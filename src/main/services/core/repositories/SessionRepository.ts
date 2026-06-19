@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 既有超限文件（transcript FTS 接入前已 ~1199 行），拆分见 docs/audits/god-file-split-roadmap.md */
 // ============================================================================
 // SessionRepository - 会话 CRUD（sessions 表 + messages 表 + todos 表）
 // ============================================================================
@@ -6,20 +5,29 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import type { Session, SessionStatus, TokenUsage, Message, ModelProvider, TodoItem, SessionTask, ToolCall } from '../../../../shared/contract';
+import type { Session, Message, ModelProvider, TodoItem, SessionTask } from '../../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
-import { collectAttachmentPersistenceMetrics, sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../../../shared/utils/messageAttachments';
-import { extractArtifacts } from '../../../agent/artifactExtractor';
 import { createLogger } from '../../infra/logger';
-import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import {
   runTranscriptFtsBackfill,
-  TRANSCRIPT_FTS_BODY_COLUMN_INDEX,
   type TranscriptKind,
 } from '../../../../shared/transcriptFts.sql';
 import { MEMORY } from '../../../../shared/constants';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
+import {
+  activeMessageWhere,
+  loopInternalMessageWhere,
+  visibleHistoryMessageWhere,
+  ensureToolCallShortDescription,
+  buildAttachmentMetadata,
+  safeJsonStringify,
+  parseJsonArray,
+  parseJsonObject,
+  rowToMessage,
+  rowToSession,
+} from './sessionRepositoryParsers';
+import { runSessionMessagesFtsSearch, runTranscriptFtsSearch } from './sessionRepositoryFtsSearch';
 
 export type { StoredSession, StoredMessage };
 
@@ -48,79 +56,6 @@ export interface PromptRewindResult {
   activeMessages: Message[];
 }
 
-function activeMessageWhere(alias = 'm'): string {
-  return `COALESCE(${alias}.visibility, 'active') = 'active'`;
-}
-
-function loopInternalMessageWhere(alias = 'm'): string {
-  return `COALESCE(${alias}.content, '') NOT LIKE '%【循环模式 · 第%轮】%' AND COALESCE(${alias}.content, '') NOT LIKE '%[[LOOP_WAIT]]%'`;
-}
-
-function visibleHistoryMessageWhere(alias = 'm'): string {
-  return `${activeMessageWhere(alias)} AND COALESCE(${alias}.is_meta, 0) = 0 AND ${loopInternalMessageWhere(alias)}`;
-}
-
-/**
- * 入库 choke point：保证持久化的所有 ToolCall 都有 shortDescription（产品视角
- * 语义短句）。任何上游路径——messageProcessor / TaskManager.turnState 重构造 /
- * web mode persist / subagent 透传——丢字段时这里统一兜底，避免 UI 看到 stale
- * 旧消息时 fallback 到机械拼接。
- */
-function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): ToolCall[] | undefined {
-  if (!toolCalls) return toolCalls;
-  return toolCalls.map((tc) => ({
-    ...tc,
-    shortDescription: tc.shortDescription ?? generateFallbackShortDescription(tc.name, tc.arguments ?? {})
-  }));
-}
-
-function buildAttachmentMetadata(attachments: Message['attachments']): Message['attachments'] | undefined {
-  const sanitized = sanitizeAttachmentsForPersistence(attachments);
-  const metrics = collectAttachmentPersistenceMetrics(attachments, sanitized);
-  if (metrics.strippedDataUrlCount > 0 || metrics.persistedDataUrlChars > 0) {
-    logger.debug('Attachment persistence media profile', metrics);
-  }
-  return sanitized;
-}
-
-function safeJsonStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value ?? null);
-  } catch {
-    return 'null';
-  }
-}
-
-function parseStoredJson<T>(value: unknown): T | undefined {
-  if (typeof value !== 'string' || value.length === 0) {
-    return undefined;
-  }
-  try {
-    return JSON.parse(value) as unknown as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function parseJsonArray(value: unknown): string[] {
-  if (typeof value !== 'string') return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseJsonObject(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'string') return {};
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
 
 interface SessionWriteOptions {
   syncOrigin?: SyncOrigin;
@@ -257,7 +192,7 @@ export class SessionRepository {
     const row = stmt.get(...params) as SQLiteRow | undefined;
     if (!row) return null;
 
-    return this.rowToSession(row);
+    return rowToSession(row);
   }
 
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false, userId?: string | null): StoredSession[] {
@@ -281,7 +216,7 @@ export class SessionRepository {
     `);
 
     const rows = stmt.all(...params, limit, offset) as SQLiteRow[];
-    return rows.map((row) => this.rowToSession(row));
+    return rows.map((row) => rowToSession(row));
   }
 
   updateSession(sessionId: string, updates: Partial<Session>, options?: SessionWriteOptions & { isDeleted?: boolean }): void {
@@ -538,7 +473,7 @@ export class SessionRepository {
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(...params) as SQLiteRow[];
 
-    return rows.map((row) => this.rowToMessage(row));
+    return rows.map((row) => rowToMessage(row));
   }
 
   getMessageCount(sessionId: string, options: MessageQueryOptions = {}): number {
@@ -563,7 +498,7 @@ export class SessionRepository {
 
     const rows = stmt.all(sessionId, count) as SQLiteRow[];
 
-    return rows.reverse().map((row) => this.rowToMessage(row));
+    return rows.reverse().map((row) => rowToMessage(row));
   }
 
   getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30, options: MessageQueryOptions = {}): Message[] {
@@ -577,7 +512,7 @@ export class SessionRepository {
 
     const rows = stmt.all(sessionId, beforeTimestamp, limit) as SQLiteRow[];
 
-    return rows.reverse().map((row) => this.rowToMessage(row));
+    return rows.reverse().map((row) => rowToMessage(row));
   }
 
   // --------------------------------------------------------------------------
@@ -608,56 +543,7 @@ export class SessionRepository {
     content: string;
     timestamp: number;
   }> {
-    const trimmed = query.trim();
-    if (trimmed.length < 3) {
-      return [];
-    }
-
-    const ftsQuery = normalizeFtsQuery(trimmed);
-    const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
-    const params: unknown[] = [ftsQuery];
-    let whereSession = '';
-    if (options.sessionId) {
-      whereSession = options.includeRewound ? 'AND f.session_id = ?' : 'AND m.session_id = ?';
-      params.push(options.sessionId);
-    }
-    params.push(limit);
-
-    try {
-      const sql = options.includeRewound
-        ? `
-          SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
-          FROM session_messages_fts f
-          WHERE f.content MATCH ? ${whereSession}
-            AND ${loopInternalMessageWhere('f')}
-          ORDER BY rank, f.timestamp DESC
-          LIMIT ?
-          `
-        : `
-          SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
-          FROM session_messages_fts f
-          JOIN messages m ON m.id = f.message_id
-          WHERE f.content MATCH ? ${whereSession}
-            AND ${visibleHistoryMessageWhere('m')}
-          ORDER BY rank, f.timestamp DESC
-          LIMIT ?
-          `;
-      const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
-
-      return rows.map((row) => ({
-        messageId: String(row.message_id ?? ''),
-        sessionId: String(row.session_id ?? ''),
-        role: String(row.role ?? ''),
-        content: String(row.content ?? ''),
-        timestamp: Number(row.timestamp ?? 0)
-      }));
-    } catch (err) {
-      logger.warn('[EpisodicFts] search failed', {
-        query: trimmed,
-        error: err
-      });
-      return [];
-    }
+    return runSessionMessagesFtsSearch(this.db, query, options);
   }
 
   /**
@@ -727,68 +613,7 @@ export class SessionRepository {
     snippet: string;
     timestamp: number;
   }> {
-    const trimmed = query.trim();
-    if (trimmed.length < 3) {
-      return [];
-    }
-
-    const ftsQuery = normalizeFtsQuery(trimmed);
-    const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
-    const conditions: string[] = [];
-    const params: unknown[] = [ftsQuery];
-
-    if (options.sessionId) {
-      conditions.push('f.session_id = ?');
-      params.push(options.sessionId);
-    }
-    if (options.kinds && options.kinds.length > 0) {
-      conditions.push(`f.kind IN (${options.kinds.map(() => '?').join(', ')})`);
-      params.push(...options.kinds);
-    }
-    if (options.toolName) {
-      conditions.push('f.tool_name = ?');
-      params.push(options.toolName);
-    }
-    if (options.timeAfter !== undefined) {
-      conditions.push('f.timestamp >= ?');
-      params.push(options.timeAfter);
-    }
-    if (options.timeBefore !== undefined) {
-      conditions.push('f.timestamp <= ?');
-      params.push(options.timeBefore);
-    }
-    params.push(limit);
-
-    const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
-    const snippetExpr = `snippet(transcript_fts, ${TRANSCRIPT_FTS_BODY_COLUMN_INDEX}, '«', '»', ' … ', 24)`;
-    // meta/loop 已在 trigger 期排除；查询期只需补 rewound 可见性过滤
-    const sql = options.includeRewound
-      ? `
-        SELECT f.message_id, f.session_id, f.kind, f.tool_name, f.timestamp, ${snippetExpr} AS snip
-        FROM transcript_fts f
-        WHERE f.body MATCH ? ${extra}
-        ORDER BY rank, f.timestamp DESC
-        LIMIT ?
-        `
-      : `
-        SELECT f.message_id, f.session_id, f.kind, f.tool_name, f.timestamp, ${snippetExpr} AS snip
-        FROM transcript_fts f
-        JOIN messages m ON m.id = f.message_id
-        WHERE f.body MATCH ? ${extra}
-          AND ${activeMessageWhere('m')}
-        ORDER BY rank, f.timestamp DESC
-        LIMIT ?
-        `;
-
-    const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
-    return rows.map((row) => ({
-      messageId: String(row.message_id ?? ''),
-      sessionId: String(row.session_id ?? ''),
-      kind: String(row.kind ?? '') as TranscriptKind,
-      toolName: row.tool_name ? String(row.tool_name) : null,
-      snippet: String(row.snip ?? ''),
-      timestamp: Number(row.timestamp ?? 0)
-    }));
+    return runTranscriptFtsSearch(this.db, query, options);
   }
 
   /**
@@ -845,7 +670,7 @@ export class SessionRepository {
     return {
       sessionId: anchor.session_id,
       messages: ordered.map((row) => ({
-        message: this.rowToMessage(row),
+        message: rowToMessage(row),
         matched: String(row.id) === messageId
       }))
     };
@@ -887,7 +712,7 @@ export class SessionRepository {
     `);
 
     const rows = stmt.all(limit) as SQLiteRow[];
-    return rows.map((row) => this.rowToSession(row));
+    return rows.map((row) => rowToSession(row));
   }
 
   markSessionsSynced(sessionIds: string[]): void {
@@ -912,7 +737,7 @@ export class SessionRepository {
 
     const rows = stmt.all(limit) as SQLiteRow[];
     return rows.map((row) => ({
-      ...this.rowToMessage(row),
+      ...rowToMessage(row),
       sessionId: row.session_id as string
     }));
   }
@@ -933,7 +758,7 @@ export class SessionRepository {
       LIMIT 1
     `);
     const row = stmt.get(sessionId, messageId) as SQLiteRow | undefined;
-    return row ? this.rowToMessage(row) : null;
+    return row ? rowToMessage(row) : null;
   }
 
   applyPromptRewind(sessionId: string, userMessageId: string, record: PromptRewindRecordInput = {}): PromptRewindResult {
@@ -959,7 +784,7 @@ export class SessionRepository {
         throw new Error(`Active user message not found: ${userMessageId}`);
       }
 
-      const anchorMessage = this.rowToMessage(anchorRow);
+      const anchorMessage = rowToMessage(anchorRow);
       const anchorRowId = Number(anchorRow.__rowid || 0);
       const rowsToHide = this.db
         .prepare(
@@ -1019,29 +844,6 @@ export class SessionRepository {
     return applyFn();
   }
 
-  private rowToMessage(row: SQLiteRow): Message {
-    const content = stripInlineAttachmentBlocks((row.content as string) || '');
-    const artifacts = row.role === 'assistant' ? extractArtifacts(content) : [];
-    return {
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content,
-      timestamp: row.timestamp as number,
-      visibility: (row.visibility as Message['visibility']) || 'active',
-      hiddenByRewindId: (row.hidden_by_rewind_id as string) || undefined,
-      hiddenAt: (row.hidden_at as number) || undefined,
-      toolCalls: parseStoredJson<Message['toolCalls']>(row.tool_calls),
-      toolResults: parseStoredJson<Message['toolResults']>(row.tool_results),
-      attachments: sanitizeAttachmentsForPersistence(parseStoredJson<Message['attachments']>(row.attachments)),
-      thinking: (row.thinking as string) || undefined,
-      effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
-      contentParts: parseStoredJson<Message['contentParts']>(row.content_parts),
-      metadata: parseStoredJson<Message['metadata']>(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-      compaction: parseStoredJson<Message['compaction']>(row.compaction),
-      ...(artifacts.length > 0 ? { artifacts } : {}),
-    };
-  }
 
   // --------------------------------------------------------------------------
   // Message Truncation (for checkpoint fork)
@@ -1349,7 +1151,7 @@ export class SessionRepository {
       )
       .all(...params, limit, offset) as SQLiteRow[];
 
-    return rows.map((row) => this.rowToSession(row));
+    return rows.map((row) => rowToSession(row));
   }
 
   archiveSession(sessionId: string, updatedAt?: number): StoredSession | null {
@@ -1372,94 +1174,4 @@ export class SessionRepository {
   // Private Helpers
   // --------------------------------------------------------------------------
 
-  private rowToSession(row: SQLiteRow): StoredSession {
-    let lastTokenUsage: TokenUsage | undefined;
-    if (row.last_token_usage) {
-      try {
-        lastTokenUsage = parseStoredJson<TokenUsage>(row.last_token_usage);
-      } catch (err: unknown) {
-        logger.warn('[DB] Failed to parse last_token_usage JSON:', err instanceof Error ? err.message : String(err));
-      }
-    }
-
-    let workbenchProvenance: Session['workbenchProvenance'] | undefined;
-    if (row.workbench_provenance) {
-      try {
-        workbenchProvenance = JSON.parse(row.workbench_provenance as string) as Session['workbenchProvenance'];
-      } catch (err: unknown) {
-        logger.warn('[DB] Failed to parse workbench_provenance JSON:', err instanceof Error ? err.message : String(err));
-      }
-    }
-
-    let origin: Session['origin'] | undefined;
-    if (row.origin) {
-      const parsedOrigin = parseJsonObject(row.origin);
-      if (typeof parsedOrigin.kind === 'string') {
-        const metadata = parsedOrigin.metadata && typeof parsedOrigin.metadata === 'object' && !Array.isArray(parsedOrigin.metadata) ? (parsedOrigin.metadata as Record<string, unknown>) : undefined;
-        origin = {
-          kind: parsedOrigin.kind as NonNullable<Session['origin']>['kind'],
-          id: typeof parsedOrigin.id === 'string' ? parsedOrigin.id : undefined,
-          name: typeof parsedOrigin.name === 'string' ? parsedOrigin.name : undefined,
-          metadata
-        };
-      }
-    }
-
-    const engine = row.agent_engine ? normalizeAgentEngineSession(parseJsonObject(row.agent_engine)) : normalizeAgentEngineSession(null);
-
-    const isArchived = row.status === 'archived';
-    const isDeleted = Boolean(row.is_deleted);
-
-    return {
-      id: row.id as string,
-      userId: row.user_id == null ? null : String(row.user_id),
-      title: row.title as string,
-      modelConfig: {
-        provider: row.model_provider as ModelProvider,
-        model: row.model_name as string
-      },
-      workingDirectory: row.working_directory as string | undefined,
-      type: (row.session_type as Session['type']) || 'chat',
-      origin,
-      parentSessionId: row.parent_session_id as string | undefined,
-      sourceRunId: row.source_run_id as string | undefined,
-      engine,
-      memoryMode: row.memory_mode === 'off' ? 'off' : 'auto',
-      suppressedMemoryEntryIds: parseJsonArray(row.suppressed_memory_entry_ids),
-      readOnly: Boolean(row.read_only),
-      retryOfSessionId: row.retry_of_session_id as string | undefined,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-      messageCount: (row.message_count as number) || 0,
-      turnCount: (row.turn_count as number) || 0,
-      workspace: row.workspace as string | undefined,
-      workbenchProvenance,
-      status: (row.status as SessionStatus) || 'idle',
-      lastTokenUsage,
-      isArchived,
-      archivedAt: isArchived ? (row.updated_at as number) : undefined,
-      isDeleted,
-      gitBranch: row.git_branch as string | undefined,
-      projectId: (row.project_id as string) || undefined
-    };
-  }
-}
-
-// ----------------------------------------------------------------------------
-// FTS query helper
-// ----------------------------------------------------------------------------
-
-/**
- * 把用户查询归一化成 FTS5 安全的表达式。
- *
- * - 以 `"` 开头表示用户知道自己在写 FTS5 语法（phrase / prefix / operators），
- *   直接原样透传
- * - 否则把整个查询包成 phrase literal：双引号包裹 + 内部 `"` 转义为 `""`
- *   → 避开 `-` `+` `:` 等 FTS5 操作符被误解释
- */
-function normalizeFtsQuery(raw: string): string {
-  if (raw.startsWith('"')) {
-    return raw;
-  }
-  return '"' + raw.replace(/"/g, '""') + '"';
 }

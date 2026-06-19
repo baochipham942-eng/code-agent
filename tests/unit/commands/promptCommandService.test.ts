@@ -74,7 +74,7 @@ describe('PromptCommandService', () => {
     await writeProjectCommand('ship', 'Ship checklist for $1');
 
     const commands = await service.listCommands(projectDir);
-    const names = commands.map((c) => c.name).sort();
+    const names = commands.filter((c) => c.source === 'file').map((c) => c.name).sort();
     expect(names).toEqual(['daily', 'ship']);
     expect(commands.find((c) => c.name === 'daily')?.description).toBe('daily report');
     expect(commands.find((c) => c.name === 'ship')?.hints).toEqual(['$1']);
@@ -144,7 +144,9 @@ describe('PromptCommandService', () => {
   it('survives a missing commands directory', async () => {
     await fs.rm(path.join(projectDir, '.code-agent', 'commands'), { recursive: true, force: true });
     await fs.rm(path.join(userDir, 'commands'), { recursive: true, force: true });
-    expect(await service.listCommands(projectDir)).toEqual([]);
+    // 文件/MCP 来源为空时只剩 builtin 命令
+    const commands = await service.listCommands(projectDir);
+    expect(commands.filter((c) => c.source !== 'builtin')).toEqual([]);
   });
 
   it('applyPromptCommandExpansion rewrites envelope content and applies agent routing', async () => {
@@ -183,6 +185,49 @@ describe('PromptCommandService', () => {
   it('ignores non-md files and dotfiles in the commands directory', async () => {
     await fs.writeFile(path.join(projectDir, '.code-agent', 'commands', 'notes.txt'), 'x', 'utf-8');
     await fs.writeFile(path.join(projectDir, '.code-agent', 'commands', '.hidden.md'), 'x', 'utf-8');
-    expect(await service.listCommands(projectDir)).toEqual([]);
+    const commands = await service.listCommands(projectDir);
+    expect(commands.filter((c) => c.source !== 'builtin')).toEqual([]);
+  });
+
+  // --------------------------------------------------------------------------
+  // Builtin prompt commands (/init 等内置模板命令)
+  // --------------------------------------------------------------------------
+  describe('builtin commands', () => {
+    it('exposes the builtin /init command even with empty command dirs', async () => {
+      const commands = await service.listCommands(projectDir);
+      const init = commands.find((c) => c.name === 'init');
+      expect(init).toBeDefined();
+      expect(init?.source).toBe('builtin');
+      expect(init?.description).toBeTruthy();
+      // 模板必须指示 agent 产出 CLAUDE.md
+      expect(init?.template).toContain('CLAUDE.md');
+    });
+
+    it('resolves /init into the builtin analysis prompt', async () => {
+      const resolved = await service.resolveInvocation('/init', projectDir);
+      expect(resolved).not.toBeNull();
+      expect(resolved!.source).toBe('builtin');
+      expect(resolved!.prompt).toContain('CLAUDE.md');
+    });
+
+    it('lets a project file command override the builtin of the same name', async () => {
+      await writeProjectCommand('init', 'project custom init $ARGUMENTS');
+      const commands = await service.listCommands(projectDir);
+      const matches = commands.filter((c) => c.name === 'init');
+      expect(matches.length).toBe(1);
+      expect(matches[0].source).toBe('file');
+      expect(matches[0].template).toContain('project custom init');
+
+      const resolved = await service.resolveInvocation('/init', projectDir);
+      expect(resolved!.source).toBe('file');
+    });
+
+    it('lets a user file command override the builtin of the same name', async () => {
+      await writeUserCommand('init', 'user custom init');
+      const commands = await service.listCommands(projectDir);
+      const matches = commands.filter((c) => c.name === 'init');
+      expect(matches.length).toBe(1);
+      expect(matches[0].source).toBe('file');
+    });
   });
 });

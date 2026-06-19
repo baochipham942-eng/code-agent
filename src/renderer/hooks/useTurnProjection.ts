@@ -201,7 +201,31 @@ export function projectTurns(
       continue;
     }
 
-    // Skip isMeta messages (Skill system internal)
+    if (msg.isMeta && msg.metadata?.automation) {
+      if (!currentTurn) {
+        turnCounter++;
+        currentTurn = {
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [],
+          status: 'completed',
+          startTime: msg.timestamp,
+        };
+        turns.push(currentTurn);
+      }
+      currentTurn.nodes.push({
+        id: `${msg.id}-automation`,
+        messageId: msg.id,
+        type: 'assistant_text',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        metadata: msg.metadata,
+      });
+      currentTurn.endTime = msg.timestamp;
+      continue;
+    }
+
+    // Skip other isMeta messages (Skill system internal)
     if (msg.isMeta) continue;
     // Skip tool role messages (results shown in toolCalls)
     if (msg.role === 'tool') continue;

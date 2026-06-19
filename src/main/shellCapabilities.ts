@@ -262,6 +262,11 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'unarchive',
     'update',
   ],
+  [IPC_DOMAINS.SESSION_AUTOMATION]: [
+    'getSessionSummary',
+    'listBySession',
+    'summarizeSessions',
+  ],
   [IPC_DOMAINS.SETTINGS]: [
     'checkApiKeyConfigured',
     'get',

@@ -73,6 +73,7 @@ export * from './contract/channel';
 
 // Cron types (定时任务)
 export * from './contract/cron';
+export * from './contract/sessionAutomation';
 
 // ToolSearch types (工具延迟加载)
 export * from './contract/toolSearch';

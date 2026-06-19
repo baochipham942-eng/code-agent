@@ -740,9 +740,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {scheduleComposerOpen && (
           <ScheduleComposerCard
             creating={creatingSchedule}
-            onSubmit={async (description) => {
+            onSubmit={async (description, options) => {
               setCreatingSchedule(true);
-              const ok = await runScheduleCreation(description);
+              const ok = await runScheduleCreation(description, options);
               setCreatingSchedule(false);
               if (ok) setScheduleComposerOpen(false);
             }}

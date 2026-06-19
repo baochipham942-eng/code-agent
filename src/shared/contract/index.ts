@@ -72,6 +72,7 @@ export * from './channel';
 
 // Cron types (定时任务)
 export * from './cron';
+export * from './sessionAutomation';
 
 // Checkpoint types (文件检查点)
 export * from './checkpoint';

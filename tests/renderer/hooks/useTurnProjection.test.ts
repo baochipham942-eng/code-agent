@@ -493,6 +493,62 @@ describe('projectTurns', () => {
     expect(projection.turns[0].nodes[2]?.subtype).toBe('skill_status');
   });
 
+  it('keeps automation meta feedback visible without exposing other meta messages', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '/schedule 每 15 分钟巡检主题页',
+        timestamp: 100,
+      },
+      {
+        id: 'automation:created:cron:job-1',
+        role: 'assistant',
+        source: 'automation',
+        content: '自动化已创建：主题页编排巡检\n频率：每 15 分钟',
+        timestamp: 110,
+        isMeta: true,
+        metadata: {
+          automation: {
+            automationId: 'cron:job-1',
+            automationType: 'cron',
+            event: 'created',
+            sourceSessionId: 'session-1',
+            sourceRefId: 'job-1',
+            status: 'active',
+            title: '主题页编排巡检',
+            cadenceLabel: '每 15 分钟',
+          },
+        },
+      },
+      {
+        id: 'hidden-meta-1',
+        role: 'assistant',
+        content: 'hidden internal note',
+        timestamp: 111,
+        isMeta: true,
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'automation:created:cron:job-1-automation',
+    ]);
+    expect(projection.turns[0].nodes[1]).toMatchObject({
+      type: 'assistant_text',
+      content: expect.stringContaining('自动化已创建'),
+      metadata: {
+        automation: {
+          automationId: 'cron:job-1',
+          event: 'created',
+        },
+      },
+    });
+  });
+
   it('keeps goal lifecycle notices inside the current turn', () => {
     const messages: Message[] = [
       {

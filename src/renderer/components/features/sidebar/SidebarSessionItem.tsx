@@ -3,6 +3,7 @@ import {
   Archive,
   ArchiveRestore,
   CheckSquare,
+  Clock3,
   Eye,
   Pin,
   ScrollText,
@@ -10,6 +11,7 @@ import {
   Square,
 } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
+import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { SessionState } from '../../../stores/taskStore';
@@ -47,6 +49,7 @@ function formatReplayEvidenceButtonTitle(
 export interface SidebarSessionItemProps {
   session: SessionWithMeta;
   unreadSessionIds: Set<string>;
+  automationSummariesBySessionId: Record<string, SessionAutomationSessionSummary>;
   currentSessionId: string | null;
   selectedSessionIds: Set<string>;
   pinnedSessionIds: Set<string>;
@@ -88,6 +91,7 @@ export type SidebarSessionItemSharedProps = Omit<SidebarSessionItemProps, 'sessi
 export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   session,
   unreadSessionIds,
+  automationSummariesBySessionId,
   currentSessionId,
   selectedSessionIds,
   pinnedSessionIds,
@@ -147,6 +151,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const messageSearchHit = messageSearchHitGroup?.bestHit;
   const lastActiveLabel = getRelativeTime(latestActivityAt, true);
   const typeLabel = getSessionTypeLabel(session.type);
+  const automationSummary = automationSummariesBySessionId[session.id];
+  const showAutomationBadge = Boolean(automationSummary?.label && (automationSummary.activeCount > 0 || automationSummary.runningCount > 0));
   const displayTitle = getDisplaySessionTitle(session.title);
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const replayEvidence = replayEvidenceBySessionId.get(session.id) ?? [];
@@ -273,6 +279,15 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {typeLabel && (
               <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-opacity duration-150 group-hover:opacity-0">
                 {typeLabel}
+              </span>
+            )}
+            {showAutomationBadge && automationSummary && (
+              <span
+                title={automationSummary.tooltip || '会话自动化'}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-opacity duration-150 group-hover:opacity-0"
+              >
+                <Clock3 className="h-3 w-3" />
+                <span>{automationSummary.label}</span>
               </span>
             )}
             {status.showBadge && (

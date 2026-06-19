@@ -18,7 +18,7 @@ import {
 
 interface ScheduleComposerCardProps {
   creating: boolean;
-  onSubmit: (description: string) => void;
+  onSubmit: (description: string, options?: { handoffPrompt?: string }) => void;
   onDismiss: () => void;
 }
 
@@ -29,6 +29,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
 }) => {
   const [selected, setSelected] = useState<ScheduleTemplate | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [handoffPrompt, setHandoffPrompt] = useState('');
 
   const pickTemplate = (template: ScheduleTemplate) => {
     setSelected(template);
@@ -49,7 +50,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
           <div className="text-xs font-medium text-indigo-300">创建定时任务</div>
           <div className="mt-0.5 text-[11px] text-indigo-200/60 leading-relaxed">
             定时任务会按你设定的时间在后台自动跑一个 agent，跑完发通知、点通知能跳到结果会话。
-            选个模板填空，或自己描述「做什么、什么时候跑」。
+            可以额外填一条唤醒后交接提示词，完成后会发回本会话继续下一步。
           </div>
         </div>
         <button
@@ -120,6 +121,18 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
             <div className="text-[10px] text-indigo-200/40 leading-relaxed">将创建：{composed}</div>
           )}
 
+          <label className="block">
+            <span className="block mb-1 text-[10px] text-indigo-200/50">唤醒后交接提示词</span>
+            <textarea
+              data-schedule-field="handoffPrompt"
+              value={handoffPrompt}
+              onChange={(e) => setHandoffPrompt(e.target.value)}
+              placeholder="例如：读取结果会话，判断是否达标；若达标继续下一阶段，若未达标给出 follow-up。"
+              rows={2}
+              className="w-full bg-zinc-800 border border-indigo-500/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-indigo-500/50 resize-none"
+            />
+          </label>
+
           <div className="flex items-center gap-2 pt-0.5">
             <button
               type="button"
@@ -134,7 +147,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
             <button
               type="button"
               data-schedule-create
-              onClick={() => canCreate && onSubmit(composed)}
+              onClick={() => canCreate && onSubmit(composed, { handoffPrompt: handoffPrompt.trim() || undefined })}
               disabled={!canCreate}
               className="flex items-center gap-1 px-3 py-1 text-xs bg-indigo-500/20 text-indigo-200 rounded hover:bg-indigo-500/30 transition-colors disabled:opacity-50"
             >

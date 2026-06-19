@@ -6,6 +6,7 @@ import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
+import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -112,7 +113,7 @@ export interface MessageAttachment {
 }
 
 // 消息来源类型
-export type MessageSource = 'user' | 'skill' | 'system' | 'goal' | 'model';
+export type MessageSource = 'user' | 'skill' | 'system' | 'goal' | 'model' | 'automation';
 
 // Subagent 消息子类型
 export type MessageSubtype = 'init' | 'result' | 'thinking' | 'tool_use';
@@ -213,6 +214,7 @@ export interface MessageMetadata {
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;
+  automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
 }
 

@@ -15,9 +15,12 @@ vi.mock('../../../src/main/config/configPaths', () => ({
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
+vi.mock('../../../src/main/services/infra/logger', () => {
+  const stub = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  // serviceRegistry 经 sessionAutomation→sessionManager 链拉入时会读取 `logger` 默认实例，
+  // 这里一并导出，避免「No "logger" export」模块加载错误。
+  return { createLogger: () => stub, logger: stub };
+});
 
 // agentRegistry 返回固定的 agent 列表（研究员有定义，孤儿角色没有）
 // 注意：预设角色（研究员）安装到用户目录后 registry 报 source: 'user'，

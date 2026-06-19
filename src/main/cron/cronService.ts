@@ -22,6 +22,14 @@ import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { notificationService } from '../services/infra/notificationService';
+import {
+  readCronSourceSessionId,
+  recordCronAutomationCreated,
+  syncCronAutomationFromJob,
+  recordCronAutomationArchived,
+  recordCronAutomationExecution,
+  type ResolveRuntimeDefinition,
+} from './cronAutomationBridge';
 
 const execAsync = promisify(exec);
 
@@ -487,6 +495,8 @@ export class CronService implements Disposable {
       this.jobs.set(job.id, { definition: job });
     }
 
+    await recordCronAutomationCreated(job, this.resolveAutomationRuntime);
+
     return job;
   }
 
@@ -522,6 +532,8 @@ export class CronService implements Disposable {
       this.jobs.set(jobId, { definition: updatedJob });
     }
 
+    syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
+
     return updatedJob;
   }
 
@@ -543,6 +555,7 @@ export class CronService implements Disposable {
 
     // Remove from database
     await this.deleteJobFromDatabase(jobId);
+    await recordCronAutomationArchived(job.definition);
 
     return true;
   }
@@ -870,6 +883,8 @@ export class CronService implements Disposable {
       // Save execution to database
       await this.saveExecutionToDatabase(execution);
 
+      await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
+
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session
       this.notifyAgentExecution(definition, execution);
     }
@@ -1040,9 +1055,14 @@ export class CronService implements Disposable {
     const configService = getConfigService();
     const sessionManager = getSessionManager();
     const currentSessionId = sessionManager.getCurrentSessionId();
+    const sourceSessionId = readCronSourceSessionId(definition, action);
+    const sourceSession = sourceSessionId
+      ? await sessionManager.getSession(sourceSessionId).catch(() => null)
+      : null;
     const currentSession = currentSessionId
       ? await sessionManager.getSession(currentSessionId)
       : null;
+    const baseSession = sourceSession ?? currentSession;
     const settings = configService.getSettings();
     const sessionType = this.getAgentSessionType(action);
     const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
@@ -1050,12 +1070,12 @@ export class CronService implements Disposable {
     return sessionManager.createSession({
       title: this.formatAgentSessionTitle(definition, sessionType),
       modelConfig: resolveSessionDefaultModelConfig({
-        provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
-        model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,
-        temperature: settings.model?.temperature ?? currentSession?.modelConfig.temperature ?? 0.7,
-        maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens,
+        provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
+        model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,
+        temperature: settings.model?.temperature ?? baseSession?.modelConfig.temperature ?? 0.7,
+        maxTokens: settings.model?.maxTokens ?? baseSession?.modelConfig.maxTokens,
       }),
-      workingDirectory: currentSession?.workingDirectory,
+      workingDirectory: baseSession?.workingDirectory,
       type: sessionType,
       origin: {
         kind: originKind,
@@ -1064,12 +1084,23 @@ export class CronService implements Disposable {
         metadata: {
           scheduleType: definition.scheduleType,
           actionType: action.type,
+          sourceSessionId,
         },
       },
+      parentSessionId: sourceSessionId,
       sourceRunId: executionId,
       readOnly: true,
     });
   }
+
+  /**
+   * 供 automation 桥接复用：解析定时任务的运行时定义（带最新 nextRunAt）。
+   * 从内存 job 表取实时调度状态，取不到回退到原始 definition。
+   */
+  private readonly resolveAutomationRuntime: ResolveRuntimeDefinition = (definition) => {
+    const job = this.jobs.get(definition.id);
+    return job ? this.withRuntimeScheduleState(job) : definition;
+  };
 
   private async retryExecution(
     definition: CronJobDefinition,

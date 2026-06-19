@@ -30,6 +30,8 @@ export interface LoopRunConfig {
   maxTurns?: number;
   /** 软停止条件的自然语言描述（满足即停）。 */
   until?: string;
+  /** 成功结束后发回源会话并触发下一步的显式交接提示词。 */
+  handoffPrompt?: string;
 }
 
 export interface LoopRunState {
@@ -39,6 +41,7 @@ export interface LoopRunState {
   intervalMs?: number;
   maxTurns: number;
   until?: string;
+  handoffPrompt?: string;
   /** 已完成的轮次数。 */
   turn: number;
   status: LoopStatus;

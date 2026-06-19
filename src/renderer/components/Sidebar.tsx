@@ -2,7 +2,7 @@
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useSessionUIStore, type SessionStatusFilter } from '../stores/sessionUIStore';
@@ -48,6 +48,8 @@ import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/Ses
 import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
 import { SidebarProjectGroup } from './features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSessionItem';
+import type { SessionAutomationSessionSummary } from '@shared/contract';
+import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import {
@@ -311,6 +313,38 @@ export const Sidebar: React.FC = () => {
     setProjectMetaById,
   } = useSidebarDerivedSessions({ canOpenSessionReplay });
 
+  const [automationSummariesBySessionId, setAutomationSummariesBySessionId] = useState<Record<string, SessionAutomationSessionSummary>>({});
+  const visibleSessionIds = useMemo(
+    () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
+    [workspaceGroupedSessions],
+  );
+  const visibleSessionIdsKey = visibleSessionIds.join('\n');
+
+  useEffect(() => {
+    if (visibleSessionIds.length === 0) {
+      setAutomationSummariesBySessionId({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    void sessionAutomationClient.summarizeSessions(visibleSessionIds)
+      .then((summaries) => {
+        if (cancelled) return;
+        setAutomationSummariesBySessionId(summaries ?? {});
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        logger.warn('Failed to load sidebar automation summaries', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        setAutomationSummariesBySessionId({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleSessionIdsKey]);
+
   const [expandedProjectDetails, setExpandedProjectDetails] = useState<Record<string, boolean>>({});
   const [projectDrawerKey, setProjectDrawerKey] = useState<string | null>(null);
   const [collapsingWorkspaces, setCollapsingWorkspaces] = useState<Record<string, boolean>>({});
@@ -496,6 +530,7 @@ export const Sidebar: React.FC = () => {
 
   const sessionItemProps: SidebarSessionItemSharedProps = {
     unreadSessionIds,
+    automationSummariesBySessionId,
     currentSessionId,
     selectedSessionIds,
     pinnedSessionIds,

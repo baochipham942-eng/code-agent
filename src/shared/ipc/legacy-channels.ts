@@ -159,6 +159,10 @@ export const IPC_CHANNELS = {
   // 主进程请求渲染端发原生系统通知（Tauri 通知插件，带 Neo 图标/身份 + 可点击跳转）
   NOTIFICATION_SHOW: 'notification:show',
 
+  // 会话级自动化回流消息：主进程写入 automation 通知后实时推渲染端
+  // （打开中的源会话即时 append，其他会话标记未读）
+  SESSION_AUTOMATION_MESSAGE: 'sessionAutomation:message',
+
   // Security channels (API Key setup, tool create confirm)
   SECURITY_CHECK_API_KEY_CONFIGURED: 'security:check-api-key-configured',
   SECURITY_TOOL_CREATE_REQUEST: 'security:tool-create-request',

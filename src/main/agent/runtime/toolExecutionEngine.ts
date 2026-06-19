@@ -25,6 +25,8 @@ import type {
 import { classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
+import { ToolArgsRepairGate, buildRepairExhaustedMessage } from './toolArgsRepairGate';
+import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
 import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
 import type { RuntimeContext } from './runtimeContext';
@@ -89,8 +91,16 @@ export class ToolExecutionEngine {
   runtimeControl!: RuntimeControlPort;
   private forceFinalResponseReasonAtBatchStart: string | undefined;
   private forceFinalResponseBatchActive = false;
+  // 工具入参 repair 节流闸：按 toolName 统计连续校验失败，超上限切终止指引
+  // （Kimi 借鉴 #1）。引擎实例随 AgentLoop 跨多轮复用，run 起点须 reset。
+  private readonly repairGate = new ToolArgsRepairGate(TOOL_ARGS_REPAIR_MAX_ATTEMPTS);
 
   constructor(protected ctx: RuntimeContext) {}
+
+  /** run 起点重置 repair 计数（每条 user 消息开新的连续失败统计窗口）。 */
+  resetRepairGate(): void {
+    this.repairGate.reset();
+  }
 
   setModules(
     contextAssembly: ContextAssembly,
@@ -562,19 +572,29 @@ export class ToolExecutionEngine {
       toolCall.arguments as Record<string, unknown>,
     );
     if (!validation.ok) {
-      logger.warn(`[AgentLoop] Tool ${toolCall.name} args failed schema validation`);
+      // repair 节流：连续失败超上限 → 不再重注入 schema，改注入终止指引断死循环
+      const repair = this.repairGate.recordFailure(toolCall.name);
+      const injectMessage = repair.exhausted
+        ? buildRepairExhaustedMessage(toolCall.name, repair.attempt)
+        : validation.message;
+
+      logger.warn(`[AgentLoop] Tool ${toolCall.name} args failed schema validation (attempt ${repair.attempt}${repair.exhausted ? ', repair exhausted' : ''})`);
       logCollector.tool('WARN', `Tool ${toolCall.name} args failed schema validation`, {
         toolCallId: toolCall.id,
         validationIssues: validation.issues,
+        repairAttempt: repair.attempt,
+        repairExhausted: repair.exhausted,
       });
 
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: false,
-        error: validation.message,
+        error: injectMessage,
         duration: Date.now() - startTime,
         metadata: {
           validationFailed: true,
+          repairAttempt: repair.attempt,
+          repairExhausted: repair.exhausted,
           validationIssues: validation.issues.map((issue) => ({
             field: issue.field,
             reason: issue.reason,
@@ -584,7 +604,7 @@ export class ToolExecutionEngine {
         },
       };
 
-      this.contextAssembly.injectSystemMessage(validation.message);
+      this.contextAssembly.injectSystemMessage(injectMessage);
 
       emitToolCallStart();
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
@@ -605,6 +625,10 @@ export class ToolExecutionEngine {
 
       return toolResult;
     }
+
+    // 入参通过校验 → 该工具的连续校验失败 streak 清零（即使后续运行时失败，
+    // 也说明"参数对了"，不算 repair 死循环的一环）。
+    this.repairGate.recordSuccess(toolCall.name);
 
     if (this.isRunCancelled()) {
       return this.buildSuppressedCancelledResult(toolCall, startTime);

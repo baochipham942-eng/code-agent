@@ -66,6 +66,7 @@ import { taskSchema } from './multiagent/task.schema';
 import { teammateSchema } from './multiagent/teammate.schema';
 import { spawnAgentSchema, agentSpawnSchema } from './multiagent/spawnAgent.schema';
 import { waitAgentSchema } from './multiagent/waitAgent.schema';
+import { collectAgentSchema } from './multiagent/collectAgent.schema';
 import { closeAgentSchema } from './multiagent/closeAgent.schema';
 import { sendInputSchema } from './multiagent/sendInput.schema';
 import { agentMessageSchema } from './multiagent/agentMessage.schema';
@@ -311,6 +312,10 @@ export function registerMigratedTools(
   registry.register(
     waitAgentSchema,
     async () => (await import('./multiagent/waitAgent')).waitAgentModule,
+  );
+  registry.register(
+    collectAgentSchema,
+    async () => (await import('./multiagent/collectAgent')).collectAgentModule,
   );
   registry.register(
     closeAgentSchema,

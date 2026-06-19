@@ -35,6 +35,8 @@ import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { estimateTokens } from '../../../context/tokenEstimator';
+import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 
 const ROLE_ALIASES: Record<string, string> = {
   explorer: 'explore',
@@ -93,6 +95,40 @@ async function runSpawnAgent(
 
   onProgress?.({ stage: 'starting', detail: schemaName });
   const normalizedArgs = normalizeSpawnArgs(args);
+
+  // ADR-025 A1：后台执行——立即返回稳定 agent_id 不阻塞前台 turn。
+  // 关键：后台子 agent 用**独立 AbortController**，否则父 turn 结束触发的
+  // abort 会连带杀掉后台任务，"后台"语义就破了。进程内 only（不跨重启 resume）。
+  if (args.run_in_background === true) {
+    const bgController = new AbortController();
+    const bgLegacyCtx = buildLegacyCtxFromProtocol(
+      { ...ctx, abortSignal: bgController.signal },
+      canUseTool,
+    );
+    const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
+      const bgResult = await executeSpawnAgentLegacy(normalizedArgs, bgLegacyCtx);
+      const adapted = adaptLegacyResult(bgResult);
+      return {
+        success: adapted.ok,
+        output: adapted.ok && typeof adapted.output === 'string' ? adapted.output : '',
+        toolsUsed: [],
+        iterations: 0,
+      };
+    });
+    onProgress?.({ stage: 'completing', percent: 100 });
+    ctx.logger.debug(`${schemaName} spawned in background`, { agentId });
+    return withMultiagentMeta(
+      {
+        ok: true,
+        output: `已在后台启动子 agent（agent_id: ${agentId}），前台不阻塞。用该 agent_id 查询状态或获取最终结果。`,
+      },
+      ctx,
+      schemaName,
+      { action: 'spawn', status: 'running', agentId, result: { background: true } },
+      `${schemaName} background`,
+    );
+  }
+
   const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
   const legacyResult = await executeSpawnAgentLegacy(normalizedArgs, legacyCtx);
   onProgress?.({ stage: 'completing', percent: 100 });

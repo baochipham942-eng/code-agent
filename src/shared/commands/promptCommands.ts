@@ -11,7 +11,7 @@
 // 产出物的天然载体。
 // ============================================================================
 
-export type PromptCommandSource = 'file' | 'mcp';
+export type PromptCommandSource = 'file' | 'mcp' | 'builtin';
 
 export interface PromptCommandInfo {
   name: string;

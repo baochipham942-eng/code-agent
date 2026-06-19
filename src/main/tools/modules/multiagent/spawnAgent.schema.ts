@@ -117,6 +117,10 @@ const spawnInputSchema = {
         required: ['role', 'task'],
       },
     },
+    run_in_background: {
+      type: 'boolean',
+      description: 'Run the subagent in the background: returns a stable agent_id immediately without blocking the foreground turn. Query status / fetch the result later by agent_id. (ADR-025 A1: in-process only, not resumable across app restart.)',
+    },
   },
   required: [] as string[],
 };

@@ -70,7 +70,6 @@ describe('architecture debt report', () => {
       'src/main/agent/subagentExecutor.ts',
       'src/main/ipc/workspace.ipc.ts',
       'src/main/services/core/repositories/SessionRepository.ts',
-      'src/main/services/skills/builtinSkills.ts',
       'src/main/telemetry/telemetryStorage.ts',
       'src/renderer/components/Sidebar.tsx',
       'src/renderer/components/features/chat/ChatInput/index.tsx',

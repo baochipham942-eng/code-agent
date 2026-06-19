@@ -88,22 +88,18 @@ import { GoalComposerCard } from './GoalComposerCard';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import {
-  applyAgentMentionSuggestion,
   buildDirectRoutingPlaceholder,
-  getLeadingAgentMentionAutocomplete,
   getPreferredAgentMentionToken,
   isLeadingAgentMentionInput,
 } from './agentMentionRouting';
 import {
-  applyAgentCommandOption,
   getAgentCommandToken,
-  getAgentCommandOptions,
-  getAgentSlashCommandQuery,
   parseAgentSlashCommand,
 } from './agentCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
+import { useChatInputAgentCommand } from './useChatInputAgentCommand';
 import {
   clearDebugDraftParamsFromCurrentUrl,
   readDebugDraftFromLocation,
@@ -197,9 +193,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
-  const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
-  const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
-  const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
   const [providerHealthMap, setProviderHealthMap] = useState<Record<string, ModelStrategyProviderHealthSnapshot>>({});
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
@@ -284,21 +277,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   );
   const updateSessionMemoryMode = useSessionStore((state) => state.updateSessionMemoryMode);
   const swarmAgents = useSwarmStore((state) => state.agents);
-  const agentMentionAutocomplete = useMemo(
-    () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
-    [swarmAgents, value],
-  );
-  const isAgentMentionAutocompleteOpen = Boolean(
-    agentMentionAutocomplete
-    && agentMentionAutocomplete.matches.length > 0
-    && dismissedAgentAutocompleteValue !== value,
-  );
-  const agentSlashCommandQuery = useMemo(() => getAgentSlashCommandQuery(value), [value]);
-  const agentCommandOptions = useMemo(
-    () => agentSlashCommandQuery === null ? [] : getAgentCommandOptions(agentEntries, agentSlashCommandQuery),
-    [agentEntries, agentSlashCommandQuery],
-  );
-  const isAgentCommandAutocompleteOpen = agentSlashCommandQuery !== null && agentCommandOptions.length > 0;
   const selectedDirectAgents = useMemo(
     () => swarmAgents.filter((agent) => targetAgentIds.includes(agent.id)),
     [swarmAgents, targetAgentIds],
@@ -436,17 +414,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, [value]);
 
-  useEffect(() => {
-    setSelectedAgentMentionIndex(0);
-    if (dismissedAgentAutocompleteValue && dismissedAgentAutocompleteValue !== value) {
-      setDismissedAgentAutocompleteValue(null);
-    }
-  }, [agentMentionAutocomplete?.query, agentMentionAutocomplete?.matches.length, dismissedAgentAutocompleteValue, value]);
-
-  useEffect(() => {
-    setSelectedAgentCommandIndex(0);
-  }, [agentSlashCommandQuery, agentCommandOptions.length]);
-
   // Handle suggestion selection
   const handleSuggestionSelect = useCallback((text: string) => {
     setValue(text);
@@ -493,25 +460,32 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     inputAreaRef.current?.focus();
   }, [value, atQuery, dismissAutocomplete]);
 
-  const handleAgentMentionSelect = useCallback((agentId: string) => {
-    const agent = swarmAgents.find((item) => item.id === agentId);
-    if (!agent) return;
-    setValue((prev) => applyAgentMentionSuggestion(prev, agent));
-    setDismissedAgentAutocompleteValue(null);
-    inputAreaRef.current?.focus();
-  }, [swarmAgents]);
-
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
   }, []);
 
-  const openAgentCommand = useCallback(() => {
-    setValue('/agent ');
-    setShowSlashPopover(false);
-    setSlashFilter('');
-    setDismissedAgentAutocompleteValue(null);
-    focusComposer();
-  }, [focusComposer]);
+  // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
+  const {
+    selectedAgentMentionIndex,
+    selectedAgentCommandIndex,
+    agentMentionAutocomplete,
+    agentCommandOptions,
+    isAgentMentionAutocompleteOpen,
+    isAgentCommandAutocompleteOpen,
+    openAgentCommand,
+    handleAgentMentionSelect,
+    handleAgentCommandOptionSelect,
+    handleAutocompleteKeyDown,
+  } = useChatInputAgentCommand({
+    value,
+    swarmAgents,
+    agentEntries,
+    inputAreaRef,
+    focusComposer,
+    setValue,
+    setShowSlashPopover,
+    setSlashFilter,
+  });
 
   const markSkillSelected = useCallback((skillName: string) => {
     const currentSelectedSkillIds = useComposerStore.getState().selectedSkillIds;
@@ -712,89 +686,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     selectWorkbenchCapabilityForCurrentTurn,
     setActiveAgentId,
     skillRecommendations,
-    value,
-  ]);
-
-  const handleAgentCommandOptionSelect = useCallback((index: number) => {
-    const option = agentCommandOptions[index];
-    if (!option) return;
-    setValue(applyAgentCommandOption(option));
-    setSelectedAgentCommandIndex(index);
-    requestAnimationFrame(() => inputAreaRef.current?.focus());
-  }, [agentCommandOptions]);
-
-  const handleAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isAgentCommandAutocompleteOpen) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedAgentCommandIndex((prev) => (prev + 1) % agentCommandOptions.length);
-        return true;
-      }
-
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedAgentCommandIndex((prev) => (
-          prev === 0 ? agentCommandOptions.length - 1 : prev - 1
-        ));
-        return true;
-      }
-
-      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
-        e.preventDefault();
-        handleAgentCommandOptionSelect(selectedAgentCommandIndex);
-        return true;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setValue('');
-        return true;
-      }
-    }
-
-    if (!isAgentMentionAutocompleteOpen || !agentMentionAutocomplete) {
-      return false;
-    }
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedAgentMentionIndex((prev) => (prev + 1) % agentMentionAutocomplete.matches.length);
-      return true;
-    }
-
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedAgentMentionIndex((prev) => (
-        prev === 0 ? agentMentionAutocomplete.matches.length - 1 : prev - 1
-      ));
-      return true;
-    }
-
-    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
-      const selected = agentMentionAutocomplete.matches[selectedAgentMentionIndex];
-      if (selected) {
-        e.preventDefault();
-        handleAgentMentionSelect(selected.id);
-        return true;
-      }
-    }
-
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      setDismissedAgentAutocompleteValue(value);
-      return true;
-    }
-
-    return false;
-  }, [
-    agentMentionAutocomplete,
-    agentCommandOptions.length,
-    handleAgentCommandOptionSelect,
-    handleAgentMentionSelect,
-    isAgentCommandAutocompleteOpen,
-    isAgentMentionAutocompleteOpen,
-    selectedAgentCommandIndex,
-    selectedAgentMentionIndex,
     value,
   ]);
 

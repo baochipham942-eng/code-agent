@@ -57,12 +57,10 @@ import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
-import { getSidebarGroupKeyForSession, isWorkspaceExpanded } from '../utils/workspaceGrouping';
+import { isWorkspaceExpanded } from '../utils/workspaceGrouping';
 import {
   buildSidebarProjectSummary,
   formatSidebarProjectSummaryLine,
-  type SidebarProjectArtifactMeta,
-  type SidebarProjectGoalMeta,
 } from '../utils/sidebarProjectSummary';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarProjectDetail } from './features/sidebar/SidebarProjectDetail';
@@ -78,25 +76,16 @@ import {
 } from './features/sidebar/sidebarPresentation';
 import ipcService from '../services/ipcService';
 import {
-  renameProject,
-  setProjectDescription,
-  setProjectStatus,
-  updateProjectGoalStatus,
-} from '../services/projectClient';
-import {
   getDisplaySessionTitle,
   getSessionStatusPresentation,
 } from '../utils/sessionPresentation';
-import { buildSessionAssetsNavigation } from '../utils/sessionAssetsNavigation';
 import { buildSessionRecoveryHints, hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import {
   resolveSidebarGroupExpansionView,
-  type SidebarGroupExpansionView,
 } from '../utils/sidebarGroupExpansion';
 import {
   formatSidebarMessageSearchHitLabel,
   formatSidebarMessageSearchHitMeta,
-  type SidebarMessageSearchHit,
 } from '../utils/sidebarMessageSearch';
 import { type SessionReplayEvidence } from '../utils/sessionReplayEvidence';
 import { openSessionReplayEvidenceTarget } from '../utils/openSessionReplayEvidence';
@@ -105,11 +94,10 @@ import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
 import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedSessions';
+import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import type { StructuredReplay } from '@shared/contract/evaluation';
-import type { ProjectStatus } from '@shared/contract/project';
 
 const logger = createLogger('Sidebar');
-const SIDEBAR_GROUP_COLLAPSE_DELAY_MS = 160;
 const SESSION_STATUS_FILTER_OPTIONS: Array<{ id: SessionStatusFilter; label: string; adminOnly?: boolean }> = [
   { id: 'all', label: '全部' },
   { id: 'unfinished', label: '未完成' },
@@ -404,296 +392,44 @@ export const Sidebar: React.FC = () => {
     collapseTimersRef.current = {};
   }, []);
 
-  const handleToggleWorkspaceGroup = useCallback((workspaceKey: string, view: SidebarGroupExpansionView) => {
-    if (view.forceExpanded) {
-      return;
-    }
-
-    const existingTimer = collapseTimersRef.current[workspaceKey];
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      delete collapseTimersRef.current[workspaceKey];
-    }
-
-    if (view.isVisibleExpanded) {
-      setCollapsingWorkspaces((previous) => ({ ...previous, [workspaceKey]: true }));
-      collapseTimersRef.current[workspaceKey] = setTimeout(() => {
-        setWorkspaceExpanded(workspaceKey, false);
-        setCollapsingWorkspaces((previous) => {
-          const next = { ...previous };
-          delete next[workspaceKey];
-          return next;
-        });
-        delete collapseTimersRef.current[workspaceKey];
-      }, SIDEBAR_GROUP_COLLAPSE_DELAY_MS);
-      return;
-    }
-
-    setCollapsingWorkspaces((previous) => {
-      if (!previous[workspaceKey]) {
-        return previous;
-      }
-      const next = { ...previous };
-      delete next[workspaceKey];
-      return next;
-    });
-    setWorkspaceExpanded(workspaceKey, true);
-  }, [setWorkspaceExpanded]);
-
-  // D-11: 顶部「新会话」默认为纯 chat，不继承项目上下文（workingDirectory: null）。
-  // 需要项目上下文的会话改由各项目组 header 的 + 按钮（createWorkspaceChat）创建。
-  // 原独立「空白」入口已下线。
-  const handleNewChat = async () => {
-    if (isCreatingSession || creatingWorkspaceKey) {
-      return;
-    }
-
-    setCreatingSessionMode('current');
-    try {
-      const session = await createSession('新对话', { workingDirectory: null });
-      if (session) {
-        setWorkspaceExpanded(getSidebarGroupKeyForSession(session), true);
-      }
-      clearPlanningState();
-    } finally {
-      setCreatingSessionMode(null);
-    }
-  };
-
-  const createWorkspaceChat = useCallback(async (
-    workspaceKey: string,
-    workingDirectory?: string,
-  ) => {
-    const directory = workingDirectory?.trim();
-    if (!directory || isCreatingSession || creatingWorkspaceKey) {
-      return;
-    }
-
-    setCreatingWorkspaceKey(workspaceKey);
-    try {
-      const session = await createSession('新对话', { workingDirectory: directory });
-      if (session) {
-        setWorkingDirectory(directory);
-        setWorkspaceExpanded(workspaceKey, true);
-        clearPlanningState();
-      }
-    } finally {
-      setCreatingWorkspaceKey(null);
-    }
-  }, [
-    clearPlanningState,
-    createSession,
-    creatingWorkspaceKey,
-    isCreatingSession,
+  const {
+    handleToggleWorkspaceGroup,
+    handleNewChat,
+    createWorkspaceChat,
+    handleNewWorkspaceChat,
+    handleSelectSession,
+    handleArchiveSession,
+    handleOpenWorkspaceAssets,
+    handleOpenSessionAssets,
+    handleOpenProjectArtifactSession,
+    handleStartProjectGoal,
+    handleRenameSidebarProject,
+    handleSetSidebarProjectStatus,
+    handleSetSidebarProjectDescription,
+    handleSelectMessageSearchHit,
+  } = useSidebarSessionActions({
+    collapseTimersRef,
+    setCollapsingWorkspaces,
     setWorkspaceExpanded,
+    isCreatingSession,
+    creatingWorkspaceKey,
+    setCreatingSessionMode,
+    setCreatingWorkspaceKey,
+    createSession,
+    clearPlanningState,
     setWorkingDirectory,
-  ]);
-
-  const handleNewWorkspaceChat = async (
-    e: React.MouseEvent,
-    workspaceKey: string,
-    workingDirectory?: string,
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await createWorkspaceChat(workspaceKey, workingDirectory);
-  };
-
-  const handleSelectSession = async (sessionId: string) => {
-    if (multiSelectMode) {
-      toggleSelection(sessionId);
-      return;
-    }
-    const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[sessionId] : undefined;
-    if (messageSearchHitGroup?.bestHit) {
-      setPendingSearchJump({
-        sessionId,
-        messageId: messageSearchHitGroup.bestHit.messageId,
-        messageIndex: messageSearchHitGroup.bestHit.messageIndex,
-        turnNumber: messageSearchHitGroup.bestHit.turnNumber,
-        matchOffset: messageSearchHitGroup.bestHit.matchOffset,
-        query: searchQuery.trim(),
-        createdAt: Date.now(),
-      });
-    }
-    if (sessionId !== currentSessionId) {
-      await switchSession(sessionId);
-    }
-  };
-
-  const handleArchiveSession = async (id: string, isArchived: boolean, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isArchived) {
-      await unarchiveSession(id);
-    } else {
-      await archiveSession(id);
-    }
-  };
-
-  const handleOpenWorkspaceAssets = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openWorkspacePreview();
-  }, [openWorkspacePreview]);
-
-  const handleOpenSessionAssets = useCallback(async (e: React.MouseEvent, session: SessionWithMeta) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const navigation = buildSessionAssetsNavigation(currentSessionId, session.id);
-    if (!navigation) {
-      return;
-    }
-    if (navigation.shouldSwitchSession) {
-      await switchSession(navigation.targetSessionId);
-    }
-    openWorkspacePreview();
-  }, [currentSessionId, openWorkspacePreview, switchSession]);
-
-  const handleOpenProjectArtifactSession = useCallback(async (artifact: SidebarProjectArtifactMeta) => {
-    if (!artifact.sessionId) {
-      return;
-    }
-    const navigation = buildSessionAssetsNavigation(currentSessionId, artifact.sessionId, {
-      artifactId: artifact.id,
-      messageId: artifact.messageId,
-      path: artifact.path,
-      previewItemId: artifact.previewItemId,
-    });
-    if (!navigation) {
-      return;
-    }
-    if (navigation.shouldSwitchSession) {
-      await switchSession(navigation.targetSessionId);
-    }
-    openWorkspacePreview(navigation.workspacePreviewItemId);
-  }, [currentSessionId, openWorkspacePreview, switchSession]);
-
-  const handleStartProjectGoal = useCallback(async (
-    goal: SidebarProjectGoalMeta,
-    workspaceKey: string,
-    workingDirectory?: string,
-  ) => {
-    const directory = workingDirectory?.trim() || null;
-    const title = goal.title.length > 42 ? `目标：${goal.title.slice(0, 39)}...` : `目标：${goal.title}`;
-    const session = await createSession(title, { workingDirectory: directory });
-    if (!session) {
-      return;
-    }
-    useAppStore.getState().setPendingProjectGoalChatSeed({
-      sessionId: session.id,
-      content: goal.title,
-      goal: {
-        goal: goal.title,
-        verify: goal.verify ?? undefined,
-        review: goal.review ?? undefined,
-      },
-    });
-    if (directory) {
-      setWorkingDirectory(directory);
-    }
-    setWorkspaceExpanded(getSidebarGroupKeyForSession(session) || workspaceKey, true);
-    await updateProjectGoalStatus(goal.id, goal.status, { lastRunSessionId: session.id });
-    setProjectMetaById((previous) => {
-      const next = { ...previous };
-      for (const [projectId, meta] of Object.entries(next)) {
-        if (!meta.goals?.some((item) => item.id === goal.id)) continue;
-        next[projectId] = {
-          ...meta,
-          goals: meta.goals.map((item) =>
-            item.id === goal.id
-              ? { ...item, lastRunSessionId: session.id }
-              : item
-          ),
-        };
-      }
-      return next;
-    });
-    clearPlanningState();
-  }, [clearPlanningState, createSession, setWorkspaceExpanded, setWorkingDirectory]);
-
-  const handleRenameSidebarProject = useCallback(async (projectId: string, name: string) => {
-    const updated = await renameProject(projectId, name);
-    setProjectMetaById((previous) => {
-      const current = previous[projectId];
-      if (!current) {
-        return previous;
-      }
-      return {
-        ...previous,
-        [projectId]: {
-          ...current,
-          name: updated.name,
-          status: updated.status,
-          description: updated.description,
-          updatedAt: updated.updatedAt,
-        },
-      };
-    });
-  }, []);
-
-  const handleSetSidebarProjectStatus = useCallback(async (projectId: string, status: ProjectStatus) => {
-    const updated = await setProjectStatus(projectId, status);
-    setProjectMetaById((previous) => {
-      const current = previous[projectId];
-      if (!current) {
-        return previous;
-      }
-      return {
-        ...previous,
-        [projectId]: {
-          ...current,
-          name: updated.name,
-          status: updated.status,
-          description: updated.description,
-          updatedAt: updated.updatedAt,
-        },
-      };
-    });
-  }, []);
-
-  const handleSetSidebarProjectDescription = useCallback(async (
-    projectId: string,
-    description: string | null,
-  ) => {
-    const updated = await setProjectDescription(projectId, description);
-    setProjectMetaById((previous) => {
-      const current = previous[projectId];
-      if (!current) {
-        return previous;
-      }
-      return {
-        ...previous,
-        [projectId]: {
-          ...current,
-          name: updated.name,
-          status: updated.status,
-          description: updated.description,
-          updatedAt: updated.updatedAt,
-        },
-      };
-    });
-  }, []);
-
-  const handleSelectMessageSearchHit = useCallback(async (
-    e: React.MouseEvent,
-    sessionId: string,
-    hit: SidebarMessageSearchHit,
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setPendingSearchJump({
-      sessionId,
-      messageId: hit.messageId,
-      messageIndex: hit.messageIndex,
-      turnNumber: hit.turnNumber,
-      matchOffset: hit.matchOffset,
-      query: searchQuery.trim(),
-      createdAt: Date.now(),
-    });
-    if (sessionId !== currentSessionId) {
-      await switchSession(sessionId);
-    }
-  }, [currentSessionId, searchQuery, setPendingSearchJump, switchSession]);
+    multiSelectMode,
+    toggleSelection,
+    searchQuery,
+    messageSearchHitsBySessionId,
+    setPendingSearchJump,
+    currentSessionId,
+    switchSession,
+    unarchiveSession,
+    archiveSession,
+    openWorkspacePreview,
+    setProjectMetaById,
+  });
 
   // 右键菜单
   const handleContextMenu = useCallback((e: React.MouseEvent, session: SessionWithMeta) => {

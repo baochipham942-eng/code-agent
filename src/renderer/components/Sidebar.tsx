@@ -17,18 +17,13 @@ import { useWorkflowStore } from '../stores/workflowStore';
 import {
   MessageSquare,
   Plus,
-  Archive,
-  ArchiveRestore,
   Loader2,
   User,
   Settings,
   LogIn,
   LogOut,
   ChevronDown,
-  CheckSquare,
-  Square,
   Trash2,
-  Pin,
   Search,
   X,
   Folder,
@@ -46,15 +41,13 @@ import {
   Ticket,
   Download,
   ListChecks,
-  Eye,
-  ShieldAlert,
   PanelRightOpen,
   ListFilter,
   Check,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useUIStore } from '../stores/uiStore';
-import { IconButton, UndoToast } from './primitives';
+import { UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { isWorkspaceExpanded } from '../utils/workspaceGrouping';
 import {
@@ -64,13 +57,12 @@ import {
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarProjectDetail } from './features/sidebar/SidebarProjectDetail';
 import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
-import { SidebarMessageHitList } from './features/sidebar/SidebarMessageHitList';
+import { SidebarSessionItem } from './features/sidebar/SidebarSessionItem';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import {
   AccountMenuItem,
   AccountMenuLabel,
-  canReuseSessionWorkbench,
   getRelativeTime,
 } from './features/sidebar/sidebarPresentation';
 import ipcService from '../services/ipcService';
@@ -78,15 +70,10 @@ import {
   getDisplaySessionTitle,
   getSessionStatusPresentation,
 } from '../utils/sessionPresentation';
-import { buildSessionRecoveryHints, hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
+import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import {
   resolveSidebarGroupExpansionView,
 } from '../utils/sidebarGroupExpansion';
-import {
-  formatSidebarMessageSearchHitLabel,
-  formatSidebarMessageSearchHitMeta,
-} from '../utils/sidebarMessageSearch';
-import { type SessionReplayEvidence } from '../utils/sessionReplayEvidence';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
@@ -117,23 +104,6 @@ const SESSION_STATUS_FILTER_LABELS: Record<SessionStatusFilter, string> = {
   review: '待审',
   background: '后台执行中',
 };
-
-function formatReplayEvidenceOverflowTitle(evidence: SessionReplayEvidence[]): string {
-  return evidence
-    .slice(2)
-    .map((item) => `${item.type === 'trace' ? 'Trace' : 'Replay'} · ${item.label}`)
-    .join('\n');
-}
-
-function formatReplayEvidenceButtonTitle(
-  evidence: SessionReplayEvidence,
-  canOpenSessionReplay: boolean,
-): string {
-  if (evidence.actionKind !== 'sessionReplay' || canOpenSessionReplay) {
-    return evidence.title;
-  }
-  return `${evidence.title}\n结构化 Replay 仅管理员可打开`;
-}
 
 export function isAccountMenuEventOutside(
   accountMenuElement: { contains: (node: Node) => boolean } | null,
@@ -537,275 +507,6 @@ export const Sidebar: React.FC = () => {
     sessionStates,
   ]);
 
-  // 渲染单个会话项
-  const renderSessionItem = (session: SessionWithMeta) => {
-    const isUnread = unreadSessionIds.has(session.id);
-    const isSelected = currentSessionId === session.id;
-    const isChecked = selectedSessionIds.has(session.id);
-    const isPinned = pinnedSessionIds.has(session.id);
-    const isRenaming = renamingId === session.id;
-    const sessionRuntime = sessionRuntimes.get(session.id);
-    const backgroundTask = backgroundTaskMap.get(session.id);
-    // 空会话（0 轮 / 0 消息）没有可回放内容，行内不展示 Replay 入口，避免「新对话」上挂个没用的图标。
-    const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
-    const status = getSessionStatusPresentation({
-      backgroundTask,
-      runtime: sessionRuntime,
-      taskState: sessionStates[session.id],
-      messageCount: session.messageCount,
-      turnCount: session.turnCount,
-      sessionStatus: session.status,
-      hasPendingApproval: hasPendingApprovalForSession(session.id),
-    });
-    const latestActivityAt = Math.max(
-      session.updatedAt || 0,
-      sessionRuntime?.lastActivityAt || 0,
-      backgroundTask?.backgroundedAt || 0,
-    );
-    const snapshotSummary = session.workbenchSnapshot?.summary?.trim() || '';
-    const hasMeaningfulSummary = snapshotSummary && snapshotSummary !== '纯对话';
-    const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
-    const messageSearchHit = messageSearchHitGroup?.bestHit;
-    const lastActiveLabel = getRelativeTime(latestActivityAt, true);
-    const typeLabel = getSessionTypeLabel(session.type);
-    const displayTitle = getDisplaySessionTitle(session.title);
-    const canOpenSessionAssets = canReuseSessionWorkbench(session);
-    const replayEvidence = replayEvidenceBySessionId.get(session.id) ?? [];
-    const hasReplaySignal = replayEvidence.length > 0;
-    const recoveryHints = buildSessionRecoveryHints(session, {
-      hasReplay: hasReplaySignal,
-      canOpenReplay: canOpenSessionReplay,
-    });
-    const pendingReviewItems = (reviewItemsBySessionId[session.id] ?? [])
-      .filter((item) => item.reviewStatus === 'pending');
-    const topReviewItem = pendingReviewItems[0];
-
-    return (
-      <div
-        key={session.id}
-        onClick={() => handleSelectSession(session.id)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            void handleSelectSession(session.id);
-          }
-        }}
-        onContextMenu={(e) => handleContextMenu(e, session)}
-        onMouseEnter={() => setHoveredSession(session.id)}
-        onMouseLeave={() => setHoveredSession(null)}
-        role="button"
-        tabIndex={0}
-        aria-current={isSelected && !multiSelectMode ? 'true' : undefined}
-        aria-label={`打开会话 ${displayTitle}`}
-        data-session-id={session.id}
-        className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 ${
-          isSelected && !multiSelectMode
-            ? 'bg-zinc-700/60'
-            : isChecked
-              ? 'bg-blue-500/10 border border-blue-500/20'
-              : 'hover:bg-zinc-800'
-        }`}
-      >
-        {/* 多选模式：Checkbox */}
-        {multiSelectMode && (
-          <div className="flex items-center mb-1">
-            {isChecked ? (
-              <CheckSquare className="w-4 h-4 text-blue-400" />
-            ) : (
-              <Square className="w-4 h-4 text-zinc-500" />
-            )}
-          </div>
-        )}
-
-        {/* Line 1: status indicators + title */}
-        <div className="flex items-center gap-2">
-          {/* 置顶图标 */}
-          {isPinned && !multiSelectMode && (
-            <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
-          )}
-
-          {/* 标题：重命名模式 vs 普通 */}
-          {isRenaming ? (
-            <input
-              ref={renameInputRef}
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onBlur={handleRenameSubmit}
-              onKeyDown={handleRenameKeyDown}
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-hidden"
-            />
-          ) : (
-            <span
-              onDoubleClick={(e) => handleDoubleClick(e, session)}
-              className={`text-sm truncate font-medium flex-1 ${
-                isSelected ? 'text-zinc-100' : 'text-zinc-400'
-              }`}
-            >
-              {displayTitle}
-            </span>
-          )}
-
-          {!multiSelectMode && !isRenaming && (
-            <>
-              {/* D-9: Replay 仅管理员可用 — 非管理员直接不渲染；空会话也不渲染（无可回放内容） */}
-              {canOpenSessionReplay && sessionHasActivity && (
-                <button
-                  type="button"
-                  aria-label={`打开 ${displayTitle} Replay`}
-                  title={`打开 ${displayTitle} Replay`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    void handleOpenSessionReplay(session);
-                  }}
-                  className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {topReviewItem && (
-                <button
-                  type="button"
-                  aria-label={`打开 ${displayTitle} 的 Review 证据`}
-                  title={`${pendingReviewItems.length} 个待审 issue · ${topReviewItem.title}`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    void handleOpenSessionReplay(session);
-                  }}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-colors hover:border-amber-400/30 hover:bg-amber-500/15 hover:text-amber-200 focus:outline-hidden"
-                >
-                  <ShieldAlert className="h-3 w-3" />
-                  <span>{pendingReviewItems.length} 待审</span>
-                </button>
-              )}
-              {canOpenSessionAssets && (
-                <button
-                  type="button"
-                  aria-label={`打开 ${displayTitle} 的产物与资产`}
-                  title={`打开 ${displayTitle} 的产物与资产`}
-                  onClick={(event) => { void handleOpenSessionAssets(event, session); }}
-                  className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
-                >
-                  <ScrollText className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {typeLabel && (
-                <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-opacity duration-150 group-hover:opacity-0">
-                  {typeLabel}
-                </span>
-              )}
-              {status.showBadge && (
-                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}>
-                  {status.label}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Line 2: summary + recent activity */}
-        {!isRenaming && (
-          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-600">
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-              {messageSearchHit ? (
-                <span className="truncate text-zinc-400">
-                  <span className="text-zinc-500">
-                    {formatSidebarMessageSearchHitMeta(messageSearchHit)}
-                  </span>
-                  <span> · {formatSidebarMessageSearchHitLabel(messageSearchHit)}</span>
-                </span>
-              ) : hasMeaningfulSummary && (
-                <span className="truncate text-zinc-500">
-                  {snapshotSummary}
-                </span>
-              )}
-              {recoveryHints.map((hint) => (
-                <span
-                  key={`${session.id}:${hint.kind}:${hint.label}`}
-                  title={hint.title}
-                  className="shrink-0 rounded border border-zinc-700/60 bg-zinc-900/70 px-1 py-0.5 text-[10px] font-medium text-zinc-500"
-                >
-                  {hint.label}
-                </span>
-              ))}
-            </span>
-            <span className="text-[10px] text-zinc-600 shrink-0">
-              {(session.turnCount ?? 0) > 0 ? `${session.turnCount} 轮 · ${lastActiveLabel}` : lastActiveLabel}
-            </span>
-          </div>
-        )}
-
-        {!isRenaming && replayEvidence.length > 0 && (
-          <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden text-[10px] text-zinc-500">
-            {replayEvidence.slice(0, 2).map((evidence) => (
-              <button
-                key={evidence.id}
-                type="button"
-                aria-label={canOpenSessionReplay
-                  || evidence.actionKind !== 'sessionReplay'
-                  ? `打开 ${displayTitle} 的 ${evidence.label}`
-                  : `Replay 仅管理员可用：${displayTitle} 的 ${evidence.label}`}
-                title={formatReplayEvidenceButtonTitle(evidence, canOpenSessionReplay)}
-                disabled={evidence.actionKind === 'sessionReplay' && !canOpenSessionReplay}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void handleOpenReplayEvidence(session, evidence);
-                }}
-                className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-zinc-700/60 bg-zinc-900/50 px-1.5 py-0.5 text-zinc-500 transition-colors hover:border-zinc-600 hover:bg-zinc-800/80 hover:text-zinc-300 focus:outline-hidden disabled:cursor-not-allowed disabled:hover:border-zinc-700/60 disabled:hover:bg-zinc-900/50 disabled:hover:text-zinc-500"
-              >
-                <span className="shrink-0 text-zinc-600">
-                  {evidence.type === 'trace' ? 'Trace' : 'Replay'}
-                </span>
-                <span className="truncate">
-                  {evidence.label}
-                </span>
-              </button>
-            ))}
-            {replayEvidence.length > 2 && (
-              <span
-                title={formatReplayEvidenceOverflowTitle(replayEvidence)}
-                className="shrink-0 rounded border border-zinc-700/60 bg-zinc-900/50 px-1.5 py-0.5 text-zinc-600"
-              >
-                +{replayEvidence.length - 2}
-              </span>
-            )}
-          </div>
-        )}
-
-        {!isRenaming && messageSearchHitGroup && (
-          <SidebarMessageHitList
-            sessionId={session.id}
-            hits={messageSearchHitGroup.hits}
-            onSelectHit={handleSelectMessageSearchHit}
-          />
-        )}
-
-        {/* Hover actions — absolute positioned top-right */}
-        {hoveredSession === session.id && !multiSelectMode && !isRenaming && (
-          <div className="absolute top-1.5 right-2 flex items-center gap-0.5">
-            <IconButton
-              icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-              aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
-              onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
-              variant="ghost"
-              size="sm"
-              className="!p-1 opacity-0 group-hover:opacity-100"
-              title={session.isArchived ? "取消归档" : "归档"}
-            />
-          </div>
-        )}
-
-        {/* 未读指示器 */}
-        {isUnread && !multiSelectMode && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-purple-500 rounded-full" />
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: h-12 to align with TitleBar on the right */}
@@ -1164,7 +865,39 @@ export const Sidebar: React.FC = () => {
                               '--sidebar-row-delay': `${Math.min(index * 24, 160)}ms`,
                             } as React.CSSProperties}
                           >
-                            {renderSessionItem(session as SessionWithMeta)}
+                            <SidebarSessionItem
+                              session={session as SessionWithMeta}
+                              unreadSessionIds={unreadSessionIds}
+                              currentSessionId={currentSessionId}
+                              selectedSessionIds={selectedSessionIds}
+                              pinnedSessionIds={pinnedSessionIds}
+                              renamingId={renamingId}
+                              sessionRuntimes={sessionRuntimes}
+                              backgroundTaskMap={backgroundTaskMap}
+                              sessionStates={sessionStates}
+                              hasPendingApprovalForSession={hasPendingApprovalForSession}
+                              searchQuery={searchQuery}
+                              messageSearchHitsBySessionId={messageSearchHitsBySessionId}
+                              replayEvidenceBySessionId={replayEvidenceBySessionId}
+                              canOpenSessionReplay={canOpenSessionReplay}
+                              reviewItemsBySessionId={reviewItemsBySessionId}
+                              multiSelectMode={multiSelectMode}
+                              hoveredSession={hoveredSession}
+                              renameValue={renameValue}
+                              renameInputRef={renameInputRef}
+                              setHoveredSession={setHoveredSession}
+                              setRenameValue={setRenameValue}
+                              handleSelectSession={handleSelectSession}
+                              handleContextMenu={handleContextMenu}
+                              handleRenameSubmit={handleRenameSubmit}
+                              handleRenameKeyDown={handleRenameKeyDown}
+                              handleDoubleClick={handleDoubleClick}
+                              handleOpenSessionReplay={handleOpenSessionReplay}
+                              handleOpenSessionAssets={handleOpenSessionAssets}
+                              handleOpenReplayEvidence={handleOpenReplayEvidence}
+                              handleSelectMessageSearchHit={handleSelectMessageSearchHit}
+                              handleArchiveSession={handleArchiveSession}
+                            />
                           </div>
                         ))
                       )}

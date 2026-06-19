@@ -3,7 +3,7 @@
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
 
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { useSessionUIStore, type SessionStatusFilter } from '../stores/sessionUIStore';
@@ -57,13 +57,12 @@ import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
-import { getSidebarGroupKeyForSession, groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGrouping';
+import { getSidebarGroupKeyForSession, isWorkspaceExpanded } from '../utils/workspaceGrouping';
 import {
   buildSidebarProjectSummary,
   formatSidebarProjectSummaryLine,
   type SidebarProjectArtifactMeta,
   type SidebarProjectGoalMeta,
-  type SidebarProjectMeta,
 } from '../utils/sidebarProjectSummary';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarProjectDetail } from './features/sidebar/SidebarProjectDetail';
@@ -79,49 +78,37 @@ import {
 } from './features/sidebar/sidebarPresentation';
 import ipcService from '../services/ipcService';
 import {
-  getProjectArtifacts,
-  getProjectDetail,
   renameProject,
   setProjectDescription,
   setProjectStatus,
   updateProjectGoalStatus,
 } from '../services/projectClient';
 import {
-  buildSessionSearchText,
   getDisplaySessionTitle,
   getSessionStatusPresentation,
-  matchesSessionStatusFilter,
 } from '../utils/sessionPresentation';
 import { buildSessionAssetsNavigation } from '../utils/sessionAssetsNavigation';
-import { sortSidebarSessionsForRecovery } from '../utils/sidebarSessionOrdering';
 import { buildSessionRecoveryHints, hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import {
   resolveSidebarGroupExpansionView,
   type SidebarGroupExpansionView,
 } from '../utils/sidebarGroupExpansion';
 import {
-  buildSidebarMessageSearchHitGroups,
   formatSidebarMessageSearchHitLabel,
   formatSidebarMessageSearchHitMeta,
-  getCurrentProjectSearchSessionIds,
-  resolveSidebarSearchScope,
   type SidebarMessageSearchHit,
-  type SidebarMessageSearchHitGroup,
-  type SidebarSearchScope,
 } from '../utils/sidebarMessageSearch';
-import { buildSessionReplayEvidenceMap, type SessionReplayEvidence } from '../utils/sessionReplayEvidence';
+import { type SessionReplayEvidence } from '../utils/sessionReplayEvidence';
 import { openSessionReplayEvidenceTarget } from '../utils/openSessionReplayEvidence';
 import { copyPathToClipboard, openExternalLink } from '../utils/platform';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
+import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedSessions';
 import type { StructuredReplay } from '@shared/contract/evaluation';
-import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
 import type { ProjectStatus } from '@shared/contract/project';
-import type { CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
 
 const logger = createLogger('Sidebar');
-const SIDEBAR_MESSAGE_SEARCH_DEBOUNCE_MS = 250;
 const SIDEBAR_GROUP_COLLAPSE_DELAY_MS = 160;
 const SESSION_STATUS_FILTER_OPTIONS: Array<{ id: SessionStatusFilter; label: string; adminOnly?: boolean }> = [
   { id: 'all', label: '全部' },
@@ -209,9 +196,6 @@ export const Sidebar: React.FC = () => {
     setShowKnowledgeMemoryPanel,
     showComputerUsePanel,
     setShowComputerUsePanel,
-    pendingPermissionRequest,
-    pendingPermissionSessionId,
-    queuedPermissionRequests,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
@@ -234,7 +218,6 @@ export const Sidebar: React.FC = () => {
     unarchiveSession,
     unreadSessionIds,
     sessionRuntimes,
-    backgroundTasks,
     renameSession,
   } = useSessionStore();
 
@@ -356,10 +339,6 @@ export const Sidebar: React.FC = () => {
     y: number;
     session: SessionWithMeta;
   } | null>(null);
-  const [searchScope, setSearchScope] = useState<SidebarSearchScope>('current-project');
-  const [messageSearchHitsBySessionId, setMessageSearchHitsBySessionId] = useState<Record<string, SidebarMessageSearchHitGroup>>({});
-  const [messageSearchLoading, setMessageSearchLoading] = useState(false);
-  const [reviewItemsBySessionId, setReviewItemsBySessionId] = useState<Record<string, AdminReviewQueueItem[]>>({});
   const [replayDialog, setReplayDialog] = useState<{
     sessionId: string;
     sessionTitle: string;
@@ -399,282 +378,26 @@ export const Sidebar: React.FC = () => {
     }
   }, [renamingId]);
 
-  const backgroundTaskMap = useMemo(
-    () => new Map(backgroundTasks.map((task) => [task.sessionId, task])),
-    [backgroundTasks],
-  );
-
-  const replayEvidenceBySessionId = useMemo(
-    () => buildSessionReplayEvidenceMap(workflowRuns, durableBackgroundTasks),
-    [durableBackgroundTasks, workflowRuns],
-  );
-
-  const hasPendingApprovalForSession = useCallback(
-    (sessionId: string) => Boolean(
-      (pendingPermissionRequest && pendingPermissionSessionId === sessionId) ||
-      (queuedPermissionRequests?.[sessionId]?.length ?? 0) > 0
-    ),
-    [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests],
-  );
-
-  const currentProjectSearchSessionIds = useMemo(
-    () => getCurrentProjectSearchSessionIds(sessions, currentSessionId),
-    [currentSessionId, sessions],
-  );
-  const effectiveSearchScope = resolveSidebarSearchScope(searchScope, currentProjectSearchSessionIds);
-  const allowedSearchSessionIds = useMemo(
-    () => effectiveSearchScope === 'current-project'
-      ? currentProjectSearchSessionIds
-      : new Set(sessions.map((session) => session.id)),
-    [currentProjectSearchSessionIds, effectiveSearchScope, sessions],
-  );
-
-  useEffect(() => {
-    const query = searchQuery.trim();
-    if (!query) {
-      setMessageSearchHitsBySessionId({});
-      setMessageSearchLoading(false);
-      return undefined;
-    }
-
-    const allowedSessionIds = allowedSearchSessionIds;
-    const sessionIds = Array.from(allowedSessionIds);
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      setMessageSearchLoading(true);
-      void ipcService.invoke(IPC_CHANNELS.SESSION_SEARCH, {
-        query,
-        options: { limit: 80, sessionIds },
-      }).then((results) => {
-        if (cancelled) return;
-        const typedResults = results as CrossSessionSearchResults | null | undefined;
-        setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(
-          typedResults?.results ?? [],
-          allowedSessionIds,
-        ));
-      }).catch((error) => {
-        if (cancelled) return;
-        logger.warn('Sidebar message search failed', {
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
-        setMessageSearchHitsBySessionId({});
-      }).finally(() => {
-        if (!cancelled) {
-          setMessageSearchLoading(false);
-        }
-      });
-    }, SIDEBAR_MESSAGE_SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [allowedSearchSessionIds, searchQuery]);
-
-  // Apply local metadata search, message-content hits, and session-native status filter.
-  const filteredSessions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return sessions.filter((session) => {
-      const status = getSessionStatusPresentation({
-        backgroundTask: backgroundTaskMap.get(session.id),
-        runtime: sessionRuntimes.get(session.id),
-        taskState: sessionStates[session.id],
-        messageCount: session.messageCount,
-        turnCount: session.turnCount,
-        sessionStatus: session.status,
-        hasPendingApproval: hasPendingApprovalForSession(session.id),
-      });
-      const hasPendingReview = (reviewItemsBySessionId[session.id] ?? [])
-        .some((item) => item.reviewStatus === 'pending');
-      if (!matchesSessionStatusFilter(sessionStatusFilter, status.kind, {
-        hasDeliverySignals: hasSessionDeliverySignals(session, {
-          hasReplay: replayEvidenceBySessionId.has(session.id),
-        }),
-        hasPendingReview,
-      })) {
-        return false;
-      }
-
-      if (!q) {
-        return true;
-      }
-
-      if (!allowedSearchSessionIds.has(session.id)) {
-        return false;
-      }
-
-      if (messageSearchHitsBySessionId[session.id]) {
-        return true;
-      }
-
-      return buildSessionSearchText({
-        session,
-        snapshot: session.workbenchSnapshot,
-        status,
-      }).includes(q);
-    });
-  }, [
+  const {
     backgroundTaskMap,
-    hasPendingApprovalForSession,
-    allowedSearchSessionIds,
-    messageSearchHitsBySessionId,
     replayEvidenceBySessionId,
+    hasPendingApprovalForSession,
+    currentProjectSearchSessionIds,
+    effectiveSearchScope,
+    setSearchScope,
+    messageSearchHitsBySessionId,
+    messageSearchLoading,
     reviewItemsBySessionId,
-    searchQuery,
-    sessionRuntimes,
-    sessionStatusFilter,
-    sessions,
-    sessionStates,
-  ]);
+    filteredSessions,
+    workspaceGroupedSessions,
+    projectMetaById,
+    setProjectMetaById,
+  } = useSidebarDerivedSessions({ canOpenSessionReplay });
 
-  // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
-  // sorted by latest activity; sessions without a workingDirectory go into a
-  // trailing uncategorized bucket. No time sub-groups inside workspaces.
-  const workspaceGroupedSessions = useMemo(
-    () => groupByWorkspace(filteredSessions).map((group) => ({
-      ...group,
-      sessions: sortSidebarSessionsForRecovery(
-        group.sessions,
-        (session) => getSessionStatusPresentation({
-          backgroundTask: backgroundTaskMap.get(session.id),
-          runtime: sessionRuntimes.get(session.id),
-          taskState: sessionStates[session.id],
-          messageCount: session.messageCount,
-          turnCount: session.turnCount,
-          sessionStatus: session.status,
-          hasPendingApproval: hasPendingApprovalForSession(session.id),
-        }).kind,
-        (session) => Math.max(
-          session.updatedAt || 0,
-          sessionRuntimes.get(session.id)?.lastActivityAt || 0,
-          backgroundTaskMap.get(session.id)?.backgroundedAt || 0,
-        ),
-      ),
-    })),
-    [backgroundTaskMap, filteredSessions, hasPendingApprovalForSession, sessionRuntimes, sessionStates],
-  );
-  const visibleProjectIds = useMemo(
-    () => Array.from(new Set(
-      workspaceGroupedSessions
-        .filter((group) => !group.isUncategorized)
-        .map((group) => group.projectId?.trim())
-        .filter((projectId): projectId is string => Boolean(projectId)),
-    )).sort(),
-    [workspaceGroupedSessions],
-  );
-  const [projectMetaById, setProjectMetaById] = useState<Record<string, SidebarProjectMeta>>({});
   const [expandedProjectDetails, setExpandedProjectDetails] = useState<Record<string, boolean>>({});
   const [projectDrawerKey, setProjectDrawerKey] = useState<string | null>(null);
   const [collapsingWorkspaces, setCollapsingWorkspaces] = useState<Record<string, boolean>>({});
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const visibleSessionIds = useMemo(
-    () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
-    [workspaceGroupedSessions],
-  );
-  const visibleSessionIdsKey = visibleSessionIds.join('\n');
-
-  useEffect(() => {
-    if (visibleProjectIds.length === 0) {
-      setProjectMetaById({});
-      return undefined;
-    }
-
-    let cancelled = false;
-    void Promise.all(visibleProjectIds.map(async (projectId): Promise<[string, SidebarProjectMeta] | null> => {
-      try {
-        const [detail, artifacts] = await Promise.all([
-          getProjectDetail(projectId),
-          getProjectArtifacts(projectId),
-        ]);
-        const visibleGoals = detail.goals.filter((goal) => goal.status !== 'archived');
-        const activeGoals = visibleGoals.filter((goal) => goal.status === 'active');
-        const sortedGoals = [...visibleGoals].sort((left, right) => {
-          const statusRank = (status: typeof left.status) => status === 'active' ? 0 : status === 'aborted' ? 1 : 2;
-          const rankDiff = statusRank(left.status) - statusRank(right.status);
-          if (rankDiff !== 0) return rankDiff;
-          return (right.updatedAt || 0) - (left.updatedAt || 0);
-        });
-        return [projectId, {
-          name: detail.project.name,
-          status: detail.project.status,
-          description: detail.project.description,
-          goalCount: visibleGoals.length,
-          activeGoalTitles: activeGoals.map((goal) => goal.goal),
-          goals: sortedGoals.slice(0, 5).map((goal) => ({
-            id: goal.id,
-            title: goal.goal,
-            verify: goal.verify,
-            review: goal.review,
-            status: goal.status,
-            updatedAt: goal.updatedAt,
-            lastRunSessionId: goal.lastRunSessionId,
-          })),
-          roleCount: detail.roles.length,
-          roleIds: detail.roles.map((role) => role.roleId),
-          artifactCount: artifacts.length,
-          recentArtifactTitles: artifacts.map((artifact) => artifact.title || artifact.kind),
-          recentArtifacts: artifacts.slice(0, 5).map((artifact) => ({
-            id: artifact.id,
-            sessionId: artifact.sessionId,
-            messageId: artifact.messageId,
-            title: artifact.title || artifact.kind,
-            kind: artifact.kind,
-            sessionTitle: artifact.sessionTitle,
-            createdAt: artifact.createdAt,
-            path: artifact.path,
-            url: artifact.url,
-            toolCallId: artifact.toolCallId,
-            toolName: artifact.toolName,
-            previewItemId: artifact.previewItemId,
-          })),
-          sessionCount: detail.sessionIds.length,
-          updatedAt: detail.project.updatedAt,
-        }];
-      } catch (error) {
-        logger.warn('Failed to load sidebar project summary', {
-          projectId,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
-        return null;
-      }
-    })).then((entries) => {
-      if (cancelled) return;
-      setProjectMetaById(Object.fromEntries(entries.filter((entry): entry is [string, SidebarProjectMeta] => entry !== null)));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [visibleProjectIds]);
-
-  useEffect(() => {
-    if (!canOpenSessionReplay || visibleSessionIds.length === 0) {
-      setReviewItemsBySessionId({});
-      return undefined;
-    }
-
-    let cancelled = false;
-    const request: SessionReviewItemsRequest = {
-      sessionIds: visibleSessionIds,
-      limitPerSession: 3,
-    };
-    void ipcService.invoke(IPC_CHANNELS.SESSION_LIST_REVIEW_ITEMS, request)
-      .then((itemsBySessionId) => {
-        if (cancelled) return;
-        setReviewItemsBySessionId(itemsBySessionId ?? {});
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        logger.warn('Failed to load sidebar review items', {
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
-        setReviewItemsBySessionId({});
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [canOpenSessionReplay, visibleSessionIdsKey]);
 
   useEffect(() => () => {
     Object.values(collapseTimersRef.current).forEach(clearTimeout);

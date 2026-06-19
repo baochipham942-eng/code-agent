@@ -63,9 +63,7 @@ describe('architecture debt report', () => {
     expect(report.topLargeFiles.every((file) => file.physicalLines > 1000 || file.effectiveLines > 1000)).toBe(true);
     expect(report.topLargeFiles.every((file) => file.path.startsWith('src/'))).toBe(true);
     expect(report.maxLines.whitelistCount).toBeGreaterThanOrEqual(0);
-    expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([
-      'src/main/agent/runtime/conversationRuntime.ts',
-    ]);
+    expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([]);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);
     expect(report.eslintNoUnsafe.skipped).toBe(true);

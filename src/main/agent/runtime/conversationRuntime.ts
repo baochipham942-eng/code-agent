@@ -1,9 +1,3 @@
-/* eslint-disable max-lines --
- * agent 主循环核心，历史 1400+ 行。拆分需把 while 循环里强依赖 this.ctx 的逻辑块
- * 安全外提，属高风险重构（回归面=整个对话执行链），不夹在 feature PR 里仓促做。
- * 已记入 backlog：先拆低风险的 useConversationStreamEffects（event-handler 集合），
- * 主循环单独立项 TDD + 对抗审查后再拆。此处暂豁免止血。
- */
 // ============================================================================
 // ConversationRuntime — Main loop, step execution, plan mode, cancel/interrupt/steer
 // Extracted from AgentLoop
@@ -29,21 +23,8 @@ import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
-import {
-  bootstrapDesktopTurnContext,
-  publishPlanningStateAfterDesktopSync,
-} from '../../desktop/desktopContextBridge';
-import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
-import { countTraceEntries, recordMemoryInjectionTrace } from '../../memory/memoryInjectionTrace';
-import {
-  recordPackedSeedMemory,
-  recordTurnMemoryBlock,
-  recordTurnMemoryDisabled,
-} from './turnQuality';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
-import { getCurrentActivityContext } from '../../services/activity/activityContextProvider';
-import { formatActivityPromptContext } from '../../services/activity/activityPromptFormatter';
-import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
+import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../../planning/taskComplexityAnalyzer';
@@ -95,7 +76,6 @@ import {
   mergeTodos,
   advanceTodoStatus,
   completeCurrentAndAdvance,
-  getSessionTodos,
   setSessionTodos,
   clearSessionTodos,
   syncTodosToSessionTasks,
@@ -108,7 +88,6 @@ import {
   HookMessageBuffer,
   estimateModelMessageTokens,
   MessageHistoryCompressor,
-  estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
 import { decideNextAction, type LoopState } from '../loopDecision';
@@ -127,7 +106,6 @@ import { goalTokensUsedWithSwarm, maybeInjectSwarmGuidance } from './swarmGoalIn
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
-  type ResolvedSkillInvocation,
 } from '../../services/skills/skillInvocationResolver';
 import {
   hasActiveSessionTodos,
@@ -135,11 +113,16 @@ import {
   queueRuntimeDiagnostic,
   todosFromPlan,
 } from './conversationRuntimePlanning';
+import {
+  bootstrapDesktopDerivedContext,
+  injectActivityContext,
+  injectSeedMemory,
+  persistFailedRunContinuationContext,
+} from './conversationRuntimeContextBootstrap';
+import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
 
 
 const logger = createLogger('AgentLoop');
-
-const STICKY_STRICT_SKILL_NAMES = new Set(['create-role', 'edit-role']);
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
@@ -233,104 +216,14 @@ export class ConversationRuntime {
     }
   }
 
+  // 薄封装：逻辑在 conversationRuntimeContextBootstrap，方法体保留供 initializeRun 调用
+  // 与单测 spy（桌面活动注入 / bootstrap 失败降级回归保护）。
   private async bootstrapDesktopDerivedContext(userMessage?: string): Promise<void> {
-    const existingTodos = getSessionTodos(this.ctx.sessionId);
-    const persistedTodos = await getSessionManager().getTodos(this.ctx.sessionId);
-
-    const existingSystemContextTokens =
-      estimateTokens(this.ctx.systemPrompt)
-      + estimateTokens(this.ctx.persistentSystemContext.join('\n\n'))
-      + this.ctx.messages
-        .filter((message) => message.role === 'system')
-        .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);
-    const contextWindowSize = getContextWindow(this.ctx.modelConfig.model);
-    const contextPressure = existingSystemContextTokens / contextWindowSize;
-    const workspaceContextMaxTokens =
-      contextPressure >= 0.12 ? 120
-        : contextPressure >= 0.08 ? 160
-          : 220;
-    const workspaceContextMaxItems =
-      contextPressure >= 0.12 ? 1
-        : contextPressure >= 0.08 ? 2
-          : 3;
-
-    const result = await bootstrapDesktopTurnContext({
-      sessionId: this.ctx.sessionId,
-      userMessage,
-      planningService: this.ctx.planningService,
-      existingTodos,
-      persistedTodos,
-      workspaceContextBudget: {
-        maxTokens: workspaceContextMaxTokens,
-        maxItems: workspaceContextMaxItems,
-      },
-    });
-
-    if (result.advancedTodos) {
-      setSessionTodos(this.ctx.sessionId, result.advancedTodos);
-      this.ctx.onEvent({ type: 'todo_update', data: result.advancedTodos });
-    }
-
-    if (result.taskSync.created.length > 0 || result.taskSync.updated.length > 0) {
-      this.ctx.onEvent({
-        type: 'task_update',
-        data: {
-          tasks: result.taskSync.tasks,
-          action: 'sync',
-          taskIds: [
-            ...result.taskSync.created.map((task) => task.id),
-            ...result.taskSync.updated.map((task) => task.id),
-          ],
-          source: 'desktop_activity',
-        },
-      });
-    }
-
-    if (result.planningSyncChanged && this.ctx.planningService) {
-      await publishPlanningStateAfterDesktopSync(this.ctx.planningService);
-    }
-
-    if (result.workspaceContextBlock) {
-      this.contextAssembly.injectSystemMessage(
-        `<workspace-activity-context>\n${result.workspaceContextBlock}\n</workspace-activity-context>`
-      );
-    }
-
-    if (result.recoveredWorkHint) {
-      this.contextAssembly.injectSystemMessage(
-        `<recovered-work-orchestration>\n${result.recoveredWorkHint}\n</recovered-work-orchestration>`
-      );
-    }
-
-    if (result.autoRecovery?.planChanged && this.ctx.planningService) {
-      await publishPlanningStateAfterDesktopSync(this.ctx.planningService);
-    }
+    return bootstrapDesktopDerivedContext(this.ctx, this.contextAssembly, userMessage);
   }
 
   private async injectActivityContext(options: { includeDesktopActivity: boolean }): Promise<void> {
-    try {
-      const context = await getCurrentActivityContext();
-      const formatted = formatActivityPromptContext(context, {
-        mode: 'legacySeparate',
-        maxChars: 4_500,
-      });
-
-      if (formatted.mode !== 'legacySeparate') return;
-
-      if (formatted.screenMemoryBlock) {
-        this.contextAssembly.injectSystemMessage(`<screen-memory>\n${formatted.screenMemoryBlock}\n</screen-memory>`);
-        logger.info('[AgentLoop] Activity screen-memory context injected at session start');
-      }
-
-      if (options.includeDesktopActivity && formatted.desktopActivityBlock) {
-        this.contextAssembly.injectSystemMessage(
-          `<desktop-activity-context>\n${formatted.desktopActivityBlock}\n</desktop-activity-context>`
-        );
-        logger.info('[AgentLoop] Activity desktop context injected at session start');
-      }
-    } catch {
-      // Graceful: activity context never blocks a run.
-    }
+    return injectActivityContext(this.contextAssembly, options);
   }
 
   setPlanMode(active: boolean): void {
@@ -752,7 +645,7 @@ export class ConversationRuntime {
     } catch (error) {
       terminal = { status: 'failed', error };
       runError = error;
-      await this.persistFailedRunContinuationContext(userMessage, iterations, error);
+      await persistFailedRunContinuationContext(this.contextAssembly, userMessage, iterations, error);
     } finally {
       // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终
       // 文本后清理，但空输出/异常/cancel 等退出路径会绕过它——若不在此兜底清理，
@@ -768,44 +661,6 @@ export class ConversationRuntime {
     }
 
     if (runError) throw runError;
-  }
-
-  private async persistFailedRunContinuationContext(
-    userMessage: string,
-    iterations: number,
-    error: unknown,
-  ): Promise<void> {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const truncatedUserMessage = userMessage.length > 2000
-      ? `${userMessage.slice(0, 2000)}\n...[truncated user request]...`
-      : userMessage;
-    const truncatedError = errorMessage.length > 1200
-      ? `${errorMessage.slice(0, 1200)}\n...[truncated runtime error]...`
-      : errorMessage;
-
-    const marker: Message = {
-      id: generateMessageId(),
-      role: 'system',
-      content: [
-        '<failed-run-continuation-context>',
-        '上一轮 agent 运行在完成最终回复前失败。后续如果用户只说“继续”，要沿着这条失败轮恢复，不要回到更早的提问，也不要要求用户重复已经给出的主题。',
-        `失败轮用户请求：${truncatedUserMessage}`,
-        `失败发生在第 ${iterations} 轮推理后。`,
-        `失败错误：${truncatedError}`,
-        '</failed-run-continuation-context>',
-      ].join('\n'),
-      timestamp: Date.now(),
-      isMeta: true,
-      source: 'system',
-    };
-
-    try {
-      await this.contextAssembly.addAndPersistMessage(marker);
-    } catch (persistError) {
-      logger.warn('[AgentLoop] Failed to persist failed-run continuation context', {
-        error: persistError instanceof Error ? persistError.message : String(persistError),
-      });
-    }
   }
 
   // ========================================================================
@@ -862,7 +717,7 @@ export class ConversationRuntime {
     try {
       const skillInvocation =
         await resolveSkillInvocation(userMessage, this.ctx.workingDirectory)
-        ?? await this.resolveStickyStrictSkillInvocation(userMessage);
+        ?? await resolveStickyStrictSkillInvocation(this.ctx, userMessage);
       if (skillInvocation) {
         const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
         this.ctx.activeSkillInvocation = {
@@ -1150,101 +1005,7 @@ export class ConversationRuntime {
       }
     }
 
-    // Seed Memory Injection
-    if (this.ctx.memoryMode === 'off') {
-      recordTurnMemoryDisabled(this.ctx, 'session_memory_off');
-      recordMemoryInjectionTrace({
-        blockType: 'seed-memory',
-        trigger: 'session_memory_off',
-        chars: 0,
-        injected: false,
-        source: 'session-memory-mode',
-        count: 0,
-        sessionId: this.ctx.sessionId,
-      });
-    } else {
-      try {
-        let seedMemorySource = 'memory-packer';
-        const packedSeedMemory = await buildPackedSeedMemory({
-          projectPath: this.ctx.workingDirectory,
-          sessionId: this.ctx.sessionId,
-          query: userMessage,
-          excludeEntryIds: this.ctx.suppressedMemoryEntryIds,
-        });
-        let seedMemoryBlock = packedSeedMemory?.block ?? null;
-        if (!seedMemoryBlock) {
-          seedMemorySource = 'database-seed';
-          seedMemoryBlock = buildSeedMemoryBlock(this.ctx.workingDirectory);
-        }
-        if (seedMemoryBlock) {
-          this.contextAssembly.injectSystemMessage(`<seed-memory>\n${seedMemoryBlock}\n</seed-memory>`);
-          recordMemoryInjectionTrace({
-            blockType: 'seed-memory',
-            trigger: 'session_start',
-            chars: seedMemoryBlock.length,
-            injected: true,
-            source: seedMemorySource,
-            count: countTraceEntries(seedMemoryBlock),
-            sessionId: this.ctx.sessionId,
-          });
-          if (packedSeedMemory) {
-            recordPackedSeedMemory(this.ctx, {
-              block: packedSeedMemory.block,
-              packed: packedSeedMemory.packed,
-              injected: true,
-              source: seedMemorySource,
-            });
-          } else {
-            recordTurnMemoryBlock(this.ctx, {
-              blockType: 'seed-memory',
-              trigger: 'session_start',
-              chars: seedMemoryBlock.length,
-              injected: true,
-              source: seedMemorySource,
-              count: countTraceEntries(seedMemoryBlock),
-            });
-          }
-          logger.info('[AgentLoop] Seed memory injected at session start');
-        } else {
-          recordMemoryInjectionTrace({
-            blockType: 'seed-memory',
-            trigger: 'session_start',
-            chars: 0,
-            injected: false,
-            source: seedMemorySource,
-            count: 0,
-            sessionId: this.ctx.sessionId,
-          });
-          recordTurnMemoryBlock(this.ctx, {
-            blockType: 'seed-memory',
-            trigger: 'session_start',
-            chars: 0,
-            injected: false,
-            source: seedMemorySource,
-            count: 0,
-          });
-        }
-      } catch {
-        recordMemoryInjectionTrace({
-          blockType: 'seed-memory',
-          trigger: 'session_start_error',
-          chars: 0,
-          injected: false,
-          source: 'memory-packer',
-          count: 0,
-          sessionId: this.ctx.sessionId,
-        });
-        recordTurnMemoryBlock(this.ctx, {
-          blockType: 'seed-memory',
-          trigger: 'session_start_error',
-          chars: 0,
-          injected: false,
-          source: 'memory-packer',
-          count: 0,
-        });
-        logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
-      }
-    }
+    await injectSeedMemory(this.ctx, this.contextAssembly, userMessage);
 
     await this.injectActivityContext({ includeDesktopActivity: !isSimpleTask });
 
@@ -1261,53 +1022,6 @@ export class ConversationRuntime {
     }
 
     return { langfuse, isSimpleTask, genNum };
-  }
-
-  private async resolveStickyStrictSkillInvocation(userMessage: string): Promise<ResolvedSkillInvocation | null> {
-    if (userMessage.trim().startsWith('/')) {
-      return null;
-    }
-
-    const seed = this.findLatestStrictSkillSeed();
-    if (!seed) {
-      return null;
-    }
-
-    const invocation = await resolveSkillInvocation(seed, this.ctx.workingDirectory);
-    if (!invocation || !this.isStickyStrictSkill(invocation)) {
-      return null;
-    }
-
-    logger.info('[AgentLoop] Restored sticky strict skill invocation from session history', {
-      skillName: invocation.skill.name,
-      matchKind: invocation.matchKind,
-      matchedText: invocation.matchedText,
-    });
-    logCollector.agent('INFO', `Sticky strict skill invocation restored: ${invocation.skill.name}`, {
-      matchKind: invocation.matchKind,
-      matchedText: invocation.matchedText,
-    });
-
-    return invocation;
-  }
-
-  private findLatestStrictSkillSeed(): string | null {
-    for (let i = this.ctx.messages.length - 1; i >= 0; i--) {
-      const msg = this.ctx.messages[i];
-      if (msg?.role !== 'user' || msg.visibility === 'rewound') {
-        continue;
-      }
-      const text = msg.content.trim();
-      if (/^\/(?:create-role|edit-role)(?:\s|$)/.test(text)) {
-        return text;
-      }
-    }
-    return null;
-  }
-
-  private isStickyStrictSkill(invocation: ResolvedSkillInvocation): boolean {
-    return invocation.skill.strictToolset === true
-      && STICKY_STRICT_SKILL_NAMES.has(invocation.skill.name);
   }
 
   // ========================================================================

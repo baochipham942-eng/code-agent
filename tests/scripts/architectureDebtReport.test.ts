@@ -74,7 +74,6 @@ describe('architecture debt report', () => {
       'src/main/telemetry/telemetryStorage.ts',
       'src/renderer/components/Sidebar.tsx',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
-      'src/renderer/components/features/settings/tabs/ModelSettings.tsx',
     ]);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);

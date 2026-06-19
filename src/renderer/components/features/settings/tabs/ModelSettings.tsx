@@ -7,16 +7,14 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Brain, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Star, Wrench } from 'lucide-react';
+import { Star } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
-import { Button, Input, Select } from '../../../primitives';
+import { Button } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
 import { MODEL, UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
 import {
-  MODEL_CAPABILITY_OPTIONS,
   buildProviderInfoFromSettings,
-  featuresFromModelMetadata,
   getProviderIconPresets,
   getProviderRuntimeModels,
   isProviderImageIcon,
@@ -54,7 +52,6 @@ import {
   describeProviderIconValidationError,
   getProtocolLabel,
   hasCustomEndpointOverride,
-  isModelMetadataLocked,
   isProviderIdentityManaged,
   orderProviderManagementRows,
   providerRequiresApiKey,
@@ -71,15 +68,14 @@ import {
   ProviderDetailCard,
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
+import { ProviderModelsSection } from './ProviderModelsSection';
+import { AddProviderCard } from './AddProviderCard';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
   config: ModelConfig;
   onChange: (config: ModelConfig) => void;
 }
-
-const CAPABILITY_ICONS: Record<string, React.ReactNode> = { tool: <Wrench className="h-3 w-3" />, vision: <Eye className="h-3 w-3" />, reasoning: <Brain className="h-3 w-3" />, code: <Code2 className="h-3 w-3" />, fast: <Gauge className="h-3 w-3" /> };
-const MODEL_CAPABILITY_PICKER = MODEL_CAPABILITY_OPTIONS.filter((capability) => ['code', 'vision', 'reasoning', 'fast', 'longContext', 'search'].includes(capability.id));
 
 interface DefaultModelSelection {
   provider: ModelProvider;
@@ -861,61 +857,17 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
         <div className="min-w-0 space-y-4">
           {isAddingProvider ? (
-            /* ── 新增 Provider / 中转站 ── */
-            <ProviderDetailCard step="+" title="新增 Provider / 中转站">
-              <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-zinc-200">显示名称</label>
-                    <Input
-                      value={newProviderName}
-                      onChange={(event) => setNewProviderName(event.target.value)}
-                      placeholder="windhub.cc"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
-                    <Select
-                      value={newProviderProtocol}
-                      onChange={(event) => setNewProviderProtocol(event.target.value as ModelProviderProtocol)}
-                    >
-                      <option value="openai">OpenAI 兼容</option>
-                      <option value="claude">Claude 协议</option>
-                    </Select>
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
-                  <Input
-                    value={newProviderBaseUrl}
-                    onChange={(event) => setNewProviderBaseUrl(event.target.value)}
-                    placeholder="https://example.com/v1"
-                  />
-                  <p className="mt-2 text-xs text-zinc-500">填到 /v1 为止，不要带 /chat/completions。</p>
-                </div>
-                <div className="flex items-end gap-3">
-                  <div className="min-w-0 flex-1">
-                    <label className="mb-2 block text-sm font-medium text-zinc-200">API Key</label>
-                    <Input
-                      type="password"
-                      value={newProviderApiKey}
-                      onChange={(event) => setNewProviderApiKey(event.target.value)}
-                      placeholder="sk-..."
-                      leftIcon={<Key className="h-4 w-4" />}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleAddProvider}
-                    disabled={isWebMode() || !newProviderName.trim() || !newProviderBaseUrl.trim()}
-                    leftIcon={<Plus className="h-4 w-4" />}
-                    className="shrink-0"
-                  >
-                    添加 Provider
-                  </Button>
-                </div>
-                <p className="text-xs text-zinc-500">添加后点击「发现模型」拉取该 Provider 的可用模型列表。</p>
-              </div>
-            </ProviderDetailCard>
+            <AddProviderCard
+              name={newProviderName}
+              protocol={newProviderProtocol}
+              baseUrl={newProviderBaseUrl}
+              apiKey={newProviderApiKey}
+              onNameChange={setNewProviderName}
+              onProtocolChange={setNewProviderProtocol}
+              onBaseUrlChange={setNewProviderBaseUrl}
+              onApiKeyChange={setNewProviderApiKey}
+              onAddProvider={handleAddProvider}
+            />
           ) : (
             <>
               {/* ── 详情 Header ── */}
@@ -978,184 +930,29 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               />
 
               {/* ── ② 模型（配好 Key 后展示） ── */}
-              {hasApiKey ? (
-                <ProviderDetailCard
-                  step="2"
-                  title="模型"
-                  meta={`${currentEnabledModels.length} 已启用 / ${currentModels.length} 个`}
-                  actions={(
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleDiscoverModels()}
-                      disabled={isWebMode() || !effectiveBaseUrl}
-                      loading={isDiscovering}
-                      leftIcon={<RefreshCw className="h-3 w-3" />}
-                    >
-                      发现模型
-                    </Button>
-                  )}
-                >
-                  {/* 搜索 + 手动添加 */}
-                  <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(160px,1fr)_minmax(140px,1fr)_minmax(120px,0.8fr)_auto] lg:items-end">
-                    <div>
-                      <label className="mb-2 block text-xs font-medium text-zinc-400">搜索模型</label>
-                      <Input
-                        value={modelSearch}
-                        onChange={(event) => setModelSearch(event.target.value)}
-                        placeholder="搜索模型..."
-                        inputSize="sm"
-                        leftIcon={<Search className="h-3.5 w-3.5" />}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-xs font-medium text-zinc-400">手动添加：模型 ID</label>
-                      <Input
-                        value={manualModelId}
-                        onChange={(event) => setManualModelId(event.target.value)}
-                        placeholder="deepseek-v3-2-251201"
-                        inputSize="sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-xs font-medium text-zinc-400">显示名称</label>
-                      <Input
-                        value={manualModelLabel}
-                        onChange={(event) => setManualModelLabel(event.target.value)}
-                        placeholder={manualModelId || '可选'}
-                        inputSize="sm"
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={handleAddManualModel}
-                      disabled={isWebMode() || !manualModelId.trim()}
-                      leftIcon={<Plus className="h-3 w-3" />}
-                      className="lg:mb-px"
-                    >
-                      添加
-                    </Button>
-                  </div>
-                  <p className="mb-3 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs leading-relaxed text-zinc-400">
-                    主任务模型会影响每一轮交付质量：复杂任务和长上下文适合能力更强的模型，日常小任务避免长期锁定慢模型或按量昂贵模型；自动模式会按任务、成本、速度和能力尝试切换。
-                  </p>
-
-                  {/* 模型列表 */}
-                  <div className="max-h-[420px] overflow-y-auto rounded-lg border border-zinc-800">
-                    {filteredCurrentModels.length === 0 ? (
-                      <div className="px-4 py-8 text-center text-sm text-zinc-500">
-                        没有匹配模型
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-zinc-800">
-                        {filteredCurrentModels.map((model) => {
-                          const features = featuresFromModelMetadata({
-                            modelId: model.id,
-                            capabilities: model.capabilities,
-                            supportsTool: model.supportsTool,
-                            supportsVision: model.supportsVision,
-                          });
-                          const metadataLocked = isModelMetadataLocked(config.provider, model);
-                          return (
-                            <div key={model.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-100">
-                                    <input
-                                      type="checkbox"
-                                      checked={model.enabled}
-                                      onChange={(event) => handleToggleModelEnabled(model, event.target.checked)}
-                                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-                                    />
-                                    <span>{model.label}</span>
-                                  </label>
-                                  <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                                    {model.source === 'discovered' ? '发现' : '内置'}
-                                  </span>
-                                  {features.map((feature) => (
-                                    <span
-                                      key={feature}
-                                      className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
-                                    >
-                                      {CAPABILITY_ICONS[feature]}
-                                      {feature}
-                                    </span>
-                                  ))}
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-zinc-500">
-                                  <span>{model.id}</span>
-                                  {model.maxTokens ? <span>{model.maxTokens.toLocaleString()} tokens</span> : null}
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
-                                {/* 设为主任务 */}
-                                {defaultSelection.provider === config.provider && defaultSelection.model === model.id ? (
-                                  <span className="inline-flex h-7 items-center gap-1 rounded border border-blue-400/50 bg-blue-500/15 px-2 text-[11px] text-blue-200">
-                                    ★ 主任务
-                                  </span>
-                                ) : model.enabled ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleSetDefaultModel(model.id)}
-                                    disabled={settingDefaultModelId !== null}
-                                    className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-500 transition hover:text-zinc-300"
-                                  >
-                                    {settingDefaultModelId === model.id ? '保存中...' : '设为主任务'}
-                                  </button>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModelTool(model)}
-                                  disabled={metadataLocked}
-                                  className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
-                                    model.supportsTool
-                                      ? 'border-blue-400/50 bg-blue-500/15 text-blue-200'
-                                      : metadataLocked
-                                        ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
-                                        : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                  }`}
-                                  title={metadataLocked ? '内置模型标签由模型目录决定' : '工具调用'}
-                                >
-                                  <Wrench className="h-3 w-3" />
-                                  工具
-                                </button>
-                                {MODEL_CAPABILITY_PICKER.map((capability) => {
-                                  const active = model.capabilities.includes(capability.id);
-                                  return (
-                                    <button
-                                      key={capability.id}
-                                      type="button"
-                                      onClick={() => handleToggleModelCapability(model, capability.id)}
-                                      disabled={metadataLocked}
-                                      className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
-                                        active
-                                          ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200'
-                                          : metadataLocked
-                                            ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
-                                            : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                      }`}
-                                      title={metadataLocked ? '内置模型标签由模型目录决定' : capability.label}
-                                    >
-                                      {CAPABILITY_ICONS[capability.id] ?? <span className="text-[10px]">{capability.label.slice(0, 1)}</span>}
-                                      {capability.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </ProviderDetailCard>
-              ) : (
-                <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/30 px-4 py-6 text-center text-xs text-zinc-500">
-                  填写 API Key 并测试连接后，即可发现和启用该 Provider 的模型。
-                </div>
-              )}
+              <ProviderModelsSection
+                hasApiKey={hasApiKey}
+                provider={config.provider}
+                currentModels={currentModels}
+                currentEnabledModels={currentEnabledModels}
+                filteredCurrentModels={filteredCurrentModels}
+                effectiveBaseUrl={effectiveBaseUrl}
+                isDiscovering={isDiscovering}
+                onDiscoverModels={() => handleDiscoverModels()}
+                modelSearch={modelSearch}
+                onModelSearchChange={setModelSearch}
+                manualModelId={manualModelId}
+                onManualModelIdChange={setManualModelId}
+                manualModelLabel={manualModelLabel}
+                onManualModelLabelChange={setManualModelLabel}
+                onAddManualModel={handleAddManualModel}
+                defaultSelection={defaultSelection}
+                settingDefaultModelId={settingDefaultModelId}
+                onSetDefaultModel={handleSetDefaultModel}
+                onToggleModelEnabled={handleToggleModelEnabled}
+                onToggleModelTool={handleToggleModelTool}
+                onToggleModelCapability={handleToggleModelCapability}
+              />
 
               {/* ── ③ 高级（折叠） ── */}
               {hasApiKey && (

@@ -67,8 +67,6 @@ describe('architecture debt report', () => {
       'src/main/agent/runtime/contextAssembly/inference.ts',
       'src/main/agent/runtime/conversationRuntime.ts',
       'src/main/agent/subagentExecutor.ts',
-      'src/renderer/components/Sidebar.tsx',
-      'src/renderer/components/features/chat/ChatInput/index.tsx',
     ]);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);

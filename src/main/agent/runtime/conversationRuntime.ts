@@ -9,36 +9,26 @@
 // ============================================================================
 
 import type {
-  ModelConfig,
   Message,
   MessageAttachment,
   MessageMetadata,
-  ToolCall,
-  ToolResult,
   AgentEvent,
-  AgentTaskPhase,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
-import type { ToolExecutor } from '../../tools/toolExecutor';
-import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
-import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
+import { getLangfuseService, getBudgetService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../../planning/taskComplexityAnalyzer';
 import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
-import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { preloadToolsForIntent } from './intentToolPreload';
 import { createLogger } from '../../services/infra/logger';
 import { createHookManager } from '../../hooks';
-import type { BudgetEventData } from '../../../shared/contract';
-import { getContextHealthService } from '../../context/contextHealthService';
-import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { getDiagnosticVersions } from '../../telemetry/diagnosticVersions';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { getContextWindow } from '../../../shared/constants';
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
@@ -47,54 +37,17 @@ import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
-import type {
-  AgentLoopConfig,
-  ModelResponse,
-  ModelMessage,
-} from '../../agent/loopTypes';
-import { isParallelSafeTool, classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
-import { CircuitBreaker } from '../../agent/toolExecution/circuitBreaker';
-import { classifyExecutionPhase } from '../../tools/executionPhase';
-import {
-  formatToolCallForHistory,
-  sanitizeToolResultsForHistory,
-  buildMultimodalContent,
-  stripImagesFromMessages,
-  extractUserRequestText,
-} from '../../agent/messageHandling/converter';
-import {
-  injectWorkingDirectoryContext,
-  buildEnhancedSystemPrompt,
-  buildRuntimeModeBlock,
-} from '../../agent/messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
+import type { AgentLoopConfig } from '../../agent/loopTypes';
+import { buildDynamicPromptV2 } from '../../prompts/builder';
 import { detectTaskFeatures } from '../../prompts/systemReminders';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
-import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
-  parseTodos,
-  mergeTodos,
   advanceTodoStatus,
-  completeCurrentAndAdvance,
   setSessionTodos,
-  clearSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
-import { fileReadTracker } from '../../tools/fileReadTracker';
-import { dataFingerprintStore } from '../../tools/dataFingerprint';
-import { MAX_PARALLEL_TOOLS, WRITE_TOOLS } from '../../agent/loopTypes';
-import {
-  compressToolResult,
-  HookMessageBuffer,
-  estimateModelMessageTokens,
-  MessageHistoryCompressor,
-} from '../../context/tokenOptimizer';
-import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
+import { WRITE_TOOLS } from '../../agent/loopTypes';
 import { decideNextAction, type LoopState } from '../loopDecision';
-import { getInputSanitizer } from '../../security/inputSanitizer';
-import { getDiffTracker } from '../../services/diff/diffTracker';
-import { getCitationService } from '../../services/citation/citationService';
-import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import type { ContextAssembly } from './contextAssembly';
@@ -286,9 +239,9 @@ export class ConversationRuntime {
   }
 
   parseMultiStepTask(prompt: string): { steps: string[]; isMultiStep: boolean } {
-    const lines = prompt.split('\n').filter(l => /^\s*(\d+[\.\)]\s|[-*]\s)/.test(l));
+    const lines = prompt.split('\n').filter(l => /^\s*(\d+[.)]\s|[-*]\s)/.test(l));
     return {
-      steps: lines.map(l => l.replace(/^\s*(\d+[\.\)]\s|[-*]\s)/, '').trim()),
+      steps: lines.map(l => l.replace(/^\s*(\d+[.)]\s|[-*]\s)/, '').trim()),
       isMultiStep: lines.length >= 2,
     };
   }

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 既有超限文件（接入「桌面操作」入口前已 ~1005 行 > 1000），拆分另议 */
 // ============================================================================
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
@@ -26,8 +25,6 @@ import {
   Trash2,
   Search,
   X,
-  Folder,
-  MessageSquareText,
   ChevronRight,
   FlaskConical,
   Clock3,
@@ -40,8 +37,6 @@ import {
   Users,
   Ticket,
   Download,
-  ListChecks,
-  PanelRightOpen,
   ListFilter,
   Check,
 } from 'lucide-react';
@@ -49,15 +44,10 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { useUIStore } from '../stores/uiStore';
 import { UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
-import { isWorkspaceExpanded } from '../utils/workspaceGrouping';
-import {
-  buildSidebarProjectSummary,
-  formatSidebarProjectSummaryLine,
-} from '../utils/sidebarProjectSummary';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
-import { SidebarProjectDetail } from './features/sidebar/SidebarProjectDetail';
-import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
-import { SidebarSessionItem } from './features/sidebar/SidebarSessionItem';
+import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
+import { SidebarProjectGroup } from './features/sidebar/SidebarProjectGroup';
+import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSessionItem';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import {
@@ -71,9 +61,6 @@ import {
   getSessionStatusPresentation,
 } from '../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
-import {
-  resolveSidebarGroupExpansionView,
-} from '../utils/sidebarGroupExpansion';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
@@ -507,6 +494,39 @@ export const Sidebar: React.FC = () => {
     sessionStates,
   ]);
 
+  const sessionItemProps: SidebarSessionItemSharedProps = {
+    unreadSessionIds,
+    currentSessionId,
+    selectedSessionIds,
+    pinnedSessionIds,
+    renamingId,
+    sessionRuntimes,
+    backgroundTaskMap,
+    sessionStates,
+    hasPendingApprovalForSession,
+    searchQuery,
+    messageSearchHitsBySessionId,
+    replayEvidenceBySessionId,
+    canOpenSessionReplay,
+    reviewItemsBySessionId,
+    multiSelectMode,
+    hoveredSession,
+    renameValue,
+    renameInputRef,
+    setHoveredSession,
+    setRenameValue,
+    handleSelectSession,
+    handleContextMenu,
+    handleRenameSubmit,
+    handleRenameKeyDown,
+    handleDoubleClick,
+    handleOpenSessionReplay,
+    handleOpenSessionAssets,
+    handleOpenReplayEvidence,
+    handleSelectMessageSearchHit,
+    handleArchiveSession,
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: h-12 to align with TitleBar on the right */}
@@ -655,257 +675,35 @@ export const Sidebar: React.FC = () => {
         ) : (
           /* Workspace/project grouped view, including search and status-filtered results. */
           <div className="py-2">
-            {workspaceGroupedSessions.map((group) => {
-              const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
-              const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
-              const summary = buildSidebarProjectSummary({
-                group,
-                backgroundTaskMap,
-                sessionRuntimes,
-                sessionStates,
-                hasPendingApprovalForSession,
-                reviewItemsBySessionId,
-                projectMeta: hasSearchFilters && projectMeta
-                  ? { ...projectMeta, sessionCount: group.sessions.length }
-                  : projectMeta,
-              });
-              const groupHasCurrentSession = group.sessions.some((session) => session.id === currentSessionId);
-              const groupExpansionSignals = {
-                hasCurrentSession: groupHasCurrentSession,
-                hasSearchFilters,
-                unfinishedCount: summary.unfinishedCount,
-              };
-              const expansionView = resolveSidebarGroupExpansionView({
-                persistedExpanded: isWorkspaceExpanded(expandedWorkspaces, group.key),
-                signals: groupExpansionSignals,
-                isCollapsing: Boolean(collapsingWorkspaces[group.key]),
-                displayName: summary.displayName,
-                disableForceExpand: group.isUncategorized,
-              });
-              const expanded = expansionView.isVisibleExpanded;
-              const summaryLine = formatSidebarProjectSummaryLine({
-                summary,
-                isUncategorized: group.isUncategorized,
-                isFiltered: hasSearchFilters,
-                workspacePaths: group.paths,
-              });
-              const title = group.isUncategorized
-                ? '纯对话，不继承项目上下文'
-                : `${summary.displayName}${group.paths.length > 0 ? ` · ${group.paths.join(' · ')}` : ''}`;
-              const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
-              const drawerOpen = projectDrawerKey === group.key;
-              const drawerSessions = drawerOpen ? buildProjectDrawerSessions(group.sessions as SessionWithMeta[]) : [];
-              return (
-                <div
-                  key={group.key}
-                  className="mb-2"
-                  data-sidebar-group-phase={expansionView.phase}
-                >
-                  <div
-                    className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
-                    title={title}
-                  >
-                    <button
-                      type="button"
-                      title={expansionView.toggleTitle}
-                      aria-label={expansionView.toggleAriaLabel}
-                      aria-disabled={expansionView.forceExpanded ? 'true' : undefined}
-                      onClick={() => handleToggleWorkspaceGroup(group.key, expansionView)}
-                      className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
-                    >
-                      <ChevronRight
-                        className={`mt-0.5 w-3 h-3 text-zinc-500 transition-transform ${
-                          expanded ? 'rotate-90' : ''
-                        } ${expansionView.phase === 'collapsing' ? 'opacity-70' : ''}`}
-                      />
-                      <IconComponent className="mt-0.5 w-3 h-3 text-zinc-500" />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
-                          {summary.unfinishedCount > 0 && (
-                            <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                              {summary.unfinishedCount} 未完成
-                            </span>
-                          )}
-                          {expansionView.protectionLabel && (
-                            <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
-                              {expansionView.protectionLabel}
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 block truncate text-[10px] text-zinc-600">
-                          {summaryLine}
-                        </span>
-                      </span>
-                    </button>
-                    {!group.isUncategorized && (
-                      <button
-                        type="button"
-                        aria-label={`打开 ${summary.displayName} 项目控制台`}
-                        title={`打开 ${summary.displayName} 项目控制台`}
-                        aria-pressed={drawerOpen ? 'true' : 'false'}
-                        onClick={() => {
-                          setProjectDrawerKey(group.key);
-                        }}
-                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-                      >
-                        <PanelRightOpen className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {!group.isUncategorized && (
-                      <button
-                        type="button"
-                        aria-label={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
-                        title={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
-                        onClick={() => {
-                          setExpandedProjectDetails((previous) => ({
-                            ...previous,
-                            [group.key]: !previous[group.key],
-                          }));
-                        }}
-                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-                      >
-                        <ListChecks className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {!group.isUncategorized && (
-                      <button
-                        type="button"
-                        aria-label={`打开 ${summary.displayName} 产物与资产`}
-                        title={`打开 ${summary.displayName} 产物与资产`}
-                        onClick={handleOpenWorkspaceAssets}
-                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-                      >
-                        <ScrollText className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {!group.isUncategorized && (
-                      <button
-                        type="button"
-                        aria-label={`在 ${summary.displayName} 新建会话`}
-                        title={`在 ${summary.displayName} 新建会话`}
-                        onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
-                        disabled={isCreatingSession || (creatingWorkspaceKey !== null && creatingWorkspaceKey !== group.key)}
-                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:opacity-50"
-                      >
-                        {creatingWorkspaceKey === group.key ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Plus className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  {detailsExpanded && !group.isUncategorized && (
-                    <SidebarProjectDetail
-                      meta={projectMeta}
-                      fallbackSessionCount={group.sessions.length}
-                      onOpenArtifactSession={handleOpenProjectArtifactSession}
-                      onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path); }}
-                    />
-                  )}
-                  {drawerOpen && !group.isUncategorized && (
-                    <SidebarProjectDrawer
-                      title={summary.displayName}
-                      summaryLine={summaryLine}
-                      paths={group.paths}
-                      meta={projectMeta}
-                      summary={summary}
-                      sessions={drawerSessions}
-                      filtered={hasSearchFilters}
-                      onClose={() => setProjectDrawerKey(null)}
-                      onOpenSession={async (sessionId) => {
-                        await handleSelectSession(sessionId);
-                        setProjectDrawerKey(null);
-                      }}
-                      onOpenArtifactSession={async (artifact) => {
-                        await handleOpenProjectArtifactSession(artifact);
-                        setProjectDrawerKey(null);
-                      }}
-                      onStartGoal={async (goal) => {
-                        await handleStartProjectGoal(goal, group.key, group.path);
-                        setProjectDrawerKey(null);
-                      }}
-                      onOpenGoalSession={async (sessionId) => {
-                        await handleSelectSession(sessionId);
-                        setProjectDrawerKey(null);
-                      }}
-                      onOpenWorkspaceAssets={() => {
-                        openWorkspacePreview();
-                        setProjectDrawerKey(null);
-                      }}
-                      onNewSession={async () => {
-                        await createWorkspaceChat(group.key, group.path);
-                        setProjectDrawerKey(null);
-                      }}
-                      onRenameProject={group.projectId
-                        ? async (name) => { await handleRenameSidebarProject(group.projectId!, name); }
-                        : undefined}
-                      onSetProjectDescription={group.projectId
-                        ? async (description) => { await handleSetSidebarProjectDescription(group.projectId!, description); }
-                        : undefined}
-                      onSetProjectStatus={group.projectId
-                        ? async (status) => { await handleSetSidebarProjectStatus(group.projectId!, status); }
-                        : undefined}
-                    />
-                  )}
-                  {expanded && (
-                    <div
-                      className={expansionView.rowsClassName}
-                      data-sidebar-group-rows={group.key}
-                    >
-                      {group.sessions.length === 0 ? (
-                        <div className="px-3 py-1 text-xs text-zinc-600">No chats</div>
-                      ) : (
-                        group.sessions.map((session, index) => (
-                          <div
-                            key={session.id}
-                            className="sidebar-project-row"
-                            style={{
-                              '--sidebar-row-delay': `${Math.min(index * 24, 160)}ms`,
-                            } as React.CSSProperties}
-                          >
-                            <SidebarSessionItem
-                              session={session as SessionWithMeta}
-                              unreadSessionIds={unreadSessionIds}
-                              currentSessionId={currentSessionId}
-                              selectedSessionIds={selectedSessionIds}
-                              pinnedSessionIds={pinnedSessionIds}
-                              renamingId={renamingId}
-                              sessionRuntimes={sessionRuntimes}
-                              backgroundTaskMap={backgroundTaskMap}
-                              sessionStates={sessionStates}
-                              hasPendingApprovalForSession={hasPendingApprovalForSession}
-                              searchQuery={searchQuery}
-                              messageSearchHitsBySessionId={messageSearchHitsBySessionId}
-                              replayEvidenceBySessionId={replayEvidenceBySessionId}
-                              canOpenSessionReplay={canOpenSessionReplay}
-                              reviewItemsBySessionId={reviewItemsBySessionId}
-                              multiSelectMode={multiSelectMode}
-                              hoveredSession={hoveredSession}
-                              renameValue={renameValue}
-                              renameInputRef={renameInputRef}
-                              setHoveredSession={setHoveredSession}
-                              setRenameValue={setRenameValue}
-                              handleSelectSession={handleSelectSession}
-                              handleContextMenu={handleContextMenu}
-                              handleRenameSubmit={handleRenameSubmit}
-                              handleRenameKeyDown={handleRenameKeyDown}
-                              handleDoubleClick={handleDoubleClick}
-                              handleOpenSessionReplay={handleOpenSessionReplay}
-                              handleOpenSessionAssets={handleOpenSessionAssets}
-                              handleOpenReplayEvidence={handleOpenReplayEvidence}
-                              handleSelectMessageSearchHit={handleSelectMessageSearchHit}
-                              handleArchiveSession={handleArchiveSession}
-                            />
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {workspaceGroupedSessions.map((group) => (
+              <SidebarProjectGroup
+                key={group.key}
+                group={group}
+                projectMetaById={projectMetaById}
+                hasSearchFilters={hasSearchFilters}
+                expandedWorkspaces={expandedWorkspaces}
+                collapsingWorkspaces={collapsingWorkspaces}
+                expandedProjectDetails={expandedProjectDetails}
+                projectDrawerKey={projectDrawerKey}
+                isCreatingSession={isCreatingSession}
+                creatingWorkspaceKey={creatingWorkspaceKey}
+                setProjectDrawerKey={setProjectDrawerKey}
+                setExpandedProjectDetails={setExpandedProjectDetails}
+                handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
+                handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
+                handleNewWorkspaceChat={handleNewWorkspaceChat}
+                handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
+                handleStartProjectGoal={handleStartProjectGoal}
+                handleSelectSession={handleSelectSession}
+                handleRenameSidebarProject={handleRenameSidebarProject}
+                handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
+                handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
+                createWorkspaceChat={createWorkspaceChat}
+                openWorkspacePreview={openWorkspacePreview}
+                buildProjectDrawerSessions={buildProjectDrawerSessions}
+                sessionItemProps={sessionItemProps}
+              />
+            ))}
           </div>
         )}
       </div>

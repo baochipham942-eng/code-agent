@@ -78,6 +78,9 @@ export interface SidebarSessionItemProps {
   handleArchiveSession: SidebarSessionActions['handleArchiveSession'];
 }
 
+/** SidebarSessionItem 除 `session` 外的共享 props，供 SidebarProjectGroup 按会话批量透传。 */
+export type SidebarSessionItemSharedProps = Omit<SidebarSessionItemProps, 'session'>;
+
 /**
  * 单条会话行。从 `Sidebar` 巨型组件的 `renderSessionItem` 抽出为独立组件，
  * 闭包读取的组件作用域值经 props 透传，零行为改动。

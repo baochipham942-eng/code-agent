@@ -18,7 +18,7 @@ function normalizeFtsQuery(raw: string): string {
   return '"' + raw.replace(/"/g, '""') + '"';
 }
 
-export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database, 
+export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
   query: string,
   options: {
     limit?: number;
@@ -84,7 +84,7 @@ export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
   }
 }
 
-export function runTranscriptFtsSearch(db: BetterSqlite3.Database, 
+export function runTranscriptFtsSearch(db: BetterSqlite3.Database,
   query: string,
   options: {
     limit?: number;

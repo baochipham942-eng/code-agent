@@ -69,7 +69,6 @@ describe('architecture debt report', () => {
       'src/main/agent/runtime/conversationRuntime.ts',
       'src/main/agent/subagentExecutor.ts',
       'src/main/ipc/workspace.ipc.ts',
-      'src/main/services/core/configService.ts',
       'src/main/services/core/repositories/SessionRepository.ts',
       'src/main/services/skills/builtinSkills.ts',
       'src/main/telemetry/telemetryStorage.ts',

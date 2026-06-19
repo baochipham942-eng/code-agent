@@ -64,7 +64,6 @@ describe('architecture debt report', () => {
     expect(report.topLargeFiles.every((file) => file.path.startsWith('src/'))).toBe(true);
     expect(report.maxLines.whitelistCount).toBeGreaterThanOrEqual(0);
     expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([
-      'src/cli/database.ts',
       'src/main/agent/runtime/contextAssembly/inference.ts',
       'src/main/agent/runtime/conversationRuntime.ts',
       'src/main/agent/subagentExecutor.ts',

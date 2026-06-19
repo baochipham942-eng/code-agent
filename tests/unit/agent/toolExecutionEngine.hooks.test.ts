@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setProtocolToolRegistryPort } from '../../../src/main/tools/protocolToolRegistration';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import { ToolExecutionEngine } from '../../../src/main/agent/runtime/toolExecutionEngine';
 import { AntiPatternDetector } from '../../../src/main/agent/antiPattern/detector';
@@ -3917,5 +3918,71 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(results).toEqual([]);
     expect(ctx.telemetryAdapter?.onToolCallEnd).not.toHaveBeenCalled();
     expect(vi.mocked(ctx.onEvent).mock.calls.some(([event]) => event.type === 'tool_call_end')).toBe(false);
+  });
+});
+
+// ============================================================================
+// #1 Kimi 借鉴 — 工具入参 repair 闸在「真引擎」里跑通（E2E 运行证据）
+// 注册一条真实协议 schema（probe_tool 必填 target），驱动真 ToolExecutionEngine
+// 的校验失败路径连续 3 次，验证前 2 次回灌 schema、第 3 次切终止指引。
+// scoped 注册：probe_tool 唯一命名，其余工具名仍解析 undefined → 不影响本文件其他测试。
+// ============================================================================
+describe('ToolExecutionEngine — tool args repair gate fires in the real engine (Kimi #1)', () => {
+  const schemas = new Map<string, never>();
+  beforeAll(() => {
+    setProtocolToolRegistryPort({
+      register: (s: { name: string }) => { schemas.set(s.name, s as never); },
+      unregister: (n: string) => schemas.delete(n),
+      has: (n: string) => schemas.has(n),
+      getSchemas: () => [...schemas.values()],
+      resolve: async () => { throw new Error('unused in this test'); },
+    } as never);
+    schemas.set('probe_tool', {
+      name: 'probe_tool',
+      description: 'test probe tool requiring target',
+      inputSchema: { type: 'object', properties: { target: { type: 'string' } }, required: ['target'] },
+      category: 'multiagent',
+      permissionLevel: 'read',
+      readOnly: true,
+    } as never);
+  });
+  afterAll(() => {
+    // 还原成空 port，避免影响后续 describe
+    setProtocolToolRegistryPort({
+      register: () => {}, unregister: () => false, has: () => false,
+      getSchemas: () => [], resolve: async () => { throw new Error('reset'); },
+    } as never);
+  });
+
+  it('switches schema-repair → terminal directive after the attempt cap', async () => {
+    const ctx = makeRuntimeContext();
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(
+      contextAssembly as never,
+      { emitTaskProgress: vi.fn() } as never,
+      { setPlanMode: vi.fn(), isPlanMode: () => false, generateAutoContinuationPrompt: () => 'continue' } as never,
+    );
+
+    // probe_tool 缺必填 target → 真引擎校验失败，连续 3 次（上限 2）
+    const call = (id: string) => ({ id, name: 'probe_tool', arguments: {} });
+    const r1 = await engine.executeSingleTool(call('p1') as never, 0, 1, false);
+    const r2 = await engine.executeSingleTool(call('p2') as never, 0, 1, false);
+    const r3 = await engine.executeSingleTool(call('p3') as never, 0, 1, false);
+
+    expect(r1.metadata?.repairExhausted).toBe(false);
+    expect(r2.metadata?.repairExhausted).toBe(false);
+    expect(r3.metadata?.repairExhausted).toBe(true);
+    expect(r3.metadata?.repairAttempt).toBe(3);
+
+    const injected = contextAssembly.injectSystemMessage.mock.calls.map((c) => c[0] as string);
+    expect(injected[0]).toContain('校验失败');
+    expect(injected[1]).toContain('校验失败');
+    expect(injected[2]).toContain('tool-args-repair-exhausted');
+    expect(injected[2]).not.toContain('完整参数 schema');
   });
 });

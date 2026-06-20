@@ -50,11 +50,16 @@ export const en: Translations = {
     deviceDesktop: 'Desktop',
     deviceTablet: 'Tablet',
     deviceMobile: 'Mobile',
+    continueEditTitle: 'Edit',
+    continueEditPlaceholder: 'Keep refining this prototype, e.g. make the nav dark, add an FAQ section (Enter to apply)',
+    continueEditSend: 'Apply',
     errImageSoon: 'Mockup / infographic coming soon — use Prototype for now',
     errNoRequirement: 'Please enter a requirement first',
     errResolveDir: 'Could not prepare the design draft directory, please retry',
     errDispatch: 'Failed to dispatch generation',
     errTimeout: 'Generation timed out — no prototype file detected',
+    errNoPrototype: 'Generate or pick a prototype first',
+    errNoInstruction: 'Enter a change request first',
   },
 
   // Settings Modal

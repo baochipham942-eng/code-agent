@@ -12,6 +12,8 @@ import {
   Monitor,
   Tablet,
   Smartphone,
+  Wand2,
+  Send,
 } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
@@ -251,6 +253,50 @@ const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDevic
   );
 };
 
+/** 续编输入条：在当前预览的原型上继续局部修改（backlog #3）。 */
+const ContinueEditBar: React.FC = () => {
+  const { t } = useI18n();
+  const { continueEdit } = useDesignGeneration();
+  const generating = useDesignStore((s) => s.status === 'generating');
+  const [text, setText] = useState('');
+
+  const submit = async (): Promise<void> => {
+    const v = text.trim();
+    if (!v || generating) return;
+    setText('');
+    await continueEdit(v);
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 py-2">
+      <Wand2 className="h-3.5 w-3.5 shrink-0 text-fuchsia-300" />
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        placeholder={t.design.continueEditPlaceholder}
+        disabled={generating}
+        className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none disabled:opacity-50"
+      />
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={generating || !text.trim()}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-40"
+      >
+        <Send className="h-3.5 w-3.5" />
+        {t.design.continueEditSend}
+      </button>
+    </div>
+  );
+};
+
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
   const previewHtml = useDesignStore((s) => s.previewHtml);
@@ -278,6 +324,7 @@ const PreviewPane: React.FC = () => {
             sandbox="allow-scripts"
           />
         </div>
+        <ContinueEditBar />
       </div>
     );
   }

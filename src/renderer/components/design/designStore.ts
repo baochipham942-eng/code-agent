@@ -47,6 +47,8 @@ interface DesignState {
 
   // 运行 actions
   startGenerating: (run: DesignRun) => void;
+  /** 在现有 run 上续编：转生成态但保留当前预览（边改边刷，不闪空）。 */
+  startEditing: (runDir: string) => void;
   setPreviewHtml: (html: string) => void;
   setDone: () => void;
   setError: (msg: string) => void;
@@ -93,6 +95,8 @@ export const useDesignStore = create<DesignState>()(
           selectedRunDir: run.runDir,
           history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
         })),
+      startEditing: (runDir) =>
+        set({ status: 'generating', error: null, previewPath: runDir, selectedRunDir: runDir }),
       setPreviewHtml: (previewHtml) => set({ previewHtml }),
       setDone: () => set({ status: 'done' }),
       setError: (error) => set({ status: 'error', error }),

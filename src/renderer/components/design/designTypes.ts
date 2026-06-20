@@ -101,6 +101,52 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
   return lines.join('\n');
 }
 
+/** 圈选到的原型元素定位信息（来自预览 iframe 注入脚本的 postMessage）。 */
+export type PrototypeSelection = {
+  /** 元素标签名（小写），如 button / h1。 */
+  tag?: string;
+  /** 元素可见文案（截断）。 */
+  text?: string;
+  /** 元素的 CSS 选择器路径，供 Agent 在源 HTML 中定位。 */
+  selector?: string;
+};
+
+export type BuildContinueEditPromptInput = {
+  /** 现有原型文件路径，Agent 在其上做局部 Edit。 */
+  reservedPath: string;
+  /** 用户的修改指令。 */
+  instruction: string;
+  /** 可选：圈选的目标元素，注入后让 Agent 定向修改。 */
+  selection?: PrototypeSelection;
+};
+
+/**
+ * 「在同一原型上续编」的回合 prompt：约束 Agent 用 Edit 对现有文件做最小局部修改，
+ * 不重写整页、不新建文件、仍以 `</html>` 收尾。带圈选元素时附上目标定位，让模型
+ * 定向改而非全局猜。与 buildPrototypePrompt（首次生成，Write 骨架 + 增量）互补。
+ */
+export function buildContinueEditPrompt(input: BuildContinueEditPromptInput): string {
+  const instruction = input.instruction.trim();
+  const lines = [
+    '在现有 HTML 原型上做局部修改，不要重写整页。',
+    `原型文件：${input.reservedPath}`,
+    '',
+    '硬性规则：',
+    `- 用 Edit 工具对 \`${input.reservedPath}\` 做最小必要的局部修改，保持页面其余部分不变。`,
+    '- 本回合只操作这一个文件，不要新建或修改其他文件。',
+    '- 文件内容保持 raw HTML，仍以 `</html>` 收尾。',
+  ];
+  const sel = input.selection;
+  if (sel && (sel.selector || sel.tag || sel.text)) {
+    lines.push('', '目标元素（用户在预览里圈选的，优先改它）：');
+    if (sel.selector) lines.push(`- CSS 选择器：${sel.selector}`);
+    if (sel.tag) lines.push(`- 标签：<${sel.tag}>`);
+    if (sel.text) lines.push(`- 文案：「${sel.text}」`);
+  }
+  if (instruction) lines.push('', '修改要求：', instruction);
+  return lines.join('\n');
+}
+
 const IMAGE_OUTPUT_LABEL: Record<Exclude<DesignOutputType, 'prototype'>, string> = {
   mockup: 'UI 设计稿',
   infographic: '信息图',

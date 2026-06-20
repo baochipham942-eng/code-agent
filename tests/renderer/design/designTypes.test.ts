@@ -3,6 +3,7 @@ import {
   formatDesignContextLines,
   buildPrototypePrompt,
   buildImagePrompt,
+  buildContinueEditPrompt,
   designDeviceWidth,
   DESIGN_TONE_OPTIONS,
 } from '../../../src/renderer/components/design/designTypes';
@@ -55,6 +56,33 @@ describe('buildImagePrompt', () => {
 
   it('信息图标签正确', () => {
     expect(buildImagePrompt({ requirement: 'x', outputType: 'infographic' })).toContain('信息图');
+  });
+});
+
+describe('buildContinueEditPrompt', () => {
+  const base = { reservedPath: '.neo-design/run-1/prototype.html', instruction: '把主按钮换成绿色' };
+
+  it('要求局部改、用 Edit、不重写整页、保留收尾', () => {
+    const p = buildContinueEditPrompt(base);
+    expect(p).toContain('.neo-design/run-1/prototype.html');
+    expect(p).toContain('Edit');
+    expect(p).toContain('局部');
+    expect(p).toContain('</html>');
+    expect(p).toContain('把主按钮换成绿色');
+  });
+
+  it('带选中元素上下文时注入目标定位', () => {
+    const p = buildContinueEditPrompt({
+      ...base,
+      selection: { tag: 'button', text: '立即购买', selector: '.hero > button.cta' },
+    });
+    expect(p).toContain('button');
+    expect(p).toContain('立即购买');
+    expect(p).toContain('.hero > button.cta');
+  });
+
+  it('无选中元素时不出现目标定位段', () => {
+    expect(buildContinueEditPrompt(base)).not.toContain('目标元素');
   });
 });
 

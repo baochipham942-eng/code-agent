@@ -48,11 +48,16 @@ export const zh = {
     deviceDesktop: '桌面',
     deviceTablet: '平板',
     deviceMobile: '手机',
+    continueEditTitle: '续编',
+    continueEditPlaceholder: '继续改这个原型，例如：把导航改成深色、加一个 FAQ 区块（回车应用）',
+    continueEditSend: '应用修改',
     errImageSoon: '设计稿 / 信息图即将支持，当前先用「交互原型」',
     errNoRequirement: '请先填写需求描述',
     errResolveDir: '无法准备设计草稿目录，请重试',
     errDispatch: '生成派发失败',
     errTimeout: '生成超时，未检测到原型文件',
+    errNoPrototype: '请先生成或选择一个原型',
+    errNoInstruction: '请先填写修改要求',
   },
 
   // Settings Modal

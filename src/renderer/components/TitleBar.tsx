@@ -10,6 +10,7 @@ import { isWebMode, isTauriMode } from '../utils/platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { WorkspaceModeSwitch } from './design/WorkspaceModeSwitch';
 export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
@@ -90,6 +91,7 @@ export const TitleBar: React.FC = () => {
           <span className="max-w-[180px] truncate">{workspaceLabel}</span>
         </button>
         <SessionActionsMenu />
+        <WorkspaceModeSwitch />
       </div>
       {/* Right: 仅保留 Task Panel toggle —— 顶栏布局对称，其余工具进左下 User Menu，
           tab 重开走 WorkbenchTabs 的 + 按钮 */}

@@ -20,6 +20,15 @@ export const zh = {
     coming: '即将推出',
   },
 
+  // Design Workspace（Kun 借鉴：设计 tab）
+  design: {
+    tabCode: 'Code',
+    tabDesign: '设计',
+    title: '设计',
+    description: '从需求生成 UI 设计稿、信息图与可交互原型',
+    comingSoon: '设计工作区开发中',
+  },
+
   // Settings Modal
   settings: {
     title: '设置',

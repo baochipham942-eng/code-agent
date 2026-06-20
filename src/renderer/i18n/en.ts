@@ -22,6 +22,15 @@ export const en: Translations = {
     coming: 'Coming',
   },
 
+  // Design Workspace (borrowed from Kun: design tab)
+  design: {
+    tabCode: 'Code',
+    tabDesign: 'Design',
+    title: 'Design',
+    description: 'Generate UI mockups, infographics and interactive prototypes from requirements',
+    comingSoon: 'Design workspace in progress',
+  },
+
   // Settings Modal
   settings: {
     title: 'Settings',

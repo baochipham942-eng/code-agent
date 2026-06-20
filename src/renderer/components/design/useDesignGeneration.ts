@@ -123,13 +123,29 @@ export function useDesignGeneration(): { generate: () => Promise<void> } {
     st.startGenerating({ runDir, requirement, createdAt: Date.now() });
     await ensureDir(runDir);
     try {
+      // 记下用户当前聊天会话：设计生成不应抢占它。
+      const prevSessionId = useSessionStore.getState().currentSessionId;
       const session = await useSessionStore
         .getState()
         .createSession(`${t.design.title}：${requirement.slice(0, 12)}`, {
           workingDirectory: runDir,
         });
-      await sendMessage({ content: prompt, context: { workingDirectory: runDir } });
-      void pollPreview(runDir, session?.id ?? null, t.design.errTimeout);
+      if (!session) {
+        useDesignStore.getState().setError(t.design.errDispatch);
+        return;
+      }
+      // createSession 会激活设计会话；立即切回用户原会话，让「通用」聊天区不被设计
+      // 会话占用。发消息时用 sessionId 指定发给设计会话（envelope.sessionId 优先于
+      // currentSessionId），不依赖当前会话；处理状态按 id 全局跟踪，预览轮询不受影响。
+      if (prevSessionId && prevSessionId !== session.id) {
+        await useSessionStore.getState().switchSession(prevSessionId);
+      }
+      await sendMessage({
+        content: prompt,
+        sessionId: session.id,
+        context: { workingDirectory: runDir },
+      });
+      void pollPreview(runDir, session.id, t.design.errTimeout);
     } catch (e) {
       useDesignStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
     }

@@ -109,6 +109,9 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
       '以内的小块——不要试图在一次 Write 里塞进整页 HTML，过大的工具入参会在流式中途中断。',
     '- 本回合只操作这一个文件，不要创建或修改其他文件。',
     '- 文件内容必须是 raw HTML——不要 markdown 围栏、不要在文件内写说明。',
+    '- 任何 HTML 标签都写成真实标签，禁止用转义实体（如 &lt;nav&gt;）或把标签当可见文本，' +
+      '否则会在页面上显示成原始代码。导航 / 页头这类结构要在同一次 Edit 内把开闭标签成对写完，' +
+      '不要跨多次 Edit 把一个元素切成半截，避免预览在中途渲染出未闭合的原始标记残影。',
     '- 以文档的 `</html>` 收尾，然后用一段话总结你实现了哪些交互。',
   ];
   const ctxLines = formatDesignContextLines(input.designContext);

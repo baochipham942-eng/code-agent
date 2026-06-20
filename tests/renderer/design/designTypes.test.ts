@@ -47,6 +47,12 @@ describe('buildPrototypePrompt', () => {
     const p = buildPrototypePrompt({ ...base, designContext: { brandColor: '#0066ff' } });
     expect(p).toContain('#0066ff');
   });
+
+  it('硬约束防 raw-HTML 残影：禁转义实体 + 元素成对写完', () => {
+    const p = buildPrototypePrompt(base);
+    expect(p).toContain('转义实体');
+    expect(p).toContain('成对');
+  });
 });
 
 describe('buildImagePrompt', () => {

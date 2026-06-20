@@ -1,6 +1,17 @@
-import { isAbsolute, resolve } from 'path';
+import { isAbsolute, resolve, join } from 'path';
 import type { RuntimeContext } from './runtimeContext';
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
+import { getUserConfigDir } from '../../config/configPaths';
+
+// 设计草稿（Kun 借鉴：设计 tab）会话的工作目录在 app 托管的 .code-agent/design 下。
+// 设计原型定义上不是游戏 artifact——这类会话整体豁免 artifact repair：既不进入、也
+// 不被旧 guard 拦截、更不从历史文本里被重新种上 guard（dogfood 实测：旧 repair 状态
+// 持久化进 DB 后会跨会话死锁拦截所有 Write，详见借鉴清单 Bug B）。
+export function isDesignDraftWorkingDir(workingDirectory: string | null | undefined): boolean {
+  if (!workingDirectory) return false;
+  const designRoot = join(getUserConfigDir(), 'design');
+  return workingDirectory === designRoot || workingDirectory.startsWith(`${designRoot}/`);
+}
 
 // Route A: the repair tool set never narrows by read/block counters.
 // Pre-patch the model can Read/Edit/Write/Append AND Bash the target artifact:
@@ -121,6 +132,12 @@ function inferArtifactRepairPhase(text: string): string {
 }
 
 export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
+  // 设计草稿会话整体豁免：清除任何已存 guard，且不从历史文本里重新种上——
+  // 防止持久化进 DB 的旧 repair 状态跨会话死锁拦截设计写入。
+  if (isDesignDraftWorkingDir(ctx.workingDirectory)) {
+    ctx.artifactRepairGuard = undefined;
+    return;
+  }
   if (ctx.artifactRepairGuard) return;
 
   const messageTextBlocks: string[] = [];

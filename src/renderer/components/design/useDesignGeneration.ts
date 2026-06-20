@@ -15,6 +15,7 @@ import type { FileInfo } from '@shared/contract/workspace';
 import { useAgent } from '../../hooks/useAgent';
 import { useI18n } from '../../hooks/useI18n';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useAppStore } from '../../stores/appStore';
 import { useDesignStore } from './designStore';
 import { buildPrototypePrompt } from './designTypes';
 
@@ -71,19 +72,24 @@ async function ensureDir(dirPath: string): Promise<void> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
- * 轮询 run 目录里的 html，边长边刷预览；检测到 </html> 收尾且大小连续多轮不变才
- * 算完成（不能一看到 </html> 就停——Agent 先写的骨架已含 </html>，会冻结空骨架）。
+ * 轮询 run 目录里的 html，每轮都把最新内容刷进预览。完成判定**以会话处理状态为准**
+ * （会话从"处理中"转为 idle 即定稿）——不能靠"文件大小稳定"，因为 Agent 先写骨架
+ * 再 edit，骨架后的思考停顿时长不定，固定时间窗会在停顿处误判完成、冻结在骨架
+ * （dogfood 实测）。文件稳定仅作"拿不到处理状态"时的兜底。
  */
-async function pollPreview(runDir: string, timeoutMsg: string): Promise<void> {
+async function pollPreview(runDir: string, sessionId: string | null, timeoutMsg: string): Promise<void> {
   const store = useDesignStore;
   const deadline = Date.now() + DESIGN_WORKSPACE.POLL_TIMEOUT_MS;
   let lastLen = -1;
   let stableRounds = 0;
+  let everProcessing = false;
   while (Date.now() < deadline) {
     // 被新一轮生成或重置取代 → 放弃本轮轮询。
     if (store.getState().previewPath !== runDir) return;
+
     const htmlPath = await findRunHtml(runDir);
     const content = htmlPath ? await readWorkspaceFile(htmlPath) : null;
+    let complete = false;
     if (content && content.length > 0) {
       if (content.length !== lastLen) {
         store.getState().setPreviewHtml(content);
@@ -92,10 +98,22 @@ async function pollPreview(runDir: string, timeoutMsg: string): Promise<void> {
       } else {
         stableRounds += 1;
       }
-      if (/<\/html>/i.test(content) && stableRounds >= DESIGN_WORKSPACE.STABLE_ROUNDS) {
-        store.getState().setDone();
-        return;
-      }
+      complete = /<\/html>/i.test(content);
+    }
+
+    // 主判定：会话处理状态从"处理中"→idle，且已有完整内容 → 定稿。
+    const processing = sessionId
+      ? useAppStore.getState().processingSessionIds.has(sessionId)
+      : false;
+    if (processing) everProcessing = true;
+    if (everProcessing && !processing && complete) {
+      store.getState().setDone();
+      return;
+    }
+    // 兜底：拿不到处理状态时，靠"完整且长时间不变"收尾。
+    if (!sessionId && complete && stableRounds >= DESIGN_WORKSPACE.STABLE_ROUNDS) {
+      store.getState().setDone();
+      return;
     }
     await sleep(DESIGN_WORKSPACE.POLL_INTERVAL_MS);
   }
@@ -141,17 +159,16 @@ export function useDesignGeneration(): { generate: () => Promise<void> } {
     st.startGenerating(runDir);
     await ensureDir(runDir);
     try {
-      await useSessionStore
+      const session = await useSessionStore
         .getState()
         .createSession(`${t.design.title}：${st.requirement.slice(0, 12)}`, {
           workingDirectory: runDir,
         });
       await sendMessage({ content: prompt, context: { workingDirectory: runDir } });
+      void pollPreview(runDir, session?.id ?? null, t.design.errTimeout);
     } catch (e) {
       useDesignStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
-      return;
     }
-    void pollPreview(runDir, t.design.errTimeout);
   }, [sendMessage, t]);
 
   return { generate };

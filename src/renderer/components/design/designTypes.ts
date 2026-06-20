@@ -65,12 +65,13 @@ export type BuildPrototypePromptInput = {
 };
 
 /**
- * 交互 HTML 原型的回合 prompt：产出单文件可交互 HTML 并用 Write 一次性写到预留
- * 路径。硬约束移植自 Kun：单文件、纯 raw HTML、以 </html> 收尾。
+ * 交互 HTML 原型的回合 prompt：产出单文件可交互 HTML 并用文件工具写到预留路径。
+ * 硬约束移植自 Kun：单文件、纯 raw HTML、增量写入、以 </html> 收尾。
  *
- * 注意：刻意要求「单次 Write 写完整文档」，不做增量 edit——多次写/改会反复触发
- * 工具入参 repair 闸导致 Write 被拦截、Agent 被迫退回 Bash（dogfood 实测，
- * 详见借鉴清单 Bug B）。一次写完最稳。
+ * 注意：刻意要求「先写骨架再用 Edit 增量扩展」。dogfood 实测，让 MiMo 把整页 HTML
+ * 塞进一次 Write 的工具入参里流式吐，会在 ~1KB 处中断（incomplete tool call）导致
+ * 文件写不完；分小块增量写每块都能稳定流完。设计草稿目录已豁免游戏校验，增量写不再
+ * 触发 artifact repair（详见借鉴清单 Bug B）。
  */
 export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
   const requirement = input.requirement.trim();
@@ -79,9 +80,11 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
     `预留原型文件路径：${input.reservedPath}`,
     '',
     '硬性规则：',
-    `- 用一次 Write 调用，在 \`${input.reservedPath}\` 写入一个完整、独立的单文件 HTML 文档；按需创建父目录。`,
-    '- 一次写完整份文档，不要分多次 write/edit 增量拼接。',
-    '- 本回合不要创建或修改任何其他文件。',
+    `- 在 \`${input.reservedPath}\` 产出一个完整、独立的单文件 HTML 文档；按需创建父目录。`,
+    '- 分步增量构建：先用 Write 写一个最小可用骨架（doctype、head、空 body），' +
+      '再用若干次 Edit 逐段把 hero、内容、样式、脚本补全。每次写入控制在约 1500 字符' +
+      '以内的小块——不要试图在一次 Write 里塞进整页 HTML，过大的工具入参会在流式中途中断。',
+    '- 本回合只操作这一个文件，不要创建或修改其他文件。',
     '- 文件内容必须是 raw HTML——不要 markdown 围栏、不要在文件内写说明。',
     '- 以文档的 `</html>` 收尾，然后用一段话总结你实现了哪些交互。',
   ];

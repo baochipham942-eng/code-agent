@@ -6,6 +6,8 @@ export const DESIGN_WORKSPACE = {
   POLL_INTERVAL_MS: 800,
   POLL_TIMEOUT_MS: 120_000,
   // 完成判定：内容大小连续 N 轮不变才算稳定（N×间隔 ≈ 静默窗口）。
-  // 不能一看到 </html> 就停——Agent 先写的骨架已含 </html>，会冻结在空骨架。
-  STABLE_ROUNDS: 6,
+  // 不能一看到 </html> 就停——Agent 先写的骨架已含 </html>，会冻结在骨架；
+  // 且骨架→edit 之间 MiMo 有思考停顿，窗口太短会在停顿处误判完成。取 12（≈10s）
+  // 扛过停顿，中途每次变化都刷新预览，最终吃到完整页面（dogfood 实测）。
+  STABLE_ROUNDS: 12,
 } as const;

@@ -54,13 +54,15 @@ async function pollPreview(absPath: string, timeoutMsg: string): Promise<void> {
     const content = await readWorkspaceFile(absPath);
     if (content && content.length > 0) {
       if (content.length !== lastLen) {
+        // 内容仍在增长（Agent 骨架→填充）：持续刷新预览，重置静默计数。
         store.getState().setPreviewHtml(content);
         lastLen = content.length;
         stableRounds = 0;
       } else {
         stableRounds += 1;
       }
-      if (/<\/html>/i.test(content) && stableRounds >= 1) {
+      // 只有"已收尾(</html>) 且 大小连续多轮不变"才算完成，避免冻结在骨架。
+      if (/<\/html>/i.test(content) && stableRounds >= DESIGN_WORKSPACE.STABLE_ROUNDS) {
         store.getState().setDone();
         return;
       }

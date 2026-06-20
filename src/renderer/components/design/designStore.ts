@@ -4,6 +4,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DesignOutputType, DesignSurface } from './designTypes';
+import type { DesignVersion } from './designFiles';
 
 export type DesignGenStatus = 'idle' | 'generating' | 'done' | 'error';
 
@@ -33,6 +34,9 @@ interface DesignState {
   error: string | null;
   previewPath: string | null;
   previewHtml: string | null;
+  // 版本快照（当前 run，不持久；磁盘是真理源）。viewingVersionPath 非空=正在看历史版本。
+  versions: DesignVersion[];
+  viewingVersionPath: string | null;
 
   // 表单 actions
   setRequirement: (v: string) => void;
@@ -47,10 +51,16 @@ interface DesignState {
 
   // 运行 actions
   startGenerating: (run: DesignRun) => void;
+  /** 在现有 run 上续编：转生成态但保留当前预览（边改边刷，不闪空）。 */
+  startEditing: (runDir: string) => void;
   setPreviewHtml: (html: string) => void;
   setDone: () => void;
   setError: (msg: string) => void;
   reset: () => void;
+
+  // 版本 actions
+  setVersions: (versions: DesignVersion[]) => void;
+  setViewingVersion: (path: string | null) => void;
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -67,6 +77,8 @@ export const useDesignStore = create<DesignState>()(
       error: null,
       previewPath: null,
       previewHtml: null,
+      versions: [],
+      viewingVersionPath: null,
 
       setRequirement: (requirement) => set({ requirement }),
       setBrandColor: (brandColor) => set({ brandColor }),
@@ -82,7 +94,15 @@ export const useDesignStore = create<DesignState>()(
           history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
         })),
       selectRun: (runDir) =>
-        set({ selectedRunDir: runDir, previewPath: runDir, previewHtml: null, status: 'idle', error: null }),
+        set({
+          selectedRunDir: runDir,
+          previewPath: runDir,
+          previewHtml: null,
+          status: 'idle',
+          error: null,
+          versions: [],
+          viewingVersionPath: null,
+        }),
 
       startGenerating: (run) =>
         set((s) => ({
@@ -91,12 +111,33 @@ export const useDesignStore = create<DesignState>()(
           previewPath: run.runDir,
           previewHtml: null,
           selectedRunDir: run.runDir,
+          versions: [],
+          viewingVersionPath: null,
           history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
         })),
+      startEditing: (runDir) =>
+        set({
+          status: 'generating',
+          error: null,
+          previewPath: runDir,
+          selectedRunDir: runDir,
+          viewingVersionPath: null,
+        }),
       setPreviewHtml: (previewHtml) => set({ previewHtml }),
       setDone: () => set({ status: 'done' }),
       setError: (error) => set({ status: 'error', error }),
-      reset: () => set({ status: 'idle', error: null, previewPath: null, previewHtml: null }),
+      reset: () =>
+        set({
+          status: 'idle',
+          error: null,
+          previewPath: null,
+          previewHtml: null,
+          versions: [],
+          viewingVersionPath: null,
+        }),
+
+      setVersions: (versions) => set({ versions }),
+      setViewingVersion: (viewingVersionPath) => set({ viewingVersionPath }),
     }),
     {
       name: 'code-agent-design',

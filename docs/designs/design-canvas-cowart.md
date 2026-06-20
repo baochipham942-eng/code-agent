@@ -1,6 +1,6 @@
 # 设计稿/信息图画布（Cowart 式无限画布 + 圈选标注迭代）· Spec
 
-> **Status**: 🟢 已拍板（D1-D4 定案 2026-06-20），待实现。引擎=通义万相 inpaint；画布=konva 自研；v1 含 A/B 对比
+> **Status**: ✅ v1 已实现并真实端到端验证（2026-06-21）。P0 画布接入 / P1 文生图回灌 / P2 圈选标注→真 inpaint(wanx2.1-imageedit) / P3 A/B 对比 全部完成。6 提交在 worktree `code-agent-canvas`（feat/design-canvas-cowart），未推远程待拍板合并。引擎=通义万相；画布=konva 自研。后续可选：工作流历史链 / agent 自主多轮编辑 / aspect_ratio 选择。
 > **来源**: `/competitor-borrow-analysis` 四路并行调研（tldraw 库 / make-real 架构 / Liblib 星流(Cowart) / 图像模型编辑能力）+ 我方 as-built 复核
 > **分支**: `feat/design-canvas-cowart`（worktree `code-agent-canvas`，基于 `feature/kun-design-quality-hook`）
 > **生成日期**: 2026-06-20

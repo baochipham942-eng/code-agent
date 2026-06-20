@@ -1,7 +1,7 @@
 // 设计工作区（Kun 借鉴：设计 tab）。左侧 composer（历史 + 需求 + 设计上下文 + 产物
 // 类型）+ 右侧预览。v1 把「交互原型」整条闭环打通；设计稿/信息图占位标「即将」。
 // 所有面向用户的文案统一走 i18n（t.design.*），避免中英混排。
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Palette,
   Sparkles,
@@ -14,6 +14,8 @@ import {
   Smartphone,
   Wand2,
   Send,
+  MousePointerClick,
+  X,
 } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
@@ -22,7 +24,8 @@ import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { readRunHtml } from './designFiles';
 import { designDeviceWidth } from './designTypes';
-import type { DesignOutputType, DesignSurface } from './designTypes';
+import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
+import { injectSelectionScript, parseProtoSelectMessage } from './designPreviewInject';
 import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
 
 /** 加载某次历史生成的产物到预览。 */
@@ -253,8 +256,14 @@ const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDevic
   );
 };
 
-/** 续编输入条：在当前预览的原型上继续局部修改（backlog #3）。 */
-const ContinueEditBar: React.FC = () => {
+/**
+ * 续编输入条：在当前预览的原型上继续局部修改（backlog #3）。
+ * selection 由 PreviewPane 圈选传入（backlog #2）：有选中时附目标元素定位并显示 chip。
+ */
+const ContinueEditBar: React.FC<{
+  selection: PrototypeSelection | null;
+  onClearSelection: () => void;
+}> = ({ selection, onClearSelection }) => {
   const { t } = useI18n();
   const { continueEdit } = useDesignGeneration();
   const generating = useDesignStore((s) => s.status === 'generating');
@@ -264,35 +273,50 @@ const ContinueEditBar: React.FC = () => {
     const v = text.trim();
     if (!v || generating) return;
     setText('');
-    await continueEdit(v);
+    const sel = selection ?? undefined;
+    onClearSelection();
+    await continueEdit(v, sel);
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 py-2">
-      <Wand2 className="h-3.5 w-3.5 shrink-0 text-fuchsia-300" />
-      <input
-        type="text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-        placeholder={t.design.continueEditPlaceholder}
-        disabled={generating}
-        className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none disabled:opacity-50"
-      />
-      <button
-        type="button"
-        onClick={() => void submit()}
-        disabled={generating || !text.trim()}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-40"
-      >
-        <Send className="h-3.5 w-3.5" />
-        {t.design.continueEditSend}
-      </button>
+    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/[0.06] px-3 py-2">
+      {selection && (
+        <div className="flex items-center gap-1.5 self-start rounded-md border border-fuchsia-400/30 bg-fuchsia-400/10 px-2 py-0.5 text-[11px] text-fuchsia-200">
+          <MousePointerClick className="h-3 w-3" />
+          <span>{t.design.selectionTarget}</span>
+          <span className="font-mono text-fuchsia-300">&lt;{selection.tag}&gt;</span>
+          {selection.text && <span className="max-w-[160px] truncate text-zinc-300">{selection.text}</span>}
+          <button type="button" onClick={onClearSelection} className="ml-0.5 text-fuchsia-300 hover:text-fuchsia-100">
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <Wand2 className="h-3.5 w-3.5 shrink-0 text-fuchsia-300" />
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          placeholder={t.design.continueEditPlaceholder}
+          disabled={generating}
+          className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={generating || !text.trim()}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-40"
+        >
+          <Send className="h-3.5 w-3.5" />
+          {t.design.continueEditSend}
+        </button>
+      </div>
     </div>
   );
 };
@@ -302,14 +326,47 @@ const PreviewPane: React.FC = () => {
   const previewHtml = useDesignStore((s) => s.previewHtml);
   const status = useDesignStore((s) => s.status);
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selection, setSelection] = useState<PrototypeSelection | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // 监听 srcDoc 注入脚本发来的圈选消息：校验来自本 iframe + 形状合法，
+  // 命中即设为选中目标并退出圈选模式（opaque origin 不可信，只认 source/type + contentWindow）。
+  useEffect(() => {
+    if (!selectMode) return;
+    const handler = (e: MessageEvent): void => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const payload = parseProtoSelectMessage(e.data);
+      if (!payload) return;
+      setSelection(payload);
+      setSelectMode(false);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [selectMode]);
 
   if (previewHtml) {
     const width = designDeviceWidth(device);
     const framed = device !== 'desktop';
+    const srcDoc = injectSelectionScript(previewHtml, selectMode);
     return (
       <div className="flex h-full w-full flex-col">
-        <div className="flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
+        <div className="relative flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
           <DeviceSwitch device={device} onChange={setDevice} />
+          <button
+            type="button"
+            onClick={() => setSelectMode((v) => !v)}
+            aria-pressed={selectMode}
+            title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
+            className={`absolute right-3 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+              selectMode
+                ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <MousePointerClick className="h-3.5 w-3.5" />
+            <span>{t.design.selectToggle}</span>
+          </button>
         </div>
         <div
           className={`flex min-h-0 flex-1 justify-center overflow-auto ${
@@ -317,14 +374,15 @@ const PreviewPane: React.FC = () => {
           }`}
         >
           <iframe
+            ref={iframeRef}
             title="design-preview"
-            srcDoc={previewHtml}
+            srcDoc={srcDoc}
             style={{ width, maxWidth: '100%' }}
             className={`h-full border-0 bg-white ${framed ? 'rounded-lg shadow-2xl' : 'w-full'}`}
             sandbox="allow-scripts"
           />
         </div>
-        <ContinueEditBar />
+        <ContinueEditBar selection={selection} onClearSelection={() => setSelection(null)} />
       </div>
     );
   }

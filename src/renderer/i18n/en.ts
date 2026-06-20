@@ -24,7 +24,7 @@ export const en: Translations = {
 
   // Design Workspace (borrowed from Kun: design tab)
   design: {
-    tabCode: 'Code',
+    tabCode: 'General',
     tabDesign: 'Design',
     title: 'Design',
     description: 'Generate UI mockups, infographics and interactive prototypes from requirements',

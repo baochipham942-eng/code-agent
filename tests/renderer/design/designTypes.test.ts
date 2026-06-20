@@ -54,6 +54,20 @@ describe('buildImagePrompt', () => {
   it('信息图标签正确', () => {
     expect(buildImagePrompt({ requirement: 'x', outputType: 'infographic' })).toContain('信息图');
   });
+
+  it('给 reservedPath 时强制 output_path 写到该路径', () => {
+    const p = buildImagePrompt({
+      requirement: '海报',
+      outputType: 'mockup',
+      reservedPath: '/x/run-1/assets/gen-9.png',
+    });
+    expect(p).toContain('output_path');
+    expect(p).toContain('/x/run-1/assets/gen-9.png');
+  });
+
+  it('不给 reservedPath 时不提 output_path', () => {
+    expect(buildImagePrompt({ requirement: '海报', outputType: 'mockup' })).not.toContain('output_path');
+  });
 });
 
 describe('DESIGN_TONE_OPTIONS', () => {

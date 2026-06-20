@@ -103,11 +103,13 @@ export type BuildImagePromptInput = {
   requirement: string;
   outputType: Exclude<DesignOutputType, 'prototype'>;
   designContext?: DesignContextInput;
+  /** 预留图片写入的绝对路径，Agent 必须把 image_generate 的 output_path 设为此值。 */
+  reservedPath?: string;
 };
 
 /**
  * 设计稿 / 信息图的回合 prompt：让 Agent 调用图像生成工具（image_generate，
- * 走 CogView/FLUX）产出静态视觉。
+ * 走 CogView/FLUX）产出静态视觉。给定 reservedPath 时强制写到该路径，便于回灌画布。
  */
 export function buildImagePrompt(input: BuildImagePromptInput): string {
   const requirement = input.requirement.trim();
@@ -116,6 +118,11 @@ export function buildImagePrompt(input: BuildImagePromptInput): string {
     `请使用图像生成工具（image_generate）生成一张${label}。`,
     `主题：${requirement || label}`,
   ];
+  if (input.reservedPath) {
+    lines.push(
+      `调用 image_generate 时必须把 output_path 参数设为 \`${input.reservedPath}\`，本回合只生成这一张图。`,
+    );
+  }
   const ctxLines = formatDesignContextLines(input.designContext);
   if (ctxLines.length > 0) lines.push('', ...ctxLines);
   lines.push('', '生成后用一句话说明这张图的设计取向。');

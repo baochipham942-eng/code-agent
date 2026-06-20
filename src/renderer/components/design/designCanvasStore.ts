@@ -2,6 +2,7 @@
 // 真理源是磁盘 canvas.json（见 designCanvasPersistence），本 store 只持运行态，
 // 不挂 persist——避免与磁盘存档双源（详见 docs/designs/design-canvas-cowart.md §2.2）。
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import {
   emptyCanvasDoc,
   type CanvasCamera,
@@ -15,6 +16,9 @@ interface DesignCanvasState {
   nodes: CanvasImageNode[];
   camera: CanvasCamera;
   selectedIds: string[];
+  /** 出图进行中（驱动生成按钮 spinner）。 */
+  generating: boolean;
+  error: string | null;
 
   /** 载入一份存档（切换 run / 刷新恢复）。 */
   loadDoc: (runDir: string | null, doc: DesignCanvasDoc) => void;
@@ -24,15 +28,21 @@ interface DesignCanvasState {
   updateNode: (id: string, patch: Partial<Omit<CanvasImageNode, 'id'>>) => void;
   setCamera: (camera: CanvasCamera) => void;
   setSelected: (ids: string[]) => void;
+  setGenerating: (generating: boolean) => void;
+  setError: (error: string | null) => void;
   /** 导出当前画布为存档文档（写盘用）。 */
   toDoc: () => DesignCanvasDoc;
 }
 
-export const useDesignCanvasStore = create<DesignCanvasState>()((set, get) => ({
+export const useDesignCanvasStore = create<DesignCanvasState>()(
+  persist(
+    (set, get) => ({
   runDir: null,
   nodes: [],
   camera: { ...emptyCanvasDoc().camera },
   selectedIds: [],
+  generating: false,
+  error: null,
 
   loadDoc: (runDir, doc) =>
     set({ runDir, nodes: doc.nodes, camera: doc.camera, selectedIds: [] }),
@@ -47,8 +57,18 @@ export const useDesignCanvasStore = create<DesignCanvasState>()((set, get) => ({
     })),
   setCamera: (camera) => set({ camera }),
   setSelected: (selectedIds) => set({ selectedIds }),
+  setGenerating: (generating) => set({ generating }),
+  setError: (error) => set({ error }),
   toDoc: () => {
     const s = get();
     return { version: 1, nodes: s.nodes, camera: s.camera };
   },
-}));
+    }),
+    {
+      name: 'code-agent-design-canvas',
+      version: 1,
+      // 只持久化 runDir（画布所属 run）；节点/相机从磁盘 canvas.json 恢复，运行态不持久。
+      partialize: (s) => ({ runDir: s.runDir }),
+    },
+  ),
+);

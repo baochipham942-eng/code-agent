@@ -8,6 +8,9 @@ import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
+import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
+import { useDesignCanvasStore } from './designCanvasStore';
+import { loadCanvasDoc } from './designCanvasPersistence';
 import { readRunHtml } from './designFiles';
 import { DesignCanvas } from './DesignCanvas';
 import type { DesignOutputType, DesignSurface } from './designTypes';
@@ -74,8 +77,10 @@ const HistorySection: React.FC = () => {
 const Composer: React.FC = () => {
   const { t } = useI18n();
   const s = useDesignStore();
-  const { generate } = useDesignGeneration();
-  const generating = s.status === 'generating';
+  const { generate: generatePrototype } = useDesignGeneration();
+  const { generate: generateCanvas } = useDesignCanvasGeneration();
+  const canvasGenerating = useDesignCanvasStore((c) => c.generating);
+  const canvasError = useDesignCanvasStore((c) => c.error);
 
   const outputTypes: Array<{ type: DesignOutputType; label: string }> = [
     { type: 'prototype', label: t.design.outputPrototype },
@@ -83,6 +88,9 @@ const Composer: React.FC = () => {
     { type: 'infographic', label: t.design.outputInfographic },
   ];
   const imageMode = isImageOutput(s.outputType);
+  const generating = imageMode ? canvasGenerating : s.status === 'generating';
+  const error = imageMode ? canvasError : s.error;
+  const onGenerate = imageMode ? generateCanvas : generatePrototype;
   const surfaces: Array<{ value: DesignSurface; label: string }> = [
     { value: 'brand', label: t.design.surfaceBrand },
     { value: 'product', label: t.design.surfaceProduct },
@@ -187,25 +195,18 @@ const Composer: React.FC = () => {
       {/* 生成 */}
       <button
         type="button"
-        onClick={() => void generate()}
-        disabled={generating || imageMode}
+        onClick={() => void onGenerate()}
+        disabled={generating}
         className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
       >
         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
         {generating ? t.design.generating : t.design.generate}
       </button>
 
-      {/* P0：图像类型画布已就绪，出图回灌为下一步（P1）。 */}
-      {imageMode && (
-        <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
-          {t.design.canvasGenSoon}
-        </div>
-      )}
-
-      {s.error && (
+      {error && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{s.error}</span>
+          <span>{error}</span>
         </div>
       )}
     </div>
@@ -255,6 +256,19 @@ export const DesignWorkspace: React.FC = () => {
     if (st.selectedRunDir && !st.previewHtml && st.status === 'idle') {
       void loadRun(st.selectedRunDir);
     }
+  }, []);
+
+  // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载。
+  useEffect(() => {
+    const cs = useDesignCanvasStore.getState();
+    if (!cs.runDir || cs.nodes.length > 0) return;
+    const runDir = cs.runDir;
+    void loadCanvasDoc(runDir).then((doc) => {
+      const cur = useDesignCanvasStore.getState();
+      if (cur.runDir === runDir && cur.nodes.length === 0) {
+        cur.loadDoc(runDir, doc);
+      }
+    });
   }, []);
 
   return (

@@ -14,4 +14,8 @@ export const DESIGN_WORKSPACE = {
   // 设计草稿工作目录的路径标记：用于把设计会话从聊天侧栏过滤掉（设计草稿不该当成
   // 聊天项目占侧栏；设计模式有自己的历史）。与主进程 getUserConfigDir()/design 对应。
   DRAFT_PATH_MARKER: '/.code-agent/design/',
+  // 画布（Cowart 式）：图片产物子目录、新节点间距、回灌后兜底节点尺寸。
+  CANVAS_ASSETS_DIR: 'assets',
+  CANVAS_NODE_GAP: 60,
+  CANVAS_NODE_FALLBACK_SIZE: 512,
 } as const;

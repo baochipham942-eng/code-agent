@@ -8,6 +8,7 @@ import type Konva from 'konva';
 import { Palette } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
+import { readWorkspaceImageAsDataUrl } from './designFiles';
 import type { CanvasImageNode } from './designCanvasTypes';
 
 // 缩放范围与步进（避免画布塌缩/无限放大）。
@@ -15,26 +16,36 @@ const SCALE_MIN = 0.1;
 const SCALE_MAX = 5;
 const SCALE_STEP = 1.05;
 
-/** 加载一张图为 HTMLImageElement；未就绪返回 null。src 接受 dataURL / http(s) URL。 */
-function useLoadedImage(src: string): HTMLImageElement | null {
+/**
+ * 加载节点图片为 HTMLImageElement；未就绪返回 null。
+ * src 为 dataURL / http(s) 时直接用；否则视为相对 run 目录的路径，经 IPC 读成 dataURL
+ * （renderer 无法直接读 fs 路径，画布存档也只存相对路径以免膨胀）。
+ */
+function useNodeImage(runDir: string | null, src: string): HTMLImageElement | null {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
     let alive = true;
-    const image = new window.Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => {
-      if (alive) setImg(image);
-    };
-    image.src = src;
+    void (async () => {
+      let url: string | null = src;
+      if (!/^(data:|https?:)/.test(src)) {
+        url = runDir ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${src}`) : null;
+      }
+      if (!url || !alive) return;
+      const image = new window.Image();
+      image.onload = () => {
+        if (alive) setImg(image);
+      };
+      image.src = url;
+    })();
     return () => {
       alive = false;
     };
-  }, [src]);
+  }, [runDir, src]);
   return img;
 }
 
-const CanvasImage: React.FC<{ node: CanvasImageNode }> = ({ node }) => {
-  const img = useLoadedImage(node.src);
+const CanvasImage: React.FC<{ node: CanvasImageNode; runDir: string | null }> = ({ node, runDir }) => {
+  const img = useNodeImage(runDir, node.src);
   if (!img) return null;
   return (
     <KonvaImage
@@ -57,6 +68,7 @@ export const DesignCanvas: React.FC = () => {
   const nodes = useDesignCanvasStore((s) => s.nodes);
   const camera = useDesignCanvasStore((s) => s.camera);
   const setCamera = useDesignCanvasStore((s) => s.setCamera);
+  const runDir = useDesignCanvasStore((s) => s.runDir);
 
   // 容器尺寸跟随（Stage 需要显式像素宽高）。
   useEffect(() => {
@@ -114,7 +126,7 @@ export const DesignCanvas: React.FC = () => {
         >
           <Layer>
             {nodes.map((node) => (
-              <CanvasImage key={node.id} node={node} />
+              <CanvasImage key={node.id} node={node} runDir={runDir} />
             ))}
           </Layer>
         </Stage>

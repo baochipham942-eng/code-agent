@@ -15,6 +15,7 @@ export * from './storage';
 export * from './misc';
 export * from './repair';
 export * from './designQuality';
+export * from './designWorkspace';
 export * from './acceptance';
 export * from './game';
 export * from './vision';

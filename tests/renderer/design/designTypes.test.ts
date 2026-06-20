@@ -7,6 +7,7 @@ import {
   designDeviceWidth,
   versionFileName,
   parseVersionTs,
+  prototypeExportName,
   DESIGN_TONE_OPTIONS,
 } from '../../../src/renderer/components/design/designTypes';
 import { DESIGN_DEVICE_PRESETS } from '../../../src/shared/constants/designWorkspace';
@@ -97,6 +98,12 @@ describe('version file naming', () => {
   it('非版本文件名返回 null', () => {
     expect(parseVersionTs('prototype.html')).toBeNull();
     expect(parseVersionTs('v-abc.html')).toBeNull();
+  });
+});
+
+describe('prototypeExportName', () => {
+  it('带时间戳的 html 文件名', () => {
+    expect(prototypeExportName(1700000000000)).toBe('neo-prototype-1700000000000.html');
   });
 });
 

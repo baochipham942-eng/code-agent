@@ -20,6 +20,11 @@ export function parseVersionTs(fileName: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** 导出到下载目录时的文件名（带时间戳避免覆盖）。 */
+export function prototypeExportName(ts: number): string {
+  return `neo-prototype-${ts}.html`;
+}
+
 /** 设计语境的表层定位：品牌主导（设计即产品）vs 产品主导（设计服务产品）。 */
 export type DesignSurface = 'brand' | 'product';
 

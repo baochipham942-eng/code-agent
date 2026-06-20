@@ -19,6 +19,10 @@ import {
   Clock,
   RotateCcw,
   ChevronDown,
+  ExternalLink,
+  Download,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
@@ -31,9 +35,11 @@ import {
   writeWorkspaceFile,
   findRunHtml,
   listVersions,
+  openInDefaultApp,
+  saveHtmlToDownloads,
   type DesignVersion,
 } from './designFiles';
-import { designDeviceWidth } from './designTypes';
+import { designDeviceWidth, prototypeExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
 import { injectSelectionScript, parseProtoSelectMessage } from './designPreviewInject';
 import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
@@ -443,9 +449,36 @@ const PreviewPane: React.FC = () => {
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
   const [selectMode, setSelectMode] = useState(false);
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [exported, setExported] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const viewing = viewingVersionPath !== null;
+
+  // 全屏态下 Esc 退出。
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  const handleOpenBrowser = async (): Promise<void> => {
+    if (!selectedRunDir) return;
+    const proto = (await findRunHtml(selectedRunDir)) ?? `${selectedRunDir}/prototype.html`;
+    await openInDefaultApp(proto);
+  };
+
+  const handleExport = async (): Promise<void> => {
+    if (!previewHtml) return;
+    const saved = await saveHtmlToDownloads(prototypeExportName(Date.now()), previewHtml);
+    if (saved) {
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    }
+  };
 
   const handleViewVersion = async (v: DesignVersion): Promise<void> => {
     const html = await readWorkspaceFile(v.path);
@@ -492,7 +525,13 @@ const PreviewPane: React.FC = () => {
     const framed = device !== 'desktop';
     const srcDoc = injectSelectionScript(previewHtml, selectMode);
     return (
-      <div className="flex h-full w-full flex-col">
+      <div
+        className={
+          fullscreen
+            ? 'fixed inset-0 z-50 flex flex-col bg-zinc-950'
+            : 'flex h-full w-full flex-col'
+        }
+      >
         <div className="relative flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
           <div className="absolute left-3">
             <VersionControl
@@ -503,22 +542,52 @@ const PreviewPane: React.FC = () => {
             />
           </div>
           <DeviceSwitch device={device} onChange={setDevice} />
-          {!viewing && (
+          <div className="absolute right-3 flex items-center gap-1">
+            {!viewing && (
+              <button
+                type="button"
+                onClick={() => setSelectMode((v) => !v)}
+                aria-pressed={selectMode}
+                title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                  selectMode
+                    ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <MousePointerClick className="h-3.5 w-3.5" />
+                <span>{t.design.selectToggle}</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setSelectMode((v) => !v)}
-              aria-pressed={selectMode}
-              title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
-              className={`absolute right-3 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
-                selectMode
-                  ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+              onClick={() => void handleOpenBrowser()}
+              title={t.design.actionOpenBrowser}
+              className="rounded-md border border-white/[0.08] p-1.5 text-zinc-400 hover:text-zinc-200"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              title={exported ? t.design.actionExported : t.design.actionExport}
+              className={`rounded-md border p-1.5 transition-colors ${
+                exported
+                  ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
                   : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <MousePointerClick className="h-3.5 w-3.5" />
-              <span>{t.design.selectToggle}</span>
+              <Download className="h-3.5 w-3.5" />
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setFullscreen((v) => !v)}
+              title={fullscreen ? t.design.actionExitFullscreen : t.design.actionFullscreen}
+              className="rounded-md border border-white/[0.08] p-1.5 text-zinc-400 hover:text-zinc-200"
+            >
+              {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            </button>
+          </div>
         </div>
         <div
           className={`flex min-h-0 flex-1 justify-center overflow-auto ${

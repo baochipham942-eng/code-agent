@@ -70,6 +70,33 @@ export async function snapshotVersion(runDir: string, html: string, ts: number):
   await writeWorkspaceFile(`${versionsDir}/${versionFileName(ts)}`, html);
 }
 
+/** 在系统默认应用打开文件（.html → 默认浏览器）。成功返回 true。 */
+export async function openInDefaultApp(filePath: string): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath });
+    return res?.success === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 把 HTML 文本导出到「下载」目录（重名自动加后缀）。返回落盘路径或 null。 */
+export async function saveHtmlToDownloads(
+  fileName: string,
+  content: string,
+): Promise<string | null> {
+  try {
+    const res = await window.domainAPI?.invoke<{ filePath: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'saveTextToDownloads',
+      { fileName, content },
+    );
+    return res?.success ? (res.data?.filePath ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 列某 run 的版本快照，按创建时间倒序（最新在前）。 */
 export async function listVersions(runDir: string): Promise<DesignVersion[]> {
   const versionsDir = `${runDir.replace(/\/+$/, '')}/${DESIGN_VERSIONS_SUBDIR}`;

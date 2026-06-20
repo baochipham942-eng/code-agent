@@ -5,6 +5,8 @@ import {
   buildImagePrompt,
   buildContinueEditPrompt,
   designDeviceWidth,
+  versionFileName,
+  parseVersionTs,
   DESIGN_TONE_OPTIONS,
 } from '../../../src/renderer/components/design/designTypes';
 import { DESIGN_DEVICE_PRESETS } from '../../../src/shared/constants/designWorkspace';
@@ -83,6 +85,18 @@ describe('buildContinueEditPrompt', () => {
 
   it('无选中元素时不出现目标定位段', () => {
     expect(buildContinueEditPrompt(base)).not.toContain('目标元素');
+  });
+});
+
+describe('version file naming', () => {
+  it('编码后能解析回时间戳', () => {
+    expect(versionFileName(1700000000000)).toBe('v-1700000000000.html');
+    expect(parseVersionTs('v-1700000000000.html')).toBe(1700000000000);
+  });
+
+  it('非版本文件名返回 null', () => {
+    expect(parseVersionTs('prototype.html')).toBeNull();
+    expect(parseVersionTs('v-abc.html')).toBeNull();
   });
 });
 

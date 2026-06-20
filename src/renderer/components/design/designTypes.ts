@@ -9,6 +9,17 @@ export function designDeviceWidth(id: DesignDeviceId): string {
   return width != null ? `${width}px` : '100%';
 }
 
+/** 版本快照文件名（按创建时间戳编码，便于排序与解析）。 */
+export function versionFileName(ts: number): string {
+  return `v-${ts}.html`;
+}
+
+/** 从版本快照文件名解析出时间戳；非法名返回 null。 */
+export function parseVersionTs(fileName: string): number | null {
+  const m = /^v-(\d+)\.html$/i.exec(fileName);
+  return m ? Number(m[1]) : null;
+}
+
 /** 设计语境的表层定位：品牌主导（设计即产品）vs 产品主导（设计服务产品）。 */
 export type DesignSurface = 'brand' | 'product';
 

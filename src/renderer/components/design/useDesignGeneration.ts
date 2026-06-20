@@ -16,7 +16,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
 import { useDesignStore } from './designStore';
 import { buildPrototypePrompt, buildContinueEditPrompt, type PrototypeSelection } from './designTypes';
-import { findRunHtml, readWorkspaceFile } from './designFiles';
+import { findRunHtml, readWorkspaceFile, snapshotVersion, listVersions } from './designFiles';
 
 /** 预创建 run 目录（让 createSession 工作目录有效、listFiles 有目标）。 */
 async function ensureDir(dirPath: string): Promise<void> {
@@ -28,6 +28,12 @@ async function ensureDir(dirPath: string): Promise<void> {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** 一次完成定稿后把当前 html 快照成版本，并刷新 store 的版本列表（backlog #4）。 */
+async function captureVersion(runDir: string, html: string): Promise<void> {
+  await snapshotVersion(runDir, html, Date.now());
+  useDesignStore.getState().setVersions(await listVersions(runDir));
+}
 
 /**
  * 轮询 run 目录里的 html，每轮都把最新内容刷进预览。完成判定**以会话处理状态为准**
@@ -69,6 +75,7 @@ async function pollPreview(runDir: string, sessionId: string | null, timeoutMsg:
       if (finalHtml && finalHtml.length > 0) {
         store.getState().setPreviewHtml(finalHtml);
         if (/<\/html>/i.test(finalHtml)) {
+          await captureVersion(runDir, finalHtml);
           store.getState().setDone();
           return;
         }

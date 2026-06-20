@@ -27,3 +27,6 @@ export const DESIGN_DEVICE_PRESETS = [
 ] as const;
 
 export type DesignDeviceId = (typeof DESIGN_DEVICE_PRESETS)[number]['id'];
+
+/** 原型版本快照存放的子目录（在每个 run 目录下）。每次生成/续编完成快照一份。 */
+export const DESIGN_VERSIONS_SUBDIR = 'versions';

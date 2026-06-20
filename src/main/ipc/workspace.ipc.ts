@@ -48,6 +48,34 @@ async function handleGenerateDesignImage(
   return { path: payload.outputPath };
 }
 
+// 设计画布圈选局部重绘（Cowart 式 P2）：底图(磁盘路径)读成 base64 + renderer 传来的 mask
+// (白=改/黑=留) → 通义万相 wanx2.1-imageedit 真 inpaint → 下载结果写盘 → 返回路径。
+async function handleEditDesignImage(
+  payload: { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
+): Promise<{ path: string }> {
+  if (!payload?.prompt || !payload?.baseImagePath || !payload?.maskDataUrl || !payload?.outputPath) {
+    throw new Error('editDesignImage 需要 prompt / baseImagePath / maskDataUrl / outputPath');
+  }
+  const { editImageWithMask, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('局部重绘需要百炼（DashScope）API Key。');
+  const baseBuf = await fsp.readFile(payload.baseImagePath);
+  const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  const { url } = await editImageWithMask({
+    apiKey,
+    prompt: payload.prompt,
+    baseImageDataUrl: baseDataUrl,
+    maskImageDataUrl: payload.maskDataUrl,
+  });
+  const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
+
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
@@ -690,6 +718,11 @@ export function registerWorkspaceHandlers(
         case 'generateDesignImage':
           data = await handleGenerateDesignImage(
             payload as { prompt: string; aspectRatio?: string; outputPath: string },
+          );
+          break;
+        case 'editDesignImage':
+          data = await handleEditDesignImage(
+            payload as { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
           );
           break;
         default:

@@ -34,9 +34,11 @@ const ZHIPU_IMAGE_MODELS = {
   legacy: 'cogview-3-flash',
 } as const;
 
-// 通义万相（DashScope 原生异步 API）：文生图模型 + 端点路径。
+// 通义万相（DashScope 原生异步 API）：文生图 + 局部重绘模型 + 端点路径。
 const WANX_T2I_MODEL = 'wanx2.1-t2i-turbo';
 const WANX_T2I_PATH = '/services/aigc/text2image/image-synthesis';
+const WANX_EDIT_MODEL = 'wanx2.1-imageedit';
+const WANX_EDIT_PATH = '/services/aigc/image2image/image-synthesis';
 const WANX_TASKS_PATH = '/tasks';
 const WANX_SIZE_BY_ASPECT = new Map<string, string>([
   ['1:1', '1024*1024'],
@@ -237,15 +239,16 @@ function parseWanxTask(value: unknown): { taskId?: string; status?: string; url?
  * 通义万相文生图（DashScope 原生异步 API）：提交任务 → 轮询直到 SUCCEEDED/FAILED。
  * 返回最终图片 URL（OSS，临时有效，调用方需下载）。
  */
-async function callWanxImageGeneration(
+// 通义万相通用「提交异步任务 → 轮询直到 SUCCEEDED/FAILED → 返回图片 url」。
+// 文生图与局部重绘共用（仅 path/body 不同）。
+async function submitAndPollWanx(
   apiKey: string,
-  prompt: string,
-  aspectRatio: string,
+  apiPath: string,
+  body: unknown,
   outerSignal: AbortSignal,
 ): Promise<{ url: string }> {
-  const size = WANX_SIZE_BY_ASPECT.get(aspectRatio) || '1024*1024';
   const submitResp = await fetchWithAbort(
-    `${MODEL_API_ENDPOINTS.dashscope}${WANX_T2I_PATH}`,
+    `${MODEL_API_ENDPOINTS.dashscope}${apiPath}`,
     {
       method: 'POST',
       headers: {
@@ -253,11 +256,7 @@ async function callWanxImageGeneration(
         Authorization: `Bearer ${apiKey}`,
         'X-DashScope-Async': 'enable',
       },
-      body: JSON.stringify({
-        model: WANX_T2I_MODEL,
-        input: { prompt },
-        parameters: { size, n: 1 },
-      }),
+      body: JSON.stringify(body),
     },
     TIMEOUT_MS.WANX_POLL,
     outerSignal,
@@ -291,6 +290,49 @@ async function callWanxImageGeneration(
     }
   }
   throw new Error('通义万相任务超时');
+}
+
+function callWanxImageGeneration(
+  apiKey: string,
+  prompt: string,
+  aspectRatio: string,
+  outerSignal: AbortSignal,
+): Promise<{ url: string }> {
+  const size = WANX_SIZE_BY_ASPECT.get(aspectRatio) || '1024*1024';
+  return submitAndPollWanx(
+    apiKey,
+    WANX_T2I_PATH,
+    { model: WANX_T2I_MODEL, input: { prompt }, parameters: { size, n: 1 } },
+    outerSignal,
+  );
+}
+
+/**
+ * 通义万相局部重绘（inpaint）：base + mask（白=改/黑=留）+ prompt → 只改 mask 区。
+ * base/mask 均传 base64 data URI（DashScope 原生接受，无需上传 OSS）。返回结果图 url。
+ */
+export async function editImageWithMask(input: {
+  apiKey: string;
+  prompt: string;
+  baseImageDataUrl: string;
+  maskImageDataUrl: string;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'description_edit_with_mask',
+        prompt: input.prompt,
+        base_image_url: input.baseImageDataUrl,
+        mask_image_url: input.maskImageDataUrl,
+      },
+      parameters: { n: 1 },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
 }
 
 export async function generateImage(

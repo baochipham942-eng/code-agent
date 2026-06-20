@@ -1,14 +1,20 @@
 // 设计画布（Cowart 式无限画布，konva/react-konva）。
-// P0：平移（拖拽）+ 缩放（滚轮，绕指针）+ 图片节点渲染 + 空状态。
-// 圈选标注→inpaint 迭代在 P2 叠加；图片回灌在 P1。相机/节点取自 designCanvasStore。
+// P0：平移/缩放/图片节点/空状态。P1：文生图回灌。
+// P2：点选图 → 圈选红框标注 → 局部重绘(通义万相 inpaint) → 新版回灌画布(带血缘)。
 // 文案走 i18n（t.design.*），不硬编码。
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { Palette } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
+import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
 import { readWorkspaceImageAsDataUrl } from './designFiles';
+import {
+  normalizeDragRect,
+  worldRectToImageRegion,
+  type Rect,
+} from './designCanvasMask';
 import type { CanvasImageNode } from './designCanvasTypes';
 
 // 缩放范围与步进（避免画布塌缩/无限放大）。
@@ -16,11 +22,6 @@ const SCALE_MIN = 0.1;
 const SCALE_MAX = 5;
 const SCALE_STEP = 1.05;
 
-/**
- * 加载节点图片为 HTMLImageElement；未就绪返回 null。
- * src 为 dataURL / http(s) 时直接用；否则视为相对 run 目录的路径，经 IPC 读成 dataURL
- * （renderer 无法直接读 fs 路径，画布存档也只存相对路径以免膨胀）。
- */
 function useNodeImage(runDir: string | null, src: string): HTMLImageElement | null {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
@@ -44,18 +45,37 @@ function useNodeImage(runDir: string | null, src: string): HTMLImageElement | nu
   return img;
 }
 
-const CanvasImage: React.FC<{ node: CanvasImageNode; runDir: string | null }> = ({ node, runDir }) => {
+const CanvasImage: React.FC<{
+  node: CanvasImageNode;
+  runDir: string | null;
+  selected: boolean;
+  onSelect: () => void;
+}> = ({ node, runDir, selected, onSelect }) => {
   const img = useNodeImage(runDir, node.src);
   if (!img) return null;
   return (
-    <KonvaImage
-      image={img}
-      x={node.x}
-      y={node.y}
-      width={node.width}
-      height={node.height}
-      listening={false}
-    />
+    <>
+      <KonvaImage
+        image={img}
+        x={node.x}
+        y={node.y}
+        width={node.width}
+        height={node.height}
+        onMouseDown={onSelect}
+        onTap={onSelect}
+      />
+      {selected && (
+        <KonvaRect
+          x={node.x}
+          y={node.y}
+          width={node.width}
+          height={node.height}
+          stroke="#e879f9"
+          strokeWidth={2}
+          listening={false}
+        />
+      )}
+    </>
   );
 };
 
@@ -69,6 +89,19 @@ export const DesignCanvas: React.FC = () => {
   const camera = useDesignCanvasStore((s) => s.camera);
   const setCamera = useDesignCanvasStore((s) => s.setCamera);
   const runDir = useDesignCanvasStore((s) => s.runDir);
+  const selectedIds = useDesignCanvasStore((s) => s.selectedIds);
+  const setSelected = useDesignCanvasStore((s) => s.setSelected);
+  const generating = useDesignCanvasStore((s) => s.generating);
+  const { editRegion } = useDesignCanvasGeneration();
+
+  // 圈选标注本地态（世界坐标）。
+  const [annotating, setAnnotating] = useState(false);
+  const [annotations, setAnnotations] = useState<Rect[]>([]);
+  const [draft, setDraft] = useState<Rect | null>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const [instruction, setInstruction] = useState('');
+
+  const selectedNode = nodes.find((n) => selectedIds.includes(n.id)) ?? null;
 
   // 容器尺寸跟随（Stage 需要显式像素宽高）。
   useEffect(() => {
@@ -81,33 +114,79 @@ export const DesignCanvas: React.FC = () => {
     return () => ro.disconnect();
   }, []);
 
-  // 滚轮缩放：绕指针位置缩放。
+  // 选中变化时复位标注（换图重圈）。
+  useEffect(() => {
+    setAnnotations([]);
+    setDraft(null);
+  }, [selectedNode?.id]);
+
+  const worldFromPointer = (): { x: number; y: number } | null => {
+    const stage = stageRef.current;
+    const p = stage?.getPointerPosition();
+    if (!stage || !p) return null;
+    return { x: (p.x - camera.x) / camera.scale, y: (p.y - camera.y) / camera.scale };
+  };
+
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>): void => {
     e.evt.preventDefault();
     const stage = stageRef.current;
-    if (!stage) return;
+    const pointer = stage?.getPointerPosition();
+    if (!stage || !pointer) return;
     const oldScale = camera.scale;
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return;
-    const mousePoint = {
-      x: (pointer.x - camera.x) / oldScale,
-      y: (pointer.y - camera.y) / oldScale,
-    };
+    const mousePoint = { x: (pointer.x - camera.x) / oldScale, y: (pointer.y - camera.y) / oldScale };
     const direction = e.evt.deltaY > 0 ? 1 : -1;
     let newScale = direction > 0 ? oldScale / SCALE_STEP : oldScale * SCALE_STEP;
     newScale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, newScale));
-    setCamera({
-      scale: newScale,
-      x: pointer.x - mousePoint.x * newScale,
-      y: pointer.y - mousePoint.y * newScale,
-    });
+    setCamera({ scale: newScale, x: pointer.x - mousePoint.x * newScale, y: pointer.y - mousePoint.y * newScale });
   };
 
-  // 平移：拖拽 Stage 结束时落库。
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>): void => {
     if (e.target !== stageRef.current) return;
     setCamera({ ...camera, x: e.target.x(), y: e.target.y() });
   };
+
+  // 圈选标注：mousedown 起框 → move 更新 → up 落框（仅 annotating 时）。
+  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
+    if (!annotating) {
+      // 非标注模式：点空白处清除选择。
+      if (e.target === stageRef.current) setSelected([]);
+      return;
+    }
+    const w = worldFromPointer();
+    if (!w) return;
+    dragStart.current = w;
+    setDraft({ x: w.x, y: w.y, width: 0, height: 0 });
+  };
+  const handleMouseMove = (): void => {
+    if (!annotating || !dragStart.current) return;
+    const w = worldFromPointer();
+    if (!w) return;
+    setDraft(normalizeDragRect(dragStart.current.x, dragStart.current.y, w.x, w.y));
+  };
+  const handleMouseUp = (): void => {
+    if (!annotating || !draft) {
+      dragStart.current = null;
+      return;
+    }
+    if (draft.width > 4 && draft.height > 4) setAnnotations((a) => [...a, draft]);
+    setDraft(null);
+    dragStart.current = null;
+  };
+
+  const onRepaint = async (): Promise<void> => {
+    if (!selectedNode) return;
+    const regions = annotations
+      .map((r) => worldRectToImageRegion(r, selectedNode))
+      .filter((r): r is Rect => r !== null);
+    await editRegion({ baseNode: selectedNode, regions, instruction });
+    if (!useDesignCanvasStore.getState().error) {
+      setAnnotations([]);
+      setInstruction('');
+      setAnnotating(false);
+    }
+  };
+
+  const draftAndCommitted = draft ? [...annotations, draft] : annotations;
 
   return (
     <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-zinc-900" data-testid="design-canvas">
@@ -120,21 +199,95 @@ export const DesignCanvas: React.FC = () => {
           y={camera.y}
           scaleX={camera.scale}
           scaleY={camera.scale}
-          draggable
+          draggable={!annotating}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
         >
           <Layer>
             {nodes.map((node) => (
-              <CanvasImage key={node.id} node={node} runDir={runDir} />
+              <CanvasImage
+                key={node.id}
+                node={node}
+                runDir={runDir}
+                selected={selectedIds.includes(node.id)}
+                onSelect={() => !annotating && setSelected([node.id])}
+              />
+            ))}
+            {draftAndCommitted.map((r, i) => (
+              <KonvaRect
+                key={i}
+                x={r.x}
+                y={r.y}
+                width={r.width}
+                height={r.height}
+                stroke="#ef4444"
+                strokeWidth={2}
+                fill="rgba(239,68,68,0.15)"
+                listening={false}
+              />
             ))}
           </Layer>
         </Stage>
       )}
+
       {nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-zinc-500">
           <Palette className="h-6 w-6 text-zinc-600" />
           <span>{t.design.canvasEmpty}</span>
+        </div>
+      )}
+
+      {/* 选中图后的局部重绘面板 */}
+      {selectedNode && (
+        <div className="absolute left-4 top-4 flex w-72 flex-col gap-2 rounded-xl border border-white/[0.1] bg-zinc-900/90 p-3 shadow-xl backdrop-blur">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setAnnotating((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+                annotating ? 'bg-red-500/20 text-red-200' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
+              }`}
+            >
+              <SquareDashedMousePointer className="h-3.5 w-3.5" />
+              {annotating ? t.design.annotateStop : t.design.annotateStart}
+            </button>
+            {annotations.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAnnotations([])}
+                className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                <X className="h-3 w-3" />
+                {t.design.clearAnnotations}（{annotations.length}）
+              </button>
+            )}
+          </div>
+          {annotating && <p className="text-[11px] leading-snug text-zinc-500">{t.design.annotateHint}</p>}
+          <textarea
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder={t.design.editInstructionPlaceholder}
+            rows={3}
+            className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => void onRepaint()}
+            disabled={generating || annotations.length === 0 || !instruction.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
+          >
+            {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {generating ? t.design.editingRegion : t.design.editRegionBtn}
+          </button>
+        </div>
+      )}
+
+      {!selectedNode && nodes.length > 0 && (
+        <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-400 backdrop-blur">
+          {t.design.canvasSelectHint}
         </div>
       )}
     </div>

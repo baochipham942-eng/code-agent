@@ -13,6 +13,7 @@ import { buildImagePrompt } from './designTypes';
 import { emptyCanvasDoc, nextNodePlacement, type CanvasImageNode } from './designCanvasTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
+import { buildMaskDataUrl, type Rect } from './designCanvasMask';
 
 async function ensureDir(dirPath: string): Promise<void> {
   try {
@@ -37,7 +38,19 @@ function loadImageDims(dataUrl: string): Promise<{ width: number; height: number
   });
 }
 
-export function useDesignCanvasGeneration(): { generate: () => Promise<void> } {
+export interface EditRegionArgs {
+  /** 被编辑的底图节点。 */
+  baseNode: CanvasImageNode;
+  /** 编辑区（图内局部像素坐标，白=改）。 */
+  regions: Rect[];
+  /** 局部重绘指令（描述这块要变成什么）。 */
+  instruction: string;
+}
+
+export function useDesignCanvasGeneration(): {
+  generate: () => Promise<void>;
+  editRegion: (args: EditRegionArgs) => Promise<void>;
+} {
   const { t } = useI18n();
 
   const generate = useCallback(async () => {
@@ -118,5 +131,66 @@ export function useDesignCanvasGeneration(): { generate: () => Promise<void> } {
     }
   }, [t]);
 
-  return { generate };
+  const editRegion = useCallback(async (args: EditRegionArgs) => {
+    const { baseNode, regions, instruction } = args;
+    const runDir = useDesignCanvasStore.getState().runDir;
+    if (!runDir) return;
+    if (!instruction.trim()) {
+      useDesignCanvasStore.getState().setError(t.design.errNoRequirement);
+      return;
+    }
+    if (regions.length === 0) {
+      useDesignCanvasStore.getState().setError(t.design.errNoAnnotation);
+      return;
+    }
+
+    const maskDataUrl = buildMaskDataUrl(baseNode.width, baseNode.height, regions);
+    const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/edit-${Date.now()}.png`;
+    const assetAbs = `${runDir}/${assetRel}`;
+
+    useDesignCanvasStore.getState().setError(null);
+    useDesignCanvasStore.getState().setGenerating(true);
+    try {
+      const res = await window.domainAPI?.invoke<{ path: string }>(
+        IPC_DOMAINS.WORKSPACE,
+        'editDesignImage',
+        {
+          prompt: instruction,
+          baseImagePath: `${runDir}/${baseNode.src}`,
+          maskDataUrl,
+          outputPath: assetAbs,
+        },
+      );
+      if (!res?.success) {
+        throw new Error(res?.error?.message || t.design.errDispatch);
+      }
+      if (useDesignCanvasStore.getState().runDir !== runDir) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        return;
+      }
+      const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
+      if (!dataUrl) throw new Error(t.design.errTimeout);
+      const { width, height } = await loadImageDims(dataUrl);
+      // 新版放在底图右侧（make-real 式 x:maxX+gap），parentId 记血缘供 P3 A/B 对比。
+      const node: CanvasImageNode = {
+        id: `node-${Date.now()}`,
+        src: assetRel,
+        x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
+        y: baseNode.y,
+        width,
+        height,
+        prompt: instruction,
+        parentId: baseNode.id,
+        createdAt: Date.now(),
+      };
+      useDesignCanvasStore.getState().addNode(node);
+      await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      useDesignCanvasStore.getState().setGenerating(false);
+    } catch (e) {
+      useDesignCanvasStore.getState().setGenerating(false);
+      useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+    }
+  }, [t]);
+
+  return { generate, editRegion };
 }

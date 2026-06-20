@@ -15,3 +15,15 @@ export const DESIGN_WORKSPACE = {
   // 聊天项目占侧栏；设计模式有自己的历史）。与主进程 getUserConfigDir()/design 对应。
   DRAFT_PATH_MARKER: '/.code-agent/design/',
 } as const;
+
+/**
+ * 预览设备断点预设（桌面/平板/手机）。`width=null` 表示自适应满宽（桌面）；
+ * 平板/手机给出固定 CSS 像素宽，预览 iframe 据此收窄并居中，模拟响应式断点。
+ */
+export const DESIGN_DEVICE_PRESETS = [
+  { id: 'desktop', width: null },
+  { id: 'tablet', width: 768 },
+  { id: 'mobile', width: 375 },
+] as const;
+
+export type DesignDeviceId = (typeof DESIGN_DEVICE_PRESETS)[number]['id'];

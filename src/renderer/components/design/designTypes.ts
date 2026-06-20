@@ -1,6 +1,13 @@
 // 设计工作区的纯类型 + 常量 + prompt 构造器（无 React 依赖，可单测）。
 // 原型 prompt 的硬约束与设计上下文移植自竞品 Kun（sdd-prototype-prompt /
 // sdd-design-context），详见 docs/competitive/kun-设计tab-借鉴清单.md。
+import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
+
+/** 把设备预设映射成预览 iframe 的 CSS 宽度（桌面满宽，平板/手机定宽）。 */
+export function designDeviceWidth(id: DesignDeviceId): string {
+  const width = DESIGN_DEVICE_PRESETS.find((d) => d.id === id)?.width;
+  return width != null ? `${width}px` : '100%';
+}
 
 /** 设计语境的表层定位：品牌主导（设计即产品）vs 产品主导（设计服务产品）。 */
 export type DesignSurface = 'brand' | 'product';

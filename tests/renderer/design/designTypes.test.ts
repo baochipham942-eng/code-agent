@@ -3,8 +3,10 @@ import {
   formatDesignContextLines,
   buildPrototypePrompt,
   buildImagePrompt,
+  designDeviceWidth,
   DESIGN_TONE_OPTIONS,
 } from '../../../src/renderer/components/design/designTypes';
+import { DESIGN_DEVICE_PRESETS } from '../../../src/shared/constants/designWorkspace';
 
 describe('formatDesignContextLines', () => {
   it('空上下文返回空数组', () => {
@@ -53,6 +55,27 @@ describe('buildImagePrompt', () => {
 
   it('信息图标签正确', () => {
     expect(buildImagePrompt({ requirement: 'x', outputType: 'infographic' })).toContain('信息图');
+  });
+});
+
+describe('DESIGN_DEVICE_PRESETS', () => {
+  it('按桌面/平板/手机顺序提供预设', () => {
+    expect(DESIGN_DEVICE_PRESETS.map((d) => d.id)).toEqual(['desktop', 'tablet', 'mobile']);
+  });
+
+  it('平板/手机给出断点宽度，桌面自适应', () => {
+    const byId = Object.fromEntries(DESIGN_DEVICE_PRESETS.map((d) => [d.id, d.width]));
+    expect(byId.desktop).toBeNull();
+    expect(byId.tablet).toBe(768);
+    expect(byId.mobile).toBe(375);
+  });
+});
+
+describe('designDeviceWidth', () => {
+  it('桌面满宽，平板/手机按断点像素', () => {
+    expect(designDeviceWidth('desktop')).toBe('100%');
+    expect(designDeviceWidth('tablet')).toBe('768px');
+    expect(designDeviceWidth('mobile')).toBe('375px');
   });
 });
 

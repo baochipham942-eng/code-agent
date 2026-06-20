@@ -2,14 +2,26 @@
 // 类型）+ 右侧预览。v1 把「交互原型」整条闭环打通；设计稿/信息图占位标「即将」。
 // 所有面向用户的文案统一走 i18n（t.design.*），避免中英混排。
 import React, { useEffect, useState } from 'react';
-import { Palette, Sparkles, Loader2, AlertCircle, History, ChevronRight } from 'lucide-react';
+import {
+  Palette,
+  Sparkles,
+  Loader2,
+  AlertCircle,
+  History,
+  ChevronRight,
+  Monitor,
+  Tablet,
+  Smartphone,
+} from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { readRunHtml } from './designFiles';
+import { designDeviceWidth } from './designTypes';
 import type { DesignOutputType, DesignSurface } from './designTypes';
+import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
 
 /** 加载某次历史生成的产物到预览。 */
 async function loadRun(runDir: string): Promise<void> {
@@ -199,19 +211,74 @@ const Composer: React.FC = () => {
   );
 };
 
+const DEVICE_ICONS: Record<DesignDeviceId, React.ReactNode> = {
+  desktop: <Monitor className="h-3.5 w-3.5" />,
+  tablet: <Tablet className="h-3.5 w-3.5" />,
+  mobile: <Smartphone className="h-3.5 w-3.5" />,
+};
+
+const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDeviceId) => void }> = ({
+  device,
+  onChange,
+}) => {
+  const { t } = useI18n();
+  const labels: Record<DesignDeviceId, string> = {
+    desktop: t.design.deviceDesktop,
+    tablet: t.design.deviceTablet,
+    mobile: t.design.deviceMobile,
+  };
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+      {DESIGN_DEVICE_PRESETS.map(({ id }) => {
+        const active = device === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            aria-pressed={active}
+            title={labels[id]}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              active ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            {DEVICE_ICONS[id]}
+            <span>{labels[id]}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
   const previewHtml = useDesignStore((s) => s.previewHtml);
   const status = useDesignStore((s) => s.status);
+  const [device, setDevice] = useState<DesignDeviceId>('desktop');
 
   if (previewHtml) {
+    const width = designDeviceWidth(device);
+    const framed = device !== 'desktop';
     return (
-      <iframe
-        title="design-preview"
-        srcDoc={previewHtml}
-        className="h-full w-full border-0 bg-white"
-        sandbox="allow-scripts"
-      />
+      <div className="flex h-full w-full flex-col">
+        <div className="flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
+          <DeviceSwitch device={device} onChange={setDevice} />
+        </div>
+        <div
+          className={`flex min-h-0 flex-1 justify-center overflow-auto ${
+            framed ? 'bg-zinc-900 p-4' : ''
+          }`}
+        >
+          <iframe
+            title="design-preview"
+            srcDoc={previewHtml}
+            style={{ width, maxWidth: '100%' }}
+            className={`h-full border-0 bg-white ${framed ? 'rounded-lg shadow-2xl' : 'w-full'}`}
+            sandbox="allow-scripts"
+          />
+        </div>
+      </div>
     );
   }
   return (

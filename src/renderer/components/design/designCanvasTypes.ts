@@ -15,6 +15,8 @@ export interface CanvasImageNode {
   prompt?: string;
   /** 它是从哪张图编辑而来（A/B 版本树用，可选；空=原始生成）。 */
   parentId?: string;
+  /** 被选为该版本组的主版（A/B 对比后定稿）。 */
+  chosen?: boolean;
   createdAt: number;
 }
 
@@ -64,6 +66,7 @@ function normalizeNode(raw: unknown): CanvasImageNode | null {
   };
   if (typeof r.prompt === 'string') node.prompt = r.prompt;
   if (typeof r.parentId === 'string') node.parentId = r.parentId;
+  if (r.chosen === true) node.chosen = true;
   return node;
 }
 

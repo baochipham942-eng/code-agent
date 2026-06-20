@@ -3,12 +3,13 @@
 // P2：点选图 → 圈选红框标注 → 局部重绘(通义万相 inpaint) → 新版回灌画布(带血缘)。
 // 文案走 i18n（t.design.*），不硬编码。
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
+import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { readWorkspaceImageAsDataUrl } from './designFiles';
 import {
   normalizeDragRect,
@@ -49,10 +50,16 @@ const CanvasImage: React.FC<{
   node: CanvasImageNode;
   runDir: string | null;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
 }> = ({ node, runDir, selected, onSelect }) => {
   const img = useNodeImage(runDir, node.src);
   if (!img) return null;
+  const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+    const evt = e.evt as MouseEvent;
+    onSelect(Boolean(evt.shiftKey || evt.metaKey));
+  };
+  // 徽标字号随相机缩放保持视觉恒定（用 1/scale 反算近似，简化为固定值即可）。
+  const badge = Math.max(14, Math.round(node.width * 0.03));
   return (
     <>
       <KonvaImage
@@ -61,9 +68,30 @@ const CanvasImage: React.FC<{
         y={node.y}
         width={node.width}
         height={node.height}
-        onMouseDown={onSelect}
-        onTap={onSelect}
+        onMouseDown={pick}
+        onTap={pick}
       />
+      {node.chosen && (
+        <>
+          <KonvaRect
+            x={node.x}
+            y={node.y}
+            width={node.width}
+            height={node.height}
+            stroke="#10b981"
+            strokeWidth={3}
+            listening={false}
+          />
+          <KonvaText
+            x={node.x + 8}
+            y={node.y + 8}
+            text="★"
+            fontSize={badge}
+            fill="#10b981"
+            listening={false}
+          />
+        </>
+      )}
       {selected && (
         <KonvaRect
           x={node.x}
@@ -72,6 +100,7 @@ const CanvasImage: React.FC<{
           height={node.height}
           stroke="#e879f9"
           strokeWidth={2}
+          dash={[10, 6]}
           listening={false}
         />
       )}
@@ -100,8 +129,32 @@ export const DesignCanvas: React.FC = () => {
   const [draft, setDraft] = useState<Rect | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [instruction, setInstruction] = useState('');
+  const [comparing, setComparing] = useState(false);
 
-  const selectedNode = nodes.find((n) => selectedIds.includes(n.id)) ?? null;
+  // 单选→局部重绘面板；双选→A/B 对比。
+  const selectedNode = selectedIds.length === 1 ? nodes.find((n) => n.id === selectedIds[0]) ?? null : null;
+  const compareNodes =
+    selectedIds.length === 2
+      ? selectedIds
+          .map((id) => nodes.find((n) => n.id === id))
+          .filter((n): n is CanvasImageNode => Boolean(n))
+      : [];
+
+  // 选择变化时退出对比浮层（除非仍是双选）。
+  useEffect(() => {
+    if (selectedIds.length !== 2) setComparing(false);
+  }, [selectedIds]);
+
+  const selectNode = (id: string, additive: boolean): void => {
+    if (annotating) return;
+    const cur = useDesignCanvasStore.getState().selectedIds;
+    if (additive) {
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-2);
+      setSelected(next);
+    } else {
+      setSelected([id]);
+    }
+  };
 
   // 容器尺寸跟随（Stage 需要显式像素宽高）。
   useEffect(() => {
@@ -213,7 +266,7 @@ export const DesignCanvas: React.FC = () => {
                 node={node}
                 runDir={runDir}
                 selected={selectedIds.includes(node.id)}
-                onSelect={() => !annotating && setSelected([node.id])}
+                onSelect={(additive) => selectNode(node.id, additive)}
               />
             ))}
             {draftAndCommitted.map((r, i) => (
@@ -285,10 +338,31 @@ export const DesignCanvas: React.FC = () => {
         </div>
       )}
 
-      {!selectedNode && nodes.length > 0 && (
+      {selectedIds.length === 0 && nodes.length > 0 && (
         <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-400 backdrop-blur">
-          {t.design.canvasSelectHint}
+          {t.design.canvasSelectHint} · {t.design.compareHint}
         </div>
+      )}
+
+      {/* 双选 → A/B 对比入口 */}
+      {compareNodes.length === 2 && !comparing && (
+        <button
+          type="button"
+          onClick={() => setComparing(true)}
+          className="absolute bottom-6 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-fuchsia-500/90 px-4 py-2 text-sm font-medium text-white shadow-xl transition-colors hover:bg-fuchsia-500"
+        >
+          <GitCompare className="h-4 w-4" />
+          {t.design.compareBtn}
+        </button>
+      )}
+
+      {comparing && compareNodes.length === 2 && (
+        <DesignCompareOverlay
+          nodeA={compareNodes[0]}
+          nodeB={compareNodes[1]}
+          runDir={runDir}
+          onClose={() => setComparing(false)}
+        />
       )}
     </div>
   );

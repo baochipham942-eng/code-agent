@@ -26,6 +26,9 @@ interface DesignCanvasState {
   resetCanvas: () => void;
   addNode: (node: CanvasImageNode) => void;
   updateNode: (id: string, patch: Partial<Omit<CanvasImageNode, 'id'>>) => void;
+  deleteNode: (id: string) => void;
+  /** 选为主版：标记该节点 chosen，并清除同版本组（同 parentId）其他节点的主版标记。 */
+  setChosen: (id: string) => void;
   setCamera: (camera: CanvasCamera) => void;
   setSelected: (ids: string[]) => void;
   setGenerating: (generating: boolean) => void;
@@ -55,6 +58,24 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
     })),
+  deleteNode: (id) =>
+    set((s) => ({
+      nodes: s.nodes.filter((n) => n.id !== id),
+      selectedIds: s.selectedIds.filter((sid) => sid !== id),
+    })),
+  setChosen: (id) =>
+    set((s) => {
+      const target = s.nodes.find((n) => n.id === id);
+      if (!target) return {};
+      const group = target.parentId; // 同一版本组 = 同 parentId
+      return {
+        nodes: s.nodes.map((n) => {
+          if (n.id === id) return { ...n, chosen: true };
+          if (n.parentId === group) return { ...n, chosen: false };
+          return n;
+        }),
+      };
+    }),
   setCamera: (camera) => set({ camera }),
   setSelected: (selectedIds) => set({ selectedIds }),
   setGenerating: (generating) => set({ generating }),

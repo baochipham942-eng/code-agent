@@ -30,14 +30,21 @@ describe('emptyCanvasDoc', () => {
 });
 
 describe('serialize/deserialize round-trip', () => {
-  it('完整文档往返不丢字段', () => {
+  it('完整文档往返不丢字段（含 chosen 主版）', () => {
     const doc: DesignCanvasDoc = {
       version: 1,
-      nodes: [node({ prompt: '改成黄昏', parentId: 'n0' })],
+      nodes: [node({ prompt: '改成黄昏', parentId: 'n0', chosen: true })],
       camera: { x: 12, y: -8, scale: 1.5 },
     };
     const back = deserializeCanvasDoc(serializeCanvasDoc(doc));
     expect(back).toEqual(doc);
+  });
+
+  it('chosen 非 true 不落字段（保持紧凑）', () => {
+    const back = deserializeCanvasDoc(
+      JSON.stringify({ nodes: [{ ...node(), chosen: false }], camera: DEFAULT_CAMERA }),
+    );
+    expect(back.nodes[0].chosen).toBeUndefined();
   });
 });
 

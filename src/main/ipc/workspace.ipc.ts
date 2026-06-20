@@ -15,6 +15,17 @@ import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
+import { promises as fsp } from 'fs';
+import { getUserConfigDir } from '../config/configPaths';
+
+// 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
+// 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
+// 用户无需选目录；需收进项目时再走显式「保存到项目」（后续）。
+async function handleResolveDesignDir(): Promise<{ dir: string }> {
+  const dir = path.join(getUserConfigDir(), 'design');
+  await fsp.mkdir(dir, { recursive: true });
+  return { dir };
+}
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -651,6 +662,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'getConfigScope':
           data = await handleGetConfigScope(payload as { workingDirectory?: string | null } | undefined, getAppService);
+          break;
+        case 'resolveDesignDir':
+          data = await handleResolveDesignDir();
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

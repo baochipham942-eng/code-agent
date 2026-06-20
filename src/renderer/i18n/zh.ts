@@ -64,6 +64,8 @@ export const zh = {
     mainVersion: '主版',
     versionOriginal: '原始版本',
     versionEdited: '局部重绘版本',
+    aspectRatioLabel: '尺寸比例',
+    exportImage: '导出图片',
     errImageSoon: '设计稿 / 信息图即将支持，当前先用「交互原型」',
     errNoRequirement: '请先填写需求描述',
     errResolveDir: '无法准备设计草稿目录，请重试',

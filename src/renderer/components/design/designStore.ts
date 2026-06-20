@@ -3,7 +3,7 @@
 // 派发逻辑在 useDesignGeneration hook，本 store 只持有状态。
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { DesignOutputType, DesignSurface } from './designTypes';
+import type { DesignAspectRatio, DesignOutputType, DesignSurface } from './designTypes';
 
 export type DesignGenStatus = 'idle' | 'generating' | 'done' | 'error';
 
@@ -24,6 +24,8 @@ interface DesignState {
   tone: string[];
   surface: DesignSurface | null;
   outputType: DesignOutputType;
+  /** 出图尺寸比例（仅图像产物用）。 */
+  aspectRatio: DesignAspectRatio;
   // 历史 + 选中
   history: DesignRun[];
   /** 当前查看/生成的 run 目录。 */
@@ -40,6 +42,7 @@ interface DesignState {
   toggleTone: (t: string) => void;
   setSurface: (s: DesignSurface | null) => void;
   setOutputType: (t: DesignOutputType) => void;
+  setAspectRatio: (r: DesignAspectRatio) => void;
 
   // 历史 actions
   addHistory: (run: DesignRun) => void;
@@ -61,6 +64,7 @@ export const useDesignStore = create<DesignState>()(
       tone: [],
       surface: null,
       outputType: 'prototype',
+      aspectRatio: '1:1',
       history: [],
       selectedRunDir: null,
       status: 'idle',
@@ -76,6 +80,7 @@ export const useDesignStore = create<DesignState>()(
         })),
       setSurface: (surface) => set((s) => ({ surface: s.surface === surface ? null : surface })),
       setOutputType: (outputType) => set({ outputType }),
+      setAspectRatio: (aspectRatio) => set({ aspectRatio }),
 
       addHistory: (run) =>
         set((s) => ({
@@ -108,6 +113,7 @@ export const useDesignStore = create<DesignState>()(
         tone: s.tone,
         surface: s.surface,
         outputType: s.outputType,
+        aspectRatio: s.aspectRatio,
         history: s.history,
         selectedRunDir: s.selectedRunDir,
       }),

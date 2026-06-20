@@ -8,6 +8,16 @@ export type DesignSurface = 'brand' | 'product';
 /** 产物类型：交互原型(HTML) / 设计稿(图) / 信息图(图)。 */
 export type DesignOutputType = 'prototype' | 'mockup' | 'infographic';
 
+/** 出图尺寸比例（映射到通义万相 size，见 imageGenerationService）。 */
+export type DesignAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+export const DESIGN_ASPECT_RATIOS: readonly DesignAspectRatio[] = [
+  '1:1',
+  '16:9',
+  '9:16',
+  '4:3',
+  '3:4',
+];
+
 /** 设计上下文，注入 prompt 以约束品牌/语气并规避 AI 默认审美。 */
 export type DesignContextInput = {
   surface?: DesignSurface;

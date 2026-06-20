@@ -13,7 +13,7 @@ import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { readRunHtml } from './designFiles';
 import { DesignCanvas } from './DesignCanvas';
-import type { DesignOutputType, DesignSurface } from './designTypes';
+import { DESIGN_ASPECT_RATIOS, type DesignOutputType, type DesignSurface } from './designTypes';
 
 /** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
 function isImageOutput(t: DesignOutputType): boolean {
@@ -191,6 +191,29 @@ const Composer: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 出图尺寸（仅图像产物） */}
+      {imageMode && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-zinc-400">{t.design.aspectRatioLabel}</span>
+          <div className="flex flex-wrap gap-1.5">
+            {DESIGN_ASPECT_RATIOS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => s.setAspectRatio(r)}
+                className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  s.aspectRatio === r
+                    ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 生成 */}
       <button

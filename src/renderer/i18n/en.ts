@@ -66,6 +66,8 @@ export const en: Translations = {
     mainVersion: 'Main',
     versionOriginal: 'Original',
     versionEdited: 'Repainted',
+    aspectRatioLabel: 'Aspect ratio',
+    exportImage: 'Export image',
     errImageSoon: 'Mockup / infographic coming soon — use Prototype for now',
     errNoRequirement: 'Please enter a requirement first',
     errResolveDir: 'Could not prepare the design draft directory, please retry',

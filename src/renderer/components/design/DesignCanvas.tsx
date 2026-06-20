@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
@@ -226,6 +226,19 @@ export const DesignCanvas: React.FC = () => {
     dragStart.current = null;
   };
 
+  const onExport = async (node: CanvasImageNode): Promise<void> => {
+    const url = /^(data:|https?:)/.test(node.src)
+      ? node.src
+      : runDir
+        ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
+        : null;
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = node.src.split('/').pop() || 'design.png';
+    a.click();
+  };
+
   const onRepaint = async (): Promise<void> => {
     if (!selectedNode) return;
     const regions = annotations
@@ -334,6 +347,14 @@ export const DesignCanvas: React.FC = () => {
           >
             {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {generating ? t.design.editingRegion : t.design.editRegionBtn}
+          </button>
+          <button
+            type="button"
+            onClick={() => void onExport(selectedNode)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {t.design.exportImage}
           </button>
         </div>
       )}

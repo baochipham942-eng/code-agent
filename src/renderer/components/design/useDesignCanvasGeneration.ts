@@ -95,7 +95,7 @@ export function useDesignCanvasGeneration(): {
       const res = await window.domainAPI?.invoke<{ path: string }>(
         IPC_DOMAINS.WORKSPACE,
         'generateDesignImage',
-        { prompt, aspectRatio: '1:1', outputPath: assetAbs },
+        { prompt, aspectRatio: form.aspectRatio, outputPath: assetAbs },
       );
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);

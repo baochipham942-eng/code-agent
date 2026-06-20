@@ -28,10 +28,10 @@ describe('formatDesignContextLines', () => {
 describe('buildPrototypePrompt', () => {
   const base = { requirement: '一个登录页', reservedPath: '.neo-design/proto-1.html' };
 
-  it('包含预留路径与防截断/单文件硬约束', () => {
+  it('包含预留路径与单次 Write/单文件硬约束', () => {
     const p = buildPrototypePrompt(base);
     expect(p).toContain('.neo-design/proto-1.html');
-    expect(p).toContain('4000');
+    expect(p).toContain('一次 Write');
     expect(p).toContain('</html>');
     expect(p).toContain('一个登录页');
   });

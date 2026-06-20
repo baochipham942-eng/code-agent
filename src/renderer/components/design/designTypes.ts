@@ -56,9 +56,6 @@ export function formatDesignContextLines(ctx: DesignContextInput | undefined): s
   ];
 }
 
-/** 单次工具调用 payload 的安全字符上限提示（Kun 防截断硬约束）。 */
-const MAX_TOOL_PAYLOAD_CHARS = 4000;
-
 export type BuildPrototypePromptInput = {
   /** 用户的需求描述。 */
   requirement: string;
@@ -68,8 +65,12 @@ export type BuildPrototypePromptInput = {
 };
 
 /**
- * 交互 HTML 原型的回合 prompt：产出单文件可交互 HTML 并用文件工具写到预留
- * 路径。硬约束移植自 Kun：单文件、纯 raw HTML、增量写入防截断、以 </html> 收尾。
+ * 交互 HTML 原型的回合 prompt：产出单文件可交互 HTML 并用 Write 一次性写到预留
+ * 路径。硬约束移植自 Kun：单文件、纯 raw HTML、以 </html> 收尾。
+ *
+ * 注意：刻意要求「单次 Write 写完整文档」，不做增量 edit——多次写/改会反复触发
+ * 工具入参 repair 闸导致 Write 被拦截、Agent 被迫退回 Bash（dogfood 实测，
+ * 详见借鉴清单 Bug B）。一次写完最稳。
  */
 export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
   const requirement = input.requirement.trim();
@@ -78,10 +79,8 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
     `预留原型文件路径：${input.reservedPath}`,
     '',
     '硬性规则：',
-    `- 在 \`${input.reservedPath}\` 产出一个完整、独立的单文件 HTML 文档；按需创建父目录。`,
-    `- 增量构建以不超输出上限：先 write 一个最小可用骨架（doctype、head、空 body），` +
-      `再用若干 edit 调用扩展。每次工具调用 payload 控制在约 ${MAX_TOOL_PAYLOAD_CHARS} 字符内` +
-      `——过大的工具入参会被截断并失败。`,
+    `- 用一次 Write 调用，在 \`${input.reservedPath}\` 写入一个完整、独立的单文件 HTML 文档；按需创建父目录。`,
+    '- 一次写完整份文档，不要分多次 write/edit 增量拼接。',
     '- 本回合不要创建或修改任何其他文件。',
     '- 文件内容必须是 raw HTML——不要 markdown 围栏、不要在文件内写说明。',
     '- 以文档的 `</html>` 收尾，然后用一段话总结你实现了哪些交互。',

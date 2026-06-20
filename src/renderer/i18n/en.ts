@@ -47,6 +47,8 @@ export const en: Translations = {
     generating: 'Generating…',
     previewEmpty: 'Fill in a requirement and click Generate — the prototype renders here live',
     previewGenerating: 'Generating prototype…',
+    canvasEmpty: 'This is the design canvas. Generated mockups / infographics appear here — pan and zoom freely',
+    canvasGenSoon: 'Canvas is ready. Image generation and lasso-annotation iteration land in the next step',
     errImageSoon: 'Mockup / infographic coming soon — use Prototype for now',
     errNoRequirement: 'Please enter a requirement first',
     errResolveDir: 'Could not prepare the design draft directory, please retry',

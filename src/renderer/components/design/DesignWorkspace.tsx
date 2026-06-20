@@ -9,7 +9,13 @@ import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { readRunHtml } from './designFiles';
+import { DesignCanvas } from './DesignCanvas';
 import type { DesignOutputType, DesignSurface } from './designTypes';
+
+/** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
+function isImageOutput(t: DesignOutputType): boolean {
+  return t === 'mockup' || t === 'infographic';
+}
 
 /** 加载某次历史生成的产物到预览。 */
 async function loadRun(runDir: string): Promise<void> {
@@ -71,11 +77,12 @@ const Composer: React.FC = () => {
   const { generate } = useDesignGeneration();
   const generating = s.status === 'generating';
 
-  const outputTypes: Array<{ type: DesignOutputType; label: string; soon?: boolean }> = [
+  const outputTypes: Array<{ type: DesignOutputType; label: string }> = [
     { type: 'prototype', label: t.design.outputPrototype },
-    { type: 'mockup', label: t.design.outputMockup, soon: true },
-    { type: 'infographic', label: t.design.outputInfographic, soon: true },
+    { type: 'mockup', label: t.design.outputMockup },
+    { type: 'infographic', label: t.design.outputInfographic },
   ];
+  const imageMode = isImageOutput(s.outputType);
   const surfaces: Array<{ value: DesignSurface; label: string }> = [
     { value: 'brand', label: t.design.surfaceBrand },
     { value: 'product', label: t.design.surfaceProduct },
@@ -87,7 +94,7 @@ const Composer: React.FC = () => {
 
       {/* 产物类型 */}
       <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
-        {outputTypes.map(({ type, label, soon }) => (
+        {outputTypes.map(({ type, label }) => (
           <button
             key={type}
             type="button"
@@ -99,7 +106,6 @@ const Composer: React.FC = () => {
             }`}
           >
             {label}
-            {soon && <span className="ml-1 text-[10px] text-zinc-500">{t.design.soon}</span>}
           </button>
         ))}
       </div>
@@ -182,12 +188,19 @@ const Composer: React.FC = () => {
       <button
         type="button"
         onClick={() => void generate()}
-        disabled={generating}
+        disabled={generating || imageMode}
         className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
       >
         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
         {generating ? t.design.generating : t.design.generate}
       </button>
+
+      {/* P0：图像类型画布已就绪，出图回灌为下一步（P1）。 */}
+      {imageMode && (
+        <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
+          {t.design.canvasGenSoon}
+        </div>
+      )}
 
       {s.error && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
@@ -201,8 +214,14 @@ const Composer: React.FC = () => {
 
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
+  const outputType = useDesignStore((s) => s.outputType);
   const previewHtml = useDesignStore((s) => s.previewHtml);
   const status = useDesignStore((s) => s.status);
+
+  // 设计稿 / 信息图 → konva 无限画布；交互原型 → HTML iframe。
+  if (isImageOutput(outputType)) {
+    return <DesignCanvas />;
+  }
 
   if (previewHtml) {
     return (

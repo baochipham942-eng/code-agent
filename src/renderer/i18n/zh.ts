@@ -45,6 +45,8 @@ export const zh = {
     generating: '生成中…',
     previewEmpty: '填写需求并点「生成」，原型会在这里实时呈现',
     previewGenerating: '正在生成原型…',
+    canvasEmpty: '这里是设计画布。生成的设计稿 / 信息图会铺在画布上，可平移、缩放',
+    canvasGenSoon: '画布已就绪。出图回灌与圈选标注迭代将在下一步接入',
     errImageSoon: '设计稿 / 信息图即将支持，当前先用「交互原型」',
     errNoRequirement: '请先填写需求描述',
     errResolveDir: '无法准备设计草稿目录，请重试',

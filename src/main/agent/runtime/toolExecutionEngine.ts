@@ -16,7 +16,11 @@ import type {
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
-import { TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS, DESIGN_QUALITY } from '../../../shared/constants';
+import { runDesignQualityReview } from '../../quality/designQualityHook';
+import { isFrontendPath } from '../../quality/detect';
+import { readFileSync } from 'node:fs';
+import { isAbsolute, resolve as resolvePath } from 'node:path';
 
 // Import refactored modules
 import type {
@@ -900,6 +904,35 @@ export class ToolExecutionEngine {
           }
         } catch (error) {
           logger.error('[AgentLoop] User post-tool hook error:', error);
+        }
+      }
+
+      // Builtin 设计质量自检（Kun 借鉴）：写/改前端文件后扫 AI 痕迹，advisory 回注让模型下一轮自我修正。
+      // 纯 advisory：不把工具标记为失败、不拦截本轮。详见 src/main/quality 与借鉴清单。
+      if (normalizedResult.success && (DESIGN_QUALITY.REVIEW_TOOLS as readonly string[]).includes(toolCall.name)) {
+        try {
+          const args = toolCall.arguments as Record<string, unknown> | undefined;
+          const rawPath = typeof args?.file_path === 'string' ? args.file_path : undefined;
+          if (rawPath && isFrontendPath(rawPath)) {
+            // Write 携带完整内容；Edit/MultiEdit 不带，改后回读磁盘取最终状态。
+            let source = typeof args?.content === 'string' ? args.content : undefined;
+            if (source === undefined) {
+              const abs = isAbsolute(rawPath) ? rawPath : resolvePath(this.ctx.workingDirectory, rawPath);
+              try {
+                source = readFileSync(abs, 'utf8');
+              } catch {
+                source = undefined;
+              }
+            }
+            if (source) {
+              const review = runDesignQualityReview({ toolName: toolCall.name, filePath: rawPath, source });
+              if (review) {
+                this.contextAssembly.injectSystemMessage(`<design-quality-review>\n${review}\n</design-quality-review>`);
+              }
+            }
+          }
+        } catch (error) {
+          logger.error('[AgentLoop] Design-quality review error:', error);
         }
       }
 

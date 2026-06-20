@@ -44,29 +44,25 @@ describe('buildPrototypePrompt', () => {
 });
 
 describe('buildImagePrompt', () => {
-  it('设计稿走 image_generate', () => {
+  it('设计稿=干净图像描述含需求与类型，不含 agent 话术', () => {
     const p = buildImagePrompt({ requirement: '电商首页', outputType: 'mockup' });
-    expect(p).toContain('image_generate');
-    expect(p).toContain('UI 设计稿');
     expect(p).toContain('电商首页');
+    expect(p).toContain('UI 设计稿');
+    expect(p).not.toContain('image_generate'); // 直连图像模型，非工具调用指令
   });
 
   it('信息图标签正确', () => {
     expect(buildImagePrompt({ requirement: 'x', outputType: 'infographic' })).toContain('信息图');
   });
 
-  it('给 reservedPath 时强制 output_path 写到该路径', () => {
+  it('品牌色/语气进入图像描述', () => {
     const p = buildImagePrompt({
       requirement: '海报',
       outputType: 'mockup',
-      reservedPath: '/x/run-1/assets/gen-9.png',
+      designContext: { brandColor: '#0066ff', tone: ['极简', '科技感'] },
     });
-    expect(p).toContain('output_path');
-    expect(p).toContain('/x/run-1/assets/gen-9.png');
-  });
-
-  it('不给 reservedPath 时不提 output_path', () => {
-    expect(buildImagePrompt({ requirement: '海报', outputType: 'mockup' })).not.toContain('output_path');
+    expect(p).toContain('#0066ff');
+    expect(p).toContain('极简');
   });
 });
 

@@ -27,6 +27,27 @@ async function handleResolveDesignDir(): Promise<{ dir: string }> {
   return { dir };
 }
 
+// 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
+// renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
+// 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
+async function handleGenerateDesignImage(
+  payload: { prompt: string; aspectRatio?: string; outputPath: string },
+): Promise<{ path: string }> {
+  if (!payload?.prompt || !payload?.outputPath) {
+    throw new Error('generateDesignImage 需要 prompt 与 outputPath');
+  }
+  const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const { imageData } = await generateImage('wanx', '', payload.prompt, payload.aspectRatio || '1:1');
+  const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  const buf = Buffer.from(base64, 'base64');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, buf);
+  return { path: payload.outputPath };
+}
+
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
@@ -665,6 +686,11 @@ export function registerWorkspaceHandlers(
           break;
         case 'resolveDesignDir':
           data = await handleResolveDesignDir();
+          break;
+        case 'generateDesignImage':
+          data = await handleGenerateDesignImage(
+            payload as { prompt: string; aspectRatio?: string; outputPath: string },
+          );
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

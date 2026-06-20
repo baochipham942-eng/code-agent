@@ -1,18 +1,12 @@
 // 设计画布出图回灌 hook（Cowart 式 P1：文生图 → 回灌画布节点）。
 //
-// 流程：点"生成" → 复用/新建画布 run 目录 → 拼 image prompt（含预留 output_path）
-// → 在隔离设计会话里发给现有 Agent loop → Agent 调 image_generate 把 PNG 写到预留路径
-// → 本 hook 轮询该路径，图就位（且会话转 idle）后读成 dataURL、量原始尺寸、在现有节点
-// 右侧落一个画布节点 → 存盘 canvas.json。
-//
-// 与 useDesignGeneration（HTML 原型）分离：产物类型不同、回填目标不同（画布 vs iframe）。
+// 直连出图：renderer 经 WORKSPACE/generateDesignImage IPC 直接调通义万相（spec D2 钦定引擎），
+// 不经 agent——纯文生图无需 agent 推理，直连更确定。IPC 出图落盘后返回路径，本 hook 读成
+// dataURL、量原始尺寸、在现有节点右侧落一个画布节点，并存盘 canvas.json。
 import { useCallback } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DESIGN_WORKSPACE } from '@shared/constants';
-import { useAgent } from '../../hooks/useAgent';
 import { useI18n } from '../../hooks/useI18n';
-import { useSessionStore } from '../../stores/sessionStore';
-import { useAppStore } from '../../stores/appStore';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { buildImagePrompt } from './designTypes';
@@ -20,13 +14,11 @@ import { emptyCanvasDoc, nextNodePlacement, type CanvasImageNode } from './desig
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
 async function ensureDir(dirPath: string): Promise<void> {
   try {
     await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'createFolder', { dirPath });
   } catch {
-    // Agent 写文件时也会建父目录，这里失败不致命。
+    // 出图 IPC 也会建父目录，这里失败不致命。
   }
 }
 
@@ -45,72 +37,7 @@ function loadImageDims(dataUrl: string): Promise<{ width: number; height: number
   });
 }
 
-/** 持久化当前画布到磁盘（best-effort，失败不打断用户）。 */
-async function persistCanvas(runDir: string): Promise<void> {
-  await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
-}
-
-/**
- * 轮询预留图片路径，就位后回灌为画布节点。完成判定以会话处理状态为准
- * （会话从"处理中"转 idle 即定稿），兜底用超时。
- */
-async function pollAndIngest(
-  runDir: string,
-  assetAbs: string,
-  assetRel: string,
-  prompt: string,
-  sessionId: string | null,
-  timeoutMsg: string,
-): Promise<void> {
-  const canvas = useDesignCanvasStore;
-  const deadline = Date.now() + DESIGN_WORKSPACE.POLL_TIMEOUT_MS;
-
-  const ingest = async (dataUrl: string): Promise<void> => {
-    const { width, height } = await loadImageDims(dataUrl);
-    const { x, y } = nextNodePlacement(canvas.getState().nodes, DESIGN_WORKSPACE.CANVAS_NODE_GAP);
-    const node: CanvasImageNode = {
-      id: `node-${Date.now()}`,
-      src: assetRel,
-      x,
-      y,
-      width,
-      height,
-      prompt,
-      createdAt: Date.now(),
-    };
-    canvas.getState().addNode(node);
-    await persistCanvas(runDir);
-    canvas.getState().setGenerating(false);
-  };
-
-  while (Date.now() < deadline) {
-    // 画布被切到别的 run → 放弃本轮。
-    if (canvas.getState().runDir !== runDir) {
-      canvas.getState().setGenerating(false);
-      return;
-    }
-    const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
-    const processing = sessionId ? useAppStore.getState().processingSessionIds.has(sessionId) : false;
-    // assetAbs 路径含时间戳唯一，文件存在即说明本回合 Agent 已写出图；
-    // 再确认会话不在处理中（Agent 写完图后可能还在补总结）才定稿。
-    if (dataUrl && !processing) {
-      await ingest(dataUrl);
-      return;
-    }
-    await sleep(DESIGN_WORKSPACE.POLL_INTERVAL_MS);
-  }
-  // 超时兜底：再尝试读一次，读到就收，否则报错。
-  const last = await readWorkspaceImageAsDataUrl(assetAbs);
-  if (last) {
-    await ingest(last);
-    return;
-  }
-  canvas.getState().setGenerating(false);
-  canvas.getState().setError(timeoutMsg);
-}
-
 export function useDesignCanvasGeneration(): { generate: () => Promise<void> } {
-  const { sendMessage } = useAgent();
   const { t } = useI18n();
 
   const generate = useCallback(async () => {
@@ -139,12 +66,9 @@ export function useDesignCanvasGeneration(): { generate: () => Promise<void> } {
 
     const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/gen-${Date.now()}.png`;
     const assetAbs = `${runDir}/${assetRel}`;
-    await ensureDir(`${runDir}/${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}`);
-
     const prompt = buildImagePrompt({
       requirement: form.requirement,
       outputType,
-      reservedPath: assetAbs,
       designContext: {
         surface: form.surface ?? undefined,
         brandColor: form.brandColor.trim() || undefined,
@@ -155,32 +79,44 @@ export function useDesignCanvasGeneration(): { generate: () => Promise<void> } {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      // 记下用户当前聊天会话：设计生成不应抢占它（同 useDesignGeneration）。
-      const prevSessionId = useSessionStore.getState().currentSessionId;
-      const session = await useSessionStore
-        .getState()
-        .createSession(`${t.design.title}：${form.requirement.slice(0, 12)}`, {
-          workingDirectory: runDir,
-        });
-      if (!session) {
+      const res = await window.domainAPI?.invoke<{ path: string }>(
+        IPC_DOMAINS.WORKSPACE,
+        'generateDesignImage',
+        { prompt, aspectRatio: '1:1', outputPath: assetAbs },
+      );
+      if (!res?.success) {
+        throw new Error(res?.error?.message || t.design.errDispatch);
+      }
+      // 画布期间未被切到别的 run 才回灌。
+      if (useDesignCanvasStore.getState().runDir !== runDir) {
         useDesignCanvasStore.getState().setGenerating(false);
-        useDesignCanvasStore.getState().setError(t.design.errDispatch);
         return;
       }
-      if (prevSessionId && prevSessionId !== session.id) {
-        await useSessionStore.getState().switchSession(prevSessionId);
-      }
-      await sendMessage({
-        content: prompt,
-        sessionId: session.id,
-        context: { workingDirectory: runDir },
-      });
-      void pollAndIngest(runDir, assetAbs, assetRel, form.requirement, session.id, t.design.errTimeout);
+      const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
+      if (!dataUrl) throw new Error(t.design.errTimeout);
+      const { width, height } = await loadImageDims(dataUrl);
+      const { x, y } = nextNodePlacement(
+        useDesignCanvasStore.getState().nodes,
+        DESIGN_WORKSPACE.CANVAS_NODE_GAP,
+      );
+      const node: CanvasImageNode = {
+        id: `node-${Date.now()}`,
+        src: assetRel,
+        x,
+        y,
+        width,
+        height,
+        prompt: form.requirement,
+        createdAt: Date.now(),
+      };
+      useDesignCanvasStore.getState().addNode(node);
+      await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      useDesignCanvasStore.getState().setGenerating(false);
     } catch (e) {
       useDesignCanvasStore.getState().setGenerating(false);
       useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
     }
-  }, [sendMessage, t]);
+  }, [t]);
 
   return { generate };
 }

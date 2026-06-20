@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'fs';
-import { isAbsolute, resolve } from 'path';
+import { isAbsolute, resolve, join } from 'path';
+import { getUserConfigDir } from '../../config/configPaths';
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { fileReadTracker } from '../../tools/fileReadTracker';
@@ -42,6 +43,15 @@ type HandleModifiedArtifactValidationArgs = {
   artifactRepairRollbackSnapshot: ArtifactRepairRollbackSnapshot | null;
 };
 
+// 设计草稿（Kun 借鉴：设计 tab）写到 app 托管的 .code-agent/design 下，定义上不是
+// 游戏 artifact——豁免游戏契约校验，否则带脚本/动画的落地页会被识别成游戏、校验
+// 失败、误入 artifact repair mode 反噬生成（dogfood 实测，见借鉴清单 Bug B）。
+// 用「已知上下文（目录）」而非「猜内容」来判定，可靠且不动游戏识别启发式。
+function isDesignDraftArtifact(absolutePath: string): boolean {
+  const designRoot = join(getUserConfigDir(), 'design');
+  return absolutePath === designRoot || absolutePath.startsWith(`${designRoot}/`);
+}
+
 export async function handleModifiedArtifactValidation({
   ctx,
   contextAssembly,
@@ -60,6 +70,8 @@ export async function handleModifiedArtifactValidation({
     const absolutePath = isAbsolute(filePath)
       ? filePath
       : resolve(ctx.workingDirectory || process.cwd(), filePath);
+    // 设计草稿目录下的产物豁免游戏校验（见上方 isDesignDraftArtifact 说明）。
+    if (isDesignDraftArtifact(absolutePath)) return;
     // 验证分级：仅 goal 验收走完整游戏契约 + 运行时/视觉冒烟；普通聊天里随手生成的交互产物
     // 走轻校验，避免"能跑的休闲小游戏"被内部契约卡成"验收失败"。
     const fullContract = Boolean(ctx.goalMode?.isPending());

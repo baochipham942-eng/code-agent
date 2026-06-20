@@ -10,6 +10,7 @@ import { isWebMode, isTauriMode } from '../utils/platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { WorkspaceModeSwitch } from './design/WorkspaceModeSwitch';
 export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
@@ -91,9 +92,9 @@ export const TitleBar: React.FC = () => {
         </button>
         <SessionActionsMenu />
       </div>
-      {/* Right: 仅保留 Task Panel toggle —— 顶栏布局对称，其余工具进左下 User Menu，
-          tab 重开走 WorkbenchTabs 的 + 按钮 */}
-      <div className="flex items-center gap-1">
+      {/* Right: 工作区切换器（与设计页表头位置一致，统一放右）+ Task Panel toggle */}
+      <div className="flex items-center gap-2">
+        <WorkspaceModeSwitch />
         <IconButton
           icon={isTaskTabOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
           aria-label={isTaskTabOpen ? 'Hide task panel' : 'Show task panel'}

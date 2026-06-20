@@ -41,6 +41,8 @@ export const en: Translations = {
     surfaceLabel: 'Surface',
     surfaceBrand: 'Brand-led',
     surfaceProduct: 'Product-led',
+    historyTitle: 'History',
+    historyEmpty: 'No generations yet',
     generate: 'Generate',
     generating: 'Generating…',
     previewEmpty: 'Fill in a requirement and click Generate — the prototype renders here live',

@@ -1,14 +1,69 @@
-// 设计工作区（Kun 借鉴：设计 tab）。左侧 composer（需求 + 设计上下文 + 产物
+// 设计工作区（Kun 借鉴：设计 tab）。左侧 composer（历史 + 需求 + 设计上下文 + 产物
 // 类型）+ 右侧预览。v1 把「交互原型」整条闭环打通；设计稿/信息图占位标「即将」。
 // 所有面向用户的文案统一走 i18n（t.design.*），避免中英混排。
-import React from 'react';
-import { Palette, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Palette, Sparkles, Loader2, AlertCircle, History, ChevronRight } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
+import { readRunHtml } from './designFiles';
 import type { DesignOutputType, DesignSurface } from './designTypes';
+
+/** 加载某次历史生成的产物到预览。 */
+async function loadRun(runDir: string): Promise<void> {
+  useDesignStore.getState().selectRun(runDir);
+  const html = await readRunHtml(runDir);
+  // 期间未被其它操作取代才写入。
+  if (html && useDesignStore.getState().previewPath === runDir) {
+    useDesignStore.getState().setPreviewHtml(html);
+  }
+}
+
+const HistorySection: React.FC = () => {
+  const { t } = useI18n();
+  const history = useDesignStore((s) => s.history);
+  const selectedRunDir = useDesignStore((s) => s.selectedRunDir);
+  const [open, setOpen] = useState(false);
+
+  if (history.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+      >
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-90' : ''}`} />
+        <History className="h-3.5 w-3.5" />
+        <span>
+          {t.design.historyTitle}（{history.length}）
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-0.5 pl-1">
+          {history.map((run) => (
+            <button
+              key={run.runDir}
+              type="button"
+              onClick={() => void loadRun(run.runDir)}
+              title={run.requirement}
+              className={`truncate rounded-md px-2 py-1 text-left text-xs transition-colors ${
+                selectedRunDir === run.runDir
+                  ? 'bg-white/[0.08] text-zinc-100'
+                  : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+              }`}
+            >
+              {run.requirement || run.runDir.split('/').pop()}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Composer: React.FC = () => {
   const { t } = useI18n();
@@ -28,6 +83,8 @@ const Composer: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 w-80 shrink-0 border-r border-white/[0.06] p-4 overflow-y-auto">
+      <HistorySection />
+
       {/* 产物类型 */}
       <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
         {outputTypes.map(({ type, label, soon }) => (
@@ -172,6 +229,15 @@ const PreviewPane: React.FC = () => {
 
 export const DesignWorkspace: React.FC = () => {
   const { t } = useI18n();
+
+  // 刷新/重开恢复：若有持久化的选中生成且当前无预览内容，回读其产物。
+  useEffect(() => {
+    const st = useDesignStore.getState();
+    if (st.selectedRunDir && !st.previewHtml && st.status === 'idle') {
+      void loadRun(st.selectedRunDir);
+    }
+  }, []);
+
   return (
     <FullScreenPage testId="design-workspace">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">

@@ -1,12 +1,21 @@
-// 设计工作区状态（Kun 借鉴）。表单 + 生成状态 + 预览结果。
+// 设计工作区状态（Kun 借鉴）。表单 + 生成状态 + 预览 + 可折叠历史。
+// 持久化表单/历史/当前选中（刷新可恢复）；预览内容与运行态不持久（transient）。
 // 派发逻辑在 useDesignGeneration hook，本 store 只持有状态。
 import { create } from 'zustand';
-import type {
-  DesignOutputType,
-  DesignSurface,
-} from './designTypes';
+import { persist } from 'zustand/middleware';
+import type { DesignOutputType, DesignSurface } from './designTypes';
 
 export type DesignGenStatus = 'idle' | 'generating' | 'done' | 'error';
+
+/** 一次设计生成的历史项。 */
+export type DesignRun = {
+  /** run 目录绝对路径，作为唯一 id。 */
+  runDir: string;
+  requirement: string;
+  createdAt: number;
+};
+
+const HISTORY_MAX = 30;
 
 interface DesignState {
   // 表单
@@ -15,12 +24,14 @@ interface DesignState {
   tone: string[];
   surface: DesignSurface | null;
   outputType: DesignOutputType;
-  // 运行
+  // 历史 + 选中
+  history: DesignRun[];
+  /** 当前查看/生成的 run 目录。 */
+  selectedRunDir: string | null;
+  // 运行（不持久）
   status: DesignGenStatus;
   error: string | null;
-  /** 当前生成的原型预留绝对路径。 */
   previewPath: string | null;
-  /** 预览 iframe 的 srcDoc 内容（HTML 原型）。 */
   previewHtml: string | null;
 
   // 表单 actions
@@ -30,38 +41,76 @@ interface DesignState {
   setSurface: (s: DesignSurface | null) => void;
   setOutputType: (t: DesignOutputType) => void;
 
+  // 历史 actions
+  addHistory: (run: DesignRun) => void;
+  selectRun: (runDir: string) => void;
+
   // 运行 actions
-  startGenerating: (previewPath: string) => void;
+  startGenerating: (run: DesignRun) => void;
   setPreviewHtml: (html: string) => void;
   setDone: () => void;
   setError: (msg: string) => void;
   reset: () => void;
 }
 
-export const useDesignStore = create<DesignState>((set) => ({
-  requirement: '',
-  brandColor: '',
-  tone: [],
-  surface: null,
-  outputType: 'prototype',
-  status: 'idle',
-  error: null,
-  previewPath: null,
-  previewHtml: null,
+export const useDesignStore = create<DesignState>()(
+  persist(
+    (set) => ({
+      requirement: '',
+      brandColor: '',
+      tone: [],
+      surface: null,
+      outputType: 'prototype',
+      history: [],
+      selectedRunDir: null,
+      status: 'idle',
+      error: null,
+      previewPath: null,
+      previewHtml: null,
 
-  setRequirement: (requirement) => set({ requirement }),
-  setBrandColor: (brandColor) => set({ brandColor }),
-  toggleTone: (t) =>
-    set((s) => ({
-      tone: s.tone.includes(t) ? s.tone.filter((x) => x !== t) : [...s.tone, t],
-    })),
-  setSurface: (surface) => set((s) => ({ surface: s.surface === surface ? null : surface })),
-  setOutputType: (outputType) => set({ outputType }),
+      setRequirement: (requirement) => set({ requirement }),
+      setBrandColor: (brandColor) => set({ brandColor }),
+      toggleTone: (t) =>
+        set((s) => ({
+          tone: s.tone.includes(t) ? s.tone.filter((x) => x !== t) : [...s.tone, t],
+        })),
+      setSurface: (surface) => set((s) => ({ surface: s.surface === surface ? null : surface })),
+      setOutputType: (outputType) => set({ outputType }),
 
-  startGenerating: (previewPath) =>
-    set({ status: 'generating', error: null, previewPath, previewHtml: null }),
-  setPreviewHtml: (previewHtml) => set({ previewHtml }),
-  setDone: () => set({ status: 'done' }),
-  setError: (error) => set({ status: 'error', error }),
-  reset: () => set({ status: 'idle', error: null, previewPath: null, previewHtml: null }),
-}));
+      addHistory: (run) =>
+        set((s) => ({
+          history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
+        })),
+      selectRun: (runDir) =>
+        set({ selectedRunDir: runDir, previewPath: runDir, previewHtml: null, status: 'idle', error: null }),
+
+      startGenerating: (run) =>
+        set((s) => ({
+          status: 'generating',
+          error: null,
+          previewPath: run.runDir,
+          previewHtml: null,
+          selectedRunDir: run.runDir,
+          history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
+        })),
+      setPreviewHtml: (previewHtml) => set({ previewHtml }),
+      setDone: () => set({ status: 'done' }),
+      setError: (error) => set({ status: 'error', error }),
+      reset: () => set({ status: 'idle', error: null, previewPath: null, previewHtml: null }),
+    }),
+    {
+      name: 'code-agent-design',
+      version: 1,
+      // 只持久化表单/历史/选中；预览内容与运行态不持久。
+      partialize: (s) => ({
+        requirement: s.requirement,
+        brandColor: s.brandColor,
+        tone: s.tone,
+        surface: s.surface,
+        outputType: s.outputType,
+        history: s.history,
+        selectedRunDir: s.selectedRunDir,
+      }),
+    },
+  ),
+);

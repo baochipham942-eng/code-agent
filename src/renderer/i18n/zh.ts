@@ -39,6 +39,8 @@ export const zh = {
     surfaceLabel: '表层定位',
     surfaceBrand: '品牌主导',
     surfaceProduct: '产品主导',
+    historyTitle: '历史',
+    historyEmpty: '暂无生成记录',
     generate: '生成',
     generating: '生成中…',
     previewEmpty: '填写需求并点「生成」，原型会在这里实时呈现',

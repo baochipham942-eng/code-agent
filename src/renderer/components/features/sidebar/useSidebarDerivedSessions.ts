@@ -12,6 +12,7 @@ import { useTaskStore } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import { createLogger } from '../../../utils/logger';
 import { groupByWorkspace } from '../../../utils/workspaceGrouping';
+import { DESIGN_WORKSPACE } from '@shared/constants';
 import { type SidebarProjectMeta } from '../../../utils/sidebarProjectSummary';
 import {
   buildSessionSearchText,
@@ -219,7 +220,12 @@ export function useSidebarDerivedSessions(
   // sorted by latest activity; sessions without a workingDirectory go into a
   // trailing uncategorized bucket. No time sub-groups inside workspaces.
   const workspaceGroupedSessions = useMemo(
-    () => groupByWorkspace(filteredSessions).map((group) => ({
+    // 设计草稿会话（工作目录在 .code-agent/design 下）不进聊天侧栏——设计模式有自己的历史。
+    () => groupByWorkspace(
+      filteredSessions.filter(
+        (s) => !s.workingDirectory?.includes(DESIGN_WORKSPACE.DRAFT_PATH_MARKER),
+      ),
+    ).map((group) => ({
       ...group,
       sessions: sortSidebarSessionsForRecovery(
         group.sessions,

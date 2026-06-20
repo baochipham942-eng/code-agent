@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   injectSelectionScript,
+  injectPreviewStyle,
   parseProtoSelectMessage,
   PROTO_SELECT_SOURCE,
   PROTO_SELECT_MESSAGE,
@@ -23,6 +24,28 @@ describe('injectSelectionScript', () => {
     const out = injectSelectionScript('<div>x</div>', true);
     expect(out.startsWith('<div>x</div>')).toBe(true);
     expect(out).toContain('data-neo-design-select');
+  });
+});
+
+describe('injectPreviewStyle', () => {
+  it('把滚动条样式插在 <head> 起始处（原型样式可覆盖）', () => {
+    const out = injectPreviewStyle('<html><head><title>x</title></head><body></body></html>');
+    expect(out).toContain('data-neo-design-style');
+    expect(out).toContain('scrollbar-width:thin');
+    // 插在 head 起始 → 在已有 <title> 之前，页面后续样式能覆盖我们的默认值
+    expect(out.indexOf('data-neo-design-style')).toBeLessThan(out.indexOf('<title>'));
+  });
+
+  it('无 head 时补一个 head', () => {
+    const out = injectPreviewStyle('<html><body>x</body></html>');
+    expect(out).toContain('<head>');
+    expect(out).toContain('data-neo-design-style');
+    expect(out.indexOf('data-neo-design-style')).toBeLessThan(out.indexOf('<body>'));
+  });
+
+  it('既无 head 也无 html 时前置', () => {
+    const out = injectPreviewStyle('<div>x</div>');
+    expect(out.startsWith('<style data-neo-design-style')).toBe(true);
   });
 });
 

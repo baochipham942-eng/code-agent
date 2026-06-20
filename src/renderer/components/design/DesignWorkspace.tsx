@@ -41,7 +41,7 @@ import {
 } from './designFiles';
 import { designDeviceWidth, prototypeExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
-import { injectSelectionScript, parseProtoSelectMessage } from './designPreviewInject';
+import { injectSelectionScript, injectPreviewStyle, parseProtoSelectMessage } from './designPreviewInject';
 import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
 
 /** 加载某次历史生成的产物 + 版本列表到预览。 */
@@ -523,7 +523,7 @@ const PreviewPane: React.FC = () => {
   if (previewHtml) {
     const width = designDeviceWidth(device);
     const framed = device !== 'desktop';
-    const srcDoc = injectSelectionScript(previewHtml, selectMode);
+    const srcDoc = injectSelectionScript(injectPreviewStyle(previewHtml), selectMode);
     return (
       <div
         className={
@@ -599,7 +599,9 @@ const PreviewPane: React.FC = () => {
             title="design-preview"
             srcDoc={srcDoc}
             style={{ width, maxWidth: '100%' }}
-            className={`h-full border-0 bg-white ${framed ? 'rounded-lg shadow-2xl' : 'w-full'}`}
+            // 设备框模式下 iframe 底色取暗色，让滚动条 gutter 透出的底与机身/暗色原型融合，
+            // 不再露出刺眼白条；桌面满宽无机身，保留白底（空白原型在白底上更自然）。
+            className={`h-full border-0 ${framed ? 'rounded-lg bg-zinc-900 shadow-2xl' : 'w-full bg-white'}`}
             sandbox="allow-scripts"
           />
         </div>

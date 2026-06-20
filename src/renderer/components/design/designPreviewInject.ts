@@ -56,6 +56,36 @@ const SELECTION_SCRIPT = `<script data-neo-design-select>(function(){
   },true);
 })();</script>`;
 
+// 预览滚动条美化样式：把 iframe 文档默认的粗亮原生滚动条换成细、半透明、随主题
+// 的样式。刻意插在 <head> 最前面（而非末尾），这样原型若自带滚动条样式仍能覆盖我们的
+// 默认值；track 透明让其透出页面背景，不再露出 iframe 的白底。仅作用于预览渲染，不写进
+// 导出文件（导出用的是 previewHtml 原文）。
+const PREVIEW_STYLE = `<style data-neo-design-style>
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:rgba(140,140,150,.35);border-radius:8px}
+*::-webkit-scrollbar-thumb:hover{background:rgba(140,140,150,.55)}
+html{scrollbar-width:thin;scrollbar-color:rgba(140,140,150,.35) transparent}
+</style>`;
+
+/**
+ * 给预览 HTML 注入滚动条美化样式（插在 <head> 起始处，原型自带样式可覆盖）。
+ * 无 <head> 时补一个；都没有则前置。
+ */
+export function injectPreviewStyle(html: string): string {
+  const headOpen = /<head[^>]*>/i.exec(html);
+  if (headOpen) {
+    const at = headOpen.index + headOpen[0].length;
+    return html.slice(0, at) + PREVIEW_STYLE + html.slice(at);
+  }
+  const htmlOpen = /<html[^>]*>/i.exec(html);
+  if (htmlOpen) {
+    const at = htmlOpen.index + htmlOpen[0].length;
+    return `${html.slice(0, at)}<head>${PREVIEW_STYLE}</head>${html.slice(at)}`;
+  }
+  return PREVIEW_STYLE + html;
+}
+
 /**
  * 圈选模式开时往 HTML 注入圈选脚本（优先插在 </body> 前，否则附到末尾）；关时原样返回。
  */

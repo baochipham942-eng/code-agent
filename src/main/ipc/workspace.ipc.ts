@@ -28,6 +28,16 @@ async function handleResolveDesignDir(): Promise<{ dir: string }> {
   return { dir };
 }
 
+// 设计图 handler 路径越界守卫（audit M1）：renderer 传入的 baseImagePath/outputPath 必须落在设计目录
+// <getUserConfigDir>/design 内。挡住读任意本地文件(base64 后外泄到 DashScope)/写覆盖任意文件。
+function assertWithinDesignDir(p: string, label: string): void {
+  const root = path.resolve(getUserConfigDir(), 'design');
+  const resolved = path.resolve(p);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error(`${label} 路径越界：必须位于设计目录内`);
+  }
+}
+
 // 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
 // renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
@@ -37,6 +47,7 @@ async function handleGenerateDesignImage(
   if (!payload?.prompt || !payload?.outputPath) {
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
     '../services/media/imageGenerationService'
   );
@@ -57,6 +68,7 @@ async function handleImportDesignImage(
   if (!payload?.dataUrl || !payload?.outputPath) {
     throw new Error('importDesignImage 需要 dataUrl 与 outputPath');
   }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const base64 = payload.dataUrl.replace(/^data:[^;]+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
@@ -71,6 +83,8 @@ async function handleEditDesignImage(
   if (!payload?.prompt || !payload?.baseImagePath || !payload?.maskDataUrl || !payload?.outputPath) {
     throw new Error('editDesignImage 需要 prompt / baseImagePath / maskDataUrl / outputPath');
   }
+  assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const { editImageWithMask, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'
   );
@@ -99,6 +113,8 @@ export async function handleExpandDesignImage(
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
   }
+  assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   // 校验 direction 在合法集合内：非法值会让 expandScalesForDirection 落 default(四向 1.0)，
   // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
   const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
@@ -141,6 +157,8 @@ export async function handleRemoveWatermarkDesignImage(
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('removeWatermarkDesignImage 需要 baseImagePath / outputPath');
   }
+  assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const { removeWatermark, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'
   );

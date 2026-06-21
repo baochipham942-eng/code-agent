@@ -24,7 +24,7 @@ async function ensureDir(dirPath: string): Promise<void> {
 }
 
 /** 把 dataURL 加载进 Image 量原始像素尺寸；失败回退兜底正方形。 */
-function loadImageDims(dataUrl: string): Promise<{ width: number; height: number }> {
+export function loadImageDims(dataUrl: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const img = new window.Image();
     const fallback = {

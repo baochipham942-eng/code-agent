@@ -48,6 +48,20 @@ async function handleGenerateDesignImage(
   return { path: payload.outputPath };
 }
 
+// 设计画布导入用户自有图片（自由画布）：renderer 传 base64 dataURL → 写盘到 run 的 assets，
+// 之后它就是普通画布节点，可被选中/圈选局部重绘（与生成图同构）。
+async function handleImportDesignImage(
+  payload: { dataUrl: string; outputPath: string },
+): Promise<{ path: string }> {
+  if (!payload?.dataUrl || !payload?.outputPath) {
+    throw new Error('importDesignImage 需要 dataUrl 与 outputPath');
+  }
+  const base64 = payload.dataUrl.replace(/^data:[^;]+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
+
 // 设计画布圈选局部重绘（Cowart 式 P2）：底图(磁盘路径)读成 base64 + renderer 传来的 mask
 // (白=改/黑=留) → 通义万相 wanx2.1-imageedit 真 inpaint → 下载结果写盘 → 返回路径。
 async function handleEditDesignImage(
@@ -724,6 +738,9 @@ export function registerWorkspaceHandlers(
           data = await handleEditDesignImage(
             payload as { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
           );
+          break;
+        case 'importDesignImage':
+          data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

@@ -9,6 +9,7 @@ import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Do
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
+import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { readWorkspaceImageAsDataUrl } from './designFiles';
 import {
@@ -122,6 +123,7 @@ export const DesignCanvas: React.FC = () => {
   const setSelected = useDesignCanvasStore((s) => s.setSelected);
   const generating = useDesignCanvasStore((s) => s.generating);
   const { editRegion } = useDesignCanvasGeneration();
+  const { importFiles } = useDesignCanvasImport();
 
   // 圈选标注本地态（世界坐标）。
   const [annotating, setAnnotating] = useState(false);
@@ -172,6 +174,28 @@ export const DesignCanvas: React.FC = () => {
     setAnnotations([]);
     setDraft(null);
   }, [selectedNode?.id]);
+
+  // 自由画布：粘贴图片导入（剪贴板含图片时拦截，纯文本粘贴不受影响）。
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+        .map((it) => it.getAsFile())
+        .filter((f): f is File => Boolean(f));
+      if (files.length > 0) {
+        e.preventDefault();
+        void importFiles(files);
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [importFiles]);
+
+  const onDrop = (e: React.DragEvent): void => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (files.length > 0) void importFiles(files);
+  };
 
   const worldFromPointer = (): { x: number; y: number } | null => {
     const stage = stageRef.current;
@@ -255,7 +279,13 @@ export const DesignCanvas: React.FC = () => {
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
 
   return (
-    <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-zinc-900" data-testid="design-canvas">
+    <div
+      ref={wrapRef}
+      className="relative h-full w-full overflow-hidden bg-zinc-900"
+      data-testid="design-canvas"
+      onDrop={onDrop}
+      onDragOver={(e) => e.preventDefault()}
+    >
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}
@@ -331,7 +361,13 @@ export const DesignCanvas: React.FC = () => {
               </button>
             )}
           </div>
-          {annotating && <p className="text-[11px] leading-snug text-zinc-500">{t.design.annotateHint}</p>}
+          {annotating ? (
+            <p className="text-[11px] leading-snug text-amber-300/80">{t.design.annotateHint}</p>
+          ) : (
+            annotations.length === 0 && (
+              <p className="text-[11px] leading-snug text-zinc-500">{t.design.annotateGuide}</p>
+            )
+          )}
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}

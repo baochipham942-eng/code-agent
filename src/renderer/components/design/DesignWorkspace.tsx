@@ -1,14 +1,15 @@
 // 设计工作区（Kun 借鉴：设计 tab）。左侧 composer（历史 + 需求 + 设计上下文 + 产物
 // 类型）+ 右侧预览。v1 把「交互原型」整条闭环打通；设计稿/信息图占位标「即将」。
 // 所有面向用户的文案统一走 i18n（t.design.*），避免中英混排。
-import React, { useEffect, useState } from 'react';
-import { Palette, Sparkles, Loader2, AlertCircle, History, ChevronRight } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Palette, Sparkles, Loader2, AlertCircle, History, ChevronRight, ImagePlus } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
+import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { readRunHtml } from './designFiles';
@@ -79,6 +80,8 @@ const Composer: React.FC = () => {
   const s = useDesignStore();
   const { generate: generatePrototype } = useDesignGeneration();
   const { generate: generateCanvas } = useDesignCanvasGeneration();
+  const { importFiles } = useDesignCanvasImport();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasGenerating = useDesignCanvasStore((c) => c.generating);
   const canvasError = useDesignCanvasStore((c) => c.error);
 
@@ -225,6 +228,34 @@ const Composer: React.FC = () => {
         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
         {generating ? t.design.generating : t.design.generate}
       </button>
+
+      {/* 自由画布：导入自有图片（也支持画布上粘贴/拖拽） */}
+      {imageMode && (
+        <>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={generating}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.12] px-3 py-2 text-sm text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-50"
+          >
+            <ImagePlus className="h-4 w-4" />
+            {t.design.importImage}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length > 0) void importFiles(files);
+              e.target.value = '';
+            }}
+          />
+          <p className="text-[11px] leading-snug text-zinc-500">{t.design.importHint}</p>
+        </>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">

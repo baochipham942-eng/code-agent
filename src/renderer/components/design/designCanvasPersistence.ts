@@ -7,8 +7,29 @@ import {
   emptyCanvasDoc,
   type DesignCanvasDoc,
 } from './designCanvasTypes';
+import { useDesignCanvasStore } from './designCanvasStore';
+import { resolveDesignDir } from './designFiles';
 
 const CANVAS_FILE = 'canvas.json';
+
+/**
+ * 确保画布有一个 run 目录：已有则复用；否则解析设计根目录、建 run-<ts>、载入空文档。
+ * 生成与导入共用（同一画布持续铺多张产物）。失败返回 null。
+ */
+export async function ensureCanvasRun(): Promise<string | null> {
+  const existing = useDesignCanvasStore.getState().runDir;
+  if (existing) return existing;
+  const baseDir = await resolveDesignDir();
+  if (!baseDir) return null;
+  const runDir = `${baseDir.replace(/\/+$/, '')}/run-${Date.now()}`;
+  try {
+    await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'createFolder', { dirPath: runDir });
+  } catch {
+    // Agent/写图时也会建父目录，这里失败不致命。
+  }
+  useDesignCanvasStore.getState().loadDoc(runDir, emptyCanvasDoc());
+  return runDir;
+}
 
 function canvasPath(runDir: string): string {
   return `${runDir.replace(/\/+$/, '')}/${CANVAS_FILE}`;

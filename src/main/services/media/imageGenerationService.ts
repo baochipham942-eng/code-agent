@@ -47,6 +47,10 @@ const WANX_SIZE_BY_ASPECT = new Map<string, string>([
   ['4:3', '1024*768'],
   ['3:4', '768*1024'],
 ]);
+// 通义万相扩图（function=expand）单边外扩比例范围；去水印默认 prompt（API 要求非空，语义不强制）。
+const WANX_EXPAND_SCALE_MIN = 1.0;
+const WANX_EXPAND_SCALE_MAX = 2.0;
+const DEFAULT_REMOVE_WATERMARK_PROMPT = '去除图像中的文字水印';
 
 const NO_TEXT_SUFFIX = '，画面中不要出现任何文字、字母、数字、标题、标签、水印、签名，纯视觉画面';
 
@@ -328,6 +332,105 @@ export async function editImageWithMask(input: {
         prompt: input.prompt,
         base_image_url: input.baseImageDataUrl,
         mask_image_url: input.maskImageDataUrl,
+      },
+      parameters: { n: 1 },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
+}
+
+export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
+
+export interface ExpandScales {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+function clampExpandScale(value: number): number {
+  if (!Number.isFinite(value)) return WANX_EXPAND_SCALE_MIN;
+  return Math.min(WANX_EXPAND_SCALE_MAX, Math.max(WANX_EXPAND_SCALE_MIN, value));
+}
+
+/**
+ * 扩图「方向 + 比例」→ wanx 四向单边 scale（top/bottom/left/right，各 ∈ [1.0, 2.0]）。
+ * 单向只抬对应边，'all'(四周) 四边同时按比例外扩。比例越界自动 clamp。
+ */
+export function expandScalesForDirection(direction: ExpandDirection, ratio: number): ExpandScales {
+  const r = clampExpandScale(ratio);
+  const base: ExpandScales = { top: 1, bottom: 1, left: 1, right: 1 };
+  switch (direction) {
+    case 'up':
+      return { ...base, top: r };
+    case 'down':
+      return { ...base, bottom: r };
+    case 'left':
+      return { ...base, left: r };
+    case 'right':
+      return { ...base, right: r };
+    case 'all':
+      return { top: r, bottom: r, left: r, right: r };
+    default:
+      return base;
+  }
+}
+
+/**
+ * 通义万相扩图（function=expand）：base 图按四向单边 scale 外扩，prompt 描述补绘内容。
+ * base 传 base64 data URI（DashScope 原生接受）。返回扩图后的结果图 url（尺寸大于原图）。
+ */
+export async function expandImage(input: {
+  apiKey: string;
+  prompt: string;
+  baseImageDataUrl: string;
+  topScale?: number;
+  bottomScale?: number;
+  leftScale?: number;
+  rightScale?: number;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'expand',
+        prompt: input.prompt,
+        base_image_url: input.baseImageDataUrl,
+      },
+      parameters: {
+        top_scale: clampExpandScale(input.topScale ?? WANX_EXPAND_SCALE_MIN),
+        bottom_scale: clampExpandScale(input.bottomScale ?? WANX_EXPAND_SCALE_MIN),
+        left_scale: clampExpandScale(input.leftScale ?? WANX_EXPAND_SCALE_MIN),
+        right_scale: clampExpandScale(input.rightScale ?? WANX_EXPAND_SCALE_MIN),
+        n: 1,
+      },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
+}
+
+/**
+ * 通义万相去文字水印（function=remove_watermark）：消除图内中英文文字水印。
+ * 无 function 专属参数；prompt API 要求非空但语义不强制，缺省走默认去水印 prompt。
+ */
+export async function removeWatermark(input: {
+  apiKey: string;
+  baseImageDataUrl: string;
+  prompt?: string;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'remove_watermark',
+        prompt: input.prompt?.trim() ? input.prompt : DEFAULT_REMOVE_WATERMARK_PROMPT,
+        base_image_url: input.baseImageDataUrl,
       },
       parameters: { n: 1 },
     },

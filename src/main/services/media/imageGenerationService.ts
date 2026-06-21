@@ -148,6 +148,9 @@ export function getDashscopeApiKey(): string | undefined {
  * 同 getDashscopeApiKey 范式；base 或 key 任一缺失则返回 undefined。绝不写进代码。
  */
 export function getGptImageConfig(): { base: string; key: string } | undefined {
+  // SecureStorage slot 名（'gptimage-base' / 'gptimage'）是 Settings UI / 未来配置入口
+  // 必须对齐的键名：env GPTIMAGE_PROXY_BASE/_KEY 优先，config slot 是回落。
+  // 将来 UI 若用不同键名会导致这里静默读到 undefined，改键名务必两边同步。
   const base = process.env.GPTIMAGE_PROXY_BASE || getConfigService().getApiKey('gptimage-base');
   const key = process.env.GPTIMAGE_PROXY_KEY || getConfigService().getApiKey('gptimage');
   if (!base || !key) return undefined;
@@ -499,7 +502,12 @@ export async function generateImage(
       TIMEOUT_MS.GPTIMAGE_GENERATION,
       outerSignal,
     );
-    if (!resp.ok) throw new Error(`gpt-image-2 生成失败: ${resp.status}`);
+    if (!resp.ok) {
+      // 透出第三方中转返回的错误正文（配额/无效 key/上游超时等唯一可读信号），
+      // 与 cogview/wanx 分支一致。body 不含 key（key 只在 Authorization header），安全。
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`gpt-image-2 生成失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
+    }
     const json = await resp.json();
     const b64 = json?.data?.[0]?.b64_json;
     if (!b64) throw new Error('gpt-image-2 返回无 b64_json');

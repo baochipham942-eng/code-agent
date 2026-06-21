@@ -7,6 +7,13 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// 显式 mock configService，让 getGptImageConfig 的 config 回落路径可控（不依赖测试环境恰好返回 undefined）。
+const { getApiKeyMock } = vi.hoisted(() => ({ getApiKeyMock: vi.fn() }));
+vi.mock('../../../../src/main/services/core/configService', () => ({
+  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+}));
+
 import {
   expandImage,
   removeWatermark,
@@ -139,8 +146,17 @@ describe('removeWatermark — wanx function=remove_watermark', () => {
 });
 
 describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => {
+  beforeEach(() => {
+    // 默认 config 无任何 key（缺-key 路径），各用例按需覆盖。
+    getApiKeyMock.mockReset();
+    getApiKeyMock.mockReturnValue(undefined);
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+  });
+
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    getApiKeyMock.mockReset();
     delete process.env.GPTIMAGE_PROXY_BASE;
     delete process.env.GPTIMAGE_PROXY_KEY;
   });
@@ -159,10 +175,40 @@ describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => 
     expect(body.prompt).not.toMatch(/不要出现任何文字/); // 设计场景保留文字
   });
 
+  it('env 缺失时回落 config slot（gptimage-base/gptimage）也能出图', async () => {
+    // 不设 env，改由 config slot 提供 base+key，覆盖 getGptImageConfig 的 config 回落分支。
+    getApiKeyMock.mockImplementation((slot: string) => {
+      if (slot === 'gptimage-base') return 'https://config.test/';
+      if (slot === 'gptimage') return 'sk-config';
+      return undefined;
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'BBB' }] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
+    expect(r.actualModel).toBe('gpt-image-2');
+    expect(r.imageData).toBe('data:image/png;base64,BBB');
+    // base 尾部斜杠应被归一化，路径拼接无双斜杠。
+    expect(fetchMock.mock.calls[0][0]).toBe('https://config.test/v1/images/generations');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer sk-config');
+  });
+
+  it('非 ok 响应把第三方中转错误正文拼进异常', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => '{"error":"quota exceeded"}',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/429.*quota exceeded/);
+  });
+
   it('gptimage 缺 key 报去设置配置', async () => {
-    delete process.env.GPTIMAGE_PROXY_BASE;
-    delete process.env.GPTIMAGE_PROXY_KEY;
-    // 且 config 无 gptimage key → 抛含「配置」字样错误
+    // env 已在 beforeEach 删除，且 config 显式返回 undefined（mockReturnValue(undefined)）
+    // → 走的是真·缺 key 路径，断言抛含「配置」字样错误。
     const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
     await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/配置/);
   });

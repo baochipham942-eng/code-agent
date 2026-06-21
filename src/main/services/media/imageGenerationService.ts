@@ -168,10 +168,36 @@ export function isImageUrl(data: string): boolean {
   return data.startsWith('http://') || data.startsWith('https://');
 }
 
+/**
+ * 图片 url 下载 SSRF 守卫（D9）：仅放行 https 公网地址，拒绝私网/环回/链路本地/元数据地址。
+ * 注意：本守卫基于 hostname 字面量判断，不解析 DNS——可挡 IP 直连与 localhost，
+ * 但 DNS rebinding（域名解析到私网）超出本期范围（后续可在 fetch 后校验 socket 远端 IP）。
+ */
+export function isSafeImageUrl(u: string): boolean {
+  let url: URL;
+  try { url = new URL(u); } catch { return false; }
+  if (url.protocol !== 'https:') return false;
+  const h = url.hostname.toLowerCase();
+  if (h === 'localhost') return false;
+  // 私网/环回/链路本地 IPv4
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const a = Number(m[1]); const b = Number(m[2]);
+    if (a === 127 || a === 10 || a === 0) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 169 && b === 254) return false;
+  }
+  // IPv6 环回/ULA/链路本地（URL hostname 对 IPv6 不带方括号）
+  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return false;
+  return true;
+}
+
 export async function downloadImageAsBase64(
   url: string,
   outerSignal: AbortSignal = new AbortController().signal,
 ): Promise<string> {
+  if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的图片 URL（仅允许 https 公网地址）');
   const response = await fetchWithAbort(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
   if (!response.ok) {
     throw new Error(`图片下载失败: ${response.status}`);

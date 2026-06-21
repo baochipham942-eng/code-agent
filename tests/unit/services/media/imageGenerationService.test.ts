@@ -18,6 +18,7 @@ import {
   expandImage,
   removeWatermark,
   expandScalesForDirection,
+  isSafeImageUrl,
 } from '../../../../src/main/services/media/imageGenerationService';
 
 function jsonResponse(obj: unknown): Response {
@@ -211,5 +212,29 @@ describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => 
     // → 走的是真·缺 key 路径，断言抛含「配置」字样错误。
     const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
     await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/配置/);
+  });
+});
+
+describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
+  it('仅允许 https 公网，拒 http/私网/元数据地址', () => {
+    expect(isSafeImageUrl('https://dashscope-result.oss-cn.aliyuncs.com/x.png')).toBe(true);
+    expect(isSafeImageUrl('http://example.com/x.png')).toBe(false);       // 非 https
+    expect(isSafeImageUrl('https://127.0.0.1/x')).toBe(false);
+    expect(isSafeImageUrl('https://169.254.169.254/latest/meta-data')).toBe(false);
+    expect(isSafeImageUrl('https://192.168.1.10/x')).toBe(false);
+    expect(isSafeImageUrl('https://10.0.0.5/x')).toBe(false);
+    expect(isSafeImageUrl('https://172.16.0.1/x')).toBe(false);
+    expect(isSafeImageUrl('https://localhost/x')).toBe(false);
+    expect(isSafeImageUrl('file:///etc/passwd')).toBe(false);
+    expect(isSafeImageUrl('not a url')).toBe(false);
+  });
+
+  it('downloadImageAsBase64 下载前拦截不安全 url（不发起 fetch）', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { downloadImageAsBase64 } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(downloadImageAsBase64('http://127.0.0.1/x')).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

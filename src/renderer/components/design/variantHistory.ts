@@ -13,7 +13,8 @@ import {
 export function slotTimeline(spine: VariantSpine, slotKey: string): Variant[] {
   return activeVariants(spine)
     .filter((v) => groupKey(v) === slotKey)
-    .sort((a, b) => a.createdAt - b.createdAt);
+    // 同毫秒 createdAt 时以 id 作 tie-break，保证时间线顺序确定（undo/redo 步进可复现）。
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }
 
 /**

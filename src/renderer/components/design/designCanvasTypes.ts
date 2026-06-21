@@ -75,7 +75,8 @@ function normalizeNode(raw: unknown): CanvasImageNode | null {
   if (r.chosen === true) node.chosen = true;
   if (r.discarded === true) node.discarded = true;
   if (typeof r.label === 'string') node.label = r.label;
-  if (isFiniteNumber(r.costCny)) node.costCny = r.costCny as number;
+  // 成本必须非负：防手改/损坏的 canvas.json 注入负成本压低累计花费、破坏 BYOK 计费信任。
+  if (isFiniteNumber(r.costCny) && (r.costCny as number) >= 0) node.costCny = r.costCny as number;
   return node;
 }
 

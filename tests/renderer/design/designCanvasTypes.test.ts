@@ -107,3 +107,20 @@ describe('CanvasImageNode 反序列化 label / costCny（T2）', () => {
     expect(doc.nodes[1].costCny).toBeUndefined();
   });
 });
+
+describe('costCny 负值防注入（codex/gemini 审计 MED）', () => {
+  it('负成本被拒（防手改 canvas.json 压低累计花费，破坏 BYOK 信任）', () => {
+    const doc = deserializeCanvasDoc(
+      JSON.stringify({
+        version: 1,
+        camera: DEFAULT_CAMERA,
+        nodes: [
+          { id: 'a', src: 'a.png', x: 0, y: 0, width: 1, height: 1, createdAt: 1, costCny: -100 },
+          { id: 'b', src: 'b.png', x: 0, y: 0, width: 1, height: 1, createdAt: 1, costCny: 0 },
+        ],
+      }),
+    );
+    expect(doc.nodes[0].costCny).toBeUndefined(); // 负值丢弃
+    expect(doc.nodes[1].costCny).toBe(0); // 0(免费)合法保留
+  });
+});

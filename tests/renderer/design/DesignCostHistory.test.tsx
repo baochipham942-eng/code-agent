@@ -40,6 +40,18 @@ describe('DesignCostHistoryView', () => {
     expect(html).toContain('前进到后一版');
   });
 
+  it('免费模型(costCny=0)单步显示「免费」而非 ¥0.00（审计 LOW）', () => {
+    // 混合：一个付费(0.14)+一个免费(0)，确保「免费」是单步展示而非累计 header 的 ¥0.00。
+    const mixed: CanvasImageNode[] = [
+      N({ id: 'p1', createdAt: 1, label: '付费出图', costCny: 0.14 }),
+      N({ id: 'f1', createdAt: 2, label: '免费出图', costCny: 0 }),
+    ];
+    const html = render(mixed);
+    expect(html).toContain('免费'); // 免费步
+    expect(html).toContain('¥0.14'); // 付费步仍显示金额
+    expect(html).toContain('¥0.14'); // 累计=0.14（免费步不加钱）
+  });
+
   it('空画布显示空态提示，不渲染步骤', () => {
     const html = render([]);
     expect(html).toContain('每一步会作为可命名、可回滚的版本');

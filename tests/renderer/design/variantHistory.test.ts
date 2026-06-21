@@ -92,3 +92,15 @@ describe('variantHistory current / 前后版', () => {
     expect(nextVariantId(spine, 'missing')).toBeUndefined();
   });
 });
+
+describe('variantHistory 同 createdAt tie-break（审计 LOW）', () => {
+  it('同毫秒时间戳按 id 稳定排序，时间线确定', () => {
+    const spine = spineOf(
+      img('nb', 100, { parentId: 'na' }),
+      img('na', 100),
+      img('nc', 100, { parentId: 'na' }),
+    );
+    // groupKey: na 为根(id=na)，nb/nc parentId=na → 同槽 na
+    expect(slotTimeline(spine, 'na').map((v) => v.id)).toEqual(['na', 'nb', 'nc']);
+  });
+});

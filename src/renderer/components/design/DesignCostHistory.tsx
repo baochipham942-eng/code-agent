@@ -137,7 +137,13 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
               const node = nodeById.get(v.id);
               const isCurrent = current?.id === v.id;
               const opLabel = v.parentId ? t.design.historyStepEdit : t.design.historyStepGenerate;
-              const cost = typeof node?.costCny === 'number' ? formatCny(node.costCny) : null;
+              // 免费档模型（如 cogview-3-flash，costCny=0）显示「免费」而非 ¥0.00。
+              const cost =
+                typeof node?.costCny === 'number'
+                  ? node.costCny === 0
+                    ? t.design.costFree
+                    : formatCny(node.costCny)
+                  : null;
               const editing = editingId === v.id;
               return (
                 <div

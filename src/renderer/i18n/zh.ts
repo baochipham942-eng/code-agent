@@ -95,6 +95,23 @@ export const zh = {
     errTimeout: '生成超时，未检测到原型文件',
     errNoPrototype: '请先生成或选择一个原型',
     errNoInstruction: '请先填写修改要求',
+    // T2 成本透明 + undo/redo 信任 UI
+    costEstimateLabel: '本次预估',
+    costActualLabel: '本次花费',
+    costFree: '免费',
+    costHint: '按 BYOK 实际计费，出图前可见',
+    historyPanelTitle: '设计历史',
+    historyPanelEmpty: '生成或局部重绘后，每一步会作为可命名、可回滚的版本出现在这里',
+    historyTotalSpend: '累计花费',
+    historyStepGenerate: '生成',
+    historyStepEdit: '局部重绘',
+    historyCurrent: '当前',
+    historyUndo: '回滚到前一版',
+    historyRedo: '前进到后一版',
+    historyRollbackTo: '回滚到这一版',
+    historyRename: '命名',
+    historyRenamePlaceholder: '给这一步起个名字',
+    historyRenameSave: '保存',
   },
 
   // Settings Modal

@@ -1,7 +1,7 @@
 // 设计工作区（Kun 借鉴：设计 tab）。左侧 composer（历史 + 需求 + 设计上下文 + 产物
 // 类型）+ 右侧预览。v1 把「交互原型」整条闭环打通；设计稿/信息图占位标「即将」。
 // 所有面向用户的文案统一走 i18n（t.design.*），避免中英混排。
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Palette,
   Sparkles,
@@ -24,6 +24,7 @@ import {
   Download,
   Maximize2,
   Minimize2,
+  GitCompare,
 } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
@@ -49,6 +50,9 @@ import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName } from './
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
 import { injectSelectionScript, injectPreviewStyle, parseProtoSelectMessage } from './designPreviewInject';
 import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
+import { VariantCompareView } from './VariantCompareView';
+import { loadProtoSpine, saveProtoSpine } from './protoSpine';
+import { activeVariants, pinVariant, discardVariant, type Variant } from './variantSpine';
 
 /** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
 function isImageOutput(t: DesignOutputType): boolean {
@@ -66,6 +70,11 @@ async function loadRun(runDir: string): Promise<void> {
   const versions = await listVersions(runDir);
   if (useDesignStore.getState().previewPath === runDir) {
     useDesignStore.getState().setVersions(versions);
+    // 载入 variant spine（版本的 pin/discard），与磁盘版本对账。
+    const spine = await loadProtoSpine(runDir, versions);
+    if (useDesignStore.getState().previewPath === runDir) {
+      useDesignStore.getState().setSpine(spine);
+    }
   }
 }
 
@@ -508,6 +517,82 @@ const ViewingBanner: React.FC<{ onRollback: () => void; onBackToLatest: () => vo
   );
 };
 
+/**
+ * 版本对比选择器：列活跃 proto 版本（含主版徽标），勾选两版进入并排对比。
+ * 与 VersionControl（只读看历史/回滚）分工：本控件负责对比 + 定稿（设主版/淘汰）。
+ */
+const VersionComparePicker: React.FC<{
+  variants: Variant[];
+  picked: string[];
+  onToggle: (id: string) => void;
+  onCompare: () => void;
+}> = ({ variants, picked, onToggle, onCompare }) => {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  if (variants.length < 2) return null; // 不足两版无可对比
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+      >
+        <GitCompare className="h-3.5 w-3.5" />
+        <span>{t.design.compareBtn}</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-white/[0.1] bg-zinc-900 p-1 shadow-2xl">
+          <div className="max-h-56 overflow-y-auto">
+            {variants.map((v, i) => {
+              const checked = picked.includes(v.id);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => onToggle(v.id)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                    checked ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-300 hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm border ${
+                        checked ? 'border-fuchsia-400 bg-fuchsia-400/80' : 'border-white/20'
+                      }`}
+                    >
+                      {checked && <span className="text-[9px] text-white">✓</span>}
+                    </span>
+                    v{variants.length - i}
+                    {v.pinned && (
+                      <span className="rounded bg-emerald-500/80 px-1 text-[9px] text-white">
+                        {t.design.mainVersion}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-zinc-500">{formatVersionTime(v.createdAt)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            disabled={picked.length !== 2}
+            onClick={() => {
+              onCompare();
+              setOpen(false);
+            }}
+            className="mt-1 w-full rounded-md bg-fuchsia-500/90 px-2 py-1.5 text-xs font-medium text-white hover:bg-fuchsia-500 disabled:opacity-40"
+          >
+            {t.design.compareBtn}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
   const outputType = useDesignStore((s) => s.outputType);
@@ -516,14 +601,47 @@ const PreviewPane: React.FC = () => {
   const selectedRunDir = useDesignStore((s) => s.selectedRunDir);
   const versions = useDesignStore((s) => s.versions);
   const viewingVersionPath = useDesignStore((s) => s.viewingVersionPath);
+  const spine = useDesignStore((s) => s.spine);
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
   const [selectMode, setSelectMode] = useState(false);
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [exported, setExported] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const viewing = viewingVersionPath !== null;
+
+  // 活跃 proto 版本（最新在前），供对比选择器；过滤已淘汰。
+  const activeProtoVariants = useMemo(
+    () =>
+      activeVariants(spine)
+        .filter((v) => v.kind === 'proto-html')
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [spine],
+  );
+
+  const toggleCompare = (id: string): void =>
+    setCompareIds((p) =>
+      p.includes(id) ? p.filter((x) => x !== id) : p.length >= 2 ? [p[1], id] : [...p, id],
+    );
+
+  const compareA = activeProtoVariants.find((v) => v.id === compareIds[0]);
+  const compareB = activeProtoVariants.find((v) => v.id === compareIds[1]);
+
+  const persistSpine = async (next: typeof spine): Promise<void> => {
+    useDesignStore.getState().setSpine(next);
+    if (selectedRunDir) await saveProtoSpine(selectedRunDir, next);
+  };
+  const handlePin = (id: string): void => {
+    void persistSpine(pinVariant(spine, id));
+  };
+  const handleDiscardVariant = (id: string): void => {
+    void persistSpine(discardVariant(spine, id));
+    setComparing(false);
+    setCompareIds([]);
+  };
 
   // 全屏态下 Esc 退出。
   useEffect(() => {
@@ -604,17 +722,35 @@ const PreviewPane: React.FC = () => {
         className={
           fullscreen
             ? 'fixed inset-0 z-50 flex flex-col bg-zinc-950'
-            : 'flex h-full w-full flex-col'
+            : 'relative flex h-full w-full flex-col'
         }
       >
+        {comparing && compareA && compareB && (
+          <VariantCompareView
+            variantA={compareA}
+            variantB={compareB}
+            runDir={selectedRunDir}
+            onPin={handlePin}
+            onDiscard={handleDiscardVariant}
+            onClose={() => setComparing(false)}
+          />
+        )}
         <div className="relative flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
-          <div className="absolute left-3">
+          <div className="absolute left-3 flex items-center gap-1.5">
             <VersionControl
               versions={versions}
               viewingPath={viewingVersionPath}
               onView={(v) => void handleViewVersion(v)}
               onBackToLatest={() => void handleBackToLatest()}
             />
+            {!viewing && (
+              <VersionComparePicker
+                variants={activeProtoVariants}
+                picked={compareIds}
+                onToggle={toggleCompare}
+                onCompare={() => setComparing(true)}
+              />
+            )}
           </div>
           <DeviceSwitch device={device} onChange={setDevice} />
           <div className="absolute right-3 flex items-center gap-1">

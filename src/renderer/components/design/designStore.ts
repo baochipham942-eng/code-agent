@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DesignAspectRatio, DesignOutputType, DesignSurface } from './designTypes';
 import type { DesignVersion } from './designFiles';
+import { emptySpine, type VariantSpine } from './variantSpine';
 
 export type DesignGenStatus = 'idle' | 'generating' | 'done' | 'error';
 
@@ -39,6 +40,8 @@ interface DesignState {
   // 版本快照（当前 run，不持久；磁盘是真理源）。viewingVersionPath 非空=正在看历史版本。
   versions: DesignVersion[];
   viewingVersionPath: string | null;
+  // variant spine（当前 run，不持久；spine.json 是真理源）。持有版本的 pin/discard。
+  spine: VariantSpine;
 
   // 表单 actions
   setRequirement: (v: string) => void;
@@ -64,6 +67,7 @@ interface DesignState {
   // 版本 actions
   setVersions: (versions: DesignVersion[]) => void;
   setViewingVersion: (path: string | null) => void;
+  setSpine: (spine: VariantSpine) => void;
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -83,6 +87,7 @@ export const useDesignStore = create<DesignState>()(
       previewHtml: null,
       versions: [],
       viewingVersionPath: null,
+      spine: emptySpine(),
 
       setRequirement: (requirement) => set({ requirement }),
       setBrandColor: (brandColor) => set({ brandColor }),
@@ -107,6 +112,7 @@ export const useDesignStore = create<DesignState>()(
           error: null,
           versions: [],
           viewingVersionPath: null,
+          spine: emptySpine(),
         }),
 
       startGenerating: (run) =>
@@ -118,6 +124,7 @@ export const useDesignStore = create<DesignState>()(
           selectedRunDir: run.runDir,
           versions: [],
           viewingVersionPath: null,
+          spine: emptySpine(),
           history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
         })),
       startEditing: (runDir) =>
@@ -139,10 +146,12 @@ export const useDesignStore = create<DesignState>()(
           previewHtml: null,
           versions: [],
           viewingVersionPath: null,
+          spine: emptySpine(),
         }),
 
       setVersions: (versions) => set({ versions }),
       setViewingVersion: (viewingVersionPath) => set({ viewingVersionPath }),
+      setSpine: (spine) => set({ spine }),
     }),
     {
       name: 'code-agent-design',

@@ -17,6 +17,8 @@ import { useAppStore } from '../../stores/appStore';
 import { useDesignStore } from './designStore';
 import { buildPrototypePrompt, buildContinueEditPrompt, type PrototypeSelection } from './designTypes';
 import { findRunHtml, readWorkspaceFile, snapshotVersion, listVersions } from './designFiles';
+import { loadProtoSpine, saveProtoSpine } from './protoSpine';
+import { pinVariant } from './variantSpine';
 
 /** 预创建 run 目录（让 createSession 工作目录有效、listFiles 有目标）。 */
 async function ensureDir(dirPath: string): Promise<void> {
@@ -29,10 +31,20 @@ async function ensureDir(dirPath: string): Promise<void> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** 一次完成定稿后把当前 html 快照成版本，并刷新 store 的版本列表（backlog #4）。 */
+/**
+ * 一次完成定稿后把当前 html 快照成版本，刷新版本列表，并把新快照作为新主版同步进
+ * variant spine（spine.json）。非破坏性：旧版本全保留，仅切 pinned 指向最新。
+ */
 async function captureVersion(runDir: string, html: string): Promise<void> {
-  await snapshotVersion(runDir, html, Date.now());
-  useDesignStore.getState().setVersions(await listVersions(runDir));
+  const ts = Date.now();
+  await snapshotVersion(runDir, html, ts);
+  const versions = await listVersions(runDir);
+  useDesignStore.getState().setVersions(versions);
+  const justAdded = versions.find((v) => v.createdAt === ts);
+  let spine = await loadProtoSpine(runDir, versions);
+  if (justAdded) spine = pinVariant(spine, justAdded.path);
+  await saveProtoSpine(runDir, spine);
+  useDesignStore.getState().setSpine(spine);
 }
 
 /**

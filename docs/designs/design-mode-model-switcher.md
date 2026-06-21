@@ -131,6 +131,10 @@ export const VIDEO_MODELS: VisualVideoModel[] = [...];
 - **P2 视频生成 MVP**（中大）：`videoGenerationService`（通义万相视频 t2v+i2v）+ `generateDesignVideo` IPC + `CanvasVideoNode` 渲染 + 视频模式 UI + 成本提示。单 provider。
 - **P3 多 provider**（中）：接 MiniMax 海螺 + 视频模型下拉补全（≥2 视频模型可切）。
 
+### 扩展点（后续候选，非本期）
+
+- **非 wanx 模型的「标注重绘」编辑（借鉴 Cowart）**：当前 D2 限定 mask 类编辑（局部重绘/扩图）只有 wanx 支持，cogview/flux/gpt-image 因不支持 mask inpaint 而**只能文生图**。借鉴 Cowart（钟二信 Codex 插件，tldraw 画布；Neo 的 konva 自研画布正是为规避其 tldraw $6k/年商用 license）的「**标注→截图整图→模型重绘**」工作流，可给**非 wanx 模型开一条不依赖 mask 的编辑路径**：画布上圈选/标注 → 截当前节点整图 → 带标注指令喂模型（如 `把红圈处改成 X、去掉标注线`）→ 出新图并排挂 spine。**gpt-image-2 尤其契合**（指令跟随强、整图编辑是其强项）。落点：复用现有圈选/标注 UI + variant spine；新增一条 `editImageByAnnotation(model, baseImage, annotatedScreenshot, instruction)` 走非 wanx 模型的整图编辑端点。**优先级**：P1（多模型切换）+ P2（视频）落地后再评估，避免本期扩散。
+
 ---
 
 ## 7. 测试

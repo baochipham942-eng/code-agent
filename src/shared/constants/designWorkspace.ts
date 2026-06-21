@@ -37,3 +37,15 @@ export const DESIGN_VERSIONS_SUBDIR = 'versions';
 
 /** variant spine 落盘文件名（每个 run 目录一份，持有 proto 版本的 pin/discard 状态）。 */
 export const DESIGN_SPINE_FILE = 'spine.json';
+
+/**
+ * 一致性锁定再编辑（T4）：局部重绘后校验"未选区域逐像素不变"的参数。
+ * wanx2.1-imageedit 等扩散 inpaint 会系统性地轻微改写 mask 外区域（全局重压缩/色偏），
+ * 故 diff-gate 度量未选区漂移，越界即触发 region-lock 把原图未选区贴回保证逐像素一致。
+ */
+export const REGION_LOCK = {
+  // 未选区域单像素通道差容差（0-255）。≤ 该值视为"未变"（感知 ε 内）。8 ≈ 3% 感知阈。
+  EPSILON: 8,
+  // diff 证据图相对原产物的文件名后缀（同目录落盘）。
+  DIFF_SUFFIX: '.diff.png',
+} as const;

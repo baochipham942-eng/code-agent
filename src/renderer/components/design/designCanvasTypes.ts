@@ -1,6 +1,7 @@
 // 设计画布（Cowart 式）纯数据模型 + 序列化（无 React 依赖，可单测）。
 // 画布存档落 run 目录下的 canvas.json；图片落 assets/，节点只存相对路径，
 // 避免 JSON 内嵌 base64 膨胀（详见 docs/designs/design-canvas-cowart.md §2.2）。
+import type { RegionLockReport } from '@shared/contract/imageConsistency';
 
 /** 画布上的一张图节点。src 为相对 run 目录的图片路径（如 'assets/gen-123.png'）。 */
 export interface CanvasImageNode {
@@ -19,6 +20,8 @@ export interface CanvasImageNode {
   chosen?: boolean;
   /** 软删除：淘汰但落盘保留（variant spine 非破坏性语义），画布渲染时过滤。 */
   discarded?: boolean;
+  /** T4 局部重绘一致性报告（未选区域是否守住 + diff 证据，仅 edit 产物有）。 */
+  consistency?: RegionLockReport;
   createdAt: number;
 }
 
@@ -70,7 +73,29 @@ function normalizeNode(raw: unknown): CanvasImageNode | null {
   if (typeof r.parentId === 'string') node.parentId = r.parentId;
   if (r.chosen === true) node.chosen = true;
   if (r.discarded === true) node.discarded = true;
+  const consistency = normalizeConsistency(r.consistency);
+  if (consistency) node.consistency = consistency;
   return node;
+}
+
+/** 校验并规整 canvas.json 里的一致性报告；字段缺失/破损返回 null（安全降级）。 */
+function normalizeConsistency(raw: unknown): RegionLockReport | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.status !== 'clean' && r.status !== 'locked') return null;
+  if (typeof r.passed !== 'boolean') return null;
+  const report: RegionLockReport = {
+    passed: r.passed,
+    status: r.status,
+    maxDelta: isFiniteNumber(r.maxDelta) ? (r.maxDelta as number) : 0,
+    meanDelta: isFiniteNumber(r.meanDelta) ? (r.meanDelta as number) : 0,
+    changedPixels: isFiniteNumber(r.changedPixels) ? (r.changedPixels as number) : 0,
+    keepPixels: isFiniteNumber(r.keepPixels) ? (r.keepPixels as number) : 0,
+    epsilon: isFiniteNumber(r.epsilon) ? (r.epsilon as number) : 0,
+    dimensionMatched: r.dimensionMatched !== false,
+  };
+  if (typeof r.diffPath === 'string' && r.diffPath.length > 0) report.diffPath = r.diffPath;
+  return report;
 }
 
 function normalizeCamera(raw: unknown): CanvasCamera {

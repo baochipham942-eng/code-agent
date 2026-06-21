@@ -5,7 +5,8 @@
 // dataURL、量原始尺寸、在现有节点右侧落一个画布节点，并存盘 canvas.json。
 import { useCallback } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { DESIGN_WORKSPACE } from '@shared/constants';
+import { DESIGN_WORKSPACE, REGION_LOCK } from '@shared/constants';
+import type { RegionLockReport } from '@shared/contract/imageConsistency';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
@@ -152,7 +153,7 @@ export function useDesignCanvasGeneration(): {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      const res = await window.domainAPI?.invoke<{ path: string }>(
+      const res = await window.domainAPI?.invoke<{ path: string; consistency?: RegionLockReport }>(
         IPC_DOMAINS.WORKSPACE,
         'editDesignImage',
         {
@@ -186,6 +187,16 @@ export function useDesignCanvasGeneration(): {
         parentId: groupKey(baseNode),
         createdAt: Date.now(),
       };
+      // 一致性报告挂到节点（随 canvas.json 落 T1 spine）。main 返回绝对 diffPath，
+      // 这里改写为相对 run 目录的路径（与 src 同构，保持存档可移植）；clean 无 diff 文件。
+      const consistency = res.data?.consistency;
+      if (consistency) {
+        node.consistency = {
+          ...consistency,
+          diffPath:
+            consistency.status === 'locked' ? `${assetRel}${REGION_LOCK.DIFF_SUFFIX}` : undefined,
+        };
+      }
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().setGenerating(false);

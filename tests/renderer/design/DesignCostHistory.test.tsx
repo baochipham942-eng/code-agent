@@ -52,6 +52,16 @@ describe('DesignCostHistoryView', () => {
     expect(html).toContain('¥0.14'); // 累计=0.14（免费步不加钱）
   });
 
+  it('全免费时累计 header 也显示「免费」而非 ¥0.00（审计 R2 LOW symmetric）', () => {
+    const allFree: CanvasImageNode[] = [
+      N({ id: 'g1', createdAt: 1, label: '免费1', costCny: 0 }),
+      N({ id: 'g2', createdAt: 2, label: '免费2', costCny: 0 }),
+    ];
+    const html = render(allFree);
+    expect(html).toContain('免费');
+    expect(html).not.toContain('¥0.00'); // header 不再 blind formatCny(0)
+  });
+
   it('空画布显示空态提示，不渲染步骤', () => {
     const html = render([]);
     expect(html).toContain('每一步会作为可命名、可回滚的版本');

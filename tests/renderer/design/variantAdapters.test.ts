@@ -66,3 +66,14 @@ describe('proto variant', () => {
     expect(v.discarded).toBe(false);
   });
 });
+
+describe('canvasNodeToVariant 空 label 回退（审计 R2 LOW symmetric）', () => {
+  it('空串/纯空白 label 回退到 prompt（与 stepName 的 trim 判定对齐）', () => {
+    const v1 = canvasNodeToVariant(node({ label: '', prompt: '橙色按钮' }));
+    expect(v1.label).toBe('橙色按钮');
+    const v2 = canvasNodeToVariant(node({ label: '   ', prompt: '橙色按钮' }));
+    expect(v2.label).toBe('橙色按钮');
+    const v3 = canvasNodeToVariant(node({ label: '我的命名', prompt: '橙色按钮' }));
+    expect(v3.label).toBe('我的命名');
+  });
+});

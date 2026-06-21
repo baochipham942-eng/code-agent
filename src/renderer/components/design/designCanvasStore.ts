@@ -81,7 +81,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         const key = groupKey(target);
         const promote = nodes
           .filter((n) => n.id !== id && !n.discarded && groupKey(n) === key)
-          .sort((a, b) => b.createdAt - a.createdAt)[0];
+          .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0];
         if (promote) nodes = nodes.map((n) => (n.id === promote.id ? { ...n, chosen: true } : n));
       }
       return { nodes, selectedIds: s.selectedIds.filter((sid) => sid !== id) };

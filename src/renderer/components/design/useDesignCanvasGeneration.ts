@@ -123,7 +123,7 @@ export function useDesignCanvasGeneration(): {
         height,
         prompt: form.requirement,
         createdAt: Date.now(),
-        ...(typeof costCny === 'number' ? { costCny } : {}),
+        ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
@@ -188,7 +188,7 @@ export function useDesignCanvasGeneration(): {
         prompt: instruction,
         parentId: groupKey(baseNode),
         createdAt: Date.now(),
-        ...(typeof costCny === 'number' ? { costCny } : {}),
+        ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());

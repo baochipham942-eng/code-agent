@@ -90,7 +90,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
         <span className="text-xs font-medium text-zinc-300">{t.design.historyPanelTitle}</span>
         <span className="text-[11px] text-zinc-500">
           {t.design.historyTotalSpend}{' '}
-          <span className="font-mono text-emerald-300">{formatCny(totalSpend)}</span>
+          <span className="font-mono text-emerald-300">{totalSpend === 0 ? t.design.costFree : formatCny(totalSpend)}</span>
         </span>
       </div>
 

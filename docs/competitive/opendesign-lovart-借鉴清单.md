@@ -119,6 +119,22 @@ as-built 已用独立 context 的 Explore agent + codex 读真实代码交叉核
 
 ---
 
+## 6. 第一档可排期 Backlog（依赖顺序 + 锚点 + 验收）
+
+排期：**T1→T2 串行打底，然后 T3/T4/T5/T6 各开独立 worktree 并行**。纪律：TDD + dogfood MiMo web + i18n(zh/en) + 新逻辑独立模块不堆 godfile + 新增 renderer IPC 须同步登记 `src/main/shellCapabilities.ts` + 高风险走 codex-audit。
+
+### Wave 1 · 底座（先做，阻塞下游）
+- **T1 非破坏性 variant spine（含版本树）** — 依赖：无（最先）。落地：统一 canvas（`designCanvasStore/designCanvasTypes`）与 proto（`versions/v-*.html`+meta）两套版本模型为一个 variant；canvas A/B（`DesignCompareOverlay.tsx`）抽通用并排对比；proto 侧新建 choose/discard（~85% 新工程，仅复用 flex）。验收：任一 op 落新 pinned variant 永不覆盖；canvas+proto 都能并排对比+设主版/淘汰落盘；dogfood 截图。成本：中。
+- **T2 成本透明 + undo/redo 信任 UI（M3）** — 依赖：T1。落地：wanx/FLUX 调用前显示预估 ¥/次；history 每步可逆可命名。验收：commit 前显示成本；任意 op 一键回滚到前一 variant。成本：低–中。
+
+### Wave 2 · 并行（各挂 spine）
+- **T3 wanx 扩图+消除** — 依赖：T1 + `submitAndPollWanx`(`imageGenerationService.ts:244`,~70%复用)。落地：新增 `function=expand`/`remove_watermark` wrapper + 参数 UI（扩图要方向/比例）+ 异步轮询。验收：扩图四向按比例出新 variant；消除去水印出新 variant；0 报错截图。成本：低（"加 wrapper 级"非"改枚举"）。
+- **T4 一致性锁定再编辑（M1）** — 依赖：T1 + 现有 mask inpaint(`editImageWithMask:314`)+Picker scope-lock。落地：region-lock + **diff-gate**（未选区域逐像素相同或感知 ε 内，不达标拒绝/重试）。验收：「只改这块其余不变」一致性测试通过 + 给 diff 证据。成本：中。
+- **T5 方向卡 + 贴参考截图入口** — 依赖：无；复用 `ask_user_question`(`askUserQuestion.schema.ts`)+`DesignBrief`(`designBrief.ts`)。落地：`designExecutor` 接线 mandatory 澄清表单 + direction-cards（抄 `question-form.ts` 字段）+ 建项目"Match a reference screenshot"分支。验收：首轮强制表单+3 方向卡+参考入口；i18n；写入 DesignBrief 影响生成。成本：低。
+- **T6 Tweaks 换肤(限 proto)+seed 真图占位** — 依赖：无。落地：proto 预览 iframe 注入 CSS 变量/HSL 覆盖（canvas PNG 无效不做）；buildPrototypePrompt 加 picsum seed 规则 + lint。验收：proto 实时切 5 色板零重生成；新原型 seed 真图非灰框；导出不含注入样式。成本：低。
+
+---
+
 ## 源索引
 
 - Open Design A：`skills/reference-design-contract/SKILL.md`、`apps/web/src/artifacts/question-form.ts`(direction-cards)、`runtime/srcdoc.ts`(HSL换肤/pod/inspect)、`edit-mode/bridge.ts`+`comments.ts:444`(scope-lock)、`apps/daemon/src/media/{models,index}.ts`、`runtimes/registry.ts`、`skills/taste-skill/SKILL.md:296`(seed图)、PR#3660(视觉diff)

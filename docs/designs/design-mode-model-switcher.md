@@ -1,6 +1,6 @@
 # 设计模式：生图/视频模型切换 + 视频生成（spec）
 
-> **状态**：设计已拍板（2026-06-21），待实现。
+> **状态**：✅ P1 已实现并合并 main（2026-06-21，merge cbf847a5b）+ 付费 dogfood 通过。P2/P3 视频未做。as-built 见 `docs/architecture/design-mode.md` §6.0/§5.2。
 > **来源**：用户需求「让设计模式能切生图/视频模型」+ 借鉴清单二档「能力感知模型路由 + @-mention」（`docs/competitive/opendesign-lovart-借鉴清单.md`）。
 > **前置**：建立在已发版 v0.18.0 的设计模式（画布 + 原型 + T1-T6 变体 spine/成本/一致性）之上。
 > **配套**：架构 `docs/architecture/design-mode.md`；产品 spec `docs/designs/design-mode-spec.md`。

@@ -1,6 +1,6 @@
 # 设计模式：非 wanx 模型「标注重绘」编辑（spec）
 
-> **状态**：设计已拍板（2026-06-21），待实现。
+> **状态**：✅ Phase A+B 已实现并合并 main（2026-06-21，merge ee545ba5b）+ 硬门探针验通 + 付费 dogfood 实锤（gpt-image-2 真跟随红圈视觉标注）。as-built 见 `docs/architecture/design-mode.md` §5.8/§6.0。
 > **来源**：spec `design-mode-model-switcher.md` §6 扩展点「非 wanx 模型的标注重绘编辑（借鉴 Cowart）」。
 > **前置**：建立在 P1 生图模型切换器之上（注册表 `visualModels.ts`、gptimage engine、T2 成本透明、T1 variant spine）。分支 `feat/design-annotation-redraw`，基于 `feat/design-model-switcher`（P1）。
 > **配套**：架构 `docs/architecture/design-mode.md`。

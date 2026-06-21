@@ -5,12 +5,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Maximize2, Eraser } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
 import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
+import { DesignImageEditOps } from './DesignImageEditOps';
 import { readWorkspaceImageAsDataUrl } from './designFiles';
 import {
   normalizeDragRect,
@@ -413,72 +414,16 @@ export const DesignCanvas: React.FC = () => {
           </button>
 
           {/* T3：wanx 扩图（方向+比例）+ 去水印，各落新 variant 挂 spine */}
-          <div className="mt-1 flex flex-col gap-1.5 border-t border-white/[0.08] pt-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-              <Maximize2 className="h-3 w-3" />
-              {t.design.expandTitle}
-            </div>
-            <div className="grid grid-cols-5 gap-1" data-testid="design-expand-directions">
-              {(
-                [
-                  ['up', t.design.expandDirUp],
-                  ['down', t.design.expandDirDown],
-                  ['left', t.design.expandDirLeft],
-                  ['right', t.design.expandDirRight],
-                  ['all', t.design.expandDirAll],
-                ] as ReadonlyArray<readonly [ExpandDirection, string]>
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  data-testid={`design-expand-dir-${key}`}
-                  onClick={() => setExpandDirection(key)}
-                  className={`rounded-md px-1 py-1 text-[11px] transition-colors ${
-                    expandDirection === key
-                      ? 'bg-fuchsia-500/30 text-fuchsia-100'
-                      : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min={1}
-                max={2}
-                step={0.1}
-                value={expandRatio}
-                data-testid="design-expand-ratio"
-                onChange={(e) => setExpandRatio(Number(e.target.value))}
-                className="h-1 flex-1 accent-fuchsia-500"
-              />
-              <span className="w-10 text-right text-[11px] tabular-nums text-zinc-400">
-                {expandRatio.toFixed(1)}×
-              </span>
-            </div>
-            <button
-              type="button"
-              data-testid="design-expand-btn"
-              onClick={() => void onExpand()}
-              disabled={generating}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:bg-white/[0.1] disabled:opacity-50"
-            >
-              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              {t.design.expandBtn}
-            </button>
-            <button
-              type="button"
-              data-testid="design-remove-watermark-btn"
-              onClick={() => void onRemoveWatermark()}
-              disabled={generating}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:bg-white/[0.1] disabled:opacity-50"
-            >
-              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
-              {t.design.removeWatermarkBtn}
-            </button>
-          </div>
+          <DesignImageEditOps
+            t={t}
+            direction={expandDirection}
+            ratio={expandRatio}
+            generating={generating}
+            onDirectionChange={setExpandDirection}
+            onRatioChange={setExpandRatio}
+            onExpand={() => void onExpand()}
+            onRemoveWatermark={() => void onRemoveWatermark()}
+          />
         </div>
       )}
 

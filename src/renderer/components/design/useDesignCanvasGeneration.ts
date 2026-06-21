@@ -67,6 +67,32 @@ export interface RemoveWatermarkArgs {
   baseNode: CanvasImageNode;
 }
 
+/**
+ * 由出图结果构造新 variant 节点：落底图右侧（make-real 式 x:maxX+gap），parentId 锚到血缘根
+ * （groupKey=parentId??id），归入底图所在版本槽。扩图/去水印/局部重绘共用同一血缘规则。
+ * id/createdAt 可注入以便测试确定性。
+ */
+export function buildVariantNode(
+  baseNode: CanvasImageNode,
+  assetRel: string,
+  dims: { width: number; height: number },
+  label: string,
+  id: string = `node-${Date.now()}`,
+  createdAt: number = Date.now(),
+): CanvasImageNode {
+  return {
+    id,
+    src: assetRel,
+    x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
+    y: baseNode.y,
+    width: dims.width,
+    height: dims.height,
+    prompt: label,
+    parentId: groupKey(baseNode),
+    createdAt,
+  };
+}
+
 export function useDesignCanvasGeneration(): {
   generate: () => Promise<void>;
   editRegion: (args: EditRegionArgs) => Promise<void>;
@@ -224,17 +250,7 @@ export function useDesignCanvasGeneration(): {
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
-      const node: CanvasImageNode = {
-        id: `node-${Date.now()}`,
-        src: assetRel,
-        x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-        y: baseNode.y,
-        width,
-        height,
-        prompt: label,
-        parentId: groupKey(baseNode),
-        createdAt: Date.now(),
-      };
+      const node = buildVariantNode(baseNode, assetRel, { width, height }, label);
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
     },

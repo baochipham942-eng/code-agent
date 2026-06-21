@@ -84,6 +84,8 @@ export const en: Translations = {
     diffMaxDelta: 'Max pixel delta',
     diffChangedPixels: 'Drifted pixels',
     aspectRatioLabel: 'Aspect ratio',
+    imageModel: 'Image model',
+    imageModelUnconfigured: 'No API key',
     exportImage: 'Export image',
     importImage: 'Add image',
     importHint: 'Or paste (⌘V) / drag images onto the canvas; select an imported image to repaint',

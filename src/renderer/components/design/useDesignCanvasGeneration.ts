@@ -154,7 +154,7 @@ export function useDesignCanvasGeneration(): {
       const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
         IPC_DOMAINS.WORKSPACE,
         'generateDesignImage',
-        { prompt, aspectRatio: form.aspectRatio, outputPath: assetAbs },
+        { prompt, aspectRatio: form.aspectRatio, model: form.imageModel, outputPath: assetAbs },
       );
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);

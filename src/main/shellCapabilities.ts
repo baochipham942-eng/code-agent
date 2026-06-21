@@ -333,6 +333,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'inspectPresentation',
     'listFiles',
     'listRecent',
+    'listVisualImageModels',
     'openPath',
     'readBinary',
     'readFile',

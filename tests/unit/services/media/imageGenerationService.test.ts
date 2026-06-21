@@ -7,10 +7,18 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// 显式 mock configService，让 getGptImageConfig 的 config 回落路径可控（不依赖测试环境恰好返回 undefined）。
+const { getApiKeyMock } = vi.hoisted(() => ({ getApiKeyMock: vi.fn() }));
+vi.mock('../../../../src/main/services/core/configService', () => ({
+  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+}));
+
 import {
   expandImage,
   removeWatermark,
   expandScalesForDirection,
+  isSafeImageUrl,
 } from '../../../../src/main/services/media/imageGenerationService';
 
 function jsonResponse(obj: unknown): Response {
@@ -135,5 +143,108 @@ describe('removeWatermark — wanx function=remove_watermark', () => {
     await removeWatermark({ apiKey: 'sk', baseImageDataUrl: DATA_URL, prompt: '去除右下角logo' });
     const input = calls[0].body?.input as Record<string, unknown>;
     expect(input.prompt).toBe('去除右下角logo');
+  });
+});
+
+describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => {
+  beforeEach(() => {
+    // 默认 config 无任何 key（缺-key 路径），各用例按需覆盖。
+    getApiKeyMock.mockReset();
+    getApiKeyMock.mockReturnValue(undefined);
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    getApiKeyMock.mockReset();
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+  });
+
+  it('gptimage engine 调 /v1/images/generations 取 b64，不加 NO_TEXT', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'AAA' }] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
+    expect(r.actualModel).toBe('gpt-image-2');
+    expect(r.imageData.startsWith('data:image/png;base64,')).toBe(true);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe('gpt-image-2');
+    expect(body.prompt).not.toMatch(/不要出现任何文字/); // 设计场景保留文字
+  });
+
+  it('env 缺失时回落 config slot（gptimage-base/gptimage）也能出图', async () => {
+    // 不设 env，改由 config slot 提供 base+key，覆盖 getGptImageConfig 的 config 回落分支。
+    getApiKeyMock.mockImplementation((slot: string) => {
+      if (slot === 'gptimage-base') return 'https://config.test/';
+      if (slot === 'gptimage') return 'sk-config';
+      return undefined;
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'BBB' }] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
+    expect(r.actualModel).toBe('gpt-image-2');
+    expect(r.imageData).toBe('data:image/png;base64,BBB');
+    // base 尾部斜杠应被归一化，路径拼接无双斜杠。
+    expect(fetchMock.mock.calls[0][0]).toBe('https://config.test/v1/images/generations');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer sk-config');
+  });
+
+  it('非 ok 响应把第三方中转错误正文拼进异常', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => '{"error":"quota exceeded"}',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/429.*quota exceeded/);
+  });
+
+  it('gptimage 缺 key 报去设置配置', async () => {
+    // env 已在 beforeEach 删除，且 config 显式返回 undefined（mockReturnValue(undefined)）
+    // → 走的是真·缺 key 路径，断言抛含「配置」字样错误。
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/配置/);
+  });
+});
+
+describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
+  it('仅允许 https 公网，拒 http/私网/元数据地址', () => {
+    expect(isSafeImageUrl('https://dashscope-result.oss-cn.aliyuncs.com/x.png')).toBe(true);
+    expect(isSafeImageUrl('http://example.com/x.png')).toBe(false);       // 非 https
+    expect(isSafeImageUrl('https://127.0.0.1/x')).toBe(false);
+    expect(isSafeImageUrl('https://169.254.169.254/latest/meta-data')).toBe(false);
+    expect(isSafeImageUrl('https://192.168.1.10/x')).toBe(false);
+    expect(isSafeImageUrl('https://10.0.0.5/x')).toBe(false);
+    expect(isSafeImageUrl('https://172.16.0.1/x')).toBe(false);
+    expect(isSafeImageUrl('https://localhost/x')).toBe(false);
+    expect(isSafeImageUrl('file:///etc/passwd')).toBe(false);
+    expect(isSafeImageUrl('not a url')).toBe(false);
+  });
+
+  it('IPv6 字面量私网/环回/链路本地/mapped 全拒，公网域名不误杀', () => {
+    expect(isSafeImageUrl('https://[::1]/x')).toBe(false);
+    expect(isSafeImageUrl('https://[fc00::1]/x')).toBe(false);
+    expect(isSafeImageUrl('https://[fe80::1]/x')).toBe(false);
+    expect(isSafeImageUrl('https://[::ffff:127.0.0.1]/x')).toBe(false);  // IPv4-mapped 环回
+    expect(isSafeImageUrl('https://fcbarcelona.com/x.png')).toBe(true);  // 公网域名不误杀
+    expect(isSafeImageUrl('https://fd-assets.net/x.png')).toBe(true);
+    expect(isSafeImageUrl('https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/x.png')).toBe(true); // wanx 不回归
+  });
+
+  it('downloadImageAsBase64 下载前拦截不安全 url（不发起 fetch）', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { downloadImageAsBase64 } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(downloadImageAsBase64('http://127.0.0.1/x')).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

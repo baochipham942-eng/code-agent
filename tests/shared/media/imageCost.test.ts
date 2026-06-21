@@ -6,6 +6,7 @@ import {
 import {
   IMAGE_PRICING_CNY,
   DESIGN_IMAGE_MODELS,
+  DESIGN_FLUX_MODEL,
 } from '../../../src/shared/constants/pricing';
 
 describe('imageCost.estimateImageCostCny', () => {
@@ -31,6 +32,19 @@ describe('imageCost.estimateImageCostCny', () => {
   it('DESIGN_IMAGE_MODELS 的 key 必须命中价表（防 model-id 与价表漂移）', () => {
     expect(DESIGN_IMAGE_MODELS.generate in IMAGE_PRICING_CNY).toBe(true);
     expect(DESIGN_IMAGE_MODELS.edit in IMAGE_PRICING_CNY).toBe(true);
+  });
+});
+
+describe('设计模式切模后实际模型价可查', () => {
+  it('cogview / flux / gpt-image-2 实际模型在价表里有非负价', () => {
+    expect(IMAGE_PRICING_CNY['cogview-4-250304']).toBeGreaterThanOrEqual(0);
+    expect(IMAGE_PRICING_CNY[DESIGN_FLUX_MODEL]).toBeGreaterThanOrEqual(0);
+    expect(IMAGE_PRICING_CNY['gpt-image-2']).toBeGreaterThanOrEqual(0);
+  });
+  it('flux / gpt-image-2 不再走 default 兜底', () => {
+    // 命中专属价表项而非 default（断言它们确有独立 key）
+    expect(Object.prototype.hasOwnProperty.call(IMAGE_PRICING_CNY, DESIGN_FLUX_MODEL)).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(IMAGE_PRICING_CNY, 'gpt-image-2')).toBe(true);
   });
 });
 

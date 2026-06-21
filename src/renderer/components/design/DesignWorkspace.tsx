@@ -58,6 +58,7 @@ import {
 import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { DesignCostHistory } from './DesignCostHistory';
+import { ImageModelPicker } from './ImageModelPicker';
 import { VariantCompareView } from './VariantCompareView';
 import { loadProtoSpine, saveProtoSpine } from './protoSpine';
 import { activeVariants, pinVariant, discardVariant, type Variant } from './variantSpine';
@@ -249,6 +250,14 @@ const Composer: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 生图模型（仅图像产物）：与出图尺寸同区，未配置 key 的灰显 */}
+      {imageMode && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-zinc-400">{t.design.imageModel}</span>
+          <ImageModelPicker />
+        </div>
+      )}
 
       {/* 出图尺寸（仅图像产物） */}
       {imageMode && (

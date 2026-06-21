@@ -13,7 +13,7 @@
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
-export type ImageEngine = 'cogview' | 'flux' | 'wanx';
+export type ImageEngine = 'cogview' | 'flux' | 'wanx' | 'gptimage';
 
 export interface GenerateImageResult {
   imageData: string;
@@ -27,6 +27,8 @@ const TIMEOUT_MS = {
   WANX_POLL: 15000,
   WANX_POLL_INTERVAL: 3000,
   WANX_TOTAL: 120000,
+  // gpt-image-2 经第三方中转的同步出图请求超时。
+  GPTIMAGE_GENERATION: 120000,
 };
 
 const ZHIPU_IMAGE_MODELS = {
@@ -53,6 +55,11 @@ const WANX_EXPAND_SCALE_MAX = 2.0;
 const DEFAULT_REMOVE_WATERMARK_PROMPT = '去除图像中的文字水印';
 
 const NO_TEXT_SUFFIX = '，画面中不要出现任何文字、字母、数字、标题、标签、水印、签名，纯视觉画面';
+
+// gpt-image-2 经第三方中转（OpenAI 兼容 /v1/images/generations，返回 b64_json）。
+const GPTIMAGE_MODEL = 'gpt-image-2';
+const GPTIMAGE_GENERATIONS_PATH = '/v1/images/generations';
+const GPTIMAGE_DEFAULT_SIZE = '1024x1024';
 
 interface OpenRouterImageMessage {
   images?: Array<{
@@ -119,7 +126,7 @@ async function fetchWithAbort(
   }
 }
 
-function getZhipuOfficialApiKey(): string | undefined {
+export function getZhipuOfficialApiKey(): string | undefined {
   const officialKey = process.env.ZHIPU_OFFICIAL_API_KEY;
   if (officialKey) return officialKey;
   const configService = getConfigService();
@@ -136,6 +143,20 @@ export function getDashscopeApiKey(): string | undefined {
   return configService.getApiKey('dashscope') || configService.getApiKey('qwen') || undefined;
 }
 
+/**
+ * gpt-image-2 自定义端点配置：env（GPTIMAGE_PROXY_BASE/KEY）优先，再回落 config 槽位。
+ * 同 getDashscopeApiKey 范式；base 或 key 任一缺失则返回 undefined。绝不写进代码。
+ */
+export function getGptImageConfig(): { base: string; key: string } | undefined {
+  // SecureStorage slot 名（'gptimage-base' / 'gptimage'）是 Settings UI / 未来配置入口
+  // 必须对齐的键名：env GPTIMAGE_PROXY_BASE/_KEY 优先，config slot 是回落。
+  // 将来 UI 若用不同键名会导致这里静默读到 undefined，改键名务必两边同步。
+  const base = process.env.GPTIMAGE_PROXY_BASE || getConfigService().getApiKey('gptimage-base');
+  const key = process.env.GPTIMAGE_PROXY_KEY || getConfigService().getApiKey('gptimage');
+  if (!base || !key) return undefined;
+  return { base: base.replace(/\/+$/, ''), key };
+}
+
 export function determineImageEngine(): ImageEngine {
   if (getZhipuOfficialApiKey()) return 'cogview';
   const configService = getConfigService();
@@ -147,10 +168,43 @@ export function isImageUrl(data: string): boolean {
   return data.startsWith('http://') || data.startsWith('https://');
 }
 
+/**
+ * 图片 url 下载 SSRF 守卫（D9）：仅放行 https 公网地址，拒绝私网/环回/链路本地/元数据地址。
+ * 注意：本守卫基于 hostname 字面量判断，不解析 DNS——可挡 IP 直连与 localhost，
+ * 但 DNS rebinding（域名解析到私网）超出本期范围（后续可在 fetch 后校验 socket 远端 IP）。
+ */
+export function isSafeImageUrl(u: string): boolean {
+  let url: URL;
+  try { url = new URL(u); } catch { return false; }
+  if (url.protocol !== 'https:') return false;
+  const h = url.hostname.toLowerCase();
+  if (h === 'localhost') return false;
+  // 私网/环回/链路本地 IPv4
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const a = Number(m[1]); const b = Number(m[2]);
+    if (a === 127 || a === 10 || a === 0) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 169 && b === 254) return false;
+  }
+  // IPv6 字面量——WHATWG URL 的 hostname 保留方括号（如 '[::1]'），必须去括号再判，
+  // 且这些前缀检查只能在 IPv6 字面量上跑，否则会误杀以 fc/fd/fe80 开头的公网域名。
+  if (h.startsWith('[') && h.endsWith(']')) {
+    const h6 = h.slice(1, -1);
+    if (h6 === '::1' || h6 === '::') return false;                 // 环回/未指定
+    if (h6.startsWith('fc') || h6.startsWith('fd')) return false;  // ULA fc00::/7
+    if (h6.startsWith('fe80')) return false;                       // 链路本地
+    if (h6.startsWith('::ffff:')) return false;                    // IPv4-mapped——保守整段拒绝，挡映射私网绕过
+  }
+  return true;
+}
+
 export async function downloadImageAsBase64(
   url: string,
   outerSignal: AbortSignal = new AbortController().signal,
 ): Promise<string> {
+  if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的图片 URL（仅允许 https 公网地址）');
   const response = await fetchWithAbort(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
   if (!response.ok) {
     throw new Error(`图片下载失败: ${response.status}`);
@@ -465,6 +519,32 @@ export async function generateImage(
     }
     const result = await callZhipuImageGeneration(zhipuApiKey, safePrompt, aspectRatio, outerSignal);
     return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
+  }
+
+  if (engine === 'gptimage') {
+    const cfg = getGptImageConfig();
+    if (!cfg) throw new Error('gpt-image-2 需要在设置配置自定义端点 base 与 API Key。');
+    // 设计场景保留文字（gpt-image 强项是文字/UI 渲染），用 raw prompt，不加 NO_TEXT 后缀。
+    const resp = await fetchWithAbort(
+      `${cfg.base}${GPTIMAGE_GENERATIONS_PATH}`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: GPTIMAGE_MODEL, prompt, n: 1, size: GPTIMAGE_DEFAULT_SIZE }),
+      },
+      TIMEOUT_MS.GPTIMAGE_GENERATION,
+      outerSignal,
+    );
+    if (!resp.ok) {
+      // 透出第三方中转返回的错误正文（配额/无效 key/上游超时等唯一可读信号），
+      // 与 cogview/wanx 分支一致。body 不含 key（key 只在 Authorization header），安全。
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`gpt-image-2 生成失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
+    }
+    const json = await resp.json();
+    const b64 = json?.data?.[0]?.b64_json;
+    if (!b64) throw new Error('gpt-image-2 返回无 b64_json');
+    return { imageData: `data:image/png;base64,${b64}`, actualModel: GPTIMAGE_MODEL };
   }
 
   // engine === 'flux'

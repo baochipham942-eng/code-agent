@@ -17,6 +17,14 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
+import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS } from '../../shared/constants/visualModels';
+import { getConfigService } from '../services/core/configService';
+import {
+  getDashscopeApiKey,
+  getZhipuOfficialApiKey,
+  getGptImageConfig,
+} from '../services/media/imageGenerationService';
+import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
@@ -44,20 +52,26 @@ function assertWithinDesignDir(p: string, label: string): void {
   }
 }
 
-// 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
+// 设计画布直连出图（Cowart 式 P1）：按 model 在视觉模型注册表间路由 engine（默认 wanx），
 // renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
-async function handleGenerateDesignImage(
-  payload: { prompt: string; aspectRatio?: string; outputPath: string },
+export async function handleGenerateDesignImage(
+  payload: { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
-  if (!payload?.prompt || !payload?.outputPath) {
+  // prompt 须为非空白（trim 后非空）：空白 prompt 是 paid no-op（尤其 wanx/gptimage 用 raw prompt），
+  // 直连 IPC/未来调用方可能绕过 renderer 的 trim 守卫，在主进程兜底拦住付费空调用。
+  if (!payload?.prompt?.trim() || !payload?.outputPath) {
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
+  // 按 model 路由到对应 engine（注册表守门，未知 id 抛错）；缺省回退默认 wanx。
+  const engine = imageEngineForModel(payload.model || defaultImageModelId());
+  // flux engine 需要具体模型串作 generateImage 的 fluxModel 入参；其余 engine 忽略此参。
+  const fluxModelArg = engine === 'flux' ? DESIGN_FLUX_MODEL : '';
   const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
     '../services/media/imageGenerationService'
   );
-  const { imageData, actualModel } = await generateImage('wanx', '', payload.prompt, payload.aspectRatio || '1:1');
+  const { imageData, actualModel } = await generateImage(engine, fluxModelArg, payload.prompt, payload.aspectRatio || '1:1');
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
@@ -778,6 +792,30 @@ async function handleGetDesignMdSummary(payload: { cwd?: string | null }): Promi
 }
 
 
+// 视觉模型可用性：key 逻辑只在主进程；按 provider 复用现有 getter，绝不向 renderer 暴露 key 值。
+function providerKeyConfigured(provider: string): boolean {
+  if (provider === 'dashscope') return !!getDashscopeApiKey();
+  if (provider === 'zhipu') return !!getZhipuOfficialApiKey();
+  if (provider === 'openrouter') return !!getConfigService().getApiKey('openrouter');
+  if (provider === 'gptimage') return !!getGptImageConfig();
+  return false;
+}
+
+// 列出注册表全部生图模型，并按用户是否已配对应 provider key 标 available。
+// 出参只含 id/label/provider/available——绝不回传 key 值（信任边界）。
+export async function handleListVisualImageModels(): Promise<{
+  models: Array<{ id: string; label: string; provider: string; available: boolean }>;
+}> {
+  return {
+    models: IMAGE_MODELS.map((m) => ({
+      id: m.id,
+      label: m.label,
+      provider: m.provider,
+      available: providerKeyConfigured(m.provider),
+    })),
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -810,6 +848,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'listRecent':
           data = await handleListRecent(getConfigService);
+          break;
+        case 'listVisualImageModels':
+          data = await handleListVisualImageModels();
           break;
         case 'removeRecent':
           data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);
@@ -864,7 +905,7 @@ export function registerWorkspaceHandlers(
           break;
         case 'generateDesignImage':
           data = await handleGenerateDesignImage(
-            payload as { prompt: string; aspectRatio?: string; outputPath: string },
+            payload as { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
           );
           break;
         case 'editDesignImage':

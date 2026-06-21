@@ -137,3 +137,33 @@ describe('removeWatermark — wanx function=remove_watermark', () => {
     expect(input.prompt).toBe('去除右下角logo');
   });
 });
+
+describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+  });
+
+  it('gptimage engine 调 /v1/images/generations 取 b64，不加 NO_TEXT', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'AAA' }] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
+    expect(r.actualModel).toBe('gpt-image-2');
+    expect(r.imageData.startsWith('data:image/png;base64,')).toBe(true);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe('gpt-image-2');
+    expect(body.prompt).not.toMatch(/不要出现任何文字/); // 设计场景保留文字
+  });
+
+  it('gptimage 缺 key 报去设置配置', async () => {
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+    // 且 config 无 gptimage key → 抛含「配置」字样错误
+    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/配置/);
+  });
+});

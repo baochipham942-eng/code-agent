@@ -48,9 +48,66 @@ export interface EditRegionArgs {
   instruction: string;
 }
 
+/** 扩图方向：单向(上/下/左/右) 或 四周(all)。与 main 侧 imageGenerationService 同义。 */
+export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
+
+export interface ExpandArgs {
+  /** 被扩图的底图节点。 */
+  baseNode: CanvasImageNode;
+  /** 扩展方向。 */
+  direction: ExpandDirection;
+  /** 扩展比例（1.0–2.0，单边外扩倍数）。 */
+  ratio: number;
+  /** 可选补绘描述（缺省走 main 侧默认 prompt）。 */
+  prompt?: string;
+}
+
+export interface RemoveWatermarkArgs {
+  /** 被去水印的底图节点。 */
+  baseNode: CanvasImageNode;
+}
+
+// 单调序列：保证同毫秒内连续构造的节点 id 不碰撞（audit M4：纯 Date.now() 同 tick 会撞，
+// store 按 id 做 setChosen/discard/对比会指向歧义节点）。generate/editRegion/buildVariantNode
+// 三处节点构造共用本源（audit R2 对称应用）。
+let variantNodeSeq = 0;
+
+/** 防同毫秒碰撞的画布节点 id（Date.now() 前缀跨会话唯一 + 单调序列后缀同 tick 唯一）。 */
+export function nextVariantNodeId(): string {
+  return `node-${Date.now()}-${(variantNodeSeq++).toString(36)}`;
+}
+
+/**
+ * 由出图结果构造新 variant 节点：落底图右侧（make-real 式 x:maxX+gap），parentId 锚到血缘根
+ * （groupKey=parentId??id），归入底图所在版本槽。扩图/去水印/局部重绘共用同一血缘规则。
+ * id/createdAt 可注入以便测试确定性；缺省 id 带单调序列后缀防同毫秒碰撞。
+ */
+export function buildVariantNode(
+  baseNode: CanvasImageNode,
+  assetRel: string,
+  dims: { width: number; height: number },
+  label: string,
+  id: string = nextVariantNodeId(),
+  createdAt: number = Date.now(),
+): CanvasImageNode {
+  return {
+    id,
+    src: assetRel,
+    x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
+    y: baseNode.y,
+    width: dims.width,
+    height: dims.height,
+    prompt: label,
+    parentId: groupKey(baseNode),
+    createdAt,
+  };
+}
+
 export function useDesignCanvasGeneration(): {
   generate: () => Promise<void>;
   editRegion: (args: EditRegionArgs) => Promise<void>;
+  expand: (args: ExpandArgs) => Promise<void>;
+  removeWatermark: (args: RemoveWatermarkArgs) => Promise<void>;
 } {
   const { t } = useI18n();
 
@@ -115,7 +172,7 @@ export function useDesignCanvasGeneration(): {
         DESIGN_WORKSPACE.CANVAS_NODE_GAP,
       );
       const node: CanvasImageNode = {
-        id: `node-${Date.now()}`,
+        id: nextVariantNodeId(),
         src: assetRel,
         x,
         y,
@@ -175,21 +232,11 @@ export function useDesignCanvasGeneration(): {
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
-      // 新版放在底图右侧（make-real 式 x:maxX+gap）。parentId 锚定到血缘根（groupKey=
-      // parentId??id）而非直接底图：编辑「编辑版」时也归入同一版本槽，避免深层血缘碎成多槽
-      // 导致「一个槽一个主版」不变量被打破。
-      const node: CanvasImageNode = {
-        id: `node-${Date.now()}`,
-        src: assetRel,
-        x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-        y: baseNode.y,
-        width,
-        height,
-        prompt: instruction,
-        parentId: groupKey(baseNode),
-        createdAt: Date.now(),
-        ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
-      };
+      // 与扩图/去水印同构：复用 buildVariantNode 落底图右侧 + parentId 锚血缘根（audit R2 对称应用，
+      // 顺带继承防碰撞 id；编辑「编辑版」也归同一版本槽，避免深层血缘碎成多槽破坏「一槽一主版」）。
+      const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
+      // T2 BYOK 成本可见：把本次局部重绘实际花费挂到该 variant 节点。
+      if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().setGenerating(false);
@@ -199,5 +246,78 @@ export function useDesignCanvasGeneration(): {
     }
   }, [t]);
 
-  return { generate, editRegion };
+  // 扩图/去水印结果共用落盘：读结果图 → 量尺寸 → 在底图右侧落新 variant 节点（parentId 锚血缘根，
+  // 与 editRegion 同槽规则）→ 存盘。扩图结果尺寸大于原图，loadImageDims 量真实尺寸即正确。
+  const landResultAsVariant = useCallback(
+    async (runDir: string, assetRel: string, assetAbs: string, baseNode: CanvasImageNode, label: string): Promise<void> => {
+      if (useDesignCanvasStore.getState().runDir !== runDir) return;
+      const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
+      if (!dataUrl) throw new Error(t.design.errTimeout);
+      const { width, height } = await loadImageDims(dataUrl);
+      const node = buildVariantNode(baseNode, assetRel, { width, height }, label);
+      useDesignCanvasStore.getState().addNode(node);
+      await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+    },
+    [t],
+  );
+
+  const expand = useCallback(
+    async (args: ExpandArgs) => {
+      const { baseNode, direction, ratio, prompt } = args;
+      const runDir = useDesignCanvasStore.getState().runDir;
+      if (!runDir) return;
+      const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/expand-${Date.now()}.png`;
+      const assetAbs = `${runDir}/${assetRel}`;
+
+      useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setGenerating(true);
+      try {
+        const res = await window.domainAPI?.invoke<{ path: string }>(
+          IPC_DOMAINS.WORKSPACE,
+          'expandDesignImage',
+          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt },
+        );
+        if (!res?.success) {
+          throw new Error(res?.error?.message || t.design.errDispatch);
+        }
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn);
+        useDesignCanvasStore.getState().setGenerating(false);
+      } catch (e) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      }
+    },
+    [t, landResultAsVariant],
+  );
+
+  const removeWatermark = useCallback(
+    async (args: RemoveWatermarkArgs) => {
+      const { baseNode } = args;
+      const runDir = useDesignCanvasStore.getState().runDir;
+      if (!runDir) return;
+      const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/dewm-${Date.now()}.png`;
+      const assetAbs = `${runDir}/${assetRel}`;
+
+      useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setGenerating(true);
+      try {
+        const res = await window.domainAPI?.invoke<{ path: string }>(
+          IPC_DOMAINS.WORKSPACE,
+          'removeWatermarkDesignImage',
+          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs },
+        );
+        if (!res?.success) {
+          throw new Error(res?.error?.message || t.design.errDispatch);
+        }
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn);
+        useDesignCanvasStore.getState().setGenerating(false);
+      } catch (e) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      }
+    },
+    [t, landResultAsVariant],
+  );
+
+  return { generate, editRegion, expand, removeWatermark };
 }

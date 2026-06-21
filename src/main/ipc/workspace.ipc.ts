@@ -17,6 +17,7 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
+import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
 
@@ -29,6 +30,16 @@ async function handleResolveDesignDir(): Promise<{ dir: string }> {
   return { dir };
 }
 
+// 设计图 handler 路径越界守卫（audit M1）：renderer 传入的 baseImagePath/outputPath 必须落在设计目录
+// <getUserConfigDir>/design 内。挡住读任意本地文件(base64 后外泄到 DashScope)/写覆盖任意文件。
+function assertWithinDesignDir(p: string, label: string): void {
+  const root = path.resolve(getUserConfigDir(), 'design');
+  const resolved = path.resolve(p);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error(`${label} 路径越界：必须位于设计目录内`);
+  }
+}
+
 // 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
 // renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
@@ -38,6 +49,7 @@ async function handleGenerateDesignImage(
   if (!payload?.prompt || !payload?.outputPath) {
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
     '../services/media/imageGenerationService'
   );
@@ -59,6 +71,7 @@ async function handleImportDesignImage(
   if (!payload?.dataUrl || !payload?.outputPath) {
     throw new Error('importDesignImage 需要 dataUrl 与 outputPath');
   }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const base64 = payload.dataUrl.replace(/^data:[^;]+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
@@ -73,6 +86,8 @@ async function handleEditDesignImage(
   if (!payload?.prompt || !payload?.baseImagePath || !payload?.maskDataUrl || !payload?.outputPath) {
     throw new Error('editDesignImage 需要 prompt / baseImagePath / maskDataUrl / outputPath');
   }
+  assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
   const { editImageWithMask, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'
   );
@@ -93,6 +108,79 @@ async function handleEditDesignImage(
   // 局部重绘固定走 wanx imageedit；实际花费按该模型查价表（T2 BYOK 成本可见）。
   const actualModel = DESIGN_IMAGE_MODELS.edit;
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+}
+
+// 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 方向/比例 → 四向单边 scale
+// → 通义万相外扩补绘 → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
+export async function handleExpandDesignImage(
+  payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+): Promise<{ path: string }> {
+  if (!payload?.baseImagePath || !payload?.outputPath) {
+    throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
+  }
+  assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+  // 校验 direction 在合法集合内：非法值会让 expandScalesForDirection 落 default(四向 1.0)，
+  // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
+  const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
+  if (!VALID_EXPAND_DIRECTIONS.includes(payload.direction)) {
+    throw new Error(`expandDesignImage: 非法 direction「${String(payload.direction)}」，须为 up/down/left/right/all`);
+  }
+  // ratio 须为有限数且在 [1,2]（NaN/越界否则被 service 静默 clamp 成空操作付费调用）。
+  if (!Number.isFinite(payload.ratio) || payload.ratio < 1 || payload.ratio > 2) {
+    throw new Error('expandDesignImage: ratio 须为 [1,2] 区间内的有限数值');
+  }
+  const { expandImage, expandScalesForDirection, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('扩图需要百炼（DashScope）API Key。');
+  const baseBuf = await fsp.readFile(payload.baseImagePath);
+  const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  const scales = expandScalesForDirection(payload.direction, payload.ratio);
+  const { url } = await expandImage({
+    apiKey,
+    prompt: payload.prompt?.trim() ? payload.prompt : '自然延伸画面背景，与原图风格一致',
+    baseImageDataUrl: baseDataUrl,
+    topScale: scales.top,
+    bottomScale: scales.bottom,
+    leftScale: scales.left,
+    rightScale: scales.right,
+  });
+  const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
+
+// 设计画布去水印（T3：wanx function=remove_watermark）：底图(磁盘)读成 base64 → 消除中英文文字水印
+// → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
+export async function handleRemoveWatermarkDesignImage(
+  payload: { baseImagePath: string; outputPath: string; prompt?: string },
+): Promise<{ path: string }> {
+  if (!payload?.baseImagePath || !payload?.outputPath) {
+    throw new Error('removeWatermarkDesignImage 需要 baseImagePath / outputPath');
+  }
+  assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+  const { removeWatermark, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('去水印需要百炼（DashScope）API Key。');
+  const baseBuf = await fsp.readFile(payload.baseImagePath);
+  const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  const { url } = await removeWatermark({
+    apiKey,
+    baseImageDataUrl: baseDataUrl,
+    prompt: payload.prompt,
+  });
+  const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
 }
 
 // ----------------------------------------------------------------------------
@@ -746,6 +834,16 @@ export function registerWorkspaceHandlers(
           break;
         case 'importDesignImage':
           data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
+          break;
+        case 'expandDesignImage':
+          data = await handleExpandDesignImage(
+            payload as { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+          );
+          break;
+        case 'removeWatermarkDesignImage':
+          data = await handleRemoveWatermarkDesignImage(
+            payload as { baseImagePath: string; outputPath: string; prompt?: string },
+          );
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

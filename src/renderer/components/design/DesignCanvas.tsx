@@ -8,9 +8,10 @@ import type Konva from 'konva';
 import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
-import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
+import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
 import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
+import { DesignImageEditOps } from './DesignImageEditOps';
 import { readWorkspaceImageAsDataUrl } from './designFiles';
 import {
   normalizeDragRect,
@@ -122,7 +123,7 @@ export const DesignCanvas: React.FC = () => {
   const selectedIds = useDesignCanvasStore((s) => s.selectedIds);
   const setSelected = useDesignCanvasStore((s) => s.setSelected);
   const generating = useDesignCanvasStore((s) => s.generating);
-  const { editRegion } = useDesignCanvasGeneration();
+  const { editRegion, expand, removeWatermark } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
 
   // 圈选标注本地态（世界坐标）。
@@ -132,6 +133,9 @@ export const DesignCanvas: React.FC = () => {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [comparing, setComparing] = useState(false);
+  // 扩图本地态：方向 + 比例（1.0–2.0）。
+  const [expandDirection, setExpandDirection] = useState<ExpandDirection>('all');
+  const [expandRatio, setExpandRatio] = useState(1.5);
 
   // 淘汰(软删除)的节点落盘保留但不在画布上呈现/参与对比。
   const visibleNodes = useMemo(() => nodes.filter((n) => !n.discarded), [nodes]);
@@ -280,6 +284,18 @@ export const DesignCanvas: React.FC = () => {
     }
   };
 
+  // 扩图：按方向+比例外扩 → 新 variant 落底图右侧。
+  const onExpand = async (): Promise<void> => {
+    if (!selectedNode) return;
+    await expand({ baseNode: selectedNode, direction: expandDirection, ratio: expandRatio });
+  };
+
+  // 去水印：消除中英文文字水印 → 新 variant 落底图右侧。
+  const onRemoveWatermark = async (): Promise<void> => {
+    if (!selectedNode) return;
+    await removeWatermark({ baseNode: selectedNode });
+  };
+
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
 
   return (
@@ -396,6 +412,18 @@ export const DesignCanvas: React.FC = () => {
             <Download className="h-3.5 w-3.5" />
             {t.design.exportImage}
           </button>
+
+          {/* T3：wanx 扩图（方向+比例）+ 去水印，各落新 variant 挂 spine */}
+          <DesignImageEditOps
+            t={t}
+            direction={expandDirection}
+            ratio={expandRatio}
+            generating={generating}
+            onDirectionChange={setExpandDirection}
+            onRatioChange={setExpandRatio}
+            onExpand={() => void onExpand()}
+            onRemoveWatermark={() => void onRemoveWatermark()}
+          />
         </div>
       )}
 

@@ -333,6 +333,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'readBinary',
     'readFile',
     'removeRecent',
+    'resolveDesignDir',
     'saveTextToDownloads',
     'selectDirectory',
     'setCurrent',

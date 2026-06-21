@@ -5,6 +5,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
+import { useWorkspaceModeStore } from './stores/workspaceModeStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -74,6 +75,9 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal').then
 })));
 const WorkflowPanel = React.lazy(() => import('./components/features/workflow/WorkflowPanel').then((module) => ({
   default: module.WorkflowPanel,
+})));
+const DesignWorkspace = React.lazy(() => import('./components/design/DesignWorkspace').then((module) => ({
+  default: module.DesignWorkspace,
 })));
 const LabPage = React.lazy(() => import('./components/features/lab/LabPage').then((module) => ({
   default: module.LabPage,
@@ -767,6 +771,13 @@ export const App: React.FC = () => {
 
       {/* V2-A: DevServerLauncher 自管 visibility，挂全局 */}
       <DevServerLauncher />
+
+      {/* Design Workspace（Kun 借鉴：设计 tab）——全屏覆盖，Code 布局不变 */}
+      {useWorkspaceModeStore((s) => s.workspaceMode) === 'design' && (
+        <React.Suspense fallback={null}>
+          <DesignWorkspace />
+        </React.Suspense>
+      )}
 
       {/* Lab Page */}
       {showLab && (

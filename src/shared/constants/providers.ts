@@ -26,6 +26,8 @@ export const MODEL_API_ENDPOINTS = {
   zhipuCoding: 'https://api.0ki.cn/api/coding/paas/v4',
   /** 通义千问 (国际版) */
   qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+  /** 阿里云百炼 DashScope 原生 API (通义万相图像合成/局部重绘等，国内端点免代理) */
+  dashscope: 'https://dashscope.aliyuncs.com/api/v1',
   /** Moonshot/Kimi */
   moonshot: 'https://api.moonshot.cn/v1',
   /** Kimi K2.5 (Coding 套餐) */

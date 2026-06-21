@@ -15,6 +15,80 @@ import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
+import { promises as fsp } from 'fs';
+import { getUserConfigDir } from '../config/configPaths';
+
+// 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
+// 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
+// 用户无需选目录；需收进项目时再走显式「保存到项目」（后续）。
+async function handleResolveDesignDir(): Promise<{ dir: string }> {
+  const dir = path.join(getUserConfigDir(), 'design');
+  await fsp.mkdir(dir, { recursive: true });
+  return { dir };
+}
+
+// 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
+// renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
+// 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
+async function handleGenerateDesignImage(
+  payload: { prompt: string; aspectRatio?: string; outputPath: string },
+): Promise<{ path: string }> {
+  if (!payload?.prompt || !payload?.outputPath) {
+    throw new Error('generateDesignImage 需要 prompt 与 outputPath');
+  }
+  const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const { imageData } = await generateImage('wanx', '', payload.prompt, payload.aspectRatio || '1:1');
+  const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  const buf = Buffer.from(base64, 'base64');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, buf);
+  return { path: payload.outputPath };
+}
+
+// 设计画布导入用户自有图片（自由画布）：renderer 传 base64 dataURL → 写盘到 run 的 assets，
+// 之后它就是普通画布节点，可被选中/圈选局部重绘（与生成图同构）。
+async function handleImportDesignImage(
+  payload: { dataUrl: string; outputPath: string },
+): Promise<{ path: string }> {
+  if (!payload?.dataUrl || !payload?.outputPath) {
+    throw new Error('importDesignImage 需要 dataUrl 与 outputPath');
+  }
+  const base64 = payload.dataUrl.replace(/^data:[^;]+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
+
+// 设计画布圈选局部重绘（Cowart 式 P2）：底图(磁盘路径)读成 base64 + renderer 传来的 mask
+// (白=改/黑=留) → 通义万相 wanx2.1-imageedit 真 inpaint → 下载结果写盘 → 返回路径。
+async function handleEditDesignImage(
+  payload: { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
+): Promise<{ path: string }> {
+  if (!payload?.prompt || !payload?.baseImagePath || !payload?.maskDataUrl || !payload?.outputPath) {
+    throw new Error('editDesignImage 需要 prompt / baseImagePath / maskDataUrl / outputPath');
+  }
+  const { editImageWithMask, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('局部重绘需要百炼（DashScope）API Key。');
+  const baseBuf = await fsp.readFile(payload.baseImagePath);
+  const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  const { url } = await editImageWithMask({
+    apiKey,
+    prompt: payload.prompt,
+    baseImageDataUrl: baseDataUrl,
+    maskImageDataUrl: payload.maskDataUrl,
+  });
+  const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -651,6 +725,22 @@ export function registerWorkspaceHandlers(
           break;
         case 'getConfigScope':
           data = await handleGetConfigScope(payload as { workingDirectory?: string | null } | undefined, getAppService);
+          break;
+        case 'resolveDesignDir':
+          data = await handleResolveDesignDir();
+          break;
+        case 'generateDesignImage':
+          data = await handleGenerateDesignImage(
+            payload as { prompt: string; aspectRatio?: string; outputPath: string },
+          );
+          break;
+        case 'editDesignImage':
+          data = await handleEditDesignImage(
+            payload as { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
+          );
+          break;
+        case 'importDesignImage':
+          data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

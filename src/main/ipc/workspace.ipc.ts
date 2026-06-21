@@ -58,7 +58,9 @@ function assertWithinDesignDir(p: string, label: string): void {
 export async function handleGenerateDesignImage(
   payload: { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
-  if (!payload?.prompt || !payload?.outputPath) {
+  // prompt 须为非空白（trim 后非空）：空白 prompt 是 paid no-op（尤其 wanx/gptimage 用 raw prompt），
+  // 直连 IPC/未来调用方可能绕过 renderer 的 trim 守卫，在主进程兜底拦住付费空调用。
+  if (!payload?.prompt?.trim() || !payload?.outputPath) {
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');

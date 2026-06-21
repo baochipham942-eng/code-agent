@@ -169,6 +169,13 @@ describe('handleGenerateDesignImage 模型路由', () => {
     const res = await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'cogview-4' });
     expect(res.costCny).toBe(0.06);
   });
+  it('空白 prompt 抛错且不触发付费出图调用（防 paid no-op）', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleGenerateDesignImage({ prompt: '   ', outputPath, model: 'wanx-t2i' }),
+    ).rejects.toThrow('generateDesignImage');
+    expect((svc.generateImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
 });
 
 describe('路径越界守卫（M1：baseImagePath/outputPath 必须在设计目录内）', () => {

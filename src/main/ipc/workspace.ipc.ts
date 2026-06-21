@@ -16,8 +16,9 @@ import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
+import { estimateVideoCostCny } from '../../shared/media/videoCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
-import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS, imageModelById } from '../../shared/constants/visualModels';
+import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS, imageModelById, videoModelById, VIDEO_MODELS } from '../../shared/constants/visualModels';
 import { getConfigService } from '../services/core/configService';
 import {
   getDashscopeApiKey,
@@ -265,6 +266,72 @@ export async function handleRemoveWatermarkDesignImage(
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
   return { path: payload.outputPath };
+}
+
+// 设计画布视频生成（P2）：t2v 直连 / i2v 用画布图节点作底图。通义万相视频异步任务。
+// 守门顺序（全在付费 service 调用之前，杜绝 paid no-op 与越界）：
+// 必填校验（t2v 需 prompt / i2v 需 baseImagePath）→ 路径守卫 → 模型存在 → cap 命中 mode。
+// 成本权威源在 main：按真实回传时长 × 模型单价查表（T2 成本可见）。
+export async function handleGenerateDesignVideo(payload: {
+  mode: 't2v' | 'i2v';
+  prompt?: string;
+  baseImagePath?: string;
+  outputPath: string;
+  model: string;
+  durationSec?: number;
+}): Promise<{ path: string; actualModel: string; costCny: number; durationSec: number }> {
+  if (!payload?.outputPath) throw new Error('generateDesignVideo 需要 outputPath');
+  if (payload.mode === 't2v' && !payload.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
+  if (payload.mode === 'i2v' && !payload.baseImagePath) throw new Error('图生视频需要 baseImagePath');
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+  if (payload.baseImagePath) assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+
+  const model = videoModelById(payload.model);
+  if (!model) throw new Error(`未知视频模型 id: ${payload.model}`);
+  if (!model.caps.includes(payload.mode)) throw new Error(`模型 ${payload.model} 不支持 ${payload.mode}`);
+
+  const { generateVideo, downloadVideoAsBuffer } = await import('../services/media/videoGenerationService');
+
+  let imageDataUrl: string | undefined;
+  if (payload.mode === 'i2v' && payload.baseImagePath) {
+    // key 守卫前置于磁盘读取（与 handleEditDesignImage / handleExpandDesignImage 兄弟
+    // handler 一致）：缺 key 时立刻报错，不读文件、不走付费路径。
+    const apiKey = getDashscopeApiKey();
+    if (!apiKey) throw new Error('图生视频需要百炼（DashScope）API Key。');
+    const baseBuf = await fsp.readFile(payload.baseImagePath);
+    imageDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  }
+
+  const { url, actualModel, durationSec } = await generateVideo({
+    model: payload.model,
+    mode: payload.mode,
+    prompt: payload.prompt,
+    imageDataUrl,
+    durationSec: payload.durationSec,
+  });
+
+  const buf = await downloadVideoAsBuffer(url);
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, buf);
+  return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
+}
+
+// 列出视频模型 + 可用性（D6/D7：复用 providerKeyConfigured；P2 全 dashscope）。
+export async function handleListVisualVideoModels(): Promise<{
+  models: Array<{ id: string; label: string; provider: string; available: boolean; caps: string[]; minDurationSec: number; maxDurationSec: number; defaultDurationSec: number }>;
+}> {
+  return {
+    models: VIDEO_MODELS.map((m) => ({
+      id: m.id,
+      label: m.label,
+      provider: m.provider,
+      available: providerKeyConfigured(m.provider),
+      caps: [...m.caps],
+      minDurationSec: m.minDurationSec,
+      maxDurationSec: m.maxDurationSec,
+      defaultDurationSec: m.defaultDurationSec,
+    })),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -960,6 +1027,14 @@ export function registerWorkspaceHandlers(
           data = await handleRemoveWatermarkDesignImage(
             payload as { baseImagePath: string; outputPath: string; prompt?: string },
           );
+          break;
+        case 'generateDesignVideo':
+          data = await handleGenerateDesignVideo(
+            payload as { mode: 't2v' | 'i2v'; prompt?: string; baseImagePath?: string; outputPath: string; model: string; durationSec?: number },
+          );
+          break;
+        case 'listVisualVideoModels':
+          data = await handleListVisualVideoModels();
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

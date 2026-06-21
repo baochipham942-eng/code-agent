@@ -17,6 +17,8 @@ export interface CanvasImageNode {
   parentId?: string;
   /** 被选为该版本组的主版（A/B 对比后定稿）。 */
   chosen?: boolean;
+  /** 软删除：淘汰但落盘保留（variant spine 非破坏性语义），画布渲染时过滤。 */
+  discarded?: boolean;
   createdAt: number;
 }
 
@@ -67,6 +69,7 @@ function normalizeNode(raw: unknown): CanvasImageNode | null {
   if (typeof r.prompt === 'string') node.prompt = r.prompt;
   if (typeof r.parentId === 'string') node.parentId = r.parentId;
   if (r.chosen === true) node.chosen = true;
+  if (r.discarded === true) node.discarded = true;
   return node;
 }
 

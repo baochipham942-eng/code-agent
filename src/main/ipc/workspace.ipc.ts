@@ -46,7 +46,7 @@ function assertWithinDesignDir(p: string, label: string): void {
   }
 }
 
-// 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
+// 设计画布直连出图（Cowart 式 P1）：按 model 在视觉模型注册表间路由 engine（默认 wanx），
 // renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
 export async function handleGenerateDesignImage(

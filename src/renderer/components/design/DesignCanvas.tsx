@@ -269,21 +269,23 @@ export const DesignCanvas: React.FC = () => {
   const { editRegion, expand, removeWatermark, editByAnnotation } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
 
-  // 标注重绘态（B4）：模式开关/指令/模型走 designStore（可持久 imageModel；模式/指令瞬时）。
+  // 标注重绘态（B4）：模式开关/指令/模型全走 designStore 瞬时态，不持久化。
+  // 模型独立于全局 imageModel（文生图默认）——选第 2 个 annotEdit 模型不应改用户文生图默认（B4 审查 Minor2）。
   const annotMode = useDesignStore((s) => s.annotMode);
   const setAnnotMode = useDesignStore((s) => s.setAnnotMode);
   const annotInstruction = useDesignStore((s) => s.annotInstruction);
   const setAnnotInstruction = useDesignStore((s) => s.setAnnotInstruction);
-  const imageModel = useDesignStore((s) => s.imageModel);
-  const setImageModel = useDesignStore((s) => s.setImageModel);
+  const annotModel = useDesignStore((s) => s.annotModel);
+  const setAnnotModel = useDesignStore((s) => s.setAnnotModel);
   // 标注图形（世界坐标）+ 当前工具，本地态（换图重置）。
   const [annotShapes, setAnnotShapes] = useState<AnnotShape[]>([]);
   const [annotTool, setAnnotTool] = useState<AnnotTool>('pen');
-  // 标注重绘默认模型：取首个声明 annotEdit 能力的模型（当前 imageModel 多为 wanx，无该能力）。
-  const annotModel = useMemo(() => {
+  // 生效模型（cap 解析的唯一来源）：已选且仍具 annotEdit 能力则用之，否则取首个 annotEdit 模型为默认。
+  // 保证下拉值、成本预估、送 IPC 的模型三处一致且必为 annotEdit-capable。
+  const effectiveAnnotModel = useMemo(() => {
     const caps = imageModelsWithCap('annotEdit');
-    return caps.some((m) => m.id === imageModel) ? imageModel : caps[0]?.id ?? imageModel;
-  }, [imageModel]);
+    return annotModel && caps.some((m) => m.id === annotModel) ? annotModel : caps[0]?.id ?? '';
+  }, [annotModel]);
 
   // 圈选标注本地态（世界坐标）。
   const [annotating, setAnnotating] = useState(false);
@@ -454,13 +456,13 @@ export const DesignCanvas: React.FC = () => {
   // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
   const onAnnotRedraw = async (): Promise<void> => {
     if (!selectedNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
-    const est = formatCny(estimateImageCostCny(annotModel));
+    const est = formatCny(estimateImageCostCny(effectiveAnnotModel));
     if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
     await editByAnnotation({
       baseNode: selectedNode,
       shapes: annotShapes,
       instruction: annotInstruction,
-      model: annotModel,
+      model: effectiveAnnotModel,
     });
     if (!useDesignCanvasStore.getState().error) {
       setAnnotShapes([]);
@@ -648,20 +650,23 @@ export const DesignCanvas: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                {/* 重绘模型（cap 过滤） */}
-                <AnnotModelSelect value={annotModel} onChange={setImageModel} />
-                {/* 重绘指令 */}
-                <textarea
-                  value={annotInstruction}
-                  onChange={(e) => setAnnotInstruction(e.target.value)}
-                  placeholder={t.design.annotInstructionPlaceholder}
-                  rows={2}
-                  className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
-                />
+                {/* 重绘模型（cap 过滤；瞬时 annotModel，与全局 imageModel 解耦） */}
+                <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} />
+                {/* 重绘指令（带可见 label） */}
+                <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                  <span>{t.design.annotInstruction}</span>
+                  <textarea
+                    value={annotInstruction}
+                    onChange={(e) => setAnnotInstruction(e.target.value)}
+                    placeholder={t.design.annotInstructionPlaceholder}
+                    rows={2}
+                    className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
+                  />
+                </label>
                 {/* 成本预估 */}
                 <div className="text-[11px] text-zinc-500">
                   {t.design.costEstimateLabel}{' '}
-                  <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(annotModel))}</span>
+                  <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(effectiveAnnotModel))}</span>
                 </div>
                 <button
                   type="button"

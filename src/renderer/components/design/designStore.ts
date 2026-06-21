@@ -35,6 +35,9 @@ interface DesignState {
   annotMode: boolean;
   /** 标注指令文本（瞬时态，不持久化）。 */
   annotInstruction: string;
+  /** 标注重绘模型选择（瞬时态，不持久化；空=未选，组件经 imageModelsWithCap('annotEdit') 解析默认）。
+   *  与全局持久化 imageModel 解耦——选第 2 个 annotEdit 模型不应改用户的文生图默认。 */
+  annotModel: string;
   // 历史 + 选中
   history: DesignRun[];
   /** 当前查看/生成的 run 目录。 */
@@ -60,6 +63,7 @@ interface DesignState {
   setImageModel: (id: string) => void;
   setAnnotMode: (on: boolean) => void;
   setAnnotInstruction: (text: string) => void;
+  setAnnotModel: (id: string) => void;
 
   // 历史 actions
   addHistory: (run: DesignRun) => void;
@@ -92,6 +96,7 @@ export const useDesignStore = create<DesignState>()(
       imageModel: defaultImageModelId(),
       annotMode: false,
       annotInstruction: '',
+      annotModel: '',
       history: [],
       selectedRunDir: null,
       status: 'idle',
@@ -114,6 +119,7 @@ export const useDesignStore = create<DesignState>()(
       setImageModel: (imageModel) => set({ imageModel }),
       setAnnotMode: (annotMode) => set({ annotMode }),
       setAnnotInstruction: (annotInstruction) => set({ annotInstruction }),
+      setAnnotModel: (annotModel) => set({ annotModel }),
 
       addHistory: (run) =>
         set((s) => ({

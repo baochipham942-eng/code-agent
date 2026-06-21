@@ -20,4 +20,14 @@ describe('designStore 标注模式', () => {
     expect(useDesignStore.getState().annotInstruction).toBe('改成绿色');
     s.setAnnotMode(false); s.setAnnotInstruction(''); // 复位，避免污染其它测试
   });
+
+  it('annotModel 默认空（未选，组件经 cap 解析默认）、可 set，且与全局 imageModel 解耦', () => {
+    const s = useDesignStore.getState();
+    expect(s.annotModel).toBe('');
+    s.setAnnotModel('flux-kontext');
+    expect(useDesignStore.getState().annotModel).toBe('flux-kontext');
+    // 解耦：改 annotModel 不动全局 imageModel（文生图默认）。
+    expect(useDesignStore.getState().imageModel).toBe('wanx-t2i');
+    s.setAnnotModel(''); // 复位，避免污染其它测试
+  });
 });

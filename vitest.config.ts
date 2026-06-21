@@ -8,6 +8,8 @@ export default defineConfig({
       electron: path.resolve(__dirname, 'src/main/platform/index.ts'),
       // keytar 原生模块为 Electron Node.js 编译，在系统 Node.js 中会 SIGSEGV
       keytar: path.resolve(__dirname, 'tests/__mocks__/keytar.ts'),
+      // react-konva → konva/index-node 在系统 Node 下 require('canvas') 崩溃，用 stub 兜底
+      'react-konva': path.resolve(__dirname, 'tests/__mocks__/react-konva.ts'),
       // tsconfig paths — 让 @shared/@renderer/@main 别名在 vitest 中生效
       '@shared': path.resolve(__dirname, 'src/shared'),
       '@renderer': path.resolve(__dirname, 'src/renderer'),

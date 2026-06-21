@@ -35,6 +35,14 @@ describe('T3 扩图/去水印结果落 variant 挂 spine', () => {
     useDesignCanvasStore.getState().loadDoc('/design/run', { ...emptyCanvasDoc(), nodes: [BASE] });
   });
 
+  it('缺省 id 同毫秒内不碰撞（防 store 内 id 歧义）', () => {
+    // 同一 tick 连续构造多个节点，id 必须各异
+    const ids = new Set(
+      Array.from({ length: 5 }, () => buildVariantNode(BASE, 'assets/x.png', { width: 1, height: 1 }, 'l').id),
+    );
+    expect(ids.size).toBe(5);
+  });
+
   it('5 个操作各追加一个新 variant，全部挂底图版本槽且落右侧', () => {
     OPS.forEach((op, i) => {
       const node = buildVariantNode(BASE, op.rel, op.dims, op.label, `node-${i}`, 100 + i);

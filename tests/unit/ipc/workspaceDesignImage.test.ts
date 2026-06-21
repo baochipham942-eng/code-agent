@@ -69,6 +69,23 @@ describe('handleExpandDesignImage', () => {
     expect(written.toString()).toBe('ABC'); // base64 QUJD 解出
   });
 
+  it('非法 direction 抛错且不触发付费出图调用（防 no-op 扩图）', async () => {
+    const svc = await import(SVC);
+    await expect(
+      // @ts-expect-error 故意传联合类型外的 direction
+      handleExpandDesignImage({ baseImagePath, outputPath, direction: 'top', ratio: 1.5 }),
+    ).rejects.toThrow(/direction/);
+    expect((svc.expandImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+
+  it('ratio 非有限数(NaN)抛错且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: Number.NaN }),
+    ).rejects.toThrow(/ratio/);
+    expect((svc.expandImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+
   it('DashScope key 缺失时报错', async () => {
     const svc = await import(SVC);
     (svc.getDashscopeApiKey as unknown as { mockReturnValueOnce: (v: unknown) => void }).mockReturnValueOnce(undefined);

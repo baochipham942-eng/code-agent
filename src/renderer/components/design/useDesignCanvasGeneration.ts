@@ -67,17 +67,21 @@ export interface RemoveWatermarkArgs {
   baseNode: CanvasImageNode;
 }
 
+// 单调序列：保证同毫秒内连续构造的节点 id 不碰撞（codex-audit M4：纯 Date.now() 同 tick
+// 会撞，store 按 id 做 setChosen/discard/对比会指向歧义节点）。
+let variantNodeSeq = 0;
+
 /**
  * 由出图结果构造新 variant 节点：落底图右侧（make-real 式 x:maxX+gap），parentId 锚到血缘根
  * （groupKey=parentId??id），归入底图所在版本槽。扩图/去水印/局部重绘共用同一血缘规则。
- * id/createdAt 可注入以便测试确定性。
+ * id/createdAt 可注入以便测试确定性；缺省 id 带单调序列后缀防同毫秒碰撞。
  */
 export function buildVariantNode(
   baseNode: CanvasImageNode,
   assetRel: string,
   dims: { width: number; height: number },
   label: string,
-  id: string = `node-${Date.now()}`,
+  id: string = `node-${Date.now()}-${(variantNodeSeq++).toString(36)}`,
   createdAt: number = Date.now(),
 ): CanvasImageNode {
   return {

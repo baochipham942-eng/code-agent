@@ -96,8 +96,18 @@ async function handleEditDesignImage(
 export async function handleExpandDesignImage(
   payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
 ): Promise<{ path: string }> {
-  if (!payload?.baseImagePath || !payload?.outputPath || !payload?.direction || !payload?.ratio) {
-    throw new Error('expandDesignImage 需要 baseImagePath / outputPath / direction / ratio');
+  if (!payload?.baseImagePath || !payload?.outputPath) {
+    throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
+  }
+  // 校验 direction 在合法集合内：非法值会让 expandScalesForDirection 落 default(四向 1.0)，
+  // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
+  const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
+  if (!VALID_EXPAND_DIRECTIONS.includes(payload.direction)) {
+    throw new Error(`expandDesignImage: 非法 direction「${String(payload.direction)}」，须为 up/down/left/right/all`);
+  }
+  // ratio 须为有限数且在 [1,2]（NaN/越界否则被 service 静默 clamp 成空操作付费调用）。
+  if (!Number.isFinite(payload.ratio) || payload.ratio < 1 || payload.ratio > 2) {
+    throw new Error('expandDesignImage: ratio 须为 [1,2] 区间内的有限数值');
   }
   const { expandImage, expandScalesForDirection, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'

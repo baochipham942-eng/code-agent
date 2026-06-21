@@ -88,3 +88,22 @@ describe('nextNodePlacement', () => {
     expect(nextNodePlacement(nodes, 60)).toEqual({ x: 360, y: 30 });
   });
 });
+
+describe('CanvasImageNode 反序列化 label / costCny（T2）', () => {
+  it('保留 label 与 costCny，类型不符则丢弃', () => {
+    const doc = deserializeCanvasDoc(
+      JSON.stringify({
+        version: 1,
+        camera: DEFAULT_CAMERA,
+        nodes: [
+          { id: 'a', src: 'a.png', x: 0, y: 0, width: 1, height: 1, createdAt: 1, label: '命名步', costCny: 0.14 },
+          { id: 'b', src: 'b.png', x: 0, y: 0, width: 1, height: 1, createdAt: 1, label: 123, costCny: 'x' },
+        ],
+      }),
+    );
+    expect(doc.nodes[0].label).toBe('命名步');
+    expect(doc.nodes[0].costCny).toBe(0.14);
+    expect(doc.nodes[1].label).toBeUndefined();
+    expect(doc.nodes[1].costCny).toBeUndefined();
+  });
+});

@@ -32,6 +32,8 @@ interface DesignCanvasState {
   discardNode: (id: string) => void;
   /** 选为主版：标记该节点 chosen，并清除同版本槽（groupKey=parentId??id）其他节点的主版标记。 */
   setChosen: (id: string) => void;
+  /** 为某一步命名（T2 可逆命名步）：写入 label，不存在则静默无操作。 */
+  renameNode: (id: string, label: string) => void;
   setCamera: (camera: CanvasCamera) => void;
   setSelected: (ids: string[]) => void;
   setGenerating: (generating: boolean) => void;
@@ -96,6 +98,11 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
           return n;
         }),
       };
+    }),
+  renameNode: (id, label) =>
+    set((s) => {
+      if (!s.nodes.some((n) => n.id === id)) return {};
+      return { nodes: s.nodes.map((n) => (n.id === id ? { ...n, label } : n)) };
     }),
   setCamera: (camera) => set({ camera }),
   setSelected: (selectedIds) => set({ selectedIds }),

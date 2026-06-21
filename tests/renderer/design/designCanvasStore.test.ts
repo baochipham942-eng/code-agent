@@ -116,3 +116,25 @@ describe('designCanvasStore setChosen / deleteNode', () => {
     expect(st.selectedIds).toEqual(['B']);
   });
 });
+
+describe('designCanvasStore renameNode（T2 命名步）', () => {
+  beforeEach(() => {
+    useDesignCanvasStore.getState().loadDoc('run-x', doc([]));
+  });
+
+  it('renameNode 写入 label，不动其他字段', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A')]));
+    s.renameNode('A', '首页英雄区 v1');
+    const node = useDesignCanvasStore.getState().nodes.find((x) => x.id === 'A');
+    expect(node?.label).toBe('首页英雄区 v1');
+    expect(node?.src).toBe('assets/A.png');
+  });
+
+  it('renameNode 对不存在的 id 静默无操作', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A')]));
+    s.renameNode('ZZ', 'x');
+    expect(useDesignCanvasStore.getState().nodes).toHaveLength(1);
+  });
+})

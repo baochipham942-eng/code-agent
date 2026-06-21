@@ -53,7 +53,9 @@ const CanvasImage: React.FC<{
   runDir: string | null;
   selected: boolean;
   onSelect: (additive: boolean) => void;
-}> = ({ node, runDir, selected, onSelect }) => {
+  onViewDiff: (node: CanvasImageNode) => void;
+}> = ({ node, runDir, selected, onSelect, onViewDiff }) => {
+  const { t } = useI18n();
   const img = useNodeImage(runDir, node.src);
   if (!img) return null;
   const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
@@ -62,6 +64,51 @@ const CanvasImage: React.FC<{
   };
   // 徽标字号随相机缩放保持视觉恒定（用 1/scale 反算近似，简化为固定值即可）。
   const badge = Math.max(14, Math.round(node.width * 0.03));
+  // T4 一致性徽章：clean=未选区守住(绿)；locked=已锁定未选区(琥珀, 可点开 diff 证据)。
+  const c = node.consistency;
+  const consistencyBadge = ((): React.ReactNode => {
+    if (!c) return null;
+    const isLocked = c.status === 'locked';
+    const color = isLocked ? '#f59e0b' : '#10b981';
+    const label = isLocked ? t.design.consistencyLocked : t.design.consistencyClean;
+    const fs = badge;
+    const padX = fs * 0.55;
+    const pillW = Math.round(label.length * fs * 0.62 + padX * 2);
+    const pillH = Math.round(fs * 1.7);
+    const px = node.x + node.width - pillW - 8;
+    const py = node.y + 8;
+    const clickable = isLocked && Boolean(c.diffPath);
+    const open = (): void => {
+      if (clickable) onViewDiff(node);
+    };
+    return (
+      <>
+        <KonvaRect
+          x={px}
+          y={py}
+          width={pillW}
+          height={pillH}
+          fill="rgba(9,9,11,0.78)"
+          stroke={color}
+          strokeWidth={1.5}
+          cornerRadius={pillH / 2}
+          listening={clickable}
+          onMouseDown={open}
+          onTap={open}
+        />
+        <KonvaText
+          x={px}
+          y={py + pillH * 0.26}
+          width={pillW}
+          align="center"
+          text={label}
+          fontSize={Math.round(fs * 0.72)}
+          fill={color}
+          listening={false}
+        />
+      </>
+    );
+  })();
   return (
     <>
       <KonvaImage
@@ -106,7 +153,52 @@ const CanvasImage: React.FC<{
           listening={false}
         />
       )}
+      {consistencyBadge}
     </>
+  );
+};
+
+// T4 diff 证据浮层：展示"模型偷改了哪些未选区域"（标红）+ 度量。
+const DiffEvidenceOverlay: React.FC<{
+  runDir: string | null;
+  node: CanvasImageNode;
+  onClose: () => void;
+}> = ({ runDir, node, onClose }) => {
+  const { t } = useI18n();
+  const [url, setUrl] = useState<string | null>(null);
+  const diffPath = node.consistency?.diffPath;
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      if (!runDir || !diffPath) return;
+      const data = await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${diffPath}`);
+      if (alive) setUrl(data);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [runDir, diffPath]);
+  const c = node.consistency;
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-zinc-950/85 p-6">
+      <div className="flex items-center gap-2 text-sm text-amber-300">
+        <span>{t.design.diffEvidenceTitle}</span>
+        <button onClick={onClose} className="rounded p-1 text-zinc-400 hover:text-zinc-100" aria-label={t.design.diffClose}>
+          <X size={16} />
+        </button>
+      </div>
+      {c && (
+        <p className="text-[11px] text-zinc-400">
+          {t.design.diffMaxDelta}: {Math.round(c.maxDelta)} · {t.design.diffChangedPixels}: {c.changedPixels}
+        </p>
+      )}
+      {url ? (
+        <img src={url} alt="diff" className="max-h-[70%] max-w-[90%] rounded border border-amber-500/40" />
+      ) : (
+        <Loader2 className="animate-spin text-zinc-500" size={20} />
+      )}
+      <p className="max-w-md text-center text-[11px] leading-snug text-zinc-500">{t.design.diffEvidenceHint}</p>
+    </div>
   );
 };
 
@@ -133,6 +225,8 @@ export const DesignCanvas: React.FC = () => {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [comparing, setComparing] = useState(false);
+  // T4 diff 证据浮层目标节点（locked 徽章点开）。
+  const [diffNode, setDiffNode] = useState<CanvasImageNode | null>(null);
   // 扩图本地态：方向 + 比例（1.0–2.0）。
   const [expandDirection, setExpandDirection] = useState<ExpandDirection>('all');
   const [expandRatio, setExpandRatio] = useState(1.5);
@@ -330,6 +424,7 @@ export const DesignCanvas: React.FC = () => {
                 runDir={runDir}
                 selected={selectedIds.includes(node.id)}
                 onSelect={(additive) => selectNode(node.id, additive)}
+                onViewDiff={setDiffNode}
               />
             ))}
             {draftAndCommitted.map((r, i) => (
@@ -452,6 +547,10 @@ export const DesignCanvas: React.FC = () => {
           runDir={runDir}
           onClose={() => setComparing(false)}
         />
+      )}
+
+      {diffNode && (
+        <DiffEvidenceOverlay runDir={runDir} node={diffNode} onClose={() => setDiffNode(null)} />
       )}
     </div>
   );

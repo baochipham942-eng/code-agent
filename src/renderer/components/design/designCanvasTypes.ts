@@ -1,6 +1,7 @@
 // 设计画布（Cowart 式）纯数据模型 + 序列化（无 React 依赖，可单测）。
 // 画布存档落 run 目录下的 canvas.json；图片落 assets/，节点只存相对路径，
 // 避免 JSON 内嵌 base64 膨胀（详见 docs/designs/design-canvas-cowart.md §2.2）。
+import type { RegionLockReport } from '@shared/contract/imageConsistency';
 
 /** 画布上的一张图节点。src 为相对 run 目录的图片路径（如 'assets/gen-123.png'）。 */
 export interface CanvasImageNode {
@@ -23,6 +24,8 @@ export interface CanvasImageNode {
   label?: string;
   /** 产出这一步的图像调用实际花费（人民币元，T2 BYOK 成本可见；权威值由出图 IPC 回传）。 */
   costCny?: number;
+  /** T4 局部重绘一致性报告（未选区域是否守住 + diff 证据，仅 edit 产物有）。 */
+  consistency?: RegionLockReport;
   createdAt: number;
 }
 
@@ -77,7 +80,29 @@ function normalizeNode(raw: unknown): CanvasImageNode | null {
   if (typeof r.label === 'string') node.label = r.label;
   // 成本必须非负：防手改/损坏的 canvas.json 注入负成本压低累计花费、破坏 BYOK 计费信任。
   if (isFiniteNumber(r.costCny) && (r.costCny as number) >= 0) node.costCny = r.costCny as number;
+  const consistency = normalizeConsistency(r.consistency);
+  if (consistency) node.consistency = consistency;
   return node;
+}
+
+/** 校验并规整 canvas.json 里的一致性报告；字段缺失/破损返回 null（安全降级）。 */
+function normalizeConsistency(raw: unknown): RegionLockReport | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.status !== 'clean' && r.status !== 'locked') return null;
+  if (typeof r.passed !== 'boolean') return null;
+  const report: RegionLockReport = {
+    passed: r.passed,
+    status: r.status,
+    maxDelta: isFiniteNumber(r.maxDelta) ? (r.maxDelta as number) : 0,
+    meanDelta: isFiniteNumber(r.meanDelta) ? (r.meanDelta as number) : 0,
+    changedPixels: isFiniteNumber(r.changedPixels) ? (r.changedPixels as number) : 0,
+    keepPixels: isFiniteNumber(r.keepPixels) ? (r.keepPixels as number) : 0,
+    epsilon: isFiniteNumber(r.epsilon) ? (r.epsilon as number) : 0,
+    dimensionMatched: r.dimensionMatched !== false,
+  };
+  if (typeof r.diffPath === 'string' && r.diffPath.length > 0) report.diffPath = r.diffPath;
+  return report;
 }
 
 function normalizeCamera(raw: unknown): CanvasCamera {

@@ -5,7 +5,8 @@
 // dataURL、量原始尺寸、在现有节点右侧落一个画布节点，并存盘 canvas.json。
 import { useCallback } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { DESIGN_WORKSPACE } from '@shared/constants';
+import { DESIGN_WORKSPACE, REGION_LOCK } from '@shared/constants';
+import type { RegionLockReport } from '@shared/contract/imageConsistency';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
@@ -211,7 +212,12 @@ export function useDesignCanvasGeneration(): {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
+      const res = await window.domainAPI?.invoke<{
+        path: string;
+        actualModel: string;
+        costCny: number;
+        consistency?: RegionLockReport;
+      }>(
         IPC_DOMAINS.WORKSPACE,
         'editDesignImage',
         {
@@ -237,6 +243,20 @@ export function useDesignCanvasGeneration(): {
       const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
       // T2 BYOK 成本可见：把本次局部重绘实际花费挂到该 variant 节点。
       if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
+      // T4 一致性报告挂到节点（随 canvas.json 落 T1 spine）。main 返回绝对 diffPath，
+      // 这里相对化 main 的真实路径（与 src 同构、存档可移植，且不臆测 main 的文件名）；
+      // clean 无 diff 文件。仅当无法从 main 路径推出相对路径时才退回约定命名兜底。
+      const consistency = res.data?.consistency;
+      if (consistency) {
+        let diffPath: string | undefined;
+        if (consistency.status === 'locked') {
+          const prefix = `${runDir.replace(/\/+$/, '')}/`;
+          diffPath = consistency.diffPath?.startsWith(prefix)
+            ? consistency.diffPath.slice(prefix.length)
+            : `${assetRel}${REGION_LOCK.DIFF_SUFFIX}`;
+        }
+        node.consistency = { ...consistency, diffPath };
+      }
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().setGenerating(false);

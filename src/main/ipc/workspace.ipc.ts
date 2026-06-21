@@ -20,6 +20,10 @@ import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
+import { REGION_LOCK } from '../../shared/constants/designWorkspace';
+import { runRegionLockGate } from '../services/media/imageConsistency';
+import { loadSharp } from '../runtime/sharpRuntime';
+import type { RegionLockReport } from '../../shared/contract/imageConsistency';
 
 // 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
 // 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
@@ -79,10 +83,14 @@ async function handleImportDesignImage(
 }
 
 // 设计画布圈选局部重绘（Cowart 式 P2）：底图(磁盘路径)读成 base64 + renderer 传来的 mask
-// (白=改/黑=留) → 通义万相 wanx2.1-imageedit 真 inpaint → 下载结果写盘 → 返回路径。
+// (白=改/黑=留) → 通义万相 wanx2.1-imageedit 真 inpaint → 下载结果。
+//
+// T4 一致性锁定：模型输出落盘前先过 region-lock 闸——diff-gate 校验未选区域（mask 黑）逐
+// 像素是否在 ε 内不变；越界则把原图未选区贴回（保证"其余不变"）并同目录落 diff 证据图。
+// 返回 consistency 报告供 renderer 挂到画布节点（随 canvas.json 落 T1 spine）+ UI 徽章。
 async function handleEditDesignImage(
   payload: { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
-): Promise<{ path: string; actualModel: string; costCny: number }> {
+): Promise<{ path: string; actualModel: string; costCny: number; consistency?: RegionLockReport }> {
   if (!payload?.prompt || !payload?.baseImagePath || !payload?.maskDataUrl || !payload?.outputPath) {
     throw new Error('editDesignImage 需要 prompt / baseImagePath / maskDataUrl / outputPath');
   }
@@ -102,12 +110,44 @@ async function handleEditDesignImage(
     maskImageDataUrl: payload.maskDataUrl,
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
-  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  // data URI 前缀用宽松匹配（与 handleImportDesignImage 一致），兼容任意 image MIME 子类型。
+  const resultBuf = Buffer.from(resultDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+
+  // mask dataURL → buffer（renderer 已按 白=改/黑=留 栅格化）。
+  const maskBuf = Buffer.from(payload.maskDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
   // 局部重绘固定走 wanx imageedit；实际花费按该模型查价表（T2 BYOK 成本可见）。
   const actualModel = DESIGN_IMAGE_MODELS.edit;
-  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+  const costCny = estimateImageCostCny(actualModel);
+
+  // 一致性闸。sharp 不可用或解码失败时降级为原模型输出（不阻断用户编辑），
+  // 不返回 consistency（renderer 退回 legacy 无徽章行为）。
+  const sharpLoaded = loadSharp();
+  if (sharpLoaded.ok && sharpLoaded.sharp) {
+    try {
+      const gate = await runRegionLockGate({
+        originalBuf: baseBuf,
+        editedBuf: resultBuf,
+        maskBuf,
+        epsilon: REGION_LOCK.EPSILON,
+        sharp: sharpLoaded.sharp,
+      });
+      await fsp.writeFile(payload.outputPath, gate.finalPng);
+      const consistency: RegionLockReport = { ...gate.report };
+      if (gate.diffPng) {
+        const diffPath = `${payload.outputPath}${REGION_LOCK.DIFF_SUFFIX}`;
+        await fsp.writeFile(diffPath, gate.diffPng);
+        consistency.diffPath = diffPath;
+      }
+      return { path: payload.outputPath, actualModel, costCny, consistency };
+    } catch (err) {
+      // 闸内部异常：保底写模型原始输出，不阻断编辑；但留可观测日志，
+      // 否则一致性逻辑静默失效（consistency 总是 undefined）无从排查。
+      console.warn('[editDesignImage] region-lock gate failed, falling back to raw output:', err);
+    }
+  }
+  await fsp.writeFile(payload.outputPath, resultBuf);
+  return { path: payload.outputPath, actualModel, costCny };
 }
 
 // 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 方向/比例 → 四向单边 scale

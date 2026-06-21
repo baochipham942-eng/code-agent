@@ -17,7 +17,13 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
-import { imageEngineForModel, defaultImageModelId } from '../../shared/constants/visualModels';
+import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS } from '../../shared/constants/visualModels';
+import { getConfigService } from '../services/core/configService';
+import {
+  getDashscopeApiKey,
+  getZhipuOfficialApiKey,
+  getGptImageConfig,
+} from '../services/media/imageGenerationService';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
@@ -784,6 +790,30 @@ async function handleGetDesignMdSummary(payload: { cwd?: string | null }): Promi
 }
 
 
+// 视觉模型可用性：key 逻辑只在主进程；按 provider 复用现有 getter，绝不向 renderer 暴露 key 值。
+function providerKeyConfigured(provider: string): boolean {
+  if (provider === 'dashscope') return !!getDashscopeApiKey();
+  if (provider === 'zhipu') return !!getZhipuOfficialApiKey();
+  if (provider === 'openrouter') return !!getConfigService().getApiKey('openrouter');
+  if (provider === 'gptimage') return !!getGptImageConfig();
+  return false;
+}
+
+// 列出注册表全部生图模型，并按用户是否已配对应 provider key 标 available。
+// 出参只含 id/label/provider/available——绝不回传 key 值（信任边界）。
+export async function handleListVisualImageModels(): Promise<{
+  models: Array<{ id: string; label: string; provider: string; available: boolean }>;
+}> {
+  return {
+    models: IMAGE_MODELS.map((m) => ({
+      id: m.id,
+      label: m.label,
+      provider: m.provider,
+      available: providerKeyConfigured(m.provider),
+    })),
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -816,6 +846,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'listRecent':
           data = await handleListRecent(getConfigService);
+          break;
+        case 'listVisualImageModels':
+          data = await handleListVisualImageModels();
           break;
         case 'removeRecent':
           data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);

@@ -126,7 +126,7 @@ async function fetchWithAbort(
   }
 }
 
-function getZhipuOfficialApiKey(): string | undefined {
+export function getZhipuOfficialApiKey(): string | undefined {
   const officialKey = process.env.ZHIPU_OFFICIAL_API_KEY;
   if (officialKey) return officialKey;
   const configService = getConfigService();

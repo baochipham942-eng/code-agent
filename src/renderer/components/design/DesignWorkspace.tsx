@@ -634,11 +634,12 @@ const PreviewPane: React.FC = () => {
     useDesignStore.getState().setSpine(next);
     if (selectedRunDir) await saveProtoSpine(selectedRunDir, next);
   };
+  // 读 store 最新 spine（而非闭包快照），避免连续 pin/discard 时基于过期 spine 互相覆盖。
   const handlePin = (id: string): void => {
-    void persistSpine(pinVariant(spine, id));
+    void persistSpine(pinVariant(useDesignStore.getState().spine, id));
   };
   const handleDiscardVariant = (id: string): void => {
-    void persistSpine(discardVariant(spine, id));
+    void persistSpine(discardVariant(useDesignStore.getState().spine, id));
     setComparing(false);
     setCompareIds([]);
   };

@@ -15,6 +15,7 @@ import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
+import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
 
@@ -82,6 +83,65 @@ async function handleEditDesignImage(
     prompt: payload.prompt,
     baseImageDataUrl: baseDataUrl,
     maskImageDataUrl: payload.maskDataUrl,
+  });
+  const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
+
+// 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 方向/比例 → 四向单边 scale
+// → 通义万相外扩补绘 → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
+export async function handleExpandDesignImage(
+  payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+): Promise<{ path: string }> {
+  if (!payload?.baseImagePath || !payload?.outputPath || !payload?.direction || !payload?.ratio) {
+    throw new Error('expandDesignImage 需要 baseImagePath / outputPath / direction / ratio');
+  }
+  const { expandImage, expandScalesForDirection, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('扩图需要百炼（DashScope）API Key。');
+  const baseBuf = await fsp.readFile(payload.baseImagePath);
+  const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  const scales = expandScalesForDirection(payload.direction, payload.ratio);
+  const { url } = await expandImage({
+    apiKey,
+    prompt: payload.prompt?.trim() ? payload.prompt : '自然延伸画面背景，与原图风格一致',
+    baseImageDataUrl: baseDataUrl,
+    topScale: scales.top,
+    bottomScale: scales.bottom,
+    leftScale: scales.left,
+    rightScale: scales.right,
+  });
+  const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  return { path: payload.outputPath };
+}
+
+// 设计画布去水印（T3：wanx function=remove_watermark）：底图(磁盘)读成 base64 → 消除中英文文字水印
+// → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
+export async function handleRemoveWatermarkDesignImage(
+  payload: { baseImagePath: string; outputPath: string; prompt?: string },
+): Promise<{ path: string }> {
+  if (!payload?.baseImagePath || !payload?.outputPath) {
+    throw new Error('removeWatermarkDesignImage 需要 baseImagePath / outputPath');
+  }
+  const { removeWatermark, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('去水印需要百炼（DashScope）API Key。');
+  const baseBuf = await fsp.readFile(payload.baseImagePath);
+  const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
+  const { url } = await removeWatermark({
+    apiKey,
+    baseImageDataUrl: baseDataUrl,
+    prompt: payload.prompt,
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -741,6 +801,16 @@ export function registerWorkspaceHandlers(
           break;
         case 'importDesignImage':
           data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
+          break;
+        case 'expandDesignImage':
+          data = await handleExpandDesignImage(
+            payload as { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+          );
+          break;
+        case 'removeWatermarkDesignImage':
+          data = await handleRemoveWatermarkDesignImage(
+            payload as { baseImagePath: string; outputPath: string; prompt?: string },
+          );
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

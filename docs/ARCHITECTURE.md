@@ -37,6 +37,7 @@
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 | [Windows 支持](./architecture/windows-support.md) | win32-x64 移植：安全与路径地基、PowerShell 命令安全规则包、NSIS unsigned + minisign 发版链、真机调试记录、朋友验收清单 |
 | [Intel x64 支持](./architecture/intel-x64-support.md) | darwin 双架构（arm64 + x64）矩阵构建、资源覆盖机制、updater manifest 合并先例 |
+| [Design Mode 设计工作区](./architecture/design-mode.md) | 全屏设计工作台 as-built：交互原型(agent 编排) + 设计稿/信息图(renderer 直连出图)；konva 自研无限画布、T1-T6 变体 spine/成本/一致性；**P1 视觉模型注册表(D1 单源)多模型切换(wanx/cogview/flux/gpt-image-2) + 标注重绘(非 wanx 整图编辑 /v1/images/edits) + SSRF 守卫** |
 
 ### 近期规格
 

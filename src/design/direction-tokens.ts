@@ -31,6 +31,8 @@ export interface DirectionTokens {
   palette: DirectionPalette;
   fonts: DirectionFontStacks;
   posture: string;
+  /** 参考来源/灵感样本（贴在方向卡上给用户"这个调性长什么样"的锚点）。 */
+  refs: string[];
 }
 
 export const directionTokens: Record<DirectionKey, DirectionTokens> = {
@@ -47,6 +49,7 @@ export const directionTokens: Record<DirectionKey, DirectionTokens> = {
       sans: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
     },
     posture: '刚好够用，不抢戏，信息密度和可扫读性优先；indigo brand 仅在交互处出现。',
+    refs: ['Linear', 'Vercel'],
   },
   premium: {
     palette: {
@@ -61,6 +64,7 @@ export const directionTokens: Record<DirectionKey, DirectionTokens> = {
       sans: "'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
     },
     posture: '有重量、留白、不喧哗；产品至上，界面让位给硬件与材质本身。',
+    refs: ['Apple', 'Stripe'],
   },
   playful: {
     palette: {
@@ -75,6 +79,7 @@ export const directionTokens: Record<DirectionKey, DirectionTokens> = {
       sans: "'Camera Plain', 'Nunito Sans', 'Avenir Next', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
     },
     posture: '轻快、有节奏、允许一点意外；温暖奶油底 + 鲜亮跳色，但不牺牲清晰度。',
+    refs: ['Lovable', 'Retool 庆祝层'],
   },
   editorial: {
     palette: {
@@ -89,6 +94,7 @@ export const directionTokens: Record<DirectionKey, DirectionTokens> = {
       sans: "'Söhne', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
     },
     posture: '像一页好杂志：terracotta 一屏一个 accent，标题有编辑判断，正文有安静秩序。',
+    refs: ['NYT 杂志版式', 'warm-editorial'],
   },
   technical: {
     palette: {
@@ -103,6 +109,7 @@ export const directionTokens: Record<DirectionKey, DirectionTokens> = {
       sans: "'IBM Plex Sans', Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
     },
     posture: '工程感明确，结构、状态、证据比装饰更重要；charcoal 父品牌只让 link blue 发声。',
+    refs: ['HashiCorp', 'Mintlify Docs'],
   },
   calm: {
     palette: {
@@ -117,6 +124,7 @@ export const directionTokens: Record<DirectionKey, DirectionTokens> = {
       sans: "Inter, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
     },
     posture: '安静、稳定、低刺激；文档优先，留白与节奏比色彩更早承担表达。',
+    refs: ['Mintlify', 'Notion'],
   },
 };
 

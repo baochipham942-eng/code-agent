@@ -29,12 +29,17 @@ const logger = createLogger('useAgent');
  * prepend 到发送给目标 agent 的隐藏内容里。普通/interrupt 路径会走 context.designBrief。
  */
 function formatDesignBriefReminder(brief: DesignBrief): string {
-  return [
+  const lines = [
     '<system-reminder kind="design-brief-json">',
     '当前会话已锁定 design brief，按此结构化 JSON 直接出 artifact，不要再 emit question-form。',
-    JSON.stringify(brief, null, 2),
-    '</system-reminder>',
-  ].join('\n');
+  ];
+  if (brief.referenceScreenshot) {
+    lines.push(
+      '用户选择「匹配参考截图」模式：请查看用户在本轮附带的参考截图，从图中提取配色/字体/版式/间距并尽力复刻，而不是套用预设方向。',
+    );
+  }
+  lines.push(JSON.stringify(brief, null, 2), '</system-reminder>');
+  return lines.join('\n');
 }
 
 function applyDesignBriefToContent(content: string, brief: DesignBrief | undefined): string {

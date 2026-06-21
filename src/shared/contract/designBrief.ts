@@ -44,6 +44,8 @@ export interface DesignBrief {
   references?: string[];
   direction?: DesignBriefDirection;
   directionTokens?: DirectionTokens;
+  /** 参考截图模式：用户选择"匹配一张参考截图"，生成期需从附带图片提取配色/字体/布局并匹配。 */
+  referenceScreenshot?: boolean;
   source?: 'manual' | 'inferred';
 }
 
@@ -93,6 +95,7 @@ function normalizeDirectionTokens(value: unknown): DirectionTokens | undefined {
       sans: normalizeText(fontsRaw.sans)!,
     },
     posture,
+    refs: normalizeStringList(raw.refs) ?? [],
   };
 }
 
@@ -113,6 +116,7 @@ export function normalizeDesignBrief(value?: Partial<DesignBrief> | null): Desig
   if (references) brief.references = references;
   if (value.direction && value.direction in DESIGN_BRIEF_DIRECTION_LABELS) brief.direction = value.direction;
   if (directionTokens) brief.directionTokens = directionTokens;
+  if (value.referenceScreenshot === true) brief.referenceScreenshot = true;
   if (value.source === 'manual' || value.source === 'inferred') brief.source = value.source;
 
   return Object.keys(brief).length > 0 ? brief : undefined;

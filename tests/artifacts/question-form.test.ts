@@ -68,6 +68,52 @@ describe('parseQuestionForm', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('accepts a curated form without top-level direction', () => {
+    const input = wrap(JSON.stringify({
+      surface: 'app_screen',
+      directions: ['premium', 'calm', 'technical'],
+    }));
+    const result = parseQuestionForm(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.form.direction).toBeUndefined();
+    expect(result.form.directions).toEqual(['premium', 'calm', 'technical']);
+  });
+
+  it('filters invalid curated directions and dedupes', () => {
+    const input = wrap(JSON.stringify({
+      surface: 'dashboard',
+      directions: ['premium', 'cyberpunk', 'premium', 'calm'],
+    }));
+    const result = parseQuestionForm(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.form.directions).toEqual(['premium', 'calm']);
+  });
+
+  it('accepts a reference-screenshot form without any direction', () => {
+    const input = wrap(JSON.stringify({ surface: 'landing_page', referenceScreenshot: true }));
+    const result = parseQuestionForm(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.form.referenceScreenshot).toBe(true);
+    expect(result.form.direction).toBeUndefined();
+  });
+
+  it('rejects a form with neither direction, directions, nor referenceScreenshot', () => {
+    const input = wrap(JSON.stringify({ surface: 'landing_page' }));
+    const result = parseQuestionForm(input);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/direction/);
+  });
+
+  it('still rejects an explicitly invalid top-level direction', () => {
+    const input = wrap(JSON.stringify({ surface: 'document', direction: 'cyberpunk' }));
+    const result = parseQuestionForm(input);
+    expect(result.ok).toBe(false);
+  });
+
   it('rejects malformed json gracefully', () => {
     const result = parseQuestionForm('```question-form\n{not valid json}\n```');
     expect(result.ok).toBe(false);
@@ -102,5 +148,16 @@ describe('renderQuestionFormToDesignBrief', () => {
     expect(brief.audience).toBe('内部团队');
     expect(brief.constraints).toEqual(['不要烟花', '不要全屏遮罩']);
     expect(brief.references).toEqual(['https://retool.com/celebrate']);
+  });
+
+  it('maps a reference-screenshot form without direction tokens', () => {
+    const brief = renderQuestionFormToDesignBrief({
+      surface: 'app_screen',
+      referenceScreenshot: true,
+    });
+    expect(brief.referenceScreenshot).toBe(true);
+    expect(brief.direction).toBeUndefined();
+    expect(brief.directionTokens).toBeUndefined();
+    expect(brief.source).toBe('manual');
   });
 });

@@ -58,6 +58,37 @@ describe('normalizeDesignBrief', () => {
     expect(normalizeDesignBrief({ intent: 'x', source: 'auto' })?.source).toBeUndefined();
   });
 
+  it('keeps referenceScreenshot flag when true and drops it when falsy', () => {
+    expect(normalizeDesignBrief({ surface: 'landing_page', referenceScreenshot: true })).toEqual({
+      surface: 'landing_page',
+      referenceScreenshot: true,
+    });
+    expect(normalizeDesignBrief({ surface: 'landing_page', referenceScreenshot: false })).toEqual({
+      surface: 'landing_page',
+    });
+  });
+
+  it('carries direction token refs through normalization', () => {
+    const brief = normalizeDesignBrief({
+      surface: 'app_screen',
+      directionTokens: directionTokens.utilitarian,
+    });
+    expect(brief?.directionTokens?.refs).toEqual(directionTokens.utilitarian.refs);
+    expect(brief?.directionTokens?.refs?.length).toBeGreaterThan(0);
+  });
+
+  it('defaults refs to empty array when raw tokens omit refs', () => {
+    const brief = normalizeDesignBrief({
+      surface: 'document',
+      directionTokens: {
+        palette: directionTokens.calm.palette,
+        fonts: directionTokens.calm.fonts,
+        posture: directionTokens.calm.posture,
+      } as never,
+    });
+    expect(brief?.directionTokens?.refs).toEqual([]);
+  });
+
   it('keeps complete direction token packages and drops incomplete packages', () => {
     expect(
       normalizeDesignBrief({

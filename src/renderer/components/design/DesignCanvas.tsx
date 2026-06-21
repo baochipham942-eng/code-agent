@@ -2,7 +2,7 @@
 // P0：平移/缩放/图片节点/空状态。P1：文生图回灌。
 // P2：点选图 → 圈选红框标注 → 局部重绘(通义万相 inpaint) → 新版回灌画布(带血缘)。
 // 文案走 i18n（t.design.*），不硬编码。
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
 import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download } from 'lucide-react';
@@ -133,12 +133,16 @@ export const DesignCanvas: React.FC = () => {
   const [instruction, setInstruction] = useState('');
   const [comparing, setComparing] = useState(false);
 
+  // 淘汰(软删除)的节点落盘保留但不在画布上呈现/参与对比。
+  const visibleNodes = useMemo(() => nodes.filter((n) => !n.discarded), [nodes]);
+
   // 单选→局部重绘面板；双选→A/B 对比。
-  const selectedNode = selectedIds.length === 1 ? nodes.find((n) => n.id === selectedIds[0]) ?? null : null;
+  const selectedNode =
+    selectedIds.length === 1 ? visibleNodes.find((n) => n.id === selectedIds[0]) ?? null : null;
   const compareNodes =
     selectedIds.length === 2
       ? selectedIds
-          .map((id) => nodes.find((n) => n.id === id))
+          .map((id) => visibleNodes.find((n) => n.id === id))
           .filter((n): n is CanvasImageNode => Boolean(n))
       : [];
 
@@ -303,7 +307,7 @@ export const DesignCanvas: React.FC = () => {
           onMouseUp={handleMouseUp}
         >
           <Layer>
-            {nodes.map((node) => (
+            {visibleNodes.map((node) => (
               <CanvasImage
                 key={node.id}
                 node={node}
@@ -329,7 +333,7 @@ export const DesignCanvas: React.FC = () => {
         </Stage>
       )}
 
-      {nodes.length === 0 && (
+      {visibleNodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-zinc-500">
           <Palette className="h-6 w-6 text-zinc-600" />
           <span>{t.design.canvasEmpty}</span>
@@ -395,7 +399,7 @@ export const DesignCanvas: React.FC = () => {
         </div>
       )}
 
-      {selectedIds.length === 0 && nodes.length > 0 && (
+      {selectedIds.length === 0 && visibleNodes.length > 0 && (
         <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-400 backdrop-blur">
           {t.design.canvasSelectHint} · {t.design.compareHint}
         </div>

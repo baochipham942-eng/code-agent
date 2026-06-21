@@ -9,6 +9,7 @@ import {
   type CanvasImageNode,
   type DesignCanvasDoc,
 } from './designCanvasTypes';
+import { groupKey } from './variantSpine';
 
 interface DesignCanvasState {
   /** 当前画布所属 run 目录（决定存档落点）；null=尚无生成的临时画布。 */
@@ -27,7 +28,9 @@ interface DesignCanvasState {
   addNode: (node: CanvasImageNode) => void;
   updateNode: (id: string, patch: Partial<Omit<CanvasImageNode, 'id'>>) => void;
   deleteNode: (id: string) => void;
-  /** 选为主版：标记该节点 chosen，并清除同版本组（同 parentId）其他节点的主版标记。 */
+  /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
+  discardNode: (id: string) => void;
+  /** 选为主版：标记该节点 chosen，并清除同版本槽（groupKey=parentId??id）其他节点的主版标记。 */
   setChosen: (id: string) => void;
   setCamera: (camera: CanvasCamera) => void;
   setSelected: (ids: string[]) => void;
@@ -63,15 +66,30 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       nodes: s.nodes.filter((n) => n.id !== id),
       selectedIds: s.selectedIds.filter((sid) => sid !== id),
     })),
+  discardNode: (id) =>
+    set((s) => {
+      const target = s.nodes.find((n) => n.id === id);
+      if (!target) return {};
+      let nodes = s.nodes.map((n) => (n.id === id ? { ...n, discarded: true } : n));
+      // 淘汰主版时，把同槽最新的活跃版升为主版（保证槽内仍有可定稿主版）。
+      if (target.chosen) {
+        const key = groupKey(target);
+        const promote = nodes
+          .filter((n) => n.id !== id && !n.discarded && groupKey(n) === key)
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        if (promote) nodes = nodes.map((n) => (n.id === promote.id ? { ...n, chosen: true } : n));
+      }
+      return { nodes, selectedIds: s.selectedIds.filter((sid) => sid !== id) };
+    }),
   setChosen: (id) =>
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
       if (!target) return {};
-      const group = target.parentId; // 同一版本组 = 同 parentId
+      const key = groupKey(target); // 同一版本槽 = groupKey(parentId ?? id)
       return {
         nodes: s.nodes.map((n) => {
           if (n.id === id) return { ...n, chosen: true };
-          if (n.parentId === group) return { ...n, chosen: false };
+          if (groupKey(n) === key) return { ...n, chosen: false };
           return n;
         }),
       };

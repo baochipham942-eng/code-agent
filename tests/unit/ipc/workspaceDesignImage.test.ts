@@ -23,6 +23,7 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
     getGptImageConfig: vi.fn(() => undefined),
     expandImage: vi.fn(async () => ({ url: 'data:image/png;base64,QUJD' })), // 'ABC'
     removeWatermark: vi.fn(async () => ({ url: 'data:image/png;base64,QUJD' })),
+    editImageByAnnotation: vi.fn(async () => ({ imageData: 'data:image/png;base64,QUJD', actualModel: 'gpt-image-2' })),
     downloadImageAsBase64: vi.fn(async (u: string) => u),
     isImageUrl: vi.fn(() => false),
     generateImage: vi.fn(async (engine: string) => ({
@@ -55,6 +56,7 @@ import {
   handleRemoveWatermarkDesignImage,
   handleGenerateDesignImage,
   handleListVisualImageModels,
+  handleEditImageByAnnotation,
 } from '../../../src/main/ipc/workspace.ipc';
 
 let workDir: string;
@@ -236,5 +238,35 @@ describe('handleListVisualImageModels（按已配 key 标可用）', () => {
     for (const m of res.models) {
       expect(Object.keys(m).sort()).toEqual(['available', 'id', 'label', 'provider']);
     }
+  });
+});
+
+describe('handleEditImageByAnnotation', () => {
+  it('cap 守门：非 annotEdit 模型抛错且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleEditImageByAnnotation({ model: 'wanx-t2i', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x', outputPath }),
+    ).rejects.toThrow(/标注重绘|不支持/);
+    expect((svc.editImageByAnnotation as any).mock.calls.length).toBe(0);
+  });
+  it('annotEdit 模型(gpt-image-2)走通：调 service 并落盘 + 回 costCny', async () => {
+    const res = await handleEditImageByAnnotation({ model: 'gpt-image-2', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: '把 logo 改成猫头', outputPath });
+    expect(res).toMatchObject({ path: outputPath, actualModel: 'gpt-image-2', costCny: 0.25 });
+    const written = await readFile(outputPath);
+    expect(written.toString()).toBe('ABC');
+  });
+  it('空白 instruction 抛错且不触发付费调用（防 paid no-op）', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleEditImageByAnnotation({ model: 'gpt-image-2', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: '   ', outputPath }),
+    ).rejects.toThrow(/instruction|指令/);
+    expect((svc.editImageByAnnotation as any).mock.calls.length).toBe(0);
+  });
+  it('outputPath 越界抛错且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleEditImageByAnnotation({ model: 'gpt-image-2', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x', outputPath: '/tmp/evil.png' }),
+    ).rejects.toThrow(/越界/);
+    expect((svc.editImageByAnnotation as any).mock.calls.length).toBe(0);
   });
 });

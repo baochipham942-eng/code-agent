@@ -215,6 +215,78 @@ describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => 
   });
 });
 
+describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注重绘', () => {
+  beforeEach(() => {
+    getApiKeyMock.mockReset();
+    getApiKeyMock.mockReturnValue(undefined);
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    getApiKeyMock.mockReset();
+    delete process.env.GPTIMAGE_PROXY_BASE;
+    delete process.env.GPTIMAGE_PROXY_KEY;
+  });
+
+  it('editImageByAnnotation(gptimage) 走 /v1/images/edits multipart 取 b64', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    let capturedUrl = ''; let capturedBody: any = null;
+    const fetchMock = vi.fn().mockImplementation(async (url: string, init: any) => {
+      capturedUrl = url; capturedBody = init.body;
+      return { ok: true, json: async () => ({ data: [{ b64_json: 'QUJD' }] }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    const r = await editImageByAnnotation({
+      engine: 'gptimage',
+      annotatedImageDataUrl: 'data:image/png;base64,QUJD',
+      instruction: '把红圈处 logo 改成猫头',
+    });
+    expect(r.actualModel).toBe('gpt-image-2');
+    expect(r.imageData.startsWith('data:image/png;base64,')).toBe(true);
+    expect(capturedUrl).toBe('https://example.test/v1/images/edits');
+    expect(capturedBody).toBeInstanceOf(FormData);
+    expect(capturedBody.get('model')).toBe('gpt-image-2');
+    expect(capturedBody.get('prompt')).toBe('把红圈处 logo 改成猫头');
+    expect(capturedBody.get('image')).toBeInstanceOf(Blob);
+  });
+
+  it('editImageByAnnotation 缺 key 报配置', async () => {
+    delete process.env.GPTIMAGE_PROXY_BASE; delete process.env.GPTIMAGE_PROXY_KEY;
+    getApiKeyMock.mockReturnValue(undefined);
+    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
+      .rejects.toThrow(/配置/);
+  });
+
+  it('editImageByAnnotation 非 ok 透出错误体', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test'; process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429, text: async () => 'quota exceeded' }));
+    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
+      .rejects.toThrow(/429.*quota exceeded/);
+  });
+
+  it('editImageByAnnotation 非 gptimage engine 抛不支持', async () => {
+    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(editImageByAnnotation({ engine: 'wanx', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
+      .rejects.toThrow(/不支持|标注重绘/);
+  });
+  it('editImageByAnnotation 空 base64 抛错且不发起 fetch（防 paid no-op）', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,', instruction: 'x' }))
+      .rejects.toThrow(/base64 为空/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
   it('仅允许 https 公网，拒 http/私网/元数据地址', () => {
     expect(isSafeImageUrl('https://dashscope-result.oss-cn.aliyuncs.com/x.png')).toBe(true);

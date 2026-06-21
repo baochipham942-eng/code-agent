@@ -16,6 +16,8 @@ import { saveCanvasDoc } from './designCanvasPersistence';
 import { groupKey } from './variantSpine';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
 import { buildMaskDataUrl, type Rect } from './designCanvasMask';
+import { composeAnnotOps, exportAnnotatedPng } from './annotComposite';
+import type { AnnotShape } from './AnnotationLayer';
 
 async function ensureDir(dirPath: string): Promise<void> {
   try {
@@ -68,6 +70,45 @@ export interface RemoveWatermarkArgs {
   baseNode: CanvasImageNode;
 }
 
+export interface EditByAnnotationArgs {
+  /** 被标注重绘的底图节点。 */
+  baseNode: CanvasImageNode;
+  /** 标注图形（世界坐标，与画布相机一致；hook 内偏移到图内局部坐标再换算到原图像素）。 */
+  shapes: AnnotShape[];
+  /** 重绘指令（描述按标注要改成什么）。 */
+  instruction: string;
+  /** 出图模型 id（须声明 annotEdit 能力，main 侧 cap 守门复核）。 */
+  model: string;
+}
+
+/** 把世界坐标标注偏移到底图局部坐标（减去节点左上角），供 composeAnnotOps 换算原图像素。 */
+function shapesToNodeLocal(shapes: AnnotShape[], node: CanvasImageNode): AnnotShape[] {
+  const dx = node.x;
+  const dy = node.y;
+  return shapes.map((shape) => {
+    switch (shape.kind) {
+      case 'pen':
+        return { ...shape, points: shape.points.map((v, i) => (i % 2 === 0 ? v - dx : v - dy)) };
+      case 'arrow':
+        return {
+          ...shape,
+          points: [
+            shape.points[0] - dx,
+            shape.points[1] - dy,
+            shape.points[2] - dx,
+            shape.points[3] - dy,
+          ] as [number, number, number, number],
+        };
+      case 'rect':
+        return { ...shape, x: shape.x - dx, y: shape.y - dy };
+      case 'text':
+        return { ...shape, x: shape.x - dx, y: shape.y - dy };
+      default:
+        return shape;
+    }
+  });
+}
+
 // 单调序列：保证同毫秒内连续构造的节点 id 不碰撞（audit M4：纯 Date.now() 同 tick 会撞，
 // store 按 id 做 setChosen/discard/对比会指向歧义节点）。generate/editRegion/buildVariantNode
 // 三处节点构造共用本源（audit R2 对称应用）。
@@ -109,6 +150,7 @@ export function useDesignCanvasGeneration(): {
   editRegion: (args: EditRegionArgs) => Promise<void>;
   expand: (args: ExpandArgs) => Promise<void>;
   removeWatermark: (args: RemoveWatermarkArgs) => Promise<void>;
+  editByAnnotation: (args: EditByAnnotationArgs) => Promise<void>;
 } {
   const { t } = useI18n();
 
@@ -339,5 +381,74 @@ export function useDesignCanvasGeneration(): {
     [t, landResultAsVariant],
   );
 
-  return { generate, editRegion, expand, removeWatermark };
+  // 标注重绘（Cowart 式 B4）：把世界坐标标注偏移到图内局部 → 按 原图/显示 比例换算到原图像素
+  // → 烘焙成「底图+红色标注」PNG → 走 editImageByAnnotation IPC（main 侧 cap 守门 + 路径守卫）→
+  // 结果落新 variant 挂 spine（parentId 锚血缘根，与 editRegion 同槽规则）。
+  const editByAnnotation = useCallback(
+    async (args: EditByAnnotationArgs) => {
+      const { baseNode, shapes, instruction, model } = args;
+      const runDir = useDesignCanvasStore.getState().runDir;
+      if (!runDir) return;
+      if (!instruction.trim()) {
+        useDesignCanvasStore.getState().setError(t.design.errNoInstruction);
+        return;
+      }
+      if (shapes.length === 0) {
+        useDesignCanvasStore.getState().setError(t.design.errNoAnnotation);
+        return;
+      }
+
+      // 读底图为 dataURL + 量原图自然像素（显示尺寸取节点 width/height；画布世界坐标 1:1 对应图像素，
+      // composeAnnotOps 仍按 自然/显示 比例换算以兜住 node 尺寸与原图像素不一致的情形）。
+      const sourceDataUrl = await readWorkspaceImageAsDataUrl(`${runDir}/${baseNode.src}`);
+      if (!sourceDataUrl) {
+        useDesignCanvasStore.getState().setError(t.design.errTimeout);
+        return;
+      }
+      const { width: naturalW, height: naturalH } = await loadImageDims(sourceDataUrl);
+      const scaled = composeAnnotOps({
+        naturalW,
+        naturalH,
+        displayW: baseNode.width,
+        displayH: baseNode.height,
+        shapes: shapesToNodeLocal(shapes, baseNode),
+      });
+      const annotatedImageDataUrl = await exportAnnotatedPng(sourceDataUrl, scaled, naturalW, naturalH);
+
+      const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/annot-${Date.now()}.png`;
+      const assetAbs = `${runDir}/${assetRel}`;
+
+      useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setGenerating(true);
+      try {
+        const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
+          IPC_DOMAINS.WORKSPACE,
+          'editImageByAnnotation',
+          { model, annotatedImageDataUrl, instruction, outputPath: assetAbs },
+        );
+        if (!res?.success) {
+          throw new Error(res?.error?.message || t.design.errDispatch);
+        }
+        const costCny = res.data?.costCny;
+        if (useDesignCanvasStore.getState().runDir !== runDir) {
+          useDesignCanvasStore.getState().setGenerating(false);
+          return;
+        }
+        const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
+        if (!dataUrl) throw new Error(t.design.errTimeout);
+        const { width, height } = await loadImageDims(dataUrl);
+        const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
+        if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
+        useDesignCanvasStore.getState().addNode(node);
+        await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+        useDesignCanvasStore.getState().setGenerating(false);
+      } catch (e) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      }
+    },
+    [t],
+  );
+
+  return { generate, editRegion, expand, removeWatermark, editByAnnotation };
 }

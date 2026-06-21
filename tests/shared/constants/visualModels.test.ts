@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  IMAGE_MODELS, imageModelById, imageEngineForModel, defaultImageModelId,
+  IMAGE_MODELS, imageModelById, imageEngineForModel, defaultImageModelId, imageModelsWithCap,
 } from '../../../src/shared/constants/visualModels';
 
 describe('visualModels registry (image)', () => {
@@ -11,7 +11,7 @@ describe('visualModels registry (image)', () => {
     expect(ids).toContain('cogview-4');
     expect(ids).toContain('flux-2');
     expect(IMAGE_MODELS.every((m) => m.caps.includes('t2i'))).toBe(true);
-    expect(imageModelById('gpt-image-2')?.caps).toEqual(['t2i']);
+    expect(imageModelById('gpt-image-2')?.caps).toContain('t2i');
     expect(imageEngineForModel('gpt-image-2')).toBe('gptimage');
   });
   it('只有 wanx 带 maskEdit/expand 能力（D2）', () => {
@@ -30,5 +30,21 @@ describe('visualModels registry (image)', () => {
   it('未知 id 返回 undefined / 抛错', () => {
     expect(imageModelById('nope')).toBeUndefined();
     expect(() => imageEngineForModel('nope')).toThrow();
+  });
+});
+
+describe('annotEdit 能力（标注重绘）', () => {
+  it('gpt-image-2 带 annotEdit，wanx/cogview/flux 不带', () => {
+    expect(imageModelById('gpt-image-2')?.caps).toContain('annotEdit');
+    expect(imageModelById('wanx-t2i')?.caps).not.toContain('annotEdit');
+    expect(imageModelById('cogview-4')?.caps).not.toContain('annotEdit');
+    expect(imageModelById('flux-2')?.caps).not.toContain('annotEdit');
+  });
+  it('imageModelsWithCap("annotEdit") 只返回 gpt-image-2', () => {
+    const ids = imageModelsWithCap('annotEdit').map((m) => m.id);
+    expect(ids).toEqual(['gpt-image-2']);
+  });
+  it('imageModelsWithCap("t2i") 返回全部四模型', () => {
+    expect(imageModelsWithCap('t2i').length).toBe(4);
   });
 });

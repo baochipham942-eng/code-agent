@@ -1,7 +1,7 @@
 // 视觉生成模型注册表（D1 单一真源）。只含「出图/出视频」模型，绝不含聊天模型（D7）。
 // P1 仅 image 部分；video 部分在 P2 追加。
 
-export type ImageCap = 't2i' | 'maskEdit' | 'expand';
+export type ImageCap = 't2i' | 'maskEdit' | 'expand' | 'annotEdit';
 export type ImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
 export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage';
 
@@ -18,7 +18,7 @@ export interface VisualImageModel {
 
 export const IMAGE_MODELS: readonly VisualImageModel[] = [
   { id: 'wanx-t2i', label: '通义万相', provider: 'dashscope', engine: 'wanx', caps: ['t2i', 'maskEdit', 'expand'] },
-  { id: 'gpt-image-2', label: 'GPT-image-2', provider: 'gptimage', engine: 'gptimage', caps: ['t2i'] },
+  { id: 'gpt-image-2', label: 'GPT-image-2', provider: 'gptimage', engine: 'gptimage', caps: ['t2i', 'annotEdit'] },
   { id: 'cogview-4', label: 'CogView-4', provider: 'zhipu', engine: 'cogview', caps: ['t2i'] },
   { id: 'flux-2', label: 'FLUX.2', provider: 'openrouter', engine: 'flux', caps: ['t2i'] },
 ];
@@ -36,4 +36,9 @@ export function imageEngineForModel(id: string): ImageEngineId {
 /** 默认走 wanx——设计模式底座（mask/扩图都依赖它）。 */
 export function defaultImageModelId(): string {
   return 'wanx-t2i';
+}
+
+/** 返回声明了指定能力的全部视觉图像模型（驱动 cap 过滤的切换器/工具）。 */
+export function imageModelsWithCap(cap: ImageCap): VisualImageModel[] {
+  return IMAGE_MODELS.filter((m) => m.caps.includes(cap));
 }

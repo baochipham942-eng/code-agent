@@ -17,7 +17,7 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
-import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS } from '../../shared/constants/visualModels';
+import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS, imageModelById } from '../../shared/constants/visualModels';
 import { getConfigService } from '../services/core/configService';
 import {
   getDashscopeApiKey,
@@ -78,6 +78,36 @@ export async function handleGenerateDesignImage(
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, buf);
   // 实际花费权威源在 main：按真正落地的模型查价表（T2 BYOK 成本可见）。
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+}
+
+// 设计画布标注重绘（Cowart 式 A3）：renderer 把圈选标注烧进图（annotatedImageDataUrl）+
+// 自然语言指令 → 模型按标注重绘 → 写盘到 outputPath → 返回路径与成本。
+// 守门顺序：必填校验 → 指令非空 → 路径守卫 → cap 守门（模型须声明 annotEdit），
+// 全部在发起付费 service 调用之前，杜绝 paid no-op 与越界写盘。
+export async function handleEditImageByAnnotation(
+  payload: { model: string; annotatedImageDataUrl: string; instruction: string; outputPath: string },
+): Promise<{ path: string; actualModel: string; costCny: number }> {
+  if (!payload?.annotatedImageDataUrl || !payload?.outputPath) {
+    throw new Error('editImageByAnnotation 需要 annotatedImageDataUrl 与 outputPath');
+  }
+  if (!payload?.instruction?.trim()) {
+    throw new Error('editImageByAnnotation 需要非空 instruction 指令');
+  }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+  // cap 守门：模型必须声明 annotEdit，否则不发起付费调用。
+  const model = imageModelById(payload.model);
+  if (!model?.caps.includes('annotEdit')) {
+    throw new Error(`模型 ${payload.model} 不支持标注重绘`);
+  }
+  const engine = imageEngineForModel(payload.model);
+  const { editImageByAnnotation } = await import('../services/media/imageGenerationService');
+  const { imageData, actualModel } = await editImageByAnnotation({
+    engine, annotatedImageDataUrl: payload.annotatedImageDataUrl, instruction: payload.instruction,
+  });
+  const base64 = imageData.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
@@ -911,6 +941,11 @@ export function registerWorkspaceHandlers(
         case 'editDesignImage':
           data = await handleEditDesignImage(
             payload as { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
+          );
+          break;
+        case 'editImageByAnnotation':
+          data = await handleEditImageByAnnotation(
+            payload as { model: string; annotatedImageDataUrl: string; instruction: string; outputPath: string },
           );
           break;
         case 'importDesignImage':

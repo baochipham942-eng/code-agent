@@ -48,9 +48,30 @@ export interface EditRegionArgs {
   instruction: string;
 }
 
+/** 扩图方向：单向(上/下/左/右) 或 四周(all)。与 main 侧 imageGenerationService 同义。 */
+export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
+
+export interface ExpandArgs {
+  /** 被扩图的底图节点。 */
+  baseNode: CanvasImageNode;
+  /** 扩展方向。 */
+  direction: ExpandDirection;
+  /** 扩展比例（1.0–2.0，单边外扩倍数）。 */
+  ratio: number;
+  /** 可选补绘描述（缺省走 main 侧默认 prompt）。 */
+  prompt?: string;
+}
+
+export interface RemoveWatermarkArgs {
+  /** 被去水印的底图节点。 */
+  baseNode: CanvasImageNode;
+}
+
 export function useDesignCanvasGeneration(): {
   generate: () => Promise<void>;
   editRegion: (args: EditRegionArgs) => Promise<void>;
+  expand: (args: ExpandArgs) => Promise<void>;
+  removeWatermark: (args: RemoveWatermarkArgs) => Promise<void>;
 } {
   const { t } = useI18n();
 
@@ -195,5 +216,88 @@ export function useDesignCanvasGeneration(): {
     }
   }, [t]);
 
-  return { generate, editRegion };
+  // 扩图/去水印结果共用落盘：读结果图 → 量尺寸 → 在底图右侧落新 variant 节点（parentId 锚血缘根，
+  // 与 editRegion 同槽规则）→ 存盘。扩图结果尺寸大于原图，loadImageDims 量真实尺寸即正确。
+  const landResultAsVariant = useCallback(
+    async (runDir: string, assetRel: string, assetAbs: string, baseNode: CanvasImageNode, label: string): Promise<void> => {
+      if (useDesignCanvasStore.getState().runDir !== runDir) return;
+      const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
+      if (!dataUrl) throw new Error(t.design.errTimeout);
+      const { width, height } = await loadImageDims(dataUrl);
+      const node: CanvasImageNode = {
+        id: `node-${Date.now()}`,
+        src: assetRel,
+        x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
+        y: baseNode.y,
+        width,
+        height,
+        prompt: label,
+        parentId: groupKey(baseNode),
+        createdAt: Date.now(),
+      };
+      useDesignCanvasStore.getState().addNode(node);
+      await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+    },
+    [t],
+  );
+
+  const expand = useCallback(
+    async (args: ExpandArgs) => {
+      const { baseNode, direction, ratio, prompt } = args;
+      const runDir = useDesignCanvasStore.getState().runDir;
+      if (!runDir) return;
+      const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/expand-${Date.now()}.png`;
+      const assetAbs = `${runDir}/${assetRel}`;
+
+      useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setGenerating(true);
+      try {
+        const res = await window.domainAPI?.invoke<{ path: string }>(
+          IPC_DOMAINS.WORKSPACE,
+          'expandDesignImage',
+          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt },
+        );
+        if (!res?.success) {
+          throw new Error(res?.error?.message || t.design.errDispatch);
+        }
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn);
+        useDesignCanvasStore.getState().setGenerating(false);
+      } catch (e) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      }
+    },
+    [t, landResultAsVariant],
+  );
+
+  const removeWatermark = useCallback(
+    async (args: RemoveWatermarkArgs) => {
+      const { baseNode } = args;
+      const runDir = useDesignCanvasStore.getState().runDir;
+      if (!runDir) return;
+      const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/dewm-${Date.now()}.png`;
+      const assetAbs = `${runDir}/${assetRel}`;
+
+      useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setGenerating(true);
+      try {
+        const res = await window.domainAPI?.invoke<{ path: string }>(
+          IPC_DOMAINS.WORKSPACE,
+          'removeWatermarkDesignImage',
+          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs },
+        );
+        if (!res?.success) {
+          throw new Error(res?.error?.message || t.design.errDispatch);
+        }
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn);
+        useDesignCanvasStore.getState().setGenerating(false);
+      } catch (e) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      }
+    },
+    [t, landResultAsVariant],
+  );
+
+  return { generate, editRegion, expand, removeWatermark };
 }

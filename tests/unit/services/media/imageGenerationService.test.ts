@@ -275,6 +275,16 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
     await expect(editImageByAnnotation({ engine: 'wanx', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
       .rejects.toThrow(/不支持|标注重绘/);
   });
+  it('editImageByAnnotation 空 base64 抛错且不发起 fetch（防 paid no-op）', async () => {
+    process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+    process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,', instruction: 'x' }))
+      .rejects.toThrow(/base64 为空/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('isSafeImageUrl SSRF 守卫 (D9)', () => {

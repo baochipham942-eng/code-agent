@@ -590,6 +590,9 @@ export async function generateImage(
 function dataUrlToBlob(dataUrl: string): Blob {
   const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
   if (!m) throw new Error('annotatedImageDataUrl 不是合法 base64 dataURL');
+  // 空 base64（如 'data:image/png;base64,'）会过 IPC truthy 校验却产 0 字节图，
+  // 在此拦住，避免向付费端点发起空图请求（防 paid no-op）。
+  if (!m[2]) throw new Error('annotatedImageDataUrl base64 为空');
   const buf = Buffer.from(m[2], 'base64');
   // Buffer 是 Uint8Array 子类；拷贝成独立 Uint8Array 避免内存池别名。
   return new Blob([new Uint8Array(buf)], { type: m[1] });

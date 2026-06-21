@@ -6,6 +6,7 @@ import { persist } from 'zustand/middleware';
 import type { DesignAspectRatio, DesignOutputType, DesignSurface } from './designTypes';
 import type { DesignVersion } from './designFiles';
 import { emptySpine, type VariantSpine } from './variantSpine';
+import { defaultImageModelId } from '../../../shared/constants/visualModels';
 
 export type DesignGenStatus = 'idle' | 'generating' | 'done' | 'error';
 
@@ -28,6 +29,8 @@ interface DesignState {
   outputType: DesignOutputType;
   /** 出图尺寸比例（仅图像产物用）。 */
   aspectRatio: DesignAspectRatio;
+  /** 图像生成模型选择（仅图像产物用）。 */
+  imageModel: string;
   // 历史 + 选中
   history: DesignRun[];
   /** 当前查看/生成的 run 目录。 */
@@ -50,6 +53,7 @@ interface DesignState {
   setSurface: (s: DesignSurface | null) => void;
   setOutputType: (t: DesignOutputType) => void;
   setAspectRatio: (r: DesignAspectRatio) => void;
+  setImageModel: (id: string) => void;
 
   // 历史 actions
   addHistory: (run: DesignRun) => void;
@@ -79,6 +83,7 @@ export const useDesignStore = create<DesignState>()(
       surface: null,
       outputType: 'prototype',
       aspectRatio: '1:1',
+      imageModel: defaultImageModelId(),
       history: [],
       selectedRunDir: null,
       status: 'idle',
@@ -98,6 +103,7 @@ export const useDesignStore = create<DesignState>()(
       setSurface: (surface) => set((s) => ({ surface: s.surface === surface ? null : surface })),
       setOutputType: (outputType) => set({ outputType }),
       setAspectRatio: (aspectRatio) => set({ aspectRatio }),
+      setImageModel: (imageModel) => set({ imageModel }),
 
       addHistory: (run) =>
         set((s) => ({
@@ -164,6 +170,7 @@ export const useDesignStore = create<DesignState>()(
         surface: s.surface,
         outputType: s.outputType,
         aspectRatio: s.aspectRatio,
+        imageModel: s.imageModel,
         history: s.history,
         selectedRunDir: s.selectedRunDir,
       }),

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,19 +25,30 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
   };
 });
 
+// 设计目录根可变 mock：让 handler 的路径越界守卫以 <cfg.root>/design 为边界（M1）。
+const cfg = vi.hoisted(() => ({ root: '' }));
+vi.mock('../../../src/main/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/main/config/configPaths')>();
+  return { ...actual, getUserConfigDir: () => cfg.root };
+});
+
 import {
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
 } from '../../../src/main/ipc/workspace.ipc';
 
 let workDir: string;
+let designRoot: string;
 let baseImagePath: string;
 let outputPath: string;
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'design-image-ipc-'));
-  baseImagePath = join(workDir, 'base.png');
-  outputPath = join(workDir, 'out', 'result.png');
+  cfg.root = workDir; // 设计根 = workDir/design
+  designRoot = join(workDir, 'design');
+  baseImagePath = join(designRoot, 'run', 'base.png');
+  outputPath = join(designRoot, 'run', 'out', 'result.png');
+  await mkdir(join(designRoot, 'run'), { recursive: true });
   await writeFile(baseImagePath, Buffer.from('basepng'));
   vi.clearAllMocks();
 });
@@ -109,5 +120,32 @@ describe('handleRemoveWatermarkDesignImage', () => {
     expect((svc.removeWatermark as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(1);
     const written = await readFile(outputPath);
     expect(written.toString()).toBe('ABC');
+  });
+});
+
+describe('路径越界守卫（M1：baseImagePath/outputPath 必须在设计目录内）', () => {
+  it('expand: outputPath 越出设计目录时抛错且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleExpandDesignImage({ baseImagePath, outputPath: join(workDir, '..', 'evil.png'), direction: 'all', ratio: 1.5 }),
+    ).rejects.toThrow(/越界/);
+    expect((svc.expandImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+
+  it('expand: baseImagePath 越出设计目录(读任意文件外泄)时抛错', async () => {
+    await expect(
+      handleExpandDesignImage({ baseImagePath: '/etc/passwd', outputPath, direction: 'all', ratio: 1.5 }),
+    ).rejects.toThrow(/越界/);
+  });
+
+  it('removeWatermark: outputPath 越界(覆盖任意文件)时抛错', async () => {
+    await expect(
+      handleRemoveWatermarkDesignImage({ baseImagePath, outputPath: '/tmp/evil-overwrite.png' }),
+    ).rejects.toThrow(/越界/);
+  });
+
+  it('设计目录内的正常路径放行（不误伤）', async () => {
+    const res = await handleRemoveWatermarkDesignImage({ baseImagePath, outputPath });
+    expect(res).toEqual({ path: outputPath });
   });
 });

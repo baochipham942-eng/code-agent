@@ -44,7 +44,8 @@ export const DESIGN_SPINE_FILE = 'spine.json';
  * 故 diff-gate 度量未选区漂移，越界即触发 region-lock 把原图未选区贴回保证逐像素一致。
  */
 export const REGION_LOCK = {
-  // 未选区域单像素通道差容差（0-255）。≤ 该值视为"未变"（感知 ε 内）。8 ≈ 3% 感知阈。
+  // 未选区域单像素通道差容差（0-255）。≤ 该值视为"未变"。语义=逐像素逐通道绝对差上界
+  // （非 CIEDE2000 感知色差）；8/255≈3%，足以滤掉 inpaint 重压缩噪声又能抓住肉眼可见漂移。
   EPSILON: 8,
   // diff 证据图相对原产物的文件名后缀（同目录落盘）。
   DIFF_SUFFIX: '.diff.png',

@@ -92,11 +92,12 @@ async function handleEditDesignImage(
     maskImageDataUrl: payload.maskDataUrl,
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
-  const resultBuf = Buffer.from(resultDataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+  // data URI 前缀用宽松匹配（与 handleImportDesignImage 一致），兼容任意 image MIME 子类型。
+  const resultBuf = Buffer.from(resultDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
 
   // mask dataURL → buffer（renderer 已按 白=改/黑=留 栅格化）。
-  const maskBuf = Buffer.from(payload.maskDataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+  const maskBuf = Buffer.from(payload.maskDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
 
   // 一致性闸。sharp 不可用或解码失败时降级为原模型输出（不阻断用户编辑），
   // 不返回 consistency（renderer 退回 legacy 无徽章行为）。
@@ -118,8 +119,10 @@ async function handleEditDesignImage(
         consistency.diffPath = diffPath;
       }
       return { path: payload.outputPath, consistency };
-    } catch {
-      // 闸内部异常：保底写模型原始输出，不阻断编辑。
+    } catch (err) {
+      // 闸内部异常：保底写模型原始输出，不阻断编辑；但留可观测日志，
+      // 否则一致性逻辑静默失效（consistency 总是 undefined）无从排查。
+      console.warn('[editDesignImage] region-lock gate failed, falling back to raw output:', err);
     }
   }
   await fsp.writeFile(payload.outputPath, resultBuf);

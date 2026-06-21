@@ -154,7 +154,9 @@ async function decodeRaw(
   }
   const { data, info } = await pipe.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return {
-    data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+    // 拷贝到独立 ArrayBuffer：sharp raw Buffer 对小图走 Node 内存池(<4KB 共享 backing)，
+    // 直接做 view 会与后续 decode 别名串扰；copy 隔离掉这一类潜在内存损坏。
+    data: new Uint8Array(data),
     width: info.width,
     height: info.height,
     channels: info.channels,
@@ -205,9 +207,11 @@ export async function runRegionLockGate(input: {
   const metrics = diffOutsideMask(original, edited, mask, epsilon);
 
   if (metrics.passed) {
-    // 模型自身守住未选区：直接采用模型输出，不引入合成接缝。
+    // 模型自身守住未选区：采用模型输出(不引入合成接缝)。统一重编码为 PNG——
+    // editedBuf 可能是 JPEG/WebP 字节(下游按 .png 落盘)，重编码保证产物始终是合法 PNG。
+    // 像素取自已解码的 RGBA，PNG 无损，不改动模型像素。
     return {
-      finalPng: dimensionMatched ? input.editedBuf : await encodePng(sharp, edited),
+      finalPng: await encodePng(sharp, edited),
       diffPng: null,
       report: {
         passed: true,

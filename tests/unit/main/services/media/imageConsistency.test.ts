@@ -215,4 +215,73 @@ describe('runRegionLockGate — sharp 端到端', () => {
     expect(dec.width).toBe(w);
     expect(dec.height).toBe(h);
   });
+
+  // H2：clean 快路径必须输出真 PNG，即使模型返回的是 JPEG 字节（防把 JPEG 写成 .png）。
+  it('clean 路径输出始终是合法 PNG（模型返回 JPEG 也重编码）', async () => {
+    const w = 16, h = 16;
+    const original = makeRaw(w, h, () => [120, 120, 120]);
+    // 用 JPEG 编码"守规矩"的输出（jpeg 有损，留区可能微漂但应在 ε 内；放大 ε 排除有损噪声干扰）。
+    const editedJpeg = await sharp(Buffer.from(original.data), {
+      raw: { width: w, height: h, channels: 4 },
+    }).jpeg({ quality: 100 }).toBuffer();
+    const mask = makeRaw(w, h, () => [255, 255, 255]); // 全编辑区，留区为空必 clean
+    const { finalPng, report } = await runRegionLockGate({
+      originalBuf: await pngFrom(original),
+      editedBuf: editedJpeg,
+      maskBuf: await pngFrom(mask),
+      epsilon: EPS,
+      sharp,
+    });
+    expect(report.status).toBe('clean');
+    const meta = await sharp(finalPng).metadata();
+    expect(meta.format).toBe('png'); // 不能是 jpeg
+  });
+
+  // H1 守卫 + M5：池化尺寸的极小图（1x1 / 2x2，落 Node Buffer 内存池）跨多次解码无别名串扰。
+  it('1x1 图（最小边界）clean 路径正确', async () => {
+    const original = makeRaw(1, 1, () => [50, 60, 70]);
+    const edited = makeRaw(1, 1, () => [200, 10, 10]);
+    const mask = makeRaw(1, 1, () => [255, 255, 255]); // 编辑区
+    const { report } = await runRegionLockGate({
+      originalBuf: await pngFrom(original), editedBuf: await pngFrom(edited),
+      maskBuf: await pngFrom(mask), epsilon: EPS, sharp,
+    });
+    expect(report.passed).toBe(true);
+    expect(report.keepPixels).toBe(0);
+  });
+
+  it('2x2 池化小图 locked 路径：留区逐像素回原图（多解码无别名串扰）', async () => {
+    // 左列编辑(白)，右列留(黑)。模型把右列也漂了。
+    const original = makeRaw(2, 2, () => [100, 110, 120]);
+    const edited = makeRaw(2, 2, (x) => (x === 0 ? [220, 30, 30] : [40, 40, 40]));
+    const mask = makeRaw(2, 2, (x) => (x === 0 ? [255, 255, 255] : [0, 0, 0]));
+    const { finalPng, report } = await runRegionLockGate({
+      originalBuf: await pngFrom(original), editedBuf: await pngFrom(edited),
+      maskBuf: await pngFrom(mask), epsilon: EPS, sharp,
+    });
+    expect(report.status).toBe('locked');
+    const dec = await decodeRGB(finalPng);
+    // 右列(x=1)两像素必须 == 原图 [100,110,120]
+    for (const y of [0, 1]) {
+      const i = (y * 2 + 1) * 4;
+      expect([dec.data[i], dec.data[i + 1], dec.data[i + 2]]).toEqual([100, 110, 120]);
+    }
+  });
+
+  // M5：mask 全黑（整图皆留区）+ 模型整图漂移 → locked 且 composite 还原整张原图。
+  it('mask 全黑（无编辑区）+ 模型漂移 → locked 还原整张原图', async () => {
+    const w = 8, h = 8;
+    const original = makeRaw(w, h, () => [70, 80, 90]);
+    const edited = makeRaw(w, h, () => [170, 180, 190]);
+    const mask = makeRaw(w, h, () => [0, 0, 0]); // 全留区
+    const { finalPng, report } = await runRegionLockGate({
+      originalBuf: await pngFrom(original), editedBuf: await pngFrom(edited),
+      maskBuf: await pngFrom(mask), epsilon: EPS, sharp,
+    });
+    expect(report.status).toBe('locked');
+    expect(report.keepPixels).toBe(w * h);
+    const dec = await decodeRGB(finalPng);
+    const i = (4 * w + 4) * 4;
+    expect([dec.data[i], dec.data[i + 1], dec.data[i + 2]]).toEqual([70, 80, 90]);
+  });
 });

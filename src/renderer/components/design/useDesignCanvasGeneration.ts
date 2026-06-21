@@ -188,14 +188,18 @@ export function useDesignCanvasGeneration(): {
         createdAt: Date.now(),
       };
       // 一致性报告挂到节点（随 canvas.json 落 T1 spine）。main 返回绝对 diffPath，
-      // 这里改写为相对 run 目录的路径（与 src 同构，保持存档可移植）；clean 无 diff 文件。
+      // 这里相对化 main 的真实路径（与 src 同构、存档可移植，且不臆测 main 的文件名）；
+      // clean 无 diff 文件。仅当无法从 main 路径推出相对路径时才退回约定命名兜底。
       const consistency = res.data?.consistency;
       if (consistency) {
-        node.consistency = {
-          ...consistency,
-          diffPath:
-            consistency.status === 'locked' ? `${assetRel}${REGION_LOCK.DIFF_SUFFIX}` : undefined,
-        };
+        let diffPath: string | undefined;
+        if (consistency.status === 'locked') {
+          const prefix = `${runDir.replace(/\/+$/, '')}/`;
+          diffPath = consistency.diffPath?.startsWith(prefix)
+            ? consistency.diffPath.slice(prefix.length)
+            : `${assetRel}${REGION_LOCK.DIFF_SUFFIX}`;
+        }
+        node.consistency = { ...consistency, diffPath };
       }
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());

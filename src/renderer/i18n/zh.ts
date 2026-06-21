@@ -82,6 +82,8 @@ export const zh = {
     diffMaxDelta: '最大像素差',
     diffChangedPixels: '越界像素数',
     aspectRatioLabel: '尺寸比例',
+    imageModel: '生图模型',
+    imageModelUnconfigured: '未配置 Key',
     exportImage: '导出图片',
     importImage: '添加图片',
     importHint: '也可直接往画布粘贴(⌘V)或拖入图片；导入后选中即可圈选重绘',

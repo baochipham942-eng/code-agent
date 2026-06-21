@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-06-21
+
+### Added
+
+- **Design Mode (full)**: a top-level design workspace alongside Code, covering interactive prototypes (HTML), mockups/infographics on an infinite konva canvas (text-to-image + true mask inpaint via Tongyi Wanxiang), and a deterministic design-quality self-review hook. Informed by an OpenDesign/Lovart competitive-borrow study (`docs/competitive/opendesign-lovart-借鉴清单.md`).
+- **Variant version spine (T1)**: canvas and prototype share a non-destructive variant model — every operation lands a new pinned variant (never overwrites), discards are soft-deletes, with side-by-side compare and set-as-main.
+- **Cost transparency + reversible history (T2)**: pre-generation cost estimate, named/undoable history steps, and BYOK actual-spend visibility (IPC returns `actualModel`/`costCny`).
+- **Image expand + watermark removal (T3)**: Wanxiang `expand` (directional ratio outpaint) and `remove_watermark`, landing into the variant spine.
+- **Consistency-locked re-editing (T4)**: region-lock + diff-gate keeps the unselected region pixel-identical after inpaint (out-of-bound pixels are pasted back and a diff-evidence image is written).
+- **Direction cards + reference-screenshot intake (T5)**: a mandatory pre-generation clarification form with multi-direction cards, a "match a reference screenshot" branch, and a "just generate" escape hatch.
+- **Runtime reskin + real-image placeholders (T6)**: prototype preview supports 5 instant theme palettes (no regeneration), and generated prototypes use deterministic real images instead of gray placeholders.
+
+### Fixed
+
+- Registered new design-canvas renderer IPC capabilities (generate/edit/import design image) in the shell capability manifest so renderer hot-update gates pass.
+- Family-level path-traversal guard (`assertWithinDesignDir`) across all design IPC actions.
+- Multiple adversarial-audit hardening passes on the variant spine, expand/remove, and the consistency gate (symmetric application + boundary fixes).
+
 ## [0.17.2] - 2026-06-18
 
 ### Added

@@ -131,6 +131,21 @@ describe('discardVariant — 淘汰是软删除（落盘保留）', () => {
     s = restoreVariant(s, 'root');
     expect(getVariant(s, 'root')?.discarded).toBe(false);
   });
+
+  it('淘汰主版会清掉它自身 pinned（否则 restore 后同槽双主版）', () => {
+    let s = emptySpine();
+    s = appendVariant(s, variant({ id: 'root' }));
+    s = appendVariant(s, variant({ id: 'edit1', parentId: 'root', createdAt: 2 })); // edit1 pinned
+    s = discardVariant(s, 'edit1'); // promote root
+    expect(getVariant(s, 'edit1')?.pinned).toBe(false); // 被淘汰者不再 pinned
+    expect(getVariant(s, 'root')?.pinned).toBe(true);
+    // restore 回来不该出现双主版
+    s = restoreVariant(s, 'edit1');
+    const pinnedInSlot = s.variants.filter(
+      (v) => !v.discarded && v.pinned && groupKey(v) === 'root',
+    );
+    expect(pinnedInSlot).toHaveLength(1);
+  });
 });
 
 describe('selectors', () => {

@@ -12,6 +12,7 @@ import { useDesignCanvasStore } from './designCanvasStore';
 import { buildImagePrompt } from './designTypes';
 import { emptyCanvasDoc, nextNodePlacement, type CanvasImageNode } from './designCanvasTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
+import { groupKey } from './variantSpine';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
 import { buildMaskDataUrl, type Rect } from './designCanvasMask';
 
@@ -171,7 +172,9 @@ export function useDesignCanvasGeneration(): {
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
-      // 新版放在底图右侧（make-real 式 x:maxX+gap），parentId 记血缘供 P3 A/B 对比。
+      // 新版放在底图右侧（make-real 式 x:maxX+gap）。parentId 锚定到血缘根（groupKey=
+      // parentId??id）而非直接底图：编辑「编辑版」时也归入同一版本槽，避免深层血缘碎成多槽
+      // 导致「一个槽一个主版」不变量被打破。
       const node: CanvasImageNode = {
         id: `node-${Date.now()}`,
         src: assetRel,
@@ -180,7 +183,7 @@ export function useDesignCanvasGeneration(): {
         width,
         height,
         prompt: instruction,
-        parentId: baseNode.id,
+        parentId: groupKey(baseNode),
         createdAt: Date.now(),
       };
       useDesignCanvasStore.getState().addNode(node);

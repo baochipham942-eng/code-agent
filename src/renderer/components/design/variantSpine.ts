@@ -99,7 +99,10 @@ export function pinVariant(spine: VariantSpine, id: string): VariantSpine {
 export function discardVariant(spine: VariantSpine, id: string): VariantSpine {
   const target = getVariant(spine, id);
   if (!target) return spine;
-  let variants = spine.variants.map((v) => (v.id === id ? { ...v, discarded: true } : v));
+  // 淘汰即清掉自身 pinned：否则之后 restore 回来会与已升任的主版形成同槽双主版。
+  let variants = spine.variants.map((v) =>
+    v.id === id ? { ...v, discarded: true, pinned: false } : v,
+  );
   if (target.pinned) {
     const key = groupKey(target);
     const promote = variants

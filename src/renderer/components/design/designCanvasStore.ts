@@ -70,7 +70,10 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
       if (!target) return {};
-      let nodes = s.nodes.map((n) => (n.id === id ? { ...n, discarded: true } : n));
+      // 淘汰即清掉自身 chosen：否则之后该节点若恢复会与已升任主版形成同槽双主版。
+      let nodes = s.nodes.map((n) =>
+        n.id === id ? { ...n, discarded: true, chosen: false } : n,
+      );
       // 淘汰主版时，把同槽最新的活跃版升为主版（保证槽内仍有可定稿主版）。
       if (target.chosen) {
         const key = groupKey(target);

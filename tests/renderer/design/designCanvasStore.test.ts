@@ -81,6 +81,31 @@ describe('designCanvasStore setChosen / deleteNode', () => {
     expect(nodes.find((x) => x.id === 'A1')?.chosen).toBe(true); // 最新活跃版 A1 升主版
   });
 
+  it('discardNode 淘汰主版会清掉自身 chosen（防恢复后双主版）', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc(
+      'run-x',
+      doc([
+        { ...n('A'), createdAt: 1 },
+        { ...n('A1', 'A'), chosen: true, createdAt: 2 },
+      ]),
+    );
+    s.discardNode('A1');
+    const nodes = useDesignCanvasStore.getState().nodes;
+    expect(nodes.find((x) => x.id === 'A1')?.chosen).toBe(false); // 自身 chosen 被清
+    expect(nodes.find((x) => x.id === 'A')?.chosen).toBe(true); // A 升主版
+  });
+
+  it('深层血缘根锚定：编辑「编辑版」也归同槽（A/A1/A2 同 parentId=A）→ 单主版', () => {
+    const s = useDesignCanvasStore.getState();
+    // editRegion 现以 groupKey(base) 作 parentId：A1、A2 都锚定到根 A
+    s.loadDoc('run-x', doc([n('A'), n('A1', 'A'), n('A2', 'A')]));
+    s.setChosen('A2');
+    const nodes = useDesignCanvasStore.getState().nodes;
+    const chosen = nodes.filter((x) => x.chosen);
+    expect(chosen.map((x) => x.id)).toEqual(['A2']); // 全槽仅一个主版
+  });
+
   it('deleteNode 移除节点并清出选择', () => {
     const s = useDesignCanvasStore.getState();
     s.loadDoc('run-x', doc([n('A'), n('B')]));

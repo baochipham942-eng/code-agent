@@ -17,6 +17,8 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
+import { imageEngineForModel, defaultImageModelId } from '../../shared/constants/visualModels';
+import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
@@ -47,17 +49,21 @@ function assertWithinDesignDir(p: string, label: string): void {
 // 设计画布直连出图（Cowart 式 P1）：固定走通义万相（spec D2 钦定引擎），
 // renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
-async function handleGenerateDesignImage(
-  payload: { prompt: string; aspectRatio?: string; outputPath: string },
+export async function handleGenerateDesignImage(
+  payload: { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.prompt || !payload?.outputPath) {
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
+  // 按 model 路由到对应 engine（注册表守门，未知 id 抛错）；缺省回退默认 wanx。
+  const engine = imageEngineForModel(payload.model || defaultImageModelId());
+  // flux engine 需要具体模型串作 generateImage 的 fluxModel 入参；其余 engine 忽略此参。
+  const fluxModelArg = engine === 'flux' ? DESIGN_FLUX_MODEL : '';
   const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
     '../services/media/imageGenerationService'
   );
-  const { imageData, actualModel } = await generateImage('wanx', '', payload.prompt, payload.aspectRatio || '1:1');
+  const { imageData, actualModel } = await generateImage(engine, fluxModelArg, payload.prompt, payload.aspectRatio || '1:1');
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
@@ -864,7 +870,7 @@ export function registerWorkspaceHandlers(
           break;
         case 'generateDesignImage':
           data = await handleGenerateDesignImage(
-            payload as { prompt: string; aspectRatio?: string; outputPath: string },
+            payload as { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
           );
           break;
         case 'editDesignImage':

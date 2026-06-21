@@ -22,6 +22,12 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
     removeWatermark: vi.fn(async () => ({ url: 'data:image/png;base64,QUJD' })),
     downloadImageAsBase64: vi.fn(async (u: string) => u),
     isImageUrl: vi.fn(() => false),
+    generateImage: vi.fn(async (engine: string) => ({
+      imageData: 'data:image/png;base64,QUJD',
+      actualModel: engine === 'cogview' ? 'cogview-4-250304'
+        : engine === 'flux' ? 'black-forest-labs/flux.2-klein-4b'
+        : engine === 'gptimage' ? 'gpt-image-2' : 'wanx2.1-t2i-turbo',
+    })),
   };
 });
 
@@ -35,6 +41,7 @@ vi.mock('../../../src/main/config/configPaths', async (importActual) => {
 import {
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
+  handleGenerateDesignImage,
 } from '../../../src/main/ipc/workspace.ipc';
 
 let workDir: string;
@@ -120,6 +127,34 @@ describe('handleRemoveWatermarkDesignImage', () => {
     expect((svc.removeWatermark as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(1);
     const written = await readFile(outputPath);
     expect(written.toString()).toBe('ABC');
+  });
+});
+
+describe('handleGenerateDesignImage 模型路由', () => {
+  it('model=cogview-4 路由到 cogview engine', async () => {
+    const svc = await import(SVC);
+    await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'cogview-4' });
+    const call = (svc.generateImage as any).mock.calls[0];
+    expect(call[0]).toBe('cogview');
+  });
+  it('缺 model 时回退默认 wanx engine', async () => {
+    const svc = await import(SVC);
+    await handleGenerateDesignImage({ prompt: 'p', outputPath });
+    expect((svc.generateImage as any).mock.calls[0][0]).toBe('wanx');
+  });
+  it('model=flux-2 路由到 flux engine 且传 DESIGN_FLUX_MODEL 作 fluxModel 入参', async () => {
+    const svc = await import(SVC);
+    await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'flux-2' });
+    const call = (svc.generateImage as any).mock.calls[0];
+    expect(call[0]).toBe('flux');
+    expect(call[1]).toBe('black-forest-labs/flux.2-klein-4b'); // 非空，否则 flux 报错
+  });
+  it('未知 model 抛错（registry 守门）', async () => {
+    await expect(handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'nope' })).rejects.toThrow();
+  });
+  it('返回 costCny 按 actualModel 查表（cogview=0.06）', async () => {
+    const res = await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'cogview-4' });
+    expect(res.costCny).toBe(0.06);
   });
 });
 

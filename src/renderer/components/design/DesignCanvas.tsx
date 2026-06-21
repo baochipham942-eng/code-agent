@@ -5,14 +5,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Pencil } from 'lucide-react';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
+import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
 import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
+import { AnnotationLayer, type AnnotShape, type AnnotTool } from './AnnotationLayer';
 import { readWorkspaceImageAsDataUrl } from './designFiles';
+import { imageModelsWithCap } from '@shared/constants/visualModels';
+import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import {
   normalizeDragRect,
   worldRectToImageRegion,
@@ -202,6 +207,52 @@ const DiffEvidenceOverlay: React.FC<{
   );
 };
 
+// 标注重绘模型下拉（cap 过滤）：仅列声明 annotEdit 能力的视觉模型，与 key 可用性求交，
+// 未配置 key 的灰显。可用性经 listVisualImageModels IPC 拉取（与 ImageModelPicker 同源）。
+const AnnotModelSelect: React.FC<{ value: string; onChange: (id: string) => void }> = ({
+  value,
+  onChange,
+}) => {
+  const { t } = useI18n();
+  const [availability, setAvailability] = useState<Record<string, boolean>>({});
+  const capModels = useMemo(() => imageModelsWithCap('annotEdit'), []);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await window.domainAPI?.invoke<{ models: Array<{ id: string; available: boolean }> }>(
+        IPC_DOMAINS.WORKSPACE,
+        'listVisualImageModels',
+      );
+      if (!cancelled && res?.success && res.data?.models) {
+        const map: Record<string, boolean> = {};
+        for (const m of res.data.models) map[m.id] = m.available;
+        setAvailability(map);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <select
+      data-testid="annot-model-select"
+      aria-label={t.design.imageModel}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-md border border-white/[0.10] bg-white/[0.04] px-2 py-1 text-xs text-zinc-200 focus:border-white/[0.3] focus:outline-none"
+    >
+      {capModels.map((m) => {
+        const available = availability[m.id] ?? false;
+        return (
+          <option key={m.id} value={m.id} disabled={!available}>
+            {available ? m.label : `${m.label}（${t.design.imageModelUnconfigured}）`}
+          </option>
+        );
+      })}
+    </select>
+  );
+};
+
 export const DesignCanvas: React.FC = () => {
   const { t } = useI18n();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -215,8 +266,24 @@ export const DesignCanvas: React.FC = () => {
   const selectedIds = useDesignCanvasStore((s) => s.selectedIds);
   const setSelected = useDesignCanvasStore((s) => s.setSelected);
   const generating = useDesignCanvasStore((s) => s.generating);
-  const { editRegion, expand, removeWatermark } = useDesignCanvasGeneration();
+  const { editRegion, expand, removeWatermark, editByAnnotation } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
+
+  // 标注重绘态（B4）：模式开关/指令/模型走 designStore（可持久 imageModel；模式/指令瞬时）。
+  const annotMode = useDesignStore((s) => s.annotMode);
+  const setAnnotMode = useDesignStore((s) => s.setAnnotMode);
+  const annotInstruction = useDesignStore((s) => s.annotInstruction);
+  const setAnnotInstruction = useDesignStore((s) => s.setAnnotInstruction);
+  const imageModel = useDesignStore((s) => s.imageModel);
+  const setImageModel = useDesignStore((s) => s.setImageModel);
+  // 标注图形（世界坐标）+ 当前工具，本地态（换图重置）。
+  const [annotShapes, setAnnotShapes] = useState<AnnotShape[]>([]);
+  const [annotTool, setAnnotTool] = useState<AnnotTool>('pen');
+  // 标注重绘默认模型：取首个声明 annotEdit 能力的模型（当前 imageModel 多为 wanx，无该能力）。
+  const annotModel = useMemo(() => {
+    const caps = imageModelsWithCap('annotEdit');
+    return caps.some((m) => m.id === imageModel) ? imageModel : caps[0]?.id ?? imageModel;
+  }, [imageModel]);
 
   // 圈选标注本地态（世界坐标）。
   const [annotating, setAnnotating] = useState(false);
@@ -275,7 +342,13 @@ export const DesignCanvas: React.FC = () => {
   useEffect(() => {
     setAnnotations([]);
     setDraft(null);
+    setAnnotShapes([]);
   }, [selectedNode?.id]);
+
+  // 无图选中时强制退出标注重绘模式（标注 UI 仅在单选图节点时存在）。
+  useEffect(() => {
+    if (!selectedNode && annotMode) setAnnotMode(false);
+  }, [selectedNode, annotMode, setAnnotMode]);
 
   // 自由画布：粘贴图片导入（剪贴板含图片时拦截，纯文本粘贴不受影响）。
   useEffect(() => {
@@ -378,6 +451,24 @@ export const DesignCanvas: React.FC = () => {
     }
   };
 
+  // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
+  const onAnnotRedraw = async (): Promise<void> => {
+    if (!selectedNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
+    const est = formatCny(estimateImageCostCny(annotModel));
+    if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
+    await editByAnnotation({
+      baseNode: selectedNode,
+      shapes: annotShapes,
+      instruction: annotInstruction,
+      model: annotModel,
+    });
+    if (!useDesignCanvasStore.getState().error) {
+      setAnnotShapes([]);
+      setAnnotInstruction('');
+      setAnnotMode(false);
+    }
+  };
+
   // 扩图：按方向+比例外扩 → 新 variant 落底图右侧。
   const onExpand = async (): Promise<void> => {
     if (!selectedNode) return;
@@ -409,7 +500,7 @@ export const DesignCanvas: React.FC = () => {
           y={camera.y}
           scaleX={camera.scale}
           scaleY={camera.scale}
-          draggable={!annotating}
+          draggable={!annotating && !annotMode}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
           onMouseDown={handleMouseDown}
@@ -441,6 +532,9 @@ export const DesignCanvas: React.FC = () => {
               />
             ))}
           </Layer>
+          {annotMode && selectedNode && (
+            <AnnotationLayer shapes={annotShapes} onShapesChange={setAnnotShapes} tool={annotTool} />
+          )}
         </Stage>
       )}
 
@@ -519,6 +613,68 @@ export const DesignCanvas: React.FC = () => {
             onExpand={() => void onExpand()}
             onRemoveWatermark={() => void onRemoveWatermark()}
           />
+
+          {/* B4：标注重绘（自由画标注 + 指令 + cap 模型 → editImageByAnnotation → 新 variant 挂 spine） */}
+          <div className="mt-1 flex flex-col gap-2 border-t border-white/[0.08] pt-2">
+            <button
+              type="button"
+              onClick={() => setAnnotMode(!annotMode)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+                annotMode ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
+              }`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {t.design.annotMode}
+            </button>
+            {annotMode && (
+              <>
+                {/* 工具选择：自由笔 / 箭头 / 矩形 / 文字 */}
+                <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+                  {([
+                    ['pen', t.design.annotToolPen],
+                    ['arrow', t.design.annotToolArrow],
+                    ['rect', t.design.annotToolRect],
+                    ['text', t.design.annotToolText],
+                  ] as Array<[AnnotTool, string]>).map(([tool, label]) => (
+                    <button
+                      key={tool}
+                      type="button"
+                      onClick={() => setAnnotTool(tool)}
+                      className={`flex-1 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
+                        annotTool === tool ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {/* 重绘模型（cap 过滤） */}
+                <AnnotModelSelect value={annotModel} onChange={setImageModel} />
+                {/* 重绘指令 */}
+                <textarea
+                  value={annotInstruction}
+                  onChange={(e) => setAnnotInstruction(e.target.value)}
+                  placeholder={t.design.annotInstructionPlaceholder}
+                  rows={2}
+                  className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
+                />
+                {/* 成本预估 */}
+                <div className="text-[11px] text-zinc-500">
+                  {t.design.costEstimateLabel}{' '}
+                  <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(annotModel))}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void onAnnotRedraw()}
+                  disabled={generating || annotShapes.length === 0 || !annotInstruction.trim()}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
+                >
+                  {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {t.design.annotRedraw}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
 

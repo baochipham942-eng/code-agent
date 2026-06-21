@@ -41,7 +41,7 @@ const WANX_T2I_MODEL = 'wanx2.1-t2i-turbo';
 const WANX_T2I_PATH = '/services/aigc/text2image/image-synthesis';
 const WANX_EDIT_MODEL = 'wanx2.1-imageedit';
 const WANX_EDIT_PATH = '/services/aigc/image2image/image-synthesis';
-const WANX_TASKS_PATH = '/tasks';
+export const WANX_TASKS_PATH = '/tasks';
 const WANX_SIZE_BY_ASPECT = new Map<string, string>([
   ['1:1', '1024*1024'],
   ['16:9', '1280*720'],
@@ -108,7 +108,7 @@ function parseOpenRouterImageResponse(value: unknown): { choices?: Array<{ messa
   return { choices };
 }
 
-async function fetchWithAbort(
+export async function fetchWithAbort(
   url: string,
   options: RequestInit,
   timeoutMs: number,

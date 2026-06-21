@@ -10,7 +10,7 @@
 ## 1. 目标 / 非目标
 
 **目标**
-- 设计模式**文生图**可在多个图像模型间切换（wanx / CogView / FLUX）。
+- 设计模式**文生图**可在多个图像模型间切换（wanx / CogView / FLUX / **gpt-image-2**，gpt-image 文字/UI 渲染最强，当设计稿首选）。
 - 新增**视频生成**能力（净新）：文生视频(t2v) + 图生视频(i2v)，可在多个视频模型间切换（通义万相视频 / MiniMax 海螺）。
 - 模型选择只用**用户在 Neo 设置里配置的 key**，且只列**视觉生成模型**。
 
@@ -33,6 +33,8 @@
 | **D5** | 成本可逆 | 视频/图像产物均挂 **variant spine**（T1）：可重生成、并排对比、设主版、可逆历史（T2）。 |
 | **D6** | 切换器可见性 | 切换器**只列「已配 key」的模型**（注册表 ∩ 已配 key）。未配 key 的模型灰显 + 「去设置配置 X」提示。 |
 | **D7** | 仅视觉模型 | 切换器**只列视觉生成模型**（image `t2i/maskEdit/expand` + video `t2v/i2v` 能力命中者），按**能力标签**过滤——provider 同时含聊天模型（GLM/Qwen/MiniMax-chat）时一律过滤掉。 |
+| **D8** | gpt-image-2（自定义 OpenAI 兼容端点） | 新增 `gptimage` engine：OpenAI `/v1/images/generations`，**取 b64_json 直接落盘**（不走 url 下载），**设计场景不加 NO_TEXT 后缀**（gpt-image 强项是文字/UI 渲染）。端点 base+key 从 config 读（env `GPTIMAGE_PROXY_BASE/_KEY` 优先，同 `getDashscopeApiKey` 范式），**绝不进代码**。caps=`['t2i']`（不支持 mask/expand，mask 类 op 仍 wanx，D2 不变）。中转不稳→做成可配置 provider，挂了换 URL 即可。gemini/grok image 同端点可后续加，本期不接。 |
+| **D9** | url 下载 SSRF 守卫 | 顺手堵 `downloadImageAsBase64`/`isImageUrl` 的潜在洞：**仅允许 https、拒绝私网 IP**（127./10./172.16-31./192.168./169.254./localhost）。对 gpt-image-2（纯 b64）不触发，但护住 wanx OSS url + 未来返回 url 的模型。 |
 
 ---
 

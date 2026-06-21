@@ -50,9 +50,13 @@ describe('visualModels registry (image)', () => {
   it('含 wanx/cogview/flux 三模型且都带 t2i 能力', () => {
     const ids = IMAGE_MODELS.map((m) => m.id);
     expect(ids).toContain('wanx-t2i');
+    expect(ids).toContain('gpt-image-2');
     expect(ids).toContain('cogview-4');
     expect(ids).toContain('flux-2');
     expect(IMAGE_MODELS.every((m) => m.caps.includes('t2i'))).toBe(true);
+    // gpt-image-2 只 t2i（mask 类 op 仍 wanx，D2）
+    expect(imageModelById('gpt-image-2')?.caps).toEqual(['t2i']);
+    expect(imageEngineForModel('gpt-image-2')).toBe('gptimage');
   });
   it('只有 wanx 带 maskEdit/expand 能力（D2）', () => {
     expect(imageModelById('wanx-t2i')?.caps).toEqual(expect.arrayContaining(['maskEdit', 'expand']));
@@ -87,8 +91,8 @@ Expected: FAIL（模块不存在）
 // P1 仅 image 部分；video 部分在 P2 追加。
 
 export type ImageCap = 't2i' | 'maskEdit' | 'expand';
-export type ImageEngineId = 'wanx' | 'cogview' | 'flux';
-export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter';
+export type ImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
+export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage';
 
 export interface VisualImageModel {
   /** 切换器/持久化用的稳定选择键。 */
@@ -103,6 +107,7 @@ export interface VisualImageModel {
 
 export const IMAGE_MODELS: readonly VisualImageModel[] = [
   { id: 'wanx-t2i', label: '通义万相', provider: 'dashscope', engine: 'wanx', caps: ['t2i', 'maskEdit', 'expand'] },
+  { id: 'gpt-image-2', label: 'GPT-image-2', provider: 'gptimage', engine: 'gptimage', caps: ['t2i'] },
   { id: 'cogview-4', label: 'CogView-4', provider: 'zhipu', engine: 'cogview', caps: ['t2i'] },
   { id: 'flux-2', label: 'FLUX.2', provider: 'openrouter', engine: 'flux', caps: ['t2i'] },
 ];
@@ -496,10 +501,152 @@ Run: `npm run build && npm run build:web` → 双 EXIT 0
 
 - [ ] **Step 3: 付费 dogfood（提示成本）**
 
-> ⚠️ 真实付费：切 CogView 出 1 张 + 切 FLUX 出 1 张（各约 ¥0.06–0.10）。先确认用户已在设置配了 zhipu / openrouter key（或 dogfood env 注入）。
-> 走 v0.18.0 验证过的 recipe：web 后端 `node dist/web/webServer.cjs`(8180) + `POST /api/domain/workspace/listVisualImageModels`（验可用性标注）+ `generateDesignImage{...,model:'cogview-4'}`（验真出图 + actualModel + costCny>0）。
+> ⚠️ 真实付费：切 **gpt-image-2** 出 1 张（约 ¥0.1–0.3，端点 `jiuuij.de5.net` 的 key 已存 `~/.code-agent/.env` 的 `GPTIMAGE_PROXY_BASE/_KEY`）+ 切 CogView/FLUX 各 1 张（各约 ¥0.06–0.10，需用户在设置配 zhipu / openrouter key）。
+> 走 v0.18.0 验证过的 recipe：web 后端 `node dist/web/webServer.cjs`(8180) + `POST /api/domain/workspace/listVisualImageModels`（验可用性标注，gpt-image-2 应为 available=true）+ `generateDesignImage{...,model:'gpt-image-2'}`（验真出图 + actualModel='gpt-image-2' + costCny>0 + 落盘 PNG 文字清晰）。
+> gpt-image-2 出图慢（~30–60s）且中转偶尔超时，dogfood 设 timeout ≥120s，失败重试一次。
 
 - [ ] **Step 4: 提交 dogfood 证据说明（无代码改动则跳过提交）**
+
+---
+
+## Task 9: gptimage engine（gpt-image-2，自定义 OpenAI 兼容端点）
+
+**Files:**
+- Modify: `src/main/services/media/imageGenerationService.ts`（`ImageEngine` 加 `gptimage` + 分支 + `getGptImageConfig`）
+- Test: `tests/unit/services/media/imageGenerationService.test.ts`（追加）
+
+**背景**：gpt-image-2 经第三方中转 `jiuuij.de5.net`（OpenAI 兼容 `/v1/images/generations`，返回 **b64_json**）。base+key 从 env `GPTIMAGE_PROXY_BASE/_KEY` 优先、再回落 config（同 `getDashscopeApiKey` 范式），**不进代码**。设计场景**不加 NO_TEXT**（gpt-image 强在出文字/UI）。
+
+- [ ] **Step 1: 写失败测试**（mock fetch 返回 `{data:[{b64_json:'AAA'}]}`）
+
+```ts
+it('gptimage engine 调 /v1/images/generations 取 b64，不加 NO_TEXT', async () => {
+  process.env.GPTIMAGE_PROXY_BASE = 'https://example.test';
+  process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'AAA' }] }) });
+  vi.stubGlobal('fetch', fetchMock);
+  const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+  const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
+  expect(r.actualModel).toBe('gpt-image-2');
+  expect(r.imageData.startsWith('data:image/png;base64,')).toBe(true);
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(body.model).toBe('gpt-image-2');
+  expect(body.prompt).not.toMatch(/不要出现任何文字/); // 设计场景保留文字
+});
+it('gptimage 缺 key 报去设置配置', async () => {
+  delete process.env.GPTIMAGE_PROXY_KEY;
+  // 且 config 无 gptimage key → 抛含「配置」字样错误
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败** → `npx vitest run tests/unit/services/media/imageGenerationService.test.ts` → FAIL
+
+- [ ] **Step 3: 写实现**
+
+```ts
+// imageGenerationService.ts
+// ImageEngine 类型加 'gptimage'：
+export type ImageEngine = 'cogview' | 'flux' | 'wanx' | 'gptimage';
+
+export function getGptImageConfig(): { base: string; key: string } | undefined {
+  const base = process.env.GPTIMAGE_PROXY_BASE || getConfigService().getApiKey('gptimage-base');
+  const key = process.env.GPTIMAGE_PROXY_KEY || getConfigService().getApiKey('gptimage');
+  if (!base || !key) return undefined;
+  return { base: base.replace(/\/+$/, ''), key };
+}
+
+// generateImage 里加分支（在 wanx 分支同级，用 raw prompt 不加 NO_TEXT）：
+if (engine === 'gptimage') {
+  const cfg = getGptImageConfig();
+  if (!cfg) throw new Error('gpt-image-2 需要在设置配置自定义端点 base 与 API Key。');
+  const resp = await fetchWithAbort(`${cfg.base}/v1/images/generations`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'gpt-image-2', prompt, n: 1, size: '1024x1024' }),
+  }, TIMEOUT_MS.IMAGE_GENERATION ?? 120000, outerSignal);
+  if (!resp.ok) throw new Error(`gpt-image-2 生成失败: ${resp.status}`);
+  const json = await resp.json();
+  const b64 = json?.data?.[0]?.b64_json;
+  if (!b64) throw new Error('gpt-image-2 返回无 b64_json');
+  return { imageData: `data:image/png;base64,${b64}`, actualModel: 'gpt-image-2' };
+}
+```
+（`'gpt-image-2'` 模型串与价表、注册表一致；其价表项在 Task 2 一并补。size 暂固定 1024x1024，aspectRatio→size 映射留后续。）
+
+- [ ] **Step 4: 跑测试通过 + typecheck** → PASS / 0
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src/main/services/media/imageGenerationService.ts tests/unit/services/media/imageGenerationService.test.ts
+git commit -m "feat(design): gptimage engine — gpt-image-2 自定义端点(b64,不加NO_TEXT)"
+```
+
+> **联动**：Task 2 价表加 `'gpt-image-2'` 项；Task 4 `providerKeyConfigured` 加 `if (provider === 'gptimage') return !!getGptImageConfig();`。
+
+---
+
+## Task 10: url 下载 SSRF 守卫（D9）
+
+**Files:**
+- Modify: `src/main/services/media/imageGenerationService.ts`（`isImageUrl` 收紧 + 下载前校验）
+- Test: `tests/unit/services/media/imageGenerationService.test.ts`（追加）
+
+**背景**：`isImageUrl` 现在放行 `http://` 且不拦内网 IP；恶意中转返回 url 时可 SSRF。gpt-image-2 走 b64 不触发，但护住 wanx OSS url + 未来返回 url 的模型。
+
+- [ ] **Step 1: 写失败测试**
+
+```ts
+import { isSafeImageUrl } from '../../../../src/main/services/media/imageGenerationService';
+it('仅允许 https 公网，拒 http/私网/元数据地址', () => {
+  expect(isSafeImageUrl('https://dashscope-result.oss-cn.aliyuncs.com/x.png')).toBe(true);
+  expect(isSafeImageUrl('http://example.com/x.png')).toBe(false);       // 非 https
+  expect(isSafeImageUrl('https://127.0.0.1/x')).toBe(false);
+  expect(isSafeImageUrl('https://169.254.169.254/latest/meta-data')).toBe(false);
+  expect(isSafeImageUrl('https://192.168.1.10/x')).toBe(false);
+  expect(isSafeImageUrl('file:///etc/passwd')).toBe(false);
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败** → FAIL（函数不存在）
+
+- [ ] **Step 3: 写实现**
+
+```ts
+// imageGenerationService.ts
+export function isSafeImageUrl(u: string): boolean {
+  let url: URL;
+  try { url = new URL(u); } catch { return false; }
+  if (url.protocol !== 'https:') return false;
+  const h = url.hostname;
+  if (h === 'localhost') return false;
+  // 私网/环回/链路本地 IPv4
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 127 || a === 10 || a === 0) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 169 && b === 254) return false;
+  }
+  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return false;
+  return true;
+}
+```
+并在 `downloadImageAsBase64` 开头加：`if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的图片 URL');`。`isImageUrl` 保持原样（仅判断"是不是 url 字符串"），安全判断交给 `isSafeImageUrl`。
+
+- [ ] **Step 4: 跑测试通过 + typecheck + 回归**
+
+Run: `npx vitest run tests/unit/services/media/imageGenerationService.test.ts` → PASS
+Run: `npm run typecheck` → 0
+（注意：wanx 走 dashscope OSS 的 https 公网 url，`isSafeImageUrl` 应放行——回归跑 `tests/unit/services/media` 全绿。）
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src/main/services/media/imageGenerationService.ts tests/unit/services/media/imageGenerationService.test.ts
+git commit -m "fix(design): url 下载 SSRF 守卫(仅https公网,拒私网/元数据)"
+```
 
 ---
 

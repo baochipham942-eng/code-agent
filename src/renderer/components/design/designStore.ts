@@ -31,6 +31,10 @@ interface DesignState {
   aspectRatio: DesignAspectRatio;
   /** 图像生成模型选择（仅图像产物用）。 */
   imageModel: string;
+  /** 标注模式开关（瞬时态，不持久化）。 */
+  annotMode: boolean;
+  /** 标注指令文本（瞬时态，不持久化）。 */
+  annotInstruction: string;
   // 历史 + 选中
   history: DesignRun[];
   /** 当前查看/生成的 run 目录。 */
@@ -54,6 +58,8 @@ interface DesignState {
   setOutputType: (t: DesignOutputType) => void;
   setAspectRatio: (r: DesignAspectRatio) => void;
   setImageModel: (id: string) => void;
+  setAnnotMode: (on: boolean) => void;
+  setAnnotInstruction: (text: string) => void;
 
   // 历史 actions
   addHistory: (run: DesignRun) => void;
@@ -84,6 +90,8 @@ export const useDesignStore = create<DesignState>()(
       outputType: 'prototype',
       aspectRatio: '1:1',
       imageModel: defaultImageModelId(),
+      annotMode: false,
+      annotInstruction: '',
       history: [],
       selectedRunDir: null,
       status: 'idle',
@@ -104,6 +112,8 @@ export const useDesignStore = create<DesignState>()(
       setOutputType: (outputType) => set({ outputType }),
       setAspectRatio: (aspectRatio) => set({ aspectRatio }),
       setImageModel: (imageModel) => set({ imageModel }),
+      setAnnotMode: (annotMode) => set({ annotMode }),
+      setAnnotInstruction: (annotInstruction) => set({ annotInstruction }),
 
       addHistory: (run) =>
         set((s) => ({

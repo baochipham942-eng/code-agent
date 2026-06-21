@@ -9,3 +9,15 @@ describe('designStore imageModel', () => {
     useDesignStore.getState().setImageModel('wanx-t2i'); // 复位避免污染其它测试
   });
 });
+
+describe('designStore 标注模式', () => {
+  it('annotMode 默认关、annotInstruction 默认空，可 set', () => {
+    const s = useDesignStore.getState();
+    expect(s.annotMode).toBe(false);
+    expect(s.annotInstruction).toBe('');
+    s.setAnnotMode(true); s.setAnnotInstruction('改成绿色');
+    expect(useDesignStore.getState().annotMode).toBe(true);
+    expect(useDesignStore.getState().annotInstruction).toBe('改成绿色');
+    s.setAnnotMode(false); s.setAnnotInstruction(''); // 复位，避免污染其它测试
+  });
+});

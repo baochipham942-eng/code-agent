@@ -229,6 +229,16 @@ describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
     expect(isSafeImageUrl('not a url')).toBe(false);
   });
 
+  it('IPv6 字面量私网/环回/链路本地/mapped 全拒，公网域名不误杀', () => {
+    expect(isSafeImageUrl('https://[::1]/x')).toBe(false);
+    expect(isSafeImageUrl('https://[fc00::1]/x')).toBe(false);
+    expect(isSafeImageUrl('https://[fe80::1]/x')).toBe(false);
+    expect(isSafeImageUrl('https://[::ffff:127.0.0.1]/x')).toBe(false);  // IPv4-mapped 环回
+    expect(isSafeImageUrl('https://fcbarcelona.com/x.png')).toBe(true);  // 公网域名不误杀
+    expect(isSafeImageUrl('https://fd-assets.net/x.png')).toBe(true);
+    expect(isSafeImageUrl('https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/x.png')).toBe(true); // wanx 不回归
+  });
+
   it('downloadImageAsBase64 下载前拦截不安全 url（不发起 fetch）', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

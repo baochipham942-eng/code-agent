@@ -322,6 +322,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'createFolder',
     'downloadFile',
     'editDesignImage',
+    'editImageByAnnotation',
     'expandDesignImage',
     'exportBundle',
     'generateDesignImage',

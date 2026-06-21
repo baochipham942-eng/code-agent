@@ -93,7 +93,7 @@ export function useDesignCanvasGeneration(): {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      const res = await window.domainAPI?.invoke<{ path: string }>(
+      const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
         IPC_DOMAINS.WORKSPACE,
         'generateDesignImage',
         { prompt, aspectRatio: form.aspectRatio, outputPath: assetAbs },
@@ -101,6 +101,7 @@ export function useDesignCanvasGeneration(): {
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);
       }
+      const costCny = res.data?.costCny;
       // 画布期间未被切到别的 run 才回灌。
       if (useDesignCanvasStore.getState().runDir !== runDir) {
         useDesignCanvasStore.getState().setGenerating(false);
@@ -122,6 +123,7 @@ export function useDesignCanvasGeneration(): {
         height,
         prompt: form.requirement,
         createdAt: Date.now(),
+        ...(typeof costCny === 'number' ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
@@ -152,7 +154,7 @@ export function useDesignCanvasGeneration(): {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      const res = await window.domainAPI?.invoke<{ path: string }>(
+      const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
         IPC_DOMAINS.WORKSPACE,
         'editDesignImage',
         {
@@ -165,6 +167,7 @@ export function useDesignCanvasGeneration(): {
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);
       }
+      const costCny = res.data?.costCny;
       if (useDesignCanvasStore.getState().runDir !== runDir) {
         useDesignCanvasStore.getState().setGenerating(false);
         return;
@@ -185,6 +188,7 @@ export function useDesignCanvasGeneration(): {
         prompt: instruction,
         parentId: groupKey(baseNode),
         createdAt: Date.now(),
+        ...(typeof costCny === 'number' ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());

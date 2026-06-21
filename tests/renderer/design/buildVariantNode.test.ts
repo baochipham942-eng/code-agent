@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildVariantNode } from '../../../src/renderer/components/design/useDesignCanvasGeneration';
+import { buildVariantNode, nextVariantNodeId } from '../../../src/renderer/components/design/useDesignCanvasGeneration';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import { emptyCanvasDoc, type CanvasImageNode } from '../../../src/renderer/components/design/designCanvasTypes';
 import { groupKey } from '../../../src/renderer/components/design/variantSpine';
@@ -41,6 +41,12 @@ describe('T3 扩图/去水印结果落 variant 挂 spine', () => {
       Array.from({ length: 5 }, () => buildVariantNode(BASE, 'assets/x.png', { width: 1, height: 1 }, 'l').id),
     );
     expect(ids.size).toBe(5);
+  });
+
+  it('nextVariantNodeId 同毫秒连续调用各异（generate/editRegion 共用同一防碰撞源）', () => {
+    const ids = new Set(Array.from({ length: 8 }, () => nextVariantNodeId()));
+    expect(ids.size).toBe(8);
+    expect([...ids].every((id) => id.startsWith('node-'))).toBe(true);
   });
 
   it('5 个操作各追加一个新 variant，全部挂底图版本槽且落右侧', () => {

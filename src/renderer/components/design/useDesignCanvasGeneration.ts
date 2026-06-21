@@ -67,9 +67,15 @@ export interface RemoveWatermarkArgs {
   baseNode: CanvasImageNode;
 }
 
-// 单调序列：保证同毫秒内连续构造的节点 id 不碰撞（codex-audit M4：纯 Date.now() 同 tick
-// 会撞，store 按 id 做 setChosen/discard/对比会指向歧义节点）。
+// 单调序列：保证同毫秒内连续构造的节点 id 不碰撞（audit M4：纯 Date.now() 同 tick 会撞，
+// store 按 id 做 setChosen/discard/对比会指向歧义节点）。generate/editRegion/buildVariantNode
+// 三处节点构造共用本源（audit R2 对称应用）。
 let variantNodeSeq = 0;
+
+/** 防同毫秒碰撞的画布节点 id（Date.now() 前缀跨会话唯一 + 单调序列后缀同 tick 唯一）。 */
+export function nextVariantNodeId(): string {
+  return `node-${Date.now()}-${(variantNodeSeq++).toString(36)}`;
+}
 
 /**
  * 由出图结果构造新 variant 节点：落底图右侧（make-real 式 x:maxX+gap），parentId 锚到血缘根
@@ -81,7 +87,7 @@ export function buildVariantNode(
   assetRel: string,
   dims: { width: number; height: number },
   label: string,
-  id: string = `node-${Date.now()}-${(variantNodeSeq++).toString(36)}`,
+  id: string = nextVariantNodeId(),
   createdAt: number = Date.now(),
 ): CanvasImageNode {
   return {
@@ -165,7 +171,7 @@ export function useDesignCanvasGeneration(): {
         DESIGN_WORKSPACE.CANVAS_NODE_GAP,
       );
       const node: CanvasImageNode = {
-        id: `node-${Date.now()}`,
+        id: nextVariantNodeId(),
         src: assetRel,
         x,
         y,
@@ -223,20 +229,9 @@ export function useDesignCanvasGeneration(): {
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
-      // 新版放在底图右侧（make-real 式 x:maxX+gap）。parentId 锚定到血缘根（groupKey=
-      // parentId??id）而非直接底图：编辑「编辑版」时也归入同一版本槽，避免深层血缘碎成多槽
-      // 导致「一个槽一个主版」不变量被打破。
-      const node: CanvasImageNode = {
-        id: `node-${Date.now()}`,
-        src: assetRel,
-        x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-        y: baseNode.y,
-        width,
-        height,
-        prompt: instruction,
-        parentId: groupKey(baseNode),
-        createdAt: Date.now(),
-      };
+      // 与扩图/去水印同构：复用 buildVariantNode 落底图右侧 + parentId 锚血缘根（audit R2 对称应用，
+      // 顺带继承防碰撞 id；编辑「编辑版」也归同一版本槽，避免深层血缘碎成多槽破坏「一槽一主版」）。
+      const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().setGenerating(false);

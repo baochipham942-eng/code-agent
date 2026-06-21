@@ -1,7 +1,17 @@
 // 设计工作区的工作区文件读取工具（renderer 侧，经 WORKSPACE domain IPC）。
 // hook 轮询与历史加载共用，避免重复。
 import { IPC_DOMAINS } from '@shared/ipc';
+import { DESIGN_VERSIONS_SUBDIR } from '@shared/constants';
 import type { FileInfo } from '@shared/contract/workspace';
+import { versionFileName, parseVersionTs } from './designTypes';
+
+/** 一次原型版本快照。 */
+export type DesignVersion = {
+  /** 快照文件绝对路径（唯一 id）。 */
+  path: string;
+  /** 创建时间戳（从文件名解析）。 */
+  createdAt: number;
+};
 
 export async function readWorkspaceFile(filePath: string): Promise<string | null> {
   try {
@@ -50,6 +60,57 @@ export async function resolveDesignDir(): Promise<string | null> {
   }
 }
 
+/** 写入工作区文件（覆盖）。成功返回 true。 */
+export async function writeWorkspaceFile(filePath: string, content: string): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'writeFile', {
+      filePath,
+      content,
+    });
+    return res?.success === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 把当前原型 html 快照成一份版本文件（versions/v-<ts>.html）。失败静默。 */
+export async function snapshotVersion(runDir: string, html: string, ts: number): Promise<void> {
+  const versionsDir = `${runDir.replace(/\/+$/, '')}/${DESIGN_VERSIONS_SUBDIR}`;
+  try {
+    await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'createFolder', { dirPath: versionsDir });
+  } catch {
+    // 已存在则忽略（createFolder 非递归、存在即抛）。
+  }
+  await writeWorkspaceFile(`${versionsDir}/${versionFileName(ts)}`, html);
+}
+
+/** 在系统默认应用打开文件（.html → 默认浏览器）。成功返回 true。 */
+export async function openInDefaultApp(filePath: string): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath });
+    return res?.success === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 把 HTML 文本导出到「下载」目录（重名自动加后缀）。返回落盘路径或 null。 */
+export async function saveHtmlToDownloads(
+  fileName: string,
+  content: string,
+): Promise<string | null> {
+  try {
+    const res = await window.domainAPI?.invoke<{ filePath: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'saveTextToDownloads',
+      { fileName, content },
+    );
+    return res?.success ? (res.data?.filePath ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 读取一张图片为 base64 dataURL；不存在/失败返回 null（画布按相对路径懒加载图片用）。 */
 export async function readWorkspaceImageAsDataUrl(filePath: string): Promise<string | null> {
   try {
@@ -63,5 +124,22 @@ export async function readWorkspaceImageAsDataUrl(filePath: string): Promise<str
     return `data:${mime};base64,${res.data.base64}`;
   } catch {
     return null;
+  }
+}
+
+/** 列某 run 的版本快照，按创建时间倒序（最新在前）。 */
+export async function listVersions(runDir: string): Promise<DesignVersion[]> {
+  const versionsDir = `${runDir.replace(/\/+$/, '')}/${DESIGN_VERSIONS_SUBDIR}`;
+  try {
+    const res = await window.domainAPI?.invoke<FileInfo[]>(IPC_DOMAINS.WORKSPACE, 'listFiles', {
+      dirPath: versionsDir,
+    });
+    if (!res?.success || !Array.isArray(res.data)) return [];
+    return res.data
+      .map((f) => ({ path: f.path, createdAt: parseVersionTs(f.name) }))
+      .filter((v): v is DesignVersion => v.createdAt != null)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  } catch {
+    return [];
   }
 }

@@ -19,3 +19,18 @@ export const DESIGN_WORKSPACE = {
   CANVAS_NODE_GAP: 60,
   CANVAS_NODE_FALLBACK_SIZE: 512,
 } as const;
+
+/**
+ * 预览设备断点预设（桌面/平板/手机）。`width=null` 表示自适应满宽（桌面）；
+ * 平板/手机给出固定 CSS 像素宽，预览 iframe 据此收窄并居中，模拟响应式断点。
+ */
+export const DESIGN_DEVICE_PRESETS = [
+  { id: 'desktop', width: null },
+  { id: 'tablet', width: 768 },
+  { id: 'mobile', width: 375 },
+] as const;
+
+export type DesignDeviceId = (typeof DESIGN_DEVICE_PRESETS)[number]['id'];
+
+/** 原型版本快照存放的子目录（在每个 run 目录下）。每次生成/续编完成快照一份。 */
+export const DESIGN_VERSIONS_SUBDIR = 'versions';

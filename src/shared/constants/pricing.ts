@@ -35,6 +35,27 @@ export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: numbe
   'default': { input: 1, output: 3 },
 };
 
+/**
+ * 图像生成/编辑定价（每张，人民币元）。单一真源——禁在业务代码散落图像价格字面量。
+ * key 为图像模型 id，必须与 imageGenerationService 返回的 actualModel 对齐。
+ * - wanx 0.14/张：DashScope（百炼）实价，文生图与局部重绘同价。
+ * - cogview-4：智谱公示价 0.06/张；cogview-3-flash 为免费档。
+ * - flux（OpenRouter，模型 id 动态）无固定单图价，走 default 兜底估算。
+ */
+export const IMAGE_PRICING_CNY: Record<string, number> = {
+  'wanx2.1-t2i-turbo': 0.14,
+  'wanx2.1-imageedit': 0.14,
+  'cogview-4-250304': 0.06,
+  'cogview-3-flash': 0,
+  default: 0.14,
+};
+
+/** 设计画布出图/局部重绘所用模型 id（与 imageGenerationService 钦定引擎一致，供预估成本查表）。 */
+export const DESIGN_IMAGE_MODELS = {
+  generate: 'wanx2.1-t2i-turbo',
+  edit: 'wanx2.1-imageedit',
+} as const;
+
 export const API_VERSIONS = {
   ANTHROPIC: '2023-06-01',
 } as const;

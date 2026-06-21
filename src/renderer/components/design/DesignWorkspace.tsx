@@ -1,7 +1,7 @@
 // 设计工作区（Kun 借鉴：设计 tab）。左侧 composer（历史 + 需求 + 设计上下文 + 产物
 // 类型）+ 右侧预览。v1 把「交互原型」整条闭环打通；设计稿/信息图占位标「即将」。
 // 所有面向用户的文案统一走 i18n（t.design.*），避免中英混排。
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Palette,
   Sparkles,
@@ -9,6 +9,7 @@ import {
   AlertCircle,
   History,
   ChevronRight,
+  ImagePlus,
   Monitor,
   Tablet,
   Smartphone,
@@ -23,12 +24,18 @@ import {
   Download,
   Maximize2,
   Minimize2,
+  GitCompare,
 } from 'lucide-react';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
+import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
+import { useDesignCanvasImport } from './useDesignCanvasImport';
+import { useDesignCanvasStore } from './designCanvasStore';
+import { loadCanvasDoc } from './designCanvasPersistence';
+import { DesignCanvas } from './DesignCanvas';
 import {
   readRunHtml,
   readWorkspaceFile,
@@ -39,10 +46,26 @@ import {
   saveHtmlToDownloads,
   type DesignVersion,
 } from './designFiles';
-import { designDeviceWidth, prototypeExportName } from './designTypes';
+import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
-import { injectSelectionScript, injectPreviewStyle, parseProtoSelectMessage } from './designPreviewInject';
-import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
+import {
+  injectSelectionScript,
+  injectPreviewStyle,
+  injectThemeOverride,
+  parseProtoSelectMessage,
+  PROTO_PALETTES,
+} from './designPreviewInject';
+import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
+import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
+import { DesignCostHistory } from './DesignCostHistory';
+import { VariantCompareView } from './VariantCompareView';
+import { loadProtoSpine, saveProtoSpine } from './protoSpine';
+import { activeVariants, pinVariant, discardVariant, type Variant } from './variantSpine';
+
+/** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
+function isImageOutput(t: DesignOutputType): boolean {
+  return t === 'mockup' || t === 'infographic';
+}
 
 /** 加载某次历史生成的产物 + 版本列表到预览。 */
 async function loadRun(runDir: string): Promise<void> {
@@ -55,6 +78,11 @@ async function loadRun(runDir: string): Promise<void> {
   const versions = await listVersions(runDir);
   if (useDesignStore.getState().previewPath === runDir) {
     useDesignStore.getState().setVersions(versions);
+    // 载入 variant spine（版本的 pin/discard），与磁盘版本对账。
+    const spine = await loadProtoSpine(runDir, versions);
+    if (useDesignStore.getState().previewPath === runDir) {
+      useDesignStore.getState().setSpine(spine);
+    }
   }
 }
 
@@ -105,14 +133,22 @@ const HistorySection: React.FC = () => {
 const Composer: React.FC = () => {
   const { t } = useI18n();
   const s = useDesignStore();
-  const { generate } = useDesignGeneration();
-  const generating = s.status === 'generating';
+  const { generate: generatePrototype } = useDesignGeneration();
+  const { generate: generateCanvas } = useDesignCanvasGeneration();
+  const { importFiles } = useDesignCanvasImport();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasGenerating = useDesignCanvasStore((c) => c.generating);
+  const canvasError = useDesignCanvasStore((c) => c.error);
 
-  const outputTypes: Array<{ type: DesignOutputType; label: string; soon?: boolean }> = [
+  const outputTypes: Array<{ type: DesignOutputType; label: string }> = [
     { type: 'prototype', label: t.design.outputPrototype },
-    { type: 'mockup', label: t.design.outputMockup, soon: true },
-    { type: 'infographic', label: t.design.outputInfographic, soon: true },
+    { type: 'mockup', label: t.design.outputMockup },
+    { type: 'infographic', label: t.design.outputInfographic },
   ];
+  const imageMode = isImageOutput(s.outputType);
+  const generating = imageMode ? canvasGenerating : s.status === 'generating';
+  const error = imageMode ? canvasError : s.error;
+  const onGenerate = imageMode ? generateCanvas : generatePrototype;
   const surfaces: Array<{ value: DesignSurface; label: string }> = [
     { value: 'brand', label: t.design.surfaceBrand },
     { value: 'product', label: t.design.surfaceProduct },
@@ -124,7 +160,7 @@ const Composer: React.FC = () => {
 
       {/* 产物类型 */}
       <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
-        {outputTypes.map(({ type, label, soon }) => (
+        {outputTypes.map(({ type, label }) => (
           <button
             key={type}
             type="button"
@@ -136,7 +172,6 @@ const Composer: React.FC = () => {
             }`}
           >
             {label}
-            {soon && <span className="ml-1 text-[10px] text-zinc-500">{t.design.soon}</span>}
           </button>
         ))}
       </div>
@@ -215,10 +250,46 @@ const Composer: React.FC = () => {
         </div>
       </div>
 
+      {/* 出图尺寸（仅图像产物） */}
+      {imageMode && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-zinc-400">{t.design.aspectRatioLabel}</span>
+          <div className="flex flex-wrap gap-1.5">
+            {DESIGN_ASPECT_RATIOS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => s.setAspectRatio(r)}
+                className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  s.aspectRatio === r
+                    ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 出图前成本预估（T2 成本透明，仅图像产物走付费图像调用） */}
+      {imageMode && (
+        <div className="-mb-2 flex items-center justify-between rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-1.5 text-[11px]">
+          <span className="text-zinc-400">
+            {t.design.costEstimateLabel}{' '}
+            <span className="font-mono text-emerald-300">
+              {formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.generate))}
+            </span>
+          </span>
+          <span className="text-zinc-500">{t.design.costHint}</span>
+        </div>
+      )}
+
       {/* 生成 */}
       <button
         type="button"
-        onClick={() => void generate()}
+        onClick={() => void onGenerate()}
         disabled={generating}
         className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
       >
@@ -226,10 +297,41 @@ const Composer: React.FC = () => {
         {generating ? t.design.generating : t.design.generate}
       </button>
 
-      {s.error && (
+      {/* 自由画布：导入自有图片（也支持画布上粘贴/拖拽） */}
+      {imageMode && (
+        <>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={generating}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.12] px-3 py-2 text-sm text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-50"
+          >
+            <ImagePlus className="h-4 w-4" />
+            {t.design.importImage}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length > 0) void importFiles(files);
+              e.target.value = '';
+            }}
+          />
+          <p className="text-[11px] leading-snug text-zinc-500">{t.design.importHint}</p>
+        </>
+      )}
+
+      {/* T2 成本透明 + undo/redo 历史（仅图像产物，挂 variant spine） */}
+      {imageMode && <DesignCostHistory />}
+
+      {error && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{s.error}</span>
+          <span>{error}</span>
         </div>
       )}
     </div>
@@ -270,6 +372,43 @@ const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDevic
             {DEVICE_ICONS[id]}
             <span>{labels[id]}</span>
           </button>
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * 配色切换（T6 Tweaks 换肤）：对预览 iframe 注入 hue-rotate 覆盖，零重生成实时试色板。
+ * 仅作用于预览渲染——导出/快照用 previewHtml 原文，不含本注入样式。色板对任意原型都是
+ * 「整轮色相旋转」，swatch 以品牌色 hue-rotate 后给个视觉提示，非绝对配色。
+ */
+const PaletteSwitch: React.FC<{ palette: string; onChange: (id: string) => void }> = ({
+  palette,
+  onChange,
+}) => {
+  const { t } = useI18n();
+  return (
+    <div
+      className="inline-flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-1.5 py-1"
+      title={t.design.paletteLabel}
+    >
+      <Palette className="h-3.5 w-3.5 text-zinc-400" />
+      {PROTO_PALETTES.map(({ id, deg }) => {
+        const active = palette === id;
+        const label = t.design.palettes[id as keyof typeof t.design.palettes] ?? id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            aria-pressed={active}
+            title={label}
+            className={`h-4 w-4 rounded-full border transition-transform ${
+              active ? 'border-white scale-110' : 'border-white/20 hover:scale-105'
+            }`}
+            style={{ background: '#d946ef', filter: `hue-rotate(${deg}deg)` }}
+          />
         );
       })}
     </div>
@@ -439,21 +578,133 @@ const ViewingBanner: React.FC<{ onRollback: () => void; onBackToLatest: () => vo
   );
 };
 
+/**
+ * 版本对比选择器：列活跃 proto 版本（含主版徽标），勾选两版进入并排对比。
+ * 与 VersionControl（只读看历史/回滚）分工：本控件负责对比 + 定稿（设主版/淘汰）。
+ */
+const VersionComparePicker: React.FC<{
+  variants: Variant[];
+  picked: string[];
+  onToggle: (id: string) => void;
+  onCompare: () => void;
+}> = ({ variants, picked, onToggle, onCompare }) => {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  if (variants.length < 2) return null; // 不足两版无可对比
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+      >
+        <GitCompare className="h-3.5 w-3.5" />
+        <span>{t.design.compareBtn}</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-white/[0.1] bg-zinc-900 p-1 shadow-2xl">
+          <div className="max-h-56 overflow-y-auto">
+            {variants.map((v, i) => {
+              const checked = picked.includes(v.id);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => onToggle(v.id)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                    checked ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-300 hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm border ${
+                        checked ? 'border-fuchsia-400 bg-fuchsia-400/80' : 'border-white/20'
+                      }`}
+                    >
+                      {checked && <span className="text-[9px] text-white">✓</span>}
+                    </span>
+                    v{variants.length - i}
+                    {v.pinned && (
+                      <span className="rounded bg-emerald-500/80 px-1 text-[9px] text-white">
+                        {t.design.mainVersion}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-zinc-500">{formatVersionTime(v.createdAt)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            disabled={picked.length !== 2}
+            onClick={() => {
+              onCompare();
+              setOpen(false);
+            }}
+            className="mt-1 w-full rounded-md bg-fuchsia-500/90 px-2 py-1.5 text-xs font-medium text-white hover:bg-fuchsia-500 disabled:opacity-40"
+          >
+            {t.design.compareBtn}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
+  const outputType = useDesignStore((s) => s.outputType);
   const previewHtml = useDesignStore((s) => s.previewHtml);
   const status = useDesignStore((s) => s.status);
   const selectedRunDir = useDesignStore((s) => s.selectedRunDir);
   const versions = useDesignStore((s) => s.versions);
   const viewingVersionPath = useDesignStore((s) => s.viewingVersionPath);
+  const spine = useDesignStore((s) => s.spine);
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
+  const [palette, setPalette] = useState('original');
   const [selectMode, setSelectMode] = useState(false);
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [exported, setExported] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const viewing = viewingVersionPath !== null;
+
+  // 活跃 proto 版本（最新在前），供对比选择器；过滤已淘汰。
+  const activeProtoVariants = useMemo(
+    () =>
+      activeVariants(spine)
+        .filter((v) => v.kind === 'proto-html')
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [spine],
+  );
+
+  const toggleCompare = (id: string): void =>
+    setCompareIds((p) =>
+      p.includes(id) ? p.filter((x) => x !== id) : p.length >= 2 ? [p[1], id] : [...p, id],
+    );
+
+  const compareA = activeProtoVariants.find((v) => v.id === compareIds[0]);
+  const compareB = activeProtoVariants.find((v) => v.id === compareIds[1]);
+
+  const persistSpine = async (next: typeof spine): Promise<void> => {
+    useDesignStore.getState().setSpine(next);
+    if (selectedRunDir) await saveProtoSpine(selectedRunDir, next);
+  };
+  // 读 store 最新 spine（而非闭包快照），避免连续 pin/discard 时基于过期 spine 互相覆盖。
+  const handlePin = (id: string): void => {
+    void persistSpine(pinVariant(useDesignStore.getState().spine, id));
+  };
+  const handleDiscardVariant = (id: string): void => {
+    void persistSpine(discardVariant(useDesignStore.getState().spine, id));
+    setComparing(false);
+    setCompareIds([]);
+  };
 
   // 全屏态下 Esc 退出。
   useEffect(() => {
@@ -520,28 +771,59 @@ const PreviewPane: React.FC = () => {
     return () => window.removeEventListener('message', handler);
   }, [selectMode]);
 
+  // 设计稿 / 信息图 → konva 无限画布；交互原型 → HTML iframe。
+  if (isImageOutput(outputType)) {
+    return <DesignCanvas />;
+  }
+
   if (previewHtml) {
     const width = designDeviceWidth(device);
     const framed = device !== 'desktop';
-    const srcDoc = injectSelectionScript(injectPreviewStyle(previewHtml), selectMode);
+    // 注入顺序：滚动条样式（head 起始）→ 换肤 hue-rotate（head 末尾，覆盖原型样式）→ 圈选脚本。
+    // 三者都只在预览渲染期注入；导出/快照走 previewHtml 原文，不含任何注入内容。
+    const srcDoc = injectSelectionScript(
+      injectThemeOverride(injectPreviewStyle(previewHtml), palette),
+      selectMode,
+    );
     return (
       <div
         className={
           fullscreen
             ? 'fixed inset-0 z-50 flex flex-col bg-zinc-950'
-            : 'flex h-full w-full flex-col'
+            : 'relative flex h-full w-full flex-col'
         }
       >
+        {comparing && compareA && compareB && (
+          <VariantCompareView
+            variantA={compareA}
+            variantB={compareB}
+            runDir={selectedRunDir}
+            onPin={handlePin}
+            onDiscard={handleDiscardVariant}
+            onClose={() => setComparing(false)}
+          />
+        )}
         <div className="relative flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
-          <div className="absolute left-3">
+          <div className="absolute left-3 flex items-center gap-1.5">
             <VersionControl
               versions={versions}
               viewingPath={viewingVersionPath}
               onView={(v) => void handleViewVersion(v)}
               onBackToLatest={() => void handleBackToLatest()}
             />
+            {!viewing && (
+              <VersionComparePicker
+                variants={activeProtoVariants}
+                picked={compareIds}
+                onToggle={toggleCompare}
+                onCompare={() => setComparing(true)}
+              />
+            )}
           </div>
-          <DeviceSwitch device={device} onChange={setDevice} />
+          <div className="flex items-center gap-2">
+            <DeviceSwitch device={device} onChange={setDevice} />
+            <PaletteSwitch palette={palette} onChange={setPalette} />
+          </div>
           <div className="absolute right-3 flex items-center gap-1">
             {!viewing && (
               <button
@@ -638,6 +920,19 @@ export const DesignWorkspace: React.FC = () => {
     if (st.selectedRunDir && !st.previewHtml && st.status === 'idle') {
       void loadRun(st.selectedRunDir);
     }
+  }, []);
+
+  // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载。
+  useEffect(() => {
+    const cs = useDesignCanvasStore.getState();
+    if (!cs.runDir || cs.nodes.length > 0) return;
+    const runDir = cs.runDir;
+    void loadCanvasDoc(runDir).then((doc) => {
+      const cur = useDesignCanvasStore.getState();
+      if (cur.runDir === runDir && cur.nodes.length === 0) {
+        cur.loadDoc(runDir, doc);
+      }
+    });
   }, []);
 
   return (

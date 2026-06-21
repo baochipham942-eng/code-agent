@@ -31,6 +31,16 @@ export type DesignSurface = 'brand' | 'product';
 /** 产物类型：交互原型(HTML) / 设计稿(图) / 信息图(图)。 */
 export type DesignOutputType = 'prototype' | 'mockup' | 'infographic';
 
+/** 出图尺寸比例（映射到通义万相 size，见 imageGenerationService）。 */
+export type DesignAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+export const DESIGN_ASPECT_RATIOS: readonly DesignAspectRatio[] = [
+  '1:1',
+  '16:9',
+  '9:16',
+  '4:3',
+  '3:4',
+];
+
 /** 设计上下文，注入 prompt 以约束品牌/语气并规避 AI 默认审美。 */
 export type DesignContextInput = {
   surface?: DesignSurface;
@@ -112,6 +122,10 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
     '- 任何 HTML 标签都写成真实标签，禁止用转义实体（如 &lt;nav&gt;）或把标签当可见文本，' +
       '否则会在页面上显示成原始代码。导航 / 页头这类结构要在同一次 Edit 内把开闭标签成对写完，' +
       '不要跨多次 Edit 把一个元素切成半截，避免预览在中途渲染出未闭合的原始标记残影。',
+    '- 需要配图 / 头像 / 封面 / 缩略图时，用真实占位图，不要灰色空框：' +
+      '`<img src="https://picsum.photos/seed/{desc}/{w}/{h}">`——{desc} 换成描述内容的英文 slug（如 ' +
+      '`office-team`）、{w}/{h} 换成像素宽高（如 `800/600`），并写贴切的 alt。禁止用灰色空 div、' +
+      '`background:#ccc` / `bg-gray-200` 这类纯色块或 via.placeholder.com / dummyimage.com 等灰图床充当图片。',
     '- 以文档的 `</html>` 收尾，然后用一段话总结你实现了哪些交互。',
   ];
   const ctxLines = formatDesignContextLines(input.designContext);
@@ -178,18 +192,17 @@ export type BuildImagePromptInput = {
 };
 
 /**
- * 设计稿 / 信息图的回合 prompt：让 Agent 调用图像生成工具（image_generate，
- * 走 CogView/FLUX）产出静态视觉。
+ * 设计稿 / 信息图的图像生成 prompt：直连图像模型（通义万相）用的干净图像描述，
+ * 不是给 Agent 的工具调用指令。把需求 + 品牌色/语气/表层定位拼成逗号分隔的视觉描述。
  */
 export function buildImagePrompt(input: BuildImagePromptInput): string {
   const requirement = input.requirement.trim();
   const label = IMAGE_OUTPUT_LABEL[input.outputType];
-  const lines = [
-    `请使用图像生成工具（image_generate）生成一张${label}。`,
-    `主题：${requirement || label}`,
-  ];
-  const ctxLines = formatDesignContextLines(input.designContext);
-  if (ctxLines.length > 0) lines.push('', ...ctxLines);
-  lines.push('', '生成后用一句话说明这张图的设计取向。');
-  return lines.join('\n');
+  const parts: string[] = [requirement || label];
+  const ctx = input.designContext;
+  if (ctx?.brandColor) parts.push(`主色调 ${ctx.brandColor}`);
+  if (ctx?.tone && ctx.tone.length > 0) parts.push(`风格：${ctx.tone.join('、')}`);
+  if (ctx?.surface === 'brand') parts.push('品牌主导视觉');
+  parts.push(input.outputType === 'infographic' ? '信息图排版，层次清晰' : 'UI 设计稿');
+  return parts.join('，');
 }

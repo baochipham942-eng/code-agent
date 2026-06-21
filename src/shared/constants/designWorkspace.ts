@@ -14,6 +14,10 @@ export const DESIGN_WORKSPACE = {
   // 设计草稿工作目录的路径标记：用于把设计会话从聊天侧栏过滤掉（设计草稿不该当成
   // 聊天项目占侧栏；设计模式有自己的历史）。与主进程 getUserConfigDir()/design 对应。
   DRAFT_PATH_MARKER: '/.code-agent/design/',
+  // 画布（Cowart 式）：图片产物子目录、新节点间距、回灌后兜底节点尺寸。
+  CANVAS_ASSETS_DIR: 'assets',
+  CANVAS_NODE_GAP: 60,
+  CANVAS_NODE_FALLBACK_SIZE: 512,
 } as const;
 
 /**
@@ -30,3 +34,19 @@ export type DesignDeviceId = (typeof DESIGN_DEVICE_PRESETS)[number]['id'];
 
 /** 原型版本快照存放的子目录（在每个 run 目录下）。每次生成/续编完成快照一份。 */
 export const DESIGN_VERSIONS_SUBDIR = 'versions';
+
+/** variant spine 落盘文件名（每个 run 目录一份，持有 proto 版本的 pin/discard 状态）。 */
+export const DESIGN_SPINE_FILE = 'spine.json';
+
+/**
+ * 一致性锁定再编辑（T4）：局部重绘后校验"未选区域逐像素不变"的参数。
+ * wanx2.1-imageedit 等扩散 inpaint 会系统性地轻微改写 mask 外区域（全局重压缩/色偏），
+ * 故 diff-gate 度量未选区漂移，越界即触发 region-lock 把原图未选区贴回保证逐像素一致。
+ */
+export const REGION_LOCK = {
+  // 未选区域单像素通道差容差（0-255）。≤ 该值视为"未变"。语义=逐像素逐通道绝对差上界
+  // （非 CIEDE2000 感知色差）；8/255≈3%，足以滤掉 inpaint 重压缩噪声又能抓住肉眼可见漂移。
+  EPSILON: 8,
+  // diff 证据图相对原产物的文件名后缀（同目录落盘）。
+  DIFF_SUFFIX: '.diff.png',
+} as const;

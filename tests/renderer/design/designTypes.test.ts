@@ -53,18 +53,36 @@ describe('buildPrototypePrompt', () => {
     expect(p).toContain('转义实体');
     expect(p).toContain('成对');
   });
+
+  it('配图走 picsum seed 真图、禁灰色占位框', () => {
+    const p = buildPrototypePrompt(base);
+    expect(p).toContain('picsum.photos/seed/');
+    // 含 {desc}/{w}/{h} 形态的占位说明
+    expect(p).toMatch(/\{[^}]*\}\/\{[^}]*\}\/\{[^}]*\}/);
+    expect(p).toContain('灰');
+  });
 });
 
 describe('buildImagePrompt', () => {
-  it('设计稿走 image_generate', () => {
+  it('设计稿=干净图像描述含需求与类型，不含 agent 话术', () => {
     const p = buildImagePrompt({ requirement: '电商首页', outputType: 'mockup' });
-    expect(p).toContain('image_generate');
-    expect(p).toContain('UI 设计稿');
     expect(p).toContain('电商首页');
+    expect(p).toContain('UI 设计稿');
+    expect(p).not.toContain('image_generate'); // 直连图像模型，非工具调用指令
   });
 
   it('信息图标签正确', () => {
     expect(buildImagePrompt({ requirement: 'x', outputType: 'infographic' })).toContain('信息图');
+  });
+
+  it('品牌色/语气进入图像描述', () => {
+    const p = buildImagePrompt({
+      requirement: '海报',
+      outputType: 'mockup',
+      designContext: { brandColor: '#0066ff', tone: ['极简', '科技感'] },
+    });
+    expect(p).toContain('#0066ff');
+    expect(p).toContain('极简');
   });
 });
 

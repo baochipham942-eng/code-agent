@@ -46,6 +46,20 @@ export async function readRunHtml(runDir: string): Promise<string | null> {
   return htmlPath ? readWorkspaceFile(htmlPath) : null;
 }
 
+/** 解析 app 托管的设计草稿根目录（主进程返回绝对路径，已确保存在）。 */
+export async function resolveDesignDir(): Promise<string | null> {
+  try {
+    const res = await window.domainAPI?.invoke<{ dir: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'resolveDesignDir',
+      {},
+    );
+    return res?.success ? (res.data?.dir ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 写入工作区文件（覆盖）。成功返回 true。 */
 export async function writeWorkspaceFile(filePath: string, content: string): Promise<boolean> {
   try {
@@ -92,6 +106,22 @@ export async function saveHtmlToDownloads(
       { fileName, content },
     );
     return res?.success ? (res.data?.filePath ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 读取一张图片为 base64 dataURL；不存在/失败返回 null（画布按相对路径懒加载图片用）。 */
+export async function readWorkspaceImageAsDataUrl(filePath: string): Promise<string | null> {
+  try {
+    const res = await window.domainAPI?.invoke<{ base64: string; mimeType: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'readBinary',
+      { filePath },
+    );
+    if (!res?.success || !res.data?.base64) return null;
+    const mime = res.data.mimeType || 'image/png';
+    return `data:${mime};base64,${res.data.base64}`;
   } catch {
     return null;
   }

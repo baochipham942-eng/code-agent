@@ -13,7 +13,7 @@
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
-export type ImageEngine = 'cogview' | 'flux';
+export type ImageEngine = 'cogview' | 'flux' | 'wanx';
 
 export interface GenerateImageResult {
   imageData: string;
@@ -23,12 +23,34 @@ export interface GenerateImageResult {
 const TIMEOUT_MS = {
   DIRECT_API: 90000,
   IMAGE_DOWNLOAD: 30000,
+  // 通义万相异步任务：单次轮询超时 + 轮询间隔 + 总超时。
+  WANX_POLL: 15000,
+  WANX_POLL_INTERVAL: 3000,
+  WANX_TOTAL: 120000,
 };
 
 const ZHIPU_IMAGE_MODELS = {
   standard: 'cogview-4-250304',
   legacy: 'cogview-3-flash',
 } as const;
+
+// 通义万相（DashScope 原生异步 API）：文生图 + 局部重绘模型 + 端点路径。
+const WANX_T2I_MODEL = 'wanx2.1-t2i-turbo';
+const WANX_T2I_PATH = '/services/aigc/text2image/image-synthesis';
+const WANX_EDIT_MODEL = 'wanx2.1-imageedit';
+const WANX_EDIT_PATH = '/services/aigc/image2image/image-synthesis';
+const WANX_TASKS_PATH = '/tasks';
+const WANX_SIZE_BY_ASPECT = new Map<string, string>([
+  ['1:1', '1024*1024'],
+  ['16:9', '1280*720'],
+  ['9:16', '720*1280'],
+  ['4:3', '1024*768'],
+  ['3:4', '768*1024'],
+]);
+// 通义万相扩图（function=expand）单边外扩比例范围；去水印默认 prompt（API 要求非空，语义不强制）。
+const WANX_EXPAND_SCALE_MIN = 1.0;
+const WANX_EXPAND_SCALE_MAX = 2.0;
+const DEFAULT_REMOVE_WATERMARK_PROMPT = '去除图像中的文字水印';
 
 const NO_TEXT_SUFFIX = '，画面中不要出现任何文字、字母、数字、标题、标签、水印、签名，纯视觉画面';
 
@@ -104,6 +126,14 @@ function getZhipuOfficialApiKey(): string | undefined {
   const zhipuKey = configService.getApiKey('zhipu');
   if (zhipuKey && !zhipuKey.startsWith('oki-')) return zhipuKey;
   return undefined;
+}
+
+/** 百炼 DashScope key（通义万相用）。env 优先（验证场景），否则取 qwen/dashscope 槽位。 */
+export function getDashscopeApiKey(): string | undefined {
+  const envKey = process.env.DASHSCOPE_API_KEY;
+  if (envKey) return envKey;
+  const configService = getConfigService();
+  return configService.getApiKey('dashscope') || configService.getApiKey('qwen') || undefined;
 }
 
 export function determineImageEngine(): ImageEngine {
@@ -195,6 +225,219 @@ async function callZhipuImageGeneration(
   return { url };
 }
 
+function parseWanxTask(value: unknown): { taskId?: string; status?: string; url?: string; message?: string } {
+  if (!isRecord(value)) return {};
+  const output = isRecord(value.output) ? value.output : {};
+  const taskId = typeof output.task_id === 'string' ? output.task_id : undefined;
+  const status = typeof output.task_status === 'string' ? output.task_status : undefined;
+  const message = typeof output.message === 'string' ? output.message : (typeof value.message === 'string' ? value.message : undefined);
+  let url: string | undefined;
+  if (isUnknownArray(output.results) && output.results.length > 0) {
+    const first = output.results[0];
+    if (isRecord(first) && typeof first.url === 'string') url = first.url;
+  }
+  return { taskId, status, url, message };
+}
+
+/**
+ * 通义万相文生图（DashScope 原生异步 API）：提交任务 → 轮询直到 SUCCEEDED/FAILED。
+ * 返回最终图片 URL（OSS，临时有效，调用方需下载）。
+ */
+// 通义万相通用「提交异步任务 → 轮询直到 SUCCEEDED/FAILED → 返回图片 url」。
+// 文生图与局部重绘共用（仅 path/body 不同）。
+async function submitAndPollWanx(
+  apiKey: string,
+  apiPath: string,
+  body: unknown,
+  outerSignal: AbortSignal,
+): Promise<{ url: string }> {
+  const submitResp = await fetchWithAbort(
+    `${MODEL_API_ENDPOINTS.dashscope}${apiPath}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-DashScope-Async': 'enable',
+      },
+      body: JSON.stringify(body),
+    },
+    TIMEOUT_MS.WANX_POLL,
+    outerSignal,
+  );
+  if (!submitResp.ok) {
+    throw new Error(`通义万相提交失败: ${submitResp.status} - ${await submitResp.text()}`);
+  }
+  const submitted = parseWanxTask(await submitResp.json());
+  if (!submitted.taskId) {
+    throw new Error('通义万相: 未返回 task_id');
+  }
+
+  const deadline = Date.now() + TIMEOUT_MS.WANX_TOTAL;
+  while (Date.now() < deadline) {
+    if (outerSignal.aborted) throw new Error('aborted');
+    await new Promise((r) => setTimeout(r, TIMEOUT_MS.WANX_POLL_INTERVAL));
+    const pollResp = await fetchWithAbort(
+      `${MODEL_API_ENDPOINTS.dashscope}${WANX_TASKS_PATH}/${submitted.taskId}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+      TIMEOUT_MS.WANX_POLL,
+      outerSignal,
+    );
+    if (!pollResp.ok) continue; // 瞬时失败不致命，继续轮询
+    const task = parseWanxTask(await pollResp.json());
+    if (task.status === 'SUCCEEDED') {
+      if (!task.url) throw new Error('通义万相: 任务成功但无图片 URL');
+      return { url: task.url };
+    }
+    if (task.status === 'FAILED' || task.status === 'CANCELED' || task.status === 'UNKNOWN') {
+      throw new Error(`通义万相任务失败: ${task.status}${task.message ? ` - ${task.message}` : ''}`);
+    }
+  }
+  throw new Error('通义万相任务超时');
+}
+
+function callWanxImageGeneration(
+  apiKey: string,
+  prompt: string,
+  aspectRatio: string,
+  outerSignal: AbortSignal,
+): Promise<{ url: string }> {
+  const size = WANX_SIZE_BY_ASPECT.get(aspectRatio) || '1024*1024';
+  return submitAndPollWanx(
+    apiKey,
+    WANX_T2I_PATH,
+    { model: WANX_T2I_MODEL, input: { prompt }, parameters: { size, n: 1 } },
+    outerSignal,
+  );
+}
+
+/**
+ * 通义万相局部重绘（inpaint）：base + mask（白=改/黑=留）+ prompt → 只改 mask 区。
+ * base/mask 均传 base64 data URI（DashScope 原生接受，无需上传 OSS）。返回结果图 url。
+ */
+export async function editImageWithMask(input: {
+  apiKey: string;
+  prompt: string;
+  baseImageDataUrl: string;
+  maskImageDataUrl: string;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'description_edit_with_mask',
+        prompt: input.prompt,
+        base_image_url: input.baseImageDataUrl,
+        mask_image_url: input.maskImageDataUrl,
+      },
+      parameters: { n: 1 },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
+}
+
+export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
+
+export interface ExpandScales {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+function clampExpandScale(value: number): number {
+  if (!Number.isFinite(value)) return WANX_EXPAND_SCALE_MIN;
+  return Math.min(WANX_EXPAND_SCALE_MAX, Math.max(WANX_EXPAND_SCALE_MIN, value));
+}
+
+/**
+ * 扩图「方向 + 比例」→ wanx 四向单边 scale（top/bottom/left/right，各 ∈ [1.0, 2.0]）。
+ * 单向只抬对应边，'all'(四周) 四边同时按比例外扩。比例越界自动 clamp。
+ */
+export function expandScalesForDirection(direction: ExpandDirection, ratio: number): ExpandScales {
+  const r = clampExpandScale(ratio);
+  const base: ExpandScales = { top: 1, bottom: 1, left: 1, right: 1 };
+  switch (direction) {
+    case 'up':
+      return { ...base, top: r };
+    case 'down':
+      return { ...base, bottom: r };
+    case 'left':
+      return { ...base, left: r };
+    case 'right':
+      return { ...base, right: r };
+    case 'all':
+      return { top: r, bottom: r, left: r, right: r };
+    default:
+      return base;
+  }
+}
+
+/**
+ * 通义万相扩图（function=expand）：base 图按四向单边 scale 外扩，prompt 描述补绘内容。
+ * base 传 base64 data URI（DashScope 原生接受）。返回扩图后的结果图 url（尺寸大于原图）。
+ */
+export async function expandImage(input: {
+  apiKey: string;
+  prompt: string;
+  baseImageDataUrl: string;
+  topScale?: number;
+  bottomScale?: number;
+  leftScale?: number;
+  rightScale?: number;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'expand',
+        prompt: input.prompt,
+        base_image_url: input.baseImageDataUrl,
+      },
+      parameters: {
+        top_scale: clampExpandScale(input.topScale ?? WANX_EXPAND_SCALE_MIN),
+        bottom_scale: clampExpandScale(input.bottomScale ?? WANX_EXPAND_SCALE_MIN),
+        left_scale: clampExpandScale(input.leftScale ?? WANX_EXPAND_SCALE_MIN),
+        right_scale: clampExpandScale(input.rightScale ?? WANX_EXPAND_SCALE_MIN),
+        n: 1,
+      },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
+}
+
+/**
+ * 通义万相去文字水印（function=remove_watermark）：消除图内中英文文字水印。
+ * 无 function 专属参数；prompt API 要求非空但语义不强制，缺省走默认去水印 prompt。
+ */
+export async function removeWatermark(input: {
+  apiKey: string;
+  baseImageDataUrl: string;
+  prompt?: string;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'remove_watermark',
+        prompt: input.prompt?.trim() ? input.prompt : DEFAULT_REMOVE_WATERMARK_PROMPT,
+        base_image_url: input.baseImageDataUrl,
+      },
+      parameters: { n: 1 },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
+}
+
 export async function generateImage(
   engine: ImageEngine,
   fluxModel: string,
@@ -204,6 +447,16 @@ export async function generateImage(
 ): Promise<GenerateImageResult> {
   const configService = getConfigService();
   const safePrompt = prompt.includes('不要出现任何文字') ? prompt : prompt + NO_TEXT_SUFFIX;
+
+  if (engine === 'wanx') {
+    const dashscopeKey = getDashscopeApiKey();
+    if (!dashscopeKey) {
+      throw new Error('通义万相需要百炼（DashScope）API Key。');
+    }
+    // 设计稿/信息图常需文字，使用原始 prompt（不追加"禁止文字"后缀）。
+    const result = await callWanxImageGeneration(dashscopeKey, prompt, aspectRatio, outerSignal);
+    return { imageData: result.url, actualModel: WANX_T2I_MODEL };
+  }
 
   if (engine === 'cogview') {
     const zhipuApiKey = getZhipuOfficialApiKey();

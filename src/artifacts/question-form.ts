@@ -16,7 +16,12 @@ import { directionTokens } from '../design/direction-tokens';
 
 export interface QuestionForm {
   surface: DesignBriefSurface;
-  direction: DesignBriefDirection;
+  /** 用户最终选定的方向。参考截图模式或仅给候选集时可缺省。 */
+  direction?: DesignBriefDirection;
+  /** AI 精选的候选方向（最多 3 张方向卡）；缺省时 UI 回退到全部 6 个方向。 */
+  directions?: DesignBriefDirection[];
+  /** 参考截图模式：用户要匹配一张参考截图（在输入框附图），此时无需选方向。 */
+  referenceScreenshot?: boolean;
   intent?: string;
   audience?: string;
   constraints?: string[];
@@ -85,14 +90,28 @@ export function parseQuestionForm(input: string): QuestionFormParseResult {
   if (!isSurface(obj.surface)) {
     return { ok: false, reason: 'missing or invalid surface' };
   }
-  if (!isDirection(obj.direction)) {
-    return { ok: false, reason: 'missing or invalid direction' };
+
+  // 顶层 direction 显式存在但非法 → 拒绝（保留旧契约）；缺省则交给候选/参考截图分支。
+  if (obj.direction !== undefined && !isDirection(obj.direction)) {
+    return { ok: false, reason: 'invalid direction' };
+  }
+
+  const directions = Array.isArray(obj.directions)
+    ? Array.from(new Set(obj.directions.filter(isDirection)))
+    : undefined;
+  const referenceScreenshot = obj.referenceScreenshot === true;
+
+  // 必须能确定"按什么生成"：选定方向 / 候选方向集 / 参考截图模式 三者至少其一。
+  if (!isDirection(obj.direction) && !(directions && directions.length > 0) && !referenceScreenshot) {
+    return { ok: false, reason: 'missing direction (need direction, directions, or referenceScreenshot)' };
   }
 
   const form: QuestionForm = {
     surface: obj.surface,
-    direction: obj.direction,
   };
+  if (isDirection(obj.direction)) form.direction = obj.direction;
+  if (directions && directions.length > 0) form.directions = directions;
+  if (referenceScreenshot) form.referenceScreenshot = true;
   const intent = trimText(obj.intent);
   const audience = trimText(obj.audience);
   const constraints = trimList(obj.constraints);
@@ -111,10 +130,13 @@ export function parseQuestionForm(input: string): QuestionFormParseResult {
 export function renderQuestionFormToDesignBrief(form: QuestionForm): DesignBrief {
   const brief: DesignBrief = {
     surface: form.surface,
-    direction: form.direction,
-    directionTokens: directionTokens[form.direction],
     source: 'manual',
   };
+  if (form.direction) {
+    brief.direction = form.direction;
+    brief.directionTokens = directionTokens[form.direction];
+  }
+  if (form.referenceScreenshot) brief.referenceScreenshot = true;
   if (form.intent) brief.intent = form.intent;
   if (form.audience) brief.audience = form.audience;
   if (form.constraints?.length) brief.constraints = form.constraints;

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   injectSelectionScript,
   injectPreviewStyle,
+  injectThemeOverride,
   parseProtoSelectMessage,
+  PROTO_PALETTES,
   PROTO_SELECT_SOURCE,
   PROTO_SELECT_MESSAGE,
 } from '../../../src/renderer/components/design/designPreviewInject';
@@ -46,6 +48,53 @@ describe('injectPreviewStyle', () => {
   it('既无 head 也无 html 时前置', () => {
     const out = injectPreviewStyle('<div>x</div>');
     expect(out.startsWith('<style data-neo-design-style')).toBe(true);
+  });
+});
+
+describe('PROTO_PALETTES', () => {
+  it('提供 5 套色板，首个是原色（零偏移）', () => {
+    expect(PROTO_PALETTES).toHaveLength(5);
+    expect(PROTO_PALETTES[0]).toMatchObject({ id: 'original', deg: 0 });
+    // id 唯一
+    expect(new Set(PROTO_PALETTES.map((p) => p.id)).size).toBe(5);
+  });
+});
+
+describe('injectThemeOverride', () => {
+  const html = '<html><head><title>x</title></head><body><img src="https://picsum.photos/seed/a/400/300"></body></html>';
+
+  it('原色（deg 0）原样返回，不注入', () => {
+    expect(injectThemeOverride(html, 'original')).toBe(html);
+  });
+
+  it('未知色板原样返回', () => {
+    expect(injectThemeOverride(html, 'nope')).toBe(html);
+  });
+
+  it('彩色色板注入 hue-rotate 覆盖样式（插在 </head> 前，赢过原型样式）', () => {
+    const ocean = PROTO_PALETTES.find((p) => p.id === 'ocean');
+    expect(ocean).toBeTruthy();
+    const out = injectThemeOverride(html, 'ocean');
+    expect(out).toContain('data-neo-design-theme');
+    expect(out).toContain(`hue-rotate(${ocean?.deg}deg)`);
+    // 图片反向旋转回原色，seed 真图不被染色
+    expect(out).toContain(`hue-rotate(${-(ocean?.deg ?? 0)}deg)`);
+    expect(out).toContain('img');
+    // 注入在 head 末尾（在 <title> 之后），样式覆盖原型既有规则
+    expect(out.indexOf('data-neo-design-theme')).toBeGreaterThan(out.indexOf('<title>'));
+    expect(out.indexOf('data-neo-design-theme')).toBeLessThan(out.indexOf('</head>'));
+  });
+
+  it('无 head 时插在 </body> 前', () => {
+    const out = injectThemeOverride('<body><div>x</div></body>', 'ocean');
+    expect(out).toContain('data-neo-design-theme');
+    expect(out.indexOf('data-neo-design-theme')).toBeLessThan(out.indexOf('</body>'));
+  });
+
+  it('既无 head 也无 body 时附到末尾', () => {
+    const out = injectThemeOverride('<div>x</div>', 'ocean');
+    expect(out.startsWith('<div>x</div>')).toBe(true);
+    expect(out).toContain('data-neo-design-theme');
   });
 });
 

@@ -3,8 +3,9 @@
 // 派发逻辑在 useDesignGeneration hook，本 store 只持有状态。
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { DesignOutputType, DesignSurface } from './designTypes';
+import type { DesignAspectRatio, DesignOutputType, DesignSurface } from './designTypes';
 import type { DesignVersion } from './designFiles';
+import { emptySpine, type VariantSpine } from './variantSpine';
 
 export type DesignGenStatus = 'idle' | 'generating' | 'done' | 'error';
 
@@ -25,6 +26,8 @@ interface DesignState {
   tone: string[];
   surface: DesignSurface | null;
   outputType: DesignOutputType;
+  /** 出图尺寸比例（仅图像产物用）。 */
+  aspectRatio: DesignAspectRatio;
   // 历史 + 选中
   history: DesignRun[];
   /** 当前查看/生成的 run 目录。 */
@@ -37,6 +40,8 @@ interface DesignState {
   // 版本快照（当前 run，不持久；磁盘是真理源）。viewingVersionPath 非空=正在看历史版本。
   versions: DesignVersion[];
   viewingVersionPath: string | null;
+  // variant spine（当前 run，不持久；spine.json 是真理源）。持有版本的 pin/discard。
+  spine: VariantSpine;
 
   // 表单 actions
   setRequirement: (v: string) => void;
@@ -44,6 +49,7 @@ interface DesignState {
   toggleTone: (t: string) => void;
   setSurface: (s: DesignSurface | null) => void;
   setOutputType: (t: DesignOutputType) => void;
+  setAspectRatio: (r: DesignAspectRatio) => void;
 
   // 历史 actions
   addHistory: (run: DesignRun) => void;
@@ -61,6 +67,7 @@ interface DesignState {
   // 版本 actions
   setVersions: (versions: DesignVersion[]) => void;
   setViewingVersion: (path: string | null) => void;
+  setSpine: (spine: VariantSpine) => void;
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -71,6 +78,7 @@ export const useDesignStore = create<DesignState>()(
       tone: [],
       surface: null,
       outputType: 'prototype',
+      aspectRatio: '1:1',
       history: [],
       selectedRunDir: null,
       status: 'idle',
@@ -79,6 +87,7 @@ export const useDesignStore = create<DesignState>()(
       previewHtml: null,
       versions: [],
       viewingVersionPath: null,
+      spine: emptySpine(),
 
       setRequirement: (requirement) => set({ requirement }),
       setBrandColor: (brandColor) => set({ brandColor }),
@@ -88,6 +97,7 @@ export const useDesignStore = create<DesignState>()(
         })),
       setSurface: (surface) => set((s) => ({ surface: s.surface === surface ? null : surface })),
       setOutputType: (outputType) => set({ outputType }),
+      setAspectRatio: (aspectRatio) => set({ aspectRatio }),
 
       addHistory: (run) =>
         set((s) => ({
@@ -102,6 +112,7 @@ export const useDesignStore = create<DesignState>()(
           error: null,
           versions: [],
           viewingVersionPath: null,
+          spine: emptySpine(),
         }),
 
       startGenerating: (run) =>
@@ -113,6 +124,7 @@ export const useDesignStore = create<DesignState>()(
           selectedRunDir: run.runDir,
           versions: [],
           viewingVersionPath: null,
+          spine: emptySpine(),
           history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
         })),
       startEditing: (runDir) =>
@@ -134,10 +146,12 @@ export const useDesignStore = create<DesignState>()(
           previewHtml: null,
           versions: [],
           viewingVersionPath: null,
+          spine: emptySpine(),
         }),
 
       setVersions: (versions) => set({ versions }),
       setViewingVersion: (viewingVersionPath) => set({ viewingVersionPath }),
+      setSpine: (spine) => set({ spine }),
     }),
     {
       name: 'code-agent-design',
@@ -149,6 +163,7 @@ export const useDesignStore = create<DesignState>()(
         tone: s.tone,
         surface: s.surface,
         outputType: s.outputType,
+        aspectRatio: s.aspectRatio,
         history: s.history,
         selectedRunDir: s.selectedRunDir,
       }),

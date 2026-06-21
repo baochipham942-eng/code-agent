@@ -22,6 +22,11 @@ describe('directionTokens', () => {
       expect(token.fonts.serif).toContain('serif');
       expect(token.fonts.sans).toContain('sans-serif');
       expect(token.posture.trim().length).toBeGreaterThan(0);
+      expect(Array.isArray(token.refs)).toBe(true);
+      expect(token.refs.length).toBeGreaterThan(0);
+      for (const ref of token.refs) {
+        expect(ref.trim().length).toBeGreaterThan(0);
+      }
     }
   });
 });

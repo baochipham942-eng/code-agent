@@ -328,6 +328,57 @@ const darkColoredGlow: DesignRule = {
   },
 };
 
+const grayImagePlaceholder: DesignRule = {
+  id: 'slop-gray-image-placeholder',
+  category: 'slop',
+  severity: 'warning',
+  minStrictness: 'relaxed',
+  title: '灰色图片占位框',
+  message:
+    '用灰色空框或占位图床（via.placeholder/dummyimage…）充当图片是典型 AI 痕迹。' +
+    '改用真实占位图 `https://picsum.photos/seed/{desc}/{w}/{h}`，并写贴切的 alt。',
+  run: (ctx) => {
+    const hits: RuleHit[] = [];
+    // 占位图床（只为产灰/假图而存在，命中即可信）。
+    const placeholderHost =
+      /via\.placeholder\.com|placehold\.co|placeholder\.pics|dummyimage\.com|placekitten\.com|placeimg\.com|fakeimg\.pl|baconmockup\.com/i;
+    // 灰底（Tailwind 浅灰族）。
+    const grayTw = /\bbg-(?:gray|slate|zinc|neutral|stone)-(?:100|200|300|400)\b/;
+    // 图片语义尺寸：纵横比工具类 / CSS aspect-ratio——「灰底 + 图片比例」强信号。
+    const aspect = /\baspect-(?:\[|video\b|square\b)|aspect-ratio\s*:/;
+    // 行内若已是真实图片源则不算灰框（含 picsum 真图、<img>、CSS 图片）。
+    const realImage = /<img\b|background-image|url\(|picsum\.photos/i;
+    const bgDecl = /background(?:-color)?\s*:\s*([^;{]+)/i;
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      if (placeholderHost.test(line)) {
+        hits.push({ line: i + 1, snippet: snippetOf(line) });
+        continue;
+      }
+      if (realImage.test(line)) continue;
+      let grayFill = grayTw.test(line);
+      if (!grayFill) {
+        const bg = bgDecl.exec(line);
+        if (bg) {
+          grayFill = extractColorLiterals(bg[1])
+            .map(describeColor)
+            .some(
+              (c): c is ColorInfo =>
+                c != null &&
+                (c.hue == null || c.saturation < 0.18) &&
+                c.lightness >= 0.45 &&
+                c.lightness <= 0.98,
+            );
+        }
+      }
+      if (grayFill && aspect.test(line)) {
+        hits.push({ line: i + 1, snippet: snippetOf(line) });
+      }
+    }
+    return hits;
+  },
+};
+
 // ── quality：通用品味 ───────────────────────────────────────────────────────
 
 const overusedFont: DesignRule = {
@@ -544,6 +595,7 @@ export const DESIGN_RULES: readonly DesignRule[] = [
   sideTabBorder,
   gradientText,
   grayTextOnColor,
+  grayImagePlaceholder,
   darkColoredGlow,
   overusedFont,
   heroFontCeiling,

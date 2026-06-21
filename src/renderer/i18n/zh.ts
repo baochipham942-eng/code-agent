@@ -88,6 +88,8 @@ export const zh = {
     deviceDesktop: '桌面',
     deviceTablet: '平板',
     deviceMobile: '手机',
+    paletteLabel: '配色（实时换肤，不重新生成）',
+    palettes: { original: '原色', citrus: '柑橘', spring: '草木', ocean: '海洋', berry: '莓紫' },
     continueEditTitle: '续编',
     continueEditPlaceholder: '继续改这个原型，例如：把导航改成深色、加一个 FAQ 区块（回车应用）',
     continueEditSend: '应用修改',

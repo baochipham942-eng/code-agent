@@ -69,6 +69,34 @@ describe('detectFrontend — slop 痕迹', () => {
       'quality-missing-reduced-motion',
     );
   });
+
+  it('命中灰色图片占位框：占位图床 URL', () => {
+    const src = '<img src="https://via.placeholder.com/400x300" alt="x">';
+    expect(ruleIds(detectFrontend(src, { filePath: 'a.html' }))).toContain(
+      'slop-gray-image-placeholder',
+    );
+  });
+
+  it('命中灰色图片占位框：dummyimage 图床', () => {
+    const src = '<img src="https://dummyimage.com/600x400/ccc/000">';
+    expect(ruleIds(detectFrontend(src, { filePath: 'a.html' }))).toContain(
+      'slop-gray-image-placeholder',
+    );
+  });
+
+  it('命中灰色图片占位框：灰底 + 图片纵横比的空框（Tailwind）', () => {
+    const src = '<div class="aspect-video bg-gray-200 rounded-lg"></div>';
+    expect(ruleIds(detectFrontend(src, { filePath: 'a.html' }))).toContain(
+      'slop-gray-image-placeholder',
+    );
+  });
+
+  it('命中灰色图片占位框：CSS 灰底 + aspect-ratio', () => {
+    const src = '.ph { background: #cccccc; aspect-ratio: 16 / 9; }';
+    expect(ruleIds(detectFrontend(src, { filePath: 'a.css' }))).toContain(
+      'slop-gray-image-placeholder',
+    );
+  });
 });
 
 describe('detectFrontend — 不误报', () => {
@@ -95,6 +123,20 @@ describe('detectFrontend — 不误报', () => {
   it('非前端文件不扫描', () => {
     const src = '.hero { background: linear-gradient(135deg, #6d28d9, #2563eb); }';
     expect(detectFrontend(src, { filePath: 'notes.txt' })).toEqual([]);
+  });
+
+  it('picsum 真图不误报为灰框', () => {
+    const src = '<img class="aspect-video" src="https://picsum.photos/seed/team/800/450" alt="团队">';
+    expect(ruleIds(detectFrontend(src, { filePath: 'a.html' }))).not.toContain(
+      'slop-gray-image-placeholder',
+    );
+  });
+
+  it('普通灰色面板（无图片纵横比）不误报为灰框', () => {
+    const src = '<div class="bg-gray-200 p-4 rounded">侧边栏</div>';
+    expect(ruleIds(detectFrontend(src, { filePath: 'a.html' }))).not.toContain(
+      'slop-gray-image-placeholder',
+    );
   });
 });
 
@@ -138,7 +180,7 @@ describe('detectFrontend — 截断与工具函数', () => {
 
   it('listDesignRules 暴露全部规则元数据', () => {
     const rules = listDesignRules();
-    expect(rules.length).toBe(15);
+    expect(rules.length).toBe(16);
     expect(rules.every((r) => r.id && r.title && r.minStrictness)).toBe(true);
   });
 });

@@ -45,7 +45,7 @@ export function DesignImageEditOps(props: DesignImageEditOpsProps): React.ReactE
                 : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
             }`}
           >
-            {t.design[labelKey]}
+            {t.design[labelKey] as string}
           </button>
         ))}
       </div>

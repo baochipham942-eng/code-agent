@@ -86,6 +86,42 @@ export function injectPreviewStyle(html: string): string {
   return PREVIEW_STYLE + html;
 }
 
+// ── Tweaks 运行时换肤（借鉴清单 T6 / OpenDesign runtime/srcdoc.ts）────────────
+// 确定性反 slop：在预览 iframe 里用一条 CSS filter 对整页做色相偏移，零重生成即可
+// 试色板。只作用于预览渲染（注入 srcDoc），导出/快照用 previewHtml 原文，不含本样式。
+// 仅对 proto HTML 有效——canvas 栅格 PNG 是图片像素，CSS filter 套不进去（故不做）。
+
+/** 预览换肤色板。`deg` 是 hue-rotate 角度；original=0 表示原色不偏移。 */
+export type ProtoPalette = { id: string; deg: number };
+
+/** 5 套预设色板。首个为原色（零偏移）。色板对任意原型都是「整轮色相旋转」而非绝对配色。 */
+export const PROTO_PALETTES: readonly ProtoPalette[] = [
+  { id: 'original', deg: 0 },
+  { id: 'citrus', deg: 45 },
+  { id: 'spring', deg: 130 },
+  { id: 'ocean', deg: 200 },
+  { id: 'berry', deg: 290 },
+];
+
+/**
+ * 按色板给预览 HTML 注入色相偏移样式。原色 / 未知色板原样返回。
+ * 把 hue-rotate 套在 :root 上整页换色；同时给图片/视频/矢量反向旋转 -deg，
+ * 让 seed 真实配图保持原色不被染脏（CSS filter 在嵌套时父子叠加，-deg 后再 +deg = 还原）。
+ * 注入在 </head> 前（样式表末尾），cascade 上赢过原型既有规则。
+ */
+export function injectThemeOverride(html: string, paletteId: string): string {
+  const palette = PROTO_PALETTES.find((p) => p.id === paletteId);
+  if (!palette || palette.deg === 0) return html;
+  const style =
+    `<style data-neo-design-theme>` +
+    `:root{filter:hue-rotate(${palette.deg}deg)}` +
+    `img,picture,video,canvas,svg,[data-neo-keep-color]{filter:hue-rotate(${-palette.deg}deg)}` +
+    `</style>`;
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${style}</head>`);
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${style}</body>`);
+  return html + style;
+}
+
 /**
  * 圈选模式开时往 HTML 注入圈选脚本（优先插在 </body> 前，否则附到末尾）；关时原样返回。
  */

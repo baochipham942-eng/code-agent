@@ -48,7 +48,13 @@ import {
 } from './designFiles';
 import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
-import { injectSelectionScript, injectPreviewStyle, parseProtoSelectMessage } from './designPreviewInject';
+import {
+  injectSelectionScript,
+  injectPreviewStyle,
+  injectThemeOverride,
+  parseProtoSelectMessage,
+  PROTO_PALETTES,
+} from './designPreviewInject';
 import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { DesignCostHistory } from './DesignCostHistory';
@@ -373,6 +379,43 @@ const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDevic
 };
 
 /**
+ * 配色切换（T6 Tweaks 换肤）：对预览 iframe 注入 hue-rotate 覆盖，零重生成实时试色板。
+ * 仅作用于预览渲染——导出/快照用 previewHtml 原文，不含本注入样式。色板对任意原型都是
+ * 「整轮色相旋转」，swatch 以品牌色 hue-rotate 后给个视觉提示，非绝对配色。
+ */
+const PaletteSwitch: React.FC<{ palette: string; onChange: (id: string) => void }> = ({
+  palette,
+  onChange,
+}) => {
+  const { t } = useI18n();
+  return (
+    <div
+      className="inline-flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-1.5 py-1"
+      title={t.design.paletteLabel}
+    >
+      <Palette className="h-3.5 w-3.5 text-zinc-400" />
+      {PROTO_PALETTES.map(({ id, deg }) => {
+        const active = palette === id;
+        const label = t.design.palettes[id as keyof typeof t.design.palettes] ?? id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            aria-pressed={active}
+            title={label}
+            className={`h-4 w-4 rounded-full border transition-transform ${
+              active ? 'border-white scale-110' : 'border-white/20 hover:scale-105'
+            }`}
+            style={{ background: '#d946ef', filter: `hue-rotate(${deg}deg)` }}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+/**
  * 续编输入条：在当前预览的原型上继续局部修改（backlog #3）。
  * selection 由 PreviewPane 圈选传入（backlog #2）：有选中时附目标元素定位并显示 chip。
  */
@@ -621,6 +664,7 @@ const PreviewPane: React.FC = () => {
   const viewingVersionPath = useDesignStore((s) => s.viewingVersionPath);
   const spine = useDesignStore((s) => s.spine);
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
+  const [palette, setPalette] = useState('original');
   const [selectMode, setSelectMode] = useState(false);
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -735,7 +779,12 @@ const PreviewPane: React.FC = () => {
   if (previewHtml) {
     const width = designDeviceWidth(device);
     const framed = device !== 'desktop';
-    const srcDoc = injectSelectionScript(injectPreviewStyle(previewHtml), selectMode);
+    // 注入顺序：滚动条样式（head 起始）→ 换肤 hue-rotate（head 末尾，覆盖原型样式）→ 圈选脚本。
+    // 三者都只在预览渲染期注入；导出/快照走 previewHtml 原文，不含任何注入内容。
+    const srcDoc = injectSelectionScript(
+      injectThemeOverride(injectPreviewStyle(previewHtml), palette),
+      selectMode,
+    );
     return (
       <div
         className={
@@ -771,7 +820,10 @@ const PreviewPane: React.FC = () => {
               />
             )}
           </div>
-          <DeviceSwitch device={device} onChange={setDevice} />
+          <div className="flex items-center gap-2">
+            <DeviceSwitch device={device} onChange={setDevice} />
+            <PaletteSwitch palette={palette} onChange={setPalette} />
+          </div>
           <div className="absolute right-3 flex items-center gap-1">
             {!viewing && (
               <button

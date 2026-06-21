@@ -90,6 +90,8 @@ export const en: Translations = {
     deviceDesktop: 'Desktop',
     deviceTablet: 'Tablet',
     deviceMobile: 'Mobile',
+    paletteLabel: 'Palette (live reskin, no regeneration)',
+    palettes: { original: 'Original', citrus: 'Citrus', spring: 'Spring', ocean: 'Ocean', berry: 'Berry' },
     continueEditTitle: 'Edit',
     continueEditPlaceholder: 'Keep refining this prototype, e.g. make the nav dark, add an FAQ section (Enter to apply)',
     continueEditSend: 'Apply',

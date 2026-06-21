@@ -122,6 +122,10 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
     '- 任何 HTML 标签都写成真实标签，禁止用转义实体（如 &lt;nav&gt;）或把标签当可见文本，' +
       '否则会在页面上显示成原始代码。导航 / 页头这类结构要在同一次 Edit 内把开闭标签成对写完，' +
       '不要跨多次 Edit 把一个元素切成半截，避免预览在中途渲染出未闭合的原始标记残影。',
+    '- 需要配图 / 头像 / 封面 / 缩略图时，用真实占位图，不要灰色空框：' +
+      '`<img src="https://picsum.photos/seed/{desc}/{w}/{h}">`——{desc} 换成描述内容的英文 slug（如 ' +
+      '`office-team`）、{w}/{h} 换成像素宽高（如 `800/600`），并写贴切的 alt。禁止用灰色空 div、' +
+      '`background:#ccc` / `bg-gray-200` 这类纯色块或 via.placeholder.com / dummyimage.com 等灰图床充当图片。',
     '- 以文档的 `</html>` 收尾，然后用一段话总结你实现了哪些交互。',
   ];
   const ctxLines = formatDesignContextLines(input.designContext);

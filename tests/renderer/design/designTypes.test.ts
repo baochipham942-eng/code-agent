@@ -53,6 +53,14 @@ describe('buildPrototypePrompt', () => {
     expect(p).toContain('转义实体');
     expect(p).toContain('成对');
   });
+
+  it('配图走 picsum seed 真图、禁灰色占位框', () => {
+    const p = buildPrototypePrompt(base);
+    expect(p).toContain('picsum.photos/seed/');
+    // 含 {desc}/{w}/{h} 形态的占位说明
+    expect(p).toMatch(/\{[^}]*\}\/\{[^}]*\}\/\{[^}]*\}/);
+    expect(p).toContain('灰');
+  });
 });
 
 describe('buildImagePrompt', () => {

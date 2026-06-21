@@ -105,6 +105,23 @@ export const en: Translations = {
     errTimeout: 'Generation timed out — no prototype file detected',
     errNoPrototype: 'Generate or pick a prototype first',
     errNoInstruction: 'Enter a change request first',
+    // T2 cost transparency + undo/redo trust UI
+    costEstimateLabel: 'Est. this run',
+    costActualLabel: 'Spent',
+    costFree: 'Free',
+    costHint: 'Billed to your BYOK key, shown before each run',
+    historyPanelTitle: 'Design history',
+    historyPanelEmpty: 'After you generate or inpaint, each step shows up here as a nameable, rollback-able version',
+    historyTotalSpend: 'Total spent',
+    historyStepGenerate: 'Generate',
+    historyStepEdit: 'Inpaint',
+    historyCurrent: 'Current',
+    historyUndo: 'Roll back one step',
+    historyRedo: 'Step forward',
+    historyRollbackTo: 'Roll back to this version',
+    historyRename: 'Rename',
+    historyRenamePlaceholder: 'Name this step',
+    historyRenameSave: 'Save',
   },
 
   // Settings Modal

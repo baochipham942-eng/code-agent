@@ -116,3 +116,45 @@ describe('designCanvasStore setChosen / deleteNode', () => {
     expect(st.selectedIds).toEqual(['B']);
   });
 });
+
+describe('designCanvasStore renameNode（T2 命名步）', () => {
+  beforeEach(() => {
+    useDesignCanvasStore.getState().loadDoc('run-x', doc([]));
+  });
+
+  it('renameNode 写入 label，不动其他字段', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A')]));
+    s.renameNode('A', '首页英雄区 v1');
+    const node = useDesignCanvasStore.getState().nodes.find((x) => x.id === 'A');
+    expect(node?.label).toBe('首页英雄区 v1');
+    expect(node?.src).toBe('assets/A.png');
+  });
+
+  it('renameNode 对不存在的 id 静默无操作', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A')]));
+    s.renameNode('ZZ', 'x');
+    expect(useDesignCanvasStore.getState().nodes).toHaveLength(1);
+  });
+})
+
+describe('discardNode 升主版 tie-break（审计 R2 LOW symmetric）', () => {
+  beforeEach(() => {
+    useDesignCanvasStore.getState().loadDoc('run-x', doc([]));
+  });
+
+  it('同 createdAt 兄弟升主版按 id 确定（与 slotTimeline tie-break 对齐）', () => {
+    const s = useDesignCanvasStore.getState();
+    // A 根；A1/A2 同 parentId=A 且同 createdAt → 淘汰主版 A 后确定升任
+    s.loadDoc('run-x', doc([
+      { ...n('A'), chosen: true, createdAt: 1 },
+      { ...n('A1', 'A'), createdAt: 5 },
+      { ...n('A2', 'A'), createdAt: 5 },
+    ]));
+    s.discardNode('A');
+    const chosen = useDesignCanvasStore.getState().nodes.filter((x) => x.chosen).map((x) => x.id);
+    // 降序 createdAt 后 id 降序 tie-break → A2 在前，确定升任 A2
+    expect(chosen).toEqual(['A2']);
+  });
+});

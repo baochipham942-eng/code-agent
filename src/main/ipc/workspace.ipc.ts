@@ -15,6 +15,8 @@ import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
+import { estimateImageCostCny } from '../../shared/media/imageCost';
+import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
@@ -43,7 +45,7 @@ function assertWithinDesignDir(p: string, label: string): void {
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
 async function handleGenerateDesignImage(
   payload: { prompt: string; aspectRatio?: string; outputPath: string },
-): Promise<{ path: string }> {
+): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.prompt || !payload?.outputPath) {
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
@@ -51,13 +53,14 @@ async function handleGenerateDesignImage(
   const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
     '../services/media/imageGenerationService'
   );
-  const { imageData } = await generateImage('wanx', '', payload.prompt, payload.aspectRatio || '1:1');
+  const { imageData, actualModel } = await generateImage('wanx', '', payload.prompt, payload.aspectRatio || '1:1');
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, buf);
-  return { path: payload.outputPath };
+  // 实际花费权威源在 main：按真正落地的模型查价表（T2 BYOK 成本可见）。
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
 // 设计画布导入用户自有图片（自由画布）：renderer 传 base64 dataURL → 写盘到 run 的 assets，
@@ -79,7 +82,7 @@ async function handleImportDesignImage(
 // (白=改/黑=留) → 通义万相 wanx2.1-imageedit 真 inpaint → 下载结果写盘 → 返回路径。
 async function handleEditDesignImage(
   payload: { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
-): Promise<{ path: string }> {
+): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.prompt || !payload?.baseImagePath || !payload?.maskDataUrl || !payload?.outputPath) {
     throw new Error('editDesignImage 需要 prompt / baseImagePath / maskDataUrl / outputPath');
   }
@@ -102,7 +105,9 @@ async function handleEditDesignImage(
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
-  return { path: payload.outputPath };
+  // 局部重绘固定走 wanx imageedit；实际花费按该模型查价表（T2 BYOK 成本可见）。
+  const actualModel = DESIGN_IMAGE_MODELS.edit;
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
 // 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 方向/比例 → 四向单边 scale

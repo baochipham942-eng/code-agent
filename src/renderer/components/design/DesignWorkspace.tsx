@@ -49,7 +49,9 @@ import {
 import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
 import { injectSelectionScript, injectPreviewStyle, parseProtoSelectMessage } from './designPreviewInject';
-import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
+import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
+import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
+import { DesignCostHistory } from './DesignCostHistory';
 import { VariantCompareView } from './VariantCompareView';
 import { loadProtoSpine, saveProtoSpine } from './protoSpine';
 import { activeVariants, pinVariant, discardVariant, type Variant } from './variantSpine';
@@ -265,6 +267,19 @@ const Composer: React.FC = () => {
         </div>
       )}
 
+      {/* 出图前成本预估（T2 成本透明，仅图像产物走付费图像调用） */}
+      {imageMode && (
+        <div className="-mb-2 flex items-center justify-between rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-1.5 text-[11px]">
+          <span className="text-zinc-400">
+            {t.design.costEstimateLabel}{' '}
+            <span className="font-mono text-emerald-300">
+              {formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.generate))}
+            </span>
+          </span>
+          <span className="text-zinc-500">{t.design.costHint}</span>
+        </div>
+      )}
+
       {/* 生成 */}
       <button
         type="button"
@@ -303,6 +318,9 @@ const Composer: React.FC = () => {
           <p className="text-[11px] leading-snug text-zinc-500">{t.design.importHint}</p>
         </>
       )}
+
+      {/* T2 成本透明 + undo/redo 历史（仅图像产物，挂 variant spine） */}
+      {imageMode && <DesignCostHistory />}
 
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">

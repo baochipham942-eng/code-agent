@@ -19,6 +19,10 @@ export interface CanvasImageNode {
   chosen?: boolean;
   /** 软删除：淘汰但落盘保留（variant spine 非破坏性语义），画布渲染时过滤。 */
   discarded?: boolean;
+  /** 用户为这一步命名的标题（T2 可逆命名步；空时历史展示回退到 prompt）。 */
+  label?: string;
+  /** 产出这一步的图像调用实际花费（人民币元，T2 BYOK 成本可见；权威值由出图 IPC 回传）。 */
+  costCny?: number;
   createdAt: number;
 }
 
@@ -70,6 +74,9 @@ function normalizeNode(raw: unknown): CanvasImageNode | null {
   if (typeof r.parentId === 'string') node.parentId = r.parentId;
   if (r.chosen === true) node.chosen = true;
   if (r.discarded === true) node.discarded = true;
+  if (typeof r.label === 'string') node.label = r.label;
+  // 成本必须非负：防手改/损坏的 canvas.json 注入负成本压低累计花费、破坏 BYOK 计费信任。
+  if (isFiniteNumber(r.costCny) && (r.costCny as number) >= 0) node.costCny = r.costCny as number;
   return node;
 }
 

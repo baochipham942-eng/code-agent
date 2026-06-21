@@ -150,7 +150,7 @@ export function useDesignCanvasGeneration(): {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      const res = await window.domainAPI?.invoke<{ path: string }>(
+      const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
         IPC_DOMAINS.WORKSPACE,
         'generateDesignImage',
         { prompt, aspectRatio: form.aspectRatio, outputPath: assetAbs },
@@ -158,6 +158,7 @@ export function useDesignCanvasGeneration(): {
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);
       }
+      const costCny = res.data?.costCny;
       // 画布期间未被切到别的 run 才回灌。
       if (useDesignCanvasStore.getState().runDir !== runDir) {
         useDesignCanvasStore.getState().setGenerating(false);
@@ -179,6 +180,7 @@ export function useDesignCanvasGeneration(): {
         height,
         prompt: form.requirement,
         createdAt: Date.now(),
+        ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
@@ -209,7 +211,7 @@ export function useDesignCanvasGeneration(): {
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
-      const res = await window.domainAPI?.invoke<{ path: string }>(
+      const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
         IPC_DOMAINS.WORKSPACE,
         'editDesignImage',
         {
@@ -222,6 +224,7 @@ export function useDesignCanvasGeneration(): {
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);
       }
+      const costCny = res.data?.costCny;
       if (useDesignCanvasStore.getState().runDir !== runDir) {
         useDesignCanvasStore.getState().setGenerating(false);
         return;
@@ -232,6 +235,8 @@ export function useDesignCanvasGeneration(): {
       // 与扩图/去水印同构：复用 buildVariantNode 落底图右侧 + parentId 锚血缘根（audit R2 对称应用，
       // 顺带继承防碰撞 id；编辑「编辑版」也归同一版本槽，避免深层血缘碎成多槽破坏「一槽一主版」）。
       const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
+      // T2 BYOK 成本可见：把本次局部重绘实际花费挂到该 variant 节点。
+      if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().setGenerating(false);

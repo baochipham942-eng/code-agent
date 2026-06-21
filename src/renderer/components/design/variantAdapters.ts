@@ -22,7 +22,9 @@ export function canvasNodeToVariant(node: CanvasImageNode): Variant {
     },
   };
   if (node.parentId) v.parentId = node.parentId;
-  if (typeof node.prompt === 'string') v.label = node.prompt;
+  // 展示标题优先用户命名（T2 命名步），回退到生成/编辑指令。
+  const label = node.label?.trim() ? node.label : node.prompt;
+  if (typeof label === 'string') v.label = label;
   return v;
 }
 

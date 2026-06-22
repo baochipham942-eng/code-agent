@@ -55,6 +55,7 @@ export const AgentEngineListSection: React.FC = () => {
         logger.warn('Failed to load agent engines', {
           error: error instanceof Error ? error.message : String(error),
         });
+        if (!cancelled) setDescriptors([]);
       });
     return () => {
       cancelled = true;

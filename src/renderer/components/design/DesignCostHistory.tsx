@@ -6,11 +6,12 @@
 // 拆成「展示组件 View（吃 props，纯渲染）+ 容器（接 store）」：View 无 store 依赖，
 // 便于无 jsdom 环境下 renderToStaticMarkup 真组件做 dogfood/视觉验证。
 import React, { useMemo, useState } from 'react';
-import { Undo2, Redo2, Pencil, Check, RotateCcw, CircleDot } from 'lucide-react';
+import { Undo2, Redo2, Pencil, Check, RotateCcw, CircleDot, Images } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { formatCny } from '@shared/media/imageCost';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { canvasNodeToVariant } from './variantAdapters';
+import { isReferenceNode } from './designCanvasTypes';
 import { groupKey, type VariantSpine } from './variantSpine';
 import {
   slotTimeline,
@@ -42,16 +43,22 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
+  // role 分流：参考图（生成前贴入，喂模型用）是输入不是产物，不进版本时间线/累计花费，
+  // 单独成「参考图」分组展示；版本时间线只认产物节点。
+  const referenceNodes = useMemo(() => nodes.filter(isReferenceNode), [nodes]);
+  const versionNodes = useMemo(() => nodes.filter((n) => !isReferenceNode(n)), [nodes]);
+
   const spine: VariantSpine = useMemo(
-    () => ({ version: 1, variants: nodes.map(canvasNodeToVariant) }),
-    [nodes],
+    () => ({ version: 1, variants: versionNodes.map(canvasNodeToVariant) }),
+    [versionNodes],
   );
-  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n] as const)), [nodes]);
+  const nodeById = useMemo(() => new Map(versionNodes.map((n) => [n.id, n] as const)), [versionNodes]);
 
   // 累计花费：所有出图/重绘步骤实际花费之和（含已淘汰——钱已真实花掉，BYOK 必须诚实）。
+  // 参考图是免费导入，不计入。
   const totalSpend = useMemo(
-    () => nodes.reduce((sum, n) => sum + (typeof n.costCny === 'number' ? n.costCny : 0), 0),
-    [nodes],
+    () => versionNodes.reduce((sum, n) => sum + (typeof n.costCny === 'number' ? n.costCny : 0), 0),
+    [versionNodes],
   );
 
   // 活跃版本槽（按 groupKey 去重，保留首次出现顺序）。
@@ -97,6 +104,15 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
           </span>
         )}
       </div>
+
+      {/* 参考图分组：喂模型的视觉输入，独立于版本时间线（不占版本序号、不计花费）。 */}
+      {referenceNodes.length > 0 && (
+        <div className="flex items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/[0.05] px-2 py-1 text-[11px] text-sky-200">
+          <Images className="h-3 w-3 shrink-0" />
+          <span className="flex-1">{t.design.historyReferenceGroup}</span>
+          <span className="font-mono text-sky-300">×{referenceNodes.length}</span>
+        </div>
+      )}
 
       {!hasSteps && <p className="text-[11px] leading-snug text-zinc-500">{t.design.historyPanelEmpty}</p>}
 

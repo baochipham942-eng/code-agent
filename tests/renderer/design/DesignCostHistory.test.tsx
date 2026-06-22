@@ -62,6 +62,33 @@ describe('DesignCostHistoryView', () => {
     expect(html).not.toContain('¥0.00'); // header 不再 blind formatCny(0)
   });
 
+  it('参考图节点不进版本时间线，单独成「参考图」分组（P2 role-aware）', () => {
+    const withRef: CanvasImageNode[] = [
+      N({ id: 'ref1', createdAt: 50, role: 'reference', label: '参考截图甲' }),
+      N({ id: 'out1', createdAt: 100, label: '生成稿', costCny: 0.14 }),
+    ];
+    const html = render(withRef);
+    expect(html).not.toContain('参考截图甲'); // 参考图不作为版本步骤出现
+    expect(html).toContain('生成稿');
+    expect(html).toContain('参考图'); // 单独分组标题
+    expect(html).toContain('×1'); // 参考图计数
+  });
+
+  it('仅有参考图、无产物时仍显示参考分组（不是纯空态）', () => {
+    const onlyRef: CanvasImageNode[] = [N({ id: 'ref1', createdAt: 50, role: 'reference' })];
+    const html = render(onlyRef);
+    expect(html).toContain('参考图'); // 参考分组在
+  });
+
+  it('参考图不计入累计花费（导入免费，钱花在产物上）', () => {
+    const mix: CanvasImageNode[] = [
+      N({ id: 'ref1', createdAt: 50, role: 'reference', costCny: 0 }),
+      N({ id: 'out1', createdAt: 100, label: '出图', costCny: 0.14 }),
+    ];
+    const html = render(mix);
+    expect(html).toContain('¥0.14'); // 累计只算产物，不被参考图扰动
+  });
+
   it('空画布显示空态提示，不渲染步骤', () => {
     const html = render([]);
     expect(html).toContain('每一步会作为可命名、可回滚的版本');

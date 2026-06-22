@@ -200,6 +200,7 @@ export const en: Translations = {
     historyPanelTitle: 'Design history',
     historyPanelEmpty: 'After you generate or inpaint, each step shows up here as a nameable, rollback-able version',
     historyTotalSpend: 'Total spent',
+    historyReferenceGroup: 'References',
     historyStepGenerate: 'Generate',
     historyStepEdit: 'Inpaint',
     historyCurrent: 'Current',

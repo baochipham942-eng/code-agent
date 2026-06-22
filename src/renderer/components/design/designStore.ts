@@ -58,6 +58,9 @@ interface DesignState {
   viewingVersionPath: string | null;
   // variant spine（当前 run，不持久；spine.json 是真理源）。持有版本的 pin/discard。
   spine: VariantSpine;
+  // proto 版本对比（瞬时态，不持久）：左侧统一历史面板选版、右侧 overlay 渲染共享这份状态。
+  compareIds: string[];
+  comparing: boolean;
 
   // 表单 actions
   setRequirement: (v: string) => void;
@@ -91,6 +94,11 @@ interface DesignState {
   setVersions: (versions: DesignVersion[]) => void;
   setViewingVersion: (path: string | null) => void;
   setSpine: (spine: VariantSpine) => void;
+
+  // proto 对比 actions（选版上限 2，FIFO 顶替；切 run 自动清空）。
+  toggleCompareId: (id: string) => void;
+  setComparing: (b: boolean) => void;
+  clearCompare: () => void;
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -118,6 +126,8 @@ export const useDesignStore = create<DesignState>()(
       versions: [],
       viewingVersionPath: null,
       spine: emptySpine(),
+      compareIds: [],
+      comparing: false,
 
       setRequirement: (requirement) => set({ requirement }),
       setBrandColor: (brandColor) => set({ brandColor }),
@@ -150,6 +160,8 @@ export const useDesignStore = create<DesignState>()(
           versions: [],
           viewingVersionPath: null,
           spine: emptySpine(),
+          compareIds: [],
+          comparing: false,
         }),
 
       startGenerating: (run) =>
@@ -162,6 +174,8 @@ export const useDesignStore = create<DesignState>()(
           versions: [],
           viewingVersionPath: null,
           spine: emptySpine(),
+          compareIds: [],
+          comparing: false,
           history: [run, ...s.history.filter((h) => h.runDir !== run.runDir)].slice(0, HISTORY_MAX),
         })),
       startEditing: (runDir) =>
@@ -184,11 +198,24 @@ export const useDesignStore = create<DesignState>()(
           versions: [],
           viewingVersionPath: null,
           spine: emptySpine(),
+          compareIds: [],
+          comparing: false,
         }),
 
       setVersions: (versions) => set({ versions }),
       setViewingVersion: (viewingVersionPath) => set({ viewingVersionPath }),
       setSpine: (spine) => set({ spine }),
+
+      toggleCompareId: (id) =>
+        set((s) => ({
+          compareIds: s.compareIds.includes(id)
+            ? s.compareIds.filter((x) => x !== id)
+            : s.compareIds.length >= 2
+              ? [s.compareIds[1], id]
+              : [...s.compareIds, id],
+        })),
+      setComparing: (comparing) => set({ comparing }),
+      clearCompare: () => set({ compareIds: [], comparing: false }),
     }),
     {
       name: 'code-agent-design',

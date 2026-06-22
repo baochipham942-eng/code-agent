@@ -178,6 +178,23 @@ describe('inference Max Mode wiring', () => {
     expect(decisionEvents).toHaveLength(1);
   });
 
+  // 异常路径漏记 token 修复：普通（非 Max Mode）推理中断时，本轮已派发请求的
+  // input tokens 是真实沉没成本，必须记一次（此前 abort 分支直接返回空，零记账）。
+  it('普通路径中断（取消）→ 记一次 input 沉没成本，不再静默漏记', async () => {
+    const ctx = buildCtx({ maxMode: false } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {
+      ctx.runtime.isCancelled = true; // 流式中途用户取消
+      throw new Error('aborted');
+    });
+
+    const response = await inference(ctx);
+
+    expect(response.type).toBe('text');
+    expect(response.content ?? '').toBe('');
+    // estimateModelMessageTokens 被 mock 为固定 12；output 中断时不估算 → 0
+    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(12, 0);
+  });
+
   it('开关开 → N 候选（无流式回调）+ judge（无工具），返回赢家并附 maxMode 诊断', async () => {
     const ctx = buildCtx({ maxMode: true, maxModeCandidates: 3 } as any);
     let candidateCount = 0;

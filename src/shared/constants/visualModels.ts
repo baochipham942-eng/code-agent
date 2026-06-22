@@ -42,3 +42,57 @@ export function defaultImageModelId(): string {
 export function imageModelsWithCap(cap: ImageCap): VisualImageModel[] {
   return IMAGE_MODELS.filter((m) => m.caps.includes(cap));
 }
+
+// ── 视频生成模型注册表（P2，单 provider dashscope）。能力标签 t2v/i2v 驱动模式过滤。 ──
+export type VideoCap = 't2v' | 'i2v';
+
+export interface VisualVideoModel {
+  id: string;
+  label: string;
+  provider: VisualProviderId; // P2 仅 'dashscope'
+  caps: VideoCap[];
+  /** 时长区间（秒）。固定时长模型令 min=default=max（如 i2v turbo 固定 5s）。 */
+  minDurationSec: number;
+  maxDurationSec: number;
+  defaultDurationSec: number;
+}
+
+export const VIDEO_MODELS: readonly VisualVideoModel[] = [
+  {
+    id: 'wan2.7-t2v',
+    label: '通义万相 文生视频',
+    provider: 'dashscope',
+    caps: ['t2v'],
+    minDurationSec: 2,
+    maxDurationSec: 15,
+    defaultDurationSec: 5,
+  },
+  {
+    id: 'wanx2.1-i2v-turbo',
+    label: '通义万相 图生视频',
+    provider: 'dashscope',
+    caps: ['i2v'],
+    minDurationSec: 5,
+    maxDurationSec: 5, // turbo 档固定 5s
+    defaultDurationSec: 5,
+  },
+];
+
+export function videoModelById(id: string): VisualVideoModel | undefined {
+  return VIDEO_MODELS.find((m) => m.id === id);
+}
+
+/** 默认走 t2v 文生视频（最常用入口）。 */
+export function defaultVideoModelId(): string {
+  return 'wan2.7-t2v';
+}
+
+export function videoModelsWithCap(cap: VideoCap): VisualVideoModel[] {
+  return VIDEO_MODELS.filter((m) => m.caps.includes(cap));
+}
+
+/** 把请求时长按模型区间 clamp（非有限/越界 → 回退默认/边界），杜绝付费空/越界调用。 */
+export function clampVideoDuration(model: VisualVideoModel, durationSec?: number): number {
+  if (typeof durationSec !== 'number' || !Number.isFinite(durationSec)) return model.defaultDurationSec;
+  return Math.min(model.maxDurationSec, Math.max(model.minDurationSec, Math.round(durationSec)));
+}

@@ -67,3 +67,21 @@ export const DESIGN_IMAGE_MODELS = {
 export const API_VERSIONS = {
   ANTHROPIC: '2023-06-01',
 } as const;
+
+/**
+ * 视频生成定价（每秒，人民币元）。单一真源——禁在业务代码散落视频价格字面量。
+ * key 为视频模型 id，与 VIDEO_MODELS / generateVideo 返回的 actualModel 对齐。
+ * ⚠️ DashScope 官方文档未直接披露单价，以下为保守上界估值（方向偏高→成本提示偏保守，
+ *    安全侧），dogfood 与真实账单核对后回填校正。
+ */
+export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
+  'wan2.7-t2v': 0.7,        // 文生视频，保守上界
+  'wanx2.1-i2v-turbo': 0.3, // 图生视频 turbo 档，保守上界
+  default: 0.7,
+};
+
+/** 设计画布视频产物默认模型 id（供 composer 预估成本查表）。 */
+export const DESIGN_VIDEO_MODELS = {
+  t2v: 'wan2.7-t2v',
+  i2v: 'wanx2.1-i2v-turbo',
+} as const;

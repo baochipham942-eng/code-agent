@@ -57,8 +57,11 @@ import {
 } from './designPreviewInject';
 import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
+import { estimateVideoCostCny } from '@shared/media/videoCost';
+import { videoModelById, clampVideoDuration } from '@shared/constants/visualModels';
 import { DesignCostHistory } from './DesignCostHistory';
 import { ImageModelPicker } from './ImageModelPicker';
+import { VideoModelPicker } from './VideoModelPicker';
 import { VariantCompareView } from './VariantCompareView';
 import { loadProtoSpine, saveProtoSpine } from './protoSpine';
 import { activeVariants, pinVariant, discardVariant, type Variant } from './variantSpine';
@@ -66,6 +69,11 @@ import { activeVariants, pinVariant, discardVariant, type Variant } from './vari
 /** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
 function isImageOutput(t: DesignOutputType): boolean {
   return t === 'mockup' || t === 'infographic';
+}
+
+/** 视频产物（走 konva 画布 + generateVideo 派发）。 */
+function isVideoOutput(t: DesignOutputType): boolean {
+  return t === 'video';
 }
 
 /** 加载某次历史生成的产物 + 版本列表到预览。 */
@@ -135,7 +143,7 @@ const Composer: React.FC = () => {
   const { t } = useI18n();
   const s = useDesignStore();
   const { generate: generatePrototype } = useDesignGeneration();
-  const { generate: generateCanvas } = useDesignCanvasGeneration();
+  const { generate: generateCanvas, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasGenerating = useDesignCanvasStore((c) => c.generating);
@@ -145,11 +153,15 @@ const Composer: React.FC = () => {
     { type: 'prototype', label: t.design.outputPrototype },
     { type: 'mockup', label: t.design.outputMockup },
     { type: 'infographic', label: t.design.outputInfographic },
+    { type: 'video', label: t.design.outputVideo },
   ];
   const imageMode = isImageOutput(s.outputType);
-  const generating = imageMode ? canvasGenerating : s.status === 'generating';
-  const error = imageMode ? canvasError : s.error;
-  const onGenerate = imageMode ? generateCanvas : generatePrototype;
+  const videoMode = isVideoOutput(s.outputType);
+  // 视频与图像产物都落 konva 画布，共用 canvas store 的 generating/error。
+  const canvasMode = imageMode || videoMode;
+  const generating = canvasMode ? canvasGenerating : s.status === 'generating';
+  const error = canvasMode ? canvasError : s.error;
+  const onGenerate = videoMode ? () => generateVideo() : imageMode ? generateCanvas : generatePrototype;
   const surfaces: Array<{ value: DesignSurface; label: string }> = [
     { value: 'brand', label: t.design.surfaceBrand },
     { value: 'product', label: t.design.surfaceProduct },
@@ -292,6 +304,75 @@ const Composer: React.FC = () => {
             </span>
           </span>
           <span className="text-zinc-500">{t.design.costHint}</span>
+        </div>
+      )}
+
+      {/* 视频产物：模式(t2v/i2v) + 视频模型 + 时长 + 成本预估（视频按秒，比图贵一量级） */}
+      {videoMode && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-zinc-400">{t.design.videoModeLabel}</span>
+            <div className="flex gap-1.5">
+              {(['t2v', 'i2v'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => s.setVideoMode(m)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                    s.videoMode === m ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {m === 't2v' ? t.design.videoModeT2v : t.design.videoModeI2v}
+                </button>
+              ))}
+            </div>
+            {s.videoMode === 'i2v' && (
+              <span className="text-[11px] leading-snug text-zinc-500">{t.design.videoI2vHint}</span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-zinc-400">{t.design.videoModel}</span>
+            <VideoModelPicker />
+          </div>
+
+          {(() => {
+            const vm = videoModelById(s.videoModel);
+            const adjustable = vm ? vm.minDurationSec < vm.maxDurationSec : false;
+            const dur = vm ? clampVideoDuration(vm, s.videoDurationSec) : s.videoDurationSec;
+            return (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-zinc-400">
+                  {t.design.videoDurationLabel}：<span className="font-mono text-zinc-300">{dur}s</span>
+                </span>
+                {adjustable && vm && (
+                  <input
+                    type="range"
+                    min={vm.minDurationSec}
+                    max={vm.maxDurationSec}
+                    step={1}
+                    value={dur}
+                    onChange={(e) => s.setVideoDurationSec(Number(e.target.value))}
+                    aria-label={t.design.videoDurationLabel}
+                  />
+                )}
+              </div>
+            );
+          })()}
+
+          {(() => {
+            const vm = videoModelById(s.videoModel);
+            const dur = vm ? clampVideoDuration(vm, s.videoDurationSec) : s.videoDurationSec;
+            return (
+              <div className="-mb-2 flex items-center justify-between rounded-lg border border-amber-400/30 bg-amber-400/[0.08] px-3 py-1.5 text-[11px]">
+                <span className="text-zinc-300">
+                  {t.design.costEstimateLabel}{' '}
+                  <span className="font-mono text-amber-300">{formatCny(estimateVideoCostCny(s.videoModel, dur))}</span>
+                </span>
+                <span className="text-zinc-500">{t.design.videoCostHint}</span>
+              </div>
+            );
+          })()}
         </div>
       )}
 

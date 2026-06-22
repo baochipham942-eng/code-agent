@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Pencil } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Pencil, Film } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
@@ -23,7 +23,13 @@ import {
   worldRectToImageRegion,
   type Rect,
 } from './designCanvasMask';
-import type { CanvasImageNode } from './designCanvasTypes';
+import {
+  isImageNode,
+  isVideoNode,
+  formatDurationLabel,
+  type CanvasImageNode,
+  type CanvasVideoNode,
+} from './designCanvasTypes';
 
 // 缩放范围与步进（避免画布塌缩/无限放大）。
 const SCALE_MIN = 0.1;
@@ -163,6 +169,101 @@ const CanvasImage: React.FC<{
   );
 };
 
+// P2 视频节点：poster 缩略图（有则懒加载，无则深色占位）+ 居中播放徽标 + 左下时长 +
+// 选中/主版高亮（与 CanvasImage 同视觉语言）。点播放徽标打开 DOM <video> 浮层。
+const KonvaVideoNode: React.FC<{
+  node: CanvasVideoNode;
+  runDir: string | null;
+  selected: boolean;
+  onSelect: (additive: boolean) => void;
+  onPlay: () => void;
+}> = ({ node, runDir, selected, onSelect, onPlay }) => {
+  const poster = useNodeImage(runDir, node.poster ?? '');
+  const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+    const evt = e.evt as MouseEvent;
+    onSelect(Boolean(evt.shiftKey || evt.metaKey));
+  };
+  const play = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+    e.cancelBubble = true;
+    onPlay();
+  };
+  const cy = node.y + node.height / 2;
+  const glyph = Math.max(28, Math.round(Math.min(node.width, node.height) * 0.18));
+  const durFs = Math.max(12, Math.round(node.width * 0.04));
+  return (
+    <>
+      {poster ? (
+        <KonvaImage image={poster} x={node.x} y={node.y} width={node.width} height={node.height} onMouseDown={pick} onTap={pick} />
+      ) : (
+        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} fill="#18181b" cornerRadius={6} onMouseDown={pick} onTap={pick} />
+      )}
+      <KonvaText
+        x={node.x}
+        y={cy - glyph / 2}
+        width={node.width}
+        align="center"
+        text="▶"
+        fontSize={glyph}
+        fill="rgba(255,255,255,0.92)"
+        onMouseDown={play}
+        onTap={play}
+      />
+      <KonvaText
+        x={node.x + 8}
+        y={node.y + node.height - durFs * 1.6}
+        text={formatDurationLabel(node.durationSec)}
+        fontSize={durFs}
+        fill="rgba(255,255,255,0.85)"
+        listening={false}
+      />
+      {node.chosen && (
+        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} stroke="#10b981" strokeWidth={3} listening={false} />
+      )}
+      {selected && (
+        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} stroke="#e879f9" strokeWidth={2} dash={[10, 6]} listening={false} />
+      )}
+    </>
+  );
+};
+
+// P2 视频播放浮层（DOM，镜像 DiffEvidenceOverlay）：把 mp4 读成 data URL 喂 <video> 就地播放。
+const VideoPlayOverlay: React.FC<{
+  runDir: string | null;
+  node: CanvasVideoNode;
+  onClose: () => void;
+}> = ({ runDir, node, onClose }) => {
+  const { t } = useI18n();
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      if (!runDir) return;
+      // readBinary 按扩展名返回 video/mp4，readWorkspaceImageAsDataUrl 用真实 mimeType → 可直接喂 <video>。
+      const data = await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`);
+      if (alive) setUrl(data);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [runDir, node.src]);
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-zinc-950/85 p-6">
+      <button
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded p-1 text-zinc-400 hover:text-zinc-100"
+        aria-label={t.design.videoPlayClose}
+      >
+        <X size={18} />
+      </button>
+      {url ? (
+        <video src={url} controls autoPlay className="max-h-[80%] max-w-[90%] rounded border border-white/20" />
+      ) : (
+        <Loader2 className="animate-spin text-zinc-500" size={20} />
+      )}
+    </div>
+  );
+};
+
 // T4 diff 证据浮层：展示"模型偷改了哪些未选区域"（标红）+ 度量。
 const DiffEvidenceOverlay: React.FC<{
   runDir: string | null;
@@ -266,7 +367,7 @@ export const DesignCanvas: React.FC = () => {
   const selectedIds = useDesignCanvasStore((s) => s.selectedIds);
   const setSelected = useDesignCanvasStore((s) => s.setSelected);
   const generating = useDesignCanvasStore((s) => s.generating);
-  const { editRegion, expand, removeWatermark, editByAnnotation } = useDesignCanvasGeneration();
+  const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
 
   // 标注重绘态（B4）：模式开关/指令/模型全走 designStore 瞬时态，不持久化。
@@ -296,6 +397,7 @@ export const DesignCanvas: React.FC = () => {
   const [comparing, setComparing] = useState(false);
   // T4 diff 证据浮层目标节点（locked 徽章点开）。
   const [diffNode, setDiffNode] = useState<CanvasImageNode | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<CanvasVideoNode | null>(null);
   // 扩图本地态：方向 + 比例（1.0–2.0）。
   const [expandDirection, setExpandDirection] = useState<ExpandDirection>('all');
   const [expandRatio, setExpandRatio] = useState(1.5);
@@ -306,11 +408,13 @@ export const DesignCanvas: React.FC = () => {
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
     selectedIds.length === 1 ? visibleNodes.find((n) => n.id === selectedIds[0]) ?? null : null;
+  // 图像专属编辑（圈选重绘/标注/扩图/去水印/导出）只对图节点开放；视频节点的渲染与操作走画布视频分支。
+  const selectedImageNode = selectedNode && isImageNode(selectedNode) ? selectedNode : null;
   const compareNodes =
     selectedIds.length === 2
       ? selectedIds
           .map((id) => visibleNodes.find((n) => n.id === id))
-          .filter((n): n is CanvasImageNode => Boolean(n))
+          .filter((n): n is CanvasImageNode => n !== undefined && isImageNode(n))
       : [];
 
   // 选择变化时退出对比浮层（除非仍是双选）。
@@ -347,10 +451,10 @@ export const DesignCanvas: React.FC = () => {
     setAnnotShapes([]);
   }, [selectedNode?.id]);
 
-  // 无图选中时强制退出标注重绘模式（标注 UI 仅在单选图节点时存在）。
+  // 无图选中时强制退出标注重绘模式（标注 UI 仅在单选图节点时存在；选中视频节点也退出）。
   useEffect(() => {
-    if (!selectedNode && annotMode) setAnnotMode(false);
-  }, [selectedNode, annotMode, setAnnotMode]);
+    if (!selectedImageNode && annotMode) setAnnotMode(false);
+  }, [selectedImageNode, annotMode, setAnnotMode]);
 
   // 自由画布：粘贴图片导入（剪贴板含图片时拦截，纯文本粘贴不受影响）。
   useEffect(() => {
@@ -441,11 +545,11 @@ export const DesignCanvas: React.FC = () => {
   };
 
   const onRepaint = async (): Promise<void> => {
-    if (!selectedNode) return;
+    if (!selectedImageNode) return;
     const regions = annotations
-      .map((r) => worldRectToImageRegion(r, selectedNode))
+      .map((r) => worldRectToImageRegion(r, selectedImageNode))
       .filter((r): r is Rect => r !== null);
-    await editRegion({ baseNode: selectedNode, regions, instruction });
+    await editRegion({ baseNode: selectedImageNode, regions, instruction });
     if (!useDesignCanvasStore.getState().error) {
       setAnnotations([]);
       setInstruction('');
@@ -455,11 +559,11 @@ export const DesignCanvas: React.FC = () => {
 
   // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
   const onAnnotRedraw = async (): Promise<void> => {
-    if (!selectedNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
+    if (!selectedImageNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
     const est = formatCny(estimateImageCostCny(effectiveAnnotModel));
     if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
     await editByAnnotation({
-      baseNode: selectedNode,
+      baseNode: selectedImageNode,
       shapes: annotShapes,
       instruction: annotInstruction,
       model: effectiveAnnotModel,
@@ -473,14 +577,14 @@ export const DesignCanvas: React.FC = () => {
 
   // 扩图：按方向+比例外扩 → 新 variant 落底图右侧。
   const onExpand = async (): Promise<void> => {
-    if (!selectedNode) return;
-    await expand({ baseNode: selectedNode, direction: expandDirection, ratio: expandRatio });
+    if (!selectedImageNode) return;
+    await expand({ baseNode: selectedImageNode, direction: expandDirection, ratio: expandRatio });
   };
 
   // 去水印：消除中英文文字水印 → 新 variant 落底图右侧。
   const onRemoveWatermark = async (): Promise<void> => {
-    if (!selectedNode) return;
-    await removeWatermark({ baseNode: selectedNode });
+    if (!selectedImageNode) return;
+    await removeWatermark({ baseNode: selectedImageNode });
   };
 
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
@@ -510,16 +614,28 @@ export const DesignCanvas: React.FC = () => {
           onMouseUp={handleMouseUp}
         >
           <Layer>
-            {visibleNodes.map((node) => (
-              <CanvasImage
-                key={node.id}
-                node={node}
-                runDir={runDir}
-                selected={selectedIds.includes(node.id)}
-                onSelect={(additive) => selectNode(node.id, additive)}
-                onViewDiff={setDiffNode}
-              />
-            ))}
+            {visibleNodes.map((node) =>
+              // 图节点走 CanvasImage；视频节点走 KonvaVideoNode（缩略图+播放徽标）。
+              isVideoNode(node) ? (
+                <KonvaVideoNode
+                  key={node.id}
+                  node={node}
+                  runDir={runDir}
+                  selected={selectedIds.includes(node.id)}
+                  onSelect={(additive) => selectNode(node.id, additive)}
+                  onPlay={() => setPlayingVideo(node)}
+                />
+              ) : (
+                <CanvasImage
+                  key={node.id}
+                  node={node}
+                  runDir={runDir}
+                  selected={selectedIds.includes(node.id)}
+                  onSelect={(additive) => selectNode(node.id, additive)}
+                  onViewDiff={setDiffNode}
+                />
+              ),
+            )}
             {draftAndCommitted.map((r, i) => (
               <KonvaRect
                 key={i}
@@ -534,7 +650,7 @@ export const DesignCanvas: React.FC = () => {
               />
             ))}
           </Layer>
-          {annotMode && selectedNode && (
+          {annotMode && selectedImageNode && (
             <AnnotationLayer shapes={annotShapes} onShapesChange={setAnnotShapes} tool={annotTool} />
           )}
         </Stage>
@@ -547,8 +663,8 @@ export const DesignCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* 选中图后的局部重绘面板 */}
-      {selectedNode && (
+      {/* 选中图后的局部重绘面板（仅图节点；视频节点不显示图像编辑工具） */}
+      {selectedImageNode && (
         <div className="absolute left-4 top-4 flex w-72 flex-col gap-2 rounded-xl border border-white/[0.1] bg-zinc-900/90 p-3 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between">
             <button
@@ -597,11 +713,21 @@ export const DesignCanvas: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => void onExport(selectedNode)}
+            onClick={() => void onExport(selectedImageNode)}
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100"
           >
             <Download className="h-3.5 w-3.5" />
             {t.design.exportImage}
+          </button>
+          {/* P2 图生视频：以选中图为底图，生成前 confirm 预估 ¥（走 generateVideo i2v 路径）。 */}
+          <button
+            type="button"
+            onClick={() => void generateVideo({ baseNode: selectedImageNode })}
+            disabled={generating}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-50"
+          >
+            <Film className="h-3.5 w-3.5" />
+            {t.design.generateVideoFromImage}
           </button>
 
           {/* T3：wanx 扩图（方向+比例）+ 去水印，各落新 variant 挂 spine */}
@@ -710,6 +836,9 @@ export const DesignCanvas: React.FC = () => {
         />
       )}
 
+      {playingVideo && (
+        <VideoPlayOverlay runDir={runDir} node={playingVideo} onClose={() => setPlayingVideo(null)} />
+      )}
       {diffNode && (
         <DiffEvidenceOverlay runDir={runDir} node={diffNode} onClose={() => setDiffNode(null)} />
       )}

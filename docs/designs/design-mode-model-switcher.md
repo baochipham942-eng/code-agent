@@ -1,6 +1,6 @@
 # 设计模式：生图/视频模型切换 + 视频生成（spec）
 
-> **状态**：✅ P1 已实现并合并 main（2026-06-21，merge cbf847a5b）+ 付费 dogfood 通过。P2/P3 视频未做。as-built 见 `docs/architecture/design-mode.md` §6.0/§5.2。
+> **状态**：✅ P1 生图切换器已实现合 main（2026-06-21，merge cbf847a5b）。✅ **P2 视频 MVP**（通义万相 t2v+i2v）已实现合本地 main（2026-06-22，merge 05681fcf0）+ 真 key dogfood 通过 + 付费链路对抗审计 0 HIGH。✅ **P3 多 provider**（MiniMax 海螺 t2v+i2v）已实现合本地 main（2026-06-22，merge a8670cd3f）+ 真 key dogfood 通过。视频下拉现 4 模型可切（2 通义万相 + 2 海螺）。as-built 见 `docs/architecture/design-mode.md` §6.0/§6.5/§5.2。
 > **来源**：用户需求「让设计模式能切生图/视频模型」+ 借鉴清单二档「能力感知模型路由 + @-mention」（`docs/competitive/opendesign-lovart-借鉴清单.md`）。
 > **前置**：建立在已发版 v0.18.0 的设计模式（画布 + 原型 + T1-T6 变体 spine/成本/一致性）之上。
 > **配套**：架构 `docs/architecture/design-mode.md`；产品 spec `docs/designs/design-mode-spec.md`。
@@ -128,8 +128,8 @@ export const VIDEO_MODELS: VisualVideoModel[] = [...];
 ## 6. 分期（每期独立可用、独立 PR）
 
 - **P1 生图模型切换器**（小）：注册表 + `generateDesignImage` 加 model + composer 生图下拉 + D6/D7 过滤。**不碰视频**。
-- **P2 视频生成 MVP**（中大）：`videoGenerationService`（通义万相视频 t2v+i2v）+ `generateDesignVideo` IPC + `CanvasVideoNode` 渲染 + 视频模式 UI + 成本提示。单 provider。
-- **P3 多 provider**（中）：接 MiniMax 海螺 + 视频模型下拉补全（≥2 视频模型可切）。
+- **P2 视频生成 MVP**（中大）✅**已实现合 main(05681fcf0)**：`videoGenerationService`（通义万相视频 t2v+i2v）+ `generateDesignVideo` IPC + `CanvasVideoNode` 渲染 + 视频模式 UI + 成本提示。单 provider。as-built 见架构 §6.5。
+- **P3 多 provider**（中）✅**已实现合 main(a8670cd3f)**：接 MiniMax 海螺（MiniMax-Hailuo-02 t2v / I2V-01 i2v）+ 视频模型下拉补全（现 4 视频模型可切）。海螺三步 submit→query→files/retrieve(需 GroupId)。as-built 见架构 §6.5。
 
 ### 扩展点（后续候选，非本期）
 

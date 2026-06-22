@@ -141,6 +141,16 @@ git tag -a v<version> -m "Release v<version>" && git push origin v<version>   # 
 # 验证：curl "https://agentneo.vercel.app/api/update?action=check&version=0.0.0&platform=darwin&channel=stable"
 ```
 
+#### 发布说明文案规则（`docs/releases/v<version>.md`，强制）
+
+这份文件会被 CI 直接灌进 **app 内更新弹窗**（`update API releaseNotes` + OSS `latest.json` 的 `notes`），**用户会原样看到**。所以写法是「面向终端用户」，不是 changelog、不是给开发者看的：
+
+- **禁止出现**：PR/issue 编号（`PR #260`）、commit hash、代码标识符（`DesignOutputType` / `slidesGenerator` / `SlideData[]`）、文件/路径名、API/模型内部名（`wanx2.1-imageedit` / `description_edit`）、架构黑话（"单一真源"/"非破坏性版本模型"/"零破坏"）、内部测试术语（dogfood / 对抗审计）。
+- **应该写**：用户**现在能做什么**，用大白话 + 「能…了 / 可以…了」的口吻；每条一句话讲清价值，不讲实现。
+- 结构：`# Agent Neo v<version>` + 日期 + 几条加粗短标题，每条一句用户视角的话。控制在屏幕一眼能扫完，别堆段落。
+- 工程细节（PR、模块、价表、审计证据）写进 `CHANGELOG.md`（面向开发者），**两者分开**：CHANGELOG 可技术，release 说明必须用户向。
+- 反例（不要这样）："设计 tab 按交付媒介分 4 类（`DesignOutputType` UI 聚合零破坏）…引擎抽成 slidesGenerator（SlideData[] 单一真源）"；正例："设计入口更清晰：按你想做什么分成 网页/图/演示稿/视频，进来直接选。"
+
 ### 本地 dogfood 打包（仅自测，非发版）
 ```bash
 bash scripts/build-audio-capture.sh   # 编译 Swift 音频采集工具（首次 clone 必跑）

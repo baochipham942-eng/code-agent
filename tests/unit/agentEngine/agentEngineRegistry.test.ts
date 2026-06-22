@@ -76,7 +76,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     expect(descriptor.defaultPermissionProfile).toBe('read_only');
     expect(descriptor.cwdPolicy).toBe('workspace_only');
     expect(descriptor.riskTier).toBe('medium');
-    expect(descriptor.capabilities).toEqual(['execute', 'stream_events', 'import_sessions', 'review']);
+    expect(descriptor.capabilities).toEqual(['execute', 'stream_events', 'review']);
     expect(descriptor.reliability?.cliStatus).toBe('available');
     expect(descriptor.reliability?.streamingMode).toBe('json');
     expect(descriptor.lastError).toBeUndefined();
@@ -88,7 +88,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     expect(descriptor.installState).toBe('missing');
     expect(descriptor.executable).toBe(false);
     expect(descriptor.runtimeState).toBe('not_configured');
-    expect(descriptor.capabilities).toEqual(['import_sessions']);
+    expect(descriptor.capabilities).toEqual([]);
     expect(descriptor.binaryPath).toBeUndefined();
     expect(descriptor.reliability?.cliStatus).toBe('missing');
     expect(descriptor.lastError).toContain('mimo');
@@ -109,7 +109,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     expect(descriptor.defaultPermissionProfile).toBe('read_only');
     expect(descriptor.cwdPolicy).toBe('workspace_only');
     expect(descriptor.riskTier).toBe('medium');
-    expect(descriptor.capabilities).toEqual(['execute', 'stream_events', 'import_sessions', 'review']);
+    expect(descriptor.capabilities).toEqual(['execute', 'stream_events', 'review']);
     expect(descriptor.reliability?.cliStatus).toBe('available');
     expect(descriptor.reliability?.streamingMode).toBe('stream_json');
     expect(descriptor.lastError).toBeUndefined();
@@ -121,7 +121,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     expect(descriptor.installState).toBe('missing');
     expect(descriptor.executable).toBe(false);
     expect(descriptor.runtimeState).toBe('not_configured');
-    expect(descriptor.capabilities).toEqual(['import_sessions']);
+    expect(descriptor.capabilities).toEqual([]);
     expect(descriptor.binaryPath).toBeUndefined();
     expect(descriptor.reliability?.cliStatus).toBe('missing');
     expect(descriptor.lastError).toContain('kimi');

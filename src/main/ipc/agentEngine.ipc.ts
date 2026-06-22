@@ -11,7 +11,10 @@ import type {
 } from '../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import { getAgentEngineRegistry } from '../services/agentEngine';
-import { buildManualAgentEngineSelection } from '../services/agentEngine/agentEngineGuards';
+import {
+  buildManualAgentEngineSelection,
+  isExternalAgentEngine,
+} from '../services/agentEngine/agentEngineGuards';
 import {
   getAgentEngineCatalogEngine,
   getRemoteAgentEngineModelCatalogService,
@@ -26,7 +29,9 @@ import {
 import { getSessionManager } from '../services/infra/sessionManager';
 
 function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
-  return kind === 'codex_cli' || kind === 'claude_code';
+  // 单一真源：external engine 列表统一由 agentEngineGuards.isExternalAgentEngine 维护，
+  // 这里只追加类型收窄（narrowing），避免引擎清单在 IPC 层重复定义而漏同步 mimo/kimi。
+  return kind !== undefined && isExternalAgentEngine(kind);
 }
 
 export function registerAgentEngineHandlers(ipcMain: IpcMain): void {

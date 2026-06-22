@@ -105,6 +105,8 @@ const HEALTH_LABELS: Record<ModelProviderHealthStatus, string> = {
 const ENGINE_KIND_LABELS: Record<ModelExternalEngineSnapshot['kind'], string> = {
   codex_cli: 'Codex CLI',
   claude_code: 'Claude Code',
+  mimo_code: 'MiMo Code',
+  kimi_code: 'Kimi Code',
 };
 
 const ENGINE_INSTALL_LABELS: Record<ModelExternalEngineSnapshot['installState'], string> = {

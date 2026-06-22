@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSessionMetadata } from '../../../shared/contract/agentEngine';
+import type { AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSessionMetadata, ExternalAgentEngineKind } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import type { Session } from '../../../shared/contract/session';
 
@@ -14,8 +14,10 @@ export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
   throw new Error(`Agent Engine cwd must stay inside workspace: ${resolvedCwd}`);
 }
 
-export function isExternalAgentEngine(kind: AgentEngineSessionMetadata['kind']): boolean {
-  return kind === 'codex_cli' || kind === 'claude_code';
+export function isExternalAgentEngine(
+  kind: AgentEngineSessionMetadata['kind'],
+): kind is ExternalAgentEngineKind {
+  return kind === 'codex_cli' || kind === 'claude_code' || kind === 'mimo_code' || kind === 'kimi_code';
 }
 
 export function assertReadOnlyExternalProfile(

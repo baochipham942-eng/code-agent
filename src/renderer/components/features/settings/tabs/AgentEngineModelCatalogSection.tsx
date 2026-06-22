@@ -15,6 +15,8 @@ const logger = createLogger('AgentEngineModelCatalogSection');
 const AGENT_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
   codex_cli: 'Codex',
   claude_code: 'Claude',
+  mimo_code: 'MiMo',
+  kimi_code: 'Kimi',
 };
 
 function formatCatalogDate(value?: string): string {

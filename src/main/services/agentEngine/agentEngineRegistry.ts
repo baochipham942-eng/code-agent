@@ -55,15 +55,19 @@ export class AgentEngineRegistry {
     }
 
     const detectedAt = now;
-    const [codex, claude] = await Promise.all([
+    const [codex, claude, mimo, kimi] = await Promise.all([
       this.detectCodex(detectedAt),
       this.detectClaude(detectedAt),
+      this.detectMimo(detectedAt),
+      this.detectKimi(detectedAt),
     ]);
 
     const descriptors = [
       this.nativeDescriptor(detectedAt),
       codex,
       claude,
+      mimo,
+      kimi,
     ];
     this.cache = { descriptors, expiresAt: now + this.cacheTtlMs };
     return descriptors;
@@ -115,7 +119,7 @@ export class AgentEngineRegistry {
       command: 'codex exec --json',
       binaryPath: probe.binaryPath,
       version: probe.version,
-      capabilities: installed ? ['execute', 'stream_events', 'import_sessions', 'review'] : ['import_sessions'],
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
       defaultPermissionProfile: 'read_only',
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
@@ -156,7 +160,7 @@ export class AgentEngineRegistry {
       command: 'claude -p --output-format stream-json --input-format text --include-partial-messages --permission-mode plan',
       binaryPath: probe.binaryPath,
       version: probe.version,
-      capabilities: installed ? ['execute', 'stream_events', 'import_sessions', 'review'] : ['import_sessions'],
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
       defaultPermissionProfile: 'read_only',
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
@@ -179,6 +183,90 @@ export class AgentEngineRegistry {
         notes: [
           'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
           'Claude Code adapter ignores terminal clutter and prefers the final result text when present.',
+        ],
+      },
+    };
+  }
+
+  private async detectMimo(detectedAt: number): Promise<AgentEngineDescriptor> {
+    const probe = await this.probeCommand('mimo', ['--version']);
+    const installed = Boolean(probe.binaryPath && !probe.error);
+    const runtimeState: AgentEngineRuntimeState = installed ? 'ready' : 'not_configured';
+
+    return {
+      kind: 'mimo_code',
+      label: 'MiMo-Code',
+      summary: 'Runs MiMo-Code CLI through a controlled workspace cwd and normalized JSON event stream.',
+      installState: installed ? 'installed' : 'missing',
+      runtimeState,
+      executable: installed,
+      command: 'mimo run --format json',
+      binaryPath: probe.binaryPath,
+      version: probe.version,
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt,
+      lastError: probe.error,
+      auditNotes: [
+        'P0 execution uses read-only sandbox by default.',
+        'Launch cwd, command summary, and log path are written to the background task ledger.',
+        'Credentials (OAuth / subscription key) are read by the CLI from MIMO_HOME; the adapter never injects API keys.',
+      ],
+      reliability: {
+        cliStatus: installed ? 'available' : probe.binaryPath ? 'error' : 'missing',
+        authState: 'not_checked',
+        quotaState: 'not_checked',
+        streamingMode: 'json',
+        toolSupport: 'workspace_tools',
+        transcriptMode: 'clean_stream_json',
+        partialMessages: false,
+        mcpBridge: false,
+        notes: [
+          'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
+        ],
+      },
+    };
+  }
+
+  private async detectKimi(detectedAt: number): Promise<AgentEngineDescriptor> {
+    const probe = await this.probeCommand('kimi', ['--version']);
+    const installed = Boolean(probe.binaryPath && !probe.error);
+    const runtimeState: AgentEngineRuntimeState = installed ? 'ready' : 'not_configured';
+
+    return {
+      kind: 'kimi_code',
+      label: 'Kimi Code',
+      summary: 'Runs Kimi Code CLI through a controlled workspace cwd and normalized stream-json event stream.',
+      installState: installed ? 'installed' : 'missing',
+      runtimeState,
+      executable: installed,
+      command: 'kimi -p --output-format stream-json',
+      binaryPath: probe.binaryPath,
+      version: probe.version,
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt,
+      lastError: probe.error,
+      auditNotes: [
+        'P0 execution uses read-only sandbox by default.',
+        'Launch cwd, command summary, and log path are written to the background task ledger.',
+        'Kimi CLI does not read API keys from env; credentials live under KIMI_CODE_HOME via kimi login / config.toml.',
+      ],
+      reliability: {
+        cliStatus: installed ? 'available' : probe.binaryPath ? 'error' : 'missing',
+        authState: 'not_checked',
+        quotaState: 'not_checked',
+        streamingMode: 'stream_json',
+        toolSupport: 'workspace_tools',
+        transcriptMode: 'clean_stream_json',
+        partialMessages: false,
+        mcpBridge: false,
+        notes: [
+          'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
         ],
       },
     };

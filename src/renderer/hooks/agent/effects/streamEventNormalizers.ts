@@ -134,6 +134,8 @@ const MODEL_PROVIDER_PROTOCOLS = new Set<ModelProviderProtocol>([
 const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ModelExternalEngineSnapshot['kind']>([
   'codex_cli',
   'claude_code',
+  'mimo_code',
+  'kimi_code',
 ]);
 
 const AGENT_ENGINE_INSTALL_STATES = new Set<ModelExternalEngineSnapshot['installState']>([

@@ -177,8 +177,9 @@ Features:
 
     const configService = getConfigService();
 
-    // Get all sources with configured API keys
-    const allAvailable = getAvailableSources(configService);
+    // Get all sources with configured API keys，应用用户搜索源偏好（ADR-026：启停 + 优先级）
+    const searchPrefs = configService.getSettings().search;
+    const allAvailable = getAvailableSources(configService, undefined, searchPrefs);
 
     if (allAvailable.length === 0) {
       return {

@@ -110,6 +110,14 @@ export interface AppSettings {
     };
     taskStrategy?: TaskModelStrategySettings;
   };
+  // 联网搜索源配置（ADR-026）。全部可选，未配置 = 现状行为不变。
+  // 注：搜索 API key 仍由 secureStorage / configService 管，不存于此。
+  search?: {
+    /** 用户禁用的搜索源 id（从可用源中排除） */
+    disabledSources?: string[];
+    /** 源优先级覆盖（id 顺序，越靠前越优先；未列出的按内置 priority 排在后） */
+    sourceOrder?: string[];
+  };
   // API 超时配置
   timeouts?: {
     /** 任务复杂度（用户设置） */

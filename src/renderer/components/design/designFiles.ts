@@ -3,6 +3,8 @@
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DESIGN_VERSIONS_SUBDIR } from '@shared/constants';
 import type { FileInfo } from '@shared/contract/workspace';
+import type { BrandContract, BrandMeta } from '@shared/contract/brandContract';
+import { normalizeBrandContract } from '@shared/contract/brandContract';
 import { versionFileName, parseVersionTs } from './designTypes';
 
 /** 一次原型版本快照。 */
@@ -183,5 +185,81 @@ export async function listVersions(runDir: string): Promise<DesignVersion[]> {
       .sort((a, b) => b.createdAt - a.createdAt);
   } catch {
     return [];
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 品牌契约 registry（CD-Parity §1）：renderer → main WORKSPACE IPC 薄封装。
+// 后端读写在 src/main/services/design/brandRegistry.ts，4 个 action 已登记
+// shellCapabilities。失败一律静默返回安全默认（null / false / 空列表）。
+// ----------------------------------------------------------------------------
+
+/** 列出所有品牌元数据 + 当前 active id；失败返回空表。 */
+export async function listBrands(): Promise<{ brands: BrandMeta[]; activeId?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ brands: BrandMeta[]; activeId?: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'listBrands',
+      {},
+    );
+    if (res?.success && res.data && Array.isArray(res.data.brands)) {
+      return { brands: res.data.brands, activeId: res.data.activeId };
+    }
+    return { brands: [] };
+  } catch {
+    return { brands: [] };
+  }
+}
+
+/**
+ * 读单个品牌完整契约（编辑表单回填用）。后端无单独 getBrand IPC，但 brand.json 落在
+ * <designDir>/brands/<id>/brand.json（设计目录内），复用 readFile 读取 + normalize。
+ * 不存在/损坏返回 null。
+ */
+export async function readBrand(id: string): Promise<BrandContract | null> {
+  if (!id) return null;
+  const dir = await resolveDesignDir();
+  if (!dir) return null;
+  const jsonPath = `${dir.replace(/\/+$/, '')}/brands/${id}/brand.json`;
+  const raw = await readWorkspaceFile(jsonPath);
+  if (!raw) return null;
+  try {
+    return normalizeBrandContract(JSON.parse(raw)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 写入/更新一份品牌契约；返回最终 id（新建时由后端派生），失败返回 null。 */
+export async function saveBrand(brand: BrandContract): Promise<string | null> {
+  try {
+    const res = await window.domainAPI?.invoke<{ id: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'saveBrand',
+      { brand },
+    );
+    return res?.success ? (res.data?.id ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 删除一份品牌契约；成功返回 true。 */
+export async function deleteBrand(id: string): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'deleteBrand', { id });
+    return res?.success === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 设置/清空 active 品牌（传 null 清空）；成功返回 true。 */
+export async function setActiveBrand(id: string | null): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'setActiveBrand', { id });
+    return res?.success === true;
+  } catch {
+    return false;
   }
 }

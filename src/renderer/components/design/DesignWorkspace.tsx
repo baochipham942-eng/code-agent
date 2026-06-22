@@ -26,7 +26,10 @@ import {
   Maximize2,
   Minimize2,
   GitCompare,
+  BadgeCheck,
 } from 'lucide-react';
+import { Button } from '../primitives';
+import { BrandManager } from './BrandManager';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
@@ -888,6 +891,7 @@ const PreviewPane: React.FC = () => {
             >
               <Download className="h-3.5 w-3.5" />
             </button>
+            {/* ds-allow:start 设计预览工具栏沿用旧裸 button 样式，与同栏导出 HTML/全屏按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
             <button
               type="button"
               onClick={() => void handleExportPdf()}
@@ -901,6 +905,7 @@ const PreviewPane: React.FC = () => {
                 <FileDown className="h-3.5 w-3.5" />
               )}
             </button>
+            {/* ds-allow:end */}
             <button
               type="button"
               onClick={() => setFullscreen((v) => !v)}
@@ -953,6 +958,7 @@ const PreviewPane: React.FC = () => {
 
 export const DesignWorkspace: React.FC = () => {
   const { t } = useI18n();
+  const [brandOpen, setBrandOpen] = useState(false);
 
   // 刷新/重开恢复：若有持久化的选中生成且当前无预览内容，回读其产物。
   useEffect(() => {
@@ -982,7 +988,17 @@ export const DesignWorkspace: React.FC = () => {
           <Palette className="h-4 w-4 text-fuchsia-300" />
           <span className="text-sm text-zinc-200">{t.design.title}</span>
         </div>
-        <WorkspaceModeSwitch />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<BadgeCheck className="h-4 w-4" />}
+            onClick={() => setBrandOpen(true)}
+          >
+            {t.design.brand.open}
+          </Button>
+          <WorkspaceModeSwitch />
+        </div>
       </div>
       <div className="flex min-h-0 flex-1">
         <Composer />
@@ -990,6 +1006,7 @@ export const DesignWorkspace: React.FC = () => {
           <PreviewPane />
         </div>
       </div>
+      <BrandManager isOpen={brandOpen} onClose={() => setBrandOpen(false)} />
     </FullScreenPage>
   );
 };

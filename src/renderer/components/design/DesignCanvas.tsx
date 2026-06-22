@@ -617,6 +617,7 @@ export const DesignCanvas: React.FC = () => {
             <Download className="h-3.5 w-3.5" />
             {t.design.exportImage}
           </button>
+          {/* ds-allow:start 画布节点操作栏沿用旧裸 button 样式，与同栏导出图片按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
           <button
             type="button"
             onClick={() => void onExportPdf(selectedNode)}
@@ -625,6 +626,7 @@ export const DesignCanvas: React.FC = () => {
             <FileDown className="h-3.5 w-3.5" />
             {t.design.exportImagePdf}
           </button>
+          {/* ds-allow:end */}
 
           {/* T3：wanx 扩图（方向+比例）+ 去水印，各落新 variant 挂 spine */}
           <DesignImageEditOps

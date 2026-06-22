@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-06-22
+
+### Added
+
+- **Design mode — switchable image models**: text-to-image can switch among Tongyi Wanxiang / CogView-4 / FLUX.2 / **gpt-image-2**, driven by a capability-tagged visual-model registry; the switcher only lists visual-generation models with a configured key (chat models filtered out). gpt-image-2 is wired via a custom OpenAI-compatible endpoint.
+- **Design mode — video generation (new)**: text-to-video and image-to-video on the canvas via Tongyi Wanxiang Video and MiniMax Hailuo, as first-class canvas nodes on the non-destructive variant spine, with a prominent per-duration cost estimate before generation.
+- **Annotation-redraw editing**: annotate on the canvas (pen/arrow/rect/text), bake the annotations into a screenshot, and have the model redraw a clean revised image — a mask-free edit path for models that don't support mask inpaint (e.g. gpt-image-2).
+- **Brand/design-system reuse**: persist your own brand palette, fonts, and component tokens and inject them into subsequent generations for cross-generation consistency.
+- **In-place text editing** for interactive prototypes (click text to edit, no regeneration).
+- **PDF and PPTX export**.
+- **Agent execution-engine compatibility matrix** + a settings section for execution engines; **MiMo-Code and Kimi Code** execution engines integrated.
+
+### Fixed
+
+- SSRF guard on image URL downloads: https public hosts only, rejecting private/loopback/metadata addresses (fixes an IPv6-literal bypass that was dead code).
+- Design IPC actions reject blank/out-of-range params before any paid call, avoiding wasted paid requests.
+- All new design-canvas IPC capabilities registered in the shell capability manifest so renderer hot-update gates pass.
+- Stability batch fixes across execution paths.
+
 ## [0.18.0] - 2026-06-21
 
 ### Added

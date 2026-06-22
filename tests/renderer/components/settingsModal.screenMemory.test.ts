@@ -30,6 +30,11 @@ const t = {
       memory: '记忆',
     },
   },
+  // 执行引擎 tab（agentEngine）的标签取自 engineCompat 命名空间；mock 须含之，否则
+  // buildSettingsTabGroups 读 t.engineCompat.engineSection.title 抛错。
+  engineCompat: {
+    engineSection: { title: '执行引擎' },
+  },
 } as any;
 
 describe('SettingsModal screen memory tab visibility', () => {

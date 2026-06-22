@@ -185,7 +185,9 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
         : undefined;
 
     const configService = getConfigService();
-    const allAvailable = getAvailableSources(configService);
+    // 应用用户搜索源偏好（ADR-026：启停 + 优先级），与 Level 1 WebSearch 路径保持一致
+    const searchPrefs = configService.getSettings().search;
+    const allAvailable = getAvailableSources(configService, undefined, searchPrefs);
 
     if (allAvailable.length === 0) {
       return {

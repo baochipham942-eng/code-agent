@@ -66,8 +66,8 @@ export const AgentEngineListSection: React.FC = () => {
 
   return (
     <SettingsSection
-      title={section.title}
-      description={section.description}
+      title={section.listTitle}
+      description={section.listDescription}
       actions={
         <Button
           variant="secondary"

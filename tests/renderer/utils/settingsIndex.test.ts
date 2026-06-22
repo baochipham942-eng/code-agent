@@ -11,6 +11,13 @@ describe('settings search index', () => {
     expect(searchSettings('browser').map((entry) => entry.tab)).toContain('workspace');
   });
 
+  it('covers new model-group tabs (generation models & search sources)', () => {
+    expect(searchSettings('生成模型').map((entry) => entry.tab)).toContain('imageVideo');
+    expect(searchSettings('视频').map((entry) => entry.tab)).toContain('imageVideo');
+    expect(searchSettings('搜索源').map((entry) => entry.tab)).toContain('search');
+    expect(searchSettings('tavily').map((entry) => entry.tab)).toContain('search');
+  });
+
   it('covers capability center settings for admins', () => {
     expect(searchSettings('capability', { isAdmin: true }).map((entry) => entry.tab)).toContain('capabilities');
     expect(searchSettings('MCP', { isAdmin: true }).map((entry) => entry.tab)).toContain('capabilities');

@@ -333,6 +333,8 @@ export const en: Translations = {
     engineSection: {
       title: 'Execution engine',
       description: 'The engine is the runtime that "runs this turn", orthogonal to the model provider. The native engine is billed by the selected provider usage; external CLI engines run on subscription quota via their own login.',
+      listTitle: 'Engines',
+      listDescription: 'Detected execution engines with their install and billing status.',
       detectButton: 'Detect engines',
       detecting: 'Detecting…',
       detectFailed: 'Engine detection failed, please retry later',

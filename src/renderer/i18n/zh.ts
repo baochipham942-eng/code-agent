@@ -333,6 +333,8 @@ export const zh = {
     engineSection: {
       title: '执行引擎',
       description: '引擎是「谁来跑这一轮」的运行内核，与模型 provider 正交。原生引擎按所选 provider 用量计费；外部 CLI 引擎经各自登录吃订阅额度。',
+      listTitle: '引擎列表',
+      listDescription: '当前已检测到的执行引擎及其安装、计费状态。',
       detectButton: '检测引擎',
       detecting: '检测中…',
       detectFailed: '引擎检测失败，请稍后重试',

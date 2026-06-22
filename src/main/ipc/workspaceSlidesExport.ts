@@ -2,9 +2,12 @@
 // topic + 页数 → slidesGenerator 真排版 deck（非图片塞 PPT）→ saveBinaryToDownloads。
 // 不调付费模型；topic 必填。
 import { promises as fsp } from 'fs';
+import path from 'path';
 import { generateSlidesDeck, buildSlidesOutline } from '../services/design/slidesGenerator';
 import { buildAiOutline } from '../services/design/slidesAiOutline';
 import { imagesToPptx } from '../services/design/pptxExport';
+import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
+import { getUserConfigDir } from '../config/configPaths';
 import type { SlideData } from '../tools/media/ppt/types';
 import { handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { assertWithinDesignDir } from './workspaceDesignPaths';
@@ -64,6 +67,44 @@ export async function handleGenerateSlidesOutline(
     return { slides: r.slides, aiUsed: r.ai };
   }
   return { slides: buildSlidesOutline(payload.topic, payload.slidesCount), aiUsed: false };
+}
+
+export interface GenerateSlidesPreviewPayload {
+  topic?: string;
+  slidesCount?: number;
+  theme?: string;
+  content?: string;
+  slides?: SlideData[];
+}
+
+// 像素级预览（增强 #2）：据 topic/大纲生成 deck → 写 design 临时目录 → LibreOffice 转每页 PNG。
+// LibreOffice 未安装时返回 libreOfficeMissing=true，由前端引导安装。转换免费（本地）。
+export async function handleGenerateSlidesPreview(payload: GenerateSlidesPreviewPayload): Promise<{
+  screenshots: string[];
+  slidesCount: number;
+  libreOfficeMissing?: boolean;
+}> {
+  const hasSlides = Array.isArray(payload?.slides) && payload.slides.length > 0;
+  if (!payload?.topic?.trim() && !hasSlides) {
+    throw new Error('generateSlidesPreview 需要 topic 或 slides');
+  }
+  if (!isLibreOfficeAvailable()) {
+    return { screenshots: [], slidesCount: 0, libreOfficeMissing: true };
+  }
+  const { buffer, slidesCount } = await generateSlidesDeck({
+    topic: payload.topic,
+    slidesCount: payload.slidesCount,
+    theme: payload.theme,
+    content: payload.content,
+    slides: payload.slides,
+  });
+  const dir = path.join(getUserConfigDir(), 'design', 'slides-preview');
+  await fsp.rm(dir, { recursive: true, force: true }); // 清旧预览，避免堆积
+  await fsp.mkdir(dir, { recursive: true });
+  const pptxPath = path.join(dir, 'preview.pptx');
+  await fsp.writeFile(pptxPath, buffer);
+  const screenshots = await convertToScreenshots(pptxPath, path.join(dir, 'png'));
+  return { screenshots, slidesCount };
 }
 
 export async function handleGenerateSlidesDeck(

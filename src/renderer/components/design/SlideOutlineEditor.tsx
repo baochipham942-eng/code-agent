@@ -1,10 +1,11 @@
 // 演示稿大纲编辑器（厚版二期）：逐页卡片预览 + 就地改字 + 增删/排序。
 // 读写 designSlidesStore（SlideData[] 单一真源），点「生成演示稿」据此排版导出。
 import React from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, X, Loader2, AlertCircle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignSlidesStore } from './designSlidesStore';
-import type { SlideOutlineItem } from './slidesOutlineOps';
+import { generateSlidesPreview, readWorkspaceImageAsDataUrl } from './designFiles';
+import { sanitizeOutline, type SlideOutlineItem } from './slidesOutlineOps';
 
 function slideKind(s: SlideOutlineItem, t: ReturnType<typeof useI18n>['t']): string {
   if (s.isTitle) return t.design.slidesKindCover;
@@ -122,23 +123,111 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
   );
 };
 
+// 像素预览图：按设计目录内 PNG 路径懒加载为 dataURL 显示。
+const PreviewImage: React.FC<{ filePath: string; index: number }> = ({ filePath, index }) => {
+  const [url, setUrl] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    void readWorkspaceImageAsDataUrl(filePath).then((u) => alive && setUrl(u));
+    return () => {
+      alive = false;
+    };
+  }, [filePath]);
+  return (
+    <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-black/40">
+      {url ? (
+        <img src={url} alt={`slide-${index + 1}`} className="block w-full" />
+      ) : (
+        <div className="flex aspect-video items-center justify-center text-zinc-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const SlideOutlineEditor: React.FC = () => {
   const { t } = useI18n();
   const outline = useDesignSlidesStore((s) => s.outline);
+  const previewShots = useDesignSlidesStore((s) => s.previewShots);
+  const previewing = useDesignSlidesStore((s) => s.previewing);
+  const previewMissing = useDesignSlidesStore((s) => s.previewMissing);
+  const [mode, setMode] = React.useState<'edit' | 'preview'>('edit');
+  const store = useDesignSlidesStore;
+
+  const runPreview = async (): Promise<void> => {
+    const cur = store.getState().outline;
+    if (!cur || cur.length === 0 || store.getState().previewing) return;
+    store.setState({ previewing: true, previewMissing: false });
+    const res = await generateSlidesPreview({ slides: sanitizeOutline(cur) });
+    store.setState({
+      previewing: false,
+      previewShots: res.screenshots && res.screenshots.length > 0 ? res.screenshots : null,
+      previewMissing: !!res.libreOfficeMissing,
+    });
+  };
+
+  const onPickPreview = (): void => {
+    setMode('preview');
+    if (!previewShots && !previewing) void runPreview();
+  };
+
   if (!outline || outline.length === 0) return null;
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.06] px-4 text-xs text-zinc-400">
-        <span>{t.design.slidesOutlineTitle}</span>
-        <span className="text-zinc-500">{t.design.slidesOutlineHint}</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2">
-          {outline.map((slide, i) => (
-            <SlideCard key={i} slide={slide} index={i} total={outline.length} />
-          ))}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.06] px-4 text-xs">
+        {/* ds-allow:start 大纲编辑/像素预览 分段切换 */}
+        <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode('edit')}
+            className={`rounded-md px-2.5 py-1 transition-colors ${mode === 'edit' ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            {t.design.slidesOutlineTitle}
+          </button>
+          <button
+            type="button"
+            onClick={onPickPreview}
+            className={`rounded-md px-2.5 py-1 transition-colors ${mode === 'preview' ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            {t.design.slidesPixelPreview}
+          </button>
         </div>
+        {/* ds-allow:end */}
+        <span className="text-zinc-500">
+          {mode === 'edit' ? t.design.slidesOutlineHint : t.design.slidesPreviewHint}
+        </span>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {mode === 'edit' ? (
+          <div className="mx-auto grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2">
+            {outline.map((slide, i) => (
+              <SlideCard key={i} slide={slide} index={i} total={outline.length} />
+            ))}
+          </div>
+        ) : previewing ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-zinc-500">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>{t.design.slidesPreviewing}</span>
+          </div>
+        ) : previewMissing ? (
+          <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-2 pt-16 text-center text-sm text-amber-300/90">
+            <AlertCircle className="h-5 w-5" />
+            <span className="whitespace-pre-line leading-relaxed">{t.design.slidesPreviewMissing}</span>
+          </div>
+        ) : previewShots ? (
+          <div className="mx-auto grid max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2">
+            {previewShots.map((p, i) => (
+              <PreviewImage key={p} filePath={p} index={i} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+            {t.design.slidesPreviewHint}
+          </div>
+        )}
       </div>
     </div>
   );

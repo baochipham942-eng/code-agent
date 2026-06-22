@@ -334,6 +334,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'generateDesignVideo',
     'generateSlidesDeck',
     'generateSlidesOutline',
+    'generateSlidesPreview',
     'getConfigScope',
     'getCurrent',
     'getDesignMdSummary',

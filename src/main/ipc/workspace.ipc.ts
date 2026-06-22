@@ -13,8 +13,10 @@ import {
   handleExportCanvasPptx,
   handleGenerateSlidesDeck,
   handleGenerateSlidesOutline,
+  handleGenerateSlidesPreview,
   type GenerateSlidesDeckPayload,
   type GenerateSlidesOutlinePayload,
+  type GenerateSlidesPreviewPayload,
 } from './workspaceSlidesExport';
 import { assertWithinDesignDir } from './workspaceDesignPaths';
 import {
@@ -1081,6 +1083,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'generateSlidesOutline':
           data = await handleGenerateSlidesOutline(payload as GenerateSlidesOutlinePayload);
+          break;
+        case 'generateSlidesPreview':
+          data = await handleGenerateSlidesPreview(payload as GenerateSlidesPreviewPayload);
           break;
         case 'createFile':
           data = await handleCreateFile(payload as { filePath: string; content?: string });

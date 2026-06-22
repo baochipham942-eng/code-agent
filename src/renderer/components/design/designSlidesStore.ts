@@ -18,6 +18,10 @@ interface DesignSlidesState {
   generating: boolean;
   result: { filePath: string; slidesCount?: number } | null;
   error: string | null;
+  // 像素预览（增强 #2）：渲染后的每页 PNG 路径 + 状态。
+  previewShots: string[] | null;
+  previewing: boolean;
+  previewMissing: boolean;
 
   setOutline: (slides: SlideOutlineItem[] | null) => void;
   setBuildingOutline: (v: boolean) => void;
@@ -41,6 +45,9 @@ export const useDesignSlidesStore = create<DesignSlidesState>((set, get) => ({
   generating: false,
   result: null,
   error: null,
+  previewShots: null,
+  previewing: false,
+  previewMissing: false,
 
   setOutline: (outline) => set({ outline }),
   setBuildingOutline: (buildingOutline) => set({ buildingOutline }),
@@ -48,32 +55,21 @@ export const useDesignSlidesStore = create<DesignSlidesState>((set, get) => ({
   setResult: (result) => set({ result }),
   setError: (error) => set({ error }),
 
-  editSlide: (index, patch) => {
-    const cur = get().outline;
-    if (cur) set({ outline: updateSlide(cur, index, patch) });
-  },
-  insertSlideAfter: (index) => {
-    const cur = get().outline;
-    if (cur) set({ outline: addSlideAfter(cur, index) });
-  },
-  deleteSlide: (index) => {
-    const cur = get().outline;
-    if (cur) set({ outline: removeSlide(cur, index) });
-  },
-  reorderSlide: (index, delta) => {
-    const cur = get().outline;
-    if (cur) set({ outline: moveSlide(cur, index, delta) });
-  },
-  editPoint: (slideIndex, pointIndex, text) => {
-    const cur = get().outline;
-    if (cur) set({ outline: updatePoint(cur, slideIndex, pointIndex, text) });
-  },
-  appendPoint: (slideIndex) => {
-    const cur = get().outline;
-    if (cur) set({ outline: addPoint(cur, slideIndex) });
-  },
-  deletePoint: (slideIndex, pointIndex) => {
-    const cur = get().outline;
-    if (cur) set({ outline: removePoint(cur, slideIndex, pointIndex) });
-  },
+  // 任意大纲修改后清空像素预览（避免展示过时渲染）。
+  editSlide: (index, patch) => applyEdit(get, set, (o) => updateSlide(o, index, patch)),
+  insertSlideAfter: (index) => applyEdit(get, set, (o) => addSlideAfter(o, index)),
+  deleteSlide: (index) => applyEdit(get, set, (o) => removeSlide(o, index)),
+  reorderSlide: (index, delta) => applyEdit(get, set, (o) => moveSlide(o, index, delta)),
+  editPoint: (slideIndex, pointIndex, text) =>
+    applyEdit(get, set, (o) => updatePoint(o, slideIndex, pointIndex, text)),
+  appendPoint: (slideIndex) => applyEdit(get, set, (o) => addPoint(o, slideIndex)),
+  deletePoint: (slideIndex, pointIndex) =>
+    applyEdit(get, set, (o) => removePoint(o, slideIndex, pointIndex)),
 }));
+
+type Get = () => DesignSlidesState;
+type Set = (partial: Partial<DesignSlidesState>) => void;
+function applyEdit(get: Get, set: Set, fn: (o: SlideOutlineItem[]) => SlideOutlineItem[]): void {
+  const cur = get().outline;
+  if (cur) set({ outline: fn(cur), previewShots: null });
+}

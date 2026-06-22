@@ -200,6 +200,32 @@ export async function generateSlidesOutline(input: {
 }
 
 /**
+ * 厚版演示稿（增强 #2）像素预览：据 topic/大纲生成 deck → LibreOffice 转每页 PNG → 返回图片路径。
+ * LibreOffice 未装时 libreOfficeMissing=true。失败返回 { screenshots: null, error }。
+ */
+export async function generateSlidesPreview(input: {
+  topic?: string;
+  slidesCount?: number;
+  theme?: string;
+  content?: string;
+  slides?: SlideOutlineItem[];
+}): Promise<{ screenshots: string[] | null; libreOfficeMissing?: boolean; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ screenshots: string[]; libreOfficeMissing?: boolean }>(
+      IPC_DOMAINS.WORKSPACE,
+      'generateSlidesPreview',
+      input,
+    );
+    if (res?.success) {
+      return { screenshots: res.data?.screenshots ?? [], libreOfficeMissing: res.data?.libreOfficeMissing };
+    }
+    return { screenshots: null, error: res?.error?.message };
+  } catch (e) {
+    return { screenshots: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * 厚版演示稿（二期）：topic/已编辑大纲 + 页数 → 主进程 slidesGenerator 真排版 deck → 导出到「下载」。
  * 返回落盘路径与页数；失败返回 { filePath: null, error }。
  */

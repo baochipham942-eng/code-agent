@@ -34,7 +34,8 @@ import {
   Terminal,
   UserCircle,
   Mic,
-  DollarSign,
+  Search,
+  ImagePlay,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -67,6 +68,8 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'capabilities',
   'plugins',
   'model',
+  'imageVideo',
+  'search',
   'mcp',
   'skills',
   'roles',
@@ -91,7 +94,8 @@ import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { AgentEngineSettings } from './tabs/AgentEngineSettings';
-import { BudgetSettings } from './tabs/BudgetSettings';
+import { SearchSettings } from './tabs/SearchSettings';
+import { ImageVideoSettings } from './tabs/ImageVideoSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { DataSettings } from './tabs/DataSettings';
@@ -151,12 +155,13 @@ export function buildSettingsTabGroups({
   const accessSubject = createAccessSubject(access);
   const tabs: SettingsTabConfig[] = [
     { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
-    { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
-    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
-    { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
+    { id: 'imageVideo', label: t.settings.tabs.imageVideo, icon: <ImagePlay className="w-4 h-4" /> },
+    { id: 'search', label: t.settings.tabs.search, icon: <Search className="w-4 h-4" /> },
+    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
-    { id: 'budget', label: '预算告警', icon: <DollarSign className="w-4 h-4" /> },
+    { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
@@ -412,7 +417,8 @@ export const SettingsModal: React.FC = () => {
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
             {activeTab === 'agentEngine' && <AgentEngineSettings />}
-            {activeTab === 'budget' && <BudgetSettings />}
+            {activeTab === 'imageVideo' && <ImageVideoSettings />}
+            {activeTab === 'search' && <SearchSettings />}
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'soul' && <SoulSettings />}
             {activeTab === 'cache' && <DataSettings />}

@@ -221,6 +221,8 @@ export const en: Translations = {
     tabs: {
       general: 'General',
       model: 'Model',
+      imageVideo: 'Generation',
+      search: 'Search',
       disclosure: 'Disclosure',
       appearance: 'Appearance',
       language: 'Language',

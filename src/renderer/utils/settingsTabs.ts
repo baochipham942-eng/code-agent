@@ -11,12 +11,13 @@ import {
 
 export const SETTINGS_TAB_IDS = [
   'general',
-  'conversation',
-  'voiceInput',
-  'keybindings',
   'model',
+  'conversation',
+  'imageVideo',
+  'search',
+  'voiceInput',
   'agentEngine',
-  'budget',
+  'keybindings',
   'appearance',
   'soul',
   'workspace',
@@ -45,6 +46,7 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'general';
 
 export type SettingsTabGroupId =
+  | 'models'
   | 'basics'
   | 'connections'
   | 'workspace'
@@ -53,6 +55,7 @@ export type SettingsTabGroupId =
   | 'system';
 
 export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
+  models: '模型与能力',
   basics: '基础偏好',
   connections: '能力与连接',
   workspace: '工作区与自动化',
@@ -62,6 +65,7 @@ export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
 };
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
+  'models',
   'basics',
   'connections',
   'workspace',
@@ -72,12 +76,13 @@ export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
 
 export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> = {
   general: 'basics',
-  conversation: 'basics',
-  voiceInput: 'basics',
+  model: 'models',
+  conversation: 'models',
+  imageVideo: 'models',
+  search: 'models',
+  voiceInput: 'models',
+  agentEngine: 'models',
   keybindings: 'basics',
-  model: 'basics',
-  agentEngine: 'basics',
-  budget: 'basics',
   appearance: 'basics',
   soul: 'basics',
   mcp: 'connections',

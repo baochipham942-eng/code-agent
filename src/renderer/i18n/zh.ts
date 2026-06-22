@@ -219,6 +219,8 @@ export const zh = {
     tabs: {
       general: '通用',
       model: '模型',
+      imageVideo: '生成模型',
+      search: '搜索',
       disclosure: '界面',
       appearance: '外观',
       language: '语言',

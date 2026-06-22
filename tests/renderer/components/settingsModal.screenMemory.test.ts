@@ -23,6 +23,8 @@ const t = {
     tabs: {
       general: '通用',
       model: '模型',
+      imageVideo: '生成模型',
+      search: '搜索',
       appearance: '外观',
       data: '数据',
       update: '更新',
@@ -72,6 +74,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     });
 
     expect(groups.map((group) => group.label)).toEqual([
+      '模型与能力',
       '基础偏好',
       '能力与连接',
       '工作区与自动化',
@@ -79,29 +82,35 @@ describe('SettingsModal screen memory tab visibility', () => {
       '记忆与隐私',
       '系统',
     ]);
+    // 模型与能力分组：所有"哪个模型/引擎干哪件事"的配置收拢、排序贴近
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
-      'general',
-      'conversation',
-      'voiceInput',
-      'keybindings',
       'model',
+      'conversation',
+      'imageVideo',
+      'search',
+      'voiceInput',
       'agentEngine',
-      'budget',
+    ]);
+    expect(groups[0].tabs[0].label).toBe('模型');
+    // 基础偏好瘦身后：去掉预算告警，对话/语音/执行引擎上移到模型与能力
+    expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
+      'general',
+      'keybindings',
       'appearance',
       'soul',
     ]);
-    expect(groups[0].tabs[0].label).toBe('权限与安全');
-    expect(groups[3].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[1].tabs[0].label).toBe('权限与安全');
+    expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'users',
       'invites',
       'controlPlane',
     ]);
-    expect(groups[3].tabs.map((tab) => tab.label)).toEqual([
+    expect(groups[4].tabs.map((tab) => tab.label)).toEqual([
       '用户管理',
       '邀请码管理',
       '控制平面',
     ]);
-    expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[2].tabs.map((tab) => tab.id)).toEqual([
       'capabilities',
       'plugins',
       'mcp',
@@ -110,12 +119,12 @@ describe('SettingsModal screen memory tab visibility', () => {
       'channels',
       'hooks',
     ]);
-    expect(groups[5].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[6].tabs.map((tab) => tab.id)).toEqual([
       'cache',
       'update',
       'about',
     ]);
-    expect(groups[5].tabs[0].label).toBe('数据与存储');
+    expect(groups[6].tabs[0].label).toBe('数据与存储');
   });
 
   it('hides user management tabs for non-admin users', () => {

@@ -110,6 +110,12 @@ export async function initializeBackgroundServices(): Promise<void> {
 
   const settings = configService.getSettings();
 
+  // 启动期日志保留清理（best-effort，非阻塞）：接上原本是死代码的审计日志清理，
+  // 并清理 agent 引擎逐次运行日志（原本无限堆积）。
+  void import('../services/infra/logRetention')
+    .then(({ runLogRetention }) => runLogRetention())
+    .catch((error) => logger.warn('Log retention failed', error as Error));
+
   // Phase 2: Background infrastructure (cloud, MCP, cron, updates, etc.)
   await initializeBackgroundInfra(configService);
 

@@ -151,6 +151,13 @@ export function getMinimaxApiKey(): string | undefined {
   return getConfigService().getApiKey('minimax') || undefined;
 }
 
+/** MiniMax 团队 ID（GroupId，海螺 files/retrieve 取下载地址需要）。env 优先，否则取 minimax-group 槽位。 */
+export function getMinimaxGroupId(): string | undefined {
+  const envGid = process.env.MINIMAX_GROUP_ID;
+  if (envGid) return envGid;
+  return getConfigService().getApiKey('minimax-group') || undefined;
+}
+
 /**
  * gpt-image-2 自定义端点配置：env（GPTIMAGE_PROXY_BASE/KEY）优先，再回落 config 槽位。
  * 同 getDashscopeApiKey 范式；base 或 key 任一缺失则返回 undefined。绝不写进代码。

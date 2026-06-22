@@ -2,7 +2,7 @@
 // 复用 wanx「提交异步任务 → 轮询 /tasks 直到 SUCCEEDED/FAILED」骨架，但解析 output.video_url
 // （与图像的 output.results[0].url 不同）。t2v / i2v 共用同一提交端点，仅 input/参数不同。
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
-import { getDashscopeApiKey, getMinimaxApiKey, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
+import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
 import { videoModelById, clampVideoDuration, type VideoCap } from '../../../shared/constants/visualModels';
 
 const VIDEO_SYNTHESIS_PATH = '/services/aigc/video-generation/video-synthesis';
@@ -136,13 +136,12 @@ async function submitAndPollMinimaxVideo(
   }
   if (!fileId) throw new Error('海螺视频任务超时或无 file_id');
 
-  // file_id → download_url（sk- key 先不带 GroupId；若 API 要求会在报文暴露，dogfood 据实补）。
-  const r = await fetchWithAbort(
-    `${base}${MINIMAX_RETRIEVE_PATH}?file_id=${encodeURIComponent(fileId)}`,
-    { headers: authHeaders },
-    VIDEO_TIMEOUT_MS.POLL,
-    outerSignal,
-  );
+  // file_id → download_url。MiniMax files/retrieve 需 GroupId（团队 ID）作 query 参数，有则带上。
+  const groupId = getMinimaxGroupId();
+  const retrieveUrl =
+    `${base}${MINIMAX_RETRIEVE_PATH}?file_id=${encodeURIComponent(fileId)}` +
+    (groupId ? `&GroupId=${encodeURIComponent(groupId)}` : '');
+  const r = await fetchWithAbort(retrieveUrl, { headers: authHeaders }, VIDEO_TIMEOUT_MS.POLL, outerSignal);
   if (!r.ok) throw new Error(`海螺视频取文件失败: ${r.status} - ${await r.text()}`);
   const rj: unknown = await r.json();
   const url =

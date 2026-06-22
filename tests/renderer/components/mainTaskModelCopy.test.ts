@@ -27,7 +27,8 @@ describe('main task model copy', () => {
   });
 
   it('explains main task model selection as a task strategy in settings', () => {
-    const source = readSource('src/renderer/components/features/settings/tabs/ModelSettings.tsx');
+    // 设置页 Master-Detail 重构后，主任务模型策略文案迁到 ProviderModelsSection（ModelSettings 仅留布局壳）。
+    const source = readSource('src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx');
 
     expect(source).toContain('主任务模型会影响每一轮交付质量');
     expect(source).toContain('日常小任务避免长期锁定慢模型或按量昂贵模型');

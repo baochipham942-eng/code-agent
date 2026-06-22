@@ -70,13 +70,15 @@
 - P3 对抗审计 0 HIGH。
 - 汇报质量证据（测试数/覆盖/结论），不贴 diff。
 
-## 进度（2026-06-22）
+## 进度（2026-06-22 — 全部完成）
 - ✅ **P0 地基**（commit 7318cf20b）：CanvasNode/Variant 加 role 字段，196 测绿。
 - ✅ **P1 参考图落画布**（commit c943178d0）：DesignImportButtons 组件 + 参考图视觉标记 + 服务 description_edit + IPC 路由 + hook 喂图，226 测绿。
-- ✅ **P2 核心 role-aware 历史**（commit 4e03d3bcf）：参考图剔出版本时间线、单独成组，229 测绿。
-- ⏳ **P2 剩余（待拍板）**：是否把 proto 版本从预览区工具栏并入左侧 composer 历史面板。现状 canvas 历史在左、proto 版本在预览工具栏（因「看某版=换 iframe」绑预览面）。并入非破坏但要动 PreviewPane 状态（compareIds/viewing），且当前在 tabreplan 活跃分支上有冲突风险。
-- ⏳ **P3 对称化 + 审计 + dogfood**：对称化（canvas 内联字段 vs proto spine.json 读写回滚）+ 对抗审计（免费）+ 真 key dogfood（**付费，需显式授权**）。
+- ✅ **P2 核心 role-aware 历史**（commit 4e03d3bcf）：参考图剔出版本时间线、单独成组。
+- ✅ **P2-full proto 合并左侧**（commit e8531f5b1）：林晨拍板「全合并进左侧」。新建 DesignProtoHistory + useProtoVersionActions，compare 状态提升到 store，PreviewPane 移除工具栏版本控件。设计历史统一为左侧 composer 一处。
+- ✅ **P3 对抗审计 + 修复**（commit 7cf936a24）：独立子 agent 当反方抓 3 真 bug 全修（HIGH#1 参考图编辑门控 / HIGH#2 读失败显式报错 / MED#3 startEditing 清对比）；判非 bug：MED#5（key 检查在 service 首步、付费前无 no-op）/ MED#4（filter-at-use 已测不拆数组）。233 测绿。
+- ✅ **P3 付费 dogfood**（林晨授权，只跑一次 ~¥0.14）：`generateImageFromReference` 真 key 端到端跑通，返回 actualModel=wanx2.1-imageedit + 真实图像；肉眼核对产物**真跟随参考图构图**（居中卡片版式保留、按 prompt 重上深蓝紫科技渐变）。description_edit 路径实锤可用。
 
 ### 关键认知修正
-- canvas 的 pin/discard 本就落盘（内联 canvas.json 节点字段），P3 对称化不需新建 spine.json，风险低于初估。
+- canvas 的 pin/discard 本就落盘（内联 canvas.json 节点字段），proto 在 spine.json；**两种持久化形态的回滚路径都已正确**（canvas 走 setChosen re-pin、proto 走 pin/discard），P3「对称化」作为持久化-读写回滚-正确性已满足，无需新建 spine.json。
+- 故意保留的 UX 差异：canvas 历史用 re-pin 回滚，proto 历史多了 discard/compare/定稿——两者数据模型同源（variant spine）、视觉语言一致、同处左侧，但 proto 的对比/定稿是其特有交互，未强行对称到 canvas（避免过度工程）。
 - 万相单 base_image；多图融合需 wan2.5-image-edit（升级路径，未接）。

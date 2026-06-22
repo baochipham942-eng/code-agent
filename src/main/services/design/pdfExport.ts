@@ -31,7 +31,20 @@ export async function htmlToPdf(html: string): Promise<Buffer> {
   let browser: import('playwright').Browser | null = null;
   try {
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
+    // 静态打印隔离（安全加固）：① 关 JS——打印不需要运行原型脚本，杜绝脚本 SSRF/exfil；
+    // ② newContext 承载该开关后再开 page。
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    // ③ setContent 之前拦截所有请求：只放行 data:/about:（内联资源/页面本身），其余一律
+    // abort——阻断外链子资源（图片/字体/CSS/信标）回连网络。打印导出可接受外链缺失。
+    await page.route('**/*', (route) => {
+      const u = route.request().url();
+      if (u.startsWith('data:') || u.startsWith('about:')) {
+        void route.continue();
+      } else {
+        void route.abort();
+      }
+    });
     // load 而非 networkidle：原型是 srcDoc 单文件，无外链长轮询，networkidle 可能因
     // 内联资源/字体轮询不收敛导致超时；load 足以等到 DOM + 样式就绪。
     await page.setContent(html, { waitUntil: 'load' });

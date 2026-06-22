@@ -124,6 +124,7 @@ export const en: Translations = {
     actionExportPdf: 'Export PDF',
     actionExportingPdf: 'Exporting PDF…',
     actionExportPdfFailed: 'PDF export failed (tried; use Export HTML instead)',
+    inlineEditNoOp: 'Edit not applied — this element can\'t be edited inline (only plain-text elements). Try a different one.',
     actionExported: 'Exported',
     actionFullscreen: 'Fullscreen',
     actionExitFullscreen: 'Exit fullscreen',

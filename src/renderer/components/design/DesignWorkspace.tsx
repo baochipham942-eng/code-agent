@@ -820,7 +820,12 @@ const PreviewPane: React.FC = () => {
     const canonical = (await readRunHtml(runDir)) ?? useDesignStore.getState().previewHtml;
     if (canonical == null) return;
     const updated = applyTextEdit(canonical, selector, newText);
-    if (updated === canonical) return; // 未命中 / 无变化：不落盘
+    if (updated === canonical) {
+      // 未命中 / 叶子限制 / 表格无 tbody 等导致回写未生效：给用户反馈，避免「改了没生效」
+      // 的静默数据丢失观感（CD-Parity §3 FIX 6）。
+      window.alert(t.design.inlineEditNoOp);
+      return;
+    }
     const proto = (await findRunHtml(runDir)) ?? `${runDir}/prototype.html`;
     await writeWorkspaceFile(proto, updated);
     // 仅当用户仍停在该 run 才刷新，避免期间切走被旧内容覆盖。

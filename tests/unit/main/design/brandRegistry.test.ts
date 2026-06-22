@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { promises as fsp } from 'fs';
+import { promises as fsp, existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import {
@@ -134,5 +134,63 @@ describe('brandRegistry', () => {
     await expect(
       saveBrand(draft({ tokens: { palette: {}, fonts: {}, posture: '' } as never })),
     ).rejects.toThrow();
+  });
+
+  // ── 路径穿越加固（adversarial audit HIGH FIX 1+2）─────────────────────────────
+  // saveBrand/deleteBrand/getBrand 接受 caller 给的 id，path.join(brandsRoot(), id)
+  // 在 id='../../...' 时逃出 brands 目录 → 任意写 / 任意递归删。修复后必须被拒/无操作，
+  // 且不在 brands 目录外写入或删除任何 sentinel。
+  it('saveBrand 显式传穿越 id：拒绝且不在 brands 外写文件', async () => {
+    // sentinel：brands 父目录（design/）下一个不该被 saveBrand 创建的目标。
+    const sentinelDir = path.join(tmpHome, '.code-agent', 'design');
+    await fsp.mkdir(sentinelDir, { recursive: true });
+    const traversalId = '../../../../evil';
+    await expect(saveBrand(draft({ id: traversalId }))).rejects.toThrow();
+    // 不该在 brands 目录外创建 evil/ 目录或文件
+    const escaped = path.join(tmpHome, 'evil');
+    expect(existsSync(escaped)).toBe(false);
+    expect(existsSync(path.join(sentinelDir, '..', '..', '..', '..', 'evil'))).toBe(false);
+    // index 也不该记录这条
+    expect((await listBrands()).brands).toEqual([]);
+  });
+
+  it('saveBrand 显式传含点/斜杠的脏 id：拒绝', async () => {
+    await expect(saveBrand(draft({ id: 'a/b' }))).rejects.toThrow();
+    await expect(saveBrand(draft({ id: 'a.b' }))).rejects.toThrow();
+    await expect(saveBrand(draft({ id: 'UPPER' }))).rejects.toThrow();
+  });
+
+  it('deleteBrand 传穿越 id：no-op，不删 brands 外任何东西', async () => {
+    const { id } = await saveBrand(draft());
+    // 在 brands 父目录放一个 sentinel 文件，模拟「被穿越删除」的目标
+    const root = path.join(tmpHome, '.code-agent', 'design', 'brands');
+    const sentinel = path.join(root, '..', 'sentinel.txt');
+    await fsp.writeFile(sentinel, 'keep me', 'utf-8');
+
+    await deleteBrand('../sentinel');
+    await deleteBrand('../../../../tmp/evil');
+    // sentinel 仍在；合法品牌也未被波及
+    expect(existsSync(sentinel)).toBe(true);
+    expect(await getBrand(id)).not.toBeNull();
+    await fsp.rm(sentinel, { force: true });
+  });
+
+  it('deleteBrand 一个不在 index 的 id：no-op，不动磁盘', async () => {
+    const { id } = await saveBrand(draft());
+    // 偷偷在 brands 下建一个不在 index 的目录，确认不被 deleteBrand 删
+    const root = path.join(tmpHome, '.code-agent', 'design', 'brands');
+    const orphanDir = path.join(root, 'orphan');
+    await fsp.mkdir(orphanDir, { recursive: true });
+    await fsp.writeFile(path.join(orphanDir, 'brand.json'), '{}', 'utf-8');
+
+    await deleteBrand('orphan');
+    expect(existsSync(orphanDir)).toBe(true);
+    // 合法品牌仍在
+    expect(await getBrand(id)).not.toBeNull();
+  });
+
+  it('getBrand 传穿越 id：返回 null（不读 brands 外文件）', async () => {
+    await expect(getBrand('../../../../etc/hosts')).resolves.toBeNull();
+    expect(await getBrand('a/b')).toBeNull();
   });
 });

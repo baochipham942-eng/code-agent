@@ -35,6 +35,26 @@ function indexPath(): string {
   return path.join(brandsRoot(), INDEX_FILE);
 }
 
+// 合法 id 形状：小写字母/数字开头，仅含小写 alnum 与连字符。无点、无斜杠、无大写，
+// deriveBrandId 的产出天然满足。caller 显式给的脏 id（穿越/大小写/点斜杠）一律拒。
+const VALID_BRAND_ID = /^[a-z0-9][a-z0-9-]*$/;
+
+function isValidBrandId(id: string): boolean {
+  return VALID_BRAND_ID.test(id);
+}
+
+// 校验 + 防穿越：先按形状判，再确认 path.resolve 后仍落在 brandsRoot() 内（belt-and-suspenders）。
+function assertSafeBrandId(id: string): void {
+  if (!isValidBrandId(id)) {
+    throw new Error(`非法品牌 id（仅允许小写字母数字与连字符）：${id}`);
+  }
+  const root = path.resolve(brandsRoot());
+  const dir = path.resolve(brandsRoot(), id);
+  if (dir !== root && !dir.startsWith(root + path.sep)) {
+    throw new Error(`品牌 id 越界（解析路径逃出 brands 目录）：${id}`);
+  }
+}
+
 function brandDir(id: string): string {
   return path.join(brandsRoot(), id);
 }
@@ -114,7 +134,7 @@ export async function listBrands(): Promise<BrandRegistryIndex> {
 
 /** 读单个品牌完整契约；不存在或损坏返回 null。 */
 export async function getBrand(id: string): Promise<BrandContract | null> {
-  if (!id) return null;
+  if (!id || !isValidBrandId(id)) return null;
   try {
     const raw = await fsp.readFile(brandJsonPath(id), 'utf-8');
     return normalizeBrandContract(JSON.parse(raw)) ?? null;
@@ -134,6 +154,8 @@ export async function saveBrand(brand: Partial<BrandContract>): Promise<{ id: st
     throw new Error('saveBrand 需要非空 name');
   }
   const id = (typeof brand.id === 'string' && brand.id.trim()) || deriveBrandId(name);
+  // 显式脏 id 直接拒（deriveBrandId 产出天然合法，不会触发）；并 belt-and-suspenders 防穿越。
+  assertSafeBrandId(id);
   const existing = await getBrand(id);
   const createdAt = existing?.createdAt ?? (typeof brand.createdAt === 'number' ? brand.createdAt : now);
 
@@ -163,9 +185,13 @@ export async function saveBrand(brand: Partial<BrandContract>): Promise<{ id: st
 
 /** 删除一个品牌：移除目录 + index 条目；若它是 active 则清空 active。 */
 export async function deleteBrand(id: string): Promise<{ ok: true }> {
-  if (!id) return { ok: true };
-  await fsp.rm(brandDir(id), { recursive: true, force: true }).catch(() => undefined);
+  if (!id || !isValidBrandId(id)) return { ok: true };
   const index = await readIndex();
+  // 只删 index 里确实登记的 id：杜绝穿越/孤儿目录被误删（即便形状合法）。
+  if (!index.brands.some((b) => b.id === id)) return { ok: true };
+  // belt-and-suspenders：rm 前再确认解析路径仍在 brands 内。
+  assertSafeBrandId(id);
+  await fsp.rm(brandDir(id), { recursive: true, force: true }).catch(() => undefined);
   const brands = index.brands.filter((b) => b.id !== id);
   const nextIndex: BrandRegistryIndex = { brands };
   if (index.activeId && index.activeId !== id) nextIndex.activeId = index.activeId;

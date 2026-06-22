@@ -29,7 +29,7 @@ export type ProtoTextEditPayload = {
 // 圈选与内联编辑共用的 selector 计算逻辑（与父侧 inlineTextEdit 的 selector 语义对齐）。
 // 注入脚本是字符串运行在 iframe 里，无法 import；这里把 path() 的函数体抽成常量字符串，
 // 在两段注入脚本里复用，保证「圈选」与「点字直接改」算出的 selector 完全同源。
-const PATH_FN_SOURCE = `
+export const PATH_FN_SOURCE = `
   function esc(s){try{return (window.CSS&&CSS.escape)?CSS.escape(s):s.replace(/[^a-zA-Z0-9_-]/g,'_');}catch(e){return s;}}
   function path(el){
     if(el.id) return '#'+esc(el.id);
@@ -38,7 +38,10 @@ const PATH_FN_SOURCE = `
       var sel=el.tagName.toLowerCase();
       if(el.classList&&el.classList.length){
         sel+='.'+Array.prototype.slice.call(el.classList,0,2).map(esc).join('.');
-      }else if(el.parentNode){
+      }
+      // 始终追加 :nth-child（不仅在无 class 时）——同 tag 同 class 的兄弟靠位置区分，
+      // 否则两个 <li class="row"> 算出同一 selector，回写会命中第一个改错元素。
+      if(el.parentNode){
         var i=Array.prototype.indexOf.call(el.parentNode.children,el)+1;
         sel+=':nth-child('+i+')';
       }
@@ -81,11 +84,16 @@ const INLINE_EDIT_SCRIPT = `<script data-neo-design-inline-edit>(function(){
   st.textContent='.__neo-edit-hover{outline:2px dashed #38bdf8!important;outline-offset:1px!important;cursor:text!important}[contenteditable="true"]{outline:2px solid #38bdf8!important;outline-offset:1px!important}';
   document.head.appendChild(st);
 ${PATH_FN_SOURCE}
+  // 仅叶子文本元素可编辑：有子*元素*的容器（含 <br>/<img> 等）一律跳过，
+  // 否则回写时 textContent 含后代文本 → 重复/结构损坏。leaf 的 textContent==直接文本，安全。
+  function isLeaf(el){ return el&&el.nodeType===1&&el.children.length===0; }
   var editing=null, last=null;
   document.addEventListener('mouseover',function(e){
     if(editing) return;
     if(last) last.classList.remove('__neo-edit-hover');
-    last=e.target; if(last&&last.classList) last.classList.add('__neo-edit-hover');
+    last=null;
+    var t=e.target;
+    if(isLeaf(t)){ last=t; t.classList&&t.classList.add('__neo-edit-hover'); }
   },true);
   function finish(el){
     if(!el) return;
@@ -98,7 +106,8 @@ ${PATH_FN_SOURCE}
   }
   document.addEventListener('click',function(e){
     e.preventDefault(); e.stopPropagation();
-    var el=e.target; if(!el||el.nodeType!==1) return;
+    var el=e.target;
+    if(!isLeaf(el)) return; // 非叶子文本元素不进入编辑（防容器误编辑损坏结构）
     if(editing===el) return;
     if(editing) finish(editing);
     editing=el;

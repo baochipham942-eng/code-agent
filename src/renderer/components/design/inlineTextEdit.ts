@@ -223,8 +223,16 @@ function locate(root: ElNode, parts: SelectorPart[]): ElNode | null {
     let node: ElNode = start;
     let ok = true;
     for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
       // 下一段：在 node 的直接子代里找首个匹配。
-      const child: ElNode | undefined = node.children.find((c) => matchPart(c, parts[i]));
+      const child: ElNode | undefined = node.children.find((c) => matchPart(c, part));
+      // tbody 容差：浏览器对 <table> 自动插入 <tbody>，path() 算 selector 时 DOM 里有
+      // tbody 段，但 canonical HTML 常写成 table>tr 不带 tbody。若该段是 tbody 且当前
+      // node 是 table 下找不到 tbody，则把这段视作穿透——下一段继续在 table 的子代里找。
+      if (!child && part.tag === 'tbody' && node.tag === 'table' &&
+          !node.children.some((c) => c.tag === 'tbody')) {
+        continue; // 跳过 tbody 段，node 不下沉，让后续段直接匹配 table 的 tr 子代
+      }
       if (!child) {
         ok = false;
         break;
@@ -237,13 +245,12 @@ function locate(root: ElNode, parts: SelectorPart[]): ElNode | null {
 }
 
 /**
- * 把 canonical HTML 里 selector 命中元素的*直接文本*替换为（转义后的）newText，保留其
- * 属性与子元素结构；selector 未命中 / 非法 / 匹配为空时原样返回 html（不落盘改动）。
+ * 把 canonical HTML 里 selector 命中的*叶子文本元素*的内容替换为（转义后的）newText，
+ * 保留其属性；selector 未命中 / 非法 / 匹配为空 / 目标含子元素时原样返回 html（no-op）。
  *
- * - 叶子文本元素：内容整体替换为转义文本。
- * - 含子元素的元素：保留子元素，仅把直接文本节点折叠为一处转义文本（置于内容区开头），
- *   其余裸文本去除——满足「只改这块文字、不动结构」的就地编辑语义。
- * - script/style 等原始文本元素不做特殊富文本处理（仍按内容整体替换，转义后写回）。
+ * - 叶子文本元素（无子元素）：内容整体替换为转义文本。
+ * - 含子元素的元素：no-op（注入脚本只对叶子开放编辑；重建含子元素的内容区会重复后代文本
+ *   或对 void/自闭子元素吐畸形标签，是 corruption 来源，故防御性不改）。
  */
 export function applyTextEdit(html: string, selector: string, newText: string): string {
   const parts = parseSelector(selector);
@@ -258,44 +265,12 @@ export function applyTextEdit(html: string, selector: string, newText: string): 
   const target = locate(root, parts);
   if (target?.contentStart == null || target.contentEnd == null) return html;
 
+  // 仅处理叶子文本元素：注入脚本已限制只对无子元素的叶子开放编辑，这里防御性地
+  // 对「含子元素」的目标返回原 html（no-op）——重建含子元素的内容区会重复后代文本 /
+  // 对 void(<br>/<img>) 与自闭 <p> 吐出畸形标签，是 corruption 来源，宁可不改。
+  if (target.children.length > 0) {
+    return html;
+  }
   const escaped = escapeHtml(newText);
-
-  // 无子元素：内容区整体替换。
-  if (target.children.length === 0) {
-    return html.slice(0, target.contentStart) + escaped + html.slice(target.contentEnd);
-  }
-
-  // 含子元素：重建内容区 = escaped 文本 + 各子元素原样保留（按源串切片）。
-  // 仅保留子元素片段，丢弃裸文本节点（即「只改文字」）。
-  let rebuilt = escaped;
-  for (const child of target.children) {
-    // 子元素在源串中的范围：从其开标签起到其内容区结束后的闭标签。
-    const openStart = findOpenTagStart(html, child);
-    const closeEnd = findCloseTagEnd(html, child);
-    if (openStart != null && closeEnd != null) {
-      rebuilt += html.slice(openStart, closeEnd);
-    }
-  }
-  return html.slice(0, target.contentStart) + rebuilt + html.slice(target.contentEnd);
-}
-
-/** 子元素开标签在源串中的起点：内容区起点回退到最近的 '<'。 */
-function findOpenTagStart(html: string, node: ElNode): number | null {
-  if (node.contentStart == null) return null;
-  const lt = html.lastIndexOf('<', node.contentStart - 1);
-  return lt >= 0 ? lt : null;
-}
-
-/** 子元素闭标签在源串中的终点：内容区终点之后的 `</tag>` 末尾；void/自闭则即内容区终点。 */
-function findCloseTagEnd(html: string, node: ElNode): number | null {
-  if (node.contentEnd == null) return null;
-  if (VOID_TAGS.has(node.tag) || node.contentStart === node.contentEnd) {
-    // 自闭/void：内容区终点之后到 '>' 处。
-    const gt = html.indexOf('>', node.contentEnd);
-    return gt >= 0 ? gt + 1 : node.contentEnd;
-  }
-  const closeRe = new RegExp(`</${node.tag}\\s*>`, 'ig');
-  closeRe.lastIndex = node.contentEnd;
-  const m = closeRe.exec(html);
-  return m ? m.index + m[0].length : node.contentEnd;
+  return html.slice(0, target.contentStart) + escaped + html.slice(target.contentEnd);
 }

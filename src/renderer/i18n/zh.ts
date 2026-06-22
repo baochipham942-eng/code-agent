@@ -122,6 +122,7 @@ export const zh = {
     actionExportPdf: '导出 PDF',
     actionExportingPdf: '导出 PDF 中…',
     actionExportPdfFailed: 'PDF 导出失败（已尝试，可改用导出 HTML）',
+    inlineEditNoOp: '改动未生效——该元素无法就地编辑（仅支持纯文本元素），请换一个试试',
     actionExported: '已导出',
     actionFullscreen: '全屏',
     actionExitFullscreen: '退出全屏',

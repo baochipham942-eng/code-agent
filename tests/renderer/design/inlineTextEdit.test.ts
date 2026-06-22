@@ -76,15 +76,60 @@ describe('applyTextEdit', () => {
     expect(applyTextEdit(html, '   ', 'y')).toBe(html);
   });
 
-  it('替换含简单子元素的元素时只改直接文本，保留子元素结构', () => {
-    // 叶子文本场景之外：元素含一个子 <span>。我们只替换直接文本节点，子元素结构保留。
-    const html = '<body><h1 id="t">前缀 <span class="hl">高亮</span> 后缀</h1></body>';
-    const out = applyTextEdit(html, '#t', '改');
-    // 子元素 span 仍在
-    expect(out).toContain('<span class="hl">高亮</span>');
-    // 直接文本被新文本替换（前后缀的裸文本不再原样保留）
-    expect(out).not.toContain('前缀');
-    expect(out).not.toContain('后缀');
-    expect(out).toContain('改');
+  // ── leaf-only 加固（adversarial audit HIGH FIX 3a/3b/3c）─────────────────────
+  // 旧实现对「含子元素」的目标重建内容区 → 重复后代文本（HIGH-1）/ 对 void 子元素吐畸形
+  // 标签（HIGH-2）。新实现限制只编辑叶子文本元素，含子元素一律 no-op。
+
+  it('含 inline 子元素的元素：no-op（不再重建、不重复后代文本）', () => {
+    const html = '<body><p id="p">Price: <b>$5</b> only</p></body>';
+    const out = applyTextEdit(html, '#p', '改了');
+    // 原样返回，不破坏结构、不重复 $5
+    expect(out).toBe(html);
+  });
+
+  it('含 void 子元素（<br>/<img>）的元素：no-op（不吐畸形标签）', () => {
+    const html = '<body><p id="p">line1<br>line2</p></body>';
+    const out = applyTextEdit(html, '#p', 'x');
+    expect(out).toBe(html);
+
+    const html2 = '<body><figure id="f">caption<img src="/a.png"></figure></body>';
+    expect(applyTextEdit(html2, '#f', 'x')).toBe(html2);
+  });
+
+  it('叶子文本元素仍可正常替换（含 class 与空白）', () => {
+    const html = '<body><h1 class="t" >old</h1></body>';
+    const out = applyTextEdit(html, 'h1.t:nth-child(1)', 'new');
+    expect(out).toContain('>new<');
+    expect(out).not.toContain('old');
+  });
+
+  it('同 class 兄弟靠 nth-child 唯一定位：编辑第二个，第一个不动', () => {
+    // path() 现在总是带 nth-child；两个 <li class="row"> 用位置区分。
+    const html =
+      '<body><ul class="list"><li class="row">first</li><li class="row">second</li></ul></body>';
+    // ul 是 body 第一个子 → nth-child(1)；第二个 li → nth-child(2)
+    const out = applyTextEdit(
+      html,
+      'ul.list:nth-child(1) > li.row:nth-child(2)',
+      'EDITED',
+    );
+    expect(out).toContain('<li class="row">first</li>');
+    expect(out).toContain('<li class="row">EDITED</li>');
+    expect(out).not.toContain('>second<');
+  });
+
+  // ── tbody 容差（FIX 6）：canonical HTML 写 table>tr 不带 tbody，但 DOM path() 含 tbody 段 ─
+  it('locate 容忍自动插入的 tbody 段（table>tr 直定位）', () => {
+    const html =
+      '<body><table id="tbl"><tr><td>a</td><td>b</td></tr></table></body>';
+    // path() 在真实 DOM 会算出 #tbl > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2)
+    const out = applyTextEdit(
+      html,
+      '#tbl > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2)',
+      'B2',
+    );
+    expect(out).toContain('<td>a</td>');
+    expect(out).toContain('<td>B2</td>');
+    expect(out).not.toContain('<td>b</td>');
   });
 });

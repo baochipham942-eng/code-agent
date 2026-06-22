@@ -6,11 +6,73 @@ import {
   injectThemeOverride,
   parseProtoSelectMessage,
   parseProtoTextEditMessage,
+  PATH_FN_SOURCE,
   PROTO_PALETTES,
   PROTO_SELECT_SOURCE,
   PROTO_SELECT_MESSAGE,
   PROTO_TEXT_EDIT_MESSAGE,
 } from '../../../src/renderer/components/design/designPreviewInject';
+
+// PATH_FN_SOURCE 是注入到 iframe 的字符串（无法 import，node 无 DOM），这里用极小的 fake
+// 元素树在 node 里 eval 出 path()，验证「总是带 nth-child」(FIX 3c)。
+function makePath(): (el: unknown) => string {
+  const factory = new Function(`${PATH_FN_SOURCE}\nreturn path;`) as () => (el: unknown) => string;
+  return factory();
+}
+type FakeEl = {
+  nodeType: number;
+  tagName: string;
+  id?: string;
+  classList: string[];
+  parentNode?: FakeEl | null;
+  parentElement?: FakeEl | null;
+  children: FakeEl[];
+};
+function el(tagName: string, opts: Partial<FakeEl> = {}): FakeEl {
+  return {
+    nodeType: 1,
+    tagName,
+    classList: [],
+    children: [],
+    parentNode: null,
+    parentElement: null,
+    ...opts,
+  } as FakeEl;
+}
+function link(parent: FakeEl, kids: FakeEl[]): FakeEl {
+  parent.children = kids;
+  kids.forEach((k) => {
+    k.parentNode = parent;
+    k.parentElement = parent;
+  });
+  return parent;
+}
+
+describe('path() (注入脚本 selector 计算)', () => {
+  it('始终给每段追加 :nth-child（即便有 class）', () => {
+    const path = makePath();
+    const body = el('BODY');
+    const ul = el('UL', { classList: ['list'] });
+    const li1 = el('LI', { classList: ['row'] });
+    const li2 = el('LI', { classList: ['row'] });
+    link(body, [ul]);
+    link(ul, [li1, li2]);
+
+    const sel1 = path(li1);
+    const sel2 = path(li2);
+    // 两个同 tag 同 class 兄弟必须算出不同 selector（位置区分）
+    expect(sel1).not.toBe(sel2);
+    expect(sel1).toContain('li.row:nth-child(1)');
+    expect(sel2).toContain('li.row:nth-child(2)');
+    // ul 段也带 nth-child（即便有 class）
+    expect(sel1).toContain('ul.list:nth-child(1)');
+  });
+
+  it('有 id 时短路返回 #id', () => {
+    const path = makePath();
+    expect(path(el('DIV', { id: 'hero' }))).toBe('#hero');
+  });
+});
 
 describe('injectSelectionScript', () => {
   it('关闭时原样返回', () => {
@@ -147,6 +209,13 @@ describe('injectInlineEditScript', () => {
     const out = injectInlineEditScript('<div>x</div>', true);
     expect(out.startsWith('<div>x</div>')).toBe(true);
     expect(out).toContain('data-neo-design-inline-edit');
+  });
+
+  it('脚本限制只编辑叶子文本元素（含 isLeaf 守卫，children.length===0）', () => {
+    const out = injectInlineEditScript('<html><body><h1>x</h1></body></html>', true);
+    // FIX 3a/3b：注入脚本必须用 isLeaf/children.length 守住，跳过有子元素的容器
+    expect(out).toContain('children.length===0');
+    expect(out).toContain('isLeaf');
   });
 });
 

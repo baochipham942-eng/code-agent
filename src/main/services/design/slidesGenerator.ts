@@ -10,9 +10,11 @@
 // ============================================================================
 
 import type PptxGenJS from 'pptxgenjs';
-import type { ChartMode, SlideData, SlideImage } from '../../tools/media/ppt/types';
+import type { ChartMode, SlideData, SlideImage, ThemeConfig } from '../../tools/media/ppt/types';
 import { getThemeConfig } from '../../tools/media/ppt/themes';
 import { outlineToSlideData, parseContentToSlides } from '../../tools/media/ppt/parser';
+import { getActiveBrandSync } from './brandRegistry';
+import { themeConfigFromBrand } from './brandTheme';
 import { registerSlideMasters } from '../../tools/media/ppt/slideMasters';
 import { selectMasterAndLayout, fillSlide, resetLayoutRotation } from '../../tools/media/ppt/layouts';
 
@@ -26,6 +28,16 @@ function getPptxGenJS(): PptxGenJSConstructor {
 
 const DEFAULT_SLIDES_COUNT = 10;
 const DEFAULT_THEME = 'neon-green';
+
+/**
+ * 主题解析（增强 #3 品牌注入）：显式 theme 优先（用户主动选主题）；否则若有 active 品牌
+ * 契约则据品牌色板/字体构造主题（「我的品牌」强制注入）；都没有则默认主题。
+ */
+function resolveTheme(explicitTheme?: string): ThemeConfig {
+  if (explicitTheme) return getThemeConfig(explicitTheme);
+  const brand = getActiveBrandSync();
+  return brand ? themeConfigFromBrand(brand) : getThemeConfig(DEFAULT_THEME);
+}
 
 export interface SlidesDeckInput {
   /** 演示稿主题 / 需求描述。slides 直传时可省（取首页标题为 deck 标题）。 */
@@ -72,7 +84,7 @@ export async function generateSlidesDeck(input: SlidesDeckInput): Promise<Slides
     throw new Error('生成演示稿需要主题或大纲（topic 或 slides 至少其一）');
   }
   const count = input.slidesCount && input.slidesCount > 0 ? input.slidesCount : DEFAULT_SLIDES_COUNT;
-  const themeConfig = getThemeConfig(input.theme ?? DEFAULT_THEME);
+  const themeConfig = resolveTheme(input.theme);
 
   // 内容通道优先级：已编辑大纲 slides > Markdown content > topic 模板大纲。
   const content = input.content?.trim();

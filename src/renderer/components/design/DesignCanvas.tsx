@@ -15,7 +15,7 @@ import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanv
 import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
-import { AnnotationLayer, type AnnotShape, type AnnotTool } from './AnnotationLayer';
+import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
 import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
 import { imagePdfExportName, canvasPptxExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
@@ -392,6 +392,10 @@ export const DesignCanvas: React.FC = () => {
   // 标注图形（世界坐标）+ 当前工具，本地态（换图重置）。
   const [annotShapes, setAnnotShapes] = useState<AnnotShape[]>([]);
   const [annotTool, setAnnotTool] = useState<AnnotTool>('pen');
+  // 文字标注：画布内输入框（替代原生 window.prompt）。world=落点世界坐标，value=草稿文字。
+  const [textDraft, setTextDraft] = useState<{ world: { x: number; y: number }; value: string } | null>(
+    null,
+  );
   // 生效模型（cap 解析的唯一来源）：已选且仍具 annotEdit 能力则用之，否则取首个 annotEdit 模型为默认。
   // 保证下拉值、成本预估、送 IPC 的模型三处一致且必为 annotEdit-capable。
   const effectiveAnnotModel = useMemo(() => {
@@ -700,7 +704,12 @@ export const DesignCanvas: React.FC = () => {
             ))}
           </Layer>
           {annotMode && selectedImageNode && (
-            <AnnotationLayer shapes={annotShapes} onShapesChange={setAnnotShapes} tool={annotTool} />
+            <AnnotationLayer
+              shapes={annotShapes}
+              onShapesChange={setAnnotShapes}
+              tool={annotTool}
+              onRequestText={(world) => setTextDraft({ world, value: '' })}
+            />
           )}
         </Stage>
       )}
@@ -711,6 +720,49 @@ export const DesignCanvas: React.FC = () => {
           <span>{t.design.canvasEmpty}</span>
         </div>
       )}
+
+      {/* 文字标注输入框（画布内，替代原生 window.prompt；落点处定位，Enter 落定 / Esc 取消）。 */}
+      {textDraft &&
+        (() => {
+          const sx = textDraft.world.x * camera.scale + camera.x;
+          const sy = textDraft.world.y * camera.scale + camera.y;
+          const commit = (): void => {
+            const text = textDraft.value.trim();
+            if (text) {
+              setAnnotShapes(
+                reduceAnnot(annotShapes, {
+                  type: 'down',
+                  tool: 'text',
+                  x: textDraft.world.x,
+                  y: textDraft.world.y,
+                  text,
+                }),
+              );
+            }
+            setTextDraft(null);
+          };
+          return (
+            <input
+              autoFocus
+              value={textDraft.value}
+              onChange={(e) => setTextDraft({ ...textDraft, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setTextDraft(null);
+                }
+              }}
+              onBlur={commit}
+              placeholder={t.design.annotTextPlaceholder}
+              // ds-allow:viz 标注输入框用红色描边呼应标注色，绝对定位于画布落点
+              className="absolute z-10 rounded border border-red-400/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-red-200 shadow-lg outline-none placeholder:text-zinc-500"
+              style={{ left: sx, top: sy, minWidth: 120 }}
+            />
+          );
+        })()}
 
       {/* 画布全幅 PPTX 导出（薄版）：当前画布上有图即显示，把全部活动图节点打成一份
           全幅 deck（每张 1 张全幅 slide），给干系人打包。<1 张图时隐藏。 */}

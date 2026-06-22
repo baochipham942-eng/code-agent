@@ -43,8 +43,9 @@ export function canvasPptxExportName(ts: number): string {
 /** 设计语境的表层定位：品牌主导（设计即产品）vs 产品主导（设计服务产品）。 */
 export type DesignSurface = 'brand' | 'product';
 
-/** 产物类型：交互原型(HTML) / 设计稿(图) / 信息图(图) / 视频。 */
-export type DesignOutputType = 'prototype' | 'mockup' | 'infographic' | 'video';
+/** 产物类型：网页(HTML) / 设计稿(图) / 信息图(图) / 演示稿(slides) / 视频。
+ *  注：UI 按「交付媒介」聚合呈现——网页=prototype，图={mockup,infographic}，演示稿=slides，视频=video。 */
+export type DesignOutputType = 'prototype' | 'mockup' | 'infographic' | 'slides' | 'video';
 
 /** 视频生成模式：文生视频 / 图生视频。 */
 export type DesignVideoMode = 't2v' | 'i2v';
@@ -198,14 +199,14 @@ export function buildContinueEditPrompt(input: BuildContinueEditPromptInput): st
   return lines.join('\n');
 }
 
-const IMAGE_OUTPUT_LABEL: Record<Exclude<DesignOutputType, 'prototype' | 'video'>, string> = {
+const IMAGE_OUTPUT_LABEL: Record<Exclude<DesignOutputType, 'prototype' | 'slides' | 'video'>, string> = {
   mockup: 'UI 设计稿',
   infographic: '信息图',
 };
 
 export type BuildImagePromptInput = {
   requirement: string;
-  outputType: Exclude<DesignOutputType, 'prototype' | 'video'>;
+  outputType: Exclude<DesignOutputType, 'prototype' | 'slides' | 'video'>;
   designContext?: DesignContextInput;
 };
 

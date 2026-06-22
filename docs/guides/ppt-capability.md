@@ -1,10 +1,12 @@
 # PPT 生成系统能力文档
 
-> 版本：v0.16.18+ | 最后更新：2026-02-06 | PR #51
+> 版本：v0.16.18+ | 最后更新：2026-06-22 | PR #51 / #260
 
 ## 概述
 
 PPT 生成系统基于 pptxgenjs 4.0.1，采用 **Slide Master + Placeholder 声明式架构**，支持 9 种主题、6 种布局、3 种原生图表，以及 Legacy 降级路径。
+
+> **双调用方（2026-06-22 起，PR #260）**：本引擎现有两个调用入口——①**agent 工具** `executePptGenerate`（含研究/AI 内容/配图/VLM 审查全套）；②**设计 tab 厚版演示稿** `services/design/slidesGenerator.ts`，从本引擎抽出纯核（`outlineToSlideData`/`parseContentToSlides → registerSlideMasters → selectMasterAndLayout → fillSlide`）去掉工具耦合，供 renderer 直连 IPC 调用。两者共用 `tools/media/ppt/*` 的主题/母版/布局/解析。设计 tab 侧的大纲编辑/像素预览/品牌注入/AI 配图详见 `docs/architecture/design-mode.md §15`。
 
 ## 架构
 

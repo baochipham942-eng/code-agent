@@ -3,6 +3,7 @@
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DESIGN_VERSIONS_SUBDIR } from '@shared/constants';
 import type { FileInfo } from '@shared/contract/workspace';
+import type { SlideOutlineItem } from './slidesOutlineOps';
 import type { BrandContract, BrandMeta } from '@shared/contract/brandContract';
 import { normalizeBrandContract } from '@shared/contract/brandContract';
 import { versionFileName, parseVersionTs } from './designTypes';
@@ -170,6 +171,88 @@ export async function exportCanvasPptx(
       { images, outputName },
     );
     if (res?.success) return { filePath: res.data?.filePath ?? null };
+    return { filePath: null, error: res?.error?.message };
+  } catch (e) {
+    return { filePath: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 厚版演示稿（二期）大纲生成：topic + 页数 → 确定性 SlideData[]（不落盘、不付费）。
+ * 失败返回 { slides: null, error }。
+ */
+export async function generateSlidesOutline(input: {
+  topic: string;
+  slidesCount?: number;
+  ai?: boolean;
+}): Promise<{ slides: SlideOutlineItem[] | null; aiUsed?: boolean; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ slides: SlideOutlineItem[]; aiUsed: boolean }>(
+      IPC_DOMAINS.WORKSPACE,
+      'generateSlidesOutline',
+      input,
+    );
+    if (res?.success) return { slides: res.data?.slides ?? null, aiUsed: res.data?.aiUsed };
+    return { slides: null, error: res?.error?.message };
+  } catch (e) {
+    return { slides: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 厚版演示稿（增强 #2）像素预览：据 topic/大纲生成 deck → LibreOffice 转每页 PNG → 返回图片路径。
+ * LibreOffice 未装时 libreOfficeMissing=true。失败返回 { screenshots: null, error }。
+ */
+export async function generateSlidesPreview(input: {
+  topic?: string;
+  slidesCount?: number;
+  theme?: string;
+  content?: string;
+  slides?: SlideOutlineItem[];
+}): Promise<{ screenshots: string[] | null; libreOfficeMissing?: boolean; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ screenshots: string[]; libreOfficeMissing?: boolean }>(
+      IPC_DOMAINS.WORKSPACE,
+      'generateSlidesPreview',
+      input,
+    );
+    if (res?.success) {
+      return { screenshots: res.data?.screenshots ?? [], libreOfficeMissing: res.data?.libreOfficeMissing };
+    }
+    return { screenshots: null, error: res?.error?.message };
+  } catch (e) {
+    return { screenshots: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 厚版演示稿（二期）：topic/已编辑大纲 + 页数 → 主进程 slidesGenerator 真排版 deck → 导出到「下载」。
+ * 返回落盘路径与页数；失败返回 { filePath: null, error }。
+ */
+export async function generateSlidesDeck(input: {
+  topic?: string;
+  slidesCount?: number;
+  theme?: string;
+  content?: string;
+  slides?: SlideOutlineItem[];
+  illustrate?: boolean;
+  imageModel?: string;
+  maxImages?: number;
+  outputName: string;
+}): Promise<{ filePath: string | null; slidesCount?: number; costCny?: number; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ filePath: string; slidesCount: number; costCny: number }>(
+      IPC_DOMAINS.WORKSPACE,
+      'generateSlidesDeck',
+      input,
+    );
+    if (res?.success) {
+      return {
+        filePath: res.data?.filePath ?? null,
+        slidesCount: res.data?.slidesCount,
+        costCny: res.data?.costCny,
+      };
+    }
     return { filePath: null, error: res?.error?.message };
   } catch (e) {
     return { filePath: null, error: e instanceof Error ? e.message : String(e) };

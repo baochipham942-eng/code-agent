@@ -24,6 +24,7 @@ import {
   Minimize2,
   BadgeCheck,
   Pencil,
+  Presentation,
 } from 'lucide-react';
 import { Button, IconButton } from '../primitives';
 import { BrandManager } from './BrandManager';
@@ -37,6 +38,9 @@ import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { DesignCanvas } from './DesignCanvas';
+import { DesignSlidesPanel } from './DesignSlidesPanel';
+import { SlideOutlineEditor } from './SlideOutlineEditor';
+import { useDesignSlidesStore } from './designSlidesStore';
 import {
   readRunHtml,
   readWorkspaceFile,
@@ -83,6 +87,41 @@ function isImageOutput(t: DesignOutputType): boolean {
 /** 视频产物（走 konva 画布 + generateVideo 派发）。 */
 function isVideoOutput(t: DesignOutputType): boolean {
   return t === 'video';
+}
+
+/** 演示稿产物（厚版，二期接入；一期为占位）。 */
+function isSlidesOutput(t: DesignOutputType): boolean {
+  return t === 'slides';
+}
+
+/** 落 konva 画布的产物：设计稿 / 信息图 / 视频。 */
+function isCanvasOutput(t: DesignOutputType): boolean {
+  return isImageOutput(t) || isVideoOutput(t);
+}
+
+/** 交付媒介（UI 聚合层）：网页 / 图 / 演示稿 / 视频。内部仍用 DesignOutputType。 */
+export type DesignMedia = 'web' | 'image' | 'slides' | 'video';
+
+/** DesignOutputType → 媒介。mockup/infographic 同属「图」。 */
+export function outputToMedia(t: DesignOutputType): DesignMedia {
+  if (t === 'prototype') return 'web';
+  if (isImageOutput(t)) return 'image';
+  if (t === 'slides') return 'slides';
+  return 'video';
+}
+
+/** 媒介 → DesignOutputType。「图」保留当前子类（默认设计稿）。 */
+export function mediaToOutput(m: DesignMedia, current: DesignOutputType): DesignOutputType {
+  switch (m) {
+    case 'web':
+      return 'prototype';
+    case 'image':
+      return isImageOutput(current) ? current : 'mockup';
+    case 'slides':
+      return 'slides';
+    case 'video':
+      return 'video';
+  }
 }
 
 /** 加载某次历史生成的产物 + 版本列表到预览。 */
@@ -160,14 +199,21 @@ const Composer: React.FC = () => {
   const canvasGenerating = useDesignCanvasStore((c) => c.generating);
   const canvasError = useDesignCanvasStore((c) => c.error);
 
-  const outputTypes: Array<{ type: DesignOutputType; label: string }> = [
-    { type: 'prototype', label: t.design.outputPrototype },
+  // 主控件按「交付媒介」分 4 类；「图」激活时出二级（设计稿 / 信息图）。
+  const mediaTabs: Array<{ media: DesignMedia; label: string }> = [
+    { media: 'web', label: t.design.outputWeb },
+    { media: 'image', label: t.design.outputImage },
+    { media: 'slides', label: t.design.outputSlides },
+    { media: 'video', label: t.design.outputVideo },
+  ];
+  const imageSubTabs: Array<{ type: DesignOutputType; label: string }> = [
     { type: 'mockup', label: t.design.outputMockup },
     { type: 'infographic', label: t.design.outputInfographic },
-    { type: 'video', label: t.design.outputVideo },
   ];
+  const activeMedia = outputToMedia(s.outputType);
   const imageMode = isImageOutput(s.outputType);
   const videoMode = isVideoOutput(s.outputType);
+  const slidesMode = isSlidesOutput(s.outputType);
   // 视频与图像产物都落 konva 画布，共用 canvas store 的 generating/error。
   const canvasMode = imageMode || videoMode;
   const generating = canvasMode ? canvasGenerating : s.status === 'generating';
@@ -182,24 +228,47 @@ const Composer: React.FC = () => {
     <div className="flex flex-col gap-5 w-80 shrink-0 border-r border-white/[0.06] p-4 overflow-y-auto">
       <HistorySection />
 
-      {/* 产物类型 */}
-      <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
-        {/* ds-allow:start 产物类型分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
-        {outputTypes.map(({ type, label }) => (
-          <button
-            key={type}
-            type="button"
-            onClick={() => s.setOutputType(type)}
-            className={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
-              s.outputType === type
-                ? 'bg-white/[0.10] text-zinc-100'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-        {/* ds-allow:end */}
+      {/* 产物媒介（4 类，按交付形态：网页 / 图 / 演示稿 / 视频） */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+          {/* ds-allow:start 媒介分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
+          {mediaTabs.map(({ media, label }) => (
+            <button
+              key={media}
+              type="button"
+              onClick={() => s.setOutputType(mediaToOutput(media, s.outputType))}
+              className={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                activeMedia === media
+                  ? 'bg-white/[0.10] text-zinc-100'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          {/* ds-allow:end */}
+        </div>
+        {/* 「图」二级：设计稿 / 信息图（仅图媒介激活时出现） */}
+        {activeMedia === 'image' && (
+          <div className="flex gap-1.5 pl-0.5">
+            {/* ds-allow:start 图二级单选 pill（选中态 fuchsia 描边，与出图尺寸 pill 同语言） */}
+            {imageSubTabs.map(({ type, label }) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => s.setOutputType(type)}
+                className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  s.outputType === type
+                    ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {/* ds-allow:end */}
+          </div>
+        )}
       </div>
 
       {/* 需求 */}
@@ -397,18 +466,29 @@ const Composer: React.FC = () => {
         </div>
       )}
 
-      {/* 生成 */}
-      {/* ds-allow:start 主生成 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 是蓝色渐变，会丢设计区视觉语言） */}
-      <button
-        type="button"
-        onClick={() => void onGenerate()}
-        disabled={generating}
-        className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
-      >
-        {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        {generating ? t.design.generating : t.design.generate}
-      </button>
-      {/* ds-allow:end */}
+      {/* 演示稿（厚版 MVP）：页数 + 生成 → 真排版 PPTX 导出到下载 */}
+      {slidesMode ? (
+        <div className="flex flex-col gap-2">
+          <div className="rounded-lg border border-fuchsia-400/20 bg-fuchsia-400/[0.06] px-3 py-2 text-[11px] leading-snug text-zinc-400">
+            {t.design.slidesComingSoon}
+          </div>
+          <DesignSlidesPanel />
+        </div>
+      ) : (
+        <>
+          {/* ds-allow:start 主生成 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 是蓝色渐变，会丢设计区视觉语言） */}
+          <button
+            type="button"
+            onClick={() => void onGenerate()}
+            disabled={generating}
+            className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
+          >
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {generating ? t.design.generating : t.design.generate}
+          </button>
+          {/* ds-allow:end */}
+        </>
+      )}
 
       {/* 自由画布：导入自有图片（也支持画布上粘贴/拖拽） */}
       {imageMode && (
@@ -603,6 +683,19 @@ const ContinueEditBar: React.FC<{
   );
 };
 
+// 演示稿预览：有大纲 → 逐页编辑器（预览 + 就地改字）；否则占位引导。
+const SlidesPreview: React.FC = () => {
+  const { t } = useI18n();
+  const hasOutline = useDesignSlidesStore((s) => !!s.outline && s.outline.length > 0);
+  if (hasOutline) return <SlideOutlineEditor />;
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-zinc-500">
+      <Presentation className="h-6 w-6 text-zinc-600" />
+      <span>{t.design.slidesPreviewSoon}</span>
+    </div>
+  );
+};
+
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
   const outputType = useDesignStore((s) => s.outputType);
@@ -778,8 +871,13 @@ const PreviewPane: React.FC = () => {
     // applyInlineEdit 只读 store getState/refs，无需进依赖；inlineEditMode 切换即重挂。
   }, [inlineEditMode]);
 
-  // 设计稿 / 信息图 → konva 无限画布；交互原型 → HTML iframe。
-  if (isImageOutput(outputType)) {
+  // 演示稿（厚版二期）→ 有大纲则进编辑器（逐页预览 + 就地改字），否则占位引导。
+  if (isSlidesOutput(outputType)) {
+    return <SlidesPreview />;
+  }
+
+  // 设计稿 / 信息图 / 视频 → konva 无限画布；交互原型（网页）→ HTML iframe。
+  if (isCanvasOutput(outputType)) {
     return <DesignCanvas />;
   }
 

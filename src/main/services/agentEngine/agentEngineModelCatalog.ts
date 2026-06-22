@@ -281,13 +281,40 @@ export function getAgentEngineCatalogEngine(
   return catalog.engines.find((engine) => engine.kind === kind) ?? null;
 }
 
+/**
+ * 显式请求的模型在目标引擎下不可用（不存在或已停用）时抛出。
+ * 用于 run 派发路径的 fail-closed：绝不静默把请求模型替换成引擎默认模型。
+ */
+export class AgentEngineModelIncompatibleError extends Error {
+  constructor(
+    public readonly kind: ExternalAgentEngineKind,
+    public readonly requestedModel: string,
+  ) {
+    super(`Model "${requestedModel}" is not available for the ${kind} agent engine.`);
+    this.name = 'AgentEngineModelIncompatibleError';
+  }
+}
+
+export interface ResolveAgentEngineCatalogModelOptions {
+  /**
+   * strict=true 时，显式请求的模型在该引擎下不可用就抛 AgentEngineModelIncompatibleError，
+   * 绝不静默替换成引擎默认模型（run 派发路径用，避免"假装跑了 X 实际跑了 Y"）。
+   * 未显式请求模型（requestedModel 为空）时仍回落默认模型，不受 strict 影响。
+   */
+  strict?: boolean;
+}
+
 export function resolveAgentEngineCatalogModel(
   catalog: AgentEngineModelCatalog,
   kind: ExternalAgentEngineKind,
   requestedModel?: string | null,
+  options?: ResolveAgentEngineCatalogModelOptions,
 ): AgentEngineModelCatalogModel | null {
   const engine = getAgentEngineCatalogEngine(catalog, kind);
   if (!engine) {
+    if (options?.strict && requestedModel) {
+      throw new AgentEngineModelIncompatibleError(kind, requestedModel);
+    }
     return null;
   }
 
@@ -297,6 +324,11 @@ export function resolveAgentEngineCatalogModel(
     : null;
   if (requested) {
     return requested;
+  }
+
+  // 显式请求了某模型但在该引擎下不可用 → fail-closed，绝不静默替换成默认模型。
+  if (options?.strict && requestedModel) {
+    throw new AgentEngineModelIncompatibleError(kind, requestedModel);
   }
 
   return enabledModels.find((model) => model.id === engine.defaultModel)
@@ -345,9 +377,13 @@ export class RemoteAgentEngineModelCatalogService {
     return remote;
   }
 
-  async resolveModelId(kind: ExternalAgentEngineKind, requestedModel?: string | null): Promise<string | undefined> {
+  async resolveModelId(
+    kind: ExternalAgentEngineKind,
+    requestedModel?: string | null,
+    options?: ResolveAgentEngineCatalogModelOptions,
+  ): Promise<string | undefined> {
     const result = await this.readCatalog();
-    return resolveAgentEngineCatalogModel(result.catalog, kind, requestedModel)?.id;
+    return resolveAgentEngineCatalogModel(result.catalog, kind, requestedModel, options)?.id;
   }
 
   private isCacheFresh(result: AgentEngineModelCatalogResult): boolean {

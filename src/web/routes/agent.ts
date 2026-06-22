@@ -387,7 +387,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           prompt,
           cwd: launch.cwd,
           workspaceRoot: launch.workspaceRoot,
-          model: await getRemoteAgentEngineModelCatalogService().resolveModelId(selectedEngine.kind, launch.model),
+          model: await getRemoteAgentEngineModelCatalogService().resolveModelId(selectedEngine.kind, launch.model, { strict: true }),
           permissionProfile: launch.permissionProfile,
           clientMessageId,
           attachmentsCount: body.attachments?.length ?? 0,

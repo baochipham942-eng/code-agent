@@ -26,20 +26,52 @@ interface ExecProbeResult {
 }
 
 const VERSION_TIMEOUT_MS = 3000;
+/**
+ * 探测结果缓存 TTL。原实现每次 list() 都重跑 which + --version（每引擎最多 3s 超时），
+ * 模型切换器一次交互内的多次 list() 会叠加卡顿。短 TTL 去重一次交互的重复探测，
+ * 又把"装好引擎后看不到"的窗口控制在数秒内（如需立即刷新可调 invalidate()）。
+ */
+const DETECT_CACHE_TTL_MS = 5000;
+
+export interface AgentEngineRegistryOptions {
+  cacheTtlMs?: number;
+  now?: () => number;
+}
 
 export class AgentEngineRegistry {
+  private readonly cacheTtlMs: number;
+  private readonly now: () => number;
+  private cache: { descriptors: AgentEngineDescriptor[]; expiresAt: number } | null = null;
+
+  constructor(options: AgentEngineRegistryOptions = {}) {
+    this.cacheTtlMs = options.cacheTtlMs ?? DETECT_CACHE_TTL_MS;
+    this.now = options.now ?? Date.now;
+  }
+
   async list(): Promise<AgentEngineDescriptor[]> {
-    const detectedAt = Date.now();
+    const now = this.now();
+    if (this.cache && this.cache.expiresAt > now) {
+      return this.cache.descriptors;
+    }
+
+    const detectedAt = now;
     const [codex, claude] = await Promise.all([
       this.detectCodex(detectedAt),
       this.detectClaude(detectedAt),
     ]);
 
-    return [
+    const descriptors = [
       this.nativeDescriptor(detectedAt),
       codex,
       claude,
     ];
+    this.cache = { descriptors, expiresAt: now + this.cacheTtlMs };
+    return descriptors;
+  }
+
+  /** 清除探测缓存，强制下次 list() 重新探测（如用户刚安装/重装引擎后） */
+  invalidate(): void {
+    this.cache = null;
   }
 
   async get(kind: AgentEngineKind): Promise<AgentEngineDescriptor> {

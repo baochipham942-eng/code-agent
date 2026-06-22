@@ -212,9 +212,15 @@ export function useDesignCanvasGeneration(): {
     // 参考图垫图：取画布上第一张参考图（role=reference）作为底图喂模型（万相当前单图，
     // 多张取第一张，与 UI 提示一致）。无参考图则纯文生图。
     const refNode = useDesignCanvasStore.getState().nodes.find(isReferenceNode);
-    const referenceImageDataUrl = refNode
-      ? (await readWorkspaceImageAsDataUrl(`${runDir}/${refNode.src}`)) ?? undefined
-      : undefined;
+    let referenceImageDataUrl: string | undefined;
+    if (refNode) {
+      referenceImageDataUrl = (await readWorkspaceImageAsDataUrl(`${runDir}/${refNode.src}`)) ?? undefined;
+      // 参考图读失败时显式报错、不静默退化成纯文生图（否则用户以为用了参考图，审计 HIGH#2）。
+      if (!referenceImageDataUrl) {
+        useDesignCanvasStore.getState().setError(t.design.errReferenceRead);
+        return;
+      }
+    }
 
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);

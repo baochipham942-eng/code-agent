@@ -27,6 +27,16 @@ describe('designStore proto 版本对比（P2 统一历史）', () => {
     s.clearCompare();
   });
 
+  it('startEditing 清空对比状态（与 selectRun/startGenerating 对称，审计 MED#3）', () => {
+    const s = useDesignStore.getState();
+    s.toggleCompareId('a');
+    s.setComparing(true);
+    s.startEditing('/d/run-x');
+    expect(useDesignStore.getState().compareIds).toEqual([]);
+    expect(useDesignStore.getState().comparing).toBe(false);
+    s.reset();
+  });
+
   it('clearCompare 清空选版 + 关对比浮层', () => {
     const s = useDesignStore.getState();
     s.toggleCompareId('a');

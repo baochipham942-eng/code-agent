@@ -190,6 +190,7 @@ export const en: Translations = {
     errResolveDir: 'Could not prepare the design draft directory, please retry',
     errDispatch: 'Failed to dispatch generation',
     errTimeout: 'Generation timed out — no prototype file detected',
+    errReferenceRead: 'Failed to read the reference image — re-add it before generating (avoided silently falling back to text-only)',
     errNoPrototype: 'Generate or pick a prototype first',
     errNoInstruction: 'Enter a change request first',
     // T2 cost transparency + undo/redo trust UI

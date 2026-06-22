@@ -459,8 +459,10 @@ export const DesignCanvas: React.FC = () => {
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
     selectedIds.length === 1 ? visibleNodes.find((n) => n.id === selectedIds[0]) ?? null : null;
-  // 图像专属编辑（圈选重绘/标注/扩图/去水印/导出）只对图节点开放；视频节点的渲染与操作走画布视频分支。
-  const selectedImageNode = selectedNode && isImageNode(selectedNode) ? selectedNode : null;
+  // 图像专属编辑（圈选重绘/标注/扩图/去水印/导出）只对【产物】图节点开放：视频节点走画布视频分支；
+  // 参考图（role=reference）是生成前的视觉输入、无版本序号，不开放编辑工具栏（审计 HIGH#1）。
+  const selectedImageNode =
+    selectedNode && isImageNode(selectedNode) && !isReferenceNode(selectedNode) ? selectedNode : null;
   const compareNodes =
     selectedIds.length === 2
       ? selectedIds

@@ -185,6 +185,9 @@ export const useDesignStore = create<DesignState>()(
           previewPath: runDir,
           selectedRunDir: runDir,
           viewingVersionPath: null,
+          // 续编会改变版本集合，残留的对比浮层会引用失效版本（审计 MED#3，与 selectRun/startGenerating 对称）。
+          compareIds: [],
+          comparing: false,
         }),
       setPreviewHtml: (previewHtml) => set({ previewHtml }),
       setDone: () => set({ status: 'done' }),

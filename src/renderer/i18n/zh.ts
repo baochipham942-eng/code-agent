@@ -188,6 +188,7 @@ export const zh = {
     errResolveDir: '无法准备设计草稿目录，请重试',
     errDispatch: '生成派发失败',
     errTimeout: '生成超时，未检测到原型文件',
+    errReferenceRead: '参考图读取失败，请重新添加参考图后再生成（已避免误用纯文生图）',
     errNoPrototype: '请先生成或选择一个原型',
     errNoInstruction: '请先填写修改要求',
     // T2 成本透明 + undo/redo 信任 UI

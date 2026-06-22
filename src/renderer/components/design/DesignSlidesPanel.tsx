@@ -8,10 +8,13 @@ import { useDesignSlidesStore } from './designSlidesStore';
 import { generateSlidesOutline, generateSlidesDeck } from './designFiles';
 import { sanitizeOutline } from './slidesOutlineOps';
 import { canvasPptxExportName } from './designTypes';
+import { ImageModelPicker } from './ImageModelPicker';
+import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 
 const MIN_SLIDES = 4;
 const MAX_SLIDES = 20;
 const DEFAULT_SLIDES = 10;
+const MAX_ILLUSTRATIONS = 4;
 
 export const DesignSlidesPanel: React.FC = () => {
   const { t } = useI18n();
@@ -19,6 +22,8 @@ export const DesignSlidesPanel: React.FC = () => {
   const [slidesCount, setSlidesCount] = React.useState(DEFAULT_SLIDES);
   const [aiOutline, setAiOutline] = React.useState(false);
   const [fellBack, setFellBack] = React.useState(false);
+  const [illustrate, setIllustrate] = React.useState(false);
+  const imageModel = useDesignStore((s) => s.imageModel);
 
   const outline = useDesignSlidesStore((s) => s.outline);
   const buildingOutline = useDesignSlidesStore((s) => s.buildingOutline);
@@ -29,6 +34,12 @@ export const DesignSlidesPanel: React.FC = () => {
 
   const topic = requirement.trim();
   const hasOutline = !!outline && outline.length > 0;
+
+  // 配图目标页数（内容页，封顶 MAX_ILLUSTRATIONS）：有大纲按实际内容页，否则按页数估。
+  const illustrationCount = hasOutline
+    ? Math.min(outline!.filter((s) => !s.isTitle && !s.isEnd && s.title.trim()).length, MAX_ILLUSTRATIONS)
+    : Math.min(Math.max(slidesCount - 2, 0), MAX_ILLUSTRATIONS);
+  const illustrationCost = illustrationCount * estimateImageCostCny(imageModel);
 
   const onBuildOutline = async (): Promise<void> => {
     if (!topic || buildingOutline) return;
@@ -52,10 +63,16 @@ export const DesignSlidesPanel: React.FC = () => {
       topic: topic || undefined,
       slidesCount,
       slides: hasOutline ? sanitizeOutline(outline!) : undefined,
+      illustrate,
+      imageModel: illustrate ? imageModel : undefined,
+      maxImages: MAX_ILLUSTRATIONS,
       outputName: canvasPptxExportName(Date.now()),
     });
     if (res.filePath) {
-      store.setState({ result: { filePath: res.filePath, slidesCount: res.slidesCount }, generating: false });
+      store.setState({
+        result: { filePath: res.filePath, slidesCount: res.slidesCount, costCny: res.costCny },
+        generating: false,
+      });
     } else {
       store.setState({ error: res.error ?? t.design.slidesGenerateError, generating: false });
     }
@@ -126,6 +143,32 @@ export const DesignSlidesPanel: React.FC = () => {
         </div>
       )}
 
+      {/* AI 配图（增强 #4，付费 opt-in）：勾选后为内容页生成插画，模型在下方选 */}
+      <div className="flex flex-col gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5">
+        <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-snug text-zinc-300">
+          <input
+            type="checkbox"
+            checked={illustrate}
+            onChange={(e) => setIllustrate(e.target.checked)}
+            className="mt-0.5 accent-fuchsia-500"
+          />
+          <span>{t.design.slidesIllustrate}</span>
+        </label>
+        {illustrate && (
+          <>
+            <ImageModelPicker />
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-zinc-500">
+                {t.design.slidesIllustrateCount.replace('{n}', String(illustrationCount))}
+              </span>
+              <span className="font-mono text-amber-300">
+                {t.design.slidesIllustrateEst} {formatCny(illustrationCost)}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
       {/* 第二步：生成演示稿（据编辑后大纲，或无大纲时直接据 topic） */}
       {/* ds-allow:start 演示稿主 CTA 用设计区品牌色 bg-fuchsia-500/90 */}
       <button
@@ -153,6 +196,7 @@ export const DesignSlidesPanel: React.FC = () => {
           <span>
             {t.design.slidesDone}
             {typeof result.slidesCount === 'number' ? `（${result.slidesCount}）` : ''}
+            {result.costCny ? ` · ${t.design.slidesIllustrateSpent} ${formatCny(result.costCny)}` : ''}
             <br />
             <span className="break-all text-emerald-300/80">{result.filePath}</span>
           </span>

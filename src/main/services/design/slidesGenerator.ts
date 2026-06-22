@@ -50,6 +50,8 @@ export interface SlidesDeckInput {
   content?: string;
   /** 已编辑的大纲（SlideData[]）：提供且非空则直接据此排版，优先于 content/topic。 */
   slides?: SlideData[];
+  /** AI 配图（增强 #4）：按 slide_index 喂进 fillSlide，对应页走图文母版。 */
+  images?: SlideImage[];
 }
 
 /**
@@ -106,12 +108,17 @@ export async function generateSlidesDeck(input: SlidesDeckInput): Promise<Slides
   registerSlideMasters(pptx, themeConfig);
   resetLayoutRotation();
 
-  const noImages: SlideImage[] = [];
+  const allImages: SlideImage[] = input.images ?? [];
   for (let i = 0; i < slides.length; i++) {
     const slideData = slides[i];
-    const { master, layout, chartData } = selectMasterAndLayout(slideData, false, 'auto' as ChartMode);
+    const slideImages = allImages.filter((img) => img.slide_index === i);
+    const { master, layout, chartData } = selectMasterAndLayout(
+      slideData,
+      slideImages.length > 0,
+      'auto' as ChartMode,
+    );
     const slide = pptx.addSlide({ masterName: master });
-    fillSlide(pptx, slide, slideData, themeConfig, layout, i, chartData, noImages);
+    fillSlide(pptx, slide, slideData, themeConfig, layout, i, chartData, slideImages);
   }
 
   const out = await pptx.write({ outputType: 'nodebuffer' });

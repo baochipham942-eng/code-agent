@@ -16,7 +16,7 @@ interface DesignSlidesState {
   outline: SlideOutlineItem[] | null;
   buildingOutline: boolean;
   generating: boolean;
-  result: { filePath: string; slidesCount?: number } | null;
+  result: { filePath: string; slidesCount?: number; costCny?: number } | null;
   error: string | null;
   // 像素预览（增强 #2）：渲染后的每页 PNG 路径 + 状态。
   previewShots: string[] | null;

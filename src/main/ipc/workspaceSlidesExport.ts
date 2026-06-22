@@ -5,6 +5,7 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import { generateSlidesDeck, buildSlidesOutline } from '../services/design/slidesGenerator';
 import { buildAiOutline } from '../services/design/slidesAiOutline';
+import { illustrateSlides } from '../services/design/slidesIllustrator';
 import { imagesToPptx } from '../services/design/pptxExport';
 import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 import { getUserConfigDir } from '../config/configPaths';
@@ -44,6 +45,10 @@ export interface GenerateSlidesDeckPayload {
   content?: string;
   /** 已编辑大纲：提供则据此排版，优先于 topic/content。 */
   slides?: SlideData[];
+  /** AI 配图（付费）：true 则按 imageModel 为内容页生成插画，走图文母版。 */
+  illustrate?: boolean;
+  imageModel?: string;
+  maxImages?: number;
   outputName?: string;
 }
 
@@ -109,21 +114,42 @@ export async function handleGenerateSlidesPreview(payload: GenerateSlidesPreview
 
 export async function handleGenerateSlidesDeck(
   payload: GenerateSlidesDeckPayload,
-): Promise<{ filePath: string; slidesCount: number }> {
+): Promise<{ filePath: string; slidesCount: number; costCny: number }> {
   const hasSlides = Array.isArray(payload?.slides) && payload.slides.length > 0;
   if ((!payload?.topic?.trim() && !hasSlides) || !payload.outputName) {
     throw new Error('generateSlidesDeck 需要 topic 或 slides，以及 outputName');
   }
+
+  // AI 配图（增强 #4，付费）：先据确定的 slides 出图，再喂进排版走图文母版。
+  let images;
+  let costCny = 0;
+  let slidesOverride = payload.slides;
+  if (payload.illustrate && payload.imageModel) {
+    const slidesForImg =
+      hasSlides && payload.slides ? payload.slides : buildSlidesOutline(payload.topic ?? '', payload.slidesCount);
+    const dir = path.join(getUserConfigDir(), 'design', 'slides-illustrations');
+    await fsp.rm(dir, { recursive: true, force: true });
+    const r = await illustrateSlides(
+      slidesForImg,
+      { modelId: payload.imageModel, maxImages: payload.maxImages },
+      dir,
+    );
+    images = r.images;
+    costCny = r.costCny;
+    slidesOverride = slidesForImg; // 与配图同一份 slides 排版，保证图文页对齐
+  }
+
   const { buffer, slidesCount } = await generateSlidesDeck({
     topic: payload.topic,
     slidesCount: payload.slidesCount,
     theme: payload.theme,
     content: payload.content,
-    slides: payload.slides,
+    slides: slidesOverride,
+    images,
   });
   const saved = await handleSaveBinaryToDownloads({
     fileName: payload.outputName,
     base64: buffer.toString('base64'),
   });
-  return { filePath: saved.filePath, slidesCount };
+  return { filePath: saved.filePath, slidesCount, costCny };
 }

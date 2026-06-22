@@ -235,15 +235,24 @@ export async function generateSlidesDeck(input: {
   theme?: string;
   content?: string;
   slides?: SlideOutlineItem[];
+  illustrate?: boolean;
+  imageModel?: string;
+  maxImages?: number;
   outputName: string;
-}): Promise<{ filePath: string | null; slidesCount?: number; error?: string }> {
+}): Promise<{ filePath: string | null; slidesCount?: number; costCny?: number; error?: string }> {
   try {
-    const res = await window.domainAPI?.invoke<{ filePath: string; slidesCount: number }>(
+    const res = await window.domainAPI?.invoke<{ filePath: string; slidesCount: number; costCny: number }>(
       IPC_DOMAINS.WORKSPACE,
       'generateSlidesDeck',
       input,
     );
-    if (res?.success) return { filePath: res.data?.filePath ?? null, slidesCount: res.data?.slidesCount };
+    if (res?.success) {
+      return {
+        filePath: res.data?.filePath ?? null,
+        slidesCount: res.data?.slidesCount,
+        costCny: res.data?.costCny,
+      };
+    }
     return { filePath: null, error: res?.error?.message };
   } catch (e) {
     return { filePath: null, error: e instanceof Error ? e.message : String(e) };

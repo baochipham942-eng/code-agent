@@ -65,10 +65,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'model', tabLabel: '模型', label: '测试连接', keywords: ['test', 'connection', '测试', '连接'] },
   { tab: 'model', tabLabel: '模型', label: '中转站', keywords: ['relay', '中转', '自定义', 'custom', 'new-api', 'one-api', '接口地址', 'base url'] },
 
-  // Agent Engine
-  { tab: 'agentEngine', tabLabel: 'Agent 引擎', label: 'Codex CLI', keywords: ['codex', 'cli', '引擎', 'engine', '外部引擎'] },
-  { tab: 'agentEngine', tabLabel: 'Agent 引擎', label: 'Claude Code', keywords: ['claude code', 'cli', '引擎', 'engine', '外部引擎'] },
-  { tab: 'agentEngine', tabLabel: 'Agent 引擎', label: '引擎默认模型', keywords: ['engine', 'model', '引擎模型', '默认模型'] },
+  // Agent Engine（执行引擎）
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: '执行引擎', keywords: ['执行引擎', 'engine', '引擎', '计费', 'billing', '订阅', '安装状态'] },
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Neo（原生引擎）', keywords: ['native', 'neo', '原生', '内置', '引擎', 'engine'] },
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Codex CLI', keywords: ['codex', 'cli', '引擎', 'engine', '外部引擎'] },
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Claude Code', keywords: ['claude code', 'cli', '引擎', 'engine', '外部引擎'] },
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'MiMo-Code', keywords: ['mimo', 'cli', '引擎', 'engine', '外部引擎'] },
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Kimi Code', keywords: ['kimi', 'cli', '引擎', 'engine', '外部引擎'] },
+  { tab: 'agentEngine', tabLabel: '执行引擎', label: '引擎默认模型', keywords: ['engine', 'model', '引擎模型', '默认模型'] },
 
   // Appearance
   { tab: 'appearance', tabLabel: '外观', label: '主题', keywords: ['theme', '主题', '深色', '浅色', 'dark', 'light', '夜间'] },

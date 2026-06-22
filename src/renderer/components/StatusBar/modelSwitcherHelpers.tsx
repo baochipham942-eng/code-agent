@@ -825,7 +825,8 @@ export function buildEngineReliabilitySummary(args: {
 }
 
 export function isExternalEngineKind(kind: AgentEngineKind): kind is ExternalAgentEngineKind {
-  // 与 agentEngineGuards.isExternalAgentEngine 保持单一真源：所有非 native 引擎都是外部 CLI。
+  // 判据与 ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'> 的类型定义一致：
+  // 所有非 native 引擎都是外部 CLI（renderer 不依赖 main 侧 agentEngineGuards，只共享这条 kind !== 'native' 判据）。
   // 旧实现只判 codex/claude，导致 mimo/kimi 在模型切换器里被当 native 处理（列不出 catalog 模型）。
   return kind !== 'native';
 }

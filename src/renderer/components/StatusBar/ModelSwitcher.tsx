@@ -610,7 +610,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     (!selectedCatalogModel || selectedCatalogModel.disabledReason),
   );
   const externalDisplayLabel = externalModelUnavailable
-    ? '已不可用'
+    ? t.engineCompat.modelUnavailable
     : selectedCatalogModel?.label
       ?? selectedEngineCatalog?.models.find((model) => model.id === selectedEngineCatalog.defaultModel)?.label
       ?? engine.model

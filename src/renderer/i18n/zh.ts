@@ -269,6 +269,46 @@ export const zh = {
       provider_not_registered: '未匹配到已注册的模型提供商',
       resolved_by_cli: '模型由 CLI 自身解析',
     },
+    // 模型切换器：外部引擎模型不可用时的占位文案
+    modelUnavailable: '已不可用',
+    // 设置页「执行引擎」section（引擎 ⟂ 模型 的 IA 落地）
+    engineSection: {
+      title: '执行引擎',
+      description: '引擎是「谁来跑这一轮」的运行内核，与模型 provider 正交。原生引擎按所选 provider 用量计费；外部 CLI 引擎经各自登录吃订阅额度。',
+      detectButton: '检测引擎',
+      detecting: '检测中…',
+      detectFailed: '引擎检测失败，请稍后重试',
+      loading: '正在检测引擎…',
+      empty: '未检测到任何引擎',
+      // 安装状态徽标
+      installState: {
+        builtin: '内置',
+        installed: '已安装',
+        missing: '未安装',
+      },
+      versionLabel: '版本',
+      binaryPathLabel: '路径',
+      defaultModelLabel: '默认模型',
+      defaultModelHint: '在「Agent Engine 模型目录」中为该引擎选择默认模型。',
+      defaultModelNative: '随会话所选 provider 模型，无需在此配置。',
+      defaultModelCliResolved: '模型由 CLI 自身解析，引擎层不预设。',
+      // 未安装时的获取指引（仅文案说明，不执行任何命令）
+      installHintTitle: '获取指引',
+      installHint: {
+        codex_cli: '安装 Codex CLI 后将 codex 加入 PATH，再点「检测引擎」。',
+        claude_code: '安装 Claude Code CLI 后将 claude 加入 PATH，再点「检测引擎」。',
+        mimo_code: '安装 MiMo-Code CLI 后将 mimo 加入 PATH，再点「检测引擎」。',
+        kimi_code: '安装 Kimi Code CLI 后将 kimi 加入 PATH，再点「检测引擎」。',
+      },
+      // 登录提示（外部引擎吃订阅，需各自登录）
+      loginHintTitle: '登录提示',
+      loginHint: {
+        codex_cli: '首次使用前需用 Codex CLI 自身的登录命令完成账号授权。',
+        claude_code: '首次使用前需用 Claude Code 自身的登录命令完成账号授权。',
+        mimo_code: '首次使用前需运行 mimo providers login 完成账号授权。',
+        kimi_code: '首次使用前需运行 kimi login 完成账号授权。',
+      },
+    },
   },
 
   // Disclosure Settings (Progressive Disclosure)

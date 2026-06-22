@@ -269,6 +269,43 @@ export const en: Translations = {
       provider_not_registered: 'No registered model provider matched',
       resolved_by_cli: 'Model is resolved by the CLI itself',
     },
+    // Model switcher: placeholder when an external engine model is unavailable
+    modelUnavailable: 'Unavailable',
+    // Settings page "Execution engine" section (engine ⟂ model IA)
+    engineSection: {
+      title: 'Execution engine',
+      description: 'The engine is the runtime that "runs this turn", orthogonal to the model provider. The native engine is billed by the selected provider usage; external CLI engines run on subscription quota via their own login.',
+      detectButton: 'Detect engines',
+      detecting: 'Detecting…',
+      detectFailed: 'Engine detection failed, please retry later',
+      loading: 'Detecting engines…',
+      empty: 'No engines detected',
+      installState: {
+        builtin: 'Built-in',
+        installed: 'Installed',
+        missing: 'Not installed',
+      },
+      versionLabel: 'Version',
+      binaryPathLabel: 'Path',
+      defaultModelLabel: 'Default model',
+      defaultModelHint: 'Choose this engine\'s default model under "Agent Engine model catalog".',
+      defaultModelNative: 'Follows the provider model selected in the session; no config needed here.',
+      defaultModelCliResolved: 'Model is resolved by the CLI itself; the engine layer presets nothing.',
+      installHintTitle: 'How to get it',
+      installHint: {
+        codex_cli: 'Install Codex CLI, add codex to PATH, then click "Detect engines".',
+        claude_code: 'Install Claude Code CLI, add claude to PATH, then click "Detect engines".',
+        mimo_code: 'Install MiMo-Code CLI, add mimo to PATH, then click "Detect engines".',
+        kimi_code: 'Install Kimi Code CLI, add kimi to PATH, then click "Detect engines".',
+      },
+      loginHintTitle: 'Login hint',
+      loginHint: {
+        codex_cli: 'Authorize your account via the Codex CLI login command before first use.',
+        claude_code: 'Authorize your account via the Claude Code login command before first use.',
+        mimo_code: 'Run mimo providers login to authorize your account before first use.',
+        kimi_code: 'Run kimi login to authorize your account before first use.',
+      },
+    },
   },
 
   // Disclosure Settings (Progressive Disclosure)

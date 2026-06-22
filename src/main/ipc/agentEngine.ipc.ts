@@ -41,8 +41,12 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
     try {
       let data: unknown;
       switch (request.action) {
-        case 'list':
         case 'detect':
+          // 「检测引擎」按钮：强制重探（绕过 5s 探测缓存），覆盖"刚装好引擎"的场景。
+          registry.invalidate();
+          data = await registry.list();
+          break;
+        case 'list':
           data = await registry.list();
           break;
         case 'get':

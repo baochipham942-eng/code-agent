@@ -127,6 +127,23 @@ async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> 
   }
 }
 
+// index.json 变更串行锁（MED-2 修复）：saveBrand/deleteBrand/setActiveBrand 都是
+// readIndex→改→writeIndex 的读改写，含 await 点；并发触发会丢更新（后写者覆盖前写者的
+// index，产生孤儿品牌）。准原子写只保证单次写原子，挡不住读改写竞态。用模块级 promise 链
+// 把所有 index 变更串成一条队列。读路径(listBrands/getBrand/getActiveBrand)不上锁——tmp+rename
+// 保证读到的要么旧要么新，不会半行。
+let indexMutationChain: Promise<unknown> = Promise.resolve();
+
+function withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = indexMutationChain.then(fn, fn);
+  // 链尾吞掉 rejection，避免一次失败把后续排队的变更全连坐拒绝。
+  indexMutationChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 /** 列出所有品牌元数据 + 当前 active id。 */
 export async function listBrands(): Promise<BrandRegistryIndex> {
   return readIndex();
@@ -148,6 +165,10 @@ export async function getBrand(id: string): Promise<BrandContract | null> {
  * 落盘 brand.json + upsert index 元数据。返回最终 id。
  */
 export async function saveBrand(brand: Partial<BrandContract>): Promise<{ id: string }> {
+  return withIndexLock(() => saveBrandImpl(brand));
+}
+
+async function saveBrandImpl(brand: Partial<BrandContract>): Promise<{ id: string }> {
   const now = Date.now();
   const name = typeof brand.name === 'string' ? brand.name.trim() : '';
   if (!name) {
@@ -185,6 +206,10 @@ export async function saveBrand(brand: Partial<BrandContract>): Promise<{ id: st
 
 /** 删除一个品牌：移除目录 + index 条目；若它是 active 则清空 active。 */
 export async function deleteBrand(id: string): Promise<{ ok: true }> {
+  return withIndexLock(() => deleteBrandImpl(id));
+}
+
+async function deleteBrandImpl(id: string): Promise<{ ok: true }> {
   if (!id || !isValidBrandId(id)) return { ok: true };
   const index = await readIndex();
   // 只删 index 里确实登记的 id：杜绝穿越/孤儿目录被误删（即便形状合法）。
@@ -201,6 +226,10 @@ export async function deleteBrand(id: string): Promise<{ ok: true }> {
 
 /** 设置/清空 active 品牌。传入不存在的 id 视为清空（不报错，保持 index 自洽）。 */
 export async function setActiveBrand(id: string | null): Promise<{ ok: true }> {
+  return withIndexLock(() => setActiveBrandImpl(id));
+}
+
+async function setActiveBrandImpl(id: string | null): Promise<{ ok: true }> {
   const index = await readIndex();
   const nextIndex: BrandRegistryIndex = { brands: index.brands };
   if (id && index.brands.some((b) => b.id === id)) {

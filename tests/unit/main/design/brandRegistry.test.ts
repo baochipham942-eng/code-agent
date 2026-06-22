@@ -47,6 +47,19 @@ describe('brandRegistry', () => {
     expect(index.activeId).toBeUndefined();
   });
 
+  it('serializes concurrent saves without orphaning (MED-2 mutex)', async () => {
+    // 并发 saveBrand：无锁时各自读到同一空 index、各写 brand.json、最后 index 只剩末写者那一个
+    // （前几个成孤儿，listBrands 看不到、删不掉）。有 mutex 串行化后 index 应含全部。
+    const names = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'];
+    const saved = await Promise.all(names.map((name) => saveBrand(draft({ name }))));
+    const index = await listBrands();
+    expect(index.brands).toHaveLength(names.length);
+    for (const { id } of saved) {
+      expect(index.brands.some((b) => b.id === id)).toBe(true);
+      expect(await getBrand(id)).not.toBeNull();
+    }
+  });
+
   it('save → list → getBrand round-trip', async () => {
     const { id } = await saveBrand(draft());
     expect(id).toMatch(/^porsche-/);

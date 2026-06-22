@@ -118,7 +118,7 @@ describe('parseMimoJsonLine', () => {
 describe('MimoCliAdapter.run', () => {
   let tempDir: string;
   let workspaceRoot: string;
-  const ENV_KEYS = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'MIMO_HOME'] as const;
+  const ENV_KEYS = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'MIMO_HOME', 'MIMOCODE_PERMISSION'] as const;
   const originalEnv: Partial<Record<typeof ENV_KEYS[number], string>> = {};
 
   beforeEach(async () => {
@@ -204,6 +204,21 @@ describe('MimoCliAdapter.run', () => {
     expect(spawnOptions.env.MIMO_HOME).toBe(process.env.MIMO_HOME);
     expect(JSON.stringify(spawnOptions.env)).not.toContain('secret-value');
 
+    // read-only 权限策略必须注入子进程 env，使 `mimo run` 非交互 + 只读：
+    // catch-all deny，只 allow 只读工具，任何工具都不解析成 ask（否则非 TTY 阻塞挂死）。
+    const permission = JSON.parse(spawnOptions.env.MIMOCODE_PERMISSION ?? '{}');
+    expect(permission['*']).toBe('deny');
+    expect(permission.read).toBe('allow');
+    expect(permission.glob).toBe('allow');
+    expect(permission.grep).toBe('allow');
+    expect(permission.list).toBe('allow');
+    expect(permission.bash).toBe('deny');
+    expect(permission.edit).toBe('deny');
+    expect(permission.write).toBe('deny');
+    expect(permission.external_directory).toBe('deny');
+    // 关键不变量：策略里不能有任何 `ask`。
+    expect(Object.values(permission)).not.toContain('ask');
+
     const firstTask = mocks.upsertTask.mock.calls[0][0];
     expect(firstTask.command).toContain('mimo run');
     expect(firstTask.command).toContain('--format json');
@@ -224,6 +239,31 @@ describe('MimoCliAdapter.run', () => {
       reason: 'user-selected',
       externalEngine: { kind: 'mimo_code', model: 'mimo-coder' },
     });
+  });
+
+  it('overrides any inherited shell MIMOCODE_PERMISSION with the read-only policy', async () => {
+    // 用户 shell 里可能存在一份不安全的策略（含 ask，非 TTY 下会阻塞）。适配器必须剥掉它，
+    // 注入自己的权威只读策略，不让外部策略泄漏进子进程。
+    process.env.MIMOCODE_PERMISSION = JSON.stringify({ '*': 'allow', bash: 'ask' });
+
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'result', result: 'done' }),
+    ], 0));
+
+    await new MimoCliAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    const spawnOptions = mocks.spawn.mock.calls[0][2] as { env: NodeJS.ProcessEnv };
+    const permission = JSON.parse(spawnOptions.env.MIMOCODE_PERMISSION ?? '{}');
+    expect(permission['*']).toBe('deny');
+    expect(permission.bash).toBe('deny');
+    expect(Object.values(permission)).not.toContain('ask');
   });
 
   it('classifies MiMo quota failures for ledger and result diagnostics', async () => {

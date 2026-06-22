@@ -19,11 +19,16 @@ import { BrowserWindow, getLogsPath } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
 import type {
+  AgentEnginePermissionProfile,
   AgentEngineRunRequest,
   AgentEngineRunResult,
 } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { generateMessageId } from '../../../shared/utils/id';
+import {
+  MIMO_CODE_PERMISSION_ENV,
+  MIMO_CODE_READ_ONLY_PERMISSION,
+} from '../../../shared/constants';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getShellPath } from '../infra/shellEnvironment';
@@ -120,7 +125,7 @@ export class MimoCliAdapter {
       updatedAt: startedAt,
     }, { allowEngineUpdate: true });
 
-    const env = buildSafeEnv();
+    const env = buildSafeEnv(permissionProfile);
     ledger.upsertTask({
       id: taskId,
       kind: 'agent_engine',
@@ -520,10 +525,12 @@ export function parseMimoJsonLine(line: string): MimoParsedEvent | null {
   return extractMimoEvent(event as Record<string, unknown>);
 }
 
-function buildSafeEnv(): NodeJS.ProcessEnv {
+function buildSafeEnv(permissionProfile: AgentEnginePermissionProfile): NodeJS.ProcessEnv {
   // 与 codex/claude 同款白名单：只透传无害系统变量 + MIMO 自家凭据目录（MIMO_HOME），
   // 剥离一切 KEY/TOKEN/SECRET，避免把 shell 里的敏感凭据带进子进程。MiMo 的 OAuth /
   // tp- 订阅 key 由 CLI 读 MIMO_HOME 落盘文件，不靠 env var 注入。
+  // 注意：MIMOCODE_PERMISSION 不在白名单——剥掉用户 shell 里可能存在的策略，由本函数
+  // 末尾按 profile 注入权威只读策略，保证非 TTY 下不弹交互审批（见 mimoCode.ts 注释）。
   const allowExact = new Set([
     'HOME',
     'PATH',
@@ -548,6 +555,12 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
   // PATH 用 login shell 捕获的完整 PATH（与 registry 探测同源），否则打包 app 下
   // mimo 的 node shebang 找不到 node（同 codexCliAdapter）。
   env.PATH = getShellPath();
+  // 按 permissionProfile 注入 MiMo 权限策略。本仓库当前只允许 read_only（见
+  // assertReadOnlyExternalProfile），故注入只读策略：catch-all deny + 只读工具 allow，
+  // 任何工具都不解析成 ask → `mimo run` 非交互不阻塞（descriptor 声明的 read_only 真正生效）。
+  if (permissionProfile === 'read_only') {
+    env[MIMO_CODE_PERMISSION_ENV] = JSON.stringify(MIMO_CODE_READ_ONLY_PERMISSION);
+  }
   return env;
 }
 

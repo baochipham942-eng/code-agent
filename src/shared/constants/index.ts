@@ -20,6 +20,7 @@ export * from './acceptance';
 export * from './game';
 export * from './vision';
 export * from './sandbox';
+export * from './mimoCode';
 export * from './memory';
 export * from './scriptRuntime';
 export * from './skillCatalog';

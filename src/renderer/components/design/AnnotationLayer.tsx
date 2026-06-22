@@ -15,7 +15,7 @@ export type AnnotShape =
   | { kind: 'text'; x: number; y: number; text: string; color: string };
 
 // 标注统一用红色（不在本常量外硬编码颜色）。
-export const ANNOT_COLOR = '#ef4444';
+export const ANNOT_COLOR = '#ef4444'; // ds-allow:viz konva 画布字面色，CSS 变量够不到
 
 export type AnnotEvent =
   | { type: 'down'; tool: AnnotTool; x: number; y: number; text?: string }

@@ -81,7 +81,7 @@ const CanvasImage: React.FC<{
   const consistencyBadge = ((): React.ReactNode => {
     if (!c) return null;
     const isLocked = c.status === 'locked';
-    const color = isLocked ? '#f59e0b' : '#10b981';
+    const color = isLocked ? '#f59e0b' : '#10b981'; // ds-allow:viz konva 画布字面色，CSS 变量够不到
     const label = isLocked ? t.design.consistencyLocked : t.design.consistencyClean;
     const fs = badge;
     const padX = fs * 0.55;
@@ -139,7 +139,7 @@ const CanvasImage: React.FC<{
             y={node.y}
             width={node.width}
             height={node.height}
-            stroke="#10b981"
+            stroke="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
             strokeWidth={3}
             listening={false}
           />
@@ -148,7 +148,7 @@ const CanvasImage: React.FC<{
             y={node.y + 8}
             text="★"
             fontSize={badge}
-            fill="#10b981"
+            fill="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
             listening={false}
           />
         </>
@@ -159,7 +159,7 @@ const CanvasImage: React.FC<{
           y={node.y}
           width={node.width}
           height={node.height}
-          stroke="#e879f9"
+          stroke="#e879f9" // ds-allow:viz konva 画布字面色，CSS 变量够不到
           strokeWidth={2}
           dash={[10, 6]}
           listening={false}
@@ -196,7 +196,11 @@ const KonvaVideoNode: React.FC<{
       {poster ? (
         <KonvaImage image={poster} x={node.x} y={node.y} width={node.width} height={node.height} onMouseDown={pick} onTap={pick} />
       ) : (
-        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} fill="#18181b" cornerRadius={6} onMouseDown={pick} onTap={pick} />
+        <KonvaRect
+          x={node.x} y={node.y} width={node.width} height={node.height}
+          fill="#18181b" // ds-allow:viz konva 画布字面色，CSS 变量够不到
+          cornerRadius={6} onMouseDown={pick} onTap={pick}
+        />
       )}
       <KonvaText
         x={node.x}
@@ -218,10 +222,18 @@ const KonvaVideoNode: React.FC<{
         listening={false}
       />
       {node.chosen && (
-        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} stroke="#10b981" strokeWidth={3} listening={false} />
+        <KonvaRect
+          x={node.x} y={node.y} width={node.width} height={node.height}
+          stroke="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
+          strokeWidth={3} listening={false}
+        />
       )}
       {selected && (
-        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} stroke="#e879f9" strokeWidth={2} dash={[10, 6]} listening={false} />
+        <KonvaRect
+          x={node.x} y={node.y} width={node.width} height={node.height}
+          stroke="#e879f9" // ds-allow:viz konva 画布字面色，CSS 变量够不到
+          strokeWidth={2} dash={[10, 6]} listening={false}
+        />
       )}
     </>
   );
@@ -682,7 +694,7 @@ export const DesignCanvas: React.FC = () => {
                 y={r.y}
                 width={r.width}
                 height={r.height}
-                stroke="#ef4444"
+                stroke="#ef4444" // ds-allow:viz konva 画布字面色，CSS 变量够不到
                 strokeWidth={2}
                 fill="rgba(239,68,68,0.15)"
                 listening={false}

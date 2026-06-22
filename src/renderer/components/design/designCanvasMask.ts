@@ -49,9 +49,9 @@ export function buildMaskDataUrl(width: number, height: number, regions: readonl
   canvas.height = Math.max(1, Math.round(height));
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('无法创建 mask canvas 上下文');
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = '#000000'; // ds-allow:viz konva 画布字面色，CSS 变量够不到
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#ffffff'; // ds-allow:viz konva 画布字面色，CSS 变量够不到
   for (const r of regions) {
     ctx.fillRect(Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height));
   }

@@ -72,6 +72,9 @@ import { loadProtoSpine, saveProtoSpine } from './protoSpine';
 import { activeVariants, pinVariant, discardVariant } from './variantSpine';
 import { VersionControl, ViewingBanner, VersionComparePicker } from './DesignVersionUI';
 
+// 品牌色输入框（<input type="color">）的默认值——这是数据值（用户填进 brandColor 的种子），不是 UI 样式。
+const DEFAULT_BRAND_COLOR = '#3b82f6'; // ds-allow:viz 品牌色输入框默认值（数据非 UI 样式）
+
 /** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
 function isImageOutput(t: DesignOutputType): boolean {
   return t === 'mockup' || t === 'infographic';
@@ -213,7 +216,7 @@ const Composer: React.FC = () => {
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={s.brandColor || '#3b82f6'}
+            value={s.brandColor || DEFAULT_BRAND_COLOR}
             onChange={(e) => s.setBrandColor(e.target.value)}
             className="h-8 w-10 cursor-pointer rounded border border-white/[0.08] bg-transparent"
           />
@@ -503,7 +506,7 @@ const PaletteSwitch: React.FC<{ palette: string; onChange: (id: string) => void 
             className={`h-4 w-4 rounded-full border transition-transform ${
               active ? 'border-white scale-110' : 'border-white/20 hover:scale-105'
             }`}
-            style={{ background: '#d946ef', filter: `hue-rotate(${deg}deg)` }}
+            style={{ background: '#d946ef', filter: `hue-rotate(${deg}deg)` }} // ds-allow:viz 色板 swatch 种子色，由 hue-rotate 旋出各档主题色
           />
         );
       })}
@@ -771,7 +774,7 @@ const PreviewPane: React.FC = () => {
       <div
         className={
           fullscreen
-            ? 'fixed inset-0 z-50 flex flex-col bg-zinc-950'
+            ? 'fixed inset-0 z-50 flex flex-col bg-zinc-950' // ds-allow 预览面板全屏布局容器（非 modal：无遮罩/无 aria-modal/无 focus trap）
             : 'relative flex h-full w-full flex-col'
         }
       >

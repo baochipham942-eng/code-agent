@@ -42,7 +42,7 @@ export const zh = {
     requirementLabel: '需求描述',
     requirementPlaceholder: '例如：一个深色风格的 SaaS 定价页，三档套餐卡片，月/年切换',
     brandColorLabel: '品牌色锚点（可选）',
-    brandColorPlaceholder: '#3b82f6 或留空',
+    brandColorPlaceholder: '#3b82f6 或留空', // ds-allow:viz 品牌色输入框占位默认值（数据非 UI 样式）
     toneLabel: '语气',
     tones: ['编辑风', '专业', '活泼', '极简', '大胆', '温暖', '科技感', '严肃'],
     surfaceLabel: '表层定位',

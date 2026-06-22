@@ -44,7 +44,7 @@ export const en: Translations = {
     requirementLabel: 'Requirement',
     requirementPlaceholder: 'e.g. a dark-themed SaaS pricing page, three plan cards, monthly/yearly toggle',
     brandColorLabel: 'Brand color anchor (optional)',
-    brandColorPlaceholder: '#3b82f6 or leave empty',
+    brandColorPlaceholder: '#3b82f6 or leave empty', // ds-allow:viz 品牌色输入框占位默认值（数据非 UI 样式）
     toneLabel: 'Tone',
     tones: ['Editorial', 'Professional', 'Playful', 'Minimal', 'Bold', 'Warm', 'Tech', 'Serious'],
     surfaceLabel: 'Surface',

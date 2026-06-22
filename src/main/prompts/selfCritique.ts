@@ -41,6 +41,15 @@ function describeBriefAnchors(brief: DesignBrief): string {
   if (brief.constraints && brief.constraints.length > 0) {
     lines.push(`  - constraints 硬约束：${brief.constraints.length} 条，逐条核对`);
   }
+  if (brief.brandContract) {
+    const bc = brief.brandContract;
+    if (bc.keep.length > 0) {
+      lines.push(`  - 品牌必守(keep)：${bc.keep.join('；')}`);
+    }
+    if (bc.doNotCopy.length > 0) {
+      lines.push(`  - 品牌禁止(do-not-copy)：${bc.doNotCopy.join('；')} —— 违反任一项 constraint 维度直接判 regression`);
+    }
+  }
   return lines.join('\n');
 }
 

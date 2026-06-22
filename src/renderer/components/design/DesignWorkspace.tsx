@@ -17,15 +17,16 @@ import {
   Send,
   MousePointerClick,
   X,
-  Clock,
-  RotateCcw,
-  ChevronDown,
   ExternalLink,
   Download,
+  FileDown,
   Maximize2,
   Minimize2,
-  GitCompare,
+  BadgeCheck,
+  Pencil,
 } from 'lucide-react';
+import { Button } from '../primitives';
+import { BrandManager } from './BrandManager';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
 import { useI18n } from '../../hooks/useI18n';
@@ -44,17 +45,21 @@ import {
   listVersions,
   openInDefaultApp,
   saveHtmlToDownloads,
+  exportPrototypePdf,
   type DesignVersion,
 } from './designFiles';
-import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName } from './designTypes';
+import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName, prototypePdfExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
 import {
   injectSelectionScript,
+  injectInlineEditScript,
   injectPreviewStyle,
   injectThemeOverride,
   parseProtoSelectMessage,
+  parseProtoTextEditMessage,
   PROTO_PALETTES,
 } from './designPreviewInject';
+import { applyTextEdit } from './inlineTextEdit';
 import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { estimateVideoCostCny } from '@shared/media/videoCost';
@@ -64,7 +69,8 @@ import { ImageModelPicker } from './ImageModelPicker';
 import { VideoModelPicker } from './VideoModelPicker';
 import { VariantCompareView } from './VariantCompareView';
 import { loadProtoSpine, saveProtoSpine } from './protoSpine';
-import { activeVariants, pinVariant, discardVariant, type Variant } from './variantSpine';
+import { activeVariants, pinVariant, discardVariant } from './variantSpine';
+import { VersionControl, ViewingBanner, VersionComparePicker } from './DesignVersionUI';
 
 /** 图像类产物（走 konva 画布）：设计稿 / 信息图。交互原型仍走 HTML iframe。 */
 function isImageOutput(t: DesignOutputType): boolean {
@@ -570,180 +576,6 @@ const ContinueEditBar: React.FC<{
   );
 };
 
-const formatVersionTime = (ts: number): string =>
-  new Date(ts).toLocaleString(undefined, {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-/** 版本下拉：列出当前原型的历史快照，选一个进入只读查看（backlog #4）。 */
-const VersionControl: React.FC<{
-  versions: DesignVersion[];
-  viewingPath: string | null;
-  onView: (v: DesignVersion) => void;
-  onBackToLatest: () => void;
-}> = ({ versions, viewingPath, onView, onBackToLatest }) => {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  if (versions.length === 0) return null;
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
-      >
-        <Clock className="h-3.5 w-3.5" />
-        <span>
-          {t.design.versionsTitle}（{versions.length}）
-        </span>
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-10 mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-white/[0.1] bg-zinc-900 p-1 shadow-2xl">
-          <button
-            type="button"
-            onClick={() => {
-              onBackToLatest();
-              setOpen(false);
-            }}
-            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
-              viewingPath === null ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-300 hover:bg-white/[0.04]'
-            }`}
-          >
-            <span className="text-emerald-300">●</span>
-            {t.design.versionLatest}
-          </button>
-          {versions.map((v, i) => (
-            <button
-              key={v.path}
-              type="button"
-              onClick={() => {
-                onView(v);
-                setOpen(false);
-              }}
-              className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
-                viewingPath === v.path ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-300 hover:bg-white/[0.04]'
-              }`}
-            >
-              <span>v{versions.length - i}</span>
-              <span className="text-zinc-500">{formatVersionTime(v.createdAt)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-/** 查看历史版本时的横幅：回滚到此 / 返回最新。 */
-const ViewingBanner: React.FC<{ onRollback: () => void; onBackToLatest: () => void }> = ({
-  onRollback,
-  onBackToLatest,
-}) => {
-  const { t } = useI18n();
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-      <Clock className="h-3.5 w-3.5 shrink-0" />
-      <span>{t.design.versionViewing}</span>
-      <button
-        type="button"
-        onClick={onRollback}
-        className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-amber-400/20 px-2.5 py-1 text-amber-100 hover:bg-amber-400/30"
-      >
-        <RotateCcw className="h-3.5 w-3.5" />
-        {t.design.versionRollback}
-      </button>
-      <button
-        type="button"
-        onClick={onBackToLatest}
-        className="rounded-md border border-amber-400/30 px-2.5 py-1 text-amber-200 hover:bg-amber-400/10"
-      >
-        {t.design.versionBackToLatest}
-      </button>
-    </div>
-  );
-};
-
-/**
- * 版本对比选择器：列活跃 proto 版本（含主版徽标），勾选两版进入并排对比。
- * 与 VersionControl（只读看历史/回滚）分工：本控件负责对比 + 定稿（设主版/淘汰）。
- */
-const VersionComparePicker: React.FC<{
-  variants: Variant[];
-  picked: string[];
-  onToggle: (id: string) => void;
-  onCompare: () => void;
-}> = ({ variants, picked, onToggle, onCompare }) => {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  if (variants.length < 2) return null; // 不足两版无可对比
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
-      >
-        <GitCompare className="h-3.5 w-3.5" />
-        <span>{t.design.compareBtn}</span>
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-white/[0.1] bg-zinc-900 p-1 shadow-2xl">
-          <div className="max-h-56 overflow-y-auto">
-            {variants.map((v, i) => {
-              const checked = picked.includes(v.id);
-              return (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => onToggle(v.id)}
-                  className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
-                    checked ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-300 hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm border ${
-                        checked ? 'border-fuchsia-400 bg-fuchsia-400/80' : 'border-white/20'
-                      }`}
-                    >
-                      {checked && <span className="text-[9px] text-white">✓</span>}
-                    </span>
-                    v{variants.length - i}
-                    {v.pinned && (
-                      <span className="rounded bg-emerald-500/80 px-1 text-[9px] text-white">
-                        {t.design.mainVersion}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-zinc-500">{formatVersionTime(v.createdAt)}</span>
-                </button>
-              );
-            })}
-          </div>
-          <button
-            type="button"
-            disabled={picked.length !== 2}
-            onClick={() => {
-              onCompare();
-              setOpen(false);
-            }}
-            className="mt-1 w-full rounded-md bg-fuchsia-500/90 px-2 py-1.5 text-xs font-medium text-white hover:bg-fuchsia-500 disabled:opacity-40"
-          >
-            {t.design.compareBtn}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
   const outputType = useDesignStore((s) => s.outputType);
@@ -756,9 +588,13 @@ const PreviewPane: React.FC = () => {
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
   const [palette, setPalette] = useState('original');
   const [selectMode, setSelectMode] = useState(false);
+  // 就地文本编辑模式（CD-Parity §3）：点字直接改、免 AI、回写 canonical prototype.html。
+  // 与圈选模式互斥（同一点击不可既圈选又编辑），切到任一态即关掉另一态。
+  const [inlineEditMode, setInlineEditMode] = useState(false);
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [exported, setExported] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -821,10 +657,26 @@ const PreviewPane: React.FC = () => {
     }
   };
 
+  // 原型 → 矢量 PDF：走主进程 playwright page.pdf()。chromium 不可用时报失败、
+  // 用户可改用「导出 HTML」兜底（不阻塞、不崩）。
+  const handleExportPdf = async (): Promise<void> => {
+    if (!previewHtml || exportingPdf) return;
+    setExportingPdf(true);
+    const res = await exportPrototypePdf(previewHtml, prototypePdfExportName(Date.now()));
+    setExportingPdf(false);
+    if (res.filePath) {
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    } else {
+      window.alert(t.design.actionExportPdfFailed);
+    }
+  };
+
   const handleViewVersion = async (v: DesignVersion): Promise<void> => {
     const html = await readWorkspaceFile(v.path);
     if (html == null) return;
     setSelectMode(false);
+    setInlineEditMode(false);
     useDesignStore.getState().setPreviewHtml(html);
     useDesignStore.getState().setViewingVersion(v.path);
   };
@@ -861,6 +713,44 @@ const PreviewPane: React.FC = () => {
     return () => window.removeEventListener('message', handler);
   }, [selectMode]);
 
+  // 就地文本编辑回写（CD-Parity §3）：blur 时 iframe 上报 {selector,newText}，父侧按 selector
+  // 改 *canonical* prototype.html（非被注入加工过的 srcDoc）落盘 + 刷新 previewHtml。免 AI、零
+  // token、不自动建 variant（想留档由用户手动「存版本」走现有 captureVersion）。与圈选 handler
+  // 物理隔离：仅 inlineEditMode 开时注册、只认 PROTO_TEXT_EDIT_MESSAGE。
+  const applyInlineEdit = async (selector: string, newText: string): Promise<void> => {
+    const runDir = useDesignStore.getState().selectedRunDir;
+    if (!runDir) return;
+    // canonical = 磁盘 prototype.html 原文（zustand previewHtml 是其只读镜像，未含注入态）。
+    const canonical = (await readRunHtml(runDir)) ?? useDesignStore.getState().previewHtml;
+    if (canonical == null) return;
+    const updated = applyTextEdit(canonical, selector, newText);
+    if (updated === canonical) {
+      // 未命中 / 叶子限制 / 表格无 tbody 等导致回写未生效：给用户反馈，避免「改了没生效」
+      // 的静默数据丢失观感（CD-Parity §3 FIX 6）。
+      window.alert(t.design.inlineEditNoOp);
+      return;
+    }
+    const proto = (await findRunHtml(runDir)) ?? `${runDir}/prototype.html`;
+    await writeWorkspaceFile(proto, updated);
+    // 仅当用户仍停在该 run 才刷新，避免期间切走被旧内容覆盖。
+    if (useDesignStore.getState().selectedRunDir === runDir) {
+      useDesignStore.getState().setPreviewHtml(updated);
+    }
+  };
+
+  useEffect(() => {
+    if (!inlineEditMode) return;
+    const handler = (e: MessageEvent): void => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const payload = parseProtoTextEditMessage(e.data);
+      if (!payload) return;
+      void applyInlineEdit(payload.selector, payload.newText);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+    // applyInlineEdit 只读 store getState/refs，无需进依赖；inlineEditMode 切换即重挂。
+  }, [inlineEditMode]);
+
   // 设计稿 / 信息图 → konva 无限画布；交互原型 → HTML iframe。
   if (isImageOutput(outputType)) {
     return <DesignCanvas />;
@@ -869,11 +759,13 @@ const PreviewPane: React.FC = () => {
   if (previewHtml) {
     const width = designDeviceWidth(device);
     const framed = device !== 'desktop';
-    // 注入顺序：滚动条样式（head 起始）→ 换肤 hue-rotate（head 末尾，覆盖原型样式）→ 圈选脚本。
-    // 三者都只在预览渲染期注入；导出/快照走 previewHtml 原文，不含任何注入内容。
-    const srcDoc = injectSelectionScript(
-      injectThemeOverride(injectPreviewStyle(previewHtml), palette),
-      selectMode,
+    // 注入顺序：滚动条样式（head 起始）→ 换肤 hue-rotate（head 末尾，覆盖原型样式）→
+    // 圈选 / 就地编辑脚本（互斥，同一时刻至多注入其一）。
+    // 都只在预览渲染期注入；导出/快照走 previewHtml 原文，不含任何注入内容。
+    const themed = injectThemeOverride(injectPreviewStyle(previewHtml), palette);
+    const srcDoc = injectInlineEditScript(
+      injectSelectionScript(themed, selectMode),
+      inlineEditMode,
     );
     return (
       <div
@@ -915,22 +807,49 @@ const PreviewPane: React.FC = () => {
             <PaletteSwitch palette={palette} onChange={setPalette} />
           </div>
           <div className="absolute right-3 flex items-center gap-1">
+            {/* ds-allow:start 设计预览工具栏沿用旧裸 button 样式（与同栏圈选/导出/全屏按钮一致）；design-mode W3 收口时统一迁 primitive */}
             {!viewing && (
-              <button
-                type="button"
-                onClick={() => setSelectMode((v) => !v)}
-                aria-pressed={selectMode}
-                title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
-                  selectMode
-                    ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
-                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <MousePointerClick className="h-3.5 w-3.5" />
-                <span>{t.design.selectToggle}</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 互斥：开圈选即关就地编辑。
+                    setInlineEditMode(false);
+                    setSelectMode((v) => !v);
+                  }}
+                  aria-pressed={selectMode}
+                  title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                    selectMode
+                      ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                      : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <MousePointerClick className="h-3.5 w-3.5" />
+                  <span>{t.design.selectToggle}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 互斥：开就地编辑即关圈选。
+                    setSelectMode(false);
+                    setSelection(null);
+                    setInlineEditMode((v) => !v);
+                  }}
+                  aria-pressed={inlineEditMode}
+                  title={inlineEditMode ? t.design.inlineEditActiveHint : t.design.inlineEditToggle}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                    inlineEditMode
+                      ? 'border-sky-400/40 bg-sky-400/10 text-sky-200'
+                      : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span>{t.design.inlineEditToggle}</span>
+                </button>
+              </>
             )}
+            {/* ds-allow:end */}
             <button
               type="button"
               onClick={() => void handleOpenBrowser()}
@@ -951,6 +870,21 @@ const PreviewPane: React.FC = () => {
             >
               <Download className="h-3.5 w-3.5" />
             </button>
+            {/* ds-allow:start 设计预览工具栏沿用旧裸 button 样式，与同栏导出 HTML/全屏按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
+            <button
+              type="button"
+              onClick={() => void handleExportPdf()}
+              disabled={exportingPdf}
+              title={exportingPdf ? t.design.actionExportingPdf : t.design.actionExportPdf}
+              className="rounded-md border border-white/[0.08] p-1.5 text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            >
+              {exportingPdf ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+            {/* ds-allow:end */}
             <button
               type="button"
               onClick={() => setFullscreen((v) => !v)}
@@ -1003,6 +937,7 @@ const PreviewPane: React.FC = () => {
 
 export const DesignWorkspace: React.FC = () => {
   const { t } = useI18n();
+  const [brandOpen, setBrandOpen] = useState(false);
 
   // 刷新/重开恢复：若有持久化的选中生成且当前无预览内容，回读其产物。
   useEffect(() => {
@@ -1032,7 +967,17 @@ export const DesignWorkspace: React.FC = () => {
           <Palette className="h-4 w-4 text-fuchsia-300" />
           <span className="text-sm text-zinc-200">{t.design.title}</span>
         </div>
-        <WorkspaceModeSwitch />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<BadgeCheck className="h-4 w-4" />}
+            onClick={() => setBrandOpen(true)}
+          >
+            {t.design.brand.open}
+          </Button>
+          <WorkspaceModeSwitch />
+        </div>
       </div>
       <div className="flex min-h-0 flex-1">
         <Composer />
@@ -1040,6 +985,7 @@ export const DesignWorkspace: React.FC = () => {
           <PreviewPane />
         </div>
       </div>
+      <BrandManager isOpen={brandOpen} onClose={() => setBrandOpen(false)} />
     </FullScreenPage>
   );
 };

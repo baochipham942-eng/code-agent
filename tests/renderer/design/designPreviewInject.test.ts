@@ -1,13 +1,78 @@
 import { describe, expect, it } from 'vitest';
 import {
   injectSelectionScript,
+  injectInlineEditScript,
   injectPreviewStyle,
   injectThemeOverride,
   parseProtoSelectMessage,
+  parseProtoTextEditMessage,
+  PATH_FN_SOURCE,
   PROTO_PALETTES,
   PROTO_SELECT_SOURCE,
   PROTO_SELECT_MESSAGE,
+  PROTO_TEXT_EDIT_MESSAGE,
 } from '../../../src/renderer/components/design/designPreviewInject';
+
+// PATH_FN_SOURCE 是注入到 iframe 的字符串（无法 import，node 无 DOM），这里用极小的 fake
+// 元素树在 node 里 eval 出 path()，验证「总是带 nth-child」(FIX 3c)。
+function makePath(): (el: unknown) => string {
+  const factory = new Function(`${PATH_FN_SOURCE}\nreturn path;`) as () => (el: unknown) => string;
+  return factory();
+}
+type FakeEl = {
+  nodeType: number;
+  tagName: string;
+  id?: string;
+  classList: string[];
+  parentNode?: FakeEl | null;
+  parentElement?: FakeEl | null;
+  children: FakeEl[];
+};
+function el(tagName: string, opts: Partial<FakeEl> = {}): FakeEl {
+  return {
+    nodeType: 1,
+    tagName,
+    classList: [],
+    children: [],
+    parentNode: null,
+    parentElement: null,
+    ...opts,
+  } as FakeEl;
+}
+function link(parent: FakeEl, kids: FakeEl[]): FakeEl {
+  parent.children = kids;
+  kids.forEach((k) => {
+    k.parentNode = parent;
+    k.parentElement = parent;
+  });
+  return parent;
+}
+
+describe('path() (注入脚本 selector 计算)', () => {
+  it('始终给每段追加 :nth-child（即便有 class）', () => {
+    const path = makePath();
+    const body = el('BODY');
+    const ul = el('UL', { classList: ['list'] });
+    const li1 = el('LI', { classList: ['row'] });
+    const li2 = el('LI', { classList: ['row'] });
+    link(body, [ul]);
+    link(ul, [li1, li2]);
+
+    const sel1 = path(li1);
+    const sel2 = path(li2);
+    // 两个同 tag 同 class 兄弟必须算出不同 selector（位置区分）
+    expect(sel1).not.toBe(sel2);
+    expect(sel1).toContain('li.row:nth-child(1)');
+    expect(sel2).toContain('li.row:nth-child(2)');
+    // ul 段也带 nth-child（即便有 class）
+    expect(sel1).toContain('ul.list:nth-child(1)');
+  });
+
+  it('有 id 时短路返回 #id', () => {
+    const path = makePath();
+    expect(path(el('DIV', { id: 'hero' }))).toBe('#hero');
+  });
+});
 
 describe('injectSelectionScript', () => {
   it('关闭时原样返回', () => {
@@ -114,5 +179,79 @@ describe('parseProtoSelectMessage', () => {
     expect(parseProtoSelectMessage({ ...valid, source: 'evil' })).toBeNull();
     expect(parseProtoSelectMessage({ ...valid, type: 'other' })).toBeNull();
     expect(parseProtoSelectMessage({ source: PROTO_SELECT_SOURCE, type: PROTO_SELECT_MESSAGE, payload: {} })).toBeNull();
+  });
+
+  it('不把就地编辑消息误认成圈选消息（类型隔离）', () => {
+    const editMsg = {
+      source: PROTO_SELECT_SOURCE,
+      type: PROTO_TEXT_EDIT_MESSAGE,
+      payload: { selector: '#t', newText: 'x' },
+    };
+    expect(parseProtoSelectMessage(editMsg)).toBeNull();
+  });
+});
+
+describe('injectInlineEditScript', () => {
+  it('关闭时原样返回', () => {
+    const html = '<html><body><h1>x</h1></body></html>';
+    expect(injectInlineEditScript(html, false)).toBe(html);
+  });
+
+  it('开启时把脚本插在 </body> 前', () => {
+    const out = injectInlineEditScript('<html><body><h1>x</h1></body></html>', true);
+    expect(out).toContain('data-neo-design-inline-edit');
+    expect(out).toContain(PROTO_TEXT_EDIT_MESSAGE);
+    expect(out).toContain('contenteditable');
+    expect(out.indexOf('data-neo-design-inline-edit')).toBeLessThan(out.indexOf('</body>'));
+  });
+
+  it('无 body 时附到末尾', () => {
+    const out = injectInlineEditScript('<div>x</div>', true);
+    expect(out.startsWith('<div>x</div>')).toBe(true);
+    expect(out).toContain('data-neo-design-inline-edit');
+  });
+
+  it('脚本限制只编辑叶子文本元素（含 isLeaf 守卫，children.length===0）', () => {
+    const out = injectInlineEditScript('<html><body><h1>x</h1></body></html>', true);
+    // FIX 3a/3b：注入脚本必须用 isLeaf/children.length 守住，跳过有子元素的容器
+    expect(out).toContain('children.length===0');
+    expect(out).toContain('isLeaf');
+  });
+});
+
+describe('parseProtoTextEditMessage', () => {
+  const valid = {
+    source: PROTO_SELECT_SOURCE,
+    type: PROTO_TEXT_EDIT_MESSAGE,
+    payload: { selector: '#title', newText: '新标题' },
+  };
+
+  it('合法消息解析出载荷', () => {
+    expect(parseProtoTextEditMessage(valid)).toEqual({ selector: '#title', newText: '新标题' });
+  });
+
+  it('允许空 newText（清空文案）', () => {
+    expect(parseProtoTextEditMessage({ ...valid, payload: { selector: '#t', newText: '' } })).toEqual({
+      selector: '#t',
+      newText: '',
+    });
+  });
+
+  it('来源/类型不符、缺字段或空 selector 返回 null', () => {
+    expect(parseProtoTextEditMessage(null)).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, source: 'evil' })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, type: PROTO_SELECT_MESSAGE })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, payload: { selector: '#t' } })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, payload: { newText: 'x' } })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, payload: { selector: '  ', newText: 'x' } })).toBeNull();
+  });
+
+  it('不把圈选消息误认成就地编辑消息（类型隔离）', () => {
+    const selMsg = {
+      source: PROTO_SELECT_SOURCE,
+      type: PROTO_SELECT_MESSAGE,
+      payload: { tag: 'h1', text: 'x', selector: '#t' },
+    };
+    expect(parseProtoTextEditMessage(selMsg)).toBeNull();
   });
 });

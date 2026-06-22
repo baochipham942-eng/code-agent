@@ -44,6 +44,16 @@ export interface DesignBrief {
   references?: string[];
   direction?: DesignBriefDirection;
   directionTokens?: DirectionTokens;
+  /**
+   * 用户「品牌契约」的 prompt 相关切片（CD-Parity §1）。完整 tokens 经 directionTokens 注入，
+   * 这里只带 keep/change/doNotCopy 三桶约束 + 可选 logo，强制注入护栏管线。
+   */
+  brandContract?: {
+    keep: string[];
+    change: string[];
+    doNotCopy: string[];
+    logoPath?: string;
+  };
   /** 参考截图模式：用户选择"匹配一张参考截图"，生成期需从附带图片提取配色/字体/布局并匹配。 */
   referenceScreenshot?: boolean;
   source?: 'manual' | 'inferred';
@@ -55,7 +65,7 @@ function normalizeText(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function normalizeStringList(value: unknown): string[] | undefined {
+export function normalizeStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = value
     .map((item) => normalizeText(item))
@@ -63,7 +73,7 @@ function normalizeStringList(value: unknown): string[] | undefined {
   return items.length > 0 ? Array.from(new Set(items)) : undefined;
 }
 
-function normalizeDirectionTokens(value: unknown): DirectionTokens | undefined {
+export function normalizeDirectionTokens(value: unknown): DirectionTokens | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const raw = value as Partial<DirectionTokens>;
   const palette = raw.palette;
@@ -99,6 +109,22 @@ function normalizeDirectionTokens(value: unknown): DirectionTokens | undefined {
   };
 }
 
+function normalizeBriefBrandContract(value: unknown): DesignBrief['brandContract'] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const raw = value as Partial<NonNullable<DesignBrief['brandContract']>>;
+  const keep = normalizeStringList(raw.keep) ?? [];
+  const change = normalizeStringList(raw.change) ?? [];
+  const doNotCopy = normalizeStringList(raw.doNotCopy) ?? [];
+  const logoPath = normalizeText(raw.logoPath);
+  // 全空（三桶都没内容且无 logo）则丢弃，避免注入空噪声段。
+  if (keep.length === 0 && change.length === 0 && doNotCopy.length === 0 && !logoPath) {
+    return undefined;
+  }
+  const result: NonNullable<DesignBrief['brandContract']> = { keep, change, doNotCopy };
+  if (logoPath) result.logoPath = logoPath;
+  return result;
+}
+
 export function normalizeDesignBrief(value?: Partial<DesignBrief> | null): DesignBrief | undefined {
   if (!value) return undefined;
 
@@ -116,6 +142,8 @@ export function normalizeDesignBrief(value?: Partial<DesignBrief> | null): Desig
   if (references) brief.references = references;
   if (value.direction && value.direction in DESIGN_BRIEF_DIRECTION_LABELS) brief.direction = value.direction;
   if (directionTokens) brief.directionTokens = directionTokens;
+  const brandContract = normalizeBriefBrandContract(value.brandContract);
+  if (brandContract) brief.brandContract = brandContract;
   if (value.referenceScreenshot === true) brief.referenceScreenshot = true;
   if (value.source === 'manual' || value.source === 'inferred') brief.source = value.source;
 

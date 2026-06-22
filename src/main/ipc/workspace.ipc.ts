@@ -7,7 +7,17 @@ import path from 'path';
 import { app, dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
-import { handleSaveTextToDownloads } from './workspaceSaveExport';
+import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
+import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
+import { imagesToPptx } from '../services/design/pptxExport';
+import {
+  listBrands as registryListBrands,
+  saveBrand as registrySaveBrand,
+  deleteBrand as registryDeleteBrand,
+  setActiveBrand as registrySetActiveBrand,
+} from '../services/design/brandRegistry';
+import type { BrandContract } from '../../shared/contract/brandContract';
+import { extractBrandFromImage as registryExtractBrand } from '../services/design/brandExtract';
 import { handleGetConfigScope } from './workspaceConfigScope';
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
@@ -916,6 +926,118 @@ export async function handleListVisualImageModels(): Promise<{
 }
 
 // ----------------------------------------------------------------------------
+// PDF 导出（CD-Parity §2）：HTML 原型走 playwright page.pdf()，栅格产物走 pdfkit 图嵌。
+// 渲染/嵌图逻辑在独立模块 services/design/pdfExport.ts，这里只做编排 + 落盘。
+// ----------------------------------------------------------------------------
+
+// HTML 原型 → 矢量 PDF → 落「下载」。chromium 不可用时 htmlToPdf 抛可读错误，
+// 经统一 catch 回传给 renderer（renderer 据此提示并回退导出 .html）。
+async function handleExportPrototypePdf(
+  payload: { html: string; outputName: string },
+): Promise<{ filePath: string }> {
+  if (!payload?.html || !payload?.outputName) {
+    throw new Error('exportPrototypePdf 需要 html 与 outputName');
+  }
+  const pdf = await htmlToPdf(payload.html);
+  return handleSaveBinaryToDownloads({
+    fileName: payload.outputName,
+    base64: pdf.toString('base64'),
+  });
+}
+
+// 栅格产物 → 单页 PDF → 落「下载」。两种来源：imagePath（磁盘，须落设计目录内，
+// 防路径越界读任意文件）或 dataUrl（renderer 直接传 base64）。
+async function handleExportImagePdf(
+  payload: { imagePath?: string; dataUrl?: string; outputName: string },
+): Promise<{ filePath: string }> {
+  if (!payload?.outputName || (!payload.imagePath && !payload.dataUrl)) {
+    throw new Error('exportImagePdf 需要 outputName 与 imagePath 或 dataUrl 之一');
+  }
+  let imageBuffer: Buffer;
+  if (payload.imagePath) {
+    assertWithinDesignDir(payload.imagePath, 'imagePath');
+    imageBuffer = await fsp.readFile(payload.imagePath);
+  } else {
+    const base64 = (payload.dataUrl ?? '').replace(/^data:[^;]+;base64,/, '');
+    imageBuffer = Buffer.from(base64, 'base64');
+  }
+  const pdf = await imageToPdf(imageBuffer);
+  return handleSaveBinaryToDownloads({
+    fileName: payload.outputName,
+    base64: pdf.toString('base64'),
+  });
+}
+
+// 画布产物多张 → 全幅 PPTX（CD-Parity §4 薄版）→ 落「下载」。
+// 每张来源二选一：imagePath（磁盘，须落设计目录内防越界读任意文件）或 dataUrl（renderer
+// 直接传 base64）。逐张解析成 Buffer → imagesToPptx 拼成全幅 deck → saveBinaryToDownloads。
+async function handleExportCanvasPptx(
+  payload: { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
+): Promise<{ filePath: string }> {
+  if (!payload?.outputName || !Array.isArray(payload.images) || payload.images.length === 0) {
+    throw new Error('exportCanvasPptx 需要 outputName 与至少一张 images');
+  }
+  const buffers: Buffer[] = [];
+  for (const src of payload.images) {
+    if (src?.imagePath) {
+      assertWithinDesignDir(src.imagePath, 'imagePath');
+      buffers.push(await fsp.readFile(src.imagePath));
+    } else if (src?.dataUrl) {
+      const base64 = src.dataUrl.replace(/^data:[^;]+;base64,/, '');
+      buffers.push(Buffer.from(base64, 'base64'));
+    } else {
+      throw new Error('exportCanvasPptx 的每张 images 需要 imagePath 或 dataUrl 之一');
+    }
+  }
+  const pptx = await imagesToPptx(buffers);
+  return handleSaveBinaryToDownloads({
+    fileName: payload.outputName,
+    base64: pptx.toString('base64'),
+  });
+}
+
+// ----------------------------------------------------------------------------
+// 品牌契约 registry（CD-Parity §1）：薄 handler，读写逻辑在独立模块
+// services/design/brandRegistry.ts，这里只做编排转发。
+// ----------------------------------------------------------------------------
+
+async function handleListBrands() {
+  return registryListBrands();
+}
+
+async function handleSaveBrand(payload: { brand: Partial<BrandContract> }) {
+  if (!payload?.brand) {
+    throw new Error('saveBrand 需要 brand');
+  }
+  return registrySaveBrand(payload.brand);
+}
+
+async function handleDeleteBrand(payload: { id: string }) {
+  if (!payload?.id) {
+    throw new Error('deleteBrand 需要 id');
+  }
+  return registryDeleteBrand(payload.id);
+}
+
+async function handleSetActiveBrand(payload: { id: string | null }) {
+  return registrySetActiveBrand(payload?.id ?? null);
+}
+
+// 从参考图提取品牌草稿（B2，vision，付费一次）。renderer 传 dataUrl（FileReader 读本地
+// 文件，免落盘）；若传 imagePath 必须落在设计目录内（与其它图 handler 同款守卫，防读任意
+// 本地文件 base64 后外泄到视觉模型）。返回 DRAFT，不落盘——由 renderer 预填表单待用户审改。
+async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePath?: string }) {
+  if (!payload?.dataUrl && !payload?.imagePath) {
+    throw new Error('extractBrandFromImage 需要 dataUrl 或 imagePath');
+  }
+  if (payload.imagePath) {
+    assertWithinDesignDir(payload.imagePath, 'imagePath');
+  }
+  const input = payload.dataUrl ? { dataUrl: payload.dataUrl } : { imagePath: payload.imagePath };
+  return registryExtractBrand(input);
+}
+
+// ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
 
@@ -968,6 +1090,22 @@ export function registerWorkspaceHandlers(
           break;
         case 'saveTextToDownloads':
           data = await handleSaveTextToDownloads(payload as { fileName: string; content: string });
+          break;
+        case 'saveBinaryToDownloads':
+          data = await handleSaveBinaryToDownloads(payload as { fileName: string; base64: string });
+          break;
+        case 'exportPrototypePdf':
+          data = await handleExportPrototypePdf(payload as { html: string; outputName: string });
+          break;
+        case 'exportImagePdf':
+          data = await handleExportImagePdf(
+            payload as { imagePath?: string; dataUrl?: string; outputName: string },
+          );
+          break;
+        case 'exportCanvasPptx':
+          data = await handleExportCanvasPptx(
+            payload as { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
+          );
           break;
         case 'createFile':
           data = await handleCreateFile(payload as { filePath: string; content?: string });
@@ -1037,6 +1175,21 @@ export function registerWorkspaceHandlers(
           break;
         case 'listVisualVideoModels':
           data = await handleListVisualVideoModels();
+          break;
+        case 'listBrands':
+          data = await handleListBrands();
+          break;
+        case 'saveBrand':
+          data = await handleSaveBrand(payload as { brand: Partial<BrandContract> });
+          break;
+        case 'deleteBrand':
+          data = await handleDeleteBrand(payload as { id: string });
+          break;
+        case 'setActiveBrand':
+          data = await handleSetActiveBrand(payload as { id: string | null });
+          break;
+        case 'extractBrandFromImage':
+          data = await handleExtractBrandFromImage(payload as { dataUrl?: string; imagePath?: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

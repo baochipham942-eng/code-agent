@@ -56,6 +56,14 @@ function describeBrief(input: CritiqueInput): string {
     lines.push('constraints:');
     for (const c of brief.constraints) lines.push(`  - ${c}`);
   }
+  if (brief.brandContract) {
+    const bc = brief.brandContract;
+    if (bc.keep.length > 0 || bc.doNotCopy.length > 0) {
+      lines.push('brandContract（品牌契约约束，并入 constraint 维度评分）:');
+      for (const k of bc.keep) lines.push(`  - keep（必守）: ${k}`);
+      for (const d of bc.doNotCopy) lines.push(`  - 禁止(do-not-copy): ${d}`);
+    }
+  }
   if (brief.references && brief.references.length > 0) {
     lines.push('references:');
     for (const r of brief.references) lines.push(`  - ${r}`);

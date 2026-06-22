@@ -5,6 +5,8 @@ import { normalizeDesignBrief } from '../../shared/contract/designBrief';
 import type { DesignBrief } from '../../shared/contract/designBrief';
 import { directionTokens } from '../../design/direction-tokens';
 import { readDesignMdSummary } from '../../design/design-md-loader';
+import { getActiveBrandSync } from '../services/design/brandRegistry';
+import { brandContractToBriefProjection } from '../../shared/contract/brandContract';
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
 import { getConnectorRegistry } from '../connectors';
 import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
@@ -241,10 +243,26 @@ function enrichDesignBriefForPrompt(
     references.push(designMdSummary);
   }
 
+  // 我的品牌契约强制注入（CD-Parity §1）：active 品牌是「sticky 默认」——
+  //  · directionTokens：仅当 brief 既无显式 directionTokens 也无 direction 时，用品牌 tokens 兜底；
+  //    用户在本任务里显式选了方向/带了 tokens，则方向优先（per-task 胜出）。
+  //  · brandContract（keep/change/doNotCopy）：品牌的「不要这样」约束永远生效——
+  //    仅当 brief 自身未携带 brandContract 时，才并入 active 品牌的三桶约束。
+  const activeBrand = getActiveBrandSync();
+  const hasExplicitTokens = Boolean(brief.directionTokens || brief.direction);
+  const directionTokensResolved =
+    brief.directionTokens
+    || (brief.direction ? directionTokens[brief.direction] : undefined)
+    || (activeBrand && !hasExplicitTokens ? activeBrand.tokens : undefined);
+  const brandContractResolved =
+    brief.brandContract
+    || (activeBrand ? brandContractToBriefProjection(activeBrand) : undefined);
+
   return normalizeDesignBrief({
     ...brief,
     references,
-    directionTokens: brief.directionTokens || (brief.direction ? directionTokens[brief.direction] : undefined),
+    directionTokens: directionTokensResolved,
+    brandContract: brandContractResolved,
   });
 }
 

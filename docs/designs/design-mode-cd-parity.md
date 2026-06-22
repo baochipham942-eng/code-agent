@@ -1,10 +1,10 @@
 # 设计模式：对标 Claude Design 能力补全（CD-Parity）· spec
 
-> **状态**：📝 探索 + 定 spec 阶段。四件均 anchor 到真实 as-built（非臆测），4 个决定性岔路已由林晨拍板（见下）。**未写实现代码**，待逐件拍板后再进实施。
+> **状态**：✅ **四件全部实现 + 合本地 main（未推 origin）**。§1 我的品牌契约（B1 持久化/强绑/UI + B2 参考图提取）、§2 PDF 导出、§3 原型就地文本编辑、§4 PPTX 薄版均落地；对抗审计（独立子 agent 当反方）抓 7 真 bug 全修；真 key dogfood（B2 vision / PDF chromium 矢量 / 内联编辑 headless 活体 / PPTX webServer）通过。as-built 见 `docs/architecture/design-mode.md` §5.9–§5.12 + §6.6 + §9/§10。
 > **来源**：对比 claude.ai/design 找出的缺口/部分项；OpenDesign reference-design-contract / question-form + Lovable/v0 inline edit 借鉴。
-> **前置**：建立在已发版 v0.18.0 的设计模式（画布 + 原型 + T1–T6）+ 已合本地 main 的 P1 生图切换 + 标注重绘之上。
+> **前置**：建立在已发版 v0.18.0 的设计模式（画布 + 原型 + T1–T6）+ P1 生图切换 + 标注重绘 + 视频 P2/P3 之上。
 > **配套**：`docs/designs/design-mode-model-switcher.md`（D1–D9）、`docs/competitive/opendesign-lovart-借鉴清单.md`（借鉴源 + 三档分类）、`docs/designs/design-system.md`（**Neo 自身 app UI 契约，与本文 §1 不同层，勿混**）。
-> **worktree**：`code-agent-cdparity` / 分支 `feat/cd-parity-explore`（基于本地 main）。
+> **落地纪要**：原在隔离 worktree `feat/cd-parity-explore` 实现，已 `--no-ff` 合本地 main；设计模式裸 button 经 W3 收口（baseline 738，design-mode 0 未声明）；registry 加并发 mutex（审计 MED-2）。
 
 ---
 

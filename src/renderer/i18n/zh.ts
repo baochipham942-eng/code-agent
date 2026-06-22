@@ -309,6 +309,89 @@ export const zh = {
     },
   },
 
+  // 执行引擎 × 模型兼容矩阵（billingMode + 不可用原因）
+  engineCompat: {
+    // 引擎计费模式标签 + 详情（hover）
+    billing: {
+      subscription: { label: '订阅额度', detail: '经 CLI 登录吃订阅 / 账号额度，不按 API key 用量计费。' },
+      api_key_payg: { label: 'API 按量', detail: '随所选 provider 按 API key 用量计费。' },
+      free_tier: { label: '免费额度', detail: '在免费额度内运行，成本压力低。' },
+      unknown: { label: '计费未知', detail: '计费方式未确定，自动策略不把省钱作为切换依据。' },
+    },
+    // 模型在某引擎下不可用 / 需提示的结构化原因
+    reason: {
+      not_in_signed_catalog: '未在该引擎的签名模型目录中登记',
+      disabled_in_catalog: '该模型已在签名目录中停用',
+      provider_not_registered: '未匹配到已注册的模型提供商',
+      resolved_by_cli: '模型由 CLI 自身解析',
+    },
+    // 模型切换器：外部引擎模型不可用时的占位文案
+    modelUnavailable: '已不可用',
+    // 设置页「执行引擎」section（引擎 ⟂ 模型 的 IA 落地）
+    engineSection: {
+      title: '执行引擎',
+      description: '引擎是「谁来跑这一轮」的运行内核，与模型 provider 正交。原生引擎按所选 provider 用量计费；外部 CLI 引擎经各自登录吃订阅额度。',
+      detectButton: '检测引擎',
+      detecting: '检测中…',
+      detectFailed: '引擎检测失败，请稍后重试',
+      loading: '正在检测引擎…',
+      empty: '未检测到任何引擎',
+      // 安装状态徽标
+      installState: {
+        builtin: '内置',
+        installed: '已安装',
+        missing: '未安装',
+      },
+      versionLabel: '版本',
+      binaryPathLabel: '路径',
+      defaultModelLabel: '默认模型',
+      defaultModelHint: '在「Agent Engine 模型目录」中为该引擎选择默认模型。',
+      defaultModelNative: '随会话所选 provider 模型，无需在此配置。',
+      defaultModelCliResolved: '模型由 CLI 自身解析，引擎层不预设。',
+      // 未安装时的获取指引（仅文案说明，不执行任何命令）
+      installHintTitle: '获取指引',
+      installHint: {
+        codex_cli: '安装 Codex CLI 后将 codex 加入 PATH，再点「检测引擎」。',
+        claude_code: '安装 Claude Code CLI 后将 claude 加入 PATH，再点「检测引擎」。',
+        mimo_code: '安装 MiMo-Code CLI 后将 mimo 加入 PATH，再点「检测引擎」。',
+        kimi_code: '安装 Kimi Code CLI 后将 kimi 加入 PATH，再点「检测引擎」。',
+      },
+      // 登录提示（外部引擎吃订阅，需各自登录）
+      loginHintTitle: '登录提示',
+      loginHint: {
+        codex_cli: '首次使用前需用 Codex CLI 自身的登录命令完成账号授权。',
+        claude_code: '首次使用前需用 Claude Code 自身的登录命令完成账号授权。',
+        mimo_code: '首次使用前需运行 mimo providers login 完成账号授权。',
+        kimi_code: '首次使用前需运行 kimi login 完成账号授权。',
+      },
+    },
+    // 设置页「Agent Engine 模型目录」section（签名目录发布 + 本机默认选择）
+    catalogSection: {
+      title: 'Agent Engine 模型目录',
+      description: 'Codex / Claude 模型由服务端签名目录发布，本机只保存默认选择。',
+      // 顶部目录元信息卡片
+      versionLabel: '目录版本',
+      versionCaption: '服务端发布版本',
+      sourceLabel: '来源',
+      sourceCaption: '验签失败会回退',
+      sourceRemote: '远程签名',
+      sourceBundled: '内置兜底',
+      updatedAtLabel: '更新时间',
+      updatedAtCaption: '目录声明时间',
+      engineCountLabel: 'Engine 数量',
+      engineCountCaption: 'Codex / Claude',
+      // 引擎行
+      remoteDefaultLabel: '远程默认',
+      localDefaultLabel: '本机默认选择',
+      modelSelectableSummary: '{enabled}/{total} 个模型可选',
+      loading: '正在读取模型目录...',
+      // toast
+      defaultUpdated: '{engine} 默认模型已更新',
+      saveFailed: '保存 Agent Engine 默认模型失败: {error}',
+      unknownError: '未知错误',
+    },
+  },
+
   // Disclosure Settings (Progressive Disclosure)
   disclosure: {
     title: '渐进披露',

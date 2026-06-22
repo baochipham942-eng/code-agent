@@ -20,7 +20,12 @@ import {
   ProviderSourceBadge,
   ProviderTransportBadge,
   sortProviderGroupsByModelStrategy,
+  buildEngineBillingSummary,
+  resolveEngineModelCompatReason,
+  EngineBillingBadge,
+  isExternalEngineKind,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
+import { zh, en } from '../../../src/renderer/i18n';
 
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
   return {
@@ -508,5 +513,48 @@ describe('ModelSwitcher Agent Engine selection', () => {
 
     expect(html).toContain('<img');
     expect(html).toContain(`src="${icon}"`);
+  });
+});
+
+describe('ModelSwitcher engine billingMode + 兼容原因（i18n）', () => {
+  it('buildEngineBillingSummary 用 i18n 标签翻译引擎计费模式（zh）', () => {
+    const native = buildEngineBillingSummary('native', zh);
+    expect(native.mode).toBe('api_key_payg');
+    expect(native.label).toBe(zh.engineCompat.billing.api_key_payg.label);
+    expect(native.detail).toBe(zh.engineCompat.billing.api_key_payg.detail);
+
+    const codex = buildEngineBillingSummary('codex_cli', zh);
+    expect(codex.mode).toBe('subscription');
+    expect(codex.label).toBe(zh.engineCompat.billing.subscription.label);
+  });
+
+  it('buildEngineBillingSummary 在 en 下取英文标签（zh/en 对齐）', () => {
+    const mimo = buildEngineBillingSummary('mimo_code', en);
+    expect(mimo.mode).toBe('subscription');
+    expect(mimo.label).toBe(en.engineCompat.billing.subscription.label);
+    expect(mimo.label).not.toBe(zh.engineCompat.billing.subscription.label);
+  });
+
+  it('resolveEngineModelCompatReason 把 reasonCode 翻成 i18n 文案', () => {
+    expect(resolveEngineModelCompatReason('not_in_signed_catalog', zh))
+      .toBe(zh.engineCompat.reason.not_in_signed_catalog);
+    expect(resolveEngineModelCompatReason('resolved_by_cli', en))
+      .toBe(en.engineCompat.reason.resolved_by_cli);
+  });
+
+  it('EngineBillingBadge 渲染 data 属性 + 标签，便于设置页/状态栏读取', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(EngineBillingBadge, { summary: buildEngineBillingSummary('claude_code', zh) }),
+    );
+    expect(html).toContain('data-engine-billing-mode="subscription"');
+    expect(html).toContain(zh.engineCompat.billing.subscription.label);
+  });
+
+  it('isExternalEngineKind 现在把 mimo/kimi 也判为外部引擎（修旧 bug）', () => {
+    expect(isExternalEngineKind('native')).toBe(false);
+    expect(isExternalEngineKind('codex_cli')).toBe(true);
+    expect(isExternalEngineKind('claude_code')).toBe(true);
+    expect(isExternalEngineKind('mimo_code')).toBe(true);
+    expect(isExternalEngineKind('kimi_code')).toBe(true);
   });
 });

@@ -155,7 +155,7 @@ export function buildSettingsTabGroups({
     { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
     { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
-    { id: 'agentEngine', label: 'Agent 引擎', icon: <Terminal className="w-4 h-4" /> },
+    { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
     { id: 'budget', label: '预算告警', icon: <DollarSign className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },

@@ -7,16 +7,22 @@
 // ============================================================================
 
 import React from 'react';
+import { useI18n } from '../../../../hooks/useI18n';
 import { SettingsPage } from '../SettingsLayout';
 import { WebModeBanner } from '../WebModeBanner';
+import { AgentEngineListSection } from './AgentEngineListSection';
 import { AgentEngineModelCatalogSection } from './AgentEngineModelCatalogSection';
 
-export const AgentEngineSettings: React.FC = () => (
-  <SettingsPage
-    title="Agent 引擎"
-    description="管理外部 CLI Agent 引擎（Codex CLI / Claude Code）的安装状态与默认模型。引擎在聊天输入框的引擎切换器中选用。"
-  >
-    <WebModeBanner />
-    <AgentEngineModelCatalogSection />
-  </SettingsPage>
-);
+export const AgentEngineSettings: React.FC = () => {
+  const { t } = useI18n();
+  return (
+    <SettingsPage
+      title={t.engineCompat.engineSection.title}
+      description={t.engineCompat.engineSection.description}
+    >
+      <WebModeBanner />
+      <AgentEngineListSection />
+      <AgentEngineModelCatalogSection />
+    </SettingsPage>
+  );
+};

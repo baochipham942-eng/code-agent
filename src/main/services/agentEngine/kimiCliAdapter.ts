@@ -11,6 +11,11 @@
 //     `kimi login` 落盘 或 KIMI_CODE_HOME 指向的 config.toml。为每个会话/用户设
 //     KIMI_CODE_HOME 隔离凭据目录（request.kimiCodeHome 可注入，默认沿用 env / CLI 默认）
 //   - 容错：OpenAI 兼容后端偶发流式完成但空响应，报 `empty response`，要 catch 不崩
+//
+// ⚠️ registry 注册（detectKimi / PATH 探测）与 model catalog 登记**刻意不在本分支改动**
+// （那两个热点文件由地基①②会话重写，避免合并冲突）。待接线清单见
+// docs/handoff-engine-wiring.md。在地基②注册 descriptor 前，registry.get('kimi_code')
+// 会抛 Unknown engine——这是预期的待接线态，不是 bug。
 
 import { spawn } from 'child_process';
 import { createWriteStream } from 'fs';

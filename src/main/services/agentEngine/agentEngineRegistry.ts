@@ -39,8 +39,6 @@ export class AgentEngineRegistry {
       this.nativeDescriptor(detectedAt),
       codex,
       claude,
-      this.placeholderExternalDescriptor('mimo_code', detectedAt),
-      this.placeholderExternalDescriptor('kimi_code', detectedAt),
     ];
   }
 
@@ -67,52 +65,6 @@ export class AgentEngineRegistry {
       riskTier: 'medium',
       detectedAt,
       auditNotes: ['Uses existing model provider, tools, permissions, trace, and review queue.'],
-    };
-  }
-
-  // TODO(engine-expansion §5②): mimo_code / kimi_code 的真实 PATH 发现（detectMimo/detectKimi 的
-  // which/where + --version 探活 + MIMO_BIN/KIMI_BIN env 覆盖）待地基②（PATH 发现 + fail-closed）
-  // 接口就绪后实现。当前返回 not_configured 占位，保证 registry.get() 不抛 "Unknown agent engine"，
-  // 但 adapter 在 executable 闸门处会拒跑（与未安装的 codex/claude 行为一致）。
-  private placeholderExternalDescriptor(
-    kind: 'mimo_code' | 'kimi_code',
-    detectedAt: number,
-  ): AgentEngineDescriptor {
-    const isMimo = kind === 'mimo_code';
-    return {
-      kind,
-      label: isMimo ? 'MiMo-Code' : 'Kimi Code',
-      summary: isMimo
-        ? 'Runs MiMo-Code CLI through a controlled workspace cwd and normalized JSON event stream.'
-        : 'Runs Kimi Code CLI in headless stream-json mode with normalized event stream.',
-      installState: 'missing',
-      runtimeState: 'not_configured',
-      executable: false,
-      command: isMimo
-        ? 'mimo run --format json'
-        : 'kimi -p --output-format stream-json',
-      capabilities: ['import_sessions'],
-      defaultPermissionProfile: 'read_only',
-      cwdPolicy: 'workspace_only',
-      riskTier: 'medium',
-      detectedAt,
-      lastError: 'PATH discovery pending (engine-expansion §5②).',
-      auditNotes: [
-        'Adapter is implemented; PATH discovery / version probe is pending the discovery framework (engine-expansion §5②).',
-      ],
-      reliability: {
-        cliStatus: 'not_checked',
-        authState: 'not_checked',
-        quotaState: 'not_checked',
-        streamingMode: isMimo ? 'json' : 'stream_json',
-        toolSupport: 'unknown',
-        transcriptMode: 'clean_stream_json',
-        partialMessages: false,
-        mcpBridge: false,
-        notes: [
-          'Registry detection for this engine is not wired yet; the descriptor is a placeholder until §5② lands.',
-        ],
-      },
     };
   }
 

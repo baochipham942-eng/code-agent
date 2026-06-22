@@ -39,6 +39,8 @@ import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { DesignCanvas } from './DesignCanvas';
 import { DesignSlidesPanel } from './DesignSlidesPanel';
+import { SlideOutlineEditor } from './SlideOutlineEditor';
+import { useDesignSlidesStore } from './designSlidesStore';
 import {
   readRunHtml,
   readWorkspaceFile,
@@ -681,6 +683,19 @@ const ContinueEditBar: React.FC<{
   );
 };
 
+// 演示稿预览：有大纲 → 逐页编辑器（预览 + 就地改字）；否则占位引导。
+const SlidesPreview: React.FC = () => {
+  const { t } = useI18n();
+  const hasOutline = useDesignSlidesStore((s) => !!s.outline && s.outline.length > 0);
+  if (hasOutline) return <SlideOutlineEditor />;
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-zinc-500">
+      <Presentation className="h-6 w-6 text-zinc-600" />
+      <span>{t.design.slidesPreviewSoon}</span>
+    </div>
+  );
+};
+
 const PreviewPane: React.FC = () => {
   const { t } = useI18n();
   const outputType = useDesignStore((s) => s.outputType);
@@ -856,14 +871,9 @@ const PreviewPane: React.FC = () => {
     // applyInlineEdit 只读 store getState/refs，无需进依赖；inlineEditMode 切换即重挂。
   }, [inlineEditMode]);
 
-  // 演示稿（厚版二期）→ 占位工作区。
+  // 演示稿（厚版二期）→ 有大纲则进编辑器（逐页预览 + 就地改字），否则占位引导。
   if (isSlidesOutput(outputType)) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-sm text-zinc-500">
-        <Presentation className="h-6 w-6 text-zinc-600" />
-        <span>{t.design.slidesPreviewSoon}</span>
-      </div>
-    );
+    return <SlidesPreview />;
   }
 
   // 设计稿 / 信息图 / 视频 → konva 无限画布；交互原型（网页）→ HTML iframe。

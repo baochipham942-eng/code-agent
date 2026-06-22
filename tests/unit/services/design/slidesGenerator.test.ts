@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { generateSlidesDeck } from '../../../../src/main/services/design/slidesGenerator';
+import { generateSlidesDeck, buildSlidesOutline } from '../../../../src/main/services/design/slidesGenerator';
 
 describe('generateSlidesDeck', () => {
   it('从 topic 确定性大纲生成有效 PPTX（ZIP 魔数 PK，非平凡体积）', async () => {
@@ -50,5 +50,44 @@ describe('generateSlidesDeck', () => {
       theme: 'does-not-exist',
     });
     expect(buffer.subarray(0, 2).toString('latin1')).toBe('PK');
+  });
+
+  it('slides 直传（已编辑大纲）优先于 topic，据此排版', async () => {
+    const { buffer, slidesCount } = await generateSlidesDeck({
+      topic: '会被忽略',
+      slides: [
+        { title: '封面页', subtitle: '副标题', points: [], isTitle: true },
+        { title: '第一节', points: ['要点一', '要点二'] },
+        { title: '谢谢', points: [], isEnd: true },
+      ],
+    });
+    expect(buffer.subarray(0, 2).toString('latin1')).toBe('PK');
+    expect(slidesCount).toBe(3);
+  });
+
+  it('slides 直传时 topic 可省（取首页标题为 deck 标题）', async () => {
+    const { buffer } = await generateSlidesDeck({
+      slides: [{ title: '只有这一页', points: ['内容'] }],
+    });
+    expect(buffer.subarray(0, 2).toString('latin1')).toBe('PK');
+  });
+});
+
+describe('buildSlidesOutline', () => {
+  it('从 topic 生成确定性大纲（含封面页 + 内容页）', () => {
+    const outline = buildSlidesOutline('一份产品介绍', 8);
+    expect(outline.length).toBeGreaterThan(0);
+    expect(outline[0].isTitle).toBe(true);
+    expect(outline[0].title).toBe('一份产品介绍');
+    // 内容页含要点
+    expect(outline.some((s) => !s.isTitle && s.points.length > 0)).toBe(true);
+  });
+
+  it('页数透传', () => {
+    expect(buildSlidesOutline('x', 12).length).toBeGreaterThan(buildSlidesOutline('x', 5).length);
+  });
+
+  it('空 topic 抛可读错误', () => {
+    expect(() => buildSlidesOutline('  ')).toThrow(/主题/);
   });
 });

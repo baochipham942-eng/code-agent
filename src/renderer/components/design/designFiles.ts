@@ -3,6 +3,7 @@
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DESIGN_VERSIONS_SUBDIR } from '@shared/constants';
 import type { FileInfo } from '@shared/contract/workspace';
+import type { SlideOutlineItem } from './slidesOutlineOps';
 import type { BrandContract, BrandMeta } from '@shared/contract/brandContract';
 import { normalizeBrandContract } from '@shared/contract/brandContract';
 import { versionFileName, parseVersionTs } from './designTypes';
@@ -177,14 +178,36 @@ export async function exportCanvasPptx(
 }
 
 /**
- * 厚版演示稿（二期）：topic + 页数 → 主进程 slidesGenerator 真排版 deck → 导出到「下载」。
+ * 厚版演示稿（二期）大纲生成：topic + 页数 → 确定性 SlideData[]（不落盘、不付费）。
+ * 失败返回 { slides: null, error }。
+ */
+export async function generateSlidesOutline(input: {
+  topic: string;
+  slidesCount?: number;
+}): Promise<{ slides: SlideOutlineItem[] | null; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ slides: SlideOutlineItem[] }>(
+      IPC_DOMAINS.WORKSPACE,
+      'generateSlidesOutline',
+      input,
+    );
+    if (res?.success) return { slides: res.data?.slides ?? null };
+    return { slides: null, error: res?.error?.message };
+  } catch (e) {
+    return { slides: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 厚版演示稿（二期）：topic/已编辑大纲 + 页数 → 主进程 slidesGenerator 真排版 deck → 导出到「下载」。
  * 返回落盘路径与页数；失败返回 { filePath: null, error }。
  */
 export async function generateSlidesDeck(input: {
-  topic: string;
+  topic?: string;
   slidesCount?: number;
   theme?: string;
   content?: string;
+  slides?: SlideOutlineItem[];
   outputName: string;
 }): Promise<{ filePath: string | null; slidesCount?: number; error?: string }> {
   try {

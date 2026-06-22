@@ -1,10 +1,12 @@
-// 厚版演示稿面板（二期 MVP）：需求(topic) + 页数 → 主进程 slidesGenerator 真排版 deck
-// → 导出到「下载」。当前 MVP 直出 PPTX；大纲编辑 / 画布预览 / 就地改字为后续增量。
-import React, { useState } from 'react';
-import { Loader2, Presentation, CheckCircle2, AlertCircle } from 'lucide-react';
+// 厚版演示稿面板（二期）侧栏：需求(topic) + 页数 → 生成大纲 → 右侧编辑 → 生成演示稿。
+// SlideData[] 单一真源在 designSlidesStore；大纲编辑器在右侧 PreviewPane。
+import React from 'react';
+import { Loader2, Presentation, ListOrdered, CheckCircle2, AlertCircle, RotateCcw } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
-import { generateSlidesDeck } from './designFiles';
+import { useDesignSlidesStore } from './designSlidesStore';
+import { generateSlidesOutline, generateSlidesDeck } from './designFiles';
+import { sanitizeOutline } from './slidesOutlineOps';
 import { canvasPptxExportName } from './designTypes';
 
 const MIN_SLIDES = 4;
@@ -14,64 +16,111 @@ const DEFAULT_SLIDES = 10;
 export const DesignSlidesPanel: React.FC = () => {
   const { t } = useI18n();
   const requirement = useDesignStore((s) => s.requirement);
-  const [slidesCount, setSlidesCount] = useState(DEFAULT_SLIDES);
-  const [generating, setGenerating] = useState(false);
-  const [result, setResult] = useState<{ filePath: string; slidesCount?: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [slidesCount, setSlidesCount] = React.useState(DEFAULT_SLIDES);
+
+  const outline = useDesignSlidesStore((s) => s.outline);
+  const buildingOutline = useDesignSlidesStore((s) => s.buildingOutline);
+  const generating = useDesignSlidesStore((s) => s.generating);
+  const result = useDesignSlidesStore((s) => s.result);
+  const error = useDesignSlidesStore((s) => s.error);
+  const store = useDesignSlidesStore;
 
   const topic = requirement.trim();
-  const canGenerate = topic.length > 0 && !generating;
+  const hasOutline = !!outline && outline.length > 0;
+
+  const onBuildOutline = async (): Promise<void> => {
+    if (!topic || buildingOutline) return;
+    store.setState({ buildingOutline: true, error: null, result: null });
+    const res = await generateSlidesOutline({ topic, slidesCount });
+    if (res.slides) {
+      store.setState({ outline: res.slides, buildingOutline: false });
+    } else {
+      store.setState({ error: res.error ?? t.design.slidesGenerateError, buildingOutline: false });
+    }
+  };
 
   const onGenerate = async (): Promise<void> => {
-    if (!canGenerate) return;
-    setGenerating(true);
-    setError(null);
-    setResult(null);
+    if (generating) return;
+    if (!hasOutline && !topic) return;
+    store.setState({ generating: true, error: null, result: null });
     const res = await generateSlidesDeck({
-      topic,
+      topic: topic || undefined,
       slidesCount,
+      slides: hasOutline ? sanitizeOutline(outline!) : undefined,
       outputName: canvasPptxExportName(Date.now()),
     });
     if (res.filePath) {
-      setResult({ filePath: res.filePath, slidesCount: res.slidesCount });
+      store.setState({ result: { filePath: res.filePath, slidesCount: res.slidesCount }, generating: false });
     } else {
-      setError(res.error ?? t.design.slidesGenerateError);
+      store.setState({ error: res.error ?? t.design.slidesGenerateError, generating: false });
     }
-    setGenerating(false);
   };
+
+  const busy = buildingOutline || generating;
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 页数 */}
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs text-zinc-400">
-          {t.design.slidesCountLabel}：<span className="font-mono text-zinc-300">{slidesCount}</span>
-        </span>
-        <input
-          type="range"
-          min={MIN_SLIDES}
-          max={MAX_SLIDES}
-          step={1}
-          value={slidesCount}
-          onChange={(e) => setSlidesCount(Number(e.target.value))}
-          aria-label={t.design.slidesCountLabel}
-        />
-      </label>
+      {/* 页数（仅生成大纲前可调；已有大纲后以实际页数为准） */}
+      {!hasOutline && (
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-zinc-400">
+            {t.design.slidesCountLabel}：<span className="font-mono text-zinc-300">{slidesCount}</span>
+          </span>
+          <input
+            type="range"
+            min={MIN_SLIDES}
+            max={MAX_SLIDES}
+            step={1}
+            value={slidesCount}
+            onChange={(e) => setSlidesCount(Number(e.target.value))}
+            aria-label={t.design.slidesCountLabel}
+          />
+        </label>
+      )}
 
-      {/* 生成（free：确定性排版，不调付费模型） */}
-      {/* ds-allow:start 演示稿生成 CTA 用设计区品牌色 bg-fuchsia-500/90（与图/网页生成按钮一致） */}
+      {/* 第一步：生成大纲（确定性、免费） */}
+      {/* ds-allow:start 大纲生成按钮：次级动作用描边样式 */}
+      <button
+        type="button"
+        onClick={() => void onBuildOutline()}
+        disabled={!topic || busy}
+        className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.12] px-3 py-2 text-sm text-zinc-200 transition-colors hover:text-white disabled:opacity-50"
+      >
+        {buildingOutline ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListOrdered className="h-4 w-4" />}
+        {hasOutline ? t.design.slidesRebuildOutline : t.design.slidesBuildOutline}
+      </button>
+      {/* ds-allow:end */}
+
+      {hasOutline && (
+        <div className="flex items-center justify-between text-[11px] text-zinc-500">
+          <span>{t.design.slidesOutlineReady}（{outline!.length}）</span>
+          <button
+            type="button"
+            onClick={() => store.setState({ outline: null, result: null, error: null })}
+            className="inline-flex items-center gap-1 hover:text-zinc-300"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t.design.slidesResetOutline}
+          </button>
+        </div>
+      )}
+
+      {/* 第二步：生成演示稿（据编辑后大纲，或无大纲时直接据 topic） */}
+      {/* ds-allow:start 演示稿主 CTA 用设计区品牌色 bg-fuchsia-500/90 */}
       <button
         type="button"
         onClick={() => void onGenerate()}
-        disabled={!canGenerate}
-        className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
+        disabled={(!hasOutline && !topic) || busy}
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
       >
         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Presentation className="h-4 w-4" />}
         {generating ? t.design.slidesGenerating : t.design.slidesGenerate}
       </button>
       {/* ds-allow:end */}
 
-      {!topic && <p className="text-[11px] leading-snug text-zinc-500">{t.design.slidesNeedTopic}</p>}
+      {!topic && !hasOutline && (
+        <p className="text-[11px] leading-snug text-zinc-500">{t.design.slidesNeedTopic}</p>
+      )}
 
       {result && (
         <div className="flex items-start gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-2 text-[11px] leading-snug text-emerald-200">

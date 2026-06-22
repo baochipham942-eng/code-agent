@@ -1,0 +1,60 @@
+name: WebServer Boot Gate
+
+# 防止 v0.19.0 那类事故：某个库在 webServer 启动期被 import，但它是 esbuild-external
+# 且没打进打包后的 app → 打包应用启动即崩（"Web server exited before healthcheck"）。
+# 本地/CI 因 node_modules 齐全而发现不了。本闸构建 webServer bundle 后做静态校验
+# （必须 bundle 的库不得残留 external require）+ 隐藏这些库做启动冒烟。
+# 设计/事故复盘：scripts/verify-webserver-boot.mjs 顶部注释。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'esbuild.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/main/**'
+      - 'src/web/**'
+      - 'src/shared/**'
+      - 'scripts/verify-webserver-boot.mjs'
+      - '.github/workflows/webserver-boot.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'esbuild.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/main/**'
+      - 'src/web/**'
+      - 'src/shared/**'
+      - 'scripts/verify-webserver-boot.mjs'
+      - '.github/workflows/webserver-boot.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: webserver-boot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boot-gate:
+    name: WebServer 打包启动闸
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build webServer bundle
+        run: npm run build:web
+
+      - name: WebServer boot gate (no external must-bundle libs + boot smoke)
+        run: npm run verify:webserver-boot

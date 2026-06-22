@@ -38,6 +38,7 @@ import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { DesignCanvas } from './DesignCanvas';
+import { DesignSlidesPanel } from './DesignSlidesPanel';
 import {
   readRunHtml,
   readWorkspaceFile,
@@ -463,10 +464,13 @@ const Composer: React.FC = () => {
         </div>
       )}
 
-      {/* 生成（演示稿为厚版二期，一期占位提示） */}
+      {/* 演示稿（厚版 MVP）：页数 + 生成 → 真排版 PPTX 导出到下载 */}
       {slidesMode ? (
-        <div className="mt-1 rounded-lg border border-fuchsia-400/20 bg-fuchsia-400/[0.06] px-3 py-2 text-xs leading-snug text-zinc-300">
-          {t.design.slidesComingSoon}
+        <div className="flex flex-col gap-2">
+          <div className="rounded-lg border border-fuchsia-400/20 bg-fuchsia-400/[0.06] px-3 py-2 text-[11px] leading-snug text-zinc-400">
+            {t.design.slidesComingSoon}
+          </div>
+          <DesignSlidesPanel />
         </div>
       ) : (
         <>

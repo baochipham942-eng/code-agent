@@ -332,6 +332,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'extractBrandFromImage',
     'generateDesignImage',
     'generateDesignVideo',
+    'generateSlidesDeck',
     'getConfigScope',
     'getCurrent',
     'getDesignMdSummary',

@@ -10,6 +10,8 @@ import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
 import { imagesToPptx } from '../services/design/pptxExport';
+import { handleGenerateSlidesDeck, type GenerateSlidesDeckPayload } from './workspaceSlidesExport';
+import { assertWithinDesignDir } from './workspaceDesignPaths';
 import {
   listBrands as registryListBrands,
   saveBrand as registrySaveBrand,
@@ -52,16 +54,6 @@ async function handleResolveDesignDir(): Promise<{ dir: string }> {
   const dir = path.join(getUserConfigDir(), 'design');
   await fsp.mkdir(dir, { recursive: true });
   return { dir };
-}
-
-// 设计图 handler 路径越界守卫（audit M1）：renderer 传入的 baseImagePath/outputPath 必须落在设计目录
-// <getUserConfigDir>/design 内。挡住读任意本地文件(base64 后外泄到 DashScope)/写覆盖任意文件。
-function assertWithinDesignDir(p: string, label: string): void {
-  const root = path.resolve(getUserConfigDir(), 'design');
-  const resolved = path.resolve(p);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error(`${label} 路径越界：必须位于设计目录内`);
-  }
 }
 
 // 设计画布直连出图（Cowart 式 P1）：按 model 在视觉模型注册表间路由 engine（默认 wanx），
@@ -1106,6 +1098,9 @@ export function registerWorkspaceHandlers(
           data = await handleExportCanvasPptx(
             payload as { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
           );
+          break;
+        case 'generateSlidesDeck':
+          data = await handleGenerateSlidesDeck(payload as GenerateSlidesDeckPayload);
           break;
         case 'createFile':
           data = await handleCreateFile(payload as { filePath: string; content?: string });

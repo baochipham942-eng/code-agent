@@ -176,6 +176,30 @@ export async function exportCanvasPptx(
   }
 }
 
+/**
+ * 厚版演示稿（二期）：topic + 页数 → 主进程 slidesGenerator 真排版 deck → 导出到「下载」。
+ * 返回落盘路径与页数；失败返回 { filePath: null, error }。
+ */
+export async function generateSlidesDeck(input: {
+  topic: string;
+  slidesCount?: number;
+  theme?: string;
+  content?: string;
+  outputName: string;
+}): Promise<{ filePath: string | null; slidesCount?: number; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ filePath: string; slidesCount: number }>(
+      IPC_DOMAINS.WORKSPACE,
+      'generateSlidesDeck',
+      input,
+    );
+    if (res?.success) return { filePath: res.data?.filePath ?? null, slidesCount: res.data?.slidesCount };
+    return { filePath: null, error: res?.error?.message };
+  } catch (e) {
+    return { filePath: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** 读取一张图片为 base64 dataURL；不存在/失败返回 null（画布按相对路径懒加载图片用）。 */
 export async function readWorkspaceImageAsDataUrl(filePath: string): Promise<string | null> {
   try {

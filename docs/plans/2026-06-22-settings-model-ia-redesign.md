@@ -2,7 +2,22 @@
 
 > 创建日期：2026-06-22
 > 分支：`feat/settings-model-ia`（worktree `code-agent-modelpage`）
-> 状态：方向 A 已拍板全量推进（2026-06-22），计划阶段，未动代码
+> 状态：方向 A 全量**已实现**（2026-06-22，分支 feat/settings-model-ia 四个 commit，未推 origin/未合 main，待视觉 dogfood + 拍板合并）
+
+## 实现进度（2026-06-22）
+
+| 阶段 | 内容 | 状态 | commit |
+|------|------|------|--------|
+| 1 | tab 分组迁移（立「模型与能力」组）+ 去预算告警 tab | ✅ | 911275d04 |
+| 2 | 搜索源多选+优先级（ADR-026） | ✅ | 506bee8c7 |
+| 3 | 生成模型默认值（ADR-027） | ✅ | 4b08c7241 |
+| 4 | 对抗审查修复 + 执行引擎标题去重 | ✅ | f0e4271c4 |
+
+- 对抗审查（独立 reviewer 当反方）：0 HIGH，修掉 M1（Level2 webSearch 漏传搜索偏好）+ L1（settingsIndex 缺新 tab 条目）。
+- 验证：typecheck 净；settingsIndex/settingsModal 分组/网络搜索(139)/设计(179)/源偏好(4)/默认模型优先级(2) 全绿。
+- 顺带修：执行引擎设置页标题+说明重复显示两遍（AgentEngineListSection 改用独立 listTitle/listDescription）。
+- **待办**：视觉 dogfood（装包看新 IA + 各新面板渲染）；推 origin + 拍板合并 main。
+
 
 ## 已拍板决策（2026-06-22，林晨）
 

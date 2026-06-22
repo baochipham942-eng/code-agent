@@ -28,12 +28,18 @@ import { toast } from '../../hooks/useToast';
 import { Brain, Sparkles, Zap, Cpu, Code2, Settings, Star } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
+import { useI18n } from '../../hooks/useI18n';
 import { trackRenderer } from '../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import {
+  buildEngineBillingSummary,
+  buildEngineModelCompatContext,
   buildEngineReliabilitySummary,
   buildProviderBillingSummary,
   buildProviderHealthSummary,
+  EngineBillingBadge,
+  EngineReliabilityPanel,
+  getEngineModelCompatReasonText,
   buildProviderMetaTitle,
   buildModelSwitcherEngineSelection,
   CAPABILITY_CONFIG,
@@ -54,20 +60,6 @@ import {
 } from './modelSwitcherHelpers';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
-
-const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
-  ready: 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200',
-  warning: 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200',
-  error: 'border-red-500/20 bg-red-500/[0.08] text-red-200',
-  info: 'border-sky-500/20 bg-sky-500/[0.08] text-sky-200',
-};
-
-const ENGINE_RELIABILITY_DOT_CLASS: Record<string, string> = {
-  ready: 'bg-emerald-300',
-  warning: 'bg-amber-300',
-  error: 'bg-red-300',
-  info: 'bg-sky-300',
-};
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -103,6 +95,7 @@ function trackModelSelected(properties: Record<string, unknown>): void {
 }
 
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
   const [overrideProvider, setOverrideProvider] = useState<ModelProvider | null>(null);
@@ -213,6 +206,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       model.capabilities.some((capability) => capability.toLowerCase().includes(query))
     );
   }, [searchQuery, selectedEngineCatalog]);
+
+  // 兼容矩阵上下文：codex/claude 走"不在目录/已停用"判定、mimo/kimi 走"由 CLI 解析"注解。
+  const engineModelCompatContext = useMemo(
+    () => buildEngineModelCompatContext(selectedEngineCatalog?.models),
+    [selectedEngineCatalog],
+  );
 
   const getPreferredEngineModel = useCallback(
     (kind: AgentEngineKind): string | undefined => {
@@ -602,6 +601,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     selectedModel: selectedCatalogModel,
     sessionFailure: engine.failure,
   }), [effectiveWorkingDirectory, engine.failure, engine.kind, selectedCatalogModel, selectedEngineDescriptor]);
+  // 引擎级计费模式（订阅/按量/免费/未知）— 选定引擎的计费语义，标签随 i18n。
+  const selectedEngineBilling = buildEngineBillingSummary(engine.kind, t);
   const externalModelUnavailable = Boolean(
     isExternalEngineKind(engine.kind) &&
     selectedEngineCatalog &&
@@ -689,6 +690,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 <span className="text-[9px] text-zinc-600">1</span>
                 <Cpu className="w-3 h-3" />
                 <span>Engine</span>
+                <span className="ml-auto text-[9px]">
+                  <EngineBillingBadge summary={selectedEngineBilling} />
+                </span>
               </div>
               <div className="grid grid-cols-3 gap-1">
                 {engineDescriptors.map((descriptor) => {
@@ -724,27 +728,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           )}
 
           {selectedEngineReliability && (
-            <div className="border-b border-zinc-700/50 px-2 py-1.5">
-              <div
-                className={`rounded-md border px-2 py-1.5 text-[11px] leading-relaxed ${ENGINE_RELIABILITY_TONE_CLASS[selectedEngineReliability.tone] ?? ENGINE_RELIABILITY_TONE_CLASS.info}`}
-                data-testid="engine-reliability-summary"
-              >
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${ENGINE_RELIABILITY_DOT_CLASS[selectedEngineReliability.tone] ?? ENGINE_RELIABILITY_DOT_CLASS.info}`}
-                  />
-                  <span className="shrink-0 font-medium">{selectedEngineReliability.label}</span>
-                  <span className="min-w-0 truncate text-zinc-200/90" title={selectedEngineReliability.summary}>
-                    {selectedEngineReliability.summary}
-                  </span>
-                </div>
-                {(selectedEngineReliability.capabilityLine || selectedEngineReliability.detail) && (
-                  <div className="mt-0.5 truncate text-[10px] text-zinc-300/70" title={selectedEngineReliability.capabilityLine || selectedEngineReliability.detail}>
-                    {selectedEngineReliability.capabilityLine || selectedEngineReliability.detail}
-                  </div>
-                )}
-              </div>
-            </div>
+            <EngineReliabilityPanel summary={selectedEngineReliability} />
           )}
 
           <div className="border-b border-zinc-700/50">
@@ -904,6 +888,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
                     : null;
                   const disabled = Boolean(model.disabledReason || unavailableReason);
+                  // 兼容矩阵判定：disabledReason 优先，否则回落 reasonCode 的 i18n 文案。
+                  const compatReason = getEngineModelCompatReasonText(engine.kind, model, engineModelCompatContext, t);
                   const selected = engine.model === model.id
                     || (!engine.model && model.id === selectedEngineCatalog.defaultModel);
                   return (
@@ -913,7 +899,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       disabled={disabled}
                       onClick={() => void handleSelectEngineModel(model)}
                       data-model-option-index={index}
-                      title={model.disabledReason || unavailableReason || model.id}
+                      title={compatReason || unavailableReason || model.id}
                       className={`
                         w-full text-left px-3 py-1.5 text-xs transition-colors
                         ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
@@ -941,7 +927,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       </div>
                       <span className="text-gray-500 text-[10px]">
                         {model.id}
-                        {model.disabledReason ? ` · ${model.disabledReason}` : ''}
+                        {compatReason ? ` · ${compatReason}` : ''}
                       </span>
                     </button>
                   );

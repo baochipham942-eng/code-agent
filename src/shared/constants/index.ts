@@ -29,3 +29,4 @@ export * from './almaPluginRegistry';
 export * from './almaMcpRegistry';
 export * from './almaRecommendationPolicy';
 export * from './almaRegistryAudit';
+export * from './engineCompat';

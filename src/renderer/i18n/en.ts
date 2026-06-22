@@ -255,6 +255,22 @@ export const en: Translations = {
     },
   },
 
+  // Runtime(engine) × model compatibility matrix (billingMode + unsupported reason)
+  engineCompat: {
+    billing: {
+      subscription: { label: 'Subscription', detail: 'Runs on subscription / account quota via CLI login; not billed per API key usage.' },
+      api_key_payg: { label: 'API pay-as-you-go', detail: 'Billed by API key usage of the selected provider.' },
+      free_tier: { label: 'Free tier', detail: 'Runs within a free quota with low cost pressure.' },
+      unknown: { label: 'Billing unknown', detail: 'Billing is undetermined; auto strategy will not treat cost as a switching factor.' },
+    },
+    reason: {
+      not_in_signed_catalog: 'Not registered in this engine’s signed model catalog',
+      disabled_in_catalog: 'This model is disabled in the signed catalog',
+      provider_not_registered: 'No registered model provider matched',
+      resolved_by_cli: 'Model is resolved by the CLI itself',
+    },
+  },
+
   // Disclosure Settings (Progressive Disclosure)
   disclosure: {
     title: 'Progressive Disclosure',

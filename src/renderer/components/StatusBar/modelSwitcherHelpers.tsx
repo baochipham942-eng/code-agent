@@ -10,6 +10,14 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { isProviderImageIcon, type RuntimeModelFeature, type RuntimeModelOptionGroup } from '@shared/modelRuntime';
+import {
+  getEngineBillingMode,
+  getEngineModelCompat,
+  type EngineBillingMode,
+  type EngineModelCompatContext,
+  type EngineModelCompatReasonCode,
+} from '@shared/constants/engineCompat';
+import type { Translations } from '../../i18n';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import { getProviderLogoBadge, getProviderLogoMark } from './providerLogoCatalog';
 import { useProviderIconImageSource } from '../../utils/providerIconAssets';
@@ -401,6 +409,130 @@ export function ProviderBillingBadge({ summary }: { summary: ProviderBillingSumm
   );
 }
 
+// ============================================================================
+// 引擎级计费模式 + 模型兼容原因 — 文案全部经 i18n 由枚举/reasonCode 派生
+// （矩阵数据来自 @shared/constants/engineCompat，本层只负责把它翻译成可见标签）
+// ============================================================================
+
+const ENGINE_BILLING_BADGE_CLASS: Record<EngineBillingMode, string> = {
+  subscription: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
+  api_key_payg: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  free_tier: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+  unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
+};
+
+export interface EngineBillingSummary {
+  mode: EngineBillingMode;
+  label: string;
+  detail: string;
+  badgeClass: string;
+}
+
+/** 把引擎 kind 翻成"订阅/按量/免费/未知"计费摘要（标签+hover 详情走 i18n）。 */
+export function buildEngineBillingSummary(kind: AgentEngineKind, t: Translations): EngineBillingSummary {
+  const mode = getEngineBillingMode(kind);
+  const copy = t.engineCompat.billing[mode];
+  return {
+    mode,
+    label: copy.label,
+    detail: copy.detail,
+    badgeClass: ENGINE_BILLING_BADGE_CLASS[mode],
+  };
+}
+
+/** 把模型兼容 reasonCode 翻成可见原因文案（不可用 / 注解共用，纯 i18n 查表）。 */
+export function resolveEngineModelCompatReason(
+  reasonCode: EngineModelCompatReasonCode,
+  t: Translations,
+): string {
+  return t.engineCompat.reason[reasonCode];
+}
+
+/**
+ * 从签名目录模型列表构造兼容判定上下文：拆出"已启用 / 已停用"模型 id 集合，
+ * 喂给 getEngineModelCompat（codex/claude 用）。mimo/kimi 无目录走直传，传空即可。
+ */
+export function buildEngineModelCompatContext(
+  models?: readonly { id: string; disabledReason?: string }[] | null,
+): EngineModelCompatContext {
+  if (!models || models.length === 0) return {};
+  const enabled = new Set<string>();
+  const disabled = new Set<string>();
+  for (const model of models) {
+    (model.disabledReason ? disabled : enabled).add(model.id);
+  }
+  return { signedCatalogEnabledModelIds: enabled, signedCatalogDisabledModelIds: disabled };
+}
+
+/**
+ * 单个引擎模型的兼容注解文案：disabledReason 是签名目录里更细的原文，优先展示；
+ * 否则回落到 getEngineModelCompat 的 reasonCode 经 i18n 派生（mimo/kimi 的"由 CLI 解析"等）。
+ */
+export function getEngineModelCompatReasonText(
+  kind: AgentEngineKind,
+  model: { id: string; disabledReason?: string },
+  context: EngineModelCompatContext,
+  t: Translations,
+): string | null {
+  if (model.disabledReason) return model.disabledReason;
+  const compat = getEngineModelCompat(kind, model.id, context);
+  return compat.reasonCode ? resolveEngineModelCompatReason(compat.reasonCode, t) : null;
+}
+
+const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
+  ready: 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200',
+  warning: 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200',
+  error: 'border-red-500/20 bg-red-500/[0.08] text-red-200',
+  info: 'border-sky-500/20 bg-sky-500/[0.08] text-sky-200',
+};
+
+const ENGINE_RELIABILITY_DOT_CLASS: Record<string, string> = {
+  ready: 'bg-emerald-300',
+  warning: 'bg-amber-300',
+  error: 'bg-red-300',
+  info: 'bg-sky-300',
+};
+
+/** 外部引擎可靠性摘要面板（tone 着色 + 摘要 + 能力/详情行）。 */
+export function EngineReliabilityPanel({ summary }: { summary: EngineReliabilitySummary }) {
+  const toneClass = ENGINE_RELIABILITY_TONE_CLASS[summary.tone] ?? ENGINE_RELIABILITY_TONE_CLASS.info;
+  const dotClass = ENGINE_RELIABILITY_DOT_CLASS[summary.tone] ?? ENGINE_RELIABILITY_DOT_CLASS.info;
+  const secondaryLine = summary.capabilityLine || summary.detail;
+  return (
+    <div className="border-b border-zinc-700/50 px-2 py-1.5">
+      <div
+        className={`rounded-md border px-2 py-1.5 text-[11px] leading-relaxed ${toneClass}`}
+        data-testid="engine-reliability-summary"
+      >
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
+          <span className="shrink-0 font-medium">{summary.label}</span>
+          <span className="min-w-0 truncate text-zinc-200/90" title={summary.summary}>
+            {summary.summary}
+          </span>
+        </div>
+        {secondaryLine && (
+          <div className="mt-0.5 truncate text-[10px] text-zinc-300/70" title={secondaryLine}>
+            {secondaryLine}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function EngineBillingBadge({ summary }: { summary: EngineBillingSummary }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 ${summary.badgeClass}`}
+      title={summary.detail}
+      data-engine-billing-mode={summary.mode}
+    >
+      {summary.label}
+    </span>
+  );
+}
+
 export function ProviderHealthBadge({ summary }: { summary: ProviderHealthSummary }) {
   return (
     <span
@@ -693,7 +825,9 @@ export function buildEngineReliabilitySummary(args: {
 }
 
 export function isExternalEngineKind(kind: AgentEngineKind): kind is ExternalAgentEngineKind {
-  return kind === 'codex_cli' || kind === 'claude_code';
+  // 与 agentEngineGuards.isExternalAgentEngine 保持单一真源：所有非 native 引擎都是外部 CLI。
+  // 旧实现只判 codex/claude，导致 mimo/kimi 在模型切换器里被当 native 处理（列不出 catalog 模型）。
+  return kind !== 'native';
 }
 
 export function buildModelSwitcherEngineSelection(

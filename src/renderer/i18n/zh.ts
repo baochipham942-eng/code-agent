@@ -253,6 +253,24 @@ export const zh = {
     },
   },
 
+  // 执行引擎 × 模型兼容矩阵（billingMode + 不可用原因）
+  engineCompat: {
+    // 引擎计费模式标签 + 详情（hover）
+    billing: {
+      subscription: { label: '订阅额度', detail: '经 CLI 登录吃订阅 / 账号额度，不按 API key 用量计费。' },
+      api_key_payg: { label: 'API 按量', detail: '随所选 provider 按 API key 用量计费。' },
+      free_tier: { label: '免费额度', detail: '在免费额度内运行，成本压力低。' },
+      unknown: { label: '计费未知', detail: '计费方式未确定，自动策略不把省钱作为切换依据。' },
+    },
+    // 模型在某引擎下不可用 / 需提示的结构化原因
+    reason: {
+      not_in_signed_catalog: '未在该引擎的签名模型目录中登记',
+      disabled_in_catalog: '该模型已在签名目录中停用',
+      provider_not_registered: '未匹配到已注册的模型提供商',
+      resolved_by_cli: '模型由 CLI 自身解析',
+    },
+  },
+
   // Disclosure Settings (Progressive Disclosure)
   disclosure: {
     title: '渐进披露',

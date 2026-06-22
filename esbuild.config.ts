@@ -26,11 +26,9 @@ const NATIVE_EXTERNALS = [
   'playwright',
   'playwright-core',
   'chromium-bidi',
-  'pptxgenjs',
   'mammoth',
   'exceljs',
   'qrcode',
-  'pdfkit',
   'sharp',
   'node-pty',
   '@ui-tars/sdk',
@@ -41,6 +39,12 @@ const NATIVE_EXTERNALS = [
 // 但第三方库可能仍 require('electron')（如 electron-store）。
 // TODO: 验证无第三方库需要后删除此 alias 和 electronMock.ts
 const ELECTRON_ALIAS = { electron: './src/web/electronMock.ts' };
+
+// pdfkit/pptxgenjs 不再 external（曾因未打进 app 资源导致打包后 require 崩溃，
+// v0.19.0 设计模式 PDF/PPTX 导出在启动期 import 触发"Web server exited ... exit status 1"）。
+// pdfkit 默认入口在运行时 fs 读 .afm 字体文件，打包后路径失效；改走 standalone 构建
+// （字体已内联 base64），可被 esbuild 安全打包进 bundle。pptxgenjs 为纯 JS，直接打包即可。
+const BUILD_ALIAS = { ...ELECTRON_ALIAS, pdfkit: 'pdfkit/js/pdfkit.standalone.js' };
 
 function normalizePemLiteral(value: string): string {
   return value.trim().replace(/\\n/g, '\n');
@@ -129,7 +133,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       outfile: 'dist/cli/index.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
-      alias: ELECTRON_ALIAS,
+      alias: BUILD_ALIAS,
       minify: !isDev,
       sourcemap: isDev,
       // 必须在任何 require 之前设置 CLI 模式，让 secureStorage.ts 跳过 keytar
@@ -151,7 +155,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       outfile: 'dist/web/webServer.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
-      alias: ELECTRON_ALIAS,
+      alias: BUILD_ALIAS,
       minify: !isDev,
       sourcemap: isDev,
       postBuild: writeControlPlanePublicKeysFile,
@@ -178,7 +182,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       outfile: 'dist/test-runner.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
-      alias: ELECTRON_ALIAS,
+      alias: BUILD_ALIAS,
     },
   };
 }

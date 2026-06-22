@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, FileDown, Pencil } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, FileDown, Pencil, Presentation } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
@@ -15,8 +15,8 @@ import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
 import { AnnotationLayer, type AnnotShape, type AnnotTool } from './AnnotationLayer';
-import { readWorkspaceImageAsDataUrl, exportImagePdf } from './designFiles';
-import { imagePdfExportName } from './designTypes';
+import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
+import { imagePdfExportName, canvasPptxExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import {
@@ -295,6 +295,8 @@ export const DesignCanvas: React.FC = () => {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [comparing, setComparing] = useState(false);
+  // 画布全幅 PPTX 导出进行中（防重复点击 + 按钮态）。
+  const [exportingPptx, setExportingPptx] = useState(false);
   // T4 diff 证据浮层目标节点（locked 徽章点开）。
   const [diffNode, setDiffNode] = useState<CanvasImageNode | null>(null);
   // 扩图本地态：方向 + 比例（1.0–2.0）。
@@ -454,6 +456,29 @@ export const DesignCanvas: React.FC = () => {
     await exportImagePdf({ dataUrl }, imagePdfExportName(Date.now()));
   };
 
+  // 画布全部活动图节点 → 全幅 PPTX（每张 1 张全幅 slide）→ 落「下载」。
+  // 薄版：导出当前画布上全部可见（未淘汰）图节点，按画布顺序。逐张解析成 dataUrl
+  // （data: 直用；相对路径经 readBinary 转）后送主进程 pptxgenjs 拼装。
+  const onExportPptx = async (): Promise<void> => {
+    if (visibleNodes.length === 0 || exportingPptx) return;
+    setExportingPptx(true);
+    try {
+      const images: Array<{ dataUrl?: string }> = [];
+      for (const node of visibleNodes) {
+        const dataUrl = /^data:/.test(node.src)
+          ? node.src
+          : runDir && !/^https?:/.test(node.src)
+            ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
+            : null;
+        if (dataUrl) images.push({ dataUrl });
+      }
+      if (images.length === 0) return;
+      await exportCanvasPptx(images, canvasPptxExportName(Date.now()));
+    } finally {
+      setExportingPptx(false);
+    }
+  };
+
   const onRepaint = async (): Promise<void> => {
     if (!selectedNode) return;
     const regions = annotations
@@ -559,6 +584,28 @@ export const DesignCanvas: React.FC = () => {
           <Palette className="h-6 w-6 text-zinc-600" />
           <span>{t.design.canvasEmpty}</span>
         </div>
+      )}
+
+      {/* 画布全幅 PPTX 导出（薄版）：当前画布上有图即显示，把全部活动图节点打成一份
+          全幅 deck（每张 1 张全幅 slide），给干系人打包。<1 张图时隐藏。 */}
+      {visibleNodes.length > 0 && (
+        <>
+          {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
+          <button
+            type="button"
+            onClick={() => void onExportPptx()}
+            disabled={exportingPptx}
+            className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
+          >
+            {exportingPptx ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Presentation className="h-3.5 w-3.5" />
+            )}
+            {t.design.exportCanvasPptx}
+          </button>
+          {/* ds-allow:end */}
+        </>
       )}
 
       {/* 选中图后的局部重绘面板 */}

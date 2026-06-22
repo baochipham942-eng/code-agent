@@ -96,6 +96,7 @@ export const zh = {
     imageModelUnconfigured: '未配置 Key',
     exportImage: '导出图片',
     exportImagePdf: '导出 PDF',
+    exportCanvasPptx: '导出 PPTX',
     importImage: '添加图片',
     importHint: '也可直接往画布粘贴(⌘V)或拖入图片；导入后选中即可圈选重绘',
     deviceDesktop: '桌面',

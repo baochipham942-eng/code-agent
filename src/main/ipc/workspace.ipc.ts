@@ -9,6 +9,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
+import { imagesToPptx } from '../services/design/pptxExport';
 import {
   listBrands as registryListBrands,
   saveBrand as registrySaveBrand,
@@ -897,6 +898,34 @@ async function handleExportImagePdf(
   });
 }
 
+// 画布产物多张 → 全幅 PPTX（CD-Parity §4 薄版）→ 落「下载」。
+// 每张来源二选一：imagePath（磁盘，须落设计目录内防越界读任意文件）或 dataUrl（renderer
+// 直接传 base64）。逐张解析成 Buffer → imagesToPptx 拼成全幅 deck → saveBinaryToDownloads。
+async function handleExportCanvasPptx(
+  payload: { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
+): Promise<{ filePath: string }> {
+  if (!payload?.outputName || !Array.isArray(payload.images) || payload.images.length === 0) {
+    throw new Error('exportCanvasPptx 需要 outputName 与至少一张 images');
+  }
+  const buffers: Buffer[] = [];
+  for (const src of payload.images) {
+    if (src?.imagePath) {
+      assertWithinDesignDir(src.imagePath, 'imagePath');
+      buffers.push(await fsp.readFile(src.imagePath));
+    } else if (src?.dataUrl) {
+      const base64 = src.dataUrl.replace(/^data:[^;]+;base64,/, '');
+      buffers.push(Buffer.from(base64, 'base64'));
+    } else {
+      throw new Error('exportCanvasPptx 的每张 images 需要 imagePath 或 dataUrl 之一');
+    }
+  }
+  const pptx = await imagesToPptx(buffers);
+  return handleSaveBinaryToDownloads({
+    fileName: payload.outputName,
+    base64: pptx.toString('base64'),
+  });
+}
+
 // ----------------------------------------------------------------------------
 // 品牌契约 registry（CD-Parity §1）：薄 handler，读写逻辑在独立模块
 // services/design/brandRegistry.ts，这里只做编排转发。
@@ -987,6 +1016,11 @@ export function registerWorkspaceHandlers(
         case 'exportImagePdf':
           data = await handleExportImagePdf(
             payload as { imagePath?: string; dataUrl?: string; outputName: string },
+          );
+          break;
+        case 'exportCanvasPptx':
+          data = await handleExportCanvasPptx(
+            payload as { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
           );
           break;
         case 'createFile':

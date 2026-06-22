@@ -35,6 +35,11 @@ export function imagePdfExportName(ts: number): string {
   return `neo-design-${ts}.pdf`;
 }
 
+/** 画布产物打包 PPTX 导出文件名（带时间戳避免覆盖）。 */
+export function canvasPptxExportName(ts: number): string {
+  return `neo-design-${ts}.pptx`;
+}
+
 /** 设计语境的表层定位：品牌主导（设计即产品）vs 产品主导（设计服务产品）。 */
 export type DesignSurface = 'brand' | 'product';
 

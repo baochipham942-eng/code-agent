@@ -326,6 +326,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'editImageByAnnotation',
     'expandDesignImage',
     'exportBundle',
+    'exportCanvasPptx',
     'exportImagePdf',
     'exportPrototypePdf',
     'generateDesignImage',

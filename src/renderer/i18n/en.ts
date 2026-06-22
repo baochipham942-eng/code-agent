@@ -98,6 +98,7 @@ export const en: Translations = {
     imageModelUnconfigured: 'No API key',
     exportImage: 'Export image',
     exportImagePdf: 'Export PDF',
+    exportCanvasPptx: 'Export PPTX',
     importImage: 'Add image',
     importHint: 'Or paste (⌘V) / drag images onto the canvas; select an imported image to repaint',
     deviceDesktop: 'Desktop',

@@ -150,6 +150,10 @@ jobs:
           fi
           npm run rebuild-native:system
           npm run build
+          # v0.19.0 事故闸：必须 bundle 的库（pdfkit/pptxgenjs 等）不得残留 esbuild-external，
+          # 否则打包后 require 崩、healthcheck 前退出。隐藏这些库做静态校验+启动冒烟，
+          # 等价打包后的模块可达性。早失败，省掉后面 ~25min 公证。
+          npm run verify:webserver-boot
           npm run tauri:prebuild-cleanup
           npm run release:security-scan
           bash scripts/tauri-release-bundle.sh "${BUNDLE_ARGS[@]}"

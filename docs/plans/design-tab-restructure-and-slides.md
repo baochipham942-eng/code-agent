@@ -80,6 +80,16 @@
 - 全链路真 key dogfood(出大纲→改→渲染→改字→导出 PPTX 可被 PowerPoint/WPS 打开)
 - TDD + codex-audit/multi-review;隔离 worktree,merge 走 --no-ff
 
+### 4.4 R1 勘探结论(一期会话已做,2026-06-22)
+- `prepareSlidesConcurrently`(parallelPptEngine.ts:82)= 纯函数,吃 `SlideData[]`+`ThemeConfig`,**不耦合 agent 上下文** ✓
+- `outlineToSlideData(topic, slides_count)`(parser.ts)= **确定性大纲**,不依赖 LLM ✓(二期「生成大纲」可先确定性、后 LLM 增强)
+- 编排逻辑全在 `executePptGenerate`(pptGenerate.ts:144,~700 行 ToolModule),耦合工具调用语义;**当前无 service 层**
+- **结论**:引擎核可复用,二期主活=把「topic/内容 → SlideData → pptx」核心从 `executePptGenerate` 抽成 `services/design/slidesGenerator`,tool 与新设计 IPC 共用。ADR 级抽取重构(R1=中风险,符合原估),工期维持 ~1-2 周。
+
+## 一期交付状态(2026-06-22)
+✅ 已实施 + typecheck 净 + 设计测试 177+6 全绿 + headless 截图逐 tab 验收。
+分支 `feat/design-tab-restructure`(worktree code-agent-tabreplan),commit f7bae8bfe,未推未合待拍板。
+
 ## 5. 风险与开放项
 - **R1** parallelPptEngine 与 agent 工具上下文耦合度未知 → 二期首件勘探,若强耦合则退回「薄版+排版增强」
 - **R2** 主树并发(多会话在途)→ 全程隔离 worktree + symlink node_modules

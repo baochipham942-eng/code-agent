@@ -6,6 +6,7 @@ import {
   resolveAgentEngineCatalogModel,
 } from '../../../src/main/services/agentEngine/agentEngineModelCatalog';
 import { createControlPlaneEnvelope } from '../../../vercel-api/lib/controlPlaneEnvelope';
+import { BUILTIN_AGENT_ENGINE_MODEL_CATALOG } from '../../../src/shared/agentEngineModelCatalog';
 
 function createKeyPair() {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -84,6 +85,42 @@ describe('Agent Engine model catalog parser', () => {
     expect(parsed.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
     expect(parsed.catalog.engines[0].models[1].disabledReason).toBe('下架');
     expect(resolveAgentEngineCatalogModel(parsed.catalog, 'codex_cli', 'gpt-5-retired')?.id).toBe('gpt-5');
+  });
+
+  it('accepts mimo_code and kimi_code engine kinds', () => {
+    const parsed = parseAgentEngineModelCatalogPayload(makeCatalog({
+      engines: [
+        {
+          kind: 'mimo_code',
+          defaultModel: 'mimo-coder',
+          models: [{ id: 'mimo-coder', label: 'MiMo Coder', capabilities: ['code'] }],
+        },
+        {
+          kind: 'kimi_code',
+          defaultModel: 'kimi-k2.5',
+          models: [{ id: 'kimi-k2.5', label: 'Kimi K2.5', capabilities: ['code'] }],
+        },
+      ],
+    }));
+
+    expect(parsed.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
+    expect(parsed.catalog.engines.map((engine) => engine.kind)).toEqual(['mimo_code', 'kimi_code']);
+  });
+});
+
+describe('bundled Agent Engine model catalog', () => {
+  it('registers mimo_code and kimi_code with resolvable default models', () => {
+    const parsed = parseAgentEngineModelCatalogPayload(BUILTIN_AGENT_ENGINE_MODEL_CATALOG, { sourcePath: 'bundled' });
+    expect(parsed.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
+    expect(parsed.catalog.engines.map((engine) => engine.kind)).toEqual(
+      expect.arrayContaining(['codex_cli', 'claude_code', 'mimo_code', 'kimi_code']),
+    );
+
+    // 未指定模型时回退到 defaultModel；指定时透传用户选择（resolveModelId 的核心路径）
+    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'mimo_code', null)?.id).toBe('mimo-coder');
+    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'mimo_code', 'mimo-coder')?.id).toBe('mimo-coder');
+    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', null)?.id).toBe('kimi-k2.5');
+    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', 'kimi-k2.5')?.id).toBe('kimi-k2.5');
   });
 });
 

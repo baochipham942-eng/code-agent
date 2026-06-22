@@ -1,7 +1,7 @@
-import type { AgentEngineKind } from '../../shared/contract/agentEngine';
+import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
 import { getBackgroundTaskLedger } from '../../main/tasks/backgroundTaskLedger';
 
-export type ExternalAgentEngineKind = Extract<AgentEngineKind, 'codex_cli' | 'claude_code'>;
+export type { ExternalAgentEngineKind };
 
 export interface ExternalAgentEngineFailureContext {
   kind: ExternalAgentEngineKind;
@@ -13,8 +13,15 @@ interface AgentEngineFailureLogger {
   warn(message: string, ...args: unknown[]): void;
 }
 
+const EXTERNAL_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
+  codex_cli: 'Codex CLI',
+  claude_code: 'Claude Code',
+  mimo_code: 'MiMo-Code',
+  kimi_code: 'Kimi Code',
+};
+
 function getExternalEngineLabel(kind: ExternalAgentEngineKind): string {
-  return kind === 'codex_cli' ? 'Codex CLI' : 'Claude Code';
+  return EXTERNAL_ENGINE_LABELS[kind];
 }
 
 export function recordExternalEngineFailure(

@@ -26,20 +26,56 @@ interface ExecProbeResult {
 }
 
 const VERSION_TIMEOUT_MS = 3000;
+/**
+ * 探测结果缓存 TTL。原实现每次 list() 都重跑 which + --version（每引擎最多 3s 超时），
+ * 模型切换器一次交互内的多次 list() 会叠加卡顿。短 TTL 去重一次交互的重复探测，
+ * 又把"装好引擎后看不到"的窗口控制在数秒内（如需立即刷新可调 invalidate()）。
+ */
+const DETECT_CACHE_TTL_MS = 5000;
+
+export interface AgentEngineRegistryOptions {
+  cacheTtlMs?: number;
+  now?: () => number;
+}
 
 export class AgentEngineRegistry {
+  private readonly cacheTtlMs: number;
+  private readonly now: () => number;
+  private cache: { descriptors: AgentEngineDescriptor[]; expiresAt: number } | null = null;
+
+  constructor(options: AgentEngineRegistryOptions = {}) {
+    this.cacheTtlMs = options.cacheTtlMs ?? DETECT_CACHE_TTL_MS;
+    this.now = options.now ?? Date.now;
+  }
+
   async list(): Promise<AgentEngineDescriptor[]> {
-    const detectedAt = Date.now();
-    const [codex, claude] = await Promise.all([
+    const now = this.now();
+    if (this.cache && this.cache.expiresAt > now) {
+      return this.cache.descriptors;
+    }
+
+    const detectedAt = now;
+    const [codex, claude, mimo, kimi] = await Promise.all([
       this.detectCodex(detectedAt),
       this.detectClaude(detectedAt),
+      this.detectMimo(detectedAt),
+      this.detectKimi(detectedAt),
     ]);
 
-    return [
+    const descriptors = [
       this.nativeDescriptor(detectedAt),
       codex,
       claude,
+      mimo,
+      kimi,
     ];
+    this.cache = { descriptors, expiresAt: now + this.cacheTtlMs };
+    return descriptors;
+  }
+
+  /** 清除探测缓存，强制下次 list() 重新探测（如用户刚安装/重装引擎后） */
+  invalidate(): void {
+    this.cache = null;
   }
 
   async get(kind: AgentEngineKind): Promise<AgentEngineDescriptor> {
@@ -83,7 +119,7 @@ export class AgentEngineRegistry {
       command: 'codex exec --json',
       binaryPath: probe.binaryPath,
       version: probe.version,
-      capabilities: installed ? ['execute', 'stream_events', 'import_sessions', 'review'] : ['import_sessions'],
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
       defaultPermissionProfile: 'read_only',
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
@@ -124,7 +160,7 @@ export class AgentEngineRegistry {
       command: 'claude -p --output-format stream-json --input-format text --include-partial-messages --permission-mode plan',
       binaryPath: probe.binaryPath,
       version: probe.version,
-      capabilities: installed ? ['execute', 'stream_events', 'import_sessions', 'review'] : ['import_sessions'],
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
       defaultPermissionProfile: 'read_only',
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
@@ -147,6 +183,90 @@ export class AgentEngineRegistry {
         notes: [
           'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
           'Claude Code adapter ignores terminal clutter and prefers the final result text when present.',
+        ],
+      },
+    };
+  }
+
+  private async detectMimo(detectedAt: number): Promise<AgentEngineDescriptor> {
+    const probe = await this.probeCommand('mimo', ['--version']);
+    const installed = Boolean(probe.binaryPath && !probe.error);
+    const runtimeState: AgentEngineRuntimeState = installed ? 'ready' : 'not_configured';
+
+    return {
+      kind: 'mimo_code',
+      label: 'MiMo-Code',
+      summary: 'Runs MiMo-Code CLI through a controlled workspace cwd and normalized JSON event stream.',
+      installState: installed ? 'installed' : 'missing',
+      runtimeState,
+      executable: installed,
+      command: 'mimo run --format json',
+      binaryPath: probe.binaryPath,
+      version: probe.version,
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt,
+      lastError: probe.error,
+      auditNotes: [
+        'P0 execution uses read-only sandbox by default.',
+        'Launch cwd, command summary, and log path are written to the background task ledger.',
+        'Credentials (OAuth / subscription key) are read by the CLI from MIMO_HOME; the adapter never injects API keys.',
+      ],
+      reliability: {
+        cliStatus: installed ? 'available' : probe.binaryPath ? 'error' : 'missing',
+        authState: 'not_checked',
+        quotaState: 'not_checked',
+        streamingMode: 'json',
+        toolSupport: 'workspace_tools',
+        transcriptMode: 'clean_stream_json',
+        partialMessages: false,
+        mcpBridge: false,
+        notes: [
+          'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
+        ],
+      },
+    };
+  }
+
+  private async detectKimi(detectedAt: number): Promise<AgentEngineDescriptor> {
+    const probe = await this.probeCommand('kimi', ['--version']);
+    const installed = Boolean(probe.binaryPath && !probe.error);
+    const runtimeState: AgentEngineRuntimeState = installed ? 'ready' : 'not_configured';
+
+    return {
+      kind: 'kimi_code',
+      label: 'Kimi Code',
+      summary: 'Runs Kimi Code CLI through a controlled workspace cwd and normalized stream-json event stream.',
+      installState: installed ? 'installed' : 'missing',
+      runtimeState,
+      executable: installed,
+      command: 'kimi -p --output-format stream-json',
+      binaryPath: probe.binaryPath,
+      version: probe.version,
+      capabilities: installed ? ['execute', 'stream_events', 'review'] : [],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt,
+      lastError: probe.error,
+      auditNotes: [
+        'P0 execution uses read-only sandbox by default.',
+        'Launch cwd, command summary, and log path are written to the background task ledger.',
+        'Kimi CLI does not read API keys from env; credentials live under KIMI_CODE_HOME via kimi login / config.toml.',
+      ],
+      reliability: {
+        cliStatus: installed ? 'available' : probe.binaryPath ? 'error' : 'missing',
+        authState: 'not_checked',
+        quotaState: 'not_checked',
+        streamingMode: 'stream_json',
+        toolSupport: 'workspace_tools',
+        transcriptMode: 'clean_stream_json',
+        partialMessages: false,
+        mcpBridge: false,
+        notes: [
+          'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
         ],
       },
     };

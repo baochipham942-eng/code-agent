@@ -869,6 +869,14 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     // steer/interrupt 导致的 abort 不是错误，返回空文本让主循环处理
     if (ctx.runtime.needsReinference || ctx.runtime.isInterrupted || ctx.runtime.isCancelled) {
       logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
+      // 中断时本轮请求已派发，input tokens 是真实沉没成本——记一次避免异常路径漏记
+      // （与 Max Mode 中止记沉没成本对称；output 在中断前无法准确估算，保守只记 input）
+      const abortedInputTokens = estimateModelMessageTokens(
+        modelMessages.map((m) => ({ role: m.role, content: m.content })),
+      );
+      if (abortedInputTokens > 0) {
+        ctx.recordTokenUsage(abortedInputTokens, 0);
+      }
       return { type: 'text', content: '' };
     }
 

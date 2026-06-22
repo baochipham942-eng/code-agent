@@ -70,5 +70,33 @@ export const BUILTIN_AGENT_ENGINE_MODEL_CATALOG: AgentEngineModelCatalog = {
         },
       ],
     },
+    {
+      kind: 'mimo_code',
+      defaultModel: 'mimo-coder',
+      updatedAt: UPDATED_AT,
+      models: [
+        {
+          id: 'mimo-coder',
+          label: 'MiMo Coder',
+          capabilities: ['code', 'reasoning'],
+          recommended: true,
+          updatedAt: UPDATED_AT,
+        },
+      ],
+    },
+    {
+      kind: 'kimi_code',
+      defaultModel: 'kimi-k2.5',
+      updatedAt: UPDATED_AT,
+      models: [
+        {
+          id: 'kimi-k2.5',
+          label: 'Kimi K2.5',
+          capabilities: ['code', 'reasoning', 'longContext'],
+          recommended: true,
+          updatedAt: UPDATED_AT,
+        },
+      ],
+    },
   ],
 };

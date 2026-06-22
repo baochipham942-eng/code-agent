@@ -56,6 +56,8 @@ import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
+  KimiCliAdapter,
+  MimoCliAdapter,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -280,7 +282,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model),
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true }),
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
@@ -296,7 +298,41 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model),
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true }),
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+      });
+      return;
+    }
+    if (engine.kind === 'mimo_code') {
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      await new MimoCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model),
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+      });
+      return;
+    }
+    if (engine.kind === 'kimi_code') {
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      // Kimi CLI 不读 env API key；per-user KIMI_CODE_HOME 凭据隔离目录由后续凭据接口派生后
+      // 通过 KimiCliRunRequest.kimiCodeHome 注入（当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
+      await new KimiCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code', launch.model),
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,

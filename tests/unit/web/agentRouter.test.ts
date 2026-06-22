@@ -15,6 +15,8 @@ const mockCreateAgentLoop = vi.fn();
 const agentEngineMocks = vi.hoisted(() => ({
   codexRun: vi.fn(),
   claudeRun: vi.fn(),
+  mimoRun: vi.fn(),
+  kimiRun: vi.fn(),
   resolveExternalEngineLaunch: vi.fn(),
   ledgerUpsertTask: vi.fn(),
   ledgerAppendEvent: vi.fn(),
@@ -69,6 +71,18 @@ vi.mock('../../../src/main/services/agentEngine', () => ({
       run: agentEngineMocks.claudeRun,
     };
   }),
+  MimoCliAdapter: vi.fn(function MimoCliAdapterMock() {
+    return {
+      run: agentEngineMocks.mimoRun,
+    };
+  }),
+  KimiCliAdapter: vi.fn(function KimiCliAdapterMock() {
+    return {
+      run: agentEngineMocks.kimiRun,
+    };
+  }),
+  isExternalAgentEngine: (kind: unknown) =>
+    kind === 'codex_cli' || kind === 'claude_code' || kind === 'mimo_code' || kind === 'kimi_code',
   resolveExternalEngineLaunch: (...args: unknown[]) => agentEngineMocks.resolveExternalEngineLaunch(...args),
   getRemoteAgentEngineModelCatalogService: () => ({
     resolveModelId: async (_kind: unknown, requested?: string | null) => requested ?? undefined,
@@ -175,6 +189,8 @@ describe('createAgentRouter', () => {
     }));
     agentEngineMocks.codexRun.mockReset();
     agentEngineMocks.claudeRun.mockReset();
+    agentEngineMocks.mimoRun.mockReset();
+    agentEngineMocks.kimiRun.mockReset();
     agentEngineMocks.ledgerUpsertTask.mockReset();
     agentEngineMocks.ledgerAppendEvent.mockReset();
     agentEngineMocks.ledgerQueueNotification.mockReset();
@@ -831,6 +847,177 @@ describe('createAgentRouter', () => {
     expect(createCLIAgent).not.toHaveBeenCalled();
     expect(updateSession).toHaveBeenCalledWith(
       'session-codex-engine',
+      expect.objectContaining({ status: 'completed' }),
+    );
+  });
+
+  it('routes MiMo engine sessions through the MiMo adapter, passing the selected model directly', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-mimo-engine',
+      title: 'MiMo engine',
+      type: 'chat',
+      workingDirectory: '/tmp/mimo-workspace',
+      engine: {
+        kind: 'mimo_code',
+        model: 'mimo-coder',
+        cwd: '/tmp/mimo-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    // launch.model 透传 mimo-coder（未注册签名 catalog，不走 resolveModelId）。
+    agentEngineMocks.resolveExternalEngineLaunch.mockImplementationOnce((session, engine, requestedCwd) => ({
+      cwd: requestedCwd || session?.workingDirectory || engine?.cwd,
+      workspaceRoot: engine?.cwd || session?.workingDirectory,
+      permissionProfile: 'read_only',
+      model: engine?.model,
+    }));
+
+    agentEngineMocks.mimoRun.mockImplementationOnce(async (request) => {
+      request.emitEvent?.({
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'MIMO_ROUTED_OK',
+          turnId: 'turn-mimo',
+        },
+      });
+      request.emitEvent?.({ type: 'agent_complete', data: null });
+      return {
+        runId: 'mimo-run-1',
+        sessionId: request.sessionId,
+        engine: 'mimo_code',
+        status: 'completed',
+        outputText: 'MIMO_ROUTED_OK',
+        exitCode: 0,
+      };
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getSession,
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '只回复 MIMO_ROUTED_OK',
+        sessionId: 'session-mimo-engine',
+        context: {
+          workingDirectory: '/tmp/mimo-workspace',
+        },
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('MIMO_ROUTED_OK');
+    expect(agentEngineMocks.mimoRun).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-mimo-engine',
+      prompt: '只回复 MIMO_ROUTED_OK',
+      cwd: '/tmp/mimo-workspace',
+      workspaceRoot: '/tmp/mimo-workspace',
+      permissionProfile: 'read_only',
+      model: 'mimo-coder',
+    }));
+    expect(agentEngineMocks.codexRun).not.toHaveBeenCalled();
+    expect(agentEngineMocks.claudeRun).not.toHaveBeenCalled();
+    expect(createCLIAgent).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenCalledWith(
+      'session-mimo-engine',
+      expect.objectContaining({ status: 'completed' }),
+    );
+  });
+
+  it('routes Kimi engine sessions through the Kimi adapter, passing the selected model directly', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-kimi-engine',
+      title: 'Kimi engine',
+      type: 'chat',
+      workingDirectory: '/tmp/kimi-workspace',
+      engine: {
+        kind: 'kimi_code',
+        model: 'kimi-k2.5',
+        cwd: '/tmp/kimi-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.resolveExternalEngineLaunch.mockImplementationOnce((session, engine, requestedCwd) => ({
+      cwd: requestedCwd || session?.workingDirectory || engine?.cwd,
+      workspaceRoot: engine?.cwd || session?.workingDirectory,
+      permissionProfile: 'read_only',
+      model: engine?.model,
+    }));
+
+    agentEngineMocks.kimiRun.mockImplementationOnce(async (request) => {
+      request.emitEvent?.({
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'KIMI_ROUTED_OK',
+          turnId: 'turn-kimi',
+        },
+      });
+      request.emitEvent?.({ type: 'agent_complete', data: null });
+      return {
+        runId: 'kimi-run-1',
+        sessionId: request.sessionId,
+        engine: 'kimi_code',
+        status: 'completed',
+        outputText: 'KIMI_ROUTED_OK',
+        exitCode: 0,
+      };
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getSession,
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '只回复 KIMI_ROUTED_OK',
+        sessionId: 'session-kimi-engine',
+        context: {
+          workingDirectory: '/tmp/kimi-workspace',
+        },
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('KIMI_ROUTED_OK');
+    expect(agentEngineMocks.kimiRun).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-kimi-engine',
+      prompt: '只回复 KIMI_ROUTED_OK',
+      cwd: '/tmp/kimi-workspace',
+      workspaceRoot: '/tmp/kimi-workspace',
+      permissionProfile: 'read_only',
+      model: 'kimi-k2.5',
+    }));
+    expect(createCLIAgent).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenCalledWith(
+      'session-kimi-engine',
       expect.objectContaining({ status: 'completed' }),
     );
   });

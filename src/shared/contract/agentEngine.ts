@@ -4,7 +4,7 @@
 
 import type { ModelCapability } from './model';
 
-export type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code';
+export type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code' | 'mimo_code' | 'kimi_code';
 
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
@@ -193,7 +193,7 @@ export interface AgentEngineModelCatalogResult {
   expiresAt?: string;
 }
 
-export const AGENT_ENGINE_KINDS: AgentEngineKind[] = ['native', 'codex_cli', 'claude_code'];
+export const AGENT_ENGINE_KINDS: AgentEngineKind[] = ['native', 'codex_cli', 'claude_code', 'mimo_code', 'kimi_code'];
 
 export const DEFAULT_AGENT_ENGINE_SESSION: AgentEngineSessionMetadata = {
   kind: 'native',

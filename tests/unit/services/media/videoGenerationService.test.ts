@@ -172,3 +172,64 @@ describe('downloadVideoAsBuffer — SSRF 守卫 + 下载', () => {
     expect(buf.toString()).toBe('MP4BYTES');
   });
 });
+
+// ── P3 MiniMax 海螺：按 provider 路由到 submit→query→files/retrieve 三步流程 ──
+function installMinimaxFetchMock(downloadUrl = 'https://minimax.example.com/out.mp4'): CapturedCall[] {
+  const calls: CapturedCall[] = [];
+  globalThis.fetch = vi.fn(async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+    calls.push({ url, body, headers: init?.headers as Record<string, string> });
+    if (url.includes('/files/retrieve')) {
+      return jsonResponse({ file: { download_url: downloadUrl }, base_resp: { status_code: 0, status_msg: 'success' } });
+    }
+    if (url.includes('/query/video_generation')) {
+      return jsonResponse({ status: 'Success', file_id: 'file-123', base_resp: { status_code: 0, status_msg: 'success' } });
+    }
+    // submit
+    return jsonResponse({ task_id: 'mm-task-1', base_resp: { status_code: 0, status_msg: 'success' } });
+  }) as unknown as typeof fetch;
+  return calls;
+}
+
+describe('generateVideo — MiniMax 海螺路由', () => {
+  it('t2v(MiniMax-Hailuo-02)：submit→query→retrieve 取 download_url，body 带 model+prompt', { timeout: 30000 }, async () => {
+    const calls = installMinimaxFetchMock();
+    const res = await generateVideo({ model: 'MiniMax-Hailuo-02', mode: 't2v', prompt: '海边日落' });
+    expect(res.url).toBe('https://minimax.example.com/out.mp4');
+    expect(res.actualModel).toBe('MiniMax-Hailuo-02');
+    const submit = calls[0];
+    expect(submit.url).toContain('/video_generation');
+    expect(submit.url).not.toContain('/query/'); // 提交不是查询端点
+    expect(submit.headers?.Authorization).toMatch(/^Bearer /);
+    expect(submit.body).toMatchObject({ model: 'MiniMax-Hailuo-02', prompt: '海边日落' });
+    expect(calls.some((c) => c.url.includes('/query/video_generation?task_id=mm-task-1'))).toBe(true);
+    expect(calls.some((c) => c.url.includes('/files/retrieve?file_id=file-123'))).toBe(true);
+  });
+
+  it('i2v(I2V-01)：底图走 first_frame_image（非 img_url）', { timeout: 30000 }, async () => {
+    const calls = installMinimaxFetchMock();
+    await generateVideo({ model: 'I2V-01', mode: 'i2v', imageDataUrl: 'data:image/png;base64,AAAA' });
+    expect(calls[0].body).toMatchObject({ model: 'I2V-01', first_frame_image: 'data:image/png;base64,AAAA' });
+    expect((calls[0].body as Record<string, unknown>).img_url).toBeUndefined();
+  });
+
+  it('提交 base_resp.status_code!=0：抛 status_msg，不进入轮询', async () => {
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      calls.push(String(input));
+      return jsonResponse({ task_id: '', base_resp: { status_code: 2013, status_msg: 'invalid params' } });
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'MiniMax-Hailuo-02', mode: 't2v', prompt: 'x' })).rejects.toThrow(/2013|invalid params/);
+    expect(calls.some((u) => u.includes('/query/'))).toBe(false);
+  });
+
+  it('查询 Fail：抛错', { timeout: 30000 }, async () => {
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/query/video_generation')) return jsonResponse({ status: 'Fail', base_resp: { status_code: 1000, status_msg: 'gen failed' } });
+      return jsonResponse({ task_id: 'mm-1', base_resp: { status_code: 0 } });
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'MiniMax-Hailuo-02', mode: 't2v', prompt: 'x' })).rejects.toThrow(/gen failed|失败/);
+  });
+});

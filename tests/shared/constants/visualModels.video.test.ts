@@ -8,9 +8,13 @@ import {
 } from '../../../src/shared/constants/visualModels';
 
 describe('VIDEO_MODELS 注册表', () => {
-  it('全部 provider 为 dashscope（P2 单 provider）', () => {
+  it('provider 仅限已接入集合，且 P3 起多 provider（dashscope + minimax 均在册）', () => {
     expect(VIDEO_MODELS.length).toBeGreaterThan(0);
-    expect(VIDEO_MODELS.every((m) => m.provider === 'dashscope')).toBe(true);
+    const allowed = new Set(['dashscope', 'minimax']);
+    expect(VIDEO_MODELS.every((m) => allowed.has(m.provider))).toBe(true);
+    const providers = new Set(VIDEO_MODELS.map((m) => m.provider));
+    expect(providers.has('dashscope')).toBe(true);
+    expect(providers.has('minimax')).toBe(true);
   });
 
   it('每个模型至少声明一个 cap，且时长区间合法（min<=default<=max 且 >0）', () => {

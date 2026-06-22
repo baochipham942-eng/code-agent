@@ -3,7 +3,7 @@
 
 export type ImageCap = 't2i' | 'maskEdit' | 'expand' | 'annotEdit';
 export type ImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
-export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage';
+export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax';
 
 export interface VisualImageModel {
   /** 切换器/持久化用的稳定选择键。 */
@@ -49,7 +49,7 @@ export type VideoCap = 't2v' | 'i2v';
 export interface VisualVideoModel {
   id: string;
   label: string;
-  provider: VisualProviderId; // P2 仅 'dashscope'
+  provider: VisualProviderId; // P2 dashscope；P3 增 minimax（海螺）
   caps: VideoCap[];
   /** 时长区间（秒）。固定时长模型令 min=default=max（如 i2v turbo 固定 5s）。 */
   minDurationSec: number;
@@ -75,6 +75,26 @@ export const VIDEO_MODELS: readonly VisualVideoModel[] = [
     minDurationSec: 5,
     maxDurationSec: 5, // turbo 档固定 5s
     defaultDurationSec: 5,
+  },
+  // P3 第二 provider：MiniMax 海螺（端点/模型名/必填字段经免费探针核实）。t2v 与 i2v 用不同模型；
+  // 时长固定 6s（MVP 不暴露 duration 参数，用模型默认）。
+  {
+    id: 'MiniMax-Hailuo-02',
+    label: '海螺 文生视频',
+    provider: 'minimax',
+    caps: ['t2v'],
+    minDurationSec: 6,
+    maxDurationSec: 6,
+    defaultDurationSec: 6,
+  },
+  {
+    id: 'I2V-01',
+    label: '海螺 图生视频',
+    provider: 'minimax',
+    caps: ['i2v'],
+    minDurationSec: 6,
+    maxDurationSec: 6,
+    defaultDurationSec: 6,
   },
 ];
 

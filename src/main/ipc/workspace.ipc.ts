@@ -24,6 +24,7 @@ import {
   getDashscopeApiKey,
   getZhipuOfficialApiKey,
   getGptImageConfig,
+  getMinimaxApiKey,
 } from '../services/media/imageGenerationService';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
@@ -895,6 +896,7 @@ function providerKeyConfigured(provider: string): boolean {
   if (provider === 'zhipu') return !!getZhipuOfficialApiKey();
   if (provider === 'openrouter') return !!getConfigService().getApiKey('openrouter');
   if (provider === 'gptimage') return !!getGptImageConfig();
+  if (provider === 'minimax') return !!getMinimaxApiKey();
   return false;
 }
 

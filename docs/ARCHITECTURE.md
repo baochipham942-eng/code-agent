@@ -39,7 +39,7 @@
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 | [Windows 支持](./architecture/windows-support.md) | win32-x64 移植：安全与路径地基、PowerShell 命令安全规则包、NSIS unsigned + minisign 发版链、真机调试记录、朋友验收清单 |
 | [Intel x64 支持](./architecture/intel-x64-support.md) | darwin 双架构（arm64 + x64）矩阵构建、资源覆盖机制、updater manifest 合并先例 |
-| [Design Mode 设计工作区](./architecture/design-mode.md) | 全屏设计工作台 as-built：**Tab 按交付媒介分 4 类(网页/图/演示稿/视频，`DesignOutputType` UI 聚合零破坏)**；网页(agent 编排) + 图〔设计稿/信息图〕(renderer 直连出图) + 视频(t2v/i2v) + **厚版演示稿(§15：引擎从 agent 工具抽 `services/design/slidesGenerator`，SlideData[] 单一真源，大纲编辑器/逐页预览/就地改字；4 增强=品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型页面可选，付费 opt-in 成本前置)**；konva 自研无限画布、T1-T6 变体 spine/成本/一致性；P1 视觉模型注册表(D1 单源)多模型切换 + 标注重绘 + SSRF 守卫 |
+| [Design Mode 设计工作区](./architecture/design-mode.md) | 全屏设计工作台 as-built：**Tab 按交付媒介分 4 类(网页/图/演示稿/视频，`DesignOutputType` UI 聚合零破坏)**；网页(agent 编排) + 图〔设计稿/信息图〕(renderer 直连出图) + 视频(t2v/i2v) + **厚版演示稿(§15：引擎从 agent 工具抽 `services/design/slidesGenerator`，SlideData[] 单一真源，大纲编辑器/逐页预览/就地改字；4 增强=品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型页面可选，付费 opt-in 成本前置)**；konva 自研无限画布、T1-T6 变体 spine/成本/一致性；P1 视觉模型注册表(D1 单源)多模型切换 + 标注重绘 + SSRF 守卫；**UC 参考图垫图(生成前贴图喂 wanx description_edit) + 统一历史(图像/视频/原型收口左侧一处、role-aware 分组)** |
 
 ### 近期规格
 

@@ -136,13 +136,13 @@ const StringListEditor: React.FC<StringListEditorProps> = ({ s, label, placehold
             size="sm"
             aria-label={s.removeRow}
             title={s.removeRow}
-            icon={<X />}
+            icon={<X className="h-3.5 w-3.5" />}
             onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
           />
         </div>
       ))}
       <div>
-        <Button variant="ghost" size="sm" leftIcon={<Plus />} onClick={() => onChange([...rows, ''])}>
+        <Button variant="ghost" size="sm" leftIcon={<Plus className="h-3.5 w-3.5" />} onClick={() => onChange([...rows, ''])}>
           {s.addRow}
         </Button>
       </div>
@@ -220,7 +220,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={<ImageDown />}
+              leftIcon={<ImageDown className="h-3.5 w-3.5" />}
               loading={extracting}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -340,7 +340,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
       <p className="text-xs text-zinc-400">{s.subtitle}</p>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-zinc-300">{s.listTitle}</span>
-        <Button variant="secondary" size="sm" leftIcon={<Plus />} onClick={onCreate}>
+        <Button variant="secondary" size="sm" leftIcon={<Plus className="h-3.5 w-3.5" />} onClick={onCreate}>
           {s.create}
         </Button>
       </div>
@@ -377,7 +377,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
                   size="sm"
                   aria-label={s.edit}
                   title={s.edit}
-                  icon={<Pencil />}
+                  icon={<Pencil className="h-3.5 w-3.5" />}
                   onClick={() => onEdit(b.id)}
                 />
                 <IconButton
@@ -385,7 +385,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
                   size="sm"
                   aria-label={s.delete}
                   title={s.delete}
-                  icon={<Trash2 />}
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
                   onClick={() => onDelete(b.id)}
                 />
               </li>

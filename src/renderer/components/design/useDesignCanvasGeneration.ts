@@ -176,6 +176,7 @@ export function useDesignCanvasGeneration(): {
     const outputType = form.outputType;
     if (outputType === 'prototype') return; // 由 useDesignGeneration 处理
     if (outputType === 'video') return; // 视频走 generateVideo，非文生图
+    if (outputType === 'slides') return; // 演示稿走厚版独立链路（二期），非文生图
 
     if (!form.requirement.trim()) {
       useDesignCanvasStore.getState().setError(t.design.errNoRequirement);

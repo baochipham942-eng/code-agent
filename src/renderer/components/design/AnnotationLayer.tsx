@@ -89,13 +89,20 @@ interface AnnotationLayerProps {
   shapes: AnnotShape[];
   onShapesChange: (s: AnnotShape[]) => void;
   tool: AnnotTool;
+  /** 文字工具点击时回调（世界坐标），由上层在画布内渲染输入框替代原生 window.prompt。 */
+  onRequestText?: (world: { x: number; y: number }) => void;
 }
 
 /**
  * 标注渲染层：把 shapes 画成红色 konva 图元，并把 Stage 指针事件
  * 经 reduceAnnot 归约后回传。挂在 DesignCanvas 的 <Stage> 内、与图层平级。
  */
-export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({ shapes, onShapesChange, tool }) => {
+export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
+  shapes,
+  onShapesChange,
+  tool,
+  onRequestText,
+}) => {
   // 是否正在拖拽进行中（pen/arrow/rect 需要 down→move→up）。
   const drawing = useRef(false);
 
@@ -111,10 +118,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({ shapes, onShap
     const w = worldPoint(e);
     if (!w) return;
     if (tool === 'text') {
-      // 文字工具：弹出输入，非空才落定。
-      const text = typeof window !== 'undefined' ? window.prompt('标注文字') ?? '' : '';
-      if (!text.trim()) return;
-      onShapesChange(reduceAnnot(shapes, { type: 'down', tool, x: w.x, y: w.y, text }));
+      // 文字工具：请上层在点击处渲染画布内输入框（替代原生 window.prompt，与深色 UI 一致）。
+      onRequestText?.(w);
       return;
     }
     drawing.current = true;

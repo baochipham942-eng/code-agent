@@ -88,10 +88,14 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
     <div className="flex flex-col gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-zinc-300">{t.design.historyPanelTitle}</span>
-        <span className="text-[11px] text-zinc-500">
-          {t.design.historyTotalSpend}{' '}
-          <span className="font-mono text-emerald-300">{totalSpend === 0 ? t.design.costFree : formatCny(totalSpend)}</span>
-        </span>
+        {/* 累计花费仅在已有步骤时显示——未生成时不该出现「免费」（与出图前预估自相矛盾）。
+            有步骤但全为免费档模型（totalSpend===0）才显示「免费」。 */}
+        {hasSteps && (
+          <span className="text-[11px] text-zinc-500">
+            {t.design.historyTotalSpend}{' '}
+            <span className="font-mono text-emerald-300">{totalSpend === 0 ? t.design.costFree : formatCny(totalSpend)}</span>
+          </span>
+        )}
       </div>
 
       {!hasSteps && <p className="text-[11px] leading-snug text-zinc-500">{t.design.historyPanelEmpty}</p>}

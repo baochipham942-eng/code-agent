@@ -23,10 +23,17 @@ function extFromType(type: string): string {
   return sub === 'jpeg' ? 'jpg' : sub.replace(/[^a-z0-9]/g, '') || 'png';
 }
 
-export function useDesignCanvasImport(): { importFiles: (files: File[]) => Promise<void> } {
+/** 导入选项：role='reference' 时落为参考图节点（生成前贴入，喂模型用，不进版本序号）。 */
+export interface ImportOptions {
+  role?: 'reference' | 'output';
+}
+
+export function useDesignCanvasImport(): {
+  importFiles: (files: File[], options?: ImportOptions) => Promise<void>;
+} {
   const { t } = useI18n();
 
-  const importFiles = useCallback(async (files: File[]) => {
+  const importFiles = useCallback(async (files: File[], options?: ImportOptions) => {
     const images = files.filter((f) => f.type.startsWith('image/'));
     if (images.length === 0) return;
 
@@ -65,6 +72,7 @@ export function useDesignCanvasImport(): { importFiles: (files: File[]) => Promi
           height,
           createdAt: Date.now(),
         };
+        if (options?.role === 'reference') node.role = 'reference';
         useDesignCanvasStore.getState().addNode(node);
       }
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());

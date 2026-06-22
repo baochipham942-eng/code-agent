@@ -37,6 +37,8 @@ export interface Variant {
   op?: string;
   /** 生成/编辑指令或标题（对比与历史用，可选）。 */
   label?: string;
+  /** 节点角色：'reference'=参考图（喂模型用，不进版本时间线序号）；缺省=产物。 */
+  role?: 'reference' | 'output';
   payload: VariantPayload;
 }
 
@@ -186,6 +188,7 @@ function normalizeVariant(raw: unknown): Variant | null {
   if (typeof r.parentId === 'string') v.parentId = r.parentId;
   if (typeof r.op === 'string') v.op = r.op;
   if (typeof r.label === 'string') v.label = r.label;
+  if (r.role === 'reference') v.role = 'reference';
   return v;
 }
 

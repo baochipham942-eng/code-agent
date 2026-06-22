@@ -67,6 +67,17 @@ describe('proto variant', () => {
   });
 });
 
+describe('canvasNodeToVariant role 透传（P0 统一画布）', () => {
+  it('reference 节点 → variant.role=reference', () => {
+    expect(canvasNodeToVariant(node({ role: 'reference' })).role).toBe('reference');
+  });
+
+  it('产物节点（role 缺省）→ variant.role 不落，按产物处理', () => {
+    expect(canvasNodeToVariant(node()).role).toBeUndefined();
+    expect(canvasNodeToVariant(node({ role: 'output' })).role).toBeUndefined();
+  });
+});
+
 describe('canvasNodeToVariant 空 label 回退（审计 R2 LOW symmetric）', () => {
   it('空串/纯空白 label 回退到 prompt（与 stepName 的 trim 判定对齐）', () => {
     const v1 = canvasNodeToVariant(node({ label: '', prompt: '橙色按钮' }));

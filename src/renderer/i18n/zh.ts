@@ -89,6 +89,7 @@ export const zh = {
     diffEvidenceTitle: 'diff 证据 · 被偷改的未选区域',
     diffEvidenceHint: '红色标记是模型在你未选区域的越界改动，已逐像素锁回原图，保证"只改这块其余不变"。',
     diffClose: '关闭',
+    videoPlayClose: '关闭',
     diffMaxDelta: '最大像素差',
     diffChangedPixels: '越界像素数',
     aspectRatioLabel: '尺寸比例',

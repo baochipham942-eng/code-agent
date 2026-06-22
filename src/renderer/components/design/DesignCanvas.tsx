@@ -23,7 +23,13 @@ import {
   worldRectToImageRegion,
   type Rect,
 } from './designCanvasMask';
-import { isImageNode, type CanvasImageNode } from './designCanvasTypes';
+import {
+  isImageNode,
+  isVideoNode,
+  formatDurationLabel,
+  type CanvasImageNode,
+  type CanvasVideoNode,
+} from './designCanvasTypes';
 
 // 缩放范围与步进（避免画布塌缩/无限放大）。
 const SCALE_MIN = 0.1;
@@ -163,6 +169,101 @@ const CanvasImage: React.FC<{
   );
 };
 
+// P2 视频节点：poster 缩略图（有则懒加载，无则深色占位）+ 居中播放徽标 + 左下时长 +
+// 选中/主版高亮（与 CanvasImage 同视觉语言）。点播放徽标打开 DOM <video> 浮层。
+const KonvaVideoNode: React.FC<{
+  node: CanvasVideoNode;
+  runDir: string | null;
+  selected: boolean;
+  onSelect: (additive: boolean) => void;
+  onPlay: () => void;
+}> = ({ node, runDir, selected, onSelect, onPlay }) => {
+  const poster = useNodeImage(runDir, node.poster ?? '');
+  const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+    const evt = e.evt as MouseEvent;
+    onSelect(Boolean(evt.shiftKey || evt.metaKey));
+  };
+  const play = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+    e.cancelBubble = true;
+    onPlay();
+  };
+  const cy = node.y + node.height / 2;
+  const glyph = Math.max(28, Math.round(Math.min(node.width, node.height) * 0.18));
+  const durFs = Math.max(12, Math.round(node.width * 0.04));
+  return (
+    <>
+      {poster ? (
+        <KonvaImage image={poster} x={node.x} y={node.y} width={node.width} height={node.height} onMouseDown={pick} onTap={pick} />
+      ) : (
+        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} fill="#18181b" cornerRadius={6} onMouseDown={pick} onTap={pick} />
+      )}
+      <KonvaText
+        x={node.x}
+        y={cy - glyph / 2}
+        width={node.width}
+        align="center"
+        text="▶"
+        fontSize={glyph}
+        fill="rgba(255,255,255,0.92)"
+        onMouseDown={play}
+        onTap={play}
+      />
+      <KonvaText
+        x={node.x + 8}
+        y={node.y + node.height - durFs * 1.6}
+        text={formatDurationLabel(node.durationSec)}
+        fontSize={durFs}
+        fill="rgba(255,255,255,0.85)"
+        listening={false}
+      />
+      {node.chosen && (
+        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} stroke="#10b981" strokeWidth={3} listening={false} />
+      )}
+      {selected && (
+        <KonvaRect x={node.x} y={node.y} width={node.width} height={node.height} stroke="#e879f9" strokeWidth={2} dash={[10, 6]} listening={false} />
+      )}
+    </>
+  );
+};
+
+// P2 视频播放浮层（DOM，镜像 DiffEvidenceOverlay）：把 mp4 读成 data URL 喂 <video> 就地播放。
+const VideoPlayOverlay: React.FC<{
+  runDir: string | null;
+  node: CanvasVideoNode;
+  onClose: () => void;
+}> = ({ runDir, node, onClose }) => {
+  const { t } = useI18n();
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      if (!runDir) return;
+      // readBinary 按扩展名返回 video/mp4，readWorkspaceImageAsDataUrl 用真实 mimeType → 可直接喂 <video>。
+      const data = await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`);
+      if (alive) setUrl(data);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [runDir, node.src]);
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-zinc-950/85 p-6">
+      <button
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded p-1 text-zinc-400 hover:text-zinc-100"
+        aria-label={t.design.videoPlayClose}
+      >
+        <X size={18} />
+      </button>
+      {url ? (
+        <video src={url} controls autoPlay className="max-h-[80%] max-w-[90%] rounded border border-white/20" />
+      ) : (
+        <Loader2 className="animate-spin text-zinc-500" size={20} />
+      )}
+    </div>
+  );
+};
+
 // T4 diff 证据浮层：展示"模型偷改了哪些未选区域"（标红）+ 度量。
 const DiffEvidenceOverlay: React.FC<{
   runDir: string | null;
@@ -296,6 +397,7 @@ export const DesignCanvas: React.FC = () => {
   const [comparing, setComparing] = useState(false);
   // T4 diff 证据浮层目标节点（locked 徽章点开）。
   const [diffNode, setDiffNode] = useState<CanvasImageNode | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<CanvasVideoNode | null>(null);
   // 扩图本地态：方向 + 比例（1.0–2.0）。
   const [expandDirection, setExpandDirection] = useState<ExpandDirection>('all');
   const [expandRatio, setExpandRatio] = useState(1.5);
@@ -513,8 +615,17 @@ export const DesignCanvas: React.FC = () => {
         >
           <Layer>
             {visibleNodes.map((node) =>
-              // 图节点走 CanvasImage；视频节点的 konva 渲染分支在 Task 6 接入（此处暂不渲染）。
-              isImageNode(node) ? (
+              // 图节点走 CanvasImage；视频节点走 KonvaVideoNode（缩略图+播放徽标）。
+              isVideoNode(node) ? (
+                <KonvaVideoNode
+                  key={node.id}
+                  node={node}
+                  runDir={runDir}
+                  selected={selectedIds.includes(node.id)}
+                  onSelect={(additive) => selectNode(node.id, additive)}
+                  onPlay={() => setPlayingVideo(node)}
+                />
+              ) : (
                 <CanvasImage
                   key={node.id}
                   node={node}
@@ -523,7 +634,7 @@ export const DesignCanvas: React.FC = () => {
                   onSelect={(additive) => selectNode(node.id, additive)}
                   onViewDiff={setDiffNode}
                 />
-              ) : null,
+              ),
             )}
             {draftAndCommitted.map((r, i) => (
               <KonvaRect
@@ -715,6 +826,9 @@ export const DesignCanvas: React.FC = () => {
         />
       )}
 
+      {playingVideo && (
+        <VideoPlayOverlay runDir={runDir} node={playingVideo} onClose={() => setPlayingVideo(null)} />
+      )}
       {diffNode && (
         <DiffEvidenceOverlay runDir={runDir} node={diffNode} onClose={() => setDiffNode(null)} />
       )}

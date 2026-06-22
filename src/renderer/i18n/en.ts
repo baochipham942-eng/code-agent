@@ -91,6 +91,7 @@ export const en: Translations = {
     diffEvidenceTitle: 'Diff evidence · unselected area drifted',
     diffEvidenceHint: 'Red marks where the model altered your unselected area; those pixels were locked back to the original, guaranteeing only the selection changed.',
     diffClose: 'Close',
+    videoPlayClose: 'Close',
     diffMaxDelta: 'Max pixel delta',
     diffChangedPixels: 'Drifted pixels',
     aspectRatioLabel: 'Aspect ratio',

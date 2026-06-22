@@ -69,3 +69,14 @@
 - UI 改动走 E2E/视觉验证。
 - P3 对抗审计 0 HIGH。
 - 汇报质量证据（测试数/覆盖/结论），不贴 diff。
+
+## 进度（2026-06-22）
+- ✅ **P0 地基**（commit 7318cf20b）：CanvasNode/Variant 加 role 字段，196 测绿。
+- ✅ **P1 参考图落画布**（commit c943178d0）：DesignImportButtons 组件 + 参考图视觉标记 + 服务 description_edit + IPC 路由 + hook 喂图，226 测绿。
+- ✅ **P2 核心 role-aware 历史**（commit 4e03d3bcf）：参考图剔出版本时间线、单独成组，229 测绿。
+- ⏳ **P2 剩余（待拍板）**：是否把 proto 版本从预览区工具栏并入左侧 composer 历史面板。现状 canvas 历史在左、proto 版本在预览工具栏（因「看某版=换 iframe」绑预览面）。并入非破坏但要动 PreviewPane 状态（compareIds/viewing），且当前在 tabreplan 活跃分支上有冲突风险。
+- ⏳ **P3 对称化 + 审计 + dogfood**：对称化（canvas 内联字段 vs proto spine.json 读写回滚）+ 对抗审计（免费）+ 真 key dogfood（**付费，需显式授权**）。
+
+### 关键认知修正
+- canvas 的 pin/discard 本就落盘（内联 canvas.json 节点字段），P3 对称化不需新建 spine.json，风险低于初估。
+- 万相单 base_image；多图融合需 wan2.5-image-edit（升级路径，未接）。

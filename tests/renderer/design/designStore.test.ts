@@ -10,6 +10,43 @@ describe('designStore imageModel', () => {
   });
 });
 
+describe('designStore proto 版本对比（P2 统一历史）', () => {
+  it('toggleCompareId 选版上限 2、FIFO 顶替、再点取消', () => {
+    const s = useDesignStore.getState();
+    s.clearCompare();
+    s.toggleCompareId('v1');
+    expect(useDesignStore.getState().compareIds).toEqual(['v1']);
+    s.toggleCompareId('v2');
+    expect(useDesignStore.getState().compareIds).toEqual(['v1', 'v2']);
+    // 第三个：FIFO 顶替最旧（保留 v2 + 新的 v3）
+    s.toggleCompareId('v3');
+    expect(useDesignStore.getState().compareIds).toEqual(['v2', 'v3']);
+    // 再点 v2 取消
+    s.toggleCompareId('v2');
+    expect(useDesignStore.getState().compareIds).toEqual(['v3']);
+    s.clearCompare();
+  });
+
+  it('startEditing 清空对比状态（与 selectRun/startGenerating 对称，审计 MED#3）', () => {
+    const s = useDesignStore.getState();
+    s.toggleCompareId('a');
+    s.setComparing(true);
+    s.startEditing('/d/run-x');
+    expect(useDesignStore.getState().compareIds).toEqual([]);
+    expect(useDesignStore.getState().comparing).toBe(false);
+    s.reset();
+  });
+
+  it('clearCompare 清空选版 + 关对比浮层', () => {
+    const s = useDesignStore.getState();
+    s.toggleCompareId('a');
+    s.setComparing(true);
+    s.clearCompare();
+    expect(useDesignStore.getState().compareIds).toEqual([]);
+    expect(useDesignStore.getState().comparing).toBe(false);
+  });
+});
+
 describe('designStore 标注模式', () => {
   it('annotMode 默认关、annotInstruction 默认空，可 set', () => {
     const s = useDesignStore.getState();

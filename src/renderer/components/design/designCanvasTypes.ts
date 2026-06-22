@@ -27,6 +27,11 @@ export interface CanvasNodeBase {
   label?: string;
   /** 产出这一步的调用实际花费（人民币元，T2 BYOK 成本可见；权威值由出图 IPC 回传）。 */
   costCny?: number;
+  /**
+   * 节点角色：'reference'=用户生成前贴入的参考图（喂模型用，不进版本时间线序号）；
+   * 缺省视为产物（生成/编辑输出）。紧凑落盘：仅 reference 落字段，产物不落。
+   */
+  role?: 'reference' | 'output';
   createdAt: number;
 }
 
@@ -85,6 +90,11 @@ export function isImageNode(n: CanvasNode): n is CanvasImageNode {
   return !isVideoNode(n);
 }
 
+/** 判断节点是否为参考图（生成前贴入，喂模型用，不计入版本时间线序号）。 */
+export function isReferenceNode(n: CanvasNode): boolean {
+  return n.role === 'reference';
+}
+
 /**
  * 格式化视频时长标签。
  * @param sec - 时长（秒）
@@ -118,6 +128,8 @@ function normalizeBase(r: Record<string, unknown>): CanvasNodeBase | null {
   if (r.chosen === true) base.chosen = true;
   if (r.discarded === true) base.discarded = true;
   if (typeof r.label === 'string') base.label = r.label;
+  // 仅 reference 落盘（产物为缺省态，保持紧凑）；非法值丢弃防破损注入。
+  if (r.role === 'reference') base.role = 'reference';
   // 成本必须非负：防手改/损坏的 canvas.json 注入负成本压低累计花费、破坏 BYOK 计费信任。
   if (isFiniteNumber(r.costCny) && (r.costCny as number) >= 0) base.costCny = r.costCny as number;
   return base;

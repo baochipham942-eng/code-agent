@@ -4,6 +4,7 @@ import {
   serializeCanvasDoc,
   deserializeCanvasDoc,
   nextNodePlacement,
+  isReferenceNode,
   DEFAULT_CAMERA,
   type CanvasImageNode,
   type DesignCanvasDoc,
@@ -105,6 +106,38 @@ describe('CanvasImageNode 反序列化 label / costCny（T2）', () => {
     expect(doc.nodes[0].costCny).toBe(0.14);
     expect(doc.nodes[1].label).toBeUndefined();
     expect(doc.nodes[1].costCny).toBeUndefined();
+  });
+});
+
+describe('role 参考/产物角色（P0 统一画布）', () => {
+  it('role=reference 序列化往返保留', () => {
+    const doc: DesignCanvasDoc = {
+      version: 1,
+      nodes: [node({ role: 'reference' })],
+      camera: DEFAULT_CAMERA,
+    };
+    const back = deserializeCanvasDoc(serializeCanvasDoc(doc));
+    expect(back.nodes[0].role).toBe('reference');
+  });
+
+  it('role 缺省（产物）不落字段保持紧凑', () => {
+    const back = deserializeCanvasDoc(
+      JSON.stringify({ nodes: [{ ...node(), role: 'output' }], camera: DEFAULT_CAMERA }),
+    );
+    expect(back.nodes[0].role).toBeUndefined();
+  });
+
+  it('非法 role 值丢弃（防破损 canvas.json 注入）', () => {
+    const back = deserializeCanvasDoc(
+      JSON.stringify({ nodes: [{ ...node(), role: 'garbage' }], camera: DEFAULT_CAMERA }),
+    );
+    expect(back.nodes[0].role).toBeUndefined();
+  });
+
+  it('isReferenceNode：仅 role=reference 为真', () => {
+    expect(isReferenceNode(node({ role: 'reference' }))).toBe(true);
+    expect(isReferenceNode(node({ role: 'output' }))).toBe(false);
+    expect(isReferenceNode(node())).toBe(false);
   });
 });
 

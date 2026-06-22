@@ -23,6 +23,10 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
     getGptImageConfig: vi.fn(() => undefined),
     expandImage: vi.fn(async () => ({ url: 'data:image/png;base64,QUJD' })), // 'ABC'
     removeWatermark: vi.fn(async () => ({ url: 'data:image/png;base64,QUJD' })),
+    generateImageFromReference: vi.fn(async () => ({
+      imageData: 'data:image/png;base64,QUJD',
+      actualModel: 'wanx2.1-imageedit',
+    })),
     editImageByAnnotation: vi.fn(async () => ({ imageData: 'data:image/png;base64,QUJD', actualModel: 'gpt-image-2' })),
     downloadImageAsBase64: vi.fn(async (u: string) => u),
     isImageUrl: vi.fn(() => false),
@@ -177,6 +181,55 @@ describe('handleGenerateDesignImage 模型路由', () => {
       handleGenerateDesignImage({ prompt: '   ', outputPath, model: 'wanx-t2i' }),
     ).rejects.toThrow('generateDesignImage');
     expect((svc.generateImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleGenerateDesignImage 参考图垫图（P1：reference→wanx description_edit）', () => {
+  const refDataUrl = 'data:image/png;base64,UkVG'; // 'REF'
+
+  it('带 referenceImageDataUrl 时走参考图编排，不走文生图 generateImage', async () => {
+    const svc = await import(SVC);
+    await handleGenerateDesignImage({ prompt: '一张落地页', outputPath, referenceImageDataUrl: refDataUrl });
+    expect((svc.generateImageFromReference as any).mock.calls.length).toBe(1);
+    expect((svc.generateImage as any).mock.calls.length).toBe(0);
+    // prompt + 参考图正确透传给 service
+    expect((svc.generateImageFromReference as any).mock.calls[0][0]).toMatchObject({
+      prompt: '一张落地页',
+      referenceImageDataUrl: refDataUrl,
+    });
+  });
+
+  it('参考图路径 actualModel=wanx2.1-imageedit，costCny=0.14，结果落盘', async () => {
+    const res = await handleGenerateDesignImage({ prompt: 'p', outputPath, referenceImageDataUrl: refDataUrl });
+    expect(res).toMatchObject({ path: outputPath, actualModel: 'wanx2.1-imageedit', costCny: 0.14 });
+    const written = await readFile(outputPath);
+    expect(written.toString()).toBe('ABC');
+  });
+
+  it('service 抛 DashScope key 缺失时 handler 透传报错', async () => {
+    const svc = await import(SVC);
+    (svc.generateImageFromReference as any).mockRejectedValueOnce(
+      new Error('参考图生成需要百炼（DashScope）API Key。'),
+    );
+    await expect(
+      handleGenerateDesignImage({ prompt: 'p', outputPath, referenceImageDataUrl: refDataUrl }),
+    ).rejects.toThrow('DashScope');
+  });
+
+  it('参考图路径空白 prompt 抛错且不触发付费调用（防 paid no-op）', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleGenerateDesignImage({ prompt: '   ', outputPath, referenceImageDataUrl: refDataUrl }),
+    ).rejects.toThrow('generateDesignImage');
+    expect((svc.generateImageFromReference as any).mock.calls.length).toBe(0);
+  });
+
+  it('outputPath 越界时抛错且不触发付费参考图调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleGenerateDesignImage({ prompt: 'p', outputPath: '/tmp/evil.png', referenceImageDataUrl: refDataUrl }),
+    ).rejects.toThrow(/越界/);
+    expect((svc.generateImageFromReference as any).mock.calls.length).toBe(0);
   });
 });
 

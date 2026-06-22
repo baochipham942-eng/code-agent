@@ -408,6 +408,52 @@ export async function editImageWithMask(input: {
   );
 }
 
+/**
+ * 通义万相指令编辑（function=description_edit）：base 图 + prompt → 按指令生成新图，无需 mask。
+ * 用作「参考图垫图」：以用户贴入的参考图为底，按需求描述生成（万相专属能力，DashScope 文档钦定）。
+ * base 传 base64 data URI（DashScope 原生接受）。返回结果图 url。
+ */
+export async function editImageByDescription(input: {
+  apiKey: string;
+  prompt: string;
+  baseImageDataUrl: string;
+  outerSignal?: AbortSignal;
+}): Promise<{ url: string }> {
+  return submitAndPollWanx(
+    input.apiKey,
+    WANX_EDIT_PATH,
+    {
+      model: WANX_EDIT_MODEL,
+      input: {
+        function: 'description_edit',
+        prompt: input.prompt,
+        base_image_url: input.baseImageDataUrl,
+      },
+      parameters: { n: 1 },
+    },
+    input.outerSignal ?? new AbortController().signal,
+  );
+}
+
+/**
+ * 参考图垫图编排（供 IPC 调用）：校验 DashScope key → description_edit → 下载结果为 dataURL。
+ * 返回 {imageData(dataURL), actualModel}，与 generateImage 出参同构，便于 handler 统一落盘。
+ */
+export async function generateImageFromReference(input: {
+  prompt: string;
+  referenceImageDataUrl: string;
+}): Promise<GenerateImageResult> {
+  const apiKey = getDashscopeApiKey();
+  if (!apiKey) throw new Error('参考图生成需要百炼（DashScope）API Key。');
+  const { url } = await editImageByDescription({
+    apiKey,
+    prompt: input.prompt,
+    baseImageDataUrl: input.referenceImageDataUrl,
+  });
+  const imageData = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  return { imageData, actualModel: WANX_EDIT_MODEL };
+}
+
 export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
 
 export interface ExpandScales {

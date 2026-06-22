@@ -9,7 +9,6 @@ import {
   AlertCircle,
   History,
   ChevronRight,
-  ImagePlus,
   Monitor,
   Tablet,
   Smartphone,
@@ -34,7 +33,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
-import { useDesignCanvasImport } from './useDesignCanvasImport';
+import { DesignImportButtons } from './DesignImportButtons';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { DesignCanvas } from './DesignCanvas';
@@ -50,7 +49,6 @@ import {
   openInDefaultApp,
   saveHtmlToDownloads,
   exportPrototypePdf,
-  type DesignVersion,
 } from './designFiles';
 import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName, prototypePdfExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
@@ -72,9 +70,10 @@ import { DesignCostHistory } from './DesignCostHistory';
 import { ImageModelPicker } from './ImageModelPicker';
 import { VideoModelPicker } from './VideoModelPicker';
 import { VariantCompareView } from './VariantCompareView';
-import { loadProtoSpine, saveProtoSpine } from './protoSpine';
-import { activeVariants, pinVariant, discardVariant } from './variantSpine';
-import { VersionControl, ViewingBanner, VersionComparePicker } from './DesignVersionUI';
+import { loadProtoSpine } from './protoSpine';
+import { activeVariants } from './variantSpine';
+import { ViewingBanner } from './DesignVersionUI';
+import { DesignProtoHistory, useProtoVersionActions } from './DesignProtoHistory';
 
 // 品牌色输入框（<input type="color">）的默认值——这是数据值（用户填进 brandColor 的种子），不是 UI 样式。
 const DEFAULT_BRAND_COLOR = '#3b82f6'; // ds-allow:viz 品牌色输入框默认值（数据非 UI 样式）
@@ -194,8 +193,6 @@ const Composer: React.FC = () => {
   const s = useDesignStore();
   const { generate: generatePrototype } = useDesignGeneration();
   const { generate: generateCanvas, generateVideo } = useDesignCanvasGeneration();
-  const { importFiles } = useDesignCanvasImport();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasGenerating = useDesignCanvasStore((c) => c.generating);
   const canvasError = useDesignCanvasStore((c) => c.error);
 
@@ -216,6 +213,8 @@ const Composer: React.FC = () => {
   const slidesMode = isSlidesOutput(s.outputType);
   // 视频与图像产物都落 konva 画布，共用 canvas store 的 generating/error。
   const canvasMode = imageMode || videoMode;
+  // 交互原型（网页）模式：左侧统一历史面板渲染 proto 版本控件。
+  const protoMode = !canvasMode && !slidesMode;
   const generating = canvasMode ? canvasGenerating : s.status === 'generating';
   const error = canvasMode ? canvasError : s.error;
   const onGenerate = videoMode ? () => generateVideo() : imageMode ? generateCanvas : generatePrototype;
@@ -490,38 +489,14 @@ const Composer: React.FC = () => {
         </>
       )}
 
-      {/* 自由画布：导入自有图片（也支持画布上粘贴/拖拽） */}
-      {imageMode && (
-        <>
-          {/* ds-allow:start 导入按钮用透明描边自定义样式（Button secondary 是实色 zinc-600，会回归） */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={generating}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.12] px-3 py-2 text-sm text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-50"
-          >
-            <ImagePlus className="h-4 w-4" />
-            {t.design.importImage}
-          </button>
-          {/* ds-allow:end */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              if (files.length > 0) void importFiles(files);
-              e.target.value = '';
-            }}
-          />
-          <p className="text-[11px] leading-snug text-zinc-500">{t.design.importHint}</p>
-        </>
-      )}
+      {/* 自由画布：导入自有图片 + 添加参考图（也支持画布上粘贴/拖拽） */}
+      {imageMode && <DesignImportButtons generating={generating} />}
 
       {/* T2 成本透明 + undo/redo 历史（仅图像产物，挂 variant spine） */}
       {imageMode && <DesignCostHistory />}
+
+      {/* 交互原型统一历史：版本看/对比/定稿（P2 从预览工具栏并入左侧 composer） */}
+      {protoMode && <DesignProtoHistory />}
 
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
@@ -702,7 +677,6 @@ const PreviewPane: React.FC = () => {
   const previewHtml = useDesignStore((s) => s.previewHtml);
   const status = useDesignStore((s) => s.status);
   const selectedRunDir = useDesignStore((s) => s.selectedRunDir);
-  const versions = useDesignStore((s) => s.versions);
   const viewingVersionPath = useDesignStore((s) => s.viewingVersionPath);
   const spine = useDesignStore((s) => s.spine);
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
@@ -715,13 +689,17 @@ const PreviewPane: React.FC = () => {
   const [fullscreen, setFullscreen] = useState(false);
   const [exported, setExported] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
-  const [compareIds, setCompareIds] = useState<string[]>([]);
-  const [comparing, setComparing] = useState(false);
+  // 对比状态提升到 store（P2：左侧统一历史面板选版、右侧对比浮层渲染共享）。
+  const compareIds = useDesignStore((s) => s.compareIds);
+  const comparing = useDesignStore((s) => s.comparing);
+  const setComparing = useDesignStore((s) => s.setComparing);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // proto 版本动作（设主版/淘汰/回最新）与左侧统一历史面板共用同一套。
+  const { pin: handlePin, discard: handleDiscardVariant, backToLatest } = useProtoVersionActions();
 
   const viewing = viewingVersionPath !== null;
 
-  // 活跃 proto 版本（最新在前），供对比选择器；过滤已淘汰。
+  // 活跃 proto 版本（最新在前），供对比浮层定位；过滤已淘汰。
   const activeProtoVariants = useMemo(
     () =>
       activeVariants(spine)
@@ -730,27 +708,8 @@ const PreviewPane: React.FC = () => {
     [spine],
   );
 
-  const toggleCompare = (id: string): void =>
-    setCompareIds((p) =>
-      p.includes(id) ? p.filter((x) => x !== id) : p.length >= 2 ? [p[1], id] : [...p, id],
-    );
-
   const compareA = activeProtoVariants.find((v) => v.id === compareIds[0]);
   const compareB = activeProtoVariants.find((v) => v.id === compareIds[1]);
-
-  const persistSpine = async (next: typeof spine): Promise<void> => {
-    useDesignStore.getState().setSpine(next);
-    if (selectedRunDir) await saveProtoSpine(selectedRunDir, next);
-  };
-  // 读 store 最新 spine（而非闭包快照），避免连续 pin/discard 时基于过期 spine 互相覆盖。
-  const handlePin = (id: string): void => {
-    void persistSpine(pinVariant(useDesignStore.getState().spine, id));
-  };
-  const handleDiscardVariant = (id: string): void => {
-    void persistSpine(discardVariant(useDesignStore.getState().spine, id));
-    setComparing(false);
-    setCompareIds([]);
-  };
 
   // 全屏态下 Esc 退出。
   useEffect(() => {
@@ -792,21 +751,13 @@ const PreviewPane: React.FC = () => {
     }
   };
 
-  const handleViewVersion = async (v: DesignVersion): Promise<void> => {
-    const html = await readWorkspaceFile(v.path);
-    if (html == null) return;
-    setSelectMode(false);
-    setInlineEditMode(false);
-    useDesignStore.getState().setPreviewHtml(html);
-    useDesignStore.getState().setViewingVersion(v.path);
-  };
-
-  const handleBackToLatest = async (): Promise<void> => {
-    if (!selectedRunDir) return;
-    const html = await readRunHtml(selectedRunDir);
-    if (html != null) useDesignStore.getState().setPreviewHtml(html);
-    useDesignStore.getState().setViewingVersion(null);
-  };
+  // 看历史版本时强制退出圈选/就地编辑（避免在只读历史版上残留编辑态）。
+  useEffect(() => {
+    if (viewing) {
+      setSelectMode(false);
+      setInlineEditMode(false);
+    }
+  }, [viewing]);
 
   const handleRollback = async (): Promise<void> => {
     if (!selectedRunDir || !viewingVersionPath) return;
@@ -910,23 +861,8 @@ const PreviewPane: React.FC = () => {
             onClose={() => setComparing(false)}
           />
         )}
+        {/* 版本控件（看版/对比/定稿）已并入左侧 composer 统一历史面板（DesignProtoHistory）。 */}
         <div className="relative flex h-10 shrink-0 items-center justify-center border-b border-white/[0.06] px-3">
-          <div className="absolute left-3 flex items-center gap-1.5">
-            <VersionControl
-              versions={versions}
-              viewingPath={viewingVersionPath}
-              onView={(v) => void handleViewVersion(v)}
-              onBackToLatest={() => void handleBackToLatest()}
-            />
-            {!viewing && (
-              <VersionComparePicker
-                variants={activeProtoVariants}
-                picked={compareIds}
-                onToggle={toggleCompare}
-                onCompare={() => setComparing(true)}
-              />
-            )}
-          </div>
           <div className="flex items-center gap-2">
             <DeviceSwitch device={device} onChange={setDevice} />
             <PaletteSwitch palette={palette} onChange={setPalette} />
@@ -1042,7 +978,7 @@ const PreviewPane: React.FC = () => {
         {viewing ? (
           <ViewingBanner
             onRollback={() => void handleRollback()}
-            onBackToLatest={() => void handleBackToLatest()}
+            onBackToLatest={() => void backToLatest()}
           />
         ) : (
           <ContinueEditBar selection={selection} onClearSelection={() => setSelection(null)} />

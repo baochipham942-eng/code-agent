@@ -28,6 +28,7 @@ import {
 import {
   isImageNode,
   isVideoNode,
+  isReferenceNode,
   formatDurationLabel,
   type CanvasImageNode,
   type CanvasVideoNode,
@@ -133,6 +134,39 @@ const CanvasImage: React.FC<{
         onMouseDown={pick}
         onTap={pick}
       />
+      {isReferenceNode(node) && (
+        <>
+          <KonvaRect
+            x={node.x}
+            y={node.y}
+            width={node.width}
+            height={node.height}
+            stroke="#38bdf8" // ds-allow:viz konva 画布字面色，CSS 变量够不到（参考图 sky 标识）
+            strokeWidth={2}
+            dash={[4, 4]}
+            listening={false}
+          />
+          <KonvaRect
+            x={node.x + 6}
+            y={node.y + 6}
+            width={Math.round(t.design.referenceBadge.length * badge * 0.62 + badge * 1.1)}
+            height={Math.round(badge * 1.7)}
+            fill="rgba(56,189,248,0.18)" // ds-allow:viz 参考徽章底
+            cornerRadius={Math.round(badge * 0.85)}
+            listening={false}
+          />
+          <KonvaText
+            x={node.x + 6}
+            y={node.y + 6 + Math.round(badge * 0.42)}
+            width={Math.round(t.design.referenceBadge.length * badge * 0.62 + badge * 1.1)}
+            align="center"
+            text={t.design.referenceBadge}
+            fontSize={Math.round(badge * 0.72)}
+            fill="#7dd3fc" // ds-allow:viz konva 画布字面色
+            listening={false}
+          />
+        </>
+      )}
       {node.chosen && (
         <>
           <KonvaRect
@@ -425,8 +459,10 @@ export const DesignCanvas: React.FC = () => {
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
     selectedIds.length === 1 ? visibleNodes.find((n) => n.id === selectedIds[0]) ?? null : null;
-  // 图像专属编辑（圈选重绘/标注/扩图/去水印/导出）只对图节点开放；视频节点的渲染与操作走画布视频分支。
-  const selectedImageNode = selectedNode && isImageNode(selectedNode) ? selectedNode : null;
+  // 图像专属编辑（圈选重绘/标注/扩图/去水印/导出）只对【产物】图节点开放：视频节点走画布视频分支；
+  // 参考图（role=reference）是生成前的视觉输入、无版本序号，不开放编辑工具栏（审计 HIGH#1）。
+  const selectedImageNode =
+    selectedNode && isImageNode(selectedNode) && !isReferenceNode(selectedNode) ? selectedNode : null;
   const compareNodes =
     selectedIds.length === 2
       ? selectedIds

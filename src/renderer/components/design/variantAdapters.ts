@@ -25,6 +25,8 @@ export function canvasNodeToVariant(node: CanvasNode): Variant {
   // 展示标题优先用户命名（T2 命名步），回退到生成/编辑指令。
   const label = node.label?.trim() ? node.label : node.prompt;
   if (typeof label === 'string') v.label = label;
+  // 参考图角色透传（产物为缺省态，不落 role 保持紧凑）。
+  if (node.role === 'reference') v.role = 'reference';
   return v;
 }
 

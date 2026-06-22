@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Pencil } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Pencil, Film } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
@@ -367,7 +367,7 @@ export const DesignCanvas: React.FC = () => {
   const selectedIds = useDesignCanvasStore((s) => s.selectedIds);
   const setSelected = useDesignCanvasStore((s) => s.setSelected);
   const generating = useDesignCanvasStore((s) => s.generating);
-  const { editRegion, expand, removeWatermark, editByAnnotation } = useDesignCanvasGeneration();
+  const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
 
   // 标注重绘态（B4）：模式开关/指令/模型全走 designStore 瞬时态，不持久化。
@@ -718,6 +718,16 @@ export const DesignCanvas: React.FC = () => {
           >
             <Download className="h-3.5 w-3.5" />
             {t.design.exportImage}
+          </button>
+          {/* P2 图生视频：以选中图为底图，生成前 confirm 预估 ¥（走 generateVideo i2v 路径）。 */}
+          <button
+            type="button"
+            onClick={() => void generateVideo({ baseNode: selectedImageNode })}
+            disabled={generating}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-50"
+          >
+            <Film className="h-3.5 w-3.5" />
+            {t.design.generateVideoFromImage}
           </button>
 
           {/* T3：wanx 扩图（方向+比例）+ 去水印，各落新 variant 挂 spine */}

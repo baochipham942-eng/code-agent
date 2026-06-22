@@ -11,9 +11,24 @@ import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { buildImagePrompt } from './designTypes';
-import { emptyCanvasDoc, nextNodePlacement, type CanvasImageNode } from './designCanvasTypes';
+import {
+  emptyCanvasDoc,
+  nextNodePlacement,
+  isVideoNode,
+  type CanvasImageNode,
+  type CanvasNode,
+  type CanvasVideoNode,
+} from './designCanvasTypes';
+import type { DesignVideoMode } from './designTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { groupKey } from './variantSpine';
+import {
+  videoModelById,
+  videoModelsWithCap,
+  clampVideoDuration,
+} from '@shared/constants/visualModels';
+import { estimateVideoCostCny } from '@shared/media/videoCost';
+import { formatCny } from '@shared/media/imageCost';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
 import { buildMaskDataUrl, type Rect } from './designCanvasMask';
 import { composeAnnotOps, exportAnnotatedPng } from './annotComposite';
@@ -147,6 +162,7 @@ export function buildVariantNode(
 
 export function useDesignCanvasGeneration(): {
   generate: () => Promise<void>;
+  generateVideo: (args?: { baseNode?: CanvasNode }) => Promise<void>;
   editRegion: (args: EditRegionArgs) => Promise<void>;
   expand: (args: ExpandArgs) => Promise<void>;
   removeWatermark: (args: RemoveWatermarkArgs) => Promise<void>;
@@ -159,6 +175,7 @@ export function useDesignCanvasGeneration(): {
     const canvas = useDesignCanvasStore.getState();
     const outputType = form.outputType;
     if (outputType === 'prototype') return; // 由 useDesignGeneration 处理
+    if (outputType === 'video') return; // 视频走 generateVideo，非文生图
 
     if (!form.requirement.trim()) {
       useDesignCanvasStore.getState().setError(t.design.errNoRequirement);
@@ -450,5 +467,102 @@ export function useDesignCanvasGeneration(): {
     [t],
   );
 
-  return { generate, editRegion, expand, removeWatermark, editByAnnotation };
+  // P2 视频生成（t2v/i2v）。有 baseNode（画布选图→生成视频）强制 i2v 用其作底图；
+  // 否则用 composer 选的 videoMode。付费前 confirm 显示预估 ¥（视频按秒，比图贵一量级）。
+  const generateVideo = useCallback(async (args?: { baseNode?: CanvasNode }) => {
+    const form = useDesignStore.getState();
+    const baseNode = args?.baseNode;
+    const mode: DesignVideoMode = baseNode ? 'i2v' : form.videoMode;
+
+    // 选模型：优先 composer 选中的，cap 不匹配则回退该模式下首个可用模型。
+    let model = videoModelById(form.videoModel);
+    if (!model?.caps.includes(mode)) model = videoModelsWithCap(mode)[0];
+    if (!model) {
+      useDesignCanvasStore.getState().setError(t.design.errDispatch);
+      return;
+    }
+
+    // i2v 必须有图底；t2v 必须有需求描述（付费前拦）。
+    if (mode === 'i2v' && (!baseNode || isVideoNode(baseNode))) {
+      useDesignCanvasStore.getState().setError(t.design.errNoBaseImageForI2v);
+      return;
+    }
+    if (mode === 't2v' && !form.requirement.trim()) {
+      useDesignCanvasStore.getState().setError(t.design.errNoRequirement);
+      return;
+    }
+
+    // 复用当前画布 run；无则新建（视频与图共用同一画布）。
+    let runDir = useDesignCanvasStore.getState().runDir;
+    if (!runDir) {
+      const baseDir = await resolveDesignDir();
+      if (!baseDir) {
+        useDesignCanvasStore.getState().setError(t.design.errResolveDir);
+        return;
+      }
+      runDir = `${baseDir.replace(/\/+$/, '')}/run-${Date.now()}`;
+      await ensureDir(runDir);
+      useDesignCanvasStore.getState().loadDoc(runDir, emptyCanvasDoc());
+    }
+
+    // 成本闸（T2）：视频按秒计费贵，付费前 confirm 显示预估 ¥ + 时长。
+    const durationSec = clampVideoDuration(model, form.videoDurationSec);
+    const estCny = estimateVideoCostCny(model.id, durationSec);
+    if (!window.confirm(`${t.design.videoCostConfirm}（${formatCny(estCny)} / ${durationSec}s）`)) return;
+
+    const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/vid-${Date.now()}.mp4`;
+    const assetAbs = `${runDir}/${assetRel}`;
+
+    useDesignCanvasStore.getState().setError(null);
+    useDesignCanvasStore.getState().setGenerating(true);
+    try {
+      const res = await window.domainAPI?.invoke<{
+        path: string;
+        actualModel: string;
+        costCny: number;
+        durationSec: number;
+      }>(IPC_DOMAINS.WORKSPACE, 'generateDesignVideo', {
+        mode,
+        model: model.id,
+        prompt: form.requirement.trim() || undefined,
+        baseImagePath: mode === 'i2v' && baseNode ? `${runDir}/${baseNode.src}` : undefined,
+        outputPath: assetAbs,
+        durationSec,
+      });
+      if (!res?.success) throw new Error(res?.error?.message || t.design.errDispatch);
+      // 画布期间未被切到别的 run 才回灌。
+      if (useDesignCanvasStore.getState().runDir !== runDir) {
+        useDesignCanvasStore.getState().setGenerating(false);
+        return;
+      }
+      const { x, y } = nextNodePlacement(
+        useDesignCanvasStore.getState().nodes,
+        DESIGN_WORKSPACE.CANVAS_NODE_GAP,
+      );
+      const costCny = res.data?.costCny;
+      const node: CanvasVideoNode = {
+        id: nextVariantNodeId(),
+        kind: 'video',
+        src: assetRel,
+        x,
+        y,
+        // 视频缩略 MVP 用 16:9 占位宽高；真实分辨率后续可读。
+        width: DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE,
+        height: Math.round((DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE * 9) / 16),
+        durationSec: res.data?.durationSec ?? durationSec,
+        prompt: form.requirement.trim() || undefined,
+        parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,
+        createdAt: Date.now(),
+        ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
+      };
+      useDesignCanvasStore.getState().addNode(node);
+      await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      useDesignCanvasStore.getState().setGenerating(false);
+    } catch (e) {
+      useDesignCanvasStore.getState().setGenerating(false);
+      useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+    }
+  }, [t]);
+
+  return { generate, generateVideo, editRegion, expand, removeWatermark, editByAnnotation };
 }

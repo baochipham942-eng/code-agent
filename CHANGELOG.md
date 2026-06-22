@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-22
+
+### Added
+
+- **Design mode — tab reorganized by delivery medium**: Web / Image / Slides / Video, so users pick "I want to make a ___" up front (`DesignOutputType` UI aggregation, zero-breaking).
+- **Design mode — thick slides pipeline**: requirement →（optional AI）outline → per-slide editing (title/points/reorder) → pixel preview (LibreOffice real-layout render) →（optional AI illustrations, model chosen on the page）→ real-layout PPTX export with brand-color theming. Engine extracted to `services/design/slidesGenerator` (SlideData[] single source of truth); enhancements are opt-in with cost shown up front.
+- **Design mode — reference-image priming**: paste a reference image before generating ("Add reference" entry, sky badge on the canvas); the first reference is fed to the model as visual guidance (Tongyi Wanxiang `wanx2.1-imageedit` / `description_edit`), preserving the reference layout while restyling per the requirement.
+- **Design mode — unified history**: design history consolidated into the left composer — image/video step timeline (reference images grouped separately, not counted as versions), and prototype version view/compare/finalize moved from the preview toolbar into the left panel. Image and prototype share the non-destructive variant spine.
+
+### Fixed
+
+- Reference-image path: fails loudly when the reference image can't be read (no silent fallback to text-only generation); reference images don't expose the region-repaint toolbar; continuing-edit clears stale compare state.
+
 ## [0.19.1] - 2026-06-22
 
 ### Fixed

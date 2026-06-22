@@ -33,6 +33,10 @@ interface DesignState {
   imageModel: string;
   /** 视频生成模型选择（仅视频产物用）。 */
   videoModel: string;
+  /** 用户是否在画布里显式选过图像模型（持久化）。true 时设置页默认不再覆盖（ADR-027）。 */
+  imageModelUserPicked: boolean;
+  /** 用户是否在画布里显式选过视频模型（持久化）。 */
+  videoModelUserPicked: boolean;
   /** 视频生成模式（文生视频/图生视频）。 */
   videoMode: DesignVideoMode;
   /** 视频时长（秒，按模型区间 clamp）。 */
@@ -68,6 +72,8 @@ interface DesignState {
   setAspectRatio: (r: DesignAspectRatio) => void;
   setImageModel: (id: string) => void;
   setVideoModel: (id: string) => void;
+  /** 套用设置页默认生成模型：仅当用户未在画布显式选过对应类型时生效（ADR-027）。 */
+  applyDefaultModels: (defaults: { image?: string; video?: string }) => void;
   setVideoMode: (m: DesignVideoMode) => void;
   setVideoDurationSec: (n: number) => void;
   setAnnotMode: (on: boolean) => void;
@@ -104,6 +110,8 @@ export const useDesignStore = create<DesignState>()(
       aspectRatio: '1:1',
       imageModel: defaultImageModelId(),
       videoModel: defaultVideoModelId(),
+      imageModelUserPicked: false,
+      videoModelUserPicked: false,
       videoMode: 't2v',
       videoDurationSec: 5,
       annotMode: false,
@@ -128,8 +136,13 @@ export const useDesignStore = create<DesignState>()(
       setSurface: (surface) => set((s) => ({ surface: s.surface === surface ? null : surface })),
       setOutputType: (outputType) => set({ outputType }),
       setAspectRatio: (aspectRatio) => set({ aspectRatio }),
-      setImageModel: (imageModel) => set({ imageModel }),
-      setVideoModel: (videoModel) => set({ videoModel }),
+      setImageModel: (imageModel) => set({ imageModel, imageModelUserPicked: true }),
+      setVideoModel: (videoModel) => set({ videoModel, videoModelUserPicked: true }),
+      applyDefaultModels: ({ image, video }) =>
+        set((s) => ({
+          imageModel: image && !s.imageModelUserPicked ? image : s.imageModel,
+          videoModel: video && !s.videoModelUserPicked ? video : s.videoModel,
+        })),
       setVideoMode: (videoMode) => set({ videoMode }),
       setVideoDurationSec: (videoDurationSec) => set({ videoDurationSec }),
       setAnnotMode: (annotMode) => set({ annotMode }),
@@ -203,6 +216,8 @@ export const useDesignStore = create<DesignState>()(
         aspectRatio: s.aspectRatio,
         imageModel: s.imageModel,
         videoModel: s.videoModel,
+        imageModelUserPicked: s.imageModelUserPicked,
+        videoModelUserPicked: s.videoModelUserPicked,
         videoMode: s.videoMode,
         videoDurationSec: s.videoDurationSec,
         history: s.history,

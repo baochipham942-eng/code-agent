@@ -110,6 +110,8 @@ export const en: Translations = {
     continueEditSend: 'Apply',
     selectToggle: 'Select',
     selectActiveHint: 'Click an element in the preview to select it',
+    inlineEditToggle: 'Edit text',
+    inlineEditActiveHint: 'Click text in the preview to edit it inline; saved on blur (no AI)',
     selectionTarget: 'Selected',
     versionsTitle: 'Versions',
     versionLatest: 'Latest',

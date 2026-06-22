@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   injectSelectionScript,
+  injectInlineEditScript,
   injectPreviewStyle,
   injectThemeOverride,
   parseProtoSelectMessage,
+  parseProtoTextEditMessage,
   PROTO_PALETTES,
   PROTO_SELECT_SOURCE,
   PROTO_SELECT_MESSAGE,
+  PROTO_TEXT_EDIT_MESSAGE,
 } from '../../../src/renderer/components/design/designPreviewInject';
 
 describe('injectSelectionScript', () => {
@@ -114,5 +117,72 @@ describe('parseProtoSelectMessage', () => {
     expect(parseProtoSelectMessage({ ...valid, source: 'evil' })).toBeNull();
     expect(parseProtoSelectMessage({ ...valid, type: 'other' })).toBeNull();
     expect(parseProtoSelectMessage({ source: PROTO_SELECT_SOURCE, type: PROTO_SELECT_MESSAGE, payload: {} })).toBeNull();
+  });
+
+  it('不把就地编辑消息误认成圈选消息（类型隔离）', () => {
+    const editMsg = {
+      source: PROTO_SELECT_SOURCE,
+      type: PROTO_TEXT_EDIT_MESSAGE,
+      payload: { selector: '#t', newText: 'x' },
+    };
+    expect(parseProtoSelectMessage(editMsg)).toBeNull();
+  });
+});
+
+describe('injectInlineEditScript', () => {
+  it('关闭时原样返回', () => {
+    const html = '<html><body><h1>x</h1></body></html>';
+    expect(injectInlineEditScript(html, false)).toBe(html);
+  });
+
+  it('开启时把脚本插在 </body> 前', () => {
+    const out = injectInlineEditScript('<html><body><h1>x</h1></body></html>', true);
+    expect(out).toContain('data-neo-design-inline-edit');
+    expect(out).toContain(PROTO_TEXT_EDIT_MESSAGE);
+    expect(out).toContain('contenteditable');
+    expect(out.indexOf('data-neo-design-inline-edit')).toBeLessThan(out.indexOf('</body>'));
+  });
+
+  it('无 body 时附到末尾', () => {
+    const out = injectInlineEditScript('<div>x</div>', true);
+    expect(out.startsWith('<div>x</div>')).toBe(true);
+    expect(out).toContain('data-neo-design-inline-edit');
+  });
+});
+
+describe('parseProtoTextEditMessage', () => {
+  const valid = {
+    source: PROTO_SELECT_SOURCE,
+    type: PROTO_TEXT_EDIT_MESSAGE,
+    payload: { selector: '#title', newText: '新标题' },
+  };
+
+  it('合法消息解析出载荷', () => {
+    expect(parseProtoTextEditMessage(valid)).toEqual({ selector: '#title', newText: '新标题' });
+  });
+
+  it('允许空 newText（清空文案）', () => {
+    expect(parseProtoTextEditMessage({ ...valid, payload: { selector: '#t', newText: '' } })).toEqual({
+      selector: '#t',
+      newText: '',
+    });
+  });
+
+  it('来源/类型不符、缺字段或空 selector 返回 null', () => {
+    expect(parseProtoTextEditMessage(null)).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, source: 'evil' })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, type: PROTO_SELECT_MESSAGE })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, payload: { selector: '#t' } })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, payload: { newText: 'x' } })).toBeNull();
+    expect(parseProtoTextEditMessage({ ...valid, payload: { selector: '  ', newText: 'x' } })).toBeNull();
+  });
+
+  it('不把圈选消息误认成就地编辑消息（类型隔离）', () => {
+    const selMsg = {
+      source: PROTO_SELECT_SOURCE,
+      type: PROTO_SELECT_MESSAGE,
+      payload: { tag: 'h1', text: 'x', selector: '#t' },
+    };
+    expect(parseProtoTextEditMessage(selMsg)).toBeNull();
   });
 });

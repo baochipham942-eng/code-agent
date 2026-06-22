@@ -27,6 +27,7 @@ import {
   Minimize2,
   GitCompare,
   BadgeCheck,
+  Pencil,
 } from 'lucide-react';
 import { Button } from '../primitives';
 import { BrandManager } from './BrandManager';
@@ -55,11 +56,14 @@ import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName, prototype
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
 import {
   injectSelectionScript,
+  injectInlineEditScript,
   injectPreviewStyle,
   injectThemeOverride,
   parseProtoSelectMessage,
+  parseProtoTextEditMessage,
   PROTO_PALETTES,
 } from './designPreviewInject';
+import { applyTextEdit } from './inlineTextEdit';
 import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { DesignCostHistory } from './DesignCostHistory';
@@ -680,6 +684,9 @@ const PreviewPane: React.FC = () => {
   const [device, setDevice] = useState<DesignDeviceId>('desktop');
   const [palette, setPalette] = useState('original');
   const [selectMode, setSelectMode] = useState(false);
+  // 就地文本编辑模式（CD-Parity §3）：点字直接改、免 AI、回写 canonical prototype.html。
+  // 与圈选模式互斥（同一点击不可既圈选又编辑），切到任一态即关掉另一态。
+  const [inlineEditMode, setInlineEditMode] = useState(false);
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [exported, setExported] = useState(false);
@@ -765,6 +772,7 @@ const PreviewPane: React.FC = () => {
     const html = await readWorkspaceFile(v.path);
     if (html == null) return;
     setSelectMode(false);
+    setInlineEditMode(false);
     useDesignStore.getState().setPreviewHtml(html);
     useDesignStore.getState().setViewingVersion(v.path);
   };
@@ -801,6 +809,39 @@ const PreviewPane: React.FC = () => {
     return () => window.removeEventListener('message', handler);
   }, [selectMode]);
 
+  // 就地文本编辑回写（CD-Parity §3）：blur 时 iframe 上报 {selector,newText}，父侧按 selector
+  // 改 *canonical* prototype.html（非被注入加工过的 srcDoc）落盘 + 刷新 previewHtml。免 AI、零
+  // token、不自动建 variant（想留档由用户手动「存版本」走现有 captureVersion）。与圈选 handler
+  // 物理隔离：仅 inlineEditMode 开时注册、只认 PROTO_TEXT_EDIT_MESSAGE。
+  const applyInlineEdit = async (selector: string, newText: string): Promise<void> => {
+    const runDir = useDesignStore.getState().selectedRunDir;
+    if (!runDir) return;
+    // canonical = 磁盘 prototype.html 原文（zustand previewHtml 是其只读镜像，未含注入态）。
+    const canonical = (await readRunHtml(runDir)) ?? useDesignStore.getState().previewHtml;
+    if (canonical == null) return;
+    const updated = applyTextEdit(canonical, selector, newText);
+    if (updated === canonical) return; // 未命中 / 无变化：不落盘
+    const proto = (await findRunHtml(runDir)) ?? `${runDir}/prototype.html`;
+    await writeWorkspaceFile(proto, updated);
+    // 仅当用户仍停在该 run 才刷新，避免期间切走被旧内容覆盖。
+    if (useDesignStore.getState().selectedRunDir === runDir) {
+      useDesignStore.getState().setPreviewHtml(updated);
+    }
+  };
+
+  useEffect(() => {
+    if (!inlineEditMode) return;
+    const handler = (e: MessageEvent): void => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const payload = parseProtoTextEditMessage(e.data);
+      if (!payload) return;
+      void applyInlineEdit(payload.selector, payload.newText);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+    // applyInlineEdit 只读 store getState/refs，无需进依赖；inlineEditMode 切换即重挂。
+  }, [inlineEditMode]);
+
   // 设计稿 / 信息图 → konva 无限画布；交互原型 → HTML iframe。
   if (isImageOutput(outputType)) {
     return <DesignCanvas />;
@@ -809,11 +850,13 @@ const PreviewPane: React.FC = () => {
   if (previewHtml) {
     const width = designDeviceWidth(device);
     const framed = device !== 'desktop';
-    // 注入顺序：滚动条样式（head 起始）→ 换肤 hue-rotate（head 末尾，覆盖原型样式）→ 圈选脚本。
-    // 三者都只在预览渲染期注入；导出/快照走 previewHtml 原文，不含任何注入内容。
-    const srcDoc = injectSelectionScript(
-      injectThemeOverride(injectPreviewStyle(previewHtml), palette),
-      selectMode,
+    // 注入顺序：滚动条样式（head 起始）→ 换肤 hue-rotate（head 末尾，覆盖原型样式）→
+    // 圈选 / 就地编辑脚本（互斥，同一时刻至多注入其一）。
+    // 都只在预览渲染期注入；导出/快照走 previewHtml 原文，不含任何注入内容。
+    const themed = injectThemeOverride(injectPreviewStyle(previewHtml), palette);
+    const srcDoc = injectInlineEditScript(
+      injectSelectionScript(themed, selectMode),
+      inlineEditMode,
     );
     return (
       <div
@@ -855,22 +898,49 @@ const PreviewPane: React.FC = () => {
             <PaletteSwitch palette={palette} onChange={setPalette} />
           </div>
           <div className="absolute right-3 flex items-center gap-1">
+            {/* ds-allow:start 设计预览工具栏沿用旧裸 button 样式（与同栏圈选/导出/全屏按钮一致）；design-mode W3 收口时统一迁 primitive */}
             {!viewing && (
-              <button
-                type="button"
-                onClick={() => setSelectMode((v) => !v)}
-                aria-pressed={selectMode}
-                title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
-                  selectMode
-                    ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
-                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <MousePointerClick className="h-3.5 w-3.5" />
-                <span>{t.design.selectToggle}</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 互斥：开圈选即关就地编辑。
+                    setInlineEditMode(false);
+                    setSelectMode((v) => !v);
+                  }}
+                  aria-pressed={selectMode}
+                  title={selectMode ? t.design.selectActiveHint : t.design.selectToggle}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                    selectMode
+                      ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                      : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <MousePointerClick className="h-3.5 w-3.5" />
+                  <span>{t.design.selectToggle}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 互斥：开就地编辑即关圈选。
+                    setSelectMode(false);
+                    setSelection(null);
+                    setInlineEditMode((v) => !v);
+                  }}
+                  aria-pressed={inlineEditMode}
+                  title={inlineEditMode ? t.design.inlineEditActiveHint : t.design.inlineEditToggle}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                    inlineEditMode
+                      ? 'border-sky-400/40 bg-sky-400/10 text-sky-200'
+                      : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span>{t.design.inlineEditToggle}</span>
+                </button>
+              </>
             )}
+            {/* ds-allow:end */}
             <button
               type="button"
               onClick={() => void handleOpenBrowser()}

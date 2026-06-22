@@ -10,6 +10,8 @@
 /** 注入脚本 → 父窗口的消息标记与类型。 */
 export const PROTO_SELECT_SOURCE = 'neo-design-proto';
 export const PROTO_SELECT_MESSAGE = 'neo-design:select';
+/** 就地文本编辑（CD-Parity §3）消息类型；复用 PROTO_SELECT_SOURCE 作来源标记。 */
+export const PROTO_TEXT_EDIT_MESSAGE = 'neo-design:text-edited';
 
 /** 父侧收到的圈选载荷。 */
 export type ProtoSelectPayload = {
@@ -18,13 +20,16 @@ export type ProtoSelectPayload = {
   selector: string;
 };
 
-// 注入脚本（IIFE，纯浏览器端运行；不可单测，逻辑尽量自洽）。
-const SELECTION_SCRIPT = `<script data-neo-design-select>(function(){
-  if (window.__neoDesignSelect) return; window.__neoDesignSelect = true;
-  var S=${JSON.stringify(PROTO_SELECT_SOURCE)}, T=${JSON.stringify(PROTO_SELECT_MESSAGE)};
-  var st=document.createElement('style');
-  st.textContent='*{cursor:crosshair!important}.__neo-hover{outline:2px solid #d946ef!important;outline-offset:1px!important}';
-  document.head.appendChild(st);
+/** 父侧收到的就地文本编辑载荷。 */
+export type ProtoTextEditPayload = {
+  selector: string;
+  newText: string;
+};
+
+// 圈选与内联编辑共用的 selector 计算逻辑（与父侧 inlineTextEdit 的 selector 语义对齐）。
+// 注入脚本是字符串运行在 iframe 里，无法 import；这里把 path() 的函数体抽成常量字符串，
+// 在两段注入脚本里复用，保证「圈选」与「点字直接改」算出的 selector 完全同源。
+const PATH_FN_SOURCE = `
   function esc(s){try{return (window.CSS&&CSS.escape)?CSS.escape(s):s.replace(/[^a-zA-Z0-9_-]/g,'_');}catch(e){return s;}}
   function path(el){
     if(el.id) return '#'+esc(el.id);
@@ -42,7 +47,16 @@ const SELECTION_SCRIPT = `<script data-neo-design-select>(function(){
       if(parts.length>=6) break;
     }
     return parts.join(' > ');
-  }
+  }`;
+
+// 注入脚本（IIFE，纯浏览器端运行；不可单测，逻辑尽量自洽）。
+const SELECTION_SCRIPT = `<script data-neo-design-select>(function(){
+  if (window.__neoDesignSelect) return; window.__neoDesignSelect = true;
+  var S=${JSON.stringify(PROTO_SELECT_SOURCE)}, T=${JSON.stringify(PROTO_SELECT_MESSAGE)};
+  var st=document.createElement('style');
+  st.textContent='*{cursor:crosshair!important}.__neo-hover{outline:2px solid #d946ef!important;outline-offset:1px!important}';
+  document.head.appendChild(st);
+${PATH_FN_SOURCE}
   var last=null;
   document.addEventListener('mouseover',function(e){
     if(last) last.classList.remove('__neo-hover');
@@ -53,6 +67,50 @@ const SELECTION_SCRIPT = `<script data-neo-design-select>(function(){
     var el=e.target; if(!el||el.nodeType!==1) return;
     var text=(el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,60);
     parent.postMessage({source:S,type:T,payload:{tag:el.tagName.toLowerCase(),text:text,selector:path(el)}},'*');
+  },true);
+})();</script>`;
+
+// 就地文本编辑注入脚本（CD-Parity §3）。hover 高亮文本元素；click 把元素设为
+// contentEditable 并聚焦；blur 时取纯文本 + path() 算 selector，postMessage 上报父侧回写
+// canonical prototype.html（免 AI、零 token）。与圈选脚本物理隔离（不同 guard 标志 + 不同
+// 消息类型），同时只注入其一（模式互斥），避免同一点击歧义。
+const INLINE_EDIT_SCRIPT = `<script data-neo-design-inline-edit>(function(){
+  if (window.__neoDesignInlineEdit) return; window.__neoDesignInlineEdit = true;
+  var S=${JSON.stringify(PROTO_SELECT_SOURCE)}, T=${JSON.stringify(PROTO_TEXT_EDIT_MESSAGE)};
+  var st=document.createElement('style');
+  st.textContent='.__neo-edit-hover{outline:2px dashed #38bdf8!important;outline-offset:1px!important;cursor:text!important}[contenteditable="true"]{outline:2px solid #38bdf8!important;outline-offset:1px!important}';
+  document.head.appendChild(st);
+${PATH_FN_SOURCE}
+  var editing=null, last=null;
+  document.addEventListener('mouseover',function(e){
+    if(editing) return;
+    if(last) last.classList.remove('__neo-edit-hover');
+    last=e.target; if(last&&last.classList) last.classList.add('__neo-edit-hover');
+  },true);
+  function finish(el){
+    if(!el) return;
+    el.removeAttribute('contenteditable');
+    if(el.classList) el.classList.remove('__neo-edit-hover');
+    var newText=(el.textContent||'').replace(/\\s+/g,' ').trim();
+    var selector=path(el);
+    editing=null;
+    parent.postMessage({source:S,type:T,payload:{selector:selector,newText:newText}},'*');
+  }
+  document.addEventListener('click',function(e){
+    e.preventDefault(); e.stopPropagation();
+    var el=e.target; if(!el||el.nodeType!==1) return;
+    if(editing===el) return;
+    if(editing) finish(editing);
+    editing=el;
+    if(el.classList) el.classList.remove('__neo-edit-hover');
+    el.setAttribute('contenteditable','true');
+    el.focus();
+    var doBlur=function(){ el.removeEventListener('blur',doBlur,true); finish(el); };
+    el.addEventListener('blur',doBlur,true);
+  },true);
+  // 回车提交（不换行）。
+  document.addEventListener('keydown',function(e){
+    if(editing && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); editing.blur(); }
   },true);
 })();</script>`;
 
@@ -143,4 +201,25 @@ export function parseProtoSelectMessage(data: unknown): ProtoSelectPayload | nul
     text: typeof p.text === 'string' ? p.text : '',
     selector: p.selector,
   };
+}
+
+/**
+ * 内联编辑模式开时往 HTML 注入就地编辑脚本（优先插在 </body> 前，否则附到末尾）；关时原样
+ * 返回。与 injectSelectionScript 互斥使用（同一时刻只注入其一）。
+ */
+export function injectInlineEditScript(html: string, enabled: boolean): string {
+  if (!enabled) return html;
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${INLINE_EDIT_SCRIPT}</body>`);
+  return html + INLINE_EDIT_SCRIPT;
+}
+
+/** 校验来自 iframe 的就地文本编辑消息（不信任 origin，只认形状 + 来源标记 + 消息类型）。 */
+export function parseProtoTextEditMessage(data: unknown): ProtoTextEditPayload | null {
+  if (!data || typeof data !== 'object') return null;
+  const m = data as Record<string, unknown>;
+  if (m.source !== PROTO_SELECT_SOURCE || m.type !== PROTO_TEXT_EDIT_MESSAGE) return null;
+  const p = m.payload as Record<string, unknown> | undefined;
+  if (!p || typeof p.selector !== 'string' || typeof p.newText !== 'string') return null;
+  if (!p.selector.trim()) return null;
+  return { selector: p.selector, newText: p.newText };
 }

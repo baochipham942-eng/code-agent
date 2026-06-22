@@ -108,6 +108,8 @@ export const zh = {
     continueEditSend: '应用修改',
     selectToggle: '圈选',
     selectActiveHint: '点击预览里的元素以选中',
+    inlineEditToggle: '点字直接改',
+    inlineEditActiveHint: '点预览里的文字直接编辑，失焦即落盘（免 AI）',
     selectionTarget: '已选中',
     versionsTitle: '版本',
     versionLatest: '最新',

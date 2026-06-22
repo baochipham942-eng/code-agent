@@ -309,18 +309,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (engine.kind === 'mimo_code') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
-      // 接线清单见 docs/handoff-engine-wiring.md。
-      // TODO(engine-expansion §5②): mimo_code 的 registry descriptor + PATH 探测待地基②注册；
-      //   未注册前 registry.get('mimo_code') 会抛 Unknown engine（预期待接线态）。
-      // TODO(engine-expansion §5①): mimo_code 未注册签名 catalog，先直传用户所选模型
-      //   （resolveModelId 对未注册 kind 返回 undefined 会丢掉用户选择）。矩阵就绪后改走
-      //   getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', ...)。
       await new MimoCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: launch.model,
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model),
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
@@ -331,17 +325,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (engine.kind === 'kimi_code') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
-      // 接线清单见 docs/handoff-engine-wiring.md。
-      // TODO(engine-expansion §5②): kimi_code 的 registry descriptor + PATH 探测待地基②注册；
-      //   per-user KIMI_CODE_HOME 凭据隔离目录由 detection/凭据接口派生后通过 kimiCodeHome 注入
-      //   （当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
-      // TODO(engine-expansion §5①): kimi_code 同 mimo_code，未注册签名 catalog，先直传用户所选模型。
+      // Kimi CLI 不读 env API key；per-user KIMI_CODE_HOME 凭据隔离目录由后续凭据接口派生后
+      // 通过 KimiCliRunRequest.kimiCodeHome 注入（当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
       await new KimiCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: launch.model,
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code', launch.model),
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,

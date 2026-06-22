@@ -7,10 +7,8 @@
 // （只透传 HOME/PATH/MIMO_HOME 等白名单，剥离敏感 KEY/TOKEN）——MiMo 的 OAuth
 // 落盘 / `tp-` 订阅 key 由 CLI 自己读 MIMO_HOME 下的凭据，适配器不自创注入路径。
 //
-// ⚠️ registry 注册（detectMimo / PATH 探测）与 model catalog 登记**刻意不在本分支改动**
-// （那两个热点文件由地基①②会话重写，避免合并冲突）。待接线清单见
-// docs/handoff-engine-wiring.md。在地基②注册 descriptor 前，registry.get('mimo_code')
-// 会抛 Unknown engine——这是预期的待接线态，不是 bug。
+// registry.get('mimo_code') 的 descriptor 由 agentEngineRegistry.detectMimo 探活产出；
+// model catalog 在 BUILTIN_AGENT_ENGINE_MODEL_CATALOG 登记 mimo_code 引擎条目。
 
 import { spawn } from 'child_process';
 import { createWriteStream } from 'fs';

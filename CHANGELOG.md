@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-06-22
+
+### Fixed
+
+- Fixed packaged-app startup failure introduced in v0.19.0 ("Web server exited before healthcheck completed: exit status: 1"): the design-mode PDF/PPTX export eagerly loaded `pdfkit`/`pptxgenjs` at startup, but those deps were esbuild-external and not shipped in the app, so the backend web server crashed on launch. Both are now bundled into the backend (`pdfkit` via its font-inlined standalone build). Functionally identical to v0.19.0.
+
 ## [0.19.0] - 2026-06-22
 
 ### Added

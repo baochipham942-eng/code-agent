@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.27 (9.26 + 2026-06-22 设计 tab 4 媒介重规划 + 厚版演示稿全链路：引擎从 agent 工具抽 service、SlideData[] 单一真源、大纲编辑器/逐页预览/就地改字、4 增强〔品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型可选〕，PR #260；详见 design-mode.md §15)
 > 版本: 9.26 (9.25 + 2026-06-16~17 迭代治理与账本收口：permission/tool execution append-only ledger、Swarm ledger 真理源 + reconcile/backfill、console/a11y/stale-dist 静态门、设计系统契约 + ratchet gate、预算告警、工具失败 action、Bash 输出头尾预览、auto-compaction stuck guard)
 > 版本: 9.25 (9.24 + 2026-06-13~15 会话页、设置页与运行证据门收口：能力证据硬门 + judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织)
 > 版本: 9.24 (9.23 + 2026-06-12 release-prep hardening：renderer production verifier metadata/bundle timeout + stage diagnostics、checkpoint rebuild foreground short wait + fail-closed、vision empty-response failure reason、skill draft 低价值工具序列名拒绝、session task tree parent recovery)
@@ -38,7 +39,7 @@
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 | [Windows 支持](./architecture/windows-support.md) | win32-x64 移植：安全与路径地基、PowerShell 命令安全规则包、NSIS unsigned + minisign 发版链、真机调试记录、朋友验收清单 |
 | [Intel x64 支持](./architecture/intel-x64-support.md) | darwin 双架构（arm64 + x64）矩阵构建、资源覆盖机制、updater manifest 合并先例 |
-| [Design Mode 设计工作区](./architecture/design-mode.md) | 全屏设计工作台 as-built：交互原型(agent 编排) + 设计稿/信息图(renderer 直连出图)；konva 自研无限画布、T1-T6 变体 spine/成本/一致性；**P1 视觉模型注册表(D1 单源)多模型切换(wanx/cogview/flux/gpt-image-2) + 标注重绘(非 wanx 整图编辑 /v1/images/edits) + SSRF 守卫** |
+| [Design Mode 设计工作区](./architecture/design-mode.md) | 全屏设计工作台 as-built：**Tab 按交付媒介分 4 类(网页/图/演示稿/视频，`DesignOutputType` UI 聚合零破坏)**；网页(agent 编排) + 图〔设计稿/信息图〕(renderer 直连出图) + 视频(t2v/i2v) + **厚版演示稿(§15：引擎从 agent 工具抽 `services/design/slidesGenerator`，SlideData[] 单一真源，大纲编辑器/逐页预览/就地改字；4 增强=品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型页面可选，付费 opt-in 成本前置)**；konva 自研无限画布、T1-T6 变体 spine/成本/一致性；P1 视觉模型注册表(D1 单源)多模型切换 + 标注重绘 + SSRF 守卫 |
 
 ### 近期规格
 

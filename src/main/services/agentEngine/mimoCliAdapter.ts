@@ -38,6 +38,10 @@ import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './a
 
 const logger = createLogger('MimoCliAdapter');
 
+// 容错：OpenAI 兼容后端偶发流式完成（exit 0）但空响应。与 Kimi 对称，按 empty response
+// 归一成可识别失败，不让它静默落到「completed without text output」兜底文案。
+const EMPTY_RESPONSE_MESSAGE = 'MiMo-Code returned an empty response.';
+
 export interface MimoCliRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
   attachmentsCount?: number;
@@ -303,7 +307,9 @@ export class MimoCliAdapter {
     }
 
     const completedAt = Date.now();
-    const failed = Boolean(timeoutMessage || spawnErrorMessage || exitCode !== 0);
+    // CLI 退出码正常（exit 0）但既无正文也无 CLI error 时，按 empty response 归一成失败。
+    const emptyResponse = !finalText && !cliErrorText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
+    const failed = Boolean(timeoutMessage || spawnErrorMessage || exitCode !== 0 || emptyResponse);
 
     ledger.addOutputRef({
       taskId,
@@ -337,6 +343,7 @@ export class MimoCliAdapter {
       const message = timeoutMessage
         || spawnErrorMessage
         || cliErrorText
+        || (emptyResponse ? EMPTY_RESPONSE_MESSAGE : '')
         || stderrText.trim()
         || finalText
         || `MiMo-Code exited with code ${exitCode}`;

@@ -27,7 +27,10 @@ import { buildGoalContract } from '../../main/agent/goalModeController';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
+  KimiCliAdapter,
+  MimoCliAdapter,
   getRemoteAgentEngineModelCatalogService,
+  isExternalAgentEngine,
   resolveExternalEngineLaunch,
 } from '../../main/services/agentEngine';
 import {
@@ -367,7 +370,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
-      if (selectedEngine.kind === 'codex_cli' || selectedEngine.kind === 'claude_code') {
+      if (isExternalAgentEngine(selectedEngine.kind)) {
         externalEngineFailureContext = {
           kind: selectedEngine.kind,
           stage: 'launch_policy',
@@ -379,15 +382,29 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           stage: 'adapter_run',
           cwd: launch.cwd,
         };
-        const adapter = selectedEngine.kind === 'codex_cli'
-          ? new CodexCliAdapter()
-          : new ClaudeCodeAdapter();
+        // codex/claude 走签名 catalog 的 resolveModelId；mimo/kimi 未注册签名 catalog，
+        // resolveModelId 对未注册 kind 返回 undefined 会丢掉用户所选模型，故直传 launch.model。
+        let adapter: CodexCliAdapter | ClaudeCodeAdapter | MimoCliAdapter | KimiCliAdapter;
+        let resolvedEngineModel: string | undefined;
+        if (selectedEngine.kind === 'codex_cli') {
+          adapter = new CodexCliAdapter();
+          resolvedEngineModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model);
+        } else if (selectedEngine.kind === 'claude_code') {
+          adapter = new ClaudeCodeAdapter();
+          resolvedEngineModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model);
+        } else if (selectedEngine.kind === 'mimo_code') {
+          adapter = new MimoCliAdapter();
+          resolvedEngineModel = launch.model;
+        } else {
+          adapter = new KimiCliAdapter();
+          resolvedEngineModel = launch.model;
+        }
         const result = await adapter.run({
           sessionId,
           prompt,
           cwd: launch.cwd,
           workspaceRoot: launch.workspaceRoot,
-          model: await getRemoteAgentEngineModelCatalogService().resolveModelId(selectedEngine.kind, launch.model),
+          model: resolvedEngineModel,
           permissionProfile: launch.permissionProfile,
           clientMessageId,
           attachmentsCount: body.attachments?.length ?? 0,

@@ -254,6 +254,34 @@ describe('MimoCliAdapter.run', () => {
     }));
   });
 
+  it('tolerates an empty streamed response (exit 0, no text) as a recognizable failure, not a crash', async () => {
+    // 只发一个非正文事件（无 textDelta / finalText），CLI 正常退出 0。
+    // 与 Kimi 对称：应归一成可识别失败（empty response），不落到「completed without text output」兜底成功。
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'tool_call', item: { name: 'Read', type: 'tool_use' } }),
+    ], 0));
+
+    const result = await new MimoCliAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'mimo_code',
+      status: 'failed',
+      exitCode: 0,
+    });
+    expect(result.error).toContain('empty response');
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage?.role).toBe('assistant');
+  });
+
   it('rejects workspace-write permission profile before spawning MiMo', async () => {
     await expect(new MimoCliAdapter().run({
       sessionId: 'session-1',
@@ -294,6 +322,37 @@ describe('MimoCliAdapter.run', () => {
     })).rejects.toThrow(/PATH discovery pending/);
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
+
+  it('reassembles a JSON object split across two stdout data events', async () => {
+    // 一个 result 对象被劈成两个 data chunk：前半无换行，后半补全 + 换行。
+    // 验证 partial-line 跨 chunk 拼接（stdoutBuffer），而非每个 chunk 独立解析。
+    const fullLine = JSON.stringify({ type: 'result', result: 'reassembled mimo answer' });
+    const splitAt = fullLine.indexOf('result"') + 4; // 切在 JSON 中间，确保单独任一半都不是合法 JSON
+    let child: ReturnType<typeof createMockChildRaw> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChildRaw([
+        Buffer.from(fullLine.slice(0, splitAt)),
+        Buffer.from(`${fullLine.slice(splitAt)}\n`),
+      ], 0);
+      return child;
+    });
+
+    const result = await new MimoCliAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'mimo_code',
+      status: 'completed',
+      outputText: 'reassembled mimo answer',
+      exitCode: 0,
+    });
+  });
 });
 
 function createMockChild(stdoutLines: string[], exitCode: number, stderrText = '') {
@@ -318,6 +377,35 @@ function createMockChild(stdoutLines: string[], exitCode: number, stderrText = '
     }
     if (stderrText) {
       child.stderr.emit('data', Buffer.from(stderrText));
+    }
+    child.exitCode = exitCode;
+    child.emit('close', exitCode);
+  });
+
+  return child;
+}
+
+// 像 createMockChild，但逐个 emit 调用方给的原始 Buffer chunk（不补换行），
+// 用于模拟 JSONL 在 chunk 边界处被劈开的场景。
+function createMockChildRaw(chunks: Buffer[], exitCode: number) {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    exitCode: number | null;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.exitCode = null;
+  child.kill = vi.fn(() => {
+    child.exitCode = 1;
+    setImmediate(() => child.emit('close', 1));
+    return true;
+  });
+
+  setImmediate(() => {
+    for (const chunk of chunks) {
+      child.stdout.emit('data', chunk);
     }
     child.exitCode = exitCode;
     child.emit('close', exitCode);

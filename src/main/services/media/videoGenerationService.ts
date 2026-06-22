@@ -2,7 +2,7 @@
 // 复用 wanx「提交异步任务 → 轮询 /tasks 直到 SUCCEEDED/FAILED」骨架，但解析 output.video_url
 // （与图像的 output.results[0].url 不同）。t2v / i2v 共用同一提交端点，仅 input/参数不同。
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
-import { getDashscopeApiKey, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
+import { getDashscopeApiKey, getMinimaxApiKey, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
 import { videoModelById, clampVideoDuration, type VideoCap } from '../../../shared/constants/visualModels';
 
 const VIDEO_SYNTHESIS_PATH = '/services/aigc/video-generation/video-synthesis';
@@ -75,6 +75,85 @@ async function submitAndPollWanxVideo(apiKey: string, body: unknown, outerSignal
   throw new Error('通义万相视频任务超时');
 }
 
+// ── P3 MiniMax 海螺视频（端点/契约经免费探针核实，与 wanx 异：submit→query→files/retrieve 三步） ──
+const MINIMAX_SUBMIT_PATH = '/video_generation';
+const MINIMAX_QUERY_PATH = '/query/video_generation';
+const MINIMAX_RETRIEVE_PATH = '/files/retrieve';
+
+function parseMinimaxBaseResp(value: unknown): { code?: number; msg?: string } {
+  if (!isRecord(value) || !isRecord(value.base_resp)) return {};
+  const br = value.base_resp;
+  return {
+    code: typeof br.status_code === 'number' ? br.status_code : undefined,
+    msg: typeof br.status_msg === 'string' ? br.status_msg : undefined,
+  };
+}
+
+/** 海螺 submit→query→retrieve：提交拿 task_id，轮询拿 file_id(status=Success)，retrieve 拿 download_url。 */
+async function submitAndPollMinimaxVideo(
+  apiKey: string,
+  body: Record<string, unknown>,
+  outerSignal: AbortSignal,
+): Promise<{ url: string }> {
+  const base = MODEL_API_ENDPOINTS.minimax;
+  const authHeaders = { Authorization: `Bearer ${apiKey}` };
+  const submitResp = await fetchWithAbort(
+    `${base}${MINIMAX_SUBMIT_PATH}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) },
+    VIDEO_TIMEOUT_MS.SUBMIT,
+    outerSignal,
+  );
+  if (!submitResp.ok) throw new Error(`海螺视频提交失败: ${submitResp.status} - ${await submitResp.text()}`);
+  const submitJson: unknown = await submitResp.json();
+  const sr = parseMinimaxBaseResp(submitJson);
+  if (sr.code !== undefined && sr.code !== 0) throw new Error(`海螺视频提交失败: ${sr.code} - ${sr.msg ?? ''}`);
+  const taskId = isRecord(submitJson) && typeof submitJson.task_id === 'string' ? submitJson.task_id : '';
+  if (!taskId) throw new Error('海螺视频: 未返回 task_id');
+
+  const deadline = Date.now() + VIDEO_TIMEOUT_MS.TOTAL;
+  let fileId = '';
+  while (Date.now() < deadline) {
+    if (outerSignal.aborted) throw new Error('aborted');
+    await new Promise((r) => setTimeout(r, VIDEO_TIMEOUT_MS.POLL_INTERVAL));
+    const q = await fetchWithAbort(
+      `${base}${MINIMAX_QUERY_PATH}?task_id=${encodeURIComponent(taskId)}`,
+      { headers: authHeaders },
+      VIDEO_TIMEOUT_MS.POLL,
+      outerSignal,
+    );
+    if (!q.ok) continue; // 瞬时失败继续轮询
+    const qj: unknown = await q.json();
+    const status = isRecord(qj) && typeof qj.status === 'string' ? qj.status : '';
+    if (status === 'Success') {
+      fileId = isRecord(qj) && typeof qj.file_id === 'string' ? qj.file_id : '';
+      break;
+    }
+    if (status === 'Fail') {
+      const qr = parseMinimaxBaseResp(qj);
+      throw new Error(`海螺视频任务失败: ${qr.msg ?? 'Fail'}`);
+    }
+    // Queueing / Preparing / Processing → 继续轮询
+  }
+  if (!fileId) throw new Error('海螺视频任务超时或无 file_id');
+
+  // file_id → download_url（sk- key 先不带 GroupId；若 API 要求会在报文暴露，dogfood 据实补）。
+  const r = await fetchWithAbort(
+    `${base}${MINIMAX_RETRIEVE_PATH}?file_id=${encodeURIComponent(fileId)}`,
+    { headers: authHeaders },
+    VIDEO_TIMEOUT_MS.POLL,
+    outerSignal,
+  );
+  if (!r.ok) throw new Error(`海螺视频取文件失败: ${r.status} - ${await r.text()}`);
+  const rj: unknown = await r.json();
+  const url =
+    isRecord(rj) && isRecord(rj.file) && typeof rj.file.download_url === 'string' ? rj.file.download_url : '';
+  if (!url) {
+    const rr = parseMinimaxBaseResp(rj);
+    throw new Error(`海螺视频: 取文件无 download_url${rr.msg ? ` - ${rr.msg}` : ''}`);
+  }
+  return { url };
+}
+
 export interface GenerateVideoArgs {
   model: string;
   mode: VideoCap;
@@ -101,19 +180,33 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
   if (args.mode === 't2v' && !args.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
   if (args.mode === 'i2v' && !args.imageDataUrl) throw new Error('图生视频需要底图');
 
+  const durationSec = clampVideoDuration(model, args.durationSec);
+  const signal = args.outerSignal ?? new AbortController().signal;
+
+  // 按 provider 路由：dashscope=通义万相（output.video_url）/ minimax=海螺（三步 retrieve）。
+  if (model.provider === 'minimax') {
+    const apiKey = getMinimaxApiKey();
+    if (!apiKey) throw new Error('海螺视频需要 MiniMax API Key。');
+    // 海螺 MVP 不传 duration（用模型默认 6s）；i2v 底图走 first_frame_image（探针确认字段名）。
+    const body: Record<string, unknown> =
+      args.mode === 't2v'
+        ? { model: model.id, prompt: args.prompt }
+        : { model: model.id, first_frame_image: args.imageDataUrl, ...(args.prompt?.trim() ? { prompt: args.prompt } : {}) };
+    const { url } = await submitAndPollMinimaxVideo(apiKey, body, signal);
+    return { url, actualModel: model.id, durationSec };
+  }
+
+  // dashscope（通义万相）
   const apiKey = getDashscopeApiKey();
   if (!apiKey) throw new Error('通义万相视频需要百炼（DashScope）API Key。');
-
-  const durationSec = clampVideoDuration(model, args.durationSec);
   const input: Record<string, unknown> =
     args.mode === 't2v'
       ? { prompt: args.prompt }
       : { img_url: args.imageDataUrl, ...(args.prompt?.trim() ? { prompt: args.prompt } : {}) };
-
   const { url } = await submitAndPollWanxVideo(
     apiKey,
     { model: model.id, input, parameters: { resolution: DEFAULT_RESOLUTION, duration: durationSec } },
-    args.outerSignal ?? new AbortController().signal,
+    signal,
   );
   return { url, actualModel: model.id, durationSec };
 }

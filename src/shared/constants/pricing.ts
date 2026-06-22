@@ -76,8 +76,12 @@ export const API_VERSIONS = {
  * （5s≈¥0.15，略偏保守安全侧）。>5s 时长按每秒线性外推（仅 5s 有实测，更长为估算）。
  */
 export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
-  'wan2.7-t2v': 0.03,        // 文生视频，实测 ¥0.14/5s 折算
-  'wanx2.1-i2v-turbo': 0.03, // 图生视频 turbo，实测 ¥0.14/5s 折算
+  'wan2.7-t2v': 0.03,        // 通义万相文生视频，实测 ¥0.14/5s 折算
+  'wanx2.1-i2v-turbo': 0.03, // 通义万相图生视频 turbo，实测 ¥0.14/5s 折算
+  // P3 MiniMax 海螺：单价未实测，保守上界估值（方向偏高→成本提示偏保守，安全侧），
+  // dogfood/控制台核对后回填校正。6s 片 × 0.2 ≈ ¥1.2。
+  'MiniMax-Hailuo-02': 0.2,  // 海螺文生视频，保守估值待校正
+  'I2V-01': 0.2,             // 海螺图生视频，保守估值待校正
   default: 0.03,
 };
 

@@ -144,6 +144,13 @@ export function getDashscopeApiKey(): string | undefined {
   return configService.getApiKey('dashscope') || configService.getApiKey('qwen') || undefined;
 }
 
+/** MiniMax key（海螺视频用）。env 优先（dogfood 覆盖），否则取 minimax 槽位。 */
+export function getMinimaxApiKey(): string | undefined {
+  const envKey = process.env.MINIMAX_API_KEY;
+  if (envKey) return envKey;
+  return getConfigService().getApiKey('minimax') || undefined;
+}
+
 /**
  * gpt-image-2 自定义端点配置：env（GPTIMAGE_PROXY_BASE/KEY）优先，再回落 config 槽位。
  * 同 getDashscopeApiKey 范式；base 或 key 任一缺失则返回 undefined。绝不写进代码。

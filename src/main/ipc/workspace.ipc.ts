@@ -67,7 +67,14 @@ async function handleResolveDesignDir(): Promise<{ dir: string }> {
 // renderer 不经 agent 直接出图——纯文生图无需 agent 推理，直连更确定。
 // 生成 → 下载 OSS URL 转 base64 → 写盘到 outputPath → 返回路径，由 renderer 回灌画布。
 export async function handleGenerateDesignImage(
-  payload: { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
+  payload: {
+    prompt: string;
+    aspectRatio?: string;
+    outputPath: string;
+    model?: string;
+    /** 参考图（base64 dataURL）：存在时走 wanx description_edit 垫图，而非纯文生图。 */
+    referenceImageDataUrl?: string;
+  },
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   // prompt 须为非空白（trim 后非空）：空白 prompt 是 paid no-op（尤其 wanx/gptimage 用 raw prompt），
   // 直连 IPC/未来调用方可能绕过 renderer 的 trim 守卫，在主进程兜底拦住付费空调用。
@@ -75,6 +82,21 @@ export async function handleGenerateDesignImage(
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
+
+  // 参考图垫图：以用户贴入的参考图为底走 wanx description_edit（万相专属能力，故固定 wanx 引擎）。
+  // 路径守卫/空 prompt 已上拦，编排（key 校验 + 出图 + 下载）下沉到 service，handler 只负责落盘。
+  if (payload.referenceImageDataUrl) {
+    const { generateImageFromReference } = await import('../services/media/imageGenerationService');
+    const { imageData, actualModel } = await generateImageFromReference({
+      prompt: payload.prompt,
+      referenceImageDataUrl: payload.referenceImageDataUrl,
+    });
+    const refBuf = Buffer.from(imageData.replace(/^data:[^;]+;base64,/, ''), 'base64');
+    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+    await fsp.writeFile(payload.outputPath, refBuf);
+    return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+  }
+
   // 按 model 路由到对应 engine（注册表守门，未知 id 抛错）；缺省回退默认 wanx。
   const engine = imageEngineForModel(payload.model || defaultImageModelId());
   // flux engine 需要具体模型串作 generateImage 的 fluxModel 入参；其余 engine 忽略此参。

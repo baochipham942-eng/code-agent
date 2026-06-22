@@ -9,7 +9,6 @@ import {
   AlertCircle,
   History,
   ChevronRight,
-  ImagePlus,
   Monitor,
   Tablet,
   Smartphone,
@@ -34,7 +33,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
-import { useDesignCanvasImport } from './useDesignCanvasImport';
+import { DesignImportButtons } from './DesignImportButtons';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { loadCanvasDoc } from './designCanvasPersistence';
 import { DesignCanvas } from './DesignCanvas';
@@ -194,8 +193,6 @@ const Composer: React.FC = () => {
   const s = useDesignStore();
   const { generate: generatePrototype } = useDesignGeneration();
   const { generate: generateCanvas, generateVideo } = useDesignCanvasGeneration();
-  const { importFiles } = useDesignCanvasImport();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasGenerating = useDesignCanvasStore((c) => c.generating);
   const canvasError = useDesignCanvasStore((c) => c.error);
 
@@ -490,35 +487,8 @@ const Composer: React.FC = () => {
         </>
       )}
 
-      {/* 自由画布：导入自有图片（也支持画布上粘贴/拖拽） */}
-      {imageMode && (
-        <>
-          {/* ds-allow:start 导入按钮用透明描边自定义样式（Button secondary 是实色 zinc-600，会回归） */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={generating}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.12] px-3 py-2 text-sm text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-50"
-          >
-            <ImagePlus className="h-4 w-4" />
-            {t.design.importImage}
-          </button>
-          {/* ds-allow:end */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              if (files.length > 0) void importFiles(files);
-              e.target.value = '';
-            }}
-          />
-          <p className="text-[11px] leading-snug text-zinc-500">{t.design.importHint}</p>
-        </>
-      )}
+      {/* 自由画布：导入自有图片 + 添加参考图（也支持画布上粘贴/拖拽） */}
+      {imageMode && <DesignImportButtons generating={generating} />}
 
       {/* T2 成本透明 + undo/redo 历史（仅图像产物，挂 variant spine） */}
       {imageMode && <DesignCostHistory />}

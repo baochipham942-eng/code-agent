@@ -89,6 +89,33 @@ describe('normalizeDesignBrief', () => {
     expect(brief?.directionTokens?.refs).toEqual([]);
   });
 
+  it('normalizes brandContract: trims/dedupes buckets, defaults change to []', () => {
+    const brief = normalizeDesignBrief({
+      surface: 'landing_page',
+      brandContract: {
+        keep: ['  克制留白 ', '克制留白'],
+        change: [],
+        doNotCopy: [' 不要渐变 ', ''],
+        logoPath: '/x/logo.png',
+      },
+    });
+    expect(brief?.brandContract).toEqual({
+      keep: ['克制留白'],
+      change: [],
+      doNotCopy: ['不要渐变'],
+      logoPath: '/x/logo.png',
+    });
+  });
+
+  it('drops brandContract when all buckets empty and no logo', () => {
+    const brief = normalizeDesignBrief({
+      surface: 'landing_page',
+      brandContract: { keep: ['', '  '], change: [], doNotCopy: ['   '] },
+    });
+    expect(brief).toEqual({ surface: 'landing_page' });
+    expect(brief?.brandContract).toBeUndefined();
+  });
+
   it('keeps complete direction token packages and drops incomplete packages', () => {
     expect(
       normalizeDesignBrief({

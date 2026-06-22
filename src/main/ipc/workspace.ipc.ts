@@ -9,6 +9,13 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
+import {
+  listBrands as registryListBrands,
+  saveBrand as registrySaveBrand,
+  deleteBrand as registryDeleteBrand,
+  setActiveBrand as registrySetActiveBrand,
+} from '../services/design/brandRegistry';
+import type { BrandContract } from '../../shared/contract/brandContract';
 import { handleGetConfigScope } from './workspaceConfigScope';
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
@@ -891,6 +898,33 @@ async function handleExportImagePdf(
 }
 
 // ----------------------------------------------------------------------------
+// 品牌契约 registry（CD-Parity §1）：薄 handler，读写逻辑在独立模块
+// services/design/brandRegistry.ts，这里只做编排转发。
+// ----------------------------------------------------------------------------
+
+async function handleListBrands() {
+  return registryListBrands();
+}
+
+async function handleSaveBrand(payload: { brand: Partial<BrandContract> }) {
+  if (!payload?.brand) {
+    throw new Error('saveBrand 需要 brand');
+  }
+  return registrySaveBrand(payload.brand);
+}
+
+async function handleDeleteBrand(payload: { id: string }) {
+  if (!payload?.id) {
+    throw new Error('deleteBrand 需要 id');
+  }
+  return registryDeleteBrand(payload.id);
+}
+
+async function handleSetActiveBrand(payload: { id: string | null }) {
+  return registrySetActiveBrand(payload?.id ?? null);
+}
+
+// ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
 
@@ -1015,6 +1049,18 @@ export function registerWorkspaceHandlers(
           data = await handleRemoveWatermarkDesignImage(
             payload as { baseImagePath: string; outputPath: string; prompt?: string },
           );
+          break;
+        case 'listBrands':
+          data = await handleListBrands();
+          break;
+        case 'saveBrand':
+          data = await handleSaveBrand(payload as { brand: Partial<BrandContract> });
+          break;
+        case 'deleteBrand':
+          data = await handleDeleteBrand(payload as { id: string });
+          break;
+        case 'setActiveBrand':
+          data = await handleSetActiveBrand(payload as { id: string | null });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

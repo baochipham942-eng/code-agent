@@ -3,6 +3,7 @@
 // pin/discard 动作由调用方注入（各自维护 store/落盘），本组件只负责呈现与触发。
 import React, { useEffect, useState } from 'react';
 import { X, Star, Trash2 } from 'lucide-react';
+import { IconButton } from '../primitives';
 import { useI18n } from '../../hooks/useI18n';
 import { readWorkspaceImageAsDataUrl, readWorkspaceFile } from './designFiles';
 import { injectPreviewStyle } from './designPreviewInject';
@@ -80,6 +81,7 @@ const Pane: React.FC<{
         {variantLabel(variant, t)}
       </p>
       <div className="flex gap-2">
+        {/* ds-allow:start 定稿 CTA 用全宽 emerald 确认色（Button primary 是蓝色渐变，会丢"设为主版"的成功语义）+ discard 用透明描边+红 hover（无对应 Button variant），两者均无法不回归地映射 primitive */}
         <button
           type="button"
           onClick={onPin}
@@ -94,6 +96,7 @@ const Pane: React.FC<{
         >
           <Trash2 className="h-3.5 w-3.5" /> {t.design.discardVersion}
         </button>
+        {/* ds-allow:end */}
       </div>
     </div>
   );
@@ -112,9 +115,13 @@ export const VariantCompareView: React.FC<{
     <div className="absolute inset-0 z-10 flex flex-col gap-3 bg-zinc-950/85 p-6 backdrop-blur">
       <div className="flex items-center justify-between">
         <span className="text-sm text-zinc-200">{t.design.compareTitle}</span>
-        <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
-          <X className="h-4 w-4" />
-        </button>
+        <IconButton
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          aria-label={t.common.close}
+          icon={<X className="h-4 w-4" />}
+        />
       </div>
       <div className="flex min-h-0 flex-1 gap-4">
         <Pane

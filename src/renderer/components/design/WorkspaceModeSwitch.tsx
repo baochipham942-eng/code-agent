@@ -20,6 +20,7 @@ export const WorkspaceModeSwitch: React.FC = () => {
       {items.map(({ mode, label, icon }) => {
         const active = workspaceMode === mode;
         return (
+          // ds-allow:start 分段控件段（active/inactive 互斥态用自定义 bg-white/[0.10]，非 Button 任一 variant）
           <button
             key={mode}
             type="button"
@@ -34,6 +35,7 @@ export const WorkspaceModeSwitch: React.FC = () => {
             {icon}
             <span>{label}</span>
           </button>
+          // ds-allow:end
         );
       })}
     </div>

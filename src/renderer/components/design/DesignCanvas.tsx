@@ -7,6 +7,7 @@ import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText
 import type Konva from 'konva';
 import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, FileDown, Pencil, Presentation, Film } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { IconButton } from '../primitives';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
@@ -261,13 +262,12 @@ const VideoPlayOverlay: React.FC<{
   }, [runDir, node.src]);
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-zinc-950/85 p-6">
-      <button
+      <IconButton
         onClick={onClose}
-        className="absolute right-4 top-4 rounded p-1 text-zinc-400 hover:text-zinc-100"
+        className="absolute right-4 top-4"
         aria-label={t.design.videoPlayClose}
-      >
-        <X size={18} />
-      </button>
+        icon={<X size={18} />}
+      />
       {url ? (
         <video src={url} controls autoPlay className="max-h-[80%] max-w-[90%] rounded border border-white/20" />
       ) : (
@@ -302,9 +302,7 @@ const DiffEvidenceOverlay: React.FC<{
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-zinc-950/85 p-6">
       <div className="flex items-center gap-2 text-sm text-amber-300">
         <span>{t.design.diffEvidenceTitle}</span>
-        <button onClick={onClose} className="rounded p-1 text-zinc-400 hover:text-zinc-100" aria-label={t.design.diffClose}>
-          <X size={16} />
-        </button>
+        <IconButton onClick={onClose} aria-label={t.design.diffClose} icon={<X size={16} />} />
       </div>
       {c && (
         <p className="text-[11px] text-zinc-400">
@@ -740,6 +738,7 @@ export const DesignCanvas: React.FC = () => {
       {selectedImageNode && (
         <div className="absolute left-4 top-4 flex w-72 flex-col gap-2 rounded-xl border border-white/[0.1] bg-zinc-900/90 p-3 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between">
+            {/* ds-allow:start 圈选开关用 toggle 态自定义填充（active=bg-red-500/20，idle=bg-white/[0.06]，非 Button variant）+ 清除标注用裸文字按钮 */}
             <button
               type="button"
               onClick={() => setAnnotating((v) => !v)}
@@ -760,6 +759,7 @@ export const DesignCanvas: React.FC = () => {
                 {t.design.clearAnnotations}（{annotations.length}）
               </button>
             )}
+            {/* ds-allow:end */}
           </div>
           {annotating ? (
             <p className="text-[11px] leading-snug text-amber-300/80">{t.design.annotateHint}</p>
@@ -775,6 +775,7 @@ export const DesignCanvas: React.FC = () => {
             rows={3}
             className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
           />
+          {/* ds-allow:start 局部重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言）+ 导出图片/图生视频用透明描边自定义样式（Button secondary 实色会回归） */}
           <button
             type="button"
             onClick={() => void onRepaint()}
@@ -802,6 +803,7 @@ export const DesignCanvas: React.FC = () => {
             <Film className="h-3.5 w-3.5" />
             {t.design.generateVideoFromImage}
           </button>
+          {/* ds-allow:end */}
           {/* ds-allow:start 画布节点操作栏沿用旧裸 button 样式，与同栏导出图片按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
           <button
             type="button"
@@ -827,6 +829,7 @@ export const DesignCanvas: React.FC = () => {
 
           {/* B4：标注重绘（自由画标注 + 指令 + cap 模型 → editImageByAnnotation → 新 variant 挂 spine） */}
           <div className="mt-1 flex flex-col gap-2 border-t border-white/[0.08] pt-2">
+            {/* ds-allow:start 标注重绘开关用 toggle 态自定义填充（active=bg-fuchsia-500/20，idle=bg-white/[0.06]，非 Button variant） */}
             <button
               type="button"
               onClick={() => setAnnotMode(!annotMode)}
@@ -837,10 +840,12 @@ export const DesignCanvas: React.FC = () => {
               <Pencil className="h-3.5 w-3.5" />
               {t.design.annotMode}
             </button>
+            {/* ds-allow:end */}
             {annotMode && (
               <>
                 {/* 工具选择：自由笔 / 箭头 / 矩形 / 文字 */}
                 <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+                  {/* ds-allow:start 标注工具分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
                   {([
                     ['pen', t.design.annotToolPen],
                     ['arrow', t.design.annotToolArrow],
@@ -858,6 +863,7 @@ export const DesignCanvas: React.FC = () => {
                       {label}
                     </button>
                   ))}
+                  {/* ds-allow:end */}
                 </div>
                 {/* 重绘模型（cap 过滤；瞬时 annotModel，与全局 imageModel 解耦） */}
                 <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} />
@@ -877,6 +883,7 @@ export const DesignCanvas: React.FC = () => {
                   {t.design.costEstimateLabel}{' '}
                   <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(effectiveAnnotModel))}</span>
                 </div>
+                {/* ds-allow:start 标注重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
                 <button
                   type="button"
                   onClick={() => void onAnnotRedraw()}
@@ -886,6 +893,7 @@ export const DesignCanvas: React.FC = () => {
                   {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   {t.design.annotRedraw}
                 </button>
+                {/* ds-allow:end */}
               </>
             )}
           </div>
@@ -900,6 +908,7 @@ export const DesignCanvas: React.FC = () => {
 
       {/* 双选 → A/B 对比入口 */}
       {compareNodes.length === 2 && !comparing && (
+        // ds-allow:start 画布悬浮对比 CTA（绝对定位 rounded-full 胶囊 + 设计区品牌色 bg-fuchsia-500/90，非 Button variant/形状）
         <button
           type="button"
           onClick={() => setComparing(true)}
@@ -908,6 +917,7 @@ export const DesignCanvas: React.FC = () => {
           <GitCompare className="h-4 w-4" />
           {t.design.compareBtn}
         </button>
+        // ds-allow:end
       )}
 
       {comparing && compareNodes.length === 2 && (

@@ -31,6 +31,7 @@ export const VersionControl: React.FC<{
 
   return (
     <div className="relative">
+      {/* ds-allow:start 版本下拉触发器（带 chevron 的下拉切换，自定义描边）+ 下拉内整宽自定义列表行（active 态 bg-white/[0.08]），均非 Button variant */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -73,6 +74,7 @@ export const VersionControl: React.FC<{
               <span className="text-zinc-500">{formatVersionTime(v.createdAt)}</span>
             </button>
           ))}
+          {/* ds-allow:end */}
         </div>
       )}
     </div>
@@ -89,6 +91,7 @@ export const ViewingBanner: React.FC<{ onRollback: () => void; onBackToLatest: (
     <div className="flex shrink-0 items-center gap-2 border-t border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
       <Clock className="h-3.5 w-3.5 shrink-0" />
       <span>{t.design.versionViewing}</span>
+      {/* ds-allow:start 查看历史版本横幅按钮用自定义 amber 配色（与横幅同色系警示语义，无对应 Button variant） */}
       <button
         type="button"
         onClick={onRollback}
@@ -104,6 +107,7 @@ export const ViewingBanner: React.FC<{ onRollback: () => void; onBackToLatest: (
       >
         {t.design.versionBackToLatest}
       </button>
+      {/* ds-allow:end */}
     </div>
   );
 };
@@ -124,6 +128,7 @@ export const VersionComparePicker: React.FC<{
 
   return (
     <div className="relative">
+      {/* ds-allow:start 版本对比下拉触发器（带 chevron 的下拉切换，自定义描边）+ 下拉内整宽勾选列表行（含自定义勾选框）+ 定稿 CTA（设计区品牌色 fuchsia），均非 Button variant */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -178,6 +183,7 @@ export const VersionComparePicker: React.FC<{
           >
             {t.design.compareBtn}
           </button>
+          {/* ds-allow:end */}
         </div>
       )}
     </div>

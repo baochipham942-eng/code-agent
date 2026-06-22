@@ -25,7 +25,7 @@ import {
   BadgeCheck,
   Pencil,
 } from 'lucide-react';
-import { Button } from '../primitives';
+import { Button, IconButton } from '../primitives';
 import { BrandManager } from './BrandManager';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
@@ -114,6 +114,7 @@ const HistorySection: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-1.5">
+      {/* ds-allow:start 折叠区披露开关（无填充的树形 disclosure 行，非 Button variant）+ 历史项整宽自定义列表行 */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -142,6 +143,7 @@ const HistorySection: React.FC = () => {
               {run.requirement || run.runDir.split('/').pop()}
             </button>
           ))}
+          {/* ds-allow:end */}
         </div>
       )}
     </div>
@@ -182,6 +184,7 @@ const Composer: React.FC = () => {
 
       {/* 产物类型 */}
       <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+        {/* ds-allow:start 产物类型分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
         {outputTypes.map(({ type, label }) => (
           <button
             key={type}
@@ -196,6 +199,7 @@ const Composer: React.FC = () => {
             {label}
           </button>
         ))}
+        {/* ds-allow:end */}
       </div>
 
       {/* 需求 */}
@@ -234,6 +238,7 @@ const Composer: React.FC = () => {
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-zinc-400">{t.design.toneLabel}</span>
         <div className="flex flex-wrap gap-1.5">
+          {/* ds-allow:start 语气多选 pill（圆角全 + 选中态自定义 fuchsia 描边/底，非 Button variant） */}
           {t.design.tones.map((tone) => (
             <button
               key={tone}
@@ -248,6 +253,7 @@ const Composer: React.FC = () => {
               {tone}
             </button>
           ))}
+          {/* ds-allow:end */}
         </div>
       </div>
 
@@ -255,6 +261,7 @@ const Composer: React.FC = () => {
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-zinc-400">{t.design.surfaceLabel}</span>
         <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+          {/* ds-allow:start surface 分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
           {surfaces.map(({ value, label }) => (
             <button
               key={value}
@@ -269,6 +276,7 @@ const Composer: React.FC = () => {
               {label}
             </button>
           ))}
+          {/* ds-allow:end */}
         </div>
       </div>
 
@@ -285,6 +293,7 @@ const Composer: React.FC = () => {
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-zinc-400">{t.design.aspectRatioLabel}</span>
           <div className="flex flex-wrap gap-1.5">
+            {/* ds-allow:start 出图尺寸单选 pill（选中态自定义 fuchsia 描边/底，非 Button variant） */}
             {DESIGN_ASPECT_RATIOS.map((r) => (
               <button
                 key={r}
@@ -299,6 +308,7 @@ const Composer: React.FC = () => {
                 {r}
               </button>
             ))}
+            {/* ds-allow:end */}
           </div>
         </div>
       )}
@@ -322,6 +332,7 @@ const Composer: React.FC = () => {
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-zinc-400">{t.design.videoModeLabel}</span>
             <div className="flex gap-1.5">
+              {/* ds-allow:start 视频模式分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
               {(['t2v', 'i2v'] as const).map((m) => (
                 <button
                   key={m}
@@ -334,6 +345,7 @@ const Composer: React.FC = () => {
                   {m === 't2v' ? t.design.videoModeT2v : t.design.videoModeI2v}
                 </button>
               ))}
+              {/* ds-allow:end */}
             </div>
             {s.videoMode === 'i2v' && (
               <span className="text-[11px] leading-snug text-zinc-500">{t.design.videoI2vHint}</span>
@@ -386,6 +398,7 @@ const Composer: React.FC = () => {
       )}
 
       {/* 生成 */}
+      {/* ds-allow:start 主生成 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 是蓝色渐变，会丢设计区视觉语言） */}
       <button
         type="button"
         onClick={() => void onGenerate()}
@@ -395,10 +408,12 @@ const Composer: React.FC = () => {
         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
         {generating ? t.design.generating : t.design.generate}
       </button>
+      {/* ds-allow:end */}
 
       {/* 自由画布：导入自有图片（也支持画布上粘贴/拖拽） */}
       {imageMode && (
         <>
+          {/* ds-allow:start 导入按钮用透明描边自定义样式（Button secondary 是实色 zinc-600，会回归） */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -408,6 +423,7 @@ const Composer: React.FC = () => {
             <ImagePlus className="h-4 w-4" />
             {t.design.importImage}
           </button>
+          {/* ds-allow:end */}
           <input
             ref={fileInputRef}
             type="file"
@@ -458,6 +474,7 @@ const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDevic
       {DESIGN_DEVICE_PRESETS.map(({ id }) => {
         const active = device === id;
         return (
+          // ds-allow:start 设备切换分段控件段（active 用自定义 bg-white/[0.10]，非 Button variant）
           <button
             key={id}
             type="button"
@@ -471,6 +488,7 @@ const DeviceSwitch: React.FC<{ device: DesignDeviceId; onChange: (d: DesignDevic
             {DEVICE_ICONS[id]}
             <span>{labels[id]}</span>
           </button>
+          // ds-allow:end
         );
       })}
     </div>
@@ -497,6 +515,7 @@ const PaletteSwitch: React.FC<{ palette: string; onChange: (id: string) => void 
         const active = palette === id;
         const label = t.design.palettes[id as keyof typeof t.design.palettes] ?? id;
         return (
+          // ds-allow:start 配色 swatch 圆点（h-4 w-4 纯色块 + hue-rotate style，非图标/文字按钮，IconButton 不适用）
           <button
             key={id}
             type="button"
@@ -508,6 +527,7 @@ const PaletteSwitch: React.FC<{ palette: string; onChange: (id: string) => void 
             }`}
             style={{ background: '#d946ef', filter: `hue-rotate(${deg}deg)` }} // ds-allow:viz 色板 swatch 种子色，由 hue-rotate 旋出各档主题色
           />
+          // ds-allow:end
         );
       })}
     </div>
@@ -544,9 +564,11 @@ const ContinueEditBar: React.FC<{
           <span>{t.design.selectionTarget}</span>
           <span className="font-mono text-fuchsia-300">&lt;{selection.tag}&gt;</span>
           {selection.text && <span className="max-w-[160px] truncate text-zinc-300">{selection.text}</span>}
+          {/* ds-allow:start chip 内清除按钮用自定义 fuchsia 文字色（与 chip 同色系，IconButton variant 文字色会冲突覆盖不可靠） */}
           <button type="button" onClick={onClearSelection} className="ml-0.5 text-fuchsia-300 hover:text-fuchsia-100">
             <X className="h-3 w-3" />
           </button>
+          {/* ds-allow:end */}
         </div>
       )}
       <div className="flex items-center gap-2">
@@ -565,6 +587,7 @@ const ContinueEditBar: React.FC<{
           disabled={generating}
           className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none disabled:opacity-50"
         />
+        {/* ds-allow:start 续编发送 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 是蓝色渐变，会丢设计区视觉语言） */}
         <button
           type="button"
           onClick={() => void submit()}
@@ -574,6 +597,7 @@ const ContinueEditBar: React.FC<{
           <Send className="h-3.5 w-3.5" />
           {t.design.continueEditSend}
         </button>
+        {/* ds-allow:end */}
       </div>
     </div>
   );
@@ -853,18 +877,20 @@ const PreviewPane: React.FC = () => {
               </>
             )}
             {/* ds-allow:end */}
-            <button
-              type="button"
+            <IconButton
+              variant="outline"
+              size="md"
               onClick={() => void handleOpenBrowser()}
               title={t.design.actionOpenBrowser}
-              className="rounded-md border border-white/[0.08] p-1.5 text-zinc-400 hover:text-zinc-200"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </button>
+              aria-label={t.design.actionOpenBrowser}
+              icon={<ExternalLink className="h-3.5 w-3.5" />}
+            />
+            {/* ds-allow:start 导出按钮有 exported 成功态切到自定义 emerald 边框/底/字（无对应 IconButton variant，className 覆盖 bg 在 Tailwind 下不可靠） */}
             <button
               type="button"
               onClick={() => void handleExport()}
               title={exported ? t.design.actionExported : t.design.actionExport}
+              aria-label={exported ? t.design.actionExported : t.design.actionExport}
               className={`rounded-md border p-1.5 transition-colors ${
                 exported
                   ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
@@ -873,6 +899,7 @@ const PreviewPane: React.FC = () => {
             >
               <Download className="h-3.5 w-3.5" />
             </button>
+            {/* ds-allow:end */}
             {/* ds-allow:start 设计预览工具栏沿用旧裸 button 样式，与同栏导出 HTML/全屏按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -888,14 +915,14 @@ const PreviewPane: React.FC = () => {
               )}
             </button>
             {/* ds-allow:end */}
-            <button
-              type="button"
+            <IconButton
+              variant="outline"
+              size="md"
               onClick={() => setFullscreen((v) => !v)}
               title={fullscreen ? t.design.actionExitFullscreen : t.design.actionFullscreen}
-              className="rounded-md border border-white/[0.08] p-1.5 text-zinc-400 hover:text-zinc-200"
-            >
-              {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            </button>
+              aria-label={fullscreen ? t.design.actionExitFullscreen : t.design.actionFullscreen}
+              icon={fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            />
           </div>
         </div>
         <div

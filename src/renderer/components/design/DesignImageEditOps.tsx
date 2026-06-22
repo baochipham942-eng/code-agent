@@ -33,6 +33,7 @@ export function DesignImageEditOps(props: DesignImageEditOpsProps): React.ReactE
         {t.design.expandTitle}
       </div>
       <div className="grid grid-cols-5 gap-1" data-testid="design-expand-directions">
+        {/* ds-allow:start 五段方向分段控件（active 用自定义 bg-fuchsia-500/30，非 Button variant） */}
         {DIRECTIONS.map(([key, labelKey]) => (
           <button
             key={key}
@@ -48,6 +49,7 @@ export function DesignImageEditOps(props: DesignImageEditOpsProps): React.ReactE
             {t.design[labelKey] as string}
           </button>
         ))}
+        {/* ds-allow:end */}
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -62,6 +64,7 @@ export function DesignImageEditOps(props: DesignImageEditOpsProps): React.ReactE
         />
         <span className="w-10 text-right text-[11px] tabular-nums text-zinc-400">{ratio.toFixed(1)}×</span>
       </div>
+      {/* ds-allow:start 扩图/去水印操作按钮用自定义半透明填充 bg-white/[0.06]（Button secondary 是实色 zinc-600，className 覆盖 bg 在 Tailwind 下不可靠会回归） */}
       <button
         type="button"
         data-testid="design-expand-btn"
@@ -82,6 +85,7 @@ export function DesignImageEditOps(props: DesignImageEditOpsProps): React.ReactE
         {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
         {t.design.removeWatermarkBtn}
       </button>
+      {/* ds-allow:end */}
     </div>
   );
 }

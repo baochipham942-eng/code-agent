@@ -109,6 +109,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
             {/* 槽级 undo/redo */}
             {timeline.length > 1 && (
               <div className="flex items-center gap-1.5">
+                {/* ds-allow:start 撤销/重做用紧凑 text-[11px] 描边按钮（Button sm 固定 text-xs+更大 padding，会改变历史面板紧凑排版） */}
                 <button
                   type="button"
                   onClick={() => undoId && onSetChosen(undoId)}
@@ -129,6 +130,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                   <Redo2 className="h-3 w-3" />
                   {t.design.historyRedo}
                 </button>
+                {/* ds-allow:end */}
               </div>
             )}
 
@@ -183,6 +185,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                   {isCurrent && (
                     <span className="shrink-0 text-[10px] text-fuchsia-300">{t.design.historyCurrent}</span>
                   )}
+                  {/* ds-allow:start 时间线行内图标按钮（保存=emerald/回滚=fuchsia hover 等自定义文字色，IconButton variant 文字色会冲突覆盖不可靠；且嵌在 text-[11px] 紧凑行内） */}
                   {editing ? (
                     <button
                       type="button"
@@ -214,6 +217,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                       )}
                     </>
                   )}
+                  {/* ds-allow:end */}
                 </div>
               );
             })}

@@ -3,6 +3,7 @@
 // 不调付费模型；topic 必填。
 import { promises as fsp } from 'fs';
 import { generateSlidesDeck, buildSlidesOutline } from '../services/design/slidesGenerator';
+import { buildAiOutline } from '../services/design/slidesAiOutline';
 import { imagesToPptx } from '../services/design/pptxExport';
 import type { SlideData } from '../tools/media/ppt/types';
 import { handleSaveBinaryToDownloads } from './workspaceSaveExport';
@@ -46,16 +47,23 @@ export interface GenerateSlidesDeckPayload {
 export interface GenerateSlidesOutlinePayload {
   topic?: string;
   slidesCount?: number;
+  /** true=AI 增强大纲（付费，调文本模型）；缺省=确定性 SCQA 模板（免费）。 */
+  ai?: boolean;
 }
 
-// 大纲生成（厚版第一步）：topic + 页数 → 确定性 SlideData[]（不落盘、不付费）。
+// 大纲生成（厚版第一步）：topic + 页数 → SlideData[]（不落盘）。
+// ai=true 走付费文本模型（无 key/失败自动降级确定性，aiUsed 反映实际）；缺省走免费模板。
 export async function handleGenerateSlidesOutline(
   payload: GenerateSlidesOutlinePayload,
-): Promise<{ slides: SlideData[] }> {
+): Promise<{ slides: SlideData[]; aiUsed: boolean }> {
   if (!payload?.topic?.trim()) {
     throw new Error('generateSlidesOutline 需要 topic');
   }
-  return { slides: buildSlidesOutline(payload.topic, payload.slidesCount) };
+  if (payload.ai) {
+    const r = await buildAiOutline(payload.topic, payload.slidesCount);
+    return { slides: r.slides, aiUsed: r.ai };
+  }
+  return { slides: buildSlidesOutline(payload.topic, payload.slidesCount), aiUsed: false };
 }
 
 export async function handleGenerateSlidesDeck(

@@ -184,14 +184,15 @@ export async function exportCanvasPptx(
 export async function generateSlidesOutline(input: {
   topic: string;
   slidesCount?: number;
-}): Promise<{ slides: SlideOutlineItem[] | null; error?: string }> {
+  ai?: boolean;
+}): Promise<{ slides: SlideOutlineItem[] | null; aiUsed?: boolean; error?: string }> {
   try {
-    const res = await window.domainAPI?.invoke<{ slides: SlideOutlineItem[] }>(
+    const res = await window.domainAPI?.invoke<{ slides: SlideOutlineItem[]; aiUsed: boolean }>(
       IPC_DOMAINS.WORKSPACE,
       'generateSlidesOutline',
       input,
     );
-    if (res?.success) return { slides: res.data?.slides ?? null };
+    if (res?.success) return { slides: res.data?.slides ?? null, aiUsed: res.data?.aiUsed };
     return { slides: null, error: res?.error?.message };
   } catch (e) {
     return { slides: null, error: e instanceof Error ? e.message : String(e) };

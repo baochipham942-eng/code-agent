@@ -17,6 +17,8 @@ export const DesignSlidesPanel: React.FC = () => {
   const { t } = useI18n();
   const requirement = useDesignStore((s) => s.requirement);
   const [slidesCount, setSlidesCount] = React.useState(DEFAULT_SLIDES);
+  const [aiOutline, setAiOutline] = React.useState(false);
+  const [fellBack, setFellBack] = React.useState(false);
 
   const outline = useDesignSlidesStore((s) => s.outline);
   const buildingOutline = useDesignSlidesStore((s) => s.buildingOutline);
@@ -30,10 +32,13 @@ export const DesignSlidesPanel: React.FC = () => {
 
   const onBuildOutline = async (): Promise<void> => {
     if (!topic || buildingOutline) return;
+    setFellBack(false);
     store.setState({ buildingOutline: true, error: null, result: null });
-    const res = await generateSlidesOutline({ topic, slidesCount });
+    const res = await generateSlidesOutline({ topic, slidesCount, ai: aiOutline });
     if (res.slides) {
       store.setState({ outline: res.slides, buildingOutline: false });
+      // 请求了 AI 但实际降级（无 key/失败）→ 提示用户
+      if (aiOutline && res.aiUsed === false) setFellBack(true);
     } else {
       store.setState({ error: res.error ?? t.design.slidesGenerateError, buildingOutline: false });
     }
@@ -78,7 +83,23 @@ export const DesignSlidesPanel: React.FC = () => {
         </label>
       )}
 
-      {/* 第一步：生成大纲（确定性、免费） */}
+      {/* AI 增强大纲开关（付费，opt-in；默认走免费确定性模板） */}
+      {!hasOutline && (
+        <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-snug text-zinc-400">
+          <input
+            type="checkbox"
+            checked={aiOutline}
+            onChange={(e) => setAiOutline(e.target.checked)}
+            className="mt-0.5 accent-fuchsia-500"
+          />
+          <span>
+            {t.design.slidesAiOutline}
+            {aiOutline && <span className="text-amber-300/80">（{t.design.slidesAiCostHint}）</span>}
+          </span>
+        </label>
+      )}
+
+      {/* 第一步：生成大纲 */}
       {/* ds-allow:start 大纲生成按钮：次级动作用描边样式 */}
       <button
         type="button"
@@ -120,6 +141,10 @@ export const DesignSlidesPanel: React.FC = () => {
 
       {!topic && !hasOutline && (
         <p className="text-[11px] leading-snug text-zinc-500">{t.design.slidesNeedTopic}</p>
+      )}
+
+      {fellBack && (
+        <p className="text-[11px] leading-snug text-amber-300/80">{t.design.slidesAiFellBack}</p>
       )}
 
       {result && (

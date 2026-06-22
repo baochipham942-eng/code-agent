@@ -56,6 +56,8 @@ import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
+  KimiCliAdapter,
+  MimoCliAdapter,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -297,6 +299,44 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model),
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+      });
+      return;
+    }
+    if (engine.kind === 'mimo_code') {
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      // TODO(engine-expansion §5①): mimo_code 尚未注册进签名 model catalog，先直传用户所选
+      // 模型（catalog resolveModelId 对未注册 kind 返回 undefined 会丢掉用户选择）。矩阵接口
+      // 就绪后改走 getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', ...)。
+      await new MimoCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: launch.model,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+      });
+      return;
+    }
+    if (engine.kind === 'kimi_code') {
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      // TODO(engine-expansion §5①): kimi_code 同 mimo_code，未注册签名 catalog，先直传用户所选模型。
+      // TODO(engine-expansion §5②): per-user KIMI_CODE_HOME 凭据隔离目录由 detection/凭据接口派生后
+      // 通过 kimiCodeHome 注入；当前沿用 env.KIMI_CODE_HOME / CLI 默认。
+      await new KimiCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: launch.model,
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,

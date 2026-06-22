@@ -23,7 +23,7 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('AgentEngineModelCatalog');
 
-const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ExternalAgentEngineKind>(['codex_cli', 'claude_code']);
+const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ExternalAgentEngineKind>(['codex_cli', 'claude_code', 'mimo_code', 'kimi_code']);
 const MODEL_CAPABILITIES = new Set<ModelCapability>([
   'code',
   'vision',
@@ -157,7 +157,7 @@ function parseEngine(
 
   const kind = readString(value.kind);
   if (!kind || !EXTERNAL_AGENT_ENGINE_KINDS.has(kind as ExternalAgentEngineKind)) {
-    diagnostics.push(diagnostic('invalid_engine_kind', 'Agent Engine catalog engine kind must be codex_cli or claude_code.', { path: `${path}.kind` }));
+    diagnostics.push(diagnostic('invalid_engine_kind', 'Agent Engine catalog engine kind must be a known external engine (codex_cli, claude_code, mimo_code, kimi_code).', { path: `${path}.kind` }));
     return { diagnostics };
   }
 

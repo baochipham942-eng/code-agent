@@ -37,12 +37,16 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   native: 'Neo',
   codex_cli: 'Codex',
   claude_code: 'Claude',
+  mimo_code: 'MiMo',
+  kimi_code: 'Kimi',
 };
 
 export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
   native: <Cpu className="w-3 h-3" />,
   codex_cli: <Terminal className="w-3 h-3" />,
   claude_code: <Terminal className="w-3 h-3" />,
+  mimo_code: <Terminal className="w-3 h-3" />,
+  kimi_code: <Terminal className="w-3 h-3" />,
 };
 
 export const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {

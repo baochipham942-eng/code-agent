@@ -15,7 +15,7 @@ export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
 }
 
 export function isExternalAgentEngine(kind: AgentEngineSessionMetadata['kind']): boolean {
-  return kind === 'codex_cli' || kind === 'claude_code';
+  return kind === 'codex_cli' || kind === 'claude_code' || kind === 'mimo_code' || kind === 'kimi_code';
 }
 
 export function assertReadOnlyExternalProfile(

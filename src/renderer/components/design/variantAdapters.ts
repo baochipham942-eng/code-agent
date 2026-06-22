@@ -2,10 +2,10 @@
 // canvas 仍以 canvas.json 节点树为真理源；proto 以 spine.json 持有 pin/discard。
 // 适配器只做形态映射，不持有状态。
 import type { Variant } from './variantSpine';
-import type { CanvasImageNode } from './designCanvasTypes';
+import type { CanvasNode } from './designCanvasTypes';
 
-/** 画布图节点 → canvas-image variant。pinned 跟随 chosen，op 由是否有 parentId 推断。 */
-export function canvasNodeToVariant(node: CanvasImageNode): Variant {
+/** 画布节点（图/视频）→ canvas-image variant。pinned 跟随 chosen，op 由是否有 parentId 推断。 */
+export function canvasNodeToVariant(node: CanvasNode): Variant {
   const v: Variant = {
     id: node.id,
     kind: 'canvas-image',

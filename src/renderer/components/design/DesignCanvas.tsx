@@ -23,7 +23,7 @@ import {
   worldRectToImageRegion,
   type Rect,
 } from './designCanvasMask';
-import type { CanvasImageNode } from './designCanvasTypes';
+import { isImageNode, type CanvasImageNode } from './designCanvasTypes';
 
 // 缩放范围与步进（避免画布塌缩/无限放大）。
 const SCALE_MIN = 0.1;
@@ -306,11 +306,13 @@ export const DesignCanvas: React.FC = () => {
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
     selectedIds.length === 1 ? visibleNodes.find((n) => n.id === selectedIds[0]) ?? null : null;
+  // 图像专属编辑（圈选重绘/标注/扩图/去水印/导出）只对图节点开放；视频节点的渲染与操作走画布视频分支。
+  const selectedImageNode = selectedNode && isImageNode(selectedNode) ? selectedNode : null;
   const compareNodes =
     selectedIds.length === 2
       ? selectedIds
           .map((id) => visibleNodes.find((n) => n.id === id))
-          .filter((n): n is CanvasImageNode => Boolean(n))
+          .filter((n): n is CanvasImageNode => n !== undefined && isImageNode(n))
       : [];
 
   // 选择变化时退出对比浮层（除非仍是双选）。
@@ -347,10 +349,10 @@ export const DesignCanvas: React.FC = () => {
     setAnnotShapes([]);
   }, [selectedNode?.id]);
 
-  // 无图选中时强制退出标注重绘模式（标注 UI 仅在单选图节点时存在）。
+  // 无图选中时强制退出标注重绘模式（标注 UI 仅在单选图节点时存在；选中视频节点也退出）。
   useEffect(() => {
-    if (!selectedNode && annotMode) setAnnotMode(false);
-  }, [selectedNode, annotMode, setAnnotMode]);
+    if (!selectedImageNode && annotMode) setAnnotMode(false);
+  }, [selectedImageNode, annotMode, setAnnotMode]);
 
   // 自由画布：粘贴图片导入（剪贴板含图片时拦截，纯文本粘贴不受影响）。
   useEffect(() => {
@@ -441,11 +443,11 @@ export const DesignCanvas: React.FC = () => {
   };
 
   const onRepaint = async (): Promise<void> => {
-    if (!selectedNode) return;
+    if (!selectedImageNode) return;
     const regions = annotations
-      .map((r) => worldRectToImageRegion(r, selectedNode))
+      .map((r) => worldRectToImageRegion(r, selectedImageNode))
       .filter((r): r is Rect => r !== null);
-    await editRegion({ baseNode: selectedNode, regions, instruction });
+    await editRegion({ baseNode: selectedImageNode, regions, instruction });
     if (!useDesignCanvasStore.getState().error) {
       setAnnotations([]);
       setInstruction('');
@@ -455,11 +457,11 @@ export const DesignCanvas: React.FC = () => {
 
   // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
   const onAnnotRedraw = async (): Promise<void> => {
-    if (!selectedNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
+    if (!selectedImageNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
     const est = formatCny(estimateImageCostCny(effectiveAnnotModel));
     if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
     await editByAnnotation({
-      baseNode: selectedNode,
+      baseNode: selectedImageNode,
       shapes: annotShapes,
       instruction: annotInstruction,
       model: effectiveAnnotModel,
@@ -473,14 +475,14 @@ export const DesignCanvas: React.FC = () => {
 
   // 扩图：按方向+比例外扩 → 新 variant 落底图右侧。
   const onExpand = async (): Promise<void> => {
-    if (!selectedNode) return;
-    await expand({ baseNode: selectedNode, direction: expandDirection, ratio: expandRatio });
+    if (!selectedImageNode) return;
+    await expand({ baseNode: selectedImageNode, direction: expandDirection, ratio: expandRatio });
   };
 
   // 去水印：消除中英文文字水印 → 新 variant 落底图右侧。
   const onRemoveWatermark = async (): Promise<void> => {
-    if (!selectedNode) return;
-    await removeWatermark({ baseNode: selectedNode });
+    if (!selectedImageNode) return;
+    await removeWatermark({ baseNode: selectedImageNode });
   };
 
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
@@ -510,16 +512,19 @@ export const DesignCanvas: React.FC = () => {
           onMouseUp={handleMouseUp}
         >
           <Layer>
-            {visibleNodes.map((node) => (
-              <CanvasImage
-                key={node.id}
-                node={node}
-                runDir={runDir}
-                selected={selectedIds.includes(node.id)}
-                onSelect={(additive) => selectNode(node.id, additive)}
-                onViewDiff={setDiffNode}
-              />
-            ))}
+            {visibleNodes.map((node) =>
+              // 图节点走 CanvasImage；视频节点的 konva 渲染分支在 Task 6 接入（此处暂不渲染）。
+              isImageNode(node) ? (
+                <CanvasImage
+                  key={node.id}
+                  node={node}
+                  runDir={runDir}
+                  selected={selectedIds.includes(node.id)}
+                  onSelect={(additive) => selectNode(node.id, additive)}
+                  onViewDiff={setDiffNode}
+                />
+              ) : null,
+            )}
             {draftAndCommitted.map((r, i) => (
               <KonvaRect
                 key={i}
@@ -534,7 +539,7 @@ export const DesignCanvas: React.FC = () => {
               />
             ))}
           </Layer>
-          {annotMode && selectedNode && (
+          {annotMode && selectedImageNode && (
             <AnnotationLayer shapes={annotShapes} onShapesChange={setAnnotShapes} tool={annotTool} />
           )}
         </Stage>
@@ -547,8 +552,8 @@ export const DesignCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* 选中图后的局部重绘面板 */}
-      {selectedNode && (
+      {/* 选中图后的局部重绘面板（仅图节点；视频节点不显示图像编辑工具） */}
+      {selectedImageNode && (
         <div className="absolute left-4 top-4 flex w-72 flex-col gap-2 rounded-xl border border-white/[0.1] bg-zinc-900/90 p-3 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between">
             <button
@@ -597,7 +602,7 @@ export const DesignCanvas: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => void onExport(selectedNode)}
+            onClick={() => void onExport(selectedImageNode)}
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100"
           >
             <Download className="h-3.5 w-3.5" />

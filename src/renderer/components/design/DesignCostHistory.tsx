@@ -20,15 +20,15 @@ import {
   canUndo,
   canRedo,
 } from './variantHistory';
-import type { CanvasImageNode } from './designCanvasTypes';
+import type { CanvasNode } from './designCanvasTypes';
 
-function stepName(node: CanvasImageNode | undefined, fallback: string): string {
+function stepName(node: CanvasNode | undefined, fallback: string): string {
   const name = node?.label ?? node?.prompt;
   return name && name.trim().length > 0 ? name : fallback;
 }
 
 export interface DesignCostHistoryViewProps {
-  nodes: CanvasImageNode[];
+  nodes: CanvasNode[];
   onSetChosen: (id: string) => void;
   onRename: (id: string, label: string) => void;
 }
@@ -69,7 +69,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
     return order;
   }, [spine]);
 
-  const startRename = (node: CanvasImageNode): void => {
+  const startRename = (node: CanvasNode): void => {
     setEditingId(node.id);
     setDraft(node.label ?? node.prompt ?? '');
   };

@@ -6,7 +6,7 @@ import { persist } from 'zustand/middleware';
 import {
   emptyCanvasDoc,
   type CanvasCamera,
-  type CanvasImageNode,
+  type CanvasNode,
   type DesignCanvasDoc,
 } from './designCanvasTypes';
 import { groupKey } from './variantSpine';
@@ -14,7 +14,7 @@ import { groupKey } from './variantSpine';
 interface DesignCanvasState {
   /** 当前画布所属 run 目录（决定存档落点）；null=尚无生成的临时画布。 */
   runDir: string | null;
-  nodes: CanvasImageNode[];
+  nodes: CanvasNode[];
   camera: CanvasCamera;
   selectedIds: string[];
   /** 出图进行中（驱动生成按钮 spinner）。 */
@@ -25,8 +25,8 @@ interface DesignCanvasState {
   loadDoc: (runDir: string | null, doc: DesignCanvasDoc) => void;
   /** 清空到空画布（保留 runDir）。 */
   resetCanvas: () => void;
-  addNode: (node: CanvasImageNode) => void;
-  updateNode: (id: string, patch: Partial<Omit<CanvasImageNode, 'id'>>) => void;
+  addNode: (node: CanvasNode) => void;
+  updateNode: (id: string, patch: Partial<Omit<CanvasNode, 'id'>>) => void;
   deleteNode: (id: string) => void;
   /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
   discardNode: (id: string) => void;
@@ -61,7 +61,9 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   addNode: (node) => set((s) => ({ nodes: [...s.nodes, node] })),
   updateNode: (id, patch) =>
     set((s) => ({
-      nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+      // 判别联合 + 部分 patch 合并：TS 无法把 spread 结果窄回 CanvasNode union（已知限制），
+      // 显式断言回 CanvasNode（非 any，保留判别字段）。
+      nodes: s.nodes.map((n) => (n.id === id ? ({ ...n, ...patch } as CanvasNode) : n)),
     })),
   deleteNode: (id) =>
     set((s) => ({

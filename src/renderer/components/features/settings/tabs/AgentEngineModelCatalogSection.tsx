@@ -3,6 +3,7 @@ import { Terminal } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import type { AgentEngineModelCatalogResult, ExternalAgentEngineKind } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
@@ -34,6 +35,8 @@ function formatCatalogDate(value?: string): string {
 }
 
 export const AgentEngineModelCatalogSection: React.FC = () => {
+  const { t } = useI18n();
+  const section = t.engineCompat.catalogSection;
   const [catalogResult, setCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
   const [defaults, setDefaults] = useState<Partial<Record<ExternalAgentEngineKind, string>>>({});
   const [savingDefault, setSavingDefault] = useState<ExternalAgentEngineKind | null>(null);
@@ -89,26 +92,31 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
           },
         },
       } as Partial<AppSettings>);
-      toast.success(`${AGENT_ENGINE_LABELS[kind]} 默认模型已更新`);
+      toast.success(section.defaultUpdated.replace('{engine}', AGENT_ENGINE_LABELS[kind]));
     } catch (error) {
-      toast.error('保存 Agent Engine 默认模型失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      toast.error(
+        section.saveFailed.replace(
+          '{error}',
+          error instanceof Error ? error.message : section.unknownError,
+        ),
+      );
     } finally {
       setSavingDefault(null);
     }
-  }, []);
+  }, [section]);
 
   return (
     <SettingsSection
-      title="Agent Engine 模型目录"
-      description="Codex / Claude 模型由服务端签名目录发布，本机只保存默认选择。"
+      title={section.title}
+      description={section.description}
     >
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
         <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
           {[
-            ['目录版本', catalogResult?.catalog.version ?? '-', '服务端发布版本'],
-            ['来源', catalogResult?.source === 'remote' ? '远程签名' : catalogResult?.source === 'bundled' ? '内置兜底' : '-', '验签失败会回退'],
-            ['更新时间', formatCatalogDate(catalogResult?.catalog.updatedAt), '目录声明时间'],
-            ['Engine 数量', String(catalogResult?.catalog.engines.length ?? 0), 'Codex / Claude'],
+            [section.versionLabel, catalogResult?.catalog.version ?? '-', section.versionCaption],
+            [section.sourceLabel, catalogResult?.source === 'remote' ? section.sourceRemote : catalogResult?.source === 'bundled' ? section.sourceBundled : '-', section.sourceCaption],
+            [section.updatedAtLabel, formatCatalogDate(catalogResult?.catalog.updatedAt), section.updatedAtCaption],
+            [section.engineCountLabel, String(catalogResult?.catalog.engines.length ?? 0), section.engineCountCaption],
           ].map(([label, value, caption]) => (
             <div key={label} className="bg-zinc-900/80 px-3 py-3">
               <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -136,13 +144,13 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                     <span>{AGENT_ENGINE_LABELS[engine.kind]}</span>
                   </div>
                   <div className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={engine.defaultModel}>
-                    远程默认：{engine.defaultModel}
+                    {section.remoteDefaultLabel}：{engine.defaultModel}
                   </div>
                 </div>
 
                 <div>
                   <label className="mb-2 block text-xs font-medium text-zinc-400">
-                    本机默认选择
+                    {section.localDefaultLabel}
                   </label>
                   <Select
                     value={selectedDefault}
@@ -159,7 +167,11 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                 </div>
 
                 <div className="min-w-0 text-xs text-zinc-400">
-                  <div>{enabledModels.length}/{engine.models.length} 个模型可选</div>
+                  <div>
+                    {section.modelSelectableSummary
+                      .replace('{enabled}', String(enabledModels.length))
+                      .replace('{total}', String(engine.models.length))}
+                  </div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {engine.models.slice(0, 5).map((model) => (
                       <span
@@ -183,7 +195,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
           })}
           {!catalogResult ? (
             <div className="px-3 py-4 text-sm text-zinc-500">
-              正在读取模型目录...
+              {section.loading}
             </div>
           ) : null}
         </div>

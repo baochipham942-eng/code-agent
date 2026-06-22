@@ -306,6 +306,31 @@ export const en: Translations = {
         kimi_code: 'Run kimi login to authorize your account before first use.',
       },
     },
+    // Settings page "Agent Engine model catalog" section (signed catalog + local default)
+    catalogSection: {
+      title: 'Agent Engine Model Catalog',
+      description: 'Codex / Claude models are published via the server-signed catalog; only the default selection is stored locally.',
+      // Top catalog metadata cards
+      versionLabel: 'Catalog Version',
+      versionCaption: 'Server-published version',
+      sourceLabel: 'Source',
+      sourceCaption: 'Falls back if signature fails',
+      sourceRemote: 'Remote signed',
+      sourceBundled: 'Bundled fallback',
+      updatedAtLabel: 'Updated At',
+      updatedAtCaption: 'Catalog declared time',
+      engineCountLabel: 'Engine Count',
+      engineCountCaption: 'Codex / Claude',
+      // Engine rows
+      remoteDefaultLabel: 'Remote default',
+      localDefaultLabel: 'Local default selection',
+      modelSelectableSummary: '{enabled}/{total} models available',
+      loading: 'Loading model catalog...',
+      // toast
+      defaultUpdated: '{engine} default model updated',
+      saveFailed: 'Failed to save Agent Engine default model: {error}',
+      unknownError: 'Unknown error',
+    },
   },
 
   // Disclosure Settings (Progressive Disclosure)

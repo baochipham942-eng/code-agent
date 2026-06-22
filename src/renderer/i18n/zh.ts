@@ -309,6 +309,31 @@ export const zh = {
         kimi_code: '首次使用前需运行 kimi login 完成账号授权。',
       },
     },
+    // 设置页「Agent Engine 模型目录」section（签名目录发布 + 本机默认选择）
+    catalogSection: {
+      title: 'Agent Engine 模型目录',
+      description: 'Codex / Claude 模型由服务端签名目录发布，本机只保存默认选择。',
+      // 顶部目录元信息卡片
+      versionLabel: '目录版本',
+      versionCaption: '服务端发布版本',
+      sourceLabel: '来源',
+      sourceCaption: '验签失败会回退',
+      sourceRemote: '远程签名',
+      sourceBundled: '内置兜底',
+      updatedAtLabel: '更新时间',
+      updatedAtCaption: '目录声明时间',
+      engineCountLabel: 'Engine 数量',
+      engineCountCaption: 'Codex / Claude',
+      // 引擎行
+      remoteDefaultLabel: '远程默认',
+      localDefaultLabel: '本机默认选择',
+      modelSelectableSummary: '{enabled}/{total} 个模型可选',
+      loading: '正在读取模型目录...',
+      // toast
+      defaultUpdated: '{engine} 默认模型已更新',
+      saveFailed: '保存 Agent Engine 默认模型失败: {error}',
+      unknownError: '未知错误',
+    },
   },
 
   // Disclosure Settings (Progressive Disclosure)

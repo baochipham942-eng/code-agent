@@ -194,6 +194,10 @@ export const en: Translations = {
       sourceManual: 'Manual',
       sourceReference: 'From reference image',
       saveFailed: 'Save failed, please retry',
+      extractFromImage: 'Extract from reference',
+      extractHint: 'Upload a reference design; AI drafts the palette/fonts/posture + Keep/Change/Do-not-copy (one paid call, editable after)',
+      extracting: 'Analyzing reference…',
+      extractFailed: 'Extraction failed, retry or fill in manually',
     },
   },
 

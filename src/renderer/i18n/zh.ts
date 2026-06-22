@@ -192,6 +192,10 @@ export const zh = {
       sourceManual: '手动录入',
       sourceReference: '参考图提取',
       saveFailed: '保存失败，请重试',
+      extractFromImage: '从参考图提取',
+      extractHint: '上传一张参考设计图，AI 抽出色板/字体/气质 + Keep/Change/Do-not-copy 草稿（付费一次，可再手改）',
+      extracting: '正在分析参考图…',
+      extractFailed: '提取失败，请重试或手动填写',
     },
   },
 

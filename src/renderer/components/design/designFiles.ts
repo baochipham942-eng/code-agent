@@ -284,3 +284,32 @@ export async function setActiveBrand(id: string | null): Promise<boolean> {
     return false;
   }
 }
+
+/** B2 抽取产物：DRAFT（best-effort tokens + 三桶），由调用方预填手填表单待用户审改。 */
+export interface BrandDraft {
+  tokens: BrandContract['tokens'];
+  keep: string[];
+  change: string[];
+  doNotCopy: string[];
+}
+
+/**
+ * 从参考图一次性提取品牌草稿（vision，付费一次）。传 dataUrl（renderer FileReader 读本地
+ * 文件，免落盘）。后端不落盘、不自动保存——返回 DRAFT 供预填表单，用户审改命名后再 saveBrand。
+ * 失败返回 { draft: null, error }，由调用方提示。
+ */
+export async function extractBrandFromImage(
+  dataUrl: string,
+): Promise<{ draft: BrandDraft | null; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<BrandDraft>(
+      IPC_DOMAINS.WORKSPACE,
+      'extractBrandFromImage',
+      { dataUrl },
+    );
+    if (res?.success && res.data) return { draft: res.data };
+    return { draft: null, error: res?.error?.message };
+  } catch (e) {
+    return { draft: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}

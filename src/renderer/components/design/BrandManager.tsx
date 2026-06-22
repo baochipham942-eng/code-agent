@@ -13,14 +13,14 @@
 // swatch 用 style={{background: 用户颜色值}} 是动态 inline（非字面量），门不拦。
 // ============================================================================
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, Check, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Trash2, Pencil, Check, X, ImageDown } from 'lucide-react';
 import { Modal, Button, Input, Textarea, IconButton } from '../primitives';
 import { useI18n } from '../../hooks/useI18n';
 import type { Translations } from '../../i18n';
 import { directionTokens, type DirectionTokens } from '../../../design/direction-tokens';
 import type { BrandContract, BrandMeta } from '../../../shared/contract/brandContract';
-import { listBrands, readBrand, saveBrand, deleteBrand, setActiveBrand } from './designFiles';
+import { listBrands, readBrand, saveBrand, deleteBrand, setActiveBrand, extractBrandFromImage } from './designFiles';
 
 type BrandStrings = Translations['design']['brand'];
 
@@ -64,6 +64,15 @@ function brandToForm(brand: BrandContract): BrandFormState {
     change: [...brand.change],
     doNotCopy: [...brand.doNotCopy],
   };
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
 }
 
 // 表单 → BrandContract（id/时间戳缺时由后端 saveBrand 补全/派生）。
@@ -154,6 +163,10 @@ export interface BrandManagerViewProps {
   form: BrandFormState;
   saving: boolean;
   error?: string;
+  /** B2：参考图提取进行中（禁用表单 + 显示提示）。 */
+  extracting?: boolean;
+  /** B2：用户选了一张参考图，容器去走 vision 提取并预填表单。 */
+  onExtract: (file: File) => void;
   onSetActive: (id: string, makeActive: boolean) => void;
   onDelete: (id: string) => void;
   onCreate: () => void;
@@ -171,6 +184,8 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
   form,
   saving,
   error,
+  extracting,
+  onExtract,
   onSetActive,
   onDelete,
   onCreate,
@@ -179,9 +194,42 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
   onSave,
   onBack,
 }) => {
+  // 隐藏 file input ref：用 Button primitive 触发（不写裸标签，守设计系统门）。
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   if (mode === 'form') {
     return (
       <div className="flex flex-col gap-4">
+        {/* 参考图提取入口（B2）：上传图 → vision 抽 tokens + 三桶 → 预填以下字段 */}
+        <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-zinc-700 px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-zinc-300">{s.sourceReference}</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={extracting}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // 复用同一 input：清空 value 以便连续选同一文件也触发 change。
+                e.target.value = '';
+                if (file) onExtract(file);
+              }}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<ImageDown />}
+              loading={extracting}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {extracting ? s.extracting : s.extractFromImage}
+            </Button>
+          </div>
+          <span className="text-[11px] text-zinc-500">{s.extractHint}</span>
+        </div>
+
         {/* 名称 */}
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-zinc-300">{s.nameLabel}</span>
@@ -369,6 +417,7 @@ export const BrandManager: React.FC<BrandManagerProps> = ({ isOpen, onClose, onA
   const [form, setForm] = useState<BrandFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [extracting, setExtracting] = useState(false);
 
   const refresh = useCallback(async () => {
     const res = await listBrands();
@@ -408,6 +457,38 @@ export const BrandManager: React.FC<BrandManagerProps> = ({ isOpen, onClose, onA
     setMode('form');
   }, []);
 
+  // B2：参考图提取 → 预填表单（human-in-loop，NOT 自动保存）。name 留给用户，
+  // tokens/keep/change/doNotCopy 用抽取结果覆盖；source 视觉抽取但保存走 manual 表单路径。
+  const handleExtract = useCallback(
+    async (file: File) => {
+      setExtracting(true);
+      setError(undefined);
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        const { draft, error: extractError } = await extractBrandFromImage(dataUrl);
+        if (!draft) {
+          setError(extractError || s.extractFailed);
+          return;
+        }
+        setForm((prev) => ({
+          ...prev,
+          palette: { ...draft.tokens.palette },
+          fonts: { ...draft.tokens.fonts },
+          posture: draft.tokens.posture,
+          refs: [...draft.tokens.refs],
+          keep: [...draft.keep],
+          change: [...draft.change],
+          doNotCopy: [...draft.doNotCopy],
+        }));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : s.extractFailed);
+      } finally {
+        setExtracting(false);
+      }
+    },
+    [s.extractFailed],
+  );
+
   const handleEdit = useCallback(async (id: string) => {
     // 列表元数据不含完整 tokens，编辑前读单个品牌完整契约（readBrand 经 readFile 读
     // brand.json）。读不到则回退到空表单 + 保留 id（保存即覆盖），不丢用户入口。
@@ -446,6 +527,8 @@ export const BrandManager: React.FC<BrandManagerProps> = ({ isOpen, onClose, onA
         form={form}
         saving={saving}
         error={error}
+        extracting={extracting}
+        onExtract={handleExtract}
         onSetActive={handleSetActive}
         onDelete={handleDelete}
         onCreate={handleCreate}

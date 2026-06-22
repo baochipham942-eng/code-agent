@@ -39,6 +39,7 @@ function renderList(activeId?: string): string {
       mode="list"
       form={baseForm}
       saving={false}
+      onExtract={noop}
       onSetActive={noop}
       onDelete={noop}
       onCreate={noop}
@@ -58,6 +59,7 @@ function renderForm(): string {
       mode="form"
       form={baseForm}
       saving={false}
+      onExtract={noop}
       onSetActive={noop}
       onDelete={noop}
       onCreate={noop}
@@ -102,6 +104,7 @@ describe('BrandManagerView 列表模式', () => {
         mode="list"
         form={baseForm}
         saving={false}
+        onExtract={noop}
         onSetActive={noop}
         onDelete={noop}
         onCreate={noop}
@@ -145,6 +148,35 @@ describe('BrandManagerView 表单模式', () => {
     expect(html).toContain(directionTokens.utilitarian.palette.primary);
   });
 
+  it('表单顶部有「从参考图提取」入口 + 提示（B2）', () => {
+    const html = renderForm();
+    expect(html).toContain(s.extractFromImage);
+    expect(html).toContain(s.extractHint);
+    expect(html).toContain('type="file"');
+  });
+
+  it('extracting 时显示「正在分析参考图」', () => {
+    const html = renderToStaticMarkup(
+      <BrandManagerView
+        s={s}
+        brands={brands}
+        mode="form"
+        form={baseForm}
+        saving={false}
+        extracting
+        onExtract={noop}
+        onSetActive={noop}
+        onDelete={noop}
+        onCreate={noop}
+        onEdit={noop}
+        onFormChange={noop}
+        onSave={noop}
+        onBack={noop}
+      />,
+    );
+    expect(html).toContain(s.extracting);
+  });
+
   it('表单底部有保存 + 返回入口', () => {
     const html = renderForm();
     expect(html).toContain(s.save);
@@ -160,6 +192,7 @@ describe('BrandManagerView 表单模式', () => {
         form={baseForm}
         saving={false}
         error={s.nameRequired}
+        onExtract={noop}
         onSetActive={noop}
         onDelete={noop}
         onCreate={noop}

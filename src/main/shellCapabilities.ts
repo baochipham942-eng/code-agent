@@ -329,6 +329,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'exportCanvasPptx',
     'exportImagePdf',
     'exportPrototypePdf',
+    'extractBrandFromImage',
     'generateDesignImage',
     'getConfigScope',
     'getCurrent',

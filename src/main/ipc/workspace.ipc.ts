@@ -17,6 +17,7 @@ import {
   setActiveBrand as registrySetActiveBrand,
 } from '../services/design/brandRegistry';
 import type { BrandContract } from '../../shared/contract/brandContract';
+import { extractBrandFromImage as registryExtractBrand } from '../services/design/brandExtract';
 import { handleGetConfigScope } from './workspaceConfigScope';
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
@@ -953,6 +954,20 @@ async function handleSetActiveBrand(payload: { id: string | null }) {
   return registrySetActiveBrand(payload?.id ?? null);
 }
 
+// 从参考图提取品牌草稿（B2，vision，付费一次）。renderer 传 dataUrl（FileReader 读本地
+// 文件，免落盘）；若传 imagePath 必须落在设计目录内（与其它图 handler 同款守卫，防读任意
+// 本地文件 base64 后外泄到视觉模型）。返回 DRAFT，不落盘——由 renderer 预填表单待用户审改。
+async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePath?: string }) {
+  if (!payload?.dataUrl && !payload?.imagePath) {
+    throw new Error('extractBrandFromImage 需要 dataUrl 或 imagePath');
+  }
+  if (payload.imagePath) {
+    assertWithinDesignDir(payload.imagePath, 'imagePath');
+  }
+  const input = payload.dataUrl ? { dataUrl: payload.dataUrl } : { imagePath: payload.imagePath };
+  return registryExtractBrand(input);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -1095,6 +1110,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'setActiveBrand':
           data = await handleSetActiveBrand(payload as { id: string | null });
+          break;
+        case 'extractBrandFromImage':
+          data = await handleExtractBrandFromImage(payload as { dataUrl?: string; imagePath?: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

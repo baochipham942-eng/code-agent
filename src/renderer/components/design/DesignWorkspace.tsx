@@ -22,6 +22,7 @@ import {
   ChevronDown,
   ExternalLink,
   Download,
+  FileDown,
   Maximize2,
   Minimize2,
   GitCompare,
@@ -44,9 +45,10 @@ import {
   listVersions,
   openInDefaultApp,
   saveHtmlToDownloads,
+  exportPrototypePdf,
   type DesignVersion,
 } from './designFiles';
-import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName } from './designTypes';
+import { DESIGN_ASPECT_RATIOS, designDeviceWidth, prototypeExportName, prototypePdfExportName } from './designTypes';
 import type { DesignOutputType, DesignSurface, PrototypeSelection } from './designTypes';
 import {
   injectSelectionScript,
@@ -678,6 +680,7 @@ const PreviewPane: React.FC = () => {
   const [selection, setSelection] = useState<PrototypeSelection | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [exported, setExported] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -737,6 +740,21 @@ const PreviewPane: React.FC = () => {
     if (saved) {
       setExported(true);
       setTimeout(() => setExported(false), 2000);
+    }
+  };
+
+  // 原型 → 矢量 PDF：走主进程 playwright page.pdf()。chromium 不可用时报失败、
+  // 用户可改用「导出 HTML」兜底（不阻塞、不崩）。
+  const handleExportPdf = async (): Promise<void> => {
+    if (!previewHtml || exportingPdf) return;
+    setExportingPdf(true);
+    const res = await exportPrototypePdf(previewHtml, prototypePdfExportName(Date.now()));
+    setExportingPdf(false);
+    if (res.filePath) {
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    } else {
+      window.alert(t.design.actionExportPdfFailed);
     }
   };
 
@@ -869,6 +887,19 @@ const PreviewPane: React.FC = () => {
               }`}
             >
               <Download className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExportPdf()}
+              disabled={exportingPdf}
+              title={exportingPdf ? t.design.actionExportingPdf : t.design.actionExportPdf}
+              className="rounded-md border border-white/[0.08] p-1.5 text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            >
+              {exportingPdf ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileDown className="h-3.5 w-3.5" />
+              )}
             </button>
             <button
               type="button"

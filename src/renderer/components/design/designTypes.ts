@@ -25,6 +25,16 @@ export function prototypeExportName(ts: number): string {
   return `neo-prototype-${ts}.html`;
 }
 
+/** 原型 PDF 导出文件名（带时间戳避免覆盖）。 */
+export function prototypePdfExportName(ts: number): string {
+  return `neo-prototype-${ts}.pdf`;
+}
+
+/** 设计稿/信息图 PDF 导出文件名（带时间戳避免覆盖）。 */
+export function imagePdfExportName(ts: number): string {
+  return `neo-design-${ts}.pdf`;
+}
+
 /** 设计语境的表层定位：品牌主导（设计即产品）vs 产品主导（设计服务产品）。 */
 export type DesignSurface = 'brand' | 'product';
 

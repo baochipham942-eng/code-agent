@@ -111,6 +111,48 @@ export async function saveHtmlToDownloads(
   }
 }
 
+/**
+ * 原型 HTML → 矢量 PDF 导出到「下载」（主进程 playwright page.pdf）。
+ * 返回落盘路径；chromium 不可用或失败时返回 { filePath: null, error }，由调用方提示降级。
+ */
+export async function exportPrototypePdf(
+  html: string,
+  outputName: string,
+): Promise<{ filePath: string | null; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ filePath: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'exportPrototypePdf',
+      { html, outputName },
+    );
+    if (res?.success) return { filePath: res.data?.filePath ?? null };
+    return { filePath: null, error: res?.error?.message };
+  } catch (e) {
+    return { filePath: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 栅格产物（dataUrl 或设计目录内 imagePath）→ 单页 PDF 导出到「下载」（主进程 pdfkit 图嵌）。
+ * 返回落盘路径；失败返回 { filePath: null, error }。
+ */
+export async function exportImagePdf(
+  source: { dataUrl?: string; imagePath?: string },
+  outputName: string,
+): Promise<{ filePath: string | null; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ filePath: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'exportImagePdf',
+      { ...source, outputName },
+    );
+    if (res?.success) return { filePath: res.data?.filePath ?? null };
+    return { filePath: null, error: res?.error?.message };
+  } catch (e) {
+    return { filePath: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** 读取一张图片为 base64 dataURL；不存在/失败返回 null（画布按相对路径懒加载图片用）。 */
 export async function readWorkspaceImageAsDataUrl(filePath: string): Promise<string | null> {
   try {

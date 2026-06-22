@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, Pencil } from 'lucide-react';
+import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, FileDown, Pencil } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
@@ -15,7 +15,8 @@ import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
 import { AnnotationLayer, type AnnotShape, type AnnotTool } from './AnnotationLayer';
-import { readWorkspaceImageAsDataUrl } from './designFiles';
+import { readWorkspaceImageAsDataUrl, exportImagePdf } from './designFiles';
+import { imagePdfExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import {
@@ -440,6 +441,19 @@ export const DesignCanvas: React.FC = () => {
     a.click();
   };
 
+  // 选中图节点 → 单页 PDF（主进程 pdfkit 图嵌）→ 落「下载」。
+  // 解析成 dataUrl 再传（data: 直用；相对路径经 readBinary 转 dataUrl）。
+  // pdfkit 需要图字节，纯 http URL（未落盘的 OSS 临时链接）不直接支持，跳过。
+  const onExportPdf = async (node: CanvasImageNode): Promise<void> => {
+    const dataUrl = /^data:/.test(node.src)
+      ? node.src
+      : runDir && !/^https?:/.test(node.src)
+        ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
+        : null;
+    if (!dataUrl) return;
+    await exportImagePdf({ dataUrl }, imagePdfExportName(Date.now()));
+  };
+
   const onRepaint = async (): Promise<void> => {
     if (!selectedNode) return;
     const regions = annotations
@@ -602,6 +616,14 @@ export const DesignCanvas: React.FC = () => {
           >
             <Download className="h-3.5 w-3.5" />
             {t.design.exportImage}
+          </button>
+          <button
+            type="button"
+            onClick={() => void onExportPdf(selectedNode)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100"
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            {t.design.exportImagePdf}
           </button>
 
           {/* T3：wanx 扩图（方向+比例）+ 去水印，各落新 variant 挂 spine */}

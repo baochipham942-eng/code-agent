@@ -7,7 +7,8 @@ import path from 'path';
 import { app, dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
-import { handleSaveTextToDownloads } from './workspaceSaveExport';
+import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
+import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
 import { handleGetConfigScope } from './workspaceConfigScope';
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
@@ -847,6 +848,49 @@ export async function handleListVisualImageModels(): Promise<{
 }
 
 // ----------------------------------------------------------------------------
+// PDF 导出（CD-Parity §2）：HTML 原型走 playwright page.pdf()，栅格产物走 pdfkit 图嵌。
+// 渲染/嵌图逻辑在独立模块 services/design/pdfExport.ts，这里只做编排 + 落盘。
+// ----------------------------------------------------------------------------
+
+// HTML 原型 → 矢量 PDF → 落「下载」。chromium 不可用时 htmlToPdf 抛可读错误，
+// 经统一 catch 回传给 renderer（renderer 据此提示并回退导出 .html）。
+async function handleExportPrototypePdf(
+  payload: { html: string; outputName: string },
+): Promise<{ filePath: string }> {
+  if (!payload?.html || !payload?.outputName) {
+    throw new Error('exportPrototypePdf 需要 html 与 outputName');
+  }
+  const pdf = await htmlToPdf(payload.html);
+  return handleSaveBinaryToDownloads({
+    fileName: payload.outputName,
+    base64: pdf.toString('base64'),
+  });
+}
+
+// 栅格产物 → 单页 PDF → 落「下载」。两种来源：imagePath（磁盘，须落设计目录内，
+// 防路径越界读任意文件）或 dataUrl（renderer 直接传 base64）。
+async function handleExportImagePdf(
+  payload: { imagePath?: string; dataUrl?: string; outputName: string },
+): Promise<{ filePath: string }> {
+  if (!payload?.outputName || (!payload.imagePath && !payload.dataUrl)) {
+    throw new Error('exportImagePdf 需要 outputName 与 imagePath 或 dataUrl 之一');
+  }
+  let imageBuffer: Buffer;
+  if (payload.imagePath) {
+    assertWithinDesignDir(payload.imagePath, 'imagePath');
+    imageBuffer = await fsp.readFile(payload.imagePath);
+  } else {
+    const base64 = (payload.dataUrl ?? '').replace(/^data:[^;]+;base64,/, '');
+    imageBuffer = Buffer.from(base64, 'base64');
+  }
+  const pdf = await imageToPdf(imageBuffer);
+  return handleSaveBinaryToDownloads({
+    fileName: payload.outputName,
+    base64: pdf.toString('base64'),
+  });
+}
+
+// ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
 
@@ -899,6 +943,17 @@ export function registerWorkspaceHandlers(
           break;
         case 'saveTextToDownloads':
           data = await handleSaveTextToDownloads(payload as { fileName: string; content: string });
+          break;
+        case 'saveBinaryToDownloads':
+          data = await handleSaveBinaryToDownloads(payload as { fileName: string; base64: string });
+          break;
+        case 'exportPrototypePdf':
+          data = await handleExportPrototypePdf(payload as { html: string; outputName: string });
+          break;
+        case 'exportImagePdf':
+          data = await handleExportImagePdf(
+            payload as { imagePath?: string; dataUrl?: string; outputName: string },
+          );
           break;
         case 'createFile':
           data = await handleCreateFile(payload as { filePath: string; content?: string });

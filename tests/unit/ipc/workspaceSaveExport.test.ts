@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { handleSaveTextToDownloads } from '../../../src/main/ipc/workspaceSaveExport';
+import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from '../../../src/main/ipc/workspaceSaveExport';
 
 let fakeHome: string;
 
@@ -57,5 +57,47 @@ describe('handleSaveTextToDownloads', () => {
   it('falls back to export.txt when the file name is empty', async () => {
     const { filePath } = await handleSaveTextToDownloads({ fileName: '', content: 'x' });
     expect(path.basename(filePath)).toBe('export.txt');
+  });
+});
+
+describe('handleSaveBinaryToDownloads', () => {
+  it('decodes base64 to exact bytes (no utf-8 corruption) in the Downloads folder', async () => {
+    const original = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0xff, 0xfe]); // %PDF- + binary
+    const { filePath } = await handleSaveBinaryToDownloads({
+      fileName: 'doc.pdf',
+      base64: original.toString('base64'),
+    });
+
+    expect(filePath).toBe(path.join(fakeHome, 'Downloads', 'doc.pdf'));
+    const written = await fs.readFile(filePath);
+    expect(written.equals(original)).toBe(true);
+  });
+
+  it('appends -N suffix instead of overwriting an existing binary export', async () => {
+    const a = Buffer.from('one').toString('base64');
+    const b = Buffer.from('two').toString('base64');
+    const first = await handleSaveBinaryToDownloads({ fileName: 'design.pdf', base64: a });
+    const second = await handleSaveBinaryToDownloads({ fileName: 'design.pdf', base64: b });
+
+    expect(path.basename(first.filePath)).toBe('design.pdf');
+    expect(path.basename(second.filePath)).toBe('design-1.pdf');
+    expect((await fs.readFile(second.filePath)).toString()).toBe('two');
+  });
+
+  it('strips path separators from the file name to prevent traversal', async () => {
+    const { filePath } = await handleSaveBinaryToDownloads({
+      fileName: '../../etc/evil.pdf',
+      base64: Buffer.from('x').toString('base64'),
+    });
+    expect(path.dirname(filePath)).toBe(path.join(fakeHome, 'Downloads'));
+    expect(path.basename(filePath)).toBe('.._.._etc_evil.pdf');
+  });
+
+  it('falls back to export.bin when the file name is empty', async () => {
+    const { filePath } = await handleSaveBinaryToDownloads({
+      fileName: '',
+      base64: Buffer.from('x').toString('base64'),
+    });
+    expect(path.basename(filePath)).toBe('export.bin');
   });
 });

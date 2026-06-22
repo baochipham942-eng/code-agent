@@ -94,11 +94,19 @@ function finish(code, msg) {
   console.error('--- last output ---\n' + out.slice(-2000));
   process.exit(1);
 }
+function isMustBundle(modPath) {
+  // modPath is a bare name ("pdfkit") or a resolved path; match by basename.
+  const base = modPath.split(/[\\/]/).pop();
+  return MUST_BE_BUNDLED.some((m) => modPath === m || base === m || modPath.endsWith(`/${m}`));
+}
 function scan(chunk) {
   out += chunk;
+  // Only a MUST-bundle lib missing at boot is our bug. Other missing modules
+  // (e.g. `dist/native/better-sqlite3` not built in a lightweight web-only job)
+  // are env/setup issues — let the exit/timeout handler warn+pass instead.
   const miss = out.match(/Cannot find module '([^']+)'/);
-  if (miss || /MODULE_NOT_FOUND/.test(out)) {
-    finish(1, `runtime boot hit a missing module${miss ? `: '${miss[1]}'` : ''} — it must be bundled, not external.`);
+  if (miss && isMustBundle(miss[1])) {
+    finish(1, `runtime boot: must-bundle lib '${miss[1]}' missing at boot — it is esbuild-external, not bundled.`);
     return;
   }
   if (out.includes(READY)) finish(0, 'runtime boot reached HTTP stage with must-bundle libs hidden.');

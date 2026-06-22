@@ -45,6 +45,11 @@ async function submitAndPollWanxVideo(apiKey: string, body: unknown, outerSignal
   );
   if (!submitResp.ok) throw new Error(`通义万相视频提交失败: ${submitResp.status} - ${await submitResp.text()}`);
   const submitted = parseWanxVideoTask(await submitResp.json());
+  // 提交即终态（如内容审核 FAILED）：直接抛出 message，不进入轮询（省一次无谓往返）。
+  if (submitted.status && submitted.status !== 'PENDING' && submitted.status !== 'RUNNING') {
+    if (submitted.status === 'SUCCEEDED' && submitted.url) return { url: submitted.url };
+    throw new Error(`通义万相视频任务失败: ${submitted.status}${submitted.message ? ` - ${submitted.message}` : ''}`);
+  }
   if (!submitted.taskId) throw new Error('通义万相视频: 未返回 task_id');
 
   const deadline = Date.now() + VIDEO_TIMEOUT_MS.TOTAL;

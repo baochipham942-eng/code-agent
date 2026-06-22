@@ -92,6 +92,18 @@ describe('handleGenerateDesignVideo', () => {
     expect(generateVideoMock).not.toHaveBeenCalled();
   });
 
+  it('costCny 用 service 真实回传时长/模型，而非请求参数', async () => {
+    const out = path.join(DESIGN_DIR, `run-cost/assets/v-${Date.now()}.mp4`);
+    // 请求 99s，但 service 实际回传 5s —— 成本必须按 5s 算
+    generateVideoMock.mockResolvedValue({ url: 'https://oss.example.com/o.mp4', actualModel: 'wan2.7-t2v', durationSec: 5 });
+    const res = await handleGenerateDesignVideo({ mode: 't2v', prompt: 'x', model: 'wan2.7-t2v', outputPath: out, durationSec: 99 });
+    // 用真实价表交叉验证：wan2.7-t2v 单价 × 5
+    const { estimateVideoCostCny } = await import('../../../src/shared/media/videoCost');
+    expect(res.durationSec).toBe(5);
+    expect(res.costCny).toBeCloseTo(estimateVideoCostCny('wan2.7-t2v', 5), 5);
+    await fsp.rm(path.dirname(path.dirname(out)), { recursive: true, force: true });
+  });
+
   it('i2v 正常路径：读底图→base64 传 service→写 mp4', async () => {
     const base = path.join(DESIGN_DIR, `run-i2v/assets/base-${Date.now()}.png`);
     await fsp.mkdir(path.dirname(base), { recursive: true });

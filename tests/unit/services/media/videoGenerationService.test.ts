@@ -100,6 +100,58 @@ describe('generateVideo — 守门与失败', () => {
   });
 });
 
+describe('generateVideo — 提交即终态（Fix A）', () => {
+  it('提交即返回 FAILED 状态：抛出该 message，不进入轮询', async () => {
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      calls.push(String(input));
+      return { ok: true, status: 200, json: async () => ({ output: { task_status: 'FAILED', message: '内容审核未通过' } }), text: async () => '' } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'wan2.7-t2v', mode: 't2v', prompt: 'x' })).rejects.toThrow(/内容审核未通过|FAILED/);
+    // 只发了提交那一次，没有进入 /tasks/ 轮询
+    expect(calls.some((u) => u.includes('/tasks/'))).toBe(false);
+  });
+});
+
+describe('generateVideo — 轮询失败路径（Fix C）', () => {
+  it('轮询 CANCELED：抛错', { timeout: 30000 }, async () => {
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/tasks/')) return jsonResponse({ output: { task_status: 'CANCELED' } });
+      return jsonResponse({ output: { task_id: 't1', task_status: 'PENDING' } });
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'wan2.7-t2v', mode: 't2v', prompt: 'x' })).rejects.toThrow(/CANCELED/);
+  });
+
+  it('轮询 UNKNOWN：抛错', { timeout: 30000 }, async () => {
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/tasks/')) return jsonResponse({ output: { task_status: 'UNKNOWN' } });
+      return jsonResponse({ output: { task_id: 't1', task_status: 'PENDING' } });
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'wan2.7-t2v', mode: 't2v', prompt: 'x' })).rejects.toThrow(/UNKNOWN/);
+  });
+
+  it('轮询 SUCCEEDED 但无 video_url：抛错', { timeout: 30000 }, async () => {
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/tasks/')) return jsonResponse({ output: { task_status: 'SUCCEEDED' } });
+      return jsonResponse({ output: { task_id: 't1', task_status: 'PENDING' } });
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'wan2.7-t2v', mode: 't2v', prompt: 'x' })).rejects.toThrow(/video_url|无/);
+  });
+
+  it('提交 HTTP !ok：抛错且不轮询', async () => {
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      calls.push(String(input));
+      return { ok: false, status: 500, json: async () => ({}), text: async () => 'upstream boom' } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await expect(generateVideo({ model: 'wan2.7-t2v', mode: 't2v', prompt: 'x' })).rejects.toThrow(/500|提交失败/);
+    expect(calls.some((u) => u.includes('/tasks/'))).toBe(false);
+  });
+});
+
 describe('downloadVideoAsBuffer — SSRF 守卫 + 下载', () => {
   it('拒绝非 https / 私网 url，不发起请求', async () => {
     const fetchSpy = vi.fn();

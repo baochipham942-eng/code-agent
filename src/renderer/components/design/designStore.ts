@@ -241,3 +241,8 @@ export const useDesignStore = create<DesignState>()(
     },
   ),
 );
+
+// E2E/dev 调试钩子：真机测试设 outputType=mockup 让 DesignCanvas 挂载用（dev 构建注入，同 window.__neo* 例）。
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+  (window as unknown as { __neoDesignStore?: typeof useDesignStore }).__neoDesignStore = useDesignStore;
+}

@@ -26,3 +26,9 @@ export const useWorkspaceModeStore = create<WorkspaceModeState>()(
     { name: 'code-agent-workspace-mode', version: 1 },
   ),
 );
+
+// E2E/dev 调试钩子：真机测试切设计模式用（dev 构建注入，同 window.__neo* 例）。
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+  (window as unknown as { __neoWorkspaceModeStore?: typeof useWorkspaceModeStore }).__neoWorkspaceModeStore =
+    useWorkspaceModeStore;
+}

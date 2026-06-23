@@ -177,3 +177,10 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     },
   ),
 );
+
+// E2E/dev 调试钩子：暴露画布 store 供真机交互测试 seed 节点 + 断言 undo/redo 结果。
+// 仅 dev 构建注入（import.meta.env.DEV），与 designPreviewInject 的 window.__neo* 钩子同例。
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+  (window as unknown as { __neoDesignCanvasStore?: typeof useDesignCanvasStore }).__neoDesignCanvasStore =
+    useDesignCanvasStore;
+}

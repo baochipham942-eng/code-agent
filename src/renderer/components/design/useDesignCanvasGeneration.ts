@@ -347,12 +347,21 @@ export function useDesignCanvasGeneration(): {
   // 扩图/去水印结果共用落盘：读结果图 → 量尺寸 → 在底图右侧落新 variant 节点（parentId 锚血缘根，
   // 与 editRegion 同槽规则）→ 存盘。扩图结果尺寸大于原图，loadImageDims 量真实尺寸即正确。
   const landResultAsVariant = useCallback(
-    async (runDir: string, assetRel: string, assetAbs: string, baseNode: CanvasImageNode, label: string): Promise<void> => {
+    async (
+      runDir: string,
+      assetRel: string,
+      assetAbs: string,
+      baseNode: CanvasImageNode,
+      label: string,
+      costCny?: number,
+    ): Promise<void> => {
       if (useDesignCanvasStore.getState().runDir !== runDir) return;
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
       const node = buildVariantNode(baseNode, assetRel, { width, height }, label);
+      // 成本透明：扩图/去水印是付费调用，把实际花费挂节点（与 editRegion/generate 对称，进成本面板）。
+      if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().clearEditHistory(); // 扩图/去水印成功提交后清 Layer1 编辑栈
@@ -371,7 +380,7 @@ export function useDesignCanvasGeneration(): {
       useDesignCanvasStore.getState().setError(null);
       useDesignCanvasStore.getState().setGenerating(true);
       try {
-        const res = await window.domainAPI?.invoke<{ path: string }>(
+        const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
           'expandDesignImage',
           { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt },
@@ -379,7 +388,7 @@ export function useDesignCanvasGeneration(): {
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
         }
-        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn);
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn, res.data?.costCny);
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
@@ -400,7 +409,7 @@ export function useDesignCanvasGeneration(): {
       useDesignCanvasStore.getState().setError(null);
       useDesignCanvasStore.getState().setGenerating(true);
       try {
-        const res = await window.domainAPI?.invoke<{ path: string }>(
+        const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
           'removeWatermarkDesignImage',
           { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs },
@@ -408,7 +417,7 @@ export function useDesignCanvasGeneration(): {
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
         }
-        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn);
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn, res.data?.costCny);
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);

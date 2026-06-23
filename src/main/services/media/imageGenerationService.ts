@@ -492,8 +492,8 @@ export async function expandImage(input: {
   leftScale?: number;
   rightScale?: number;
   outerSignal?: AbortSignal;
-}): Promise<{ url: string }> {
-  return submitAndPollWanx(
+}): Promise<{ url: string; actualModel: string }> {
+  const res = await submitAndPollWanx(
     input.apiKey,
     WANX_EDIT_PATH,
     {
@@ -513,6 +513,8 @@ export async function expandImage(input: {
     },
     input.outerSignal ?? new AbortController().signal,
   );
+  // 成本权威源在 main：扩图走 wanx imageedit，回传实际模型供 IPC 查价表（成本透明补全）。
+  return { ...res, actualModel: WANX_EDIT_MODEL };
 }
 
 /**
@@ -524,8 +526,8 @@ export async function removeWatermark(input: {
   baseImageDataUrl: string;
   prompt?: string;
   outerSignal?: AbortSignal;
-}): Promise<{ url: string }> {
-  return submitAndPollWanx(
+}): Promise<{ url: string; actualModel: string }> {
+  const res = await submitAndPollWanx(
     input.apiKey,
     WANX_EDIT_PATH,
     {
@@ -539,6 +541,8 @@ export async function removeWatermark(input: {
     },
     input.outerSignal ?? new AbortController().signal,
   );
+  // 成本权威源在 main：去水印走 wanx imageedit，回传实际模型供 IPC 查价表（成本透明补全）。
+  return { ...res, actualModel: WANX_EDIT_MODEL };
 }
 
 export async function generateImage(

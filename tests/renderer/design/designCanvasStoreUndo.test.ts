@@ -127,6 +127,26 @@ describe('designCanvasStore undo/redo (Layer1 编辑历史)', () => {
     expect(nodes.find((x) => x.id === 'A2')?.chosen).toBe(true); // 主版选择保留(修复前会被抹成 false)
   });
 
+  it('skeptic HIGH-1：delete→undo→redo 重新删除生效（redo 不复活被删节点）', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A'), n('B')]));
+    s.deleteNode('B');
+    useDesignCanvasStore.getState().undoEdit(); // B 恢复
+    expect(useDesignCanvasStore.getState().nodes.map((x) => x.id).sort()).toEqual(['A', 'B']);
+    useDesignCanvasStore.getState().redoEdit(); // 重做删除
+    expect(useDesignCanvasStore.getState().nodes.map((x) => x.id)).toEqual(['A']);
+  });
+
+  it('skeptic HIGH-1 配套：addNode 清 redo 栈（add 后无法 redo 撞丢新增节点）', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A')]));
+    s.updateNode('A', { x: 10 });
+    useDesignCanvasStore.getState().undoEdit(); // 可重做
+    expect(useDesignCanvasStore.getState().canEditRedo()).toBe(true);
+    useDesignCanvasStore.getState().addNode(n('B')); // 新分支：清 redo
+    expect(useDesignCanvasStore.getState().canEditRedo()).toBe(false);
+  });
+
   it('HIGH-1：move→import 新节点→undo，新增节点不丢', () => {
     const s = useDesignCanvasStore.getState();
     s.loadDoc('run-x', doc([n('A')]));

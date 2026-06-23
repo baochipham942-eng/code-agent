@@ -86,7 +86,7 @@ describe('expandImage — wanx function=expand', () => {
       leftScale: 1,
       rightScale: 1.2,
     });
-    expect(result).toEqual({ url: 'https://oss.example.com/out.png' });
+    expect(result).toEqual({ url: 'https://oss.example.com/out.png', actualModel: 'wanx2.1-imageedit' });
 
     const submit = calls[0];
     expect(submit.url).toContain('/services/aigc/image2image/image-synthesis');
@@ -125,7 +125,7 @@ describe('removeWatermark — wanx function=remove_watermark', () => {
   it('提交 body 含 function=remove_watermark 与默认去水印 prompt', async () => {
     const calls = installFetchMock();
     const result = await removeWatermark({ apiKey: 'sk', baseImageDataUrl: DATA_URL });
-    expect(result).toEqual({ url: 'https://oss.example.com/out.png' });
+    expect(result).toEqual({ url: 'https://oss.example.com/out.png', actualModel: 'wanx2.1-imageedit' });
 
     expect(calls[0].body).toMatchObject({
       model: 'wanx2.1-imageedit',

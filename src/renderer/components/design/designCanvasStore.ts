@@ -16,6 +16,12 @@ import {
 } from './designDiagramTypes';
 import { groupKey } from './variantSpine';
 import {
+  computeProposalResult,
+  type ProposalApplyResult,
+  type ProposalApplyOpts,
+} from './applyCanvasProposal';
+import type { CanvasProposalOp } from '../../../shared/contract/canvasProposal';
+import {
   emptyEditHistory,
   pushSnapshot,
   undoEdit as applyUndo,
@@ -70,6 +76,13 @@ interface DesignCanvasState {
   addShape: (shape: CanvasShape) => void;
   updateShape: (id: string, patch: Partial<CanvasShape>) => void;
   deleteShape: (id: string) => void;
+  /**
+   * 应用一批 agent 提议 op（ADR-026 D3-B：整批=一个原子撤销单元）。
+   * 第一刀仅 Layer1 op（移动/连线/形状/标注）：有变更则**整批单次快照**后落新态，
+   * 一次 undo 即可全撤；全跳过（stale-target）则不动状态/不进快照。返回应用/跳过明细。
+   * 落盘（saveCanvasDoc）由调用方在本 action 后执行。
+   */
+  applyProposalBatch: (ops: CanvasProposalOp[], opts: ProposalApplyOpts) => ProposalApplyResult;
   setSelectedDiagram: (sel: SelectedDiagram) => void;
   setCamera: (camera: CanvasCamera) => void;
   setSelected: (ids: string[]) => void;
@@ -256,6 +269,20 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
           s.selectedDiagram?.type === 'shape' && s.selectedDiagram.id === id ? null : s.selectedDiagram,
       };
     }),
+  applyProposalBatch: (ops, opts) => {
+    const s = get();
+    const result = computeProposalResult({ nodes: s.nodes, connectors: s.connectors, shapes: s.shapes }, ops, opts);
+    if (result.changed) {
+      // D3-B：Layer1 整批单次快照（应用前），整批一次 undo 撤完。
+      set({
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        nodes: result.next.nodes,
+        connectors: result.next.connectors,
+        shapes: result.next.shapes,
+      });
+    }
+    return result;
+  },
   setSelectedDiagram: (sel) =>
     // 选中图解对象时清掉节点选择（互斥），反之亦然由 setSelected 处理。
     set(() => ({ selectedDiagram: sel, selectedIds: [] })),

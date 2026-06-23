@@ -57,7 +57,6 @@ function fakeStream(): MediaStream {
 function installMedia() {
   // jsdom 的 Blob 不实现 arrayBuffer()，转写链路需要它
   if (typeof Blob.prototype.arrayBuffer !== 'function') {
-     
     Blob.prototype.arrayBuffer = function arrayBuffer() {
       return Promise.resolve(new ArrayBuffer(8));
     };
@@ -237,6 +236,22 @@ describe('stop / toggle / retry / clearError', () => {
       view.result.current.retry();
     });
     await waitFor(() => expect(view.result.current.status).toBe('idle'));
+  });
+
+  it('前置门错误（unsupported）清掉残留 pendingAudio，canRetry 不误亮', async () => {
+    // 先制造一次可重试失败 → pendingAudio 留存、canRetry 亮
+    ipc.transcribeSpeech.mockResolvedValueOnce({ success: false, error: 'x', recoverable: true });
+    const view = renderHook(() => useVoiceInput());
+    await waitFor(() => expect(view.result.current.isEnabled).toBe(true));
+    await recordAndStop(view);
+    expect(view.result.current.canRetry).toBe(true);
+    // 再走 unsupported 前置门 → 应清掉残留，canRetry 归 false
+    delete (window as unknown as { MediaRecorder?: unknown }).MediaRecorder;
+    await act(async () => {
+      await view.result.current.start();
+    });
+    expect(view.result.current.errorCode).toBe('UNSUPPORTED');
+    expect(view.result.current.canRetry).toBe(false);
   });
 
   it('clearError 复位状态', async () => {

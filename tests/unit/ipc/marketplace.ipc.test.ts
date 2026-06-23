@@ -170,7 +170,7 @@ describe('LIST_PLUGINS / SEARCH_PLUGINS', () => {
 describe('INSTALL / UNINSTALL / ENABLE / DISABLE', () => {
   it('INSTALL 成功且有安装记录 → 回填 plugin', async () => {
     mp.installPlugin.mockResolvedValue({ installedSkills: ['s1'], installedCommands: ['c1'], installedPluginRoot: '/r' });
-    mp.listInstalledPlugins.mockResolvedValue({ 'pdf@official': { plugin: 'pdf', marketplace: 'official', scope: 'user', isEnabled: true, installedAt: 1, pluginRoot: '/r', types: [], skills: [], commands: [] } });
+    mp.listInstalledPlugins.mockResolvedValue({ 'pdf@official': { plugin: 'pdf', marketplace: 'official', scope: 'user', isEnabled: true, installedAt: '2026-01-02T00:00:00.000Z', pluginRoot: '/r', types: [], skills: [], commands: [] } });
     const res = (await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official')) as { success: boolean; plugin?: { name: string } };
     expect(res.success).toBe(true);
     expect(res.plugin).toMatchObject({ name: 'pdf', marketplace: 'official' });
@@ -204,8 +204,8 @@ describe('INSTALL / UNINSTALL / ENABLE / DISABLE', () => {
 describe('LIST_INSTALLED', () => {
   it('按 scope 过滤', async () => {
     mp.listInstalledPlugins.mockResolvedValue({
-      'a@m': { plugin: 'a', marketplace: 'm', scope: 'user', isEnabled: true, installedAt: 1, pluginRoot: '/a', types: [], skills: [], commands: [] },
-      'b@m': { plugin: 'b', marketplace: 'm', scope: 'project', isEnabled: false, installedAt: 2, pluginRoot: '/b', types: [], skills: [], commands: [] },
+      'a@m': { plugin: 'a', marketplace: 'm', scope: 'user', isEnabled: true, installedAt: '2026-01-02T00:00:00.000Z', pluginRoot: '/a', types: [], skills: [], commands: [] },
+      'b@m': { plugin: 'b', marketplace: 'm', scope: 'project', isEnabled: false, installedAt: '2026-01-03T00:00:00.000Z', pluginRoot: '/b', types: [], skills: [], commands: [] },
     });
     const userOnly = (await call(IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED, 'user')) as { data: Array<{ name: string }> };
     expect(userOnly.data).toHaveLength(1);

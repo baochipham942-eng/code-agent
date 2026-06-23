@@ -201,11 +201,37 @@ describe('light memory 委派', () => {
 });
 
 describe('v2 entry 委派', () => {
-  it('memoryEntries / memoryEntryUpdate / memoryExportV2 / memoryRebuildMirror 透传 runtime', async () => {
+  it('memoryEntries / memoryExportV2 / memoryRebuildMirror 透传 runtime', async () => {
     expect((await call('memoryEntries')).data).toEqual([{ id: 'e1' }]);
-    expect((await call('memoryEntryUpdate', { entryId: 'e1' })).data).toEqual({ ok: true });
-    expect(rt.updateMemoryEntry).toHaveBeenCalled();
     expect((await call('memoryExportV2')).data).toEqual({ bundle: 'v2' });
     expect((await call('memoryRebuildMirror')).data).toEqual({ rebuilt: 5 });
+  });
+
+  // Codex 审计：不能只证 runtime 被调用——必须断言带了正确 (db, payload)，否则丢参仍绿
+  it('memoryEntryUpdate 带 (db, payload) 委派；缺 entryId 报错', async () => {
+    expect((await call('memoryEntryUpdate', { entryId: 'e1', patch: { x: 1 } })).data).toEqual({ ok: true });
+    expect(rt.updateMemoryEntry).toHaveBeenCalledWith(db, { entryId: 'e1', patch: { x: 1 } });
+    expect(await call('memoryEntryUpdate', {})).toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR', message: expect.stringContaining('entryId') } });
+  });
+
+  it('memoryEntryDelete 带 (db, payload) 委派；缺 entryId 报错', async () => {
+    expect((await call('memoryEntryDelete', { entryId: 'e9' })).data).toEqual({ ok: true });
+    expect(rt.deleteMemoryEntry).toHaveBeenCalledWith(db, { entryId: 'e9' });
+    expect(await call('memoryEntryDelete', {})).toMatchObject({ success: false, error: { message: expect.stringContaining('entryId') } });
+  });
+
+  it('memoryPack 带 (payload, db) 委派', async () => {
+    expect((await call('memoryPack', { ids: ['e1'] })).data).toEqual({ packed: 2 });
+    expect(rt.packMemoryEntries).toHaveBeenCalledWith({ ids: ['e1'] }, db);
+  });
+
+  it('memoryImportV2DryRun/Apply 要求 schemaVersion 2 bundle，并带 db', async () => {
+    const bundle = { schemaVersion: 2, entries: [] };
+    expect((await call('memoryImportV2DryRun', { bundle })).data).toEqual({ willImport: 1 });
+    expect(rt.dryRunImportMemoryBundleV2).toHaveBeenCalledWith(bundle, db);
+    expect((await call('memoryImportV2Apply', { bundle, allowConflicts: true })).data).toEqual({ imported: 1 });
+    expect(rt.applyImportMemoryBundleV2).toHaveBeenCalledWith(bundle, db, { allowConflicts: true });
+    // 非 v2 bundle → 拒绝
+    expect(await call('memoryImportV2DryRun', { bundle: { schemaVersion: 1 } })).toMatchObject({ success: false, error: { message: expect.stringContaining('schemaVersion 2') } });
   });
 });

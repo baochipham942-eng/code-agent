@@ -269,7 +269,13 @@ describe('SkillsMP 社区搜索', () => {
     expect(res.success).toBe(true);
     expect(res.data).toHaveLength(1);
     expect(res.total).toBe(1);
-    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain('q=pdf&limit=5');
+    const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { headers: Record<string, string>; signal?: unknown }];
+    expect(url).toContain('q=pdf&limit=5');
+    // Codex 审计：不能只看 URL query——验证带了正确鉴权头/内容类型/超时 signal，
+    // 否则丢 Authorization 或 timeout 仍会绿
+    expect(init.headers.Authorization).toBe('Bearer key-123');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(init.signal).toBeDefined();
   });
 
   it('401 → INVALID_API_KEY', async () => {

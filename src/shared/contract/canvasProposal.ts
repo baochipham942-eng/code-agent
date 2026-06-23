@@ -55,12 +55,22 @@ export interface ProposeRenameNodeOp {
   label: string;
 }
 
-/** 第一刀提议 op 判别联合。 */
+/**
+ * 淘汰（软删）一个已存在节点（三刀）。走 store.discardNode：标记 discarded、节点留盘可恢复，
+ * **非破坏性**。不进 Layer1 撤销批（与人类淘汰一致），靠画布「已淘汰·恢复」入口找回。
+ */
+export interface ProposeDiscardNodeOp {
+  kind: 'discardNode';
+  nodeId: string;
+}
+
+/** 提议 op 判别联合（一刀 Layer1 四种 + 三刀 discardNode 软删）。 */
 export type CanvasProposalOp =
   | ProposeMoveNodeOp
   | ProposeAddConnectorOp
   | ProposeAddShapeOp
-  | ProposeRenameNodeOp;
+  | ProposeRenameNodeOp
+  | ProposeDiscardNodeOp;
 
 /** agent 一次提交的一批提议。 */
 export interface CanvasOpProposal {
@@ -169,6 +179,9 @@ export function normalizeProposalOp(raw: unknown): CanvasProposalOp | null {
     case 'renameNode':
       if (!isNonEmptyString(r.nodeId) || !isNonEmptyString(r.label)) return null;
       return { kind: 'renameNode', nodeId: r.nodeId, label: r.label.slice(0, PROPOSAL_TEXT_MAX) };
+    case 'discardNode':
+      if (!isNonEmptyString(r.nodeId)) return null;
+      return { kind: 'discardNode', nodeId: r.nodeId };
     case 'addShape': {
       const shape = normalizeProposedShape(r.shape);
       if (!shape) return null;

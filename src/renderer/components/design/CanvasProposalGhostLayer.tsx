@@ -7,6 +7,8 @@ import type { CanvasProposalOp } from '../../../shared/contract/canvasProposal';
 
 const GHOST = '#3b82f6'; // ds-allow:viz 提议蓝
 const GHOST_FILL = 'rgba(59,130,246,0.12)'; // ds-allow:viz
+const DANGER = '#ef4444'; // ds-allow:viz 待淘汰红
+const DANGER_FILL = 'rgba(239,68,68,0.10)'; // ds-allow:viz
 
 function centerOf(n: CanvasNode): { x: number; y: number } {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 };
@@ -59,6 +61,18 @@ export const CanvasProposalGhostLayer: React.FC<{
             const n = byId.get(op.nodeId);
             if (!n) return null;
             return <KonvaText key={i} x={n.x} y={n.y - 18} text={`✎ ${op.label}`} fontSize={13} fill={GHOST} />;
+          }
+          case 'discardNode': {
+            const n = byId.get(op.nodeId);
+            if (!n) return null;
+            // 待淘汰：红框 + 对角叉，明示「这个会被软删（可恢复）」。
+            return (
+              <Group key={i}>
+                <Rect x={n.x} y={n.y} width={n.width} height={n.height} stroke={DANGER} strokeWidth={2} dash={[8, 6]} fill={DANGER_FILL} cornerRadius={4} />
+                <Line points={[n.x, n.y, n.x + n.width, n.y + n.height]} stroke={DANGER} strokeWidth={1.5} dash={[4, 4]} />
+                <Line points={[n.x + n.width, n.y, n.x, n.y + n.height]} stroke={DANGER} strokeWidth={1.5} dash={[4, 4]} />
+              </Group>
+            );
           }
           default:
             return null;

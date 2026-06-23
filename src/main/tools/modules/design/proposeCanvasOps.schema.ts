@@ -10,12 +10,13 @@ export const proposeCanvasOpsSchema: ToolSchema = {
   name: 'ProposeCanvasOps',
   description: `Propose a batch of edits to the design canvas (arrange/connect/annotate existing items) and WAIT for the user to approve or reject. You do NOT edit the canvas directly — the user reviews a visual preview and applies it. Use this in the design workspace to lay out user flows, connect screens, or label steps.
 
-Each op refers to existing nodes by their id (from the injected canvas snapshot). Supported ops (this version):
+Each op refers to existing nodes by their id (from the injected canvas snapshot). Supported ops:
 - moveNode {nodeId,x,y}: reposition an existing node.
 - addConnector {fromNodeId,toNodeId,label?}: draw an arrow between two existing nodes.
 - addShape {shape}: add a freeform shape/label (rect/ellipse/sticky/text/line).
 - renameNode {nodeId,label}: label a node.
-NOT supported here: creating images (paid generation) or deleting anything. Only propose ops whose target nodes exist in the current canvas.`,
+- discardNode {nodeId}: soft-remove a node — it is hidden but RECOVERABLE by the user, never permanently deleted. Use sparingly, only for clearly-unwanted drafts.
+NOT supported here: creating images (paid generation). Only propose ops whose target nodes exist in the current canvas.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -27,7 +28,7 @@ NOT supported here: creating images (paid generation) or deleting anything. Only
           properties: {
             kind: {
               type: 'string',
-              enum: ['moveNode', 'addConnector', 'addShape', 'renameNode'],
+              enum: ['moveNode', 'addConnector', 'addShape', 'renameNode', 'discardNode'],
               description: 'Op type.',
             },
             nodeId: { type: 'string', description: 'Target node id (moveNode/renameNode).' },

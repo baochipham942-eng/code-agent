@@ -6,8 +6,13 @@ import ipcService from '../../services/ipcService';
 import { useCanvasProposalStore } from './canvasProposalStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { saveCanvasDoc } from './designCanvasPersistence';
-import { applyProposal, rejectProposal, type ProposalControllerDeps } from './canvasProposalController';
-import type { ProposalApplyResult } from './applyCanvasProposal';
+import {
+  applyProposal,
+  rejectProposal,
+  type ProposalControllerDeps,
+  type ProposalApplyOutcome,
+} from './canvasProposalController';
+import type { CanvasProposalOp } from '@shared/contract';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -20,6 +25,17 @@ function makeGenId(): (kind: string, index: number) => string {
 function controllerDeps(): ProposalControllerDeps {
   return {
     applyBatch: (ops, opts) => useDesignCanvasStore.getState().applyProposalBatch(ops, opts),
+    // 软删：仅淘汰当前存在且未淘汰的节点（stale 的跳过），走 store.discardNode（Layer2 可恢复）。
+    applyDiscards: (nodeIds) => {
+      const st = useDesignCanvasStore.getState();
+      const live = new Set(st.nodes.filter((n) => !n.discarded).map((n) => n.id));
+      let applied = 0;
+      let skipped = 0;
+      for (const id of nodeIds) {
+        if (live.has(id)) { st.discardNode(id); applied++; } else { skipped++; }
+      }
+      return { applied, skipped };
+    },
     save: async () => {
       const { runDir, toDoc } = useDesignCanvasStore.getState();
       if (runDir) await saveCanvasDoc(runDir, toDoc());
@@ -32,7 +48,7 @@ function controllerDeps(): ProposalControllerDeps {
 
 export interface CanvasProposalReview {
   pending: CanvasOpProposal | null;
-  apply: () => Promise<ProposalApplyResult | void>;
+  apply: (selectedOps?: CanvasProposalOp[]) => Promise<ProposalApplyOutcome | void>;
   reject: (feedback?: string) => Promise<void>;
 }
 
@@ -48,10 +64,10 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     return () => unsubscribe?.();
   }, [setPending]);
 
-  const apply = useCallback(async () => {
+  const apply = useCallback(async (selectedOps?: CanvasProposalOp[]) => {
     if (!pending) return;
     try {
-      return await applyProposal(pending, controllerDeps());
+      return await applyProposal(pending, controllerDeps(), selectedOps);
     } finally {
       // 用户已决策：即使回 agent 的 IPC 失败也清掉审批条，不把 UI 卡住（本地变更已落）。
       clear();

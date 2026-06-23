@@ -47,7 +47,12 @@ describe('normalizeProposalOp', () => {
     expect(normalizeProposalOp({ kind: 'renameNode', nodeId: 'n1', label: '' })).toBeNull();
   });
 
-  it('未知 kind / 非对象 → null', () => {
+  it('discardNode（三刀软删）：合法通过 + 缺 nodeId → null', () => {
+    expect(normalizeProposalOp({ kind: 'discardNode', nodeId: 'n1' })).toEqual({ kind: 'discardNode', nodeId: 'n1' });
+    expect(normalizeProposalOp({ kind: 'discardNode', nodeId: '' })).toBeNull();
+  });
+
+  it('未知 kind / 非对象 → null（deleteNode 硬删仍不在白名单）', () => {
     expect(normalizeProposalOp({ kind: 'deleteNode', nodeId: 'n1' })).toBeNull();
     expect(normalizeProposalOp(null)).toBeNull();
     expect(normalizeProposalOp('x')).toBeNull();

@@ -19,6 +19,7 @@ import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from '.
 import { DiagramLayer, type DiagramCanvasTool, type TextEditTarget } from './DiagramLayer';
 import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
 import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
+import { DiscardedNodesTray } from './DiscardedNodesTray';
 import { useCanvasProposalReview } from './useCanvasProposalReview';
 import { DiagramToolbar } from './DiagramToolbar';
 import { reduceDiagram, type ShapeTool } from './diagramReducer';
@@ -950,14 +951,17 @@ export const DesignCanvas: React.FC = () => {
         </Stage>
       )}
 
-      {/* ADR-026：提议审批条（应用/拒绝）。 */}
+      {/* ADR-026：提议审批条（逐 op 取舍 + 应用/拒绝）。 */}
       {canvasProposal.pending && (
         <CanvasProposalReviewBar
           proposal={canvasProposal.pending}
-          onApply={() => void canvasProposal.apply()}
+          onApply={(ops) => void canvasProposal.apply(ops)}
           onReject={(fb) => void canvasProposal.reject(fb)}
         />
       )}
+
+      {/* ADR-026 三刀：已淘汰节点恢复入口（软删找回）。 */}
+      <DiscardedNodesTray />
 
       {/* 图解工具条（模式/调色板/删除）——消费 surface 只放工具选择，不放配置管理。 */}
       <DiagramToolbar

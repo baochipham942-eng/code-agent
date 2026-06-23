@@ -65,6 +65,20 @@ describe('designCanvasStore setChosen / deleteNode', () => {
     expect(st.selectedIds).toEqual(['B']);
   });
 
+  it('restoreNode（三刀软删找回）：清 discarded 让节点重新可见；非淘汰/不存在 = no-op', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A'), n('B')]));
+    s.discardNode('A');
+    expect(useDesignCanvasStore.getState().nodes.find((x) => x.id === 'A')?.discarded).toBe(true);
+    s.restoreNode('A');
+    const st = useDesignCanvasStore.getState();
+    expect(st.nodes.find((x) => x.id === 'A')?.discarded).toBe(false);
+    // 未淘汰 / 不存在：no-op，不抛错
+    s.restoreNode('B');
+    s.restoreNode('ghost');
+    expect(useDesignCanvasStore.getState().nodes.find((x) => x.id === 'B')?.discarded).toBeUndefined();
+  });
+
   it('discardNode 淘汰主版 → 同槽最新活跃版自动升主版', () => {
     const s = useDesignCanvasStore.getState();
     s.loadDoc(

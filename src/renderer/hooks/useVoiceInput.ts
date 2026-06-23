@@ -287,6 +287,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     if (isStartingRef.current || status === 'recording' || status === 'transcribing') return;
 
     if (!settings.enabled) {
+      // 前置门错误清掉残留 pendingAudio，否则上一次可重试失败会让 canRetry 误亮
+      pendingAudioRef.current = null;
       setError('语音输入已关闭');
       setErrorCode('DISABLED');
       setStatus('error');
@@ -294,9 +296,11 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     }
 
     if (!checkSupport()) {
+      pendingAudioRef.current = null;
       setIsSupported(false);
       setError('您的浏览器不支持语音输入');
       setErrorCode('UNSUPPORTED');
+      setStatus('error');
       return;
     }
 

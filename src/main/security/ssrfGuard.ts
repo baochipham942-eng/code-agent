@@ -60,10 +60,15 @@ export function assertSafeCustomBaseUrl(raw: string): string {
   if (url.protocol !== 'https:') {
     throw new Error('自定义端点 base URL 必须是 https');
   }
+  // 内嵌凭证（user:pass@host）会随 URL 进端点日志/被当作另一条目，直接拒。
+  if (url.username || url.password) {
+    throw new Error('自定义端点 base URL 不能内嵌账号密码');
+  }
   if (isPrivateOrLocalHost(url.hostname)) {
     throw new Error(`拒绝指向私网/环回/元数据地址的 base URL：${url.hostname}`);
   }
-  return trimmed.replace(/\/+$/, '');
+  // 返回 WHATWG 规范化形式（host 小写/百分号归一），去尾斜杠——保证去重与存盘一致。
+  return url.href.replace(/\/+$/, '');
 }
 
 /**

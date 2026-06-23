@@ -62,6 +62,13 @@ function sanitizeModel(value: unknown): CustomImageModel | null {
   const v = value as Record<string, unknown>;
   if (typeof v.id !== 'string' || !VALID_ID.test(v.id)) return null;
   if (typeof v.label !== 'string' || typeof v.baseUrl !== 'string' || typeof v.modelName !== 'string') return null;
+  // 防御纵深：磁盘文件可能被篡改塞私网 baseUrl。读盘时也过一道 SSRF 守卫，
+  // 不合规的条目直接丢弃（不进 list、不暴露给 renderer）。出图前还有一道守卫兜底。
+  try {
+    assertSafeCustomBaseUrl(v.baseUrl);
+  } catch {
+    return null;
+  }
   const model: CustomImageModel = {
     id: v.id,
     label: v.label,
@@ -153,13 +160,20 @@ async function saveImpl(input: CustomImageModelInput): Promise<{ id: string }> {
   const baseUrl = assertSafeCustomBaseUrl(input.baseUrl);
 
   const now = Date.now();
-  const id = deriveId(label);
+  const store = await readStore();
+  // 防 id 碰撞静默覆盖：deriveId 的时戳尾缀熵低（~24 天回绕），同 label 跨期可能撞 id。
+  // 撞了就追加去碰撞字符，绝不覆盖已有条目（保护用户既有模型 + 不串 key）。
+  let id = deriveId(label);
+  let guard = 0;
+  while (store.models.some((m) => m.id === id) && guard < 100) {
+    id = `${id}-${(guard + 1).toString(36)}`;
+    guard += 1;
+  }
   const model: CustomImageModel = { id, label, baseUrl, modelName, createdAt: now, updatedAt: now };
   if (typeof input.costCnyPerImage === 'number' && Number.isFinite(input.costCnyPerImage) && input.costCnyPerImage >= 0) {
     model.costCnyPerImage = input.costCnyPerImage;
   }
 
-  const store = await readStore();
   store.models = [...store.models.filter((m) => m.id !== id), model];
   await writeStore(store);
   return { id };

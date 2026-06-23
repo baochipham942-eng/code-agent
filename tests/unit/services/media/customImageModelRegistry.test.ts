@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -134,6 +134,24 @@ describe('key 存取（SecureStorage，不进明文 json）', () => {
     // metadata 文件不含 key 值
     const models = await listCustomImageModels();
     expect(JSON.stringify(models)).not.toContain('sk-abc');
+  });
+});
+
+describe('磁盘篡改防御（防御纵深）', () => {
+  it('被篡改成私网 baseUrl 的条目在读盘时被 SSRF 守卫丢弃，不进 list', async () => {
+    const storePath = join(workDir, 'design', 'custom-image-models.json');
+    await mkdir(join(workDir, 'design'), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify({
+        models: [
+          { id: 'evil-1', label: 'E', baseUrl: 'https://127.0.0.1/v1', modelName: 'm', createdAt: 0, updatedAt: 0 },
+          { id: 'good-1', label: 'G', baseUrl: 'https://api.x.com/v1', modelName: 'm', createdAt: 0, updatedAt: 0 },
+        ],
+      }),
+    );
+    const models = await listCustomImageModels();
+    expect(models.map((m) => m.id)).toEqual(['good-1']); // evil-1 被丢弃
   });
 });
 

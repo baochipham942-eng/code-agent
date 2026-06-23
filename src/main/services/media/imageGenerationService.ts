@@ -202,7 +202,13 @@ export async function downloadImageAsBase64(
   outerSignal: AbortSignal = new AbortController().signal,
 ): Promise<string> {
   if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的图片 URL（仅允许 https 公网地址）');
-  const response = await fetchWithAbort(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
+  // SSRF-via-redirect 防护：私网守卫只校验了初始 URL；若让 fetch 透明跟 3xx 跳转，
+  // 端点可把图片 url 跳到 169.254.169.254 等私网绕过守卫。用 redirect:manual 截停，
+  // 拒绝任何跳转（合法图床直出 200，不靠跳转）。
+  const response = await fetchWithAbort(url, { redirect: 'manual' }, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error('拒绝下载：图片 URL 发生跳转（SSRF 防护）');
+  }
   if (!response.ok) {
     throw new Error(`图片下载失败: ${response.status}`);
   }

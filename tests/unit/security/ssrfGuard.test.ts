@@ -59,6 +59,13 @@ describe('assertSafeCustomBaseUrl', () => {
     expect(() => assertSafeCustomBaseUrl('not a url')).toThrow();
     expect(() => assertSafeCustomBaseUrl('')).toThrow();
   });
+  it('拒绝内嵌凭证（userinfo），防凭证随 URL 外泄到端点日志', () => {
+    expect(() => assertSafeCustomBaseUrl('https://user:pass@api.x.com/v1')).toThrow();
+    expect(() => assertSafeCustomBaseUrl('https://user@api.x.com/v1')).toThrow();
+  });
+  it('返回 WHATWG 规范化形式（host 小写）以便去重一致', () => {
+    expect(assertSafeCustomBaseUrl('HTTPS://API.X.COM/v1')).toBe('https://api.x.com/v1');
+  });
 });
 
 describe('assertSafeDownloadUrl', () => {

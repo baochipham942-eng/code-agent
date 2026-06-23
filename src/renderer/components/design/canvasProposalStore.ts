@@ -14,3 +14,9 @@ export const useCanvasProposalStore = create<CanvasProposalState>((set) => ({
   setPending: (proposal) => set({ pending: proposal }),
   clear: () => set({ pending: null }),
 }));
+
+// E2E/dev 调试钩子：真机测试用 setPending 模拟收到 agent 提议（同 window.__neo* 例）。
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+  (window as unknown as { __neoCanvasProposalStore?: typeof useCanvasProposalStore }).__neoCanvasProposalStore =
+    useCanvasProposalStore;
+}

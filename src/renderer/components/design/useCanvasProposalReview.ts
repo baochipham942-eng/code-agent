@@ -49,15 +49,21 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   const apply = useCallback(async () => {
     if (!pending) return;
-    const result = await applyProposal(pending, controllerDeps());
-    clear();
-    return result;
+    try {
+      return await applyProposal(pending, controllerDeps());
+    } finally {
+      // 用户已决策：即使回 agent 的 IPC 失败也清掉审批条，不把 UI 卡住（本地变更已落）。
+      clear();
+    }
   }, [pending, clear]);
 
   const reject = useCallback(async (feedback?: string) => {
     if (!pending) return;
-    await rejectProposal(pending, { respond: controllerDeps().respond }, feedback);
-    clear();
+    try {
+      await rejectProposal(pending, { respond: controllerDeps().respond }, feedback);
+    } finally {
+      clear();
+    }
   }, [pending, clear]);
 
   return { pending, apply, reject };

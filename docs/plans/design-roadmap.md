@@ -16,7 +16,7 @@
 
 外圈 4 项（借鉴清单余项）:
   节点连线 / freeform 图解 ... 🟡 实现完成待 PR/合并(分支 feat/design-diagram-canvas)
-  Agent 操作画布(人审批) ..... ⬜ 借鉴(依赖节点连线，现已解锁前置)
+  Agent 操作画布(人审批) ..... 🟦 ADR-026 已采纳，待实现(D1-B/D2-A/D3-B,MVP 加/排布/连线/标注)
   region-lock 升可选硬保证 ... 🟡 实现完成待 PR/合并(分支 feat/design-region-lock-strict)
   扩图/去水印成本补全 ........ ✅ 折进节点连线刀(待同 PR 合并)
 ```
@@ -82,17 +82,23 @@ handler 回 `{path,actualModel,costCny}`、renderer `landResultAsVariant` 挂 co
 - **关（默认）**：维持 best-effort，不阻断编辑。
 - **开**：region-lock 无法强制执行时响亮失败——sharp 不可用在**付费生成前**拦截（不浪费一次付费调用）；闸内部抛错则拒绝写未保证产物（模型原图不落盘）。
 - 落点：`imageConsistency.ts` 抽 `ensureRegionLockEnforceable`/`onRegionLockGateError` 两纯函数（可单测）；`designSettings.ts` 新建轻量行为偏好存储（原子写+串行锁+容损读）；`handleEditDesignImage` 付费前预检 + 闸错按严格分流；新增 `get/updateDesignSettings` IPC（shellCapabilities 注册）；`VisualModelsSettings` 新增段 + 开关 + i18n。
-- 验证：TDD（designSettings 8 + 严格守卫 5 + IPC dispatch 4）+ typecheck 净 + capability-diff/scanner 门绿 + 真机 headless E2E（设置 tab 真挂载、开关 false→true 翻转、i18n 解析、控制台仅后端缺席错）+ 独立 skeptic 当反方抓 1 MED（硬编码默认值）已修。worktree `code-agent-regionlock` / 分支 `feat/design-region-lock-strict`，2 commit 未推未合待拍板。
+- 验证：TDD（designSettings 8 + 严格守卫 5 + IPC dispatch 4）+ typecheck 净 + capability-diff/scanner 门绿 + 真机 headless E2E（设置 tab 真挂载、开关 false→true 翻转、i18n 解析、控制台仅后端缺席错）+ 独立 skeptic 当反方抓 1 MED（硬编码默认值）已修。**已合 main（PR #275，merge 5912ff5f；CI 6 绿 0 红）。**
 
-#### 仅剩一项（未排期）
-- **Agent 操作画布（人审批）**：现设计出图 renderer 直连"不经 agent"。给 agent 画布工具（读状态/提议/应用 op），人审批后落地（守"人主导"）。高成本，**节点连线已做完，前置解锁；需先出 ADR 级设计决策（跨进程画布状态桥 + 审批协议 + op↔编辑历史落地）让林晨拍板再实现。**
+#### 仅剩一项 · Agent 操作画布（人审批） — 🟦 ADR-026 已采纳，待实现
+ADR：`docs/decisions/026-agent-operated-design-canvas.md`（2026-06-23 林晨拍板「按推荐全要」）。核心立场=**agent 只提议、不直接落地**，真正改 store 的永远是 renderer（守"人主导"）。四项决策：
+- **D1-B 每轮注入画布快照**（renderer `store.toDoc()` 注入 agent 上下文，含限长裁剪；否决读 canvas.json 陈旧态/请求响应桥过重）。
+- **D2-A askUserQuestion 式阻塞工具 + ghost 预览**（`proposeCanvasOps` 阻塞等审批 + Konva 叠层画提议虚影 + Apply/Reject）。
+- **D3-B 整批=原子撤销 + 混批顺序写死**（Layer1 先于 Layer2、Layer2 后 `clearEditHistory`，防跨生成 undo 删节点）。
+- **横切红线**：付费前置审批（含付费生成的提议，审批在付费前）+ MVP 只给 加/排布/连线/标注（不给删除/discard 破坏性 op）+ main 永不直接 mutate 画布。
+实施切分：①只读提议闭环（Layer1-only，无付费）②含生成提议（付费前置 + Layer2 混批）③按需 per-op 取舍/破坏性 op 硬审批。
 
 ## 进度日志
 - 2026-06-23：Alma 借鉴分析完成 → 借鉴清单归档 → agent-team 探索三地基 → codex+skeptic 审计 → **⑤ 实现并合 main(PR #267)** → ① 另起会话推进。
 - 2026-06-23：**① 自定义生图模型合 main（PR #270）**（rebase 最新 main；Phase1-4 + codex 5 修订 + 独立 skeptic 抓 1 HIGH+1 MED 全修 + 真机 HTTP-IPC + Playwright；合并时补 renderer-capability-diff 漏登记的 3 capability）。
 - 2026-06-23：**①′ 生成模型设置 tab 合 main**（IA 修正：配置迁设置页+设计页只选；自定义视频端点配置层对称 image 但出片留空待接入）。
 - 2026-06-23：**节点连线 / freeform 图解实现完成**（外圈 keystone，解锁 Agent 操作画布前置）+ **扩图/去水印成本补全折进同刀**。Phase1-3 TDD（数据模型加法/形状归约器/连线几何/undo 快照重构/store/DiagramLayer+Toolbar/i18n）+ 独立 skeptic 抓 1 HIGH+2 MED+2 LOW 全修 + 316 design 测全绿 + 真实 renderer 构建。待 PR/合并（分支 `feat/design-diagram-canvas`，计划 `docs/plans/design-node-connectors.md`）。
-- 2026-06-23：**region-lock 升可选硬保证实现完成**（外圈自补强）。新增严格模式开关（设置页·生成模型 tab，默认关）：sharp 不可用付费前拦截 / 闸错拒写未保证产物。TDD（17 新测）+ typecheck 净 + capability 门绿 + 真机 headless E2E（开关挂载/翻转/i18n）+ 独立 skeptic 抓 1 MED（硬编码默认值）已修。待 PR/合并（分支 `feat/design-region-lock-strict`）。外圈仅剩 Agent 操作画布（需先出 ADR）。
+- 2026-06-23：**region-lock 升可选硬保证合 main（PR #275，merge 5912ff5f，CI 6 绿 0 红）**（外圈自补强）。新增严格模式开关（设置页·生成模型 tab，默认关）：sharp 不可用付费前拦截 / 闸错拒写未保证产物。TDD（17 新测）+ typecheck 净 + capability 门绿 + 真机 headless E2E（开关挂载/翻转/i18n）+ 独立 skeptic 抓 1 MED（硬编码默认值）已修。
+- 2026-06-23：**ADR-026 Agent 操作画布（人审批）已采纳**（外圈最后一项，林晨拍板「按推荐全要」）。三路探查（agent/tool 系统 + 主→渲染推送通道 / 画布状态模型 + 编辑历史不变量 / 现成审批原语）定地基 → D1-B 每轮注入画布快照 + D2-A askUserQuestion 式阻塞 + ghost 预览 + D3-B 整批原子撤销 + MVP 加/排布/连线/标注不给删除。待起第一刀实现（只读提议闭环，Layer1-only 无付费）。
 
 ## 索引
 - 借鉴总纲：`docs/competitive/alma-借鉴清单.md`

@@ -117,3 +117,24 @@ export function reconcileUndoFrame(
   }
   return { nodes, connectors: frame.connectors, shapes: frame.shapes };
 }
+
+/**
+ * redo 还原帧 × 当前态调和（修 skeptic HIGH-1：redo 不能复用 undo 的 reconcile）。
+ * undo 的"追加当前态独有节点"语义是 undo 专用（保住快照后新增的节点）；redo 方向相反——
+ * redo 目标帧是较新的权威态，当前态独有的节点正是这次 redo 要"重新去掉"的（如重做一次删除），
+ * 不能追加回来。故 redo 只取帧节点 + 覆盖存活节点的 Layer2(chosen/discarded)，**不追加** current-only。
+ * （add/import 等会改节点集且不进历史的操作已在 store 侧清空 redo 栈，故 redo 时不存在
+ * "需要保留的 current-only 新增节点"。）connectors/shapes 同样整帧还原。
+ */
+export function reconcileRedoFrame(
+  frame: CanvasEditSnapshot,
+  current: CanvasEditSnapshot,
+): CanvasEditSnapshot {
+  const currentById = new Map(current.nodes.map((node) => [node.id, node]));
+  const nodes: CanvasNode[] = frame.nodes.map((fn) => {
+    const cur = currentById.get(fn.id);
+    if (!cur) return fn;
+    return { ...fn, chosen: cur.chosen, discarded: cur.discarded } as CanvasNode;
+  });
+  return { nodes, connectors: frame.connectors, shapes: frame.shapes };
+}

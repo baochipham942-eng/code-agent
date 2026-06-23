@@ -24,6 +24,7 @@ import {
   canEditUndo as canUndo,
   canEditRedo as canRedo,
   reconcileUndoFrame,
+  reconcileRedoFrame,
   type CanvasEditSnapshot,
   type EditHistoryStack,
 } from './canvasEditHistory';
@@ -129,7 +130,10 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     });
   },
   // addNode = 生成产物落画布，属 Layer2（variant spine），不进 Layer1 编辑历史。
-  addNode: (node) => set((s) => ({ nodes: [...s.nodes, node] })),
+  // 但它改了节点集，是一条新分支：清空 redo 栈（标准 undo/redo 不变式），
+  // 否则 add 后 redo 会带着"当前态独有的新增节点"撞上 reconcileRedoFrame 的不追加语义而丢节点（修 HIGH-1 配套）。
+  addNode: (node) =>
+    set((s) => ({ nodes: [...s.nodes, node], editHistory: { ...s.editHistory, future: [] } })),
   updateNode: (id, patch) =>
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {}; // 无此节点：不改、不留无谓撤销点
@@ -209,7 +213,10 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       if (!s.connectors.some((c) => c.id === id)) return {};
       return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
-        connectors: s.connectors.map((c) => (c.id === id ? { ...c, ...patch, id: c.id } : c)),
+        // 保 id + 端点不被 patch 越权改写（端点改写可绕过 normalizeConnector 制造自环/悬空，修 skeptic LOW-1）。
+        connectors: s.connectors.map((c) =>
+          c.id === id ? { ...c, ...patch, id: c.id, fromNodeId: c.fromNodeId, toNodeId: c.toNodeId } : c,
+        ),
       };
     }),
   deleteConnector: (id) =>
@@ -277,7 +284,8 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     const s = get();
     const res = applyRedo(s.editHistory, snapshotOf(s));
     if (!res) return;
-    const merged = reconcileUndoFrame(res.snapshot, snapshotOf(s));
+    // redo 用 redo 专用调和（不追加 current-only 节点，修 skeptic HIGH-1）。
+    const merged = reconcileRedoFrame(res.snapshot, snapshotOf(s));
     const nodeIds = new Set(merged.nodes.map((node) => node.id));
     set({
       nodes: merged.nodes,

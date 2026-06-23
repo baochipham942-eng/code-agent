@@ -427,6 +427,12 @@ export const DesignCanvas: React.FC = () => {
   const [diagramColor, setDiagramColor] = useState<string>(DIAGRAM_DEFAULT_COLOR);
   // 图解文字内联编辑目标（新建 text / 编辑形状文字 / 编辑连线 label）。
   const [diagramText, setDiagramText] = useState<{ target: TextEditTarget; value: string } | null>(null);
+  // 防 Enter+blur 双提交（new-text 会落两份）：每次开编辑器重置，提交/取消后置 true 吃掉卸载触发的 blur（修 skeptic MED-2）。
+  const diagramTextDoneRef = useRef(false);
+  const openDiagramText = (target: TextEditTarget): void => {
+    diagramTextDoneRef.current = false;
+    setDiagramText({ target, value: target.kind === 'new-text' ? '' : target.initial });
+  };
   // 进行中的图解绘制形状（Stage 处理器维护，up 后提交进 store）。
   const [diagramDraft, setDiagramDraft] = useState<CanvasShape | null>(null);
   const diagramDrawing = useRef(false);
@@ -561,8 +567,16 @@ export const DesignCanvas: React.FC = () => {
         },
         { annotMode, comparing },
         {
-          undo: () => useDesignCanvasStore.getState().undoEdit(),
-          redo: () => useDesignCanvasStore.getState().redoEdit(),
+          // undo/redo 后落盘：图解对象每次改都写 canvas.json，撤销也须同步磁盘，
+          // 否则内存回滚但磁盘还在，reload 复活（修 skeptic LOW-2）。
+          undo: () => {
+            useDesignCanvasStore.getState().undoEdit();
+            persistDiagram();
+          },
+          redo: () => {
+            useDesignCanvasStore.getState().redoEdit();
+            persistDiagram();
+          },
         },
       );
       if (handled) e.preventDefault();
@@ -650,7 +664,8 @@ export const DesignCanvas: React.FC = () => {
   };
   // 文字内联编辑提交：新建 text / 改形状文字 / 改连线 label。
   const commitDiagramText = (): void => {
-    if (!diagramText) return;
+    if (diagramTextDoneRef.current || !diagramText) return; // 已提交/取消：吃掉卸载触发的二次 blur
+    diagramTextDoneRef.current = true;
     const { target, value } = diagramText;
     const text = value.trim();
     const store = useDesignCanvasStore.getState();
@@ -682,7 +697,7 @@ export const DesignCanvas: React.FC = () => {
       const w = worldFromPointer();
       if (!w) return;
       if (diagramTool === 'text') {
-        setDiagramText({ target: { kind: 'new-text', world: w }, value: '' });
+        openDiagramText({ kind: 'new-text', world: w });
         return;
       }
       diagramDrawing.current = true;
@@ -911,12 +926,7 @@ export const DesignCanvas: React.FC = () => {
             onUpdateShape={onUpdateShape}
             onAddConnector={onAddConnector}
             onSelect={setSelectedDiagram}
-            onRequestText={(target) =>
-              setDiagramText({
-                target,
-                value: target.kind === 'new-text' ? '' : target.initial,
-              })
-            }
+            onRequestText={openDiagramText}
           />
           {annotMode && selectedImageNode && (
             <AnnotationLayer
@@ -971,6 +981,7 @@ export const DesignCanvas: React.FC = () => {
                   commitDiagramText();
                 } else if (e.key === 'Escape') {
                   e.preventDefault();
+                  diagramTextDoneRef.current = true; // 取消：吃掉卸载触发的 blur 提交
                   setDiagramText(null);
                 }
               }}

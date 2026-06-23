@@ -5,7 +5,7 @@
 // 分工：**绘制**走 Stage 级处理器（DesignCanvas.handleMouseDown/Move/Up，对所有点击都触发，
 // 能在节点之上起笔）；本层只负责 ① 渲染连线/形状/draft ② select 模式下选中已有对象（点击
 // target 到具体 shape，冒泡正常）③ connect 模式下节点 hit-rect 命中。
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Layer, Group, Line, Arrow, Rect as KonvaRect, Ellipse as KonvaEllipse, Text as KonvaText } from 'react-konva';
 import type { CanvasNode } from './designCanvasTypes';
 import type { CanvasConnector, CanvasShape } from './designDiagramTypes';
@@ -60,6 +60,10 @@ export const DiagramLayer: React.FC<DiagramLayerProps> = ({
 }) => {
   // connect 模式：已点的源节点 id（再点目标即成线）。
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  // 切换工具时清空待连源（修 skeptic MED-1：否则切走再切回 connect 会和上轮残留源误连）。
+  useEffect(() => {
+    setConnectFrom(null);
+  }, [tool]);
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const interactive = tool === 'select';
 

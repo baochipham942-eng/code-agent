@@ -55,6 +55,13 @@ describe('designCanvasStore 图解层连线', () => {
     expect(get().connectors[0].label).toBeUndefined();
   });
 
+  it('updateConnector 不被越权改端点（防自环/悬空，skeptic LOW-1）', () => {
+    get().addConnector(conn('c1', 'A', 'B'));
+    get().updateConnector('c1', { fromNodeId: 'B', toNodeId: 'B' } as Partial<CanvasConnector>);
+    expect(get().connectors[0].fromNodeId).toBe('A'); // 端点受保护
+    expect(get().connectors[0].toNodeId).toBe('B');
+  });
+
   it('deleteConnector 删除并清选中', () => {
     get().addConnector(conn('c1', 'A', 'B'));
     get().setSelectedDiagram({ type: 'connector', id: 'c1' });

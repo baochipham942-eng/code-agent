@@ -11,6 +11,7 @@ import {
   canEditUndo,
   canEditRedo,
   reconcileUndoFrame,
+  reconcileRedoFrame,
   type CanvasEditSnapshot,
 } from '@renderer/components/design/canvasEditHistory';
 
@@ -182,5 +183,32 @@ describe('reconcileUndoFrame（还原帧 × 当前态调和，修 HIGH-1）', ()
     const out = reconcileUndoFrame(frame, current);
     expect(out.connectors.map((c) => c.id)).toEqual(['c1']);
     expect(out.shapes).toEqual([]);
+  });
+});
+
+describe('reconcileRedoFrame（redo 专用，不追加 current-only 节点，修 HIGH-1）', () => {
+  it('redo 删除：current 独有节点不被追加回来（这正是 redo 要重新删掉的）', () => {
+    // 帧=删除后态[A]，current=undo 恢复后[A,B]；redo 应回到[A]（B 去掉）
+    const out = reconcileRedoFrame(snap([nodeAt('A')]), snap([nodeAt('A'), nodeAt('B')]));
+    expect(out.nodes.map((n) => n.id)).toEqual(['A']);
+  });
+
+  it('存活节点仍覆盖当前 Layer2(chosen/discarded)', () => {
+    const out = reconcileRedoFrame(snap([nodeAt('A', { x: 9 })]), snap([nodeAt('A', { x: 0, chosen: true })]));
+    expect(out.nodes[0].x).toBe(9);
+    expect(out.nodes[0].chosen).toBe(true);
+  });
+
+  it('帧独有节点（redo 重做一次新增）从帧还原', () => {
+    const out = reconcileRedoFrame(snap([nodeAt('A'), nodeAt('B')]), snap([nodeAt('A')]));
+    expect(out.nodes.map((n) => n.id)).toEqual(['A', 'B']);
+  });
+
+  it('connectors/shapes 整帧还原', () => {
+    const out = reconcileRedoFrame(
+      snap([nodeAt('A')], [{ id: 'c1', fromNodeId: 'A', toNodeId: 'B', createdAt: 1 }]),
+      snap([nodeAt('A')], []),
+    );
+    expect(out.connectors.map((c) => c.id)).toEqual(['c1']);
   });
 });

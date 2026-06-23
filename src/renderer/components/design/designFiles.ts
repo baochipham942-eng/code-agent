@@ -396,3 +396,60 @@ export async function extractBrandFromImage(
     return { draft: null, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ── 自定义生图模型（借鉴项①）IPC 封装 ──
+
+export interface CustomImageModelMeta {
+  id: string;
+  label: string;
+  baseUrl: string;
+  modelName: string;
+  costCnyPerImage?: number;
+  available: boolean;
+}
+
+/** 列出已添加的自定义生图模型（含 available，标 key 是否已配）；失败返回空表。 */
+export async function listCustomImageModels(): Promise<CustomImageModelMeta[]> {
+  try {
+    const res = await window.domainAPI?.invoke<{ models: CustomImageModelMeta[] }>(
+      IPC_DOMAINS.WORKSPACE,
+      'listCustomImageModels',
+      {},
+    );
+    if (res?.success && Array.isArray(res.data?.models)) return res.data.models;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/** 新建自定义生图模型；返回 {id} 或 {error}。apiKey 必填。 */
+export async function saveCustomImageModel(input: {
+  label: string;
+  baseUrl: string;
+  modelName: string;
+  costCnyPerImage?: number;
+  apiKey: string;
+}): Promise<{ id: string | null; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ id: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'saveCustomImageModel',
+      input,
+    );
+    if (res?.success && res.data?.id) return { id: res.data.id };
+    return { id: null, error: res?.error?.message };
+  } catch (e) {
+    return { id: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 删除一个自定义生图模型（连带清除密钥）；成功返回 true。 */
+export async function deleteCustomImageModel(id: string): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'deleteCustomImageModel', { id });
+    return res?.success === true;
+  } catch {
+    return false;
+  }
+}

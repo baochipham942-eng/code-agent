@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -48,6 +48,12 @@ vi.mock('../../../src/main/config/configPaths', async (importActual) => {
 vi.mock('../../../src/main/services/core/configService', async (importActual) => {
   const actual = await importActual<typeof import('../../../src/main/services/core/configService')>();
   return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: vi.fn(() => undefined) })) };
+});
+
+// handleDownloadFile 用 app.getPath('downloads')；mock 成 cfg.root（每测的 workDir）使下载目录确定可断言。
+vi.mock('../../../src/main/platform', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/main/platform')>();
+  return { ...actual, app: { ...actual.app, getPath: (k: string) => (k === 'downloads' ? cfg.root : actual.app?.getPath?.(k)) } };
 });
 
 import {
@@ -199,5 +205,32 @@ describe('handleDownloadFile SSRF 收口（审计修订2）', () => {
     await expect(handleDownloadFile({ url: 'http://169.254.169.254/latest/meta-data' })).rejects.toThrow();
     await expect(handleDownloadFile({ url: 'https://127.0.0.1/x' })).rejects.toThrow();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('SSRF-via-redirect：用 redirect:manual 发起，3xx 跳转被拒（审计 HIGH-1）', async () => {
+    // 初始 host 公网过守卫，但端点 302→内网。裸 fetch 透明跟跳转会绕过守卫，须 redirect:manual + 拒 3xx。
+    let capturedRedirect: RequestRedirect | undefined;
+    globalThis.fetch = vi.fn(async (_u: unknown, init?: RequestInit) => {
+      capturedRedirect = init?.redirect;
+      return { ok: false, status: 302, statusText: 'Found', arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await expect(handleDownloadFile({ url: 'https://files.example.com/a.png' })).rejects.toThrow(/跳转|redirect|SSRF/i);
+    expect(capturedRedirect).toBe('manual');
+  });
+
+  it('filename 路径穿越被 basename 收窄，落盘恒在下载目录内（审计 MED-1）', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true, status: 200, statusText: 'OK', arrayBuffer: async () => new TextEncoder().encode('x').buffer,
+    } as unknown as Response)) as unknown as typeof fetch;
+    // '../../../../tmp/evil.env' 想逃出 downloads 覆盖任意文件 → basename 去掉路径分量只剩 'evil.env'，
+    // 落到 downloadsDir(=workDir) 内，绝不逃逸；返回的 filePath 必须在 downloadsDir 下。
+    const { filePath } = await handleDownloadFile({
+      url: 'https://files.example.com/a.png',
+      filename: '../../../../tmp/evil.env',
+    });
+    expect(filePath).toBe(join(workDir, 'evil.env')); // basename 后落在下载目录内
+    expect(filePath.startsWith(workDir)).toBe(true);
+    // 逃逸目标 /tmp/evil.env 未被写入。
+    await expect(readFile('/tmp/evil.env', 'utf-8')).rejects.toThrow();
   });
 });

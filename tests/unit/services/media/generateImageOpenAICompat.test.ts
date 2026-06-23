@@ -11,7 +11,7 @@ import { generateImageOpenAICompat, sniffImageMimeFromBase64 } from '../../../..
 // 用 magic bytes 造各格式的 base64 头（只需头部，余下补零）。
 const b64Of = (bytes: number[]) => Buffer.from([...bytes, ...new Array(12).fill(0)]).toString('base64');
 
-interface Captured { url: string; headers?: Record<string, string>; body?: Record<string, unknown>; }
+interface Captured { url: string; headers?: Record<string, string>; body?: Record<string, unknown>; redirect?: RequestRedirect; }
 
 function installFetch(response: unknown): Captured[] {
   const calls: Captured[] = [];
@@ -20,6 +20,7 @@ function installFetch(response: unknown): Captured[] {
       url: String(input),
       headers: init?.headers as Record<string, string>,
       body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      redirect: init?.redirect,
     });
     return { ok: true, status: 200, json: async () => response, text: async () => JSON.stringify(response) } as unknown as Response;
   }) as unknown as typeof fetch;
@@ -61,6 +62,20 @@ describe('generateImageOpenAICompat', () => {
     await expect(
       generateImageOpenAICompat({ baseUrl: 'https://api.x.com/v1', apiKey: 'sk', modelName: 'm', prompt: 'p' }),
     ).rejects.toThrow();
+  });
+
+  it('SSRF-via-redirect 防护：用 redirect:manual 发起，且 3xx 跳转被拒（审计 HIGH-1）', async () => {
+    // 端点（用户自填，可能恶意/被攻陷/DNS rebind）返回 302→169.254.169.254 元数据地址：
+    // 守卫只校验了初始 host，若透明跟跳转就绕过守卫打内网。生成 POST 必须 redirect:manual + 拒 3xx。
+    const calls: Captured[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown, init?: RequestInit) => {
+      calls.push({ url: String(input), redirect: init?.redirect });
+      return { ok: false, status: 302, json: async () => ({}), text: async () => '' } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await expect(
+      generateImageOpenAICompat({ baseUrl: 'https://evil.example.com/v1', apiKey: 'sk', modelName: 'm', prompt: 'p' }),
+    ).rejects.toThrow(/跳转|redirect|SSRF/i);
+    expect(calls[0].redirect).toBe('manual'); // 不透明跟跳转
   });
 
   it('非 2xx 透出端点错误正文', async () => {

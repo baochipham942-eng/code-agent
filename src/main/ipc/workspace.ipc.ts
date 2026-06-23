@@ -669,13 +669,23 @@ export async function handleDownloadFile(
   // 元数据地址，杜绝被当跳板。放行 http/https 公网（下载比出图宽松）。
   assertSafeDownloadUrl(payload.url);
 
-  // 下载到用户下载目录
+  // 下载到用户下载目录。文件名收窄到 basename（审计 MED-1）：payload.filename 可能含
+  // '../../.code-agent/.env' 想逃出 downloads 目录覆盖任意文件，basename 去掉路径分量，
+  // 再断言解析后仍在 downloadsDir 内（纵深防御，basename 后理论上恒成立，越界即拒）。
   const downloadsDir = app.getPath('downloads');
-  const filename = payload.filename || `download_${Date.now()}`;
-  const filePath = pathModule.join(downloadsDir, filename);
+  const safeName = pathModule.basename(payload.filename || `download_${Date.now()}`);
+  const filePath = pathModule.join(downloadsDir, safeName);
+  const rel = pathModule.relative(downloadsDir, filePath);
+  if (!safeName || rel.startsWith('..') || pathModule.isAbsolute(rel)) {
+    throw new Error('拒绝：下载文件名越界（必须落在下载目录内）');
+  }
 
-  // 下载文件
-  const response = await fetch(payload.url);
+  // 下载文件。SSRF-via-redirect 防护（审计 HIGH-1）：守卫只校验了初始 URL host；
+  // redirect:manual 截停 3xx 跳转，杜绝端点把请求跳到内网/元数据地址绕过守卫。
+  const response = await fetch(payload.url, { redirect: 'manual' });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error('拒绝下载：URL 发生跳转（SSRF 防护）');
+  }
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`);
   }

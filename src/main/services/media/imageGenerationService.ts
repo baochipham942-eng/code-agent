@@ -734,10 +734,17 @@ export async function generateImageOpenAICompat(input: {
       method: 'POST',
       headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: input.modelName, prompt: input.prompt, n: 1, size }),
+      // SSRF-via-redirect 防护（审计 HIGH-1）：守卫只校验了初始 baseUrl host；若透明跟 3xx 跳转，
+      // 用户自填端点可 302→169.254.169.254 等内网绕过守卫。redirect:manual 截停，拒任何跳转
+      // （合法 OpenAI 兼容端点直出 200 JSON，不靠跳转），与 downloadImageAsBase64 同源。
+      redirect: 'manual',
     },
     TIMEOUT_MS.GPTIMAGE_GENERATION,
     input.outerSignal ?? new AbortController().signal,
   );
+  if (resp.status >= 300 && resp.status < 400) {
+    throw new Error('拒绝：自定义生图端点发生跳转（SSRF 防护）');
+  }
   if (!resp.ok) {
     // 透出端点错误正文（配额/无效 key/上游超时等唯一可读信号）。body 不含 key（key 只在 header），安全。
     const errBody = await resp.text().catch(() => '');

@@ -57,6 +57,10 @@ export class HeartbeatTaskLoader {
 
     if (!fs.existsSync(filePath)) {
       logger.info('No HEARTBEAT.md found', { path: filePath });
+      // The file is the source of truth — if it's gone (e.g. user deleted it),
+      // tear down any tasks we previously registered instead of leaving them
+      // running as orphans.
+      await this.cleanup();
       return;
     }
 

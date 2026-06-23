@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -90,19 +90,31 @@ describe('ErrorTracker.hasReachedStrikeLimit (3-strike rule)', () => {
 });
 
 describe('ErrorTracker.getRecentErrors', () => {
-  it('filters by tool and respects the limit', async () => {
-    const tracker = new ErrorTracker(makeConfig());
-    await tracker.log({ toolName: 'bash', message: 'a' });
-    await tracker.log({ toolName: 'write_file', message: 'b' });
-    await tracker.log({ toolName: 'bash', message: 'c' });
+  it('filters by tool and sorts newest-first, respecting the limit', async () => {
+    // Control the clock so each error gets a distinct, increasing timestamp,
+    // letting us assert the recency sort exactly (not just membership).
+    const nowSpy = vi.spyOn(Date, 'now');
+    try {
+      const tracker = new ErrorTracker(makeConfig());
+      nowSpy.mockReturnValue(1000);
+      await tracker.log({ toolName: 'bash', message: 'a' });
+      nowSpy.mockReturnValue(2000);
+      await tracker.log({ toolName: 'write_file', message: 'b' });
+      nowSpy.mockReturnValue(3000);
+      await tracker.log({ toolName: 'bash', message: 'c' });
 
-    // Order within the same millisecond is a tie, so assert membership not order.
-    const bashErrors = await tracker.getRecentErrors('bash');
-    expect(bashErrors.map((e) => e.message).sort()).toEqual(['a', 'c']);
-    expect(bashErrors.every((e) => e.toolName === 'bash')).toBe(true);
+      // 'c' is newer than 'a'; write_file is filtered out.
+      const bashErrors = await tracker.getRecentErrors('bash');
+      expect(bashErrors.map((e) => e.message)).toEqual(['c', 'a']);
+      expect(bashErrors.every((e) => e.toolName === 'bash')).toBe(true);
 
-    const limited = await tracker.getRecentErrors(undefined, 1);
-    expect(limited).toHaveLength(1);
+      // Across all tools, the single most recent is 'c'.
+      const limited = await tracker.getRecentErrors(undefined, 1);
+      expect(limited).toHaveLength(1);
+      expect(limited[0].message).toBe('c');
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 

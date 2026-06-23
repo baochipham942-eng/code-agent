@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -73,21 +73,35 @@ describe('FindingsManager.getSummary', () => {
     expect(await mgr.getSummary()).toBe('');
   });
 
-  it('groups by category with friendly labels and caps per category', async () => {
-    const mgr = new FindingsManager(makeConfig());
-    await mgr.add(code({ category: 'issue', title: 'Bug A' }));
-    await mgr.add(code({ category: 'issue', title: 'Bug B' }));
-    await mgr.add(code({ category: 'issue', title: 'Bug C' }));
-    await mgr.add(code({ category: 'issue', title: 'Bug D' }));
+  it('groups by category with friendly labels and caps to the newest per category', async () => {
+    // Distinct increasing timestamps so "most recent" is deterministic.
+    const nowSpy = vi.spyOn(Date, 'now');
+    try {
+      const mgr = new FindingsManager(makeConfig());
+      nowSpy.mockReturnValue(1000);
+      await mgr.add(code({ category: 'issue', title: 'Bug A' }));
+      nowSpy.mockReturnValue(2000);
+      await mgr.add(code({ category: 'issue', title: 'Bug B' }));
+      nowSpy.mockReturnValue(3000);
+      await mgr.add(code({ category: 'issue', title: 'Bug C' }));
+      nowSpy.mockReturnValue(4000);
+      await mgr.add(code({ category: 'issue', title: 'Bug D' }));
 
-    const summary = await mgr.getSummary(2);
-    expect(summary).toContain('<findings-summary>');
-    expect(summary).toContain('Total findings: 4');
-    expect(summary).toContain('**Issues Found:**');
-    // Only the 2 most recent of the 4 issues appear.
-    const bulletCount = (summary.match(/^- /gm) ?? []).length;
-    expect(bulletCount).toBe(2);
-    expect(summary).toContain('</findings-summary>');
+      const summary = await mgr.getSummary(2);
+      expect(summary).toContain('<findings-summary>');
+      expect(summary).toContain('Total findings: 4');
+      expect(summary).toContain('**Issues Found:**');
+      // The 2 newest issues are kept; the 2 oldest are dropped.
+      expect(summary).toContain('Bug D');
+      expect(summary).toContain('Bug C');
+      expect(summary).not.toContain('Bug A');
+      expect(summary).not.toContain('Bug B');
+      const bulletCount = (summary.match(/^- /gm) ?? []).length;
+      expect(bulletCount).toBe(2);
+      expect(summary).toContain('</findings-summary>');
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 

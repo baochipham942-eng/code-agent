@@ -139,6 +139,19 @@ describe('HeartbeatTaskLoader.loadFromFile', () => {
     expect(cronService.scheduleCron.mock.calls[0][0]).toBe('0 11 * * *');
   });
 
+  it('cleans up registered jobs when HEARTBEAT.md is deleted', async () => {
+    // Deleting the file is the user disabling all heartbeat tasks; a reload
+    // (e.g. triggered by the file watcher) must remove the stale cron jobs.
+    writeHeartbeat(['### T', '- cron: 0 9 * * *', '- prompt: p', ''].join('\n'));
+    const loader = new HeartbeatTaskLoader({ workingDirectory, cronService });
+    await loader.loadFromFile();
+    expect(cronService.scheduleCron).toHaveBeenCalledTimes(1);
+
+    fs.rmSync(path.join(getProjectConfigDir(workingDirectory), 'HEARTBEAT.md'));
+    await loader.loadFromFile(); // file gone → must clean up job-1
+    expect(cronService.deleteJob).toHaveBeenCalledWith('job-1');
+  });
+
   it('cleans up previously registered jobs on reload', async () => {
     writeHeartbeat(['### T', '- cron: 0 9 * * *', '- prompt: p', ''].join('\n'));
     const loader = new HeartbeatTaskLoader({ workingDirectory, cronService });

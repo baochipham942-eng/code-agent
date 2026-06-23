@@ -140,23 +140,24 @@ describe('FeasibilityChecker.checkStep — precondition types', () => {
   it('env_var_set reads process.env', async () => {
     const checker = new FeasibilityChecker(workingDirectory);
     const varName = 'FEASIBILITY_TEST_VAR';
-    delete process.env[varName];
-
-    expect(
-      (await checker.checkStep(
-        enhancedStep([{ type: 'env_var_set', description: '', target: varName, required: true }])
-      )).feasible
-    ).toBe(false);
-
-    process.env[varName] = '1';
+    const original = process.env[varName]; // preserve any pre-existing value
     try {
+      delete process.env[varName];
+      expect(
+        (await checker.checkStep(
+          enhancedStep([{ type: 'env_var_set', description: '', target: varName, required: true }])
+        )).feasible
+      ).toBe(false);
+
+      process.env[varName] = '1';
       expect(
         (await checker.checkStep(
           enhancedStep([{ type: 'env_var_set', description: '', target: varName, required: true }])
         )).feasible
       ).toBe(true);
     } finally {
-      delete process.env[varName];
+      if (original === undefined) delete process.env[varName];
+      else process.env[varName] = original;
     }
   });
 

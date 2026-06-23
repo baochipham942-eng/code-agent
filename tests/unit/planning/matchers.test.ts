@@ -135,6 +135,13 @@ describe('matchDangerousBash', () => {
     expect(m(ctx({ toolName: 'bash', toolParams: { command } }))).toBe(true);
   });
 
+  // The bash tool registers at runtime as 'Bash' (capital B — see
+  // src/main/tools/modules/shell/bash.schema.ts). The dangerous-command
+  // safety blocker must fire for the real tool name, not just lowercase.
+  it.each(['Bash', 'BASH'])('flags dangerous commands for tool name "%s"', (toolName) => {
+    expect(m(ctx({ toolName, toolParams: { command: 'rm -rf /' } }))).toBe(true);
+  });
+
   it.each(['ls -la', 'rm file.txt', 'git status', 'chmod 644 file'])(
     'allows safe command: %s',
     (command) => {

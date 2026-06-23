@@ -161,9 +161,25 @@ describe('recordCronAutomationCreated', () => {
 });
 
 describe('syncCronAutomationFromJob', () => {
-  it('upserts when a source session exists', () => {
-    syncCronAutomationFromJob(def({ metadata: { sourceSessionId: 'sess' } }), identityRuntime);
+  it('upserts the full automation contract, including the resolved nextRunAt', () => {
+    // A resolver that injects runtime scheduling state — the upsert must carry it.
+    const resolveRuntime = (d: CronJobDefinition) => ({ ...d, nextRunAt: 999_000 });
+    syncCronAutomationFromJob(
+      def({ id: 'job-9', name: 'Nightly', enabled: false, metadata: { sourceSessionId: 'sess' } }),
+      resolveRuntime
+    );
     expect(service.upsert).toHaveBeenCalledTimes(1);
+    expect(service.upsert.mock.calls[0][0]).toMatchObject({
+      id: 'cron:job-9',
+      sourceSessionId: 'sess',
+      type: 'cron',
+      status: 'paused', // enabled: false
+      title: 'Nightly',
+      cadenceLabel: '每 5 分钟',
+      nextRunAt: 999_000,
+      sourceRefId: 'job-9',
+      config: { createdVia: 'cron', scheduleType: 'every', actionType: 'shell' },
+    });
   });
 
   it('does nothing without a source session', () => {
@@ -221,8 +237,16 @@ describe('recordCronAutomationExecution', () => {
   });
 
   it('maps a failed execution and uses the event status for one-time jobs', async () => {
+    // One-time job: scheduleType AND schedule must both be 'at' (no contract drift),
+    // so the seeded upsert carries the real one-time cadence label.
+    service.getBySourceRef.mockReturnValue(null);
     await recordCronAutomationExecution(
-      def({ metadata: { sourceSessionId: 'sess' }, scheduleType: 'at', enabled: true }),
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'at',
+        schedule: { type: 'at', datetime: Date.UTC(2026, 0, 2, 3, 4) },
+        enabled: true,
+      }),
       exec({ status: 'failed', error: 'boom' }),
       identityRuntime
     );
@@ -230,6 +254,8 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.event).toBe('failed');
     expect(arg.recordStatus).toBe('failed'); // one-time job → not kept active
     expect(arg.error).toBe('boom');
+    // The seed upsert reflects the one-time schedule, not a recurring one.
+    expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
   });
 
   it('does nothing without a source session', async () => {

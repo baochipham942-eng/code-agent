@@ -101,6 +101,27 @@ describe('PlanManager.create + read (markdown round-trip)', () => {
     expect(yStep.status).toBe('skipped');
   });
 
+  it('regenerates phase ids on read (phase ids are NOT persisted in markdown)', async () => {
+    // Known limitation: toMarkdown serializes the plan id + per-step StepMeta id,
+    // but not phase ids. A fresh reader gets new phase ids, so callers must use
+    // the reloaded plan's actual phase ids — not ids from the original create().
+    const writer = new PlanManager(makeConfig());
+    await writer.create(
+      basePlan([
+        { id: 'ph-original', title: 'Phase', status: 'pending', steps: [{ id: 's1', content: 'x', status: 'pending' }] },
+      ])
+    );
+
+    const reader = new PlanManager(makeConfig());
+    const loaded = await reader.read();
+    expect(loaded!.phases[0].id).not.toBe('ph-original'); // regenerated
+    // Mutating via a reloaded phase id works; via the original id it throws.
+    await expect(reader.updateStepStatus('ph-original', 's1', 'completed')).rejects.toThrow('not found');
+    await expect(
+      reader.updateStepStatus(loaded!.phases[0].id, loaded!.phases[0].steps[0].id, 'completed')
+    ).resolves.toBeUndefined();
+  });
+
   it('read returns null when no plan file exists', async () => {
     const mgr = new PlanManager(makeConfig());
     expect(await mgr.exists()).toBe(false);

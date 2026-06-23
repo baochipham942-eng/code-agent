@@ -2,8 +2,12 @@
 // P1 仅 image 部分；video 部分在 P2 追加。
 
 export type ImageCap = 't2i' | 'maskEdit' | 'expand' | 'annotEdit';
-export type ImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
-export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax';
+// 内置静态引擎：映射到 imageGenerationService.generateImage 的 engine（与 service 的 ImageEngine 对齐）。
+export type StaticImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
+// 'openai-compat'：用户自填的 OpenAI 兼容生图端点（借鉴项①）。仅 t2i，不进任何静态 helper
+// （imageEngineForModel 只认内置表且对 openai-compat 显式抛错，custom id 走 IPC 独立分支）。
+export type ImageEngineId = StaticImageEngineId | 'openai-compat';
+export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'custom';
 
 export interface VisualImageModel {
   /** 切换器/持久化用的稳定选择键。 */
@@ -27,9 +31,15 @@ export function imageModelById(id: string): VisualImageModel | undefined {
   return IMAGE_MODELS.find((m) => m.id === id);
 }
 
-export function imageEngineForModel(id: string): ImageEngineId {
+// 硬边界（艾克斯审计修订 3）：只认内置静态表，返回静态 engine。custom（openai-compat）
+// 永不进这里——未登记 id 抛"未知模型"，万一登记了 openai-compat 也显式拒绝，逼出图路由对
+// custom 走独立分支，杜绝误用静态 helper 把自定义模型塞进内置 generateImage。
+export function imageEngineForModel(id: string): StaticImageEngineId {
   const m = imageModelById(id);
   if (!m) throw new Error(`未知生图模型 id: ${id}`);
+  if (m.engine === 'openai-compat') {
+    throw new Error(`模型 ${id} 是自定义端点（openai-compat），不能走内置 engine 路由`);
+  }
   return m.engine;
 }
 

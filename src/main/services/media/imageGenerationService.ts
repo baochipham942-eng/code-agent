@@ -12,6 +12,7 @@
 
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { isPrivateOrLocalHost } from '../../security/ssrfGuard';
 
 export type ImageEngine = 'cogview' | 'flux' | 'wanx' | 'gptimage';
 
@@ -192,27 +193,8 @@ export function isSafeImageUrl(u: string): boolean {
   let url: URL;
   try { url = new URL(u); } catch { return false; }
   if (url.protocol !== 'https:') return false;
-  const h = url.hostname.toLowerCase();
-  if (h === 'localhost') return false;
-  // 私网/环回/链路本地 IPv4
-  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (m) {
-    const a = Number(m[1]); const b = Number(m[2]);
-    if (a === 127 || a === 10 || a === 0) return false;
-    if (a === 172 && b >= 16 && b <= 31) return false;
-    if (a === 192 && b === 168) return false;
-    if (a === 169 && b === 254) return false;
-  }
-  // IPv6 字面量——WHATWG URL 的 hostname 保留方括号（如 '[::1]'），必须去括号再判，
-  // 且这些前缀检查只能在 IPv6 字面量上跑，否则会误杀以 fc/fd/fe80 开头的公网域名。
-  if (h.startsWith('[') && h.endsWith(']')) {
-    const h6 = h.slice(1, -1);
-    if (h6 === '::1' || h6 === '::') return false;                 // 环回/未指定
-    if (h6.startsWith('fc') || h6.startsWith('fd')) return false;  // ULA fc00::/7
-    if (h6.startsWith('fe80')) return false;                       // 链路本地
-    if (h6.startsWith('::ffff:')) return false;                    // IPv4-mapped——保守整段拒绝，挡映射私网绕过
-  }
-  return true;
+  // 私网/环回/链路本地/元数据判定下沉到 ssrfGuard（单一真源，避免与裸下载/自定义端点守卫漂移）。
+  return !isPrivateOrLocalHost(url.hostname);
 }
 
 export async function downloadImageAsBase64(

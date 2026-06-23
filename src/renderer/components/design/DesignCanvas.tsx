@@ -527,8 +527,8 @@ export const DesignCanvas: React.FC = () => {
   }, [importFiles]);
 
   // 撤销/重做快捷键（Cmd/Ctrl+Z、+Shift+Z）。路由判定见 canvasUndoKeybinding（纯函数+测试覆盖）：
-  // 输入框/IME 内让出原生 undo（codex MED-4），标注模式撤一笔标注（从实时 annotShapes 派生，
-  // 无独立历史栈→无 codex MED-5 同步隐患）。挂组件内 window listener，切走设计画布自动卸载。
+  // 输入框/IME 内让出原生 undo（MED-4）；比较浮层显示时不劫持（MED-2）；标注模式不做画布 undo
+  // （HIGH-2，标注笔画级撤销延后）。挂组件内 window listener，切走设计画布自动卸载。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const handled = dispatchCanvasUndoKey(
@@ -541,18 +541,17 @@ export const DesignCanvas: React.FC = () => {
           targetTag: (e.target as HTMLElement | null)?.tagName,
           targetEditable: (e.target as HTMLElement | null)?.isContentEditable ?? false,
         },
-        { annotMode },
+        { annotMode, comparing },
         {
           undo: () => useDesignCanvasStore.getState().undoEdit(),
           redo: () => useDesignCanvasStore.getState().redoEdit(),
-          annotUndo: () => setAnnotShapes((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev)),
         },
       );
       if (handled) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [annotMode]);
+  }, [annotMode, comparing]);
 
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();

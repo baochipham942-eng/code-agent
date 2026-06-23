@@ -114,4 +114,27 @@ describe('designCanvasStore undo/redo (Layer1 编辑历史)', () => {
     expect(useDesignCanvasStore.getState().canEditUndo()).toBe(false);
     expect(useDesignCanvasStore.getState().canEditRedo()).toBe(false);
   });
+
+  // —— HIGH-1：undo 不抹掉快照后的 Layer2 变更与新增节点 ——
+  it('HIGH-1：move→setChosen→undo，主版选择不被抹掉', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A1', 'A'), n('A2', 'A')])); // 同槽
+    s.updateNode('A1', { x: 999 }); // 编辑（进 Layer1 快照,此刻无 chosen）
+    s.setChosen('A2'); // Layer2 选主版（不进 Layer1）
+    useDesignCanvasStore.getState().undoEdit(); // 撤 A1 的移动
+    const nodes = useDesignCanvasStore.getState().nodes;
+    expect(nodes.find((x) => x.id === 'A1')?.x).toBe(0); // 移动已撤
+    expect(nodes.find((x) => x.id === 'A2')?.chosen).toBe(true); // 主版选择保留(修复前会被抹成 false)
+  });
+
+  it('HIGH-1：move→import 新节点→undo，新增节点不丢', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A')]));
+    s.updateNode('A', { x: 50 }); // 编辑快照 [A]
+    s.addNode(n('B')); // 模拟 import 在快照后加入（不进 Layer1）
+    useDesignCanvasStore.getState().undoEdit();
+    const ids = useDesignCanvasStore.getState().nodes.map((x) => x.id);
+    expect(ids).toContain('B'); // 新增节点不被 undo 抹掉(修复前会消失)
+    expect(useDesignCanvasStore.getState().nodes.find((x) => x.id === 'A')?.x).toBe(0);
+  });
 });

@@ -18,6 +18,7 @@ import {
   clearHistory,
   canEditUndo as canUndo,
   canEditRedo as canRedo,
+  reconcileUndoFrame,
   type EditHistoryStack,
 } from './canvasEditHistory';
 
@@ -147,16 +148,18 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     const s = get();
     const res = applyUndo(s.editHistory, s.nodes);
     if (!res) return;
-    const ids = new Set(res.nodes.map((node) => node.id));
-    // 撤销后清理已不存在节点的选中态，避免悬空选择。
-    set({ nodes: res.nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
+    // 调和还原帧与当前态：保留 Layer2(chosen/discarded)与快照后新增节点（修 HIGH-1）。
+    const nodes = reconcileUndoFrame(res.nodes, s.nodes);
+    const ids = new Set(nodes.map((node) => node.id));
+    set({ nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
   },
   redoEdit: () => {
     const s = get();
     const res = applyRedo(s.editHistory, s.nodes);
     if (!res) return;
-    const ids = new Set(res.nodes.map((node) => node.id));
-    set({ nodes: res.nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
+    const nodes = reconcileUndoFrame(res.nodes, s.nodes);
+    const ids = new Set(nodes.map((node) => node.id));
+    set({ nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
   },
   clearEditHistory: () => set({ editHistory: clearHistory() }),
   canEditUndo: () => canUndo(get().editHistory),

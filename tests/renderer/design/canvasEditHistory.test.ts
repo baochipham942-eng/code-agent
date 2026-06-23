@@ -9,10 +9,15 @@ import {
   clearHistory,
   canEditUndo,
   canEditRedo,
+  reconcileUndoFrame,
 } from '@renderer/components/design/canvasEditHistory';
 
 function node(id: string, label?: string): CanvasNode {
   return { id, src: `assets/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt: 1, ...(label ? { label } : {}) };
+}
+
+function nodeAt(id: string, over: Partial<CanvasNode> = {}): CanvasNode {
+  return { id, src: `assets/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt: 1, ...over } as CanvasNode;
 }
 
 describe('canvasEditHistory', () => {
@@ -98,5 +103,45 @@ describe('canvasEditHistory', () => {
     s = clearHistory();
     expect(s.past).toEqual([]);
     expect(s.future).toEqual([]);
+  });
+});
+
+describe('reconcileUndoFrame（还原帧 × 当前态调和，修 HIGH-1）', () => {
+  it('存活节点：还原几何/label，但保留当前 chosen/discarded（Layer2 不被 undo 抹掉）', () => {
+    // 快照时 A 在 x=0、chosen=false；之后 A 被移动到 x=999 且被 setChosen
+    const frame = [nodeAt('A', { x: 0, chosen: false })];
+    const current = [nodeAt('A', { x: 999, chosen: true })];
+    const out = reconcileUndoFrame(frame, current);
+    expect(out).toHaveLength(1);
+    expect(out[0].x).toBe(0); // 几何还原
+    expect(out[0].chosen).toBe(true); // 当前主版选择保留（不被还原帧抹掉）
+  });
+
+  it('快照后新增的节点（import/生成）不丢：current 有 frame 无 → 保留追加', () => {
+    const frame = [nodeAt('A')];
+    const current = [nodeAt('A'), nodeAt('B')]; // B 是快照后 import 进来的
+    const out = reconcileUndoFrame(frame, current);
+    expect(out.map((n) => n.id)).toEqual(['A', 'B']);
+  });
+
+  it('快照后被删的节点：frame 有 current 无 → 从 frame 还原（撤销删除）', () => {
+    const frame = [nodeAt('A'), nodeAt('B')];
+    const current = [nodeAt('A')]; // B 被删
+    const out = reconcileUndoFrame(frame, current);
+    expect(out.map((n) => n.id)).toEqual(['A', 'B']);
+  });
+
+  it('discarded 也按当前态保留', () => {
+    const frame = [nodeAt('A', { discarded: false })];
+    const current = [nodeAt('A', { discarded: true })];
+    const out = reconcileUndoFrame(frame, current);
+    expect(out[0].discarded).toBe(true);
+  });
+
+  it('被删节点从 frame 还原时，带回它快照时的 chosen/discarded（不在 current 无从覆盖）', () => {
+    const frame = [nodeAt('A'), nodeAt('B', { chosen: true })];
+    const current = [nodeAt('A')];
+    const out = reconcileUndoFrame(frame, current);
+    expect(out.find((n) => n.id === 'B')?.chosen).toBe(true);
   });
 });

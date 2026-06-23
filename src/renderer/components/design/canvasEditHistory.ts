@@ -77,3 +77,27 @@ export function canEditUndo(stack: EditHistoryStack): boolean {
 export function canEditRedo(stack: EditHistoryStack): boolean {
   return stack.future.length > 0;
 }
+
+/**
+ * 把"还原帧"与"当前态"调和（修 HIGH-1：undo 整体换数组会抹掉快照之后的 Layer2 变更与新增节点）。
+ * Layer1 编辑历史只负责直接编辑（移动/缩放/删除/重命名）；setChosen/discardNode（Layer2）与
+ * addNode（import）不进历史栈。直接用还原帧覆盖会丢掉这些。规则：
+ * - 帧内节点仍存在于当前态 → 取帧的编辑字段（几何/label），但用当前态的 chosen/discarded 覆盖
+ *   （主版选择/淘汰是 Layer2，不该被编辑 undo 还原）。
+ * - 帧内节点已不在当前态（被删，正被 undo 恢复）→ 整体用帧（含其快照时的 chosen/discarded）。
+ * - 当前态有而帧内没有的节点（快照后 import/生成新增）→ 原样保留，追加在后。
+ */
+export function reconcileUndoFrame(frame: CanvasNode[], current: CanvasNode[]): CanvasNode[] {
+  const currentById = new Map(current.map((n) => [n.id, n]));
+  const frameIds = new Set(frame.map((n) => n.id));
+  const merged: CanvasNode[] = frame.map((fn) => {
+    const cur = currentById.get(fn.id);
+    if (!cur) return fn; // 被删节点恢复：用帧（含快照时 Layer2 状态）
+    return { ...fn, chosen: cur.chosen, discarded: cur.discarded } as CanvasNode; // 几何还原 + Layer2 保留
+  });
+  // 快照后新增、当前态独有的节点不能丢。
+  for (const cn of current) {
+    if (!frameIds.has(cn.id)) merged.push(cn);
+  }
+  return merged;
+}

@@ -91,6 +91,10 @@ export const IPC_CHANNELS = {
   USER_QUESTION_ASK: 'user-question:ask',
   USER_QUESTION_RESPONSE: 'user-question:response',
 
+  // 设计画布提议审批通道（ADR-026：agent 提议 op → 用户审批）
+  CANVAS_PROPOSAL_ASK: 'canvas-proposal:ask',
+  CANVAS_PROPOSAL_RESPONSE: 'canvas-proposal:response',
+
   // Confirm action channels (Gen 3+ confirm_action)
   CONFIRM_ACTION_ASK: 'confirm-action:ask',
   CONFIRM_ACTION_RESPONSE: 'confirm-action:response',

@@ -17,6 +17,9 @@ import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
 import { DiagramLayer, type DiagramCanvasTool, type TextEditTarget } from './DiagramLayer';
+import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
+import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
+import { useCanvasProposalReview } from './useCanvasProposalReview';
 import { DiagramToolbar } from './DiagramToolbar';
 import { reduceDiagram, type ShapeTool } from './diagramReducer';
 import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
@@ -421,6 +424,8 @@ export const DesignCanvas: React.FC = () => {
   // —— 图解层（连线 / freeform 形状）——
   const connectors = useDesignCanvasStore((s) => s.connectors);
   const shapes = useDesignCanvasStore((s) => s.shapes);
+  // ADR-026：订阅 agent 画布提议 + Apply/Reject 落地。
+  const canvasProposal = useCanvasProposalReview();
   const selectedDiagram = useDesignCanvasStore((s) => s.selectedDiagram);
   const setSelectedDiagram = useDesignCanvasStore((s) => s.setSelectedDiagram);
   const [diagramTool, setDiagramTool] = useState<DiagramCanvasTool>('select');
@@ -936,7 +941,22 @@ export const DesignCanvas: React.FC = () => {
               onRequestText={(world) => setTextDraft({ world, value: '' })}
             />
           )}
+          {/* ADR-026：agent 待审批提议的 ghost 虚影（蓝色虚线/半透明），点应用才落库。 */}
+          {canvasProposal.pending && (
+            <Layer listening={false}>
+              <CanvasProposalGhostLayer ops={canvasProposal.pending.ops} nodes={nodes} />
+            </Layer>
+          )}
         </Stage>
+      )}
+
+      {/* ADR-026：提议审批条（应用/拒绝）。 */}
+      {canvasProposal.pending && (
+        <CanvasProposalReviewBar
+          proposal={canvasProposal.pending}
+          onApply={() => void canvasProposal.apply()}
+          onReject={(fb) => void canvasProposal.reject(fb)}
+        />
       )}
 
       {/* 图解工具条（模式/调色板/删除）——消费 surface 只放工具选择，不放配置管理。 */}

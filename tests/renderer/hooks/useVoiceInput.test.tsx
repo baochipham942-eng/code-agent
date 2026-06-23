@@ -260,6 +260,24 @@ describe('stop / toggle / retry / clearError', () => {
     expect(view.result.current.canRetry).toBe(false);
   });
 
+  it('前置门错误（disabled）同样清掉残留 pendingAudio，canRetry 不误亮', async () => {
+    // 与 unsupported 分支对称：先制造可重试失败 → 再关闭语音输入再点开始
+    ipc.transcribeSpeech.mockResolvedValueOnce({ success: false, error: 'x', recoverable: true });
+    const view = renderHook(() => useVoiceInput());
+    await waitFor(() => expect(view.result.current.isEnabled).toBe(true));
+    await recordAndStop(view);
+    expect(view.result.current.canRetry).toBe(true);
+    // 设置事件关闭语音输入 → 走 DISABLED 前置门
+    act(() => {
+      window.dispatchEvent(new CustomEvent('voice-input-settings-updated', { detail: { enabled: false } }));
+    });
+    await act(async () => {
+      await view.result.current.start();
+    });
+    expect(view.result.current.errorCode).toBe('DISABLED');
+    expect(view.result.current.canRetry).toBe(false);
+  });
+
   it('clearError 复位状态', async () => {
     getUserMediaImpl = () => Promise.reject(new Error('busy'));
     const view = renderHook(() => useVoiceInput());

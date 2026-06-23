@@ -154,6 +154,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'compression',
     'decisions',
     'execPolicy',
+    'logClientError',
   ],
   [IPC_DOMAINS.HOOK]: [
     'list',

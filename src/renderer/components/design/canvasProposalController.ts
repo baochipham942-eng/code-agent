@@ -1,5 +1,6 @@
 // ADR-026 D2-A：提议 Apply/Reject 落地逻辑（依赖注入，纯可测；UI 与 IPC 细节由 hook 注入）。
 import type { CanvasOpProposal, CanvasProposalDecision } from '../../../shared/contract/canvasProposal';
+import { normalizeProposal } from '../../../shared/contract/canvasProposal';
 import type { ProposalApplyResult, ProposalApplyOpts } from './applyCanvasProposal';
 
 export interface ProposalControllerDeps {
@@ -21,7 +22,9 @@ export async function applyProposal(
   proposal: CanvasOpProposal,
   deps: ProposalControllerDeps,
 ): Promise<ProposalApplyResult> {
-  const result = deps.applyBatch(proposal.ops, { genId: deps.genId, now: deps.now() });
+  // 防御纵深：IPC 收到的 ops 在 renderer 侧再过一道校验/截断（不盲信 main 已校验的 payload）。
+  const { ops } = normalizeProposal(proposal.ops);
+  const result = deps.applyBatch(ops, { genId: deps.genId, now: deps.now() });
   if (result.changed) await deps.save();
   await deps.respond({
     requestId: proposal.requestId,

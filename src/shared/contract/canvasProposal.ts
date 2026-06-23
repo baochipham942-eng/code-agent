@@ -11,6 +11,10 @@
 
 /** 形状几何上限/文本上限与 designDiagramTypes 对齐（此处复述常量避免 shared→renderer 反向依赖）。 */
 export const PROPOSAL_TEXT_MAX = 2000;
+/** 单批提议 op 数上限（防模型一次吐上万 op 撑爆审批/应用）。超出截断。 */
+export const MAX_OPS_PER_PROPOSAL = 100;
+/** 形状 color 字符串上限（防超长字符串写进 canvas.json）。 */
+export const PROPOSAL_COLOR_MAX = 64;
 
 // ── 单个提议 op（agent 产出；引用已存在节点用 nodeId，新实体不带 id/createdAt 由 renderer 分配）──
 
@@ -126,10 +130,12 @@ export function formatCanvasSnapshotForPrompt(snap: CanvasSnapshot | undefined |
     lines.push(`- ${n.id}${label} [${k}] @(${Math.round(n.x)},${Math.round(n.y)}) ${Math.round(n.width)}×${Math.round(n.height)}`);
   }
   if (snap.connectors.length > 0) {
-    lines.push(`已有连线（${snap.connectors.length}）：`);
+    const connCapped = snap.connectors.length > CANVAS_SNAPSHOT_MAX_NODES;
+    lines.push(`已有连线（${snap.connectors.length}${connCapped ? '，仅列前 ' + CANVAS_SNAPSHOT_MAX_NODES + ' 条' : ''}）：`);
     for (const c of snap.connectors.slice(0, CANVAS_SNAPSHOT_MAX_NODES)) {
       lines.push(`- ${c.fromNodeId} → ${c.toNodeId}${c.label ? ` "${c.label.slice(0, 40)}"` : ''}`);
     }
+    if (connCapped) lines.push('（连线已截断，提议前可先确认目标连线是否已存在，避免重复。）');
   }
   if (snap.shapeCount > 0) lines.push(`已有 freeform 形状/标注：${snap.shapeCount} 个。`);
   return lines.join('\n');
@@ -177,7 +183,7 @@ export function normalizeProposalOp(raw: unknown): CanvasProposalOp | null {
 export function normalizeProposedShape(raw: unknown): ProposedShape | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const color = isNonEmptyString(r.color) ? r.color : undefined;
+  const color = isNonEmptyString(r.color) ? r.color.slice(0, PROPOSAL_COLOR_MAX) : undefined;
   const text = typeof r.text === 'string' ? r.text.slice(0, PROPOSAL_TEXT_MAX) : '';
   switch (r.kind) {
     case 'rect':
@@ -198,12 +204,13 @@ export function normalizeProposedShape(raw: unknown): ProposedShape | null {
   }
 }
 
-/** 校验整批提议（过滤非法 op，返回干净 ops + 被丢弃数）。 */
+/** 校验整批提议（过滤非法 op + 截断到 MAX_OPS_PER_PROPOSAL，返回干净 ops + 被丢弃数）。 */
 export function normalizeProposal(ops: unknown): { ops: CanvasProposalOp[]; dropped: number } {
   if (!Array.isArray(ops)) return { ops: [], dropped: 0 };
   const clean: CanvasProposalOp[] = [];
   let dropped = 0;
   for (const raw of ops) {
+    if (clean.length >= MAX_OPS_PER_PROPOSAL) { dropped++; continue; } // 超上限的一律丢弃
     const op = normalizeProposalOp(raw);
     if (op) clean.push(op);
     else dropped++;

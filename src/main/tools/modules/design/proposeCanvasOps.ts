@@ -123,6 +123,19 @@ export async function executeProposeCanvasOps(
         pendingProposals.delete(request.requestId);
         reject(new Error('Canvas proposal timeout - no response from user'));
       }, TIMEOUT_MS);
+      // abort 中途触发（agent 取消）：清掉 pending + reject，别让条目泄漏 / 工具挂到超时（C1）。
+      ctx.abortSignal.addEventListener(
+        'abort',
+        () => {
+          const p = pendingProposals.get(request.requestId);
+          if (p) {
+            clearTimeout(p.timeout);
+            pendingProposals.delete(request.requestId);
+          }
+          reject(new Error('aborted'));
+        },
+        { once: true },
+      );
       pendingProposals.set(request.requestId, { resolve, reject, timeout });
     });
 

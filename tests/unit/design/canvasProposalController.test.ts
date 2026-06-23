@@ -39,6 +39,26 @@ describe('applyProposal', () => {
   });
 });
 
+describe('applyProposal 防御纵深（I1）', () => {
+  it('IPC 收到的 ops 在 renderer 侧再校验：剥离非法/破坏性 op 后才 applyBatch', async () => {
+    const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'addConnector' }], skipped: [], changed: true };
+    const d = deps(result);
+    const dirty: CanvasOpProposal = {
+      requestId: 'cp-2',
+      ops: [
+        { kind: 'addConnector', fromNodeId: 'a', toNodeId: 'b' },
+        // 破坏性/破损 op：renderer 侧 normalizeProposal 应剥离
+        { kind: 'deleteNode', nodeId: 'a' } as unknown as CanvasOpProposal['ops'][number],
+        { kind: 'addConnector', fromNodeId: 'x', toNodeId: 'x' } as CanvasOpProposal['ops'][number], // 自环
+      ],
+    };
+    await applyProposal(dirty, d);
+    const passedOps = d.applyBatch.mock.calls[0][0];
+    expect(passedOps).toHaveLength(1);
+    expect(passedOps[0]).toMatchObject({ kind: 'addConnector', fromNodeId: 'a', toNodeId: 'b' });
+  });
+});
+
 describe('rejectProposal', () => {
   it('回 reject 带 feedback', async () => {
     const respond = vi.fn();

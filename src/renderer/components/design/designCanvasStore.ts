@@ -270,17 +270,20 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       };
     }),
   applyProposalBatch: (ops, opts) => {
-    const s = get();
-    const result = computeProposalResult({ nodes: s.nodes, connectors: s.connectors, shapes: s.shapes }, ops, opts);
-    if (result.changed) {
+    // 用 set((s)=>...) 更新式，基于最新态原子计算+落定（防 get()→set() 间并发漂移，
+    // 如审批期间用户拖动节点；与本 store 其它 action 一致）。结果经闭包带出。
+    let result!: ProposalApplyResult;
+    set((s) => {
+      result = computeProposalResult({ nodes: s.nodes, connectors: s.connectors, shapes: s.shapes }, ops, opts);
+      if (!result.changed) return {};
       // D3-B：Layer1 整批单次快照（应用前），整批一次 undo 撤完。
-      set({
+      return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
         nodes: result.next.nodes,
         connectors: result.next.connectors,
         shapes: result.next.shapes,
-      });
-    }
+      };
+    });
     return result;
   },
   setSelectedDiagram: (sel) =>

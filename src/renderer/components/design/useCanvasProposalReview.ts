@@ -10,9 +10,10 @@ import { applyProposal, rejectProposal, type ProposalControllerDeps } from './ca
 import type { ProposalApplyResult } from './applyCanvasProposal';
 
 function makeGenId(): (kind: string, index: number) => string {
+  // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
   return (kind, index) =>
     typeof crypto !== 'undefined' && crypto.randomUUID
-      ? `${kind}-${crypto.randomUUID()}`
+      ? `${kind}-${index}-${crypto.randomUUID()}`
       : `${kind}-${Date.now()}-${index}`;
 }
 

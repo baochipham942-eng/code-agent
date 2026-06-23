@@ -108,6 +108,21 @@ describe('校验', () => {
   });
 });
 
+describe('abort 中途（C1）', () => {
+  it('等待中 abort → reject + 不泄漏（工具以错误结束，不挂到超时）', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const ctrl = new AbortController();
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: validOps }, makeCtx({ abortSignal: ctrl.signal }), allowAll);
+    await new Promise((r) => setTimeout(r, 10)); // 等 send 出去、pending 已挂
+    ctrl.abort();
+    const r = await p;
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('DOMAIN_ERROR'); // reject('aborted') 走统一 catch
+  });
+});
+
 describe('CLI fallback', () => {
   it('无交互 renderer → 不 send、明确不假装已应用', async () => {
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);

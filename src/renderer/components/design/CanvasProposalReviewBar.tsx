@@ -18,8 +18,8 @@ function opSummary(ops: CanvasOpProposal['ops'], labels: { move: string; connect
 
 export const CanvasProposalReviewBar: React.FC<{
   proposal: CanvasOpProposal;
-  onApply: () => void;
-  onReject: (feedback?: string) => void;
+  onApply: () => void | Promise<void>;
+  onReject: (feedback?: string) => void | Promise<void>;
 }> = ({ proposal, onApply, onReject }) => {
   const { t } = useI18n();
   const s = t.design;
@@ -33,10 +33,16 @@ export const CanvasProposalReviewBar: React.FC<{
     rename: s.proposalOpRename,
   });
 
-  const guard = (fn: () => void) => () => {
+  // async-aware：等待 handler 完成再复位 busy（出错也复位，不把按钮永久锁死）。
+  // 组件常在 handler 内 clear() 后卸载——卸载后 setBusy 是 no-op，无副作用。
+  const guard = (fn: () => void | Promise<void>) => async () => {
     if (busy) return;
     setBusy(true);
-    fn();
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

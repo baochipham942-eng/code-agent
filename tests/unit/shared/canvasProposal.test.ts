@@ -6,6 +6,8 @@ import {
   normalizeProposal,
   formatCanvasSnapshotForPrompt,
   CANVAS_SNAPSHOT_MAX_NODES,
+  MAX_OPS_PER_PROPOSAL,
+  PROPOSAL_COLOR_MAX,
   PROPOSAL_TEXT_MAX,
   type CanvasSnapshot,
 } from '../../../src/shared/contract/canvasProposal';
@@ -95,6 +97,20 @@ describe('normalizeProposal', () => {
   it('非数组 → 空', () => {
     expect(normalizeProposal('nope')).toEqual({ ops: [], dropped: 0 });
   });
+
+  it('超 MAX_OPS_PER_PROPOSAL：截断，超出计 dropped（防上万 op 撑爆）', () => {
+    const many = Array.from({ length: MAX_OPS_PER_PROPOSAL + 25 }, (_, i) => ({ kind: 'renameNode', nodeId: `n${i}`, label: 'x' }));
+    const res = normalizeProposal(many);
+    expect(res.ops).toHaveLength(MAX_OPS_PER_PROPOSAL);
+    expect(res.dropped).toBe(25);
+  });
+});
+
+describe('normalizeProposedShape color 上限（I4）', () => {
+  it('超长 color 截断到 PROPOSAL_COLOR_MAX', () => {
+    const s = normalizeProposedShape({ kind: 'rect', x: 0, y: 0, width: 1, height: 1, color: 'a'.repeat(5000) });
+    expect((s as { color: string }).color.length).toBe(PROPOSAL_COLOR_MAX);
+  });
 });
 
 describe('formatCanvasSnapshotForPrompt', () => {
@@ -127,5 +143,13 @@ describe('formatCanvasSnapshotForPrompt', () => {
     expect(out).toContain(`仅列前 ${CANVAS_SNAPSHOT_MAX_NODES}`);
     // 只渲染前 MAX 个 id 行
     expect(out).not.toContain(`n${CANVAS_SNAPSHOT_MAX_NODES + 5} `);
+  });
+
+  it('连线超上限：标注截断并提示避免重复（I3）', () => {
+    const nodes = [{ id: 'a', x: 0, y: 0, width: 10, height: 10 }];
+    const conns = Array.from({ length: CANVAS_SNAPSHOT_MAX_NODES + 5 }, (_, i) => ({ fromNodeId: 'a', toNodeId: `b${i}` }));
+    const out = formatCanvasSnapshotForPrompt(snap(nodes, { connectors: conns }))!;
+    expect(out).toContain(`仅列前 ${CANVAS_SNAPSHOT_MAX_NODES} 条`);
+    expect(out).toContain('避免重复');
   });
 });

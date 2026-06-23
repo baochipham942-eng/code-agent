@@ -15,7 +15,8 @@ import { listCustomImageModels } from './designFiles';
 
 export const CanvasAutonomyReviewBar: React.FC<{
   request: AutonomyEnvelopeRequest;
-  onGrant: (granted: AutonomyGrant) => void | Promise<void>;
+  /** perImageCny=审批面板算出的真实单价快照，建立信封时存入供预算闸兜底（R2-MED-1）。 */
+  onGrant: (granted: AutonomyGrant, perImageCny: number) => void | Promise<void>;
   onDecline: (feedback?: string) => void | Promise<void>;
 }> = ({ request, onGrant, onDecline }) => {
   const { t } = useI18n();
@@ -52,7 +53,7 @@ export const CanvasAutonomyReviewBar: React.FC<{
   const handleGrant = async (): Promise<void> => {
     setBusy(true);
     try {
-      await onGrant({ maxVariants: variants, maxCny });
+      await onGrant({ maxVariants: variants, maxCny }, perImage); // 快照单价（与面板预估同源）进信封
     } finally {
       setBusy(false);
     }

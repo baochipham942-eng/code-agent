@@ -103,6 +103,18 @@ describe('makeBudgetedGenerate · 预算闸 + 消费', () => {
     expect(getEnv()!.usedVariants).toBe(0); // 失败不吃版本槽
   });
 
+  it('出图期间信封被清（abort）→ await 后不复活已清信封（审计 R2-MED 防孤儿重生）', async () => {
+    let current: ReturnType<typeof grantEnvelope> | null = grantEnvelope({ maxVariants: 3, maxCny: 1 });
+    const setEnvelope = vi.fn((e: ReturnType<typeof grantEnvelope>) => { current = e; });
+    // rawGenerate 期间模拟 abort 把信封清掉。
+    const raw = vi.fn(async () => { current = null; return { ok: true, costCny: 0.14 }; });
+    const gate = makeBudgetedGenerate({ estimateCost: () => 0.14, rawGenerate: raw, getEnvelope: () => current, setEnvelope });
+    const r = await gate(gen());
+    expect(r.ok).toBe(true); // 付费已 commit
+    expect(setEnvelope).not.toHaveBeenCalled(); // 不拿陈旧引用复活已清信封
+    expect(current).toBeNull(); // 信封保持已清
+  });
+
   it('无信封 → 不调 rawGenerate（auto 路径不该到这，防御）', async () => {
     const raw = vi.fn(async () => ({ ok: true, costCny: 0.14 }));
     const gate = makeBudgetedGenerate({ estimateCost: () => 0.14, rawGenerate: raw, getEnvelope: () => null, setEnvelope: vi.fn() });

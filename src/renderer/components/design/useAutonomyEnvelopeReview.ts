@@ -10,8 +10,8 @@ import { isAutonomyRunTerminal } from './autonomyProposalRouting';
 
 export interface AutonomyEnvelopeReview {
   pendingRequest: AutonomyEnvelopeRequest | null;
-  /** 批准信封（granted=人最终确认值）：建立信封 + 回 grant 裁决。 */
-  grant: (granted: AutonomyGrant) => Promise<void>;
+  /** 批准信封（granted=人最终确认值，perImageCny=审批面板算出的真实单价快照）：建立信封 + 回 grant 裁决。 */
+  grant: (granted: AutonomyGrant, perImageCny?: number) => Promise<void>;
   /** 不批：回 decline 裁决（可带意见）。 */
   decline: (feedback?: string) => Promise<void>;
 }
@@ -39,7 +39,9 @@ export function useAutonomyEnvelopeReview(): AutonomyEnvelopeReview {
     const unsubStatus = ipcService.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
       const st = useDesignAutonomyStore.getState();
       if (!st.envelope) return;
-      if (st.envelopeSessionId && event.sessionId !== st.envelopeSessionId) return; // 非本信封的 session
+      // 审计 R2-LOW-1：须 sessionId 非空且**精确匹配**才清——null 绑定（ctx.sessionId 为空的边界）不被任意
+      // 别的 session 终态误清（那会无故中断合法自主 run）。null 绑定靠 CANCEL/手动停/耗尽兜底。
+      if (!st.envelopeSessionId || event.sessionId !== st.envelopeSessionId) return;
       if (isAutonomyRunTerminal(event.status)) st.clear();
     });
     return () => {
@@ -49,11 +51,11 @@ export function useAutonomyEnvelopeReview(): AutonomyEnvelopeReview {
     };
   }, [setPendingRequest]);
 
-  const grant = useCallback(async (granted: AutonomyGrant) => {
+  const grant = useCallback(async (granted: AutonomyGrant, perImageCny?: number) => {
     const req = useDesignAutonomyStore.getState().pendingRequest;
     if (!req) return;
-    // 在 renderer 建立信封（夹紧 + 派生默认经 grantEnvelope，与 main 工具同口径）；绑请求的 sessionId（HIGH-2）。
-    useDesignAutonomyStore.getState().grantFromApproval(granted, req.sessionId);
+    // 在 renderer 建立信封（夹紧 + 派生默认经 grantEnvelope，与 main 工具同口径）；绑 sessionId（HIGH-2）+ 快照单价（R2-MED-1）。
+    useDesignAutonomyStore.getState().grantFromApproval(granted, req.sessionId, perImageCny);
     try {
       await ipcService.invoke(IPC_CHANNELS.CANVAS_AUTONOMY_RESPONSE, { requestId: req.requestId, verdict: 'grant', granted });
     } finally {

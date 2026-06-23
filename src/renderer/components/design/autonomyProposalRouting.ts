@@ -80,7 +80,11 @@ export function makeBudgetedGenerate(
     const est = deps.estimateCost(op);
     if (!canAfford(env, est)) return { ok: false }; // 预算闸：付费前拦，零付费
     const r = await deps.rawGenerate(op);
-    deps.setEnvelope(consume(env, { landed: r.ok, costCny: r.costCny ?? 0 }));
+    // 审计 R2-MED：出图期间信封可能被清（abort / run 终态 / 手动停）。**重读**信封，被清则不复活
+    // （付费已 commit 不可退，但绝不拿陈旧引用 setEnvelope 把已清信封救回来 → 防孤儿信封重生）。
+    const envAfter = deps.getEnvelope();
+    if (!envAfter) return r;
+    deps.setEnvelope(consume(envAfter, { landed: r.ok, costCny: r.costCny ?? 0 }));
     return r;
   };
 }

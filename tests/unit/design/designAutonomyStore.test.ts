@@ -18,12 +18,21 @@ describe('designAutonomyStore', () => {
     expect(useDesignAutonomyStore.getState().pendingRequest).toBeNull();
   });
 
-  it('grantFromApproval 建立信封并重置变体组', () => {
+  it('grantFromApproval 建立信封并重置变体组；绑 sessionId + 快照单价（R2-MED-1）', () => {
     useDesignAutonomyStore.setState({ variantGroupId: 'stale-group' });
-    const env = useDesignAutonomyStore.getState().grantFromApproval({ maxVariants: 3, maxCny: 0.5 });
+    const env = useDesignAutonomyStore.getState().grantFromApproval({ maxVariants: 3, maxCny: 0.5 }, 'sess-9', 3.0);
     expect(env.maxVariants).toBe(3);
     expect(useDesignAutonomyStore.getState().envelope).toEqual(env);
+    expect(useDesignAutonomyStore.getState().envelopeSessionId).toBe('sess-9');
+    expect(useDesignAutonomyStore.getState().perImageCny).toBe(3.0); // 快照真实单价供预算闸兜底
     expect(useDesignAutonomyStore.getState().variantGroupId).toBeNull(); // 新一轮重置
+  });
+
+  it('clear 连带清 perImageCny 快照', () => {
+    useDesignAutonomyStore.getState().grantFromApproval({ maxVariants: 2 }, 'sess-1', 3.0);
+    useDesignAutonomyStore.getState().clear();
+    expect(useDesignAutonomyStore.getState().perImageCny).toBeNull();
+    expect(useDesignAutonomyStore.getState().envelopeSessionId).toBeNull();
   });
 
   it('setEnvelope 持久消费；setVariantGroupId 记录组', () => {

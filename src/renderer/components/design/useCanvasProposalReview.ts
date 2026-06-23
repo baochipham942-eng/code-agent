@@ -15,11 +15,11 @@ import {
 import type { CanvasProposalOp } from '@shared/contract';
 import { planDiscards } from './applyCanvasProposal';
 import { generateProposedImage, resolveProposedImageModel } from './designProposedImageGen';
-import { decideProposalHandling, autonomousApply, makeGroupedGenerate, resolveAutonomyImageCostCny } from './autonomyProposalRouting';
+import { decideProposalHandling, autonomousApply, makeGroupedGenerate } from './autonomyProposalRouting';
 import { isExhausted } from '@shared/contract/designAutonomy';
+import { estimateImageCostCny } from '@shared/media/imageCost';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
-import { listCustomImageModels } from './designFiles';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -90,12 +90,16 @@ export function useCanvasProposalReview(): CanvasProposalReview {
           generate: (op, opts) => generateProposedImage(op, opts),
         });
         void (async () => {
-          // HIGH-1：用与 main 出图同源的准确单价（自定义模型用 costCnyPerImage），杜绝 est 假低绕过 ¥ 闸。
-          const customModels = await listCustomImageModels().catch(() => []);
           try {
             await autonomousApply(request, {
               baseDeps: { ...controllerDeps(), generate: groupedGenerate },
-              estimateCost: (op) => resolveAutonomyImageCostCny(resolveProposedImageModel(op.model, useDesignStore.getState().imageModel), customModels),
+              // HIGH-1 + R2-MED-1：预算闸单价取「价表估值」与「grant 时快照真实单价」的较大者——
+              // fail-closed，自定义模型不被运行时拉取失败拉低到 0.14 绕过 ¥ 闸；不在自主期依赖运行时拉取。
+              estimateCost: (op) => {
+                const resolved = resolveProposedImageModel(op.model, useDesignStore.getState().imageModel);
+                const snapshot = useDesignAutonomyStore.getState().perImageCny ?? 0;
+                return Math.max(estimateImageCostCny(resolved), snapshot);
+              },
               getEnvelope: () => useDesignAutonomyStore.getState().envelope,
               setEnvelope: (e) => useDesignAutonomyStore.getState().setEnvelope(e),
             });

@@ -984,7 +984,7 @@ export const DesignCanvas: React.FC = () => {
       {autonomy.pendingRequest && (
         <CanvasAutonomyReviewBar
           request={autonomy.pendingRequest}
-          onGrant={(g) => void autonomy.grant(g)}
+          onGrant={(g, perImageCny) => void autonomy.grant(g, perImageCny)}
           onDecline={(fb) => void autonomy.decline(fb)}
         />
       )}

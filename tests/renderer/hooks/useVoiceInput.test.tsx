@@ -136,6 +136,9 @@ describe('支持检测与前置校验', () => {
     });
     expect(result.current.errorCode).toBe('UNSUPPORTED');
     expect(result.current.isSupported).toBe(false);
+    // Codex 审计：unsupported 分支应与 DISABLED 分支对称设 status='error'，
+    // 否则 UI 停在 idle 却持有错误（曾经的生产不一致，本 PR 一并修复）
+    expect(result.current.status).toBe('error');
   });
 });
 

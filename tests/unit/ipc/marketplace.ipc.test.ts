@@ -47,10 +47,11 @@ type HandlerFn = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 let handlers: Map<string, HandlerFn>;
 const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!(null, ...args);
 
+// 形状对齐真实 MarketplaceInfo 契约：source 是 MarketplaceSource 对象、lastUpdated 是 ISO string
 const entry = (over: Record<string, unknown> = {}) => ({
-  source: 'github:x/y',
+  source: { source: 'github', repo: 'x/y' },
   installLocation: '/loc',
-  lastUpdated: 1,
+  lastUpdated: '2026-01-01T00:00:00.000Z',
   autoUpdate: true,
   ...over,
 });
@@ -84,7 +85,7 @@ describe('MARKETPLACE_LIST', () => {
     const res = (await call(IPC_CHANNELS.MARKETPLACE_LIST)) as { success: boolean; data: unknown[] };
     expect(res.success).toBe(true);
     expect(res.data).toEqual([
-      { name: 'official', description: 'desc', source: 'github:x/y', installLocation: '/loc', lastUpdated: 1, pluginCount: 2, autoUpdate: true },
+      { name: 'official', description: 'desc', source: { source: 'github', repo: 'x/y' }, installLocation: '/loc', lastUpdated: '2026-01-01T00:00:00.000Z', pluginCount: 2, autoUpdate: true },
     ]);
   });
 
@@ -105,10 +106,10 @@ describe('MARKETPLACE_LIST', () => {
 describe('ADD / REMOVE / INFO', () => {
   it('ADD 装后回查 info 与 config 组装结果', async () => {
     mp.addMarketplace.mockResolvedValue({ name: 'official' });
-    mp.listMarketplaces.mockResolvedValue({ official: entry({ source: 'git:add' }) });
-    const res = (await call(IPC_CHANNELS.MARKETPLACE_ADD, 'git:add')) as { success: boolean; data: { name: string; source: string } };
-    expect(res.data).toMatchObject({ name: 'official', source: 'git:add', pluginCount: 2 });
-    expect(mp.addMarketplace).toHaveBeenCalledWith('git:add');
+    mp.listMarketplaces.mockResolvedValue({ official: entry({ source: { source: 'url', url: 'https://m' } }) });
+    const res = (await call(IPC_CHANNELS.MARKETPLACE_ADD, 'https://m')) as { success: boolean; data: { name: string; source: unknown } };
+    expect(res.data).toMatchObject({ name: 'official', source: { source: 'url', url: 'https://m' }, pluginCount: 2 });
+    expect(mp.addMarketplace).toHaveBeenCalledWith('https://m');
   });
 
   it('REMOVE 委派并回 success', async () => {

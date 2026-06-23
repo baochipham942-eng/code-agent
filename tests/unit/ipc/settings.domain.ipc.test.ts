@@ -158,16 +158,27 @@ describe('testApiKey', () => {
     expect(res.error).toContain('不支持');
   });
 
-  it('deepseek 200 → success:true（GET）', async () => {
+  it('deepseek 200 → GET /models + Bearer 鉴权头', async () => {
     global.fetch = vi.fn(async () => ({ ok: true })) as never;
     expect((await callSettings('testApiKey', { provider: 'deepseek', apiKey: 'k' })).data).toEqual({ success: true });
-    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ method: 'GET' });
+    // Codex 审计：不能只看 method——验证打的是 /models 端点、带正确 Bearer 头、GET 无 body
+    const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { method: string; headers: Record<string, string>; body?: unknown }];
+    expect(url).toContain('/models');
+    expect(init.method).toBe('GET');
+    expect(init.headers.Authorization).toBe('Bearer k');
+    expect(init.body).toBeUndefined();
   });
 
-  it('claude 走 POST 带 body', async () => {
+  it('claude → POST /messages + x-api-key + anthropic-version + JSON body', async () => {
     global.fetch = vi.fn(async () => ({ ok: true })) as never;
     await callSettings('testApiKey', { provider: 'claude', apiKey: 'k' });
-    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ method: 'POST' });
+    const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { method: string; headers: Record<string, string>; body: string }];
+    expect(url).toContain('/messages');
+    expect(init.method).toBe('POST');
+    expect(init.headers['x-api-key']).toBe('k');
+    expect(init.headers['anthropic-version']).toBeTruthy();
+    expect(init.headers['content-type']).toBe('application/json');
+    expect(JSON.parse(init.body)).toMatchObject({ max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] });
   });
 
   it('非 200 → 返回状态码与截断错误文本', async () => {
@@ -221,12 +232,16 @@ describe('checkApiKeyConfigured', () => {
   it('全无 → false', async () => {
     const saved = process.env;
     process.env = { ...saved };
-    for (const k of ['MOONSHOT_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'ZHIPU_API_KEY', 'GROQ_API_KEY', 'QWEN_API_KEY', 'MINIMAX_API_KEY', 'OPENROUTER_API_KEY', 'PERPLEXITY_API_KEY', 'LONGCAT_API_KEY', 'XIAOMI_API_KEY']) {
-      delete process.env[k];
+    try {
+      for (const k of ['MOONSHOT_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'ZHIPU_API_KEY', 'GROQ_API_KEY', 'QWEN_API_KEY', 'MINIMAX_API_KEY', 'OPENROUTER_API_KEY', 'PERPLEXITY_API_KEY', 'LONGCAT_API_KEY', 'XIAOMI_API_KEY']) {
+        delete process.env[k];
+      }
+      env.config.getSettings.mockReturnValue({});
+      expect((await callSettings('checkApiKeyConfigured')).data).toBe(false);
+    } finally {
+      // Codex 审计：断言失败也要还原 env，否则污染后续测试
+      process.env = saved;
     }
-    env.config.getSettings.mockReturnValue({});
-    expect((await callSettings('checkApiKeyConfigured')).data).toBe(false);
-    process.env = saved;
   });
 });
 

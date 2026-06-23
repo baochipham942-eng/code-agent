@@ -198,21 +198,36 @@ describe('repairPermission', () => {
 });
 
 describe('openApp', () => {
-  it('合法 mail → exec open -a Mail', async () => {
+  // openApp 的 open -a 仅 macOS 支持，须固定 process.platform 否则 Linux/Windows CI 会误判
+  const realPlatform = process.platform;
+  const setPlatform = (p: string) => Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  afterEach(() => setPlatform(realPlatform));
+
+  it('macOS 合法 mail → exec open -a Mail', async () => {
+    setPlatform('darwin');
     const res = await call('openApp', { connectorId: 'mail' });
     expect(res).toMatchObject({ success: true, data: { opened: true, app: 'Mail' } });
     expect(env.exec).toHaveBeenCalledWith(expect.stringContaining('open -a "Mail"'), expect.any(Function));
   });
 
+  it('非 macOS → 报错（不支持 open -a）', async () => {
+    setPlatform('linux');
+    expect(await call('openApp', { connectorId: 'mail' })).toMatchObject({ success: false, error: { message: expect.stringContaining('macOS') } });
+    expect(env.exec).not.toHaveBeenCalled();
+  });
+
   it('缺 connectorId → 报错', async () => {
+    setPlatform('darwin');
     expect(await call('openApp', {})).toMatchObject({ success: false, error: { message: expect.stringContaining('required') } });
   });
 
   it('无原生 app 映射 → 报错', async () => {
+    setPlatform('darwin');
     expect(await call('openApp', { connectorId: 'photos' })).toMatchObject({ success: false, error: { message: expect.stringContaining('no native app') } });
   });
 
   it('exec 失败 → INTERNAL_ERROR', async () => {
+    setPlatform('darwin');
     env.exec.mockImplementation((_cmd: string, cb: (err: Error | null) => void) => cb(new Error('open boom')));
     expect(await call('openApp', { connectorId: 'mail' })).toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR', message: 'open boom' } });
   });

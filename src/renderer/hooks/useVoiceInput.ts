@@ -297,6 +297,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       setIsSupported(false);
       setError('您的浏览器不支持语音输入');
       setErrorCode('UNSUPPORTED');
+      setStatus('error');
       return;
     }
 

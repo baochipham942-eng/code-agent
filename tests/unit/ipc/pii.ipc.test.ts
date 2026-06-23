@@ -177,6 +177,15 @@ describe('setup:start (startSetup)', () => {
     const res = await call(handler, 'setup:start');
     expect(res.data).toEqual({ started: true });
     expect(mockState.spawn).toHaveBeenCalledTimes(1);
+    // Codex 审计：不能只数调用次数——验证 spawn 的是当前 node 本体跑 setup 脚本，
+    // 且把 bundled uv/runner 路径通过 env 传给脚本，stdio 配置正确
+    const [cmd, args, opts] = mockState.spawn.mock.calls[0] as [string, string[], { env: Record<string, string>; stdio: unknown }];
+    expect(cmd).toBe(process.execPath);
+    expect(args).toHaveLength(1);
+    expect(args[0]).toMatch(/setup-gliner-pii\.mjs$/);
+    expect(opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
+    expect(opts.env.CODE_AGENT_BUNDLED_UV).toMatch(/uv(\.exe)?$/);
+    expect(opts.env.CODE_AGENT_BUNDLED_RUNNER).toMatch(/gliner_onnx_runner\.py$/);
     expect(mockState.broadcast).toHaveBeenCalled(); // setState('running') 推事件
     const status = await call(handler, 'setup:status');
     expect(status.data).toMatchObject({ state: 'running' });

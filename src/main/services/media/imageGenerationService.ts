@@ -12,6 +12,7 @@
 
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { isPrivateOrLocalHost } from '../../security/ssrfGuard';
 
 export type ImageEngine = 'cogview' | 'flux' | 'wanx' | 'gptimage';
 
@@ -192,27 +193,8 @@ export function isSafeImageUrl(u: string): boolean {
   let url: URL;
   try { url = new URL(u); } catch { return false; }
   if (url.protocol !== 'https:') return false;
-  const h = url.hostname.toLowerCase();
-  if (h === 'localhost') return false;
-  // 私网/环回/链路本地 IPv4
-  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (m) {
-    const a = Number(m[1]); const b = Number(m[2]);
-    if (a === 127 || a === 10 || a === 0) return false;
-    if (a === 172 && b >= 16 && b <= 31) return false;
-    if (a === 192 && b === 168) return false;
-    if (a === 169 && b === 254) return false;
-  }
-  // IPv6 字面量——WHATWG URL 的 hostname 保留方括号（如 '[::1]'），必须去括号再判，
-  // 且这些前缀检查只能在 IPv6 字面量上跑，否则会误杀以 fc/fd/fe80 开头的公网域名。
-  if (h.startsWith('[') && h.endsWith(']')) {
-    const h6 = h.slice(1, -1);
-    if (h6 === '::1' || h6 === '::') return false;                 // 环回/未指定
-    if (h6.startsWith('fc') || h6.startsWith('fd')) return false;  // ULA fc00::/7
-    if (h6.startsWith('fe80')) return false;                       // 链路本地
-    if (h6.startsWith('::ffff:')) return false;                    // IPv4-mapped——保守整段拒绝，挡映射私网绕过
-  }
-  return true;
+  // 私网/环回/链路本地/元数据判定下沉到 ssrfGuard（单一真源，避免与裸下载/自定义端点守卫漂移）。
+  return !isPrivateOrLocalHost(url.hostname);
 }
 
 export async function downloadImageAsBase64(
@@ -220,7 +202,13 @@ export async function downloadImageAsBase64(
   outerSignal: AbortSignal = new AbortController().signal,
 ): Promise<string> {
   if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的图片 URL（仅允许 https 公网地址）');
-  const response = await fetchWithAbort(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
+  // SSRF-via-redirect 防护：私网守卫只校验了初始 URL；若让 fetch 透明跟 3xx 跳转，
+  // 端点可把图片 url 跳到 169.254.169.254 等私网绕过守卫。用 redirect:manual 截停，
+  // 拒绝任何跳转（合法图床直出 200，不靠跳转）。
+  const response = await fetchWithAbort(url, { redirect: 'manual' }, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error('拒绝下载：图片 URL 发生跳转（SSRF 防护）');
+  }
   if (!response.ok) {
     throw new Error(`图片下载失败: ${response.status}`);
   }
@@ -695,4 +683,82 @@ export async function editImageByAnnotation(input: {
   const b64 = json?.data?.[0]?.b64_json;
   if (!b64) throw new Error('gpt-image-2 标注重绘返回无 b64_json');
   return { imageData: `data:image/png;base64,${b64}`, actualModel: GPTIMAGE_MODEL };
+}
+
+// 自定义 OpenAI 兼容生图端点（借鉴项①）：固定打 ${baseUrl}/images/generations（baseUrl 含 /v1）。
+const OPENAI_COMPAT_GENERATIONS_PATH = '/images/generations';
+const OPENAI_COMPAT_SIZE_BY_ASPECT = new Map<string, string>([
+  ['1:1', '1024x1024'],
+  ['16:9', '1792x1024'],
+  ['9:16', '1024x1792'],
+  ['4:3', '1024x768'],
+  ['3:4', '768x1024'],
+]);
+
+/**
+ * 从 base64 头部 magic bytes 嗅探真实图片 mime（PNG/JPEG/GIF/WEBP），未知回退 image/png。
+ * 自定义端点（如 doubao-seedream）的 b64_json 可能是 JPEG，不能一律标 png。只解头部不解整图。
+ */
+export function sniffImageMimeFromBase64(b64: string): string {
+  const head = Buffer.from(b64.slice(0, 24), 'base64'); // 24 base64 字符 = 18 字节，够判 webp(需 12 字节)
+  if (head.length >= 4) {
+    if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'image/png';
+    if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+    if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return 'image/gif';
+    if (
+      head.length >= 12 &&
+      head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && // RIFF
+      head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50 // WEBP
+    ) return 'image/webp';
+  }
+  return 'image/png';
+}
+
+/**
+ * 调用用户自填的 OpenAI 兼容生图端点（文生图 only）。caller 须已对 baseUrl 过 SSRF 守卫。
+ * 返回兼容三态：data[0].b64_json（转 dataURL）/ data[0].url（透传，由 caller 下载过 isSafeImageUrl）。
+ * actualModel = 用户填的 modelName（落价表/成本用）。设计场景保留文字，用 raw prompt。
+ */
+export async function generateImageOpenAICompat(input: {
+  baseUrl: string;
+  apiKey: string;
+  modelName: string;
+  prompt: string;
+  aspectRatio?: string;
+  outerSignal?: AbortSignal;
+}): Promise<GenerateImageResult> {
+  const size = OPENAI_COMPAT_SIZE_BY_ASPECT.get(input.aspectRatio || '1:1') || GPTIMAGE_DEFAULT_SIZE;
+  const resp = await fetchWithAbort(
+    `${input.baseUrl.replace(/\/+$/, '')}${OPENAI_COMPAT_GENERATIONS_PATH}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: input.modelName, prompt: input.prompt, n: 1, size }),
+      // SSRF-via-redirect 防护（审计 HIGH-1）：守卫只校验了初始 baseUrl host；若透明跟 3xx 跳转，
+      // 用户自填端点可 302→169.254.169.254 等内网绕过守卫。redirect:manual 截停，拒任何跳转
+      // （合法 OpenAI 兼容端点直出 200 JSON，不靠跳转），与 downloadImageAsBase64 同源。
+      redirect: 'manual',
+    },
+    TIMEOUT_MS.GPTIMAGE_GENERATION,
+    input.outerSignal ?? new AbortController().signal,
+  );
+  if (resp.status >= 300 && resp.status < 400) {
+    throw new Error('拒绝：自定义生图端点发生跳转（SSRF 防护）');
+  }
+  if (!resp.ok) {
+    // 透出端点错误正文（配额/无效 key/上游超时等唯一可读信号）。body 不含 key（key 只在 header），安全。
+    const errBody = await resp.text().catch(() => '');
+    throw new Error(`自定义生图端点失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
+  }
+  const json = await resp.json();
+  const first = json?.data?.[0];
+  const b64 = first?.b64_json;
+  if (typeof b64 === 'string' && b64) {
+    return { imageData: `data:${sniffImageMimeFromBase64(b64)};base64,${b64}`, actualModel: input.modelName };
+  }
+  const url = first?.url;
+  if (typeof url === 'string' && url) {
+    return { imageData: url, actualModel: input.modelName };
+  }
+  throw new Error('自定义生图端点返回既无 b64_json 也无 url');
 }

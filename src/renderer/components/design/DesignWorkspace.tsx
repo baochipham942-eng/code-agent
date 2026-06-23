@@ -68,6 +68,7 @@ import { estimateVideoCostCny } from '@shared/media/videoCost';
 import { videoModelById, clampVideoDuration } from '@shared/constants/visualModels';
 import { DesignCostHistory } from './DesignCostHistory';
 import { ImageModelPicker } from './ImageModelPicker';
+import { CustomImageModelManager } from './CustomImageModelManager';
 import { VideoModelPicker } from './VideoModelPicker';
 import { VariantCompareView } from './VariantCompareView';
 import { loadProtoSpine } from './protoSpine';
@@ -195,6 +196,9 @@ const Composer: React.FC = () => {
   const { generate: generateCanvas, generateVideo } = useDesignCanvasGeneration();
   const canvasGenerating = useDesignCanvasStore((c) => c.generating);
   const canvasError = useDesignCanvasStore((c) => c.error);
+  // 自定义生图模型管理弹窗（借鉴项①）。增删后 bump key 让 ImageModelPicker 重挂载重新拉列表。
+  const [customModelOpen, setCustomModelOpen] = useState(false);
+  const [imageModelPickerKey, setImageModelPickerKey] = useState(0);
 
   // 主控件按「交付媒介」分 4 类；「图」激活时出二级（设计稿 / 信息图）。
   const mediaTabs: Array<{ media: DesignMedia; label: string }> = [
@@ -348,11 +352,21 @@ const Composer: React.FC = () => {
         </div>
       </div>
 
-      {/* 生图模型（仅图像产物）：与出图尺寸同区，未配置 key 的灰显 */}
+      {/* 生图模型（仅图像产物）：与出图尺寸同区，未配置 key 的灰显；右侧入口管理自定义端点 */}
       {imageMode && (
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-zinc-400">{t.design.imageModel}</span>
-          <ImageModelPicker />
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-400">{t.design.imageModel}</span>
+            <Button variant="ghost" size="sm" onClick={() => setCustomModelOpen(true)}>
+              {t.design.customModel.open}
+            </Button>
+          </div>
+          <ImageModelPicker key={imageModelPickerKey} />
+          <CustomImageModelManager
+            isOpen={customModelOpen}
+            onClose={() => setCustomModelOpen(false)}
+            onModelsChange={() => setImageModelPickerKey((k) => k + 1)}
+          />
         </div>
       )}
 

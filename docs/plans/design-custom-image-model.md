@@ -17,8 +17,10 @@
 修改：visualModels.ts(扩类型) / imageGenerationService.ts(新增 generateImageOpenAICompat，不改 generateImage 主签名) / workspace.ipc.ts(handleGenerateDesignImage 加分支 + handleListVisualImageModels 合并 + 3 case) / ImageModelPicker.tsx + DesignWorkspace.tsx(+按钮) / i18n。
 
 ## 数据流
-填表 → saveCustomImageModel → validateCustomBaseUrl(SSRF) → 连通性探测(真实 256x256 出图) → 落盘 + setCustomModelApiKey。
-出图 → 先查 listCustomImageModels 命中 → getCustomModelApiKey → 再 validateCustomBaseUrl → generateImageOpenAICompat → isImageUrl ? download(过 isSafeImageUrl) : b64 → 写盘(assertWithinDesignDir) → 返回{path,actualModel,costCny}。
+填表 → saveCustomImageModel → validateCustomBaseUrl(SSRF) → 落盘 + setCustomModelApiKey。
+> **实现取舍（修订4 最终落地）**：**取消保存时的付费连通性探测**——无探测=无可反复触发的扣费口，是付费护栏最稳解。
+> 代价：保存不校验端点可用性，首个错误延后到出图时暴露（端点错误正文已透出 renderer，可读）。
+出图 → 先查 listCustomImageModels 命中 → getCustomModelApiKey → 再 validateCustomBaseUrl → generateImageOpenAICompat(redirect:manual 防跳转) → isImageUrl ? download(过 isSafeImageUrl + redirect:manual) : b64 → 写盘(assertWithinDesignDir) → 返回{path,actualModel,costCny}。
 
 ## 🔴 艾克斯对抗审计修订（必须并入实现）
 1. **[HIGH] 能力守门又一漏网入口**（workspace.ipc.ts:88）：`referenceImageDataUrl`（参考图垫图）分支**完全绕过 payload.model**，固定进 generateImageFromReference，无 cap/provider/custom 判断。蓝图只盯 mask/expand/annotEdit 静态表守门，**漏了参考图垫图这个仍挂在 generateDesignImage 下的编辑入口**——自定义模型撞进来须显式拦截或定义行为。

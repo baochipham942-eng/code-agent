@@ -319,4 +319,16 @@ describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+
+  it('downloadImageAsBase64 用 redirect:manual 且拒 3xx 跳转（防 SSRF-via-redirect 绕过私网守卫）', async () => {
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      // 断言走 manual 模式（不让 undici 透明跟跳转到私网）
+      expect(init?.redirect).toBe('manual');
+      return { ok: false, status: 302, headers: { get: () => 'https://169.254.169.254/' }, arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { downloadImageAsBase64 } = await import('../../../../src/main/services/media/imageGenerationService');
+    await expect(downloadImageAsBase64('https://cdn.public.example.com/img.png')).rejects.toThrow(/跳转|redirect|下载失败/);
+    vi.unstubAllGlobals();
+  });
 });

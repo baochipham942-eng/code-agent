@@ -33,3 +33,27 @@ export function resolveCanvasUndoAction(e: KeyEventLike, opts: { annotMode: bool
   }
   return e.shiftKey ? 'redo' : 'undo';
 }
+
+/** 撤销/重做的动作回调（由 DesignCanvas 注入真实 store/state 操作）。 */
+export interface CanvasUndoHandlers {
+  undo: () => void;
+  redo: () => void;
+  annotUndo: () => void;
+}
+
+/**
+ * 把一次按键事件分发到对应回调。返回是否已处理（caller 据此 preventDefault）。
+ * 路由判定委托 resolveCanvasUndoAction；本函数只做"动作→回调"映射，便于在无 DOM 下单测。
+ */
+export function dispatchCanvasUndoKey(
+  e: KeyEventLike,
+  opts: { annotMode: boolean },
+  h: CanvasUndoHandlers,
+): boolean {
+  const action = resolveCanvasUndoAction(e, opts);
+  if (action === 'none') return false;
+  if (action === 'undo') h.undo();
+  else if (action === 'redo') h.redo();
+  else if (action === 'annot-undo') h.annotUndo();
+  return true;
+}

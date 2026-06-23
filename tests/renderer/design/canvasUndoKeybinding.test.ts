@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveCanvasUndoAction,
+  dispatchCanvasUndoKey,
   type KeyEventLike,
 } from '@renderer/components/design/canvasUndoKeybinding';
 
@@ -66,5 +67,45 @@ describe('resolveCanvasUndoAction', () => {
 
   it('标注模式下输入框内仍 none（输入边界优先于标注）', () => {
     expect(resolveCanvasUndoAction(ev({ targetTag: 'INPUT' }), { annotMode: true })).toBe('none');
+  });
+});
+
+describe('dispatchCanvasUndoKey（动作→回调 分发胶水）', () => {
+  const spies = () => {
+    const calls: string[] = [];
+    return {
+      calls,
+      handlers: {
+        undo: () => calls.push('undo'),
+        redo: () => calls.push('redo'),
+        annotUndo: () => calls.push('annotUndo'),
+      },
+    };
+  };
+
+  it('undo 动作调 undo 回调并返回 true（应 preventDefault）', () => {
+    const { calls, handlers } = spies();
+    const handled = dispatchCanvasUndoKey(ev({}), { annotMode: false }, handlers);
+    expect(handled).toBe(true);
+    expect(calls).toEqual(['undo']);
+  });
+
+  it('redo 动作调 redo 回调', () => {
+    const { calls, handlers } = spies();
+    dispatchCanvasUndoKey(ev({ shiftKey: true }), { annotMode: false }, handlers);
+    expect(calls).toEqual(['redo']);
+  });
+
+  it('标注模式调 annotUndo 回调', () => {
+    const { calls, handlers } = spies();
+    dispatchCanvasUndoKey(ev({}), { annotMode: true }, handlers);
+    expect(calls).toEqual(['annotUndo']);
+  });
+
+  it('none 不调任何回调并返回 false（不 preventDefault，放行原生）', () => {
+    const { calls, handlers } = spies();
+    const handled = dispatchCanvasUndoKey(ev({ targetTag: 'INPUT' }), { annotMode: false }, handlers);
+    expect(handled).toBe(false);
+    expect(calls).toEqual([]);
   });
 });

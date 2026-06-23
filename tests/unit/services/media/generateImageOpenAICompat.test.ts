@@ -6,7 +6,10 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateImageOpenAICompat } from '../../../../src/main/services/media/imageGenerationService';
+import { generateImageOpenAICompat, sniffImageMimeFromBase64 } from '../../../../src/main/services/media/imageGenerationService';
+
+// 用 magic bytes 造各格式的 base64 头（只需头部，余下补零）。
+const b64Of = (bytes: number[]) => Buffer.from([...bytes, ...new Array(12).fill(0)]).toString('base64');
 
 interface Captured { url: string; headers?: Record<string, string>; body?: Record<string, unknown>; }
 
@@ -39,6 +42,12 @@ describe('generateImageOpenAICompat', () => {
     expect(res.actualModel).toBe('sdxl');
   });
 
+  it('b64 按真实 magic 标注 mime（seedream 返回 JPEG 不再误标 png）', async () => {
+    installFetch({ data: [{ b64_json: b64Of([0xff, 0xd8, 0xff, 0xe0]) }] }); // JPEG
+    const res = await generateImageOpenAICompat({ baseUrl: 'https://api.x.com/v1', apiKey: 'sk', modelName: 'm', prompt: 'p' });
+    expect(res.imageData.startsWith('data:image/jpeg;base64,')).toBe(true);
+  });
+
   it('返回 data[0].url 时直接透传 url（由调用方下载）', async () => {
     installFetch({ data: [{ url: 'https://oss.example.com/out.png' }] });
     const res = await generateImageOpenAICompat({
@@ -61,5 +70,15 @@ describe('generateImageOpenAICompat', () => {
     await expect(
       generateImageOpenAICompat({ baseUrl: 'https://api.x.com/v1', apiKey: 'bad', modelName: 'm', prompt: 'p' }),
     ).rejects.toThrow(/401|invalid api key/);
+  });
+});
+
+describe('sniffImageMimeFromBase64', () => {
+  it('PNG/JPEG/GIF/WEBP magic 各识别正确，未知回退 png', () => {
+    expect(sniffImageMimeFromBase64(b64Of([0x89, 0x50, 0x4e, 0x47]))).toBe('image/png');
+    expect(sniffImageMimeFromBase64(b64Of([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(sniffImageMimeFromBase64(b64Of([0x47, 0x49, 0x46, 0x38]))).toBe('image/gif');
+    expect(sniffImageMimeFromBase64(Buffer.from('RIFF\0\0\0\0WEBPxxxx').toString('base64'))).toBe('image/webp');
+    expect(sniffImageMimeFromBase64(Buffer.from('hello world').toString('base64'))).toBe('image/png');
   });
 });

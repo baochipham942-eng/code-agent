@@ -696,6 +696,25 @@ const OPENAI_COMPAT_SIZE_BY_ASPECT = new Map<string, string>([
 ]);
 
 /**
+ * 从 base64 头部 magic bytes 嗅探真实图片 mime（PNG/JPEG/GIF/WEBP），未知回退 image/png。
+ * 自定义端点（如 doubao-seedream）的 b64_json 可能是 JPEG，不能一律标 png。只解头部不解整图。
+ */
+export function sniffImageMimeFromBase64(b64: string): string {
+  const head = Buffer.from(b64.slice(0, 24), 'base64'); // 24 base64 字符 = 18 字节，够判 webp(需 12 字节)
+  if (head.length >= 4) {
+    if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'image/png';
+    if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+    if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return 'image/gif';
+    if (
+      head.length >= 12 &&
+      head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && // RIFF
+      head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50 // WEBP
+    ) return 'image/webp';
+  }
+  return 'image/png';
+}
+
+/**
  * 调用用户自填的 OpenAI 兼容生图端点（文生图 only）。caller 须已对 baseUrl 过 SSRF 守卫。
  * 返回兼容三态：data[0].b64_json（转 dataURL）/ data[0].url（透传，由 caller 下载过 isSafeImageUrl）。
  * actualModel = 用户填的 modelName（落价表/成本用）。设计场景保留文字，用 raw prompt。
@@ -728,7 +747,7 @@ export async function generateImageOpenAICompat(input: {
   const first = json?.data?.[0];
   const b64 = first?.b64_json;
   if (typeof b64 === 'string' && b64) {
-    return { imageData: `data:image/png;base64,${b64}`, actualModel: input.modelName };
+    return { imageData: `data:${sniffImageMimeFromBase64(b64)};base64,${b64}`, actualModel: input.modelName };
   }
   const url = first?.url;
   if (typeof url === 'string' && url) {

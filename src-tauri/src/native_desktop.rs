@@ -472,11 +472,17 @@ static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 pub fn desktop_request_microphone_permission() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        // Check TCC database directly — no blocking Swift subprocess
+        // Check TCC database directly — no blocking Swift subprocess。
+        // 用运行时真实 bundle id（测试包为 com.linchen.code-agent.dev），避免测试包查到生产包的麦克风授权。
+        let bundle_id = env::var("CODE_AGENT_BUNDLE_ID")
+            .unwrap_or_else(|_| "com.linchen.code-agent".to_string());
+        let tcc_query = format!(
+            "SELECT auth_value FROM access WHERE service='kTCCServiceMicrophone' AND client='{bundle_id}' LIMIT 1;"
+        );
         let output = Command::new("sqlite3")
             .args([
                 "/Users/linchen/Library/Application Support/com.apple.TCC/TCC.db",
-                "SELECT auth_value FROM access WHERE service='kTCCServiceMicrophone' AND client='com.linchen.code-agent' LIMIT 1;",
+                tcc_query.as_str(),
             ])
             .output();
 
@@ -2093,8 +2099,18 @@ pub fn desktop_start_audio_rec() -> Result<AudioRecStartResult, String> {
     let ffmpeg_bin = find_ffmpeg_binary()
         .ok_or_else(|| "ffmpeg not found. Install: brew install ffmpeg".to_string())?;
 
-    let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let fifo_path = format!("{home}/.code-agent/audio-capture.fifo");
+    // fifo 落在数据目录下，随通道隔离：测试包用 ~/.code-agent-dev/audio-capture.fifo，
+    // 不与生产包的 ~/.code-agent/audio-capture.fifo 撞同一管道。
+    let fifo_base = if let Ok(dir) = env::var("CODE_AGENT_DATA_DIR") {
+        PathBuf::from(dir)
+    } else {
+        let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home).join(".code-agent")
+    };
+    let fifo_path = fifo_base
+        .join("audio-capture.fifo")
+        .to_string_lossy()
+        .into_owned();
 
     // Remove stale FIFO
     let _ = std::fs::remove_file(&fifo_path);

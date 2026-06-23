@@ -16,6 +16,9 @@ import * as fs from 'fs/promises';
 /** New config directory name */
 export const CONFIG_DIR_NEW = '.code-agent';
 
+/** 测试/开发通道的数据目录名，与生产 CONFIG_DIR_NEW 并存、互不污染 */
+export const CONFIG_DIR_DEV = `${CONFIG_DIR_NEW}-dev`;
+
 /** Legacy config directory name (for backward compatibility) */
 export const CONFIG_DIR_LEGACY = '.claude';
 
@@ -54,8 +57,14 @@ export function getHomeDir(): string {
 
 /**
  * Get user-level config directory (new format)
+ *
+ * 与 appPaths.getUserDataPath() 指向同一目录：优先 CODE_AGENT_DATA_DIR（测试/开发通道
+ * 由 webEnvInit/Rust 注入到 .code-agent-dev），未设置时退回 <home>/.code-agent。
+ * 这样 pty/background-tasks 等走 getUserConfigDir 的子系统也随通道隔离，不再固定在生产目录。
  */
 export function getUserConfigDir(): string {
+  const explicit = process.env.CODE_AGENT_DATA_DIR?.trim();
+  if (explicit) return explicit;
   return path.join(getHomeDir(), CONFIG_DIR_NEW);
 }
 

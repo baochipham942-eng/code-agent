@@ -1,27 +1,21 @@
 // ============================================================================
-// CustomImageModelManager（自定义生图模型 · 借鉴项① frontend）
+// CustomImageModelManagerView（自定义生图/视频端点管理 · 纯展示 View）
 // ----------------------------------------------------------------------------
-// registry UI：列出已添加的自定义 OpenAI 兼容生图端点（含已配置/未配置徽标 + 删除）
-// + 新增表单（显示名 / Base URL / 模型名 / API Key / 可选成本）。落盘走 designFiles
-// 的 WORKSPACE IPC 封装，后端 customImageModelRegistry + SSRF 守卫已完成。仅文生图。
+// registry UI：列出已添加的自定义端点（含已配置/未配置徽标 + 删除）+ 新增表单
+// （显示名 / Base URL / 模型名 / API Key / 可选成本）。纯展示、吃 props，可
+// renderToStaticMarkup 单测（绕开 zustand SSR getServerSnapshot 坑）。
 //
-// 拆成纯展示 CustomImageModelManagerView（吃 props，可 renderToStaticMarkup 单测，绕开
-// zustand SSR getServerSnapshot 坑）+ 容器 CustomImageModelManager（接 useI18n / IPC / 状态）。
+// 容器逻辑（接 IPC / 状态）由调用方提供：设置页「生成模型」tab 的 VisualModelsSettings
+// 用它管理 image / video 两套自定义端点（IA：模型配置归设置页，设计页只选不配）。
 //
-// 设计系统契约：只用 primitives（Modal/Button/Input/IconButton）+ token，不写裸 button。
+// 设计系统契约：只用 primitives（Button/Input/IconButton）+ token，不写裸 button。
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import { Plus, Trash2, Check } from 'lucide-react';
-import { Modal, Button, Input, IconButton } from '../primitives';
-import { useI18n } from '../../hooks/useI18n';
+import { Button, Input, IconButton } from '../primitives';
 import type { Translations } from '../../i18n';
-import {
-  listCustomImageModels,
-  saveCustomImageModel,
-  deleteCustomImageModel,
-  type CustomImageModelMeta,
-} from './designFiles';
+import type { CustomImageModelMeta } from './designFiles';
 
 type CustomModelStrings = Translations['design']['customModel'];
 
@@ -184,98 +178,3 @@ export const CustomImageModelManagerView: React.FC<CustomImageModelManagerViewPr
     </div>
   );
 };
-
-// ---------------------------------------------------------------------------
-// 容器 —— 接 useI18n / IPC / 本地状态，挂在 Modal 里。
-// ---------------------------------------------------------------------------
-export interface CustomImageModelManagerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  /** 模型增删后通知父级刷新生图模型下拉，可选。 */
-  onModelsChange?: () => void;
-}
-
-export const CustomImageModelManager: React.FC<CustomImageModelManagerProps> = ({ isOpen, onClose, onModelsChange }) => {
-  const { t } = useI18n();
-  const s = t.design.customModel;
-
-  const [models, setModels] = useState<CustomImageModelMeta[]>([]);
-  const [mode, setMode] = useState<'list' | 'form'>('list');
-  const [form, setForm] = useState<CustomModelFormState>(emptyCustomModelForm);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
-
-  const refresh = useCallback(async () => {
-    setModels(await listCustomImageModels());
-  }, []);
-
-  useEffect(() => {
-    if (isOpen) {
-      setMode('list');
-      setError(undefined);
-      void refresh();
-    }
-  }, [isOpen, refresh]);
-
-  const handleCreate = useCallback(() => {
-    setForm(emptyCustomModelForm());
-    setError(undefined);
-    setMode('form');
-  }, []);
-
-  const handleDelete = useCallback(
-    async (id: string) => {
-      if (!window.confirm(s.deleteConfirm)) return;
-      await deleteCustomImageModel(id);
-      await refresh();
-      onModelsChange?.();
-    },
-    [refresh, onModelsChange, s.deleteConfirm],
-  );
-
-  const handleSave = useCallback(async () => {
-    // 前端轻校验（后端 + SSRF 守卫是权威）：必填项空则就地提示，不发 IPC。
-    if (!form.label.trim()) { setError(s.nameRequired); return; }
-    if (!form.baseUrl.trim()) { setError(s.baseUrlRequired); return; }
-    if (!form.modelName.trim()) { setError(s.modelNameRequired); return; }
-    if (!form.apiKey.trim()) { setError(s.apiKeyRequired); return; }
-    const costNum = form.cost.trim() ? Number(form.cost) : undefined;
-    setSaving(true);
-    setError(undefined);
-    const { id, error: saveError } = await saveCustomImageModel({
-      label: form.label.trim(),
-      baseUrl: form.baseUrl.trim(),
-      modelName: form.modelName.trim(),
-      apiKey: form.apiKey.trim(),
-      ...(typeof costNum === 'number' && Number.isFinite(costNum) && costNum >= 0 ? { costCnyPerImage: costNum } : {}),
-    });
-    setSaving(false);
-    if (!id) {
-      setError(saveError || s.saveFailed);
-      return;
-    }
-    setMode('list');
-    await refresh();
-    onModelsChange?.();
-  }, [form, refresh, onModelsChange, s]);
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={s.title} size="lg">
-      <CustomImageModelManagerView
-        s={s}
-        models={models}
-        mode={mode}
-        form={form}
-        saving={saving}
-        error={error}
-        onCreate={handleCreate}
-        onDelete={handleDelete}
-        onBack={() => setMode('list')}
-        onFormChange={setForm}
-        onSave={handleSave}
-      />
-    </Modal>
-  );
-};
-
-export default CustomImageModelManager;

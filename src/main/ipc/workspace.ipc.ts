@@ -56,6 +56,13 @@ import {
   setCustomModelApiKey,
   type CustomImageModel,
 } from '../services/media/customImageModelRegistry';
+import {
+  getCustomVideoModelApiKey,
+  listCustomVideoModels,
+  saveCustomVideoModel,
+  deleteCustomVideoModel,
+  setCustomVideoModelApiKey,
+} from '../services/media/customVideoModelRegistry';
 import { assertSafeCustomBaseUrl, assertSafeDownloadUrl } from '../security/ssrfGuard';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
@@ -1070,6 +1077,55 @@ export async function handleDeleteCustomImageModel(payload: { id: string }): Pro
 }
 
 // ----------------------------------------------------------------------------
+// 自定义生视频模型管理（视觉模型设置 tab · 配置层 only）：与 image 对称的薄 handler。
+// ⚠️ 不接出片生成——视频无 OpenAI 兼容统一标准，出片协议待接入；故无 generateDesignVideo 路由
+// 分支、不并入 VideoModelPicker。这里只做 list/save/delete 配置。绝不回 key 值。
+// ----------------------------------------------------------------------------
+
+export async function handleListCustomVideoModels(): Promise<{
+  models: Array<{ id: string; label: string; baseUrl: string; modelName: string; costCnyPerVideo?: number; available: boolean }>;
+}> {
+  const customs = await listCustomVideoModels();
+  return {
+    models: customs.map((c) => ({
+      id: c.id,
+      label: c.label,
+      baseUrl: c.baseUrl,
+      modelName: c.modelName,
+      ...(c.costCnyPerVideo !== undefined ? { costCnyPerVideo: c.costCnyPerVideo } : {}),
+      available: !!getCustomVideoModelApiKey(c.id),
+    })),
+  };
+}
+
+export async function handleSaveCustomVideoModel(payload: {
+  label: string;
+  baseUrl: string;
+  modelName: string;
+  costCnyPerVideo?: number;
+  apiKey: string;
+}): Promise<{ id: string }> {
+  if (!payload?.apiKey?.trim()) {
+    throw new Error('saveCustomVideoModel 需要非空 API Key');
+  }
+  const { id } = await saveCustomVideoModel({
+    label: payload.label,
+    baseUrl: payload.baseUrl,
+    modelName: payload.modelName,
+    costCnyPerVideo: payload.costCnyPerVideo,
+  });
+  setCustomVideoModelApiKey(id, payload.apiKey.trim());
+  return { id };
+}
+
+export async function handleDeleteCustomVideoModel(payload: { id: string }): Promise<{ ok: true }> {
+  if (!payload?.id) {
+    throw new Error('deleteCustomVideoModel 需要 id');
+  }
+  return deleteCustomVideoModel(payload.id);
+}
+
+// ----------------------------------------------------------------------------
 // PDF 导出（CD-Parity §2）：HTML 原型走 playwright page.pdf()，栅格产物走 pdfkit 图嵌。
 // 渲染/嵌图逻辑在独立模块 services/design/pdfExport.ts，这里只做编排 + 落盘。
 // ----------------------------------------------------------------------------
@@ -1199,6 +1255,17 @@ export function registerWorkspaceHandlers(
           break;
         case 'deleteCustomImageModel':
           data = await handleDeleteCustomImageModel(payload as { id: string });
+          break;
+        case 'listCustomVideoModels':
+          data = await handleListCustomVideoModels();
+          break;
+        case 'saveCustomVideoModel':
+          data = await handleSaveCustomVideoModel(
+            payload as { label: string; baseUrl: string; modelName: string; costCnyPerVideo?: number; apiKey: string },
+          );
+          break;
+        case 'deleteCustomVideoModel':
+          data = await handleDeleteCustomVideoModel(payload as { id: string });
           break;
         case 'removeRecent':
           data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);

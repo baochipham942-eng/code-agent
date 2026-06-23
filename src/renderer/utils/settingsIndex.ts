@@ -65,6 +65,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'model', tabLabel: '模型', label: '测试连接', keywords: ['test', 'connection', '测试', '连接'] },
   { tab: 'model', tabLabel: '模型', label: '中转站', keywords: ['relay', '中转', '自定义', 'custom', 'new-api', 'one-api', '接口地址', 'base url'] },
 
+  // Visual Models（生成模型：生图 / 生视频）
+  { tab: 'visualModels', tabLabel: '生成模型', label: '生图模型', keywords: ['image', '生图', '文生图', 't2i', 'wanx', '通义万相', 'gpt-image', 'cogview', 'flux', '视觉模型', 'visual'] },
+  { tab: 'visualModels', tabLabel: '生成模型', label: '生视频模型', keywords: ['video', '生视频', '文生视频', '图生视频', 't2v', 'i2v', '海螺', 'minimax', '通义万相', 'visual'] },
+  { tab: 'visualModels', tabLabel: '生成模型', label: '自定义生图端点', keywords: ['custom', '自定义', '端点', 'endpoint', 'base url', 'openai', '兼容', 'byo', 'sdxl', 'seedream'] },
+  { tab: 'visualModels', tabLabel: '生成模型', label: '自定义视频端点', keywords: ['custom', '自定义', '视频端点', 'video endpoint', 'base url'] },
+
   // Agent Engine（执行引擎）
   { tab: 'agentEngine', tabLabel: '执行引擎', label: '执行引擎', keywords: ['执行引擎', 'engine', '引擎', '计费', 'billing', '订阅', '安装状态'] },
   { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Neo（原生引擎）', keywords: ['native', 'neo', '原生', '内置', '引擎', 'engine'] },

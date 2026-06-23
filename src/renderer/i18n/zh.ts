@@ -297,6 +297,7 @@ export const zh = {
     tabs: {
       general: '通用',
       model: '模型',
+      visualModels: '生成模型',
       disclosure: '界面',
       appearance: '外观',
       language: '语言',
@@ -317,6 +318,21 @@ export const zh = {
     cloud: {
       title: '云端配置',
       description: 'System Prompt、Skills 等配置从云端实时获取，支持热更新。',
+    },
+    visualModels: {
+      title: '生成模型',
+      subtitle: '管理生图 / 生视频模型和你自己的端点。模型在这里配置，设计页只负责选择已配置的模型。',
+      imageSection: '生图模型',
+      videoSection: '生视频模型',
+      builtinTitle: '内置模型',
+      videoTitle: '自定义视频端点',
+      videoSubtitle: '接入你自己的视频生成端点。密钥只存在本机。',
+      videoEmpty: '还没有自定义视频端点。点「新增」接入你自己的视频模型。',
+      videoCostLabel: '单条成本（元，可选）',
+      videoNamePlaceholder: '例如：我的视频模型',
+      videoModelNamePlaceholder: '例如：sora-1',
+      videoBaseUrlHint: '视频生成端点根地址。仅支持 https 公网地址。',
+      videoPendingNote: '出片能力接入中：自定义视频端点目前可配置保存，出片调用待接入真实协议。',
     },
   },
 

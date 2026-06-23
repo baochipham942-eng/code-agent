@@ -453,3 +453,60 @@ export async function deleteCustomImageModel(id: string): Promise<boolean> {
     return false;
   }
 }
+
+// ── 自定义生视频模型 IPC 封装（视觉模型设置 tab · 配置层 only，不接出片） ──
+
+export interface CustomVideoModelMeta {
+  id: string;
+  label: string;
+  baseUrl: string;
+  modelName: string;
+  costCnyPerVideo?: number;
+  available: boolean;
+}
+
+/** 列出已添加的自定义生视频模型（含 available）；失败返回空表。 */
+export async function listCustomVideoModels(): Promise<CustomVideoModelMeta[]> {
+  try {
+    const res = await window.domainAPI?.invoke<{ models: CustomVideoModelMeta[] }>(
+      IPC_DOMAINS.WORKSPACE,
+      'listCustomVideoModels',
+      {},
+    );
+    if (res?.success && Array.isArray(res.data?.models)) return res.data.models;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/** 新建自定义生视频模型；返回 {id} 或 {error}。apiKey 必填。 */
+export async function saveCustomVideoModel(input: {
+  label: string;
+  baseUrl: string;
+  modelName: string;
+  costCnyPerVideo?: number;
+  apiKey: string;
+}): Promise<{ id: string | null; error?: string }> {
+  try {
+    const res = await window.domainAPI?.invoke<{ id: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'saveCustomVideoModel',
+      input,
+    );
+    if (res?.success && res.data?.id) return { id: res.data.id };
+    return { id: null, error: res?.error?.message };
+  } catch (e) {
+    return { id: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 删除一个自定义生视频模型（连带清除密钥）；成功返回 true。 */
+export async function deleteCustomVideoModel(id: string): Promise<boolean> {
+  try {
+    const res = await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'deleteCustomVideoModel', { id });
+    return res?.success === true;
+  } catch {
+    return false;
+  }
+}

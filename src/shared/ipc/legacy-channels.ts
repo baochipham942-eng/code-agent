@@ -94,6 +94,8 @@ export const IPC_CHANNELS = {
   // 设计画布提议审批通道（ADR-026：agent 提议 op → 用户审批）
   CANVAS_PROPOSAL_ASK: 'canvas-proposal:ask',
   CANVAS_PROPOSAL_RESPONSE: 'canvas-proposal:response',
+  // 二刀（审计 MED-3）：agent abort/超时时通知 renderer 撤掉审批条，防孤儿提议被后点 Apply 触发付费生成
+  CANVAS_PROPOSAL_CANCEL: 'canvas-proposal:cancel',
 
   // Confirm action channels (Gen 3+ confirm_action)
   CONFIRM_ACTION_ASK: 'confirm-action:ask',

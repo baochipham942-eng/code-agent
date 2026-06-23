@@ -21,6 +21,11 @@ export interface ProposalControllerDeps {
   generate?: (op: ProposeGenerateImageOp) => Promise<{ ok: boolean; costCny?: number }>;
   /** 二刀：≥1 张生成真落地后清 Layer1 编辑栈（#274 跨生成边界不变量）；全失败不清，保 Layer1 单次 undo。 */
   clearHistory?: () => void;
+  /**
+   * 二刀（审计 MED-1）：付费生成期间锁画布忙态（renderer 注入 store.setGenerating + 阻断叠层）。
+   * 串行出图可达数分钟，不锁则用户中途手动编辑会被收尾 clearHistory 连带清掉 undo。仅含生成批调用。
+   */
+  setBusy?: (busy: boolean) => void;
 }
 
 /** Apply 落地结果汇总（Layer1 + discard 合并计数，供 UI 提示 + 回灌 agent）。 */
@@ -57,25 +62,38 @@ export async function applyProposal(
   // discard（软删，不进 Cmd+Z）。
   const discard = deps.applyDiscards(discardIds);
 
+  // 落盘失败不中断付费批、不吞 respond：节点已在 store，下次 save 再持久化（审计 HIGH-1）。
+  const safeSave = async (): Promise<void> => {
+    try { await deps.save(); } catch { /* 落盘失败容忍：内存态已对，避免因 I/O 错中断付费批/挂死 agent */ }
+  };
+
   // Phase B：Layer2 串行生成（含付费）。逐个 await，累计成功数 + 实际花费。
   let genApplied = 0;
   let genSkipped = 0;
   let genCostCny = 0;
-  for (const op of genOps) {
-    if (!deps.generate) { genSkipped++; continue; } // 非交互/降级：无出图能力，计 skipped 不崩
-    const r = await deps.generate(op);
-    if (r.ok) {
-      genApplied++;
-      if (typeof r.costCny === 'number' && r.costCny >= 0) genCostCny += r.costCny;
-    } else {
-      genSkipped++;
+  if (genOps.length > 0) deps.setBusy?.(true); // MED-1：付费期间锁画布，禁手动编辑
+  try {
+    for (const op of genOps) {
+      if (!deps.generate) { genSkipped++; continue; } // 非交互/降级：无出图能力，计 skipped 不崩
+      let r: { ok: boolean; costCny?: number };
+      // HIGH-2：单张抛错（如 resolveDesignDir 失败）只计本张 skipped，不拖垮整批、不吞 respond。
+      try { r = await deps.generate(op); } catch { r = { ok: false }; }
+      if (r.ok) {
+        genApplied++;
+        if (typeof r.costCny === 'number' && r.costCny >= 0) genCostCny += r.costCny;
+        await safeSave(); // HIGH-1：每张付费产物立即落盘，崩溃/关窗不丢已付费的图
+      } else {
+        genSkipped++;
+      }
     }
+  } finally {
+    if (genOps.length > 0) deps.setBusy?.(false); // 即便中途异常也解锁画布
   }
   // 收尾：当且仅当 ≥1 张生成真落地才清 Layer1 编辑栈（#274 边界不变量）；全失败保 Layer1 undo。
   if (genApplied > 0) deps.clearHistory?.();
 
   const changed = layer1.changed || discard.applied > 0 || genApplied > 0;
-  if (changed) await deps.save();
+  if (changed) await safeSave();
 
   // 用户在 per-op 取舍里取消勾选的 op 也计入 skipped——否则 agent 不知这些被用户主动否决，
   // 可能反复重提（L1）。deselected = 原批 - 用户选中的子集。

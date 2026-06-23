@@ -45,6 +45,8 @@ function controllerDeps(): ProposalControllerDeps {
     // 二刀 Layer2：真出图（出图 IPC + addNode，不落盘不清史）；clearHistory 由 controller 在 ≥1 张落地后调。
     generate: (op) => generateProposedImage(op),
     clearHistory: () => useDesignCanvasStore.getState().clearEditHistory(),
+    // MED-1：付费生成期间置 generating——既锁住表单出图入口，又驱动画布阻断叠层（DesignCanvas 据此禁手动编辑）。
+    setBusy: (busy) => useDesignCanvasStore.getState().setGenerating(busy),
   };
 }
 
@@ -63,8 +65,17 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
       setPending(request);
     });
-    return () => unsubscribe?.();
-  }, [setPending]);
+    // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
+    // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
+    const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, (payload: { requestId: string }) => {
+      const cur = useCanvasProposalStore.getState().pending;
+      if (cur && cur.requestId === payload.requestId) clear();
+    });
+    return () => {
+      unsubscribe?.();
+      unsubCancel?.();
+    };
+  }, [setPending, clear]);
 
   const apply = useCallback(async (selectedOps?: CanvasProposalOp[]) => {
     if (!pending) return;

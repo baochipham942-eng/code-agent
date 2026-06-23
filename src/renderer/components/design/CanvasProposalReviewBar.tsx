@@ -46,10 +46,11 @@ export const CanvasProposalReviewBar: React.FC<{
   }, [proposal.requestId, proposal.ops]);
 
   const formImageModel = useDesignStore((st) => st.imageModel);
-  const L: OpLabels = {
+  // L 进 useMemo（审计 LOW）：否则每次渲染（如输入框每次按键）重建对象，rows 的 useMemo 依赖被打穿全量重算。
+  const L: OpLabels = useMemo(() => ({
     move: s.proposalOpMove, connect: s.proposalOpConnect, shape: s.proposalOpShape,
     rename: s.proposalOpRename, discard: s.proposalOpDiscard, generate: s.proposalOpGenerate,
-  };
+  }), [s.proposalOpMove, s.proposalOpConnect, s.proposalOpShape, s.proposalOpRename, s.proposalOpDiscard, s.proposalOpGenerate]);
   const rows = useMemo(() => proposal.ops.map((op) => describeOp(op, L, formImageModel, s.proposalPaidBadge)), [proposal.ops, L, formImageModel, s.proposalPaidBadge]);
   const selectedOps = useMemo(() => proposal.ops.filter((_, i) => selected.has(i)), [proposal.ops, selected]);
   // 付费闸：仅统计「当前勾选」的生成 op 预估合计 ¥ + 张数（取消勾选实时减少，红线①付费前置审批的可见账）。

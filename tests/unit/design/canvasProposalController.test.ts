@@ -191,6 +191,62 @@ describe('applyProposal 二刀：含付费生成（Layer2）', () => {
     const out = await applyProposal(p, d);
     expect(out).toMatchObject({ appliedCount: 0, skippedCount: 1 });
   });
+
+  // 审计 HIGH-2：单个 generate 抛错不能拖垮整批、不能吞掉 respond（否则 agent 挂到超时）。
+  it('某张 generate 抛异常：计 skipped、继续后续、仍回 respond（不挂死 agent）', async () => {
+    const d = genDeps(nochange, []);
+    d.generate = vi.fn()
+      .mockRejectedValueOnce(new Error('resolveDesignDir 失败'))
+      .mockResolvedValueOnce({ ok: true, costCny: 0.14 });
+    const p: CanvasOpProposal = { requestId: 'cp-g5', ops: [{ kind: 'generateImage', prompt: 'a' }, { kind: 'generateImage', prompt: 'b' }] };
+    const out = await applyProposal(p, d);
+    expect(d.generate).toHaveBeenCalledTimes(2); // 第一张抛错不阻断第二张
+    expect(out).toMatchObject({ appliedCount: 1, skippedCount: 1 });
+    expect(d.respond).toHaveBeenCalledWith({ requestId: 'cp-g5', verdict: 'apply', appliedCount: 1, skippedCount: 1, costCny: 0.14 });
+  });
+
+  // 审计 HIGH-1：每张付费产物落地后立即落盘（崩溃/关窗不丢已付费的图）。
+  it('增量落盘：每张生成成功后即 save（不只末尾一次）', async () => {
+    const d = genDeps(nochange, [{ ok: true, costCny: 0.14 }, { ok: true, costCny: 0.14 }]);
+    const p: CanvasOpProposal = { requestId: 'cp-g6', ops: [{ kind: 'generateImage', prompt: 'a' }, { kind: 'generateImage', prompt: 'b' }] };
+    await applyProposal(p, d);
+    // 2 张各一次增量 save，顺序上每次 save 紧跟其 generate。
+    const saves = d.order.filter((x) => x === 'save').length;
+    expect(saves).toBeGreaterThanOrEqual(2);
+    expect(d.order.indexOf('generate')).toBeLessThan(d.order.indexOf('save'));
+  });
+
+  // 审计 HIGH-1：落盘失败不中断付费批、不吞 respond（节点已在 store，下次 save 再持久化）。
+  it('save 抛错：不中断、仍回 respond', async () => {
+    const d = genDeps(nochange, [{ ok: true, costCny: 0.14 }]);
+    d.save = vi.fn(() => { throw new Error('writeFile EACCES'); });
+    const p: CanvasOpProposal = { requestId: 'cp-g7', ops: [{ kind: 'generateImage', prompt: 'a' }] };
+    const out = await applyProposal(p, d);
+    expect(out).toMatchObject({ appliedCount: 1 });
+    expect(d.respond).toHaveBeenCalled();
+  });
+
+  // 审计 MED-1：付费生成期间锁画布（setBusy 包住 Phase B），禁用户手动编辑→避免收尾 clearHistory 误清。
+  it('含生成批：setBusy(true) 在生成前、setBusy(false) 在生成后（即便抛错也复位）', async () => {
+    const order: string[] = [];
+    const d = {
+      ...genDeps(nochange, [{ ok: true, costCny: 0.14 }]),
+      setBusy: vi.fn((b: boolean) => order.push(b ? 'busy-on' : 'busy-off')),
+    };
+    const realGen = d.generate;
+    d.generate = vi.fn(async (op) => { order.push('generate'); return realGen(op); });
+    const p: CanvasOpProposal = { requestId: 'cp-g8', ops: [{ kind: 'generateImage', prompt: 'a' }] };
+    await applyProposal(p, d);
+    expect(order).toEqual(['busy-on', 'generate', 'busy-off']);
+  });
+
+  it('纯 Layer1 批（无生成）：不调 setBusy（无需锁画布）', async () => {
+    const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'moveNode' }], skipped: [], changed: true };
+    const d = { ...genDeps(result, []), setBusy: vi.fn() };
+    const p: CanvasOpProposal = { requestId: 'cp-g9', ops: [{ kind: 'moveNode', nodeId: 'a', x: 1, y: 2 }] };
+    await applyProposal(p, d);
+    expect(d.setBusy).not.toHaveBeenCalled();
+  });
 });
 
 describe('rejectProposal', () => {

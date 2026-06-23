@@ -868,6 +868,17 @@ export const DesignCanvas: React.FC = () => {
       onDrop={onDrop}
       onDragOver={(e) => e.preventDefault()}
     >
+      {/* 生成忙态遮罩（审计 MED-1）：付费/出图期间拦截 konva 指针事件，禁止手动拖拽/绘制——
+          否则提议生成收尾的 clearEditHistory 会连带清掉用户中途手动编辑的 undo。审批条 z-30 在其上，
+          自身 busy 已禁用按钮；本遮罩 z-10 只盖 Stage，视觉透明（spinner 由各自 UI 给）。 */}
+      {generating && (
+        <div
+          data-testid="canvas-busy-overlay"
+          className="absolute inset-0 z-10 cursor-wait"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}

@@ -125,11 +125,18 @@ export async function executeProposeCanvasOps(
     /* ignore */
   }
 
+  // 通知 renderer 撤掉审批条（审计 MED-3）：abort/超时后若不撤，用户后点 Apply 会在无 agent 监听下
+  // 触发付费生成（孤儿提议烧钱）。二刀起生成是付费路径，必须主动取消 UI。
+  const broadcastCancel = (): void => {
+    try { mainWindow.webContents.send(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, { requestId: request.requestId }); } catch { /* 窗口已毁，无需取消 */ }
+  };
+
   const TIMEOUT_MS = computeProposalTimeoutMs(ops);
   try {
     const decision = await new Promise<CanvasProposalDecision>((resolve, reject) => {
       const timeout = setTimeout(() => {
         pendingProposals.delete(request.requestId);
+        broadcastCancel();
         reject(new Error('Canvas proposal timeout - no response from user'));
       }, TIMEOUT_MS);
       // abort 中途触发（agent 取消）：清掉 pending + reject，别让条目泄漏 / 工具挂到超时（C1）。
@@ -141,6 +148,7 @@ export async function executeProposeCanvasOps(
             clearTimeout(p.timeout);
             pendingProposals.delete(request.requestId);
           }
+          broadcastCancel();
           reject(new Error('aborted'));
         },
         { once: true },

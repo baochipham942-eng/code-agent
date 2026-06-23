@@ -122,6 +122,23 @@ describe('abort 中途（C1）', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('DOMAIN_ERROR'); // reject('aborted') 走统一 catch
   });
+
+  // 审计 MED-3：abort 时广播 CANVAS_PROPOSAL_CANCEL，让 renderer 撤掉审批条——
+  // 否则用户后点 Apply 会在无 agent 监听下触发付费生成（孤儿提议烧钱）。
+  it('abort → 广播 CANVAS_PROPOSAL_CANCEL（带 requestId）', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const ctrl = new AbortController();
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: validOps }, makeCtx({ abortSignal: ctrl.signal }), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    const reqId = sendMock.mock.calls[0][1].requestId as string;
+    ctrl.abort();
+    await p.catch(() => void 0);
+    const cancelCall = sendMock.mock.calls.find((c) => c[0] === IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL);
+    expect(cancelCall).toBeTruthy();
+    expect(cancelCall![1]).toEqual({ requestId: reqId });
+  });
 });
 
 describe('CLI fallback', () => {

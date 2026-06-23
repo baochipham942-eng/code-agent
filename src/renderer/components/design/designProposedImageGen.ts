@@ -49,27 +49,29 @@ async function ensureRunDir(): Promise<string | null> {
  * { ok:false }，由 controller 计 skipped——不抛、不污染画布、不重复付费。落位 nextNodePlacement 自动定（红线③）。
  */
 export async function generateProposedImage(op: ProposeGenerateImageOp): Promise<{ ok: boolean; costCny?: number }> {
-  const runDir = await ensureRunDir();
-  if (!runDir) return { ok: false };
-
-  const form = useDesignStore.getState();
-  const model = resolveProposedImageModel(op.model, form.imageModel);
-  const aspectRatio = op.aspectRatio || form.aspectRatio;
-  // 用 agent 的 prompt 作 requirement，套画布当前品牌上下文保持视觉一致（outputType 收敛到图类）。
-  const prompt = buildImagePrompt({
-    requirement: op.prompt,
-    outputType: form.outputType === 'infographic' ? 'infographic' : 'mockup',
-    designContext: {
-      surface: form.surface ?? undefined,
-      brandColor: form.brandColor.trim() || undefined,
-      tone: form.tone,
-    },
-  });
-
-  const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/gen-${Date.now()}.png`;
-  const assetAbs = `${runDir}/${assetRel}`;
-
+  // 全程包在 try 内（审计 HIGH-2）：ensureRunDir/resolveDesignDir 也可能抛（FS/权限），
+  // 任何抛错都收敛成 { ok:false }，绝不让异常冒泡到 controller 把整批拖垮 / 吞掉 respond。
   try {
+    const runDir = await ensureRunDir();
+    if (!runDir) return { ok: false };
+
+    const form = useDesignStore.getState();
+    const model = resolveProposedImageModel(op.model, form.imageModel);
+    const aspectRatio = op.aspectRatio || form.aspectRatio;
+    // 用 agent 的 prompt 作 requirement，套画布当前品牌上下文保持视觉一致（outputType 收敛到图类）。
+    const prompt = buildImagePrompt({
+      requirement: op.prompt,
+      outputType: form.outputType === 'infographic' ? 'infographic' : 'mockup',
+      designContext: {
+        surface: form.surface ?? undefined,
+        brandColor: form.brandColor.trim() || undefined,
+        tone: form.tone,
+      },
+    });
+
+    const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/gen-${Date.now()}.png`;
+    const assetAbs = `${runDir}/${assetRel}`;
+
     const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
       IPC_DOMAINS.WORKSPACE,
       'generateDesignImage',

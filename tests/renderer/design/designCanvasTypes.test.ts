@@ -141,6 +141,61 @@ describe('role 参考/产物角色（P0 统一画布）', () => {
   });
 });
 
+describe('图解层 connectors/shapes 序列化（节点连线）', () => {
+  it('含连线/形状的文档往返不丢', () => {
+    const doc: DesignCanvasDoc = {
+      version: 1,
+      nodes: [node({ id: 'a' }), node({ id: 'b', x: 300 })],
+      connectors: [{ id: 'c1', fromNodeId: 'a', toNodeId: 'b', label: '下一步', createdAt: 2 }],
+      shapes: [{ id: 's1', kind: 'rect', x: 0, y: 0, width: 50, height: 50, color: '#64748b', createdAt: 3 }],
+      camera: DEFAULT_CAMERA,
+    };
+    const back = deserializeCanvasDoc(serializeCanvasDoc(doc));
+    expect(back).toEqual(doc);
+  });
+
+  it('无图解层时不落空数组（紧凑 + 兼容老档往返）', () => {
+    const doc: DesignCanvasDoc = { version: 1, nodes: [node()], camera: DEFAULT_CAMERA };
+    const serialized = serializeCanvasDoc(doc);
+    expect(serialized).not.toContain('connectors');
+    expect(serialized).not.toContain('shapes');
+    const back = deserializeCanvasDoc(serialized);
+    expect(back.connectors).toBeUndefined();
+    expect(back.shapes).toBeUndefined();
+    expect(back).toEqual(doc);
+  });
+
+  it('反序列化过滤悬空连线（端点节点已被删）', () => {
+    const text = JSON.stringify({
+      version: 1,
+      camera: DEFAULT_CAMERA,
+      nodes: [node({ id: 'a' })],
+      connectors: [
+        { id: 'c1', fromNodeId: 'a', toNodeId: 'gone', createdAt: 1 }, // toNodeId 不存在
+        { id: 'c2', fromNodeId: 'a', toNodeId: 'a', createdAt: 1 }, // 自环（先被 normalize 拒）
+      ],
+    });
+    const back = deserializeCanvasDoc(text);
+    expect(back.connectors).toBeUndefined(); // 全被过滤 → 字段不挂
+  });
+
+  it('反序列化过滤破损形状，保留合法', () => {
+    const text = JSON.stringify({
+      version: 1,
+      camera: DEFAULT_CAMERA,
+      nodes: [],
+      shapes: [
+        { id: 's1', kind: 'text', x: 1, y: 1, text: 'ok' },
+        { id: 's2', kind: 'rect', x: 0, y: 0, width: 'bad', height: 1 }, // 几何非法
+        { kind: 'rect', x: 0, y: 0, width: 1, height: 1 }, // 缺 id
+      ],
+    });
+    const back = deserializeCanvasDoc(text);
+    expect(back.shapes).toHaveLength(1);
+    expect(back.shapes?.[0].id).toBe('s1');
+  });
+});
+
 describe('costCny 负值防注入（codex/gemini 审计 MED）', () => {
   it('负成本被拒（防手改 canvas.json 压低累计花费，破坏 BYOK 信任）', () => {
     const doc = deserializeCanvasDoc(

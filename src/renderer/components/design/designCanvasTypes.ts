@@ -2,6 +2,13 @@
 // 画布存档落 run 目录下的 canvas.json；图片落 assets/，节点只存相对路径，
 // 避免 JSON 内嵌 base64 膨胀（详见 docs/designs/design-canvas-cowart.md §2.2）。
 import type { RegionLockReport } from '@shared/contract/imageConsistency';
+import {
+  normalizeConnector,
+  normalizeShape,
+  pruneDanglingConnectors,
+  type CanvasConnector,
+  type CanvasShape,
+} from './designDiagramTypes';
 
 /** 视频节点的默认时长（秒），当 durationSec 缺失或非正时回退。 */
 export const DEFAULT_VIDEO_DURATION_SEC = 5;
@@ -67,6 +74,13 @@ export interface CanvasCamera {
 export interface DesignCanvasDoc {
   version: 1;
   nodes: CanvasNode[];
+  /**
+   * 图解层连线（加法字段，老存档缺失自然降级为空）。节点↔节点，渲染时实时算锚点。
+   * 紧凑落盘：仅非空时序列化，避免老档/无图解画布平白多出空数组。
+   */
+  connectors?: CanvasConnector[];
+  /** 图解层 freeform 形状（加法字段，同上）。 */
+  shapes?: CanvasShape[];
   camera: CanvasCamera;
 }
 
@@ -192,13 +206,18 @@ function normalizeCamera(raw: unknown): CanvasCamera {
   };
 }
 
-/** 序列化为 canvas.json 字符串。 */
+/** 序列化为 canvas.json 字符串。图解层（connectors/shapes）仅非空时落盘，保持紧凑。 */
 export function serializeCanvasDoc(doc: DesignCanvasDoc): string {
-  return JSON.stringify(
-    { version: CANVAS_DOC_VERSION, nodes: doc.nodes, camera: doc.camera },
-    null,
-    2,
-  );
+  const out: {
+    version: typeof CANVAS_DOC_VERSION;
+    nodes: CanvasNode[];
+    connectors?: CanvasConnector[];
+    shapes?: CanvasShape[];
+    camera: CanvasCamera;
+  } = { version: CANVAS_DOC_VERSION, nodes: doc.nodes, camera: doc.camera };
+  if (doc.connectors && doc.connectors.length > 0) out.connectors = doc.connectors;
+  if (doc.shapes && doc.shapes.length > 0) out.shapes = doc.shapes;
+  return JSON.stringify(out, null, 2);
 }
 
 /**
@@ -218,7 +237,21 @@ export function deserializeCanvasDoc(text: string | null | undefined): DesignCan
   const nodes = Array.isArray(p.nodes)
     ? p.nodes.map(normalizeNode).filter((n): n is CanvasNode => n !== null)
     : [];
-  return { version: CANVAS_DOC_VERSION, nodes, camera: normalizeCamera(p.camera) };
+  const doc: DesignCanvasDoc = { version: CANVAS_DOC_VERSION, nodes, camera: normalizeCamera(p.camera) };
+  // 图解层（加法字段）：归一化 + 过滤悬空连线（端点节点必须存在）；仅非空时挂上，保持紧凑。
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const connectors = Array.isArray(p.connectors)
+    ? pruneDanglingConnectors(
+        p.connectors.map(normalizeConnector).filter((c): c is CanvasConnector => c !== null),
+        nodeIds,
+      )
+    : [];
+  if (connectors.length > 0) doc.connectors = connectors;
+  const shapes = Array.isArray(p.shapes)
+    ? p.shapes.map(normalizeShape).filter((s): s is CanvasShape => s !== null)
+    : [];
+  if (shapes.length > 0) doc.shapes = shapes;
+  return doc;
 }
 
 /** 计算下一个新节点的落点：放在现有节点最右侧 +gap（移植 make-real 的 x:maxX+60）。 */

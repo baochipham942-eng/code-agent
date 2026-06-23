@@ -9,6 +9,11 @@ import {
   type CanvasNode,
   type DesignCanvasDoc,
 } from './designCanvasTypes';
+import {
+  pruneDanglingConnectors,
+  type CanvasConnector,
+  type CanvasShape,
+} from './designDiagramTypes';
 import { groupKey } from './variantSpine';
 import {
   emptyEditHistory,
@@ -19,19 +24,29 @@ import {
   canEditUndo as canUndo,
   canEditRedo as canRedo,
   reconcileUndoFrame,
+  type CanvasEditSnapshot,
   type EditHistoryStack,
 } from './canvasEditHistory';
+
+/** 图解层选中引用（形状或连线，统一一个字段，互斥于节点选择）。 */
+export type SelectedDiagram = { type: 'shape' | 'connector'; id: string } | null;
 
 interface DesignCanvasState {
   /** 当前画布所属 run 目录（决定存档落点）；null=尚无生成的临时画布。 */
   runDir: string | null;
   nodes: CanvasNode[];
+  /** 图解层连线（节点↔节点，渲染时实时算锚点）。 */
+  connectors: CanvasConnector[];
+  /** 图解层 freeform 形状。 */
+  shapes: CanvasShape[];
   camera: CanvasCamera;
   selectedIds: string[];
+  /** 图解层选中（形状/连线），与节点选择互斥。 */
+  selectedDiagram: SelectedDiagram;
   /** 出图进行中（驱动生成按钮 spinner）。 */
   generating: boolean;
   error: string | null;
-  /** Layer1 编辑历史栈：节点移动/缩放/删除/重命名的快照。生成产物走 Layer2 variant spine，不进本栈。 */
+  /** Layer1 编辑历史栈：节点移动/缩放/删除/重命名 + 图解层增删改的快照。生成产物走 Layer2 variant spine，不进本栈。 */
   editHistory: EditHistoryStack;
 
   /** 载入一份存档（切换 run / 刷新恢复）。 */
@@ -47,6 +62,14 @@ interface DesignCanvasState {
   setChosen: (id: string) => void;
   /** 为某一步命名（T2 可逆命名步）：写入 label，不存在则静默无操作。 */
   renameNode: (id: string, label: string) => void;
+  // —— 图解层（连线 / 形状），均为 Layer1 直接编辑，进编辑历史 ——
+  addConnector: (connector: CanvasConnector) => void;
+  updateConnector: (id: string, patch: Partial<Omit<CanvasConnector, 'id'>>) => void;
+  deleteConnector: (id: string) => void;
+  addShape: (shape: CanvasShape) => void;
+  updateShape: (id: string, patch: Partial<CanvasShape>) => void;
+  deleteShape: (id: string) => void;
+  setSelectedDiagram: (sel: SelectedDiagram) => void;
   setCamera: (camera: CanvasCamera) => void;
   setSelected: (ids: string[]) => void;
   setGenerating: (generating: boolean) => void;
@@ -63,22 +86,47 @@ interface DesignCanvasState {
   toDoc: () => DesignCanvasDoc;
 }
 
+/** 从当前 state 取一帧编辑快照（节点 + 图解层）。 */
+function snapshotOf(s: { nodes: CanvasNode[]; connectors: CanvasConnector[]; shapes: CanvasShape[] }): CanvasEditSnapshot {
+  return { nodes: s.nodes, connectors: s.connectors, shapes: s.shapes };
+}
+
 export const useDesignCanvasStore = create<DesignCanvasState>()(
   persist(
     (set, get) => ({
   runDir: null,
   nodes: [],
+  connectors: [],
+  shapes: [],
   camera: { ...emptyCanvasDoc().camera },
   selectedIds: [],
+  selectedDiagram: null,
   generating: false,
   error: null,
   editHistory: emptyEditHistory(),
 
   loadDoc: (runDir, doc) =>
-    set({ runDir, nodes: doc.nodes, camera: doc.camera, selectedIds: [], editHistory: clearHistory() }),
+    set({
+      runDir,
+      nodes: doc.nodes,
+      connectors: doc.connectors ?? [],
+      shapes: doc.shapes ?? [],
+      camera: doc.camera,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    }),
   resetCanvas: () => {
     const empty = emptyCanvasDoc();
-    set({ nodes: empty.nodes, camera: empty.camera, selectedIds: [], editHistory: clearHistory() });
+    set({
+      nodes: empty.nodes,
+      connectors: [],
+      shapes: [],
+      camera: empty.camera,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    });
   },
   // addNode = 生成产物落画布，属 Layer2（variant spine），不进 Layer1 编辑历史。
   addNode: (node) => set((s) => ({ nodes: [...s.nodes, node] })),
@@ -86,7 +134,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {}; // 无此节点：不改、不留无谓撤销点
       return {
-        editHistory: pushSnapshot(s.editHistory, s.nodes), // 改前先快照（Layer1）
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)), // 改前先快照（Layer1）
         // 判别联合 + 部分 patch 合并：TS 无法把 spread 结果窄回 CanvasNode union（已知限制），
         // 显式断言回 CanvasNode（非 any，保留判别字段）。
         nodes: s.nodes.map((n) => (n.id === id ? ({ ...n, ...patch } as CanvasNode) : n)),
@@ -95,9 +143,13 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   deleteNode: (id) =>
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {};
+      const nodes = s.nodes.filter((n) => n.id !== id);
+      const nodeIds = new Set(nodes.map((n) => n.id));
       return {
-        editHistory: pushSnapshot(s.editHistory, s.nodes),
-        nodes: s.nodes.filter((n) => n.id !== id),
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        nodes,
+        // 级联剪掉指向被删节点的悬空连线（与渲染层过滤一致，保持 state 干净）。
+        connectors: pruneDanglingConnectors(s.connectors, nodeIds),
         selectedIds: s.selectedIds.filter((sid) => sid !== id),
       };
     }),
@@ -136,37 +188,115 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {};
       return {
-        editHistory: pushSnapshot(s.editHistory, s.nodes),
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
         nodes: s.nodes.map((n) => (n.id === id ? { ...n, label } : n)),
       };
     }),
+  addConnector: (connector) =>
+    set((s) => {
+      // 端点必须都是现存节点（防加悬空连线）；重复 id 忽略。
+      const nodeIds = new Set(s.nodes.map((n) => n.id));
+      if (!nodeIds.has(connector.fromNodeId) || !nodeIds.has(connector.toNodeId)) return {};
+      if (connector.fromNodeId === connector.toNodeId) return {};
+      if (s.connectors.some((c) => c.id === connector.id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        connectors: [...s.connectors, connector],
+      };
+    }),
+  updateConnector: (id, patch) =>
+    set((s) => {
+      if (!s.connectors.some((c) => c.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        connectors: s.connectors.map((c) => (c.id === id ? { ...c, ...patch, id: c.id } : c)),
+      };
+    }),
+  deleteConnector: (id) =>
+    set((s) => {
+      if (!s.connectors.some((c) => c.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        connectors: s.connectors.filter((c) => c.id !== id),
+        selectedDiagram:
+          s.selectedDiagram?.type === 'connector' && s.selectedDiagram.id === id ? null : s.selectedDiagram,
+      };
+    }),
+  addShape: (shape) =>
+    set((s) => {
+      if (s.shapes.some((sh) => sh.id === shape.id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        shapes: [...s.shapes, shape],
+      };
+    }),
+  updateShape: (id, patch) =>
+    set((s) => {
+      if (!s.shapes.some((sh) => sh.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        // 保 id + kind 不被 patch 改写（kind 是判别字段，越权改写会破坏联合）。
+        shapes: s.shapes.map((sh) => (sh.id === id ? ({ ...sh, ...patch, id: sh.id, kind: sh.kind } as CanvasShape) : sh)),
+      };
+    }),
+  deleteShape: (id) =>
+    set((s) => {
+      if (!s.shapes.some((sh) => sh.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        shapes: s.shapes.filter((sh) => sh.id !== id),
+        selectedDiagram:
+          s.selectedDiagram?.type === 'shape' && s.selectedDiagram.id === id ? null : s.selectedDiagram,
+      };
+    }),
+  setSelectedDiagram: (sel) =>
+    // 选中图解对象时清掉节点选择（互斥），反之亦然由 setSelected 处理。
+    set(() => ({ selectedDiagram: sel, selectedIds: [] })),
   setCamera: (camera) => set({ camera }),
-  setSelected: (selectedIds) => set({ selectedIds }),
+  setSelected: (selectedIds) => set({ selectedIds, selectedDiagram: null }),
   setGenerating: (generating) => set({ generating }),
   setError: (error) => set({ error }),
   undoEdit: () => {
     const s = get();
-    const res = applyUndo(s.editHistory, s.nodes);
+    const res = applyUndo(s.editHistory, snapshotOf(s));
     if (!res) return;
-    // 调和还原帧与当前态：保留 Layer2(chosen/discarded)与快照后新增节点（修 HIGH-1）。
-    const nodes = reconcileUndoFrame(res.nodes, s.nodes);
-    const ids = new Set(nodes.map((node) => node.id));
-    set({ nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
+    // 调和还原帧与当前态：保留 Layer2(chosen/discarded)与快照后新增节点（修 HIGH-1）；
+    // connectors/shapes 整帧还原。
+    const merged = reconcileUndoFrame(res.snapshot, snapshotOf(s));
+    const nodeIds = new Set(merged.nodes.map((node) => node.id));
+    set({
+      nodes: merged.nodes,
+      connectors: pruneDanglingConnectors(merged.connectors, nodeIds),
+      shapes: merged.shapes,
+      editHistory: res.stack,
+      selectedIds: s.selectedIds.filter((id) => nodeIds.has(id)),
+      selectedDiagram: null,
+    });
   },
   redoEdit: () => {
     const s = get();
-    const res = applyRedo(s.editHistory, s.nodes);
+    const res = applyRedo(s.editHistory, snapshotOf(s));
     if (!res) return;
-    const nodes = reconcileUndoFrame(res.nodes, s.nodes);
-    const ids = new Set(nodes.map((node) => node.id));
-    set({ nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
+    const merged = reconcileUndoFrame(res.snapshot, snapshotOf(s));
+    const nodeIds = new Set(merged.nodes.map((node) => node.id));
+    set({
+      nodes: merged.nodes,
+      connectors: pruneDanglingConnectors(merged.connectors, nodeIds),
+      shapes: merged.shapes,
+      editHistory: res.stack,
+      selectedIds: s.selectedIds.filter((id) => nodeIds.has(id)),
+      selectedDiagram: null,
+    });
   },
   clearEditHistory: () => set({ editHistory: clearHistory() }),
   canEditUndo: () => canUndo(get().editHistory),
   canEditRedo: () => canRedo(get().editHistory),
   toDoc: () => {
     const s = get();
-    return { version: 1, nodes: s.nodes, camera: s.camera };
+    const doc: DesignCanvasDoc = { version: 1, nodes: s.nodes, camera: s.camera };
+    if (s.connectors.length > 0) doc.connectors = s.connectors;
+    if (s.shapes.length > 0) doc.shapes = s.shapes;
+    return doc;
   },
     }),
     {

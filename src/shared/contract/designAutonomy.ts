@@ -104,3 +104,25 @@ export function consume(
     spentCny: env.spentCny + cost,
   };
 }
+
+// ── 信封审批 IPC 契约（main 工具 ↔ renderer 审批面板）──
+
+/** main → renderer：agent 请求一个自主信封（人审批/可改）。 */
+export interface AutonomyEnvelopeRequest {
+  requestId: string;
+  /** agent 的目标一句话（给人看「要自主做什么」）。 */
+  goal: string;
+  /** agent 提议的信封（两上限可选；人可改）。 */
+  proposed: AutonomyGrant;
+  rationale?: string;
+}
+
+/** renderer → main：人对信封请求的裁决。 */
+export interface AutonomyEnvelopeDecision {
+  requestId: string;
+  /** grant=批准（granted 为人最终确认的信封）；decline=不批。 */
+  verdict: 'grant' | 'decline';
+  /** verdict=grant 时人最终批准的信封（可能已改 agent 提议值）。 */
+  granted?: AutonomyGrant;
+  feedback?: string;
+}

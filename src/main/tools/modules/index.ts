@@ -146,6 +146,7 @@ import { taskManagerSchema } from './planning/taskManager.schema';
 import { askUserQuestionSchema } from './planning/askUserQuestion.schema';
 import { confirmActionSchema } from './planning/confirmAction.schema';
 import { proposeCanvasOpsSchema } from './design/proposeCanvasOps.schema';
+import { requestDesignAutonomySchema } from './design/requestDesignAutonomy.schema';
 import { exploreSchema } from './planning/explore.schema';
 import { recommendCapabilitySchema } from './planning/recommendCapability.schema';
 import { attemptCompletionSchema } from './planning/attemptCompletion.schema';
@@ -440,6 +441,10 @@ export function registerMigratedTools(
   registry.register(
     proposeCanvasOpsSchema,
     async () => (await import('./design/proposeCanvasOps')).proposeCanvasOpsModule,
+  );
+  registry.register(
+    requestDesignAutonomySchema,
+    async () => (await import('./design/requestDesignAutonomy')).requestDesignAutonomyModule,
   );
   registry.register(
     exploreSchema,

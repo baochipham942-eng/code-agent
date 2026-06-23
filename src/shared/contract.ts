@@ -22,6 +22,7 @@ export * from './contract/workspace';
 export * from './contract/workspacePreview';
 export * from './contract/designBrief';
 export * from './contract/canvasProposal';
+export * from './contract/designAutonomy';
 export * from './contract/planning';
 export * from './contract/question';
 export * from './contract/elicitation';

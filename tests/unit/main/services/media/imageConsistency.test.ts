@@ -7,6 +7,10 @@ import {
   compositeRegionLock,
   buildDiffOverlay,
   runRegionLockGate,
+  ensureRegionLockEnforceable,
+  onRegionLockGateError,
+  REGION_LOCK_STRICT_SHARP_UNAVAILABLE,
+  REGION_LOCK_STRICT_GATE_FAILED,
   type RawImage,
 } from '../../../../../src/main/services/media/imageConsistency';
 import { REGION_LOCK } from '../../../../../src/shared/constants/designWorkspace';
@@ -283,5 +287,40 @@ describe('runRegionLockGate — sharp 端到端', () => {
     const dec = await decodeRGB(finalPng);
     const i = (4 * w + 4) * 4;
     expect([dec.data[i], dec.data[i + 1], dec.data[i + 2]]).toEqual([70, 80, 90]);
+  });
+});
+
+// ---- 严格模式守卫（可选硬保证）----
+describe('ensureRegionLockEnforceable', () => {
+  it('sharp 可用：无论是否严格都返回 true（继续跑闸）', () => {
+    expect(ensureRegionLockEnforceable({ strict: false, sharpAvailable: true })).toBe(true);
+    expect(ensureRegionLockEnforceable({ strict: true, sharpAvailable: true })).toBe(true);
+  });
+
+  it('sharp 不可用 + 非严格：返回 false（best-effort 降级，不抛错）', () => {
+    expect(ensureRegionLockEnforceable({ strict: false, sharpAvailable: false })).toBe(false);
+  });
+
+  it('sharp 不可用 + 严格：抛错（拒绝产出未保证产物，付费前拦截）', () => {
+    expect(() => ensureRegionLockEnforceable({ strict: true, sharpAvailable: false })).toThrow(
+      REGION_LOCK_STRICT_SHARP_UNAVAILABLE,
+    );
+  });
+});
+
+describe('onRegionLockGateError', () => {
+  it('非严格：静默返回（调用方降级写模型原图）', () => {
+    expect(() => onRegionLockGateError({ strict: false, cause: new Error('decode boom') })).not.toThrow();
+  });
+
+  it('严格：抛错且链上 cause', () => {
+    const cause = new Error('decode boom');
+    try {
+      onRegionLockGateError({ strict: true, cause });
+      throw new Error('应当已抛出');
+    } catch (e) {
+      expect((e as Error).message).toBe(REGION_LOCK_STRICT_GATE_FAILED);
+      expect((e as Error & { cause?: unknown }).cause).toBe(cause);
+    }
   });
 });

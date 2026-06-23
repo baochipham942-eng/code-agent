@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Check } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { REGION_LOCK } from '@shared/constants';
 import { SettingsPage } from '../SettingsLayout';
 import {
   CustomImageModelManagerView,
@@ -24,6 +25,8 @@ import {
   listCustomVideoModels,
   saveCustomVideoModel,
   deleteCustomVideoModel,
+  getDesignSettings,
+  updateDesignSettings,
   type CustomImageModelMeta,
 } from '../../../design/designFiles';
 
@@ -150,6 +153,59 @@ const CustomEndpointManager: React.FC<CustomEndpointManagerProps> = ({ strings: 
   );
 };
 
+// 图像编辑一致性 · 严格模式开关：region-lock best-effort 升可选硬保证（设置页配置层）。
+const RegionLockStrictToggle: React.FC<{
+  section: string;
+  label: string;
+  hint: string;
+}> = ({ section, label, hint }) => {
+  const [strict, setStrict] = useState<boolean>(REGION_LOCK.STRICT_DEFAULT);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void getDesignSettings().then((s) => setStrict(s.regionLockStrict));
+  }, []);
+
+  const handleToggle = useCallback(async () => {
+    if (saving) return;
+    const next = !strict;
+    setSaving(true);
+    setStrict(next); // 乐观更新
+    const result = await updateDesignSettings({ regionLockStrict: next });
+    setStrict(result.regionLockStrict); // 以落盘真值为准
+    setSaving(false);
+  }, [strict, saving]);
+
+  return (
+    <section className="flex flex-col gap-3 border-t border-zinc-800 pt-6">
+      <h4 className="text-sm font-semibold text-zinc-100">{section}</h4>
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-3">
+        <div className="pr-2">
+          <p className="text-sm text-zinc-200">{label}</p>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-500">{hint}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={strict}
+          aria-label={label}
+          disabled={saving}
+          onClick={handleToggle}
+          className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+            strict ? 'bg-primary-500' : 'bg-zinc-600'
+          }`}
+        >
+          <span
+            className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              strict ? 'translate-x-[22px]' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+      </div>
+    </section>
+  );
+};
+
 export const VisualModelsSettings: React.FC = () => {
   const { t } = useI18n();
   const s = t.settings.visualModels;
@@ -233,6 +289,13 @@ export const VisualModelsSettings: React.FC = () => {
           remove={deleteCustomVideoModel}
         />
       </section>
+
+      {/* ── 图像编辑一致性（region-lock 严格模式）── */}
+      <RegionLockStrictToggle
+        section={s.consistencySection}
+        label={s.strictLabel}
+        hint={s.strictHint}
+      />
     </SettingsPage>
   );
 };

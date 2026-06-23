@@ -348,6 +348,10 @@ export const en: Translations = {
       videoModelNamePlaceholder: 'e.g. sora-1',
       videoBaseUrlHint: 'Video generation endpoint root. HTTPS public URLs only.',
       videoPendingNote: 'Generation coming soon: custom video endpoints can be saved now; the generate call will be wired up later.',
+      consistencySection: 'Image-edit consistency',
+      strictLabel: 'Strict mode: guarantee only the selected area changes',
+      strictHint:
+        'When on, a region edit that cannot pixel-guarantee the unselected area is unchanged is cancelled with a notice (instead of handing you an image whose other areas may have been silently altered). Off by default: best-effort lock, and when it cannot be enforced the model result is still used so your editing is not interrupted.',
     },
   },
 

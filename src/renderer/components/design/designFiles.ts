@@ -1,7 +1,7 @@
 // 设计工作区的工作区文件读取工具（renderer 侧，经 WORKSPACE domain IPC）。
 // hook 轮询与历史加载共用，避免重复。
 import { IPC_DOMAINS } from '@shared/ipc';
-import { DESIGN_VERSIONS_SUBDIR } from '@shared/constants';
+import { DESIGN_VERSIONS_SUBDIR, REGION_LOCK } from '@shared/constants';
 import type { FileInfo } from '@shared/contract/workspace';
 import type { SlideOutlineItem } from './slidesOutlineOps';
 import type { BrandContract, BrandMeta } from '@shared/contract/brandContract';
@@ -509,4 +509,48 @@ export async function deleteCustomVideoModel(id: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ── 设计工作区轻量行为偏好（设置页配置层）──
+/** 设计工作区行为偏好（与 main designSettings.ts 结构对齐，IPC 边界按结构匹配）。 */
+export interface DesignWorkspaceSettings {
+  /** 局部重绘一致性严格模式：region-lock 无法强制执行时拒绝产出未保证图（默认 false）。 */
+  regionLockStrict: boolean;
+}
+
+const DESIGN_SETTINGS_DEFAULT: DesignWorkspaceSettings = { regionLockStrict: REGION_LOCK.STRICT_DEFAULT };
+
+export async function getDesignSettings(): Promise<DesignWorkspaceSettings> {
+  try {
+    const res = await window.domainAPI?.invoke<DesignWorkspaceSettings>(
+      IPC_DOMAINS.WORKSPACE,
+      'getDesignSettings',
+      {},
+    );
+    if (res?.success && res.data && typeof res.data.regionLockStrict === 'boolean') {
+      return { regionLockStrict: res.data.regionLockStrict };
+    }
+    return DESIGN_SETTINGS_DEFAULT;
+  } catch {
+    return DESIGN_SETTINGS_DEFAULT;
+  }
+}
+
+/** 写入设计偏好，返回合并后的完整偏好；失败回退入参的乐观值。 */
+export async function updateDesignSettings(
+  patch: Partial<DesignWorkspaceSettings>,
+): Promise<DesignWorkspaceSettings> {
+  try {
+    const res = await window.domainAPI?.invoke<DesignWorkspaceSettings>(
+      IPC_DOMAINS.WORKSPACE,
+      'updateDesignSettings',
+      patch,
+    );
+    if (res?.success && res.data && typeof res.data.regionLockStrict === 'boolean') {
+      return { regionLockStrict: res.data.regionLockStrict };
+    }
+  } catch {
+    /* 落到下方回退 */
+  }
+  return { ...DESIGN_SETTINGS_DEFAULT, ...patch };
 }

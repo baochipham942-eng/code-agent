@@ -17,7 +17,7 @@
 外圈 4 项（借鉴清单余项）:
   节点连线 / freeform 图解 ... 🟡 实现完成待 PR/合并(分支 feat/design-diagram-canvas)
   Agent 操作画布(人审批) ..... ⬜ 借鉴(依赖节点连线，现已解锁前置)
-  region-lock 升可选硬保证 ... ⬜ 自补强
+  region-lock 升可选硬保证 ... 🟡 实现完成待 PR/合并(分支 feat/design-region-lock-strict)
   扩图/去水印成本补全 ........ ✅ 折进节点连线刀(待同 PR 合并)
 ```
 
@@ -77,15 +77,22 @@ codex 修订 5 道坑全部落地并经实测验证：
 扩图/去水印是真实付费 wanx imageedit 调用，但 handler 此前只回 `{path}` 不进成本面板。补全：service 回 actualModel、
 handler 回 `{path,actualModel,costCny}`、renderer `landResultAsVariant` 挂 costCny 到回灌节点（与出图/编辑对称）。
 
-#### 其余两项（未排期）
-- **Agent 操作画布（人审批）**：现设计出图 renderer 直连"不经 agent"。给 agent 画布工具（读状态/提议/应用 op），人审批后落地（守"人主导"）。高成本，**节点连线已做完，前置解锁。**
-- **region-lock 升可选硬保证**：现 region-lock 是 best-effort（sharp 不可用/gate 抛错降级）。升级为可选硬保证。低-中成本。
+#### region-lock 升可选硬保证 — 🟡 实现完成待 PR/合并
+局部重绘一致性闸原本两处静默漏洞（sharp 不可用 / 闸内部抛错 → 降级写模型原图，未选区可能被偷改而用户无感）补成**可选硬保证**。新增「严格模式」开关（设置页·生成模型 tab「图像编辑一致性」段，默认关，落 `<config>/design/design-settings.json`）：
+- **关（默认）**：维持 best-effort，不阻断编辑。
+- **开**：region-lock 无法强制执行时响亮失败——sharp 不可用在**付费生成前**拦截（不浪费一次付费调用）；闸内部抛错则拒绝写未保证产物（模型原图不落盘）。
+- 落点：`imageConsistency.ts` 抽 `ensureRegionLockEnforceable`/`onRegionLockGateError` 两纯函数（可单测）；`designSettings.ts` 新建轻量行为偏好存储（原子写+串行锁+容损读）；`handleEditDesignImage` 付费前预检 + 闸错按严格分流；新增 `get/updateDesignSettings` IPC（shellCapabilities 注册）；`VisualModelsSettings` 新增段 + 开关 + i18n。
+- 验证：TDD（designSettings 8 + 严格守卫 5 + IPC dispatch 4）+ typecheck 净 + capability-diff/scanner 门绿 + 真机 headless E2E（设置 tab 真挂载、开关 false→true 翻转、i18n 解析、控制台仅后端缺席错）+ 独立 skeptic 当反方抓 1 MED（硬编码默认值）已修。worktree `code-agent-regionlock` / 分支 `feat/design-region-lock-strict`，2 commit 未推未合待拍板。
+
+#### 仅剩一项（未排期）
+- **Agent 操作画布（人审批）**：现设计出图 renderer 直连"不经 agent"。给 agent 画布工具（读状态/提议/应用 op），人审批后落地（守"人主导"）。高成本，**节点连线已做完，前置解锁；需先出 ADR 级设计决策（跨进程画布状态桥 + 审批协议 + op↔编辑历史落地）让林晨拍板再实现。**
 
 ## 进度日志
 - 2026-06-23：Alma 借鉴分析完成 → 借鉴清单归档 → agent-team 探索三地基 → codex+skeptic 审计 → **⑤ 实现并合 main(PR #267)** → ① 另起会话推进。
 - 2026-06-23：**① 自定义生图模型合 main（PR #270）**（rebase 最新 main；Phase1-4 + codex 5 修订 + 独立 skeptic 抓 1 HIGH+1 MED 全修 + 真机 HTTP-IPC + Playwright；合并时补 renderer-capability-diff 漏登记的 3 capability）。
 - 2026-06-23：**①′ 生成模型设置 tab 合 main**（IA 修正：配置迁设置页+设计页只选；自定义视频端点配置层对称 image 但出片留空待接入）。
 - 2026-06-23：**节点连线 / freeform 图解实现完成**（外圈 keystone，解锁 Agent 操作画布前置）+ **扩图/去水印成本补全折进同刀**。Phase1-3 TDD（数据模型加法/形状归约器/连线几何/undo 快照重构/store/DiagramLayer+Toolbar/i18n）+ 独立 skeptic 抓 1 HIGH+2 MED+2 LOW 全修 + 316 design 测全绿 + 真实 renderer 构建。待 PR/合并（分支 `feat/design-diagram-canvas`，计划 `docs/plans/design-node-connectors.md`）。
+- 2026-06-23：**region-lock 升可选硬保证实现完成**（外圈自补强）。新增严格模式开关（设置页·生成模型 tab，默认关）：sharp 不可用付费前拦截 / 闸错拒写未保证产物。TDD（17 新测）+ typecheck 净 + capability 门绿 + 真机 headless E2E（开关挂载/翻转/i18n）+ 独立 skeptic 抓 1 MED（硬编码默认值）已修。待 PR/合并（分支 `feat/design-region-lock-strict`）。外圈仅剩 Agent 操作画布（需先出 ADR）。
 
 ## 索引
 - 借鉴总纲：`docs/competitive/alma-借鉴清单.md`

@@ -346,6 +346,10 @@ export const zh = {
       videoModelNamePlaceholder: '例如：sora-1',
       videoBaseUrlHint: '视频生成端点根地址。仅支持 https 公网地址。',
       videoPendingNote: '出片能力接入中：自定义视频端点目前可配置保存，出片调用待接入真实协议。',
+      consistencySection: '图像编辑一致性',
+      strictLabel: '严格模式：保证只改选中区域',
+      strictHint:
+        '开启后，局部重绘若无法逐像素保证未选区域不变，会直接取消并提示（而不是给你一张可能被偷改其它区域的图）。默认关闭：尽力锁定，无法锁定时仍采用模型结果不打断你。',
     },
   },
 

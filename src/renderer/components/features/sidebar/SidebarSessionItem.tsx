@@ -15,7 +15,7 @@ import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { SessionState } from '../../../stores/taskStore';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
+import { getDisplaySessionTitle, getSessionAttentionDot, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { buildSessionRecoveryHints } from '../../../utils/sessionRecoveryHints';
 import {
   formatSidebarMessageSearchHitLabel,
@@ -164,6 +164,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const pendingReviewItems = (reviewItemsBySessionId[session.id] ?? [])
     .filter((item) => item.reviewStatus === 'pending');
   const topReviewItem = pendingReviewItems[0];
+  // 待办圆点：仅 出错(红)/待确认(蓝)，取代原来的文字状态徽章；问题解决后状态变化、点自然消失。
+  const attentionDot = getSessionAttentionDot(status.kind);
 
   return (
     <div
@@ -290,10 +292,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                 <span>{automationSummary.label}</span>
               </span>
             )}
-            {status.showBadge && (
-              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}>
-                {status.label}
-              </span>
+            {attentionDot && (
+              <span
+                aria-label={attentionDot.label}
+                title={attentionDot.label}
+                className={`shrink-0 h-2 w-2 rounded-full transition-opacity duration-150 group-hover:opacity-0 ${attentionDot.colorClassName}`}
+              />
             )}
           </>
         )}

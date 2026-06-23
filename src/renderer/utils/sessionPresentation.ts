@@ -163,6 +163,28 @@ export function getSessionStatusPresentation(args: {
   return PRESENTATION.done;
 }
 
+export interface SessionAttentionDot {
+  kind: 'error' | 'approval';
+  /** 圆点底色（Tailwind bg-*）。 */
+  colorClassName: string;
+  label: string;
+}
+
+/**
+ * 会话行右侧"待办圆点"：只表达需要用户动手的两类——出错(红)/待确认(蓝)。
+ * 其余状态(执行中/未完成/已完成)返回 null，不显示点，保持列表干净；
+ * 问题解决后会话状态不再是 error/approval，点自然消失。
+ */
+export function getSessionAttentionDot(kind: SessionStatusKind): SessionAttentionDot | null {
+  if (kind === 'error') {
+    return { kind: 'error', colorClassName: 'bg-red-500', label: PRESENTATION.error.label };
+  }
+  if (kind === 'approval') {
+    return { kind: 'approval', colorClassName: 'bg-blue-500', label: PRESENTATION.approval.label };
+  }
+  return null;
+}
+
 export function buildSessionSearchText(args: {
   session: SessionWithMeta;
   snapshot?: SessionWorkbenchSnapshot;

@@ -206,11 +206,10 @@ describe('Sidebar session metadata', () => {
     // 在 store 用于排序/统计，但不再直接渲染。下面对 snapshot summary 的断言已覆盖。
     expect(html).toContain('工作区 · Browser');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
-    expect(html).toContain('aria-label="打开 code-agent 项目控制台"');
-    expect(html).toContain('aria-label="展开 code-agent 项目详情"');
-    expect(html).toContain('aria-label="打开 code-agent 产物与资产"');
+    // 控制台/详情/资产 已收进折叠头的「···」更多操作菜单（点开才渲染），头部默认只剩新建 + 更多。
+    expect(html).toContain('aria-label="code-agent 更多操作"');
     expect(html).toContain('aria-label="打开 Session Native Workspace 的产物与资产"');
-    expect(html).toContain('1 未完成');
+    // 工作区数字徽章不再带「未完成」文字，改为纯数字 + 颜色编码；执行中数量在头部摘要行体现。
     expect(html).toContain('1 执行中');
     expect(html).toContain('1 会话');
     expect(html).toContain('repo/code-agent');

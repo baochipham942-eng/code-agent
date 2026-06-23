@@ -69,6 +69,7 @@ describe('buildSidebarProjectSummary', () => {
     expect(summary.runningCount).toBe(1);
     expect(summary.pendingApprovalCount).toBe(1);
     expect(summary.attentionCount).toBe(1);
+    expect(summary.errorCount).toBe(1);
     expect(summary.unfinishedCount).toBe(3);
     expect(summary.reviewIssueCount).toBe(2);
     expect(summary.goalCount).toBe(2);
@@ -103,6 +104,7 @@ describe('buildSidebarProjectSummary', () => {
         unfinishedCount: 2,
         pendingApprovalCount: 1,
         attentionCount: 0,
+        errorCount: 0,
         runningCount: 1,
         reviewIssueCount: 0,
         goalCount: 3,
@@ -127,6 +129,7 @@ describe('buildSidebarProjectSummary', () => {
         unfinishedCount: 0,
         pendingApprovalCount: 0,
         attentionCount: 0,
+        errorCount: 0,
         runningCount: 0,
         reviewIssueCount: 0,
         latestActivityAt: 0,

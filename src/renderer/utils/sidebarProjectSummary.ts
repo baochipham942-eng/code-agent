@@ -53,6 +53,8 @@ export interface SidebarProjectSummary {
   unfinishedCount: number;
   pendingApprovalCount: number;
   attentionCount: number;
+  /** attentionCount 中"出错"的子集，用于工作区数字徽章的红色优先级。 */
+  errorCount: number;
   runningCount: number;
   reviewIssueCount: number;
   artifactCount?: number;
@@ -82,6 +84,7 @@ export function buildSidebarProjectSummary({
 }: BuildSidebarProjectSummaryArgs): SidebarProjectSummary {
   let pendingApprovalCount = 0;
   let attentionCount = 0;
+  let errorCount = 0;
   let runningCount = 0;
   let reviewIssueCount = 0;
   let latestActivityAt = group.latestActivityAt || 0;
@@ -105,6 +108,9 @@ export function buildSidebarProjectSummary({
       runningCount += 1;
     } else if (status.kind === 'paused' || status.kind === 'error' || status.kind === 'incomplete') {
       attentionCount += 1;
+      if (status.kind === 'error') {
+        errorCount += 1;
+      }
     }
     reviewIssueCount += (reviewItemsBySessionId?.[session.id] ?? [])
       .filter((item) => item.reviewStatus === 'pending')
@@ -124,6 +130,7 @@ export function buildSidebarProjectSummary({
     unfinishedCount: pendingApprovalCount + attentionCount + runningCount,
     pendingApprovalCount,
     attentionCount,
+    errorCount,
     runningCount,
     reviewIssueCount,
     artifactCount: projectMeta?.artifactCount,

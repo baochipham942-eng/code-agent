@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getSessionAttentionDot,
   getSessionStatusPresentation,
   matchesSessionStatusFilter,
 } from '../../../src/renderer/utils/sessionPresentation';
@@ -182,6 +183,26 @@ describe('getSessionStatusPresentation', () => {
         }).kind,
       ).toBe('live');
     });
+  });
+});
+
+describe('getSessionAttentionDot', () => {
+  it('returns a red dot only for error', () => {
+    const dot = getSessionAttentionDot('error');
+    expect(dot?.kind).toBe('error');
+    expect(dot?.colorClassName).toContain('red');
+  });
+
+  it('returns a blue dot only for approval (待确认)', () => {
+    const dot = getSessionAttentionDot('approval');
+    expect(dot?.kind).toBe('approval');
+    expect(dot?.colorClassName).toContain('blue');
+  });
+
+  it('returns null for non-actionable states (running/incomplete/done/idle/paused/background/live)', () => {
+    for (const kind of ['background', 'live', 'paused', 'done', 'incomplete', 'idle'] as const) {
+      expect(getSessionAttentionDot(kind)).toBeNull();
+    }
   });
 });
 

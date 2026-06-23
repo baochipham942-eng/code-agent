@@ -1,13 +1,11 @@
-import React, { type Dispatch, type SetStateAction } from 'react';
+import React, { useState, type Dispatch, type SetStateAction } from 'react';
 import {
   ChevronRight,
   Folder,
-  ListChecks,
   Loader2,
   MessageSquareText,
-  PanelRightOpen,
+  MoreHorizontal,
   Plus,
-  ScrollText,
 } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import {
@@ -19,6 +17,7 @@ import { resolveSidebarGroupExpansionView } from '../../../utils/sidebarGroupExp
 import { SidebarProjectDetail } from './SidebarProjectDetail';
 import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './SidebarProjectDrawer';
 import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './SidebarSessionItem';
+import { SessionContextMenu } from './SessionContextMenu';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
 
@@ -35,7 +34,6 @@ export interface SidebarProjectGroupProps {
   setProjectDrawerKey: Dispatch<SetStateAction<string | null>>;
   setExpandedProjectDetails: Dispatch<SetStateAction<Record<string, boolean>>>;
   handleToggleWorkspaceGroup: SidebarSessionActions['handleToggleWorkspaceGroup'];
-  handleOpenWorkspaceAssets: SidebarSessionActions['handleOpenWorkspaceAssets'];
   handleNewWorkspaceChat: SidebarSessionActions['handleNewWorkspaceChat'];
   handleOpenProjectArtifactSession: SidebarSessionActions['handleOpenProjectArtifactSession'];
   handleStartProjectGoal: SidebarSessionActions['handleStartProjectGoal'];
@@ -67,7 +65,6 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   setProjectDrawerKey,
   setExpandedProjectDetails,
   handleToggleWorkspaceGroup,
-  handleOpenWorkspaceAssets,
   handleNewWorkspaceChat,
   handleOpenProjectArtifactSession,
   handleStartProjectGoal,
@@ -89,6 +86,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     currentSessionId,
   } = sessionItemProps;
 
+  const [moreMenuPos, setMoreMenuPos] = useState<{ x: number; y: number } | null>(null);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
   const summary = buildSidebarProjectSummary({
@@ -154,11 +152,30 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
-              {summary.unfinishedCount > 0 && (
-                <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                  {summary.unfinishedCount} 未完成
-                </span>
-              )}
+              {(() => {
+                // 工作区数字徽章：仅当有 执行中/出错/待确认 时显示;数字=三类总数;
+                // 颜色优先级 出错红 > 待确认蓝 > 纯执行中中性。全是已完成/历史则不显示。
+                const activeTotal = summary.runningCount + summary.errorCount + summary.pendingApprovalCount;
+                if (activeTotal === 0) return null;
+                const tone = summary.errorCount > 0
+                  ? 'border-red-500/25 bg-red-500/10 text-red-300'
+                  : summary.pendingApprovalCount > 0
+                    ? 'border-blue-500/25 bg-blue-500/10 text-blue-300'
+                    : 'border-zinc-600/50 bg-zinc-700/40 text-zinc-300';
+                const title = [
+                  summary.runningCount > 0 ? `${summary.runningCount} 执行中` : null,
+                  summary.errorCount > 0 ? `${summary.errorCount} 出错` : null,
+                  summary.pendingApprovalCount > 0 ? `${summary.pendingApprovalCount} 待确认` : null,
+                ].filter(Boolean).join(' · ');
+                return (
+                  <span
+                    title={title}
+                    className={`shrink-0 inline-flex min-w-[1.125rem] items-center justify-center rounded-full border px-1 py-0.5 text-[10px] font-medium tabular-nums ${tone}`}
+                  >
+                    {activeTotal}
+                  </span>
+                );
+              })()}
               {expansionView.protectionLabel && (
                 <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
                   {expansionView.protectionLabel}
@@ -173,42 +190,17 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
-            aria-label={`打开 ${summary.displayName} 项目控制台`}
-            title={`打开 ${summary.displayName} 项目控制台`}
-            aria-pressed={drawerOpen ? 'true' : 'false'}
-            onClick={() => {
-              setProjectDrawerKey(group.key);
+            aria-label={`${summary.displayName} 更多操作`}
+            title="更多操作"
+            aria-haspopup="menu"
+            aria-expanded={moreMenuPos ? 'true' : 'false'}
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setMoreMenuPos({ x: rect.right, y: rect.bottom + 4 });
             }}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
           >
-            <PanelRightOpen className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {!group.isUncategorized && (
-          <button
-            type="button"
-            aria-label={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
-            title={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
-            onClick={() => {
-              setExpandedProjectDetails((previous) => ({
-                ...previous,
-                [group.key]: !previous[group.key],
-              }));
-            }}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {!group.isUncategorized && (
-          <button
-            type="button"
-            aria-label={`打开 ${summary.displayName} 产物与资产`}
-            title={`打开 ${summary.displayName} 产物与资产`}
-            onClick={handleOpenWorkspaceAssets}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <ScrollText className="h-3.5 w-3.5" />
+            <MoreHorizontal className="h-3.5 w-3.5" />
           </button>
         )}
         {!group.isUncategorized && (
@@ -228,6 +220,33 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           </button>
         )}
       </div>
+      {moreMenuPos && !group.isUncategorized && (
+        <SessionContextMenu
+          x={moreMenuPos.x}
+          y={moreMenuPos.y}
+          onClose={() => setMoreMenuPos(null)}
+          items={[
+            {
+              label: '项目控制台',
+              icon: '🖥',
+              onClick: () => setProjectDrawerKey(group.key),
+            },
+            {
+              label: detailsExpanded ? '收起项目详情' : '项目详情',
+              icon: '📋',
+              onClick: () => setExpandedProjectDetails((previous) => ({
+                ...previous,
+                [group.key]: !previous[group.key],
+              })),
+            },
+            {
+              label: '产物与资产',
+              icon: '📦',
+              onClick: () => openWorkspacePreview(),
+            },
+          ]}
+        />
+      )}
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail
           meta={projectMeta}

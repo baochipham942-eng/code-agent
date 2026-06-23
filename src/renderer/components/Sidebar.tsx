@@ -362,7 +362,6 @@ export const Sidebar: React.FC = () => {
     handleNewWorkspaceChat,
     handleSelectSession,
     handleArchiveSession,
-    handleOpenWorkspaceAssets,
     handleOpenSessionAssets,
     handleOpenProjectArtifactSession,
     handleStartProjectGoal,
@@ -725,7 +724,6 @@ export const Sidebar: React.FC = () => {
                 setProjectDrawerKey={setProjectDrawerKey}
                 setExpandedProjectDetails={setExpandedProjectDetails}
                 handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
-                handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
                 handleNewWorkspaceChat={handleNewWorkspaceChat}
                 handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
                 handleStartProjectGoal={handleStartProjectGoal}

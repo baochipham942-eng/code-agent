@@ -299,6 +299,7 @@ export const en: Translations = {
     tabs: {
       general: 'General',
       model: 'Model',
+      visualModels: 'Visual models',
       disclosure: 'Disclosure',
       appearance: 'Appearance',
       language: 'Language',
@@ -319,6 +320,19 @@ export const en: Translations = {
     cloud: {
       title: 'Cloud Config',
       description: 'System Prompt, Skills and other configurations are fetched from cloud in real-time.',
+    },
+    visualModels: {
+      title: 'Visual models',
+      subtitle: 'Manage image / video generation models and your own endpoints. Configure models here; the design canvas only selects from configured ones.',
+      imageSection: 'Image generation',
+      videoSection: 'Video generation',
+      builtinTitle: 'Built-in models',
+      videoTitle: 'Custom video endpoints',
+      videoSubtitle: 'Connect your own video generation endpoint. Keys stay on this device.',
+      videoEmpty: 'No custom video endpoints yet. Click "Add" to connect your own video model.',
+      videoCostLabel: 'Cost per video (CNY, optional)',
+      videoBaseUrlHint: 'Video generation endpoint root. HTTPS public URLs only.',
+      videoPendingNote: 'Generation coming soon: custom video endpoints can be saved now; the generate call will be wired up later.',
     },
   },
 

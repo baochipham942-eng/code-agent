@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   X,
   Cpu,
+  Image as ImageIcon,
   Palette,
   Fingerprint,
   Info,
@@ -67,6 +68,7 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'capabilities',
   'plugins',
   'model',
+  'visualModels',
   'mcp',
   'skills',
   'roles',
@@ -90,6 +92,7 @@ import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
+import { VisualModelsSettings } from './tabs/VisualModelsSettings';
 import { AgentEngineSettings } from './tabs/AgentEngineSettings';
 import { BudgetSettings } from './tabs/BudgetSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
@@ -155,6 +158,7 @@ export function buildSettingsTabGroups({
     { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
     { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
     { id: 'budget', label: '预算告警', icon: <DollarSign className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
@@ -411,6 +415,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
+            {activeTab === 'visualModels' && <VisualModelsSettings />}
             {activeTab === 'agentEngine' && <AgentEngineSettings />}
             {activeTab === 'budget' && <BudgetSettings />}
             {activeTab === 'appearance' && <AppearanceSettings />}

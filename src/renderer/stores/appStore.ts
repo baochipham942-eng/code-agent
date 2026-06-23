@@ -1090,3 +1090,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
   setCacheStats: (stats) => set({ cacheStats: stats }),
 }));
+
+// E2E/dev 调试钩子：真机测试用 openSettingsTab 打开设置并跳到指定 tab（同 window.__neo* 例）。
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+  (window as unknown as { __neoAppStore?: typeof useAppStore }).__neoAppStore = useAppStore;
+}

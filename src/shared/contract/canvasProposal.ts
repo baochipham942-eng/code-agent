@@ -134,6 +134,8 @@ export interface CanvasSnapshotNode {
   width: number;
   height: number;
   kind?: 'image' | 'video';
+  /** ADR-027 D5：用户在变体组里挑中的主版——人挑=唯一质量信号，回灌让 agent 知道哪个方向赢了。 */
+  chosen?: boolean;
 }
 
 export interface CanvasSnapshotConnector {
@@ -165,7 +167,8 @@ export function formatCanvasSnapshotForPrompt(snap: CanvasSnapshot | undefined |
   for (const n of capped) {
     const label = n.label ? ` "${n.label.slice(0, 60)}"` : '';
     const k = n.kind === 'video' ? 'video' : 'image';
-    lines.push(`- ${n.id}${label} [${k}] @(${Math.round(n.x)},${Math.round(n.y)}) ${Math.round(n.width)}×${Math.round(n.height)}`);
+    const chosen = n.chosen ? ' ★用户选定为主版' : '';
+    lines.push(`- ${n.id}${label} [${k}] @(${Math.round(n.x)},${Math.round(n.y)}) ${Math.round(n.width)}×${Math.round(n.height)}${chosen}`);
   }
   if (snap.connectors.length > 0) {
     const connCapped = snap.connectors.length > CANVAS_SNAPSHOT_MAX_NODES;

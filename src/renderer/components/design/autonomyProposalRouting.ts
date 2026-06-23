@@ -8,6 +8,8 @@
 import type { CanvasProposalOp, CanvasOpProposal, CanvasProposalDecision, ProposeGenerateImageOp } from '@shared/contract';
 import { type AutonomyEnvelope, canAfford, consume, remaining, isExhausted } from '@shared/contract/designAutonomy';
 import { applyProposal, type ProposalControllerDeps, type ProposalApplyOutcome } from './canvasProposalController';
+import type { CanvasNode } from './designCanvasTypes';
+import { groupKey } from './variantSpine';
 
 /** 是否含破坏性 op（discardNode）——破坏性永远逐步审批，不进自主（边界3）。 */
 export function hasDestructiveOp(ops: CanvasProposalOp[]): boolean {
@@ -56,6 +58,37 @@ export function makeBudgetedGenerate(
     deps.setEnvelope(consume(env, { landed: r.ok, costCny: r.costCny ?? 0 }));
     return r;
   };
+}
+
+/**
+ * 把出图归入「同一变体组」的包装（自主扇出 D3/D5）：组首张无 parentId（groupKey=自身 id），
+ * 后续张 parentId=组 id，使 N 张成兄弟变体供人挑（setChosen 按 groupKey 操作）。
+ * 首张成功后用其 nodeId 建组。
+ */
+export function makeGroupedGenerate(deps: {
+  getGroupId: () => string | null;
+  setGroupId: (id: string) => void;
+  generate: (op: ProposeGenerateImageOp, opts?: { parentId?: string }) => Promise<{ ok: boolean; costCny?: number; nodeId?: string }>;
+}): (op: ProposeGenerateImageOp) => Promise<{ ok: boolean; costCny?: number; nodeId?: string }> {
+  return async (op) => {
+    const gid = deps.getGroupId();
+    const r = await deps.generate(op, gid ? { parentId: gid } : undefined);
+    if (r.ok && r.nodeId && !gid) deps.setGroupId(r.nodeId); // 首张成功建组
+    return r;
+  };
+}
+
+/**
+ * 人挑一个变体后，应被软删的「同组其余存活变体」id（D5：挑=主版 + 其余软删进托盘，可恢复）。
+ * 同组 = groupKey 相同；排除被挑中的、已淘汰的。
+ */
+export function planUnpickedDiscards(nodes: CanvasNode[], pickedId: string): string[] {
+  const picked = nodes.find((n) => n.id === pickedId);
+  if (!picked) return [];
+  const key = groupKey(picked);
+  return nodes
+    .filter((n) => n.id !== pickedId && !n.discarded && groupKey(n) === key)
+    .map((n) => n.id);
 }
 
 export interface AutonomousApplyDeps {

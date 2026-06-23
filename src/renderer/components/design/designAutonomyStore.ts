@@ -8,23 +8,29 @@ import { grantEnvelope } from '@shared/contract/designAutonomy';
 interface DesignAutonomyState {
   /** 当前活跃信封；null=不在自主模式（提议走 026 逐步人闸）。 */
   envelope: AutonomyEnvelope | null;
-  /** 人审批信封时建立（夹紧 + 派生默认经 grantEnvelope）；返回建立的信封。 */
+  /** 本轮自主扇出的变体组 id（首张出图建立）；null=本轮尚无变体。N 张同组供人挑。 */
+  variantGroupId: string | null;
+  /** 人审批信封时建立（夹紧 + 派生默认经 grantEnvelope）；重置变体组；返回建立的信封。 */
   grantFromApproval: (grant: AutonomyGrant) => AutonomyEnvelope;
   /** 自动应用消费后持久化新信封。 */
   setEnvelope: (env: AutonomyEnvelope) => void;
-  /** 作废信封（abort/超时/新一轮/手动停）。 */
+  /** 首张出图后记录变体组 id（后续张归入同组）。 */
+  setVariantGroupId: (id: string) => void;
+  /** 作废信封（abort/超时/新一轮/手动停）；连带清变体组。 */
   clear: () => void;
 }
 
 export const useDesignAutonomyStore = create<DesignAutonomyState>((set) => ({
   envelope: null,
+  variantGroupId: null,
   grantFromApproval: (grant) => {
     const env = grantEnvelope(grant);
-    set({ envelope: env });
+    set({ envelope: env, variantGroupId: null }); // 新一轮重置变体组
     return env;
   },
   setEnvelope: (env) => set({ envelope: env }),
-  clear: () => set({ envelope: null }),
+  setVariantGroupId: (id) => set({ variantGroupId: id }),
+  clear: () => set({ envelope: null, variantGroupId: null }),
 }));
 
 // E2E/dev 调试钩子（同 canvasProposalStore 例）。

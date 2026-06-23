@@ -15,7 +15,7 @@ import {
 import type { CanvasProposalOp } from '@shared/contract';
 import { planDiscards } from './applyCanvasProposal';
 import { generateProposedImage, estimateProposedImageCostCny, resolveProposedImageModel } from './designProposedImageGen';
-import { decideProposalHandling, autonomousApply } from './autonomyProposalRouting';
+import { decideProposalHandling, autonomousApply, makeGroupedGenerate } from './autonomyProposalRouting';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
 
@@ -81,8 +81,14 @@ export function useCanvasProposalReview(): CanvasProposalReview {
         // 单飞：已有提议在落地则退回人闸兜底（设 pending），不并发自动应用。
         if (cs.applyingRequestId) { cs.setPending(request); return; }
         cs.setApplying(request.requestId);
+        // 出图归入本轮变体组（首张建组，后续同组）——N 张兄弟变体供人挑。
+        const groupedGenerate = makeGroupedGenerate({
+          getGroupId: () => useDesignAutonomyStore.getState().variantGroupId,
+          setGroupId: (id) => useDesignAutonomyStore.getState().setVariantGroupId(id),
+          generate: (op, opts) => generateProposedImage(op, opts),
+        });
         void autonomousApply(request, {
-          baseDeps: controllerDeps(),
+          baseDeps: { ...controllerDeps(), generate: groupedGenerate },
           estimateCost: (op) => estimateProposedImageCostCny(resolveProposedImageModel(op.model, useDesignStore.getState().imageModel)),
           getEnvelope: () => useDesignAutonomyStore.getState().envelope,
           setEnvelope: (e) => useDesignAutonomyStore.getState().setEnvelope(e),

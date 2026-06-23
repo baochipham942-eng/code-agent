@@ -176,6 +176,15 @@ describe('formatCanvasSnapshotForPrompt', () => {
     expect(out).not.toContain(`n${CANVAS_SNAPSHOT_MAX_NODES + 5} `);
   });
 
+  it('ADR-027 D5：chosen 节点标 ★用户选定为主版（人挑回灌给 agent）', () => {
+    const out = formatCanvasSnapshotForPrompt(snap([
+      { id: 'win', label: 'hero A', x: 0, y: 0, width: 10, height: 10, chosen: true },
+      { id: 'lose', label: 'hero B', x: 0, y: 0, width: 10, height: 10 },
+    ]))!;
+    expect(out).toMatch(/win.*★用户选定为主版/);
+    expect(out).not.toMatch(/lose.*★/);
+  });
+
   it('连线超上限：标注截断并提示避免重复（I3）', () => {
     const nodes = [{ id: 'a', x: 0, y: 0, width: 10, height: 10 }];
     const conns = Array.from({ length: CANVAS_SNAPSHOT_MAX_NODES + 5 }, (_, i) => ({ fromNodeId: 'a', toNodeId: `b${i}` }));

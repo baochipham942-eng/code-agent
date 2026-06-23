@@ -48,7 +48,10 @@ async function ensureRunDir(): Promise<string | null> {
  * **不落盘、不清史**（controller 收尾）。失败（无 runDir / IPC 报错 / 读图失败 / 中途切 run）一律返回
  * { ok:false }，由 controller 计 skipped——不抛、不污染画布、不重复付费。落位 nextNodePlacement 自动定（红线③）。
  */
-export async function generateProposedImage(op: ProposeGenerateImageOp): Promise<{ ok: boolean; costCny?: number }> {
+export async function generateProposedImage(
+  op: ProposeGenerateImageOp,
+  opts?: { parentId?: string },
+): Promise<{ ok: boolean; costCny?: number; nodeId?: string }> {
   // 全程包在 try 内（审计 HIGH-2）：ensureRunDir/resolveDesignDir 也可能抛（FS/权限），
   // 任何抛错都收敛成 { ok:false }，绝不让异常冒泡到 controller 把整批拖垮 / 吞掉 respond。
   try {
@@ -85,8 +88,9 @@ export async function generateProposedImage(op: ProposeGenerateImageOp): Promise
     const { width, height } = await loadImageDims(dataUrl);
     const { x, y } = nextNodePlacement(useDesignCanvasStore.getState().nodes, DESIGN_WORKSPACE.CANVAS_NODE_GAP);
     const costCny = res.data?.costCny;
+    const nodeId = nextVariantNodeId();
     const node: CanvasImageNode = {
-      id: nextVariantNodeId(),
+      id: nodeId,
       src: assetRel,
       x,
       y,
@@ -94,11 +98,13 @@ export async function generateProposedImage(op: ProposeGenerateImageOp): Promise
       height,
       prompt: op.prompt,
       createdAt: Date.now(),
+      // ADR-027：自主扇出时归入同一变体组（parentId=组首张 id），使 N 张成兄弟变体供人挑（setChosen 按 groupKey）。
+      ...(opts?.parentId ? { parentId: opts.parentId } : {}),
       ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
     };
     // addNode 不落盘不清史：controller 在整批生成毕统一 save + 条件 clearEditHistory（混批顺序写死）。
     useDesignCanvasStore.getState().addNode(node);
-    return { ok: true, ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}) };
+    return { ok: true, nodeId, ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}) };
   } catch {
     return { ok: false };
   }

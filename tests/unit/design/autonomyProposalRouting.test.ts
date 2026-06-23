@@ -4,8 +4,11 @@ import {
   decideProposalHandling,
   hasDestructiveOp,
   makeBudgetedGenerate,
+  makeGroupedGenerate,
+  planUnpickedDiscards,
   autonomousApply,
 } from '@renderer/components/design/autonomyProposalRouting';
+import type { CanvasNode } from '@renderer/components/design/designCanvasTypes';
 import type { ProposalControllerDeps } from '@renderer/components/design/canvasProposalController';
 import type { ProposalApplyResult } from '@renderer/components/design/applyCanvasProposal';
 import { grantEnvelope, consume, type AutonomyEnvelope } from '@shared/contract/designAutonomy';
@@ -164,5 +167,57 @@ describe('autonomousApply · 自动应用编排（注入预算闸 + 回填剩余
     const decision = respondRaw.mock.calls[0][0];
     expect(decision.autonomy!.exhausted).toBe(true);
     expect(decision.autonomy!.remainingVariants).toBe(0);
+  });
+});
+
+describe('makeGroupedGenerate · 变体分组（D3/D5）', () => {
+  it('首张无 parentId、成功后用其 nodeId 建组', async () => {
+    let group: string | null = null;
+    const generate = vi.fn(async () => ({ ok: true, costCny: 0.14, nodeId: 'node-1' }));
+    const grouped = makeGroupedGenerate({ getGroupId: () => group, setGroupId: (id) => { group = id; }, generate });
+    await grouped(gen());
+    expect(generate).toHaveBeenCalledWith(expect.anything(), undefined); // 首张无 parentId
+    expect(group).toBe('node-1'); // 建组
+  });
+
+  it('后续张归入已建的组（parentId=组 id），不重建组', async () => {
+    let group: string | null = 'node-1';
+    const generate = vi.fn(async () => ({ ok: true, costCny: 0.14, nodeId: 'node-2' }));
+    const grouped = makeGroupedGenerate({ getGroupId: () => group, setGroupId: (id) => { group = id; }, generate });
+    await grouped(gen());
+    expect(generate).toHaveBeenCalledWith(expect.anything(), { parentId: 'node-1' });
+    expect(group).toBe('node-1'); // 不变
+  });
+
+  it('首张失败不建组（下张仍是组首张）', async () => {
+    let group: string | null = null;
+    const generate = vi.fn(async () => ({ ok: false }));
+    const grouped = makeGroupedGenerate({ getGroupId: () => group, setGroupId: (id) => { group = id; }, generate });
+    await grouped(gen());
+    expect(group).toBeNull();
+  });
+});
+
+describe('planUnpickedDiscards · 人挑后软删同组其余（D5）', () => {
+  const mk = (id: string, parentId?: string, discarded?: boolean): CanvasNode =>
+    ({ id, x: 0, y: 0, width: 1, height: 1, src: 'x', createdAt: 1, ...(parentId ? { parentId } : {}), ...(discarded ? { discarded } : {}) }) as CanvasNode;
+
+  it('挑组首张 → 同组其余存活变体被列入软删', () => {
+    const nodes = [mk('a'), mk('b', 'a'), mk('c', 'a')];
+    expect(planUnpickedDiscards(nodes, 'a').sort()).toEqual(['b', 'c']);
+  });
+
+  it('挑子变体 → 组首张 + 其余子变体都软删（同 groupKey=a）', () => {
+    const nodes = [mk('a'), mk('b', 'a'), mk('c', 'a')];
+    expect(planUnpickedDiscards(nodes, 'b').sort()).toEqual(['a', 'c']);
+  });
+
+  it('已淘汰的不重复软删；别组节点不动', () => {
+    const nodes = [mk('a'), mk('b', 'a', true), mk('x'), mk('y', 'x')];
+    expect(planUnpickedDiscards(nodes, 'a')).toEqual([]); // b 已淘汰；x/y 是别组
+  });
+
+  it('挑不存在的 id → 空', () => {
+    expect(planUnpickedDiscards([mk('a')], 'zzz')).toEqual([]);
   });
 });

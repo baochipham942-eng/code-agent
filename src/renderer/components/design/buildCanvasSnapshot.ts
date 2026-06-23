@@ -20,6 +20,7 @@ export function buildCanvasSnapshot(state: {
     const out: CanvasSnapshotNode = { id: n.id, x: n.x, y: n.y, width: n.width, height: n.height };
     if (label) out.label = label;
     if (n.kind === 'video') out.kind = 'video';
+    if (n.chosen) out.chosen = true; // ADR-027 D5：回灌人挑的主版给 agent
     return out;
   });
   // 只保留两端都在快照节点集内的连线（截断后端点可能落选）。

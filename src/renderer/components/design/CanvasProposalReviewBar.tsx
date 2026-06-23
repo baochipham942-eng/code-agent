@@ -1,21 +1,31 @@
 // ADR-026 D2-A/三刀：画布提议审批条（DOM 浮层）。展示 agent 提议 + rationale，逐 op 勾选取舍，
 // 应用 / 拒绝（可带意见）。ghost 虚影（蓝=改/红=淘汰）由 CanvasProposalGhostLayer 画在画布上。
 import React, { useEffect, useMemo, useState } from 'react';
-import { Sparkles, Check, X, Trash2 } from 'lucide-react';
+import { Sparkles, Check, X, Trash2, Coins } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import type { CanvasOpProposal, CanvasProposalOp } from '@shared/contract';
+import { isGenerateOp } from '@shared/contract';
+import { formatCny } from '@shared/media/imageCost';
+import { useDesignStore } from './designStore';
+import { resolveProposedImageModel, estimateProposedImageCostCny } from './designProposedImageGen';
 
 interface OpLabels {
-  move: string; connect: string; shape: string; rename: string; discard: string;
+  move: string; connect: string; shape: string; rename: string; discard: string; generate: string;
 }
 
-function describeOp(op: CanvasProposalOp, L: OpLabels): { text: string; danger: boolean } {
+/** 估算单个生成 op 的成本（¥）——与实际出图共用 resolveProposedImageModel，预估与落地 model 一致。 */
+function genOpCostCny(op: Extract<CanvasProposalOp, { kind: 'generateImage' }>, formImageModel: string): number {
+  return estimateProposedImageCostCny(resolveProposedImageModel(op.model, formImageModel));
+}
+
+function describeOp(op: CanvasProposalOp, L: OpLabels, formImageModel: string, paidBadge: string): { text: string; danger: boolean; paid: boolean } {
   switch (op.kind) {
-    case 'moveNode': return { text: `${L.move} · ${op.nodeId}`, danger: false };
-    case 'addConnector': return { text: `${L.connect} ${op.fromNodeId} → ${op.toNodeId}${op.label ? ` "${op.label}"` : ''}`, danger: false };
-    case 'addShape': return { text: `${L.shape} · ${op.shape.kind}`, danger: false };
-    case 'renameNode': return { text: `${L.rename} "${op.label}"`, danger: false };
-    case 'discardNode': return { text: `${L.discard} · ${op.nodeId}`, danger: true };
+    case 'moveNode': return { text: `${L.move} · ${op.nodeId}`, danger: false, paid: false };
+    case 'addConnector': return { text: `${L.connect} ${op.fromNodeId} → ${op.toNodeId}${op.label ? ` "${op.label}"` : ''}`, danger: false, paid: false };
+    case 'addShape': return { text: `${L.shape} · ${op.shape.kind}`, danger: false, paid: false };
+    case 'renameNode': return { text: `${L.rename} "${op.label}"`, danger: false, paid: false };
+    case 'discardNode': return { text: `${L.discard} · ${op.nodeId}`, danger: true, paid: false };
+    case 'generateImage': return { text: `${L.generate} · "${op.prompt.slice(0, 40)}" · ${paidBadge} ${formatCny(genOpCostCny(op, formImageModel))}`, danger: false, paid: true };
   }
 }
 
@@ -35,12 +45,22 @@ export const CanvasProposalReviewBar: React.FC<{
     setSelected(new Set(proposal.ops.map((_, i) => i)));
   }, [proposal.requestId, proposal.ops]);
 
+  const formImageModel = useDesignStore((st) => st.imageModel);
   const L: OpLabels = {
     move: s.proposalOpMove, connect: s.proposalOpConnect, shape: s.proposalOpShape,
-    rename: s.proposalOpRename, discard: s.proposalOpDiscard,
+    rename: s.proposalOpRename, discard: s.proposalOpDiscard, generate: s.proposalOpGenerate,
   };
-  const rows = useMemo(() => proposal.ops.map((op) => describeOp(op, L)), [proposal.ops, L]);
+  const rows = useMemo(() => proposal.ops.map((op) => describeOp(op, L, formImageModel, s.proposalPaidBadge)), [proposal.ops, L, formImageModel, s.proposalPaidBadge]);
   const selectedOps = useMemo(() => proposal.ops.filter((_, i) => selected.has(i)), [proposal.ops, selected]);
+  // 付费闸：仅统计「当前勾选」的生成 op 预估合计 ¥ + 张数（取消勾选实时减少，红线①付费前置审批的可见账）。
+  const genCost = useMemo(() => {
+    let amount = 0;
+    let count = 0;
+    proposal.ops.forEach((op, i) => {
+      if (selected.has(i) && isGenerateOp(op)) { amount += genOpCostCny(op, formImageModel); count += 1; }
+    });
+    return { amount, count };
+  }, [proposal.ops, selected, formImageModel]);
 
   const toggle = (i: number): void => {
     setSelected((prev) => {
@@ -86,7 +106,8 @@ export const CanvasProposalReviewBar: React.FC<{
                     className="h-3.5 w-3.5 accent-blue-500"
                   />
                   {row.danger ? <Trash2 className="h-3 w-3 shrink-0 text-red-400" /> : null}
-                  <span className={`truncate ${row.danger ? 'text-red-300' : 'text-zinc-300'}`}>{row.text}</span>
+                  {row.paid ? <Coins className="h-3 w-3 shrink-0 text-amber-400" /> : null}
+                  <span className={`truncate ${row.danger ? 'text-red-300' : row.paid ? 'text-amber-200' : 'text-zinc-300'}`}>{row.text}</span>
                 </label>
               </li>
             ))}
@@ -101,6 +122,15 @@ export const CanvasProposalReviewBar: React.FC<{
           />
         </div>
       </div>
+      {genCost.count > 0 ? (
+        <div
+          data-testid="proposal-cost-gate"
+          className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/[0.08] px-2 py-1.5 text-xs text-amber-200"
+        >
+          <Coins className="h-3.5 w-3.5 shrink-0" />
+          <span>{s.proposalEstCost.replace('{amount}', formatCny(genCost.amount)).replace('{n}', String(genCost.count))}</span>
+        </div>
+      ) : null}
       <div className="mt-2 flex items-center justify-end gap-2">
         <button
           type="button"

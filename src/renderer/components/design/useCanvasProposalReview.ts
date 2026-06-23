@@ -14,6 +14,7 @@ import {
 } from './canvasProposalController';
 import type { CanvasProposalOp } from '@shared/contract';
 import { planDiscards } from './applyCanvasProposal';
+import { generateProposedImage } from './designProposedImageGen';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -41,6 +42,9 @@ function controllerDeps(): ProposalControllerDeps {
     respond: (decision) => ipcService.invoke(IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE, decision),
     genId: makeGenId(),
     now: () => Date.now(),
+    // 二刀 Layer2：真出图（出图 IPC + addNode，不落盘不清史）；clearHistory 由 controller 在 ≥1 张落地后调。
+    generate: (op) => generateProposedImage(op),
+    clearHistory: () => useDesignCanvasStore.getState().clearEditHistory(),
   };
 }
 

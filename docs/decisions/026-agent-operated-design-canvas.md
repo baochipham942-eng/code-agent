@@ -98,3 +98,72 @@ interface CanvasProposalDecision {
 3. **第三刀（按需）**：per-op 取舍（appliedOpIds）/ 破坏性 op 单独硬审批。
 
 > 每刀照设计能力借鉴路线工作纪律：origin/main 独立 worktree、TDD、独立 context 对抗审计修 HIGH/MED、PR 等 CI 全绿不擅自合、更新 roadmap 进度日志。
+
+---
+
+## 增补（二刀 · 含付费生成提议）
+
+- **状态**: 已采纳 — **增补-D1-A + 增补-D2 写死 + 增补-D3 renderer 权威 + 二刀红线全收**（2026-06-23 林晨拍板：「按推荐全要」）
+- **背景**: 一刀（Layer1-only 提议闭环）+ 三刀（per-op 取舍 + discardNode 软删）已落地（`feat/agent-canvas-cut3`）。二刀补上**唯一缺口**：agent 提议「生成新图」这类**含付费生成**的 op。原 ADR 已把横切红线①（付费前置审批）/ D3-B（混批顺序写死）写过，但当时只是声明；真要实现 `addNode 含付费生成`，有三处必须先把规则钉死再动手——本增补拍这三刀。
+- **现状勘误（实地复核三处接口）**：
+  1. 现有 `applyProposalBatch` 走 `computeProposalResult`（纯同步函数）+ `applyProposal` 控制器（已是 async 壳但内部全同步）。**生成是 async**（`generateDesignImage` IPC + 落盘 + 量尺寸全 await），同步引擎装不下。
+  2. 现成付费链路在 `useDesignCanvasGeneration.generate()`，但它从 `useDesignStore` 表单读 prompt，**不接受外部 prompt 参数**——agent 提议需要一个「按显式 prompt 出图」的入口，要从 `generate()` 抽核。
+  3. 付费前置审批已有先例：`generateVideo()` 用 `window.confirm` 在付费前显示预估 ¥。成本估算权威源 `estimateImageCostCny(model)`（查 `pricing.ts` 唯一真源，wanx 0.14/张），**在 renderer 侧**。
+
+### 增补-D1 — applyProposalBatch 异步化 = **A：双相切分（Layer1 同步纯 + Layer2 异步生成），整体 await 到落地**
+
+把 apply 切成两相，控制器变真异步：
+
+- **Phase A（Layer1，同步纯，快照内）**：`computeProposalResult` **零改动**——move/connector/shape/rename 仍走现有同步引擎，一次快照、一次 undo。discardNode 仍按三刀（不进撤销批）。
+- **Phase B（Layer2，异步生成）**：对每个生成 op **串行** await 付费 IPC → 成功则 `addNode` + `saveCanvasDoc` → 全部生成完毕后**统一一次** `clearEditHistory()`（见增补-D2 的 #274 不变量）。
+- **新增 `generateImage` op 的核**：从 `generate()` 抽 `generateFromPrompt(prompt, {model?, aspectRatio?})` 纯函数式入口，`generate()` 与新提议路径共用，**绝不另写一套出图/落盘路径**（沿用「零新 mutate 路径」铁律）。
+
+**关键子决策 · 阻塞工具何时 resolve = await 到生成落地（拿真实结果），不提前返回**：
+- 理由：agent 该拿到**地面真相**——实际生成几张、实际花了多少 ¥、哪张失败。提前返回「已开始生成」会让 agent 在画布 mid-generation 时盲目追加提议。
+- 超时处理：含生成的批次，main 侧把阻塞超时从 `USER_QUESTION`(300s) 抬到 `USER_QUESTION + 单图预算 × 生成数`（覆盖「用户思考 + 串行出图」总耗时），避免慢付费撞死工具。纯 Layer1 批次仍用 300s。
+- 否决 **B 提前 resolve + 下一轮快照回灌结果**：解耦了超时，但 agent 当轮拿不到真实 cost/失败，且 mid-generation 竞态难防。MVP 取「慢但正确」。
+
+### 增补-D2 — Layer2 混批顺序与历史不变量 = **写死 Layer1→discard→Layer2，clearEditHistory 仅在真有生成落地时**
+
+一个混批（Layer1 op + 生成 op）的应用顺序**硬编码、不可交错**：
+
+1. **拆批**：partition 成 `layer1Ops` / `discardIds` / `genOps`。
+2. **Phase A**：`applyProposalBatch(layer1Ops)` —— 单次快照、单 undo 单元。
+3. **discard**：`applyDiscards(discardIds)` —— 软删、不推快照（同三刀）。
+4. **Phase B**：串行生成 `genOps`，每张 `addNode` + 落盘。
+5. **收尾**：**当且仅当 ≥1 张真落地**才 `clearEditHistory()`。
+
+写死的三条不变量（对抗审计重点盯）：
+- **Layer1 严格先于 Layer2，永不交错**。因为 Layer2 的 `addNode` 跨了快照数组边界，收尾 `clearEditHistory()` 会销毁 Layer1 的 undo frame；若 Layer2 先跑，Layer1 快照会在节点集已变后才拍 → `reconcile*Frame` 错配 → 重蹈 #274「跨生成 undo 删节点」。
+- **禁止前向引用**：同批内 Layer1 op 不得指向 Layer2 将生成的新节点（连线/移动一张还没生出来的图）。天然被现有 stale-target 防御挡住——新节点 id 由 renderer 在生成后才分配，agent propose 时拿不到，引用必落在 pre-batch live 集外 → skip。MVP 接受「想连新生成的图，下一轮再提议连线」。
+- **clearEditHistory 绑定生成成败**：全部生成失败时**不清** Layer1 编辑栈（保住 Layer1 可单次 undo）。clearEditHistory 是 Layer2 成功的代价，不是无条件收尾。
+
+### 增补-D3 — 付费前置审批 = **renderer 为成本权威 + ghost 审批面板即付费闸（无二次 confirm）**
+
+落实横切红线①「付费必须在付费之前审批、阻塞期间零付费调用」：
+
+- **renderer 是成本估算唯一权威，不信 agent 报价**：生成 op 只带 `prompt` / 可选 `model`；预估 ¥ 由 renderer 在预览时查 `estimateImageCostCny(model)` 算（单张 + 合计），显示在审批面板。agent 自报成本一律不作准（防模型幻觉成低价诱导点击）。
+- **ghost 审批面板即付费闸，砍掉二次 confirm**：用户在 ghost 预览上看到 op 列表 + 每张生成的预估 ¥ + 合计，点一次 Apply → renderer 才走付费 IPC。**不再弹** `window.confirm`（表单态 `generateVideo` 的二次确认在提议路径下被审批面板取代）。
+- **阻塞期间零付费保证**：`proposeCanvasOps`（main 侧）只发提议 + 等裁决，**永不发起任何付费调用**（已是事实，本条对生成 op 再次钉死）。一切付费在 renderer apply 之后。
+- **拒绝/超时 = 零花费**。
+- **per-op 取舍联动成本**：用户取消勾选某张生成，合计 ¥ 实时只算选中项（复用三刀 per-op 机制）。
+- **预估 vs 实际**：付费前显示 `estimateImageCostCny` 预估，付费后真实 `costCny` 挂节点（已有）；增补-D1 await 到落地，故 agent tool output 回灌**真实合计花费**。
+
+### 增补-横切红线（二刀新增，写死）
+
+1. **二刀 MVP 生成 op 只给「文生图」一种**：新增 `generateImage { prompt, model?, aspectRatio? }`。agent 提议的 **editRegion / expand / removeWatermark / 视频 i2v·t2v** 这些「衍生 op」（要绑底图节点 + 更多参数 + 更贵）**暂不给 agent**，留后续单刀。把二刀爆炸半径锁在最简单、最便宜（0.14/张）的付费路径。
+2. **agent 不得引入新模型/端点**：`generateImage.model` 若指定，renderer 须校验它是**已配置的可用视觉模型**（复用「只列已配置模型」守卫），否则回退表单默认 `imageModel`。守「配置归设置页、工作 surface 只选」的 IA 铁律。
+3. **生成节点落位由 renderer 定**：复用 `nextNodePlacement` 自动落在现有节点右侧，**忽略 agent 建议坐标**（避免重叠数学 + 越权布局）。要排布让 agent 下一轮用 moveNode 提议。
+4. **Main 永不直接 mutate / 永不直接付费**：agent 端只产提议数据；付费与 store 变更全在 renderer apply 后。
+
+### 增补 · 实施切分（二刀，待拍板后逐点推进）
+
+1. **契约扩展**：`CanvasProposalOp` 加 `ProposeGenerateImageOp`；`normalizeProposalOp` + `proposeCanvasOps.schema` enum 加 `generateImage` + 校验（prompt 非空、model 可选且白名单、aspectRatio 可选）。纯逻辑 TDD。
+2. **出图核抽取**：从 `useDesignCanvasGeneration.generate()` 抽 `generateFromPrompt`，表单路径与提议路径共用，回归现有出图不破。
+3. **控制器异步化**：`applyProposal` 改双相（增补-D1/D2），Layer1 同步 + Layer2 串行生成 + 条件 clearEditHistory。注入 `generateFromPrompt` 依赖，保持控制器可测。TDD 锁死顺序不变量 + clearEditHistory 绑成败 + 全失败保 Layer1 undo。
+4. **审批面板成本 UI**：ghost 预览面板加每张/合计预估 ¥（`estimateImageCostCny`），per-op 取舍联动；砍 `window.confirm`。i18n（zh/en）。
+5. **阻塞超时抬升**：含生成批次用 `USER_QUESTION + 单图预算×N`。
+6. **真机 E2E + 真 key dogfood**：提议生成 → 看预估 ¥ → apply → 真烧 wanx 出图落画布 → agent 拿真实 cost；reject 零花费；混批（Layer1+生成）顺序与 undo 行为。
+7. **独立 context 对抗审计**修 HIGH/MED（重点：混批历史顺序 + 付费闸不被绕过 + 全失败不清史）。
+
+> 工作纪律同一刀：独立 worktree、TDD、对抗审计、CI 全绿不擅自合、更新 roadmap。**付费 dogfood 默认只跑一次，付费前显式向林晨确认**（[[feedback_paid_dogfood_cost_safety]]）。

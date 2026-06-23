@@ -122,6 +122,77 @@ describe('applyProposal 三刀：discard 拆分 + per-op 取舍', () => {
   });
 });
 
+describe('applyProposal 二刀：含付费生成（Layer2）', () => {
+  function genDeps(
+    result: ProposalApplyResult,
+    genResults: Array<{ ok: boolean; costCny?: number }>,
+    discard: { applied: number; skipped: number } = { applied: 0, skipped: 0 },
+  ) {
+    const order: string[] = [];
+    let genCall = 0;
+    return {
+      order,
+      applyBatch: vi.fn(() => { order.push('applyBatch'); return result; }),
+      applyDiscards: vi.fn(() => { order.push('applyDiscards'); return discard; }),
+      generate: vi.fn(async () => { order.push('generate'); return genResults[genCall++] ?? { ok: false }; }),
+      clearHistory: vi.fn(() => { order.push('clearHistory'); }),
+      save: vi.fn(() => { order.push('save'); }),
+      respond: vi.fn(),
+      genId: (k: string, i: number) => `${k}-${i}`,
+      now: () => 1000,
+    };
+  }
+
+  it('Layer1 严格先于 Layer2 生成，clearHistory 在生成之后（顺序写死）', async () => {
+    const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'moveNode' }], skipped: [], changed: true };
+    const d = genDeps(result, [{ ok: true, costCny: 0.14 }]);
+    const p: CanvasOpProposal = {
+      requestId: 'cp-g1',
+      ops: [{ kind: 'generateImage', prompt: '一张登录页' }, { kind: 'moveNode', nodeId: 'a', x: 1, y: 2 }],
+    };
+    await applyProposal(p, d);
+    // applyBatch 只收 Layer1（moveNode），不含 generateImage
+    expect(d.applyBatch.mock.calls[0][0]).toHaveLength(1);
+    expect(d.applyBatch.mock.calls[0][0][0]).toMatchObject({ kind: 'moveNode' });
+    expect(d.generate).toHaveBeenCalledTimes(1);
+    // 顺序：applyBatch → generate → clearHistory → save（Layer1 先于 Layer2，clearHistory 在生成后）
+    expect(d.order.indexOf('applyBatch')).toBeLessThan(d.order.indexOf('generate'));
+    expect(d.order.indexOf('generate')).toBeLessThan(d.order.indexOf('clearHistory'));
+  });
+
+  it('≥1 张生成成功才 clearHistory + 回灌真实合计花费', async () => {
+    const d = genDeps(nochange, [{ ok: true, costCny: 0.14 }, { ok: true, costCny: 0.14 }]);
+    const p: CanvasOpProposal = {
+      requestId: 'cp-g2',
+      ops: [{ kind: 'generateImage', prompt: 'a' }, { kind: 'generateImage', prompt: 'b' }],
+    };
+    const out = await applyProposal(p, d);
+    expect(d.clearHistory).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ appliedCount: 2, skippedCount: 0 });
+    expect(d.respond).toHaveBeenCalledWith({ requestId: 'cp-g2', verdict: 'apply', appliedCount: 2, skippedCount: 0, costCny: 0.28 });
+  });
+
+  it('全部生成失败：不 clearHistory（保 Layer1 可单次 undo）+ 计 skipped', async () => {
+    const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'moveNode' }], skipped: [], changed: true };
+    const d = genDeps(result, [{ ok: false }, { ok: false }]);
+    const p: CanvasOpProposal = {
+      requestId: 'cp-g3',
+      ops: [{ kind: 'moveNode', nodeId: 'a', x: 1, y: 2 }, { kind: 'generateImage', prompt: 'a' }, { kind: 'generateImage', prompt: 'b' }],
+    };
+    const out = await applyProposal(p, d);
+    expect(d.clearHistory).not.toHaveBeenCalled(); // 全失败保 Layer1 undo
+    expect(d.save).toHaveBeenCalledTimes(1); // Layer1 有变更仍落盘
+    expect(out).toMatchObject({ appliedCount: 1, skippedCount: 2 });
+  });
+
+  it('生成 op 但无 generate 依赖（非交互/降级）：计 skipped，不崩', async () => {
+    const d = deps(nochange);
+    const p: CanvasOpProposal = { requestId: 'cp-g4', ops: [{ kind: 'generateImage', prompt: 'a' }] };
+    const out = await applyProposal(p, d);
+    expect(out).toMatchObject({ appliedCount: 0, skippedCount: 1 });
+  });
+});
+
 describe('rejectProposal', () => {
   it('回 reject 带 feedback', async () => {
     const respond = vi.fn();

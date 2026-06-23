@@ -9,6 +9,7 @@ import {
   MAX_OPS_PER_PROPOSAL,
   PROPOSAL_COLOR_MAX,
   PROPOSAL_TEXT_MAX,
+  PROPOSAL_PROMPT_MAX,
   type CanvasSnapshot,
 } from '../../../src/shared/contract/canvasProposal';
 
@@ -50,6 +51,31 @@ describe('normalizeProposalOp', () => {
   it('discardNode（三刀软删）：合法通过 + 缺 nodeId → null', () => {
     expect(normalizeProposalOp({ kind: 'discardNode', nodeId: 'n1' })).toEqual({ kind: 'discardNode', nodeId: 'n1' });
     expect(normalizeProposalOp({ kind: 'discardNode', nodeId: '' })).toBeNull();
+  });
+
+  it('generateImage（二刀文生图）：合法通过 + 仅留 prompt/model/aspectRatio', () => {
+    expect(
+      normalizeProposalOp({ kind: 'generateImage', prompt: '一张登录页', model: 'wanx2.1-t2i-turbo', aspectRatio: '9:16' }),
+    ).toEqual({ kind: 'generateImage', prompt: '一张登录页', model: 'wanx2.1-t2i-turbo', aspectRatio: '9:16' });
+  });
+
+  it('generateImage：缺/空 prompt → null（无内容不付费）', () => {
+    expect(normalizeProposalOp({ kind: 'generateImage', prompt: '' })).toBeNull();
+    expect(normalizeProposalOp({ kind: 'generateImage' })).toBeNull();
+  });
+
+  it('generateImage：prompt 截断到 PROPOSAL_PROMPT_MAX；model/aspectRatio 可选省略', () => {
+    const op = normalizeProposalOp({ kind: 'generateImage', prompt: 'p'.repeat(PROPOSAL_PROMPT_MAX + 100) });
+    expect(op).toMatchObject({ kind: 'generateImage' });
+    expect((op as { prompt: string }).prompt.length).toBe(PROPOSAL_PROMPT_MAX);
+    expect(op as Record<string, unknown>).not.toHaveProperty('model');
+    expect(op as Record<string, unknown>).not.toHaveProperty('aspectRatio');
+  });
+
+  it('generateImage：非字符串 model/aspectRatio 丢弃（不带进契约）', () => {
+    const op = normalizeProposalOp({ kind: 'generateImage', prompt: 'x', model: 123, aspectRatio: {} });
+    expect(op as Record<string, unknown>).not.toHaveProperty('model');
+    expect(op as Record<string, unknown>).not.toHaveProperty('aspectRatio');
   });
 
   it('未知 kind / 非对象 → null（deleteNode 硬删仍不在白名单）', () => {

@@ -1,7 +1,7 @@
 // 设计工作区的工作区文件读取工具（renderer 侧，经 WORKSPACE domain IPC）。
 // hook 轮询与历史加载共用，避免重复。
 import { IPC_DOMAINS } from '@shared/ipc';
-import { DESIGN_VERSIONS_SUBDIR } from '@shared/constants';
+import { DESIGN_VERSIONS_SUBDIR, REGION_LOCK } from '@shared/constants';
 import type { FileInfo } from '@shared/contract/workspace';
 import type { SlideOutlineItem } from './slidesOutlineOps';
 import type { BrandContract, BrandMeta } from '@shared/contract/brandContract';
@@ -518,7 +518,7 @@ export interface DesignWorkspaceSettings {
   regionLockStrict: boolean;
 }
 
-const DESIGN_SETTINGS_DEFAULT: DesignWorkspaceSettings = { regionLockStrict: false };
+const DESIGN_SETTINGS_DEFAULT: DesignWorkspaceSettings = { regionLockStrict: REGION_LOCK.STRICT_DEFAULT };
 
 export async function getDesignSettings(): Promise<DesignWorkspaceSettings> {
   try {

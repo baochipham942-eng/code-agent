@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Check } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { REGION_LOCK } from '@shared/constants';
 import { SettingsPage } from '../SettingsLayout';
 import {
   CustomImageModelManagerView,
@@ -158,7 +159,7 @@ const RegionLockStrictToggle: React.FC<{
   label: string;
   hint: string;
 }> = ({ section, label, hint }) => {
-  const [strict, setStrict] = useState(false);
+  const [strict, setStrict] = useState<boolean>(REGION_LOCK.STRICT_DEFAULT);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

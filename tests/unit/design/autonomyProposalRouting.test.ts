@@ -7,11 +7,14 @@ import {
   makeGroupedGenerate,
   planUnpickedDiscards,
   autonomousApply,
+  resolveAutonomyImageCostCny,
+  isAutonomyRunTerminal,
 } from '@renderer/components/design/autonomyProposalRouting';
 import type { CanvasNode } from '@renderer/components/design/designCanvasTypes';
 import type { ProposalControllerDeps } from '@renderer/components/design/canvasProposalController';
 import type { ProposalApplyResult } from '@renderer/components/design/applyCanvasProposal';
 import { grantEnvelope, consume, type AutonomyEnvelope } from '@shared/contract/designAutonomy';
+import { estimateImageCostCny } from '@shared/media/imageCost';
 import type { CanvasOpProposal, CanvasProposalDecision, ProposeGenerateImageOp } from '@shared/contract';
 
 function proposal(ops: CanvasOpProposal['ops']): CanvasOpProposal {
@@ -219,5 +222,35 @@ describe('planUnpickedDiscards · 人挑后软删同组其余（D5）', () => {
 
   it('挑不存在的 id → 空', () => {
     expect(planUnpickedDiscards([mk('a')], 'zzz')).toEqual([]);
+  });
+});
+
+describe('resolveAutonomyImageCostCny · 准确估价（审计 HIGH-1）', () => {
+  const T2I = estimateImageCostCny(); // 价表 default = 0.14
+
+  it('自定义模型用 costCnyPerImage（est==actual，不再回落 0.14）', () => {
+    const custom = [{ id: 'cust-1', modelName: 'gpt-image-1', costCnyPerImage: 3.0 }];
+    expect(resolveAutonomyImageCostCny('cust-1', custom)).toBe(3.0);
+  });
+
+  it('自定义模型未填价 → 按 modelName 查价表（不按 id 查，id 不在表里会误回 0.14）', () => {
+    const custom = [{ id: 'cust-2', modelName: 'wanx2.1-t2i-turbo' }];
+    expect(resolveAutonomyImageCostCny('cust-2', custom)).toBe(estimateImageCostCny('wanx2.1-t2i-turbo'));
+  });
+
+  it('内置/未知模型 → 按 modelId 查价表', () => {
+    expect(resolveAutonomyImageCostCny('wanx-t2i', [])).toBe(estimateImageCostCny('wanx-t2i'));
+    expect(resolveAutonomyImageCostCny('totally-unknown', [])).toBe(T2I);
+  });
+});
+
+describe('isAutonomyRunTerminal · run 终态判定（审计 HIGH-2）', () => {
+  it('运行中态 → 非终态（不清信封）', () => {
+    for (const s of ['running', 'paused', 'queued', 'cancelling']) expect(isAutonomyRunTerminal(s)).toBe(false);
+  });
+  it('结束/中断/空闲态 → 终态（清信封，防孤儿）', () => {
+    for (const s of ['completed', 'cancelled', 'idle', 'interrupted', 'error', 'orphaned', 'archived']) {
+      expect(isAutonomyRunTerminal(s)).toBe(true);
+    }
   });
 });

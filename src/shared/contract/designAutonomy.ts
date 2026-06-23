@@ -115,6 +115,8 @@ export interface AutonomyEnvelopeRequest {
   /** agent 提议的信封（两上限可选；人可改）。 */
   proposed: AutonomyGrant;
   rationale?: string;
+  /** 发起请求的 agent run 的 sessionId——信封绑此 session，该 run 进终态即作废（审计 HIGH-2 防孤儿）。 */
+  sessionId?: string;
 }
 
 /** renderer → main：人对信封请求的裁决。 */

@@ -1,7 +1,7 @@
 // ADR-027 slice5：有界自主信封审批条（DOM 浮层）。展示 agent 目标 + rationale，
 // 人可调生成数量 / 预算上限，看预估 ¥，Grant/Decline。Grant 即付费预授权（红线①）——
 // 之后 AI 在信封内自主出图、不再逐张问，总花费不超上限。
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Check, X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import type { AutonomyEnvelopeRequest, AutonomyGrant } from '@shared/contract';
@@ -9,7 +9,9 @@ import { formatCny } from '@shared/media/imageCost';
 import { clampVariants, defaultAutonomyGrant } from '@shared/contract/designAutonomy';
 import { MAX_AUTONOMY_VARIANTS } from '@shared/constants';
 import { useDesignStore } from './designStore';
-import { resolveProposedImageModel, estimateProposedImageCostCny } from './designProposedImageGen';
+import { resolveProposedImageModel } from './designProposedImageGen';
+import { resolveAutonomyImageCostCny, type CustomImageModelPrice } from './autonomyProposalRouting';
+import { listCustomImageModels } from './designFiles';
 
 export const CanvasAutonomyReviewBar: React.FC<{
   request: AutonomyEnvelopeRequest;
@@ -23,10 +25,18 @@ export const CanvasAutonomyReviewBar: React.FC<{
   const [showDecline, setShowDecline] = useState(false);
   const [feedback, setFeedback] = useState('');
 
-  // 单张预估 ¥（与实际出图同 resolve 口径，预估==落地）。
+  // HIGH-1：拉自定义模型价（含 costCnyPerImage），让审批面板预估==实际出图账单（不再对自定义模型假低 0.14）。
+  const [customModels, setCustomModels] = useState<CustomImageModelPrice[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void listCustomImageModels().then((ms) => { if (alive) setCustomModels(ms); }).catch(() => void 0);
+    return () => { alive = false; };
+  }, []);
+
+  // 单张预估 ¥（与实际出图同源计价，预估==落地）。
   const perImage = useMemo(
-    () => estimateProposedImageCostCny(resolveProposedImageModel(undefined, formImageModel)),
-    [formImageModel],
+    () => resolveAutonomyImageCostCny(resolveProposedImageModel(undefined, formImageModel), customModels),
+    [formImageModel, customModels],
   );
   const derived = useMemo(() => defaultAutonomyGrant(), []);
 

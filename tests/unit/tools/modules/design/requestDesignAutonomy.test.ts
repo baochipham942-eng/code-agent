@@ -68,6 +68,7 @@ describe('IPC 协议契约', () => {
     expect(channel).toBe(IPC_CHANNELS.CANVAS_AUTONOMY_ASK);
     expect(payload).toMatchObject({ goal: '探索 3 个 hero 图方向', proposed: { maxVariants: 3 }, rationale: '多给几个方向挑' });
     expect(payload.requestId).toMatch(/^da-\d+/);
+    expect(payload.sessionId).toBe('s1'); // HIGH-2：信封绑 session，run 终态作废
   });
 });
 

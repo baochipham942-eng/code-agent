@@ -14,10 +14,12 @@ import {
 } from './canvasProposalController';
 import type { CanvasProposalOp } from '@shared/contract';
 import { planDiscards } from './applyCanvasProposal';
-import { generateProposedImage, estimateProposedImageCostCny, resolveProposedImageModel } from './designProposedImageGen';
-import { decideProposalHandling, autonomousApply, makeGroupedGenerate } from './autonomyProposalRouting';
+import { generateProposedImage, resolveProposedImageModel } from './designProposedImageGen';
+import { decideProposalHandling, autonomousApply, makeGroupedGenerate, resolveAutonomyImageCostCny } from './autonomyProposalRouting';
+import { isExhausted } from '@shared/contract/designAutonomy';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
+import { listCustomImageModels } from './designFiles';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -87,12 +89,23 @@ export function useCanvasProposalReview(): CanvasProposalReview {
           setGroupId: (id) => useDesignAutonomyStore.getState().setVariantGroupId(id),
           generate: (op, opts) => generateProposedImage(op, opts),
         });
-        void autonomousApply(request, {
-          baseDeps: { ...controllerDeps(), generate: groupedGenerate },
-          estimateCost: (op) => estimateProposedImageCostCny(resolveProposedImageModel(op.model, useDesignStore.getState().imageModel)),
-          getEnvelope: () => useDesignAutonomyStore.getState().envelope,
-          setEnvelope: (e) => useDesignAutonomyStore.getState().setEnvelope(e),
-        }).finally(() => { useCanvasProposalStore.getState().setApplying(null); });
+        void (async () => {
+          // HIGH-1：用与 main 出图同源的准确单价（自定义模型用 costCnyPerImage），杜绝 est 假低绕过 ¥ 闸。
+          const customModels = await listCustomImageModels().catch(() => []);
+          try {
+            await autonomousApply(request, {
+              baseDeps: { ...controllerDeps(), generate: groupedGenerate },
+              estimateCost: (op) => resolveAutonomyImageCostCny(resolveProposedImageModel(op.model, useDesignStore.getState().imageModel), customModels),
+              getEnvelope: () => useDesignAutonomyStore.getState().envelope,
+              setEnvelope: (e) => useDesignAutonomyStore.getState().setEnvelope(e),
+            });
+          } finally {
+            useCanvasProposalStore.getState().setApplying(null);
+            // MED-1：本轮耗尽即作废信封，免后续免费 op 在「已批准窗口外」继续自动应用。
+            const envNow = useDesignAutonomyStore.getState().envelope;
+            if (envNow && isExhausted(envNow)) useDesignAutonomyStore.getState().clear();
+          }
+        })();
         return;
       }
       setPending(request);
@@ -100,11 +113,12 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
     // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
     const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, (payload: { requestId: string }) => {
-      // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略 CANCEL（付费已 commit）。
+      // ADR-027 审计 HIGH-2(a)：自主 run 的 proposeCanvasOps abort/超时 → **无条件**作废活跃信封
+      // （即便正落地这条；abort 应停止后续付费）。与「忽略 UI 撤条」解耦——付费已 commit 只阻止撤审批条，不阻止信封作废。
+      if (useDesignAutonomyStore.getState().envelope) useDesignAutonomyStore.getState().clear();
+      // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略撤 UI（付费已 commit）。
       if (useCanvasProposalStore.getState().applyingRequestId === payload.requestId) return;
       clearIfStill(payload.requestId);
-      // ADR-027：自主 run 中途 abort/超时 → 作废活跃信封（active 信封下提议都走 auto，故 CANCEL 即自主中止）。
-      if (useDesignAutonomyStore.getState().envelope) useDesignAutonomyStore.getState().clear();
     });
     return () => {
       unsubscribe?.();

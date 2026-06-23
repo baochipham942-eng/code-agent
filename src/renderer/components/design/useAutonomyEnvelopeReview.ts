@@ -2,10 +2,11 @@
 // Grant 时在 renderer 建立信封（成本权威所在，红线④）+ 回裁决；之后 proposeCanvasOps 的
 // generateImage 提议会在信封内自动放行（见 useCanvasProposalReview）。
 import { useEffect, useCallback } from 'react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, type SessionStatusUpdateEvent } from '@shared/ipc';
 import type { AutonomyEnvelopeRequest, AutonomyGrant } from '@shared/contract';
 import ipcService from '../../services/ipcService';
 import { useDesignAutonomyStore } from './designAutonomyStore';
+import { isAutonomyRunTerminal } from './autonomyProposalRouting';
 
 export interface AutonomyEnvelopeReview {
   pendingRequest: AutonomyEnvelopeRequest | null;
@@ -33,17 +34,26 @@ export function useAutonomyEnvelopeReview(): AutonomyEnvelopeReview {
     const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_AUTONOMY_CANCEL, (payload: { requestId: string }) => {
       clearIfStill(payload.requestId);
     });
+    // 审计 HIGH-2：信封绑 agent run 生命周期——拥有它的 session 进终态（完成/中断/取消/空闲）即作废信封，
+    // 杜绝「run 结束后孤儿信封在下一轮无人复批即自动付费」。绑 sessionId 防误清他 session 的信封。
+    const unsubStatus = ipcService.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
+      const st = useDesignAutonomyStore.getState();
+      if (!st.envelope) return;
+      if (st.envelopeSessionId && event.sessionId !== st.envelopeSessionId) return; // 非本信封的 session
+      if (isAutonomyRunTerminal(event.status)) st.clear();
+    });
     return () => {
       unsubAsk?.();
       unsubCancel?.();
+      unsubStatus?.();
     };
   }, [setPendingRequest]);
 
   const grant = useCallback(async (granted: AutonomyGrant) => {
     const req = useDesignAutonomyStore.getState().pendingRequest;
     if (!req) return;
-    // 在 renderer 建立信封（夹紧 + 派生默认经 grantEnvelope，与 main 工具同口径）。
-    useDesignAutonomyStore.getState().grantFromApproval(granted);
+    // 在 renderer 建立信封（夹紧 + 派生默认经 grantEnvelope，与 main 工具同口径）；绑请求的 sessionId（HIGH-2）。
+    useDesignAutonomyStore.getState().grantFromApproval(granted, req.sessionId);
     try {
       await ipcService.invoke(IPC_CHANNELS.CANVAS_AUTONOMY_RESPONSE, { requestId: req.requestId, verdict: 'grant', granted });
     } finally {

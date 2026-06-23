@@ -83,6 +83,7 @@ export async function executeRequestDesignAutonomy(
     goal,
     proposed,
     ...(rationale ? { rationale } : {}),
+    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}), // 信封绑 session，run 终态作废（HIGH-2）
   };
 
   const mainWindow = BrowserWindow.getAllWindows()[0];

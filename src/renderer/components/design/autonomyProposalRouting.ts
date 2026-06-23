@@ -7,9 +7,34 @@
 // ============================================================================
 import type { CanvasProposalOp, CanvasOpProposal, CanvasProposalDecision, ProposeGenerateImageOp } from '@shared/contract';
 import { type AutonomyEnvelope, canAfford, consume, remaining, isExhausted } from '@shared/contract/designAutonomy';
+import { estimateImageCostCny } from '@shared/media/imageCost';
 import { applyProposal, type ProposalControllerDeps, type ProposalApplyOutcome } from './canvasProposalController';
 import type { CanvasNode } from './designCanvasTypes';
 import { groupKey } from './variantSpine';
+
+/** 自定义生图模型的计价信息（renderer 从 listCustomImageModels 取，与 main 出图计价同源）。 */
+export interface CustomImageModelPrice {
+  id: string;
+  modelName: string;
+  costCnyPerImage?: number;
+}
+
+/**
+ * 准确预估一张图的成本（¥）——**与 main 出图实际计价同源**（审计 HIGH-1）：
+ * 自定义模型用用户填的 costCnyPerImage（缺则按 modelName 查价表），否则按 modelId 查价表。
+ * 杜绝「自定义模型 est 回落 0.14、actual 按真价 ¥3 扣」导致预算硬天花板被绕过。
+ */
+export function resolveAutonomyImageCostCny(modelId: string, customModels: CustomImageModelPrice[]): number {
+  const custom = customModels.find((m) => m.id === modelId);
+  if (custom) return custom.costCnyPerImage ?? estimateImageCostCny(custom.modelName);
+  return estimateImageCostCny(modelId);
+}
+
+/** agent run 是否进入终态（非 running/paused/queued/cancelling）——终态即清自主信封（审计 HIGH-2）。 */
+const AUTONOMY_NONTERMINAL: ReadonlySet<string> = new Set(['running', 'paused', 'queued', 'cancelling']);
+export function isAutonomyRunTerminal(status: string): boolean {
+  return !AUTONOMY_NONTERMINAL.has(status);
+}
 
 /** 是否含破坏性 op（discardNode）——破坏性永远逐步审批，不进自主（边界3）。 */
 export function hasDestructiveOp(ops: CanvasProposalOp[]): boolean {

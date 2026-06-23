@@ -4,7 +4,10 @@ import {
   normalizeProposalOp,
   normalizeProposedShape,
   normalizeProposal,
+  formatCanvasSnapshotForPrompt,
+  CANVAS_SNAPSHOT_MAX_NODES,
   PROPOSAL_TEXT_MAX,
+  type CanvasSnapshot,
 } from '../../../src/shared/contract/canvasProposal';
 
 describe('normalizeProposalOp', () => {
@@ -91,5 +94,38 @@ describe('normalizeProposal', () => {
 
   it('非数组 → 空', () => {
     expect(normalizeProposal('nope')).toEqual({ ops: [], dropped: 0 });
+  });
+});
+
+describe('formatCanvasSnapshotForPrompt', () => {
+  const snap = (nodes: CanvasSnapshot['nodes'], extra: Partial<CanvasSnapshot> = {}): CanvasSnapshot => ({
+    nodes, connectors: [], shapeCount: 0, ...extra,
+  });
+
+  it('空画布 → null', () => {
+    expect(formatCanvasSnapshotForPrompt(snap([]))).toBeNull();
+    expect(formatCanvasSnapshotForPrompt(null)).toBeNull();
+    expect(formatCanvasSnapshotForPrompt(undefined)).toBeNull();
+  });
+
+  it('列出节点 id/label/坐标，含连线与形状计数', () => {
+    const out = formatCanvasSnapshotForPrompt(snap(
+      [{ id: 'n1', label: '登录页', x: 0, y: 0, width: 200, height: 400 }],
+      { connectors: [{ fromNodeId: 'n1', toNodeId: 'n2', label: '下一步' }], shapeCount: 3 },
+    ))!;
+    expect(out).toContain('n1');
+    expect(out).toContain('登录页');
+    expect(out).toContain('n1 → n2');
+    expect(out).toContain('下一步');
+    expect(out).toContain('3');
+    expect(out).toContain('ProposeCanvasOps');
+  });
+
+  it('节点超上限：截断并标记', () => {
+    const many = Array.from({ length: CANVAS_SNAPSHOT_MAX_NODES + 10 }, (_, i) => ({ id: `n${i}`, x: 0, y: 0, width: 10, height: 10 }));
+    const out = formatCanvasSnapshotForPrompt(snap(many))!;
+    expect(out).toContain(`仅列前 ${CANVAS_SNAPSHOT_MAX_NODES}`);
+    // 只渲染前 MAX 个 id 行
+    expect(out).not.toContain(`n${CANVAS_SNAPSHOT_MAX_NODES + 5} `);
   });
 });

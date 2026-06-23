@@ -78,6 +78,63 @@ export interface CanvasProposalDecision {
   skippedCount?: number;
 }
 
+// ── D1-B 画布快照（renderer → agent 上下文注入；轻量、限长，agent 据此引用真实节点 id）──
+
+/** 注入上下文的节点数 上限（防大画布撑爆 prompt；超出截断并标记）。 */
+export const CANVAS_SNAPSHOT_MAX_NODES = 40;
+
+export interface CanvasSnapshotNode {
+  id: string;
+  /** 节点标签或生成 prompt（让 agent 知道这是哪个屏/产物）。 */
+  label?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  kind?: 'image' | 'video';
+}
+
+export interface CanvasSnapshotConnector {
+  fromNodeId: string;
+  toNodeId: string;
+  label?: string;
+}
+
+/** 画布当前态的轻量快照（运行时态，不进 DB）。 */
+export interface CanvasSnapshot {
+  nodes: CanvasSnapshotNode[];
+  connectors: CanvasSnapshotConnector[];
+  /** 形状只给计数（freeform 标注，agent 一般不需逐个引用）。 */
+  shapeCount: number;
+  /** 是否因超 CANVAS_SNAPSHOT_MAX_NODES 截断了节点列表。 */
+  truncated?: boolean;
+}
+
+/**
+ * 把画布快照格式化为注入 system context 的文本块。空画布返回 null（无可注入）。
+ * 节点超上限则截断并提示——agent 只能对快照里列出的节点提议 op（stale-target 由应用引擎兜底）。
+ */
+export function formatCanvasSnapshotForPrompt(snap: CanvasSnapshot | undefined | null): string | null {
+  if (!snap || !Array.isArray(snap.nodes) || snap.nodes.length === 0) return null;
+  const capped = snap.nodes.slice(0, CANVAS_SNAPSHOT_MAX_NODES);
+  const lines: string[] = [];
+  lines.push('设计画布当前内容（你可以用 ProposeCanvasOps 提议排布/连线/标注，仅能引用下列节点 id）：');
+  lines.push(`节点（${snap.nodes.length} 个${snap.truncated || snap.nodes.length > CANVAS_SNAPSHOT_MAX_NODES ? '，仅列前 ' + CANVAS_SNAPSHOT_MAX_NODES + ' 个' : ''}）：`);
+  for (const n of capped) {
+    const label = n.label ? ` "${n.label.slice(0, 60)}"` : '';
+    const k = n.kind === 'video' ? 'video' : 'image';
+    lines.push(`- ${n.id}${label} [${k}] @(${Math.round(n.x)},${Math.round(n.y)}) ${Math.round(n.width)}×${Math.round(n.height)}`);
+  }
+  if (snap.connectors.length > 0) {
+    lines.push(`已有连线（${snap.connectors.length}）：`);
+    for (const c of snap.connectors.slice(0, CANVAS_SNAPSHOT_MAX_NODES)) {
+      lines.push(`- ${c.fromNodeId} → ${c.toNodeId}${c.label ? ` "${c.label.slice(0, 40)}"` : ''}`);
+    }
+  }
+  if (snap.shapeCount > 0) lines.push(`已有 freeform 形状/标注：${snap.shapeCount} 个。`);
+  return lines.join('\n');
+}
+
 // ── 校验/归一化（main 侧产出与 renderer 侧消费共用，防破损 op 进流程）──
 
 function isFiniteNumber(v: unknown): v is number {

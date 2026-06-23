@@ -67,6 +67,26 @@ describe('workbenchTurnContext', () => {
     expect(blocks[0]).toContain('当前这一条消息');
   });
 
+  it('注入设计画布快照（ADR-026 D1-B）：含 <design_canvas> 块 + 节点 id', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      canvasSnapshot: {
+        nodes: [{ id: 'n1', label: '登录页', x: 0, y: 0, width: 200, height: 400 }],
+        connectors: [],
+        shapeCount: 0,
+      },
+    });
+    const joined = blocks.join('\n');
+    expect(joined).toContain('<design_canvas>');
+    expect(joined).toContain('n1');
+    expect(joined).toContain('登录页');
+    expect(joined).toContain('ProposeCanvasOps');
+  });
+
+  it('无 canvasSnapshot：不注入 <design_canvas>', () => {
+    const blocks = buildWorkbenchTurnSystemContext({ selectedSkillIds: ['x'] });
+    expect(blocks.join('\n')).not.toContain('<design_canvas>');
+  });
+
   it('projects browser execution intent into the hidden turn system context', () => {
     const blocks = buildWorkbenchTurnSystemContext({
       executionIntent: {

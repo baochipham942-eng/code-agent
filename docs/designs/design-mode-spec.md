@@ -1,6 +1,6 @@
 # Design Mode 产品 Spec（设计工作区）
 
-> **状态**：v1 + T1-T6 + CD-Parity + P2/P3 视频已交付（已合 main）。**Tab 4 媒介重规划 + 厚版演示稿 + 4 增强已合（PR #260，详见 §0）**。**统一画布历史批次（UC，2026-06-22，随 v0.20.0 合 main）**：生成前贴参考图喂模型 + 设计历史统一到左侧一处（§4 末两行）。本文是产品层总览；技术架构见 `docs/architecture/design-mode.md`（厚版演示稿 §15、参考图垫图 §5.13、统一历史 §5.14），画布深度设计见 `docs/designs/design-canvas-cowart.md`，竞品来源见 `docs/competitive/`。
+> **状态**：v1 + T1-T6 + CD-Parity + P2/P3 视频已交付（已合 main）。**Tab 4 媒介重规划 + 厚版演示稿 + 4 增强已合（PR #260，详见 §0）**。**统一画布历史批次（UC，2026-06-22，随 v0.20.0 合 main）**：生成前贴参考图喂模型 + 设计历史统一到左侧一处（§4 末两行）。**Agent 操作画布（人审批，2026-06-23 合 main，§5.6）**：AI 提议→人审批→renderer 落地三刀（含付费生成提议，付费前置审批）。本文是产品层总览；技术架构见 `docs/architecture/design-mode.md`（厚版演示稿 §15、参考图垫图 §5.13、统一历史 §5.14、agent 操作画布 §5.15），画布深度设计见 `docs/designs/design-canvas-cowart.md`，竞品来源见 `docs/competitive/`。
 
 ---
 
@@ -71,6 +71,18 @@
 
 > T6 换肤仅作用于交互原型（proto HTML 预览）；画布静态 PNG 是像素图，换肤套不进去（故不做）。
 
+## 5.6 Agent 操作画布（人审批，ADR-026，2026-06-23 已交付）
+
+> 此前画布是「用户直接操作 + AI 直连出图」。本批新增第三方：**AI 也能提议改画布，你点头后由系统落地**。铁律——AI 只提议、不直接落地，守「人主导直接操作」。详见 [2026-06-23 spec](../specs/2026-06-23-agent-operated-design-canvas.md)。
+
+| 刀 | 用户价值 | 状态 |
+|----|---------|------|
+| 一刀 · 只读提议 | AI 在画布上提议排布/连线/标注，你看到 ghost 预览后逐项勾选应用或拒绝；AI 永不擅自改你的画布 | ✅ PR #277 |
+| 三刀 · 取舍 + 软删 | 一批提议可只应用你认可的子集；AI 提议「淘汰」是软删，可从「已淘汰·恢复」找回 | ✅ PR #278 |
+| 二刀 · 含付费生成 | AI 能提议「生成一张新图」，**预估 ¥ 在你点应用前就显示**（你不点不花钱），实际花费与预估一致 | ✅ PR #278 |
+
+> 付费前置审批：含生成的提议，审批面板即付费闸——你点 Apply 前零付费调用，拒绝/超时零花费。AI 不能引入新模型/端点（只用你已配置的）。二刀经 4 轮对抗审计收敛 + 真 key dogfood（¥0.14，预估==实际）。
+
 ## 6. 范围
 
 **v1 已交付**：顶层 Code/设计导航 · 三产物类型 · 原型实时预览 · 画布(konva)出图回灌 · 圈选真 inpaint · 版本对比 · 自由画布导入 · 尺寸选择 · 图片导出 · 设计质量自检 hook。
@@ -79,7 +91,9 @@
 
 **UC 已交付**（随 v0.20.0 合 main）：参考图垫图（生成前贴图喂 wanx `description_edit`，真 key dogfood 实锤跟随参考图）· 统一历史（图像/视频/原型收口左侧一处，历史 role-aware 把参考图与产物分组）· `role` 角色字段贯穿画布数据层 · 对抗审计 0 遗留 HIGH。
 
-**仍不做 / 后续**：agent 自主多轮编辑（让 agent 自己看结果再改）· 工作流历史链可视化 · 原型高级特性（设备切换/圈选改/版本快照，独立分支）· 桌面包真机 dogfood。
+**Agent 操作画布已交付**（PR #277/#278，§5.6）：AI 提议→人审批→renderer 落地三刀（一刀只读提议 · 三刀取舍+软删 · 二刀含付费生成，付费前置审批）。
+
+**仍不做 / 后续**：agent **自主**多轮编辑（让 agent 自己看结果反复改，无需人审批每步）· agent 提议编辑/扩图/视频等衍生付费 op（当前只给文生图）· 工作流历史链可视化 · 原型高级特性（设备切换/圈选改/版本快照，独立分支）· 桌面包真机 dogfood。
 
 ## 7. 关键决策（拍板记录，详见 canvas spec）
 
@@ -101,6 +115,7 @@
 
 ## 9. 关联文档
 
-- 技术架构：`docs/architecture/design-mode.md`
+- 技术架构：`docs/architecture/design-mode.md`（agent 操作画布见 §5.15）
+- Agent 操作画布：决策 `docs/decisions/026-agent-operated-design-canvas.md`、spec `docs/specs/2026-06-23-agent-operated-design-canvas.md`
 - 画布深度设计 + 调研 + D1-D4：`docs/designs/design-canvas-cowart.md`
 - 竞品借鉴清单：`docs/competitive/kun-设计tab-借鉴清单.md`、`docs/competitive/opendesign-lovart-借鉴清单.md`（T1-T6 借鉴源）

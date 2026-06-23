@@ -3,6 +3,7 @@
 > **范围**：Neo/code-agent 顶层「设计」工作区的完整技术架构——网页(HTML) + 图(设计稿/信息图) + 演示稿(厚版 PPT) + 视频 + 设计质量自检。基于 2026-06 多轮迭代（Kun 借鉴打底 + Cowart 式画布 + OpenDesign/Lovart 借鉴 T1-T6 + CD-Parity 四特性 + P2/P3 视频）提炼，2026-06-22 追加 **Tab 4 媒介重规划 + 厚版演示稿全链路（§15）** 与 **统一画布历史批次（UC：参考图垫图 §5.13 + 统一历史 §5.14）**。
 > **状态**：T1-T6 已合 main（PR #258 `b377aa424`）；CD-Parity 四特性已合（§5.9-5.12）；P2/P3 视频已合；**Tab 重规划 + 厚版演示稿 + 4 增强已合（PR #260 `4c9a6fda4`，详见 §15）**。
 > **统一画布历史批次（UC，2026-06-22，随 v0.20.0 合 main）**：参考图垫图（§5.13）+ 统一历史（§5.14，proto 版本控件并入左侧 composer + 历史 role-aware）+ `CanvasNode/Variant` 加 `role` 角色字段。对抗审计 0 遗留 HIGH，真 key dogfood 实锤参考图垫图可用。
+> **Agent 操作画布（人审批，2026-06-23 合 main，§5.15）**：新增第三方「agent 提议 → 人审批 → renderer 落地」（[ADR-026](../decisions/026-agent-operated-design-canvas.md) 三刀：一刀只读提议 PR #277 / 三刀取舍+软删 + 二刀含付费生成 PR #278）。agent 永不直接改画布；含付费生成的提议付费前置审批（预估==实际，dogfood 实锤）。二刀经 4 轮对抗审计收敛。详见 [2026-06-23 spec](../specs/2026-06-23-agent-operated-design-canvas.md)。
 > **配套文档**：产品 spec `docs/designs/design-mode-spec.md`；画布深度设计 `docs/designs/design-canvas-cowart.md`；演示稿计划 `docs/plans/design-tab-restructure-and-slides.md`；UC 实施计划 `docs/plans/design-unified-canvas-history.md`；PPT 引擎 `docs/guides/ppt-capability.md`；竞品来源 `docs/competitive/kun-设计tab-借鉴清单.md` 与 `docs/competitive/opendesign-lovart-借鉴清单.md`。
 
 ---
@@ -321,6 +322,48 @@ proto 预览态选色板 → injectThemeOverride(html, paletteId) 往 srcDoc 注
 - **持久化对称性**：canvas 的 pin/discard 内联 `canvas.json` 节点字段（chosen/discarded），proto 在 `spine.json`——两种形态的回滚路径都正确（canvas 走 setChosen re-pin、proto 走 pin/discard）。故"对称化"作为"读写回滚正确性"已满足，**不需新建 canvas 侧 spine.json**。
 - **故意保留的 UX 差异**：proto 多了 discard/compare/定稿（其特有交互），未强行对称到 canvas（避免过度工程）；两者数据模型同源、视觉语言一致、同处左侧。
 - 渲染分流：DesignWorkspace composer 按 `imageMode → DesignCostHistory` / `protoMode(=!canvas && !slides) → DesignProtoHistory`。
+
+### 5.15 Agent 操作画布（人审批，[ADR-026](../decisions/026-agent-operated-design-canvas.md)，2026-06-23 三刀合 main）
+
+前述 §5.1-5.14 都是**用户直接操作 + AI 直连出图**。本节是新增的第三方：**agent 也能提议改画布，人点头后由 renderer 落地**。铁律——**agent 只提议、不直接落地**，真正改 store 的永远是 renderer（守"人主导"）；**main 进程永不直接 mutate 画布**。详细产品契约见 [2026-06-23 spec](../specs/2026-06-23-agent-operated-design-canvas.md)。
+
+#### 数据流（提议 → 审批 → 落地）
+```
+[注入] design 模式每轮把 store 画布快照（节点 id/label/坐标 + 连线 + 形状计数，限长截断、排除 discarded）
+        注入 agent 上下文（formatCanvasSnapshotForPrompt）——agent 只能引用快照里的真实节点 id。
+[提议] agent 调 ProposeCanvasOps 工具 → 阻塞，main 经 CANVAS_PROPOSAL_ASK 推提议给 renderer。
+[预览] renderer 持 pending（canvasProposalStore）→ CanvasProposalGhostLayer 在 Konva 画蓝色虚影（改）/红色叉（淘汰），
+        含付费生成的 op 在 CanvasProposalReviewBar 显示预估 ¥（付费闸）。
+[审批] 用户逐 op 勾选 → Apply/Reject。Apply 经 applyProposal 落地，结果（applied/skipped/真实花费）
+        经 CANVAS_PROPOSAL_RESPONSE 回灌阻塞的工具 → agent 拿到地面真相。
+[取消] agent abort / 工具超时 → main 广播 CANVAS_PROPOSAL_CANCEL → renderer 撤审批条（防孤儿提议被事后误点付费）。
+```
+
+#### op 契约（`src/shared/contract/canvasProposal.ts`，main 产出与 renderer 消费共用校验）
+`CanvasProposalOp` 判别联合：`moveNode`/`addConnector`/`addShape`/`renameNode`（Layer1，一刀）+ `discardNode`（软删，三刀）+ `generateImage`（文生图，含付费，二刀）。`normalizeProposalOp` 剥离破损/越权 op——**硬删 `deleteNode` 永不在白名单**；`generateImage` 只留 `{prompt, model?, aspectRatio?}`（model 白名单校验在 renderer）。
+
+#### 落地双相（`canvasProposalController.applyProposal`，二刀混批顺序写死）
+| 相 | 内容 | 历史语义 |
+|----|------|----------|
+| Phase A（同步） | Layer1（move/connector/shape/rename）经 `store.applyProposalBatch` → 一次快照、一次 Cmd+Z 撤完 | 整批原子撤销单元 |
+| discard | `discardNode` 软删（不进 Cmd+Z，靠"已淘汰·恢复"托盘找回） | 非破坏，variant spine 兜底 |
+| Phase B（异步） | `generateImage` 串行付费出图（`designProposedImageGen.generateProposedImage` → 复用 `generateDesignImage` IPC，不落盘不清史，controller 收尾）；每张成功后**增量落盘** | 跨快照边界 |
+| 收尾 | **当且仅当 ≥1 张生成真落地**才 `clearEditHistory`（全失败则保 Layer1 undo） | #274 边界不变量 |
+
+- **Layer1 严格先于 Layer2，永不交错**：Layer2 加节点跨快照数组边界，收尾清史会销毁 Layer1 undo frame；若 Layer2 先跑则 Layer1 快照在节点集已变后才拍 → reconcile 错配重蹈"跨生成 undo 删节点"。
+- **付费前置审批（红线①）**：预估 ¥ 由 renderer 查价表（`estimateImageCostCny`，pricing.ts 唯一真源）算并显示，**不信 agent 报价**；阻塞工具等待期间零付费调用，用户 Apply 后才真出图。拒绝/超时零花费。dogfood 实锤预估==实际（wanx t2i 0.14）。
+- **模型/落位边界（红线②③）**：agent 提议 model 仅当是注册表内 t2i 模型才采纳，否则回退表单默认（`resolveProposedImageModel`）——不让 agent 引入新端点；生成图落位由 renderer 自动定（忽略 agent 坐标）。
+- **并发锁（审计 R3）**：`applyingRequestId` 提升到 `canvasProposalStore`（全局单例、跨组件重挂存活），在 apply/reject/clear/cancel 每个边界按 requestId 校验——防双击 Apply 双付费、付费期间 CANCEL 撤 UI、并发提议互相误清。付费生成期间画布盖忙态遮罩（绑 `applying`）拦 konva 指针，防手动编辑被收尾清史误清。
+
+#### 文件 / IPC / 测试
+| 层 | 落点 |
+|----|------|
+| 契约 | `src/shared/contract/canvasProposal.ts`（op 联合 + normalizer + 快照格式化） |
+| 工具（main） | `src/main/tools/modules/design/proposeCanvasOps.ts`(+`.schema.ts`)：阻塞往返 + 超时（含生成批按张数抬升）+ abort/超时广播 CANCEL |
+| 控制器（renderer） | `canvasProposalController.ts`（双相 applyProposal）+ `applyCanvasProposal.ts`（纯应用引擎 + stale-target 防御）+ `designProposedImageGen.ts`（Layer2 付费出图核） |
+| 状态/UI | `canvasProposalStore.ts`（pending + applyingRequestId 锁）+ `useCanvasProposalReview.ts`（订阅/应用/取消）+ `CanvasProposalReviewBar.tsx`（逐 op 勾选 + 付费闸）+ `CanvasProposalGhostLayer.tsx`（Konva 虚影） |
+| IPC | `CANVAS_PROPOSAL_ASK`（main→renderer 提议）/ `CANVAS_PROPOSAL_RESPONSE`（裁决回灌）/ `CANVAS_PROPOSAL_CANCEL`（abort/超时撤 UI） |
+| 测试 | `tests/unit/shared/canvasProposal.test.ts`、`tests/unit/design/{canvasProposalController,applyCanvasProposal,proposedImageModel}.test.ts`、`tests/unit/tools/modules/design/proposeCanvasOps.test.ts`、`tests/renderer/design/designCanvasStoreProposal.test.ts` |
 
 ---
 

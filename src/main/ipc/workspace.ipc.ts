@@ -290,7 +290,7 @@ async function handleEditDesignImage(
 // → 通义万相外扩补绘 → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
 export async function handleExpandDesignImage(
   payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
-): Promise<{ path: string }> {
+): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
   }
@@ -314,7 +314,7 @@ export async function handleExpandDesignImage(
   const baseBuf = await fsp.readFile(payload.baseImagePath);
   const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
   const scales = expandScalesForDirection(payload.direction, payload.ratio);
-  const { url } = await expandImage({
+  const { url, actualModel } = await expandImage({
     apiKey,
     prompt: payload.prompt?.trim() ? payload.prompt : '自然延伸画面背景，与原图风格一致',
     baseImageDataUrl: baseDataUrl,
@@ -327,14 +327,15 @@ export async function handleExpandDesignImage(
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
-  return { path: payload.outputPath };
+  // 成本透明补全：扩图是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
 // 设计画布去水印（T3：wanx function=remove_watermark）：底图(磁盘)读成 base64 → 消除中英文文字水印
 // → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
 export async function handleRemoveWatermarkDesignImage(
   payload: { baseImagePath: string; outputPath: string; prompt?: string },
-): Promise<{ path: string }> {
+): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('removeWatermarkDesignImage 需要 baseImagePath / outputPath');
   }
@@ -347,7 +348,7 @@ export async function handleRemoveWatermarkDesignImage(
   if (!apiKey) throw new Error('去水印需要百炼（DashScope）API Key。');
   const baseBuf = await fsp.readFile(payload.baseImagePath);
   const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
-  const { url } = await removeWatermark({
+  const { url, actualModel } = await removeWatermark({
     apiKey,
     baseImageDataUrl: baseDataUrl,
     prompt: payload.prompt,
@@ -356,7 +357,8 @@ export async function handleRemoveWatermarkDesignImage(
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
-  return { path: payload.outputPath };
+  // 成本透明补全：去水印是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
 // 设计画布视频生成（P2）：t2v 直连 / i2v 用画布图节点作底图。通义万相视频异步任务。

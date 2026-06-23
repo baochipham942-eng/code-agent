@@ -16,7 +16,7 @@
 
 外圈 4 项（借鉴清单余项）:
   节点连线 / freeform 图解 ... 🟡 实现完成待 PR/合并(分支 feat/design-diagram-canvas)
-  Agent 操作画布(人审批) ..... 🟡 一刀(只读提议)合 main #277；三刀(取舍/软删/恢复)+二刀(含付费生成)实现完成待 PR(分支 feat/agent-canvas-cut3)
+  Agent 操作画布(人审批) ..... ✅ 一刀(只读提议)合 main #277；三刀(取舍/软删/恢复)+二刀(含付费生成)合 main #278(merge 40fe9ac31)
   region-lock 升可选硬保证 ... 🟡 实现完成待 PR/合并(分支 feat/design-region-lock-strict)
   扩图/去水印成本补全 ........ ✅ 折进节点连线刀(待同 PR 合并)
 ```

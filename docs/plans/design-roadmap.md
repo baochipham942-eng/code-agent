@@ -11,14 +11,14 @@
 三地基（实施焦点）:
   ⑤ undo/redo ............... ✅ 已合 main (PR #267)
   ① 自定义生图模型 .......... ✅ 已合 main (PR #270)
-  ①′ 生成模型设置 tab ....... 🟡 待 PR/合并(IA 修正:配置迁设置页+自定义视频端点配置层)
+  ①′ 生成模型设置 tab ....... ✅ 已合 main(IA 修正:配置迁设置页+自定义视频端点配置层)
   ④ 统一偏好记忆 ............ ⚠️ 暂缓·需重写(注入地基错位)
 
-外圈 4 项（借鉴清单余项，未排期）:
-  节点连线 / freeform 图解 ... ⬜ 借鉴(是 Agent 操作画布前置)
-  Agent 操作画布(人审批) ..... ⬜ 借鉴(依赖节点连线)
+外圈 4 项（借鉴清单余项）:
+  节点连线 / freeform 图解 ... 🟡 实现完成待 PR/合并(分支 feat/design-diagram-canvas)
+  Agent 操作画布(人审批) ..... ⬜ 借鉴(依赖节点连线，现已解锁前置)
   region-lock 升可选硬保证 ... ⬜ 自补强
-  扩图/去水印成本补全 ........ ⬜ 自补强
+  扩图/去水印成本补全 ........ ✅ 折进节点连线刀(待同 PR 合并)
 ```
 
 ## 逐项状态
@@ -55,16 +55,37 @@ codex 修订 5 道坑全部落地并经实测验证：
 **不能按原蓝图直接做**：实地调查证实注入地基错位——`enrichDesignBriefForPrompt` 只服务通用 chat，设计三条生成路径（原型 `buildPrototypePrompt` / 画布出图 `buildImagePrompt` / 演示稿 `resolveTheme`）**全绕过它**。须按"三条各自落点"重写注入设计，且范围缩到轻量偏好（主题/模型/风格），别假装能统一注入品牌契约。
 计划：`docs/plans/design-preference-memory.md`（已含三线注入地图 + 10 条审计修订）。
 
-### 外圈 4 项（借鉴清单 §模块表，未排期）
-- **节点连线 / freeform 图解**：画布现仅 image/video 节点，无边/连线/形状。设计要梳理用户流/IA/流程图。中-高成本。**是 Agent 操作画布的前置。**
-- **Agent 操作画布（人审批）**：现设计出图 renderer 直连"不经 agent"。给 agent 画布工具（读状态/提议/应用 op），人审批后落地（守"人主导"）。高成本，依赖节点连线。
+### 外圈 4 项（借鉴清单 §模块表）
+
+#### 节点连线 / freeform 图解 — 🟡 实现完成待 PR/合并
+画布从"贴图墙"升级为图解/用户流 surface：节点↔节点连线（实时锚点跟随、可文字 label）+ freeform 形状
+（矩形/椭圆/线/文字/便签），统一进 Cmd/Ctrl+Z 撤销栈。**Agent 操作画布的前置地基。**
+计划：`docs/plans/design-node-connectors.md`。worktree `code-agent-diagram` / 分支 `feat/design-diagram-canvas`。
+- **数据模型加法**（`CANVAS_DOC_VERSION` 维持 1，老档零破坏）：`designDiagramTypes.ts` connector/shape 模型 +
+  归一化 + 悬空连线过滤；`designCanvasTypes` 序列化仅非空落盘。
+- **纯逻辑 TDD**：`diagramReducer`（形状绘制归约器）+ `connectorGeometry`（两端中心连线与边框交点作锚点）。
+- **undo 重构**为快照帧 `{nodes,connectors,shapes}`（节点 reconcile 原样保留，图解层整帧还原）；store API 不变。
+- **UI**：`DiagramLayer`（渲染+选中+连接 hit-rect）+ `DiagramToolbar`（模式/调色板/删除）+ 绘制走 Stage
+  处理器（能在节点之上起笔）+ 文字内联编辑 + Delete 键 + i18n(zh/en)。**配置/管理不进画布**（消费 surface 只放工具选择）。
+- **skeptic 审计**（独立 context 当反方）抓 1 HIGH（redo 删除失效，base #267 埋下，加 `reconcileRedoFrame` 修正）
+  + 2 MED（connect 源残留 / 文字 Enter+blur 双提交）+ 2 LOW 全修，回归测试覆盖。
+- **验证**：typecheck 净 + 316 design 测全绿（67 新纯逻辑/store 测 + 5 toolbar SSR）+ renderer 真实构建过。
+  **未做完整 konva 真机 E2E**（prod E2E 构建缺 dev 钩子、本机无 node-canvas/headless）——konva 渲染是声明式薄层，
+  其输入（几何/归约器/store）已被纯逻辑测穷尽覆盖。
+
+#### 扩图/去水印成本补全 — ✅ 折进节点连线刀（待同 PR 合并）
+扩图/去水印是真实付费 wanx imageedit 调用，但 handler 此前只回 `{path}` 不进成本面板。补全：service 回 actualModel、
+handler 回 `{path,actualModel,costCny}`、renderer `landResultAsVariant` 挂 costCny 到回灌节点（与出图/编辑对称）。
+
+#### 其余两项（未排期）
+- **Agent 操作画布（人审批）**：现设计出图 renderer 直连"不经 agent"。给 agent 画布工具（读状态/提议/应用 op），人审批后落地（守"人主导"）。高成本，**节点连线已做完，前置解锁。**
 - **region-lock 升可选硬保证**：现 region-lock 是 best-effort（sharp 不可用/gate 抛错降级）。升级为可选硬保证。低-中成本。
-- **扩图/去水印成本补全**：现这两路只回 `{path}` 无 costCny。补全成本透明。低成本。
 
 ## 进度日志
 - 2026-06-23：Alma 借鉴分析完成 → 借鉴清单归档 → agent-team 探索三地基 → codex+skeptic 审计 → **⑤ 实现并合 main(PR #267)** → ① 另起会话推进。
 - 2026-06-23：**① 自定义生图模型合 main（PR #270）**（rebase 最新 main；Phase1-4 + codex 5 修订 + 独立 skeptic 抓 1 HIGH+1 MED 全修 + 真机 HTTP-IPC + Playwright；合并时补 renderer-capability-diff 漏登记的 3 capability）。
-- 2026-06-23：**①′ 生成模型设置 tab 实现完成**（IA 修正：配置迁设置页+设计页只选；自定义视频端点配置层对称 image 但出片留空待接入），待 PR/合并（分支 feat/visual-models-settings-tab）。
+- 2026-06-23：**①′ 生成模型设置 tab 合 main**（IA 修正：配置迁设置页+设计页只选；自定义视频端点配置层对称 image 但出片留空待接入）。
+- 2026-06-23：**节点连线 / freeform 图解实现完成**（外圈 keystone，解锁 Agent 操作画布前置）+ **扩图/去水印成本补全折进同刀**。Phase1-3 TDD（数据模型加法/形状归约器/连线几何/undo 快照重构/store/DiagramLayer+Toolbar/i18n）+ 独立 skeptic 抓 1 HIGH+2 MED+2 LOW 全修 + 316 design 测全绿 + 真实 renderer 构建。待 PR/合并（分支 `feat/design-diagram-canvas`，计划 `docs/plans/design-node-connectors.md`）。
 
 ## 索引
 - 借鉴总纲：`docs/competitive/alma-借鉴清单.md`

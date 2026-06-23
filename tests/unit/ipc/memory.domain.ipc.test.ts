@@ -148,12 +148,15 @@ describe('deleteByCategory', () => {
   it('preference → 逐个删偏好并计数', async () => {
     db.getAllPreferences.mockReturnValue({ a: 1, b: 2 });
     expect((await call('deleteByCategory', { category: 'preference' })).data).toBe(2);
+    // Codex 审计：断言删的是哪些 key，错删别的 key 不能绿
+    expect(db.deletePreference).toHaveBeenCalledWith('a');
+    expect(db.deletePreference).toHaveBeenCalledWith('b');
     expect(db.deletePreference).toHaveBeenCalledTimes(2);
   });
 
-  it('其他分类 → deleteProjectKnowledgeBySource', async () => {
+  it('其他分类 → deleteProjectKnowledgeBySource(映射后的旧源名)', async () => {
     expect((await call('deleteByCategory', { category: 'learned' })).data).toBe(3);
-    expect(db.deleteProjectKnowledgeBySource).toHaveBeenCalled();
+    expect(db.deleteProjectKnowledgeBySource).toHaveBeenCalledWith('learned');
   });
 });
 
@@ -178,7 +181,8 @@ describe('export / import / stats', () => {
     const res = (await call('import', { data })).data as { imported: number; skipped: number };
     expect(res.skipped).toBe(1); // 第一条抛错
     expect(res.imported).toBe(1); // 第二条成功
-    expect(db.saveProjectKnowledge).toHaveBeenCalled();
+    // Codex 审计：断言导入的 projectPath/content/source/confidence，错导入不能绿
+    expect(db.saveProjectKnowledge).toHaveBeenCalledWith('/p', expect.any(String), '经验一则', 'learned', 0.8);
   });
 
   it('getMemoryStats 统计分类/来源/总数', async () => {

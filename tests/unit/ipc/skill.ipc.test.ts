@@ -206,9 +206,11 @@ describe('会话挂载', () => {
     expect(svc.session.mountSkill).toHaveBeenCalledWith('s1', 'pdf', 'lib1', 'manual');
   });
 
-  it('SESSION_UNMOUNT / SESSION_LIST 同步委派', async () => {
+  it('SESSION_UNMOUNT / SESSION_LIST 同步委派（带正确 sessionId/skillName）', async () => {
     expect(await call(SKILL_CHANNELS.SESSION_UNMOUNT, 's1', 'pdf')).toBe(true);
+    expect(svc.session.unmountSkill).toHaveBeenCalledWith('s1', 'pdf');
     expect(await call(SKILL_CHANNELS.SESSION_LIST, 's1')).toEqual([{ name: 'pdf' }]);
+    expect(svc.session.getMountedSkills).toHaveBeenCalledWith('s1');
   });
 
   it('SESSION_RECOMMEND 缺 userInput 传空串', async () => {
@@ -330,12 +332,14 @@ describe('combo 录制', () => {
     expect(await call(SKILL_CHANNELS.COMBO_START, 's1')).toEqual({ success: true });
     expect(svc.recorder.startRecording).toHaveBeenCalledWith('s1');
     expect(await call(SKILL_CHANNELS.COMBO_STOP, 's1')).toEqual({ success: true });
+    expect(svc.recorder.stopRecording).toHaveBeenCalledWith('s1'); // Codex 审计：错传 sessionId 不能绿
     expect(await call(SKILL_CHANNELS.COMBO_MARK_TURN, 's1', 'hi')).toEqual({ success: true });
     expect(svc.recorder.markTurn).toHaveBeenCalledWith('s1', 'hi');
   });
 
-  it('CHECK_SUGGESTION 透传 recorder 结果', async () => {
+  it('CHECK_SUGGESTION 透传 recorder 结果（带 sessionId）', async () => {
     expect(await call(SKILL_CHANNELS.COMBO_CHECK_SUGGESTION, 's1')).toEqual({ suggested: false });
+    expect(svc.recorder.checkSuggestion).toHaveBeenCalledWith('s1');
   });
 
   it('COMBO_SAVE 委派 saveAsSkill', async () => {
@@ -361,8 +365,9 @@ describe('草稿确认队列', () => {
     expect(await call(SKILL_CHANNELS.DRAFT_LIST)).toEqual([{ id: 'd1' }]);
   });
 
-  it('DRAFT_CONFIRM 成功后重扫 discovery', async () => {
+  it('DRAFT_CONFIRM 成功后重扫 discovery（带正确 draftId/workingDirectory）', async () => {
     expect(await call(SKILL_CHANNELS.DRAFT_CONFIRM, 'd1', '/wd')).toEqual({ success: true });
+    expect(svc.drafts.confirmSkillDraft).toHaveBeenCalledWith('d1', '/wd'); // Codex 审计：错传 draftId 不能绿
     expect(svc.discovery.initialize).toHaveBeenCalledWith('/wd');
   });
 
@@ -372,8 +377,9 @@ describe('草稿确认队列', () => {
     expect(svc.discovery.initialize).not.toHaveBeenCalled();
   });
 
-  it('DRAFT_REJECT 委派', async () => {
+  it('DRAFT_REJECT 委派（带正确 draftId）', async () => {
     expect(await call(SKILL_CHANNELS.DRAFT_REJECT, 'd1')).toEqual({ success: true });
+    expect(svc.drafts.rejectSkillDraft).toHaveBeenCalledWith('d1');
   });
 
   it('DRAFT_LIST service 抛错重抛', async () => {

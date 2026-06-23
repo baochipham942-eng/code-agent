@@ -136,6 +136,9 @@ describe('MARKETPLACE_REFRESH', () => {
     mp.refreshMarketplace.mockRejectedValueOnce(new Error('a fail')).mockResolvedValueOnce(undefined);
     const res = await call(IPC_CHANNELS.MARKETPLACE_REFRESH);
     expect(res).toEqual({ success: true, data: undefined });
+    // Codex 审计：断言刷的是 a 和 b，而非 refresh(undefined) 两次或同一个两次
+    expect(mp.refreshMarketplace).toHaveBeenCalledWith('a');
+    expect(mp.refreshMarketplace).toHaveBeenCalledWith('b');
     expect(mp.refreshMarketplace).toHaveBeenCalledTimes(2);
   });
 });

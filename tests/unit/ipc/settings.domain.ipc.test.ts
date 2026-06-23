@@ -208,11 +208,12 @@ describe('devMode', () => {
     expect((await callSettings('getDevMode')).data).toBe(false);
   });
 
-  it('setDevMode 写 secureStorage 并同步 config', async () => {
+  it('setDevMode 写 secureStorage 并把 devModeAutoApprove 同步进 config（保留既有 permissions）', async () => {
     env.config.getSettings.mockReturnValue({ permissions: { permissionMode: 'default' } });
     await callSettings('setDevMode', { enabled: true });
     expect(env.secureStorage.set).toHaveBeenCalledWith('settings.devModeAutoApprove', 'true');
-    expect(env.config.updateSettings).toHaveBeenCalled();
+    // Codex 审计：同步点是 payload 本身——丢掉既有 permissions 或没写 devModeAutoApprove 不能绿
+    expect(env.config.updateSettings).toHaveBeenCalledWith({ permissions: { permissionMode: 'default', devModeAutoApprove: true } });
   });
 });
 

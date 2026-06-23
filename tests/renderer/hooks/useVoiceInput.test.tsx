@@ -173,7 +173,13 @@ describe('录音 → 转写主链路', () => {
     const view = renderHook(() => useVoiceInput({ onTranscript }));
     await waitFor(() => expect(view.result.current.isEnabled).toBe(true));
     await recordAndStop(view);
-    expect(ipc.transcribeSpeech).toHaveBeenCalled();
+    // Codex 审计：断言 ASR 选项被透传——source='composer' 与 durationSeconds 是 load-bearing，
+    // 丢了会让计费/上下文归属错乱却仍绿
+    expect(ipc.transcribeSpeech).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ source: 'composer', durationSeconds: 2, mode: expect.anything(), language: expect.anything() }),
+    );
     expect(onTranscript).toHaveBeenCalledWith('你好世界', expect.objectContaining({ success: true }));
     expect(view.result.current.status).toBe('idle');
   });

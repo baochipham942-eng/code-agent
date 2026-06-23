@@ -243,6 +243,43 @@ fn web_server_node_env() -> &'static str {
     }
 }
 
+/// 测试/开发通道的数据目录名，与生产 `.code-agent` 并存、互不污染。
+const DEV_DATA_DIR_NAME: &str = ".code-agent-dev";
+
+/// 根据 bundle identifier 与构建 profile 推导测试/开发通道的数据目录。
+/// 返回 `Some(dir)` 表示应把 `CODE_AGENT_DATA_DIR` 设为该目录；`None` 表示沿用生产默认。
+/// 规则：identifier 以 `.dev` 结尾（打包的测试包），或 debug 构建（`cargo tauri dev` 调试态）
+/// → 切到 `<home>/.code-agent-dev`；其余（生产包）→ `None`。
+fn dev_channel_data_dir(identifier: &str, is_debug: bool, home: Option<&Path>) -> Option<PathBuf> {
+    if !(is_debug || identifier.ends_with(".dev")) {
+        return None;
+    }
+    Some(home?.join(DEV_DATA_DIR_NAME))
+}
+
+/// 在 spawn webServer 之前，按运行通道把数据目录与 bundle id 落到进程 env：
+/// - `CODE_AGENT_DATA_DIR`：未显式设置且处于 dev/test 通道时切到 `.code-agent-dev`，
+///   随 `.envs(env::vars())` 传给 node 子进程，原生 appshots / native_desktop 也读它，
+///   保证测试调试不写进生产包的 `~/.code-agent`。
+/// - `CODE_AGENT_BUNDLE_ID`：暴露真实 bundle id，让麦克风 / 截图逻辑不误读生产包的授权。
+fn apply_channel_env(app: &tauri::AppHandle) {
+    let identifier = app.config().identifier.clone();
+    if env::var_os("CODE_AGENT_BUNDLE_ID").is_none() {
+        env::set_var("CODE_AGENT_BUNDLE_ID", &identifier);
+    }
+    if env::var_os("CODE_AGENT_DATA_DIR").is_some() {
+        return; // 已显式指定（含打包测试包），尊重不覆盖
+    }
+    let home = env::var_os("HOME").map(PathBuf::from);
+    if let Some(dir) = dev_channel_data_dir(&identifier, cfg!(debug_assertions), home.as_deref()) {
+        eprintln!(
+            "[channel] dev/test build ({identifier}) → CODE_AGENT_DATA_DIR={}",
+            dir.display()
+        );
+        env::set_var("CODE_AGENT_DATA_DIR", dir);
+    }
+}
+
 fn is_server_running() -> bool {
     let client = match Client::builder().timeout(Duration::from_secs(2)).build() {
         Ok(c) => c,
@@ -1009,10 +1046,10 @@ fn open_update_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod runtime_env_tests {
     use super::{
-        bundled_node_candidates, web_server_node_env, web_server_runtime_env,
+        bundled_node_candidates, dev_channel_data_dir, web_server_node_env, web_server_runtime_env,
         BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV,
     };
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn includes_bundled_runtime_root_for_web_server() {
@@ -1045,6 +1082,31 @@ mod runtime_env_tests {
                     Path::new("/tmp/Agent.app/Contents/Resources").to_path_buf()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn dev_channel_dir_routes_test_builds_to_sibling_dir() {
+        let home = PathBuf::from("/Users/x");
+        // 打包测试包：identifier 以 .dev 结尾（release 构建）→ 切到 .code-agent-dev
+        assert_eq!(
+            dev_channel_data_dir("com.linchen.code-agent.dev", false, Some(&home)),
+            Some(PathBuf::from("/Users/x/.code-agent-dev"))
+        );
+        // 开发调试：debug 构建（cargo tauri dev），identifier 仍是生产值 → 也切到 dev
+        assert_eq!(
+            dev_channel_data_dir("com.linchen.code-agent", true, Some(&home)),
+            Some(PathBuf::from("/Users/x/.code-agent-dev"))
+        );
+        // 生产包：release + 非 .dev → 不切（沿用 ~/.code-agent）
+        assert_eq!(
+            dev_channel_data_dir("com.linchen.code-agent", false, Some(&home)),
+            None
+        );
+        // 无 HOME → None（不 panic）
+        assert_eq!(
+            dev_channel_data_dir("com.linchen.code-agent.dev", false, None),
+            None
         );
     }
 
@@ -1493,6 +1555,9 @@ fn main() {
             keybindings_set_global_hotkeys
         ])
         .setup(|app| {
+            // 必须在 spawn webServer 之前：决定本进程（含 node 子进程）的数据目录通道。
+            apply_channel_env(&app.handle());
+
             if cfg!(debug_assertions) && is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).
                 // Release builds must not trust an arbitrary healthy localhost:8180 process:

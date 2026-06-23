@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Agent Neo Dev",
+  "identifier": "com.linchen.code-agent.dev",
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/dev-disabled/latest.json"
+      ]
+    }
+  }
+}

@@ -34,6 +34,13 @@ pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "LeftCmd+RightCmd";
 
 #[cfg(target_os = "macos")]
 const OWN_BUNDLE_ID: &str = "com.linchen.code-agent";
+
+/// 运行时真实 bundle id：测试包（com.linchen.code-agent.dev）由 main 注入 CODE_AGENT_BUNDLE_ID，
+/// 缺省时回退到生产常量，保证排除"自己窗口"时认的是当前进程的 bundle 而非写死的生产值。
+#[cfg(target_os = "macos")]
+fn own_bundle_id() -> String {
+    std::env::var("CODE_AGENT_BUNDLE_ID").unwrap_or_else(|_| OWN_BUNDLE_ID.to_string())
+}
 #[cfg(target_os = "macos")]
 const AX_TEXT_MAX_CHARS: usize = 4000;
 #[cfg(target_os = "macos")]
@@ -490,7 +497,7 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
         }}
         emit(["found": false])
         "#,
-        own = OWN_BUNDLE_ID,
+        own = own_bundle_id(),
         own_pid = std::process::id()
     );
 

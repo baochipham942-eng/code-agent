@@ -163,6 +163,8 @@ export const VisualModelsSettings: React.FC = () => {
     empty: s.videoEmpty,
     costLabel: s.videoCostLabel,
     baseUrlHint: s.videoBaseUrlHint,
+    namePlaceholder: s.videoNamePlaceholder,
+    modelNamePlaceholder: s.videoModelNamePlaceholder,
   };
 
   const [builtinImage, setBuiltinImage] = useState<BuiltinRow[]>([]);

@@ -331,6 +331,8 @@ export const en: Translations = {
       videoSubtitle: 'Connect your own video generation endpoint. Keys stay on this device.',
       videoEmpty: 'No custom video endpoints yet. Click "Add" to connect your own video model.',
       videoCostLabel: 'Cost per video (CNY, optional)',
+      videoNamePlaceholder: 'e.g. My video model',
+      videoModelNamePlaceholder: 'e.g. sora-1',
       videoBaseUrlHint: 'Video generation endpoint root. HTTPS public URLs only.',
       videoPendingNote: 'Generation coming soon: custom video endpoints can be saved now; the generate call will be wired up later.',
     },

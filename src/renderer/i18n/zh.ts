@@ -329,6 +329,8 @@ export const zh = {
       videoSubtitle: '接入你自己的视频生成端点。密钥只存在本机。',
       videoEmpty: '还没有自定义视频端点。点「新增」接入你自己的视频模型。',
       videoCostLabel: '单条成本（元，可选）',
+      videoNamePlaceholder: '例如：我的视频模型',
+      videoModelNamePlaceholder: '例如：sora-1',
       videoBaseUrlHint: '视频生成端点根地址。仅支持 https 公网地址。',
       videoPendingNote: '出片能力接入中：自定义视频端点目前可配置保存，出片调用待接入真实协议。',
     },

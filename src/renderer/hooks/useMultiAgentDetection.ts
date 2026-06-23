@@ -47,7 +47,7 @@ const MULTI_AGENT_TOOLS = [
 /**
  * Extract all tool calls from messages
  */
-function extractToolCalls(messages: Message[]): ToolCall[] {
+export function extractToolCalls(messages: Message[]): ToolCall[] {
   const toolCalls: ToolCall[] = [];
 
   for (const message of messages) {
@@ -62,14 +62,14 @@ function extractToolCalls(messages: Message[]): ToolCall[] {
 /**
  * Check if a tool call is related to multi-agent operations
  */
-function isMultiAgentToolCall(toolCall: ToolCall): boolean {
+export function isMultiAgentToolCall(toolCall: ToolCall): boolean {
   return MULTI_AGENT_TOOLS.includes(toolCall.name);
 }
 
 /**
  * Extract agent name from tool call arguments
  */
-function extractAgentName(toolCall: ToolCall): string | null {
+export function extractAgentName(toolCall: ToolCall): string | null {
   const args = toolCall.arguments;
 
   // Common argument names for agent identification
@@ -95,7 +95,7 @@ function extractAgentName(toolCall: ToolCall): string | null {
 /**
  * Detect collaboration pattern from tool call sequence
  */
-function detectPattern(toolCalls: ToolCall[]): CollaborationPattern {
+export function detectPattern(toolCalls: ToolCall[]): CollaborationPattern {
   const agentToolCalls = toolCalls.filter(isMultiAgentToolCall);
 
   if (agentToolCalls.length === 0) {
@@ -180,7 +180,7 @@ function detectPattern(toolCalls: ToolCall[]): CollaborationPattern {
 /**
  * Extract unique agent names from tool calls
  */
-function extractActiveAgents(toolCalls: ToolCall[]): string[] {
+export function extractActiveAgents(toolCalls: ToolCall[]): string[] {
   const agents = new Set<string>();
 
   // Always include the main agent

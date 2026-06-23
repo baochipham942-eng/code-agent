@@ -1,5 +1,5 @@
 // ADR-026 D2-A：订阅 agent 画布提议（CANVAS_PROPOSAL_ASK）→ 持待审批态 → Apply/Reject 落地。
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { CanvasOpProposal } from '@shared/contract';
 import ipcService from '../../services/ipcService';
@@ -52,17 +52,22 @@ function controllerDeps(): ProposalControllerDeps {
 
 export interface CanvasProposalReview {
   pending: CanvasOpProposal | null;
+  /** 是否有提议正在落地（含 Phase B 出图）——驱动画布忙态遮罩（R3 MED-1）。 */
+  applying: boolean;
   apply: (selectedOps?: CanvasProposalOp[]) => Promise<ProposalApplyOutcome | void>;
   reject: (feedback?: string) => Promise<void>;
 }
 
+/** 仅当 store 当前 pending 仍是该 requestId 才清——防并发提议互相误清（R3 MED-2）。 */
+function clearIfStill(requestId: string): void {
+  const st = useCanvasProposalStore.getState();
+  if (st.pending?.requestId === requestId) st.clear();
+}
+
 export function useCanvasProposalReview(): CanvasProposalReview {
   const pending = useCanvasProposalStore((s) => s.pending);
+  const applyingRequestId = useCanvasProposalStore((s) => s.applyingRequestId);
   const setPending = useCanvasProposalStore((s) => s.setPending);
-  const clear = useCanvasProposalStore((s) => s.clear);
-  // 用户是否已点 Apply、正在落地（含 Phase B 出图）。在途时忽略 CANCEL，避免审批条/忙态遮罩中途消失
-  // 而生成仍在后台跑（R2 MED-1）；用户已 commit 的付费照常完成，agent 的 respond 落到已删 pending 自然 no-op。
-  const applyingRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
@@ -71,36 +76,42 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
     // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
     const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, (payload: { requestId: string }) => {
-      if (applyingRef.current) return; // R2 MED-1：已在落地中，不中途撤 UI
-      const cur = useCanvasProposalStore.getState().pending;
-      if (cur && cur.requestId === payload.requestId) clear();
+      // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略 CANCEL（付费已 commit）。
+      if (useCanvasProposalStore.getState().applyingRequestId === payload.requestId) return;
+      clearIfStill(payload.requestId);
     });
     return () => {
       unsubscribe?.();
       unsubCancel?.();
     };
-  }, [setPending, clear]);
+  }, [setPending]);
 
   const apply = useCallback(async (selectedOps?: CanvasProposalOp[]) => {
-    if (!pending) return;
-    applyingRef.current = true;
+    const st = useCanvasProposalStore.getState();
+    const target = st.pending;
+    // R3 HIGH-1：重入闸——已有提议在落地则忽略（防双击 Apply 双付费 / Apply 后又点 Reject）。
+    if (!target || st.applyingRequestId) return;
+    st.setApplying(target.requestId);
     try {
-      return await applyProposal(pending, controllerDeps(), selectedOps);
+      return await applyProposal(target, controllerDeps(), selectedOps);
     } finally {
-      // 用户已决策：即使回 agent 的 IPC 失败也清掉审批条，不把 UI 卡住（本地变更已落）。
-      applyingRef.current = false;
-      clear();
+      useCanvasProposalStore.getState().setApplying(null);
+      clearIfStill(target.requestId); // R3 MED-2：只清自己这条，别误清并发新提议
     }
-  }, [pending, clear]);
+  }, []);
 
   const reject = useCallback(async (feedback?: string) => {
-    if (!pending) return;
+    const st = useCanvasProposalStore.getState();
+    const target = st.pending;
+    if (!target || st.applyingRequestId) return; // 同闸：落地中不接受 Reject
+    st.setApplying(target.requestId);
     try {
-      await rejectProposal(pending, { respond: controllerDeps().respond }, feedback);
+      await rejectProposal(target, { respond: controllerDeps().respond }, feedback);
     } finally {
-      clear();
+      useCanvasProposalStore.getState().setApplying(null);
+      clearIfStill(target.requestId);
     }
-  }, [pending, clear]);
+  }, []);
 
-  return { pending, apply, reject };
+  return { pending, applying: applyingRequestId !== null, apply, reject };
 }

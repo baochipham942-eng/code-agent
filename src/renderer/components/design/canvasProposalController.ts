@@ -54,6 +54,7 @@ export async function applyProposal(
   // 顶层兜底（审计 R2 LOW-1）：Phase A 的 applyBatch/applyDiscards 是同步调用，万一抛错
   // （如畸形 layer 态）会绕过 respond，让阻塞的 agent 挂到超时。这里保证任何未捕获抛错都先回一个
   // reject 再外抛——agent 立即解阻、知道没应用；UI 侧由 apply() 的 finally 清掉审批条。
+  let responded = false;
   try {
   // 防御纵深：IPC 收到的 ops（或用户勾选的子集）在 renderer 侧再过一道校验/截断。
   const { ops } = normalizeProposal(selectedOps ?? proposal.ops);
@@ -104,6 +105,7 @@ export async function applyProposal(
   const deselected = selectedOps ? Math.max(0, proposal.ops.length - selectedOps.length) : 0;
   const appliedCount = layer1.applied.length + discard.applied + genApplied;
   const skippedCount = layer1.skipped.length + discard.skipped + deselected + genSkipped;
+  responded = true; // R3 LOW-1：标记已应答，正常 respond 即将发出（即便它抛错也不在 catch 补发 reject）
   await deps.respond({
     requestId: proposal.requestId,
     verdict: 'apply',
@@ -113,8 +115,11 @@ export async function applyProposal(
   });
   return { appliedCount, skippedCount, layer1 };
   } catch (err) {
-    // 兜底：任何未捕获抛错都先回 reject 让 agent 解阻（best-effort，respond 自身再失败也吞掉），再外抛。
-    try { await deps.respond({ requestId: proposal.requestId, verdict: 'reject', feedback: '画布应用内部错误' }); } catch { /* ignore */ }
+    // 兜底：Phase A 同步抛错等未应答情形才补发 reject 让 agent 解阻（R3 LOW-1：已应答则不补，
+    // 否则画布改动已落地却补 reject 会与 agent 认知 desync）。best-effort，respond 再失败也吞掉。
+    if (!responded) {
+      try { await deps.respond({ requestId: proposal.requestId, verdict: 'reject', feedback: '画布应用内部错误' }); } catch { /* ignore */ }
+    }
     throw err instanceof Error ? err : new Error(String(err));
   }
 }

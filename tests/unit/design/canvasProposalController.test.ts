@@ -250,6 +250,18 @@ describe('applyProposal 二刀：含付费生成（Layer2）', () => {
     expect(d.respond.mock.calls[0][0]).toMatchObject({ requestId: 'cp-g10', verdict: 'reject' });
   });
 
+  // 审计 R3 LOW-1：正常 respond(apply) 自身抛错（IPC 断）时，catch 不得再补发 reject——
+  // 画布改动已落地，补 reject 会造成状态与 agent 认知不一致。只发一次。
+  it('respond(apply) 抛错：catch 不补发 reject（避免状态 desync），全程只 respond 一次', async () => {
+    const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'moveNode' }], skipped: [], changed: true };
+    const d = genDeps(result, []);
+    d.respond = vi.fn(() => { throw new Error('IPC disconnect'); });
+    const p: CanvasOpProposal = { requestId: 'cp-g11', ops: [{ kind: 'moveNode', nodeId: 'a', x: 1, y: 2 }] };
+    await applyProposal(p, d).catch(() => void 0);
+    expect(d.respond).toHaveBeenCalledTimes(1); // 只一次（apply），不补 reject
+    expect(d.respond.mock.calls[0][0]).toMatchObject({ verdict: 'apply' });
+  });
+
   it('纯 Layer1 批（无生成）：不调 setBusy（无需锁画布）', async () => {
     const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'moveNode' }], skipped: [], changed: true };
     const d = { ...genDeps(result, []), setBusy: vi.fn() };

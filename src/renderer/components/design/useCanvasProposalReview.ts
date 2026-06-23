@@ -14,7 +14,10 @@ import {
 } from './canvasProposalController';
 import type { CanvasProposalOp } from '@shared/contract';
 import { planDiscards } from './applyCanvasProposal';
-import { generateProposedImage } from './designProposedImageGen';
+import { generateProposedImage, estimateProposedImageCostCny, resolveProposedImageModel } from './designProposedImageGen';
+import { decideProposalHandling, autonomousApply } from './autonomyProposalRouting';
+import { useDesignAutonomyStore } from './designAutonomyStore';
+import { useDesignStore } from './designStore';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -71,6 +74,21 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
+      // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
+      const env = useDesignAutonomyStore.getState().envelope;
+      if (decideProposalHandling(request, env) === 'auto') {
+        const cs = useCanvasProposalStore.getState();
+        // 单飞：已有提议在落地则退回人闸兜底（设 pending），不并发自动应用。
+        if (cs.applyingRequestId) { cs.setPending(request); return; }
+        cs.setApplying(request.requestId);
+        void autonomousApply(request, {
+          baseDeps: controllerDeps(),
+          estimateCost: (op) => estimateProposedImageCostCny(resolveProposedImageModel(op.model, useDesignStore.getState().imageModel)),
+          getEnvelope: () => useDesignAutonomyStore.getState().envelope,
+          setEnvelope: (e) => useDesignAutonomyStore.getState().setEnvelope(e),
+        }).finally(() => { useCanvasProposalStore.getState().setApplying(null); });
+        return;
+      }
       setPending(request);
     });
     // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。

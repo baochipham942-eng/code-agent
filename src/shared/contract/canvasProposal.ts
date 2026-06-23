@@ -113,6 +113,11 @@ export interface CanvasProposalDecision {
   skippedCount?: number;
   /** 二刀：本批付费生成的实际合计花费（¥）。仅含真出图的成本，让 agent 知道真烧了多少。 */
   costCny?: number;
+  /**
+   * ADR-027 自主：本次在自主信封内自动应用后的剩余预算 + 是否耗尽。
+   * 仅自动路径（auto）回填——让 agent 知道还能发散几张、还是该停下让用户挑选。
+   */
+  autonomy?: { remainingVariants: number; remainingCny: number; exhausted: boolean };
 }
 
 // ── D1-B 画布快照（renderer → agent 上下文注入；轻量、限长，agent 据此引用真实节点 id）──

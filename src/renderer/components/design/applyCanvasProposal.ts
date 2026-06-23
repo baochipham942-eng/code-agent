@@ -62,6 +62,30 @@ function shapeFromProposed(s: ProposedShape, id: string, createdAt: number): Can
  * - addShape：无目标，恒应用（renderer 分配 id/createdAt）。
  * 节点集在本批内不变（第一刀无 加/删 节点），故 stale 判定用初始节点集。
  */
+/**
+ * 规划软删（淘汰，三刀）：在当前存活节点集 liveIds 里决定哪些 id 该真淘汰。
+ * - 不存在/已淘汰的 id → 跳过（stale-target）。
+ * - 同一 id 重复出现 → 仅第一次淘汰，其余计 skipped（去重防多计 applied，H1）。
+ * 纯函数（不调 store）；调用方按 toDiscard 逐个 store.discardNode。
+ */
+export function planDiscards(
+  liveIds: ReadonlySet<string>,
+  nodeIds: string[],
+): { toDiscard: string[]; applied: number; skipped: number } {
+  const seen = new Set<string>();
+  const toDiscard: string[] = [];
+  let skipped = 0;
+  for (const id of nodeIds) {
+    if (liveIds.has(id) && !seen.has(id)) {
+      seen.add(id);
+      toDiscard.push(id);
+    } else {
+      skipped++;
+    }
+  }
+  return { toDiscard, applied: toDiscard.length, skipped };
+}
+
 export function computeProposalResult(
   state: ProposalApplyState,
   ops: CanvasProposalOp[],

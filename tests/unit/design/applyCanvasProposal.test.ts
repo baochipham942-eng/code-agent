@@ -1,6 +1,6 @@
 // ADR-026 提议应用引擎：ops→画布状态 + stale-target 防御（纯函数）。
 import { describe, it, expect } from 'vitest';
-import { computeProposalResult, type ProposalApplyState } from '../../../src/renderer/components/design/applyCanvasProposal';
+import { computeProposalResult, planDiscards, type ProposalApplyState } from '../../../src/renderer/components/design/applyCanvasProposal';
 import type { CanvasNode } from '../../../src/renderer/components/design/designCanvasTypes';
 import type { CanvasProposalOp } from '../../../src/shared/contract/canvasProposal';
 
@@ -122,5 +122,18 @@ describe('computeProposalResult — 混合批 + 顺序', () => {
     expect(r.changed).toBe(false);
     expect(r.next.nodes).toBe(state.nodes);
     expect(r.next.connectors).toBe(state.connectors);
+  });
+});
+
+describe('planDiscards — 软删规划（去重 + stale）', () => {
+  const live = new Set(['A', 'B', 'C']);
+  it('全在 live：全淘汰', () => {
+    expect(planDiscards(live, ['A', 'B'])).toEqual({ toDiscard: ['A', 'B'], applied: 2, skipped: 0 });
+  });
+  it('不在 live（stale）：跳过', () => {
+    expect(planDiscards(live, ['A', 'ghost'])).toEqual({ toDiscard: ['A'], applied: 1, skipped: 1 });
+  });
+  it('同一 id 重复（H1）：仅淘汰一次，其余计 skipped', () => {
+    expect(planDiscards(live, ['A', 'A', 'A'])).toEqual({ toDiscard: ['A'], applied: 1, skipped: 2 });
   });
 });

@@ -65,6 +65,39 @@ describe('designCanvasStore setChosen / deleteNode', () => {
     expect(st.selectedIds).toEqual(['B']);
   });
 
+  it('restoreNode（三刀软删找回）：清 discarded 让节点重新可见；非淘汰/不存在 = no-op', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A'), n('B')]));
+    s.discardNode('A');
+    expect(useDesignCanvasStore.getState().nodes.find((x) => x.id === 'A')?.discarded).toBe(true);
+    s.restoreNode('A');
+    const st = useDesignCanvasStore.getState();
+    expect(st.nodes.find((x) => x.id === 'A')?.discarded).toBe(false);
+    // 未淘汰 / 不存在：no-op，不抛错
+    s.restoreNode('B');
+    s.restoreNode('ghost');
+    expect(useDesignCanvasStore.getState().nodes.find((x) => x.id === 'B')?.discarded).toBeUndefined();
+  });
+
+  it('restoreNode 补主版（M1）：整槽淘汰后逐个恢复，第一个恢复的升为主版，不留无主版槽', () => {
+    const s = useDesignCanvasStore.getState();
+    // 同槽两版 A1(主)/A2，A2 parentId=A1 → groupKey 同槽
+    s.loadDoc('run-x', { version: 1, camera: { x: 0, y: 0, scale: 1 }, nodes: [
+      { ...n('A1'), chosen: true },
+      { ...n('A2'), parentId: 'A1' },
+    ] });
+    s.discardNode('A1'); // A2 升主版
+    s.discardNode('A2'); // 整槽淘汰，无主版
+    s.restoreNode('A2'); // 恢复：槽内无主版 → A2 升主版
+    let st = useDesignCanvasStore.getState();
+    expect(st.nodes.find((x) => x.id === 'A2')?.chosen).toBe(true);
+    s.restoreNode('A1'); // 槽内已有主版 A2 → A1 恢复为非主版
+    st = useDesignCanvasStore.getState();
+    expect(st.nodes.find((x) => x.id === 'A1')?.chosen).toBe(false);
+    // 槽内恰有一个主版
+    expect(st.nodes.filter((x) => !x.discarded && x.chosen)).toHaveLength(1);
+  });
+
   it('discardNode 淘汰主版 → 同槽最新活跃版自动升主版', () => {
     const s = useDesignCanvasStore.getState();
     s.loadDoc(

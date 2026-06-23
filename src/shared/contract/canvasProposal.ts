@@ -15,6 +15,8 @@ export const PROPOSAL_TEXT_MAX = 2000;
 export const MAX_OPS_PER_PROPOSAL = 100;
 /** 形状 color 字符串上限（防超长字符串写进 canvas.json）。 */
 export const PROPOSAL_COLOR_MAX = 64;
+/** 生成 prompt 上限（二刀文生图；比 PROPOSAL_TEXT_MAX 宽，容纳富描述）。 */
+export const PROPOSAL_PROMPT_MAX = 4000;
 
 // ── 单个提议 op（agent 产出；引用已存在节点用 nodeId，新实体不带 id/createdAt 由 renderer 分配）──
 
@@ -55,12 +57,41 @@ export interface ProposeRenameNodeOp {
   label: string;
 }
 
-/** 第一刀提议 op 判别联合。 */
+/**
+ * 淘汰（软删）一个已存在节点（三刀）。走 store.discardNode：标记 discarded、节点留盘可恢复，
+ * **非破坏性**。不进 Layer1 撤销批（与人类淘汰一致），靠画布「已淘汰·恢复」入口找回。
+ */
+export interface ProposeDiscardNodeOp {
+  kind: 'discardNode';
+  nodeId: string;
+}
+
+/**
+ * 生成一张新图落画布（二刀 Layer2，含付费）。agent 只给 prompt（+ 可选 model/aspectRatio）；
+ * **付费前置审批**：renderer 在用户 apply 前查价表显示预估 ¥，apply 后才走付费出图 IPC（红线①）。
+ * 落位由 renderer 定（nextNodePlacement，忽略 agent 坐标，红线③）；model 若给须为已配置可用视觉模型，
+ * 否则回退表单默认（红线②，白名单校验在 renderer，本契约只做形状校验）。
+ */
+export interface ProposeGenerateImageOp {
+  kind: 'generateImage';
+  prompt: string;
+  model?: string;
+  aspectRatio?: string;
+}
+
+/** 提议 op 判别联合（一刀 Layer1 四种 + 三刀 discardNode 软删 + 二刀 generateImage 文生图）。 */
 export type CanvasProposalOp =
   | ProposeMoveNodeOp
   | ProposeAddConnectorOp
   | ProposeAddShapeOp
-  | ProposeRenameNodeOp;
+  | ProposeRenameNodeOp
+  | ProposeDiscardNodeOp
+  | ProposeGenerateImageOp;
+
+/** 是否为 Layer2 生成 op（含付费；与 Layer1 区分用于混批顺序与成本估算）。 */
+export function isGenerateOp(op: CanvasProposalOp): op is ProposeGenerateImageOp {
+  return op.kind === 'generateImage';
+}
 
 /** agent 一次提交的一批提议。 */
 export interface CanvasOpProposal {
@@ -80,6 +111,8 @@ export interface CanvasProposalDecision {
   /** verdict=apply 时 renderer 回灌的应用结果（让 agent 知道实际落地几条、跳过几条 stale）。 */
   appliedCount?: number;
   skippedCount?: number;
+  /** 二刀：本批付费生成的实际合计花费（¥）。仅含真出图的成本，让 agent 知道真烧了多少。 */
+  costCny?: number;
 }
 
 // ── D1-B 画布快照（renderer → agent 上下文注入；轻量、限长，agent 据此引用真实节点 id）──
@@ -169,6 +202,17 @@ export function normalizeProposalOp(raw: unknown): CanvasProposalOp | null {
     case 'renameNode':
       if (!isNonEmptyString(r.nodeId) || !isNonEmptyString(r.label)) return null;
       return { kind: 'renameNode', nodeId: r.nodeId, label: r.label.slice(0, PROPOSAL_TEXT_MAX) };
+    case 'discardNode':
+      if (!isNonEmptyString(r.nodeId)) return null;
+      return { kind: 'discardNode', nodeId: r.nodeId };
+    case 'generateImage': {
+      if (!isNonEmptyString(r.prompt)) return null; // 无 prompt 不付费
+      const op: ProposeGenerateImageOp = { kind: 'generateImage', prompt: r.prompt.slice(0, PROPOSAL_PROMPT_MAX) };
+      // model/aspectRatio 仅接受非空字符串（model 白名单校验在 renderer，红线②）。
+      if (isNonEmptyString(r.model)) op.model = r.model.slice(0, PROPOSAL_COLOR_MAX);
+      if (isNonEmptyString(r.aspectRatio)) op.aspectRatio = r.aspectRatio.slice(0, 16);
+      return op;
+    }
     case 'addShape': {
       const shape = normalizeProposedShape(r.shape);
       if (!shape) return null;

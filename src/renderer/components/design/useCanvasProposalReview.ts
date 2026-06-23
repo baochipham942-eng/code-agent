@@ -6,8 +6,15 @@ import ipcService from '../../services/ipcService';
 import { useCanvasProposalStore } from './canvasProposalStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { saveCanvasDoc } from './designCanvasPersistence';
-import { applyProposal, rejectProposal, type ProposalControllerDeps } from './canvasProposalController';
-import type { ProposalApplyResult } from './applyCanvasProposal';
+import {
+  applyProposal,
+  rejectProposal,
+  type ProposalControllerDeps,
+  type ProposalApplyOutcome,
+} from './canvasProposalController';
+import type { CanvasProposalOp } from '@shared/contract';
+import { planDiscards } from './applyCanvasProposal';
+import { generateProposedImage } from './designProposedImageGen';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -20,6 +27,14 @@ function makeGenId(): (kind: string, index: number) => string {
 function controllerDeps(): ProposalControllerDeps {
   return {
     applyBatch: (ops, opts) => useDesignCanvasStore.getState().applyProposalBatch(ops, opts),
+    // 软删：仅淘汰当前存在且未淘汰的节点（stale/重复的跳过，planDiscards 去重），走 store.discardNode（Layer2 可恢复）。
+    applyDiscards: (nodeIds) => {
+      const st = useDesignCanvasStore.getState();
+      const live = new Set(st.nodes.filter((n) => !n.discarded).map((n) => n.id));
+      const { toDiscard, applied, skipped } = planDiscards(live, nodeIds);
+      for (const id of toDiscard) st.discardNode(id);
+      return { applied, skipped };
+    },
     save: async () => {
       const { runDir, toDoc } = useDesignCanvasStore.getState();
       if (runDir) await saveCanvasDoc(runDir, toDoc());
@@ -27,45 +42,76 @@ function controllerDeps(): ProposalControllerDeps {
     respond: (decision) => ipcService.invoke(IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE, decision),
     genId: makeGenId(),
     now: () => Date.now(),
+    // 二刀 Layer2：真出图（出图 IPC + addNode，不落盘不清史）；clearHistory 由 controller 在 ≥1 张落地后调。
+    generate: (op) => generateProposedImage(op),
+    clearHistory: () => useDesignCanvasStore.getState().clearEditHistory(),
+    // MED-1：付费生成期间置 generating——既锁住表单出图入口，又驱动画布阻断叠层（DesignCanvas 据此禁手动编辑）。
+    setBusy: (busy) => useDesignCanvasStore.getState().setGenerating(busy),
   };
 }
 
 export interface CanvasProposalReview {
   pending: CanvasOpProposal | null;
-  apply: () => Promise<ProposalApplyResult | void>;
+  /** 是否有提议正在落地（含 Phase B 出图）——驱动画布忙态遮罩（R3 MED-1）。 */
+  applying: boolean;
+  apply: (selectedOps?: CanvasProposalOp[]) => Promise<ProposalApplyOutcome | void>;
   reject: (feedback?: string) => Promise<void>;
+}
+
+/** 仅当 store 当前 pending 仍是该 requestId 才清——防并发提议互相误清（R3 MED-2）。 */
+function clearIfStill(requestId: string): void {
+  const st = useCanvasProposalStore.getState();
+  if (st.pending?.requestId === requestId) st.clear();
 }
 
 export function useCanvasProposalReview(): CanvasProposalReview {
   const pending = useCanvasProposalStore((s) => s.pending);
+  const applyingRequestId = useCanvasProposalStore((s) => s.applyingRequestId);
   const setPending = useCanvasProposalStore((s) => s.setPending);
-  const clear = useCanvasProposalStore((s) => s.clear);
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
       setPending(request);
     });
-    return () => unsubscribe?.();
+    // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
+    // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
+    const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, (payload: { requestId: string }) => {
+      // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略 CANCEL（付费已 commit）。
+      if (useCanvasProposalStore.getState().applyingRequestId === payload.requestId) return;
+      clearIfStill(payload.requestId);
+    });
+    return () => {
+      unsubscribe?.();
+      unsubCancel?.();
+    };
   }, [setPending]);
 
-  const apply = useCallback(async () => {
-    if (!pending) return;
+  const apply = useCallback(async (selectedOps?: CanvasProposalOp[]) => {
+    const st = useCanvasProposalStore.getState();
+    const target = st.pending;
+    // R3 HIGH-1：重入闸——已有提议在落地则忽略（防双击 Apply 双付费 / Apply 后又点 Reject）。
+    if (!target || st.applyingRequestId) return;
+    st.setApplying(target.requestId);
     try {
-      return await applyProposal(pending, controllerDeps());
+      return await applyProposal(target, controllerDeps(), selectedOps);
     } finally {
-      // 用户已决策：即使回 agent 的 IPC 失败也清掉审批条，不把 UI 卡住（本地变更已落）。
-      clear();
+      useCanvasProposalStore.getState().setApplying(null);
+      clearIfStill(target.requestId); // R3 MED-2：只清自己这条，别误清并发新提议
     }
-  }, [pending, clear]);
+  }, []);
 
   const reject = useCallback(async (feedback?: string) => {
-    if (!pending) return;
+    const st = useCanvasProposalStore.getState();
+    const target = st.pending;
+    if (!target || st.applyingRequestId) return; // 同闸：落地中不接受 Reject
+    st.setApplying(target.requestId);
     try {
-      await rejectProposal(pending, { respond: controllerDeps().respond }, feedback);
+      await rejectProposal(target, { respond: controllerDeps().respond }, feedback);
     } finally {
-      clear();
+      useCanvasProposalStore.getState().setApplying(null);
+      clearIfStill(target.requestId);
     }
-  }, [pending, clear]);
+  }, []);
 
-  return { pending, apply, reject };
+  return { pending, applying: applyingRequestId !== null, apply, reject };
 }

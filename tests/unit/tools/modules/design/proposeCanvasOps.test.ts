@@ -22,8 +22,9 @@ vi.mock('../../../../../src/main/services/infra/notificationService', () => ({
   notificationService: { notifyNeedsInput: notifyNeedsInputMock },
 }));
 
-import { proposeCanvasOpsModule } from '../../../../../src/main/tools/modules/design/proposeCanvasOps';
+import { proposeCanvasOpsModule, computeProposalTimeoutMs } from '../../../../../src/main/tools/modules/design/proposeCanvasOps';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
+import { INTERACTION_TIMEOUTS } from '../../../../../src/shared/constants';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -121,6 +122,23 @@ describe('abort 中途（C1）', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('DOMAIN_ERROR'); // reject('aborted') 走统一 catch
   });
+
+  // 审计 MED-3：abort 时广播 CANVAS_PROPOSAL_CANCEL，让 renderer 撤掉审批条——
+  // 否则用户后点 Apply 会在无 agent 监听下触发付费生成（孤儿提议烧钱）。
+  it('abort → 广播 CANVAS_PROPOSAL_CANCEL（带 requestId）', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const ctrl = new AbortController();
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: validOps }, makeCtx({ abortSignal: ctrl.signal }), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    const reqId = sendMock.mock.calls[0][1].requestId as string;
+    ctrl.abort();
+    await p.catch(() => void 0);
+    const cancelCall = sendMock.mock.calls.find((c) => c[0] === IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL);
+    expect(cancelCall).toBeTruthy();
+    expect(cancelCall![1]).toEqual({ requestId: reqId });
+  });
 });
 
 describe('CLI fallback', () => {
@@ -135,6 +153,41 @@ describe('CLI fallback', () => {
       expect(r.output).toContain('非交互式设计画布环境');
       expect(r.output).toContain('不要假设提议已应用');
     }
+  });
+});
+
+describe('二刀：含付费生成', () => {
+  it('computeProposalTimeoutMs：纯 Layer1 用 USER_QUESTION，每张生成加一份出图预算', () => {
+    expect(computeProposalTimeoutMs([{ kind: 'addConnector', fromNodeId: 'a', toNodeId: 'b' }] as never)).toBe(INTERACTION_TIMEOUTS.USER_QUESTION);
+    expect(computeProposalTimeoutMs([
+      { kind: 'generateImage', prompt: 'a' },
+      { kind: 'generateImage', prompt: 'b' },
+      { kind: 'moveNode', nodeId: 'n', x: 0, y: 0 },
+    ] as never)).toBe(INTERACTION_TIMEOUTS.USER_QUESTION + 2 * INTERACTION_TIMEOUTS.CANVAS_PROPOSAL_GEN_BUDGET);
+  });
+
+  it('generateImage 是合法 op：不被 INVALID_ARGS 剥光（接受文生图提议）', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: [{ kind: 'generateImage', prompt: '一张登录页' }] }, makeCtx(), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    p.catch(() => void 0);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock.mock.calls[0][1].ops[0]).toMatchObject({ kind: 'generateImage', prompt: '一张登录页' });
+  });
+
+  it('apply 回灌 costCny → 输出含实际花费', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: [{ kind: 'generateImage', prompt: 'a' }] }, makeCtx(), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    const reqId = sendMock.mock.calls[0][1].requestId as string;
+    await captured.responseCb!(null, { requestId: reqId, verdict: 'apply', appliedCount: 1, skippedCount: 0, costCny: 0.14 });
+    const r = await p;
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.output).toContain('实际花费 ¥0.14');
   });
 });
 

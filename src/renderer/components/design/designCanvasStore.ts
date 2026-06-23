@@ -65,6 +65,8 @@ interface DesignCanvasState {
   deleteNode: (id: string) => void;
   /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
   discardNode: (id: string) => void;
+  /** 恢复（取消淘汰）：清掉 discarded 标记让节点重新可见（软删的找回路径，三刀）。 */
+  restoreNode: (id: string) => void;
   /** 选为主版：标记该节点 chosen，并清除同版本槽（groupKey=parentId??id）其他节点的主版标记。 */
   setChosen: (id: string) => void;
   /** 为某一步命名（T2 可逆命名步）：写入 label，不存在则静默无操作。 */
@@ -187,6 +189,19 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         if (promote) nodes = nodes.map((n) => (n.id === promote.id ? { ...n, chosen: true } : n));
       }
       return { nodes, selectedIds: s.selectedIds.filter((sid) => sid !== id) };
+    }),
+  restoreNode: (id) =>
+    set((s) => {
+      const target = s.nodes.find((n) => n.id === id);
+      if (!target || !target.discarded) return {}; // 不存在或本就没淘汰：no-op
+      // 清 discarded。若同槽已无主版（如整槽淘汰后逐个恢复），把本节点升为主版补回
+      // 「槽内恒有一个 chosen」不变量（M1，对称于 discardNode 的自动升主版）；否则留 false。
+      const key = groupKey(target);
+      const slotHasChosen = s.nodes.some(
+        (n) => n.id !== id && !n.discarded && groupKey(n) === key && n.chosen,
+      );
+      const chosen = !slotHasChosen;
+      return { nodes: s.nodes.map((n) => (n.id === id ? { ...n, discarded: false, chosen } : n)) };
     }),
   setChosen: (id) =>
     set((s) => {

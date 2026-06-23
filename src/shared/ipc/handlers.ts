@@ -528,6 +528,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST]: (request: ToolCreateRequestEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
   [IPC_CHANNELS.CANVAS_PROPOSAL_ASK]: (request: CanvasOpProposal) => void;
+  [IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL]: (payload: { requestId: string }) => void;
   [IPC_CHANNELS.MCP_ELICITATION_REQUEST]: (request: MCPElicitationRequest) => void;
   [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;

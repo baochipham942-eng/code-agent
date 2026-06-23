@@ -56,6 +56,15 @@ function describeOps(ops: CanvasOpProposal['ops']): string {
   return [...counts.entries()].map(([k, n]) => `${k}×${n}`).join(', ');
 }
 
+/**
+ * 阻塞超时（ADR-026 增补-D1）：纯 Layer1 批用 USER_QUESTION；含付费生成的批每张加一份出图预算，
+ * 因审批后还要在 renderer 串行出图、整体 await 到落地才回裁决，慢付费不能撞死工具。
+ */
+export function computeProposalTimeoutMs(ops: CanvasOpProposal['ops']): number {
+  const genCount = ops.filter((o) => o.kind === 'generateImage').length;
+  return INTERACTION_TIMEOUTS.USER_QUESTION + genCount * INTERACTION_TIMEOUTS.CANVAS_PROPOSAL_GEN_BUDGET;
+}
+
 export async function executeProposeCanvasOps(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -68,7 +77,7 @@ export async function executeProposeCanvasOps(
     return {
       ok: false,
       error: dropped > 0
-        ? `No valid ops: all ${dropped} op(s) were invalid or unsupported (only moveNode/addConnector/addShape/renameNode on existing nodes are allowed).`
+        ? `No valid ops: all ${dropped} op(s) were invalid or unsupported (allowed: moveNode/addConnector/addShape/renameNode/discardNode on existing nodes, or generateImage with a prompt).`
         : 'ops must be a non-empty array of canvas operations',
       code: 'INVALID_ARGS',
     };
@@ -116,11 +125,18 @@ export async function executeProposeCanvasOps(
     /* ignore */
   }
 
-  const TIMEOUT_MS = INTERACTION_TIMEOUTS.USER_QUESTION;
+  // 通知 renderer 撤掉审批条（审计 MED-3）：abort/超时后若不撤，用户后点 Apply 会在无 agent 监听下
+  // 触发付费生成（孤儿提议烧钱）。二刀起生成是付费路径，必须主动取消 UI。
+  const broadcastCancel = (): void => {
+    try { mainWindow.webContents.send(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, { requestId: request.requestId }); } catch { /* 窗口已毁，无需取消 */ }
+  };
+
+  const TIMEOUT_MS = computeProposalTimeoutMs(ops);
   try {
     const decision = await new Promise<CanvasProposalDecision>((resolve, reject) => {
       const timeout = setTimeout(() => {
         pendingProposals.delete(request.requestId);
+        broadcastCancel();
         reject(new Error('Canvas proposal timeout - no response from user'));
       }, TIMEOUT_MS);
       // abort 中途触发（agent 取消）：清掉 pending + reject，别让条目泄漏 / 工具挂到超时（C1）。
@@ -132,6 +148,7 @@ export async function executeProposeCanvasOps(
             clearTimeout(p.timeout);
             pendingProposals.delete(request.requestId);
           }
+          broadcastCancel();
           reject(new Error('aborted'));
         },
         { once: true },
@@ -144,8 +161,10 @@ export async function executeProposeCanvasOps(
     if (decision.verdict === 'apply') {
       const applied = decision.appliedCount ?? ops.length;
       const skipped = decision.skippedCount ?? 0;
-      const skipNote = skipped > 0 ? `，跳过 ${skipped} 项（目标已变更/陈旧）` : '';
-      return { ok: true, output: `用户已批准并应用：${applied} 项画布操作${skipNote}（${describeOps(ops)}）。画布已更新。` };
+      const skipNote = skipped > 0 ? `，跳过 ${skipped} 项（目标已变更，或被用户取消勾选——勿重复提议被否决项）` : '';
+      // 二刀：含付费生成时回灌实际合计花费，让模型知道真烧了多少。
+      const costNote = typeof decision.costCny === 'number' && decision.costCny > 0 ? `，本次生成实际花费 ¥${decision.costCny.toFixed(2)}` : '';
+      return { ok: true, output: `用户已批准并应用：${applied} 项画布操作${skipNote}${costNote}（${describeOps(ops)}）。画布已更新。` };
     }
     const fb = decision.feedback ? `\n用户意见：${decision.feedback}` : '';
     return { ok: true, output: `用户拒绝了本次画布提议。${fb}\n请据此调整后再提议，或改用其它方式。不要假设任何修改已应用。` };

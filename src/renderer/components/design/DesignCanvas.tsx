@@ -19,6 +19,7 @@ import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from '.
 import { DiagramLayer, type DiagramCanvasTool, type TextEditTarget } from './DiagramLayer';
 import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
 import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
+import { DiscardedNodesTray } from './DiscardedNodesTray';
 import { useCanvasProposalReview } from './useCanvasProposalReview';
 import { DiagramToolbar } from './DiagramToolbar';
 import { reduceDiagram, type ShapeTool } from './diagramReducer';
@@ -867,6 +868,19 @@ export const DesignCanvas: React.FC = () => {
       onDrop={onDrop}
       onDragOver={(e) => e.preventDefault()}
     >
+      {/* 生成忙态遮罩（审计 MED-1）：仅在提议「正在落地」（applying）期间拦截 konva 指针事件，禁止
+          手动拖拽/绘制——否则提议生成收尾的 clearEditHistory 会连带清掉用户中途手动编辑的 undo。
+          审批条 z-30 在其上、自身 busy 已禁用按钮；本遮罩 z-10 只盖 Stage。
+          绑 applying 而非 generating&&pending（R3 MED-1）：避免「表单出图中 + agent 后台推来一条 pending」
+          时遮罩误弹挡住用户手动流程；只有用户真点了 Apply 进入落地才锁。 */}
+      {canvasProposal.applying && (
+        <div
+          data-testid="canvas-busy-overlay"
+          className="absolute inset-0 z-10 cursor-wait"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}
@@ -950,14 +964,17 @@ export const DesignCanvas: React.FC = () => {
         </Stage>
       )}
 
-      {/* ADR-026：提议审批条（应用/拒绝）。 */}
+      {/* ADR-026：提议审批条（逐 op 取舍 + 应用/拒绝）。 */}
       {canvasProposal.pending && (
         <CanvasProposalReviewBar
           proposal={canvasProposal.pending}
-          onApply={() => void canvasProposal.apply()}
+          onApply={(ops) => void canvasProposal.apply(ops)}
           onReject={(fb) => void canvasProposal.reject(fb)}
         />
       )}
+
+      {/* ADR-026 三刀：已淘汰节点恢复入口（软删找回）。 */}
+      <DiscardedNodesTray />
 
       {/* 图解工具条（模式/调色板/删除）——消费 surface 只放工具选择，不放配置管理。 */}
       <DiagramToolbar

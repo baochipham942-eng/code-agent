@@ -103,6 +103,8 @@ export function useCanvasProposalReview(): CanvasProposalReview {
       // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略 CANCEL（付费已 commit）。
       if (useCanvasProposalStore.getState().applyingRequestId === payload.requestId) return;
       clearIfStill(payload.requestId);
+      // ADR-027：自主 run 中途 abort/超时 → 作废活跃信封（active 信封下提议都走 auto，故 CANCEL 即自主中止）。
+      if (useDesignAutonomyStore.getState().envelope) useDesignAutonomyStore.getState().clear();
     });
     return () => {
       unsubscribe?.();

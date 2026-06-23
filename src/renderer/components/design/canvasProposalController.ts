@@ -51,6 +51,10 @@ export async function applyProposal(
   deps: ProposalControllerDeps,
   selectedOps?: CanvasOpProposal['ops'],
 ): Promise<ProposalApplyOutcome> {
+  // 顶层兜底（审计 R2 LOW-1）：Phase A 的 applyBatch/applyDiscards 是同步调用，万一抛错
+  // （如畸形 layer 态）会绕过 respond，让阻塞的 agent 挂到超时。这里保证任何未捕获抛错都先回一个
+  // reject 再外抛——agent 立即解阻、知道没应用；UI 侧由 apply() 的 finally 清掉审批条。
+  try {
   // 防御纵深：IPC 收到的 ops（或用户勾选的子集）在 renderer 侧再过一道校验/截断。
   const { ops } = normalizeProposal(selectedOps ?? proposal.ops);
   const layer1Ops = ops.filter((o) => o.kind !== 'discardNode' && !isGenerateOp(o));
@@ -108,6 +112,11 @@ export async function applyProposal(
     ...(genCostCny > 0 ? { costCny: genCostCny } : {}),
   });
   return { appliedCount, skippedCount, layer1 };
+  } catch (err) {
+    // 兜底：任何未捕获抛错都先回 reject 让 agent 解阻（best-effort，respond 自身再失败也吞掉），再外抛。
+    try { await deps.respond({ requestId: proposal.requestId, verdict: 'reject', feedback: '画布应用内部错误' }); } catch { /* ignore */ }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 }
 
 /** 拒绝提议：不改画布，回 reject（带可选修改意见）给 agent。 */

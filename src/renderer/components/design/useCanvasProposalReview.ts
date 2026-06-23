@@ -1,5 +1,5 @@
 // ADR-026 D2-A：订阅 agent 画布提议（CANVAS_PROPOSAL_ASK）→ 持待审批态 → Apply/Reject 落地。
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { CanvasOpProposal } from '@shared/contract';
 import ipcService from '../../services/ipcService';
@@ -60,6 +60,9 @@ export function useCanvasProposalReview(): CanvasProposalReview {
   const pending = useCanvasProposalStore((s) => s.pending);
   const setPending = useCanvasProposalStore((s) => s.setPending);
   const clear = useCanvasProposalStore((s) => s.clear);
+  // 用户是否已点 Apply、正在落地（含 Phase B 出图）。在途时忽略 CANCEL，避免审批条/忙态遮罩中途消失
+  // 而生成仍在后台跑（R2 MED-1）；用户已 commit 的付费照常完成，agent 的 respond 落到已删 pending 自然 no-op。
+  const applyingRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
@@ -68,6 +71,7 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
     // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
     const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, (payload: { requestId: string }) => {
+      if (applyingRef.current) return; // R2 MED-1：已在落地中，不中途撤 UI
       const cur = useCanvasProposalStore.getState().pending;
       if (cur && cur.requestId === payload.requestId) clear();
     });
@@ -79,10 +83,12 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   const apply = useCallback(async (selectedOps?: CanvasProposalOp[]) => {
     if (!pending) return;
+    applyingRef.current = true;
     try {
       return await applyProposal(pending, controllerDeps(), selectedOps);
     } finally {
       // 用户已决策：即使回 agent 的 IPC 失败也清掉审批条，不把 UI 卡住（本地变更已落）。
+      applyingRef.current = false;
       clear();
     }
   }, [pending, clear]);

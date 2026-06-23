@@ -240,6 +240,16 @@ describe('applyProposal 二刀：含付费生成（Layer2）', () => {
     expect(order).toEqual(['busy-on', 'generate', 'busy-off']);
   });
 
+  // 审计 R2 LOW-1：Phase A（applyBatch/applyDiscards）同步抛错也必须回 respond，否则 agent 挂死。
+  it('applyBatch 同步抛错：兜底回 respond（reject），不挂死 agent', async () => {
+    const d = genDeps(nochange, []);
+    d.applyBatch = vi.fn(() => { throw new Error('malformed layer state'); });
+    const p: CanvasOpProposal = { requestId: 'cp-g10', ops: [{ kind: 'moveNode', nodeId: 'a', x: 1, y: 2 }] };
+    await applyProposal(p, d).catch(() => void 0); // 允许 rethrow，但 respond 必须先发出
+    expect(d.respond).toHaveBeenCalledTimes(1);
+    expect(d.respond.mock.calls[0][0]).toMatchObject({ requestId: 'cp-g10', verdict: 'reject' });
+  });
+
   it('纯 Layer1 批（无生成）：不调 setBusy（无需锁画布）', async () => {
     const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'moveNode' }], skipped: [], changed: true };
     const d = { ...genDeps(result, []), setBusy: vi.fn() };

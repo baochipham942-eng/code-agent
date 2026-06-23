@@ -201,10 +201,8 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('Session Native Workspace');
     expect(html).toContain('执行中');
     expect(html).not.toContain('已完成');
-    // commit bce470a2 把 turnCount 显示从 Sidebar 二级信息行移除，改用
-    // workbenchSnapshot.summary 占据该位置（"工作区 · Browser"）。turnCount 仍保留
-    // 在 store 用于排序/统计，但不再直接渲染。下面对 snapshot summary 的断言已覆盖。
-    expect(html).toContain('工作区 · Browser');
+    // 会话行已压成单行：标题 + 轮次·时间 + 右侧动作/圆点。工作区摘要、recovery hints
+    // 等二级信息行已移除（用户要求"会话模块只展示一行"），故不再断言它们。
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
     // 控制台/详情/资产 已收进折叠头的「···」更多操作菜单（点开才渲染），头部默认只剩新建 + 更多。
     expect(html).toContain('aria-label="code-agent 更多操作"');
@@ -213,8 +211,6 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('1 执行中');
     expect(html).toContain('1 会话');
     expect(html).toContain('repo/code-agent');
-    expect(html).toContain('sidebar-recovery');
-    expect(html).toContain('PR #17');
     expect(html).toContain('产物');
   });
 

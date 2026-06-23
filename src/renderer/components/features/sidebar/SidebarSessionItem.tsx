@@ -3,7 +3,6 @@ import {
   Archive,
   ArchiveRestore,
   CheckSquare,
-  Clock3,
   Eye,
   Pin,
   ScrollText,
@@ -12,18 +11,11 @@ import {
 } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
-import { IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getSessionAttentionDot, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
-import { buildSessionRecoveryHints } from '../../../utils/sessionRecoveryHints';
-import {
-  formatSidebarMessageSearchHitLabel,
-  formatSidebarMessageSearchHitMeta,
-} from '../../../utils/sidebarMessageSearch';
 import { type SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 import { canReuseSessionWorkbench, getRelativeTime } from './sidebarPresentation';
-import { getSessionTypeLabel } from './SessionTypeFilterBar';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
@@ -91,7 +83,6 @@ export type SidebarSessionItemSharedProps = Omit<SidebarSessionItemProps, 'sessi
 export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   session,
   unreadSessionIds,
-  automationSummariesBySessionId,
   currentSessionId,
   selectedSessionIds,
   pinnedSessionIds,
@@ -106,7 +97,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   canOpenSessionReplay,
   reviewItemsBySessionId,
   multiSelectMode,
-  hoveredSession,
   renameValue,
   renameInputRef,
   setHoveredSession,
@@ -145,22 +135,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     sessionRuntime?.lastActivityAt || 0,
     backgroundTask?.backgroundedAt || 0,
   );
-  const snapshotSummary = session.workbenchSnapshot?.summary?.trim() || '';
-  const hasMeaningfulSummary = snapshotSummary && snapshotSummary !== '纯对话';
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
-  const messageSearchHit = messageSearchHitGroup?.bestHit;
   const lastActiveLabel = getRelativeTime(latestActivityAt, true);
-  const typeLabel = getSessionTypeLabel(session.type);
-  const automationSummary = automationSummariesBySessionId[session.id];
-  const showAutomationBadge = Boolean(automationSummary?.label && (automationSummary.activeCount > 0 || automationSummary.runningCount > 0));
   const displayTitle = getDisplaySessionTitle(session.title);
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const replayEvidence = replayEvidenceBySessionId.get(session.id) ?? [];
-  const hasReplaySignal = replayEvidence.length > 0;
-  const recoveryHints = buildSessionRecoveryHints(session, {
-    hasReplay: hasReplaySignal,
-    canOpenReplay: canOpenSessionReplay,
-  });
   const pendingReviewItems = (reviewItemsBySessionId[session.id] ?? [])
     .filter((item) => item.reviewStatus === 'pending');
   const topReviewItem = pendingReviewItems[0];
@@ -204,14 +183,15 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         </div>
       )}
 
-      {/* Line 1: status indicators + title */}
+      {/* 单行：未读点 + 置顶 + 标题 + 右侧区（默认 轮次·时间·待办圆点 / hover 动作图标，display 切换互斥不重叠） */}
       <div className="flex items-center gap-2">
-        {/* 置顶图标 */}
+        {isUnread && !multiSelectMode && (
+          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-purple-500" aria-label="未读" />
+        )}
         {isPinned && !multiSelectMode && (
           <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
         )}
 
-        {/* 标题：重命名模式 vs 普通 */}
         {isRenaming ? (
           <input
             ref={renameInputRef}
@@ -234,132 +214,88 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         )}
 
         {!multiSelectMode && !isRenaming && (
-          <>
-            {/* D-9: Replay 仅管理员可用 — 非管理员直接不渲染；空会话也不渲染（无可回放内容） */}
-            {canOpenSessionReplay && sessionHasActivity && (
-              <button
-                type="button"
-                aria-label={`打开 ${displayTitle} Replay`}
-                title={`打开 ${displayTitle} Replay`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void handleOpenSessionReplay(session);
-                }}
-                className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
-              >
-                <Eye className="h-3.5 w-3.5" />
-              </button>
-            )}
+          <div className="shrink-0 flex items-center gap-1.5">
+            {/* 待审 review：常显可点徽章(admin 信号,带计数),不随 hover 切换 */}
             {topReviewItem && (
               <button
                 type="button"
                 aria-label={`打开 ${displayTitle} 的 Review 证据`}
                 title={`${pendingReviewItems.length} 个待审 issue · ${topReviewItem.title}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void handleOpenSessionReplay(session);
-                }}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-colors hover:border-amber-400/30 hover:bg-amber-500/15 hover:text-amber-200 focus:outline-hidden"
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleOpenSessionReplay(session); }}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-colors hover:border-amber-400/30 hover:bg-amber-500/15 hover:text-amber-200 focus:outline-hidden"
               >
                 <ShieldAlert className="h-3 w-3" />
                 <span>{pendingReviewItems.length} 待审</span>
               </button>
             )}
-            {canOpenSessionAssets && (
+            {/* 默认态：轮次·时间 + 待办圆点 */}
+            <div className="flex items-center gap-1.5 group-hover:hidden">
+              <span className="text-[10px] text-zinc-600 whitespace-nowrap">
+                {(session.turnCount ?? 0) > 0 ? `${session.turnCount} 轮 · ${lastActiveLabel}` : lastActiveLabel}
+              </span>
+              {attentionDot && (
+                <span
+                  aria-label={attentionDot.label}
+                  title={attentionDot.label}
+                  className={`h-2 w-2 rounded-full ${attentionDot.colorClassName}`}
+                />
+              )}
+            </div>
+            {/* hover 态：动作图标（取代默认态，不与之同时占位） */}
+            <div className="hidden items-center gap-0.5 group-hover:flex">
+              {canOpenSessionReplay && sessionHasActivity && (
+                <button
+                  type="button"
+                  aria-label={`打开 ${displayTitle} Replay`}
+                  title={`打开 ${displayTitle} Replay`}
+                  onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleOpenSessionReplay(session); }}
+                  className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {canOpenSessionAssets && (
+                <button
+                  type="button"
+                  aria-label={`打开 ${displayTitle} 的产物与资产`}
+                  title={`打开 ${displayTitle} 的产物与资产`}
+                  onClick={(event) => { void handleOpenSessionAssets(event, session); }}
+                  className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                >
+                  <ScrollText className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 type="button"
-                aria-label={`打开 ${displayTitle} 的产物与资产`}
-                title={`打开 ${displayTitle} 的产物与资产`}
-                onClick={(event) => { void handleOpenSessionAssets(event, session); }}
-                className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
+                aria-label={session.isArchived ? '取消归档' : '归档'}
+                title={session.isArchived ? '取消归档' : '归档'}
+                onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
+                className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
               >
-                <ScrollText className="h-3.5 w-3.5" />
+                {session.isArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
               </button>
-            )}
-            {typeLabel && (
-              <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-opacity duration-150 group-hover:opacity-0">
-                {typeLabel}
-              </span>
-            )}
-            {showAutomationBadge && automationSummary && (
-              <span
-                title={automationSummary.tooltip || '会话自动化'}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-opacity duration-150 group-hover:opacity-0"
-              >
-                <Clock3 className="h-3 w-3" />
-                <span>{automationSummary.label}</span>
-              </span>
-            )}
-            {attentionDot && (
-              <span
-                aria-label={attentionDot.label}
-                title={attentionDot.label}
-                className={`shrink-0 h-2 w-2 rounded-full transition-opacity duration-150 group-hover:opacity-0 ${attentionDot.colorClassName}`}
-              />
-            )}
-          </>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Line 2: summary + recent activity */}
-      {!isRenaming && (
-        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-600">
-          <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-            {messageSearchHit ? (
-              <span className="truncate text-zinc-400">
-                <span className="text-zinc-500">
-                  {formatSidebarMessageSearchHitMeta(messageSearchHit)}
-                </span>
-                <span> · {formatSidebarMessageSearchHitLabel(messageSearchHit)}</span>
-              </span>
-            ) : hasMeaningfulSummary && (
-              <span className="truncate text-zinc-500">
-                {snapshotSummary}
-              </span>
-            )}
-            {recoveryHints.map((hint) => (
-              <span
-                key={`${session.id}:${hint.kind}:${hint.label}`}
-                title={hint.title}
-                className="shrink-0 rounded border border-zinc-700/60 bg-zinc-900/70 px-1 py-0.5 text-[10px] font-medium text-zinc-500"
-              >
-                {hint.label}
-              </span>
-            ))}
-          </span>
-          <span className="text-[10px] text-zinc-600 shrink-0">
-            {(session.turnCount ?? 0) > 0 ? `${session.turnCount} 轮 · ${lastActiveLabel}` : lastActiveLabel}
-          </span>
-        </div>
-      )}
-
+      {/* 回放证据（仅 workflow/trace 等少数会话才有的 admin 链路；普通会话不出现，故不破坏单行） */}
       {!isRenaming && replayEvidence.length > 0 && (
         <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden text-[10px] text-zinc-500">
           {replayEvidence.slice(0, 2).map((evidence) => (
             <button
               key={evidence.id}
               type="button"
-              aria-label={canOpenSessionReplay
-                || evidence.actionKind !== 'sessionReplay'
+              aria-label={canOpenSessionReplay || evidence.actionKind !== 'sessionReplay'
                 ? `打开 ${displayTitle} 的 ${evidence.label}`
                 : `Replay 仅管理员可用：${displayTitle} 的 ${evidence.label}`}
               title={formatReplayEvidenceButtonTitle(evidence, canOpenSessionReplay)}
               disabled={evidence.actionKind === 'sessionReplay' && !canOpenSessionReplay}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void handleOpenReplayEvidence(session, evidence);
-              }}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleOpenReplayEvidence(session, evidence); }}
               className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-zinc-700/60 bg-zinc-900/50 px-1.5 py-0.5 text-zinc-500 transition-colors hover:border-zinc-600 hover:bg-zinc-800/80 hover:text-zinc-300 focus:outline-hidden disabled:cursor-not-allowed disabled:hover:border-zinc-700/60 disabled:hover:bg-zinc-900/50 disabled:hover:text-zinc-500"
             >
-              <span className="shrink-0 text-zinc-600">
-                {evidence.type === 'trace' ? 'Trace' : 'Replay'}
-              </span>
-              <span className="truncate">
-                {evidence.label}
-              </span>
+              <span className="shrink-0 text-zinc-600">{evidence.type === 'trace' ? 'Trace' : 'Replay'}</span>
+              <span className="truncate">{evidence.label}</span>
             </button>
           ))}
           {replayEvidence.length > 2 && (
@@ -373,32 +309,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         </div>
       )}
 
+      {/* 搜索命中子列表（仅搜索时） */}
       {!isRenaming && messageSearchHitGroup && (
         <SidebarMessageHitList
           sessionId={session.id}
           hits={messageSearchHitGroup.hits}
           onSelectHit={handleSelectMessageSearchHit}
         />
-      )}
-
-      {/* Hover actions — absolute positioned top-right */}
-      {hoveredSession === session.id && !multiSelectMode && !isRenaming && (
-        <div className="absolute top-1.5 right-2 flex items-center gap-0.5">
-          <IconButton
-            icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
-            onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
-            variant="ghost"
-            size="sm"
-            className="!p-1 opacity-0 group-hover:opacity-100"
-            title={session.isArchived ? "取消归档" : "归档"}
-          />
-        </div>
-      )}
-
-      {/* 未读指示器 */}
-      {isUnread && !multiSelectMode && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-purple-500 rounded-full" />
       )}
     </div>
   );

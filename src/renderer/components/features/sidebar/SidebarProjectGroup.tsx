@@ -152,30 +152,6 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
-              {(() => {
-                // 工作区数字徽章：仅当有 执行中/出错/待确认 时显示;数字=三类总数;
-                // 颜色优先级 出错红 > 待确认蓝 > 纯执行中中性。全是已完成/历史则不显示。
-                const activeTotal = summary.runningCount + summary.errorCount + summary.pendingApprovalCount;
-                if (activeTotal === 0) return null;
-                const tone = summary.errorCount > 0
-                  ? 'border-red-500/25 bg-red-500/10 text-red-300'
-                  : summary.pendingApprovalCount > 0
-                    ? 'border-blue-500/25 bg-blue-500/10 text-blue-300'
-                    : 'border-zinc-600/50 bg-zinc-700/40 text-zinc-300';
-                const title = [
-                  summary.runningCount > 0 ? `${summary.runningCount} 执行中` : null,
-                  summary.errorCount > 0 ? `${summary.errorCount} 出错` : null,
-                  summary.pendingApprovalCount > 0 ? `${summary.pendingApprovalCount} 待确认` : null,
-                ].filter(Boolean).join(' · ');
-                return (
-                  <span
-                    title={title}
-                    className={`shrink-0 inline-flex min-w-[1.125rem] items-center justify-center rounded-full border px-1 py-0.5 text-[10px] font-medium tabular-nums ${tone}`}
-                  >
-                    {activeTotal}
-                  </span>
-                );
-              })()}
               {expansionView.protectionLabel && (
                 <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
                   {expansionView.protectionLabel}
@@ -219,6 +195,30 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             )}
           </button>
         )}
+        {(() => {
+          // 工作区数字徽章(最右、圆形):仅当有 执行中/出错/待确认 时显示;数字=三类总数;
+          // 颜色优先级 出错红 > 待确认蓝 > 纯执行中中性。全是已完成/历史则不显示。
+          const activeTotal = summary.runningCount + summary.errorCount + summary.pendingApprovalCount;
+          if (activeTotal === 0) return null;
+          const tone = summary.errorCount > 0
+            ? 'border-red-500/30 bg-red-500/15 text-red-300'
+            : summary.pendingApprovalCount > 0
+              ? 'border-blue-500/30 bg-blue-500/15 text-blue-300'
+              : 'border-zinc-600/50 bg-zinc-700/50 text-zinc-300';
+          const badgeTitle = [
+            summary.runningCount > 0 ? `${summary.runningCount} 执行中` : null,
+            summary.errorCount > 0 ? `${summary.errorCount} 出错` : null,
+            summary.pendingApprovalCount > 0 ? `${summary.pendingApprovalCount} 待确认` : null,
+          ].filter(Boolean).join(' · ');
+          return (
+            <span
+              title={badgeTitle}
+              className={`ml-1 inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full border px-1 text-[10px] font-semibold leading-none tabular-nums ${tone}`}
+            >
+              {activeTotal}
+            </span>
+          );
+        })()}
       </div>
       {moreMenuPos && !group.isUncategorized && (
         <SessionContextMenu

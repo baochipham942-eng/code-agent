@@ -221,6 +221,34 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           }
         }
 
+        // renderer 错误落盘：把 renderer 侧错误（如更新安装失败）写进后端 file logger
+        // （code-agent-*.log）。修复"renderer logger 只走 console、正式包 devtools 关、
+        // 失败无据可查"的可观测性缺口——renderer 在 catch 里 fire-and-forget 调本出口即留痕。
+        case 'logClientError': {
+          const payload = (request.payload ?? {}) as {
+            context?: string;
+            message?: string;
+            detail?: string;
+          };
+          const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+          if (!message) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ACTION', message: 'logClientError requires payload.message' },
+            };
+          }
+          const context =
+            typeof payload.context === 'string' && payload.context.trim()
+              ? payload.context.trim()
+              : 'ClientError';
+          const { createLogger } = await import('../services/infra/logger');
+          createLogger(context).error(
+            message,
+            typeof payload.detail === 'string' && payload.detail ? { detail: payload.detail } : undefined,
+          );
+          return { success: true, data: { logged: true } };
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

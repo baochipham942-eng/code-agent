@@ -49,6 +49,18 @@ export {
 const logger = createLogger('UpdateSettings');
 const BUILD_APP_VERSION = import.meta.env.VITE_APP_VERSION as string | undefined;
 
+/**
+ * 把更新流程的错误**落盘**到后端 file logger（code-agent-*.log）。
+ * renderer logger 只走 console、正式包 devtools 又是关的，更新失败原本无据可查；
+ * 这里 fire-and-forget 经 DIAGNOSTICS/logClientError 留痕，IPC 自身失败静默吞掉（不连累 UI）。
+ */
+function persistClientError(context: string, message: string, err: unknown): void {
+  const detail = err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+  void ipcService
+    .invokeDomain(IPC_DOMAINS.DIAGNOSTICS, 'logClientError', { context, message, detail })
+    .catch(() => {});
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -460,6 +472,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       onUpdateInfoChange(null);
       setError(t.update?.checkError || '检查更新失败，请稍后重试');
       logger.error('Update check failed', err);
+      persistClientError('UpdateCheck', 'Update check failed', err);
     } finally {
       await refreshRendererBundleStatus();
       setIsChecking(false);
@@ -504,6 +517,8 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         logger.debug('Native updater install failed, opening release page fallback', {
           error: installError instanceof Error ? installError.message : String(installError),
         });
+        // 落盘真正的 native 更新失败原因（fallback 路径外层不再抛，否则这条会丢）。
+        persistClientError('UpdateInstall', 'Native updater install failed, opened release page fallback', installError);
         await tauriOpenUpdateUrl(updateInfo.downloadUrl);
       }
       setIsInstalling(false);
@@ -511,6 +526,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     } catch (err) {
       setError('更新安装失败，请稍后重试');
       logger.error('Tauri update install failed', err);
+      persistClientError('UpdateInstall', 'Tauri update install failed', err);
       setIsInstalling(false);
       setInstallProgress(null);
     }

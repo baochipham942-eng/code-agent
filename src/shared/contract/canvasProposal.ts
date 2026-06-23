@@ -73,6 +73,9 @@ export interface CanvasProposalDecision {
   /** apply=批准整批应用；reject=拒绝（feedback 回 agent 作修改意见）。 */
   verdict: 'apply' | 'reject';
   feedback?: string;
+  /** verdict=apply 时 renderer 回灌的应用结果（让 agent 知道实际落地几条、跳过几条 stale）。 */
+  appliedCount?: number;
+  skippedCount?: number;
 }
 
 // ── 校验/归一化（main 侧产出与 renderer 侧消费共用，防破损 op 进流程）──

@@ -10,7 +10,7 @@
 ```
 三地基（实施焦点）:
   ⑤ undo/redo ............... ✅ 已合 main (PR #267)
-  ① 自定义生图模型 .......... ⏳ 进行中(独立会话/worktree)
+  ① 自定义生图模型 .......... ✅ 实现完成·待 PR/合并(worktree code-agent-customimg)
   ④ 统一偏好记忆 ............ ⚠️ 暂缓·需重写(注入地基错位)
 
 外圈 4 项（借鉴清单余项，未排期）:
@@ -27,9 +27,16 @@
 TDD 247 单测 + skeptic 审计(2 HIGH+1 MED 全修) + Playwright 真机交互 E2E 通过。
 计划：`docs/plans/design-canvas-undo-redo.md`。**暂缓子项**：Phase 5 编辑落盘存活重启（loadDoc/切 run 竞态，作单独一刀）。
 
-### ① 自定义生图模型端点 — ⏳ 进行中
+### ① 自定义生图模型端点 — ✅ 实现完成·待 PR/合并
 让用户自填任意 OpenAI 兼容图像端点（yetone 推文被点赞的卖点）。第一刀只做 t2i。
-计划：`docs/plans/design-custom-image-model.md`（架构=运行时叠加层；含 codex 修订 5 道坑：参考图垫图守门 / 付费探测护栏 / SSRF / 静态枚举边界 / 返回契约兼容）。
+计划：`docs/plans/design-custom-image-model.md`（架构=运行时叠加层）。worktree `code-agent-customimg` / 分支 `feat/design-custom-image-model`。
+codex 修订 5 道坑全部落地并经实测验证：
+- **参考图垫图守门**：custom 命中后参考图分支显式抛错（仅 t2i），IPC 单测覆盖。
+- **付费探测护栏**：彻底**取消保存时的连通性探测**（无探测=无可反复触发的付费口），最稳解，对齐付费安全规矩。
+- **SSRF**：新建 `ssrfGuard.ts` 单一真源（custom baseUrl=https 公网 / 裸下载 downloadFile=http(s) 公网 / 图片下载 isSafeImageUrl=https 公网 + redirect:manual 防跳转绕过）；守卫跑在 WHATWG URL 归一化之后，十/十六/八进制数字 IP 与 ::ffff: 映射地址均被中和（实测）。
+- **静态枚举边界**：`imageEngineForModel` 对 custom/未知 id 显式抛错；三处调用点（t2i / annotEdit / slides）均「上游拦 custom」或「失败响亮」，绝不静默误路由。
+- **返回契约兼容**：`listVisualImageModels` 合并 custom（provider:'custom'）仅扩 provider 取值，旧 renderer 只消费 id/label/available 自然兼容；key/baseUrl 绝不回传（实测无泄漏）。
+验证：typecheck 净 + 67 新单测 + 307 media/security 回归全绿 + 真机 webServer HTTP-IPC 集成（save/list/合并/delete/SSRF 三连拦/无 key 落盘）+ Playwright 渲染器接线（入口→弹窗→表单逐字段校验，零 console error）。
 
 ### ④ 统一偏好记忆 — ⚠️ 暂缓·需重写
 **不能按原蓝图直接做**：实地调查证实注入地基错位——`enrichDesignBriefForPrompt` 只服务通用 chat，设计三条生成路径（原型 `buildPrototypePrompt` / 画布出图 `buildImagePrompt` / 演示稿 `resolveTheme`）**全绕过它**。须按"三条各自落点"重写注入设计，且范围缩到轻量偏好（主题/模型/风格），别假装能统一注入品牌契约。
@@ -43,6 +50,7 @@ TDD 247 单测 + skeptic 审计(2 HIGH+1 MED 全修) + Playwright 真机交互 E
 
 ## 进度日志
 - 2026-06-23：Alma 借鉴分析完成 → 借鉴清单归档 → agent-team 探索三地基 → codex+skeptic 审计 → **⑤ 实现并合 main(PR #267)** → ① 另起会话推进。
+- 2026-06-23：**① 自定义生图模型实现完成**（rebase 到最新 origin/main；Phase1-4 全落地 + codex 5 修订验证 + 独立 skeptic 复审 + 真机 HTTP-IPC 集成 + Playwright E2E），待 PR/合并（worktree code-agent-customimg）。
 
 ## 索引
 - 借鉴总纲：`docs/competitive/alma-借鉴清单.md`

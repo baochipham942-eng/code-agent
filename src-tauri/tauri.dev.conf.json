@@ -2,6 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Agent Neo Dev",
   "identifier": "com.linchen.code-agent.dev",
+  "app": {
+    "security": {
+      "csp": "default-src 'self' http://localhost:8181 https://localhost:8181 data: blob:; connect-src 'self' http://localhost:8181 ws://localhost:8181 https://localhost:8181 wss://localhost:8181; img-src 'self' data: blob: http://localhost:8181 https://localhost:8181; style-src 'self' 'unsafe-inline' http://localhost:8181 https://localhost:8181; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:8181 https://localhost:8181; font-src 'self' data: http://localhost:8181 https://localhost:8181; frame-src 'self' http://localhost:* https://localhost:* http://127.0.0.1:*"
+    }
+  },
   "plugins": {
     "updater": {
       "endpoints": [

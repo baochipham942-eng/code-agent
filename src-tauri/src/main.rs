@@ -35,8 +35,9 @@ use native_desktop::{
 };
 use pip::{pip_frame, pip_hide, pip_show};
 
-const SERVER_URL: &str = "http://localhost:8180";
-const HEALTH_URL: &str = "http://localhost:8180/api/health";
+/// 生产通道 webServer 端口；测试包用 DEV_WEB_PORT 以便与生产包同时运行。
+const PROD_WEB_PORT: u16 = 8180;
+const DEV_WEB_PORT: u16 = 8181;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
@@ -246,26 +247,62 @@ fn web_server_node_env() -> &'static str {
 /// 测试/开发通道的数据目录名，与生产 `.code-agent` 并存、互不污染。
 const DEV_DATA_DIR_NAME: &str = ".code-agent-dev";
 
+/// 数据隔离通道：identifier 以 `.dev` 结尾（打包测试包）或 debug 构建（`cargo tauri dev`）
+/// 都视为 dev 通道，数据落到 `.code-agent-dev`。
+fn is_dev_data_channel(identifier: &str, is_debug: bool) -> bool {
+    is_debug || identifier.ends_with(".dev")
+}
+
 /// 根据 bundle identifier 与构建 profile 推导测试/开发通道的数据目录。
 /// 返回 `Some(dir)` 表示应把 `CODE_AGENT_DATA_DIR` 设为该目录；`None` 表示沿用生产默认。
-/// 规则：identifier 以 `.dev` 结尾（打包的测试包），或 debug 构建（`cargo tauri dev` 调试态）
-/// → 切到 `<home>/.code-agent-dev`；其余（生产包）→ `None`。
 fn dev_channel_data_dir(identifier: &str, is_debug: bool, home: Option<&Path>) -> Option<PathBuf> {
-    if !(is_debug || identifier.ends_with(".dev")) {
+    if !is_dev_data_channel(identifier, is_debug) {
         return None;
     }
     Some(home?.join(DEV_DATA_DIR_NAME))
 }
 
-/// 在 spawn webServer 之前，按运行通道把数据目录与 bundle id 落到进程 env：
-/// - `CODE_AGENT_DATA_DIR`：未显式设置且处于 dev/test 通道时切到 `.code-agent-dev`，
-///   随 `.envs(env::vars())` 传给 node 子进程，原生 appshots / native_desktop 也读它，
-///   保证测试调试不写进生产包的 `~/.code-agent`。
+/// webServer 监听端口：**只按 `.dev` identifier 切到 8181**（打包测试包，与生产 8180 并存
+/// 可同时运行）。`cargo tauri dev` 虽是 dev 数据通道，但 devUrl 与 beforeDevCommand 起的
+/// webServer 固定 8180，故端口仍走 8180，避免调试态白屏。
+fn channel_web_port(identifier: &str) -> u16 {
+    if identifier.ends_with(".dev") {
+        DEV_WEB_PORT
+    } else {
+        PROD_WEB_PORT
+    }
+}
+
+/// 当前进程实际使用的 webServer 端口：读 apply_channel_env 注入的 `CODE_AGENT_WEB_PORT`，
+/// 缺省退回生产端口。SERVER_URL / HEALTH_URL / 错误提示 / spawn 都以此为唯一真源。
+fn web_port() -> u16 {
+    env::var("CODE_AGENT_WEB_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(PROD_WEB_PORT)
+}
+
+fn server_url() -> String {
+    format!("http://localhost:{}", web_port())
+}
+
+fn health_url() -> String {
+    format!("{}/api/health", server_url())
+}
+
+/// 在 spawn webServer 之前，按运行通道把数据目录、端口与 bundle id 落到进程 env：
+/// - `CODE_AGENT_WEB_PORT`：测试包 8181，生产 8180；随 `.envs()` 传给 webServer（读 WEB_PORT），
+///   也是 Rust 端 server_url / health_url / 错误提示的唯一真源，保证两包同时运行不抢端口。
+/// - `CODE_AGENT_DATA_DIR`：未显式设置且处于 dev 数据通道时切到 `.code-agent-dev`，
+///   随 `.envs()` 传给 node 子进程，原生 appshots / native_desktop 也读它。
 /// - `CODE_AGENT_BUNDLE_ID`：暴露真实 bundle id，让麦克风 / 截图逻辑不误读生产包的授权。
 fn apply_channel_env(app: &tauri::AppHandle) {
     let identifier = app.config().identifier.clone();
     if env::var_os("CODE_AGENT_BUNDLE_ID").is_none() {
         env::set_var("CODE_AGENT_BUNDLE_ID", &identifier);
+    }
+    if env::var_os("CODE_AGENT_WEB_PORT").is_none() {
+        env::set_var("CODE_AGENT_WEB_PORT", channel_web_port(&identifier).to_string());
     }
     if env::var_os("CODE_AGENT_DATA_DIR").is_some() {
         return; // 已显式指定（含打包测试包），尊重不覆盖
@@ -285,7 +322,7 @@ fn is_server_running() -> bool {
         Ok(c) => c,
         Err(_) => return false,
     };
-    matches!(client.get(HEALTH_URL).send(), Ok(resp) if resp.status().as_u16() == 200)
+    matches!(client.get(health_url()).send(), Ok(resp) if resp.status().as_u16() == 200)
 }
 
 fn make_boot_token() -> String {
@@ -433,6 +470,8 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
         .env("NODE_ENV", web_server_node_env())
+        // 测试包用 8181、生产 8180，保证两包同时运行不抢端口（webServer 读 WEB_PORT）
+        .env("WEB_PORT", web_port().to_string())
         // stdin 用 pipe：本进程死亡（含 panic/SIGABRT）时管道关闭，
         // webServer 监听 stdin EOF 自杀，不留孤儿进程占住端口
         .stdin(Stdio::piped())
@@ -480,7 +519,7 @@ fn wait_for_healthcheck(
             Err(error) => return Err(format!("Failed to inspect web server process: {error}")),
         }
 
-        match client.get(HEALTH_URL).send() {
+        match client.get(health_url()).send() {
             Ok(response) if response.status().as_u16() == 200 => {
                 let body = response.text().unwrap_or_default();
                 if health_matches_boot_token(&body, expected_boot_token) {
@@ -495,7 +534,7 @@ fn wait_for_healthcheck(
     Err(format!(
         "Timed out after {}s waiting for {}",
         HEALTH_TIMEOUT.as_secs(),
-        HEALTH_URL
+        health_url()
     ))
 }
 
@@ -508,8 +547,9 @@ fn start_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
         let _ = child.wait();
         if is_server_running() {
             return Err(format!(
-                "端口 8180 被其他进程占用，Agent Neo 无法启动自己的服务。\n\
-                 请退出占用端口的程序（或重启电脑）后重试。\n\n原始错误: {error}"
+                "端口 {} 被其他进程占用，Agent Neo 无法启动自己的服务。\n\
+                 请退出占用端口的程序（或重启电脑）后重试。\n\n原始错误: {error}",
+                web_port()
             ));
         }
         return Err(error);
@@ -526,7 +566,7 @@ fn boot_server_url() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    format!("{SERVER_URL}/?boot={boot_ms}")
+    format!("{}/?boot={boot_ms}", server_url())
 }
 
 /// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
@@ -1046,8 +1086,9 @@ fn open_update_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod runtime_env_tests {
     use super::{
-        bundled_node_candidates, dev_channel_data_dir, web_server_node_env, web_server_runtime_env,
-        BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV,
+        bundled_node_candidates, channel_web_port, dev_channel_data_dir, web_server_node_env,
+        web_server_runtime_env, BUNDLED_RUNTIME_ROOT_ENV, DEV_WEB_PORT, PROD_WEB_PORT,
+        RESOURCE_DIR_ENV,
     };
     use std::path::{Path, PathBuf};
 
@@ -1108,6 +1149,16 @@ mod runtime_env_tests {
             dev_channel_data_dir("com.linchen.code-agent.dev", false, None),
             None
         );
+    }
+
+    #[test]
+    fn channel_web_port_only_splits_on_dev_identifier() {
+        // 打包测试包（.dev）→ 8181，与生产 8180 并存可同时运行
+        assert_eq!(channel_web_port("com.linchen.code-agent.dev"), DEV_WEB_PORT);
+        // 生产包 → 8180
+        assert_eq!(channel_web_port("com.linchen.code-agent"), PROD_WEB_PORT);
+        // 注意：端口不按 debug 切——cargo tauri dev 用生产 identifier，仍走 8180
+        // 以匹配 devUrl 与 beforeDevCommand 起的 webServer，避免白屏。
     }
 
     #[test]
@@ -1562,7 +1613,7 @@ fn main() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).
                 // Release builds must not trust an arbitrary healthy localhost:8180 process:
                 // a stale dev server can serve mismatched renderer assets and leave the app white.
-                println!("Web server already running on {SERVER_URL}, skipping spawn");
+                println!("Web server already running on {}, skipping spawn", server_url());
             } else {
                 match start_web_server(&app.handle()) {
                     Ok(child) => app.state::<AppState>().store_child(child),

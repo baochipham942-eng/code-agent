@@ -83,6 +83,14 @@ const ALLOWED_ORIGINS = new Set([
   'https://tauri.localhost',
 ]);
 
+// 测试包 webServer 跑在非默认端口（如 8181），其渲染器同源请求一般不触发 CORS，
+// 但稳妥起见把运行时实际端口的 localhost/127.0.0.1 origin 也加进白名单。
+const runtimePort = (process.env.WEB_PORT || process.env.CODE_AGENT_WEB_PORT || '').trim();
+if (runtimePort) {
+  ALLOWED_ORIGINS.add(`http://localhost:${runtimePort}`);
+  ALLOWED_ORIGINS.add(`http://127.0.0.1:${runtimePort}`);
+}
+
 export function corsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const origin = req.headers.origin;
   if (origin && ALLOWED_ORIGINS.has(origin)) {

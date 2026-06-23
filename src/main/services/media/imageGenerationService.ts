@@ -678,3 +678,55 @@ export async function editImageByAnnotation(input: {
   if (!b64) throw new Error('gpt-image-2 标注重绘返回无 b64_json');
   return { imageData: `data:image/png;base64,${b64}`, actualModel: GPTIMAGE_MODEL };
 }
+
+// 自定义 OpenAI 兼容生图端点（借鉴项①）：固定打 ${baseUrl}/images/generations（baseUrl 含 /v1）。
+const OPENAI_COMPAT_GENERATIONS_PATH = '/images/generations';
+const OPENAI_COMPAT_SIZE_BY_ASPECT = new Map<string, string>([
+  ['1:1', '1024x1024'],
+  ['16:9', '1792x1024'],
+  ['9:16', '1024x1792'],
+  ['4:3', '1024x768'],
+  ['3:4', '768x1024'],
+]);
+
+/**
+ * 调用用户自填的 OpenAI 兼容生图端点（文生图 only）。caller 须已对 baseUrl 过 SSRF 守卫。
+ * 返回兼容三态：data[0].b64_json（转 dataURL）/ data[0].url（透传，由 caller 下载过 isSafeImageUrl）。
+ * actualModel = 用户填的 modelName（落价表/成本用）。设计场景保留文字，用 raw prompt。
+ */
+export async function generateImageOpenAICompat(input: {
+  baseUrl: string;
+  apiKey: string;
+  modelName: string;
+  prompt: string;
+  aspectRatio?: string;
+  outerSignal?: AbortSignal;
+}): Promise<GenerateImageResult> {
+  const size = OPENAI_COMPAT_SIZE_BY_ASPECT.get(input.aspectRatio || '1:1') || GPTIMAGE_DEFAULT_SIZE;
+  const resp = await fetchWithAbort(
+    `${input.baseUrl.replace(/\/+$/, '')}${OPENAI_COMPAT_GENERATIONS_PATH}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: input.modelName, prompt: input.prompt, n: 1, size }),
+    },
+    TIMEOUT_MS.GPTIMAGE_GENERATION,
+    input.outerSignal ?? new AbortController().signal,
+  );
+  if (!resp.ok) {
+    // 透出端点错误正文（配额/无效 key/上游超时等唯一可读信号）。body 不含 key（key 只在 header），安全。
+    const errBody = await resp.text().catch(() => '');
+    throw new Error(`自定义生图端点失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
+  }
+  const json = await resp.json();
+  const first = json?.data?.[0];
+  const b64 = first?.b64_json;
+  if (typeof b64 === 'string' && b64) {
+    return { imageData: `data:image/png;base64,${b64}`, actualModel: input.modelName };
+  }
+  const url = first?.url;
+  if (typeof url === 'string' && url) {
+    return { imageData: url, actualModel: input.modelName };
+  }
+  throw new Error('自定义生图端点返回既无 b64_json 也无 url');
+}

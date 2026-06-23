@@ -47,6 +47,16 @@ import {
 } from '../services/media/imageGenerationService';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
+import {
+  getCustomImageModel,
+  getCustomModelApiKey,
+  listCustomImageModels,
+  saveCustomImageModel,
+  deleteCustomImageModel,
+  setCustomModelApiKey,
+  type CustomImageModel,
+} from '../services/media/customImageModelRegistry';
+import { assertSafeCustomBaseUrl, assertSafeDownloadUrl } from '../security/ssrfGuard';
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
 import { REGION_LOCK } from '../../shared/constants/designWorkspace';
@@ -83,9 +93,16 @@ export async function handleGenerateDesignImage(
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
 
+  // 自定义模型（借鉴项①）：查注册表命中则走 openai-compat 独立分支（绝不进 imageEngineForModel）。
+  const custom = payload.model ? await getCustomImageModel(payload.model) : null;
+
   // 参考图垫图：以用户贴入的参考图为底走 wanx description_edit（万相专属能力，故固定 wanx 引擎）。
   // 路径守卫/空 prompt 已上拦，编排（key 校验 + 出图 + 下载）下沉到 service，handler 只负责落盘。
   if (payload.referenceImageDataUrl) {
+    // 审计修订1：参考图垫图绕过 model 路由固定走 wanx——自定义模型只声明 t2i，撞进来显式拦。
+    if (custom) {
+      throw new Error(`自定义模型 ${custom.label} 不支持参考图垫图（仅文生图）`);
+    }
     const { generateImageFromReference } = await import('../services/media/imageGenerationService');
     const { imageData, actualModel } = await generateImageFromReference({
       prompt: payload.prompt,
@@ -95,6 +112,10 @@ export async function handleGenerateDesignImage(
     await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
     await fsp.writeFile(payload.outputPath, refBuf);
     return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+  }
+
+  if (custom) {
+    return generateDesignImageViaCustom(custom, payload);
   }
 
   // 按 model 路由到对应 engine（注册表守门，未知 id 抛错）；缺省回退默认 wanx。
@@ -112,6 +133,37 @@ export async function handleGenerateDesignImage(
   await fsp.writeFile(payload.outputPath, buf);
   // 实际花费权威源在 main：按真正落地的模型查价表（T2 BYOK 成本可见）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+}
+
+// 自定义 OpenAI 兼容端点出图（借鉴项①）：key 校验 → 出图前再过一道 SSRF 守卫（防落盘后被篡改）
+// → 调 service → url 走 isSafeImageUrl 下载 / b64 直接落盘。成本：用户填的 costCnyPerImage 优先，
+// 否则按 modelName 查价表（未知模型回退 default 0.14）。actualModel = 用户填的 modelName。
+async function generateDesignImageViaCustom(
+  custom: CustomImageModel,
+  payload: { prompt: string; aspectRatio?: string; outputPath: string },
+): Promise<{ path: string; actualModel: string; costCny: number }> {
+  const apiKey = getCustomModelApiKey(custom.id);
+  if (!apiKey) {
+    throw new Error(`自定义模型 ${custom.label} 未配置 API Key，请在设置中补填。`);
+  }
+  // 出图前再守一道：注册表存的是已校验 baseUrl，但磁盘文件可能被外部篡改，发请求前必须再判。
+  const baseUrl = assertSafeCustomBaseUrl(custom.baseUrl);
+  const { generateImageOpenAICompat, downloadImageAsBase64, isImageUrl } = await import(
+    '../services/media/imageGenerationService'
+  );
+  const { imageData, actualModel } = await generateImageOpenAICompat({
+    baseUrl,
+    apiKey,
+    modelName: custom.modelName,
+    prompt: payload.prompt,
+    aspectRatio: payload.aspectRatio || '1:1',
+  });
+  const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  const costCny = custom.costCnyPerImage ?? estimateImageCostCny(custom.modelName);
+  return { path: payload.outputPath, actualModel, costCny };
 }
 
 // 设计画布标注重绘（Cowart 式 A3）：renderer 把圈选标注烧进图（annotatedImageDataUrl）+
@@ -606,12 +658,16 @@ async function handleShowItemInFolder(
   shell.showItemInFolder(resolvedPath);
 }
 
-async function handleDownloadFile(
+export async function handleDownloadFile(
   payload: { url: string; filename?: string }
 ): Promise<{ filePath: string }> {
   const { app } = await import('../platform');
   const fs = await import('fs/promises');
   const pathModule = await import('path');
+
+  // SSRF 收口（审计修订2）：downloadFile 是 IPC 暴露的任意 URL 裸 fetch，必须挡私网/环回/
+  // 元数据地址，杜绝被当跳板。放行 http/https 公网（下载比出图宽松）。
+  assertSafeDownloadUrl(payload.url);
 
   // 下载到用户下载目录
   const downloadsDir = app.getPath('downloads');
@@ -931,19 +987,76 @@ function providerKeyConfigured(provider: string): boolean {
   return false;
 }
 
-// 列出注册表全部生图模型，并按用户是否已配对应 provider key 标 available。
-// 出参只含 id/label/provider/available——绝不回传 key 值（信任边界）。
+// 列出注册表全部生图模型（内置 + 自定义），并按用户是否已配对应 key 标 available。
+// 出参只含 id/label/provider/available——绝不回传 key 值/baseUrl（信任边界）。
 export async function handleListVisualImageModels(): Promise<{
   models: Array<{ id: string; label: string; provider: string; available: boolean }>;
 }> {
+  const builtin = IMAGE_MODELS.map((m) => ({
+    id: m.id,
+    label: m.label,
+    provider: m.provider as string,
+    available: providerKeyConfigured(m.provider),
+  }));
+  // 自定义模型（借鉴项①）：available = 该模型是否已配 key（每模型独立 key）。
+  const customs = await listCustomImageModels();
+  const customList = customs.map((c) => ({
+    id: c.id,
+    label: c.label,
+    provider: 'custom',
+    available: !!getCustomModelApiKey(c.id),
+  }));
+  return { models: [...builtin, ...customList] };
+}
+
+// ----------------------------------------------------------------------------
+// 自定义生图模型管理（借鉴项①）：薄 handler，CRUD 逻辑在 customImageModelRegistry。
+// ----------------------------------------------------------------------------
+
+// 列出自定义模型（含 baseUrl/modelName 供管理 UI 展示 + available 标 key 是否已配）。绝不回 key 值。
+export async function handleListCustomImageModels(): Promise<{
+  models: Array<{ id: string; label: string; baseUrl: string; modelName: string; costCnyPerImage?: number; available: boolean }>;
+}> {
+  const customs = await listCustomImageModels();
   return {
-    models: IMAGE_MODELS.map((m) => ({
-      id: m.id,
-      label: m.label,
-      provider: m.provider,
-      available: providerKeyConfigured(m.provider),
+    models: customs.map((c) => ({
+      id: c.id,
+      label: c.label,
+      baseUrl: c.baseUrl,
+      modelName: c.modelName,
+      ...(c.costCnyPerImage !== undefined ? { costCnyPerImage: c.costCnyPerImage } : {}),
+      available: !!getCustomModelApiKey(c.id),
     })),
   };
+}
+
+// 新建自定义模型：注册表校验 label/modelName + SSRF 守卫 baseUrl → 落盘 → 存 key 进 SecureStorage。
+// apiKey 必填（无 key 的模型不可用，存了只是污染列表）。返回最终 id。
+export async function handleSaveCustomImageModel(payload: {
+  label: string;
+  baseUrl: string;
+  modelName: string;
+  costCnyPerImage?: number;
+  apiKey: string;
+}): Promise<{ id: string }> {
+  if (!payload?.apiKey?.trim()) {
+    throw new Error('saveCustomImageModel 需要非空 API Key');
+  }
+  const { id } = await saveCustomImageModel({
+    label: payload.label,
+    baseUrl: payload.baseUrl,
+    modelName: payload.modelName,
+    costCnyPerImage: payload.costCnyPerImage,
+  });
+  setCustomModelApiKey(id, payload.apiKey.trim());
+  return { id };
+}
+
+export async function handleDeleteCustomImageModel(payload: { id: string }): Promise<{ ok: true }> {
+  if (!payload?.id) {
+    throw new Error('deleteCustomImageModel 需要 id');
+  }
+  return deleteCustomImageModel(payload.id);
 }
 
 // ----------------------------------------------------------------------------
@@ -1065,6 +1178,17 @@ export function registerWorkspaceHandlers(
           break;
         case 'listVisualImageModels':
           data = await handleListVisualImageModels();
+          break;
+        case 'listCustomImageModels':
+          data = await handleListCustomImageModels();
+          break;
+        case 'saveCustomImageModel':
+          data = await handleSaveCustomImageModel(
+            payload as { label: string; baseUrl: string; modelName: string; costCnyPerImage?: number; apiKey: string },
+          );
+          break;
+        case 'deleteCustomImageModel':
+          data = await handleDeleteCustomImageModel(payload as { id: string });
           break;
         case 'removeRecent':
           data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);

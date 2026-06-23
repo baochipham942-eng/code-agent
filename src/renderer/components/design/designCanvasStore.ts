@@ -194,8 +194,14 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
       if (!target || !target.discarded) return {}; // 不存在或本就没淘汰：no-op
-      // 仅清 discarded（chosen 留 false，恢复后是同槽活跃非主版，用户可再设主版）。
-      return { nodes: s.nodes.map((n) => (n.id === id ? { ...n, discarded: false } : n)) };
+      // 清 discarded。若同槽已无主版（如整槽淘汰后逐个恢复），把本节点升为主版补回
+      // 「槽内恒有一个 chosen」不变量（M1，对称于 discardNode 的自动升主版）；否则留 false。
+      const key = groupKey(target);
+      const slotHasChosen = s.nodes.some(
+        (n) => n.id !== id && !n.discarded && groupKey(n) === key && n.chosen,
+      );
+      const chosen = !slotHasChosen;
+      return { nodes: s.nodes.map((n) => (n.id === id ? { ...n, discarded: false, chosen } : n)) };
     }),
   setChosen: (id) =>
     set((s) => {

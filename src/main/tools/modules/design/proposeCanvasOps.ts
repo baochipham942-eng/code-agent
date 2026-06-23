@@ -144,7 +144,7 @@ export async function executeProposeCanvasOps(
     if (decision.verdict === 'apply') {
       const applied = decision.appliedCount ?? ops.length;
       const skipped = decision.skippedCount ?? 0;
-      const skipNote = skipped > 0 ? `，跳过 ${skipped} 项（目标已变更/陈旧）` : '';
+      const skipNote = skipped > 0 ? `，跳过 ${skipped} 项（目标已变更，或被用户取消勾选——勿重复提议被否决项）` : '';
       return { ok: true, output: `用户已批准并应用：${applied} 项画布操作${skipNote}（${describeOps(ops)}）。画布已更新。` };
     }
     const fb = decision.feedback ? `\n用户意见：${decision.feedback}` : '';

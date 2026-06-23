@@ -47,8 +47,11 @@ export async function applyProposal(
   const changed = layer1.changed || discard.applied > 0;
   if (changed) await deps.save();
 
+  // 用户在 per-op 取舍里取消勾选的 op 也计入 skipped——否则 agent 不知这些被用户主动否决，
+  // 可能反复重提（L1）。deselected = 原批 - 用户选中的子集。
+  const deselected = selectedOps ? Math.max(0, proposal.ops.length - selectedOps.length) : 0;
   const appliedCount = layer1.applied.length + discard.applied;
-  const skippedCount = layer1.skipped.length + discard.skipped;
+  const skippedCount = layer1.skipped.length + discard.skipped + deselected;
   await deps.respond({ requestId: proposal.requestId, verdict: 'apply', appliedCount, skippedCount });
   return { appliedCount, skippedCount, layer1 };
 }

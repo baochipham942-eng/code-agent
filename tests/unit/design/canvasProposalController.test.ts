@@ -100,6 +100,19 @@ describe('applyProposal 三刀：discard 拆分 + per-op 取舍', () => {
     expect(d.applyBatch.mock.calls[0][0][0]).toMatchObject({ kind: 'addConnector' });
   });
 
+  it('L1：用户取消勾选的 op 计入 skippedCount（让 agent 知被否决，勿重提）', async () => {
+    const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'addConnector' }], skipped: [], changed: true };
+    const d = deps(result);
+    const p: CanvasOpProposal = {
+      requestId: 'cp-7',
+      ops: [{ kind: 'addConnector', fromNodeId: 'a', toNodeId: 'b' }, { kind: 'renameNode', nodeId: 'c', label: 'x' }, { kind: 'renameNode', nodeId: 'd', label: 'y' }],
+    };
+    // 3 选 1：另 2 条算 deselected → skippedCount=2
+    const out = await applyProposal(p, d, [p.ops[0]]);
+    expect(out).toMatchObject({ appliedCount: 1, skippedCount: 2 });
+    expect(d.respond).toHaveBeenCalledWith({ requestId: 'cp-7', verdict: 'apply', appliedCount: 1, skippedCount: 2 });
+  });
+
   it('全跳过（Layer1 无变更 + discard 全 stale）：不落盘，仍回 apply（appliedCount=0）', async () => {
     const d = deps(nochange, { applied: 0, skipped: 2 });
     const p: CanvasOpProposal = { requestId: 'cp-6', ops: [{ kind: 'discardNode', nodeId: 'x' }, { kind: 'discardNode', nodeId: 'y' }] };

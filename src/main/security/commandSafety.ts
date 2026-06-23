@@ -15,6 +15,7 @@ import {
   evaluateWindowsDanger,
   isKnownSafeWindowsCommand,
 } from './shellRules/windowsRules';
+import { RM_FLAGS, RM_FLAGS_REQUIRED } from './rmFlagPattern';
 
 const logger = createLogger('CommandSafety');
 
@@ -433,13 +434,14 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [
   //  · 删根 / 家 / 系统目录 / 整个顶级容器目录 → critical，硬毙
   // 宽匹配先标 high，保证任何删 / 或 ~ 路径的 rm 至少要确认，绝不会因细分漏判而降成 safe；
   // validateCommand 取最高风险，灾难性子集会被下面 critical 模式拽回硬毙。
-  { pattern: /rm\s+(-[rRf]+\s+)*[\/~]/, riskLevel: 'high', flag: 'recursive_delete_targeted', reason: 'Recursive/forced deletion of a specific path', suggestion: 'Confirm the exact target; consider trash instead of rm' },
-  { pattern: /rm\s+(-[rRf]+\s+)*\/(\s|$|\*)/, riskLevel: 'critical', flag: 'root_delete', reason: 'Recursive deletion of the root directory' },
-  { pattern: /rm\s+(-[rRf]+\s+)*(~|\$HOME)\/?(\s|$|\*)/, riskLevel: 'critical', flag: 'home_delete', reason: 'Recursive deletion of the entire home directory' },
-  { pattern: /rm\s+(-[rRf]+\s+)*\/(System|usr|bin|sbin|etc|var|private|opt|cores|dev|Network|Library)(\/|\s|$)/, riskLevel: 'critical', flag: 'system_dir_delete', reason: 'Recursive deletion of a system directory' },
-  { pattern: /rm\s+(-[rRf]+\s+)*\/(Applications|Users|Volumes)\/?(\s|$|\*)/, riskLevel: 'critical', flag: 'container_dir_delete', reason: 'Recursive deletion of an entire top-level directory' },
-  { pattern: /rm\s+-rf?\s+\*/, riskLevel: 'critical', flag: 'wildcard_delete', reason: 'Recursive deletion with wildcard' },
-  { pattern: /rm\s+-rf?\s+\.\s*$/, riskLevel: 'critical', flag: 'current_dir_delete', reason: 'Deleting current directory' },
+  // flag 前缀用共享的 RM_FLAGS（短簇 + 长选项 + 任意序），杜绝 `rm --recursive /` 旁路
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS}[/~]`), riskLevel: 'high', flag: 'recursive_delete_targeted', reason: 'Recursive/forced deletion of a specific path', suggestion: 'Confirm the exact target; consider trash instead of rm' },
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS}/(\\s|$|\\*)`), riskLevel: 'critical', flag: 'root_delete', reason: 'Recursive deletion of the root directory' },
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS}(~|\\$HOME)/?(\\s|$|\\*)`), riskLevel: 'critical', flag: 'home_delete', reason: 'Recursive deletion of the entire home directory' },
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS}/(System|usr|bin|sbin|etc|var|private|opt|cores|dev|Network|Library)(/|\\s|$)`), riskLevel: 'critical', flag: 'system_dir_delete', reason: 'Recursive deletion of a system directory' },
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS}/(Applications|Users|Volumes)/?(\\s|$|\\*)`), riskLevel: 'critical', flag: 'container_dir_delete', reason: 'Recursive deletion of an entire top-level directory' },
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS_REQUIRED}\\*`), riskLevel: 'critical', flag: 'wildcard_delete', reason: 'Recursive deletion with wildcard' },
+  { pattern: new RegExp(`rm\\s+${RM_FLAGS_REQUIRED}\\.\\s*$`), riskLevel: 'critical', flag: 'current_dir_delete', reason: 'Deleting current directory' },
   // 磁盘操作
   { pattern: />\s*\/dev\/sd[a-z]/, riskLevel: 'critical', flag: 'disk_overwrite', reason: 'Writing directly to disk device' },
   { pattern: /mkfs\./, riskLevel: 'critical', flag: 'format_disk', reason: 'Formatting disk' },

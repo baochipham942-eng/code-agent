@@ -411,6 +411,41 @@ describe('validateCommand — rm 删除分级', () => {
     }
   });
 
+  // 长选项 / 拆分 flag 的等价写法必须与短 flag 同等分级（防旁路）
+  describe('长选项 / 任意序 flag 的灾难性删除仍硬毙', () => {
+    const catastrophicLongFlag = [
+      'rm --recursive --force /',
+      'rm --force --recursive /',
+      'rm -r --force /',
+      'rm --recursive /',
+      'rm --recursive --force ~',
+      'rm --recursive /System/Library/Foo',
+      'rm --force --recursive /Applications',
+    ];
+    for (const cmd of catastrophicLongFlag) {
+      it(`blocks: ${cmd}`, () => {
+        const r = validateCommand(cmd);
+        expect(r.allowed).toBe(false);
+        expect(r.riskLevel).toBe('critical');
+      });
+    }
+  });
+
+  describe('长选项的目标删除 → 一次确认', () => {
+    const targetedLongFlag = [
+      'rm --recursive /Applications/Claude.app',
+      'rm --recursive --force ~/Downloads/tmp',
+      'rm -r --force /tmp/build-cache',
+    ];
+    for (const cmd of targetedLongFlag) {
+      it(`confirms (not blocks): ${cmd}`, () => {
+        const r = validateCommand(cmd);
+        expect(r.allowed).toBe(true);
+        expect(r.riskLevel).toBe('high');
+      });
+    }
+  });
+
   // 目标明确的删除：从硬毙降为"一次确认"(allowed=true / high)
   describe('目标明确删除 → 一次确认（不硬毙）', () => {
     const targeted = [

@@ -28,6 +28,7 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
           <span className="font-mono text-zinc-400">{index + 1}</span>
           <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-zinc-400">{slideKind(slide, t)}</span>
         </span>
+        {/* ds-allow:start 卡片图标工具栏：上移/下移/删页，设计区紧凑图标控件非标准按钮 */}
         <div className="flex items-center gap-0.5">
           <button
             type="button"
@@ -57,6 +58,7 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
+        {/* ds-allow:end */}
       </div>
 
       {/* 标题（就地改字） */}
@@ -89,6 +91,7 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
                 placeholder={t.design.slidesPointPlaceholder}
                 className="flex-1 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
               />
+              {/* ds-allow:start 删除要点：图标控件非标准按钮 */}
               <button
                 type="button"
                 onClick={() => s.getState().deletePoint(index, pi)}
@@ -97,8 +100,10 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
               >
                 <X className="h-3 w-3" />
               </button>
+              {/* ds-allow:end */}
             </div>
           ))}
+          {/* ds-allow:start 添加要点：文字链接式控件非标准按钮 */}
           <button
             type="button"
             onClick={() => s.getState().appendPoint(index)}
@@ -107,10 +112,12 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
             <Plus className="h-3 w-3" />
             {t.design.slidesAddPoint}
           </button>
+          {/* ds-allow:end */}
         </div>
       )}
 
       {/* 在此页后插入 */}
+      {/* ds-allow:start 插入页：文字链接式控件非标准按钮 */}
       <button
         type="button"
         onClick={() => s.getState().insertSlideAfter(index)}
@@ -119,6 +126,7 @@ const SlideCard: React.FC<{ slide: SlideOutlineItem; index: number; total: numbe
         <Plus className="h-3 w-3" />
         {t.design.slidesInsertAfter}
       </button>
+      {/* ds-allow:end */}
     </div>
   );
 };

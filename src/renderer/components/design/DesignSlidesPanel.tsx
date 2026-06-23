@@ -132,6 +132,7 @@ export const DesignSlidesPanel: React.FC = () => {
       {hasOutline && (
         <div className="flex items-center justify-between text-[11px] text-zinc-500">
           <span>{t.design.slidesOutlineReady}（{outline!.length}）</span>
+          {/* ds-allow:start 重置大纲：文字链接式控件非标准按钮 */}
           <button
             type="button"
             onClick={() => store.setState({ outline: null, result: null, error: null })}
@@ -140,6 +141,7 @@ export const DesignSlidesPanel: React.FC = () => {
             <RotateCcw className="h-3 w-3" />
             {t.design.slidesResetOutline}
           </button>
+          {/* ds-allow:end */}
         </div>
       )}
 

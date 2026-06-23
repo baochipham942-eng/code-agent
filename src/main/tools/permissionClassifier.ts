@@ -15,7 +15,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
-import { RM_FLAGS_REQUIRED } from '../security/rmFlagPattern';
+import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { isBashToolName, normalizeToolName } from './toolNames';
 
 const logger = createLogger('PermissionClassifier');
@@ -96,9 +96,9 @@ const MCP_TOOL_PREFIXES = ['mcp_', 'mcp:', 'MCPUnified'];
 
 // 危险 bash 模式 — 始终拒绝或要求确认
 const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision: PermissionDecision }> = [
-  // flag 前缀用共享 RM_FLAGS_REQUIRED（短簇/长选项/任意序），堵 `rm --recursive /` 旁路
-  { pattern: new RegExp(`rm\\s+${RM_FLAGS_REQUIRED}[/~]`), reason: '递归删除系统目录', decision: 'deny' },
-  { pattern: new RegExp(`rm\\s+${RM_FLAGS_REQUIRED}\\*`), reason: '递归删除通配符', decision: 'deny' },
+  // flag 前缀用共享 RM_FLAGS_REQUIRED（短簇/长选项/=值/任意序）+ RM_HEAD 词边界
+  { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}[/~]`), reason: '递归删除系统目录', decision: 'deny' },
+  { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}\\*`), reason: '递归删除通配符', decision: 'deny' },
   { pattern: />\s*\/dev\/sd/, reason: '直接写入块设备', decision: 'deny' },
   { pattern: /mkfs\s/, reason: '格式化文件系统', decision: 'deny' },
   { pattern: /dd\s+if=/, reason: 'dd 磁盘操作', decision: 'deny' },

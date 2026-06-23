@@ -18,11 +18,21 @@
  * 绝对路径 / ~ 的 rm 都要确认」，flag 前缀只是可选装饰；放宽 flag 形态只会让
  * 更多等价写法落入同一分级，偏向「多确认」是安全的。
  */
-export const RM_FLAGS = String.raw`(?:(?:-[A-Za-z]+|--[A-Za-z][\w-]*|--)\s+)*`;
+// 单个 flag token：短簇 `-rf`、长选项 `--recursive`（含 `--interactive=never` 这类
+// 带 `=值` 的形态）、`--` 分隔符。`=\S+` 让带值长选项不会断开整串 flag。
+const RM_FLAG_TOKEN = String.raw`(?:-[A-Za-z]+|--[A-Za-z][\w-]*(?:=\S+)?|--)`;
+
+export const RM_FLAGS = String.raw`(?:${RM_FLAG_TOKEN}\s+)*`;
 
 /**
  * 同 {@link RM_FLAGS}，但要求「至少一个」flag token。
  * 用于通配符 / 当前目录删除这类「裸 `rm *` 不算危险、但带任意 flag 就危险」的场景，
  * 保留原 `-rf?` 的「需带 flag」语义，同时不再漏掉 `-fr` / `--recursive` / `--force`。
  */
-export const RM_FLAGS_REQUIRED = String.raw`(?:(?:-[A-Za-z]+|--[A-Za-z][\w-]*|--)\s+)+`;
+export const RM_FLAGS_REQUIRED = String.raw`(?:${RM_FLAG_TOKEN}\s+)+`;
+
+/**
+ * `rm` 命令头：左侧负向后顾排除单词字符/连字符，避免把 `confirm /`、`foo-rm /`
+ * 这类把 `rm` 当子串的命令误判；同时仍能命中 `/bin/rm`、`\rm`、`;rm`、行首 `rm`。
+ */
+export const RM_HEAD = String.raw`(?<![\w-])rm\s+`;

@@ -431,6 +431,33 @@ describe('validateCommand — rm 删除分级', () => {
     }
   });
 
+  describe('=值长选项不再断开 flag 串', () => {
+    it('rm --recursive --force --interactive=never / → critical', () => {
+      const r = validateCommand('rm --recursive --force --interactive=never /');
+      expect(r.allowed).toBe(false);
+      expect(r.riskLevel).toBe('critical');
+    });
+  });
+
+  describe('词边界：把 rm 当子串的命令不误判', () => {
+    it.each(['confirm --recursive /', 'confirm /foo', 'firmware /opt'])(
+      'does not flag: %s',
+      (cmd) => {
+        // 这些不是 rm，不应被 rm 危险模式命中（可能落到其它分级，但不是 rm flag）
+        const r = validateCommand(cmd);
+        expect(r.securityFlags.some((f) => f.includes('delete'))).toBe(false);
+      }
+    );
+
+    it.each(['/bin/rm -rf /', '\\rm -rf /', 'echo x; rm -rf /'])(
+      'still catches real rm: %s',
+      (cmd) => {
+        const r = validateCommand(cmd);
+        expect(r.riskLevel).toBe('critical');
+      }
+    );
+  });
+
   describe('长选项的目标删除 → 一次确认', () => {
     const targetedLongFlag = [
       'rm --recursive /Applications/Claude.app',

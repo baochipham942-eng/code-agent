@@ -18,6 +18,7 @@ describe('matchDangerousBash — rm long/short/mixed flags', () => {
     'rm -r --force ~/Library',
     'rm -rf *',
     'rm --recursive --force *',
+    'rm --recursive --force --interactive=never /', // =value long option
   ])('flags dangerous rm: %s', (command) => {
     expect(m(ctx(command))).toBe(true);
   });
@@ -26,6 +27,7 @@ describe('matchDangerousBash — rm long/short/mixed flags', () => {
     'rm file.txt',           // relative, no flags → not this matcher's concern
     'npm install lodash',    // unrelated
     'ls -la /',              // not rm
+    'confirm --recursive /', // "rm" as a substring of confirm → word boundary
   ])('does not over-flag: %s', (command) => {
     expect(m(ctx(command))).toBe(false);
   });

@@ -114,7 +114,9 @@ export function matchDangerousBash(): HookMatcher {
   ];
 
   return (context: HookContext) => {
-    if (context.toolName !== 'bash') return false;
+    // The bash tool registers as 'Bash' at runtime (see bash.schema.ts);
+    // normalize so the safety blocker fires regardless of casing.
+    if (context.toolName?.toLowerCase() !== 'bash') return false;
     const command = context.toolParams?.command as string | undefined;
     if (!command) return false;
     return dangerousPatterns.some((pattern) => pattern.test(command));

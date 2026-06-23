@@ -259,6 +259,9 @@ export function useDesignCanvasGeneration(): {
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      // 生成成功提交后清 Layer1 编辑栈（codex HIGH-3 时机）：整数组快照不能跨生成边界，
+      // 否则跨界 undo 会还原到不含新节点的旧数组=静默删掉刚生成的图。失败/取消路径不清。
+      useDesignCanvasStore.getState().clearEditHistory();
       useDesignCanvasStore.getState().setGenerating(false);
     } catch (e) {
       useDesignCanvasStore.getState().setGenerating(false);
@@ -333,6 +336,7 @@ export function useDesignCanvasGeneration(): {
       }
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      useDesignCanvasStore.getState().clearEditHistory(); // 成功提交后清 Layer1 编辑栈（同 generate）
       useDesignCanvasStore.getState().setGenerating(false);
     } catch (e) {
       useDesignCanvasStore.getState().setGenerating(false);
@@ -351,6 +355,7 @@ export function useDesignCanvasGeneration(): {
       const node = buildVariantNode(baseNode, assetRel, { width, height }, label);
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      useDesignCanvasStore.getState().clearEditHistory(); // 扩图/去水印成功提交后清 Layer1 编辑栈
     },
     [t],
   );
@@ -473,6 +478,7 @@ export function useDesignCanvasGeneration(): {
         if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
         useDesignCanvasStore.getState().addNode(node);
         await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+        useDesignCanvasStore.getState().clearEditHistory(); // 标注重绘成功提交后清 Layer1 编辑栈
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
@@ -572,6 +578,7 @@ export function useDesignCanvasGeneration(): {
       };
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
+      useDesignCanvasStore.getState().clearEditHistory(); // 视频生成成功提交后清 Layer1 编辑栈
       useDesignCanvasStore.getState().setGenerating(false);
     } catch (e) {
       useDesignCanvasStore.getState().setGenerating(false);

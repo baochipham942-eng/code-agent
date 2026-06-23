@@ -16,6 +16,7 @@ import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
+import { resolveCanvasUndoAction } from './canvasUndoKeybinding';
 import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
 import { imagePdfExportName, canvasPptxExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
@@ -524,6 +525,34 @@ export const DesignCanvas: React.FC = () => {
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
   }, [importFiles]);
+
+  // 撤销/重做快捷键（Cmd/Ctrl+Z、+Shift+Z）。路由判定见 canvasUndoKeybinding（纯函数+测试覆盖）：
+  // 输入框/IME 内让出原生 undo（codex MED-4），标注模式撤一笔标注（从实时 annotShapes 派生，
+  // 无独立历史栈→无 codex MED-5 同步隐患）。挂组件内 window listener，切走设计画布自动卸载。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const action = resolveCanvasUndoAction(
+        {
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          isComposing: e.isComposing,
+          targetTag: (e.target as HTMLElement | null)?.tagName,
+          targetEditable: (e.target as HTMLElement | null)?.isContentEditable ?? false,
+        },
+        { annotMode },
+      );
+      if (action === 'none') return;
+      e.preventDefault();
+      const store = useDesignCanvasStore.getState();
+      if (action === 'undo') store.undoEdit();
+      else if (action === 'redo') store.redoEdit();
+      else if (action === 'annot-undo') setAnnotShapes((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [annotMode]);
 
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();

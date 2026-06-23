@@ -411,6 +411,68 @@ describe('validateCommand — rm 删除分级', () => {
     }
   });
 
+  // 长选项 / 拆分 flag 的等价写法必须与短 flag 同等分级（防旁路）
+  describe('长选项 / 任意序 flag 的灾难性删除仍硬毙', () => {
+    const catastrophicLongFlag = [
+      'rm --recursive --force /',
+      'rm --force --recursive /',
+      'rm -r --force /',
+      'rm --recursive /',
+      'rm --recursive --force ~',
+      'rm --recursive /System/Library/Foo',
+      'rm --force --recursive /Applications',
+    ];
+    for (const cmd of catastrophicLongFlag) {
+      it(`blocks: ${cmd}`, () => {
+        const r = validateCommand(cmd);
+        expect(r.allowed).toBe(false);
+        expect(r.riskLevel).toBe('critical');
+      });
+    }
+  });
+
+  describe('=值长选项不再断开 flag 串', () => {
+    it('rm --recursive --force --interactive=never / → critical', () => {
+      const r = validateCommand('rm --recursive --force --interactive=never /');
+      expect(r.allowed).toBe(false);
+      expect(r.riskLevel).toBe('critical');
+    });
+  });
+
+  describe('词边界：把 rm 当子串的命令不误判', () => {
+    it.each(['confirm --recursive /', 'confirm /foo', 'firmware /opt'])(
+      'does not flag: %s',
+      (cmd) => {
+        // 这些不是 rm，不应被 rm 危险模式命中（可能落到其它分级，但不是 rm flag）
+        const r = validateCommand(cmd);
+        expect(r.securityFlags.some((f) => f.includes('delete'))).toBe(false);
+      }
+    );
+
+    it.each(['/bin/rm -rf /', '\\rm -rf /', 'echo x; rm -rf /'])(
+      'still catches real rm: %s',
+      (cmd) => {
+        const r = validateCommand(cmd);
+        expect(r.riskLevel).toBe('critical');
+      }
+    );
+  });
+
+  describe('长选项的目标删除 → 一次确认', () => {
+    const targetedLongFlag = [
+      'rm --recursive /Applications/Claude.app',
+      'rm --recursive --force ~/Downloads/tmp',
+      'rm -r --force /tmp/build-cache',
+    ];
+    for (const cmd of targetedLongFlag) {
+      it(`confirms (not blocks): ${cmd}`, () => {
+        const r = validateCommand(cmd);
+        expect(r.allowed).toBe(true);
+        expect(r.riskLevel).toBe('high');
+      });
+    }
+  });
+
   // 目标明确的删除：从硬毙降为"一次确认"(allowed=true / high)
   describe('目标明确删除 → 一次确认（不硬毙）', () => {
     const targeted = [

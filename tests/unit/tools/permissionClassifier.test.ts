@@ -90,4 +90,24 @@ describe('PermissionClassifier', () => {
     expect(risky.decision).toBe('ask');
     expect(risky.cached).toBe(false);
   });
+
+  describe('dangerous rm — long/short/mixed flags all deny', () => {
+    it.each([
+      'rm -rf /',
+      'rm -fr /',
+      'rm --recursive --force /',
+      'rm --recursive /',
+      'rm -r --force /',
+      'rm -rf ~',
+      'rm --recursive ~/Library',
+      'rm --recursive --force *',
+    ])('denies: %s', async (command) => {
+      const result = await classifyPermission(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+      );
+      expect(result.decision).toBe('deny');
+    });
+  });
 });

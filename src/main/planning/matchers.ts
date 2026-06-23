@@ -5,6 +5,7 @@
 import type { HookContext } from './types';
 import type { HookMatcher, ToolCategory, MatcherFactory } from './hooks/types';
 import { TOOL_CATEGORIES } from './hooks/types';
+import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 
 // ----------------------------------------------------------------------------
 // Core Matcher Functions
@@ -102,8 +103,9 @@ export const matchers: MatcherFactory = {
  */
 export function matchDangerousBash(): HookMatcher {
   const dangerousPatterns = [
-    /rm\s+-rf?\s+[/~]/i, // rm -rf / or ~
-    /rm\s+-rf?\s+\*/i, // rm -rf *
+    // flag 前缀用共享 RM_FLAGS_REQUIRED（短簇/长选项/=值/任意序）+ RM_HEAD 词边界
+    new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}[/~]`, 'i'), // rm -rf/-fr/--recursive / or ~
+    new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}\\*`, 'i'), // rm <flags> *
     />\s*\/dev\/sd[a-z]/i, // Writing to disk devices
     /mkfs/i, // Format filesystem
     /dd\s+if=.*of=\/dev/i, // dd to device

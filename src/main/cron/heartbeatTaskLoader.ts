@@ -104,6 +104,12 @@ export class HeartbeatTaskLoader {
       logger.info('Heartbeat tasks loaded', { total: tasks.length, registered: this.registeredJobIds.size });
     } catch (error) {
       logger.error('Failed to load HEARTBEAT.md', { error: String(error) });
+      // TOCTOU: the file may have been deleted between existsSync and read.
+      // If it's gone now, tear down stale jobs (same as the missing-file path);
+      // a transient read error where the file still exists keeps jobs intact.
+      if (!fs.existsSync(filePath)) {
+        await this.cleanup();
+      }
     }
   }
 

@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+// Re-export the real fs through a configurable namespace so individual tests
+// can spyOn specific functions (ESM namespaces are otherwise non-configurable).
+// All functions keep their real implementation unless explicitly spied.
+vi.mock('fs', async (importOriginal) => ({ ...(await importOriginal<typeof import('fs')>()) }));
 import {
   HeartbeatTaskLoader,
   isWithinActiveHours,
@@ -150,6 +155,23 @@ describe('HeartbeatTaskLoader.loadFromFile', () => {
     fs.rmSync(path.join(getProjectConfigDir(workingDirectory), 'HEARTBEAT.md'));
     await loader.loadFromFile(); // file gone → must clean up job-1
     expect(cronService.deleteJob).toHaveBeenCalledWith('job-1');
+  });
+
+  it('cleans up stale jobs when the file vanishes between existsSync and read (TOCTOU)', async () => {
+    writeHeartbeat(['### T', '- cron: 0 9 * * *', '- prompt: p', ''].join('\n'));
+    const loader = new HeartbeatTaskLoader({ workingDirectory, cronService });
+    await loader.loadFromFile(); // registers job-1
+
+    // Race: existsSync passes, then the file is gone by readFileSync time.
+    fs.rmSync(path.join(getProjectConfigDir(workingDirectory), 'HEARTBEAT.md'));
+    vi.spyOn(fs, 'existsSync').mockReturnValueOnce(true); // only the guard call
+    vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+
+    await loader.loadFromFile();
+    expect(cronService.deleteJob).toHaveBeenCalledWith('job-1');
+    vi.restoreAllMocks();
   });
 
   it('cleans up previously registered jobs on reload', async () => {

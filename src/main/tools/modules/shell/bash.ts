@@ -80,6 +80,35 @@ function unwrapSelfReference(command: string): string {
   return command;
 }
 
+/**
+ * 检测"用代码画图/出图"的命令（设计画布会话硬控用）。大小写不敏感。
+ * 仅在 ctx.executionIntent.designCanvasActive===true 时作为拦截判据使用；
+ * 普通会话不调用本函数 → 零影响。匹配 dogfood 实测的逃生路径：
+ *   - python 图形库（PIL/Pillow/cairosvg/reportlab/matplotlib/...）
+ *   - pip 安装图形库
+ *   - imagemagick（magick / convert / mogrify 且带图片扩展名）
+ *   - 把命令输出重定向写成图片文件（> out.png）
+ */
+const CODE_IMAGE_PYTHON_LIB = /\b(PIL|Pillow|cairosvg|reportlab|matplotlib|svgwrite|wand|cairo)\b/i;
+const CODE_IMAGE_PIP_INSTALL = /\bpip[0-9]*\s+install\b[^\n]*\b(pillow|reportlab|cairosvg|matplotlib|wand|svgwrite)\b/i;
+const CODE_IMAGE_MAGICK = /\bmagick\b/i;
+const CODE_IMAGE_CONVERT = /\b(convert|mogrify)\b[^\n]*\.(png|jpe?g|gif|webp|bmp|tiff|svg)\b/i;
+const CODE_IMAGE_REDIRECT = />\s*\S+\.(png|jpe?g|gif|webp|bmp|tiff|svg)\b/i;
+
+export function looksLikeCodeImageGeneration(command: string): boolean {
+  if (!command) return false;
+  return (
+    CODE_IMAGE_PYTHON_LIB.test(command) ||
+    CODE_IMAGE_PIP_INSTALL.test(command) ||
+    CODE_IMAGE_MAGICK.test(command) ||
+    CODE_IMAGE_CONVERT.test(command) ||
+    CODE_IMAGE_REDIRECT.test(command)
+  );
+}
+
+const DESIGN_CANVAS_REDIRECT_MESSAGE =
+  '[设计画布会话] 当前在设计画布会话中：生成/绘制图片必须用 proposeCanvasOps 工具在画布上提议生成（用户审批后由画布出图），不要用 Python/Pillow/imagemagick 等代码方式画图。如确需用代码处理图像，请切到「通用」模式后再试。';
+
 /** 检测模型把别的工具调用当成 bash 命令传入 */
 function detectToolConfusion(command: string): string | null {
   const m = command.match(/^\s*(write_file|edit_file|read_file|read_xlsx|glob|grep)\s*\(/);
@@ -438,6 +467,16 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const command = unwrapSelfReference(rawCommand);
+
+    // -------------------------------------------------------------------------
+    // 设计画布会话硬控（跨进程）：本轮是设计画布会话且命令是"用代码画图"时，
+    // 拒绝执行并重定向到 proposeCanvasOps。只在 designCanvasActive===true 时拦，
+    // 普通会话（undefined/false）一律放行，零影响。命令不是画图也放行。
+    // -------------------------------------------------------------------------
+    if (ctx.executionIntent?.designCanvasActive === true && looksLikeCodeImageGeneration(command)) {
+      return { ok: false, error: DESIGN_CANVAS_REDIRECT_MESSAGE, code: 'DESIGN_CANVAS_REDIRECT' };
+    }
+
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
     const workingDirectory = (args.working_directory as string) || ctx.workingDir;
     const implicitBackground = rewriteImplicitBackgroundCommand(command);

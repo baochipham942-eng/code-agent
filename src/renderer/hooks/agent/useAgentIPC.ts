@@ -119,6 +119,34 @@ export function withCanvasSnapshotContext(
   return { ...(context || {}), canvasSnapshot };
 }
 
+/**
+ * R1（设计 Surface 会话化）跨进程硬控闸：设计会话激活时，在 envelope 的
+ * executionIntent 上打 designCanvasActive=true，main 侧 shell 工具据此硬拦"用代码画图"
+ * （Python/Pillow/imagemagick 等）并重定向到 proposeCanvasOps。
+ * 闸口径与画布注入/affordance 完全一致（isSessionDesignActive + 画布属主==当前会话），
+ * 严守"只在设计会话生效，绝不伤普通会话"——非激活时显式置 false，普通会话发出 false。
+ * **合并语义**：保留 executionIntent 上已有字段（browserSessionMode 等），只补 designCanvasActive。
+ */
+export function withDesignCanvasActiveIntent(
+  context: ConversationEnvelopeContext | undefined,
+  sessionId: string | null | undefined,
+): ConversationEnvelopeContext | undefined {
+  const active = isDesignCanvasActiveForSession(sessionId);
+  return {
+    ...(context || {}),
+    executionIntent: {
+      ...(context?.executionIntent || {}),
+      designCanvasActive: active,
+    },
+  };
+}
+
+function isDesignCanvasActiveForSession(sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false;
+  if (!useSessionStore.getState().isSessionDesignActive(sessionId)) return false;
+  return useDesignCanvasStore.getState().ownerSessionId === sessionId;
+}
+
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
 type SessionStoreState = ReturnType<typeof useSessionStore.getState>;
 
@@ -410,8 +438,11 @@ export function useAgentIPC({
       const sessionDesignBrief = enrichDesignBrief(effectiveSessionId
         ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
         : undefined);
-      const contextWithDesignBrief = withCanvasSnapshotContext(
-        withDesignBriefContext(context, sessionDesignBrief),
+      const contextWithDesignBrief = withDesignCanvasActiveIntent(
+        withCanvasSnapshotContext(
+          withDesignBriefContext(context, sessionDesignBrief),
+        ),
+        effectiveSessionId,
       );
 
       if (directRouting.kind === 'error') {

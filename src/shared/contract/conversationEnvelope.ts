@@ -50,6 +50,8 @@ export interface ConversationExecutionIntent {
   preferDesktopContext?: boolean;
   allowBrowserAutomation?: boolean;
   browserSessionSnapshot?: BrowserSessionIntentSnapshot;
+  /** 设计画布会话激活（owner==本会话）。main 侧 shell 工具据此硬拦代码画图，重定向到 proposeCanvasOps。 */
+  designCanvasActive?: boolean;
 }
 
 export interface ComposerPromptCommandSelection {

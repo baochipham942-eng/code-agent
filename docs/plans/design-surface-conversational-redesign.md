@@ -1,6 +1,6 @@
 # 设计 Surface 会话化改造 Spec（表单 → 常驻设计 agent 会话）
 
-> **状态**：已拍板，一期实施中（分支 `feat/design-conversational-surface`，基线 `d93e26f93`）。
+> **状态**：一期完成 + 真机 dogfood 收口（含部分二期：设计模式收口/意图驱动/秒关等），HEAD `c3ae5b5c4`，22 commit，待 push/PR。分支 `feat/design-conversational-surface`，基线 `d93e26f93`。详细进度与待办见 `design-roadmap.md` 2026-06-24 条目。
 > **日期**：2026-06-24（2026-06-24 修订：基线、agent-loop-entry 洞察、R2 专属 tab、一期加法）
 > **定位铁律**：Agent Neo = cowork 人机协作产品（产物为主轴、对标 Manus），**不是文生图工具**。设计 surface 退回「填参数表单→点生成」与 Neo 自身 agent 定位打架。
 > **竞品实证**：Lovart（ChatCanvas = 对话+无限画布）、OpenDesign（studio = 左对话流 + 右画布产物）。截图 `~/Downloads/opendesign-screenshots/`（`02-home.png`、`03-studio-image.png`）。

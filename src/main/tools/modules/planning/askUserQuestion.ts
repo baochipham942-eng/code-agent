@@ -26,27 +26,13 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import type {
-  UserQuestionRequest,
-  UserQuestionResponse,
   UserQuestion,
 } from '../../../../shared/contract';
-import { IPC_CHANNELS } from '../../../../shared/ipc';
-import { BrowserWindow, ipcMain } from '../../../platform';
 import { createLogger } from '../../../services/infra/logger';
-import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
+import { promptUserInChat } from '../../utils/userQuestionPrompt';
 
 const logger = createLogger('AskUserQuestion');
-
-// Store pending question requests
-const pendingQuestions = new Map<string, {
-  resolve: (response: UserQuestionResponse) => void;
-  reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
-}>();
-
-// Register IPC handler for user responses (only once)
-let handlerRegistered = false;
 
 function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
   const formatted = questions
@@ -59,23 +45,6 @@ function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
     .join('\n\n');
 
   return `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`;
-}
-
-function registerResponseHandler(): void {
-  if (handlerRegistered) return;
-  handlerRegistered = true;
-
-  ipcMain.handle(
-    IPC_CHANNELS.USER_QUESTION_RESPONSE,
-    async (_event, response: UserQuestionResponse) => {
-      const pending = pendingQuestions.get(response.requestId);
-      if (pending) {
-        clearTimeout(pending.timeout);
-        pendingQuestions.delete(response.requestId);
-        pending.resolve(response);
-      }
-    },
-  );
 }
 
 export async function executeAskUserQuestion(
@@ -128,73 +97,35 @@ export async function executeAskUserQuestion(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
-  // Register response handler (idempotent)
-  registerResponseHandler();
+  logger.info('Sending questions to UI');
+  const result = await promptUserInChat(questions, {
+    sessionId: ctx.sessionId || '',
+    abortSignal: ctx.abortSignal,
+    notify: { title: '等待回答', body: questions[0]?.question || '请回答问题' },
+  });
 
-  // Create request — shape 必须与 legacy 一致：{id, questions, timestamp}
-  const request: UserQuestionRequest = {
-    id: `q-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
-    questions,
-    timestamp: Date.now(),
-  };
-
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+  if (result.status === 'no-renderer') {
     // CLI/headless webServer 模式：返回 fallback 文案（与 legacy 1:1 复刻，模型无法假装"用户没反对"）
     onProgress?.({ stage: 'completing', percent: 100 });
-    return {
-      ok: true,
-      output: formatNoInteractiveUserOutput(questions),
-    };
+    return { ok: true, output: formatNoInteractiveUserOutput(questions) };
   }
 
-  // Send question to renderer via IPC — channel 不变 (IPC_CHANNELS.USER_QUESTION_ASK)
-  logger.info('Sending questions to UI', { requestId: request.id });
-  mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
-
-  // Desktop notification (best-effort)
-  try {
-    const { notificationService } = await import('../../../services/infra/notificationService');
-    notificationService.notifyNeedsInput({
-      sessionId: ctx.sessionId || '',
-      title: '等待回答',
-      body: questions[0]?.question || '请回答问题',
-    });
-  } catch {
-    /* ignore */
-  }
-
-  const TIMEOUT_MS = INTERACTION_TIMEOUTS.USER_QUESTION;
-
-  try {
-    const response = await new Promise<UserQuestionResponse>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        pendingQuestions.delete(request.id);
-        reject(new Error('Question timeout - no response from user'));
-      }, TIMEOUT_MS);
-
-      pendingQuestions.set(request.id, { resolve, reject, timeout });
-    });
-
-    const answerLines = Object.entries(response.answers).map(([header, answer]) => {
+  if (result.status === 'answered' && result.response) {
+    const answerLines = Object.entries(result.response.answers).map(([header, answer]) => {
       const answerStr = Array.isArray(answer) ? answer.join(', ') : answer;
       return `[${header}]: ${answerStr}`;
     });
-
     onProgress?.({ stage: 'completing', percent: 100 });
-    ctx.logger.debug('AskUserQuestion done', { requestId: request.id });
-
-    return {
-      ok: true,
-      output: `User responses:\n${answerLines.join('\n')}`,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to get user response',
-      code: 'DOMAIN_ERROR',
-    };
+    ctx.logger.debug('AskUserQuestion done');
+    return { ok: true, output: `User responses:\n${answerLines.join('\n')}` };
   }
+
+  // timeout / aborted
+  return {
+    ok: false,
+    error: 'Question timeout - no response from user',
+    code: 'DOMAIN_ERROR',
+  };
 }
 
 class AskUserQuestionHandler implements ToolHandler<Record<string, unknown>, string> {

@@ -9,7 +9,7 @@ import type { AgentEvent, ModelConfig } from '../shared/contract';
  */
 import type { MessageAttachment } from '../shared/contract';
 import type { AppServiceRunOptions } from '../shared/contract/appService';
-import type { ConversationEnvelopeContext } from '../shared/contract/conversationEnvelope';
+import type { ConversationEnvelopeContext, ConversationExecutionIntent } from '../shared/contract/conversationEnvelope';
 import type { GoalContract } from '../main/agent/goalModeController';
 
 export interface CLIGlobalOptions {
@@ -48,6 +48,8 @@ export interface CLIConfig {
   goalContract?: GoalContract;
   /** 迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
   maxIterations?: number;
+  /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */
+  executionIntent?: ConversationExecutionIntent;
 }
 
 /**

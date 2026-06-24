@@ -425,6 +425,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const config = agent.getConfig();
 
+      // 每轮执行意图透传（web HTTP 路径）：renderer 的 context.executionIntent 必须进 AgentLoop
+      // config → RuntimeContext.executionIntent，否则设计会话的 designCanvasActive 丢失，画布工具
+      // 不会提进工具表、shell 代码画图守卫也不触发（桌面 Electron 路径经 agentAppService 已透传，
+      // web 这条独立 HTTP 路径此前漏接）。
+      if (body.context?.executionIntent) {
+        config.executionIntent = { ...body.context.executionIntent };
+      }
+
       // 自动模式标志透传：adaptiveRouter 简单任务路由 + vision capability fallback 的总闸门
       if (sessionAdaptive) {
         config.modelConfig.adaptive = true;

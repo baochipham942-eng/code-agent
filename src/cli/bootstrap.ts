@@ -469,6 +469,8 @@ export function createAgentLoop(
     enableToolDeferredLoading: true, // 延迟加载非核心工具，减少 tool overhead
     goalContract: config.goalContract, // /goal 自治模式契约（透传给 ctx.goalMode）
     maxIterations: config.maxIterations, // 迭代数硬上限（角色主动性醒来等预算受限场景）
+    executionIntent: config.executionIntent, // 每轮执行意图（designCanvasActive 等）→ RuntimeContext
+
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

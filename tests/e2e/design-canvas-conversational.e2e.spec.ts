@@ -82,13 +82,14 @@ test('从聊天点设计画布入口 → design-canvas tab 激活 + konva 画布
   const canvasTabLabel = page.locator('span.truncate', { hasText: CANVAS_TAB_LABEL });
   await expect(canvasTabLabel).toBeVisible({ timeout: 10_000 });
 
-  // 3. DesignCanvasTab 内部挂的 DesignCanvas 容器出现（确认 tab 内容真渲染了）
-  const canvasContainer = page.locator('[data-testid="design-canvas"]');
+  // 3. DesignCanvasTab 外层容器出现（用专属 testid 区分全屏覆盖层的 design-canvas，M3 防重复）
+  const canvasContainer = page.locator('[data-testid="design-canvas-tab"]');
   await expect(canvasContainer).toBeVisible({ timeout: 10_000 });
 
-  // 4. konva 真渲染: 容器内出现 <canvas>，且 getBoundingClientRect 宽高均 > 0。
+  // 4. konva 真渲染: tab 容器内出现 <canvas>，且 getBoundingClientRect 宽高均 > 0。
   //    konva Stage 仅在 size.w>0 && size.h>0 时挂载（ResizeObserver 跟随 wrapper），
   //    故 canvas 出现本身就证明 Stage 拿到了非零尺寸；再断言 rect 宽高坐实。
+  //    在 tab 容器内查 canvas，去掉脆弱的全局 .first()。
   const konvaCanvas = canvasContainer.locator('canvas').first();
   await expect(konvaCanvas).toBeVisible({ timeout: 10_000 });
 

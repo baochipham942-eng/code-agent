@@ -35,7 +35,7 @@ import { useDesignGeneration } from './useDesignGeneration';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
 import { DesignImportButtons } from './DesignImportButtons';
 import { useDesignCanvasStore } from './designCanvasStore';
-import { loadCanvasDoc } from './designCanvasPersistence';
+import { useRestoreCanvasFromDisk } from './useRestoreCanvasFromDisk';
 import { DesignCanvas } from './DesignCanvas';
 import { DesignSlidesPanel } from './DesignSlidesPanel';
 import { SlideOutlineEditor } from './SlideOutlineEditor';
@@ -1012,18 +1012,8 @@ export const DesignWorkspace: React.FC = () => {
     }
   }, []);
 
-  // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载。
-  useEffect(() => {
-    const cs = useDesignCanvasStore.getState();
-    if (!cs.runDir || cs.nodes.length > 0) return;
-    const runDir = cs.runDir;
-    void loadCanvasDoc(runDir).then((doc) => {
-      const cur = useDesignCanvasStore.getState();
-      if (cur.runDir === runDir && cur.nodes.length === 0) {
-        cur.loadDoc(runDir, doc);
-      }
-    });
-  }, []);
+  // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载（共享 hook，与 DesignCanvasTab 同源）。
+  useRestoreCanvasFromDisk();
 
   return (
     <FullScreenPage testId="design-workspace">

@@ -13,6 +13,7 @@ import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
 import { useAppshotsStore } from './appshotsStore';
+import { useDesignCanvasStore } from '../components/design/designCanvasStore';
 
 const logger = createLogger('SessionStore');
 
@@ -567,6 +568,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       try {
         await invokeSession('delete', { sessionId });
 
+        // 清理该会话的设计态：design-active 标记 + 画布属主（属主匹配才释放），避免悬空。
+        get().clearSessionDesignActive(sessionId);
+        useDesignCanvasStore.getState().clearCanvasOwner(sessionId);
+
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
 
@@ -591,6 +596,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     archiveSession: async (sessionId: string) => {
       try {
         await invokeSession('archive', { sessionId });
+
+        // 清理该会话的设计态：design-active 标记 + 画布属主（属主匹配才释放），避免悬空。
+        get().clearSessionDesignActive(sessionId);
+        useDesignCanvasStore.getState().clearCanvasOwner(sessionId);
 
         const { filter } = useSessionUIStore.getState();
         const { currentSessionId, sessions } = get();

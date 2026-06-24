@@ -79,6 +79,9 @@ const WorkflowPanel = React.lazy(() => import('./components/features/workflow/Wo
 const DesignWorkspace = React.lazy(() => import('./components/design/DesignWorkspace').then((module) => ({
   default: module.DesignWorkspace,
 })));
+const DesignCanvasTab = React.lazy(() => import('./components/design/DesignCanvasTab').then((module) => ({
+  default: module.DesignCanvasTab,
+})));
 const LabPage = React.lazy(() => import('./components/features/lab/LabPage').then((module) => ({
   default: module.LabPage,
 })));
@@ -697,6 +700,11 @@ export const App: React.FC = () => {
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
         {activeWorkbenchTab === 'context' && <ContextPanel />}
         {activeWorkbenchTab === 'audit' && <ReplayAuditPanel />}
+        {activeWorkbenchTab === 'design-canvas' && (
+          <React.Suspense fallback={null}>
+            <DesignCanvasTab />
+          </React.Suspense>
+        )}
         {isPreviewActive && <PreviewPanel />}
       </div>
     </div>

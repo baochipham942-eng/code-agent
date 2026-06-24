@@ -102,7 +102,7 @@ export const en: Translations = {
     generating: 'Generating…',
     previewEmpty: 'Fill in a requirement and click Generate — your web page renders here live',
     previewGenerating: 'Generating web page…',
-    canvasEmpty: 'Describe what you want in the chat — AI generates designs onto this canvas. Pan & zoom to explore.',
+    canvasEmpty: 'Blank canvas · paste an image, draw with the toolbar above, or ask AI in the chat',
     canvasGenSoon: 'Canvas is ready. Image generation and lasso-annotation iteration land in the next step',
     canvasSelectHint: 'Select an image, then lasso a region for local repaint',
     annotateStart: 'Annotate',

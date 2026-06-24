@@ -100,7 +100,7 @@ export const zh = {
     generating: '生成中…',
     previewEmpty: '填写需求并点「生成」，网页会在这里实时呈现',
     previewGenerating: '正在生成网页…',
-    canvasEmpty: '在左侧对话里描述你想要的设计，AI 会把图生成到这块画布上。可平移、缩放。',
+    canvasEmpty: '空白画布 · 可直接粘贴图片、用上方工具绘制，或在对话里让 AI 生成产物',
     canvasGenSoon: '画布已就绪。出图回灌与圈选标注迭代将在下一步接入',
     canvasSelectHint: '点选一张图后可圈选区域做局部重绘',
     annotateStart: '圈选标注',

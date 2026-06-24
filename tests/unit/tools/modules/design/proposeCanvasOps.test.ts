@@ -72,6 +72,30 @@ describe('IPC 协议契约', () => {
     expect(payload).toMatchObject({ rationale: '画用户流', ops: [expect.objectContaining({ kind: 'addConnector' })] });
     expect(payload.requestId).toMatch(/^cp-\d+/);
   });
+
+  // H2-R2.b：ASK payload 带 ctx.sessionId，供 renderer 属主隔离闸（跨会话提议被拒）。
+  it('send 带 sessionId（renderer 属主隔离闸用）', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const handler = await proposeCanvasOpsModule.createHandler();
+    const ctrl = new AbortController();
+    const p = handler.execute({ ops: validOps }, makeCtx({ sessionId: 's-design', abortSignal: ctrl.signal }), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    p.catch(() => void 0);
+    expect(sendMock.mock.calls[0][1].sessionId).toBe('s-design');
+  });
+
+  // 向后兼容：ctx.sessionId 为空时 payload 不带 sessionId 键。
+  it('send 不带 sessionId 键（ctx.sessionId 为空时省略，向后兼容）', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const handler = await proposeCanvasOpsModule.createHandler();
+    const ctrl = new AbortController();
+    const p = handler.execute({ ops: validOps }, makeCtx({ sessionId: '', abortSignal: ctrl.signal }), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    p.catch(() => void 0);
+    expect('sessionId' in sendMock.mock.calls[0][1]).toBe(false);
+  });
 });
 
 describe('校验', () => {

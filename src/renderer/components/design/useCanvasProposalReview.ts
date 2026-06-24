@@ -76,6 +76,14 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
+      // H2-R2.c 写路径属主闸（fail-closed）：画布属主非该会话 → 拒绝并解阻 agent，不弹审批条、不自动应用。
+      // 防会话 B 的 agent 改/烧钱出图到会话 A 的画布。须在设 pending/自动应用之前。
+      // request.sessionId 为空（向后兼容）时不拦——读路径已堵，此处只挡明确跨会话写。
+      const cs = useDesignCanvasStore.getState();
+      if (request.sessionId && cs.ownerSessionId !== request.sessionId) {
+        void controllerDeps().respond({ requestId: request.requestId, verdict: 'reject', feedback: '画布当前不属于该会话，提议被隔离拒绝' });
+        return;
+      }
       // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
       const env = useDesignAutonomyStore.getState().envelope;
       if (decideProposalHandling(request, env) === 'auto') {

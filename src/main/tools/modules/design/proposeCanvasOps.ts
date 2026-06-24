@@ -99,6 +99,8 @@ export async function executeProposeCanvasOps(
     requestId: `cp-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
     ops,
     ...(rationale ? { rationale } : {}),
+    // H2-R2：带上发起提议的 session，renderer 属主隔离闸用（跨会话提议被拒）。
+    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
   };
 
   const mainWindow = BrowserWindow.getAllWindows()[0];

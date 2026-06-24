@@ -661,6 +661,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['variants', '变体', '批量生成', 'autonomy', 'design'],
     source: 'builtin',
   },
+  {
+    name: 'ProposeVideoOps',
+    shortDescription: '在设计会话里生成视频（文生视频/图生视频），会话内确认成本后落画布视频节点（视频走这里，不要用代码/ffmpeg）',
+    tags: ['planning', 'media'],
+    aliases: ['video', '视频', '生成视频', '文生视频', '图生视频', 't2v', 'i2v', '动画', 'animate'],
+    source: 'builtin',
+  },
 
   // ============================================================================
   // Gen 8: 自我进化
@@ -760,6 +767,8 @@ export const TOOL_ALIASES: Record<string, string> = {
   propose_canvas_ops: 'ProposeCanvasOps',
   requestDesignAutonomy: 'RequestDesignAutonomy',
   request_design_autonomy: 'RequestDesignAutonomy',
+  proposeVideoOps: 'ProposeVideoOps',
+  propose_video_ops: 'ProposeVideoOps',
 };
 
 /**

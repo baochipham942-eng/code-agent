@@ -34,7 +34,7 @@ type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
  * （executionIntent.designCanvasActive === true）时由 inference 组装点条件注入工具表。
  * 普通会话完全看不到这两个工具，零污染。
  */
-export const DESIGN_CANVAS_TOOL_NAMES = ['ProposeCanvasOps', 'RequestDesignAutonomy'] as const;
+export const DESIGN_CANVAS_TOOL_NAMES = ['ProposeCanvasOps', 'RequestDesignAutonomy', 'ProposeVideoOps'] as const;
 
 function mapPermissionLevel(level: PermissionLevel): LegacyPermissionLevel {
   if (level === 'dangerous') return 'execute';

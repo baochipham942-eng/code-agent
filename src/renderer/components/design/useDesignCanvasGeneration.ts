@@ -31,6 +31,7 @@ import {
 import { estimateVideoCostCny } from '@shared/media/videoCost';
 import { formatCny } from '@shared/media/imageCost';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
+import { generateVideoToCanvas } from './designProposedVideoGen';
 import { buildMaskDataUrl, type Rect } from './designCanvasMask';
 import { composeAnnotOps, exportAnnotatedPng } from './annotComposite';
 import type { AnnotShape } from './AnnotationLayer';
@@ -522,77 +523,21 @@ export function useDesignCanvasGeneration(): {
       return;
     }
 
-    // 复用当前画布 run；无则新建（视频与图共用同一画布）。
-    let runDir = useDesignCanvasStore.getState().runDir;
-    if (!runDir) {
-      const baseDir = await resolveDesignDir();
-      if (!baseDir) {
-        useDesignCanvasStore.getState().setError(t.design.errResolveDir);
-        return;
-      }
-      runDir = `${baseDir.replace(/\/+$/, '')}/run-${Date.now()}`;
-      await ensureDir(runDir);
-      useDesignCanvasStore.getState().loadDoc(runDir, emptyCanvasDoc());
-    }
-
     // 成本闸（T2）：视频按秒计费贵，付费前 confirm 显示预估 ¥ + 时长。
     const durationSec = clampVideoDuration(model, form.videoDurationSec);
     const estCny = estimateVideoCostCny(model.id, durationSec);
     if (!window.confirm(`${t.design.videoCostConfirm}（${formatCny(estCny)} / ${durationSec}s）`)) return;
 
-    const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/vid-${Date.now()}.mp4`;
-    const assetAbs = `${runDir}/${assetRel}`;
-
+    // 出视频 + 落画布节点（与 agent 路径 ProposeVideoOps 共用 generateVideoToCanvas）。
     useDesignCanvasStore.getState().setError(null);
-    useDesignCanvasStore.getState().setGenerating(true);
-    try {
-      const res = await window.domainAPI?.invoke<{
-        path: string;
-        actualModel: string;
-        costCny: number;
-        durationSec: number;
-      }>(IPC_DOMAINS.WORKSPACE, 'generateDesignVideo', {
-        mode,
-        model: model.id,
-        prompt: form.requirement.trim() || undefined,
-        baseImagePath: mode === 'i2v' && baseNode ? `${runDir}/${baseNode.src}` : undefined,
-        outputPath: assetAbs,
-        durationSec,
-      });
-      if (!res?.success) throw new Error(res?.error?.message || t.design.errDispatch);
-      // 画布期间未被切到别的 run 才回灌。
-      if (useDesignCanvasStore.getState().runDir !== runDir) {
-        useDesignCanvasStore.getState().setGenerating(false);
-        return;
-      }
-      const { x, y } = nextNodePlacement(
-        useDesignCanvasStore.getState().nodes,
-        DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-      );
-      const costCny = res.data?.costCny;
-      const node: CanvasVideoNode = {
-        id: nextVariantNodeId(),
-        kind: 'video',
-        src: assetRel,
-        x,
-        y,
-        // 视频缩略 MVP 用 16:9 占位宽高；真实分辨率后续可读。
-        width: DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE,
-        height: Math.round((DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE * 9) / 16),
-        durationSec: res.data?.durationSec ?? durationSec,
-        prompt: form.requirement.trim() || undefined,
-        parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,
-        createdAt: Date.now(),
-        ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
-      };
-      useDesignCanvasStore.getState().addNode(node);
-      await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
-      useDesignCanvasStore.getState().clearEditHistory(); // 视频生成成功提交后清 Layer1 编辑栈
-      useDesignCanvasStore.getState().setGenerating(false);
-    } catch (e) {
-      useDesignCanvasStore.getState().setGenerating(false);
-      useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
-    }
+    const result = await generateVideoToCanvas({
+      mode,
+      modelId: model.id,
+      durationSec,
+      prompt: form.requirement.trim() || undefined,
+      baseNode,
+    });
+    if (!result.ok && result.error) useDesignCanvasStore.getState().setError(result.error);
   }, [t]);
 
   return { generate, generateVideo, editRegion, expand, removeWatermark, editByAnnotation };

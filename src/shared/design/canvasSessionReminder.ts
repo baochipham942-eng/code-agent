@@ -13,7 +13,8 @@ export function formatDesignCanvasSessionReminder(): string {
     '<system-reminder kind="design-canvas-session">',
     '你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的视觉产物面。',
     '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 ProposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
-    '严禁用 shell / python / 写文件等方式生成图片或绕开画布——画布是本会话唯一的视觉产物面。',
+    '要生成视频（文生视频 / 图生视频）用 ProposeVideoOps 工具——它会在对话里向用户确认成本，确认后出视频并落到画布视频节点。',
+    '严禁用 shell / python / ffmpeg / 写文件等方式生成图片或视频、绕开画布——画布是本会话唯一的视觉产物面。',
     '</system-reminder>',
   ].join('\n');
 }

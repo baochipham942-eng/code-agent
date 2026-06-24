@@ -74,3 +74,43 @@
 
 ## 8. 工作纪律
 origin/main 独立 worktree、TDD、独立 context 对抗审计修 HIGH/MED、PR 等 CI 全绿不擅自合、更新本 spec 与 `design-roadmap.md` 进度。
+
+---
+
+## 9. 二期设计（2026-06-24 林晨拍板，3 个 PR）
+
+> 一期 + 真机 dogfood 收口已合进 PR #282（OPEN，基线 `d93e26f93`）。二期在它之上继续。**基线**：PR #282 未合且是地基（ProposeCanvasOps 接线 / executionIntent 透传 / affordance 服务端注入 / `ownerSessionId` 属主闸都在它上面），故二期 worktree 基于 `feat/design-conversational-surface` 起；#282 落 main 后把后续 PR rebase。
+
+### 9.0 拍板结论（4 岔路 + 1 追加）
+1. **分期顺序**：拆 3 个 PR，**先做主轴**（媒介 agent 路径 2b）→ 鲁棒性（2a）→ 收口（2c）。每个独立 PR、独立审计、各自 CI/测试绿。
+2. **文档型产物落点**：网页/演示稿落**预览 tab**（贴 OpenDesign「左对话 + 右产物 tab」）；图片/视频落**画布节点**。画布保持「视觉合成」纯语义。
+3. **出图失衡处理**：**健康优先选型 + 单步兜底**（详见 2a #3）。billing 红线=最多 +1 次、真实成本如实回传、绝不静默多扣。
+4. **表单退役节奏**：**先降级保留、dogfood 实证后再删**（加法在前、删除在后、留回退窗口）。
+5. **【追加】成本确认搬进对话区**：付费生成的「消耗 ¥X 确认」弹窗做成**会话内交互卡**，不再落画布审批条/`window.confirm` 抢焦点；产物仍落画布/预览 tab。
+
+### 9.1 媒介 agent 路径现状（探子核实，file:line 见 2b 计划）
+| 媒介 | 引擎 | agent 工具 | 现状落点 | 距离会话化 |
+|---|---|---|---|---|
+| 图 | `imageGenerationService` | ✅ `ProposeCanvasOps`(ADR-026) | 画布节点 | 已通 |
+| 视频 | `videoGenerationService`（独立可调） | ❌ 无 | 表单直连 IPC | 加 `ProposeVideoOps`→画布 `KonvaVideoNode` |
+| 演示稿 | `slidesGenerator`（独立可调） | ❌ 无 | 表单直连 IPC | 加 `ProposeSlidesOps`→预览 tab |
+| 网页 | agent 写 HTML（`dispatchToRun`） | ～（程序化进 loop，非工具/非对话） | iframe 预览 tab | 最近：确认会话化通路 + 预览 tab 接好 |
+
+### 9.2 PR 2b — 媒介 agent 路径 + 成本确认搬进对话（主轴，先做）
+- 视频 → 画布节点：新增 `ProposeVideoOps`，复用 ProposeCanvasOps 桥接（tool→IPC→落 `KonvaVideoNode`）。**硬约束**：视频永不进 ADR-027 自主信封，每次必人审批 + 出图前显示预估 ¥。
+- 演示稿 → 预览 tab：新增 `ProposeSlidesOps`，调 `slidesGenerator`（大纲免费 / illustrate 出图才付费），产物 = pptx + 预览，落专属 workbench 预览 tab。
+- 网页 → 预览 tab：会话化通路确认 + affordance 扩展到「写 HTML 落地页 → 预览 tab」，验证为主、少量接线。
+- **成本确认共享原语**：建一个「会话内成本确认」原语，复用 `AskUserQuestion` 的阻塞 round-trip（`USER_QUESTION_ASK/RESPONSE`，双模式已通），渲染对话流卡片「本次生成消耗 ¥X，是否继续？[确认][取消]」。三媒介统一走它；图像把现有 `CanvasProposalReviewBar` 的**花钱确认**迁进对话；视频/标注替换 `window.confirm`。自主预算信封（ADR-027）保留画布（预授权域语义）。
+- **接线必做（dogfood 血泪）**：① 新工具注册进 CORE/DEFERRED + designCanvasActive 提进基础表；② 媒介意图沿 `executionIntent` 在 web HTTP 路径透传；③ `canvasSessionReminder` 扩到网页/演示稿/视频；④ 每条新 IPC 写路径过 `ownerSessionId` 属主闸 fail-closed。
+- 详见 `design-surface-conversational-impl-phase2b.md`。
+
+### 9.3 PR 2a — 鲁棒性三件（各自独立、低风险）
+- **#3 出图健康优先 + 单步兜底**：默认只在「已配 key」模型里选；抽 `classifyImageGenerationError`（复用 `modelRouterPolicy` 的 quota/auth/network 模式）→ 余额/鉴权类自动换下一个健康模型重试**一次**（非循环），真实累计成本 sum 回传；仍失败给清晰分类提示。affordance 告诉 agent 已自动兜底、别自己循环换模型。
+- **#4 草稿去重**：`findReusableNewSessionDraft` 改「空草稿（message/turn=0）无视标题即复用」或令 ConversationJudge 不给空草稿改名。web 侧为主。
+- **#5 历史污染迁移**：复用 `migrations.ts` 加幂等 strip（`messages.content` 以设计 affordance marker 开头→剥离），事务 + 批处理 + best-effort 不抛。**实现前先核实真实 marker 字符串与 web/electron DB 落点**。
+
+### 9.4 PR 2c — 表单退役 + 布局收口 + god-file 拆分 + 打磨
+- 表单先降级隐藏 → dogfood 实证三媒介稳后删 DesignWorkspace 直连 `onGenerate` + 退役 `workspaceMode 'design'` 全屏覆盖 + `WorkspaceModeSwitch` design 跳转。
+- 布局收口「对话主轴 + 画布/网页/演示稿 预览 tab 列」（§9.0.2 图）。
+- god-file 拆分：DesignWorkspace→~500 行；DesignCanvas→~700 行（抽 `CanvasOverlays`/`useCanvasPanZoom`/`useCanvasKeyboardShortcuts`/`ProposalAndAutonomyOverlays`/`CanvasEditPanel`，**避开 diagram/annotation 高耦合两块**）；同步删 `architectureDebtReport` 白名单。
+- 设计入口一等可发现性 + 视觉打磨。

@@ -50,6 +50,37 @@ function applyDesignBriefToContent(content: string, brief: DesignBrief | undefin
   return `${reminder}\n\n${content}`;
 }
 
+/**
+ * R1（设计 Surface 会话化）冷启动引导：设计会话激活时（即使画布空），给 agent prepend 一段
+ * <system-reminder>，明确告诉它用 proposeCanvasOps / RequestDesignAutonomy 操作画布，
+ * 别用 shell / python / 写文件等方式绕开画布。修补 dogfood 暴露的缺口——空画布不注入
+ * canvasSnapshot，系统提示零引导，agent 不知道该走画布工具。
+ */
+export function formatDesignCanvasSessionReminder(canvasEmpty: boolean): string {
+  const canvasState = canvasEmpty ? '为空' : '已有元素';
+  return [
+    '<system-reminder kind="design-canvas-session">',
+    `你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的产物面（画布当前${canvasState}）。`,
+    '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 proposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
+    '严禁用 shell / python / 写文件等方式生成图片或绕开画布——画布是本会话唯一的视觉产物面。',
+    '</system-reminder>',
+  ].join('\n');
+}
+
+/**
+ * 设计会话冷启动引导的判定 + 应用。与 withCanvasSnapshotContext 同口径双闸
+ * （isSessionDesignActive + 画布属主==当前会话），但**不要求画布非空**——空画布才是真缺口。
+ * 命中则把引导 prepend 到 content 前；否则原样返回。
+ */
+export function applyDesignCanvasSessionToContent(content: string, sessionId: string | null | undefined): string {
+  if (!sessionId) return content;
+  if (!useSessionStore.getState().isSessionDesignActive(sessionId)) return content;
+  const cs = useDesignCanvasStore.getState();
+  if (cs.ownerSessionId !== sessionId) return content; // 画布属主非当前会话 → 不注入（防跨会话泄漏）
+  const reminder = formatDesignCanvasSessionReminder(cs.nodes.length === 0);
+  return `${reminder}\n\n${content}`;
+}
+
 function enrichDesignBrief(brief: DesignBrief | undefined): DesignBrief | undefined {
   if (!brief) return undefined;
   return normalizeDesignBrief({
@@ -416,7 +447,10 @@ export function useAgentIPC({
         };
 
         try {
-          const directMessage = applyDesignBriefToContent(content.trim(), sessionDesignBrief);
+          const directMessage = applyDesignCanvasSessionToContent(
+            applyDesignBriefToContent(content.trim(), sessionDesignBrief),
+            effectiveSessionId,
+          );
           const results = await Promise.all(
             directRouting.targets.map((target) =>
               ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
@@ -518,6 +552,8 @@ export function useAgentIPC({
           sessionId: effectiveSessionId!,
           envelope: {
             ...envelope,
+            // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
+            // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
             content: envelope.content,
             attachments,
             context: queuedContext,
@@ -565,6 +601,9 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
+          // 设计会话冷启动引导：普通/auto 路径的 content 直接发给 agent（design brief 走 context，
+          // 但 canvas-session 引导是 renderer 运行时 prepend，须进真正发出的 content）。
+          content: applyDesignCanvasSessionToContent(envelope.content, effectiveSessionId),
           clientMessageId: userMessage.id,
           context: contextWithDesignBrief,
           sessionId: effectiveSessionId,

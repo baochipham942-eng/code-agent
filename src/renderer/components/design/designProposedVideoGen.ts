@@ -13,8 +13,53 @@ import {
 import { useDesignCanvasStore } from './designCanvasStore';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { groupKey } from './variantSpine';
-import { resolveDesignDir } from './designFiles';
+import { resolveDesignDir, readWorkspaceBinaryAsBlobUrl } from './designFiles';
 import { nextVariantNodeId } from './useDesignCanvasGeneration';
+
+/**
+ * 抽视频首帧当封面（JPEG data URL，缩到 maxWidth）。失败返回 null（封面是增强，不阻塞落节点）。
+ * 依赖 CSP media-src 允许 blob:（已在 index.html 放开）。blob 同源 → canvas 不被污染，toDataURL 可用。
+ */
+async function captureVideoFirstFrame(videoBlobUrl: string, maxWidth = 480): Promise<string | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (val: string | null): void => {
+      if (!done) {
+        done = true;
+        resolve(val);
+      }
+    };
+    const v = document.createElement('video');
+    v.muted = true;
+    v.preload = 'metadata';
+    v.src = videoBlobUrl;
+    v.onloadeddata = () => {
+      try {
+        v.currentTime = Math.min(0.1, (v.duration || 1) / 2);
+      } catch {
+        finish(null);
+      }
+    };
+    v.onseeked = () => {
+      try {
+        const scale = v.videoWidth > maxWidth ? maxWidth / v.videoWidth : 1;
+        const w = Math.max(1, Math.round(v.videoWidth * scale));
+        const h = Math.max(1, Math.round(v.videoHeight * scale));
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        if (!ctx) return finish(null);
+        ctx.drawImage(v, 0, 0, w, h);
+        finish(c.toDataURL('image/jpeg', 0.72));
+      } catch {
+        finish(null);
+      }
+    };
+    v.onerror = () => finish(null);
+    setTimeout(() => finish(null), 8000);
+  });
+}
 
 export interface GenerateVideoToCanvasParams {
   mode: 't2v' | 'i2v';
@@ -86,6 +131,19 @@ export async function generateVideoToCanvas(
         return { ok: false, error: '画布已切换，已放弃落地' };
       }
 
+      // 抽首帧当封面（增强，失败不阻塞）：blob URL 喂 <video> → canvas → JPEG data URL，
+      // 存进 node.poster（useNodeImage 直接渲染 data:），否则画布上是黑底不明显。
+      let poster: string | undefined;
+      try {
+        const blobUrl = await readWorkspaceBinaryAsBlobUrl(`${runDir}/${assetRel}`);
+        if (blobUrl) {
+          poster = (await captureVideoFirstFrame(blobUrl)) ?? undefined;
+          URL.revokeObjectURL(blobUrl);
+        }
+      } catch {
+        /* 封面是增强，抽帧失败就回退黑底 */
+      }
+
       const { x, y } = nextNodePlacement(
         useDesignCanvasStore.getState().nodes,
         DESIGN_WORKSPACE.CANVAS_NODE_GAP,
@@ -104,6 +162,7 @@ export async function generateVideoToCanvas(
         prompt: prompt || undefined,
         parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,
         createdAt: Date.now(),
+        ...(poster ? { poster } : {}),
         ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);

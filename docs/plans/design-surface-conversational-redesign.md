@@ -70,6 +70,7 @@
 - 一期 `workspaceMode` 与 `isSessionDesignActive` 双信号并存（过渡态，二期收敛）。
 - `DesignCanvas` standalone 挂载可能缺 `DesignWorkspace` 提供的隐式上下文（含 `loadCanvasDoc` 加载 effect）——一期 E2E 兜。
 - 付费出图 dogfood 默认只跑一次、付费前向林晨确认。
+- 遗留全屏表单 surface（`workspaceMode==='design'`）**不参与会话化属主语义**：它不调 `claimCanvasForSession`/`markSessionDesignActive`，但它是表单路径（不走 agent loop、用直连出图、不发 `proposeCanvasOps`），故读注入失效与写路径 owner 闸都不从这触发，无害（L1-R2）。二期退役表单时一并收口。
 
 ## 8. 工作纪律
 origin/main 独立 worktree、TDD、独立 context 对抗审计修 HIGH/MED、PR 等 CI 全绿不擅自合、更新本 spec 与 `design-roadmap.md` 进度。

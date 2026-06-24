@@ -13,6 +13,7 @@ import { useDisclosure } from '../hooks/useDisclosure';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useDesignCanvasStore } from './design/designCanvasStore';
+import { saveCanvasDoc } from './design/designCanvasPersistence';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -162,6 +163,13 @@ export const WorkbenchTabs: React.FC = () => {
         onClick={() => {
           if (!currentSessionId) return;
           useSessionStore.getState().markSessionDesignActive(currentSessionId);
+          // M1-R2.c：真·跨会话认领前先把当前画布兜底落盘（claim 会清空旧画布 + 置 runDir=null，
+          // 不落盘则未保存的手动编辑静默丢失）。仅真·跨会话（owner 非空且非当前）才需，沿用本仓
+          // 「编辑后落盘」的 fire-and-forget 写法；no-op / 无主认领分支不重置不丢数据，无需落盘。
+          const cs = useDesignCanvasStore.getState();
+          if (cs.ownerSessionId && cs.ownerSessionId !== currentSessionId && cs.runDir) {
+            void saveCanvasDoc(cs.runDir, cs.toDoc());
+          }
           // 认领画布属主：当前会话非属主则重置画布（防上个设计会话内容残留泄漏）。
           useDesignCanvasStore.getState().claimCanvasForSession(currentSessionId);
           openWorkbenchTab('design-canvas');

@@ -120,6 +120,15 @@ function snapshotOf(s: { nodes: CanvasNode[]; connectors: CanvasConnector[]; sha
   return { nodes: s.nodes, connectors: s.connectors, shapes: s.shapes };
 }
 
+/**
+ * persist partialize（M1-R2.a）：只持久化 runDir + ownerSessionId；节点/相机从磁盘 canvas.json 恢复。
+ * 持久化属主使刷新后属主随 runDir 一起恢复，同会话回来 claim 命中 no-op 保画布，
+ * 避免 owner=null 走重置分支把刚从盘恢复的画布清空孤儿化。抽成具名纯函数便于单测。
+ */
+export function persistDesignCanvas(s: DesignCanvasState) {
+  return { runDir: s.runDir, ownerSessionId: s.ownerSessionId };
+}
+
 export const useDesignCanvasStore = create<DesignCanvasState>()(
   persist(
     (set, get) => ({
@@ -148,8 +157,16 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       editHistory: clearHistory(),
     }),
   claimCanvasForSession: (sessionId) => {
-    if (get().ownerSessionId === sessionId) return; // 已属本会话：保留现有画布
-    // 换属主：重置画布为空再认领（复用 loadDoc 的清空字段集，保证一致无脏态）。
+    const owner = get().ownerSessionId;
+    if (owner === sessionId) return; // ① 已属本会话：保留现有画布（no-op）
+    if (owner === null) {
+      // ② 无主画布（含刷新后从磁盘恢复但 owner 未持久化的边界）→ **认领**现有画布，
+      // 保留 nodes/runDir/connectors/shapes，不重置（M1-R2.b：无主画布归当前点击者，不丢数据）。
+      set({ ownerSessionId: sessionId });
+      return;
+    }
+    // ③ 真·跨会话（owner 是另一个非空会话）：重置画布为空再换属主（复用 loadDoc 的清空字段集）。
+    // 跨会话前的落盘由调用方在 claim 前完成（避免在同步 action 里塞磁盘 I/O，沿用本仓「编辑后落盘」分工）。
     set({
       nodes: [],
       connectors: [],
@@ -158,6 +175,9 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       ownerSessionId: sessionId,
       selectedIds: [],
       selectedDiagram: null,
+      // L2-R2：清运行态，避免新画布继承上个会话的出图遮罩/错误。
+      generating: false,
+      error: null,
       editHistory: clearHistory(),
     });
   },
@@ -397,8 +417,8 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     {
       name: 'code-agent-design-canvas',
       version: 1,
-      // 只持久化 runDir（画布所属 run）；节点/相机从磁盘 canvas.json 恢复，运行态不持久。
-      partialize: (s) => ({ runDir: s.runDir }),
+      // 持久化 runDir（画布所属 run）+ ownerSessionId（属主，M1-R2.a）；节点/相机从磁盘 canvas.json 恢复。
+      partialize: persistDesignCanvas,
     },
   ),
 );

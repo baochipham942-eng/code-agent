@@ -4,6 +4,7 @@ import {
   getLoadedDeferredToolDefinitions,
   getDesignCanvasToolDefinitions,
   withDesignCanvasTools,
+  withoutGenericMediaToolsInDesign,
 } from '../../../src/main/tools/dispatch/toolDefinitions';
 import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../../src/main/services/toolSearch/deferredTools';
 import {
@@ -231,6 +232,34 @@ describe('toolDefinitions deferred loading', () => {
       const autonomyCount = result.filter((t) => t.name === 'RequestDesignAutonomy').length;
       expect(proposeCount).toBe(1);
       expect(autonomyCount).toBe(1);
+    });
+  });
+
+  describe('withoutGenericMediaToolsInDesign (funnel 到画布工具)', () => {
+    const withGenerics = (): { name: string }[] => [
+      { name: 'Read' },
+      { name: 'image_generate' },
+      { name: 'video_generate' },
+      { name: 'image_annotate' },
+      { name: 'ProposeVideoOps' },
+    ];
+
+    it('designCanvasActive === true → 移除通用 image/video/annotate 工具，保留画布工具', () => {
+      const result = withoutGenericMediaToolsInDesign(withGenerics() as never, true);
+      const names = result.map((t) => t.name);
+      expect(names).not.toContain('image_generate');
+      expect(names).not.toContain('video_generate');
+      expect(names).not.toContain('image_annotate');
+      expect(names).toContain('ProposeVideoOps');
+      expect(names).toContain('Read');
+    });
+
+    it('designCanvasActive 假/undefined → 原样保留（普通会话零影响）', () => {
+      for (const active of [false, undefined] as const) {
+        const names = withoutGenericMediaToolsInDesign(withGenerics() as never, active).map((t) => t.name);
+        expect(names).toContain('image_generate');
+        expect(names).toContain('video_generate');
+      }
     });
   });
 

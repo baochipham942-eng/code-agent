@@ -16,6 +16,7 @@ export function formatDesignCanvasSessionReminder(): string {
     '要生成视频（文生视频 / 图生视频）用 ProposeVideoOps 工具——它会在对话里向用户确认成本，确认后出视频并落到画布视频节点。',
     '要做演示稿 / 幻灯片（PPT）用 ProposeSlidesOps 工具——大纲排版免费，配图付费时会在对话里确认成本，生成后在预览 tab 打开。',
     '要做网页 / 落地页 / 可交互 HTML 原型时，直接写一个自包含的 .html 文件到工作目录（这是网页产物的正确方式，不受下面图片/视频限制约束），用户可在预览 tab 打开查看。',
+    '本会话已停用通用 image_generate / video_generate / image_annotate 工具——图片走 ProposeCanvasOps、视频走 ProposeVideoOps，别去搜这些通用工具。',
     '严禁用 shell / python / ffmpeg / 写文件等方式生成图片或视频、绕开画布——画布是本会话唯一的视觉产物面（此限制只针对图片/视频，不限制写 HTML 网页文件）。',
     '</system-reminder>',
   ].join('\n');

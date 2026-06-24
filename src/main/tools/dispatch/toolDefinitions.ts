@@ -157,6 +157,28 @@ export function withDesignCanvasTools(
 }
 
 /**
+ * 设计会话激活时应被画布工具**取代**的通用媒介工具：funnel agent 走 ProposeCanvasOps /
+ * ProposeVideoOps（进画布、有会话内成本卡、走设计已配模型），而非通用
+ * image_generate / video_generate / image_annotate（不进画布、无成本卡、且 video_generate
+ * 写死智谱 cogvideox，余额不足直接 429——dogfood 实证 agent 会误抓它）。
+ * 普通会话（designCanvasActive 假）原样返回，零影响。
+ */
+export const DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS = [
+  'image_generate',
+  'video_generate',
+  'image_annotate',
+] as const;
+
+export function withoutGenericMediaToolsInDesign(
+  tools: ToolDefinition[],
+  designCanvasActive: boolean | undefined,
+): ToolDefinition[] {
+  if (!designCanvasActive) return tools;
+  const suppressed = new Set<string>(DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS);
+  return tools.filter((t) => !suppressed.has(t.name));
+}
+
+/**
  * 获取延迟工具摘要（用于 system prompt 提示）
  *
  * 返回延迟工具名称列表，提示模型可通过 tool_search 发现这些工具。

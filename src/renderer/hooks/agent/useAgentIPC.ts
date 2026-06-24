@@ -70,14 +70,18 @@ function withDesignBriefContext(
 }
 
 // ADR-026 D1-B：design 模式发轮时附带画布快照，供 agent ProposeCanvasOps 引用真实节点 id。
-// R1（设计 Surface 会话化）：闸门从全局 workspaceMode 解绑，改为「当前 session 是否设计激活」，
-// 避免把画布快照注入普通编码会话。仅设计会话且画布非空时附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
+// R1（设计 Surface 会话化）：双闸守护，避免跨会话泄漏画布——
+//   ① per-session 设计激活闸：当前 session 必须 isSessionDesignActive（不污染普通编码会话）；
+//   ② 画布属主闸：全局单例画布 store 不随 switchSession 重载，故还须校验画布属主==当前会话，
+//      否则会把上一个设计会话的画布误注入当前会话的 agent 上下文（fail-closed）。
+// 两闸都过且画布非空时才附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
 export function withCanvasSnapshotContext(
   context: ConversationEnvelopeContext | undefined,
 ): ConversationEnvelopeContext | undefined {
   const sessionId = useSessionStore.getState().currentSessionId;
   if (!useSessionStore.getState().isSessionDesignActive(sessionId)) return context;
   const cs = useDesignCanvasStore.getState();
+  if (cs.ownerSessionId !== sessionId) return context; // 画布属主非当前会话 → 不注入（防跨会话泄漏）
   if (cs.nodes.length === 0) return context;
   const canvasSnapshot = buildCanvasSnapshot({ nodes: cs.nodes, connectors: cs.connectors, shapes: cs.shapes });
   if (canvasSnapshot.nodes.length === 0) return context;

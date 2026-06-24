@@ -12,6 +12,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
+import { useDesignCanvasStore } from './design/designCanvasStore';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -161,6 +162,8 @@ export const WorkbenchTabs: React.FC = () => {
         onClick={() => {
           if (!currentSessionId) return;
           useSessionStore.getState().markSessionDesignActive(currentSessionId);
+          // 认领画布属主：当前会话非属主则重置画布（防上个设计会话内容残留泄漏）。
+          useDesignCanvasStore.getState().claimCanvasForSession(currentSessionId);
           openWorkbenchTab('design-canvas');
         }}
         className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"

@@ -41,6 +41,12 @@ export type SelectedDiagram = { type: 'shape' | 'connector'; id: string } | null
 interface DesignCanvasState {
   /** 当前画布所属 run 目录（决定存档落点）；null=尚无生成的临时画布。 */
   runDir: string | null;
+  /**
+   * 画布属主会话 id（跨会话隔离闸的真理源）；null=无属主（fail-closed）。
+   * 全局单例 store 不随 switchSession 重载，故注入闸严格校验属主==当前会话，
+   * 防止把会话 A 的画布误注入会话 B 的 agent 上下文。运行态，不持久化（刷新后回 null）。
+   */
+  ownerSessionId: string | null;
   nodes: CanvasNode[];
   /** 图解层连线（节点↔节点，渲染时实时算锚点）。 */
   connectors: CanvasConnector[];
@@ -58,6 +64,13 @@ interface DesignCanvasState {
 
   /** 载入一份存档（切换 run / 刷新恢复）。 */
   loadDoc: (runDir: string | null, doc: DesignCanvasDoc) => void;
+  /**
+   * 入口认领画布属主：属主已是该会话则 no-op（保留现有画布）；否则重置画布为空并改属主
+   * （避免认领后旧内容残留导致下一轮注入泄漏）。
+   */
+  claimCanvasForSession: (sessionId: string) => void;
+  /** 释放画布属主（会话删除/归档时调用）：属主匹配则重置画布为空且属主置 null，否则不动。 */
+  clearCanvasOwner: (sessionId: string) => void;
   /** 清空到空画布（保留 runDir）。 */
   resetCanvas: () => void;
   addNode: (node: CanvasNode) => void;
@@ -111,6 +124,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   persist(
     (set, get) => ({
   runDir: null,
+  ownerSessionId: null,
   nodes: [],
   connectors: [],
   shapes: [],
@@ -122,6 +136,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   editHistory: emptyEditHistory(),
 
   loadDoc: (runDir, doc) =>
+    // 注意：不写 ownerSessionId（保持现值）——loadDoc 是同属主会话内的存档恢复，不该改属主。
     set({
       runDir,
       nodes: doc.nodes,
@@ -132,6 +147,33 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       selectedDiagram: null,
       editHistory: clearHistory(),
     }),
+  claimCanvasForSession: (sessionId) => {
+    if (get().ownerSessionId === sessionId) return; // 已属本会话：保留现有画布
+    // 换属主：重置画布为空再认领（复用 loadDoc 的清空字段集，保证一致无脏态）。
+    set({
+      nodes: [],
+      connectors: [],
+      shapes: [],
+      runDir: null,
+      ownerSessionId: sessionId,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    });
+  },
+  clearCanvasOwner: (sessionId) => {
+    if (get().ownerSessionId !== sessionId) return; // 非属主：不动
+    set({
+      nodes: [],
+      connectors: [],
+      shapes: [],
+      runDir: null,
+      ownerSessionId: null,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    });
+  },
   resetCanvas: () => {
     const empty = emptyCanvasDoc();
     set({

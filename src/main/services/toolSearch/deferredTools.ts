@@ -668,6 +668,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['video', '视频', '生成视频', '文生视频', '图生视频', 't2v', 'i2v', '动画', 'animate'],
     source: 'builtin',
   },
+  {
+    name: 'ProposeSlidesOps',
+    shortDescription: '在设计会话里生成演示稿（PPTX，大纲免费/配图付费），生成后在预览 tab 打开（演示稿/幻灯片走这里）',
+    tags: ['planning', 'media'],
+    aliases: ['slides', '演示稿', '幻灯片', 'PPT', 'PPTX', 'deck', 'presentation', '演讲', 'pitch'],
+    source: 'builtin',
+  },
 
   // ============================================================================
   // Gen 8: 自我进化
@@ -769,6 +776,8 @@ export const TOOL_ALIASES: Record<string, string> = {
   request_design_autonomy: 'RequestDesignAutonomy',
   proposeVideoOps: 'ProposeVideoOps',
   propose_video_ops: 'ProposeVideoOps',
+  proposeSlidesOps: 'ProposeSlidesOps',
+  propose_slides_ops: 'ProposeSlidesOps',
 };
 
 /**

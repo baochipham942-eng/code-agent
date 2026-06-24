@@ -163,7 +163,8 @@ describe('toolDefinitions deferred loading', () => {
     expect(names).toContain('ProposeCanvasOps');
     expect(names).toContain('RequestDesignAutonomy');
     expect(names).toContain('ProposeVideoOps');
-    expect(definitions).toHaveLength(3);
+    expect(names).toContain('ProposeSlidesOps');
+    expect(definitions).toHaveLength(4);
 
     for (const definition of definitions) {
       expect(definition.description.length).toBeGreaterThan(0);

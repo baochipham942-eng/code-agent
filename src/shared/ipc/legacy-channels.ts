@@ -102,6 +102,10 @@ export const IPC_CHANNELS = {
   CANVAS_VIDEO_ASK: 'canvas-video:ask',
   CANVAS_VIDEO_RESPONSE: 'canvas-video:response',
 
+  // 2b：agent 生成文档型产物（演示稿等）后，main → renderer 请求打开预览 tab（单向，best-effort，
+  // renderer 按当前会话过滤，不抢背景会话焦点）。
+  WORKSPACE_OPEN_PREVIEW: 'workspace:open-preview',
+
   // 设计画布有界自主信封审批通道（ADR-027：agent 请求预算信封 → 用户一次性审批）
   CANVAS_AUTONOMY_ASK: 'canvas-autonomy:ask',
   CANVAS_AUTONOMY_RESPONSE: 'canvas-autonomy:response',

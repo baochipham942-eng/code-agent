@@ -53,6 +53,7 @@ import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
 import { useComputerUsePip } from './hooks/useComputerUsePip';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
+import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo, Message } from '@shared/contract';
@@ -228,6 +229,7 @@ export const App: React.FC = () => {
   useBackgroundTaskSync();
   useInAppValidationBridge();
   useRendererBundleAutoReload();
+  useOpenPreviewBridge(); // 2b：agent 生成演示稿等文档型产物 → 打开预览 tab
 
   // 全局快捷键（命令面板、设置、会话导航等；compact 只有用户显式绑定后才会触发）
   useKeyboardShortcuts({

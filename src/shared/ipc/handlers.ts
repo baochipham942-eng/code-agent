@@ -536,6 +536,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CANVAS_PROPOSAL_ASK]: (request: CanvasOpProposal) => void;
   [IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL]: (payload: { requestId: string }) => void;
   [IPC_CHANNELS.CANVAS_VIDEO_ASK]: (request: CanvasVideoRequest) => void;
+  [IPC_CHANNELS.WORKSPACE_OPEN_PREVIEW]: (payload: { filePath: string; sessionId?: string }) => void;
   [IPC_CHANNELS.CANVAS_AUTONOMY_ASK]: (request: AutonomyEnvelopeRequest) => void;
   [IPC_CHANNELS.CANVAS_AUTONOMY_CANCEL]: (payload: { requestId: string }) => void;
   [IPC_CHANNELS.MCP_ELICITATION_REQUEST]: (request: MCPElicitationRequest) => void;

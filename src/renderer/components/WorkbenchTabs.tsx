@@ -5,8 +5,9 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck, Palette } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
@@ -34,6 +35,7 @@ export const WorkbenchTabs: React.FC = () => {
   const setActiveWorkbenchTab = useAppStore((s) => s.setActiveWorkbenchTab);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { isStandard } = useDisclosure();
   const workspacePreviewItems = useWorkspacePreviewModel();
   const savedPresetCount = useWorkbenchPresetStore((s) => s.presets.length);
@@ -96,6 +98,9 @@ export const WorkbenchTabs: React.FC = () => {
     if (id === 'audit') {
       return { id, label: 'Audit', title: 'Replay / 会话质量审计', isDirty: false };
     }
+    if (id === 'design-canvas') {
+      return { id, label: t.design.canvasTabLabel, title: t.design.canvasTabLabel, isDirty: false };
+    }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
     const isDirty = previewTab ? previewTab.content !== previewTab.savedContent : false;
@@ -147,6 +152,23 @@ export const WorkbenchTabs: React.FC = () => {
       })}
 
       </div>{/* end scroll inner */}
+
+      {/* 「设计画布」入口 — 标记当前会话为设计会话 + 打开 design-canvas tab，让用户边对话边看画布 */}
+      <button
+        type="button"
+        data-testid="open-design-canvas"
+        disabled={!currentSessionId}
+        onClick={() => {
+          if (!currentSessionId) return;
+          useSessionStore.getState().markSessionDesignActive(currentSessionId);
+          openWorkbenchTab('design-canvas');
+        }}
+        className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
+        title={t.design.openCanvasHint}
+        aria-label={t.design.openCanvas}
+      >
+        <Palette className="w-3 h-3 text-fuchsia-400/80" />
+      </button>
 
       {/* "+" 按钮 — 关掉的 tab 从这里重新开。在 scroll 容器外，popover 才不被 overflow 切 */}
       {canAddAny && (

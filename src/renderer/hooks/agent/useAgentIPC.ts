@@ -52,7 +52,7 @@ function applyDesignBriefToContent(content: string, brief: DesignBrief | undefin
 
 /**
  * R1（设计 Surface 会话化）冷启动引导：设计会话激活时（即使画布空），给 agent prepend 一段
- * <system-reminder>，明确告诉它用 proposeCanvasOps / RequestDesignAutonomy 操作画布，
+ * <system-reminder>，明确告诉它用 ProposeCanvasOps / RequestDesignAutonomy 操作画布，
  * 别用 shell / python / 写文件等方式绕开画布。修补 dogfood 暴露的缺口——空画布不注入
  * canvasSnapshot，系统提示零引导，agent 不知道该走画布工具。
  */
@@ -61,7 +61,7 @@ export function formatDesignCanvasSessionReminder(canvasEmpty: boolean): string 
   return [
     '<system-reminder kind="design-canvas-session">',
     `你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的产物面（画布当前${canvasState}）。`,
-    '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 proposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
+    '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 ProposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
     '严禁用 shell / python / 写文件等方式生成图片或绕开画布——画布是本会话唯一的视觉产物面。',
     '</system-reminder>',
   ].join('\n');
@@ -122,7 +122,7 @@ export function withCanvasSnapshotContext(
 /**
  * R1（设计 Surface 会话化）跨进程硬控闸：设计会话激活时，在 envelope 的
  * executionIntent 上打 designCanvasActive=true，main 侧 shell 工具据此硬拦"用代码画图"
- * （Python/Pillow/imagemagick 等）并重定向到 proposeCanvasOps。
+ * （Python/Pillow/imagemagick 等）并重定向到 ProposeCanvasOps。
  * 闸口径与画布注入/affordance 完全一致（isSessionDesignActive + 画布属主==当前会话），
  * 严守"只在设计会话生效，绝不伤普通会话"——非激活时显式置 false，普通会话发出 false。
  * **合并语义**：保留 executionIntent 上已有字段（browserSessionMode 等），只补 designCanvasActive。

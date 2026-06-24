@@ -8,7 +8,8 @@ import { useDesignCanvasStore } from '../../../src/renderer/components/design/de
 import type { CanvasNode } from '../../../src/renderer/components/design/designCanvasTypes';
 
 // R1 设计 Surface 会话化：冷启动引导。设计会话激活（即使画布空）时给 agent prepend 一段
-// system-reminder，告诉它用 proposeCanvasOps / RequestDesignAutonomy 操作画布，别用 shell/python 绕开。
+// system-reminder，告诉它用 ProposeCanvasOps / RequestDesignAutonomy 操作画布，别用 shell/python 绕开。
+// 工具名必须精确大写驼峰（与 protocol schema name 一致），否则 agent 照着 select 会 not found。
 
 function makeNode(id: string): CanvasNode {
   return { id, src: `${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: Date.now() };
@@ -22,9 +23,9 @@ function setDesignActive(sessionId: string, active: boolean): void {
 }
 
 describe('formatDesignCanvasSessionReminder', () => {
-  it('includes proposeCanvasOps + RequestDesignAutonomy + anti shell/python + empty wording when canvas empty', () => {
+  it('includes ProposeCanvasOps + RequestDesignAutonomy + anti shell/python + empty wording when canvas empty', () => {
     const reminder = formatDesignCanvasSessionReminder(true);
-    expect(reminder).toContain('proposeCanvasOps');
+    expect(reminder).toContain('ProposeCanvasOps');
     expect(reminder).toContain('RequestDesignAutonomy');
     expect(reminder).toMatch(/shell/i);
     expect(reminder).toMatch(/python/i);
@@ -32,9 +33,15 @@ describe('formatDesignCanvasSessionReminder', () => {
     expect(reminder).toContain('design-canvas-session');
   });
 
+  it('uses exact PascalCase tool names matching protocol schema (no lowercase proposeCanvasOps)', () => {
+    const reminder = formatDesignCanvasSessionReminder(true);
+    // 精确大写驼峰；不得出现裸小写 proposeCanvasOps（带前缀 P 的大写形式仍允许）
+    expect(reminder).not.toMatch(/(?<![A-Za-z])proposeCanvasOps/);
+  });
+
   it('uses non-empty wording when canvas has elements', () => {
     const reminder = formatDesignCanvasSessionReminder(false);
-    expect(reminder).toContain('proposeCanvasOps');
+    expect(reminder).toContain('ProposeCanvasOps');
     expect(reminder).toContain('RequestDesignAutonomy');
     expect(reminder).toContain('已有元素');
     expect(reminder).not.toContain('为空');
@@ -59,7 +66,7 @@ describe('applyDesignCanvasSessionToContent', () => {
     const result = applyDesignCanvasSessionToContent('生成一张图', 's1');
 
     expect(result).not.toBe('生成一张图');
-    expect(result).toContain('proposeCanvasOps');
+    expect(result).toContain('ProposeCanvasOps');
     expect(result).toContain('为空');
     expect(result.endsWith('生成一张图')).toBe(true);
   });
@@ -71,7 +78,7 @@ describe('applyDesignCanvasSessionToContent', () => {
     const result = applyDesignCanvasSessionToContent('改一下', 's1');
 
     expect(result).toContain('已有元素');
-    expect(result).toContain('proposeCanvasOps');
+    expect(result).toContain('ProposeCanvasOps');
   });
 
   it('returns content unchanged when session is not design-active', () => {

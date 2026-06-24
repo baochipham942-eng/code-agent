@@ -11,6 +11,7 @@ import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
   getAllToolDefinitions,
+  withDesignCanvasTools,
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
 import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skillBoundaryScope';
@@ -383,6 +384,17 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     // 传统模式：发送所有工具
     tools = getAllToolDefinitions();
     logger.debug('Tools:', tools.map((t) => t.name));
+  }
+
+  // 设计会话激活时，把画布工具（ProposeCanvasOps / RequestDesignAutonomy）直接提进工具表，
+  // 让 agent 免 ToolSearch 即可调用。这两个工具不在 CORE/DEFERRED 体系，普通会话零污染。
+  // （非破坏式去重；全集模式下已含它们时 withDesignCanvasTools 不重复加。）
+  {
+    const beforeCanvas = tools.length;
+    tools = withDesignCanvasTools(tools, ctx.runtime.executionIntent?.designCanvasActive);
+    if (tools.length !== beforeCanvas) {
+      logger.debug(`Tools (design canvas active): ${beforeCanvas} -> ${tools.length} total`);
+    }
   }
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);

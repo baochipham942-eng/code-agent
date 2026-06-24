@@ -28,6 +28,14 @@ import { isBashToolName } from '../toolNames';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
+/**
+ * 设计画布工具名（ADR-026）。这两个工具登记在 protocol registry，但**故意不放进**
+ * CORE_TOOLS / DEFERRED_TOOLS_META —— 它们不通过 ToolSearch 暴露，而是仅在设计会话激活
+ * （executionIntent.designCanvasActive === true）时由 inference 组装点条件注入工具表。
+ * 普通会话完全看不到这两个工具，零污染。
+ */
+export const DESIGN_CANVAS_TOOL_NAMES = ['ProposeCanvasOps', 'RequestDesignAutonomy'] as const;
+
 function mapPermissionLevel(level: PermissionLevel): LegacyPermissionLevel {
   if (level === 'dangerous') return 'execute';
   return level;
@@ -111,6 +119,41 @@ export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
     .filter((definition) => loadedNames.has(definition.name));
 
   return [...protocolDefinitions, ...mcpDefinitions];
+}
+
+/**
+ * 获取设计画布工具定义（ProposeCanvasOps / RequestDesignAutonomy）。
+ *
+ * 这两个工具不在 CORE/DEFERRED 体系里，只在设计会话激活时由 inference 组装点条件注入。
+ * 从 protocol registry 取完整 schema（name/description/inputSchema 齐全），合并 cloud meta，
+ * 与 getCoreToolDefinitions 同款取法，保证 agent 能直接调用、免 ToolSearch。
+ */
+export function getDesignCanvasToolDefinitions(): ToolDefinition[] {
+  const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+  const wanted = new Set<string>(DESIGN_CANVAS_TOOL_NAMES);
+
+  return getProtocolToolSchemas()
+    .filter((schema) => wanted.has(schema.name))
+    .map((schema) => schemaToDefinition(schema, cloudToolMeta));
+}
+
+/**
+ * 设计会话激活时把画布工具注入工具表（去重）。非激活时原样返回，保证普通会话零污染。
+ *
+ * 抽成纯函数以便 inference 组装点直接调用 + 单测守住"零污染"硬底线，无需启动整套推理引擎。
+ *
+ * @param tools 已组装的基础工具表（core + loaded-deferred，或全集）
+ * @param designCanvasActive 本轮 executionIntent.designCanvasActive
+ */
+export function withDesignCanvasTools(
+  tools: ToolDefinition[],
+  designCanvasActive: boolean | undefined,
+): ToolDefinition[] {
+  if (!designCanvasActive) return tools;
+  const existing = new Set(tools.map((t) => t.name));
+  const canvasTools = getDesignCanvasToolDefinitions().filter((t) => !existing.has(t.name));
+  if (canvasTools.length === 0) return tools;
+  return [...tools, ...canvasTools];
 }
 
 /**

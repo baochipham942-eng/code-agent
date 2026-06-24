@@ -53,6 +53,7 @@ vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
   getCoreToolDefinitions: vi.fn().mockReturnValue(mockToolDefinitions),
   getLoadedDeferredToolDefinitions: vi.fn().mockReturnValue([]),
   getAllToolDefinitions: vi.fn().mockReturnValue(mockToolDefinitions),
+  withDesignCanvasTools: vi.fn((tools) => tools),
 }));
 
 vi.mock('../../../src/main/tools/workbenchToolScope', () => ({

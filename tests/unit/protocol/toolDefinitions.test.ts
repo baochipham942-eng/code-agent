@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
+  getDesignCanvasToolDefinitions,
+  withDesignCanvasTools,
 } from '../../../src/main/tools/dispatch/toolDefinitions';
+import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../../src/main/services/toolSearch/deferredTools';
 import {
   findToolSearchExecutionContractFailures,
   resolveToolSearchExecutionContract,
@@ -150,6 +153,79 @@ describe('toolDefinitions deferred loading', () => {
     expect(resolveToolSearchExecutionContract(desktopResult.tools[0]!)).toMatchObject({
       executable: false,
       reason: expect.stringMatching(/Desktop workbench|no registered protocol tool/i),
+    });
+  });
+
+  it('returns full design canvas tool definitions with non-empty parameters/description', () => {
+    const definitions = getDesignCanvasToolDefinitions();
+    const names = definitions.map((definition) => definition.name);
+
+    expect(names).toContain('ProposeCanvasOps');
+    expect(names).toContain('RequestDesignAutonomy');
+    expect(definitions).toHaveLength(2);
+
+    for (const definition of definitions) {
+      expect(definition.description.length).toBeGreaterThan(0);
+      expect(definition.inputSchema).toBeTruthy();
+      expect(definition.inputSchema.type).toBe('object');
+      expect(Object.keys(definition.inputSchema.properties ?? {}).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps design canvas tools out of CORE_TOOLS and DEFERRED_TOOLS_META (no normal-session pollution)', () => {
+    // 硬底线：这两个工具不进 core/deferred 体系，普通会话工具表绝不出现它们。
+    const deferredNames = new Set(DEFERRED_TOOLS_META.map((meta) => meta.name));
+    for (const name of ['ProposeCanvasOps', 'RequestDesignAutonomy']) {
+      expect(CORE_TOOLS).not.toContain(name);
+      expect(deferredNames.has(name)).toBe(false);
+    }
+
+    // 普通会话工具表 = core + loaded-deferred；未激活设计会话时绝不含画布工具。
+    const normalSessionNames = new Set([
+      ...getCoreToolDefinitions().map((d) => d.name),
+      ...getLoadedDeferredToolDefinitions().map((d) => d.name),
+    ]);
+    expect(normalSessionNames.has('ProposeCanvasOps')).toBe(false);
+    expect(normalSessionNames.has('RequestDesignAutonomy')).toBe(false);
+  });
+
+  describe('withDesignCanvasTools (inference assembly injection)', () => {
+    const baseTools = () => getCoreToolDefinitions();
+
+    it('appends canvas tools when designCanvasActive === true', () => {
+      const base = baseTools();
+      const result = withDesignCanvasTools(base, true);
+      const names = result.map((t) => t.name);
+
+      expect(names).toContain('ProposeCanvasOps');
+      expect(names).toContain('RequestDesignAutonomy');
+      // 基础工具原样保留
+      for (const t of base) {
+        expect(names).toContain(t.name);
+      }
+    });
+
+    it('does NOT include canvas tools when designCanvasActive === false (normal session zero pollution)', () => {
+      const result = withDesignCanvasTools(baseTools(), false);
+      const names = result.map((t) => t.name);
+      expect(names).not.toContain('ProposeCanvasOps');
+      expect(names).not.toContain('RequestDesignAutonomy');
+    });
+
+    it('does NOT include canvas tools when designCanvasActive is undefined (normal session zero pollution)', () => {
+      const result = withDesignCanvasTools(baseTools(), undefined);
+      const names = result.map((t) => t.name);
+      expect(names).not.toContain('ProposeCanvasOps');
+      expect(names).not.toContain('RequestDesignAutonomy');
+    });
+
+    it('does not duplicate canvas tools when they are already present in the base table', () => {
+      const base = [...baseTools(), ...getDesignCanvasToolDefinitions()];
+      const result = withDesignCanvasTools(base, true);
+      const proposeCount = result.filter((t) => t.name === 'ProposeCanvasOps').length;
+      const autonomyCount = result.filter((t) => t.name === 'RequestDesignAutonomy').length;
+      expect(proposeCount).toBe(1);
+      expect(autonomyCount).toBe(1);
     });
   });
 

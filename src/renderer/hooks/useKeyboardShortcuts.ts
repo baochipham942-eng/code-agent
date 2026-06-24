@@ -21,6 +21,12 @@ import {
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { useKeybindingsSettings } from './useKeybindingsSettings';
+import {
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
+  type GlobalHotkeyRegistrationResult,
+} from '../services/nativeCommandFacade';
+import { listenTauriEvent } from '../services/tauriPluginFacade';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -96,13 +102,6 @@ interface GlobalHotkeyEventPayload {
   accelerator: string;
 }
 
-interface GlobalHotkeyRegistrationResult {
-  actionId: KeybindingActionId;
-  accelerator: string;
-  registered: boolean;
-  error?: string | null;
-}
-
 function isInputTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   return Boolean(
@@ -112,16 +111,8 @@ function isInputTarget(target: EventTarget | null): boolean {
   );
 }
 
-async function invokeTauriCommand<T = unknown>(command: string, args?: Record<string, unknown>): Promise<T | null> {
-  const internals = (window as unknown as {
-    __TAURI_INTERNALS__?: { invoke<R>(cmd: string, args?: Record<string, unknown>): Promise<R> };
-  }).__TAURI_INTERNALS__;
-  if (!internals) return null;
-  return internals.invoke<T>(command, args);
-}
-
 function isTauriRuntime(): boolean {
-  return Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+  return isNativeCommandRuntimeAvailable();
 }
 
 // ============================================================================
@@ -406,7 +397,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           return true;
 
         case 'appshot.capture':
-          if (await invokeTauriCommand('appshots_trigger')) return true;
+          if (isNativeCommandRuntimeAvailable() && await invokeNativeCommandAction('triggerAppshot')) return true;
           setShowCapturePanel(true);
           return true;
 
@@ -533,10 +524,8 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
 
   useEffect(() => {
     void (async () => {
-      const results = await invokeTauriCommand<GlobalHotkeyRegistrationResult[]>(
-        'keybindings_set_global_hotkeys',
-        { bindings: globalHotkeyBindings }
-      );
+      if (!isNativeCommandRuntimeAvailable()) return;
+      const results = await invokeNativeCommandAction('setGlobalHotkeys', { bindings: globalHotkeyBindings });
       for (const result of results || []) {
         if (!result.registered) {
           logger.warn('Failed to register global hotkey', {
@@ -556,8 +545,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     void (async () => {
       if (!isTauriRuntime()) return;
       try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const unlisten = await listen<GlobalHotkeyEventPayload>('keybindings:global_hotkey', (event) => {
+        const unlisten = await listenTauriEvent<GlobalHotkeyEventPayload>('keybindings:global_hotkey', (event) => {
           if (cancelled) return;
           void runAction(event.payload.actionId);
         });

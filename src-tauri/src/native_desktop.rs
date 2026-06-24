@@ -32,16 +32,34 @@ pub struct NativeDesktopCapabilities {
 #[serde(rename_all = "camelCase")]
 pub struct NativePermissionStatus {
     kind: String,
+    label: String,
     status: String,
+    required: bool,
     detail: Option<String>,
+    action: Option<String>,
+    bundle_id: Option<String>,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NativePermissionSummary {
+    granted: u32,
+    denied: u32,
+    needs_restart: u32,
+    wrong_bundle_id: u32,
+    unknown: u32,
+    unsupported: u32,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativePermissionSnapshot {
+    schema_version: u8,
     platform: String,
     checked_at_ms: u128,
+    bundle_id: Option<String>,
     permissions: Vec<NativePermissionStatus>,
+    summary: NativePermissionSummary,
 }
 
 #[derive(Serialize, Clone)]
@@ -467,36 +485,96 @@ extern "C" {
 #[cfg(target_os = "macos")]
 static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+fn current_bundle_id() -> Option<String> {
+    env::var("CODE_AGENT_BUNDLE_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn is_agent_bundle_id(bundle_id: &str) -> bool {
+    bundle_id == "com.linchen.code-agent" || bundle_id == "com.linchen.code-agent.dev"
+}
+
+fn permission_status(
+    kind: &str,
+    label: &str,
+    status: &str,
+    required: bool,
+    detail: Option<String>,
+    action: Option<String>,
+    bundle_id: Option<String>,
+) -> NativePermissionStatus {
+    NativePermissionStatus {
+        kind: kind.to_string(),
+        label: label.to_string(),
+        status: status.to_string(),
+        required,
+        detail,
+        action,
+        bundle_id,
+    }
+}
+
+fn permission_summary(permissions: &[NativePermissionStatus]) -> NativePermissionSummary {
+    let mut summary = NativePermissionSummary::default();
+    for permission in permissions {
+        match permission.status.as_str() {
+            "granted" => summary.granted += 1,
+            "denied" => summary.denied += 1,
+            "needs_restart" => summary.needs_restart += 1,
+            "wrong_bundle_id" => summary.wrong_bundle_id += 1,
+            "unsupported" => summary.unsupported += 1,
+            _ => summary.unknown += 1,
+        }
+    }
+    summary
+}
+
+#[cfg(target_os = "macos")]
+fn tcc_db_path() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join("Library/Application Support/com.apple.TCC/TCC.db"))
+}
+
+#[cfg(target_os = "macos")]
+fn query_tcc_auth_value(service: &str, bundle_id: &str) -> Option<String> {
+    let db_path = tcc_db_path()?;
+    let query = format!(
+        "SELECT auth_value FROM access WHERE service='{service}' AND client='{bundle_id}' LIMIT 1;"
+    );
+    let output = Command::new("sqlite3")
+        .arg(db_path)
+        .arg(query)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
+fn tcc_auth_value_to_permission_state(value: Option<&str>) -> &'static str {
+    match value {
+        Some("2") => "granted",
+        Some("0") => "denied",
+        Some("1") | Some("3") => "unknown",
+        Some(_) => "unknown",
+        None => "unknown",
+    }
+}
+
 /// Check microphone permission status (non-blocking, no Swift compilation)
 #[tauri::command]
 pub fn desktop_request_microphone_permission() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        // Check TCC database directly — no blocking Swift subprocess。
-        // 用运行时真实 bundle id（测试包为 com.linchen.code-agent.dev），避免测试包查到生产包的麦克风授权。
-        let bundle_id = env::var("CODE_AGENT_BUNDLE_ID")
-            .unwrap_or_else(|_| "com.linchen.code-agent".to_string());
-        let tcc_query = format!(
-            "SELECT auth_value FROM access WHERE service='kTCCServiceMicrophone' AND client='{bundle_id}' LIMIT 1;"
-        );
-        let output = Command::new("sqlite3")
-            .args([
-                "/Users/linchen/Library/Application Support/com.apple.TCC/TCC.db",
-                tcc_query.as_str(),
-            ])
-            .output();
-
-        match output {
-            Ok(o) if o.status.success() => {
-                let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                match val.as_str() {
-                    "2" => Ok("granted".to_string()),
-                    "0" => Ok("denied".to_string()),
-                    _ => Ok("unknown".to_string()),
-                }
-            }
-            _ => Ok("unknown".to_string()),
-        }
+        let bundle_id = current_bundle_id().unwrap_or_else(|| "com.linchen.code-agent".to_string());
+        Ok(tcc_auth_value_to_permission_state(
+            query_tcc_auth_value("kTCCServiceMicrophone", &bundle_id).as_deref(),
+        ).to_string())
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -508,57 +586,176 @@ pub fn desktop_request_microphone_permission() -> Result<String, String> {
 #[cfg(target_os = "macos")]
 fn probe_accessibility_permission() -> NativePermissionStatus {
     // Call AXIsProcessTrusted() directly via FFI — checks THIS process's TCC record
+    let bundle_id = current_bundle_id();
     let trusted = unsafe { AXIsProcessTrusted() };
     if trusted {
-        NativePermissionStatus {
-            kind: "accessibility".to_string(),
-            status: "granted".to_string(),
-            detail: Some("AXIsProcessTrusted() returned true.".to_string()),
-        }
+        permission_status(
+            "accessibility",
+            "Accessibility",
+            "granted",
+            true,
+            Some("AXIsProcessTrusted() returned true.".to_string()),
+            None,
+            bundle_id,
+        )
     } else {
-        NativePermissionStatus {
-            kind: "accessibility".to_string(),
-            status: "denied".to_string(),
-            detail: Some("AXIsProcessTrusted() returned false. Enable in System Settings > Privacy > Accessibility.".to_string()),
-        }
+        permission_status(
+            "accessibility",
+            "Accessibility",
+            "denied",
+            true,
+            Some("AXIsProcessTrusted() returned false. Enable in System Settings > Privacy > Accessibility.".to_string()),
+            Some("open_accessibility_settings".to_string()),
+            bundle_id,
+        )
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 fn probe_accessibility_permission() -> NativePermissionStatus {
-    NativePermissionStatus {
-        kind: "accessibility".to_string(),
-        status: "unsupported".to_string(),
-        detail: Some("Accessibility probing is only implemented on macOS.".to_string()),
-    }
+    permission_status(
+        "accessibility",
+        "Accessibility",
+        "unsupported",
+        true,
+        Some("Accessibility probing is only implemented on macOS.".to_string()),
+        None,
+        None,
+    )
 }
 
 #[cfg(target_os = "macos")]
 fn probe_screen_capture_permission() -> NativePermissionStatus {
     // Call CGPreflightScreenCaptureAccess() directly via FFI — checks THIS process's TCC record
+    let bundle_id = current_bundle_id();
     let granted = unsafe { CGPreflightScreenCaptureAccess() };
     if granted {
-        NativePermissionStatus {
-            kind: "screenCapture".to_string(),
-            status: "granted".to_string(),
-            detail: Some("CGPreflightScreenCaptureAccess() returned true.".to_string()),
-        }
+        permission_status(
+            "screenCapture",
+            "Screen Recording",
+            "granted",
+            false,
+            Some("CGPreflightScreenCaptureAccess() returned true.".to_string()),
+            None,
+            bundle_id,
+        )
+    } else if SCREEN_CAPTURE_REQUESTED.load(Ordering::SeqCst) {
+        permission_status(
+            "screenCapture",
+            "Screen Recording",
+            "needs_restart",
+            false,
+            Some("Screen Recording was requested in this session. Restart Agent Neo after granting it in System Settings.".to_string()),
+            Some("restart_after_grant".to_string()),
+            bundle_id,
+        )
     } else {
-        NativePermissionStatus {
-            kind: "screenCapture".to_string(),
-            status: "denied".to_string(),
-            detail: Some("Screen Recording permission not granted. Enable in System Settings > Privacy > Screen Recording.".to_string()),
-        }
+        permission_status(
+            "screenCapture",
+            "Screen Recording",
+            "denied",
+            false,
+            Some("Screen Recording permission not granted. Enable in System Settings > Privacy > Screen Recording.".to_string()),
+            Some("open_screen_capture_settings".to_string()),
+            bundle_id,
+        )
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 fn probe_screen_capture_permission() -> NativePermissionStatus {
-    NativePermissionStatus {
-        kind: "screenCapture".to_string(),
-        status: "unsupported".to_string(),
-        detail: Some("Screen capture probing is only implemented on macOS.".to_string()),
+    permission_status(
+        "screenCapture",
+        "Screen Recording",
+        "unsupported",
+        false,
+        Some("Screen capture probing is only implemented on macOS.".to_string()),
+        None,
+        None,
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn probe_microphone_permission() -> NativePermissionStatus {
+    let bundle_id = current_bundle_id().unwrap_or_else(|| "com.linchen.code-agent".to_string());
+    if !is_agent_bundle_id(&bundle_id) {
+        return permission_status(
+            "microphone",
+            "Microphone",
+            "wrong_bundle_id",
+            true,
+            Some(format!("CODE_AGENT_BUNDLE_ID={bundle_id} is not a recognized Agent Neo bundle id.")),
+            Some("check_bundle_identifier".to_string()),
+            Some(bundle_id),
+        );
     }
+
+    let current_value = query_tcc_auth_value("kTCCServiceMicrophone", &bundle_id);
+    let current_state = tcc_auth_value_to_permission_state(current_value.as_deref());
+    if current_state == "unknown" && bundle_id != "com.linchen.code-agent" {
+        let production_value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+        if tcc_auth_value_to_permission_state(production_value.as_deref()) == "granted" {
+            return permission_status(
+                "microphone",
+                "Microphone",
+                "wrong_bundle_id",
+                true,
+                Some("Microphone is granted to the production bundle, but the current dev/test bundle is not authorized.".to_string()),
+                Some("open_microphone_settings_for_current_bundle".to_string()),
+                Some(bundle_id),
+            );
+        }
+    }
+
+    let (detail, action) = match current_state {
+        "granted" => (
+            Some("Microphone permission is granted for the current bundle.".to_string()),
+            None,
+        ),
+        "denied" => (
+            Some("Microphone permission is denied for the current bundle.".to_string()),
+            Some("open_microphone_settings".to_string()),
+        ),
+        _ => (
+            Some("Microphone permission has not been recorded for the current bundle.".to_string()),
+            Some("request_microphone_permission".to_string()),
+        ),
+    };
+
+    permission_status(
+        "microphone",
+        "Microphone",
+        current_state,
+        true,
+        detail,
+        action,
+        Some(bundle_id),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn probe_microphone_permission() -> NativePermissionStatus {
+    permission_status(
+        "microphone",
+        "Microphone",
+        "unsupported",
+        true,
+        Some("Microphone permission probing is only implemented on macOS.".to_string()),
+        None,
+        None,
+    )
+}
+
+fn probe_notifications_permission() -> NativePermissionStatus {
+    permission_status(
+        "notifications",
+        "Notifications",
+        "unknown",
+        false,
+        Some("Notification permission is managed by the Tauri notification plugin and is not probed by the native desktop bridge yet.".to_string()),
+        Some("check_notification_plugin".to_string()),
+        current_bundle_id(),
+    )
 }
 
 /// Get the window title of the frontmost app via AppleScript.
@@ -1595,10 +1792,19 @@ pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
 
 #[tauri::command]
 pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
+    let permissions = vec![
+        probe_microphone_permission(),
+        probe_screen_capture_permission(),
+        probe_accessibility_permission(),
+        probe_notifications_permission(),
+    ];
     Ok(NativePermissionSnapshot {
+        schema_version: 1,
         platform: env::consts::OS.to_string(),
         checked_at_ms: now_ms(),
-        permissions: vec![probe_screen_capture_permission(), probe_accessibility_permission()],
+        bundle_id: current_bundle_id(),
+        summary: permission_summary(&permissions),
+        permissions,
     })
 }
 
@@ -2219,5 +2425,30 @@ mod privacy_tests {
         assert!(!sanitized.contains("alice@example.com"));
         assert!(!sanitized.contains("/Users/linchen"));
         assert!(!sanitized.contains("4242-4242-4242-4242"));
+    }
+
+    #[test]
+    fn maps_tcc_auth_values_to_permission_contract_states() {
+        assert_eq!(tcc_auth_value_to_permission_state(Some("2")), "granted");
+        assert_eq!(tcc_auth_value_to_permission_state(Some("0")), "denied");
+        assert_eq!(tcc_auth_value_to_permission_state(Some("1")), "unknown");
+        assert_eq!(tcc_auth_value_to_permission_state(None), "unknown");
+    }
+
+    #[test]
+    fn summarizes_native_permission_contract_states() {
+        let permissions = vec![
+            permission_status("microphone", "Microphone", "granted", true, None, None, None),
+            permission_status("screenCapture", "Screen Recording", "needs_restart", false, None, None, None),
+            permission_status("accessibility", "Accessibility", "wrong_bundle_id", true, None, None, None),
+            permission_status("notifications", "Notifications", "unknown", false, None, None, None),
+        ];
+
+        let summary = permission_summary(&permissions);
+
+        assert_eq!(summary.granted, 1);
+        assert_eq!(summary.needs_restart, 1);
+        assert_eq!(summary.wrong_bundle_id, 1);
+        assert_eq!(summary.unknown, 1);
     }
 }

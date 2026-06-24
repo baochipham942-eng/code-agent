@@ -10,35 +10,30 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppshotsStore } from '../stores/appshotsStore';
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
+import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../services/nativeCommandFacade';
+import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { toast } from './useToast';
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const internals = (window as unknown as { __TAURI_INTERNALS__?: { invoke<R>(cmd: string, args?: Record<string, unknown>): Promise<R> } }).__TAURI_INTERNALS__;
-  if (!internals) throw new Error('Tauri runtime not available');
-  return internals.invoke<T>(cmd, args);
-}
 
 export function useAppshots(): void {
   const setPending = useAppshotsStore((s) => s.setPending);
   const setStarting = useAppshotsStore((s) => s.setStarting);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+    if (!isNativeCommandRuntimeAvailable()) {
       return; // 非 Tauri（dev:web）环境无 appshots
     }
     let cleanup: (() => void) | undefined;
 
     const setup = async () => {
       try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const offStarting = await listen('appshots:capture_starting', () => {
+        const offStarting = await listenTauriEvent('appshots:capture_starting', () => {
           setStarting(true, useSessionStore.getState().currentSessionId);
         });
-        const offReady = await listen<AppshotCapture>('appshots:capture_ready', async (event) => {
+        const offReady = await listenTauriEvent<AppshotCapture>('appshots:capture_ready', async (event) => {
           const capture = { ...event.payload };
           // 事件只带磁盘路径；按需读取 base64 dataURL 作为图片附件数据。
           try {
-            capture.screenshotDataUrl = await invoke<string>('appshots_read_image_data_url', {
+            capture.screenshotDataUrl = await invokeNativeCommandAction('readAppshotImageDataUrl', {
               path: capture.screenshotPath,
             });
           } catch (error) {
@@ -63,7 +58,7 @@ export function useAppshots(): void {
           }
           setPending(capture, sessionId);
         });
-        const offError = await listen<{ code?: string; message?: string }>('appshots:error', (event) => {
+        const offError = await listenTauriEvent<{ code?: string; message?: string }>('appshots:error', (event) => {
           setStarting(false, null);
           const msg = event.payload?.message ?? event.payload?.code ?? '未知错误';
           toast.error(`Appshot 失败：${msg}`);

@@ -17,6 +17,7 @@ import { FolderOpen, Loader2, Play, AlertCircle, CheckCircle2 } from 'lucide-rea
 import { useAppStore } from '../../stores/appStore';
 import { Button, Modal } from '../primitives';
 import { invokeDomain } from '../../services/ipcService';
+import { pickNativeDirectory } from '../../services/tauriPluginFacade';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { isTauriMode, isWebMode } from '../../utils/platform';
 import type {
@@ -47,9 +48,7 @@ const INITIAL: LauncherState = {
 
 async function pickDirectory(initial: string): Promise<string | null> {
   if (isTauriMode()) {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const result = await open({ directory: true, multiple: false, title: '选择项目目录' });
-    return typeof result === 'string' ? result : null;
+    return pickNativeDirectory({ title: '选择项目目录' });
   }
   if (isWebMode()) {
     return window.prompt('输入项目目录绝对路径', initial)?.trim() || null;

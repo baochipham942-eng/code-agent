@@ -48,6 +48,84 @@ function envelope(kind: string, payload: Record<string, unknown>) {
   };
 }
 
+function rendererServe(overrides: Record<string, unknown> = {}) {
+  return {
+    source: 'active',
+    reason: 'active-healthy',
+    serveDir: '/data/renderer-cache/active',
+    builtinDir: '/app/dist/renderer',
+    activeDir: '/data/renderer-cache/active',
+    activeBundle: { version: '0.17.1', contentHash: 'hash' },
+    currentShellVersion: '0.17.1',
+    ...overrides,
+  };
+}
+
+function desktopShellDiagnostics(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    generatedAt: '2026-06-24T00:00:00.000Z',
+    app: {
+      version: '0.17.1',
+      mode: 'tauri',
+      bundleId: 'com.linchen.code-agent',
+      dataDir: '/tmp/agent-neo-smoke',
+      webPort: 19777,
+      pid: 100,
+    },
+    boot: {
+      stage: 'window-navigated',
+      bootId: 'boot-id',
+      pid: 100,
+      webServerPid: 200,
+      diagnosticFile: '/tmp/agent-neo-smoke/logs/desktop-shell-boot-latest.json',
+      healthMatchedBootToken: true,
+    },
+    webServer: {
+      url: 'http://localhost:19777',
+      health: 'ok',
+      pid: 200,
+      serverRoot: '/app',
+    },
+    renderer: rendererServe(),
+    resources: [
+      {
+        id: 'web-server-script',
+        label: 'webServer bundle',
+        kind: 'web-server',
+        required: true,
+        status: 'present',
+        path: '/app/dist/web/webServer.cjs',
+      },
+      {
+        id: 'renderer-index',
+        label: 'builtin renderer index',
+        kind: 'renderer',
+        required: true,
+        status: 'present',
+        path: '/app/dist/renderer/index.html',
+      },
+      {
+        id: 'bundled-node',
+        label: 'bundled Node',
+        kind: 'runtime',
+        required: true,
+        status: 'present',
+        path: '/app/dist/bundled-node/bin/node',
+      },
+    ],
+    runtimeAssets: {
+      runtimeBaseDir: '/runtime',
+      activeManifestPath: '/runtime/active.json',
+      assets: [],
+      summary: { installed: 0, bundledFallback: 1, missing: 0 },
+    },
+    rendererBundle: null,
+    issues: [],
+    ...overrides,
+  };
+}
+
 function createFetch(overrides: Record<string, Response> = {}) {
   return async (url: string | URL) => {
     const href = String(url);
@@ -140,6 +218,22 @@ function writeFixtureDir() {
     rollbackToBuiltin: false,
   }));
   writeFileSync(join(dir, 'server-logs.ndjson'), '{"level":"info","message":"ok","status":200}\n');
+  writeFileSync(join(dir, 'desktop-shell-smoke.json'), JSON.stringify({
+    ok: true,
+    summary: {
+      evidenceReady: true,
+      bootStage: 'window-navigated',
+      webHealth: 'ok',
+      rendererSource: 'active',
+      rendererReason: 'active-healthy',
+      classificationStatus: 'ok',
+    },
+    failures: [],
+    warnings: [],
+    evidence: {
+      desktopShell: desktopShellDiagnostics(),
+    },
+  }));
   return dir;
 }
 
@@ -160,6 +254,91 @@ describe('release post-publish verifier', () => {
       expect.objectContaining({ code: 'distribution_page_version_is_dynamic' }),
     ]));
     expect(result.summary.renderer.controlPlane.version).toBe('0.17.1');
+  });
+
+  it('accepts desktop shell diagnostics JSON as a post-publish evidence gate', async () => {
+    const fixtureDir = writeFixtureDir();
+    const diagnosticsFile = join(fixtureDir, 'desktop-shell-smoke.json');
+    const result = await verifyReleasePostPublish({
+      version: '0.17.1',
+      baseUrl,
+      manifestUrl,
+      releaseRecordUrl,
+      fetchImpl: createFetch(),
+      desktopShellDiagnosticsFile: diagnosticsFile,
+      requireDesktopShellDiagnostics: true,
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.summary.desktopShell).toMatchObject({
+      file: diagnosticsFile,
+      status: 'ok',
+      stage: 'window-navigated',
+      rendererSource: 'active',
+      rendererReason: 'active-healthy',
+    });
+  });
+
+  it('fails post-publish verification with structured desktop shell reasons', async () => {
+    const fixtureDir = writeFixtureDir();
+    const diagnosticsFile = join(fixtureDir, 'desktop-shell-smoke-failed.json');
+    writeFileSync(diagnosticsFile, JSON.stringify({
+      ok: false,
+      summary: { evidenceReady: true, classificationStatus: 'failed' },
+      failures: [{
+        code: 'desktop_shell_pid_mismatch',
+        message: 'boot diagnostics and /api/health disagree on webServer pid',
+      }],
+      evidence: {
+        desktopShell: desktopShellDiagnostics({
+          boot: {
+            stage: 'failed',
+            webServerPid: 200,
+            healthMatchedBootToken: false,
+            diagnosticFile: '/tmp/agent-neo-smoke/logs/desktop-shell-boot-latest.json',
+          },
+          webServer: { url: 'http://localhost:19777', health: 'boot-token-mismatch', pid: 200 },
+          renderer: rendererServe({ source: 'builtin', reason: 'active-index-missing', activeBundle: null }),
+          resources: [{
+            id: 'web-server-script',
+            label: 'webServer bundle',
+            kind: 'web-server',
+            required: true,
+            status: 'missing',
+            path: '/app/dist/web/webServer.cjs',
+          }],
+          runtimeAssets: {
+            runtimeBaseDir: '/runtime',
+            activeManifestPath: '/runtime/active.json',
+            assets: [{
+              id: 'sharp-image-runtime',
+              label: 'Image processing components',
+              delivery: 'bundled',
+              state: 'missing',
+              nodeModules: [],
+            }],
+            summary: { installed: 0, bundledFallback: 0, missing: 1 },
+          },
+        }),
+      },
+    }));
+
+    await expect(verifyReleasePostPublish({
+      version: '0.17.1',
+      baseUrl,
+      manifestUrl,
+      releaseRecordUrl,
+      fetchImpl: createFetch(),
+      desktopShellDiagnosticsFile: diagnosticsFile,
+      requireDesktopShellDiagnostics: true,
+    })).rejects.toMatchObject({
+      failures: expect.arrayContaining([
+        expect.objectContaining({ code: 'desktop_shell_pid_mismatch' }),
+        expect.objectContaining({ code: 'desktop_shell_boot_token_mismatch' }),
+        expect.objectContaining({ code: 'desktop_shell_required_resource_missing' }),
+        expect.objectContaining({ code: 'desktop_shell_runtime_asset_missing' }),
+      ]),
+    } satisfies Partial<ReleasePostPublishVerificationError>);
   });
 
   it('fails when control-plane renderer rollout is behind and rolling back to builtin', async () => {
@@ -220,6 +399,9 @@ describe('release post-publish verifier', () => {
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       ok: true,
+      summary: {
+        desktopShell: expect.objectContaining({ status: 'ok' }),
+      },
       warnings: expect.arrayContaining([
         expect.objectContaining({ code: 'cloud_api_metadata_fallback' }),
         expect.objectContaining({ code: 'distribution_page_version_is_dynamic' }),

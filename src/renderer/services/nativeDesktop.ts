@@ -9,6 +9,11 @@
  */
 
 import { IPC_DOMAINS, type IPCResponse } from '@shared/ipc';
+import type {
+  NativePermissionKind,
+  NativePermissionSnapshot,
+  NativePermissionStatus,
+} from '@shared/contract';
 
 export interface NativeDesktopCapabilities {
   platform: string;
@@ -21,17 +26,7 @@ export interface NativeDesktopCapabilities {
   phase: string;
 }
 
-export interface NativePermissionStatus {
-  kind: string;
-  status: 'granted' | 'denied' | 'unknown' | 'unsupported';
-  detail?: string | null;
-}
-
-export interface NativePermissionSnapshot {
-  platform: string;
-  checkedAtMs: number;
-  permissions: NativePermissionStatus[];
-}
+export type { NativePermissionKind, NativePermissionSnapshot, NativePermissionStatus };
 
 export interface FrontmostContextSnapshot {
   platform: string;
@@ -188,7 +183,7 @@ export interface NativeDesktopCollectorRequest {
   maxRecentEvents?: number;
 }
 
-type SettingsPaneKind = 'screenCapture' | 'accessibility' | 'microphone';
+type SettingsPaneKind = Extract<NativePermissionKind, 'screenCapture' | 'accessibility' | 'microphone'>;
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const internals = window.__TAURI_INTERNALS__;
@@ -198,20 +193,110 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return internals.invoke<T>(cmd, args);
 }
 
+export interface NativeDesktopActionMap {
+  getCapabilities: {
+    payload: undefined;
+    result: NativeDesktopCapabilities;
+  };
+  getPermissionStatus: {
+    payload: undefined;
+    result: NativePermissionSnapshot;
+  };
+  getFrontmostContext: {
+    payload: undefined;
+    result: FrontmostContextSnapshot;
+  };
+  getAppIcon: {
+    payload: { query: string; size?: number };
+    result: AppIconResult;
+  };
+  getCollectorStatus: {
+    payload: undefined;
+    result: NativeDesktopCollectorStatus;
+  };
+  startCollector: {
+    payload: NativeDesktopCollectorRequest | undefined;
+    result: NativeDesktopCollectorStatus;
+  };
+  stopCollector: {
+    payload: undefined;
+    result: NativeDesktopCollectorStatus;
+  };
+  listRecentEvents: {
+    payload: { limit?: number } | undefined;
+    result: DesktopActivityEvent[];
+  };
+  stopAudioRecorder: {
+    payload: undefined;
+    result: boolean;
+  };
+  openSystemSettings: {
+    payload: { kind: SettingsPaneKind };
+    result: boolean;
+  };
+}
+
+export type NativeDesktopAction = keyof NativeDesktopActionMap;
+type NativeDesktopActionPayload<K extends NativeDesktopAction> = NativeDesktopActionMap[K]['payload'];
+type NativeDesktopActionResult<K extends NativeDesktopAction> = NativeDesktopActionMap[K]['result'];
+
+type NativeDesktopCommandSpec<K extends NativeDesktopAction> = {
+  command: string;
+  args?: (payload: NativeDesktopActionPayload<K>) => Record<string, unknown> | undefined;
+};
+
+const NATIVE_DESKTOP_COMMANDS: {
+  [K in NativeDesktopAction]: NativeDesktopCommandSpec<K>;
+} = {
+  getCapabilities: { command: 'desktop_get_capabilities' },
+  getPermissionStatus: { command: 'desktop_get_permission_status' },
+  getFrontmostContext: { command: 'desktop_get_frontmost_context' },
+  getAppIcon: {
+    command: 'desktop_get_app_icon',
+    args: (payload) => ({
+      query: payload.query,
+      size: payload.size ?? 64,
+    }),
+  },
+  getCollectorStatus: { command: 'desktop_get_collector_status' },
+  startCollector: {
+    command: 'desktop_start_collector',
+    args: (payload) => ({ request: payload ?? {} }),
+  },
+  stopCollector: { command: 'desktop_stop_collector' },
+  listRecentEvents: {
+    command: 'desktop_list_recent_events',
+    args: (payload) => ({ limit: payload?.limit ?? 8 }),
+  },
+  stopAudioRecorder: { command: 'desktop_stop_audio_rec' },
+  openSystemSettings: {
+    command: 'desktop_open_system_settings',
+    args: (payload) => ({ request: { kind: payload.kind } }),
+  },
+};
+
+export async function invokeNativeDesktopAction<K extends NativeDesktopAction>(
+  action: K,
+  payload?: NativeDesktopActionPayload<K>,
+): Promise<NativeDesktopActionResult<K>> {
+  const spec = NATIVE_DESKTOP_COMMANDS[action];
+  return invoke<NativeDesktopActionResult<K>>(spec.command, spec.args?.(payload as never));
+}
+
 export function isNativeDesktopAvailable(): boolean {
   return typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 }
 
 export async function getNativeDesktopCapabilities(): Promise<NativeDesktopCapabilities> {
-  return invoke<NativeDesktopCapabilities>('desktop_get_capabilities');
+  return invokeNativeDesktopAction('getCapabilities');
 }
 
 export async function getNativeDesktopPermissionStatus(): Promise<NativePermissionSnapshot> {
-  return invoke<NativePermissionSnapshot>('desktop_get_permission_status');
+  return invokeNativeDesktopAction('getPermissionStatus');
 }
 
 export async function getFrontmostDesktopContext(): Promise<FrontmostContextSnapshot> {
-  return invoke<FrontmostContextSnapshot>('desktop_get_frontmost_context');
+  return invokeNativeDesktopAction('getFrontmostContext');
 }
 
 export interface AppIconResult {
@@ -227,11 +312,11 @@ export interface AppIconResult {
  * 仅在 Tauri 桌面模式下可用，dev:web / 非 macOS 会 throw。
  */
 export async function getMacOSAppIcon(query: string, size = 64): Promise<AppIconResult> {
-  return invoke<AppIconResult>('desktop_get_app_icon', { query, size });
+  return invokeNativeDesktopAction('getAppIcon', { query, size });
 }
 
 export async function getNativeDesktopCollectorStatus(): Promise<NativeDesktopCollectorStatus> {
-  return invoke<NativeDesktopCollectorStatus>('desktop_get_collector_status');
+  return invokeNativeDesktopAction('getCollectorStatus');
 }
 
 export async function getComputerSurfaceState(): Promise<ComputerSurfaceState> {
@@ -241,15 +326,15 @@ export async function getComputerSurfaceState(): Promise<ComputerSurfaceState> {
 export async function startNativeDesktopCollector(
   request: NativeDesktopCollectorRequest = {}
 ): Promise<NativeDesktopCollectorStatus> {
-  return invoke<NativeDesktopCollectorStatus>('desktop_start_collector', { request });
+  return invokeNativeDesktopAction('startCollector', request);
 }
 
 export async function stopNativeDesktopCollector(): Promise<NativeDesktopCollectorStatus> {
-  return invoke<NativeDesktopCollectorStatus>('desktop_stop_collector');
+  return invokeNativeDesktopAction('stopCollector');
 }
 
 export async function listRecentNativeDesktopEvents(limit = 8): Promise<DesktopActivityEvent[]> {
-  return invoke<DesktopActivityEvent[]>('desktop_list_recent_events', { limit });
+  return invokeNativeDesktopAction('listRecentEvents', { limit });
 }
 
 export interface AudioCaptureStatus {
@@ -365,7 +450,7 @@ export async function stopAudioCapture(): Promise<AudioCaptureStatus> {
   // 停止 Tauri 端的 rec 进程
   if (isNativeDesktopAvailable()) {
     try {
-      await invoke<boolean>('desktop_stop_audio_rec');
+      await invokeNativeDesktopAction('stopAudioRecorder');
     } catch { /* best effort */ }
   }
   return status;
@@ -398,7 +483,5 @@ export async function readComputerSurfaceState(
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {
-  return invoke<boolean>('desktop_open_system_settings', {
-    request: { kind },
-  });
+  return invokeNativeDesktopAction('openSystemSettings', { kind });
 }

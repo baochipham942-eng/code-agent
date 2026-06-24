@@ -11,6 +11,8 @@
  * injects HTTP polyfills for compatibility APIs.
  */
 
+import { openNativePath, openNativeUrl } from '../services/tauriPluginFacade';
+
 export function isTauriMode(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -45,10 +47,7 @@ export function getDesktopShellLabel(): string {
 export function openExternalLink(href: string | undefined): boolean {
   if (!href || !isTauriMode()) return false;
   const isHttp = /^https?:\/\//i.test(href);
-  void import('@tauri-apps/plugin-opener')
-    .then((opener) =>
-      isHttp ? opener.openUrl(href) : opener.openPath(href.replace(/^file:\/\//, '')),
-    )
+  void (isHttp ? openNativeUrl(href) : openNativePath(href.replace(/^file:\/\//, '')))
     .catch(() => {});
   return true;
 }

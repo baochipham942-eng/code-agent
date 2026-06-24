@@ -11,6 +11,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { WorkspaceModeSwitch } from './design/WorkspaceModeSwitch';
+import { pickNativeDirectory } from '../services/tauriPluginFacade';
 export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
@@ -41,9 +42,7 @@ export const TitleBar: React.FC = () => {
       if (isWebMode()) {
         selectedPath = window.prompt('输入工作目录路径', effectiveWorkingDirectory || '')?.trim() || null;
       } else if (isTauriMode()) {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const result = await open({ directory: true, multiple: false, title: '选择工作目录' });
-        selectedPath = typeof result === 'string' ? result : null;
+        selectedPath = await pickNativeDirectory({ title: '选择工作目录' });
       }
       if (selectedPath) {
         setComposerWorkingDirectory(selectedPath);

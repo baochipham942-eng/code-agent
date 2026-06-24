@@ -12,17 +12,18 @@ import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
+import {
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
+} from '../../../../services/nativeCommandFacade';
 
 const logger = createLogger('AppshotsSettings');
 
 // 把「启用」同步给原生左右 Cmd 热键监听（Tauri command）。
 async function syncNativeEnabled(enabled: boolean): Promise<void> {
-  const internals = (window as unknown as {
-    __TAURI_INTERNALS__?: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> };
-  }).__TAURI_INTERNALS__;
-  if (!internals) return;
+  if (!isNativeCommandRuntimeAvailable()) return;
   try {
-    await internals.invoke('appshots_set_enabled', { enabled });
+    await invokeNativeCommandAction('setAppshotsEnabled', { enabled });
   } catch (error) {
     logger.error('appshots_set_enabled 同步失败', error);
   }

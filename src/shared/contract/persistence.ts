@@ -2,6 +2,8 @@
 // Persistence Health Contract
 // ============================================================================
 
+import type { RendererServeDecision } from './desktopShell';
+
 export type PersistenceStatus = 'available' | 'unavailable';
 export type PersistenceMode = 'database' | 'memory';
 
@@ -23,4 +25,5 @@ export interface WebHealthResponse {
   pid: number;
   tauriBootToken: string | null;
   persistence: PersistenceHealth;
+  rendererServe?: RendererServeDecision | null;
 }

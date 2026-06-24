@@ -10,6 +10,7 @@ import { formatShortcutForDisplay, getKeybindingAccelerator } from '@shared/keyb
 import { isTauriMode } from '../../../utils/platform';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useKeybindingsSettings } from '../../../hooks/useKeybindingsSettings';
+import { listenTauriEvent } from '../../../services/tauriPluginFacade';
 
 export const MemoFloater: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -64,10 +65,9 @@ export const MemoFloater: React.FC = () => {
 
     const listen = async () => {
       try {
-        const { listen: tauriListen } = await import('@tauri-apps/api/event');
-        const unlisten1 = await tauriListen('memo:activate', showMemo);
-        const unlisten2 = await tauriListen('memo:new_chat', handleNewChatEvent);
-        const unlisten3 = await tauriListen('memo:paste_context', handlePasteContext);
+        const unlisten1 = await listenTauriEvent('memo:activate', showMemo);
+        const unlisten2 = await listenTauriEvent('memo:new_chat', handleNewChatEvent);
+        const unlisten3 = await listenTauriEvent('memo:paste_context', handlePasteContext);
         return () => {
           unlisten1();
           unlisten2();

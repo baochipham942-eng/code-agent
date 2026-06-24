@@ -153,6 +153,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'budget',
     'compression',
     'decisions',
+    'desktopShell',
     'execPolicy',
     'logClientError',
   ],

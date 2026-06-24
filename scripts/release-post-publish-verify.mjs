@@ -2,6 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  classifyDesktopShellDiagnostics,
+  extractDesktopShellDiagnostics,
+} from './desktop-shell-diagnostics.mjs';
 
 export class ReleasePostPublishVerificationError extends Error {
   constructor(message, options = {}) {
@@ -423,6 +427,106 @@ async function verifyServerLogs({ logsFile, requireServerLogAudit }) {
   };
 }
 
+async function verifyDesktopShellDiagnostics({ diagnosticsFile, requireDesktopShellDiagnostics }) {
+  const warnings = [];
+  if (!diagnosticsFile) {
+    const message = 'desktop shell diagnostics skipped because --desktop-shell-diagnostics-file was not provided';
+    if (requireDesktopShellDiagnostics) {
+      return {
+        summary: { skipped: true, status: 'missing' },
+        failures: [{ code: 'desktop_shell_diagnostics_missing', message }],
+        warnings,
+      };
+    }
+    pushWarning(warnings, 'desktop_shell_diagnostics_skipped', message);
+    return { summary: { skipped: true, status: 'skipped' }, failures: [], warnings };
+  }
+
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(diagnosticsFile, 'utf8'));
+  } catch (error) {
+    return {
+      summary: { file: diagnosticsFile, status: 'invalid-json' },
+      failures: [{
+        code: 'desktop_shell_diagnostics_file_invalid',
+        message: `desktop shell diagnostics file is not readable JSON: ${error instanceof Error ? error.message : String(error)}`,
+        file: diagnosticsFile,
+      }],
+      warnings,
+    };
+  }
+
+  const diagnostics = extractDesktopShellDiagnostics(raw);
+  const classification = classifyDesktopShellDiagnostics(diagnostics);
+  const failures = [];
+  const seenFailureCodes = new Set();
+  const seenWarningCodes = new Set();
+  const addFailure = (failure) => {
+    const code = failure.code ?? 'desktop_shell_diagnostics_failed';
+    const key = `${code}:${failure.message ?? ''}`;
+    if (seenFailureCodes.has(key)) return;
+    seenFailureCodes.add(key);
+    failures.push({ code, message: failure.message, ...failure });
+  };
+  const addWarning = (code, message, details = {}) => {
+    const key = `${code}:${message ?? ''}`;
+    if (seenWarningCodes.has(key)) return;
+    seenWarningCodes.add(key);
+    pushWarning(warnings, code, message, details);
+  };
+
+  if (isRecord(raw) && raw.ok === false && Array.isArray(raw.failures)) {
+    for (const failure of raw.failures) {
+      if (isRecord(failure)) {
+        addFailure({
+          code: failure.code ?? 'desktop_shell_packaged_smoke_failed',
+          message: failure.message ?? 'desktop shell packaged smoke failed',
+          evidence: failure.evidence,
+        });
+      }
+    }
+  }
+
+  for (const issue of classification.issues.filter((entry) => entry.severity === 'error')) {
+    addFailure({
+      code: issue.code,
+      message: issue.message,
+      action: issue.action,
+      evidence: issue.evidence,
+    });
+  }
+
+  for (const issue of classification.issues.filter((entry) => entry.severity === 'warning')) {
+    addWarning(issue.code, issue.message, {
+      action: issue.action,
+      evidence: issue.evidence,
+    });
+  }
+  if (isRecord(raw) && Array.isArray(raw.warnings)) {
+    for (const warning of raw.warnings) {
+      if (isRecord(warning)) {
+        addWarning(warning.code ?? 'desktop_shell_packaged_smoke_warning', warning.message ?? 'desktop shell packaged smoke warning', {
+          evidence: warning.evidence,
+        });
+      }
+    }
+  }
+
+  return {
+    summary: {
+      file: diagnosticsFile,
+      smokeOk: isRecord(raw) && typeof raw.ok === 'boolean' ? raw.ok : undefined,
+      smokeSummary: isRecord(raw) && isRecord(raw.summary) ? raw.summary : undefined,
+      status: classification.status,
+      ...classification.summary,
+      issueCount: classification.issues.length,
+    },
+    failures,
+    warnings,
+  };
+}
+
 function mergeResult(target, key, result) {
   target.summary[key] = result.summary;
   target.failures.push(...result.failures);
@@ -474,6 +578,10 @@ export async function verifyReleasePostPublish(options = {}) {
   mergeResult(result, 'serverLogs', await verifyServerLogs({
     logsFile: options.serverLogFile,
     requireServerLogAudit: options.requireServerLogAudit === true,
+  }));
+  mergeResult(result, 'desktopShell', await verifyDesktopShellDiagnostics({
+    diagnosticsFile: options.desktopShellDiagnosticsFile,
+    requireDesktopShellDiagnostics: options.requireDesktopShellDiagnostics === true,
   }));
 
   if (result.failures.length > 0) {
@@ -567,7 +675,11 @@ function usage() {
     '  --manifest-url <url>             Renderer latest manifest URL',
     '  --release-record-url <url>       Renderer release-record URL',
     '  --server-log-file <file>         Vercel log export to audit for 5xx/error/DEP0169',
+    '  --desktop-shell-diagnostics-file <file>',
+    '                                  JSON from npm run desktop-shell:packaged-smoke -- --json',
     '  --require-server-log-audit       Fail if --server-log-file is missing',
+    '  --require-desktop-shell-diagnostics',
+    '                                  Fail if desktop shell diagnostics JSON is missing',
     '  --require-cloud-api-metadata     Fail when update health is using github_releases fallback',
     '  --fixture-dir <dir>              Read responses from fixture files instead of network',
     '  --timeout-ms <n>                 Default: 15000',
@@ -587,6 +699,14 @@ function parseCliArgs(args) {
     }
   })();
   const fixtureDir = readArg(args, '--fixture-dir');
+  const fixtureDesktopShellDiagnosticsFile = (() => {
+    if (!fixtureDir) return undefined;
+    for (const name of ['desktop-shell-smoke.json', 'desktop-shell-diagnostics.json']) {
+      const file = path.join(fixtureDir, name);
+      if (fs.existsSync(file)) return file;
+    }
+    return undefined;
+  })();
   return {
     version: readArg(args, '--version') ?? packageVersion,
     baseUrl: readArg(args, '--base-url') ?? DEFAULT_BASE_URL,
@@ -597,7 +717,9 @@ function parseCliArgs(args) {
         ? path.join(fixtureDir, 'server-logs.ndjson')
         : undefined
     ),
+    desktopShellDiagnosticsFile: readArg(args, '--desktop-shell-diagnostics-file') ?? fixtureDesktopShellDiagnosticsFile,
     requireServerLogAudit: hasFlag(args, '--require-server-log-audit'),
+    requireDesktopShellDiagnostics: hasFlag(args, '--require-desktop-shell-diagnostics'),
     requireCloudApiMetadata: hasFlag(args, '--require-cloud-api-metadata'),
     fixtureDir,
     timeoutMs: Number(readArg(args, '--timeout-ms') ?? DEFAULT_TIMEOUT_MS),

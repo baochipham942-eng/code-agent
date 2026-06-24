@@ -76,7 +76,7 @@ function statusToneClass(tone: StatusTone): string {
 function permissionTone(permission: NativePermissionStatus | null): StatusTone {
   if (!permission) return 'warning';
   if (permission.status === 'granted') return 'ready';
-  if (permission.status === 'denied') return 'blocked';
+  if (['denied', 'needs_restart', 'wrong_bundle_id'].includes(permission.status)) return 'blocked';
   if (permission.status === 'unsupported') return 'neutral';
   return 'warning';
 }
@@ -88,6 +88,10 @@ function permissionLabel(permission: NativePermissionStatus | null): string {
       return '已授权';
     case 'denied':
       return '未授权';
+    case 'needs_restart':
+      return '需重启';
+    case 'wrong_bundle_id':
+      return 'Bundle 不匹配';
     case 'unsupported':
       return '不支持';
     default:

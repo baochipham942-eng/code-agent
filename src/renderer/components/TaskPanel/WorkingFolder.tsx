@@ -9,6 +9,7 @@ import { useComposerStore } from '../../stores/composerStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { isWebMode, isTauriMode } from '../../utils/platform';
+import { pickNativeDirectory, revealNativePath } from '../../services/tauriPluginFacade';
 
 interface FileInfo {
   path: string;
@@ -91,9 +92,8 @@ export const WorkingFolder: React.FC = () => {
         return;
       }
       if (isTauriMode()) {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const result = await open({ directory: true, multiple: false, title: '选择工作目录' });
-        if (typeof result === 'string') {
+        const result = await pickNativeDirectory({ title: '选择工作目录' });
+        if (result) {
           setWorkingDirectory(result);
         }
       }
@@ -105,8 +105,7 @@ export const WorkingFolder: React.FC = () => {
   const handleOpenInFinder = async (filePath: string) => {
     try {
       if (isTauriMode()) {
-        const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
-        await revealItemInDir(filePath);
+        await revealNativePath(filePath);
       }
     } catch (error) {
       console.error('Failed to open in Finder:', error);

@@ -49,10 +49,16 @@ const selectionState = {
 };
 
 const sessionUiState = {
-  searchQuery: '',
-  setSearchQuery: vi.fn(),
-  sessionStatusFilter: 'all',
-  setSessionStatusFilter: vi.fn(),
+	  searchQuery: '',
+	  setSearchQuery: vi.fn(),
+	  sessionStatusFilter: 'all',
+	  setSessionStatusFilter: vi.fn(),
+  trajectoryTierFilter: 'all',
+  setTrajectoryTierFilter: vi.fn(),
+  trajectoryFailureFilter: 'all',
+  setTrajectoryFailureFilter: vi.fn(),
+  trajectoryReviewFilter: 'all',
+  setTrajectoryReviewFilter: vi.fn(),
   pendingSearchJump: null,
   setPendingSearchJump: vi.fn(),
   softDelete: vi.fn(),

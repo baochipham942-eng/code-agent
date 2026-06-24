@@ -6,7 +6,7 @@ import express from 'express';
 import {
   activeBundleDir,
   readActiveBundleMeta,
-  resolveRendererServeDir,
+  resolveRendererServeDecision,
 } from '../../main/services/renderer/rendererBundleCache';
 import { createLogger } from '../../main/services/infra/logger';
 
@@ -41,9 +41,9 @@ export function createStaticRouter(deps: StaticDeps): Router {
   function resolveServeDir(): string {
     if (deps.staticDir) return deps.staticDir;
     if (deps.dataDir) {
-      return resolveRendererServeDir(deps.dataDir, builtinDir, process.env, {
+      return resolveRendererServeDecision(deps.dataDir, builtinDir, process.env, {
         currentShellVersion: deps.currentShellVersion,
-      });
+      }).serveDir;
     }
     return builtinDir;
   }

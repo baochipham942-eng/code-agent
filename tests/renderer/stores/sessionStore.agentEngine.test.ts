@@ -27,6 +27,9 @@ function resetSessionStore(): void {
     filter: 'active',
     searchQuery: '',
     sessionStatusFilter: 'all',
+    trajectoryTierFilter: 'all',
+    trajectoryFailureFilter: 'all',
+    trajectoryReviewFilter: 'all',
   });
 }
 

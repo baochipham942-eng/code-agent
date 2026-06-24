@@ -61,6 +61,10 @@ import {
 import { buildRuntimeModelOptions, isDynamicCustomProviderId } from '@shared/modelRuntime';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
+import {
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
+} from '../../../../services/nativeCommandFacade';
 import { toast } from '../../../../hooks/useToast';
 import { trackRenderer } from '../../../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
@@ -266,15 +270,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
   useEffect(() => {
-    // Window.__TAURI_INTERNALS__ 类型来自 types/tauri.d.ts 全局声明
-    const internals = window.__TAURI_INTERNALS__;
-    if (!internals) return;
+    if (!isNativeCommandRuntimeAvailable()) return;
     const report = () => {
       const el = appshotSlotRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      internals
-        .invoke('appshots_report_composer_slot', {
+      invokeNativeCommandAction('reportAppshotComposerSlot', {
           slot: { x: r.left + window.screenX, y: r.top + window.screenY, width: 56, height: 56 },
         })
         .catch(() => {});

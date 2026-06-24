@@ -47,6 +47,7 @@ export * from './contract/memory';
 
 // Desktop activity types
 export * from './contract/desktop';
+export * from './contract/nativeDesktop';
 export * from './contract/activityProvider';
 export * from './contract/activityContext';
 
@@ -107,6 +108,7 @@ export * from './contract/reviewQueue';
 export * from './contract/productClosure';
 export * from './contract/completionSummary';
 export * from './contract/persistence';
+export * from './contract/desktopShell';
 
 // Decision Trace types (Security decision chain transparency)
 export * from './contract/decisionTrace';

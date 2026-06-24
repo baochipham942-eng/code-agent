@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { chmod, cp, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdtemp, rename, rm } from 'node:fs/promises';
 import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,6 +60,16 @@ function runBundledNodeInfo(nodePath) {
 }
 
 async function ensureBundledNodePermissions() {
+  if (targetPlatform === 'darwin' && existsSync(outputRoot)) {
+    try {
+      execFileSync('xattr', ['-cr', outputRoot], { stdio: 'ignore' });
+    } catch {
+      // Keep packaging portable if xattr is unavailable; chmod checks still run below.
+    }
+    if (existsSync(outputBin)) {
+      await rewriteFileWithoutExtendedAttributes(outputBin, 0o755);
+    }
+  }
   if (targetPlatform === 'win32') return; // NTFS 无可执行位，find 在 Windows 是另一个工具
   if (existsSync(outputBin)) {
     await chmod(outputBin, 0o755);
@@ -71,6 +81,23 @@ async function ensureBundledNodePermissions() {
     .filter(Boolean);
   for (const fileName of files) {
     await chmod(fileName, 0o644);
+  }
+}
+
+async function rewriteFileWithoutExtendedAttributes(filePath, mode) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'agent-neo-xattr-scrub-'));
+  const tempPath = path.join(tempDir, path.basename(filePath));
+  try {
+    await copyFile(filePath, tempPath);
+    await chmod(tempPath, mode);
+    try {
+      execFileSync('xattr', ['-c', tempPath], { stdio: 'ignore' });
+    } catch {
+      // copyFile already drops extended attributes on current macOS; xattr is best effort.
+    }
+    await rename(tempPath, filePath);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -119,6 +146,7 @@ async function copyProvidedNode(sourcePath, expected) {
   await cp(sourcePath, outputBin, { force: true, dereference: true });
   await chmod(outputBin, 0o755);
   await copyProvidedNodeSharedLibraries(sourcePath);
+  await ensureBundledNodePermissions();
   const info = runBundledNodeInfo(outputBin);
   if (info.platform !== expected.platform || info.arch !== expected.arch) {
     throw new Error(`Provided Node is ${info.platform}-${info.arch}, expected ${expected.platform}-${expected.arch}`);
@@ -228,6 +256,7 @@ async function downloadOfficialNode(expected) {
     if (!isWindows) {
       await chmod(outputBin, 0o755);
     }
+    await ensureBundledNodePermissions();
     return runBundledNodeInfo(outputBin);
   } finally {
     await rm(tempDir, { recursive: true, force: true });

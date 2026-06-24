@@ -228,6 +228,26 @@ function explainPermission(
     return;
   }
 
+  if (permission.status === 'needs_restart') {
+    addExplanation(items, {
+      id: `${kind}:needs_restart`,
+      title: `${label} 需要重启`,
+      detail: permission.detail || `${label} 授权后需要重启 Agent Neo 才能生效。`,
+      tone: 'blocked',
+    });
+    return;
+  }
+
+  if (permission.status === 'wrong_bundle_id') {
+    addExplanation(items, {
+      id: `${kind}:wrong_bundle_id`,
+      title: `${label} Bundle 不匹配`,
+      detail: permission.detail || `${label} 授权落在了另一个包上，请给当前运行包重新授权。`,
+      tone: 'blocked',
+    });
+    return;
+  }
+
   addExplanation(items, {
     id: `${kind}:${permission.status}`,
     title: `${label} ${permission.status === 'denied' ? '未授权' : '未确认'}`,

@@ -67,7 +67,7 @@ async function handleStopAutoCheck(): Promise<void> {
 }
 
 async function handleRuntimeAssetsStatus(): Promise<RuntimeAssetsStatus> {
-  return getRuntimeAssetsStatus();
+  return getRuntimeAssetsStatus({ shellVersion: app.getVersion() });
 }
 
 async function handleRendererBundleStatus(): Promise<RendererBundleStatus> {

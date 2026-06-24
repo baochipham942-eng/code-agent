@@ -6,6 +6,7 @@
 import React from 'react';
 import type { Citation } from '@shared/contract/citation';
 import { isWebMode, isTauriMode, copyPathToClipboard } from '../../utils/platform';
+import { openNativePath } from '../../services/tauriPluginFacade';
 
 interface CitationListProps {
   citations: Citation[];
@@ -69,8 +70,7 @@ function CitationChip({ citation, onClick }: CitationChipProps) {
       }
       if (isTauriMode()) {
         try {
-          const { openPath } = await import('@tauri-apps/plugin-opener');
-          await openPath(citation.source);
+          await openNativePath(citation.source);
         } catch (error) {
           console.error('Failed to open path:', error);
         }

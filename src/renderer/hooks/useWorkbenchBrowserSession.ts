@@ -130,6 +130,10 @@ function getPermissionLabel(status: NativePermissionStatus | null): string {
       return '已授权';
     case 'denied':
       return '未授权';
+    case 'needs_restart':
+      return '需重启';
+    case 'wrong_bundle_id':
+      return 'Bundle 不匹配';
     case 'unsupported':
       return '不支持';
     case 'unknown':
@@ -168,6 +172,14 @@ function getPermissionDetail(
     return `${label}未授权。`;
   }
 
+  if (status.status === 'needs_restart') {
+    return `${label}授权后需要重启 Agent Neo。`;
+  }
+
+  if (status.status === 'wrong_bundle_id') {
+    return `${label}授权落在了另一个 bundle id 上，请给当前包重新授权。`;
+  }
+
   if (status.status === 'unsupported') {
     return `${label}在当前平台不支持。`;
   }
@@ -187,6 +199,12 @@ function getPermissionIssue(
   }
   if (status?.status === 'denied') {
     return `${label}未授权`;
+  }
+  if (status?.status === 'needs_restart') {
+    return `${label}需重启`;
+  }
+  if (status?.status === 'wrong_bundle_id') {
+    return `${label}Bundle 不匹配`;
   }
   return `${label}未确认`;
 }

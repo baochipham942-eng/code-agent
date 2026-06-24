@@ -9,6 +9,8 @@ import { Button } from '../../../primitives';
 import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type {
+  DesktopShellDiagnostics,
+  NativePermissionSnapshot,
   PrepareRuntimeAssetsResult,
   RendererBundleStatus,
   RuntimeAssetsStatus,
@@ -35,6 +37,10 @@ import {
   hasRendererBundlePendingActivation,
   readLoadedRendererBundleStatus,
 } from '../../../../utils/rendererBundleActivation';
+import {
+  getNativeDesktopPermissionStatus,
+  isNativeDesktopAvailable,
+} from '../../../../services/nativeDesktop';
 
 export {
   getRendererBundleActivationText,
@@ -47,6 +53,25 @@ export {
 } from '../../../../utils/rendererBundleActivation';
 
 const logger = createLogger('UpdateSettings');
+
+async function enrichDesktopShellDiagnostics(
+  diagnostics: DesktopShellDiagnostics,
+): Promise<DesktopShellDiagnostics> {
+  if (!isNativeDesktopAvailable()) {
+    return diagnostics;
+  }
+  try {
+    return {
+      ...diagnostics,
+      nativePermissions: await getNativeDesktopPermissionStatus(),
+    };
+  } catch (err) {
+    logger.debug('Native permission status unavailable', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return diagnostics;
+  }
+}
 const BUILD_APP_VERSION = import.meta.env.VITE_APP_VERSION as string | undefined;
 
 /**
@@ -117,9 +142,13 @@ export function getInstallButtonLabel(
 export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null): string | null {
   if (!status) return null;
   const optionalMissing = status.assets.filter((asset) => asset.delivery === 'optional' && asset.state === 'missing').length;
-  const bundledMissing = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing').length;
+  const bundledMissingAssets = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing');
+  const bundledMissing = bundledMissingAssets.length;
   const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
-  if (bundledMissing > 0) return '图片理解暂不可用';
+  if (bundledMissing > 0) {
+    const names = Array.from(new Set(bundledMissingAssets.map(getRuntimeAssetDisplayName))).slice(0, 3);
+    return `${names.join('、')}暂不可用`;
+  }
   if (optionalMissing > 0 && bundledReady > 0) return '图片理解已可用；语音输入、网页操作首次使用时自动下载';
   if (optionalMissing > 0) return '语音输入、网页操作首次使用时自动下载';
   if (status.summary.missing > 0) return '部分功能暂不可用';
@@ -148,9 +177,12 @@ export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): strin
 
 export function getRuntimeAssetDisplayName(asset: RuntimeAssetStatusEntry): string {
   const value = `${asset.id} ${asset.label}`.toLowerCase();
+  if (value.includes('computer-use')) return 'Computer Use';
+  if (value === 'uv uv sidecar binary' || value.includes('uv sidecar')) return 'uv';
+  if (value === 'rtk rtk sidecar binary' || value.includes('rtk sidecar')) return 'rtk';
   if (value.includes('audio') || value.includes('vad')) return '语音输入';
   if (value.includes('browser') || value.includes('playwright')) return '网页操作';
-  if (value.includes('image') || value.includes('sharp')) return '图片理解';
+  if (value.includes('image') || value.includes('sharp') || value.includes('vision')) return '图片理解';
   return asset.label;
 }
 
@@ -290,6 +322,180 @@ export function getRendererBundleDiagnosticRows(status: RendererBundleStatus | n
   return rows;
 }
 
+export function getDesktopShellSummaryText(diagnostics: DesktopShellDiagnostics | null): string | null {
+  if (!diagnostics) return null;
+  const nativePermissionError = diagnostics.nativePermissions?.permissions.some((permission) => (
+    permission.required && ['denied', 'needs_restart', 'wrong_bundle_id'].includes(permission.status)
+  ));
+  if (
+    diagnostics.boot.stage === 'failed' ||
+    diagnostics.issues.some((issue) => issue.severity === 'error') ||
+    nativePermissionError
+  ) {
+    return '桌面壳启动存在错误';
+  }
+  const nativePermissionWarning = diagnostics.nativePermissions?.permissions.some((permission) => (
+    permission.status === 'unknown' || (!permission.required && permission.status !== 'granted' && permission.status !== 'unsupported')
+  ));
+  if (
+    diagnostics.webServer.health !== 'ok' ||
+    diagnostics.issues.some((issue) => issue.severity === 'warning') ||
+    diagnostics.resources.some((resource) => resource.status !== 'present') ||
+    nativePermissionWarning
+  ) {
+    return '桌面壳启动有警告';
+  }
+  return '桌面壳启动正常';
+}
+
+function getNativePermissionSummaryText(snapshot: NativePermissionSnapshot | null | undefined): string | null {
+  if (!snapshot) return null;
+  const parts = [
+    `${snapshot.summary.granted} granted`,
+    snapshot.summary.denied ? `${snapshot.summary.denied} denied` : null,
+    snapshot.summary.needsRestart ? `${snapshot.summary.needsRestart} needs_restart` : null,
+    snapshot.summary.wrongBundleId ? `${snapshot.summary.wrongBundleId} wrong_bundle_id` : null,
+    snapshot.summary.unknown ? `${snapshot.summary.unknown} unknown` : null,
+    snapshot.summary.unsupported ? `${snapshot.summary.unsupported} unsupported` : null,
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+export function getDesktopShellDiagnosticRows(
+  diagnostics: DesktopShellDiagnostics | null,
+): Array<{ label: string; value: string }> {
+  if (!diagnostics) return [];
+  const missingResources = diagnostics.resources.filter((resource) => resource.status !== 'present');
+  const rows: Array<{ label: string; value: string }> = [
+    { label: '启动阶段', value: diagnostics.boot.stage },
+    {
+      label: 'webServer',
+      value: [
+        diagnostics.webServer.health,
+        `pid ${diagnostics.webServer.pid ?? diagnostics.boot.webServerPid ?? 'unknown'}`,
+        `port ${diagnostics.app.webPort}`,
+      ].join(' · '),
+    },
+    {
+      label: 'boot token',
+      value: diagnostics.boot.healthMatchedBootToken === true
+        ? 'matched'
+        : diagnostics.boot.healthMatchedBootToken === false
+          ? 'mismatch'
+          : 'unknown',
+    },
+  ];
+  if (diagnostics.channelIsolation) {
+    rows.push({
+      label: '通道隔离',
+      value: [
+        diagnostics.channelIsolation.channel,
+        diagnostics.channelIsolation.status,
+        `port ${diagnostics.channelIsolation.webPort}/${diagnostics.channelIsolation.expectedWebPort}`,
+        diagnostics.channelIsolation.bundleId ?? 'bundle unknown',
+      ].join(' · '),
+    });
+    for (const check of diagnostics.channelIsolation.checks) {
+      rows.push({
+        label: `channel:${check.label}`,
+        value: `${check.status} · ${check.detail}`,
+      });
+    }
+  }
+  if (diagnostics.renderer) {
+    rows.push({
+      label: 'renderer',
+      value: `${diagnostics.renderer.source} · ${diagnostics.renderer.reason}`,
+    });
+    if (diagnostics.renderer.activeBundle) {
+      rows.push({
+        label: 'active bundle',
+        value: `v${diagnostics.renderer.activeBundle.version} · ${shortContentHash(diagnostics.renderer.activeBundle.contentHash)}`,
+      });
+    }
+  }
+  rows.push({
+    label: '资源检查',
+    value: missingResources.length
+      ? `${missingResources.length} missing · ${missingResources.map((resource) => resource.id).join(', ')}`
+      : `${diagnostics.resources.length} present`,
+  });
+  if (diagnostics.runtimeAssets) {
+    rows.push({
+      label: '运行资源',
+      value: [
+        `${diagnostics.runtimeAssets.summary.installed} installed`,
+        `${diagnostics.runtimeAssets.summary.bundledFallback} bundled`,
+        `${diagnostics.runtimeAssets.summary.missing} missing`,
+      ].join(' · '),
+    });
+    rows.push({
+      label: '运行资源账本',
+      value: [
+        `${diagnostics.runtimeAssets.assets.length} registered`,
+        `${diagnostics.runtimeAssets.assets.filter((asset) => asset.registry?.hash).length} hashed`,
+        `${diagnostics.runtimeAssets.assets.filter((asset) => asset.registry?.minShellVersion).length} min-shell`,
+      ].join(' · '),
+    });
+    for (const asset of diagnostics.runtimeAssets.assets) {
+      const registry = asset.registry;
+      if (!registry) continue;
+      rows.push({
+        label: `asset:${getRuntimeAssetDisplayName(asset)}`,
+        value: [
+          registry.state,
+          registry.source,
+          registry.platform,
+          registry.version ? `v${registry.version}` : null,
+          registry.minShellVersion ? `min ${registry.minShellVersion}` : null,
+          registry.hash ? `${registry.hashKind ?? 'hash'}:${shortContentHash(registry.hash)}` : null,
+        ].filter(Boolean).join(' · '),
+      });
+    }
+  }
+  const permissionSummary = getNativePermissionSummaryText(diagnostics.nativePermissions);
+  if (permissionSummary) {
+    rows.push({ label: '系统权限', value: permissionSummary });
+    for (const permission of diagnostics.nativePermissions?.permissions ?? []) {
+      rows.push({
+        label: permission.label,
+        value: [
+          permission.status,
+          permission.required ? 'required' : 'optional',
+          permission.action,
+          permission.bundleId ? `bundle ${permission.bundleId}` : null,
+        ].filter(Boolean).join(' · '),
+      });
+    }
+  }
+  if (diagnostics.boot.diagnosticFile) {
+    rows.push({ label: '诊断文件', value: diagnostics.boot.diagnosticFile });
+  }
+  if (diagnostics.issues.length > 0) {
+    rows.push({
+      label: '已知问题',
+      value: diagnostics.issues.map((issue) => `${issue.severity}:${issue.code}`).join(' · '),
+    });
+  }
+  if (diagnostics.boot.previousFailure) {
+    rows.push({
+      label: '上次启动失败',
+      value: [
+        diagnostics.boot.previousFailure.stage,
+        diagnostics.boot.previousFailure.code,
+        diagnostics.boot.previousFailure.generatedAt,
+      ].filter(Boolean).join(' · '),
+    });
+  }
+  if (diagnostics.repairActions?.length) {
+    rows.push({
+      label: '修复动作',
+      value: diagnostics.repairActions.map((action) => action.label).join(' · '),
+    });
+  }
+  return rows;
+}
+
 function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
   if (asset.state === 'installed') return 'text-green-300 bg-green-500/10 border-green-500/30';
   if (asset.state === 'bundledFallback') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
@@ -304,6 +510,20 @@ function getRendererBundleTone(status: RendererBundleStatus): string {
   if (outcome === 'skipped') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
   if (outcome === 'failed') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
   return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
+}
+
+function getDesktopShellTone(diagnostics: DesktopShellDiagnostics): string {
+  if (diagnostics.boot.stage === 'failed' || diagnostics.issues.some((issue) => issue.severity === 'error')) {
+    return 'text-red-300 bg-red-500/10 border-red-500/30';
+  }
+  if (
+    diagnostics.webServer.health !== 'ok' ||
+    diagnostics.issues.some((issue) => issue.severity === 'warning') ||
+    diagnostics.resources.some((resource) => resource.status !== 'present')
+  ) {
+    return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
+  }
+  return 'text-green-300 bg-green-500/10 border-green-500/30';
 }
 
 function hasNativeUpdateBridge(): boolean {
@@ -336,6 +556,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const [localVersion, setLocalVersion] = useState<string | null>(null);
   const [runtimeAssetsStatus, setRuntimeAssetsStatus] = useState<RuntimeAssetsStatus | null>(null);
   const [rendererBundleStatus, setRendererBundleStatus] = useState<RendererBundleStatus | null>(null);
+  const [desktopShellDiagnostics, setDesktopShellDiagnostics] = useState<DesktopShellDiagnostics | null>(null);
   const [isPreparingRuntimeAssets, setIsPreparingRuntimeAssets] = useState(false);
   const [runtimeAssetsError, setRuntimeAssetsError] = useState<string | null>(null);
 
@@ -392,6 +613,16 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           error: err instanceof Error ? err.message : String(err),
         });
       });
+    ipcService.invokeDomain<DesktopShellDiagnostics>(IPC_DOMAINS.DIAGNOSTICS, 'desktopShell')
+      .then((diagnostics) => enrichDesktopShellDiagnostics(diagnostics))
+      .then((diagnostics) => {
+        if (!cancelled) setDesktopShellDiagnostics(diagnostics);
+      })
+      .catch((err: unknown) => {
+        logger.debug('Desktop shell diagnostics unavailable', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     return () => {
       cancelled = true;
     };
@@ -415,6 +646,19 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       return status;
     } catch (err) {
       logger.debug('Renderer bundle status unavailable', { error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  };
+
+  const refreshDesktopShellDiagnostics = async () => {
+    try {
+      const diagnostics = await enrichDesktopShellDiagnostics(
+        await ipcService.invokeDomain<DesktopShellDiagnostics>(IPC_DOMAINS.DIAGNOSTICS, 'desktopShell'),
+      );
+      setDesktopShellDiagnostics(diagnostics);
+      return diagnostics;
+    } catch (err) {
+      logger.debug('Desktop shell diagnostics unavailable', { error: err instanceof Error ? err.message : String(err) });
       return null;
     }
   };
@@ -475,6 +719,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       persistClientError('UpdateCheck', 'Update check failed', err);
     } finally {
       await refreshRendererBundleStatus();
+      await refreshDesktopShellDiagnostics();
       setIsChecking(false);
     }
   };
@@ -485,6 +730,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     try {
       await ipcService.invokeDomain<PrepareRuntimeAssetsResult>(IPC_DOMAINS.UPDATE, 'prepareRuntimeAssets');
       await refreshRuntimeAssetsStatus();
+      await refreshDesktopShellDiagnostics();
       const info = await ipcService.invokeDomain<UpdateInfo | null>(IPC_DOMAINS.UPDATE, 'getInfo');
       if (info) {
         onUpdateInfoChange({
@@ -619,6 +865,42 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               <span>{runtimeAssetsError}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {isDeveloperMode && desktopShellDiagnostics && (
+        <div className="bg-zinc-800 rounded-lg p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm text-zinc-400">桌面壳诊断</div>
+              <div className="text-sm font-medium text-zinc-200 mt-1">
+                {getDesktopShellSummaryText(desktopShellDiagnostics)}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className={`text-xs px-2 py-1 rounded border ${getDesktopShellTone(desktopShellDiagnostics)}`}>
+                {desktopShellDiagnostics.boot.stage}
+              </span>
+              <Button
+                disabled={isDisabled}
+                onClick={refreshDesktopShellDiagnostics}
+                variant="ghost"
+                size="sm"
+                title="刷新诊断"
+                className="px-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 text-xs">
+            {getDesktopShellDiagnosticRows(desktopShellDiagnostics).map((row) => (
+              <div key={row.label} className="flex items-start justify-between gap-3">
+                <span className="shrink-0 text-zinc-500">{row.label}</span>
+                <span className="min-w-0 text-right text-zinc-400 break-all">{row.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

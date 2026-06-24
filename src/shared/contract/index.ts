@@ -99,6 +99,7 @@ export * from './capture';
 
 // Desktop activity types (原生桌面采集)
 export * from './desktop';
+export * from './nativeDesktop';
 export * from './activityProvider';
 export * from './activityContext';
 
@@ -120,6 +121,7 @@ export * from './productClosure';
 export * from './completionSummary';
 export * from './handoff';
 export * from './persistence';
+export * from './desktopShell';
 
 // Conversation envelope types (chat-native workbench context)
 export * from './conversationEnvelope';

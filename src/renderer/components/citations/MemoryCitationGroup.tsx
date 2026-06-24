@@ -12,6 +12,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Citation } from '@shared/contract/citation';
 import { isWebMode, isTauriMode, copyPathToClipboard } from '../../utils/platform';
+import { openNativePath } from '../../services/tauriPluginFacade';
 
 interface Props {
   citations: Citation[];
@@ -56,8 +57,7 @@ function MemoryCitationRow({ citation }: { citation: Citation }) {
     }
     if (isTauriMode()) {
       try {
-        const { openPath } = await import('@tauri-apps/plugin-opener');
-        await openPath(citation.source);
+        await openNativePath(citation.source);
       } catch (error) {
         console.error('[MemoryCitation] open failed:', error);
       }

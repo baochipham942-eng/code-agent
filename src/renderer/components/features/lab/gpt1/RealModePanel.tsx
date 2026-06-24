@@ -25,6 +25,7 @@ import {
 import { IPC_CHANNELS } from '../../../../../shared/ipc';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
+import { pickNativeDirectory } from '../../../../services/tauriPluginFacade';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -199,9 +200,8 @@ export const RealModePanel: React.FC = () => {
         return;
       }
       if (isTauriMode()) {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const result = await open({ directory: true, multiple: false, title: '选择项目目录' });
-        if (typeof result === 'string') {
+        const result = await pickNativeDirectory({ title: '选择项目目录' });
+        if (result) {
           setProjectPath(result);
           setProjectUIStatus('downloaded');
           addLog('info', `已选择项目目录: ${result}`);

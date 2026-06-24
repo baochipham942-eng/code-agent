@@ -2,11 +2,12 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { HandlerFn } from '../electronMock';
 import { sseClients, replayFromLastEventId } from '../helpers/sse';
-import type { PersistenceHealth, WebHealthResponse } from '../../shared/contract';
+import type { PersistenceHealth, RendererServeDecision, WebHealthResponse } from '../../shared/contract';
 
 interface HealthDeps {
   handlers: Map<string, HandlerFn>;
   getPersistenceHealth: () => PersistenceHealth;
+  getRendererServeDecision?: () => RendererServeDecision | null;
 }
 
 export function createHealthRouter(deps: HealthDeps): Router {
@@ -24,6 +25,7 @@ export function createHealthRouter(deps: HealthDeps): Router {
       pid: process.pid,
       tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
       persistence: deps.getPersistenceHealth(),
+      rendererServe: deps.getRendererServeDecision?.() ?? null,
     };
     res.json(payload);
   });

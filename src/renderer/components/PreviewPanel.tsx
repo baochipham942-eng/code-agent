@@ -12,6 +12,7 @@ import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 import { inlineHtmlAssets } from '../utils/inlineHtmlAssets';
+import { revealNativePath } from '../services/tauriPluginFacade';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
 
@@ -503,8 +504,7 @@ export const PreviewPanel: React.FC = () => {
         await copyPathToClipboard(previewFilePath);
         return;
       }
-      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
-      await revealItemInDir(previewFilePath);
+      await revealNativePath(previewFilePath);
     } catch (err) {
       logger.error('Failed to reveal in folder', err);
     }

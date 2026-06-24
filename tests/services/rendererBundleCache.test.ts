@@ -7,6 +7,7 @@ import {
   readActiveBundleMeta,
   readActiveContentHash,
   readRendererBundleStatus,
+  resolveRendererServeDecision,
   resolveRendererServeDir,
 } from '../../src/main/services/renderer/rendererBundleCache';
 import {
@@ -39,11 +40,23 @@ describe('rendererBundleCache（serve 目录解析 + active 健康校验 + 兜�
 
   it('无 active 缓存 → serve 包内 builtin', () => {
     expect(resolveRendererServeDir(dataDir, builtinDir)).toBe(builtinDir);
+    expect(resolveRendererServeDecision(dataDir, builtinDir)).toMatchObject({
+      source: 'builtin',
+      reason: 'no-active-meta',
+      serveDir: builtinDir,
+      activeBundle: null,
+    });
   });
 
   it('active 健康（合法 meta + index.html）→ serve active', () => {
     seedActive({ version: '0.16.91', contentHash: 'abc' }, true);
     expect(resolveRendererServeDir(dataDir, builtinDir)).toBe(activeBundleDir(dataDir));
+    expect(resolveRendererServeDecision(dataDir, builtinDir)).toMatchObject({
+      source: 'active',
+      reason: 'active-healthy',
+      serveDir: activeBundleDir(dataDir),
+      activeBundle: { version: '0.16.91', contentHash: 'abc' },
+    });
   });
 
   it('active 版本低于当前 shell → serve 包内 builtin，避免旧前端压过新壳修复', () => {
@@ -52,6 +65,13 @@ describe('rendererBundleCache（serve 目录解析 + active 健康校验 + 兜�
     expect(resolveRendererServeDir(dataDir, builtinDir, process.env, {
       currentShellVersion: '0.16.102',
     })).toBe(builtinDir);
+    expect(resolveRendererServeDecision(dataDir, builtinDir, process.env, {
+      currentShellVersion: '0.16.102',
+    })).toMatchObject({
+      source: 'builtin',
+      reason: 'active-older-than-shell',
+      activeBundle: { version: '0.16.101', contentHash: 'abc' },
+    });
   });
 
   it('active 版本等于当前 shell → 仍可 serve active', () => {
@@ -68,6 +88,13 @@ describe('rendererBundleCache（serve 目录解析 + active 健康校验 + 兜�
     expect(resolveRendererServeDir(dataDir, builtinDir, {
       CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
     } as NodeJS.ProcessEnv)).toBe(builtinDir);
+    expect(resolveRendererServeDecision(dataDir, builtinDir, {
+      CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
+    } as NodeJS.ProcessEnv)).toMatchObject({
+      source: 'builtin',
+      reason: 'hot-update-disabled',
+      disabledReason: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE',
+    });
     expect(readRendererBundleStatus(dataDir, {
       CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
     } as NodeJS.ProcessEnv)).toMatchObject({
@@ -114,12 +141,22 @@ describe('rendererBundleCache（serve 目录解析 + active 健康校验 + 兜�
   it('active 有 meta 但缺 index.html → 不健康，fallback builtin', () => {
     seedActive({ version: '0.16.91', contentHash: 'abc' }, false);
     expect(resolveRendererServeDir(dataDir, builtinDir)).toBe(builtinDir);
+    expect(resolveRendererServeDecision(dataDir, builtinDir)).toMatchObject({
+      source: 'builtin',
+      reason: 'active-index-missing',
+      activeBundle: { version: '0.16.91', contentHash: 'abc' },
+    });
   });
 
   it('active meta 畸形 JSON → null + fallback builtin', () => {
     seedActive('{not valid json', true);
     expect(readActiveBundleMeta(dataDir)).toBeNull();
     expect(resolveRendererServeDir(dataDir, builtinDir)).toBe(builtinDir);
+    expect(resolveRendererServeDecision(dataDir, builtinDir)).toMatchObject({
+      source: 'builtin',
+      reason: 'invalid-active-meta',
+      activeBundle: null,
+    });
   });
 
   it('active meta 缺字段 → null + fallback builtin', () => {

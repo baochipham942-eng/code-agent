@@ -14,6 +14,8 @@ describe('useWorkbenchBrowserSession readiness helpers', () => {
   it('marks granted permissions ready and denied permissions blocked', () => {
     expect(getPermissionReadinessTone({ status: 'granted' })).toBe('ready');
     expect(getPermissionReadinessTone({ status: 'denied' })).toBe('blocked');
+    expect(getPermissionReadinessTone({ status: 'needs_restart' })).toBe('blocked');
+    expect(getPermissionReadinessTone({ status: 'wrong_bundle_id' })).toBe('blocked');
     expect(getPermissionReadinessTone({ status: 'unsupported' })).toBe('blocked');
   });
 

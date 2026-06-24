@@ -28,6 +28,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       working_directory TEXT,
       session_type TEXT NOT NULL DEFAULT 'chat',
       origin TEXT,
+      metadata TEXT,
       parent_session_id TEXT,
       source_run_id TEXT,
       agent_engine TEXT,

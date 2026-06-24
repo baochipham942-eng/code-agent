@@ -39,8 +39,12 @@ Options:
                  Run read-only production checks after CI/publish has completed.
   --server-log-file <file>
                  Vercel log export for --post-publish-verify.
+  --desktop-shell-diagnostics-file <file>
+                 JSON from desktop-shell packaged smoke for --post-publish-verify.
   --require-server-log-audit
                  Fail post-publish verify when server logs are not provided.
+  --require-desktop-shell-diagnostics
+                 Fail post-publish verify when desktop shell diagnostics are not provided.
   --require-cloud-api-metadata
                  Fail post-publish verify when update health uses GitHub fallback.
   --repo <repo>  GitHub repo, owner/name. Defaults to origin or GITHUB_REPOSITORY.
@@ -114,6 +118,21 @@ while (($# > 0)); do
     --require-server-log-audit)
       POST_PUBLISH_VERIFY=1
       POST_PUBLISH_ARGS+=("--require-server-log-audit")
+      shift
+      ;;
+    --desktop-shell-diagnostics-file)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--desktop-shell-diagnostics-file" "$(read_arg_value "$1" "${2:-}")")
+      shift 2
+      ;;
+    --desktop-shell-diagnostics-file=*)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--desktop-shell-diagnostics-file" "${1#*=}")
+      shift
+      ;;
+    --require-desktop-shell-diagnostics)
+      POST_PUBLISH_VERIFY=1
+      POST_PUBLISH_ARGS+=("--require-desktop-shell-diagnostics")
       shift
       ;;
     --require-cloud-api-metadata)

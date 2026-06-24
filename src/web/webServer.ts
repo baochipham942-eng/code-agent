@@ -315,6 +315,7 @@ import { createDomainRouter } from './routes/domain';
 import { createShellRouter } from './routes/shell';
 import { createStaticRouter } from './routes/static';
 import { applyRendererBundleUpdate } from '../main/services/renderer/rendererBundleFetcher';
+import { resolveRendererServeDecision } from '../main/services/renderer/rendererBundleCache';
 import { getAppVersion } from '../main/platform';
 import { createAgentRouter } from './routes/agent';
 import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
@@ -974,7 +975,16 @@ function createApp(): express.Express {
   app.use(express.json({ limit: '50mb', strict: false }));
 
   // ── Health & SSE (extracted to routes/health.ts) ────────────────────
-  app.use('/api', createHealthRouter({ handlers, getPersistenceHealth }));
+  app.use('/api', createHealthRouter({
+    handlers,
+    getPersistenceHealth,
+    getRendererServeDecision: () => resolveRendererServeDecision(
+      resolveCodeAgentDataDir(),
+      path.resolve(__dirname, '..', 'renderer'),
+      process.env,
+      { currentShellVersion: getAppVersion() },
+    ),
+  }));
 
   // ── File upload ─────────────────────────────────────────────────────
   app.post('/api/upload/temp', async (req: Request, res: Response) => {

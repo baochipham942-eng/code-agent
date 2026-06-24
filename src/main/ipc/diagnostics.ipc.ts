@@ -249,6 +249,13 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           return { success: true, data: { logged: true } };
         }
 
+        // 桌面壳诊断：聚合 Tauri boot、webServer health、renderer serve、runtime assets
+        // 和关键包内资源，只读、脱敏，不暴露 raw boot token / env / secret。
+        case 'desktopShell': {
+          const { getDesktopShellDiagnostics } = await import('../diagnostics/desktopShellDiagnostics');
+          return { success: true, data: await getDesktopShellDiagnostics() };
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

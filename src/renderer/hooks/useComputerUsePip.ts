@@ -1,18 +1,7 @@
 import { useEffect, useRef } from 'react';
 import ipcService from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
-
-// Tauri 命令调用：走 __TAURI_INTERNALS__（与 useAppshots 同款），区别于 ipcService.invoke
-// （后者是 TS-main 的 IPC 通道）。pip_* 与 appshots_read_image_data_url 都是 Rust 端命令。
-async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const internals = (
-    window as unknown as {
-      __TAURI_INTERNALS__?: { invoke<R>(c: string, a?: Record<string, unknown>): Promise<R> };
-    }
-  ).__TAURI_INTERNALS__;
-  if (!internals) throw new Error('Tauri runtime not available');
-  return internals.invoke<T>(cmd, args);
-}
+import { invokeNativeCommandAction } from '../services/nativeCommandFacade';
 
 // 从 tool_call_end 的 ToolResult 里取 computer-use 表面截图路径（不依赖工具名，
 // 只认 metadata.computerSurfaceSnapshot.screenshotPath，对 computer-use observe/get_state 等都通用）。
@@ -48,20 +37,20 @@ export function useComputerUsePip(): void {
     const hide = () => {
       if (!activeRef.current) return;
       activeRef.current = false;
-      void tauriInvoke('pip_hide').catch(() => {});
+      void invokeNativeCommandAction('hidePip').catch(() => {});
     };
 
     const pushFrame = async (screenshotPath: string) => {
       try {
         if (!activeRef.current) {
           activeRef.current = true;
-          await tauriInvoke('pip_show');
+          await invokeNativeCommandAction('showPip');
         }
-        const dataUrl = await tauriInvoke<string>('appshots_read_image_data_url', {
+        const dataUrl = await invokeNativeCommandAction('readAppshotImageDataUrl', {
           path: screenshotPath,
         });
         if (!disposed && dataUrl) {
-          await tauriInvoke('pip_frame', { dataUrl });
+          await invokeNativeCommandAction('framePip', { dataUrl });
         }
       } catch {
         // Tauri 不可用 / 读图失败 → 忽略，不影响主流程

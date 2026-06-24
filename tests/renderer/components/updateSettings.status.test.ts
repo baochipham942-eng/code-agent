@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { RendererBundleStatus, UpdateInfo } from '../../../src/shared/contract';
+import type { DesktopShellDiagnostics, RendererBundleStatus, UpdateInfo } from '../../../src/shared/contract';
 import {
+  getDesktopShellDiagnosticRows,
+  getDesktopShellSummaryText,
   getRendererBundleDiagnosticRows,
   getRendererBundleActivationText,
   getRendererBundleReloadBlockedReason,
@@ -31,6 +33,78 @@ const availableUpdateInfo: UpdateInfo = {
   currentVersion: '0.16.75',
   latestVersion: '0.16.76',
 };
+
+type DesktopShellDiagnosticsOverrides = Partial<Omit<DesktopShellDiagnostics, 'app' | 'boot' | 'webServer'>> & {
+  app?: Partial<DesktopShellDiagnostics['app']>;
+  boot?: Partial<DesktopShellDiagnostics['boot']>;
+  webServer?: Partial<DesktopShellDiagnostics['webServer']>;
+};
+
+function desktopShellDiagnostics(overrides: DesktopShellDiagnosticsOverrides = {}): DesktopShellDiagnostics {
+  const base: DesktopShellDiagnostics = {
+    schemaVersion: 1,
+    generatedAt: '2026-06-24T00:00:00.000Z',
+    app: {
+      version: '0.16.102',
+      mode: 'tauri',
+      bundleId: 'com.linchen.code-agent',
+      dataDir: '/Users/x/.code-agent',
+      webPort: 8180,
+      pid: 100,
+    },
+    boot: {
+      stage: 'window-navigated',
+      bootId: 'abc123',
+      pid: 100,
+      webServerPid: 200,
+      diagnosticFile: '/Users/x/.code-agent/logs/desktop-shell-boot-latest.json',
+      healthMatchedBootToken: true,
+    },
+    webServer: {
+      url: 'http://localhost:8180',
+      health: 'ok',
+      pid: 200,
+      serverRoot: '/Applications/Agent Neo.app/Contents/Resources/_up_',
+    },
+    renderer: {
+      source: 'builtin',
+      reason: 'no-active-meta',
+      serveDir: '/app/dist/renderer',
+      builtinDir: '/app/dist/renderer',
+      activeDir: '/Users/x/.code-agent/renderer-cache/active',
+      activeBundle: null,
+      currentShellVersion: '0.16.102',
+    },
+    resources: [
+      {
+        id: 'web-server-script',
+        label: 'webServer bundle',
+        kind: 'web-server',
+        path: '/app/dist/web/webServer.cjs',
+        required: true,
+        status: 'present',
+      },
+      {
+        id: 'renderer-index',
+        label: 'builtin renderer index',
+        kind: 'renderer',
+        path: '/app/dist/renderer/index.html',
+        required: true,
+        status: 'present',
+      },
+    ],
+    runtimeAssets: null,
+    rendererBundle: null,
+    issues: [],
+  };
+  return {
+    ...base,
+    ...overrides,
+    app: { ...base.app, ...overrides.app },
+    boot: { ...base.boot, ...overrides.boot },
+    webServer: { ...base.webServer, ...overrides.webServer },
+  };
+}
 
 describe('UpdateSettings status visibility', () => {
   it('hides stale success status while a fresh check is running or failed', () => {
@@ -171,6 +245,20 @@ describe('UpdateSettings status visibility', () => {
       state: 'bundledFallback',
       nodeModules: [],
     })).toBe('图片理解');
+    expect(getRuntimeAssetDisplayName({
+      id: 'computer-use-app',
+      label: 'Agent Neo Computer Use app',
+      delivery: 'bundled',
+      state: 'bundledFallback',
+      nodeModules: [],
+    })).toBe('Computer Use');
+    expect(getRuntimeAssetDisplayName({
+      id: 'uv',
+      label: 'uv sidecar binary',
+      delivery: 'bundled',
+      state: 'bundledFallback',
+      nodeModules: [],
+    })).toBe('uv');
   });
 
   it('shows prepare action only when runtime assets need an update', () => {
@@ -380,6 +468,180 @@ describe('UpdateSettings status visibility', () => {
       { label: '当前热更', value: '包内版本' },
       { label: '停用开关', value: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE' },
     ]);
+  });
+
+  it('summarizes desktop shell diagnostics across ok, warning, and error states', () => {
+    expect(getDesktopShellSummaryText(desktopShellDiagnostics())).toBe('桌面壳启动正常');
+
+    expect(getDesktopShellSummaryText(desktopShellDiagnostics({
+      resources: [
+        {
+          id: 'control-plane-public-keys',
+          label: 'control-plane public keys',
+          kind: 'resource',
+          path: '/app/dist/web/control-plane-public-keys.json',
+          required: false,
+          status: 'missing',
+        },
+      ],
+      issues: [{ severity: 'warning', code: 'desktop-shell-optional-resource-missing', message: 'optional missing' }],
+    }))).toBe('桌面壳启动有警告');
+
+    expect(getDesktopShellSummaryText(desktopShellDiagnostics({
+      boot: { stage: 'failed' },
+      issues: [{ severity: 'error', code: 'desktop-shell-healthcheck-failed', message: 'timeout' }],
+    }))).toBe('桌面壳启动存在错误');
+  });
+
+  it('renders desktop shell diagnostics rows without exposing raw tokens', () => {
+    const rows = getDesktopShellDiagnosticRows(desktopShellDiagnostics({
+      renderer: {
+        source: 'active',
+        reason: 'active-healthy',
+        serveDir: '/data/renderer-cache/active',
+        builtinDir: '/app/dist/renderer',
+        activeDir: '/data/renderer-cache/active',
+        activeBundle: { version: '0.16.103', contentHash: 'abcdef1234567890' },
+        currentShellVersion: '0.16.103',
+      },
+      runtimeAssets: {
+        runtimeBaseDir: '/runtime',
+        activeManifestPath: '/runtime/active.json',
+        assets: [{
+          id: 'uv',
+          label: 'uv sidecar binary',
+          kind: 'tool-binary',
+          delivery: 'bundled',
+          state: 'bundledFallback',
+          nodeModules: [],
+          files: [{
+            name: 'uv',
+            path: '/app/scripts/uv',
+            exists: true,
+            executable: true,
+            source: 'bundled',
+          }],
+          version: '0.11.16',
+          minShellVersion: '0.16.103',
+          platform: 'darwin-arm64',
+          registry: {
+            id: 'uv',
+            label: 'uv sidecar binary',
+            kind: 'tool-binary',
+            delivery: 'bundled',
+            state: 'bundledFallback',
+            source: 'bundled',
+            path: '/app/scripts/uv',
+            version: '0.11.16',
+            minShellVersion: '0.16.103',
+            platform: 'darwin-arm64',
+            hash: 'f63ec276fa13f8f392542a334c0f58f36833b24304831e5f4c221e2edf7a16f3',
+            hashKind: 'pinnedBinarySha256',
+            required: true,
+          },
+        }],
+        summary: { installed: 1, bundledFallback: 1, missing: 0 },
+      },
+      boot: {
+        previousFailure: {
+          stage: 'web-server-spawned',
+          recordedStage: 'failed',
+          generatedAt: '2026-06-23T23:59:00.000Z',
+          code: 'desktop-shell-healthcheck-failed',
+          message: 'healthcheck timed out',
+        },
+      },
+      repairActions: [
+        {
+          kind: 'clear-webserver-port',
+          label: '清理 webServer 端口',
+          reason: 'healthcheck 未确认当前壳进程',
+        },
+        {
+          kind: 'disable-hot-renderer',
+          label: '禁用 hot renderer',
+          reason: 'renderer 热更可能影响当前壳加载',
+        },
+      ],
+      channelIsolation: {
+        channel: 'dev',
+        status: 'ok',
+        bundleId: 'com.linchen.code-agent.dev',
+        dataDir: '/Users/x/.code-agent-dev',
+        webPort: 8181,
+        expectedWebPort: 8181,
+        checks: [
+          { id: 'data-dir', label: 'data dir', status: 'ok', detail: '/Users/x/.code-agent-dev' },
+          { id: 'web-port', label: 'web port', status: 'ok', detail: '8181 (expected 8181)' },
+          { id: 'bundle-id', label: 'bundle id', status: 'ok', detail: 'com.linchen.code-agent.dev' },
+          { id: 'permission-bundle-id', label: 'permission bundle id', status: 'ok', detail: 'com.linchen.code-agent.dev' },
+        ],
+      },
+      nativePermissions: {
+        schemaVersion: 1,
+        platform: 'darwin',
+        checkedAtMs: 1000,
+        bundleId: 'com.linchen.code-agent.dev',
+        permissions: [
+          {
+            kind: 'microphone',
+            label: 'Microphone',
+            status: 'wrong_bundle_id',
+            required: true,
+            action: 'open_microphone_settings_for_current_bundle',
+            bundleId: 'com.linchen.code-agent.dev',
+          },
+          {
+            kind: 'screenCapture',
+            label: 'Screen Recording',
+            status: 'needs_restart',
+            required: false,
+            action: 'restart_after_grant',
+            bundleId: 'com.linchen.code-agent.dev',
+          },
+        ],
+        summary: {
+          granted: 0,
+          denied: 0,
+          needsRestart: 1,
+          wrongBundleId: 1,
+          unknown: 0,
+          unsupported: 0,
+        },
+      },
+    }));
+
+    expect(rows).toContainEqual({ label: '启动阶段', value: 'window-navigated' });
+    expect(rows).toContainEqual({ label: 'boot token', value: 'matched' });
+    expect(rows).toContainEqual({ label: 'renderer', value: 'active · active-healthy' });
+    expect(rows).toContainEqual({ label: 'active bundle', value: 'v0.16.103 · abcdef123456' });
+    expect(rows).toContainEqual({
+      label: '通道隔离',
+      value: 'dev · ok · port 8181/8181 · com.linchen.code-agent.dev',
+    });
+    expect(rows).toContainEqual({
+      label: 'channel:data dir',
+      value: 'ok · /Users/x/.code-agent-dev',
+    });
+    expect(rows).toContainEqual({ label: '运行资源账本', value: '1 registered · 1 hashed · 1 min-shell' });
+    expect(rows).toContainEqual({
+      label: 'asset:uv',
+      value: 'bundledFallback · bundled · darwin-arm64 · v0.11.16 · min 0.16.103 · pinnedBinarySha256:f63ec276fa13',
+    });
+    expect(rows).toContainEqual({
+      label: '上次启动失败',
+      value: 'web-server-spawned · desktop-shell-healthcheck-failed · 2026-06-23T23:59:00.000Z',
+    });
+    expect(rows).toContainEqual({
+      label: '修复动作',
+      value: '清理 webServer 端口 · 禁用 hot renderer',
+    });
+    expect(rows).toContainEqual({ label: '系统权限', value: '0 granted · 1 needs_restart · 1 wrong_bundle_id' });
+    expect(rows).toContainEqual({
+      label: 'Microphone',
+      value: 'wrong_bundle_id · required · open_microphone_settings_for_current_bundle · bundle com.linchen.code-agent.dev',
+    });
+    expect(rows.map((row) => row.value).join('\n')).not.toContain('tauri-');
   });
 
   it('detects renderer bundle changes that need a page refresh', () => {

@@ -4,6 +4,8 @@ use std::{
     cmp::Ordering,
     collections::HashSet,
     env,
+    hash::{DefaultHasher, Hash, Hasher},
+    io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -11,8 +13,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    include_image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager,
-    RunEvent, State, WindowEvent,
+    include_image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager, RunEvent,
+    State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -44,6 +46,9 @@ const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const LOG_DIR_ENV: &str = "CODE_AGENT_LOG_DIR";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
+const BOOT_DIAGNOSTICS_PATH_ENV: &str = "AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE";
+const BOOT_DIAGNOSTICS_FILE: &str = "desktop-shell-boot-latest.json";
+const SHELL_EVENTS_FILE: &str = "desktop-shell-events.ndjson";
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["dist", "bundled-node", "bin", "node"],
     &["dist", "bundled-node", "node"],
@@ -55,9 +60,138 @@ const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["bundled-node", "node.exe"],
 ];
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum DesktopShellBootStage {
+    ChannelEnvApplied,
+    ResourcePreflight,
+    ServerScriptResolved,
+    NodeBinaryResolved,
+    WebServerSpawned,
+    HealthReady,
+    WindowNavigated,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DesktopShellIssue {
+    severity: String,
+    code: String,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    action: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum DesktopShellResourceKind {
+    WebServer,
+    Renderer,
+    Runtime,
+    NativeModule,
+    Resource,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum DesktopShellResourceStatus {
+    Present,
+    Missing,
+    NotExecutable,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DesktopShellResourceCheck {
+    id: String,
+    label: String,
+    kind: DesktopShellResourceKind,
+    path: String,
+    required: bool,
+    status: DesktopShellResourceStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopShellPreviousFailure {
+    stage: DesktopShellBootStage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recorded_stage: Option<DesktopShellBootStage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_server_pid: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopShellBootDiagnostics {
+    schema_version: u8,
+    generated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    app_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bundle_id: Option<String>,
+    pid: u32,
+    web_port: u16,
+    stage: DesktopShellBootStage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failed_stage: Option<DesktopShellBootStage>,
+    health_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    boot_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_server_pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    server_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    script_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node_binary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    health_matched_boot_token: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_failure: Option<DesktopShellPreviousFailure>,
+    resources: Vec<DesktopShellResourceCheck>,
+    issues: Vec<DesktopShellIssue>,
+}
+
 #[derive(Default)]
 struct AppState {
-    web_server: Mutex<Option<Child>>,
+    web_server: Mutex<Option<OwnedWebServerChild>>,
+}
+
+struct OwnedWebServerChild {
+    child: Child,
+    pid: u32,
+    owner: &'static str,
+    started_at: String,
+    stdin_eof_cleanup: bool,
+}
+
+struct DesktopShellProcessCleanup {
+    owner: String,
+    pid: u32,
+    started_at: String,
+    cleaned_at: String,
+    exit_reason: String,
+    wait_status: Option<String>,
+    stdin_eof_cleanup: bool,
 }
 
 #[derive(Default)]
@@ -90,17 +224,35 @@ struct KeybindingGlobalHotkeyResult {
 
 impl AppState {
     fn store_child(&self, child: Child) {
+        let pid = child.id();
         let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
-        *guard = Some(child);
+        *guard = Some(OwnedWebServerChild {
+            child,
+            pid,
+            owner: "tauri-shell",
+            started_at: now_millis_string(),
+            stdin_eof_cleanup: true,
+        });
     }
 
-    fn cleanup(&self) {
+    fn cleanup(&self) -> Option<DesktopShellProcessCleanup> {
         let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
 
-        if let Some(mut child) = guard.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        let mut owned = guard.take()?;
+        let kill_result = owned.child.kill();
+        let wait_status = owned.child.wait().map(|status| status.to_string()).ok();
+        Some(DesktopShellProcessCleanup {
+            owner: owned.owner.to_string(),
+            pid: owned.pid,
+            started_at: owned.started_at,
+            cleaned_at: now_millis_string(),
+            exit_reason: match kill_result {
+                Ok(()) => "tauri-exit-cleanup".to_string(),
+                Err(error) => format!("cleanup-kill-failed:{error}"),
+            },
+            wait_status,
+            stdin_eof_cleanup: owned.stdin_eof_cleanup,
+        })
     }
 }
 
@@ -236,6 +388,447 @@ fn web_server_log_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
         .map(|dir| dir.join("logs"))
 }
 
+fn now_millis_string() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().to_string())
+        .unwrap_or_else(|_| "0".to_string())
+}
+
+fn path_to_string(path: &Path) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn boot_diagnostics_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    web_server_log_dir(app).map(|dir| dir.join(BOOT_DIAGNOSTICS_FILE))
+}
+
+fn shell_events_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    web_server_log_dir(app).map(|dir| dir.join(SHELL_EVENTS_FILE))
+}
+
+fn token_fingerprint(token: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    token.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn desktop_shell_channel(bundle_id: Option<&str>, is_debug: bool) -> &'static str {
+    if is_debug || bundle_id.is_some_and(|id| id.ends_with(".dev")) {
+        "dev"
+    } else {
+        "prod"
+    }
+}
+
+fn desktop_shell_event_payload(
+    diagnostics: &DesktopShellBootDiagnostics,
+    level: &str,
+    event: &str,
+    message: &str,
+    details: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "schemaVersion": 1,
+        "source": "tauri-shell",
+        "generatedAt": now_millis_string(),
+        "level": level,
+        "event": event,
+        "stage": diagnostics.stage,
+        "appVersion": diagnostics.app_version,
+        "bundleId": diagnostics.bundle_id,
+        "channel": desktop_shell_channel(diagnostics.bundle_id.as_deref(), cfg!(debug_assertions)),
+        "pid": diagnostics.pid,
+        "webPort": diagnostics.web_port,
+        "message": message,
+    });
+
+    if let Some(object) = payload.as_object_mut() {
+        if let Some(boot_id) = diagnostics.boot_id.as_deref() {
+            object.insert("bootId".to_string(), serde_json::json!(boot_id));
+            object.insert("sessionId".to_string(), serde_json::json!(boot_id));
+        }
+        if let Some(web_server_pid) = diagnostics.web_server_pid {
+            object.insert(
+                "webServerPid".to_string(),
+                serde_json::json!(web_server_pid),
+            );
+        }
+        if let Some(details) = details {
+            object.insert("details".to_string(), details);
+        }
+    }
+
+    payload
+}
+
+fn append_shell_event_payload(app: &tauri::AppHandle, payload: serde_json::Value) {
+    let json = match serde_json::to_string(&payload) {
+        Ok(json) => json,
+        Err(_) => return,
+    };
+    eprintln!("{json}");
+
+    let Some(path) = shell_events_path(app) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{json}");
+    }
+}
+
+fn write_shell_event(
+    app: &tauri::AppHandle,
+    diagnostics: &DesktopShellBootDiagnostics,
+    level: &str,
+    event: &str,
+    message: &str,
+    details: Option<serde_json::Value>,
+) {
+    append_shell_event_payload(
+        app,
+        desktop_shell_event_payload(diagnostics, level, event, message, details),
+    );
+}
+
+fn write_process_cleanup_event(app: &tauri::AppHandle, cleanup: DesktopShellProcessCleanup) {
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": cleanup.cleaned_at,
+            "level": "info",
+            "event": "desktop-shell-process-cleanup",
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "pid": std::process::id(),
+            "webPort": web_port(),
+            "message": "webServer child cleaned up during Tauri exit",
+            "process": {
+                "owner": cleanup.owner,
+                "role": "webServer",
+                "pid": cleanup.pid,
+                "startedAt": cleanup.started_at,
+                "exitReason": cleanup.exit_reason,
+                "waitStatus": cleanup.wait_status,
+                "stdinEofCleanup": cleanup.stdin_eof_cleanup,
+            }
+        }),
+    );
+}
+
+fn desktop_shell_boot_stage_from_value(value: &serde_json::Value) -> Option<DesktopShellBootStage> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+fn first_desktop_shell_issue(
+    value: &serde_json::Value,
+) -> (Option<String>, Option<String>, Option<String>) {
+    let Some(issue) = value
+        .get("issues")
+        .and_then(|issues| issues.as_array())
+        .and_then(|issues| issues.first())
+    else {
+        return (None, None, None);
+    };
+
+    (
+        issue
+            .get("code")
+            .and_then(|code| code.as_str())
+            .map(str::to_string),
+        issue
+            .get("message")
+            .and_then(|message| message.as_str())
+            .map(str::to_string),
+        issue
+            .get("action")
+            .and_then(|action| action.as_str())
+            .map(str::to_string),
+    )
+}
+
+fn previous_boot_failure_from_value(
+    value: &serde_json::Value,
+) -> Option<DesktopShellPreviousFailure> {
+    if value.get("schemaVersion").and_then(|schema| schema.as_u64()) != Some(1) {
+        return None;
+    }
+    let recorded_stage = value
+        .get("stage")
+        .and_then(desktop_shell_boot_stage_from_value)?;
+    if recorded_stage == DesktopShellBootStage::WindowNavigated {
+        return None;
+    }
+
+    let failed_stage = value
+        .get("failedStage")
+        .and_then(desktop_shell_boot_stage_from_value);
+    let stage = failed_stage
+        .clone()
+        .unwrap_or_else(|| recorded_stage.clone());
+    let (code, message, action) = first_desktop_shell_issue(value);
+
+    Some(DesktopShellPreviousFailure {
+        stage,
+        recorded_stage: Some(recorded_stage),
+        generated_at: value
+            .get("generatedAt")
+            .and_then(|generated_at| generated_at.as_str())
+            .map(str::to_string),
+        code: code.or_else(|| {
+            Some("desktop-shell-previous-boot-incomplete".to_string())
+        }),
+        message: message.or_else(|| {
+            Some("Previous desktop shell launch did not reach renderer navigation.".to_string())
+        }),
+        action,
+        diagnostic_file: value
+            .get("diagnosticFile")
+            .and_then(|diagnostic_file| diagnostic_file.as_str())
+            .map(str::to_string),
+        web_port: value
+            .get("webPort")
+            .and_then(|web_port| web_port.as_u64())
+            .and_then(|web_port| u16::try_from(web_port).ok()),
+        web_server_pid: value
+            .get("webServerPid")
+            .and_then(|web_server_pid| web_server_pid.as_u64())
+            .and_then(|web_server_pid| u32::try_from(web_server_pid).ok()),
+    })
+}
+
+fn read_previous_boot_failure(app: &tauri::AppHandle) -> Option<DesktopShellPreviousFailure> {
+    let path = boot_diagnostics_path(app)?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    previous_boot_failure_from_value(&value)
+}
+
+fn new_boot_diagnostics(app: &tauri::AppHandle) -> DesktopShellBootDiagnostics {
+    let previous_failure = read_previous_boot_failure(app);
+    DesktopShellBootDiagnostics {
+        schema_version: 1,
+        generated_at: now_millis_string(),
+        app_version: app.config().version.clone(),
+        bundle_id: Some(app.config().identifier.clone()),
+        pid: std::process::id(),
+        web_port: web_port(),
+        stage: DesktopShellBootStage::ChannelEnvApplied,
+        failed_stage: None,
+        health_url: health_url(),
+        boot_id: None,
+        web_server_pid: None,
+        server_root: None,
+        script_path: None,
+        node_binary: None,
+        health_matched_boot_token: None,
+        diagnostic_file: boot_diagnostics_path(app).map(|path| path_to_string(&path)),
+        previous_failure,
+        resources: Vec::new(),
+        issues: Vec::new(),
+    }
+}
+
+fn write_boot_diagnostics(app: &tauri::AppHandle, diagnostics: &DesktopShellBootDiagnostics) {
+    let Some(path) = boot_diagnostics_path(app) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(diagnostics) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+fn record_boot_stage(
+    app: &tauri::AppHandle,
+    diagnostics: &mut DesktopShellBootDiagnostics,
+    stage: DesktopShellBootStage,
+) {
+    diagnostics.stage = stage;
+    diagnostics.generated_at = now_millis_string();
+    write_boot_diagnostics(app, diagnostics);
+    write_shell_event(
+        app,
+        diagnostics,
+        "info",
+        "desktop-shell-boot-stage",
+        "desktop shell boot stage advanced",
+        Some(serde_json::json!({
+            "stage": diagnostics.stage,
+            "webServerPid": diagnostics.web_server_pid,
+            "healthMatchedBootToken": diagnostics.health_matched_boot_token,
+        })),
+    );
+}
+
+fn record_boot_failure(
+    app: &tauri::AppHandle,
+    diagnostics: &mut DesktopShellBootDiagnostics,
+    code: &str,
+    message: &str,
+) {
+    diagnostics.failed_stage = Some(diagnostics.stage.clone());
+    diagnostics.stage = DesktopShellBootStage::Failed;
+    diagnostics.generated_at = now_millis_string();
+    diagnostics.issues.push(DesktopShellIssue {
+        severity: "error".to_string(),
+        code: code.to_string(),
+        message: message.to_string(),
+        action: Some("检查桌面包 resources 与 webServer 启动日志".to_string()),
+    });
+    write_boot_diagnostics(app, diagnostics);
+    write_shell_event(
+        app,
+        diagnostics,
+        "error",
+        "desktop-shell-boot-failed",
+        message,
+        Some(serde_json::json!({ "code": code })),
+    );
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .map(|metadata| metadata.is_file() && (metadata.permissions().mode() & 0o111) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn resource_status(path: &Path, executable: bool) -> DesktopShellResourceStatus {
+    if !path.is_file() {
+        return DesktopShellResourceStatus::Missing;
+    }
+    if executable && !is_executable_file(path) {
+        return DesktopShellResourceStatus::NotExecutable;
+    }
+    DesktopShellResourceStatus::Present
+}
+
+fn resource_check(
+    id: &str,
+    label: &str,
+    kind: DesktopShellResourceKind,
+    path: PathBuf,
+    required: bool,
+    executable: bool,
+) -> DesktopShellResourceCheck {
+    let status = resource_status(&path, executable);
+    let message = match status {
+        DesktopShellResourceStatus::Present => None,
+        DesktopShellResourceStatus::Missing => {
+            Some("resource missing from packaged bundle".to_string())
+        }
+        DesktopShellResourceStatus::NotExecutable => {
+            Some("resource exists but is not executable".to_string())
+        }
+    };
+    DesktopShellResourceCheck {
+        id: id.to_string(),
+        label: label.to_string(),
+        kind,
+        path: path_to_string(&path),
+        required,
+        status,
+        message,
+    }
+}
+
+fn desktop_shell_resource_preflight(
+    root: &Path,
+    resource_dir: Option<&Path>,
+) -> Vec<DesktopShellResourceCheck> {
+    let bundled_node = resolve_bundled_node_binary(root, resource_dir).unwrap_or_else(|| {
+        bundled_node_candidates(root, resource_dir)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| {
+                root.join("dist")
+                    .join("bundled-node")
+                    .join("bin")
+                    .join("node")
+            })
+    });
+
+    vec![
+        resource_check(
+            "web-server-script",
+            "webServer bundle",
+            DesktopShellResourceKind::WebServer,
+            root.join("dist").join("web").join("webServer.cjs"),
+            true,
+            false,
+        ),
+        resource_check(
+            "renderer-index",
+            "builtin renderer index",
+            DesktopShellResourceKind::Renderer,
+            root.join("dist").join("renderer").join("index.html"),
+            true,
+            false,
+        ),
+        resource_check(
+            "bundled-node",
+            "bundled Node",
+            DesktopShellResourceKind::Runtime,
+            bundled_node,
+            true,
+            true,
+        ),
+        resource_check(
+            "control-plane-public-keys",
+            "control-plane public keys",
+            DesktopShellResourceKind::Resource,
+            root.join("dist")
+                .join("web")
+                .join("control-plane-public-keys.json"),
+            false,
+            false,
+        ),
+        resource_check(
+            "better-sqlite3-native",
+            "better-sqlite3 native module",
+            DesktopShellResourceKind::NativeModule,
+            root.join("dist")
+                .join("native")
+                .join("better-sqlite3")
+                .join("build")
+                .join("Release")
+                .join("better_sqlite3.node"),
+            true,
+            false,
+        ),
+    ]
+}
+
+fn required_resource_failures(
+    resources: &[DesktopShellResourceCheck],
+) -> Vec<&DesktopShellResourceCheck> {
+    resources
+        .iter()
+        .filter(|resource| {
+            resource.required && resource.status != DesktopShellResourceStatus::Present
+        })
+        .collect()
+}
+
 fn web_server_node_env() -> &'static str {
     if cfg!(debug_assertions) {
         "development"
@@ -302,7 +895,10 @@ fn apply_channel_env(app: &tauri::AppHandle) {
         env::set_var("CODE_AGENT_BUNDLE_ID", &identifier);
     }
     if env::var_os("CODE_AGENT_WEB_PORT").is_none() {
-        env::set_var("CODE_AGENT_WEB_PORT", channel_web_port(&identifier).to_string());
+        env::set_var(
+            "CODE_AGENT_WEB_PORT",
+            channel_web_port(&identifier).to_string(),
+        );
     }
     if env::var_os("CODE_AGENT_DATA_DIR").is_some() {
         return; // 已显式指定（含打包测试包），尊重不覆盖
@@ -446,13 +1042,41 @@ fn resolve_node_binary(bundled_runtime_root: &Path, resource_dir: Option<&Path>)
     resolve_system_node_binary()
 }
 
-fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
+fn spawn_web_server_recording(
+    app: &tauri::AppHandle,
+    diagnostics: &mut DesktopShellBootDiagnostics,
+) -> Result<(Child, String), String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
+    diagnostics.script_path = Some(path_to_string(&script_path));
+    diagnostics.server_root = Some(path_to_string(&working_dir));
+    record_boot_stage(
+        app,
+        diagnostics,
+        DesktopShellBootStage::ServerScriptResolved,
+    );
+
     let boot_token = make_boot_token();
+    diagnostics.boot_id = Some(token_fingerprint(&boot_token));
     // Windows: 去掉 `\\?\` 前缀，否则 node 解析脚本路径崩在 lstat 'C:'（见 strip_verbatim_prefix）。
     // script_path/working_dir 来自 candidate_roots（已规整）；此处规整 node 解析另用的 resource_dir。
     let resource_dir = app.path().resource_dir().ok().map(strip_verbatim_prefix);
     let node_binary = resolve_node_binary(&working_dir, resource_dir.as_deref());
+    diagnostics.node_binary = Some(path_to_string(&node_binary));
+    record_boot_stage(app, diagnostics, DesktopShellBootStage::NodeBinaryResolved);
+
+    diagnostics.resources = desktop_shell_resource_preflight(&working_dir, resource_dir.as_deref());
+    record_boot_stage(app, diagnostics, DesktopShellBootStage::ResourcePreflight);
+    let required_failures = required_resource_failures(&diagnostics.resources);
+    if !cfg!(debug_assertions) && !required_failures.is_empty() {
+        let details = required_failures
+            .iter()
+            .map(|resource| format!("{} ({})", resource.label, resource.path))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Desktop shell resource preflight failed: missing or unusable required resource(s): {details}"
+        ));
+    }
 
     // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量
     // 流到 webServer 的 Node 进程。Rust Command 默认就继承父 env，但写出来更明确。
@@ -484,6 +1108,9 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     if let Some(log_dir) = web_server_log_dir(app) {
         command.env(LOG_DIR_ENV, log_dir.as_os_str());
     }
+    if let Some(boot_path) = boot_diagnostics_path(app) {
+        command.env(BOOT_DIAGNOSTICS_PATH_ENV, boot_path.as_os_str());
+    }
 
     let child = command.spawn().map_err(|error| {
         format!(
@@ -493,6 +1120,23 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
             error
         )
     })?;
+    diagnostics.web_server_pid = Some(child.id());
+    write_shell_event(
+        app,
+        diagnostics,
+        "info",
+        "desktop-shell-process-started",
+        "webServer child process spawned",
+        Some(serde_json::json!({
+            "process": {
+                "owner": "tauri-shell",
+                "role": "webServer",
+                "pid": child.id(),
+                "stdinEofCleanup": true,
+            }
+        })),
+    );
+    record_boot_stage(app, diagnostics, DesktopShellBootStage::WebServerSpawned);
 
     Ok((child, boot_token))
 }
@@ -507,6 +1151,7 @@ fn wait_for_healthcheck(
         .map_err(|error| format!("Failed to build HTTP client: {error}"))?;
 
     let deadline = Instant::now() + HEALTH_TIMEOUT;
+    let mut saw_boot_token_mismatch = false;
 
     while Instant::now() < deadline {
         match child.try_wait() {
@@ -525,10 +1170,19 @@ fn wait_for_healthcheck(
                 if health_matches_boot_token(&body, expected_boot_token) {
                     return Ok(());
                 }
+                saw_boot_token_mismatch = true;
                 thread::sleep(HEALTH_INTERVAL);
             }
             Ok(_) | Err(_) => thread::sleep(HEALTH_INTERVAL),
         }
+    }
+
+    if saw_boot_token_mismatch {
+        return Err(format!(
+            "Timed out after {}s waiting for {} with matching boot token",
+            HEALTH_TIMEOUT.as_secs(),
+            health_url()
+        ));
     }
 
     Err(format!(
@@ -540,21 +1194,36 @@ fn wait_for_healthcheck(
 
 /// spawn webServer 并等待健康检查通过。失败时清理子进程，并对"端口被占"场景
 /// 给出可操作的错误信息（而不是裸超时）。
-fn start_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
-    let (mut child, boot_token) = spawn_web_server(app)?;
+fn start_web_server_recording(
+    app: &tauri::AppHandle,
+    diagnostics: &mut DesktopShellBootDiagnostics,
+) -> Result<Child, String> {
+    let (mut child, boot_token) = spawn_web_server_recording(app, diagnostics)?;
     if let Err(error) = wait_for_healthcheck(&mut child, Some(&boot_token)) {
+        diagnostics.health_matched_boot_token = Some(false);
         let _ = child.kill();
         let _ = child.wait();
         if is_server_running() {
-            return Err(format!(
+            let message = format!(
                 "端口 {} 被其他进程占用，Agent Neo 无法启动自己的服务。\n\
                  请退出占用端口的程序（或重启电脑）后重试。\n\n原始错误: {error}",
                 web_port()
-            ));
+            );
+            record_boot_failure(app, diagnostics, "desktop-shell-port-occupied", &message);
+            return Err(message);
         }
+        record_boot_failure(app, diagnostics, "desktop-shell-healthcheck-failed", &error);
         return Err(error);
     }
+    diagnostics.health_matched_boot_token = Some(true);
+    record_boot_stage(app, diagnostics, DesktopShellBootStage::HealthReady);
     Ok(child)
+}
+
+fn start_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
+    let mut diagnostics = new_boot_diagnostics(app);
+    write_boot_diagnostics(app, &diagnostics);
+    start_web_server_recording(app, &mut diagnostics)
 }
 
 /// 每次启动唯一的 boot URL：HTTP 缓存按完整 URL（含 query）做 key，
@@ -567,6 +1236,10 @@ fn boot_server_url() -> String {
         .map(|d| d.as_millis())
         .unwrap_or(0);
     format!("{}/?boot={boot_ms}", server_url())
+}
+
+fn renderer_navigation_failure_message(error: &str) -> String {
+    format!("Renderer navigation failed after webServer healthcheck: {error}")
 }
 
 /// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
@@ -582,14 +1255,13 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Invalid server URL: {error}"))?;
 
     // 与 tauri.conf.json 的 main window 配置保持一致
-    let window =
-        tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
-            .title("Agent Neo")
-            .inner_size(1200.0, 800.0)
-            .min_inner_size(960.0, 640.0)
-            .disable_drag_drop_handler()
-            .build()
-            .map_err(|error| format!("Failed to rebuild main window: {error}"))?;
+    let window = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
+        .title("Agent Neo")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(960.0, 640.0)
+        .disable_drag_drop_handler()
+        .build()
+        .map_err(|error| format!("Failed to rebuild main window: {error}"))?;
 
     let _ = window.show();
     let _ = window.set_focus();
@@ -602,21 +1274,25 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
 /// 启动，tauri-plugin-dialog 的 blocking_show 无法呈现 modal（会静默失败）。
 /// 改用 osascript 拉起独立的原生 alert 进程，不依赖宿主事件循环，确保用户
 /// 一定能看到提示而不是无声闪退。
-fn show_startup_failure(error: &str) {
-    eprintln!("Startup failure: {error}");
+fn show_startup_failure(error: &str, diagnostic_file: Option<&str>) {
+    let message = match diagnostic_file {
+        Some(path) => format!("{error}\n\n诊断文件: {path}"),
+        None => error.to_string(),
+    };
+    eprintln!("Startup failure: {message}");
     // AppleScript 字符串转义：反斜杠、双引号、换行
-    let safe = error
+    let safe = message
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', " ");
-    let script = format!(
-        "display alert \"Agent Neo 启动失败\" message \"{safe}\" as critical"
-    );
+    let script = format!("display alert \"Agent Neo 启动失败\" message \"{safe}\" as critical");
     let _ = Command::new("osascript").arg("-e").arg(&script).status();
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
-    app.state::<AppState>().cleanup();
+    if let Some(cleanup) = app.state::<AppState>().cleanup() {
+        write_process_cleanup_event(app, cleanup);
+    }
 }
 
 fn install_signal_handler(app: &tauri::AppHandle) {
@@ -1086,11 +1762,44 @@ fn open_update_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod runtime_env_tests {
     use super::{
-        bundled_node_candidates, channel_web_port, dev_channel_data_dir, web_server_node_env,
-        web_server_runtime_env, BUNDLED_RUNTIME_ROOT_ENV, DEV_WEB_PORT, PROD_WEB_PORT,
-        RESOURCE_DIR_ENV,
+        bundled_node_candidates, channel_web_port, desktop_shell_channel,
+        desktop_shell_event_payload, desktop_shell_resource_preflight, dev_channel_data_dir,
+        previous_boot_failure_from_value, renderer_navigation_failure_message,
+        required_resource_failures, web_server_node_env, web_server_runtime_env,
+        DesktopShellBootDiagnostics, DesktopShellBootStage, DesktopShellResourceStatus,
+        BUNDLED_RUNTIME_ROOT_ENV, DEV_WEB_PORT, PROD_WEB_PORT, RESOURCE_DIR_ENV,
     };
+    use std::fs;
     use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(prefix: &str) -> PathBuf {
+        let id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let root = std::env::temp_dir().join(format!("{prefix}-{id}"));
+        fs::create_dir_all(&root).expect("create temp root");
+        root
+    }
+
+    fn write_file(path: &Path, content: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent");
+        }
+        fs::write(path, content).expect("write test file");
+    }
+
+    #[cfg(unix)]
+    fn make_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).expect("chmod");
+    }
+
+    #[cfg(not(unix))]
+    fn make_executable(_path: &Path) {}
 
     #[test]
     fn includes_bundled_runtime_root_for_web_server() {
@@ -1187,14 +1896,188 @@ mod runtime_env_tests {
                 .to_path_buf()
         ));
     }
+
+    #[test]
+    fn desktop_shell_preflight_marks_missing_required_resources() {
+        let root = temp_root("agent-shell-preflight-missing");
+        let resources = desktop_shell_resource_preflight(&root, None);
+        let failures = required_resource_failures(&resources);
+
+        assert!(failures
+            .iter()
+            .any(|resource| resource.id == "web-server-script"));
+        assert!(failures
+            .iter()
+            .any(|resource| resource.id == "renderer-index"));
+        assert!(failures
+            .iter()
+            .any(|resource| resource.id == "bundled-node"));
+        assert!(failures
+            .iter()
+            .any(|resource| resource.id == "better-sqlite3-native"));
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn desktop_shell_preflight_accepts_required_packaged_resources() {
+        let root = temp_root("agent-shell-preflight-ok");
+        write_file(
+            &root.join("dist").join("web").join("webServer.cjs"),
+            "console.log('ok')",
+        );
+        write_file(
+            &root.join("dist").join("renderer").join("index.html"),
+            "<html></html>",
+        );
+        let node = root
+            .join("dist")
+            .join("bundled-node")
+            .join("bin")
+            .join("node");
+        write_file(&node, "#!/usr/bin/env node\n");
+        make_executable(&node);
+        write_file(
+            &root
+                .join("dist")
+                .join("native")
+                .join("better-sqlite3")
+                .join("build")
+                .join("Release")
+                .join("better_sqlite3.node"),
+            "native",
+        );
+
+        let resources = desktop_shell_resource_preflight(&root, None);
+        assert!(required_resource_failures(&resources).is_empty());
+        assert_eq!(
+            resources
+                .iter()
+                .find(|resource| resource.id == "bundled-node")
+                .map(|resource| &resource.status),
+            Some(&DesktopShellResourceStatus::Present)
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn desktop_shell_channel_splits_dev_and_prod() {
+        assert_eq!(
+            desktop_shell_channel(Some("com.linchen.code-agent.dev"), false),
+            "dev"
+        );
+        assert_eq!(
+            desktop_shell_channel(Some("com.linchen.code-agent"), false),
+            "prod"
+        );
+        assert_eq!(
+            desktop_shell_channel(Some("com.linchen.code-agent"), true),
+            "dev"
+        );
+    }
+
+    #[test]
+    fn desktop_shell_event_payload_is_structured_without_raw_boot_token() {
+        let diagnostics = DesktopShellBootDiagnostics {
+            schema_version: 1,
+            generated_at: "1".to_string(),
+            app_version: Some("0.16.102".to_string()),
+            bundle_id: Some("com.linchen.code-agent.dev".to_string()),
+            pid: 100,
+            web_port: DEV_WEB_PORT,
+            stage: DesktopShellBootStage::HealthReady,
+            failed_stage: None,
+            health_url: "http://localhost:8181/api/health".to_string(),
+            boot_id: Some("boot-fingerprint".to_string()),
+            web_server_pid: Some(200),
+            server_root: None,
+            script_path: None,
+            node_binary: None,
+            health_matched_boot_token: Some(true),
+            diagnostic_file: None,
+            previous_failure: None,
+            resources: Vec::new(),
+            issues: Vec::new(),
+        };
+
+        let payload = desktop_shell_event_payload(
+            &diagnostics,
+            "info",
+            "desktop-shell-boot-stage",
+            "boot stage advanced",
+            Some(serde_json::json!({
+                "rawToken": "[redacted]",
+                "process": { "owner": "tauri-shell", "pid": 200, "stdinEofCleanup": true }
+            })),
+        );
+
+        assert_eq!(payload["schemaVersion"], 1);
+        assert_eq!(payload["source"], "tauri-shell");
+        assert_eq!(payload["bootId"], "boot-fingerprint");
+        assert_eq!(payload["sessionId"], "boot-fingerprint");
+        assert_eq!(payload["webServerPid"], 200);
+        assert_eq!(payload["details"]["process"]["owner"], "tauri-shell");
+        assert!(!payload.to_string().contains("tauri-secret-token"));
+    }
+
+    #[test]
+    fn renderer_navigation_failure_message_names_renderer_boundary() {
+        assert_eq!(
+            renderer_navigation_failure_message("invalid boot URL"),
+            "Renderer navigation failed after webServer healthcheck: invalid boot URL"
+        );
+    }
+
+    #[test]
+    fn previous_boot_failure_keeps_failed_stage_for_next_launch() {
+        let value = serde_json::json!({
+            "schemaVersion": 1,
+            "generatedAt": "123",
+            "webPort": DEV_WEB_PORT,
+            "stage": "failed",
+            "failedStage": "web-server-spawned",
+            "webServerPid": 456,
+            "diagnosticFile": "/tmp/desktop-shell-boot-latest.json",
+            "issues": [{
+                "severity": "error",
+                "code": "desktop-shell-healthcheck-failed",
+                "message": "healthcheck timed out",
+                "action": "check logs"
+            }]
+        });
+
+        let failure = previous_boot_failure_from_value(&value).expect("failure");
+
+        assert_eq!(failure.stage, DesktopShellBootStage::WebServerSpawned);
+        assert_eq!(failure.recorded_stage, Some(DesktopShellBootStage::Failed));
+        assert_eq!(
+            failure.code,
+            Some("desktop-shell-healthcheck-failed".to_string())
+        );
+        assert_eq!(failure.web_server_pid, Some(456));
+    }
+
+    #[test]
+    fn previous_boot_failure_ignores_successful_launch() {
+        let value = serde_json::json!({
+            "schemaVersion": 1,
+            "generatedAt": "123",
+            "webPort": DEV_WEB_PORT,
+            "stage": "window-navigated"
+        });
+
+        assert!(previous_boot_failure_from_value(&value).is_none());
+    }
 }
 
 #[cfg(test)]
 mod update_url_tests {
     use super::{
         check_failed_info, cloud_update_info_from_response, compare_update_versions,
-        github_release_page_from_download_url, no_update_info, normalize_manual_update_url,
-        sanitize_release_channel, validate_update_url, CloudUpdateResponse,
+        github_release_page_from_download_url, health_matches_boot_token, no_update_info,
+        normalize_manual_update_url, sanitize_release_channel, validate_update_url,
+        CloudUpdateResponse,
     };
     use std::cmp::Ordering;
 
@@ -1375,6 +2258,23 @@ mod update_url_tests {
         assert!(!up_to_date.has_update);
         assert!(!up_to_date.check_failed);
     }
+
+    #[test]
+    fn health_token_match_detects_stale_or_wrong_web_server() {
+        assert!(health_matches_boot_token(
+            r#"{"status":"ok","tauriBootToken":"boot-1"}"#,
+            Some("boot-1")
+        ));
+        assert!(!health_matches_boot_token(
+            r#"{"status":"ok","tauriBootToken":"boot-2"}"#,
+            Some("boot-1")
+        ));
+        assert!(!health_matches_boot_token(
+            r#"{"status":"ok"}"#,
+            Some("boot-1")
+        ));
+        assert!(health_matches_boot_token(r#"{"status":"ok"}"#, None));
+    }
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -1441,10 +2341,7 @@ fn toggle_main_window(app_handle: &AppHandle) {
     }
 }
 
-fn unregister_configurable_global_hotkeys(
-    app_handle: &AppHandle,
-    state: &KeybindingHotkeysState,
-) {
+fn unregister_configurable_global_hotkeys(app_handle: &AppHandle, state: &KeybindingHotkeysState) {
     let previous = {
         let mut guard = state
             .registered
@@ -1454,7 +2351,10 @@ fn unregister_configurable_global_hotkeys(
     };
 
     for accelerator in previous {
-        if let Err(error) = app_handle.global_shortcut().unregister(accelerator.as_str()) {
+        if let Err(error) = app_handle
+            .global_shortcut()
+            .unregister(accelerator.as_str())
+        {
             eprintln!("Failed to unregister keybinding hotkey {accelerator}: {error}");
         }
     }
@@ -1608,35 +2508,79 @@ fn main() {
         .setup(|app| {
             // 必须在 spawn webServer 之前：决定本进程（含 node 子进程）的数据目录通道。
             apply_channel_env(&app.handle());
+            let mut boot_diagnostics = new_boot_diagnostics(&app.handle());
+            write_boot_diagnostics(&app.handle(), &boot_diagnostics);
 
             if cfg!(debug_assertions) && is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).
                 // Release builds must not trust an arbitrary healthy localhost:8180 process:
                 // a stale dev server can serve mismatched renderer assets and leave the app white.
-                println!("Web server already running on {}, skipping spawn", server_url());
+                println!(
+                    "Web server already running on {}, skipping spawn",
+                    server_url()
+                );
+                boot_diagnostics.health_matched_boot_token = None;
+                record_boot_stage(
+                    &app.handle(),
+                    &mut boot_diagnostics,
+                    DesktopShellBootStage::HealthReady,
+                );
             } else {
-                match start_web_server(&app.handle()) {
+                match start_web_server_recording(&app.handle(), &mut boot_diagnostics) {
                     Ok(child) => app.state::<AppState>().store_child(child),
                     Err(error) => {
                         // 不走 panic（SIGABRT 闪退无提示）：弹错误框告知用户后干净退出
-                        show_startup_failure(&error);
+                        show_startup_failure(&error, boot_diagnostics.diagnostic_file.as_deref());
                         std::process::exit(1);
                     }
                 }
             }
 
-            if let Some(window) = app.get_webview_window("main") {
-                // window 初始 url 是 about:blank（tauri.conf.json），避免启动竞赛下
-                // webServer 未起时页面加载失败白屏。healthcheck 通过后用
-                // webview.navigate() 跳到 boot URL（比 eval+JS 更可靠，且走正常
-                // 导航而不是 cross-origin replace）。?boot= 每次唯一，绕开
-                // WKWebView 对启动文档的历史缓存（启动连刷根因）。
-                if let Ok(url) = boot_server_url().parse() {
-                    let _ = window.navigate(url);
-                }
-                let _ = window.show();
-                let _ = window.set_focus();
+            let Some(window) = app.get_webview_window("main") else {
+                let error =
+                    "Renderer main window is missing after webServer healthcheck".to_string();
+                record_boot_failure(
+                    &app.handle(),
+                    &mut boot_diagnostics,
+                    "desktop-shell-renderer-window-missing",
+                    &error,
+                );
+                show_startup_failure(&error, boot_diagnostics.diagnostic_file.as_deref());
+                std::process::exit(1);
+            };
+
+            // window 初始 url 是 about:blank（tauri.conf.json），避免启动竞赛下
+            // webServer 未起时页面加载失败白屏。healthcheck 通过后用
+            // webview.navigate() 跳到 boot URL（比 eval+JS 更可靠，且走正常
+            // 导航而不是 cross-origin replace）。?boot= 每次唯一，绕开
+            // WKWebView 对启动文档的历史缓存（启动连刷根因）。
+            let navigation_result = boot_server_url()
+                .parse::<tauri::Url>()
+                .map_err(|error| {
+                    renderer_navigation_failure_message(&format!("invalid boot URL: {error}"))
+                })
+                .and_then(|url| {
+                    window
+                        .navigate(url)
+                        .map_err(|error| renderer_navigation_failure_message(&error.to_string()))
+                });
+            if let Err(error) = navigation_result {
+                record_boot_failure(
+                    &app.handle(),
+                    &mut boot_diagnostics,
+                    "desktop-shell-renderer-navigation-failed",
+                    &error,
+                );
+                show_startup_failure(&error, boot_diagnostics.diagnostic_file.as_deref());
+                std::process::exit(1);
             }
+            let _ = window.show();
+            let _ = window.set_focus();
+            record_boot_stage(
+                &app.handle(),
+                &mut boot_diagnostics,
+                DesktopShellBootStage::WindowNavigated,
+            );
 
             // System Tray
             if let Err(e) = setup_tray(app) {

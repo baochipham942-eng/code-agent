@@ -98,6 +98,12 @@ const sessionUiState = {
   setSearchQuery: vi.fn(),
   sessionStatusFilter: 'all' as 'all' | 'unfinished' | 'approval' | 'running' | 'attention' | 'artifact' | 'review' | 'background',
   setSessionStatusFilter: vi.fn(),
+  trajectoryTierFilter: 'all',
+  setTrajectoryTierFilter: vi.fn(),
+  trajectoryFailureFilter: 'all',
+  setTrajectoryFailureFilter: vi.fn(),
+  trajectoryReviewFilter: 'all',
+  setTrajectoryReviewFilter: vi.fn(),
   pendingSearchJump: null,
   setPendingSearchJump: vi.fn(),
   expandedWorkspaces: {} as Record<string, boolean>,
@@ -185,6 +191,9 @@ describe('Sidebar session metadata', () => {
     authState.user = null;
     sessionUiState.searchQuery = '';
     sessionUiState.sessionStatusFilter = 'all';
+    sessionUiState.trajectoryTierFilter = 'all';
+    sessionUiState.trajectoryFailureFilter = 'all';
+    sessionUiState.trajectoryReviewFilter = 'all';
     appState.pendingPermissionRequest = null;
     appState.pendingPermissionSessionId = null;
     appState.queuedPermissionRequests = {};
@@ -225,6 +234,16 @@ describe('Sidebar session metadata', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('按状态筛选会话'); // 筛选图标按钮 aria-label
+  });
+
+  it('surfaces the active trajectory pending-review filter for admins', () => {
+    authState.user = { isAdmin: true };
+    sessionUiState.sessionStatusFilter = 'review';
+    sessionUiState.trajectoryReviewFilter = 'pending';
+
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(html).toContain('状态筛选：待审 · 待复核');
   });
 
   it('hides the status filter entry for non-admin users (D-10)', () => {

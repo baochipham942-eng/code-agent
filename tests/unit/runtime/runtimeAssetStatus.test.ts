@@ -17,6 +17,22 @@ function mkdirp(targetPath: string): string {
   return targetPath;
 }
 
+function writeExecutable(filePath: string): string {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, '#!/bin/sh\nexit 0\n', 'utf8');
+  fs.chmodSync(filePath, 0o755);
+  return filePath;
+}
+
+function createBundledRegistryResources(root: string): void {
+  writeExecutable(path.join(root, 'scripts', 'system-audio-capture'));
+  writeExecutable(path.join(root, 'scripts', 'vision-ocr'));
+  writeExecutable(path.join(root, 'scripts', 'vision-tagger'));
+  writeExecutable(path.join(root, 'scripts', 'uv'));
+  writeExecutable(path.join(root, 'scripts', 'rtk'));
+  mkdirp(path.join(root, 'scripts', 'Agent Neo Computer Use.app'));
+}
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true });
@@ -39,6 +55,8 @@ describe('runtimeAssetStatus', () => {
     mkdirp(path.join(sharpManagedRoot, 'node_modules', '@img', 'sharp-darwin-arm64'));
     mkdirp(path.join(sharpManagedRoot, 'node_modules', '@img', 'sharp-libvips-darwin-arm64'));
     mkdirp(path.join(sharpManagedRoot, 'node_modules', 'detect-libc'));
+    const bundledRoot = makeTempRoot();
+    createBundledRegistryResources(bundledRoot);
     mkdirp(runtimeBaseDir);
     fs.writeFileSync(path.join(runtimeBaseDir, 'active.json'), JSON.stringify({
       schemaVersion: 1,
@@ -84,12 +102,40 @@ describe('runtimeAssetStatus', () => {
       },
     }));
 
-    const status = await getRuntimeAssetsStatus({ runtimeBaseDir });
-    expect(status.summary).toEqual({ installed: 3, bundledFallback: 0, missing: 0 });
+    const status = await getRuntimeAssetsStatus({
+      runtimeBaseDir,
+      shellVersion: '0.16.120',
+      resolverOptions: {
+        env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: bundledRoot },
+        cwd: makeTempRoot(),
+        dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      },
+    });
+    expect(status.summary.installed).toBe(3);
+    expect(status.summary.bundledFallback).toBe(status.assets.length - 3);
+    expect(status.summary.missing).toBe(0);
     expect(status.assets.every((asset) => asset.nodeModules.every((moduleStatus) => moduleStatus.source === 'managed'))).toBe(true);
     expect(status.assets.find((asset) => asset.id === 'sharp-image-runtime')).toMatchObject({
       delivery: 'bundled',
       state: 'installed',
+    });
+    expect(status.assets.find((asset) => asset.id === 'uv')).toMatchObject({
+      kind: 'tool-binary',
+      registry: expect.objectContaining({
+        version: '0.11.16',
+        minShellVersion: '0.16.120',
+        hashKind: 'pinnedBinarySha256',
+        platform: expect.stringMatching(/^(darwin|win32)-/),
+      }),
+    });
+    expect(status.assets.find((asset) => asset.id === 'system-audio-capture')).toMatchObject({
+      kind: 'helper-binary',
+      registry: expect.objectContaining({
+        state: 'bundledFallback',
+        source: 'bundled',
+        minShellVersion: '0.16.120',
+        hashKind: 'fileSha256',
+      }),
     });
   });
 
@@ -102,9 +148,11 @@ describe('runtimeAssetStatus', () => {
     mkdirp(path.join(bundledRoot, 'node_modules', '@img', 'sharp-darwin-arm64'));
     mkdirp(path.join(bundledRoot, 'node_modules', '@img', 'sharp-libvips-darwin-arm64'));
     mkdirp(path.join(bundledRoot, 'node_modules', 'detect-libc'));
+    createBundledRegistryResources(bundledRoot);
 
     const status = await getRuntimeAssetsStatus({
       runtimeBaseDir,
+      shellVersion: '0.16.120',
       resolverOptions: {
         env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: bundledRoot },
         cwd: makeTempRoot(),
@@ -112,7 +160,9 @@ describe('runtimeAssetStatus', () => {
       },
     });
 
-    expect(status.summary).toEqual({ installed: 0, bundledFallback: 1, missing: 2 });
+    expect(status.summary.installed).toBe(0);
+    expect(status.summary.bundledFallback).toBe(status.assets.length - 2);
+    expect(status.summary.missing).toBe(2);
     expect(status.assets.find((asset) => asset.id === 'sharp-image-runtime')).toMatchObject({
       delivery: 'bundled',
       state: 'bundledFallback',
@@ -141,7 +191,7 @@ describe('runtimeAssetStatus', () => {
       },
     });
 
-    expect(status.summary).toEqual({ installed: 0, bundledFallback: 0, missing: 3 });
+    expect(status.summary).toEqual({ installed: 0, bundledFallback: 0, missing: status.assets.length });
     expect(status.assets.every((asset) => asset.state === 'missing')).toBe(true);
     expect(status.assets.every((asset) => asset.nodeModules.every((moduleStatus) => !moduleStatus.exists))).toBe(true);
   });

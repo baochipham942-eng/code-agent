@@ -125,6 +125,10 @@ function writeManifest(
       archiveFile: path.relative(root, asset.archivePath),
       archiveSha256: asset.archiveSha256,
       expandedSha256: asset.expandedSha256,
+      compatibility: {
+        minAppVersion: '0.16.78',
+        maxAppVersion: null,
+      },
       install: {
         root: `runtime/onnxruntime-vad/${asset.expandedSha256}`,
       },
@@ -163,6 +167,7 @@ describe('runtimeAssetInstaller', () => {
       root: result.root,
       expandedSha256: asset.expandedSha256,
       archiveSha256: asset.archiveSha256,
+      minShellVersion: '0.16.78',
       nodeModules: ['onnxruntime-node', 'avr-vad'],
       installedAt: '2026-05-22T01:00:00.000Z',
     });

@@ -189,6 +189,8 @@ describe('macOS release fail-closed gates', () => {
     // （任一架构失败则 GitHub Release / stable 提升不会执行）。
     const steps = workflow.jobs?.['build-mac']?.steps ?? [];
     const stepNames = steps.map((step) => step.name);
+    const buildBundle = steps.find((step) => step.name === 'Build signed Tauri updater bundle');
+    const buildBundleRun = buildBundle?.run ?? '';
     const verifierIndex = stepNames.indexOf('Verify renderer hot-update release gate');
     const rendererProbeIndex = stepNames.indexOf('Smoke-probe renderer startup (block publish on ErrorBoundary crash)');
     const repackIndex = stepNames.indexOf('Repack updater archive (clean AppleDouble + post-notarize state)');
@@ -196,6 +198,13 @@ describe('macOS release fail-closed gates', () => {
 
     expect(verifierIndex).toBeGreaterThan(rendererProbeIndex);
     expect(verifierIndex).toBeLessThan(repackIndex);
+    expect(buildBundleRun.indexOf('npm run build')).toBeGreaterThanOrEqual(0);
+    expect(buildBundleRun.indexOf('npm run verify:webserver-boot')).toBeGreaterThan(
+      buildBundleRun.indexOf('npm run build'),
+    );
+    expect(buildBundleRun.indexOf('npm run tauri:prebuild-cleanup')).toBeGreaterThan(
+      buildBundleRun.indexOf('npm run verify:webserver-boot'),
+    );
 
     const publishJob = workflow.jobs?.['publish'];
     // 三平台折入后 publish 同时依赖 mac + windows，但 windows 失败不拖死 mac 发版：
@@ -461,12 +470,17 @@ describe('macOS release fail-closed gates', () => {
     const prebuildCleanup = readRepoFile('scripts/tauri-prebuild-cleanup.sh');
     const releaseBundle = readRepoFile('scripts/tauri-release-bundle.sh');
     const releaseNeo = readRepoFile('scripts/release-neo.sh');
+    const prepareBundledNode = readRepoFile('scripts/prepare-bundled-node.mjs');
 
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages?.['']?.version).toBe(packageJson.version);
     expect(packageJson.scripts['release:neo']).toBe('bash scripts/release-neo.sh');
+    expect(packageJson.scripts['desktop-shell:packaged-smoke']).toBe('node scripts/desktop-shell-packaged-smoke.mjs');
     expect(packageJson.scripts['release:post-publish']).toBe('node scripts/release-post-publish-verify.mjs');
+    expect(packageJson.scripts['tauri:package']).toContain('npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup');
+    expect(packageJson.scripts['tauri:package:dev']).toContain('npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('bash scripts/tauri-release-bundle.sh');
+    expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:notarize-macos');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:verify-macos');
     expect(packageJson.scripts['release:notarize-macos']).toBe('bash scripts/tauri-notarize.sh');
@@ -477,6 +491,8 @@ describe('macOS release fail-closed gates', () => {
     expect(releaseNeo).toContain('git push "${REMOTE}" "${TAG}"');
     expect(releaseNeo).toContain('node scripts/verify-github-workflow-run.mjs');
     expect(releaseNeo).toContain('--post-publish-verify');
+    expect(releaseNeo).toContain('--desktop-shell-diagnostics-file');
+    expect(releaseNeo).toContain('--require-desktop-shell-diagnostics');
     expect(releaseNeo).toContain('local post_publish_cmd=(npm run release:post-publish -- --version "${VERSION}")');
     expect(releaseNeo).toContain('if ((${#POST_PUBLISH_ARGS[@]} > 0)); then');
     expect(releaseNeo).toContain('post_publish_cmd+=("${POST_PUBLISH_ARGS[@]}")');
@@ -487,6 +503,8 @@ describe('macOS release fail-closed gates', () => {
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');
+    expect(prepareBundledNode).toContain("execFileSync('xattr', ['-cr', outputRoot]");
+    expect(prepareBundledNode).toContain('rewriteFileWithoutExtendedAttributes(outputBin, 0o755)');
   });
 
   it('bundles Sharp runtime while keeping optional browser and audio runtimes out of Tauri resources', () => {

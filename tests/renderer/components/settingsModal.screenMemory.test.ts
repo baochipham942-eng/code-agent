@@ -85,6 +85,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'voiceInput',
       'keybindings',
       'model',
+      'visualModels',
       'agentEngine',
       'budget',
       'appearance',

@@ -48,6 +48,7 @@ export interface RuntimeAssetInstallRecord {
   archiveSha256: string;
   archiveFile: string;
   appVersion?: string;
+  minShellVersion?: string;
   platform?: string;
   groups: string[];
   nodeModules: string[];
@@ -425,6 +426,7 @@ export async function installRuntimeAssetFromManifest(
       archiveSha256: expectedArchiveSha256,
       archiveFile: archivePath,
       appVersion: manifest.appVersion,
+      minShellVersion: asset.compatibility?.minAppVersion ?? manifest.appVersion,
       platform: asset.platform ?? manifest.platform,
       groups: asset.groups ?? [],
       nodeModules: asset.nodeModules ?? [],

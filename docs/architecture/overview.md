@@ -120,6 +120,20 @@
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
 
+## 2026-06-24 架构增量（Desktop Shell Operability / Native Runtime / Release Acceptance）
+
+这一轮把 Tauri 壳层、bundled Node、webServer、renderer、runtime assets 和 release smoke 收成同一个可诊断边界。完整合同见 [2026-06-24 as-built spec](../specs/2026-06-24-desktop-shell-operability.md)，壳层架构见 [desktop-shell.md](./desktop-shell.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Desktop shell diagnostics | `DesktopShellDiagnostics` 聚合 app 版本、启动阶段、webServer health、renderer serve decision、资源 preflight、runtime assets、native permissions、channel isolation、repair actions 和 issues；入口复用 `diagnostics.desktopShell` | [desktop-shell.md](./desktop-shell.md)、[ipc-channels.md](./ipc-channels.md) |
+| 启动链路可解释 | Tauri Rust 记录 `channel-env-applied -> resource-preflight -> server-script-resolved -> node-binary-resolved -> web-server-spawned -> health-ready -> window-navigated`，失败时写短原因和前次失败记录 | [desktop-shell.md](./desktop-shell.md)、[observability.md](./observability.md) |
+| Bundle 资源完整性 | 包内启动前检查 `dist/web/webServer.cjs`、`dist/renderer/index.html`、bundled Node 和 `better-sqlite3` native module；本地 package / release bundle 脚本都挂 `verify:webserver-boot` | [desktop-shell.md](./desktop-shell.md)、[hot-update.md](./hot-update.md) |
+| Renderer 与 shell 版本合同 | `/api/health.rendererServe` 暴露 active/builtin/static 来源和 `active-healthy`、`hot-update-disabled`、`no-active-meta`、`active-index-missing`、`active-older-than-shell` 等原因，避免热更覆盖旧前端 | [desktop-shell.md](./desktop-shell.md)、[hot-update.md](./hot-update.md) |
+| Runtime asset registry | `system-audio-capture`、`vision-ocr`、`vision-tagger`、Computer Use app、`uv`、`rtk`、sharp runtime 和可选 browser/audio runtime 都进入统一 registry/status，带平台、版本、最小壳版本和 hash 摘要 | [desktop-shell.md](./desktop-shell.md)、[native-app-integration.md](./native-app-integration.md) |
+| Native command facade | 前端组件通过 `nativeDesktop`、`nativeCommandFacade`、`tauriPluginFacade` 调 native domain API / Tauri command / plugin，不把 invoke 和插件细节散在 UI 组件里 | [desktop-shell.md](./desktop-shell.md)、[native-app-integration.md](./native-app-integration.md) |
+| Release acceptance | `desktop-shell:packaged-smoke` 生成可交给 `release:post-publish` 的 JSON 证据；当前 0.20.0 本机包 smoke 已通过，生产 post-publish 仍卡在 control-plane renderer rollout 版本未追齐 | [desktop-shell.md](./desktop-shell.md)、[hot-update.md](./hot-update.md) |
+
 ## 2026-06-18 架构增量（Web Data / Release Verification / Input Surface）
 
 今天这轮把默认联网数据层、输入区推荐密度和发版后生产验收合到同一张运行时地图。完整合同见 [2026-06-18 as-built spec](../specs/2026-06-18-web-data-release-and-input-surface.md)。

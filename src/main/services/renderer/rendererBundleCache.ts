@@ -13,6 +13,10 @@ import type {
   RendererBundleSourceStatus,
   RendererBundleStatus,
 } from '../../../shared/contract/update';
+import type {
+  RendererServeDecision,
+  RendererServeDecisionReason,
+} from '../../../shared/contract/desktopShell';
 import {
   RENDERER_BUNDLE_CHANNEL_ENV,
   RENDERER_BUNDLE_MANIFEST_URL_ENV,
@@ -65,6 +69,11 @@ export interface ResolveRendererServeDirOptions {
   currentShellVersion?: string;
 }
 
+type ActiveBundleMetaReadResult =
+  | { status: 'missing'; meta: null }
+  | { status: 'invalid'; meta: null }
+  | { status: 'valid'; meta: ActiveBundleMeta };
+
 function isValidMeta(value: unknown): value is ActiveBundleMeta {
   if (!value || typeof value !== 'object') return false;
   const m = value as Record<string, unknown>;
@@ -75,14 +84,23 @@ function isValidMeta(value: unknown): value is ActiveBundleMeta {
 }
 
 export function readActiveBundleMeta(dataDir: string): ActiveBundleMeta | null {
+  const result = readActiveBundleMetaWithStatus(dataDir);
+  return result.status === 'valid' ? result.meta : null;
+}
+
+function readActiveBundleMetaWithStatus(dataDir: string): ActiveBundleMetaReadResult {
+  const metaPath = join(activeBundleDir(dataDir), '.bundle-meta.json');
+  if (!existsSync(metaPath)) {
+    return { status: 'missing', meta: null };
+  }
   try {
-    const raw = readFileSync(join(activeBundleDir(dataDir), '.bundle-meta.json'), 'utf8');
+    const raw = readFileSync(metaPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);
     return isValidMeta(parsed)
-      ? { version: parsed.version, contentHash: parsed.contentHash }
-      : null;
+      ? { status: 'valid', meta: { version: parsed.version, contentHash: parsed.contentHash } }
+      : { status: 'invalid', meta: null };
   } catch {
-    return null;
+    return { status: 'invalid', meta: null };
   }
 }
 
@@ -251,22 +269,59 @@ export function readActiveContentHash(dataDir: string): string | null {
 }
 
 /** serve 目录决策：active 健康 → active 绝对路径；否则包内 builtin */
+export function resolveRendererServeDecision(
+  dataDir: string,
+  builtinDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: ResolveRendererServeDirOptions = {},
+): RendererServeDecision {
+  const active = activeBundleDir(dataDir);
+  const baseDecision = (
+    reason: RendererServeDecisionReason,
+    extra: Partial<RendererServeDecision> = {},
+  ): RendererServeDecision => ({
+    source: reason === 'active-healthy' ? 'active' : 'builtin',
+    reason,
+    serveDir: reason === 'active-healthy' ? active : builtinDir,
+    builtinDir,
+    activeDir: active,
+    activeBundle: null,
+    ...(options.currentShellVersion ? { currentShellVersion: options.currentShellVersion } : {}),
+    ...extra,
+  });
+
+  const disabledReason = getRendererHotUpdateDisabledReason(env);
+  if (disabledReason) {
+    return baseDecision('hot-update-disabled', { disabledReason });
+  }
+
+  const activeMetaResult = readActiveBundleMetaWithStatus(dataDir);
+  if (activeMetaResult.status === 'missing') {
+    return baseDecision('no-active-meta');
+  }
+  if (activeMetaResult.status === 'invalid') {
+    return baseDecision('invalid-active-meta');
+  }
+
+  const activeMeta = activeMetaResult.meta;
+  const activeIsOlderThanShell = options.currentShellVersion
+    ? compareUpdateVersions(activeMeta.version, options.currentShellVersion) < 0
+    : false;
+  if (activeIsOlderThanShell) {
+    return baseDecision('active-older-than-shell', { activeBundle: activeMeta });
+  }
+  if (!existsSync(join(active, 'index.html'))) {
+    return baseDecision('active-index-missing', { activeBundle: activeMeta });
+  }
+
+  return baseDecision('active-healthy', { activeBundle: activeMeta });
+}
+
 export function resolveRendererServeDir(
   dataDir: string,
   builtinDir: string,
   env: NodeJS.ProcessEnv = process.env,
   options: ResolveRendererServeDirOptions = {},
 ): string {
-  if (isRendererHotUpdateDisabled(env)) {
-    return builtinDir;
-  }
-  const active = activeBundleDir(dataDir);
-  const activeMeta = readActiveBundleMeta(dataDir);
-  const activeIsOlderThanShell = activeMeta && options.currentShellVersion
-    ? compareUpdateVersions(activeMeta.version, options.currentShellVersion) < 0
-    : false;
-  if (activeMeta && !activeIsOlderThanShell && existsSync(join(active, 'index.html'))) {
-    return active;
-  }
-  return builtinDir;
+  return resolveRendererServeDecision(dataDir, builtinDir, env, options).serveDir;
 }

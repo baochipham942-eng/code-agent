@@ -63,6 +63,30 @@ export interface PrepareRuntimeAssetsResult {
 
 export type RuntimeAssetStatusState = 'installed' | 'bundledFallback' | 'missing';
 export type RuntimeAssetDelivery = 'optional' | 'bundled';
+export type RuntimeAssetRegistryKind = 'node-modules' | 'helper-binary' | 'tool-binary' | 'app-bundle';
+export type RuntimeAssetRegistrySource = 'managed' | 'bundled' | 'dev' | 'missing';
+export type RuntimeAssetHashKind =
+  | 'archiveSha256'
+  | 'expandedSha256'
+  | 'fileSha256'
+  | 'pinnedBinarySha256'
+  | 'pinnedArchiveSha256';
+
+export interface RuntimeAssetRegistryEntry {
+  id: string;
+  label: string;
+  kind: RuntimeAssetRegistryKind;
+  delivery: RuntimeAssetDelivery;
+  state: RuntimeAssetStatusState;
+  source: RuntimeAssetRegistrySource;
+  path?: string;
+  version?: string;
+  minShellVersion?: string;
+  platform?: string;
+  hash?: string;
+  hashKind?: RuntimeAssetHashKind;
+  required?: boolean;
+}
 
 export interface RuntimeAssetModuleStatus {
   name: string;
@@ -71,15 +95,30 @@ export interface RuntimeAssetModuleStatus {
   source: 'managed' | 'bundled';
 }
 
+export interface RuntimeAssetFileStatus {
+  name: string;
+  path: string;
+  exists: boolean;
+  executable?: boolean;
+  source: RuntimeAssetRegistrySource;
+}
+
 export interface RuntimeAssetStatusEntry {
   id: string;
   label: string;
+  kind?: RuntimeAssetRegistryKind;
   delivery: RuntimeAssetDelivery;
   state: RuntimeAssetStatusState;
   nodeModules: RuntimeAssetModuleStatus[];
+  files?: RuntimeAssetFileStatus[];
   activeRoot?: string;
   installedAt?: string;
+  version?: string;
+  minShellVersion?: string;
+  platform?: string;
+  archiveSha256?: string;
   expandedSha256?: string;
+  registry?: RuntimeAssetRegistryEntry;
 }
 
 export interface RuntimeAssetsStatus {

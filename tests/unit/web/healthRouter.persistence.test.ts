@@ -2,16 +2,17 @@ import express from 'express';
 import http from 'http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHealthRouter } from '../../../src/web/routes/health';
-import type { PersistenceHealth, WebHealthResponse } from '../../../src/shared/contract';
+import type { PersistenceHealth, RendererServeDecision, WebHealthResponse } from '../../../src/shared/contract';
 
 let server: http.Server | undefined;
 let baseUrl = '';
 
-async function startHealthApi(persistence: PersistenceHealth) {
+async function startHealthApi(persistence: PersistenceHealth, rendererServe?: RendererServeDecision) {
   const app = express();
   app.use('/api', createHealthRouter({
     handlers: new Map(),
     getPersistenceHealth: () => persistence,
+    getRendererServeDecision: rendererServe ? () => rendererServe : undefined,
   }));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -55,5 +56,32 @@ describe('createHealthRouter persistence health', () => {
 
     expect(response.status).toBe(200);
     expect(body.persistence).toEqual(persistence);
+  });
+
+  it('includes renderer serve decision when provided', async () => {
+    const persistence = {
+      status: 'available',
+      mode: 'database',
+      durable: true,
+      message: 'ok',
+      checkedAt: 123,
+    } satisfies PersistenceHealth;
+    const rendererServe = {
+      source: 'builtin',
+      reason: 'active-older-than-shell',
+      serveDir: '/app/dist/renderer',
+      builtinDir: '/app/dist/renderer',
+      activeDir: '/data/renderer-cache/active',
+      activeBundle: { version: '0.16.101', contentHash: 'abcdef' },
+      currentShellVersion: '0.16.102',
+    } satisfies RendererServeDecision;
+
+    await startHealthApi(persistence, rendererServe);
+
+    const response = await fetch(`${baseUrl}/api/health`);
+    const body = await response.json() as WebHealthResponse;
+
+    expect(response.status).toBe(200);
+    expect(body.rendererServe).toEqual(rendererServe);
   });
 });

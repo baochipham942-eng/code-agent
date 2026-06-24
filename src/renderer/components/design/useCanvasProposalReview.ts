@@ -21,6 +21,7 @@ import { estimateImageCostCny } from '@shared/media/imageCost';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
 import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -77,13 +78,21 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
-      // H2-R2.c 写路径属主闸（fail-closed）：画布属主非该会话 → 拒绝并解阻 agent，不弹审批条、不自动应用。
-      // 防会话 B 的 agent 改/烧钱出图到会话 A 的画布。须在设 pending/自动应用之前。
+      // H2-R2.c 写路径属主闸（fail-closed）+ 意图驱动自动认领。须在设 pending/自动应用之前。
       // request.sessionId 为空（向后兼容）时不拦——读路径已堵，此处只挡明确跨会话写。
       const cs = useDesignCanvasStore.getState();
-      if (request.sessionId && cs.ownerSessionId !== request.sessionId) {
-        void controllerDeps().respond({ requestId: request.requestId, verdict: 'reject', feedback: '画布当前不属于该会话，提议被隔离拒绝' });
-        return;
+      if (request.sessionId) {
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (cs.ownerSessionId === null && request.sessionId === currentSessionId) {
+          // 意图驱动自动激活：画布无主 + 提议来自当前会话 → 该会话认领（无需手动点画布）。
+          useSessionStore.getState().markSessionDesignActive(request.sessionId);
+          useDesignCanvasStore.getState().claimCanvasForSession(request.sessionId);
+        } else if (useDesignCanvasStore.getState().ownerSessionId !== request.sessionId) {
+          // 画布属另一会话（或无主但非当前会话）→ 拒绝并解阻 agent（H2-R2 跨会话隔离）。
+          // 防会话 B 的 agent 改/烧钱出图到会话 A 的画布，或背景会话抢当前画布。
+          void controllerDeps().respond({ requestId: request.requestId, verdict: 'reject', feedback: '画布当前不属于该会话，提议被隔离拒绝' });
+          return;
+        }
       }
       // UX：agent 操作画布即自动展开+聚焦设计画布 tab，用户无需手动切 tab 才看到提议/产物。
       useAppStore.getState().openWorkbenchTab('design-canvas', { source: 'auto' });

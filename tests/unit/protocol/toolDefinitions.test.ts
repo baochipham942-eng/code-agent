@@ -172,15 +172,18 @@ describe('toolDefinitions deferred loading', () => {
     }
   });
 
-  it('keeps design canvas tools out of CORE_TOOLS and DEFERRED_TOOLS_META (no normal-session pollution)', () => {
-    // 硬底线：这两个工具不进 core/deferred 体系，普通会话工具表绝不出现它们。
+  it('registers design canvas tools as DEFERRED (discoverable by intent) but keeps them out of CORE_TOOLS', () => {
+    // 意图驱动发现：画布工具进 DEFERRED 索引，agent 任何会话都能按意图 ToolSearch 搜到/select。
     const deferredNames = new Set(DEFERRED_TOOLS_META.map((meta) => meta.name));
     for (const name of ['ProposeCanvasOps', 'RequestDesignAutonomy']) {
-      expect(CORE_TOOLS).not.toContain(name);
-      expect(deferredNames.has(name)).toBe(false);
+      expect(CORE_TOOLS).not.toContain(name); // DEFERRED 不是 CORE
+      expect(deferredNames.has(name)).toBe(true); // 但要在 DEFERRED 索引里
     }
+  });
 
-    // 普通会话工具表 = core + loaded-deferred；未激活设计会话时绝不含画布工具。
+  it('keeps design canvas tools out of the normal-session base table (zero pollution invariant)', () => {
+    // 硬不变量：DEFERRED ≠ 进基础表。普通会话工具表 = core + 已加载 deferred；
+    // 未搜索/未激活设计会话时，基础表绝不含画布工具。
     const normalSessionNames = new Set([
       ...getCoreToolDefinitions().map((d) => d.name),
       ...getLoadedDeferredToolDefinitions().map((d) => d.name),

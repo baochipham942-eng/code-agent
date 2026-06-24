@@ -59,8 +59,8 @@ import {
 import {
   resolveHealthyImageModelId,
   nextHealthyImageModelId,
+  isImageBalanceError,
 } from '../services/media/imageModelHealth';
-import { classifyProviderFallbackReason } from '../model/modelRouterPolicy';
 import {
   getCustomVideoModelApiKey,
   listCustomVideoModels,
@@ -150,16 +150,18 @@ export async function handleGenerateDesignImage(
     return generateImage(engine, fluxModelArg, payload.prompt, payload.aspectRatio || '1:1');
   };
 
-  // 单步兜底（2a #3）：chosen 模型遇「余额/配额」类错误 → 换下一个健康模型重试一次（非循环）。
-  // billing 红线：余额类错误在出图付费**之前**被端点拒绝（没出图=没扣费），故「A 失败→B 重试」
-  // 净扣 1 次、不双扣；auth/network/timeout 等非余额错误不换模型，原样抛出，自然不重复付费。
+  // 单步兜底（2a #3）：chosen 模型遇「余额/欠费」类错误 → 换下一个健康模型重试一次（非循环）。
+  // billing 口径（审计 MED-2，诚实标注）：余额类错误在 submit 阶段被端点拒绝时（没出图=没扣费），
+  // 「A 失败→B 重试」净扣 1 次；wanx 异步任务若在轮询阶段才返回余额失败，则「不双扣」**依赖
+  // DashScope 对失败任务不计费**这一上游语义（本 PR 未独立验证，不宣称已证）。auth/network/timeout
+  // 等非余额错误不换模型，原样抛出，自然不重复付费。触发条件用图像专用窄白名单（非通用 quota 分类）。
   let imageData: string;
   let actualModel: string;
   try {
     ({ imageData, actualModel } = await runOnce(primaryModelId));
   } catch (err) {
-    const reason = classifyProviderFallbackReason(err instanceof Error ? err.message : String(err));
-    const fallbackModelId = reason === 'quota' ? nextHealthyImageModelId(primaryModelId) : null;
+    const message = err instanceof Error ? err.message : String(err);
+    const fallbackModelId = isImageBalanceError(message) ? nextHealthyImageModelId(primaryModelId) : null;
     if (!fallbackModelId) throw err;
     ({ imageData, actualModel } = await runOnce(fallbackModelId));
   }

@@ -28,6 +28,7 @@ import {
   pickNextHealthyImageModelId,
   isImageModelConfigured,
   configuredImageModelIds,
+  isImageBalanceError,
   IMAGE_MODEL_HEALTH_PRIORITY,
 } from '../../../../src/main/services/media/imageModelHealth';
 import { IMAGE_MODELS } from '../../../../src/shared/constants/visualModels';
@@ -43,6 +44,39 @@ beforeEach(() => {
   vi.mocked(svc.getZhipuOfficialApiKey).mockReturnValue(undefined);
   vi.mocked(svc.getGptImageConfig).mockReturnValue(undefined);
   vi.mocked(cfgSvc.getConfigService).mockReturnValue({ getApiKey: () => undefined } as never);
+});
+
+describe('isImageBalanceError（窄余额白名单，审计 MED-1）', () => {
+  it('命中真·余额/欠费信号（中英 + DashScope/OpenAI 兼容）', () => {
+    for (const m of [
+      'InsufficientBalance: 余额不足',
+      'insufficient_quota',
+      'insufficient balance',
+      '账户已欠费',
+      'Account Arrearage',
+      '余额为负',
+      '402 Payment Required',
+    ]) {
+      expect(isImageBalanceError(m)).toBe(true);
+    }
+  });
+
+  it('不误判非余额错误（裸 credit/billing/credential/quota exceeded 不触发额外付费）', () => {
+    for (const m of [
+      'credential error',
+      'billing address invalid',
+      '401 Unauthorized: invalid api key',
+      'network error: ECONNRESET',
+      'stream inactivity timeout',
+      'model_not_allowed',
+      'quota exceeded, retry later', // 速率限流措辞，非欠费——不该换模型多付费
+      'request id 1402938 failed',   // \b402\b 不命中无关数字串
+      'smearrears',                  // \barrear 前导边界挡掉非真实词
+      '',
+    ]) {
+      expect(isImageBalanceError(m)).toBe(false);
+    }
+  });
 });
 
 describe('防漂移：健康优先级列表与 registry 对齐', () => {

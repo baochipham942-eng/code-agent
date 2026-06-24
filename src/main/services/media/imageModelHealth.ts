@@ -22,6 +22,19 @@ import {
 } from './imageGenerationService';
 import { imageModelById, defaultImageModelId } from '../../../shared/constants/visualModels';
 
+// 图像专用「余额/欠费」错误白名单（审计 MED-1）：不复用通用 LLM 的 classifyProviderFallbackReason
+// quota 分类——它含裸 `credit`/`billing` 子串，第三方生图中转返回任意含这些词的文案（如
+// "billing address invalid" / "credential error"）会误判成余额、误触发一次额外付费，违反 billing
+// 红线。这里只收窄到真·余额/欠费信号（中英 + DashScope/OpenAI 兼容端点常见串），且补上通用
+// 分类漏掉的「欠费/Arrearage」。只有命中这里才触发单步兜底。
+const IMAGE_BALANCE_ERROR_PATTERN =
+  /insufficient[_ ]?balance|insufficient[_ ]?quota|余额不足|余额为负|欠费|\barrear|payment required|\b402\b/i;
+
+/** 判定一条出图错误是否「余额/欠费」类（=付费前被端点拒，是兜底换模型的唯一触发条件）。 */
+export function isImageBalanceError(message: string): boolean {
+  return IMAGE_BALANCE_ERROR_PATTERN.test(message || '');
+}
+
 // 内置生图模型健康优先级：wanx 居首=设计底座（mask/扩图均依赖），其后按通用文生图可用性排。
 // 选默认与单步兜底都按此顺序取首个已配模型。
 export const IMAGE_MODEL_HEALTH_PRIORITY: readonly string[] = [

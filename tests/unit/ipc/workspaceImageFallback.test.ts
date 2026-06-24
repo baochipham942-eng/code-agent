@@ -126,6 +126,18 @@ describe('handleGenerateDesignImage — 余额类单步兜底', () => {
     expect(res.actualModel).toBe('cogview-4-250304');
   });
 
+  it('兜底模型也失败 → 第二个错误冒泡，仅两次调用不循环（审计 LOW-A）', async () => {
+    health.dashscope = 'sk-dash';
+    health.gptimage = { base: 'https://x', key: 'k' };
+    gen.impl = async (engine) => {
+      if (engine === 'wanx') throw new Error('InsufficientBalance 余额不足');
+      throw new Error('gpt-image-2 生成失败: 500 - upstream error');
+    };
+
+    await expect(handleGenerateDesignImage({ prompt: 'a cat', outputPath })).rejects.toThrow(/upstream error/);
+    expect(gen.calls).toEqual(['wanx', 'gptimage']); // 兜底一次即止，第二次错误原样冒泡
+  });
+
   it('显式指定已配模型 → 尊重选择，成功不兜底', async () => {
     health.dashscope = 'sk-dash';
     health.gptimage = { base: 'https://x', key: 'k' };

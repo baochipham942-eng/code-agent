@@ -22,6 +22,7 @@ import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { toast } from '../../hooks/useToast';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -156,11 +157,20 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     // R3 HIGH-1：重入闸——已有提议在落地则忽略（防双击 Apply 双付费 / Apply 后又点 Reject）。
     if (!target || st.applyingRequestId) return;
     st.setApplying(target.requestId);
+    // 秒关 UX：点应用即关审批条（不等 ~15s 出图）。出图在画布上以忙态指示进行（绑 applyingRequestId
+    // 的 canvas-busy-overlay + setGenerating），用户已点应用=已确认付费，无需弹窗继续占屏。
+    st.clear();
+    // 画布忙态：整个 apply 期间置 generating，驱动画布「生成中…」叠层；finally 复位。
+    // （controller 内 setBusy 仅覆盖 gen 批；此处覆盖整段，保证审批条关掉后画布有清晰反馈。）
+    useDesignCanvasStore.getState().setGenerating(true);
     try {
       return await applyProposal(target, controllerDeps(), selectedOps);
+    } catch (err) {
+      // 弹窗已关，出图失败（如智谱余额不足）须让用户知道——除 controller 已回 reject 解阻 agent 外，前端补 toast。
+      toast.error(`出图失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       useCanvasProposalStore.getState().setApplying(null);
-      clearIfStill(target.requestId); // R3 MED-2：只清自己这条，别误清并发新提议
+      useDesignCanvasStore.getState().setGenerating(false);
     }
   }, []);
 

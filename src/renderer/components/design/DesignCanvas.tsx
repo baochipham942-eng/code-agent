@@ -897,10 +897,16 @@ export const DesignCanvas: React.FC = () => {
       {canvasProposal.applying && (
         <div
           data-testid="canvas-busy-overlay"
-          className="absolute inset-0 z-10 cursor-wait"
+          className="absolute inset-0 z-10 flex cursor-wait items-center justify-center bg-zinc-950/40"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
-        />
+        >
+          {/* 秒关后画布忙态反馈：审批条已关，这里居中转圈 +「生成中…」让用户清楚正在出图（~15s）。 */}
+          <div className="flex items-center gap-2 rounded-full bg-zinc-900/90 px-4 py-2 text-sm text-zinc-100 shadow-lg ring-1 ring-white/10">
+            <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+            <span>{t.design.proposalApplying}</span>
+          </div>
+        </div>
       )}
       {size.w > 0 && size.h > 0 && (
         <Stage

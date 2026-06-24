@@ -29,6 +29,7 @@ import { Button, IconButton } from '../primitives';
 import { BrandManager } from './BrandManager';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
+import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
@@ -1032,6 +1033,14 @@ export const DesignWorkspace: React.FC = () => {
             {t.design.brand.open}
           </Button>
           <WorkspaceModeSwitch />
+          <IconButton
+            variant="ghost"
+            size="sm"
+            icon={<X className="h-4 w-4" />}
+            aria-label={t.design.closeForm}
+            title={t.design.closeForm}
+            onClick={() => useWorkspaceModeStore.getState().setDesignFormOpen(false)}
+          />
         </div>
       </div>
       <div className="flex min-h-0 flex-1">

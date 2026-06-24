@@ -5,9 +5,10 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck, Palette } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck, Palette, LayoutTemplate } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useWorkspaceModeStore } from '../stores/workspaceModeStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
@@ -179,6 +180,23 @@ export const WorkbenchTabs: React.FC = () => {
         aria-label={t.design.openCanvas}
       >
         <Palette className="w-3 h-3 text-fuchsia-400/80" />
+      </button>
+
+      {/* 「网页/演示稿/视频」入口 — 按需打开旧全屏表单（这四类媒介的唯一生成入口，
+          会话化收口后从「切到设计自动弹」降级为这里按需开）。仅有当前会话时可点。 */}
+      <button
+        type="button"
+        data-testid="open-design-legacy-form"
+        disabled={!currentSessionId}
+        onClick={() => {
+          if (!currentSessionId) return;
+          useWorkspaceModeStore.getState().setDesignFormOpen(true);
+        }}
+        className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
+        title={t.design.openLegacyFormHint}
+        aria-label={t.design.openLegacyForm}
+      >
+        <LayoutTemplate className="w-3 h-3 text-sky-400/80" />
       </button>
 
       {/* "+" 按钮 — 关掉的 tab 从这里重新开。在 scroll 容器外，popover 才不被 overflow 切 */}

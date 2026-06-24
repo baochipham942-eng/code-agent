@@ -15,7 +15,6 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
-import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
 import { buildCanvasSnapshot } from '../../components/design/buildCanvasSnapshot';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -71,11 +70,13 @@ function withDesignBriefContext(
 }
 
 // ADR-026 D1-B：design 模式发轮时附带画布快照，供 agent ProposeCanvasOps 引用真实节点 id。
-// 仅 design 模式且画布非空时附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
-function withCanvasSnapshotContext(
+// R1（设计 Surface 会话化）：闸门从全局 workspaceMode 解绑，改为「当前 session 是否设计激活」，
+// 避免把画布快照注入普通编码会话。仅设计会话且画布非空时附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
+export function withCanvasSnapshotContext(
   context: ConversationEnvelopeContext | undefined,
 ): ConversationEnvelopeContext | undefined {
-  if (useWorkspaceModeStore.getState().workspaceMode !== 'design') return context;
+  const sessionId = useSessionStore.getState().currentSessionId;
+  if (!useSessionStore.getState().isSessionDesignActive(sessionId)) return context;
   const cs = useDesignCanvasStore.getState();
   if (cs.nodes.length === 0) return context;
   const canvasSnapshot = buildCanvasSnapshot({ nodes: cs.nodes, connectors: cs.connectors, shapes: cs.shapes });

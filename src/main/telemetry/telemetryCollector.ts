@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 // ============================================================================
 // Telemetry Collector - 事件采集 + 缓冲 + TelemetryAdapter
 // ============================================================================
@@ -16,6 +17,7 @@ import { classifyIntent, evaluateOutcome } from './intentClassifier';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, DiagnosticTriggerReason } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
+import { INCOMPLETE_TOOL_RESULT_MARKER } from '../../shared/contract/agentTrajectory';
 import { sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
 import {
   classifyError,
@@ -149,6 +151,8 @@ export class TelemetryCollector {
 
   endSession(sessionId: string): void {
     if (this.activeSession?.id !== sessionId) return;
+
+    this.finalizeOpenTurnsForSession(sessionId);
 
     // Flush any pending data
     this.flush();
@@ -357,6 +361,87 @@ export class TelemetryCollector {
     return buffer;
   }
 
+  private incompleteToolResultMessage(toolName: string): string {
+    return `${INCOMPLETE_TOOL_RESULT_MARKER} Tool call "${toolName}" ended without a matching tool result before turn closeout.`;
+  }
+
+  private closePendingToolCallsForActiveTurn(endTime: number): void {
+    if (!this.activeTurn?.id || !this.activeTurn.sessionId || this.pendingToolCalls.size === 0) {
+      return;
+    }
+
+    for (const pending of this.pendingToolCalls.values()) {
+      const error = this.incompleteToolResultMessage(pending.name);
+      const record: TelemetryToolCall & { turnId: string; sessionId: string } = {
+        id: pending.id,
+        turnId: this.activeTurn.id,
+        sessionId: this.activeTurn.sessionId,
+        toolCallId: pending.toolCallId,
+        name: pending.name,
+        arguments: pending.arguments,
+        actualArguments: pending.actualArguments,
+        resultSummary: error,
+        success: false,
+        error,
+        errorCategory: 'unknown',
+        durationMs: Math.max(0, endTime - pending.timestamp),
+        timestamp: pending.timestamp,
+        index: pending.index,
+        parallel: pending.parallel,
+      };
+      this.turnToolCalls.push(record);
+      this.turnErrorCount++;
+      this.pushEvent({
+        type: 'tool_call',
+        sessionId: this.activeTurn.sessionId,
+        data: record,
+      });
+    }
+
+    this.pendingToolCalls.clear();
+  }
+
+  private closePendingDetachedToolCalls(buffer: DetachedTurnBuffer, endTime: number): void {
+    if (buffer.pendingToolCalls.size === 0) return;
+    for (const pending of buffer.pendingToolCalls.values()) {
+      const error = this.incompleteToolResultMessage(pending.name);
+      buffer.toolCalls.push({
+        toolCallId: pending.toolCallId,
+        name: pending.name,
+        arguments: pending.rawArguments ?? parseSerializedArguments(pending.arguments),
+        resultSummary: error,
+        success: false,
+        error,
+        durationMs: Math.max(0, endTime - pending.timestamp),
+        timestamp: pending.timestamp,
+        index: pending.index,
+        parallel: pending.parallel,
+        metadata: {
+          closeoutReason: 'pending_tool_result',
+        },
+      });
+    }
+    buffer.pendingToolCalls.clear();
+  }
+
+  private finalizeOpenTurnsForSession(sessionId: string): void {
+    if (this.activeTurn?.sessionId === sessionId && this.activeTurn.id) {
+      this.endTurn(
+        sessionId,
+        this.activeTurn.id,
+        this.activeTurn.assistantResponse ?? '',
+        this.activeTurn.thinkingContent,
+        this.activeTurn.systemPromptHash,
+      );
+    }
+
+    for (const buffer of [...this.detachedTurnBuffers.values()]) {
+      if (buffer.sessionId === sessionId) {
+        this.endDetachedTurn(sessionId, buffer.turnId, '', undefined, undefined, buffer.agentId);
+      }
+    }
+  }
+
   private hasActiveTurn(sessionId: string, turnId: string): boolean {
     return this.activeTurn?.id === turnId && this.activeTurn.sessionId === sessionId;
   }
@@ -440,6 +525,8 @@ export class TelemetryCollector {
   ): boolean {
     const key = this.detachedTurnKey(sessionId, turnId);
     const buffer = this.ensureDetachedTurnBuffer(sessionId, turnId, { agentId });
+    const now = Date.now();
+    this.closePendingDetachedToolCalls(buffer, now);
     const recorded = this.recordDetachedTurn({
       sessionId,
       turnId,
@@ -451,7 +538,7 @@ export class TelemetryCollector {
       agentId: buffer.agentId ?? agentId,
       parentTurnId: buffer.parentTurnId,
       startTime: buffer.startTime,
-      endTime: Date.now(),
+      endTime: now,
       modelCalls: buffer.modelCalls,
       toolCalls: buffer.toolCalls,
       events: buffer.events
@@ -474,6 +561,7 @@ export class TelemetryCollector {
 
     const now = Date.now();
     const startTime = this.activeTurn.startTime!;
+    this.closePendingToolCallsForActiveTurn(now);
 
     // Classify intent
     const toolNames = this.turnToolCalls.map((tc) => tc.name);

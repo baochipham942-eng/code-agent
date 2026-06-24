@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 import { IPC_DOMAINS } from '@shared/ipc';
+import type {
+  AgentTrajectoryGateFailure,
+  AgentTrajectoryQualityTier,
+} from '@shared/contract/agentTrajectory';
 import { useSessionStore, type SessionFilter } from './sessionStore';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
@@ -16,6 +20,9 @@ async function deleteSession(id: string): Promise<void> {
 export type { SessionFilter };
 
 export type SessionStatusFilter = 'all' | 'unfinished' | 'approval' | 'running' | 'attention' | 'artifact' | 'review' | 'background';
+export type TrajectoryTierFilter = 'all' | AgentTrajectoryQualityTier;
+export type TrajectoryFailureFilter = 'all' | AgentTrajectoryGateFailure;
+export type TrajectoryReviewFilter = 'all' | 'pending' | 'reviewed';
 
 export interface PendingDelete {
   ids: string[];
@@ -64,6 +71,9 @@ interface SessionUIState {
   filter: SessionFilter;
   searchQuery: string;
   sessionStatusFilter: SessionStatusFilter;
+  trajectoryTierFilter: TrajectoryTierFilter;
+  trajectoryFailureFilter: TrajectoryFailureFilter;
+  trajectoryReviewFilter: TrajectoryReviewFilter;
   pendingSearchJump: PendingSessionSearchJump | null;
   inputHistory: string[];
   inputHistoryIndex: number;
@@ -75,6 +85,9 @@ interface SessionUIActions {
   setFilter: (filter: SessionFilter) => void;
   setSearchQuery: (query: string) => void;
   setSessionStatusFilter: (filter: SessionStatusFilter) => void;
+  setTrajectoryTierFilter: (filter: TrajectoryTierFilter) => void;
+  setTrajectoryFailureFilter: (filter: TrajectoryFailureFilter) => void;
+  setTrajectoryReviewFilter: (filter: TrajectoryReviewFilter) => void;
   setPendingSearchJump: (jump: PendingSessionSearchJump | null) => void;
   softDelete: (ids: string[]) => void;
   undoDelete: () => void;
@@ -93,6 +106,9 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   filter: 'active' as SessionFilter,
   searchQuery: '',
   sessionStatusFilter: 'all',
+  trajectoryTierFilter: 'all',
+  trajectoryFailureFilter: 'all',
+  trajectoryReviewFilter: 'all',
   pendingSearchJump: null,
   inputHistory: [],
   inputHistoryIndex: -1,
@@ -110,6 +126,18 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
   setSessionStatusFilter: (sessionStatusFilter: SessionStatusFilter) => {
     set({ sessionStatusFilter });
+  },
+
+  setTrajectoryTierFilter: (trajectoryTierFilter: TrajectoryTierFilter) => {
+    set({ trajectoryTierFilter });
+  },
+
+  setTrajectoryFailureFilter: (trajectoryFailureFilter: TrajectoryFailureFilter) => {
+    set({ trajectoryFailureFilter });
+  },
+
+  setTrajectoryReviewFilter: (trajectoryReviewFilter: TrajectoryReviewFilter) => {
+    set({ trajectoryReviewFilter });
   },
 
   setPendingSearchJump: (pendingSearchJump: PendingSessionSearchJump | null) => {

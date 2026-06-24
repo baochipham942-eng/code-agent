@@ -72,10 +72,11 @@ export interface AppServiceRunOptions {
  * 会话创建配置
  */
 export interface CreateSessionConfig {
-  title?: string;
-  workingDirectory?: string | null;
-  engine?: Partial<AgentEngineSessionMetadata> | null;
-}
+	  title?: string;
+	  workingDirectory?: string | null;
+	  engine?: Partial<AgentEngineSessionMetadata> | null;
+	  metadata?: Record<string, unknown>;
+	}
 
 /**
  * 模型切换参数

@@ -109,6 +109,11 @@ function createReplay(
               summary: '1 tool schemas available',
             },
           },
+          {
+            type: 'text',
+            content: 'ok',
+            timestamp: 150,
+          },
         ],
         inputTokens: 10,
         outputTokens: 8,

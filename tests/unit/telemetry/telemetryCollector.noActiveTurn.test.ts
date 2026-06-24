@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TelemetryModelCall } from '../../../src/shared/contract/telemetry';
+import { INCOMPLETE_TOOL_RESULT_MARKER } from '../../../src/shared/contract/agentTrajectory';
 
 const mocks = vi.hoisted(() => ({
   logger: {
@@ -125,5 +126,73 @@ describe('TelemetryCollector adapter no-active-turn fallback', () => {
       totalTokens: 24,
     });
     expect(mocks.logger.warn.mock.calls.some(([message]) => String(message).includes('turnId mismatch'))).toBe(false);
+  });
+
+  it('closes active pending tool calls as failed results when a turn ends', () => {
+    collector.startSession('session-pending-tool', {
+      title: 'Pending tool',
+      modelProvider: 'test',
+      modelName: 'test-model',
+      workingDirectory: '/tmp/workbench',
+    });
+    collector.startTurn('session-pending-tool', 'turn-pending', 1, 'Read something');
+    collector.recordToolCallStart('turn-pending', 'tool-pending-1', 'Read', {
+      file_path: 'package.json',
+    }, 0, false);
+
+    collector.endTurn('session-pending-tool', 'turn-pending', 'Could not finish.');
+
+    expect(mocks.storage.batchInsert).toHaveBeenCalledWith(expect.objectContaining({
+      toolCalls: [
+        expect.objectContaining({
+          turnId: 'turn-pending',
+          sessionId: 'session-pending-tool',
+          toolCallId: 'tool-pending-1',
+          name: 'Read',
+          success: false,
+          resultSummary: expect.stringContaining(INCOMPLETE_TOOL_RESULT_MARKER),
+          error: expect.stringContaining(INCOMPLETE_TOOL_RESULT_MARKER),
+        }),
+      ],
+    }));
+    expect(collector.getSessionData('session-pending-tool')).toMatchObject({
+      totalToolCalls: 1,
+      totalErrors: 1,
+      toolSuccessRate: 0,
+    });
+  });
+
+  it('closes detached pending tool calls as failed results when a detached turn ends', () => {
+    collector.startSession('session-detached-pending-tool', {
+      title: 'Detached pending tool',
+      modelProvider: 'test',
+      modelName: 'test-model',
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const adapter = collector.createAdapter('session-detached-pending-tool', 'agent-reviewer');
+    adapter.onToolCallStart('turn-detached-pending', 'tool-pending-2', 'Read', {
+      file_path: 'package.json',
+    }, 0, false);
+    adapter.onTurnEnd('turn-detached-pending', 'Detached turn finished.');
+
+    expect(mocks.storage.batchInsert).toHaveBeenCalledWith(expect.objectContaining({
+      toolCalls: [
+        expect.objectContaining({
+          turnId: 'turn-detached-pending',
+          sessionId: 'session-detached-pending-tool',
+          toolCallId: 'tool-pending-2',
+          name: 'Read',
+          success: false,
+          resultSummary: expect.stringContaining(INCOMPLETE_TOOL_RESULT_MARKER),
+          error: expect.stringContaining(INCOMPLETE_TOOL_RESULT_MARKER),
+        }),
+      ],
+    }));
+    expect(collector.getSessionData('session-detached-pending-tool')).toMatchObject({
+      totalToolCalls: 1,
+      totalErrors: 1,
+      toolSuccessRate: 0,
+    });
   });
 });

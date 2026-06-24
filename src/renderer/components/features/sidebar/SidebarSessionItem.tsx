@@ -1,15 +1,5 @@
 import React from 'react';
-import {
-  Archive,
-  ArchiveRestore,
-  CheckSquare,
-  Clock3,
-  Eye,
-  Pin,
-  ScrollText,
-  ShieldAlert,
-  Square,
-} from 'lucide-react';
+import { Archive, ArchiveRestore, CheckSquare, Clock3, Eye, Pin, ScrollText, ShieldAlert, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
@@ -36,14 +26,46 @@ function formatReplayEvidenceOverflowTitle(evidence: SessionReplayEvidence[]): s
     .join('\n');
 }
 
-function formatReplayEvidenceButtonTitle(
-  evidence: SessionReplayEvidence,
-  canOpenSessionReplay: boolean,
-): string {
+function formatReplayEvidenceButtonTitle(evidence: SessionReplayEvidence, canOpenSessionReplay: boolean): string {
   if (evidence.actionKind !== 'sessionReplay' || canOpenSessionReplay) {
     return evidence.title;
   }
   return `${evidence.title}\n结构化 Replay 仅管理员可打开`;
+}
+
+function getTrajectoryDatasetLabel(role: string): string {
+  switch (role) {
+    case 'core_eval':
+      return 'Core';
+    case 'excluded':
+      return 'Out';
+    default:
+      return 'Diag';
+  }
+}
+
+function getTrajectoryQualityToneClassName(tier: string): string {
+  switch (tier) {
+    case 'G2':
+      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300';
+    case 'G1':
+      return 'border-amber-500/25 bg-amber-500/10 text-amber-300';
+    default:
+      return 'border-rose-500/25 bg-rose-500/10 text-rose-300';
+  }
+}
+
+function formatTrajectoryQualityTitle(summary: SidebarDerivedSessions['trajectoryQualityBySessionId'][string]): string {
+  const quality = summary.quality;
+  const collection = summary.collection;
+  const failures = quality.failures.length > 0 ? quality.failures.slice(0, 8).join(' · ') : 'no gate failures';
+  return [
+    `Trajectory ${quality.tier}`,
+    collection.datasetRole,
+    collection.taskKind,
+    `${collection.datasetVersion} · ${collection.source}`,
+    failures,
+  ].join('\n');
 }
 
 export interface SidebarSessionItemProps {
@@ -63,6 +85,7 @@ export interface SidebarSessionItemProps {
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
   canOpenSessionReplay: boolean;
   reviewItemsBySessionId: SidebarDerivedSessions['reviewItemsBySessionId'];
+  trajectoryQualityBySessionId: SidebarDerivedSessions['trajectoryQualityBySessionId'];
   multiSelectMode: boolean;
   hoveredSession: string | null;
   renameValue: string;
@@ -105,6 +128,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   replayEvidenceBySessionId,
   canOpenSessionReplay,
   reviewItemsBySessionId,
+  trajectoryQualityBySessionId,
   multiSelectMode,
   hoveredSession,
   renameValue,
@@ -152,7 +176,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const lastActiveLabel = getRelativeTime(latestActivityAt, true);
   const typeLabel = getSessionTypeLabel(session.type);
   const automationSummary = automationSummariesBySessionId[session.id];
-  const showAutomationBadge = Boolean(automationSummary?.label && (automationSummary.activeCount > 0 || automationSummary.runningCount > 0));
+  const showAutomationBadge = Boolean(
+    automationSummary?.label && (automationSummary.activeCount > 0 || automationSummary.runningCount > 0),
+  );
   const displayTitle = getDisplaySessionTitle(session.title);
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const replayEvidence = replayEvidenceBySessionId.get(session.id) ?? [];
@@ -161,9 +187,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     hasReplay: hasReplaySignal,
     canOpenReplay: canOpenSessionReplay,
   });
-  const pendingReviewItems = (reviewItemsBySessionId[session.id] ?? [])
-    .filter((item) => item.reviewStatus === 'pending');
+  const pendingReviewItems = (reviewItemsBySessionId[session.id] ?? []).filter(
+    (item) => item.reviewStatus === 'pending',
+  );
   const topReviewItem = pendingReviewItems[0];
+  const trajectoryQualitySummary = trajectoryQualityBySessionId[session.id];
+  const trajectoryQuality = trajectoryQualitySummary?.quality;
+  const trajectoryCollection = trajectoryQualitySummary?.collection;
 
   return (
     <div
@@ -183,31 +213,19 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-current={isSelected && !multiSelectMode ? 'true' : undefined}
       aria-label={`打开会话 ${displayTitle}`}
       data-session-id={session.id}
-      className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 ${
-        isSelected && !multiSelectMode
-          ? 'bg-zinc-700/60'
-          : isChecked
-            ? 'bg-blue-500/10 border border-blue-500/20'
-            : 'hover:bg-zinc-800'
-      }`}
+      className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
     >
       {/* 多选模式：Checkbox */}
       {multiSelectMode && (
         <div className="flex items-center mb-1">
-          {isChecked ? (
-            <CheckSquare className="w-4 h-4 text-blue-400" />
-          ) : (
-            <Square className="w-4 h-4 text-zinc-500" />
-          )}
+          {isChecked ? <CheckSquare className="w-4 h-4 text-blue-400" /> : <Square className="w-4 h-4 text-zinc-500" />}
         </div>
       )}
 
       {/* Line 1: status indicators + title */}
       <div className="flex items-center gap-2">
         {/* 置顶图标 */}
-        {isPinned && !multiSelectMode && (
-          <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
-        )}
+        {isPinned && !multiSelectMode && <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />}
 
         {/* 标题：重命名模式 vs 普通 */}
         {isRenaming ? (
@@ -223,9 +241,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         ) : (
           <span
             onDoubleClick={(e) => handleDoubleClick(e, session)}
-            className={`text-sm truncate font-medium flex-1 ${
-              isSelected ? 'text-zinc-100' : 'text-zinc-400'
-            }`}
+            className={`text-sm truncate font-medium flex-1 ${isSelected ? 'text-zinc-100' : 'text-zinc-400'}`}
           >
             {displayTitle}
           </span>
@@ -265,12 +281,22 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                 <span>{pendingReviewItems.length} 待审</span>
               </button>
             )}
+            {trajectoryQualitySummary && trajectoryQuality && trajectoryCollection && (
+              <span
+                title={formatTrajectoryQualityTitle(trajectoryQualitySummary)}
+                className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getTrajectoryQualityToneClassName(trajectoryQuality.tier)}`}
+              >
+                {trajectoryQuality.tier} · {getTrajectoryDatasetLabel(trajectoryCollection.datasetRole)}
+              </span>
+            )}
             {canOpenSessionAssets && (
               <button
                 type="button"
                 aria-label={`打开 ${displayTitle} 的产物与资产`}
                 title={`打开 ${displayTitle} 的产物与资产`}
-                onClick={(event) => { void handleOpenSessionAssets(event, session); }}
+                onClick={(event) => {
+                  void handleOpenSessionAssets(event, session);
+                }}
                 className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
               >
                 <ScrollText className="h-3.5 w-3.5" />
@@ -291,7 +317,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               </span>
             )}
             {status.showBadge && (
-              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}>
+              <span
+                className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}
+              >
                 {status.label}
               </span>
             )}
@@ -305,15 +333,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             {messageSearchHit ? (
               <span className="truncate text-zinc-400">
-                <span className="text-zinc-500">
-                  {formatSidebarMessageSearchHitMeta(messageSearchHit)}
-                </span>
+                <span className="text-zinc-500">{formatSidebarMessageSearchHitMeta(messageSearchHit)}</span>
                 <span> · {formatSidebarMessageSearchHitLabel(messageSearchHit)}</span>
               </span>
-            ) : hasMeaningfulSummary && (
-              <span className="truncate text-zinc-500">
-                {snapshotSummary}
-              </span>
+            ) : (
+              hasMeaningfulSummary && <span className="truncate text-zinc-500">{snapshotSummary}</span>
             )}
             {recoveryHints.map((hint) => (
               <span
@@ -337,10 +361,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             <button
               key={evidence.id}
               type="button"
-              aria-label={canOpenSessionReplay
-                || evidence.actionKind !== 'sessionReplay'
-                ? `打开 ${displayTitle} 的 ${evidence.label}`
-                : `Replay 仅管理员可用：${displayTitle} 的 ${evidence.label}`}
+              aria-label={
+                canOpenSessionReplay || evidence.actionKind !== 'sessionReplay'
+                  ? `打开 ${displayTitle} 的 ${evidence.label}`
+                  : `Replay 仅管理员可用：${displayTitle} 的 ${evidence.label}`
+              }
               title={formatReplayEvidenceButtonTitle(evidence, canOpenSessionReplay)}
               disabled={evidence.actionKind === 'sessionReplay' && !canOpenSessionReplay}
               onClick={(event) => {
@@ -350,12 +375,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               }}
               className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-zinc-700/60 bg-zinc-900/50 px-1.5 py-0.5 text-zinc-500 transition-colors hover:border-zinc-600 hover:bg-zinc-800/80 hover:text-zinc-300 focus:outline-hidden disabled:cursor-not-allowed disabled:hover:border-zinc-700/60 disabled:hover:bg-zinc-900/50 disabled:hover:text-zinc-500"
             >
-              <span className="shrink-0 text-zinc-600">
-                {evidence.type === 'trace' ? 'Trace' : 'Replay'}
-              </span>
-              <span className="truncate">
-                {evidence.label}
-              </span>
+              <span className="shrink-0 text-zinc-600">{evidence.type === 'trace' ? 'Trace' : 'Replay'}</span>
+              <span className="truncate">{evidence.label}</span>
             </button>
           ))}
           {replayEvidence.length > 2 && (
@@ -382,12 +403,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         <div className="absolute top-1.5 right-2 flex items-center gap-0.5">
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
+            aria-label={session.isArchived ? 'Unarchive session' : 'Archive session'}
             onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
             variant="ghost"
             size="sm"
             className="!p-1 opacity-0 group-hover:opacity-100"
-            title={session.isArchived ? "取消归档" : "归档"}
+            title={session.isArchived ? '取消归档' : '归档'}
           />
         </div>
       )}

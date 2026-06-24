@@ -6,7 +6,9 @@ import type { createLogger } from '../../infra/logger';
 type Logger = ReturnType<typeof createLogger>;
 
 function tableExists(db: BetterSqlite3.Database, tableName: string): boolean {
-  const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(tableName) as { name?: string } | undefined;
+  const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(tableName) as
+    | { name?: string }
+    | undefined;
   return row?.name === tableName;
 }
 
@@ -35,6 +37,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       working_directory TEXT,
       session_type TEXT NOT NULL DEFAULT 'chat',
       origin TEXT,
+      metadata TEXT,
       parent_session_id TEXT,
       source_run_id TEXT,
       agent_engine TEXT,
@@ -52,6 +55,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN user_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN memory_mode TEXT NOT NULL DEFAULT 'auto'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]'`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN metadata TEXT`, logger);
 
   // Messages 表
   db.exec(`
@@ -216,7 +220,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_recorded ON permission_decisions (recorded_at)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`,
+  );
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_tool ON permission_decisions (tool_name, recorded_at)`);
 
   // Tool Execution Events 事件账本（ADR-022 第二期，append-only · 崩溃重放）—
@@ -238,7 +244,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_exec ON tool_execution_events (execution_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_session ON tool_execution_events (session_id, recorded_at)`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tool_execution_events_session ON tool_execution_events (session_id, recorded_at)`,
+  );
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_phase ON tool_execution_events (phase, recorded_at)`);
 
   // Swarm Run Ledger 协同事件账本（ADR-022 §四第三期 3b · ADR-023 D2，append-only · 真理源）—
@@ -1073,7 +1081,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       archived_at INTEGER
     )
   `);
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`);
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`,
+  );
 
   // Project Goals 表 — 一个项目多个并行 goal，各自带状态
   db.exec(`

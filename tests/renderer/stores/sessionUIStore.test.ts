@@ -258,4 +258,25 @@ describe('sessionUIStore - input history', () => {
       }
     });
   });
+
+  describe('trajectory review filters', () => {
+    it('should default trajectory filters to all', () => {
+      expect(useSessionUIStore.getState().trajectoryTierFilter).toBe('all');
+      expect(useSessionUIStore.getState().trajectoryFailureFilter).toBe('all');
+      expect(useSessionUIStore.getState().trajectoryReviewFilter).toBe('all');
+    });
+
+    it('should update trajectory tier, failure, and review filters', () => {
+      useSessionUIStore.getState().setTrajectoryTierFilter('G1');
+      useSessionUIStore.getState().setTrajectoryFailureFilter('missing_tool_result');
+      useSessionUIStore.getState().setTrajectoryReviewFilter('pending');
+
+      expect(useSessionUIStore.getState().trajectoryTierFilter).toBe('G1');
+      expect(useSessionUIStore.getState().trajectoryFailureFilter).toBe('missing_tool_result');
+      expect(useSessionUIStore.getState().trajectoryReviewFilter).toBe('pending');
+
+      useSessionUIStore.getState().setTrajectoryReviewFilter('reviewed');
+      expect(useSessionUIStore.getState().trajectoryReviewFilter).toBe('reviewed');
+    });
+  });
 });

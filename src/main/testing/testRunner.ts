@@ -25,8 +25,8 @@ import { createLogger } from '../services/infra/logger';
 import { isNonRetryableError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
-import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
-import type { ReplayBlock, StructuredReplay } from '../../shared/contract/evaluation';
+import type { StructuredReplay } from '../../shared/contract/evaluation';
+import { evaluateAgentTrajectoryReplay } from '../evaluation/trajectory/trajectoryGate';
 // TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
@@ -116,53 +116,9 @@ export class TestRunner {
     return testCase.tags?.includes('real-agent-run') ?? false;
   }
 
-  private getReplayBlocks(replay: StructuredReplay): ReplayBlock[] {
-    return replay.turns.flatMap((turn) => turn.blocks);
-  }
-
   private validateRealAgentRunReplay(replay: StructuredReplay | null): string[] {
-    if (!replay) return ['missing_structured_replay'];
-
-    const completeness = replay.summary.telemetryCompleteness;
-    const failures: string[] = [];
-    if (!completeness) {
-      failures.push('missing_telemetry_completeness');
-      failures.push(...getReplayCompletenessReasons({
-        sessionId: replay.sessionId,
-        replayKey: replay.traceIdentity?.replayKey,
-        dataSource: replay.dataSource ?? replay.summary.metricAvailability?.dataSource,
-        turnCount: replay.turns.length,
-        modelCallCount: 0,
-        toolCallCount: 0,
-        eventCount: 0,
-        hasModelDecisions: false,
-        hasToolSchemas: false,
-      }));
-      return Array.from(new Set(failures));
-    }
-
-    const blocks = this.getReplayBlocks(replay);
-    const modelBlocks = blocks.filter((block) => block.type === 'model_call');
-    const toolBlocks = blocks.filter((block) => block.type === 'tool_call' && block.toolCall);
-    failures.push(...getReplayCompletenessReasons({
-      sessionId: completeness.sessionId ?? replay.sessionId,
-      replayKey: completeness.replayKey ?? replay.traceIdentity?.replayKey,
-      dataSource: completeness.dataSource ?? replay.dataSource ?? replay.summary.metricAvailability?.dataSource,
-      turnCount: completeness.turnCount,
-      modelCallCount: completeness.modelCallCount,
-      toolCallCount: completeness.toolCallCount,
-      eventCount: completeness.eventCount,
-      hasModelDecisions: completeness.hasModelDecisions,
-      hasToolSchemas: completeness.hasToolSchemas,
-      hasReplayExplanation: modelBlocks.some((block) => block.modelDecision?.prompt || block.modelDecision?.completion),
-      hasToolArgs: toolBlocks.some((block) => Object.keys(block.toolCall?.args || {}).length > 0),
-      hasToolResult: toolBlocks.some((block) => block.toolCall?.successKnown || block.toolCall?.result),
-    }));
-    if (completeness.hasRealAgentTrace !== true) {
-      failures.push('missing_real_agent_trace');
-    }
-
-    return Array.from(new Set(failures));
+    const gate = evaluateAgentTrajectoryReplay(replay);
+    return gate.exportReady ? [] : gate.failures;
   }
 
   private async attachTelemetryReplay(testCase: TestCase, result: TestResult): Promise<void> {

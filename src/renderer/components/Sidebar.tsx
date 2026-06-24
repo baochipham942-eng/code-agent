@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 // ============================================================================
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
@@ -5,7 +6,7 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSelectionStore } from '../stores/selectionStore';
-import { useSessionUIStore, type SessionStatusFilter } from '../stores/sessionUIStore';
+import { useSessionUIStore, type SessionStatusFilter, type TrajectoryReviewFilter } from '../stores/sessionUIStore';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
@@ -52,16 +53,9 @@ import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
-import {
-  AccountMenuItem,
-  AccountMenuLabel,
-  getRelativeTime,
-} from './features/sidebar/sidebarPresentation';
+import { AccountMenuItem, AccountMenuLabel, getRelativeTime } from './features/sidebar/sidebarPresentation';
 import ipcService from '../services/ipcService';
-import {
-  getDisplaySessionTitle,
-  getSessionStatusPresentation,
-} from '../utils/sessionPresentation';
+import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
@@ -70,11 +64,21 @@ import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedS
 import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import type { StructuredReplay } from '@shared/contract/evaluation';
+import type {
+  AgentTrajectoryDatasetRole,
+  AgentTrajectoryGateFailure,
+  AgentTrajectoryQualityTier,
+  AgentTrajectorySessionQualitySummary,
+} from '@shared/contract/agentTrajectory';
 
 export { resolveRuntimeLogsDir };
 
 const logger = createLogger('Sidebar');
-const SESSION_STATUS_FILTER_OPTIONS: Array<{ id: SessionStatusFilter; label: string; adminOnly?: boolean }> = [
+const SESSION_STATUS_FILTER_OPTIONS: Array<{
+  id: SessionStatusFilter;
+  label: string;
+  adminOnly?: boolean;
+}> = [
   { id: 'all', label: '全部' },
   { id: 'unfinished', label: '未完成' },
   { id: 'approval', label: '待确认' },
@@ -92,6 +96,37 @@ const SESSION_STATUS_FILTER_LABELS: Record<SessionStatusFilter, string> = {
   artifact: '交付线索',
   review: '待审',
   background: '后台执行中',
+};
+const TRAJECTORY_TIER_FILTER_OPTIONS: Array<{
+  id: AgentTrajectoryQualityTier;
+  label: string;
+}> = [
+  { id: 'G2', label: 'G2 Core' },
+  { id: 'G1', label: 'G1 Diagnostic' },
+  { id: 'G0', label: 'G0 Diagnostic' },
+];
+const TRAJECTORY_FAILURE_FILTER_OPTIONS: Array<{
+  id: AgentTrajectoryGateFailure;
+  label: string;
+}> = [
+  { id: 'missing_tool_result', label: '缺工具结果' },
+  { id: 'missing_tool_schemas', label: '缺工具定义' },
+  { id: 'missing_assistant_final_answer', label: '缺最终回答' },
+  { id: 'pending_tool_result', label: '工具待闭环' },
+  { id: 'ordinary_chat_no_tool', label: '普通聊天' },
+  { id: 'transcript_fallback_replay', label: '历史 fallback' },
+];
+const TRAJECTORY_REVIEW_FILTER_OPTIONS: Array<{
+  id: TrajectoryReviewFilter;
+  label: string;
+}> = [
+  { id: 'pending', label: '待复核' },
+  { id: 'reviewed', label: '已复核' },
+];
+const TRAJECTORY_REVIEW_FILTER_LABELS: Record<TrajectoryReviewFilter, string> = {
+  all: '全部复核状态',
+  pending: '待复核',
+  reviewed: '已复核',
 };
 
 export function isAccountMenuEventOutside(
@@ -163,6 +198,12 @@ export const Sidebar: React.FC = () => {
     setSearchQuery,
     sessionStatusFilter,
     setSessionStatusFilter,
+    trajectoryTierFilter,
+    setTrajectoryTierFilter,
+    trajectoryFailureFilter,
+    setTrajectoryFailureFilter,
+    trajectoryReviewFilter,
+    setTrajectoryReviewFilter,
     setPendingSearchJump,
     softDelete,
     undoDelete,
@@ -185,12 +226,9 @@ export const Sidebar: React.FC = () => {
   const canOpenInviteCodes = canAccessFeature('settings.invites', user);
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
   const isVerifiedAdmin = user?.isAdmin === true;
-  const isAdminPendingVerification = !isVerifiedAdmin
-    && hasCachedAdminClaim
-    && sessionTrustState === 'cached';
-  const adminPendingTitle = authBackendAvailable === false
-    ? '登录服务启动失败，管理员身份暂时不能验证'
-    : '正在验证管理员身份';
+  const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
+  const adminPendingTitle =
+    authBackendAvailable === false ? '登录服务启动失败，管理员身份暂时不能验证' : '正在验证管理员身份';
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -203,11 +241,7 @@ export const Sidebar: React.FC = () => {
   const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const isCreatingSession = creatingSessionMode !== null;
-  const hasActiveAdvancedTool = Boolean(
-    showLab ||
-      showTimeCapabilityCenter ||
-      showDesktopPanel
-  );
+  const hasActiveAdvancedTool = Boolean(showLab || showTimeCapabilityCenter || showDesktopPanel);
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
 
   useEffect(() => {
@@ -307,13 +341,17 @@ export const Sidebar: React.FC = () => {
     messageSearchHitsBySessionId,
     messageSearchLoading,
     reviewItemsBySessionId,
+    trajectoryQualityBySessionId,
+    mergeTrajectoryQualitySummary,
     filteredSessions,
     workspaceGroupedSessions,
     projectMetaById,
     setProjectMetaById,
   } = useSidebarDerivedSessions({ canOpenSessionReplay });
 
-  const [automationSummariesBySessionId, setAutomationSummariesBySessionId] = useState<Record<string, SessionAutomationSessionSummary>>({});
+  const [automationSummariesBySessionId, setAutomationSummariesBySessionId] = useState<
+    Record<string, SessionAutomationSessionSummary>
+  >({});
   const visibleSessionIds = useMemo(
     () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
     [workspaceGroupedSessions],
@@ -327,7 +365,8 @@ export const Sidebar: React.FC = () => {
     }
 
     let cancelled = false;
-    void sessionAutomationClient.summarizeSessions(visibleSessionIds)
+    void sessionAutomationClient
+      .summarizeSessions(visibleSessionIds)
       .then((summaries) => {
         if (cancelled) return;
         setAutomationSummariesBySessionId(summaries ?? {});
@@ -350,10 +389,13 @@ export const Sidebar: React.FC = () => {
   const [collapsingWorkspaces, setCollapsingWorkspaces] = useState<Record<string, boolean>>({});
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  useEffect(() => () => {
-    Object.values(collapseTimersRef.current).forEach(clearTimeout);
-    collapseTimersRef.current = {};
-  }, []);
+  useEffect(
+    () => () => {
+      Object.values(collapseTimersRef.current).forEach(clearTimeout);
+      collapseTimersRef.current = {};
+    },
+    [],
+  );
 
   const {
     handleToggleWorkspaceGroup,
@@ -463,70 +505,110 @@ export const Sidebar: React.FC = () => {
   );
 
   const hasAnySessions = sessions.length > 0;
-  const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all';
+  const hasActiveTrajectoryFilter =
+    trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
+  const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter;
   const canSearchCurrentProject = currentProjectSearchSessionIds.size > 0;
   const showSearchScopeControls = Boolean(searchQuery.trim()) && canSearchCurrentProject;
-  const activeStatusFilterLabel = SESSION_STATUS_FILTER_LABELS[sessionStatusFilter] ?? '匹配';
-  const visibleStatusFilterOptions = SESSION_STATUS_FILTER_OPTIONS
-    .filter((option) => !option.adminOnly || canOpenSessionReplay);
+  const activeTrajectoryFilterLabel = [
+    trajectoryTierFilter !== 'all' ? trajectoryTierFilter : null,
+    trajectoryReviewFilter !== 'all' ? TRAJECTORY_REVIEW_FILTER_LABELS[trajectoryReviewFilter] : null,
+    trajectoryFailureFilter !== 'all'
+      ? (TRAJECTORY_FAILURE_FILTER_OPTIONS.find((option) => option.id === trajectoryFailureFilter)?.label ??
+        trajectoryFailureFilter)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const activeStatusFilterLabel = [
+    SESSION_STATUS_FILTER_LABELS[sessionStatusFilter] ?? '匹配',
+    activeTrajectoryFilterLabel || null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const hasActiveStatusDropdownFilter = sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter;
+  const visibleStatusFilterOptions = SESSION_STATUS_FILTER_OPTIONS.filter(
+    (option) => !option.adminOnly || canOpenSessionReplay,
+  );
   const showOptionalUpdateButton = isOptionalUpdateAvailable(optionalUpdateInfo);
-  const optionalUpdateLabel = optionalUpdateInfo?.latestVersion
-    ? `v${optionalUpdateInfo.latestVersion}`
-    : '新版本';
-  const buildProjectDrawerSessions = useCallback((groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] => (
-    groupSessions.map((session) => {
-      const sessionRuntime = sessionRuntimes.get(session.id);
-      const backgroundTask = backgroundTaskMap.get(session.id);
-      const status = getSessionStatusPresentation({
-        backgroundTask,
-        runtime: sessionRuntime,
-        taskState: sessionStates[session.id],
-        messageCount: session.messageCount,
-        turnCount: session.turnCount,
-        sessionStatus: session.status,
-        hasPendingApproval: hasPendingApprovalForSession(session.id),
-      });
-      const latestActivityAt = Math.max(
-        session.updatedAt || 0,
-        sessionRuntime?.lastActivityAt || 0,
-        backgroundTask?.backgroundedAt || 0,
-      );
-      const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
-      const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? [])
-        .filter((item) => item.reviewStatus === 'pending')
-        .length;
-      const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
-      const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== '纯对话');
+  const optionalUpdateLabel = optionalUpdateInfo?.latestVersion ? `v${optionalUpdateInfo.latestVersion}` : '新版本';
+  const handleUpdateTrajectoryCollection = useCallback(
+    async (datasetRole: AgentTrajectoryDatasetRole): Promise<void> => {
+      if (!replayDialog) return;
+      try {
+        const summary = (await ipcService.invoke(IPC_CHANNELS.REPLAY_UPDATE_TRAJECTORY_COLLECTION, {
+          sessionId: replayDialog.sessionId,
+          patch: { datasetRole },
+        })) as AgentTrajectorySessionQualitySummary;
+        mergeTrajectoryQualitySummary(replayDialog.sessionId, summary);
+        showToast('success', `已标记为 ${datasetRole}`);
+      } catch (error) {
+        logger.warn('Failed to update trajectory collection metadata', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        showToast('error', `更新数据集标记失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    [mergeTrajectoryQualitySummary, replayDialog, showToast],
+  );
+  const buildProjectDrawerSessions = useCallback(
+    (groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] =>
+      groupSessions.map((session) => {
+        const sessionRuntime = sessionRuntimes.get(session.id);
+        const backgroundTask = backgroundTaskMap.get(session.id);
+        const status = getSessionStatusPresentation({
+          backgroundTask,
+          runtime: sessionRuntime,
+          taskState: sessionStates[session.id],
+          messageCount: session.messageCount,
+          turnCount: session.turnCount,
+          sessionStatus: session.status,
+          hasPendingApproval: hasPendingApprovalForSession(session.id),
+        });
+        const latestActivityAt = Math.max(
+          session.updatedAt || 0,
+          sessionRuntime?.lastActivityAt || 0,
+          backgroundTask?.backgroundedAt || 0,
+        );
+        const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
+        const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? []).filter(
+          (item) => item.reviewStatus === 'pending',
+        ).length;
+        const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
+        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== '纯对话');
 
-      return {
-        id: session.id,
-        title: getDisplaySessionTitle(session.title),
-        statusLabel: status.label,
-        statusToneClassName: status.toneClassName,
-        showStatusBadge: status.showBadge,
-        typeLabel: getSessionTypeLabel(session.type),
-        summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-        lastActiveLabel: getRelativeTime(latestActivityAt, true),
-        workingDirectory: session.workingDirectory,
-        gitBranch: session.gitBranch,
-        prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
-        isCurrent: session.id === currentSessionId,
-        turnCount: session.turnCount,
-        messageCount: session.messageCount,
-        hasDeliverySignals: hasSessionDeliverySignals(session, { hasReplay: replayEvidenceCount > 0 }),
-        replayEvidenceCount,
-        pendingReviewCount,
-      };
-    })
-  ), [
-    backgroundTaskMap,
-    currentSessionId,
-    hasPendingApprovalForSession,
-    replayEvidenceBySessionId,
-    reviewItemsBySessionId,
-    sessionRuntimes,
-    sessionStates,
-  ]);
+        return {
+          id: session.id,
+          title: getDisplaySessionTitle(session.title),
+          statusLabel: status.label,
+          statusToneClassName: status.toneClassName,
+          showStatusBadge: status.showBadge,
+          typeLabel: getSessionTypeLabel(session.type),
+          summary: hasMeaningfulSummary ? snapshotSummary : undefined,
+          lastActiveLabel: getRelativeTime(latestActivityAt, true),
+          workingDirectory: session.workingDirectory,
+          gitBranch: session.gitBranch,
+          prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
+          isCurrent: session.id === currentSessionId,
+          turnCount: session.turnCount,
+          messageCount: session.messageCount,
+          hasDeliverySignals: hasSessionDeliverySignals(session, {
+            hasReplay: replayEvidenceCount > 0,
+          }),
+          replayEvidenceCount,
+          pendingReviewCount,
+        };
+      }),
+    [
+      backgroundTaskMap,
+      currentSessionId,
+      hasPendingApprovalForSession,
+      replayEvidenceBySessionId,
+      reviewItemsBySessionId,
+      sessionRuntimes,
+      sessionStates,
+    ],
+  );
 
   const sessionItemProps: SidebarSessionItemSharedProps = {
     unreadSessionIds,
@@ -544,6 +626,7 @@ export const Sidebar: React.FC = () => {
     replayEvidenceBySessionId,
     canOpenSessionReplay,
     reviewItemsBySessionId,
+    trajectoryQualityBySessionId,
     multiSelectMode,
     hoveredSession,
     renameValue,
@@ -591,20 +674,16 @@ export const Sidebar: React.FC = () => {
               onClick={() => setStatusFilterOpen((v) => !v)}
               aria-label="按状态筛选会话"
               aria-expanded={statusFilterOpen}
-              title={sessionStatusFilter === 'all' ? '按状态筛选会话' : `状态筛选：${activeStatusFilterLabel}`}
-              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${
-                sessionStatusFilter !== 'all'
-                  ? 'border-zinc-500 bg-zinc-700/70 text-zinc-100'
-                  : 'border-transparent text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
-              }`}
+              title={!hasActiveStatusDropdownFilter ? '按状态筛选会话' : `状态筛选：${activeStatusFilterLabel}`}
+              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${hasActiveStatusDropdownFilter ? 'border-zinc-500 bg-zinc-700/70 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
             >
               <ListFilter className="h-4 w-4" />
-              {sessionStatusFilter !== 'all' && (
+              {hasActiveStatusDropdownFilter && (
                 <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-400" />
               )}
             </button>
             {statusFilterOpen && (
-              <div className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl">
+              <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl">
                 <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">按状态筛选</div>
                 {visibleStatusFilterOptions.map((option) => {
                   const active = sessionStatusFilter === option.id;
@@ -612,16 +691,94 @@ export const Sidebar: React.FC = () => {
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => { setSessionStatusFilter(option.id); setStatusFilterOpen(false); }}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-zinc-700 ${
-                        active ? 'text-zinc-100' : 'text-zinc-400'
-                      }`}
+                      onClick={() => {
+                        setSessionStatusFilter(option.id);
+                        if (option.id !== 'review') {
+                          setTrajectoryTierFilter('all');
+                          setTrajectoryFailureFilter('all');
+                          setTrajectoryReviewFilter('all');
+                        }
+                        setStatusFilterOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-zinc-700 ${active ? 'text-zinc-100' : 'text-zinc-400'}`}
                     >
                       <Check className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-cyan-400' : 'text-transparent'}`} />
                       <span>{option.label}</span>
                     </button>
                   );
                 })}
+                <div className="my-1 border-t border-zinc-700/70" />
+                <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                  Review Queue Trajectory
+                </div>
+                <div className="px-2 py-1">
+                  <div className="mb-1 flex flex-wrap gap-1">
+                    {TRAJECTORY_REVIEW_FILTER_OPTIONS.map((option) => {
+                      const active = trajectoryReviewFilter === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setSessionStatusFilter('review');
+                            setTrajectoryReviewFilter(active ? 'all' : option.id);
+                          }}
+                          className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                    {TRAJECTORY_TIER_FILTER_OPTIONS.map((option) => {
+                      const active = trajectoryTierFilter === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setSessionStatusFilter('review');
+                            setTrajectoryTierFilter(active ? 'all' : option.id);
+                          }}
+                          className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid gap-0.5">
+                    {TRAJECTORY_FAILURE_FILTER_OPTIONS.map((option) => {
+                      const active = trajectoryFailureFilter === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setSessionStatusFilter('review');
+                            setTrajectoryFailureFilter(active ? 'all' : option.id);
+                          }}
+                          className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] transition-colors ${active ? 'bg-amber-500/10 text-amber-200' : 'text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-200'}`}
+                        >
+                          <Check className={`h-3 w-3 shrink-0 ${active ? 'text-amber-300' : 'text-transparent'}`} />
+                          <span className="truncate">{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {hasActiveTrajectoryFilter && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTrajectoryTierFilter('all');
+                        setTrajectoryFailureFilter('all');
+                        setTrajectoryReviewFilter('all');
+                      }}
+                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900/40 px-2 py-1 text-left text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+                    >
+                      清除 Trajectory 筛选
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -661,11 +818,7 @@ export const Sidebar: React.FC = () => {
                     key={option.id}
                     type="button"
                     onClick={() => setSearchScope(option.id)}
-                    className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-                      active
-                        ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200'
-                        : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/60 hover:text-zinc-300'
-                    }`}
+                    className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/60 hover:text-zinc-300'}`}
                   >
                     {option.label}
                   </button>
@@ -703,8 +856,8 @@ export const Sidebar: React.FC = () => {
               {messageSearchLoading
                 ? '搜索消息内容中...'
                 : !searchQuery && sessionStatusFilter !== 'all'
-                ? `当前没有${activeStatusFilterLabel}会话`
-                : '未找到匹配的会话'}
+                  ? `当前没有${activeStatusFilterLabel}会话`
+                  : '未找到匹配的会话'}
             </p>
           </div>
         ) : (
@@ -746,14 +899,9 @@ export const Sidebar: React.FC = () => {
       {/* 多选模式底部操作栏 */}
       {multiSelectMode && selectedSessionIds.size > 0 && (
         <div className="px-3 py-2 border-t border-zinc-700 flex items-center justify-between">
-          <span className="text-xs text-zinc-400">
-            已选 {selectedSessionIds.size} 个
-          </span>
+          <span className="text-xs text-zinc-400">已选 {selectedSessionIds.size} 个</span>
           <div className="flex items-center gap-2">
-            <button
-              onClick={clearSelection}
-              className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
-            >
+            <button onClick={clearSelection} className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors">
               取消
             </button>
             <button
@@ -766,8 +914,6 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
       )}
-
-
 
       {/* Optional update entry */}
       {showOptionalUpdateButton && (
@@ -799,11 +945,7 @@ export const Sidebar: React.FC = () => {
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt=""
-                  className="w-7 h-7 rounded-full object-cover"
-                />
+                <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
               ) : (
                 <User className="w-5 h-5 text-zinc-500" />
               )}
@@ -822,49 +964,80 @@ export const Sidebar: React.FC = () => {
                   管理员待验证
                 </span>
               ) : null}
-              <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`}
+              />
             </button>
             {/* User Dropdown Menu */}
             {showUserMenu && (
               <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
                 <AccountMenuLabel>常用</AccountMenuLabel>
                 <AccountMenuItem
-                  onClick={() => { setShowActivityPanel(true); setShowUserMenu(false); }}
+                  onClick={() => {
+                    setShowActivityPanel(true);
+                    setShowUserMenu(false);
+                  }}
                   icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
                   label="活动"
                 />
                 <AccountMenuItem
-                  onClick={() => { setShowKnowledgeMemoryPanel(true); setShowUserMenu(false); }}
-                  icon={<Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+                  onClick={() => {
+                    setShowKnowledgeMemoryPanel(true);
+                    setShowUserMenu(false);
+                  }}
+                  icon={
+                    <Brain
+                      className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`}
+                    />
+                  }
                   label="知识与记忆"
                 />
                 <AccountMenuItem
-                  onClick={() => { setShowComputerUsePanel(true); setShowUserMenu(false); }}
-                  icon={<MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+                  onClick={() => {
+                    setShowComputerUsePanel(true);
+                    setShowUserMenu(false);
+                  }}
+                  icon={
+                    <MousePointerClick
+                      className={`w-4 h-4 ${showComputerUsePanel ? 'text-cyan-400' : 'text-cyan-400/80'}`}
+                    />
+                  }
                   label="桌面操作"
                 />
                 <AccountMenuItem
-                  onClick={() => { setShowCronCenter(!showCronCenter); setShowUserMenu(false); }}
+                  onClick={() => {
+                    setShowCronCenter(!showCronCenter);
+                    setShowUserMenu(false);
+                  }}
                   icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
                   label="自动化"
                 />
                 {canOpenPromptManager && (
                   <AccountMenuItem
-                    onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}
+                    onClick={() => {
+                      setShowPromptManager(true);
+                      setShowUserMenu(false);
+                    }}
                     icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
                     label="提示词"
                   />
                 )}
                 {canOpenUserDashboard && (
                   <AccountMenuItem
-                    onClick={() => { openSettingsTab('users'); setShowUserMenu(false); }}
+                    onClick={() => {
+                      openSettingsTab('users');
+                      setShowUserMenu(false);
+                    }}
                     icon={<Users className="w-4 h-4 text-amber-400/80" />}
                     label="用户管理"
                   />
                 )}
                 {canOpenInviteCodes && (
                   <AccountMenuItem
-                    onClick={() => { openSettingsTab('invites'); setShowUserMenu(false); }}
+                    onClick={() => {
+                      openSettingsTab('invites');
+                      setShowUserMenu(false);
+                    }}
                     icon={<Ticket className="w-4 h-4 text-amber-400/80" />}
                     label="邀请码管理"
                   />
@@ -876,7 +1049,9 @@ export const Sidebar: React.FC = () => {
                   onClick={() => setShowAccountAdvancedTools((open) => !open)}
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                 >
-                  <ChevronRight className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`} />
+                  <ChevronRight
+                    className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`}
+                  />
                   <span className="min-w-0 flex-1 text-left">高级工具</span>
                   {hasActiveAdvancedTool && (
                     <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
@@ -887,18 +1062,35 @@ export const Sidebar: React.FC = () => {
                 {advancedToolsOpen && (
                   <div className="pb-1">
                     <AccountMenuItem
-                      onClick={() => { setShowLab(true); setShowUserMenu(false); }}
-                      icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+                      onClick={() => {
+                        setShowLab(true);
+                        setShowUserMenu(false);
+                      }}
+                      icon={
+                        <FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
+                      }
                       label="模型训练"
                     />
                     <AccountMenuItem
-                      onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
-                      icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
+                      onClick={() => {
+                        setShowTimeCapabilityCenter(!showTimeCapabilityCenter);
+                        setShowUserMenu(false);
+                      }}
+                      icon={
+                        <CalendarDays
+                          className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`}
+                        />
+                      }
                       label="时间与能力"
                     />
                     <AccountMenuItem
-                      onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
-                      icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+                      onClick={() => {
+                        setShowDesktopPanel(!showDesktopPanel);
+                        setShowUserMenu(false);
+                      }}
+                      icon={
+                        <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
+                      }
                       label="桌面采集"
                     />
                   </div>
@@ -906,12 +1098,18 @@ export const Sidebar: React.FC = () => {
 
                 <div className="border-t border-zinc-800" />
                 <AccountMenuItem
-                  onClick={() => { setShowSettings(true); setShowUserMenu(false); }}
+                  onClick={() => {
+                    setShowSettings(true);
+                    setShowUserMenu(false);
+                  }}
                   icon={<Settings className="w-4 h-4" />}
                   label="设置"
                 />
                 <AccountMenuItem
-                  onClick={() => { signOut(); setShowUserMenu(false); }}
+                  onClick={() => {
+                    signOut();
+                    setShowUserMenu(false);
+                  }}
                   icon={<LogOut className="w-4 h-4" />}
                   label="退出登录"
                 />
@@ -937,6 +1135,8 @@ export const Sidebar: React.FC = () => {
           workflowRuns={Object.values(workflowRuns).filter((run) => run.sessionId === replayDialog.sessionId)}
           backgroundTasks={durableBackgroundTasks.filter((task) => task.sessionId === replayDialog.sessionId)}
           evidence={replayEvidenceBySessionId.get(replayDialog.sessionId) ?? []}
+          trajectorySummary={trajectoryQualityBySessionId[replayDialog.sessionId]}
+          onUpdateTrajectoryDatasetRole={handleUpdateTrajectoryCollection}
           onOpenEvidence={(evidence) => {
             const session = sessions.find((item) => item.id === replayDialog.sessionId);
             if (session) {

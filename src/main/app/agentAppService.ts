@@ -506,10 +506,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         model: settings.model?.model,
         temperature: settings.model?.temperature,
         maxTokens: settings.model?.maxTokens,
-      }),
-      workingDirectory,
-      engine: config?.engine ? requestedEngine : undefined,
-    });
+	      }),
+	      workingDirectory,
+	      engine: config?.engine ? requestedEngine : undefined,
+	      metadata: config?.metadata,
+	    });
 
     sessionManager.setCurrentSession(session.id);
     this._setCurrentSessionId(session.id);

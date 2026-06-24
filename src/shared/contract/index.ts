@@ -110,6 +110,7 @@ export * from './appService';
 
 // Trace types (Turn-based trace view)
 export * from './trace';
+export * from './agentTrajectory';
 export * from './turnTimeline';
 export * from './turnQuality';
 export * from './sessionWorkspace';

@@ -165,8 +165,8 @@ describe('SessionRepository', () => {
       expect(updateResult).toBeDefined();
 
       // lastTokenUsage param should be JSON string（参数顺序新增了 agentEngine/memoryMode/
-      // suppressed/workspace/workbenchProvenance 后，lastTokenUsage 从 index 10 移到 12）
-      const lastTokenParam = updateResult!.params[12];
+      // suppressed/workspace/workbenchProvenance/metadata 后，lastTokenUsage 从 index 10 移到 13）
+      const lastTokenParam = updateResult!.params[13];
       expect(typeof lastTokenParam).toBe('string');
       expect(JSON.parse(lastTokenParam as string)).toEqual(tokenUsage);
     });
@@ -179,7 +179,7 @@ describe('SessionRepository', () => {
       expect(updateResult).toBeDefined();
 
       // lastTokenUsage not provided → null (COALESCE keeps existing value)
-      expect(updateResult!.params[12]).toBeNull();
+      expect(updateResult!.params[13]).toBeNull();
     });
 
     it('should throw when session not found (changes === 0)', () => {

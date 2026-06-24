@@ -305,7 +305,11 @@ export const TELEMETRY_CHANNELS = {
   SUBMIT_FEEDBACK: 'telemetry:submit-feedback',
   /** 获取结构化回放数据 */
   GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
-  /** 实时事件推送（主进程 -> 渲染进程） */
+	  /** 获取 Agent Trajectory 质量摘要 */
+	  GET_TRAJECTORY_QUALITY: 'trajectory:get-quality-summary',
+	  /** 更新 Agent Trajectory 数据集采集元数据 */
+	  UPDATE_TRAJECTORY_COLLECTION: 'trajectory:update-collection-metadata',
+	  /** 实时事件推送（主进程 -> 渲染进程） */
   EVENT: 'telemetry:event',
   /** 健康摘要：采集状态 + session 数 + 存储占用 + 最近事件时间 */
   HEALTH: 'telemetry:health',

@@ -90,6 +90,7 @@ async function main(): Promise<void> {
     const { getDatabase } = await import('../../src/main/services/core/databaseService');
     const testing = await import('../../src/main/testing/index');
     const { getTelemetryQueryService } = await import('../../src/main/evaluation/telemetryQueryService');
+    const { buildAgentTrajectoryFromReplay } = await import('../../src/main/evaluation/trajectory/trajectoryExporter');
 
     await getDatabase().initialize();
 
@@ -149,6 +150,13 @@ async function main(): Promise<void> {
     if (!toolBlock?.toolCall?.successKnown || !String(toolBlock.toolCall.result ?? '').includes(MARKER)) {
       fail('Structured replay is missing the successful Read tool result.', toolBlock);
     }
+    const trajectory = buildAgentTrajectoryFromReplay(replay);
+    if (trajectory.quality.tier !== 'G2' || !trajectory.quality.exportReady) {
+      fail('Agent trajectory did not pass the G2 export gate.', trajectory.quality);
+    }
+    if (trajectory.summary.toolCallCount !== trajectory.summary.toolResultCount) {
+      fail('Agent trajectory has unpaired tool calls/results.', trajectory.summary);
+    }
 
     const output = {
       ok: true,
@@ -157,6 +165,7 @@ async function main(): Promise<void> {
       replayKey: result.replayKey,
       status: result.status,
       telemetryGate: result.telemetryGate,
+      trajectoryGate: trajectory.quality,
       telemetryCompleteness: result.telemetryCompleteness,
       toolExecutions: result.toolExecutions.map((tool) => ({
         tool: tool.tool,
@@ -171,6 +180,8 @@ async function main(): Promise<void> {
         toolBlocks: blocks.filter((block) => block.type === 'tool_call').length,
         hasReadSchema: true,
         hasReadResult: true,
+        trajectorySteps: trajectory.steps.length,
+        trajectoryTier: trajectory.quality.tier,
       },
     };
 

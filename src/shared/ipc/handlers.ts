@@ -41,8 +41,9 @@ import type { CompletedAgentRun } from '../contract/agentHistory';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
-import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, SessionAnalysisResult, TestReportListItem, TestRunReport, EvalAnnotationPayload, AxialCodingEntryIpc, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest } from './types';
+import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, SessionAnalysisResult, TestReportListItem, TestRunReport, EvalAnnotationPayload, AxialCodingEntryIpc, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
+import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
 // ----------------------------------------------------------------------------
 // Renderer -> Main: Invoke handlers (request/response)
@@ -411,10 +412,12 @@ export interface IpcInvokeHandlers {
     tokens: number | null;
   } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
-  [IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK]: (payload: TelemetryFeedbackSubmitRequest) => Promise<TelemetryFeedbackSubmitResult>;
-  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
-  [IPC_CHANNELS.TELEMETRY_HEALTH]: () => Promise<TelemetryHealth>;
-}
+	  [IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK]: (payload: TelemetryFeedbackSubmitRequest) => Promise<TelemetryFeedbackSubmitResult>;
+	  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
+	  [IPC_CHANNELS.REPLAY_GET_TRAJECTORY_QUALITY]: (payload: AgentTrajectoryQualitySummariesRequest) => Promise<Record<string, AgentTrajectorySessionQualitySummary>>;
+	  [IPC_CHANNELS.REPLAY_UPDATE_TRAJECTORY_COLLECTION]: (payload: AgentTrajectoryCollectionUpdateRequest) => Promise<AgentTrajectorySessionQualitySummary>;
+	  [IPC_CHANNELS.TELEMETRY_HEALTH]: () => Promise<TelemetryHealth>;
+	}
 
 export interface ManagedBrowserSessionChangedEvent {
   reason: 'launch' | 'close' | 'new_tab' | 'close_tab' | 'switch_tab' | 'navigate' | 'page_load' | 'history' | 'reload' | 'set_viewport' | 'crashed' | 'external_bridge';

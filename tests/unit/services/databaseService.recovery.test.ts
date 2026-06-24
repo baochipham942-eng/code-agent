@@ -49,4 +49,24 @@ describe('DatabaseService retry recovery', () => {
       durable: true,
     });
   });
+
+  it('can initialize again after close clears the finished init promise', async () => {
+    const db = new DatabaseService();
+    const close = vi.fn();
+    let initialized = 0;
+    vi.spyOn(db as unknown as { _doInitialize: () => Promise<void> }, '_doInitialize').mockImplementation(
+      async () => {
+        initialized++;
+        (db as unknown as { db: { close: () => void } | null }).db = { close };
+      },
+    );
+
+    await db.initialize();
+    db.close();
+    await db.initialize();
+
+    expect(initialized).toBe(2);
+    expect(close).toHaveBeenCalledOnce();
+    expect(db.isReady).toBe(true);
+  });
 });

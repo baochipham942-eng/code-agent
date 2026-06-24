@@ -39,10 +39,11 @@ export interface SessionCreateOptions {
   workingDirectory?: string;
   type?: Session['type'];
   origin?: Session['origin'];
-  parentSessionId?: string;
-  sourceRunId?: string;
-  engine?: Session['engine'];
-  readOnly?: boolean;
+	  parentSessionId?: string;
+	  sourceRunId?: string;
+	  engine?: Session['engine'];
+	  metadata?: Session['metadata'];
+	  readOnly?: boolean;
   retryOfSessionId?: string;
   userId?: string | null;
 }
@@ -273,8 +274,9 @@ export class SessionManager implements Disposable {
       modelConfig: sanitizeModelConfigForSession(options.modelConfig),
       workingDirectory: options.workingDirectory,
       type: options.type || 'chat',
-      origin: options.origin,
-      parentSessionId: options.parentSessionId,
+	      origin: options.origin,
+	      metadata: options.metadata,
+	      parentSessionId: options.parentSessionId,
       sourceRunId: options.sourceRunId,
       engine: normalizeAgentEngineSession(options.engine),
       memoryMode: 'auto',
@@ -1154,9 +1156,10 @@ export class SessionManager implements Disposable {
       title: data.title,
       modelConfig: sanitizeModelConfigForSession(data.modelConfig),
       workingDirectory: data.workingDirectory,
-      type: data.type || 'chat',
-      origin: data.origin,
-      parentSessionId: data.parentSessionId,
+	      type: data.type || 'chat',
+	      origin: data.origin,
+	      metadata: data.metadata,
+	      parentSessionId: data.parentSessionId,
       sourceRunId: data.sourceRunId,
       readOnly: data.readOnly,
       retryOfSessionId: data.retryOfSessionId,

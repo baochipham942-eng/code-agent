@@ -310,6 +310,17 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('Replay');
     expect(html).toContain('Alma Project / Session Organization');
+    expect(html).toContain('Trajectory');
+    expect(html).toContain('G1');
+    expect(html).toContain('Coding');
+    expect(html).toContain('Diagnostic');
+    expect(html).toContain('Core eval');
+    expect(html).toContain('Excluded');
+    expect(html).toContain('aria-label="确认复核 Diagnostic"');
+    expect(html).toContain('agent-trajectory-v1');
+    expect(html).toContain('quality_gate');
+    expect(html).toContain('Trajectory Gate');
+    expect(html).toContain('missing_tool_result');
     expect(html).toContain('Turns');
     expect(html).toContain('3');
     expect(html).toContain('Read 2');

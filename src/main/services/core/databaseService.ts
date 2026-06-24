@@ -494,6 +494,8 @@ export class DatabaseService {
       this.db.close();
       this.db = null;
     }
+    this._initPromise = null;
+    this._initFailed = false;
   }
 
   async dispose(): Promise<void> {
@@ -680,10 +682,11 @@ export class DatabaseService {
       workingDirectory?: string;
       type?: Session['type'];
       origin?: Session['origin'];
-      parentSessionId?: string;
-      sourceRunId?: string;
-      engine?: Session['engine'];
-      readOnly?: boolean;
+	      parentSessionId?: string;
+	      sourceRunId?: string;
+	      engine?: Session['engine'];
+	      metadata?: Session['metadata'];
+	      readOnly?: boolean;
       retryOfSessionId?: string;
       createdAt?: number | string;
       updatedAt?: number | string;

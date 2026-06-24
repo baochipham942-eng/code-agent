@@ -4,4 +4,13 @@
 
 export { TrajectoryBuilder } from './trajectoryBuilder';
 export { DeviationDetector } from './deviationDetector';
+export { evaluateAgentTrajectoryReplay } from './trajectoryGate';
+export {
+  buildAgentTrajectoryFromReplay,
+  exportAgentTrajectories,
+  listTelemetryTrajectorySessionIds,
+  normalizeAgentTrajectorySampleWindow,
+  shouldExportTrajectory,
+  writeAgentTrajectoryJsonl,
+} from './trajectoryExporter';
 export * from './attribution';

@@ -9,10 +9,97 @@ import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import { getTelemetryUploaderService } from '../telemetry/telemetryUploaderService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryHealth, TelemetrySessionListOptions } from '../../shared/contract/telemetry';
+import { getDatabase } from '../services/core/databaseService';
+import type {
+  AgentTrajectoryCollectionMetadataPatch,
+  AgentTrajectoryDatasetRole,
+  AgentTrajectorySessionQualitySummary,
+  AgentTrajectoryTaskKind,
+} from '../../shared/contract/agentTrajectory';
+import {
+  evaluateAgentTrajectoryReplay,
+  mergeAgentTrajectoryCollectionMetadata,
+  readAgentTrajectoryCollectionMetadata,
+  resolveAgentTrajectoryCollectionMetadata,
+  writeAgentTrajectoryCollectionMetadata,
+} from '../../shared/contract/agentTrajectory';
+import type {
+  TelemetryFeedbackSubmitRequest,
+  TelemetryFeedbackSubmitResult,
+  TelemetryHealth,
+  TelemetrySessionListOptions,
+} from '../../shared/contract/telemetry';
+import type {
+  AgentTrajectoryCollectionUpdateRequest,
+  AgentTrajectoryQualitySummariesRequest,
+} from '../../shared/ipc/types';
 import { assertAdminAccess, isCurrentUserAdmin } from './adminGuard';
 
 const logger = createLogger('TelemetryIPC');
+const TRAJECTORY_QUALITY_SUMMARY_LIMIT = 250;
+
+function assertDatasetRole(value: unknown): asserts value is AgentTrajectoryDatasetRole {
+  if (value !== undefined && value !== 'core_eval' && value !== 'diagnostic' && value !== 'excluded') {
+    throw new Error('Invalid trajectory datasetRole');
+  }
+}
+
+function assertTaskKind(value: unknown): asserts value is AgentTrajectoryTaskKind {
+  if (
+    value !== undefined &&
+    value !== 'coding' &&
+    value !== 'search' &&
+    value !== 'data_analysis' &&
+    value !== 'agent_task' &&
+    value !== 'ordinary_chat' &&
+    value !== 'other'
+  ) {
+    throw new Error('Invalid trajectory taskKind');
+  }
+}
+
+function validateCollectionPatch(patch: AgentTrajectoryCollectionMetadataPatch): void {
+  assertDatasetRole(patch.datasetRole);
+  assertTaskKind(patch.taskKind);
+  if (patch.datasetVersion !== undefined && !patch.datasetVersion.trim()) {
+    throw new Error('Invalid trajectory datasetVersion');
+  }
+}
+
+async function buildTrajectoryQualitySummary(
+  sessionId: string,
+  options: {
+    patch?: AgentTrajectoryCollectionMetadataPatch;
+    persistMissingCollection?: boolean;
+  } = {},
+): Promise<AgentTrajectorySessionQualitySummary> {
+  const { getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
+  const replay = await getTelemetryQueryService().getStructuredReplay(sessionId);
+  const quality = evaluateAgentTrajectoryReplay(replay);
+  const db = getDatabase();
+  const session = db.getSession(sessionId, { includeDeleted: true });
+  const sessionMetadata = session?.metadata;
+  const baseCollection = resolveAgentTrajectoryCollectionMetadata(quality, sessionMetadata);
+  const collection = options.patch
+    ? mergeAgentTrajectoryCollectionMetadata(baseCollection, options.patch, {
+        source: 'manual_review',
+      })
+    : baseCollection;
+  const hasPersistedCollection = Boolean(readAgentTrajectoryCollectionMetadata(sessionMetadata));
+  if (session && (options.patch || (options.persistMissingCollection && !hasPersistedCollection))) {
+    db.updateSession(sessionId, {
+      metadata: writeAgentTrajectoryCollectionMetadata(sessionMetadata, collection),
+      updatedAt: session.updatedAt,
+    });
+  }
+  return {
+    sessionId,
+    dataSource: replay?.dataSource,
+    traceIdentity: replay?.traceIdentity,
+    quality,
+    collection,
+  };
+}
 
 /**
  * 注册遥测相关的 IPC handlers
@@ -87,6 +174,52 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
     return extractStructuredReplay(sessionId);
   });
 
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.GET_TRAJECTORY_QUALITY,
+    async (
+      _event,
+      payload: AgentTrajectoryQualitySummariesRequest,
+    ): Promise<Record<string, AgentTrajectorySessionQualitySummary>> => {
+      assertAdminAccess('Telemetry');
+      if (process.env.EVAL_DISABLED === 'true') return {};
+
+      const sessionIds = Array.from(
+        new Set((payload.sessionIds ?? []).map((sessionId) => sessionId.trim()).filter(Boolean)),
+      ).slice(0, TRAJECTORY_QUALITY_SUMMARY_LIMIT);
+      if (sessionIds.length === 0) return {};
+
+      const entries = await Promise.all(
+        sessionIds.map(
+          async (sessionId): Promise<[string, AgentTrajectorySessionQualitySummary]> => [
+            sessionId,
+            await buildTrajectoryQualitySummary(sessionId, {
+              persistMissingCollection: true,
+            }),
+          ],
+        ),
+      );
+      return Object.fromEntries(entries);
+    },
+  );
+
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.UPDATE_TRAJECTORY_COLLECTION,
+    async (_event, payload: AgentTrajectoryCollectionUpdateRequest): Promise<AgentTrajectorySessionQualitySummary> => {
+      assertAdminAccess('Telemetry');
+      if (process.env.EVAL_DISABLED === 'true') {
+        throw new Error('Replay evaluation is disabled');
+      }
+      const sessionId = payload.sessionId?.trim();
+      if (!sessionId) {
+        throw new Error('Missing sessionId');
+      }
+      validateCollectionPatch(payload.patch ?? {});
+      return buildTrajectoryQualitySummary(sessionId, {
+        patch: payload.patch ?? {},
+      });
+    },
+  );
+
   // 删除会话遥测数据
   ipcMain.handle(TELEMETRY_CHANNELS.DELETE_SESSION, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
@@ -95,14 +228,17 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
   });
 
   // 用户显式质量反馈：普通登录用户可写；读取仍只走 admin-only 云端/本地查询。
-  ipcMain.handle(TELEMETRY_CHANNELS.SUBMIT_FEEDBACK, async (_event, payload: TelemetryFeedbackSubmitRequest): Promise<TelemetryFeedbackSubmitResult> => {
-    const feedback = storage.recordFeedback(payload);
-    if (!feedback) {
-      return { success: false, error: 'Invalid telemetry feedback payload' };
-    }
-    void getTelemetryUploaderService().upload();
-    return { success: true, feedbackId: feedback.id };
-  });
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.SUBMIT_FEEDBACK,
+    async (_event, payload: TelemetryFeedbackSubmitRequest): Promise<TelemetryFeedbackSubmitResult> => {
+      const feedback = storage.recordFeedback(payload);
+      if (!feedback) {
+        return { success: false, error: 'Invalid telemetry feedback payload' };
+      }
+      void getTelemetryUploaderService().upload();
+      return { success: true, feedbackId: feedback.id };
+    },
+  );
 
   // 健康摘要：是否启用 + session 数 + 存储占用 + 最近事件时间
   ipcMain.handle(TELEMETRY_CHANNELS.HEALTH, async (): Promise<TelemetryHealth> => {
@@ -111,7 +247,7 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
       enabled: storage.dbAvailable,
       sessionCount: storage.getSessionCount(),
       storageBytes: storage.getStorageBytes(),
-      lastEventAt: storage.getLastEventAt()
+      lastEventAt: storage.getLastEventAt(),
     };
   });
 

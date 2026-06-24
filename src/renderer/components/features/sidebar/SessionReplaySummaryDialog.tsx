@@ -2,13 +2,21 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { IconButton, Modal } from '../../primitives';
 import type { ReplayBlock, ReplayTurn, StructuredReplay } from '@shared/contract/evaluation';
+import {
+  evaluateAgentTrajectoryReplay,
+  resolveAgentTrajectoryCollectionMetadata,
+} from '@shared/contract/agentTrajectory';
+import type {
+  AgentTrajectoryDatasetRole,
+  AgentTrajectoryQualityTier,
+  AgentTrajectorySessionQualitySummary,
+  AgentTrajectoryTaskKind,
+} from '@shared/contract/agentTrajectory';
 import type { Task, TaskEvent, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 
-type FocusedReplayOwner =
-  | { kind: 'workflow'; id: string }
-  | { kind: 'background'; id: string };
+type FocusedReplayOwner = { kind: 'workflow'; id: string } | { kind: 'background'; id: string };
 
 export interface SessionReplaySummaryDialogProps {
   sessionTitle: string;
@@ -16,6 +24,8 @@ export interface SessionReplaySummaryDialogProps {
   workflowRuns?: ScriptRunSnapshot[];
   backgroundTasks?: Task[];
   evidence?: SessionReplayEvidence[];
+  trajectorySummary?: AgentTrajectorySessionQualitySummary;
+  onUpdateTrajectoryDatasetRole?: (datasetRole: AgentTrajectoryDatasetRole) => void | Promise<void>;
   onOpenEvidence?: (evidence: SessionReplayEvidence) => void | Promise<void>;
   onClose: () => void;
 }
@@ -91,6 +101,47 @@ function formatToolDistribution(replay: StructuredReplay): string {
 
   return entries.map(([category, count]) => `${category} ${count}`).join(' · ');
 }
+
+function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): string {
+  switch (tier) {
+    case 'G2':
+      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
+    case 'G1':
+      return 'border-amber-500/25 bg-amber-500/10 text-amber-200';
+    default:
+      return 'border-rose-500/25 bg-rose-500/10 text-rose-200';
+  }
+}
+
+function getTrajectoryDatasetLabel(role: AgentTrajectoryDatasetRole): string {
+  switch (role) {
+    case 'core_eval':
+      return 'Core eval';
+    case 'excluded':
+      return 'Excluded';
+    default:
+      return 'Diagnostic';
+  }
+}
+
+function getTrajectoryTaskKindLabel(kind: AgentTrajectoryTaskKind): string {
+  switch (kind) {
+    case 'coding':
+      return 'Coding';
+    case 'search':
+      return 'Search';
+    case 'data_analysis':
+      return 'Data';
+    case 'agent_task':
+      return 'Agent task';
+    case 'ordinary_chat':
+      return 'Chat';
+    default:
+      return 'Other';
+  }
+}
+
+const TRAJECTORY_DATASET_ROLE_OPTIONS: AgentTrajectoryDatasetRole[] = ['core_eval', 'diagnostic', 'excluded'];
 
 function lastPathSegment(value: string | undefined): string | null {
   if (!value) return null;
@@ -200,12 +251,9 @@ function formatWorkflowAgentStatus(agent: ScriptRunAgentSnapshot): string {
 }
 
 function formatWorkflowAgentDetail(agent: ScriptRunAgentSnapshot): string {
-  const items = [
-    agent.phase,
-    agent.model,
-    agent.cached ? 'cached' : null,
-    agent.hasSchema ? 'schema' : null,
-  ].filter(Boolean);
+  const items = [agent.phase, agent.model, agent.cached ? 'cached' : null, agent.hasSchema ? 'schema' : null].filter(
+    Boolean,
+  );
   return items.length > 0 ? items.join(' · ') : agent.id;
 }
 
@@ -253,11 +301,7 @@ function formatBlockLabel(block: ReplayBlock): string {
 function formatBlockDetail(block: ReplayBlock): string {
   if (block.type === 'tool_call' && block.toolCall) {
     const duration = formatDuration(block.toolCall.duration);
-    const outcome = block.toolCall.successKnown === false
-      ? '结果未知'
-      : block.toolCall.success
-        ? '成功'
-        : '失败';
+    const outcome = block.toolCall.successKnown === false ? '结果未知' : block.toolCall.success ? '成功' : '失败';
     return `${outcome} · ${duration}`;
   }
   if (block.type === 'model_call' && block.modelDecision) {
@@ -287,9 +331,9 @@ function getBlockToneClassName(block: ReplayBlock): string {
 function getTurnSummary(turn: ReplayTurn): string {
   const toolCount = turn.blocks.filter((block) => block.type === 'tool_call').length;
   const modelCount = turn.blocks.filter((block) => block.type === 'model_call').length;
-  const errorCount = turn.blocks.filter((block) => (
-    block.type === 'error' || (block.type === 'tool_call' && block.toolCall?.success === false)
-  )).length;
+  const errorCount = turn.blocks.filter(
+    (block) => block.type === 'error' || (block.type === 'tool_call' && block.toolCall?.success === false),
+  ).length;
   const items = [
     `${turn.blocks.length} blocks`,
     toolCount > 0 ? `${toolCount} tools` : null,
@@ -311,11 +355,7 @@ function renderEvidenceChip(
   const className = 'rounded border border-zinc-700/60 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400';
   if (!onOpenEvidence || item.actionKind === 'sessionReplay') {
     return (
-      <span
-        key={item.id}
-        title={item.title}
-        className={className}
-      >
+      <span key={item.id} title={item.title} className={className}>
         {label}
       </span>
     );
@@ -343,11 +383,18 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
   workflowRuns = [],
   backgroundTasks = [],
   evidence = [],
+  trajectorySummary,
+  onUpdateTrajectoryDatasetRole,
   onOpenEvidence,
   onClose,
 }) => {
   const [focusedReplayOwner, setFocusedReplayOwner] = React.useState<FocusedReplayOwner | null>(null);
+  const [updatingDatasetRole, setUpdatingDatasetRole] = React.useState<AgentTrajectoryDatasetRole | null>(null);
   const completeness = replay.summary.telemetryCompleteness;
+  const replayTrajectoryQuality = React.useMemo(() => evaluateAgentTrajectoryReplay(replay), [replay]);
+  const trajectoryQuality = trajectorySummary?.quality ?? replayTrajectoryQuality;
+  const trajectoryCollection =
+    trajectorySummary?.collection ?? resolveAgentTrajectoryCollectionMetadata(trajectoryQuality, undefined);
   const incompleteReasons = completeness?.incompleteReasons ?? [];
   const issueCount = replay.summary.deviations?.length ?? 0;
   const visibleTurns = replay.turns.slice(0, 8);
@@ -355,9 +402,9 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
   const workflowEvidenceByRunId = groupEvidenceByOwner(evidence, getWorkflowEvidenceRunId);
   const backgroundEvidenceByTaskId = groupEvidenceByOwner(evidence, getBackgroundEvidenceTaskId);
   const sortedWorkflowRuns = [...workflowRuns].sort((a, b) => getWorkflowSortTime(b) - getWorkflowSortTime(a));
-  const sortedBackgroundTasks = [...backgroundTasks].sort((a, b) => (
-    getBackgroundTaskSortTime(b) - getBackgroundTaskSortTime(a)
-  ));
+  const sortedBackgroundTasks = [...backgroundTasks].sort(
+    (a, b) => getBackgroundTaskSortTime(b) - getBackgroundTaskSortTime(a),
+  );
   const visibleWorkflowRuns = sortedWorkflowRuns.slice(0, 3);
   const visibleBackgroundTasks = sortedBackgroundTasks.slice(0, 3);
   const attachedEvidenceIds = new Set<string>();
@@ -376,21 +423,22 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
   const hiddenWorkflowRunCount = Math.max(0, workflowRuns.length - visibleWorkflowRuns.length);
   const hiddenBackgroundTaskCount = Math.max(0, backgroundTasks.length - visibleBackgroundTasks.length);
   const hiddenEvidenceCount = Math.max(0, remainingEvidence.length - visibleEvidence.length);
-  const hasWorkflowEvidence = visibleWorkflowRuns.length > 0
-    || visibleBackgroundTasks.length > 0
-    || visibleEvidence.length > 0;
-  const focusedWorkflowRun = focusedReplayOwner?.kind === 'workflow'
-    ? visibleWorkflowRuns.find((snapshot) => snapshot.runId === focusedReplayOwner.id) ?? null
-    : null;
-  const focusedBackgroundTask = focusedReplayOwner?.kind === 'background'
-    ? visibleBackgroundTasks.find((task) => task.id === focusedReplayOwner.id) ?? null
-    : null;
+  const hasWorkflowEvidence =
+    visibleWorkflowRuns.length > 0 || visibleBackgroundTasks.length > 0 || visibleEvidence.length > 0;
+  const focusedWorkflowRun =
+    focusedReplayOwner?.kind === 'workflow'
+      ? (visibleWorkflowRuns.find((snapshot) => snapshot.runId === focusedReplayOwner.id) ?? null)
+      : null;
+  const focusedBackgroundTask =
+    focusedReplayOwner?.kind === 'background'
+      ? (visibleBackgroundTasks.find((task) => task.id === focusedReplayOwner.id) ?? null)
+      : null;
   const activeFocusedOwner = focusedWorkflowRun || focusedBackgroundTask ? focusedReplayOwner : null;
   const activeFocusedOwnerKey = getFocusedReplayOwnerKey(activeFocusedOwner);
   const focusedEvidence = focusedWorkflowRun
-    ? workflowEvidenceByRunId.get(focusedWorkflowRun.runId) ?? []
+    ? (workflowEvidenceByRunId.get(focusedWorkflowRun.runId) ?? [])
     : focusedBackgroundTask
-      ? backgroundEvidenceByTaskId.get(focusedBackgroundTask.id) ?? []
+      ? (backgroundEvidenceByTaskId.get(focusedBackgroundTask.id) ?? [])
       : [];
 
   return (
@@ -418,436 +466,488 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
         </>
       }
     >
-        <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-            <dt className="text-zinc-500">Turns</dt>
-            <dd className="mt-1 font-medium text-zinc-200">{replay.summary.totalTurns}</dd>
-          </div>
-          <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-            <dt className="text-zinc-500">来源</dt>
-            <dd className="mt-1 font-medium text-zinc-200">{replay.dataSource}</dd>
-          </div>
-          <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-            <dt className="text-zinc-500">耗时</dt>
-            <dd className="mt-1 font-medium text-zinc-200">{formatDuration(replay.summary.totalDurationMs)}</dd>
-          </div>
-          <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-            <dt className="text-zinc-500">偏差</dt>
-            <dd className="mt-1 font-medium text-zinc-200">{issueCount}</dd>
-          </div>
-        </dl>
-
-        <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
-          <div className="text-zinc-500">工具分布</div>
-          <div className="mt-1 text-zinc-300">{formatToolDistribution(replay)}</div>
+      <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+          <dt className="text-zinc-500">Trajectory</dt>
+          <dd className="mt-1 flex items-center gap-1">
+            <span
+              className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getTrajectoryTierToneClassName(trajectoryQuality.tier)}`}
+            >
+              {trajectoryQuality.tier}
+            </span>
+            <span className="truncate font-medium text-zinc-200">
+              {getTrajectoryTaskKindLabel(trajectoryQuality.classification.taskKind)}
+            </span>
+          </dd>
         </div>
-
-        {hasWorkflowEvidence && (
-          <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="font-medium text-zinc-300">Workflow / Background</div>
-              <div className="text-[10px] text-zinc-600">
-                {workflowRuns.length} workflow · {backgroundTasks.length} task · {evidence.length} evidence
-              </div>
+        <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+          <dt className="text-zinc-500">数据集</dt>
+          <dd className="mt-1">
+            <div className="flex flex-wrap gap-1">
+              {TRAJECTORY_DATASET_ROLE_OPTIONS.map((role) => {
+                const active = trajectoryCollection.datasetRole === role;
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    disabled={!onUpdateTrajectoryDatasetRole || updatingDatasetRole !== null}
+                    aria-pressed={active ? 'true' : 'false'}
+                    aria-label={`${active ? '确认复核' : '标记为'} ${getTrajectoryDatasetLabel(role)}`}
+                    onClick={async (event) => {
+                      event.preventDefault();
+                      if (!onUpdateTrajectoryDatasetRole) return;
+                      setUpdatingDatasetRole(role);
+                      try {
+                        await onUpdateTrajectoryDatasetRole(role);
+                      } finally {
+                        setUpdatingDatasetRole(null);
+                      }
+                    }}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${active ? 'border-sky-400/40 bg-sky-500/15 text-sky-100' : 'border-zinc-700 bg-zinc-950/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50'}`}
+                  >
+                    {updatingDatasetRole === role ? '...' : getTrajectoryDatasetLabel(role)}
+                  </button>
+                );
+              })}
             </div>
+            <div className="mt-1 truncate text-[10px] text-zinc-500">
+              {trajectoryCollection.datasetVersion} · {trajectoryCollection.source}
+            </div>
+          </dd>
+        </div>
+        <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+          <dt className="text-zinc-500">Turns</dt>
+          <dd className="mt-1 font-medium text-zinc-200">{replay.summary.totalTurns}</dd>
+        </div>
+        <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+          <dt className="text-zinc-500">来源</dt>
+          <dd className="mt-1 font-medium text-zinc-200">{replay.dataSource}</dd>
+        </div>
+        <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+          <dt className="text-zinc-500">耗时</dt>
+          <dd className="mt-1 font-medium text-zinc-200">{formatDuration(replay.summary.totalDurationMs)}</dd>
+        </div>
+        <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+          <dt className="text-zinc-500">偏差</dt>
+          <dd className="mt-1 font-medium text-zinc-200">{issueCount}</dd>
+        </div>
+      </dl>
 
-            <div className="grid gap-2">
-              {activeFocusedOwner && (
-                <div className="rounded-md border border-zinc-700 bg-zinc-900/60 p-2">
+      <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
+        <div className="text-zinc-500">工具分布</div>
+        <div className="mt-1 text-zinc-300">{formatToolDistribution(replay)}</div>
+      </div>
+
+      {trajectoryQuality.failures.length > 0 && (
+        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs">
+          <div className="text-amber-200">Trajectory Gate</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {trajectoryQuality.failures.slice(0, 12).map((failure) => (
+              <span
+                key={failure}
+                className="rounded border border-amber-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-amber-100/80"
+              >
+                {failure}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasWorkflowEvidence && (
+        <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="font-medium text-zinc-300">Workflow / Background</div>
+            <div className="text-[10px] text-zinc-600">
+              {workflowRuns.length} workflow · {backgroundTasks.length} task · {evidence.length} evidence
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            {activeFocusedOwner && (
+              <div className="rounded-md border border-zinc-700 bg-zinc-900/60 p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">聚焦证据</div>
+                    <div className="mt-0.5 truncate text-xs font-medium text-zinc-200">
+                      {focusedWorkflowRun
+                        ? focusedWorkflowRun.goal
+                          ? `Workflow: ${focusedWorkflowRun.goal}`
+                          : `Workflow ${focusedWorkflowRun.runId}`
+                        : focusedBackgroundTask?.title}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] text-zinc-500">
+                      {focusedWorkflowRun
+                        ? `${formatWorkflowStatus(focusedWorkflowRun)} · ${formatWorkflowRunMeta(focusedWorkflowRun)}`
+                        : focusedBackgroundTask
+                          ? `${formatTaskStatus(focusedBackgroundTask)} · ${formatBackgroundTaskMeta(focusedBackgroundTask)}`
+                          : ''}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFocusedReplayOwner(null)}
+                    className="shrink-0 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-200"
+                  >
+                    退出聚焦
+                  </button>
+                </div>
+                {focusedEvidence.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1" aria-label="聚焦证据列表">
+                    {focusedEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px] text-zinc-500">
+                    这个执行现场暂未关联 replay/trace 证据
+                  </div>
+                )}
+                {focusedWorkflowRun && focusedWorkflowRun.phases.length > 0 && (
+                  <div className="mt-2 truncate text-[10px] text-zinc-500">
+                    Phases：{focusedWorkflowRun.phases.slice(0, 6).join(' · ')}
+                  </div>
+                )}
+                {focusedWorkflowRun && focusedWorkflowRun.agents.length > 0 && (
+                  <div className="mt-2 grid gap-1" aria-label="聚焦 workflow agents">
+                    <div className="text-[10px] font-medium text-zinc-400">
+                      Agents · {formatWorkflowAgentSummary(focusedWorkflowRun)}
+                    </div>
+                    {focusedWorkflowRun.agents.slice(0, 6).map((agent) => {
+                      const body = formatWorkflowAgentBody(agent);
+                      return (
+                        <div
+                          key={`focused:${focusedWorkflowRun.runId}:agent:${agent.id}`}
+                          className="rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate font-medium text-zinc-300">
+                              {agent.label || 'workflow agent'}
+                            </span>
+                            <span className="shrink-0 text-zinc-500">{formatWorkflowAgentStatus(agent)}</span>
+                          </div>
+                          <div className="mt-0.5 truncate text-zinc-500">{formatWorkflowAgentDetail(agent)}</div>
+                          {body && <div className="mt-0.5 truncate text-zinc-400">{body}</div>}
+                        </div>
+                      );
+                    })}
+                    {focusedWorkflowRun.agents.length > 6 && (
+                      <div className="px-1 text-[10px] text-zinc-600">
+                        另有 {focusedWorkflowRun.agents.length - 6} 个 workflow agent
+                      </div>
+                    )}
+                  </div>
+                )}
+                {focusedWorkflowRun && focusedWorkflowRun.logs.length > 0 && (
+                  <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1">
+                    <div className="text-[10px] font-medium text-zinc-400">Logs</div>
+                    <div className="mt-1 grid gap-0.5 text-[10px] text-zinc-500">
+                      {focusedWorkflowRun.logs.slice(-5).map((log, index) => (
+                        <div key={`focused:${focusedWorkflowRun.runId}:log:${index}`} className="truncate">
+                          {truncateContent(log, 120)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {focusedBackgroundTask && focusedBackgroundTask.outputRefs.length > 0 && (
+                  <div className="mt-2" aria-label="聚焦 background outputs">
+                    <div className="mb-1 text-[10px] font-medium text-zinc-400">Outputs</div>
+                    <div className="flex flex-wrap gap-1">
+                      {focusedBackgroundTask.outputRefs.slice(0, 6).map((ref) => (
+                        <span
+                          key={`focused:${focusedBackgroundTask.id}:output:${ref.id}`}
+                          title={ref.path || ref.uri || ref.label}
+                          className="rounded border border-zinc-700/60 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                        >
+                          {formatTaskOutputRef(ref)}
+                        </span>
+                      ))}
+                      {focusedBackgroundTask.outputRefs.length > 6 && (
+                        <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
+                          另有 {focusedBackgroundTask.outputRefs.length - 6} 个 output
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {focusedBackgroundTask && focusedBackgroundTask.events.length > 0 && (
+                  <div className="mt-2 grid gap-1" aria-label="聚焦 background events">
+                    <div className="text-[10px] font-medium text-zinc-400">Events</div>
+                    {focusedBackgroundTask.events.slice(-5).map((event) => (
+                      <div
+                        key={`focused:${event.id}`}
+                        className="rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px]"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-medium text-zinc-300">
+                            {formatTaskEventLabel(event)}
+                          </span>
+                          <span className="shrink-0 text-zinc-600">
+                            {new Date(event.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event)}</div>
+                      </div>
+                    ))}
+                    {focusedBackgroundTask.events.length > 5 && (
+                      <div className="px-1 text-[10px] text-zinc-600">
+                        另有 {focusedBackgroundTask.events.length - 5} 个 task event
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {visibleWorkflowRuns.map((snapshot) => {
+              const runEvidence = workflowEvidenceByRunId.get(snapshot.runId) ?? [];
+              const owner: FocusedReplayOwner = {
+                kind: 'workflow',
+                id: snapshot.runId,
+              };
+              const ownerKey = getFocusedReplayOwnerKey(owner);
+              const focused = ownerKey === activeFocusedOwnerKey;
+              return (
+                <div
+                  key={snapshot.runId}
+                  className={`rounded-md border p-2 ${focused ? 'border-violet-300/40 bg-violet-500/10' : 'border-violet-500/15 bg-violet-500/5'}`}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">聚焦证据</div>
-                      <div className="mt-0.5 truncate text-xs font-medium text-zinc-200">
-                        {focusedWorkflowRun
-                          ? (focusedWorkflowRun.goal ? `Workflow: ${focusedWorkflowRun.goal}` : `Workflow ${focusedWorkflowRun.runId}`)
-                          : focusedBackgroundTask?.title}
+                      <div className="truncate font-medium text-violet-200">
+                        {snapshot.goal ? `Workflow: ${snapshot.goal}` : `Workflow ${snapshot.runId}`}
                       </div>
-                      <div className="mt-0.5 truncate text-[10px] text-zinc-500">
-                        {focusedWorkflowRun
-                          ? `${formatWorkflowStatus(focusedWorkflowRun)} · ${formatWorkflowRunMeta(focusedWorkflowRun)}`
-                          : focusedBackgroundTask
-                            ? `${formatTaskStatus(focusedBackgroundTask)} · ${formatBackgroundTaskMeta(focusedBackgroundTask)}`
-                            : ''}
+                      <div className="mt-0.5 truncate text-[10px] text-violet-200/60">
+                        {formatWorkflowStatus(snapshot)}
+                      </div>
+                      <div className="mt-0.5 truncate text-[10px] text-violet-200/45">
+                        {formatWorkflowRunMeta(snapshot)}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setFocusedReplayOwner(null)}
-                      className="shrink-0 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-200"
-                    >
-                      退出聚焦
-                    </button>
+                    <div className="shrink-0 text-right text-[10px] text-violet-200/60">
+                      <div>{formatWorkflowAgentSummary(snapshot)}</div>
+                      {snapshot.durationMs !== undefined && <div>{formatDuration(snapshot.durationMs)}</div>}
+                      <button
+                        type="button"
+                        aria-pressed={focused ? 'true' : 'false'}
+                        aria-label={`聚焦 workflow ${snapshot.runId}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFocusedReplayOwner(focused ? null : owner);
+                        }}
+                        className="mt-1 rounded border border-violet-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-violet-200/70 transition-colors hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-violet-100"
+                      >
+                        {focused ? '已聚焦' : '聚焦'}
+                      </button>
+                    </div>
                   </div>
-                  {focusedEvidence.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-1" aria-label="聚焦证据列表">
-                      {focusedEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
-                    </div>
-                  ) : (
-                    <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px] text-zinc-500">
-                      这个执行现场暂未关联 replay/trace 证据
+                  {snapshot.phases.length > 0 && (
+                    <div className="mt-1 truncate text-[10px] text-zinc-500">
+                      Phases：{snapshot.phases.slice(0, 4).join(' · ')}
                     </div>
                   )}
-                  {focusedWorkflowRun && focusedWorkflowRun.phases.length > 0 && (
-                    <div className="mt-2 truncate text-[10px] text-zinc-500">
-                      Phases：{focusedWorkflowRun.phases.slice(0, 6).join(' · ')}
+                  {runEvidence.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1" aria-label={`Workflow ${snapshot.runId} 证据`}>
+                      {runEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
                     </div>
                   )}
-                  {focusedWorkflowRun && focusedWorkflowRun.agents.length > 0 && (
-                    <div className="mt-2 grid gap-1" aria-label="聚焦 workflow agents">
-                      <div className="text-[10px] font-medium text-zinc-400">
-                        Agents · {formatWorkflowAgentSummary(focusedWorkflowRun)}
-                      </div>
-                      {focusedWorkflowRun.agents.slice(0, 6).map((agent) => {
+                  {snapshot.agents.length > 0 && (
+                    <div className="mt-2 grid gap-1">
+                      {snapshot.agents.slice(0, 4).map((agent) => {
                         const body = formatWorkflowAgentBody(agent);
                         return (
                           <div
-                            key={`focused:${focusedWorkflowRun.runId}:agent:${agent.id}`}
-                            className="rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px]"
+                            key={agent.id}
+                            className="rounded border border-violet-500/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="min-w-0 truncate font-medium text-zinc-300">
+                              <span className="min-w-0 truncate font-medium text-violet-100">
                                 {agent.label || 'workflow agent'}
                               </span>
-                              <span className="shrink-0 text-zinc-500">{formatWorkflowAgentStatus(agent)}</span>
+                              <span className="shrink-0 text-violet-200/60">{formatWorkflowAgentStatus(agent)}</span>
                             </div>
                             <div className="mt-0.5 truncate text-zinc-500">{formatWorkflowAgentDetail(agent)}</div>
                             {body && <div className="mt-0.5 truncate text-zinc-400">{body}</div>}
                           </div>
                         );
                       })}
-                      {focusedWorkflowRun.agents.length > 6 && (
+                      {snapshot.agents.length > 4 && (
                         <div className="px-1 text-[10px] text-zinc-600">
-                          另有 {focusedWorkflowRun.agents.length - 6} 个 workflow agent
+                          另有 {snapshot.agents.length - 4} 个 workflow agent
                         </div>
                       )}
                     </div>
                   )}
-                  {focusedWorkflowRun && focusedWorkflowRun.logs.length > 0 && (
-                    <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1">
-                      <div className="text-[10px] font-medium text-zinc-400">Logs</div>
+                  {snapshot.logs.length > 0 && (
+                    <div className="mt-2 rounded border border-violet-500/10 bg-zinc-950/40 px-2 py-1">
+                      <div className="text-[10px] font-medium text-violet-100">Logs</div>
                       <div className="mt-1 grid gap-0.5 text-[10px] text-zinc-500">
-                        {focusedWorkflowRun.logs.slice(-5).map((log, index) => (
-                          <div key={`focused:${focusedWorkflowRun.runId}:log:${index}`} className="truncate">
-                            {truncateContent(log, 120)}
+                        {snapshot.logs.slice(-3).map((log, index) => (
+                          <div key={`${snapshot.runId}:log:${index}`} className="truncate">
+                            {truncateContent(log, 110)}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-                  {focusedBackgroundTask && focusedBackgroundTask.outputRefs.length > 0 && (
-                    <div className="mt-2" aria-label="聚焦 background outputs">
-                      <div className="mb-1 text-[10px] font-medium text-zinc-400">Outputs</div>
-                      <div className="flex flex-wrap gap-1">
-                        {focusedBackgroundTask.outputRefs.slice(0, 6).map((ref) => (
-                          <span
-                            key={`focused:${focusedBackgroundTask.id}:output:${ref.id}`}
-                            title={ref.path || ref.uri || ref.label}
-                            className="rounded border border-zinc-700/60 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                          >
-                            {formatTaskOutputRef(ref)}
-                          </span>
-                        ))}
-                        {focusedBackgroundTask.outputRefs.length > 6 && (
-                          <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
-                            另有 {focusedBackgroundTask.outputRefs.length - 6} 个 output
-                          </span>
-                        )}
+                </div>
+              );
+            })}
+            {hiddenWorkflowRunCount > 0 && (
+              <div className="px-1 text-[10px] text-zinc-600">另有 {hiddenWorkflowRunCount} 个 workflow run</div>
+            )}
+
+            {visibleBackgroundTasks.map((task) => {
+              const taskEvidence = backgroundEvidenceByTaskId.get(task.id) ?? [];
+              const owner: FocusedReplayOwner = {
+                kind: 'background',
+                id: task.id,
+              };
+              const ownerKey = getFocusedReplayOwnerKey(owner);
+              const focused = ownerKey === activeFocusedOwnerKey;
+              return (
+                <div
+                  key={task.id}
+                  className={`rounded-md border p-2 ${focused ? 'border-cyan-300/40 bg-cyan-500/10' : 'border-cyan-500/15 bg-cyan-500/5'}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-cyan-200">{task.title}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-cyan-200/60">{formatTaskStatus(task)}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-cyan-200/45">
+                        {formatBackgroundTaskMeta(task)}
                       </div>
                     </div>
+                    <div className="shrink-0 text-right text-[10px] text-cyan-200/60">
+                      <div>{task.source}</div>
+                      {task.durationMs !== undefined && <div>{formatDuration(task.durationMs)}</div>}
+                      <button
+                        type="button"
+                        aria-pressed={focused ? 'true' : 'false'}
+                        aria-label={`聚焦 background task ${task.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFocusedReplayOwner(focused ? null : owner);
+                        }}
+                        className="mt-1 rounded border border-cyan-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-cyan-200/70 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-cyan-100"
+                      >
+                        {focused ? '已聚焦' : '聚焦'}
+                      </button>
+                    </div>
+                  </div>
+                  {task.outputRefs.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {task.outputRefs.slice(0, 4).map((ref) => (
+                        <span
+                          key={ref.id}
+                          title={ref.path || ref.uri || ref.label}
+                          className="rounded border border-zinc-700/60 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                        >
+                          {formatTaskOutputRef(ref)}
+                        </span>
+                      ))}
+                    </div>
                   )}
-                  {focusedBackgroundTask && focusedBackgroundTask.events.length > 0 && (
-                    <div className="mt-2 grid gap-1" aria-label="聚焦 background events">
-                      <div className="text-[10px] font-medium text-zinc-400">Events</div>
-                      {focusedBackgroundTask.events.slice(-5).map((event) => (
+                  {taskEvidence.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1" aria-label={`Background task ${task.id} 证据`}>
+                      {taskEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                    </div>
+                  )}
+                  {task.events.length > 0 && (
+                    <div className="mt-2 grid gap-1">
+                      {task.events.slice(-3).map((event) => (
                         <div
-                          key={`focused:${event.id}`}
-                          className="rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px]"
+                          key={event.id}
+                          className="rounded border border-cyan-500/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="min-w-0 truncate font-medium text-zinc-300">
+                            <span className="min-w-0 truncate font-medium text-cyan-100">
                               {formatTaskEventLabel(event)}
                             </span>
-                            <span className="shrink-0 text-zinc-600">
+                            <span className="shrink-0 text-cyan-200/50">
                               {new Date(event.timestamp).toLocaleTimeString()}
                             </span>
                           </div>
                           <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event)}</div>
                         </div>
                       ))}
-                      {focusedBackgroundTask.events.length > 5 && (
-                        <div className="px-1 text-[10px] text-zinc-600">
-                          另有 {focusedBackgroundTask.events.length - 5} 个 task event
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
-              )}
-              {visibleWorkflowRuns.map((snapshot) => {
-                const runEvidence = workflowEvidenceByRunId.get(snapshot.runId) ?? [];
-                const owner: FocusedReplayOwner = { kind: 'workflow', id: snapshot.runId };
-                const ownerKey = getFocusedReplayOwnerKey(owner);
-                const focused = ownerKey === activeFocusedOwnerKey;
-                return (
-                  <div
-                    key={snapshot.runId}
-                    className={`rounded-md border p-2 ${
-                      focused
-                        ? 'border-violet-300/40 bg-violet-500/10'
-                        : 'border-violet-500/15 bg-violet-500/5'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-violet-200">
-                          {snapshot.goal ? `Workflow: ${snapshot.goal}` : `Workflow ${snapshot.runId}`}
-                        </div>
-                        <div className="mt-0.5 truncate text-[10px] text-violet-200/60">
-                          {formatWorkflowStatus(snapshot)}
-                        </div>
-                        <div className="mt-0.5 truncate text-[10px] text-violet-200/45">
-                          {formatWorkflowRunMeta(snapshot)}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right text-[10px] text-violet-200/60">
-                        <div>{formatWorkflowAgentSummary(snapshot)}</div>
-                        {snapshot.durationMs !== undefined && <div>{formatDuration(snapshot.durationMs)}</div>}
-                        <button
-                          type="button"
-                          aria-pressed={focused ? 'true' : 'false'}
-                          aria-label={`聚焦 workflow ${snapshot.runId}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setFocusedReplayOwner(focused ? null : owner);
-                          }}
-                          className="mt-1 rounded border border-violet-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-violet-200/70 transition-colors hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-violet-100"
-                        >
-                          {focused ? '已聚焦' : '聚焦'}
-                        </button>
-                      </div>
-                    </div>
-                    {snapshot.phases.length > 0 && (
-                      <div className="mt-1 truncate text-[10px] text-zinc-500">
-                        Phases：{snapshot.phases.slice(0, 4).join(' · ')}
-                      </div>
-                    )}
-                    {runEvidence.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1" aria-label={`Workflow ${snapshot.runId} 证据`}>
-                        {runEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
-                      </div>
-                    )}
-                    {snapshot.agents.length > 0 && (
-                      <div className="mt-2 grid gap-1">
-                        {snapshot.agents.slice(0, 4).map((agent) => {
-                          const body = formatWorkflowAgentBody(agent);
-                          return (
-                            <div
-                              key={agent.id}
-                              className="rounded border border-violet-500/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="min-w-0 truncate font-medium text-violet-100">
-                                  {agent.label || 'workflow agent'}
-                                </span>
-                                <span className="shrink-0 text-violet-200/60">
-                                  {formatWorkflowAgentStatus(agent)}
-                                </span>
-                              </div>
-                              <div className="mt-0.5 truncate text-zinc-500">{formatWorkflowAgentDetail(agent)}</div>
-                              {body && <div className="mt-0.5 truncate text-zinc-400">{body}</div>}
-                            </div>
-                          );
-                        })}
-                        {snapshot.agents.length > 4 && (
-                          <div className="px-1 text-[10px] text-zinc-600">
-                            另有 {snapshot.agents.length - 4} 个 workflow agent
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {snapshot.logs.length > 0 && (
-                      <div className="mt-2 rounded border border-violet-500/10 bg-zinc-950/40 px-2 py-1">
-                        <div className="text-[10px] font-medium text-violet-100">Logs</div>
-                        <div className="mt-1 grid gap-0.5 text-[10px] text-zinc-500">
-                          {snapshot.logs.slice(-3).map((log, index) => (
-                            <div key={`${snapshot.runId}:log:${index}`} className="truncate">
-                              {truncateContent(log, 110)}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {hiddenWorkflowRunCount > 0 && (
-                <div className="px-1 text-[10px] text-zinc-600">
-                  另有 {hiddenWorkflowRunCount} 个 workflow run
-                </div>
-              )}
+              );
+            })}
+            {hiddenBackgroundTaskCount > 0 && (
+              <div className="px-1 text-[10px] text-zinc-600">另有 {hiddenBackgroundTaskCount} 个 background task</div>
+            )}
 
-              {visibleBackgroundTasks.map((task) => {
-                const taskEvidence = backgroundEvidenceByTaskId.get(task.id) ?? [];
-                const owner: FocusedReplayOwner = { kind: 'background', id: task.id };
-                const ownerKey = getFocusedReplayOwnerKey(owner);
-                const focused = ownerKey === activeFocusedOwnerKey;
-                return (
-                  <div
-                    key={task.id}
-                    className={`rounded-md border p-2 ${
-                      focused
-                        ? 'border-cyan-300/40 bg-cyan-500/10'
-                        : 'border-cyan-500/15 bg-cyan-500/5'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-cyan-200">{task.title}</div>
-                        <div className="mt-0.5 truncate text-[10px] text-cyan-200/60">
-                          {formatTaskStatus(task)}
-                        </div>
-                        <div className="mt-0.5 truncate text-[10px] text-cyan-200/45">
-                          {formatBackgroundTaskMeta(task)}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right text-[10px] text-cyan-200/60">
-                        <div>{task.source}</div>
-                        {task.durationMs !== undefined && <div>{formatDuration(task.durationMs)}</div>}
-                        <button
-                          type="button"
-                          aria-pressed={focused ? 'true' : 'false'}
-                          aria-label={`聚焦 background task ${task.id}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setFocusedReplayOwner(focused ? null : owner);
-                          }}
-                          className="mt-1 rounded border border-cyan-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-cyan-200/70 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-cyan-100"
-                        >
-                          {focused ? '已聚焦' : '聚焦'}
-                        </button>
-                      </div>
-                    </div>
-                    {task.outputRefs.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {task.outputRefs.slice(0, 4).map((ref) => (
-                          <span
-                            key={ref.id}
-                            title={ref.path || ref.uri || ref.label}
-                            className="rounded border border-zinc-700/60 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                          >
-                            {formatTaskOutputRef(ref)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {taskEvidence.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1" aria-label={`Background task ${task.id} 证据`}>
-                        {taskEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
-                      </div>
-                    )}
-                    {task.events.length > 0 && (
-                      <div className="mt-2 grid gap-1">
-                        {task.events.slice(-3).map((event) => (
-                          <div
-                            key={event.id}
-                            className="rounded border border-cyan-500/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="min-w-0 truncate font-medium text-cyan-100">
-                                {formatTaskEventLabel(event)}
-                              </span>
-                              <span className="shrink-0 text-cyan-200/50">
-                                {new Date(event.timestamp).toLocaleTimeString()}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {hiddenBackgroundTaskCount > 0 && (
-                <div className="px-1 text-[10px] text-zinc-600">
-                  另有 {hiddenBackgroundTaskCount} 个 background task
+            {visibleEvidence.length > 0 && (
+              <div>
+                <div className="mb-1 text-[10px] font-medium text-zinc-500">其他证据</div>
+                <div className="flex flex-wrap gap-1" aria-label="其他证据">
+                  {visibleEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                  {hiddenEvidenceCount > 0 && (
+                    <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
+                      另有 {hiddenEvidenceCount} 个 evidence
+                    </span>
+                  )}
                 </div>
-              )}
-
-              {visibleEvidence.length > 0 && (
-                <div>
-                  <div className="mb-1 text-[10px] font-medium text-zinc-500">其他证据</div>
-                  <div className="flex flex-wrap gap-1" aria-label="其他证据">
-                    {visibleEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
-                    {hiddenEvidenceCount > 0 && (
-                      <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
-                        另有 {hiddenEvidenceCount} 个 evidence
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950/60 p-2">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-xs font-medium text-zinc-300">Timeline</div>
-            {hiddenTurnCount > 0 && (
-              <div className="text-[10px] text-zinc-600">另有 {hiddenTurnCount} 轮未展示</div>
+              </div>
             )}
           </div>
-          {visibleTurns.length === 0 ? (
-            <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-500">
-              Replay 暂无 turn 明细
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              {visibleTurns.map((turn) => (
-                <div key={turn.turnNumber} className="rounded-md border border-zinc-800 bg-zinc-900/35 p-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium text-zinc-200">第 {turn.turnNumber} 轮</div>
-                      <div className="mt-0.5 truncate text-[10px] text-zinc-600">{getTurnSummary(turn)}</div>
-                    </div>
-                    <div className="shrink-0 text-right text-[10px] text-zinc-600">
-                      <div>{formatDuration(turn.durationMs)}</div>
-                      <div>{turn.inputTokens + turn.outputTokens} tokens</div>
-                    </div>
-                  </div>
-                  {turn.blocks.length > 0 && (
-                    <div className="mt-2 grid gap-1">
-                      {turn.blocks.slice(0, 6).map((block, index) => (
-                        <div
-                          key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}
-                          className={`rounded border px-2 py-1 text-[11px] ${getBlockToneClassName(block)}`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="min-w-0 truncate font-medium">{formatBlockLabel(block)}</span>
-                            <span className="shrink-0 text-[10px] opacity-70">{block.type}</span>
-                          </div>
-                          <div className="mt-0.5 truncate opacity-80">{formatBlockDetail(block)}</div>
-                        </div>
-                      ))}
-                      {turn.blocks.length > 6 && (
-                        <div className="px-2 text-[10px] text-zinc-600">
-                          另有 {turn.blocks.length - 6} 个 block
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+      )}
 
-        {incompleteReasons.length > 0 && (
-          <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
-            Replay 数据不完整：{incompleteReasons.join(' · ')}
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950/60 p-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs font-medium text-zinc-300">Timeline</div>
+          {hiddenTurnCount > 0 && <div className="text-[10px] text-zinc-600">另有 {hiddenTurnCount} 轮未展示</div>}
+        </div>
+        {visibleTurns.length === 0 ? (
+          <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-500">
+            Replay 暂无 turn 明细
+          </div>
+        ) : (
+          <div className="grid gap-2">
+            {visibleTurns.map((turn) => (
+              <div key={turn.turnNumber} className="rounded-md border border-zinc-800 bg-zinc-900/35 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-zinc-200">第 {turn.turnNumber} 轮</div>
+                    <div className="mt-0.5 truncate text-[10px] text-zinc-600">{getTurnSummary(turn)}</div>
+                  </div>
+                  <div className="shrink-0 text-right text-[10px] text-zinc-600">
+                    <div>{formatDuration(turn.durationMs)}</div>
+                    <div>{turn.inputTokens + turn.outputTokens} tokens</div>
+                  </div>
+                </div>
+                {turn.blocks.length > 0 && (
+                  <div className="mt-2 grid gap-1">
+                    {turn.blocks.slice(0, 6).map((block, index) => (
+                      <div
+                        key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}
+                        className={`rounded border px-2 py-1 text-[11px] ${getBlockToneClassName(block)}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-medium">{formatBlockLabel(block)}</span>
+                          <span className="shrink-0 text-[10px] opacity-70">{block.type}</span>
+                        </div>
+                        <div className="mt-0.5 truncate opacity-80">{formatBlockDetail(block)}</div>
+                      </div>
+                    ))}
+                    {turn.blocks.length > 6 && (
+                      <div className="px-2 text-[10px] text-zinc-600">另有 {turn.blocks.length - 6} 个 block</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
+      </div>
+
+      {incompleteReasons.length > 0 && (
+        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
+          Replay 数据不完整：{incompleteReasons.join(' · ')}
+        </div>
+      )}
     </Modal>
   );
 };

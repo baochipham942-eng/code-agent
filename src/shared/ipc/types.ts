@@ -11,6 +11,7 @@ import type {
   TodoItem,
 } from '../contract';
 import type { ConversationEnvelopeContext } from '../contract/conversationEnvelope';
+import type { AgentTrajectoryCollectionMetadataPatch } from '../contract/agentTrajectory';
 
 import type {
   ObjectiveMetrics,
@@ -156,6 +157,15 @@ export interface SessionReviewItemsRequest {
   sessionIds: string[];
   includeReviewed?: boolean;
   limitPerSession?: number;
+}
+
+export interface AgentTrajectoryQualitySummariesRequest {
+  sessionIds: string[];
+}
+
+export interface AgentTrajectoryCollectionUpdateRequest {
+  sessionId: string;
+  patch: AgentTrajectoryCollectionMetadataPatch;
 }
 
 /**

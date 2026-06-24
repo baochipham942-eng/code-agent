@@ -21,7 +21,8 @@
 12. [日志系统](#12-日志系统)
 13. [错误分类](#13-错误分类)
 14. [数据库 Schema](#14-数据库-schema)
-15. [文件清单](#15-文件清单)
+15. [Agent Trajectory P3 数据运营管线](#15-agent-trajectory-p3-数据运营管线)
+16. [文件清单](#16-文件清单)
 
 ---
 
@@ -38,6 +39,8 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 评测分为两个层次：
 - **客观指标**（Objective）：从数据库直接计算，无需 LLM，毫秒级返回
 - **主观评测**（Subjective）：调用 LLM 进行语义级评估，按需触发
+
+2026-06-24 之后，评测系统还包含 Agent Trajectory 数据运营闭环。它不是按单次 API 请求打分，而是把完整 agent session 转成可复核、可导出的 `core_eval` JSONL 数据集：`User -> Assistant/model decision -> Tool Call -> Tool Result -> Assistant Final Answer` 必须闭合，且正式导出只接受 `collection.source = manual_review` 的 session。
 
 ### 评分体系
 
@@ -65,7 +68,7 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 
 ## 2. 双管线架构
 
-评测系统采用双管线（Dual-Pipeline）架构，分别处理会话评测和批量评测两种场景：
+评测系统采用三条管线，分别处理会话评分、批量评测和 Agent Trajectory 数据运营：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -80,6 +83,13 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 │  TestRunner → 确定性断言（15+ 断言类型）→ 结果聚合              │
 │  触发: eval-ci.ts CLI / CI 管道                               │
 │  输出: experiments + experiment_cases 表                      │
+└─────────────────────────────────────────────────────────────┘
+         ↕ AgentTrajectoryExporter（session-level 数据集）
+┌─────────────────────────────────────────────────────────────┐
+│               Pipeline C: Agent Trajectory 数据运营            │
+│  StructuredReplay → G0/G1/G2 Gate → Review Queue → JSONL      │
+│  触发: trajectory:* CLI / Replay 人工复核                       │
+│  输出: agentTrajectoryCollection metadata + core_eval JSONL    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,6 +107,15 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 - **输出**：pass/fail 结果 + 详细断言日志，写入 `experiments` + `experiment_cases` 表
 - **特点**：可重复、确定性，无 LLM 依赖
 
+### Pipeline C — Agent Trajectory 数据运营
+
+- **触发方式**：`trajectory:audit`、`trajectory:collect-sample-live`、`trajectory:review-status`、`trajectory:review-dossier`、`trajectory:apply-review-live`、`trajectory:live-closeout`
+- **评估入口**：`evaluateAgentTrajectoryReplay()` 对 `StructuredReplay` 做完整性 gate
+- **质量层级**：`G2` 可进 `core_eval`，`G1` 留作 `diagnostic`，`G0` / ordinary chat 进入 `excluded`
+- **人工复核**：机器生成的分类先记为 `audit_backfill`；Replay UI 或 reviewed worksheet 写入 `manual_review`
+- **正式导出**：`trajectory:live-closeout` 只导出 `collection.source = manual_review` 且达到 strict gate 的 `core_eval` 行
+- **P3 关闭标准**：20-50 条 fresh live agent candidates，全部人工复核，0 pending review，`core-eval.jsonl` 行数与 reviewed `core_eval` 数一致，G2 / top failure / diagnostic / excluded rate 过 gate
+
 ### 桥接层 — ExperimentAdapter
 
 将 TestRunner 的批量评测结果转换为实验系统的数据格式：
@@ -113,6 +132,21 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 | `evaluation:load-experiment` | 加载实验详情 + 用例数据 |
 | `evaluation:get-failure-funnel` | 获取失败漏斗分析数据 |
 | `evaluation:get-cross-experiment` | 跨实验对比数据 |
+
+### Agent Trajectory CLI
+
+Agent Trajectory 数据运营走 CLI 和 Replay UI，不新增 evaluation IPC 通道：
+
+| 命令 | 用途 |
+|------|------|
+| `npm run trajectory:collect-sample-live` | 对 live data dir 追加受控 AgentLoop 样本，强制先备份 DB |
+| `npm run trajectory:review-status` | 只读查看 live window 的 agent candidates、pending review、exported rows 和 gate failures |
+| `npm run trajectory:review-worksheet` | 生成只含 pending agent candidates 的人工复核 worksheet |
+| `npm run trajectory:review-dossier` | 生成含 prompt、final answer、tool chain、models、tool definitions 和 failure tags 的证据包 |
+| `npm run trajectory:apply-review-live` | 只应用显式 review 决策，写 `collection.source = manual_review`，强制先备份 DB |
+| `npm run trajectory:post-review-check` | 重建 closeout report / review packet / JSONL，允许 gate failure，适合复核过程中使用 |
+| `npm run trajectory:live-closeout` | 严格最终验收，不带 `--allow-gate-failure`，失败即非 0 退出 |
+| `npm run trajectory:p3-acceptance` | 只读输出 P3 requirement-by-requirement 验收快照 |
 
 ---
 
@@ -339,6 +373,33 @@ currentSessionId: string | null;
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
+
+### 5.4 Agent Trajectory 数据运营流
+
+```
+fresh live AgentLoop sessions
+  → telemetry_sessions / telemetry_turns / telemetry_tool_calls / session_events
+  → TelemetryQueryService.getStructuredReplay(sessionId)
+  → evaluateAgentTrajectoryReplay(replay)
+      ├─ 检查 model decision / provenance
+      ├─ 检查 tool call id / args / schema
+      ├─ 检查 paired tool result / pending closeout
+      ├─ 检查 final assistant answer
+      └─ 分类 G2/core_eval, G1/diagnostic, G0|ordinary_chat/excluded
+  → resolveAgentTrajectoryCollectionMetadata()
+      ├─ 初始 source = audit_backfill
+      └─ 人工复核后 source = manual_review
+  → trajectory review worksheet / dossier / packet
+  → apply-agent-trajectory-review.ts
+  → trajectory:live-closeout
+      ├─ exportCollectionSource = manual_review
+      ├─ minExported = 20
+      ├─ minManualReviewedAgentCandidates = 20
+      ├─ maxPendingReview = 0
+      └─ core-eval.jsonl
+```
+
+正式 `core_eval` JSONL 是 session-level artifact。每行包含 `trajectoryId`、`traceIdentity`、`quality`、`collection`、`summary`、`toolDefinitions`、`steps`，其中 `collection.source` 必须是 `manual_review`。
 
 ---
 
@@ -610,6 +671,23 @@ CLI 入口，支持在 CI/CD 管道中批量运行评测用例。
 > 经验值：mimo 全量跑 `CODE_AGENT_TIMEOUT_SCALE=4`（60s→240s、30s→120s、300s→1200s）。
 > `scale` 与 `FORCE_TIMEOUT` 同时设时，FORCE_TIMEOUT 优先且不叠加 scale。
 
+### Agent Trajectory P3 closeout CLI
+
+P3 closeout 使用 live data dir 的 fresh window。最终验收命令示例：
+
+```bash
+npm run trajectory:live-closeout -- --since=2026-06-24T20:27:00+08:00
+```
+
+该命令会读取 live DB 的 telemetry/replay，但在默认 closeout 路径下复制到临时 runtime data dir 做导出和 gate，因此不会再次写 live DB。真正写 live DB 的命令只有明确带 `--live-data-dir --backup-live-db --persist-collection-metadata` 的 seed 路径，以及 `trajectory:apply-review-live` 这种带 `--apply --live-data-dir --backup-live-db` 的人工复核路径。
+
+P3 as-built 验收结果记录在：
+
+- `docs/audits/agent-trajectory-live-closeout-latest.md`
+- `docs/audits/agent-trajectory-p3-acceptance-latest.md`
+- `docs/audits/2026-06-24-agent-trajectory-real-data-backflow.md`
+- `eval-datasets/agent-trajectory/core-eval.jsonl`
+
 ---
 
 ## 12. 日志系统
@@ -710,10 +788,72 @@ CREATE TABLE experiment_cases (
 | `tool_uses` | 工具调用记录（name, args, result, success, duration） |
 | `telemetry_turns` | 轮次级遥测 |
 | `telemetry_tool_calls` | 工具调用遥测（含 `error_category` 列） |
+| `sessions.metadata.agentTrajectoryCollection` | session-level trajectory collection metadata；记录 dataset role、task kind、dataset version、source、reviewer、failure tags |
 
 ---
 
-## 15. 文件清单
+## 15. Agent Trajectory P3 数据运营管线
+
+### 15.1 Collection Spec V1
+
+| 项 | 规则 |
+|----|------|
+| Capture unit | 一条完整 session |
+| Preferred tasks | Coding, Search, Data Analysis, agent task |
+| Default excluded | ordinary chat, translation-only, embedding-only, replay-only, transcript fallback |
+| Required chain | User -> Assistant/model decision -> Tool Call -> Tool Result -> Assistant Final Answer |
+| Tool requirements | 每个 tool call 要有 id、name、args、tool schema 和 paired result |
+| Model requirements | provider/model provenance 和 replay explanation 可回放 |
+| Dataset roles | `core_eval`, `diagnostic`, `excluded` |
+| Final export source | 只接受 `manual_review` |
+
+### 15.2 Gate Semantics
+
+| Tier | Role | Meaning |
+|------|------|---------|
+| G2 | `core_eval` | 完整 telemetry replay，无 failure tags，可经人工复核进入 JSONL |
+| G1 | `diagnostic` | 有真实 telemetry，但缺 tool definition/schema/final answer 等修复项 |
+| G0 | `excluded` 或 `diagnostic` | 缺结构化 replay、普通聊天、无工具链或严重不完整 |
+
+Strict P3 gate:
+
+- `minSessions >= 20`
+- `minAgentCandidates >= 20`
+- `minExported >= 20`
+- `minManualReviewed >= 20`
+- `minManualReviewedAgentCandidates >= 20`
+- `maxPendingReview = 0`
+- `minG2Rate >= 0.70`
+- `maxTopFailureRate <= 0.20`
+- `maxDiagnosticRate <= 0.30`
+- `maxExcludedRate <= 0.05`
+
+### 15.3 2026-06-24 P3 Closeout Evidence
+
+Fresh window: `2026-06-24T20:27:00+08:00`.
+
+| Metric | Value |
+|--------|------:|
+| Audited sessions | 20 |
+| Agent candidates | 20 |
+| Manual reviewed agent candidates | 20 |
+| Exported `core_eval` rows | 20 |
+| Pending review | 0 |
+| G2 rate | 100.00% |
+| Top failure | none |
+| `core-eval.jsonl` lines | 20 |
+
+Final strict closeout:
+
+```bash
+npm run trajectory:live-closeout -- --since=2026-06-24T20:27:00+08:00
+```
+
+The command exits 0 and regenerates `docs/audits/agent-trajectory-live-closeout-latest.md` with `Status: passed`.
+
+---
+
+## 16. 文件清单
 
 ### 后端（Main Process）
 
@@ -722,6 +862,8 @@ CREATE TABLE experiment_cases (
 | `src/main/evaluation/EvaluationService.ts` | 448 | 主编排服务，两层 fallback |
 | `src/main/evaluation/swissCheeseEvaluator.ts` | 588 | 瑞士奶酪多评审员引擎 |
 | `src/main/evaluation/parallelEvaluator.ts` | 494 | 多候选方案选择 |
+| `src/main/evaluation/trajectory/trajectoryExporter.ts` | — | Agent Trajectory session-level audit/export/segmentation |
+| `src/main/evaluation/trajectory/trajectoryGate.ts` | — | Shared Agent Trajectory gate re-export |
 | `src/main/evaluation/sessionAnalyticsService.ts` | 399 | 客观指标计算 |
 | `src/main/evaluation/sessionEventService.ts` | 299 | SSE 事件持久化 |
 | `src/main/evaluation/types.ts` | 62 | 内部类型定义 |
@@ -737,6 +879,13 @@ CREATE TABLE experiment_cases (
 | `src/main/evaluation/failureFunnel.ts` | — | 5 阶段失败漏斗分类 |
 | `src/main/ipc/evaluation.ipc.ts` | 179+ | IPC 桥接层（12 handler） |
 | `src/main/cli/eval-ci.ts` | — | CLI 批量评测入口 |
+| `scripts/export-agent-trajectories.ts` | — | Agent Trajectory audit / closeout CLI |
+| `scripts/collect-agent-trajectory-sample.ts` | — | Controlled real AgentLoop sample collection |
+| `scripts/agent-trajectory-review-status.ts` | — | Review queue status / worksheet generation |
+| `scripts/agent-trajectory-review-dossier.ts` | — | Review evidence dossier generation |
+| `scripts/apply-agent-trajectory-review.ts` | — | Explicit review decision apply path |
+| `scripts/agent-trajectory-p3-acceptance.ts` | — | P3 requirement snapshot |
+| `src/shared/contract/agentTrajectory.ts` | — | Agent Trajectory quality, collection metadata and JSONL contract |
 | `src/shared/types/evaluation.ts` | 143 | 公开类型 + 常量 |
 | `src/shared/ipc/channels.ts` | — | IPC 通道名定义 |
 

@@ -88,6 +88,7 @@ export interface Session {
   workingDirectory?: string;
   type?: SessionType; // 工作单元类型，旧数据默认 chat
   origin?: SessionOrigin; // 触发来源，如 cron job / heartbeat task / parent agent
+  metadata?: Record<string, unknown>; // 会话级产品/评测元数据，不承载消息内容
   parentSessionId?: string; // 子 session 或派生 session 的父级
   sourceRunId?: string; // 外部执行记录 ID，如 CronJobExecution.id
   engine?: AgentEngineSessionMetadata; // Agent Engine metadata; old sessions default to native

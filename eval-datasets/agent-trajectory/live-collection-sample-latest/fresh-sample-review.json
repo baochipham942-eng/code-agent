@@ -1,0 +1,333 @@
+{
+  "generatedAt": 1782304676467,
+  "dataDir": "/Users/linchen/Library/Application Support/code-agent",
+  "scratchDir": "/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/agent-trajectory-collection-run-69iOEC",
+  "workspaceDir": "/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/agent-trajectory-collection-run-69iOEC/workspace",
+  "draftCoreEvalPath": "/Users/linchen/Downloads/ai/code-agent/eval-datasets/agent-trajectory/live-collection-sample-latest/draft-core-eval-candidates.jsonl",
+  "totalSessions": 10,
+  "exported": 10,
+  "byTier": {
+    "G0": 0,
+    "G1": 0,
+    "G2": 10
+  },
+  "g2Rate": 1,
+  "byDatasetRole": {
+    "core_eval": 10,
+    "diagnostic": 0,
+    "excluded": 0
+  },
+  "byTaskKind": {
+    "coding": 10,
+    "search": 0,
+    "data_analysis": 0,
+    "agent_task": 0,
+    "ordinary_chat": 0,
+    "other": 0
+  },
+  "byCollectionSource": {
+    "quality_gate": 0,
+    "manual_review": 0,
+    "audit_backfill": 10,
+    "session_metadata": 0
+  },
+  "qualityGate": {
+    "passed": true,
+    "minSessions": 10,
+    "minG2Rate": 0.7,
+    "maxTopFailureRate": 0.2,
+    "topFailureRate": 0
+  },
+  "reviewItems": [
+    {
+      "sessionId": "test-1782304669143",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304670043",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304670815",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304671494",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304672207",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304672913",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304673593",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304674346",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304675064",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    },
+    {
+      "sessionId": "test-1782304675747",
+      "reviewScope": "agent_candidate",
+      "currentDatasetRole": "core_eval",
+      "suggestedAction": "verify_core_eval",
+      "priority": "medium",
+      "tier": "G2",
+      "taskKind": "coding",
+      "datasetVersion": "agent-trajectory-v1",
+      "collectionSource": "audit_backfill",
+      "failures": [],
+      "metrics": {
+        "turnCount": 2,
+        "modelCallCount": 2,
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "eventCount": 17,
+        "toolDefinitionCount": 1,
+        "finalAnswerPresent": true,
+        "pendingToolResultCount": 0
+      },
+      "review": {
+        "datasetRole": null,
+        "taskKind": null,
+        "reviewedBy": null,
+        "notes": null,
+        "instruction": "Open Replay, then fill datasetRole. Gate suggestion: core_eval. Allowed: core_eval, diagnostic, excluded."
+      }
+    }
+  ]
+}

@@ -58,6 +58,15 @@
 - [ ] **真付费 dogfood**（默认单跑一次、**付费前找林晨确认**）：视频 1 条 + 演示稿带图 1 套，走真 agent→对话成本卡确认→出片落画布/预览 tab。**dogfood 必带** `CODE_AGENT_RENDERER_HOT_UPDATE=false CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE=true` + 换端口避 SW + curl 比对 bundle hash（记忆铁坑）。
 - [ ] 更新 spec §9 + roadmap 进度；PR 开但 CI/测试全绿前不擅自合（#282 仓库无 CI workflow，合并信号靠测试证据 + dogfood）。
 
+## 7.5 实施进度（2026-06-24）
+- ✅ **Slice A** 会话内成本确认共享原语（`promptUserInChat`+`confirmGenerationCost`，AskUserQuestion 薄封装零回归）— commit `c968952ce`，22 测。
+- ✅ **Slice C** `ProposeVideoOps`→画布视频节点（会话区确认成本/永不自主/属主闸/表单共用 `generateVideoToCanvas`）— commit `2672b5c6f`，9+62 测。
+- ✅ **Slice D** `ProposeSlidesOps`→预览 tab（大纲免费/illustrate 付费会话确认/`WORKSPACE_OPEN_PREVIEW`）— commit `d5bf25575`，7 测。
+- ✅ **Slice E** 网页会话化 affordance（写自包含 HTML，免限制歧义）— commit `16c29d9de`。
+- ✅ **对抗审计**（独立 subagent 反方）0 HIGH/2 MED/3 LOW，修 M2 fail-open + M1 文档化 — commit `aad36fd28`，报告 `docs/audits/2026-06-24-2b-media-agent-paths.md`。
+- 全量 2097 设计/工具/协议/共享测绿 + typecheck 净。**真付费 dogfood 待林晨授权后跑（视频 1 + 演示稿带图 1）**。
+- **范围调整**：**Slice B（图像成本确认迁对话）+ Slice F（window.confirm 收尾）下放 2c**。真因：会话内成本原语在 **main**，而「是否 ADR-027 自主信封批次」的判断在 **renderer** 状态（`useDesignAutonomyStore`）；main 无法干净判定该弹会话确认还是走信封预算，强行做要把信封态复制进 main（正是历史审计反复抓的 dual-state drift）。安全做法=随 2c 画布审批条/布局收口一起重做。新媒介（视频/演示稿）已在 2b 证明会话内成本范式。window.confirm（视频表单/标注重绘）是**画布用户主动操作**非 agent 路径，随 2c 表单退役一并收口。
+
 ## 8. 显式不做（YAGNI / 留后期）
 - 表单退役、布局收口、god-file 拆分 → **2c**。
 - 出图健康优先/单步兜底、草稿去重、历史污染迁移 → **2a**。

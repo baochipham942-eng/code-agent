@@ -164,6 +164,14 @@ export async function executeProposeCanvasOps(
       const skipNote = skipped > 0 ? `，跳过 ${skipped} 项（目标已变更，或被用户取消勾选——勿重复提议被否决项）` : '';
       // 二刀：含付费生成时回灌实际合计花费，让模型知道真烧了多少。
       const costNote = typeof decision.costCny === 'number' && decision.costCny > 0 ? `，本次生成实际花费 ¥${decision.costCny.toFixed(2)}` : '';
+      // ADR-027 自主：自动路径回填剩余预算——告诉 agent 继续发散还是停下让用户挑。
+      const auto = decision.autonomy;
+      if (auto) {
+        const tail = auto.exhausted
+          ? `自主信封已耗尽（剩 ${auto.remainingVariants} 个变体 / ¥${auto.remainingCny.toFixed(2)}）。停止生成，让用户从变体里挑选一个。`
+          : `自主信封剩余 ${auto.remainingVariants} 个变体 / ¥${auto.remainingCny.toFixed(2)}。可继续提议下一个**明显不同方向**的变体，或停下让用户挑选。`;
+        return { ok: true, output: `已在自主信封内自动应用：${applied} 项画布操作${skipNote}${costNote}（${describeOps(ops)}）。${tail}` };
+      }
       return { ok: true, output: `用户已批准并应用：${applied} 项画布操作${skipNote}${costNote}（${describeOps(ops)}）。画布已更新。` };
     }
     const fb = decision.feedback ? `\n用户意见：${decision.feedback}` : '';

@@ -177,6 +177,38 @@ describe('二刀：含付费生成', () => {
     expect(sendMock.mock.calls[0][1].ops[0]).toMatchObject({ kind: 'generateImage', prompt: '一张登录页' });
   });
 
+  it('ADR-027 自主：apply 回灌 autonomy → 输出「自动应用」+ 剩余预算；未耗尽提示继续发散', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: [{ kind: 'generateImage', prompt: 'a' }] }, makeCtx(), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    const reqId = sendMock.mock.calls[0][1].requestId as string;
+    await captured.responseCb!(null, { requestId: reqId, verdict: 'apply', appliedCount: 1, skippedCount: 0, costCny: 0.14, autonomy: { remainingVariants: 2, remainingCny: 0.36, exhausted: false } });
+    const r = await p;
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.output).toContain('自动应用');
+      expect(r.output).toContain('剩余 2 个变体');
+      expect(r.output).toContain('继续提议');
+    }
+  });
+
+  it('ADR-027 自主：耗尽 → 输出提示停止让用户挑选', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+    const h = await proposeCanvasOpsModule.createHandler();
+    const p = h.execute({ ops: [{ kind: 'generateImage', prompt: 'a' }] }, makeCtx(), allowAll);
+    await new Promise((r) => setTimeout(r, 10));
+    const reqId = sendMock.mock.calls[0][1].requestId as string;
+    await captured.responseCb!(null, { requestId: reqId, verdict: 'apply', appliedCount: 1, skippedCount: 0, costCny: 0.14, autonomy: { remainingVariants: 0, remainingCny: 0.08, exhausted: true } });
+    const r = await p;
+    if (r.ok) {
+      expect(r.output).toContain('耗尽');
+      expect(r.output).toContain('挑选');
+    }
+  });
+
   it('apply 回灌 costCny → 输出含实际花费', async () => {
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
     hasInteractiveRendererMock.mockReturnValue(true);

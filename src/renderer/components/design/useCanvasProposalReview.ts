@@ -14,7 +14,12 @@ import {
 } from './canvasProposalController';
 import type { CanvasProposalOp } from '@shared/contract';
 import { planDiscards } from './applyCanvasProposal';
-import { generateProposedImage } from './designProposedImageGen';
+import { generateProposedImage, resolveProposedImageModel } from './designProposedImageGen';
+import { decideProposalHandling, autonomousApply, makeGroupedGenerate } from './autonomyProposalRouting';
+import { isExhausted } from '@shared/contract/designAutonomy';
+import { estimateImageCostCny } from '@shared/media/imageCost';
+import { useDesignAutonomyStore } from './designAutonomyStore';
+import { useDesignStore } from './designStore';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -71,12 +76,51 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
+      // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
+      const env = useDesignAutonomyStore.getState().envelope;
+      if (decideProposalHandling(request, env) === 'auto') {
+        const cs = useCanvasProposalStore.getState();
+        // 单飞：已有提议在落地则退回人闸兜底（设 pending），不并发自动应用。
+        if (cs.applyingRequestId) { cs.setPending(request); return; }
+        cs.setApplying(request.requestId);
+        // 出图归入本轮变体组（首张建组，后续同组）——N 张兄弟变体供人挑。
+        const groupedGenerate = makeGroupedGenerate({
+          getGroupId: () => useDesignAutonomyStore.getState().variantGroupId,
+          setGroupId: (id) => useDesignAutonomyStore.getState().setVariantGroupId(id),
+          generate: (op, opts) => generateProposedImage(op, opts),
+        });
+        void (async () => {
+          try {
+            await autonomousApply(request, {
+              baseDeps: { ...controllerDeps(), generate: groupedGenerate },
+              // HIGH-1 + R2-MED-1：预算闸单价取「价表估值」与「grant 时快照真实单价」的较大者——
+              // fail-closed，自定义模型不被运行时拉取失败拉低到 0.14 绕过 ¥ 闸；不在自主期依赖运行时拉取。
+              estimateCost: (op) => {
+                const resolved = resolveProposedImageModel(op.model, useDesignStore.getState().imageModel);
+                const snapshot = useDesignAutonomyStore.getState().perImageCny ?? 0;
+                return Math.max(estimateImageCostCny(resolved), snapshot);
+              },
+              getEnvelope: () => useDesignAutonomyStore.getState().envelope,
+              setEnvelope: (e) => useDesignAutonomyStore.getState().setEnvelope(e),
+            });
+          } finally {
+            useCanvasProposalStore.getState().setApplying(null);
+            // MED-1：本轮耗尽即作废信封，免后续免费 op 在「已批准窗口外」继续自动应用。
+            const envNow = useDesignAutonomyStore.getState().envelope;
+            if (envNow && isExhausted(envNow)) useDesignAutonomyStore.getState().clear();
+          }
+        })();
+        return;
+      }
       setPending(request);
     });
     // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
     // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
     const unsubCancel = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL, (payload: { requestId: string }) => {
-      // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略 CANCEL（付费已 commit）。
+      // ADR-027 审计 HIGH-2(a)：自主 run 的 proposeCanvasOps abort/超时 → **无条件**作废活跃信封
+      // （即便正落地这条；abort 应停止后续付费）。与「忽略 UI 撤条」解耦——付费已 commit 只阻止撤审批条，不阻止信封作废。
+      if (useDesignAutonomyStore.getState().envelope) useDesignAutonomyStore.getState().clear();
+      // R3 HIGH-1：用 store 级锁（跨重挂存活）而非组件 ref。正落地这条则忽略撤 UI（付费已 commit）。
       if (useCanvasProposalStore.getState().applyingRequestId === payload.requestId) return;
       clearIfStill(payload.requestId);
     });

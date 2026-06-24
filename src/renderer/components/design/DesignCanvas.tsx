@@ -21,6 +21,9 @@ import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
 import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
 import { DiscardedNodesTray } from './DiscardedNodesTray';
 import { useCanvasProposalReview } from './useCanvasProposalReview';
+import { useAutonomyEnvelopeReview } from './useAutonomyEnvelopeReview';
+import { CanvasAutonomyReviewBar } from './CanvasAutonomyReviewBar';
+import { useDesignAutonomyStore } from './designAutonomyStore';
 import { DiagramToolbar } from './DiagramToolbar';
 import { reduceDiagram, type ShapeTool } from './diagramReducer';
 import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
@@ -427,6 +430,10 @@ export const DesignCanvas: React.FC = () => {
   const shapes = useDesignCanvasStore((s) => s.shapes);
   // ADR-026：订阅 agent 画布提议 + Apply/Reject 落地。
   const canvasProposal = useCanvasProposalReview();
+  // ADR-027：订阅 agent 自主信封请求 + Grant/Decline；活跃信封态驱动进度/停止指示。
+  const autonomy = useAutonomyEnvelopeReview();
+  const autonomyEnvelope = useDesignAutonomyStore((st) => st.envelope);
+  const autonomyClear = useDesignAutonomyStore((st) => st.clear);
   const selectedDiagram = useDesignCanvasStore((s) => s.selectedDiagram);
   const setSelectedDiagram = useDesignCanvasStore((s) => s.setSelectedDiagram);
   const [diagramTool, setDiagramTool] = useState<DiagramCanvasTool>('select');
@@ -971,6 +978,31 @@ export const DesignCanvas: React.FC = () => {
           onApply={(ops) => void canvasProposal.apply(ops)}
           onReject={(fb) => void canvasProposal.reject(fb)}
         />
+      )}
+
+      {/* ADR-027：自主信封审批条（人一次性批预算 → AI 在信封内自主出图）。 */}
+      {autonomy.pendingRequest && (
+        <CanvasAutonomyReviewBar
+          request={autonomy.pendingRequest}
+          onGrant={(g, perImageCny) => void autonomy.grant(g, perImageCny)}
+          onDecline={(fb) => void autonomy.decline(fb)}
+        />
+      )}
+
+      {/* ADR-027：自主进行中指示 + 停止（活跃信封时；审批条出现时不重叠）。 */}
+      {autonomyEnvelope && !autonomy.pendingRequest && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-amber-300/60 bg-white/95 px-4 py-1.5 text-xs text-neutral-600 shadow-md backdrop-blur dark:border-amber-500/40 dark:bg-neutral-900/95 dark:text-neutral-300">
+          <span>
+            {t.design.autonomyRunning
+              .replace('{used}', String(autonomyEnvelope.usedVariants))
+              .replace('{max}', String(autonomyEnvelope.maxVariants))
+              .replace('{spent}', formatCny(autonomyEnvelope.spentCny))
+              .replace('{cap}', formatCny(autonomyEnvelope.maxCny))}
+          </span>
+          <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10">
+            {t.design.autonomyStop}
+          </button>
+        </div>
       )}
 
       {/* ADR-026 三刀：已淘汰节点恢复入口（软删找回）。 */}

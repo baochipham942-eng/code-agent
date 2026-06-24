@@ -113,6 +113,11 @@ export interface CanvasProposalDecision {
   skippedCount?: number;
   /** 二刀：本批付费生成的实际合计花费（¥）。仅含真出图的成本，让 agent 知道真烧了多少。 */
   costCny?: number;
+  /**
+   * ADR-027 自主：本次在自主信封内自动应用后的剩余预算 + 是否耗尽。
+   * 仅自动路径（auto）回填——让 agent 知道还能发散几张、还是该停下让用户挑选。
+   */
+  autonomy?: { remainingVariants: number; remainingCny: number; exhausted: boolean };
 }
 
 // ── D1-B 画布快照（renderer → agent 上下文注入；轻量、限长，agent 据此引用真实节点 id）──
@@ -129,6 +134,8 @@ export interface CanvasSnapshotNode {
   width: number;
   height: number;
   kind?: 'image' | 'video';
+  /** ADR-027 D5：用户在变体组里挑中的主版——人挑=唯一质量信号，回灌让 agent 知道哪个方向赢了。 */
+  chosen?: boolean;
 }
 
 export interface CanvasSnapshotConnector {
@@ -160,7 +167,8 @@ export function formatCanvasSnapshotForPrompt(snap: CanvasSnapshot | undefined |
   for (const n of capped) {
     const label = n.label ? ` "${n.label.slice(0, 60)}"` : '';
     const k = n.kind === 'video' ? 'video' : 'image';
-    lines.push(`- ${n.id}${label} [${k}] @(${Math.round(n.x)},${Math.round(n.y)}) ${Math.round(n.width)}×${Math.round(n.height)}`);
+    const chosen = n.chosen ? ' ★用户选定为主版' : '';
+    lines.push(`- ${n.id}${label} [${k}] @(${Math.round(n.x)},${Math.round(n.y)}) ${Math.round(n.width)}×${Math.round(n.height)}${chosen}`);
   }
   if (snap.connectors.length > 0) {
     const connCapped = snap.connectors.length > CANVAS_SNAPSHOT_MAX_NODES;

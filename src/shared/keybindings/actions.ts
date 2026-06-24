@@ -131,8 +131,10 @@ export const KEYBINDING_DEFINITIONS = [
     category: 'sessionEditing',
     scope: 'session',
     configurable: true,
-    enabledByDefault: true,
-    defaultHotkeys: { darwin: 'Cmd+Shift+R', win32: 'Ctrl+Shift+R', linux: 'Ctrl+Shift+R' },
+    // 默认不绑键：Cmd/Ctrl+Shift+R 与浏览器/桌面端「硬刷新」全局快捷键冲突，会在用户想刷新时
+    // 误触发「重发上一条」——对付费生成（出图/出视频）等于偷偷再花一次钱。用户可在设置里自行绑定。
+    enabledByDefault: false,
+    defaultHotkeys: { darwin: null, win32: null, linux: null },
   },
   {
     id: 'session.compact',

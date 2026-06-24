@@ -20,7 +20,7 @@ import { nextVariantNodeId } from './useDesignCanvasGeneration';
  * 抽视频首帧当封面（JPEG data URL，缩到 maxWidth）。失败返回 null（封面是增强，不阻塞落节点）。
  * 依赖 CSP media-src 允许 blob:（已在 index.html 放开）。blob 同源 → canvas 不被污染，toDataURL 可用。
  */
-async function captureVideoFirstFrame(videoBlobUrl: string, maxWidth = 480): Promise<string | null> {
+export async function captureVideoFirstFrame(videoBlobUrl: string, maxWidth = 480): Promise<string | null> {
   return new Promise((resolve) => {
     let done = false;
     const finish = (val: string | null): void => {

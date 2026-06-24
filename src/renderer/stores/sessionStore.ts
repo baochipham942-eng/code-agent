@@ -225,6 +225,8 @@ interface SessionState {
   isLoadingOlder: boolean;
   // 当前会话锁定的 design brief（来自 question-form 提交，仅运行时内存态，不进 DB）
   sessionDesignBriefs: Map<string, DesignBrief>;
+  // 标记为设计会话的 session（画布快照注入上下文的闸门真源，仅运行时内存态，不进 DB）
+  designActiveSessions: Set<string>;
 }
 
 interface SessionActions {
@@ -260,6 +262,9 @@ interface SessionActions {
   setSessionDesignBrief: (sessionId: string, brief: DesignBrief) => void;
   clearSessionDesignBrief: (sessionId: string) => void;
   getSessionDesignBrief: (sessionId: string) => DesignBrief | undefined;
+  markSessionDesignActive: (sessionId: string) => void;
+  clearSessionDesignActive: (sessionId: string) => void;
+  isSessionDesignActive: (sessionId: string | null | undefined) => boolean;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -280,6 +285,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     hasOlderMessages: false,
     isLoadingOlder: false,
     sessionDesignBriefs: new Map<string, DesignBrief>(),
+    designActiveSessions: new Set<string>(),
 
     loadSessions: async () => {
       const { filter } = useSessionUIStore.getState();
@@ -1011,6 +1017,27 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     getSessionDesignBrief: (sessionId) => {
       return get().sessionDesignBriefs.get(sessionId);
     },
+
+    markSessionDesignActive: (sessionId) => {
+      set((state) => {
+        if (state.designActiveSessions.has(sessionId)) return state;
+        return { designActiveSessions: new Set(state.designActiveSessions).add(sessionId) };
+      });
+    },
+
+    clearSessionDesignActive: (sessionId) => {
+      set((state) => {
+        if (!state.designActiveSessions.has(sessionId)) return state;
+        const next = new Set(state.designActiveSessions);
+        next.delete(sessionId);
+        return { designActiveSessions: next };
+      });
+    },
+
+    isSessionDesignActive: (sessionId) => {
+      if (!sessionId) return false;
+      return get().designActiveSessions.has(sessionId);
+    },
   }));
 
 let _initialized = false;
@@ -1035,6 +1062,7 @@ function clearSessionStateForAuthChange(): void {
     hasOlderMessages: false,
     isLoadingOlder: false,
     sessionDesignBriefs: new Map<string, DesignBrief>(),
+    designActiveSessions: new Set<string>(),
   });
 }
 

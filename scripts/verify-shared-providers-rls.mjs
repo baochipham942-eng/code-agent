@@ -22,6 +22,8 @@ if (!url || !anon) {
 // 这些表都不应让 anon / 非管理员读到任何一行
 const SENSITIVE_TABLES = [
   'control_plane_shared_providers',
+  'control_plane_shared_service_keys',
+  'control_plane_shared_service_key_pool_state',
   'control_plane_entitlements',
 ];
 

@@ -271,3 +271,36 @@ export function nextNodePlacement(
   }
   return { x: maxRight + gap, y: topY };
 }
+
+/**
+ * 适配视口（fit-to-view）：给定可见节点 + Stage 像素宽高，算出把所有内容居中并缩放到适配的相机。
+ * 屏幕变换约定：screen = world * scale + camera.{x,y}（与 Stage x/y/scale 一致）。
+ * - scale = min(viewW/bboxW, viewH/bboxH) * padding（留边，默认 0.9）
+ * - 把 bbox 中心映射到视口中心：camera.{x,y} = view/2 - bboxCenter * scale
+ * 无节点或视口为 0 时返回 null（调用方保持现状不动相机）。
+ */
+export function computeFitCamera(
+  nodes: readonly CanvasNode[],
+  viewW: number,
+  viewH: number,
+  padding = 0.9,
+): CanvasCamera | null {
+  if (nodes.length === 0 || viewW <= 0 || viewH <= 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x + n.width > maxX) maxX = n.x + n.width;
+    if (n.y + n.height > maxY) maxY = n.y + n.height;
+  }
+  const bboxW = maxX - minX;
+  const bboxH = maxY - minY;
+  // 退化 bbox（单点/零尺寸）：不缩放，仅居中。
+  const scale = bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1;
+  const cx = minX + bboxW / 2;
+  const cy = minY + bboxH / 2;
+  return { scale, x: viewW / 2 - cx * scale, y: viewH / 2 - cy * scale };
+}

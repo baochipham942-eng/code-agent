@@ -43,6 +43,7 @@ import {
   isVideoNode,
   isReferenceNode,
   formatDurationLabel,
+  computeFitCamera,
   type CanvasImageNode,
   type CanvasVideoNode,
 } from './designCanvasTypes';
@@ -534,6 +535,19 @@ export const DesignCanvas: React.FC = () => {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // fit-to-view：节点新增（含空→非空、出图回灌）时自动把内容居中并缩放到适配视口，留 padding。
+  // 仅在「可见节点数增加」时 fit 一次——不在每次 setCamera 时跑，避免打断用户手动平移/缩放。
+  const prevNodeCountRef = useRef(0);
+  useEffect(() => {
+    const count = visibleNodes.length;
+    const grew = count > prevNodeCountRef.current;
+    prevNodeCountRef.current = count;
+    if (!grew || size.w <= 0 || size.h <= 0) return;
+    const fit = computeFitCamera(visibleNodes, size.w, size.h);
+    if (fit) setCamera(fit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只想在节点集 / 视口变化时评估，setCamera 稳定
+  }, [visibleNodes, size.w, size.h]);
 
   // 选中变化时复位标注（换图重圈）。
   useEffect(() => {

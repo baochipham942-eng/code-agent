@@ -10,7 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import React from 'react';
 
-import { WorkspaceModeSwitch } from '../../../src/renderer/components/design/WorkspaceModeSwitch';
+import {
+  WorkspaceModeSwitch,
+  activateDesignCanvasForCurrentSession,
+} from '../../../src/renderer/components/design/WorkspaceModeSwitch';
+import { TitleBar } from '../../../src/renderer/components/TitleBar';
 import { useWorkspaceModeStore } from '../../../src/renderer/stores/workspaceModeStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -99,5 +103,88 @@ describe('WorkspaceModeSwitch 切到设计模式', () => {
 
     expect(setMode).toHaveBeenCalledWith('code');
     expect(setFormOpen).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('activateDesignCanvasForCurrentSession', () => {
+  it('有 currentSession → 三个 action 都调（幂等可复用）', () => {
+    const markFn = vi.fn();
+    const claimFn = vi.fn();
+    const openFn = vi.fn();
+    useSessionStore.setState({ currentSessionId: 's1', markSessionDesignActive: markFn });
+    useDesignCanvasStore.setState({ claimCanvasForSession: claimFn });
+    useAppStore.setState({ openWorkbenchTab: openFn });
+
+    activateDesignCanvasForCurrentSession();
+
+    expect(markFn).toHaveBeenCalledWith('s1');
+    expect(claimFn).toHaveBeenCalledWith('s1');
+    expect(openFn).toHaveBeenCalledWith('design-canvas', { source: 'auto' });
+  });
+
+  it('无 currentSession → 不调任何 action', () => {
+    const markFn = vi.fn();
+    const claimFn = vi.fn();
+    const openFn = vi.fn();
+    useSessionStore.setState({ currentSessionId: null, markSessionDesignActive: markFn });
+    useDesignCanvasStore.setState({ claimCanvasForSession: claimFn });
+    useAppStore.setState({ openWorkbenchTab: openFn });
+
+    activateDesignCanvasForCurrentSession();
+
+    expect(markFn).not.toHaveBeenCalled();
+    expect(claimFn).not.toHaveBeenCalled();
+    expect(openFn).not.toHaveBeenCalled();
+  });
+});
+
+describe('TitleBar mount/响应式激活 effect（修持久化 mode=design 不展示画布）', () => {
+  it('持久化 mode=design + 有会话：初始挂载即激活会话化画布', () => {
+    const markFn = vi.fn();
+    const claimFn = vi.fn();
+    const openFn = vi.fn();
+    // 模拟 zustand persist 还原后的初始 state：mode 已是 'design'，onClick 从未触发。
+    useWorkspaceModeStore.setState({ workspaceMode: 'design' });
+    useSessionStore.setState({ currentSessionId: 's1', markSessionDesignActive: markFn });
+    useDesignCanvasStore.setState({ claimCanvasForSession: claimFn });
+    useAppStore.setState({ openWorkbenchTab: openFn });
+
+    render(<TitleBar />);
+
+    expect(markFn).toHaveBeenCalledWith('s1');
+    expect(claimFn).toHaveBeenCalledWith('s1');
+    expect(openFn).toHaveBeenCalledWith('design-canvas', { source: 'auto' });
+  });
+
+  it('mode=code：挂载不激活', () => {
+    const markFn = vi.fn();
+    const claimFn = vi.fn();
+    const openFn = vi.fn();
+    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
+    useSessionStore.setState({ currentSessionId: 's1', markSessionDesignActive: markFn });
+    useDesignCanvasStore.setState({ claimCanvasForSession: claimFn });
+    useAppStore.setState({ openWorkbenchTab: openFn });
+
+    render(<TitleBar />);
+
+    expect(markFn).not.toHaveBeenCalled();
+    expect(claimFn).not.toHaveBeenCalled();
+    expect(openFn).not.toHaveBeenCalled();
+  });
+
+  it('mode=design 但无会话：挂载不激活（等会话就绪）', () => {
+    const markFn = vi.fn();
+    const claimFn = vi.fn();
+    const openFn = vi.fn();
+    useWorkspaceModeStore.setState({ workspaceMode: 'design' });
+    useSessionStore.setState({ currentSessionId: null, markSessionDesignActive: markFn });
+    useDesignCanvasStore.setState({ claimCanvasForSession: claimFn });
+    useAppStore.setState({ openWorkbenchTab: openFn });
+
+    render(<TitleBar />);
+
+    expect(markFn).not.toHaveBeenCalled();
+    expect(claimFn).not.toHaveBeenCalled();
+    expect(openFn).not.toHaveBeenCalled();
   });
 });

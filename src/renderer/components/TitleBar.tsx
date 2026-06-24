@@ -1,16 +1,17 @@
 // ============================================================================
 // TitleBar - Right side title bar with workspace path and task panel toggle
 // ============================================================================
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useWorkspaceModeStore } from '../stores/workspaceModeStore';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen } from 'lucide-react';
 import { isWebMode, isTauriMode } from '../utils/platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
-import { WorkspaceModeSwitch } from './design/WorkspaceModeSwitch';
+import { WorkspaceModeSwitch, activateDesignCanvasForCurrentSession } from './design/WorkspaceModeSwitch';
 export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
@@ -24,6 +25,19 @@ export const TitleBar: React.FC = () => {
   const isTaskTabOpen = workbenchTabs.includes('task');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
+  // 设计模式持久化激活兜底：workspaceMode 经 zustand persist 持久化，重开/刷新页面时
+  // mode 可能已是 'design'，而激活逻辑原先只挂在 toggle 的 onClick（重开时从不触发），
+  // 导致画布不展示、要再点一下「设计」才激活。这里在总是挂载的 TitleBar 上响应式激活：
+  // ①初次挂载若 mode='design' 且有会话 → 自动激活；②设计模式下切会话 → 新会话也激活。
+  // deps 只放 [workspaceMode, currentSessionId]——用户手动关画布 tab 不改这两个 dep，
+  // 不会被强制重开（避免烦人）。三个 action 幂等，重复调用无副作用。
+  const workspaceMode = useWorkspaceModeStore((s) => s.workspaceMode);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  useEffect(() => {
+    if (workspaceMode === 'design' && currentSessionId) {
+      activateDesignCanvasForCurrentSession();
+    }
+  }, [workspaceMode, currentSessionId]);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
   const effectiveWorkingDirectory = composerWorkingDirectory ?? workingDirectory;
   // Get workspace name from path

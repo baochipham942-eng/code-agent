@@ -62,6 +62,9 @@ export async function executeProposeSlidesOps(
     const requested = typeof args.imageModel === 'string' ? imageModelById(args.imageModel) : undefined;
     imageModel = requested ? requested.id : defaultImageModelId();
     const outline = buildSlidesOutline(topic, slidesCount);
+    // 成本不变量（审计 M1）：估价与实际出图须用同一模型。当前图像服务无 fallback，
+    // actualModel === imageModel → estimate == actual。2a 引入图像 fallback 后，若兜底换到更贵
+    // 模型，须保证实际花费不超过此处已确认的信封（否则要二次确认），不得静默超额。
     const { count, costCny } = estimateIllustrateCost(outline, imageModel, maxImages);
     if (count > 0 && costCny > 0) {
       const confirmed = await confirmGenerationCost({

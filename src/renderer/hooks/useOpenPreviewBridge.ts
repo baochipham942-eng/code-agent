@@ -7,17 +7,28 @@ import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 
+/**
+ * 是否允许打开预览（fail-closed）：
+ * - 请求不带 sessionId（无会话上下文）→ 允许（无前台会话可保护）。
+ * - 带 sessionId → 必须精确等于当前会话；current 为空或不同一律不开
+ *   （防背景会话/null 前台时产物抢焦点，审计 M2）。
+ */
+export function shouldOpenPreview(
+  payloadSessionId: string | undefined,
+  currentSessionId: string | null | undefined,
+): boolean {
+  if (!payloadSessionId) return true;
+  return payloadSessionId === currentSessionId;
+}
+
 export function useOpenPreviewBridge(): void {
   useEffect(() => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.WORKSPACE_OPEN_PREVIEW,
       (payload: { filePath: string; sessionId?: string }) => {
         if (!payload?.filePath) return;
-        // 背景会话产物不抢前台焦点：带 sessionId 且非当前会话则忽略（文件已生成，用户可手动打开）。
-        if (payload.sessionId) {
-          const currentSessionId = useSessionStore.getState().currentSessionId;
-          if (currentSessionId && payload.sessionId !== currentSessionId) return;
-        }
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (!shouldOpenPreview(payload.sessionId, currentSessionId)) return;
         useAppStore.getState().openPreview(payload.filePath);
       },
     );

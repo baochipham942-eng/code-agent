@@ -8,6 +8,7 @@ import ipcService from '../../services/ipcService';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { isAutonomyRunTerminal } from './autonomyProposalRouting';
+import { useAppStore } from '../../stores/appStore';
 
 export interface AutonomyEnvelopeReview {
   pendingRequest: AutonomyEnvelopeRequest | null;
@@ -41,6 +42,8 @@ export function useAutonomyEnvelopeReview(): AutonomyEnvelopeReview {
         });
         return;
       }
+      // UX：agent 发起自主信封即自动展开+聚焦设计画布 tab。
+      useAppStore.getState().openWorkbenchTab('design-canvas', { source: 'auto' });
       setPendingRequest(request);
     });
     // abort/超时：撤掉信封审批面板（防孤儿信封被后点 Grant）。仅撤当前这条，不调 respond（agent 已不在监听）。

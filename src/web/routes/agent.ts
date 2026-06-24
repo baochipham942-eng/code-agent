@@ -50,6 +50,7 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { extractArtifacts } from '../../main/agent/artifactExtractor';
+import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 
@@ -461,6 +462,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (!config.systemPrompt) {
         config.systemPrompt = 'You are running in Web UI mode (browser-based interface), not CLI/terminal mode. Users interact with you through a web chat interface with rich rendering support (markdown, code blocks, images). Respond accordingly.';
       }
+
+      // 设计画布会话冷启动引导：按轮服务端注入 systemPrompt（不进用户 content，免污染历史提示词）。
+      config.systemPrompt = composeDesignCanvasSystemPrompt(
+        config.systemPrompt,
+        config.executionIntent?.designCanvasActive,
+      );
 
       // Fix: CLI config maps 'anthropic' but provider is 'claude'
       // Ensure apiKey is populated from env if missing

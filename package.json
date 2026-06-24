@@ -27,6 +27,7 @@
     "test:swarm:e2e": "playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/swarm-chain.spec.ts",
     "test:swarm:full": "npm run test:swarm:smoke && npm run test:swarm:e2e",
     "test:e2e:new-session": "playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/new-session.e2e.spec.ts",
+    "test:e2e:design-canvas": "playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/design-canvas-conversational.e2e.spec.ts",
     "test:e2e:goal-mode": "playwright test --config tests/e2e/playwright.system-chrome.config.ts tests/e2e/goal-mode.spec.ts",
     "test:e2e:model-strategy": "playwright test --config tests/e2e/playwright.system-chrome.config.ts tests/e2e/model-strategy-recommendation.spec.ts",
     "acceptance:browser-computer": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-computer-smoke.ts",

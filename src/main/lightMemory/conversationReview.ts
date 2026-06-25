@@ -66,6 +66,118 @@ export function isLowValueSkillName(name: string): boolean {
   return false;
 }
 
+type ArtifactSkillFamily = 'presentation' | 'poster' | 'html-presentation';
+
+const ARTIFACT_FAMILY_KEYWORDS: Record<ArtifactSkillFamily, readonly string[]> = {
+  presentation: ['presentation', 'ppt', 'powerpoint', 'slide', 'slides', 'deck'],
+  poster: ['poster', 'infographic'],
+  'html-presentation': ['html-presentation', 'html-demo', 'html-slides'],
+};
+
+const ARTIFACT_GENERIC_TOKENS = new Set([
+  'a', 'an', 'the',
+  'create', 'creating', 'generate', 'generating', 'make', 'making', 'build', 'building',
+  'design', 'designing', 'draft', 'drafting', 'produce', 'producing',
+  'from', 'for', 'with', 'using', 'to', 'into',
+  'professional', 'interactive', 'visual', 'structured', 'content', 'theme', 'topic',
+  'html', 'demo', 'presentation', 'ppt', 'powerpoint', 'slide', 'slides', 'deck',
+  'poster', 'infographic', 'outline', 'brief', 'style', 'layout', 'page', 'pages',
+]);
+
+const ARTIFACT_METHOD_PATTERNS: readonly RegExp[] = [
+  /\bslides\.json\b/i,
+  /\bpptx?\b/i,
+  /\bpdf\b/i,
+  /\bhtml\b/i,
+  /\bcss\b/i,
+  /\bbrowser\b/i,
+  /\bplaywright\b/i,
+  /\bscreenshot\b/i,
+  /\bpage prompts?\b/i,
+  /\bbackground images?\b/i,
+  /\bsynthesi[sz]e\b/i,
+  /\bmerge\b/i,
+  /\bexport\b/i,
+  /\brender\b/i,
+  /\btemplate\b/i,
+  /\bresponsive\b/i,
+  /\bvisual review\b/i,
+  /页面提示词/,
+  /背景图/,
+  /合成/,
+  /导出/,
+  /截图/,
+  /浏览器/,
+  /验收/,
+];
+
+const ARTIFACT_CANONICAL_DESCRIPTIONS: Record<string, string> = {
+  'generating-presentation-from-outline': 'Create a reusable presentation workflow from a structured outline, including slide data, visual prompts, synthesis, and verification.',
+  'generating-presentation-from-brief': 'Create a reusable presentation workflow from a brief or topic, including structure, visual direction, synthesis, and verification.',
+  'generating-poster-from-brief': 'Create a reusable poster or infographic workflow from a brief, including layout direction, asset generation, export, and verification.',
+  'creating-interactive-html-presentation': 'Create a reusable interactive HTML presentation workflow, including page structure, responsive layout, browser delivery, and verification.',
+};
+
+function detectArtifactFamily(name: string, description: string, body: string): ArtifactSkillFamily | null {
+  const haystack = `${name} ${description} ${body}`.toLowerCase();
+  if (/\bhtml\b/.test(haystack) && /\b(presentation|slides?|demo)\b/.test(haystack)) {
+    return 'html-presentation';
+  }
+  for (const [family, keywords] of Object.entries(ARTIFACT_FAMILY_KEYWORDS) as Array<[ArtifactSkillFamily, readonly string[]]>) {
+    if (keywords.some((keyword) => haystack.includes(keyword))) return family;
+  }
+  return null;
+}
+
+function countTopicTokens(name: string): number {
+  return name
+    .split('-')
+    .filter(Boolean)
+    .filter((token) => token.length > 1)
+    .filter((token) => !ARTIFACT_GENERIC_TOKENS.has(token))
+    .filter((token) => !(SKILL_REVIEW.NAME_TOOL_TOKENS as readonly string[]).includes(token))
+    .length;
+}
+
+function countMethodEvidence(text: string): number {
+  return ARTIFACT_METHOD_PATTERNS.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function canonicalArtifactName(family: ArtifactSkillFamily, text: string): string {
+  if (family === 'html-presentation') return 'creating-interactive-html-presentation';
+  if (family === 'poster') return 'generating-poster-from-brief';
+  if (/\boutline\b/i.test(text) || /大纲/.test(text)) return 'generating-presentation-from-outline';
+  return 'generating-presentation-from-brief';
+}
+
+function refineArtifactSkillCandidate(skill: ReviewedSkill): ReviewedSkill | null {
+  const family = detectArtifactFamily(skill.name, skill.description, skill.body);
+  if (!family) return skill;
+
+  const text = `${skill.name}\n${skill.description}\n${skill.body}`;
+  const topicTokens = countTopicTokens(skill.name);
+  const methodEvidence = countMethodEvidence(text);
+
+  // A subject-heavy artifact candidate with only generic "structure/style/delivery" advice is a one-off output.
+  if (topicTokens >= 2 && methodEvidence < 2) {
+    logger.debug('Skill review rejected: artifact candidate is topic-specific without reusable method evidence', {
+      name: skill.name,
+      topicTokens,
+      methodEvidence,
+    });
+    return null;
+  }
+
+  if (topicTokens < 2) return skill;
+
+  const canonicalName = canonicalArtifactName(family, text);
+  return {
+    ...skill,
+    name: canonicalName,
+    description: ARTIFACT_CANONICAL_DESCRIPTIONS[canonicalName] ?? skill.description,
+  };
+}
+
 function truncate(text: string, max: number): string {
   const trimmed = text.trim();
   return trimmed.length > max ? trimmed.slice(0, max).trim() : trimmed;
@@ -88,6 +200,8 @@ const REVIEW_PROMPT = `你是技能沉淀复盘器。阅读下面这段刚结束
 - 用「动名词 + 领域宾语」的 kebab-case，从【任务意图】取名，例：deploying-tauri-macos、extracting-pdf-tables、migrating-database-schema。
 - 严禁用泛词：helper / utils / tools / data / files / documents / workflow / general / common。
 - 严禁拿工具名拼名字：bash-bash-bash、grep-read-edit、run-bash 这类一律不行——这说明你在记"点了哪几个工具"而不是"完成了什么任务"。
+- 产物生成类任务要区分"可复用方法"和"一次性题目"：PPT/HTML 演示稿/海报可以沉淀通用流程，但不要把具体主题写进 skill 名。
+- 例如 creating-ai-product-manager-presentation、generating-ai-agent-architecture-ppt 这种主题级名字通常应 false；若确有可迁移方法，应改成 generating-presentation-from-brief / generating-presentation-from-outline / creating-interactive-html-presentation 这类跨主题名字。
 - 如果只能想出上面这类名字 → 直接 shouldCreate=false。
 
 body 用 Markdown，针对这一类任务写【可复用指南】，按以下结构（没有的小节可省，但不要灌水），不超过 ${SKILL_REVIEW.MAX_BODY_CHARS} 字：
@@ -172,7 +286,7 @@ export function parseReviewedSkill(raw: string): ReviewedSkill | null {
       ? obj.signal
       : 'reusable_workflow';
 
-  return { shouldCreate: true, signal, name, description, body };
+  return refineArtifactSkillCandidate({ shouldCreate: true, signal, name, description, body });
 }
 
 /**

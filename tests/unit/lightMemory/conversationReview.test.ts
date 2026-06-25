@@ -136,6 +136,64 @@ describe('parseReviewedSkill', () => {
     expect(parseReviewedSkill(JSON.stringify({ ...valid, name: 'helper' }))).toBeNull();
     expect(parseReviewedSkill(JSON.stringify({ ...valid, name: 'tools' }))).toBeNull();
   });
+
+  it('主题级 PPT 草稿且只有空泛方法 → null', () => {
+    const r = parseReviewedSkill(JSON.stringify({
+      ...valid,
+      signal: 'reusable_workflow',
+      name: 'creating-ai-product-manager-presentation',
+      description: 'Create a professional AI product manager transformation presentation.',
+      body: [
+        '## When to use',
+        'Create a presentation on AI product manager transformation.',
+        '## Steps',
+        '1. Define content structure with market trends and core competencies.',
+        '2. Choose a professional style.',
+        '3. Deliver it to the user.',
+        '## Verification',
+        '- Check content accuracy and style consistency.',
+      ].join('\n'),
+    }));
+    expect(r).toBeNull();
+  });
+
+  it('跨主题 PPT 工作流名 → 放行', () => {
+    const r = parseReviewedSkill(JSON.stringify({
+      ...valid,
+      signal: 'reusable_workflow',
+      name: 'generating-ppt-from-outline',
+      description: 'Generate a presentation from a structured outline.',
+      body: [
+        '## Steps',
+        '1. Convert the outline into slide titles and bullets.',
+        '2. Generate slides.json and page prompts.',
+        '3. Synthesize PPTX/PDF and review the browser export.',
+      ].join('\n'),
+    }));
+    expect(r).not.toBeNull();
+    expect(r!.name).toBe('generating-ppt-from-outline');
+  });
+
+  it('主题级 PPT 但有可迁移方法 → 归并成通用工作流名', () => {
+    const r = parseReviewedSkill(JSON.stringify({
+      ...valid,
+      signal: 'reusable_workflow',
+      name: 'generating-ai-agent-architecture-ppt',
+      description: 'Create an AI Agent architecture PPT with a specific theme.',
+      body: [
+        '## Steps',
+        '1. Convert the brief into a slide outline.',
+        '2. Generate slides.json and page prompts.',
+        '3. Generate background images.',
+        '4. Merge text and images into PPTX/PDF.',
+        '## Verification',
+        '- Render the deck in a browser and capture screenshots.',
+      ].join('\n'),
+    }));
+    expect(r).not.toBeNull();
+    expect(r!.name).toBe('generating-presentation-from-outline');
+    expect(r!.description).toContain('structured outline');
+  });
 });
 
 // ── buildReviewSnippet / buildReviewPrompt ──
@@ -161,6 +219,7 @@ describe('buildReviewPrompt', () => {
     const prompt = buildReviewPrompt({ userMessages: ['帮我部署'] });
     expect(prompt).toContain('shouldCreate');
     expect(prompt).toContain('CLASS-LEVEL');
+    expect(prompt).toContain('不要把具体主题写进 skill 名');
     expect(prompt).toContain('帮我部署');
   });
 });

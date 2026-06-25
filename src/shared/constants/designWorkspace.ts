@@ -49,4 +49,7 @@ export const REGION_LOCK = {
   EPSILON: 8,
   // diff 证据图相对原产物的文件名后缀（同目录落盘）。
   DIFF_SUFFIX: '.diff.png',
+  // 严格模式默认关：默认沿用 best-effort（sharp 不可用/闸出错则降级写模型原图，不阻断编辑）。
+  // 开启后，region-lock 无法强制执行时「响亮失败」，拒绝给出未经一致性保证的产物（见 imageConsistency）。
+  STRICT_DEFAULT: false,
 } as const;

@@ -67,8 +67,14 @@ import { assertSafeCustomBaseUrl, assertSafeDownloadUrl } from '../security/ssrf
 import { promises as fsp } from 'fs';
 import { getUserConfigDir } from '../config/configPaths';
 import { REGION_LOCK } from '../../shared/constants/designWorkspace';
-import { runRegionLockGate } from '../services/media/imageConsistency';
+import {
+  runRegionLockGate,
+  ensureRegionLockEnforceable,
+  onRegionLockGateError,
+} from '../services/media/imageConsistency';
 import { loadSharp } from '../runtime/sharpRuntime';
+import { readDesignSettings, updateDesignSettings } from '../services/design/designSettings';
+import type { DesignSettings } from '../services/design/designSettings';
 import type { RegionLockReport } from '../../shared/contract/imageConsistency';
 
 // 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
@@ -232,6 +238,14 @@ async function handleEditDesignImage(
   }
   assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
   assertWithinDesignDir(payload.outputPath, 'outputPath');
+
+  // 一致性严格模式预检（付费生成前）：strict 开 + sharp 不可用 → 立刻抛错，
+  // 拒绝产出未经一致性保证的图，且不浪费一次付费模型调用（best-effort 默认仍降级）。
+  const { regionLockStrict } = await readDesignSettings();
+  const sharpLoaded = loadSharp();
+  const sharpAvailable = sharpLoaded.ok && !!sharpLoaded.sharp;
+  ensureRegionLockEnforceable({ strict: regionLockStrict, sharpAvailable });
+
   const { editImageWithMask, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'
   );
@@ -256,10 +270,9 @@ async function handleEditDesignImage(
   const actualModel = DESIGN_IMAGE_MODELS.edit;
   const costCny = estimateImageCostCny(actualModel);
 
-  // 一致性闸。sharp 不可用或解码失败时降级为原模型输出（不阻断用户编辑），
+  // 一致性闸。sharp 可用时跑闸；不可用时（已过严格预检）非严格降级写原模型输出，
   // 不返回 consistency（renderer 退回 legacy 无徽章行为）。
-  const sharpLoaded = loadSharp();
-  if (sharpLoaded.ok && sharpLoaded.sharp) {
+  if (sharpAvailable && sharpLoaded.sharp) {
     try {
       const gate = await runRegionLockGate({
         originalBuf: baseBuf,
@@ -277,9 +290,10 @@ async function handleEditDesignImage(
       }
       return { path: payload.outputPath, actualModel, costCny, consistency };
     } catch (err) {
-      // 闸内部异常：保底写模型原始输出，不阻断编辑；但留可观测日志，
-      // 否则一致性逻辑静默失效（consistency 总是 undefined）无从排查。
+      // 闸内部异常：留可观测日志。严格模式下 onRegionLockGateError 抛错——拒绝写未保证产物
+      // （模型原图不落盘）；非严格则保底写模型原始输出，不阻断编辑。
       console.warn('[editDesignImage] region-lock gate failed, falling back to raw output:', err);
+      onRegionLockGateError({ strict: regionLockStrict, cause: err });
     }
   }
   await fsp.writeFile(payload.outputPath, resultBuf);
@@ -290,7 +304,7 @@ async function handleEditDesignImage(
 // → 通义万相外扩补绘 → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
 export async function handleExpandDesignImage(
   payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
-): Promise<{ path: string }> {
+): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
   }
@@ -314,7 +328,7 @@ export async function handleExpandDesignImage(
   const baseBuf = await fsp.readFile(payload.baseImagePath);
   const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
   const scales = expandScalesForDirection(payload.direction, payload.ratio);
-  const { url } = await expandImage({
+  const { url, actualModel } = await expandImage({
     apiKey,
     prompt: payload.prompt?.trim() ? payload.prompt : '自然延伸画面背景，与原图风格一致',
     baseImageDataUrl: baseDataUrl,
@@ -327,14 +341,15 @@ export async function handleExpandDesignImage(
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
-  return { path: payload.outputPath };
+  // 成本透明补全：扩图是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
 // 设计画布去水印（T3：wanx function=remove_watermark）：底图(磁盘)读成 base64 → 消除中英文文字水印
 // → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
 export async function handleRemoveWatermarkDesignImage(
   payload: { baseImagePath: string; outputPath: string; prompt?: string },
-): Promise<{ path: string }> {
+): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('removeWatermarkDesignImage 需要 baseImagePath / outputPath');
   }
@@ -347,7 +362,7 @@ export async function handleRemoveWatermarkDesignImage(
   if (!apiKey) throw new Error('去水印需要百炼（DashScope）API Key。');
   const baseBuf = await fsp.readFile(payload.baseImagePath);
   const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
-  const { url } = await removeWatermark({
+  const { url, actualModel } = await removeWatermark({
     apiKey,
     baseImageDataUrl: baseDataUrl,
     prompt: payload.prompt,
@@ -356,7 +371,8 @@ export async function handleRemoveWatermarkDesignImage(
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
-  return { path: payload.outputPath };
+  // 成本透明补全：去水印是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
+  return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
 // 设计画布视频生成（P2）：t2v 直连 / i2v 用画布图节点作底图。通义万相视频异步任务。
@@ -1125,6 +1141,18 @@ export async function handleDeleteCustomVideoModel(payload: { id: string }): Pro
   return deleteCustomVideoModel(payload.id);
 }
 
+// ── 设计工作区轻量行为偏好（设置页配置，设计页只消费）──
+export async function handleGetDesignSettings(): Promise<DesignSettings> {
+  return readDesignSettings();
+}
+
+export async function handleUpdateDesignSettings(payload: Partial<DesignSettings>): Promise<DesignSettings> {
+  // 只接受已知布尔字段，忽略未知键（防 renderer 误传污染落盘 json）。
+  const patch: Partial<DesignSettings> = {};
+  if (typeof payload?.regionLockStrict === 'boolean') patch.regionLockStrict = payload.regionLockStrict;
+  return updateDesignSettings(patch);
+}
+
 // ----------------------------------------------------------------------------
 // PDF 导出（CD-Parity §2）：HTML 原型走 playwright page.pdf()，栅格产物走 pdfkit 图嵌。
 // 渲染/嵌图逻辑在独立模块 services/design/pdfExport.ts，这里只做编排 + 落盘。
@@ -1266,6 +1294,12 @@ export function registerWorkspaceHandlers(
           break;
         case 'deleteCustomVideoModel':
           data = await handleDeleteCustomVideoModel(payload as { id: string });
+          break;
+        case 'getDesignSettings':
+          data = await handleGetDesignSettings();
+          break;
+        case 'updateDesignSettings':
+          data = await handleUpdateDesignSettings(payload as Partial<DesignSettings>);
           break;
         case 'removeRecent':
           data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);

@@ -91,6 +91,18 @@ export const IPC_CHANNELS = {
   USER_QUESTION_ASK: 'user-question:ask',
   USER_QUESTION_RESPONSE: 'user-question:response',
 
+  // 设计画布提议审批通道（ADR-026：agent 提议 op → 用户审批）
+  CANVAS_PROPOSAL_ASK: 'canvas-proposal:ask',
+  CANVAS_PROPOSAL_RESPONSE: 'canvas-proposal:response',
+  // 二刀（审计 MED-3）：agent abort/超时时通知 renderer 撤掉审批条，防孤儿提议被后点 Apply 触发付费生成
+  CANVAS_PROPOSAL_CANCEL: 'canvas-proposal:cancel',
+
+  // 设计画布有界自主信封审批通道（ADR-027：agent 请求预算信封 → 用户一次性审批）
+  CANVAS_AUTONOMY_ASK: 'canvas-autonomy:ask',
+  CANVAS_AUTONOMY_RESPONSE: 'canvas-autonomy:response',
+  // abort/超时撤掉信封审批面板（防孤儿信封被后点 Grant 后无 agent 使用）
+  CANVAS_AUTONOMY_CANCEL: 'canvas-autonomy:cancel',
+
   // Confirm action channels (Gen 3+ confirm_action)
   CONFIRM_ACTION_ASK: 'confirm-action:ask',
   CONFIRM_ACTION_RESPONSE: 'confirm-action:response',

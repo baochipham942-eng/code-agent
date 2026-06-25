@@ -171,6 +171,41 @@ function encodePng(sharp: SharpModule, raw: RawImage): Promise<Buffer> {
     .toBuffer();
 }
 
+// ---- 严格模式守卫（可选硬保证）----
+// best-effort（默认）：sharp 不可用 / 闸抛错时降级写模型原图，不阻断编辑。
+// strict（用户在设置页开启）：region-lock 无法强制执行时「响亮失败」，拒绝产出未经一致性保证的图。
+// main 侧抛出的错误直接回传 renderer 展示，故消息走中文硬编码（与既有 handler 错误一致）。
+
+export const REGION_LOCK_STRICT_SHARP_UNAVAILABLE =
+  '一致性严格模式已开启，但图像处理组件 (sharp) 不可用，无法保证未选区域不被改动。已取消本次局部重绘（未调用付费模型，不产生费用）。';
+
+export const REGION_LOCK_STRICT_GATE_FAILED =
+  '一致性严格模式已开启，但一致性校验执行失败，已拒绝写入未经保证的结果（模型原图未落盘，可关闭严格模式后重试）。';
+
+/**
+ * 严格模式预检：region-lock 能否被强制执行。
+ * - sharp 可用：返回 true（继续跑一致性闸，与是否严格无关）。
+ * - sharp 不可用 + 严格：抛错（拒绝产出未保证产物）。**调用方须在付费生成前调用**，避免白付费。
+ * - sharp 不可用 + 非严格：返回 false（best-effort 降级，调用方写模型原图、不阻断编辑）。
+ */
+export function ensureRegionLockEnforceable(opts: { strict: boolean; sharpAvailable: boolean }): boolean {
+  if (opts.sharpAvailable) return true;
+  if (opts.strict) throw new Error(REGION_LOCK_STRICT_SHARP_UNAVAILABLE);
+  return false;
+}
+
+/**
+ * 一致性闸自身执行失败（sharp 已加载但解码/处理抛错）时的处置：
+ * - 严格：抛错（链上原因），拒绝写未保证产物。
+ * - 非严格：静默返回，由调用方降级写模型原图。
+ */
+export function onRegionLockGateError(opts: { strict: boolean; cause: unknown }): void {
+  if (!opts.strict) return;
+  const err = new Error(REGION_LOCK_STRICT_GATE_FAILED) as Error & { cause?: unknown };
+  err.cause = opts.cause;
+  throw err;
+}
+
 export interface RegionLockGateResult {
   /** 最终产物 PNG（clean=模型输出；locked=留区贴回原图后的合成图）。 */
   finalPng: Buffer;

@@ -10,6 +10,7 @@ import { brandContractToBriefProjection } from '../../shared/contract/brandContr
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
 import { getConnectorRegistry } from '../connectors';
 import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
+import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasProposal';
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -52,6 +53,14 @@ export function buildWorkbenchTurnSystemContext(
     if (selfCritique) {
       lines.push(selfCritique);
     }
+  }
+
+  // ADR-026 D1-B：设计画布快照注入——agent 据此引用真实节点 id 用 ProposeCanvasOps 提议。
+  const canvasBlock = formatCanvasSnapshotForPrompt(context.canvasSnapshot);
+  if (canvasBlock) {
+    lines.push('<design_canvas>');
+    lines.push(canvasBlock);
+    lines.push('</design_canvas>');
   }
 
   if (context.selectedSkillIds?.length) {

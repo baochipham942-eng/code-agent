@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
-import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 import type { ServiceApiKey } from '../contract/configService';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
@@ -126,6 +126,12 @@ export interface IpcInvokeHandlers {
 
   // User question (Gen 3+ ask_user_question)
   [IPC_CHANNELS.USER_QUESTION_RESPONSE]: (response: UserQuestionResponse) => Promise<void>;
+
+  // 设计画布提议审批（ADR-026）：renderer → main 回裁决
+  [IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE]: (response: CanvasProposalDecision) => Promise<void>;
+
+  // 设计画布有界自主信封审批（ADR-027）：renderer → main 回信封裁决
+  [IPC_CHANNELS.CANVAS_AUTONOMY_RESPONSE]: (decision: AutonomyEnvelopeDecision) => Promise<void>;
 
   // MCP Elicitation (server requests user input)
   [IPC_CHANNELS.MCP_ELICITATION_RESPONSE]: (response: MCPElicitationResponse) => Promise<void>;
@@ -527,6 +533,10 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST]: (request: ToolCreateRequestEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
+  [IPC_CHANNELS.CANVAS_PROPOSAL_ASK]: (request: CanvasOpProposal) => void;
+  [IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL]: (payload: { requestId: string }) => void;
+  [IPC_CHANNELS.CANVAS_AUTONOMY_ASK]: (request: AutonomyEnvelopeRequest) => void;
+  [IPC_CHANNELS.CANVAS_AUTONOMY_CANCEL]: (payload: { requestId: string }) => void;
   [IPC_CHANNELS.MCP_ELICITATION_REQUEST]: (request: MCPElicitationRequest) => void;
   [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;

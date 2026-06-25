@@ -342,6 +342,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getConfigScope',
     'getCurrent',
     'getDesignMdSummary',
+    'getDesignSettings',
     'importDesignImage',
     'inspectArchive',
     'inspectPresentation',
@@ -367,6 +368,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setActiveBrand',
     'setCurrent',
     'showItemInFolder',
+    'updateDesignSettings',
     'writeFile',
   ],
 } satisfies Partial<Record<IPCDomain, readonly string[]>>;

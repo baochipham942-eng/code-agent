@@ -15,6 +15,9 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
+import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
+import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
+import { buildCanvasSnapshot } from '../../components/design/buildCanvasSnapshot';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
@@ -65,6 +68,19 @@ function withDesignBriefContext(
     ...(context || {}),
     designBrief: brief,
   };
+}
+
+// ADR-026 D1-B：design 模式发轮时附带画布快照，供 agent ProposeCanvasOps 引用真实节点 id。
+// 仅 design 模式且画布非空时附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
+function withCanvasSnapshotContext(
+  context: ConversationEnvelopeContext | undefined,
+): ConversationEnvelopeContext | undefined {
+  if (useWorkspaceModeStore.getState().workspaceMode !== 'design') return context;
+  const cs = useDesignCanvasStore.getState();
+  if (cs.nodes.length === 0) return context;
+  const canvasSnapshot = buildCanvasSnapshot({ nodes: cs.nodes, connectors: cs.connectors, shapes: cs.shapes });
+  if (canvasSnapshot.nodes.length === 0) return context;
+  return { ...(context || {}), canvasSnapshot };
 }
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
@@ -358,7 +374,9 @@ export function useAgentIPC({
       const sessionDesignBrief = enrichDesignBrief(effectiveSessionId
         ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
         : undefined);
-      const contextWithDesignBrief = withDesignBriefContext(context, sessionDesignBrief);
+      const contextWithDesignBrief = withCanvasSnapshotContext(
+        withDesignBriefContext(context, sessionDesignBrief),
+      );
 
       if (directRouting.kind === 'error') {
         const errorContent =

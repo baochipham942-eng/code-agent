@@ -18,10 +18,21 @@ import { DesignImageEditOps } from './DesignImageEditOps';
 import { DesignLayerPanel } from './DesignLayerPanel';
 import { CanvasImage, KonvaVideoNode } from './DesignCanvasNodes';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
+import { DiagramLayer, type DiagramCanvasTool, type TextEditTarget } from './DiagramLayer';
+import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
+import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
+import { DiscardedNodesTray } from './DiscardedNodesTray';
+import { useCanvasProposalReview } from './useCanvasProposalReview';
+import { useAutonomyEnvelopeReview } from './useAutonomyEnvelopeReview';
+import { CanvasAutonomyReviewBar } from './CanvasAutonomyReviewBar';
+import { useDesignAutonomyStore } from './designAutonomyStore';
+import { DiagramToolbar } from './DiagramToolbar';
+import { reduceDiagram, type ShapeTool } from './diagramReducer';
+import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
+import { saveCanvasDoc } from './designCanvasPersistence';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
 import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
-import { saveCanvasDoc } from './designCanvasPersistence';
 import { imagePdfExportName, canvasPptxExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
@@ -190,6 +201,31 @@ export const DesignCanvas: React.FC = () => {
   const discardNode = useDesignCanvasStore((s) => s.discardNode);
   const deleteNodes = useDesignCanvasStore((s) => s.deleteNodes);
   const generating = useDesignCanvasStore((s) => s.generating);
+  // —— 图解层（连线 / freeform 形状）——
+  const connectors = useDesignCanvasStore((s) => s.connectors);
+  const shapes = useDesignCanvasStore((s) => s.shapes);
+  // ADR-026：订阅 agent 画布提议 + Apply/Reject 落地。
+  const canvasProposal = useCanvasProposalReview();
+  // ADR-027：订阅 agent 自主信封请求 + Grant/Decline；活跃信封态驱动进度/停止指示。
+  const autonomy = useAutonomyEnvelopeReview();
+  const autonomyEnvelope = useDesignAutonomyStore((st) => st.envelope);
+  const autonomyClear = useDesignAutonomyStore((st) => st.clear);
+  const selectedDiagram = useDesignCanvasStore((s) => s.selectedDiagram);
+  const setSelectedDiagram = useDesignCanvasStore((s) => s.setSelectedDiagram);
+  const [diagramTool, setDiagramTool] = useState<DiagramCanvasTool>('select');
+  const [diagramColor, setDiagramColor] = useState<string>(DIAGRAM_DEFAULT_COLOR);
+  // 图解文字内联编辑目标（新建 text / 编辑形状文字 / 编辑连线 label）。
+  const [diagramText, setDiagramText] = useState<{ target: TextEditTarget; value: string } | null>(null);
+  // 防 Enter+blur 双提交（new-text 会落两份）：每次开编辑器重置，提交/取消后置 true 吃掉卸载触发的 blur（修 skeptic MED-2）。
+  const diagramTextDoneRef = useRef(false);
+  const openDiagramText = (target: TextEditTarget): void => {
+    diagramTextDoneRef.current = false;
+    setDiagramText({ target, value: target.kind === 'new-text' ? '' : target.initial });
+  };
+  // 进行中的图解绘制形状（Stage 处理器维护，up 后提交进 store）。
+  const [diagramDraft, setDiagramDraft] = useState<CanvasShape | null>(null);
+  const diagramDrawing = useRef(false);
+  const isShapeTool = diagramTool !== 'select' && diagramTool !== 'connect';
   const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
 
@@ -351,6 +387,8 @@ export const DesignCanvas: React.FC = () => {
         },
         { annotMode, comparing },
         {
+          // undo/redo 后落盘：图解对象每次改都写 canvas.json，撤销也须同步磁盘，
+          // 否则内存回滚但磁盘还在，reload 复活（修 skeptic LOW-2）。
           undo: () => {
             useDesignCanvasStore.getState().undoEdit();
             persistCanvasDoc();
@@ -417,6 +455,25 @@ export const DesignCanvas: React.FC = () => {
     };
   }, []);
 
+  // 图解删除键：选中图解对象（形状/连线）时按 Delete/Backspace 删除。
+  // 在输入框/可编辑元素内不劫持（让出原生删除）；正在编辑文字时不响应。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (diagramText) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const editable = (e.target as HTMLElement | null)?.isContentEditable ?? false;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || editable) return;
+      if (!useDesignCanvasStore.getState().selectedDiagram) return;
+      e.preventDefault();
+      onDeleteSelectedDiagram();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // onDeleteSelectedDiagram 是稳定闭包（无依赖捕获），diagramText 变化时重挂以读最新态。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagramText]);
+
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
@@ -442,8 +499,84 @@ export const DesignCanvas: React.FC = () => {
     }
   };
 
+  // —— 图解层辅助 ——
+  const makeId = (): string =>
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `d-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // 图解编辑后落盘（复用既有 canvas.json 写盘链路；无 runDir 时仅内存态，与节点编辑落盘模型一致）。
+  const persistDiagram = (): void => {
+    const rd = useDesignCanvasStore.getState().runDir;
+    if (rd) void saveCanvasDoc(rd, useDesignCanvasStore.getState().toDoc());
+  };
+  const onUpdateShape = (id: string, patch: Partial<CanvasShape>): void => {
+    useDesignCanvasStore.getState().updateShape(id, patch);
+    persistDiagram();
+  };
+  const onAddConnector = (fromNodeId: string, toNodeId: string): void => {
+    useDesignCanvasStore
+      .getState()
+      .addConnector({ id: makeId(), fromNodeId, toNodeId, createdAt: Date.now() });
+    persistDiagram();
+  };
+  const onDeleteSelectedDiagram = (): void => {
+    const sel = useDesignCanvasStore.getState().selectedDiagram;
+    if (!sel) return;
+    if (sel.type === 'shape') useDesignCanvasStore.getState().deleteShape(sel.id);
+    else useDesignCanvasStore.getState().deleteConnector(sel.id);
+    persistDiagram();
+  };
+  // 文字内联编辑提交：新建 text / 改形状文字 / 改连线 label。
+  const commitDiagramText = (): void => {
+    if (diagramTextDoneRef.current || !diagramText) return; // 已提交/取消：吃掉卸载触发的二次 blur
+    diagramTextDoneRef.current = true;
+    const { target, value } = diagramText;
+    const text = value.trim();
+    const store = useDesignCanvasStore.getState();
+    if (target.kind === 'new-text') {
+      if (text) {
+        store.addShape({
+          id: makeId(),
+          kind: 'text',
+          x: target.world.x,
+          y: target.world.y,
+          text,
+          color: diagramColor,
+          createdAt: Date.now(),
+        });
+      }
+    } else if (target.kind === 'shape') {
+      store.updateShape(target.id, { text } as Partial<CanvasShape>);
+    } else {
+      store.updateConnector(target.id, { label: text || undefined });
+    }
+    setDiagramText(null);
+    persistDiagram();
+  };
+
   // 圈选标注：mousedown 起框 → move 更新 → up 落框（仅 annotating 时）。
+  // 图解绘制（shape 工具）也走 Stage 处理器（对所有点击触发，能在节点之上起笔）。
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
+    if (isShapeTool) {
+      const w = worldFromPointer();
+      if (!w) return;
+      if (diagramTool === 'text') {
+        openDiagramText({ kind: 'new-text', world: w });
+        return;
+      }
+      diagramDrawing.current = true;
+      const next = reduceDiagram([], {
+        type: 'down',
+        tool: diagramTool as ShapeTool,
+        x: w.x,
+        y: w.y,
+        id: makeId(),
+        createdAt: Date.now(),
+        color: diagramColor,
+      });
+      setDiagramDraft(next[0] ?? null);
+      return;
+    }
     if (!annotating && !annotMode) {
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
@@ -458,8 +591,11 @@ export const DesignCanvas: React.FC = () => {
       }
     }
     if (!annotating) {
-      // 非标注模式：点空白处清除选择。
-      if (e.target === stageRef.current) setSelected([]);
+      // 非标注/非绘制模式：点空白处清除选择（节点 + 图解）。
+      if (e.target === stageRef.current) {
+        setSelected([]);
+        setSelectedDiagram(null);
+      }
       return;
     }
     const w = worldFromPointer();
@@ -476,6 +612,13 @@ export const DesignCanvas: React.FC = () => {
       setCamera((current) => panBy(current, { x: pointer.x - prev.x, y: pointer.y - prev.y }));
       return;
     }
+    if (isShapeTool) {
+      if (!diagramDrawing.current || !diagramDraft) return;
+      const w = worldFromPointer();
+      if (!w) return;
+      setDiagramDraft(reduceDiagram([diagramDraft], { type: 'move', x: w.x, y: w.y })[0] ?? null);
+      return;
+    }
     if (!annotating || !dragStart.current) return;
     const w = worldFromPointer();
     if (!w) return;
@@ -484,6 +627,17 @@ export const DesignCanvas: React.FC = () => {
   const handleMouseUp = (): void => {
     if (panDragRef.current) {
       panDragRef.current = null;
+      return;
+    }
+    if (isShapeTool) {
+      if (!diagramDrawing.current || !diagramDraft) return;
+      diagramDrawing.current = false;
+      const committed = reduceDiagram([diagramDraft], { type: 'up' });
+      setDiagramDraft(null);
+      if (committed.length > 0) {
+        useDesignCanvasStore.getState().addShape(committed[0]);
+        persistDiagram();
+      }
       return;
     }
     if (!annotating || !draft) {
@@ -608,6 +762,19 @@ export const DesignCanvas: React.FC = () => {
       onDrop={onDrop}
       onDragOver={(e) => e.preventDefault()}
     >
+      {/* 生成忙态遮罩（审计 MED-1）：仅在提议「正在落地」（applying）期间拦截 konva 指针事件，禁止
+          手动拖拽/绘制——否则提议生成收尾的 clearEditHistory 会连带清掉用户中途手动编辑的 undo。
+          审批条 z-30 在其上、自身 busy 已禁用按钮；本遮罩 z-10 只盖 Stage。
+          绑 applying 而非 generating&&pending（R3 MED-1）：避免「表单出图中 + agent 后台推来一条 pending」
+          时遮罩误弹挡住用户手动流程；只有用户真点了 Apply 进入落地才锁。 */}
+      {canvasProposal.applying && (
+        <div
+          data-testid="canvas-busy-overlay"
+          className="absolute inset-0 z-10 cursor-wait"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}
@@ -665,6 +832,19 @@ export const DesignCanvas: React.FC = () => {
               />
             ))}
           </Layer>
+          {/* 图解层（连线 + freeform 形状），始终渲染；绘制走 Stage 处理器，本层管渲染+选中+连接。 */}
+          <DiagramLayer
+            tool={diagramTool}
+            nodes={visibleNodes}
+            connectors={connectors}
+            shapes={shapes}
+            draft={diagramDraft}
+            selected={selectedDiagram}
+            onUpdateShape={onUpdateShape}
+            onAddConnector={onAddConnector}
+            onSelect={setSelectedDiagram}
+            onRequestText={openDiagramText}
+          />
           {annotMode && selectedImageNode && (
             <AnnotationLayer
               shapes={annotShapes}
@@ -673,8 +853,105 @@ export const DesignCanvas: React.FC = () => {
               onRequestText={(world) => setTextDraft({ world, value: '' })}
             />
           )}
+          {/* ADR-026：agent 待审批提议的 ghost 虚影（蓝色虚线/半透明），点应用才落库。 */}
+          {canvasProposal.pending && (
+            <Layer listening={false}>
+              <CanvasProposalGhostLayer ops={canvasProposal.pending.ops} nodes={nodes} />
+            </Layer>
+          )}
         </Stage>
       )}
+
+      {/* ADR-026：提议审批条（逐 op 取舍 + 应用/拒绝）。 */}
+      {canvasProposal.pending && (
+        <CanvasProposalReviewBar
+          proposal={canvasProposal.pending}
+          onApply={(ops) => void canvasProposal.apply(ops)}
+          onReject={(fb) => void canvasProposal.reject(fb)}
+        />
+      )}
+
+      {/* ADR-027：自主信封审批条（人一次性批预算 → AI 在信封内自主出图）。 */}
+      {autonomy.pendingRequest && (
+        <CanvasAutonomyReviewBar
+          request={autonomy.pendingRequest}
+          onGrant={(g, perImageCny) => void autonomy.grant(g, perImageCny)}
+          onDecline={(fb) => void autonomy.decline(fb)}
+        />
+      )}
+
+      {/* ADR-027：自主进行中指示 + 停止（活跃信封时；审批条出现时不重叠）。 */}
+      {autonomyEnvelope && !autonomy.pendingRequest && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-amber-300/60 bg-white/95 px-4 py-1.5 text-xs text-neutral-600 shadow-md backdrop-blur dark:border-amber-500/40 dark:bg-neutral-900/95 dark:text-neutral-300">
+          <span>
+            {t.design.autonomyRunning
+              .replace('{used}', String(autonomyEnvelope.usedVariants))
+              .replace('{max}', String(autonomyEnvelope.maxVariants))
+              .replace('{spent}', formatCny(autonomyEnvelope.spentCny))
+              .replace('{cap}', formatCny(autonomyEnvelope.maxCny))}
+          </span>
+          <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10">
+            {t.design.autonomyStop}
+          </button>
+        </div>
+      )}
+
+      {/* ADR-026 三刀：已淘汰节点恢复入口（软删找回）。 */}
+      <DiscardedNodesTray />
+
+      {/* 图解工具条（模式/调色板/删除）——消费 surface 只放工具选择，不放配置管理。 */}
+      <DiagramToolbar
+        tool={diagramTool}
+        onToolChange={(tl) => {
+          setDiagramTool(tl);
+          setSelectedDiagram(null);
+        }}
+        color={diagramColor}
+        onColorChange={setDiagramColor}
+        canDelete={selectedDiagram !== null}
+        onDelete={onDeleteSelectedDiagram}
+      />
+
+      {/* 图解模式提示（connect/绘制时给一句引导）。 */}
+      {diagramTool === 'connect' && (
+        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow">
+          {t.design.diagramConnectHint}
+        </div>
+      )}
+      {isShapeTool && diagramTool !== 'text' && (
+        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-zinc-300 shadow">
+          {t.design.diagramDrawHint}
+        </div>
+      )}
+
+      {/* 图解文字内联编辑（新建 text / 改形状文字 / 改连线 label）。 */}
+      {diagramText &&
+        (() => {
+          const sx = diagramText.target.world.x * camera.scale + camera.x;
+          const sy = diagramText.target.world.y * camera.scale + camera.y;
+          return (
+            <input
+              autoFocus
+              data-testid="diagram-text-input"
+              value={diagramText.value}
+              onChange={(e) => setDiagramText({ ...diagramText, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitDiagramText();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  diagramTextDoneRef.current = true; // 取消：吃掉卸载触发的 blur 提交
+                  setDiagramText(null);
+                }
+              }}
+              onBlur={commitDiagramText}
+              placeholder={t.design.diagramTextPlaceholder}
+              className="absolute z-10 rounded border border-sky-400/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-zinc-100 shadow-lg outline-none placeholder:text-zinc-500"
+              style={{ left: sx, top: sy, minWidth: 120 }}
+            />
+          );
+        })()}
 
       {visibleNodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-zinc-500">

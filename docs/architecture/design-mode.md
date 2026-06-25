@@ -324,6 +324,48 @@ proto 预览态选色板 → injectThemeOverride(html, paletteId) 往 srcDoc 注
 
 ---
 
+### 5.16 有界自主（预算信封 + 人挑收敛，[ADR-027](../decisions/027-bounded-autonomy-design-canvas.md)，2026-06-24）
+
+§5.15（[ADR-026](../decisions/026-agent-operated-design-canvas.md)）让 agent 能提议改画布、**人逐张审批**。本节再进一刀：**人一次性批预算信封 → agent 在信封内自主出 N 个发散变体（不再逐张问）→ 人挑一个**。铁律——付费闸**没破**，只从「逐张点头」上移到「信封预授权」；¥ 上限是硬天花板，绝不超花；自主的价值在**多样性**不在自我纠错，**人挑=唯一质量信号**（绕开不靠谱 vision-critic）。详细产品契约见 [2026-06-24 spec](../specs/2026-06-24-bounded-autonomy-design-canvas.md)。
+
+#### 数据流（批信封 → 自主扇出 → 人挑）
+```
+[批信封] agent 调 RequestDesignAutonomy（goal + 提议信封）→ 阻塞，main 经 CANVAS_AUTONOMY_ASK 推给 renderer。
+         CanvasAutonomyReviewBar 显示目标 + 可调 生成数/预算 + 预估¥（同源计价）→ 人 Grant/Decline。
+         Grant：renderer 建立信封（designAutonomyStore，绑 sessionId + 快照单价）→ CANVAS_AUTONOMY_RESPONSE 回 agent。
+[自主]   agent 连发 ProposeCanvasOps({generateImage})；renderer 的 useCanvasProposalReview 据信封路由：
+         decideProposalHandling = auto（有信封 ∧ 非破坏性）→ autonomousApply（不弹人闸）。
+[预算闸] makeBudgetedGenerate：付费前 canAfford(est) 拦 → 真出图（generateProposedImage，落同一变体组）
+         → consume(成败/实际¥)；await 后重读信封防 resurrection。耗尽即 clear 信封。回灌 agent 剩余预算。
+[人挑]   N 张兄弟变体进对比视图（DesignCompareOverlay）→ setChosen 主版 + planUnpickedDiscards 软删其余。
+         画布快照标 ★chosen 回灌 agent（人挑=质量信号）。多轮=人「再来一轮」需重新批信封。
+[作废]   信封绑 run 生命周期：SESSION_STATUS_UPDATE 该 session 进终态 → clear；abort/手动停/耗尽亦 clear。
+```
+
+#### 三层 op 分级（自主放行边界）
+| op 类 | 自主内行为 |
+|-------|-----------|
+| 免费非破坏 Layer1（move/connector/shape/rename） | 自动应用，不吃预算，可 Cmd+Z 撤 |
+| 付费 generateImage（文生图） | 吃预算，信封内自动放行，付费前 est 闸；耗尽硬停 |
+| 破坏性（discardNode）/ 视频 / 编辑扩图去水印 | **不进自主**，break out 回 ADR-026 逐步人审批 |
+
+#### 横切红线（对抗审计重点盯）
+- **付费预授权 = 硬天花板**：est 与 grant 时快照单价取 `max`（fail-closed，自定义模型不被运行时拉取失败拉低绕闸）；逐张 est 不超剩余 ¥ 才出图；耗尽硬停。est==actual（同源计价，dogfood 实锤 wanx 0.14==0.14）。
+- **防孤儿信封**：信封绑 sessionId，run 终态/abort/手动停/耗尽即作废；`makeBudgetedGenerate` await 后重读信封防 in-flight 出图把已清信封写活（resurrection）。
+- **main 永不直接 mutate/付费**；自主只在 brief 清晰后启动；无交互画布降级回告文字。
+
+#### 文件 / IPC / 测试
+| 层 | 落点 |
+|----|------|
+| 契约 | `src/shared/contract/designAutonomy.ts`（信封类型 + 预算账 reducer + 请求/裁决 + sessionId）；`src/shared/constants/autonomy.ts`（默认/天花板/安全系数） |
+| 工具（main） | `src/main/tools/modules/design/requestDesignAutonomy.ts`(+`.schema.ts`)：阻塞往返 + 超时 + 降级 + 发 sessionId |
+| 路由/引擎（renderer） | `autonomyProposalRouting.ts`（decideProposalHandling / makeBudgetedGenerate / makeGroupedGenerate / autonomousApply / planUnpickedDiscards / resolveAutonomyImageCostCny / isAutonomyRunTerminal） |
+| 状态/UI | `designAutonomyStore.ts`（信封 + sessionId + 单价快照 + 变体组）；`useAutonomyEnvelopeReview.ts`（订阅 ASK/CANCEL + 状态终态 clear）；`CanvasAutonomyReviewBar.tsx`（审批条）；`useCanvasProposalReview.ts`（ASK 按信封路由 auto/gate） |
+| IPC | `CANVAS_AUTONOMY_ASK`（main→renderer 信封请求）/ `CANVAS_AUTONOMY_RESPONSE`（裁决回灌）/ `CANVAS_AUTONOMY_CANCEL`（abort/超时撤审批面板） |
+| 测试 | `tests/unit/shared/designAutonomy.test.ts`、`tests/unit/design/{autonomyProposalRouting,designAutonomyStore}.test.ts`、`tests/unit/tools/modules/design/requestDesignAutonomy.test.ts`、`tests/unit/shared/canvasProposal.test.ts`（快照 chosen） |
+
+---
+
 ## 6. 图像引擎层（`src/main/services/media/imageGenerationService.ts`）
 
 ### 6.0 视觉模型注册表（`src/shared/constants/visualModels.ts`，D1 单一真源）

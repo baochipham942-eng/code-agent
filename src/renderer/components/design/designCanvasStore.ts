@@ -9,7 +9,18 @@ import {
   type CanvasNode,
   type DesignCanvasDoc,
 } from './designCanvasTypes';
+import {
+  pruneDanglingConnectors,
+  type CanvasConnector,
+  type CanvasShape,
+} from './designDiagramTypes';
 import { groupKey } from './variantSpine';
+import {
+  computeProposalResult,
+  type ProposalApplyResult,
+  type ProposalApplyOpts,
+} from './applyCanvasProposal';
+import type { CanvasProposalOp } from '../../../shared/contract/canvasProposal';
 import {
   emptyEditHistory,
   pushSnapshot,
@@ -19,19 +30,30 @@ import {
   canEditUndo as canUndo,
   canEditRedo as canRedo,
   reconcileUndoFrame,
+  reconcileRedoFrame,
+  type CanvasEditSnapshot,
   type EditHistoryStack,
 } from './canvasEditHistory';
+
+/** 图解层选中引用（形状或连线，统一一个字段，互斥于节点选择）。 */
+export type SelectedDiagram = { type: 'shape' | 'connector'; id: string } | null;
 
 interface DesignCanvasState {
   /** 当前画布所属 run 目录（决定存档落点）；null=尚无生成的临时画布。 */
   runDir: string | null;
   nodes: CanvasNode[];
+  /** 图解层连线（节点↔节点，渲染时实时算锚点）。 */
+  connectors: CanvasConnector[];
+  /** 图解层 freeform 形状。 */
+  shapes: CanvasShape[];
   camera: CanvasCamera;
   selectedIds: string[];
+  /** 图解层选中（形状/连线），与节点选择互斥。 */
+  selectedDiagram: SelectedDiagram;
   /** 出图进行中（驱动生成按钮 spinner）。 */
   generating: boolean;
   error: string | null;
-  /** Layer1 编辑历史栈：节点移动/缩放/删除/重命名的快照。生成产物走 Layer2 variant spine，不进本栈。 */
+  /** Layer1 编辑历史栈：节点移动/缩放/删除/重命名 + 图解层增删改的快照。生成产物走 Layer2 variant spine，不进本栈。 */
   editHistory: EditHistoryStack;
 
   /** 载入一份存档（切换 run / 刷新恢复）。 */
@@ -44,10 +66,27 @@ interface DesignCanvasState {
   deleteNodes: (ids: readonly string[]) => void;
   /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
   discardNode: (id: string) => void;
+  /** 恢复（取消淘汰）：清掉 discarded 标记让节点重新可见（软删的找回路径，三刀）。 */
+  restoreNode: (id: string) => void;
   /** 选为主版：标记该节点 chosen，并清除同版本槽（groupKey=parentId??id）其他节点的主版标记。 */
   setChosen: (id: string) => void;
   /** 为某一步命名（T2 可逆命名步）：写入 label，不存在则静默无操作。 */
   renameNode: (id: string, label: string) => void;
+  // —— 图解层（连线 / 形状），均为 Layer1 直接编辑，进编辑历史 ——
+  addConnector: (connector: CanvasConnector) => void;
+  updateConnector: (id: string, patch: Partial<Omit<CanvasConnector, 'id'>>) => void;
+  deleteConnector: (id: string) => void;
+  addShape: (shape: CanvasShape) => void;
+  updateShape: (id: string, patch: Partial<CanvasShape>) => void;
+  deleteShape: (id: string) => void;
+  /**
+   * 应用一批 agent 提议 op（ADR-026 D3-B：整批=一个原子撤销单元）。
+   * 第一刀仅 Layer1 op（移动/连线/形状/标注）：有变更则**整批单次快照**后落新态，
+   * 一次 undo 即可全撤；全跳过（stale-target）则不动状态/不进快照。返回应用/跳过明细。
+   * 落盘（saveCanvasDoc）由调用方在本 action 后执行。
+   */
+  applyProposalBatch: (ops: CanvasProposalOp[], opts: ProposalApplyOpts) => ProposalApplyResult;
+  setSelectedDiagram: (sel: SelectedDiagram) => void;
   setCamera: (camera: CanvasCamera | ((camera: CanvasCamera) => CanvasCamera)) => void;
   setSelected: (ids: string[]) => void;
   setGenerating: (generating: boolean) => void;
@@ -64,30 +103,58 @@ interface DesignCanvasState {
   toDoc: () => DesignCanvasDoc;
 }
 
+/** 从当前 state 取一帧编辑快照（节点 + 图解层）。 */
+function snapshotOf(s: { nodes: CanvasNode[]; connectors: CanvasConnector[]; shapes: CanvasShape[] }): CanvasEditSnapshot {
+  return { nodes: s.nodes, connectors: s.connectors, shapes: s.shapes };
+}
+
 export const useDesignCanvasStore = create<DesignCanvasState>()(
   persist(
     (set, get) => ({
   runDir: null,
   nodes: [],
+  connectors: [],
+  shapes: [],
   camera: { ...emptyCanvasDoc().camera },
   selectedIds: [],
+  selectedDiagram: null,
   generating: false,
   error: null,
   editHistory: emptyEditHistory(),
 
   loadDoc: (runDir, doc) =>
-    set({ runDir, nodes: doc.nodes, camera: doc.camera, selectedIds: [], editHistory: clearHistory() }),
+    set({
+      runDir,
+      nodes: doc.nodes,
+      connectors: doc.connectors ?? [],
+      shapes: doc.shapes ?? [],
+      camera: doc.camera,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    }),
   resetCanvas: () => {
     const empty = emptyCanvasDoc();
-    set({ nodes: empty.nodes, camera: empty.camera, selectedIds: [], editHistory: clearHistory() });
+    set({
+      nodes: empty.nodes,
+      connectors: [],
+      shapes: [],
+      camera: empty.camera,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    });
   },
   // addNode = 生成产物落画布，属 Layer2（variant spine），不进 Layer1 编辑历史。
-  addNode: (node) => set((s) => ({ nodes: [...s.nodes, node] })),
+  // 但它改了节点集，是一条新分支：清空 redo 栈（标准 undo/redo 不变式），
+  // 否则 add 后 redo 会带着"当前态独有的新增节点"撞上 reconcileRedoFrame 的不追加语义而丢节点（修 HIGH-1 配套）。
+  addNode: (node) =>
+    set((s) => ({ nodes: [...s.nodes, node], editHistory: { ...s.editHistory, future: [] } })),
   updateNode: (id, patch) =>
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {}; // 无此节点：不改、不留无谓撤销点
       return {
-        editHistory: pushSnapshot(s.editHistory, s.nodes), // 改前先快照（Layer1）
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)), // 改前先快照（Layer1）
         // 判别联合 + 部分 patch 合并：TS 无法把 spread 结果窄回 CanvasNode union（已知限制），
         // 显式断言回 CanvasNode（非 any，保留判别字段）。
         nodes: s.nodes.map((n) => (n.id === id ? ({ ...n, ...patch } as CanvasNode) : n)),
@@ -98,9 +165,13 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => {
       const idSet = new Set(ids);
       if (idSet.size === 0 || !s.nodes.some((n) => idSet.has(n.id))) return {};
+      const nodes = s.nodes.filter((n) => !idSet.has(n.id));
+      const nodeIds = new Set(nodes.map((n) => n.id));
       return {
-        editHistory: pushSnapshot(s.editHistory, s.nodes),
-        nodes: s.nodes.filter((n) => !idSet.has(n.id)),
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        nodes,
+        // 级联剪掉指向被删节点的悬空连线（与渲染层过滤一致，保持 state 干净）。
+        connectors: pruneDanglingConnectors(s.connectors, nodeIds),
         selectedIds: s.selectedIds.filter((sid) => !idSet.has(sid)),
       };
     }),
@@ -122,6 +193,19 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       }
       return { nodes, selectedIds: s.selectedIds.filter((sid) => sid !== id) };
     }),
+  restoreNode: (id) =>
+    set((s) => {
+      const target = s.nodes.find((n) => n.id === id);
+      if (!target || !target.discarded) return {}; // 不存在或本就没淘汰：no-op
+      // 清 discarded。若同槽已无主版（如整槽淘汰后逐个恢复），把本节点升为主版补回
+      // 「槽内恒有一个 chosen」不变量（M1，对称于 discardNode 的自动升主版）；否则留 false。
+      const key = groupKey(target);
+      const slotHasChosen = s.nodes.some(
+        (n) => n.id !== id && !n.discarded && groupKey(n) === key && n.chosen,
+      );
+      const chosen = !slotHasChosen;
+      return { nodes: s.nodes.map((n) => (n.id === id ? { ...n, discarded: false, chosen } : n)) };
+    }),
   setChosen: (id) =>
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
@@ -139,40 +223,139 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {};
       return {
-        editHistory: pushSnapshot(s.editHistory, s.nodes),
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
         nodes: s.nodes.map((n) => (n.id === id ? { ...n, label } : n)),
       };
     }),
+  addConnector: (connector) =>
+    set((s) => {
+      // 端点必须都是现存节点（防加悬空连线）；重复 id 忽略。
+      const nodeIds = new Set(s.nodes.map((n) => n.id));
+      if (!nodeIds.has(connector.fromNodeId) || !nodeIds.has(connector.toNodeId)) return {};
+      if (connector.fromNodeId === connector.toNodeId) return {};
+      if (s.connectors.some((c) => c.id === connector.id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        connectors: [...s.connectors, connector],
+      };
+    }),
+  updateConnector: (id, patch) =>
+    set((s) => {
+      if (!s.connectors.some((c) => c.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        // 保 id + 端点不被 patch 越权改写（端点改写可绕过 normalizeConnector 制造自环/悬空，修 skeptic LOW-1）。
+        connectors: s.connectors.map((c) =>
+          c.id === id ? { ...c, ...patch, id: c.id, fromNodeId: c.fromNodeId, toNodeId: c.toNodeId } : c,
+        ),
+      };
+    }),
+  deleteConnector: (id) =>
+    set((s) => {
+      if (!s.connectors.some((c) => c.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        connectors: s.connectors.filter((c) => c.id !== id),
+        selectedDiagram:
+          s.selectedDiagram?.type === 'connector' && s.selectedDiagram.id === id ? null : s.selectedDiagram,
+      };
+    }),
+  addShape: (shape) =>
+    set((s) => {
+      if (s.shapes.some((sh) => sh.id === shape.id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        shapes: [...s.shapes, shape],
+      };
+    }),
+  updateShape: (id, patch) =>
+    set((s) => {
+      if (!s.shapes.some((sh) => sh.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        // 保 id + kind 不被 patch 改写（kind 是判别字段，越权改写会破坏联合）。
+        shapes: s.shapes.map((sh) => (sh.id === id ? ({ ...sh, ...patch, id: sh.id, kind: sh.kind } as CanvasShape) : sh)),
+      };
+    }),
+  deleteShape: (id) =>
+    set((s) => {
+      if (!s.shapes.some((sh) => sh.id === id)) return {};
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        shapes: s.shapes.filter((sh) => sh.id !== id),
+        selectedDiagram:
+          s.selectedDiagram?.type === 'shape' && s.selectedDiagram.id === id ? null : s.selectedDiagram,
+      };
+    }),
+  applyProposalBatch: (ops, opts) => {
+    // 用 set((s)=>...) 更新式，基于最新态原子计算+落定（防 get()→set() 间并发漂移，
+    // 如审批期间用户拖动节点；与本 store 其它 action 一致）。结果经闭包带出。
+    let result!: ProposalApplyResult;
+    set((s) => {
+      result = computeProposalResult({ nodes: s.nodes, connectors: s.connectors, shapes: s.shapes }, ops, opts);
+      if (!result.changed) return {};
+      // D3-B：Layer1 整批单次快照（应用前），整批一次 undo 撤完。
+      return {
+        editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
+        nodes: result.next.nodes,
+        connectors: result.next.connectors,
+        shapes: result.next.shapes,
+      };
+    });
+    return result;
+  },
+  setSelectedDiagram: (sel) =>
+    // 选中图解对象时清掉节点选择（互斥），反之亦然由 setSelected 处理。
+    set(() => ({ selectedDiagram: sel, selectedIds: [] })),
   setCamera: (camera) =>
     set((s) => ({
       camera: typeof camera === 'function' ? camera(s.camera) : camera,
     })),
-  setSelected: (selectedIds) => set({ selectedIds }),
+  setSelected: (selectedIds) => set({ selectedIds, selectedDiagram: null }),
   setGenerating: (generating) => set({ generating }),
   setError: (error) => set({ error }),
   undoEdit: () => {
     const s = get();
-    const res = applyUndo(s.editHistory, s.nodes);
+    const res = applyUndo(s.editHistory, snapshotOf(s));
     if (!res) return;
-    // 调和还原帧与当前态：保留 Layer2(chosen/discarded)与快照后新增节点（修 HIGH-1）。
-    const nodes = reconcileUndoFrame(res.nodes, s.nodes);
-    const ids = new Set(nodes.map((node) => node.id));
-    set({ nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
+    // 调和还原帧与当前态：保留 Layer2(chosen/discarded)与快照后新增节点（修 HIGH-1）；
+    // connectors/shapes 整帧还原。
+    const merged = reconcileUndoFrame(res.snapshot, snapshotOf(s));
+    const nodeIds = new Set(merged.nodes.map((node) => node.id));
+    set({
+      nodes: merged.nodes,
+      connectors: pruneDanglingConnectors(merged.connectors, nodeIds),
+      shapes: merged.shapes,
+      editHistory: res.stack,
+      selectedIds: s.selectedIds.filter((id) => nodeIds.has(id)),
+      selectedDiagram: null,
+    });
   },
   redoEdit: () => {
     const s = get();
-    const res = applyRedo(s.editHistory, s.nodes);
+    const res = applyRedo(s.editHistory, snapshotOf(s));
     if (!res) return;
-    const nodes = reconcileUndoFrame(res.nodes, s.nodes);
-    const ids = new Set(nodes.map((node) => node.id));
-    set({ nodes, editHistory: res.stack, selectedIds: s.selectedIds.filter((id) => ids.has(id)) });
+    // redo 用 redo 专用调和（不追加 current-only 节点，修 skeptic HIGH-1）。
+    const merged = reconcileRedoFrame(res.snapshot, snapshotOf(s));
+    const nodeIds = new Set(merged.nodes.map((node) => node.id));
+    set({
+      nodes: merged.nodes,
+      connectors: pruneDanglingConnectors(merged.connectors, nodeIds),
+      shapes: merged.shapes,
+      editHistory: res.stack,
+      selectedIds: s.selectedIds.filter((id) => nodeIds.has(id)),
+      selectedDiagram: null,
+    });
   },
   clearEditHistory: () => set({ editHistory: clearHistory() }),
   canEditUndo: () => canUndo(get().editHistory),
   canEditRedo: () => canRedo(get().editHistory),
   toDoc: () => {
     const s = get();
-    return { version: 1, nodes: s.nodes, camera: s.camera };
+    const doc: DesignCanvasDoc = { version: 1, nodes: s.nodes, camera: s.camera };
+    if (s.connectors.length > 0) doc.connectors = s.connectors;
+    if (s.shapes.length > 0) doc.shapes = s.shapes;
+    return doc;
   },
     }),
     {

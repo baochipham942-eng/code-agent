@@ -60,6 +60,11 @@ export const INTERACTION_TIMEOUTS = {
   PERMISSION: 60_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
+  /**
+   * 画布提议含付费生成时，每张图给阻塞工具加的出图预算（ADR-026 增补-D1）。
+   * 总超时 = USER_QUESTION（用户思考）+ 本值 × 生成张数（串行出图），避免慢付费撞死工具。
+   */
+  CANVAS_PROPOSAL_GEN_BUDGET: 90_000,
 } as const;
 
 /** 锁和资源管理超时 */

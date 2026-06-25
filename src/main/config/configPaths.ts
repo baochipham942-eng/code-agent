@@ -8,19 +8,17 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
+import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../../shared/constants/configDir';
 
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
 
-/** New config directory name */
-export const CONFIG_DIR_NEW = '.code-agent';
+// 目录名常量上移到 shared 单一真值源（供 renderer 干净引用）；此处 re-export 保持现有 import 不变。
+export { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY };
 
 /** 测试/开发通道的数据目录名，与生产 CONFIG_DIR_NEW 并存、互不污染 */
 export const CONFIG_DIR_DEV = `${CONFIG_DIR_NEW}-dev`;
-
-/** Legacy config directory name (for backward compatibility) */
-export const CONFIG_DIR_LEGACY = '.claude';
 
 // ----------------------------------------------------------------------------
 // Types

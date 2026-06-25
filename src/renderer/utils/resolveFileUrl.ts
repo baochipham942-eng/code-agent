@@ -1,4 +1,5 @@
 import { hasNativeBridge } from '../api/transport';
+import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 
 function getBrowserAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -22,7 +23,10 @@ export function resolveFileUrl(filePath: string): string {
     && (!hasNativeBridge() || window.location.protocol === 'http:' || window.location.protocol === 'https:');
 
   if (isWebMode) {
-    if (filePath.includes('/.code-agent/appshots/')) {
+    // app 私有配置目录（.code-agent）下的图片走专用截图路由，由后端按运行时真实目录做白名单校验。
+    // normalize 分隔符以兼容 Windows 反斜杠路径。
+    const normalized = filePath.replace(/\\/g, '/');
+    if (normalized.includes(`/${CONFIG_DIR_NEW}/`)) {
       const params = new URLSearchParams({ path: filePath });
       return `/api/screenshot?${params.toString()}`;
     }

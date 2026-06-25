@@ -46,6 +46,29 @@ describe('resolveFileUrl', () => {
     expect(params.has('token')).toBe(false);
   });
 
+  it('routes browser screenshots under the config dir to /api/screenshot in web mode', () => {
+    mocks.hasNativeBridge.mockReturnValue(false);
+    stubWindow('http:', 'test-token');
+
+    const resolved = resolveFileUrl('/Users/linchen/.code-agent/screenshots/screenshot_123.png');
+    const params = new URLSearchParams(resolved.split('?')[1]);
+
+    expect(resolved.startsWith('/api/screenshot?')).toBe(true);
+    expect(params.get('path')).toBe('/Users/linchen/.code-agent/screenshots/screenshot_123.png');
+  });
+
+  it('routes config-dir screenshots using Windows backslash separators to /api/screenshot', () => {
+    mocks.hasNativeBridge.mockReturnValue(false);
+    stubWindow('http:');
+
+    const winPath = 'C:\\Users\\lin\\.code-agent\\screenshots\\screenshot_123.png';
+    const resolved = resolveFileUrl(winPath);
+    const params = new URLSearchParams(resolved.split('?')[1]);
+
+    expect(resolved.startsWith('/api/screenshot?')).toBe(true);
+    expect(params.get('path')).toBe(winPath);
+  });
+
   it('keeps native desktop file paths as file URLs', () => {
     mocks.hasNativeBridge.mockReturnValue(true);
     stubWindow('tauri:', 'test-token');

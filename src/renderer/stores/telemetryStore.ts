@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import ipcService from '../services/ipcService';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent } from '@shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryCostBucket, TelemetryCostByPeriodOptions } from '@shared/contract/telemetry';
 
 interface TurnDetailData {
   turn: TelemetryTurn;
@@ -23,11 +23,13 @@ interface TelemetryStore {
   sessionListOptions: TelemetrySessionListOptions;
   toolStats: TelemetryToolStat[];
   intentDistribution: TelemetryIntentStat[];
+  costBuckets: TelemetryCostBucket[];
   isLive: boolean;
   isLoading: boolean;
 
   // Actions
   loadSessions: (options?: TelemetrySessionListOptions) => Promise<void>;
+  loadCostByPeriod: (options: TelemetryCostByPeriodOptions) => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
   loadTurns: (sessionId: string) => Promise<void>;
   loadEvents: (sessionId: string) => Promise<void>;
@@ -49,6 +51,7 @@ const initialState = {
   sessionListOptions: {} as TelemetrySessionListOptions,
   toolStats: [] as TelemetryToolStat[],
   intentDistribution: [] as TelemetryIntentStat[],
+  costBuckets: [] as TelemetryCostBucket[],
   isLive: true,
   isLoading: false
 };
@@ -68,6 +71,15 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
       console.error('Failed to load telemetry sessions:', error);
     } finally {
       set({ isLoading: false });
+    }
+  },
+
+  loadCostByPeriod: async (options: TelemetryCostByPeriodOptions) => {
+    try {
+      const buckets = await ipcService.invoke('telemetry:get-cost-by-period', options);
+      if (buckets) set({ costBuckets: buckets });
+    } catch (error) {
+      console.error('Failed to load cost by period:', error);
     }
   },
 

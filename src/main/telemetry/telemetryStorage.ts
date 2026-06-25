@@ -5,7 +5,7 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import type { RendererBundleStatus } from '../../shared/contract/update';
@@ -1092,6 +1092,66 @@ export class TelemetryStorage {
       }));
     } catch (error) {
       logger.error('Failed to get intent distribution:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 成本日历聚合：按日/周/月对 telemetry_sessions.estimated_cost 做 GROUP BY date 聚合。
+   * 读侧逻辑聚合，不建物理大表（对齐 ADR-023 P2）；周期键用本地时区，
+   * 返回按周期正序（旧→新）排列，供前端趋势图直接渲染。
+   */
+  getCostByPeriod(options: TelemetryCostByPeriodOptions): TelemetryCostBucket[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const limit = options.limit ?? 30;
+      // 周期键的 strftime 格式：本地时区，start_time 为毫秒需转秒
+      const periodFormat =
+        options.granularity === 'month'
+          ? '%Y-%m'
+          : options.granularity === 'week'
+            ? '%Y-W%W'
+            : '%Y-%m-%d';
+      const periodExpr = `strftime('${periodFormat}', telemetry_sessions.start_time / 1000, 'unixepoch', 'localtime')`;
+
+      const where: string[] = [];
+      const params: unknown[] = [];
+      const ownerExpr = 'COALESCE(telemetry_sessions.user_id, sessions.user_id)';
+      if (options.unassignedOnly) {
+        where.push(`${ownerExpr} IS NULL`);
+      } else if (options.userId) {
+        where.push(`${ownerExpr} = ?`);
+        params.push(options.userId);
+      }
+
+      const rows = this.getDb()
+        .prepare(
+          `
+          SELECT ${periodExpr} AS period,
+                 COALESCE(SUM(telemetry_sessions.estimated_cost), 0) AS cost,
+                 COALESCE(SUM(telemetry_sessions.total_tokens), 0) AS tokens,
+                 COUNT(*) AS sessions
+          FROM telemetry_sessions
+          LEFT JOIN sessions ON sessions.id = telemetry_sessions.id
+          ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+          GROUP BY period
+          ORDER BY period DESC
+          LIMIT ?
+        `
+        )
+        .all(...params, limit) as Record<string, unknown>[];
+
+      // 倒序取最近 N 个 → 反转为正序（旧→新）供图表 X 轴渲染
+      return rows
+        .map((row) => ({
+          period: String(row.period),
+          cost: Number(row.cost) || 0,
+          tokens: Number(row.tokens) || 0,
+          sessions: Number(row.sessions) || 0,
+        }))
+        .reverse();
+    } catch (error) {
+      logger.error('Failed to aggregate telemetry cost by period:', error);
       return [];
     }
   }

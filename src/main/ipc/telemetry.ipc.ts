@@ -28,6 +28,7 @@ import type {
   TelemetryFeedbackSubmitResult,
   TelemetryHealth,
   TelemetrySessionListOptions,
+  TelemetryCostByPeriodOptions,
 } from '../../shared/contract/telemetry';
 import type {
   AgentTrajectoryCollectionUpdateRequest,
@@ -147,6 +148,12 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
   ipcMain.handle(TELEMETRY_CHANNELS.GET_INTENT_DIST, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getIntentDistribution(sessionId);
+  });
+
+  // 成本日历聚合（日/周/月，跨会话）
+  ipcMain.handle(TELEMETRY_CHANNELS.GET_COST_BY_PERIOD, async (_event, options: TelemetryCostByPeriodOptions) => {
+    assertAdminAccess('Telemetry');
+    return storage.getCostByPeriod(options);
   });
 
   // 获取会话所有事件（用于时间线视图）

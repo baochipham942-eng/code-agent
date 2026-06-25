@@ -295,6 +295,8 @@ export const TELEMETRY_CHANNELS = {
   GET_COMPUTER_SURFACE_SUMMARY: 'telemetry:get-computer-surface-summary',
   /** 获取意图分布统计 */
   GET_INTENT_DIST: 'telemetry:get-intent-dist',
+  /** 成本日历：按日/周/月聚合成本 */
+  GET_COST_BY_PERIOD: 'telemetry:get-cost-by-period',
   /** 获取会话所有事件（用于时间线） */
   GET_EVENTS: 'telemetry:get-events',
   /** 获取系统提示词（按 hash） */

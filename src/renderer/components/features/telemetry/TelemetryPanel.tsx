@@ -10,6 +10,7 @@ import { TurnDetail } from './TurnDetail';
 import { TimelineView } from './TimelineView';
 import { ToolStats } from './ToolStats';
 import { OverviewTab } from './OverviewTab';
+import { CostCalendar } from './CostCalendar';
 import { BarChart3, List, Clock, Wrench, Radio, CircleOff, ChevronLeft } from 'lucide-react';
 import ipcService from '../../../services/ipcService';
 import { AdminUserScopeSelect, type AdminUserScopeValue } from '../admin/AdminUserScopeSelect';
@@ -91,6 +92,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <CostCalendar userScope={userScope} />
           {sessions.map((session) => (
             <button key={session.id} onClick={() => loadSession(session.id)} className="w-full text-left p-2.5 bg-zinc-800 rounded-lg border border-transparent hover:border-zinc-700 hover:bg-zinc-800 transition-colors">
               <div className="flex items-center justify-between mb-1">

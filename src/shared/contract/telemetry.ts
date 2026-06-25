@@ -413,6 +413,31 @@ export interface TelemetryIntentStat {
   percentage: number;
 }
 
+export type TelemetryCostGranularity = 'day' | 'week' | 'month';
+
+/**
+ * 成本日历聚合的单个周期桶。基于 telemetry_sessions 读侧聚合
+ * （GROUP BY date(start_time)），不建物理大表，对齐 ADR-023 P2。
+ */
+export interface TelemetryCostBucket {
+  /** 周期键：day=YYYY-MM-DD, week=YYYY-Www, month=YYYY-MM（本地时区） */
+  period: string;
+  /** 该周期累计成本（美元） */
+  cost: number;
+  /** 该周期累计 tokens */
+  tokens: number;
+  /** 该周期会话数 */
+  sessions: number;
+}
+
+export interface TelemetryCostByPeriodOptions {
+  granularity: TelemetryCostGranularity;
+  /** 返回最近 N 个周期（倒序取再正序返回供图表渲染）；默认 30 */
+  limit?: number;
+  userId?: string | null;
+  unassignedOnly?: boolean;
+}
+
 // Telemetry event for real-time push
 export interface TelemetryPushEvent {
   type: 'session_start' | 'session_end' | 'turn_start' | 'turn_end' | 'tool_call' | 'model_call';

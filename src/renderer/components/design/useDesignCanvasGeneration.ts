@@ -13,7 +13,7 @@ import { useDesignCanvasStore } from './designCanvasStore';
 import { buildImagePrompt } from './designTypes';
 import {
   emptyCanvasDoc,
-  nextNodePlacement,
+  isImageNode,
   isVideoNode,
   isReferenceNode,
   type CanvasImageNode,
@@ -34,6 +34,11 @@ import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
 import { buildMaskDataUrl, type Rect } from './designCanvasMask';
 import { composeAnnotOps, exportAnnotatedPng } from './annotComposite';
 import type { AnnotShape } from './AnnotationLayer';
+import { placeCanvasNode, placeVariantNode, type CanvasPlacementOperation } from './canvasPlacement';
+import {
+  buildDesignSelectionContext,
+  firstSelectedImageNode,
+} from './designSelectionContext';
 
 async function ensureDir(dirPath: string): Promise<void> {
   try {
@@ -147,12 +152,19 @@ export function buildVariantNode(
   label: string,
   id: string = nextVariantNodeId(),
   createdAt: number = Date.now(),
+  options: { existingNodes?: readonly CanvasNode[]; operation?: CanvasPlacementOperation } = {},
 ): CanvasImageNode {
+  const { x, y } = placeVariantNode(
+    baseNode,
+    options.existingNodes ?? [baseNode],
+    dims,
+    options.operation ?? 'variant',
+  );
   return {
     id,
     src: assetRel,
-    x: baseNode.x + baseNode.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-    y: baseNode.y,
+    x,
+    y,
     width: dims.width,
     height: dims.height,
     prompt: label,
@@ -199,6 +211,8 @@ export function useDesignCanvasGeneration(): {
 
     const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/gen-${Date.now()}.png`;
     const assetAbs = `${runDir}/${assetRel}`;
+    const selectionCanvas = useDesignCanvasStore.getState();
+    const selectionContext = buildDesignSelectionContext(selectionCanvas.nodes, selectionCanvas.selectedIds);
     const prompt = buildImagePrompt({
       requirement: form.requirement,
       outputType,
@@ -207,11 +221,12 @@ export function useDesignCanvasGeneration(): {
         brandColor: form.brandColor.trim() || undefined,
         tone: form.tone,
       },
+      selectionContext,
     });
 
-    // 参考图垫图：取画布上第一张参考图（role=reference）作为底图喂模型（万相当前单图，
-    // 多张取第一张，与 UI 提示一致）。无参考图则纯文生图。
-    const refNode = useDesignCanvasStore.getState().nodes.find(isReferenceNode);
+    // 参考图垫图：优先取当前选中的图片；没有选中图时，再取画布上第一张参考图。
+    // 万相当前单图输入，多张选中时取第一张，与 selectionContext 的 primary 一致。
+    const refNode = firstSelectedImageNode(selectionCanvas.nodes, selectionContext) ?? selectionCanvas.nodes.find(isReferenceNode);
     let referenceImageDataUrl: string | undefined;
     if (refNode) {
       referenceImageDataUrl = (await readWorkspaceImageAsDataUrl(`${runDir}/${refNode.src}`)) ?? undefined;
@@ -228,7 +243,14 @@ export function useDesignCanvasGeneration(): {
       const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
         IPC_DOMAINS.WORKSPACE,
         'generateDesignImage',
-        { prompt, aspectRatio: form.aspectRatio, model: form.imageModel, outputPath: assetAbs, referenceImageDataUrl },
+        {
+          prompt,
+          aspectRatio: form.aspectRatio,
+          model: form.imageModel,
+          outputPath: assetAbs,
+          referenceImageDataUrl,
+          selectionContext,
+        },
       );
       if (!res?.success) {
         throw new Error(res?.error?.message || t.design.errDispatch);
@@ -242,10 +264,13 @@ export function useDesignCanvasGeneration(): {
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
-      const { x, y } = nextNodePlacement(
-        useDesignCanvasStore.getState().nodes,
-        DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-      );
+      const latestCanvas = useDesignCanvasStore.getState();
+      const { x, y } = placeCanvasNode({
+        nodes: latestCanvas.nodes,
+        size: { width, height },
+        camera: latestCanvas.camera,
+        operation: 'root',
+      });
       const node: CanvasImageNode = {
         id: nextVariantNodeId(),
         src: assetRel,
@@ -285,6 +310,9 @@ export function useDesignCanvasGeneration(): {
     const maskDataUrl = buildMaskDataUrl(baseNode.width, baseNode.height, regions);
     const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/edit-${Date.now()}.png`;
     const assetAbs = `${runDir}/${assetRel}`;
+    const selectionCanvas = useDesignCanvasStore.getState();
+    const selectedIds = selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id];
+    const selectionContext = buildDesignSelectionContext(selectionCanvas.nodes, selectedIds);
 
     useDesignCanvasStore.getState().setError(null);
     useDesignCanvasStore.getState().setGenerating(true);
@@ -302,6 +330,7 @@ export function useDesignCanvasGeneration(): {
           baseImagePath: `${runDir}/${baseNode.src}`,
           maskDataUrl,
           outputPath: assetAbs,
+          selectionContext,
         },
       );
       if (!res?.success) {
@@ -317,7 +346,10 @@ export function useDesignCanvasGeneration(): {
       const { width, height } = await loadImageDims(dataUrl);
       // 与扩图/去水印同构：复用 buildVariantNode 落底图右侧 + parentId 锚血缘根（audit R2 对称应用，
       // 顺带继承防碰撞 id；编辑「编辑版」也归同一版本槽，避免深层血缘碎成多槽破坏「一槽一主版」）。
-      const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
+      const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction, undefined, undefined, {
+        existingNodes: useDesignCanvasStore.getState().nodes,
+        operation: 'variant',
+      });
       // T2 BYOK 成本可见：把本次局部重绘实际花费挂到该 variant 节点。
       if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
       // T4 一致性报告挂到节点（随 canvas.json 落 T1 spine）。main 返回绝对 diffPath，
@@ -347,12 +379,22 @@ export function useDesignCanvasGeneration(): {
   // 扩图/去水印结果共用落盘：读结果图 → 量尺寸 → 在底图右侧落新 variant 节点（parentId 锚血缘根，
   // 与 editRegion 同槽规则）→ 存盘。扩图结果尺寸大于原图，loadImageDims 量真实尺寸即正确。
   const landResultAsVariant = useCallback(
-    async (runDir: string, assetRel: string, assetAbs: string, baseNode: CanvasImageNode, label: string): Promise<void> => {
+    async (
+      runDir: string,
+      assetRel: string,
+      assetAbs: string,
+      baseNode: CanvasImageNode,
+      label: string,
+      operation: CanvasPlacementOperation = 'variant',
+    ): Promise<void> => {
       if (useDesignCanvasStore.getState().runDir !== runDir) return;
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
-      const node = buildVariantNode(baseNode, assetRel, { width, height }, label);
+      const node = buildVariantNode(baseNode, assetRel, { width, height }, label, undefined, undefined, {
+        existingNodes: useDesignCanvasStore.getState().nodes,
+        operation,
+      });
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().clearEditHistory(); // 扩图/去水印成功提交后清 Layer1 编辑栈
@@ -367,6 +409,11 @@ export function useDesignCanvasGeneration(): {
       if (!runDir) return;
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/expand-${Date.now()}.png`;
       const assetAbs = `${runDir}/${assetRel}`;
+      const selectionCanvas = useDesignCanvasStore.getState();
+      const selectionContext = buildDesignSelectionContext(
+        selectionCanvas.nodes,
+        selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id],
+      );
 
       useDesignCanvasStore.getState().setError(null);
       useDesignCanvasStore.getState().setGenerating(true);
@@ -374,12 +421,12 @@ export function useDesignCanvasGeneration(): {
         const res = await window.domainAPI?.invoke<{ path: string }>(
           IPC_DOMAINS.WORKSPACE,
           'expandDesignImage',
-          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt },
+          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt, selectionContext },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
         }
-        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn);
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn, 'expand');
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
@@ -396,6 +443,11 @@ export function useDesignCanvasGeneration(): {
       if (!runDir) return;
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/dewm-${Date.now()}.png`;
       const assetAbs = `${runDir}/${assetRel}`;
+      const selectionCanvas = useDesignCanvasStore.getState();
+      const selectionContext = buildDesignSelectionContext(
+        selectionCanvas.nodes,
+        selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id],
+      );
 
       useDesignCanvasStore.getState().setError(null);
       useDesignCanvasStore.getState().setGenerating(true);
@@ -403,12 +455,12 @@ export function useDesignCanvasGeneration(): {
         const res = await window.domainAPI?.invoke<{ path: string }>(
           IPC_DOMAINS.WORKSPACE,
           'removeWatermarkDesignImage',
-          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs },
+          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, selectionContext },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
         }
-        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn);
+        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn, 'removeWatermark');
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
@@ -454,6 +506,11 @@ export function useDesignCanvasGeneration(): {
 
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/annot-${Date.now()}.png`;
       const assetAbs = `${runDir}/${assetRel}`;
+      const selectionCanvas = useDesignCanvasStore.getState();
+      const selectionContext = buildDesignSelectionContext(
+        selectionCanvas.nodes,
+        selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id],
+      );
 
       useDesignCanvasStore.getState().setError(null);
       useDesignCanvasStore.getState().setGenerating(true);
@@ -461,7 +518,7 @@ export function useDesignCanvasGeneration(): {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
           'editImageByAnnotation',
-          { model, annotatedImageDataUrl, instruction, outputPath: assetAbs },
+          { model, annotatedImageDataUrl, instruction, outputPath: assetAbs, selectionContext },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
@@ -474,7 +531,10 @@ export function useDesignCanvasGeneration(): {
         const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
         if (!dataUrl) throw new Error(t.design.errTimeout);
         const { width, height } = await loadImageDims(dataUrl);
-        const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction);
+        const node = buildVariantNode(baseNode, assetRel, { width, height }, instruction, undefined, undefined, {
+          existingNodes: useDesignCanvasStore.getState().nodes,
+          operation: 'annotation',
+        });
         if (typeof costCny === 'number' && costCny >= 0) node.costCny = costCny;
         useDesignCanvasStore.getState().addNode(node);
         await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
@@ -492,7 +552,10 @@ export function useDesignCanvasGeneration(): {
   // 否则用 composer 选的 videoMode。付费前 confirm 显示预估 ¥（视频按秒，比图贵一量级）。
   const generateVideo = useCallback(async (args?: { baseNode?: CanvasNode }) => {
     const form = useDesignStore.getState();
-    const baseNode = args?.baseNode;
+    const initialCanvas = useDesignCanvasStore.getState();
+    const selectionContext = buildDesignSelectionContext(initialCanvas.nodes, initialCanvas.selectedIds);
+    const selectedImageNode = firstSelectedImageNode(initialCanvas.nodes, selectionContext);
+    const baseNode = args?.baseNode ?? (form.videoMode === 'i2v' ? selectedImageNode : undefined);
     const mode: DesignVideoMode = baseNode ? 'i2v' : form.videoMode;
 
     // 选模型：优先 composer 选中的，cap 不匹配则回退该模式下首个可用模型。
@@ -504,7 +567,7 @@ export function useDesignCanvasGeneration(): {
     }
 
     // i2v 必须有图底；t2v 必须有需求描述（付费前拦）。
-    if (mode === 'i2v' && (!baseNode || isVideoNode(baseNode))) {
+    if (mode === 'i2v' && (!baseNode || !isImageNode(baseNode) || isVideoNode(baseNode))) {
       useDesignCanvasStore.getState().setError(t.design.errNoBaseImageForI2v);
       return;
     }
@@ -549,6 +612,7 @@ export function useDesignCanvasGeneration(): {
         baseImagePath: mode === 'i2v' && baseNode ? `${runDir}/${baseNode.src}` : undefined,
         outputPath: assetAbs,
         durationSec,
+        selectionContext,
       });
       if (!res?.success) throw new Error(res?.error?.message || t.design.errDispatch);
       // 画布期间未被切到别的 run 才回灌。
@@ -556,10 +620,17 @@ export function useDesignCanvasGeneration(): {
         useDesignCanvasStore.getState().setGenerating(false);
         return;
       }
-      const { x, y } = nextNodePlacement(
-        useDesignCanvasStore.getState().nodes,
-        DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-      );
+      const videoSize = {
+        width: DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE,
+        height: Math.round((DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE * 9) / 16),
+      };
+      const latestCanvas = useDesignCanvasStore.getState();
+      const { x, y } = placeCanvasNode({
+        nodes: latestCanvas.nodes,
+        baseNode: mode === 'i2v' ? baseNode : undefined,
+        size: videoSize,
+        operation: 'video',
+      });
       const costCny = res.data?.costCny;
       const node: CanvasVideoNode = {
         id: nextVariantNodeId(),
@@ -568,8 +639,8 @@ export function useDesignCanvasGeneration(): {
         x,
         y,
         // 视频缩略 MVP 用 16:9 占位宽高；真实分辨率后续可读。
-        width: DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE,
-        height: Math.round((DESIGN_WORKSPACE.CANVAS_NODE_FALLBACK_SIZE * 9) / 16),
+        width: videoSize.width,
+        height: videoSize.height,
         durationSec: res.data?.durationSec ?? durationSec,
         prompt: form.requirement.trim() || undefined,
         parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,

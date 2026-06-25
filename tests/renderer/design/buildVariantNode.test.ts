@@ -82,4 +82,20 @@ describe('T3 扩图/去水印结果落 variant 挂 spine', () => {
     const base = store.nodes.find((n) => n.id === BASE.id);
     expect(base).toMatchObject({ id: 'base-1', width: 800, height: 600 });
   });
+
+  it('传入现有兄弟节点时，新 variant 接在同槽最右侧，避免叠住上一版', () => {
+    const first = buildVariantNode(BASE, 'assets/first.png', { width: 800, height: 600 }, 'first', 'node-first', 10);
+    const second = buildVariantNode(
+      BASE,
+      'assets/second.png',
+      { width: 800, height: 600 },
+      'second',
+      'node-second',
+      11,
+      { existingNodes: [BASE, first] },
+    );
+    expect(second.x).toBe(first.x + first.width + DESIGN_WORKSPACE.CANVAS_NODE_GAP);
+    expect(second.y).toBe(BASE.y);
+    expect(second.parentId).toBe(groupKey(BASE));
+  });
 });

@@ -9,6 +9,7 @@ import {
 } from './designCanvasTypes';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { resolveDesignDir } from './designFiles';
+import { saveDesignDocForCanvas } from './designDocPersistence';
 
 const CANVAS_FILE = 'canvas.json';
 
@@ -54,7 +55,8 @@ export async function saveCanvasDoc(runDir: string, doc: DesignCanvasDoc): Promi
       filePath: canvasPath(runDir),
       content: serializeCanvasDoc(doc),
     });
-    return Boolean(res?.success);
+    if (!res?.success) return false;
+    return saveDesignDocForCanvas(runDir, doc);
   } catch {
     return false;
   }

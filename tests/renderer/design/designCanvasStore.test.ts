@@ -137,7 +137,24 @@ describe('designCanvasStore renameNode（T2 命名步）', () => {
     s.renameNode('ZZ', 'x');
     expect(useDesignCanvasStore.getState().nodes).toHaveLength(1);
   });
-})
+});
+
+describe('designCanvasStore setCamera', () => {
+  beforeEach(() => {
+    useDesignCanvasStore.getState().loadDoc('run-x', doc([]));
+  });
+
+  it('accepts functional updates against the latest camera', () => {
+    const s = useDesignCanvasStore.getState();
+    s.setCamera({ x: 10, y: 20, scale: 1 });
+    useDesignCanvasStore.getState().setCamera((camera) => ({
+      ...camera,
+      x: camera.x + 5,
+      scale: camera.scale * 2,
+    }));
+    expect(useDesignCanvasStore.getState().camera).toEqual({ x: 15, y: 20, scale: 2 });
+  });
+});
 
 describe('discardNode 升主版 tie-break（审计 R2 LOW symmetric）', () => {
   beforeEach(() => {

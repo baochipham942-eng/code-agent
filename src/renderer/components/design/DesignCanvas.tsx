@@ -3,7 +3,7 @@
 // P2：点选图 → 圈选红框标注 → 局部重绘(通义万相 inpaint) → 新版回灌画布(带血缘)。
 // 文案走 i18n（t.design.*），不硬编码。
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
+import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
 import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, FileDown, Pencil, Presentation, Film } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -15,6 +15,8 @@ import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanv
 import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageEditOps } from './DesignImageEditOps';
+import { DesignLayerPanel } from './DesignLayerPanel';
+import { CanvasImage, KonvaVideoNode } from './DesignCanvasNodes';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
@@ -30,250 +32,16 @@ import {
   isImageNode,
   isVideoNode,
   isReferenceNode,
-  formatDurationLabel,
   type CanvasImageNode,
   type CanvasVideoNode,
 } from './designCanvasTypes';
-
-// 缩放范围与步进（避免画布塌缩/无限放大）。
-const SCALE_MIN = 0.1;
-const SCALE_MAX = 5;
-const SCALE_STEP = 1.05;
-
-function useNodeImage(runDir: string | null, src: string): HTMLImageElement | null {
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      let url: string | null = src;
-      if (!/^(data:|https?:)/.test(src)) {
-        url = runDir ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${src}`) : null;
-      }
-      if (!url || !alive) return;
-      const image = new window.Image();
-      image.onload = () => {
-        if (alive) setImg(image);
-      };
-      image.src = url;
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [runDir, src]);
-  return img;
-}
-
-const CanvasImage: React.FC<{
-  node: CanvasImageNode;
-  runDir: string | null;
-  selected: boolean;
-  onSelect: (additive: boolean) => void;
-  onViewDiff: (node: CanvasImageNode) => void;
-}> = ({ node, runDir, selected, onSelect, onViewDiff }) => {
-  const { t } = useI18n();
-  const img = useNodeImage(runDir, node.src);
-  if (!img) return null;
-  const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
-    const evt = e.evt as MouseEvent;
-    onSelect(Boolean(evt.shiftKey || evt.metaKey));
-  };
-  // 徽标字号随相机缩放保持视觉恒定（用 1/scale 反算近似，简化为固定值即可）。
-  const badge = Math.max(14, Math.round(node.width * 0.03));
-  // T4 一致性徽章：clean=未选区守住(绿)；locked=已锁定未选区(琥珀, 可点开 diff 证据)。
-  const c = node.consistency;
-  const consistencyBadge = ((): React.ReactNode => {
-    if (!c) return null;
-    const isLocked = c.status === 'locked';
-    const color = isLocked ? '#f59e0b' : '#10b981'; // ds-allow:viz konva 画布字面色，CSS 变量够不到
-    const label = isLocked ? t.design.consistencyLocked : t.design.consistencyClean;
-    const fs = badge;
-    const padX = fs * 0.55;
-    const pillW = Math.round(label.length * fs * 0.62 + padX * 2);
-    const pillH = Math.round(fs * 1.7);
-    const px = node.x + node.width - pillW - 8;
-    const py = node.y + 8;
-    const clickable = isLocked && Boolean(c.diffPath);
-    const open = (): void => {
-      if (clickable) onViewDiff(node);
-    };
-    return (
-      <>
-        <KonvaRect
-          x={px}
-          y={py}
-          width={pillW}
-          height={pillH}
-          fill="rgba(9,9,11,0.78)"
-          stroke={color}
-          strokeWidth={1.5}
-          cornerRadius={pillH / 2}
-          listening={clickable}
-          onMouseDown={open}
-          onTap={open}
-        />
-        <KonvaText
-          x={px}
-          y={py + pillH * 0.26}
-          width={pillW}
-          align="center"
-          text={label}
-          fontSize={Math.round(fs * 0.72)}
-          fill={color}
-          listening={false}
-        />
-      </>
-    );
-  })();
-  return (
-    <>
-      <KonvaImage
-        image={img}
-        x={node.x}
-        y={node.y}
-        width={node.width}
-        height={node.height}
-        onMouseDown={pick}
-        onTap={pick}
-      />
-      {isReferenceNode(node) && (
-        <>
-          <KonvaRect
-            x={node.x}
-            y={node.y}
-            width={node.width}
-            height={node.height}
-            stroke="#38bdf8" // ds-allow:viz konva 画布字面色，CSS 变量够不到（参考图 sky 标识）
-            strokeWidth={2}
-            dash={[4, 4]}
-            listening={false}
-          />
-          <KonvaRect
-            x={node.x + 6}
-            y={node.y + 6}
-            width={Math.round(t.design.referenceBadge.length * badge * 0.62 + badge * 1.1)}
-            height={Math.round(badge * 1.7)}
-            fill="rgba(56,189,248,0.18)" // ds-allow:viz 参考徽章底
-            cornerRadius={Math.round(badge * 0.85)}
-            listening={false}
-          />
-          <KonvaText
-            x={node.x + 6}
-            y={node.y + 6 + Math.round(badge * 0.42)}
-            width={Math.round(t.design.referenceBadge.length * badge * 0.62 + badge * 1.1)}
-            align="center"
-            text={t.design.referenceBadge}
-            fontSize={Math.round(badge * 0.72)}
-            fill="#7dd3fc" // ds-allow:viz konva 画布字面色
-            listening={false}
-          />
-        </>
-      )}
-      {node.chosen && (
-        <>
-          <KonvaRect
-            x={node.x}
-            y={node.y}
-            width={node.width}
-            height={node.height}
-            stroke="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
-            strokeWidth={3}
-            listening={false}
-          />
-          <KonvaText
-            x={node.x + 8}
-            y={node.y + 8}
-            text="★"
-            fontSize={badge}
-            fill="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
-            listening={false}
-          />
-        </>
-      )}
-      {selected && (
-        <KonvaRect
-          x={node.x}
-          y={node.y}
-          width={node.width}
-          height={node.height}
-          stroke="#e879f9" // ds-allow:viz konva 画布字面色，CSS 变量够不到
-          strokeWidth={2}
-          dash={[10, 6]}
-          listening={false}
-        />
-      )}
-      {consistencyBadge}
-    </>
-  );
-};
-
-// P2 视频节点：poster 缩略图（有则懒加载，无则深色占位）+ 居中播放徽标 + 左下时长 +
-// 选中/主版高亮（与 CanvasImage 同视觉语言）。点播放徽标打开 DOM <video> 浮层。
-const KonvaVideoNode: React.FC<{
-  node: CanvasVideoNode;
-  runDir: string | null;
-  selected: boolean;
-  onSelect: (additive: boolean) => void;
-  onPlay: () => void;
-}> = ({ node, runDir, selected, onSelect, onPlay }) => {
-  const poster = useNodeImage(runDir, node.poster ?? '');
-  const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
-    const evt = e.evt as MouseEvent;
-    onSelect(Boolean(evt.shiftKey || evt.metaKey));
-  };
-  const play = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
-    e.cancelBubble = true;
-    onPlay();
-  };
-  const cy = node.y + node.height / 2;
-  const glyph = Math.max(28, Math.round(Math.min(node.width, node.height) * 0.18));
-  const durFs = Math.max(12, Math.round(node.width * 0.04));
-  return (
-    <>
-      {poster ? (
-        <KonvaImage image={poster} x={node.x} y={node.y} width={node.width} height={node.height} onMouseDown={pick} onTap={pick} />
-      ) : (
-        <KonvaRect
-          x={node.x} y={node.y} width={node.width} height={node.height}
-          fill="#18181b" // ds-allow:viz konva 画布字面色，CSS 变量够不到
-          cornerRadius={6} onMouseDown={pick} onTap={pick}
-        />
-      )}
-      <KonvaText
-        x={node.x}
-        y={cy - glyph / 2}
-        width={node.width}
-        align="center"
-        text="▶"
-        fontSize={glyph}
-        fill="rgba(255,255,255,0.92)"
-        onMouseDown={play}
-        onTap={play}
-      />
-      <KonvaText
-        x={node.x + 8}
-        y={node.y + node.height - durFs * 1.6}
-        text={formatDurationLabel(node.durationSec)}
-        fontSize={durFs}
-        fill="rgba(255,255,255,0.85)"
-        listening={false}
-      />
-      {node.chosen && (
-        <KonvaRect
-          x={node.x} y={node.y} width={node.width} height={node.height}
-          stroke="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
-          strokeWidth={3} listening={false}
-        />
-      )}
-      {selected && (
-        <KonvaRect
-          x={node.x} y={node.y} width={node.width} height={node.height}
-          stroke="#e879f9" // ds-allow:viz konva 画布字面色，CSS 变量够不到
-          strokeWidth={2} dash={[10, 6]} listening={false}
-        />
-      )}
-    </>
-  );
-};
+import {
+  classifyPointerDragIntent,
+  classifyWheelIntent,
+  panBy,
+  panFromWheel,
+  zoomFromWheel,
+} from './canvasCameraInput';
 
 // P2 视频播放浮层（DOM，镜像 DiffEvidenceOverlay）：把 mp4 读成 data URL 喂 <video> 就地播放。
 const VideoPlayOverlay: React.FC<{
@@ -405,6 +173,9 @@ export const DesignCanvas: React.FC = () => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const spaceDownRef = useRef(false);
+  const panDragRef = useRef<{ x: number; y: number } | null>(null);
+  const [panModifierActive, setPanModifierActive] = useState(false);
 
   const nodes = useDesignCanvasStore((s) => s.nodes);
   const camera = useDesignCanvasStore((s) => s.camera);
@@ -412,6 +183,9 @@ export const DesignCanvas: React.FC = () => {
   const runDir = useDesignCanvasStore((s) => s.runDir);
   const selectedIds = useDesignCanvasStore((s) => s.selectedIds);
   const setSelected = useDesignCanvasStore((s) => s.setSelected);
+  const renameNode = useDesignCanvasStore((s) => s.renameNode);
+  const setChosen = useDesignCanvasStore((s) => s.setChosen);
+  const discardNode = useDesignCanvasStore((s) => s.discardNode);
   const generating = useDesignCanvasStore((s) => s.generating);
   const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
@@ -553,6 +327,39 @@ export const DesignCanvas: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [annotMode, comparing]);
 
+  // 行业常见手势：空格临时手型工具。输入框内不劫持空格，避免影响指令编辑。
+  useEffect(() => {
+    const editableTarget = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+    const setSpaceDown = (active: boolean): void => {
+      spaceDownRef.current = active;
+      setPanModifierActive(active);
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.code !== 'Space' || editableTarget(e.target)) return;
+      e.preventDefault();
+      setSpaceDown(true);
+    };
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.code !== 'Space') return;
+      e.preventDefault();
+      setSpaceDown(false);
+    };
+    const onBlur = (): void => setSpaceDown(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
@@ -571,21 +378,28 @@ export const DesignCanvas: React.FC = () => {
     const stage = stageRef.current;
     const pointer = stage?.getPointerPosition();
     if (!stage || !pointer) return;
-    const oldScale = camera.scale;
-    const mousePoint = { x: (pointer.x - camera.x) / oldScale, y: (pointer.y - camera.y) / oldScale };
-    const direction = e.evt.deltaY > 0 ? 1 : -1;
-    let newScale = direction > 0 ? oldScale / SCALE_STEP : oldScale * SCALE_STEP;
-    newScale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, newScale));
-    setCamera({ scale: newScale, x: pointer.x - mousePoint.x * newScale, y: pointer.y - mousePoint.y * newScale });
-  };
-
-  const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>): void => {
-    if (e.target !== stageRef.current) return;
-    setCamera({ ...camera, x: e.target.x(), y: e.target.y() });
+    if (classifyWheelIntent(e.evt) === 'zoom') {
+      setCamera((current) => zoomFromWheel(current, pointer, e.evt));
+    } else {
+      setCamera((current) => panFromWheel(current, e.evt));
+    }
   };
 
   // 圈选标注：mousedown 起框 → move 更新 → up 落框（仅 annotating 时）。
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
+    if (!annotating && !annotMode) {
+      const stage = stageRef.current;
+      const pointer = stage?.getPointerPosition();
+      const intent = classifyPointerDragIntent({
+        button: e.evt.button,
+        spaceKey: spaceDownRef.current,
+      });
+      if (pointer && intent === 'pan') {
+        e.evt.preventDefault();
+        panDragRef.current = pointer;
+        return;
+      }
+    }
     if (!annotating) {
       // 非标注模式：点空白处清除选择。
       if (e.target === stageRef.current) setSelected([]);
@@ -597,12 +411,24 @@ export const DesignCanvas: React.FC = () => {
     setDraft({ x: w.x, y: w.y, width: 0, height: 0 });
   };
   const handleMouseMove = (): void => {
+    if (panDragRef.current) {
+      const pointer = stageRef.current?.getPointerPosition();
+      if (!pointer) return;
+      const prev = panDragRef.current;
+      panDragRef.current = pointer;
+      setCamera((current) => panBy(current, { x: pointer.x - prev.x, y: pointer.y - prev.y }));
+      return;
+    }
     if (!annotating || !dragStart.current) return;
     const w = worldFromPointer();
     if (!w) return;
     setDraft(normalizeDragRect(dragStart.current.x, dragStart.current.y, w.x, w.y));
   };
   const handleMouseUp = (): void => {
+    if (panDragRef.current) {
+      panDragRef.current = null;
+      return;
+    }
     if (!annotating || !draft) {
       dragStart.current = null;
       return;
@@ -610,6 +436,17 @@ export const DesignCanvas: React.FC = () => {
     if (draft.width > 4 && draft.height > 4) setAnnotations((a) => [...a, draft]);
     setDraft(null);
     dragStart.current = null;
+  };
+
+  const focusNode = (id: string): void => {
+    const node = useDesignCanvasStore.getState().nodes.find((candidate) => candidate.id === id);
+    if (!node || size.w <= 0 || size.h <= 0) return;
+    setSelected([id]);
+    setCamera((current) => ({
+      ...current,
+      x: size.w / 2 - (node.x + node.width / 2) * current.scale,
+      y: size.h / 2 - (node.y + node.height / 2) * current.scale,
+    }));
   };
 
   const onExport = async (node: CanvasImageNode): Promise<void> => {
@@ -723,12 +560,14 @@ export const DesignCanvas: React.FC = () => {
           y={camera.y}
           scaleX={camera.scale}
           scaleY={camera.scale}
-          draggable={!annotating && !annotMode}
+          draggable={false}
           onWheel={handleWheel}
-          onDragEnd={handleDragEnd}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onMouseLeave={() => {
+            panDragRef.current = null;
+          }}
         >
           <Layer>
             {visibleNodes.map((node) =>
@@ -739,6 +578,7 @@ export const DesignCanvas: React.FC = () => {
                   node={node}
                   runDir={runDir}
                   selected={selectedIds.includes(node.id)}
+                  panModifierActive={panModifierActive}
                   onSelect={(additive) => selectNode(node.id, additive)}
                   onPlay={() => setPlayingVideo(node)}
                 />
@@ -748,6 +588,7 @@ export const DesignCanvas: React.FC = () => {
                   node={node}
                   runDir={runDir}
                   selected={selectedIds.includes(node.id)}
+                  panModifierActive={panModifierActive}
                   onSelect={(additive) => selectNode(node.id, additive)}
                   onViewDiff={setDiffNode}
                 />
@@ -849,6 +690,16 @@ export const DesignCanvas: React.FC = () => {
           {/* ds-allow:end */}
         </>
       )}
+
+      <DesignLayerPanel
+        nodes={nodes}
+        selectedIds={selectedIds}
+        onSelect={(id, additive) => selectNode(id, additive)}
+        onRename={renameNode}
+        onSetChosen={setChosen}
+        onDiscard={discardNode}
+        onFocus={focusNode}
+      />
 
       {/* 选中图后的局部重绘面板（仅图节点；视频节点不显示图像编辑工具） */}
       {selectedImageNode && (

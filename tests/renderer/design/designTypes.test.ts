@@ -84,6 +84,43 @@ describe('buildImagePrompt', () => {
     expect(p).toContain('#0066ff');
     expect(p).toContain('极简');
   });
+
+  it('选中画布对象进入图像描述，避免模型猜目标', () => {
+    const p = buildImagePrompt({
+      requirement: '把这张图改成更适合 SaaS 官网的首屏',
+      outputType: 'mockup',
+      selectionContext: {
+        selectedIds: ['node-1'],
+        multi: false,
+        summary: 'image:Hero',
+        primary: {
+          id: 'node-1',
+          type: 'image',
+          src: 'assets/hero.png',
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+          label: 'Hero',
+          groupId: 'node-1',
+          chosen: false,
+          role: 'output',
+        },
+        nodes: [
+          {
+            id: 'node-1',
+            type: 'image',
+            src: 'assets/hero.png',
+            bounds: { x: 10, y: 20, width: 300, height: 200 },
+            label: 'Hero',
+            groupId: 'node-1',
+            chosen: false,
+            role: 'output',
+          },
+        ],
+      },
+    });
+    expect(p).toContain('当前画布选中 1 个对象');
+    expect(p).toContain('node-1');
+    expect(p).toContain('bounds=10,20,300x200');
+  });
 });
 
 describe('buildContinueEditPrompt', () => {

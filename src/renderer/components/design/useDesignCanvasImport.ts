@@ -6,8 +6,9 @@ import { DESIGN_WORKSPACE } from '@shared/constants';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { ensureCanvasRun, saveCanvasDoc } from './designCanvasPersistence';
-import { nextNodePlacement, type CanvasImageNode } from './designCanvasTypes';
-import { loadImageDims } from './useDesignCanvasGeneration';
+import type { CanvasImageNode } from './designCanvasTypes';
+import { loadImageDims, nextVariantNodeId } from './useDesignCanvasGeneration';
+import { placeCanvasNode } from './canvasPlacement';
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -59,12 +60,15 @@ export function useDesignCanvasImport(): {
         );
         if (!res?.success) throw new Error(res?.error?.message || t.design.errDispatch);
         const { width, height } = await loadImageDims(dataUrl);
-        const { x, y } = nextNodePlacement(
-          useDesignCanvasStore.getState().nodes,
-          DESIGN_WORKSPACE.CANVAS_NODE_GAP,
-        );
+        const latestCanvas = useDesignCanvasStore.getState();
+        const { x, y } = placeCanvasNode({
+          nodes: latestCanvas.nodes,
+          size: { width, height },
+          camera: latestCanvas.camera,
+          operation: options?.role === 'reference' ? 'reference' : 'root',
+        });
         const node: CanvasImageNode = {
-          id: `node-${Date.now()}-${i}`,
+          id: nextVariantNodeId(),
           src: assetRel,
           x,
           y,

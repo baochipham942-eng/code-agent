@@ -2,6 +2,8 @@
 // 原型 prompt 的硬约束与设计上下文移植自竞品 Kun（sdd-prototype-prompt /
 // sdd-design-context），详见 docs/competitive/kun-设计tab-借鉴清单.md。
 import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
+import type { DesignSelectionContext } from './designSelectionContext';
+import { selectionPromptHint } from './designSelectionContext';
 
 /** 把设备预设映射成预览 iframe 的 CSS 宽度（桌面满宽，平板/手机定宽）。 */
 export function designDeviceWidth(id: DesignDeviceId): string {
@@ -208,6 +210,7 @@ export type BuildImagePromptInput = {
   requirement: string;
   outputType: Exclude<DesignOutputType, 'prototype' | 'slides' | 'video'>;
   designContext?: DesignContextInput;
+  selectionContext?: DesignSelectionContext | null;
 };
 
 /**
@@ -223,5 +226,6 @@ export function buildImagePrompt(input: BuildImagePromptInput): string {
   if (ctx?.tone && ctx.tone.length > 0) parts.push(`风格：${ctx.tone.join('、')}`);
   if (ctx?.surface === 'brand') parts.push('品牌主导视觉');
   parts.push(input.outputType === 'infographic' ? '信息图排版，层次清晰' : 'UI 设计稿');
-  return parts.join('，');
+  const hint = selectionPromptHint(input.selectionContext);
+  return hint ? `${parts.join('，')}\n\n${hint}` : parts.join('，');
 }

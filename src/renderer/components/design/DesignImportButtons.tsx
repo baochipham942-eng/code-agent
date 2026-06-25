@@ -28,6 +28,7 @@ export const DesignImportButtons: React.FC<{ generating: boolean }> = ({ generat
       {/* ds-allow:end */}
       <input
         ref={fileInputRef}
+        data-testid="design-import-image-input"
         type="file"
         accept="image/*"
         multiple
@@ -53,6 +54,7 @@ export const DesignImportButtons: React.FC<{ generating: boolean }> = ({ generat
       {/* ds-allow:end */}
       <input
         ref={referenceInputRef}
+        data-testid="design-import-reference-input"
         type="file"
         accept="image/*"
         multiple

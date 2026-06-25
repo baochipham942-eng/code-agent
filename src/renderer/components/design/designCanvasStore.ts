@@ -47,7 +47,7 @@ interface DesignCanvasState {
   setChosen: (id: string) => void;
   /** 为某一步命名（T2 可逆命名步）：写入 label，不存在则静默无操作。 */
   renameNode: (id: string, label: string) => void;
-  setCamera: (camera: CanvasCamera) => void;
+  setCamera: (camera: CanvasCamera | ((camera: CanvasCamera) => CanvasCamera)) => void;
   setSelected: (ids: string[]) => void;
   setGenerating: (generating: boolean) => void;
   setError: (error: string | null) => void;
@@ -140,7 +140,10 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         nodes: s.nodes.map((n) => (n.id === id ? { ...n, label } : n)),
       };
     }),
-  setCamera: (camera) => set({ camera }),
+  setCamera: (camera) =>
+    set((s) => ({
+      camera: typeof camera === 'function' ? camera(s.camera) : camera,
+    })),
   setSelected: (selectedIds) => set({ selectedIds }),
   setGenerating: (generating) => set({ generating }),
   setError: (error) => set({ error }),

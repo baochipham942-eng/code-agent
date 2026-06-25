@@ -7,7 +7,6 @@
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
-import type { AppSettings } from '@shared/contract/settings';
 import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
@@ -15,7 +14,7 @@ import type {
   ConversationVoiceInputMetadata,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
-import { getModelCapabilities, getModelDisplayLabel, getProviderDisplayName, UI } from '@shared/constants';
+import { UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
@@ -43,31 +42,18 @@ import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
-import {
-  buildCapabilitySemanticSuggestions,
-  CapabilitySuggestionStrip,
-} from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import {
-  ModelSwitcher,
-  MODEL_OVERRIDE_CHANGE_EVENT,
-  type ModelOverrideChangeDetail,
-} from '../../../StatusBar/ModelSwitcher';
-import { buildRuntimeModelOptions, isDynamicCustomProviderId } from '@shared/modelRuntime';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
 import {
   invokeNativeCommandAction,
   isNativeCommandRuntimeAvailable,
 } from '../../../../services/nativeCommandFacade';
-import { toast } from '../../../../hooks/useToast';
-import { trackRenderer } from '../../../../observability/posthogRenderer';
-import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
@@ -89,15 +75,6 @@ import {
 } from './debugDraftUrl';
 import { getTrailingSlashToken } from './slashPickerModel';
 import { AgentChip } from './AgentChip';
-import {
-  applyModelStrategyRecommendationAction,
-  buildModelStrategyRecommendationFeedback,
-  buildModelStrategyRecommendation,
-  type ModelStrategyCandidate,
-  type ModelStrategyRecommendationFeedbackEvent,
-  type ModelStrategyProviderHealthSnapshot,
-} from './modelStrategyRecommendation';
-import { ModelStrategyRecommendationStrip } from './ModelStrategyRecommendationStrip';
 
 // ============================================================================
 // 类型定义
@@ -158,7 +135,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
-  const { currentSessionId, sessionEngineKind, sessionEngineFailure } = useChatInputSessionScope(setValue, setAttachments);
+  const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
   );
@@ -171,7 +148,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
-  const [providerHealthMap, setProviderHealthMap] = useState<Record<string, ModelStrategyProviderHealthSnapshot>>({});
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
     suggestedName: string;
@@ -219,18 +195,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setAttachments,
     setIsUploading: (uploading) => setIsUploading(uploading),
   });
-  // 输入命中技能关键词时的推荐（已安装→挂载 / 未安装→从推荐目录安装）
+  // Composer typing stays passive: no pre-send Skill/MCP recommendations from text heuristics.
+  // Agent-side recommendations happen after a turn starts, via tool/search/capability reasoning.
   const {
     recommendations: skillRecommendations,
-    installingSkillName,
     mountRecommendedSkill,
     installRecommendedSkill,
-  } = useSkillRecommendations(currentSessionId, value);
+  } = useSkillRecommendations(currentSessionId, '');
   const capabilityRegistry = useWorkbenchCapabilityRegistry();
-  const capabilitySuggestions = useMemo(
-    () => buildCapabilitySemanticSuggestions(value, capabilityRegistry.items),
-    [capabilityRegistry.items, value],
-  );
+  const capabilitySuggestions = useMemo(() => [], []);
   const browserSession = useWorkbenchBrowserSession();
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
@@ -238,7 +211,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
-  const updateSessionEngine = useSessionStore((state) => state.updateSessionEngine);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const currentSessionMemoryMode = useSessionStore((state) =>
     currentSessionId
@@ -455,8 +427,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
   const {
-    selectSkillForCurrentTurn,
-    selectWorkbenchCapabilityForCurrentTurn,
     handleSlashCommandSelect,
   } = useChatInputSlashCommands({
     value,
@@ -539,191 +509,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   const modelConfig = useAppStore((s) => s.modelConfig);
-  const [sessionModelOverride, setSessionModelOverride] = useState<ModelOverrideChangeDetail['override']>(null);
-  const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
-  const [dismissedModelStrategyKey, setDismissedModelStrategyKey] = useState<string | null>(null);
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const statusStreaming = useStatusStore((s) => s.isStreaming);
 
-  useEffect(() => {
-    if (!currentSessionId) {
-      setSessionModelOverride(null);
-      return;
-    }
-
-    let cancelled = false;
-    const overrideRequest = window.domainAPI?.invoke<ModelOverrideChangeDetail['override']>(
-      IPC_DOMAINS.SESSION,
-      'getModelOverride',
-      { sessionId: currentSessionId },
-    );
-    if (!overrideRequest) {
-      setSessionModelOverride(null);
-    } else {
-      overrideRequest.then((res) => {
-        if (!cancelled && res?.success) {
-          setSessionModelOverride(res.data ?? null);
-        }
-      })
-        .catch(() => {
-          if (!cancelled) setSessionModelOverride(null);
-        });
-    }
-
-    const handleModelOverrideChange = (event: Event) => {
-      const detail = (event as CustomEvent<ModelOverrideChangeDetail>).detail;
-      if (detail?.sessionId === currentSessionId) {
-        setSessionModelOverride(detail.override);
-      }
-    };
-
-    window.addEventListener(MODEL_OVERRIDE_CHANGE_EVENT, handleModelOverrideChange);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(MODEL_OVERRIDE_CHANGE_EVENT, handleModelOverrideChange);
-    };
-  }, [currentSessionId]);
-
   const hasContent = value.trim().length > 0 || attachments.length > 0;
-  const hasImageAttachments = attachments.some((attachment) => (
-    attachment.type === 'image' || attachment.category === 'image'
-  ));
-  const effectiveProviderId = sessionModelOverride?.provider ?? modelConfig.provider;
-  const effectiveModelId = sessionModelOverride?.model ?? modelConfig.model;
-  useEffect(() => {
-    let cancelled = false;
-    const request = window.domainAPI?.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {});
-    if (!request) return;
-    request.then((res) => {
-      if (!cancelled && res?.success && res.data) {
-        setModelSettings(res.data);
-      }
-    })
-      .catch(() => {
-        if (!cancelled) setModelSettings(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  useEffect(() => {
-    if (sessionEngineKind !== 'native') return;
-    let cancelled = false;
-    const request = window.domainAPI?.invoke<Record<string, ModelStrategyProviderHealthSnapshot>>(
-      IPC_DOMAINS.PROVIDER,
-      'getHealthStatus',
-      {},
-    );
-    if (!request) return;
-    request.then((res) => {
-      if (!cancelled && res?.success && res.data) {
-        setProviderHealthMap(res.data);
-      }
-    })
-      .catch(() => {
-        if (!cancelled) setProviderHealthMap({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveProviderId, sessionEngineKind]);
-  const effectiveModelCapabilities = useMemo(() => {
-    const capabilities = new Set(getModelCapabilities(effectiveModelId));
-    if (effectiveModelId === modelConfig.model) {
-      for (const capability of modelConfig.capabilities ?? []) {
-        if (capability === 'vision') capabilities.add('vision');
-        if (capability === 'longContext') capabilities.add('long-context');
-      }
-    }
-    return Array.from(capabilities);
-  }, [effectiveModelId, modelConfig.capabilities, modelConfig.model]);
-  const modelStrategyCandidates = useMemo<ModelStrategyCandidate[]>(() => {
-    if (!modelSettings) return [];
-    return buildRuntimeModelOptions(modelSettings).map((option) => ({
-      provider: option.provider,
-      providerLabel: option.providerLabel,
-      model: option.model,
-      modelLabel: option.label,
-      capabilities: Array.from(new Set([
-        ...option.features,
-        ...getModelCapabilities(option.model),
-      ])),
-      providerHealth: providerHealthMap[option.provider],
-    }));
-  }, [modelSettings, providerHealthMap]);
-  const effectiveProviderBillingMode = useMemo(() => {
-    const configured = modelSettings?.models.providers?.[effectiveProviderId]?.billingMode;
-    if (configured) return configured;
-    return isDynamicCustomProviderId(effectiveProviderId) ? 'unknown' : 'payg';
-  }, [effectiveProviderId, modelSettings]);
-  const modelStrategyRecommendation = useMemo(() => buildModelStrategyRecommendation({
-    inputValue: value,
-    hasImageAttachments,
-    engineKind: sessionEngineKind,
-    modelLabel: getModelDisplayLabel(effectiveModelId),
-    modelCapabilities: effectiveModelCapabilities,
-    adaptiveEnabled: Boolean(sessionModelOverride?.adaptive || modelConfig.adaptive),
-    currentProvider: effectiveProviderId,
-    currentModel: effectiveModelId,
-    providerLabel: getProviderDisplayName(effectiveProviderId),
-    providerHealth: providerHealthMap[effectiveProviderId],
-    billingMode: effectiveProviderBillingMode,
-    externalEngineFailure: sessionEngineFailure,
-    candidates: modelStrategyCandidates,
-  }), [
-    effectiveModelCapabilities,
-    effectiveModelId,
-    effectiveProviderId,
-    effectiveProviderBillingMode,
-    hasImageAttachments,
-    modelStrategyCandidates,
-    modelConfig.adaptive,
-    providerHealthMap,
-    sessionEngineFailure,
-    sessionEngineKind,
-    sessionModelOverride?.adaptive,
-    value,
-  ]);
-  const visibleModelStrategyRecommendation =
-    modelStrategyRecommendation?.key === dismissedModelStrategyKey ? null : modelStrategyRecommendation;
-
-  const applyModelStrategyOverride = useCallback((override: ModelOverrideChangeDetail['override']) => {
-    setSessionModelOverride(override);
-    if (!currentSessionId) return;
-    window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, {
-      detail: { sessionId: currentSessionId, override },
-    }));
-  }, [currentSessionId]);
-
-  const recordModelStrategyFeedback = useCallback((feedback: ModelStrategyRecommendationFeedbackEvent) => {
-    trackRenderer(POSTHOG_EVENTS.MODEL_STRATEGY_RECOMMENDATION_FEEDBACK, { ...feedback });
-  }, []);
-
-  const handleApplyModelStrategyRecommendation = useCallback(async () => {
-    await applyModelStrategyRecommendationAction({
-      currentSessionId,
-      recommendation: visibleModelStrategyRecommendation,
-      currentProvider: effectiveProviderId,
-      currentModel: effectiveModelId,
-      switchModel: async (request) => {
-        const res = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', request);
-        return res as { success?: boolean; error?: { message?: string } } | undefined;
-      },
-      updateSessionEngine,
-      applyOverride: applyModelStrategyOverride,
-      dismiss: setDismissedModelStrategyKey,
-      recordFeedback: recordModelStrategyFeedback,
-      notifySuccess: toast.success,
-      notifyError: toast.error,
-    });
-  }, [applyModelStrategyOverride, currentSessionId, effectiveModelId, effectiveProviderId, recordModelStrategyFeedback, updateSessionEngine, visibleModelStrategyRecommendation]);
-
-  const handleDismissModelStrategyRecommendation = useCallback(() => {
-    if (!visibleModelStrategyRecommendation) return;
-    const feedback = buildModelStrategyRecommendationFeedback(visibleModelStrategyRecommendation, 'dismissed');
-    if (feedback) recordModelStrategyFeedback(feedback);
-    setDismissedModelStrategyKey(visibleModelStrategyRecommendation.key);
-  }, [recordModelStrategyFeedback, visibleModelStrategyRecommendation]);
 
   return (
     <div
@@ -800,14 +589,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
-        {visibleModelStrategyRecommendation && (
-          <ModelStrategyRecommendationStrip
-            recommendation={visibleModelStrategyRecommendation}
-            onApply={handleApplyModelStrategyRecommendation}
-            onDismiss={handleDismissModelStrategyRecommendation}
-          />
-        )}
-
         {/* 拖放提示 */}
         {isDragOver && (
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
@@ -836,32 +617,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
 
         <InlineWorkbenchBar />
-
-        {/* Skill / MCP / Connector 推荐条 - 输入命中关键词时显示 */}
-        <CapabilitySuggestionStrip
-          skillRecommendations={showSlashPopover ? [] : skillRecommendations}
-          capabilitySuggestions={showSlashPopover ? [] : capabilitySuggestions}
-          onSkillMount={(recommendation) => {
-            void selectSkillForCurrentTurn({
-              skillName: recommendation.skillName,
-              libraryId: recommendation.libraryId,
-              mounted: false,
-              recommendation,
-              recommendationAction: recommendation.action ?? 'mount',
-            });
-          }}
-          onSkillInstall={(recommendation) => {
-            void selectSkillForCurrentTurn({
-              skillName: recommendation.skillName,
-              libraryId: recommendation.libraryId,
-              mounted: false,
-              recommendation,
-              recommendationAction: 'install',
-            });
-          }}
-          onCapabilitySelect={selectWorkbenchCapabilityForCurrentTurn}
-          installingSkillName={installingSkillName}
-        />
 
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
         <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">

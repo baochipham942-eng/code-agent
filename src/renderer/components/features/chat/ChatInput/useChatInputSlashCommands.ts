@@ -22,7 +22,7 @@ import {
 export interface UseChatInputSlashCommandsParams {
   value: string;
   currentSessionId: string | null;
-  /** 输入命中关键词的技能推荐（来自 useSkillRecommendations）。 */
+  /** Agent-side or explicit recommendations. Composer typing passes an empty list. */
   skillRecommendations: SkillRecommendationView[];
   mountRecommendedSkill: (recommendation: SkillRecommendationView, sessionId: string) => Promise<boolean>;
   installRecommendedSkill: (recommendation: SkillRecommendationView, sessionId: string) => Promise<boolean>;

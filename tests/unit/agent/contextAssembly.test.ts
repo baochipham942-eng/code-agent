@@ -28,6 +28,9 @@ const serviceMocks = vi.hoisted(() => ({
     replaceMessages: vi.fn(),
   },
 }));
+const archiveHydrationMocks = vi.hoisted(() => ({
+  readToolResultArchive: vi.fn(),
+}));
 
 // checkpointWriterService 的可注入 holder（audit C-H3 测试用）：默认透传真实单例，
 // 单个测试可临时替换实例，afterEach 清空
@@ -234,6 +237,14 @@ vi.mock('../../../src/main/context/autoCompressor', () => ({
   AutoContextCompressor: class {},
   getAutoCompressor: vi.fn(),
 }));
+
+vi.mock('../../../src/main/utils/toolResultSpill', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/main/utils/toolResultSpill')>();
+  return {
+    ...actual,
+    readToolResultArchive: archiveHydrationMocks.readToolResultArchive,
+  };
+});
 
 vi.mock('../../../src/main/model/modelRouter', () => ({
   ModelRouter: class {},
@@ -482,6 +493,7 @@ beforeEach(() => {
   serviceMocks.sessionManager.addMessage.mockClear();
   serviceMocks.sessionManager.addMessageToSession.mockClear();
   serviceMocks.sessionManager.replaceMessages.mockClear();
+  archiveHydrationMocks.readToolResultArchive.mockReset();
   vi.mocked(getPromptForTask).mockReset();
   vi.mocked(getPromptForTask).mockReturnValue('system prompt');
   vi.mocked(needsArtifactTaskBrief).mockReset();
@@ -547,6 +559,62 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
     expect(systemContent).not.toContain('handoff-proposal');
     expect(systemContent).not.toContain('worthHandoff');
+  });
+
+  it('hydrates an explicitly requested archived tool result into model messages', async () => {
+    const archiveRef = {
+      version: 1 as const,
+      artifactId: 'tool_result:session-hydrate:Bash:call-1:abc123def456',
+      filePath: '/tmp/tool-result.txt',
+      toolName: 'Bash',
+      sessionId: 'session-hydrate',
+      sha256: 'abc123def456'.padEnd(64, '0'),
+      bytes: 123,
+      createdAt: 1000,
+      reason: 'tool-result-budget',
+      toolCallId: 'call-1',
+      sourceMessageId: 'tool-msg-1',
+    };
+    const compressionState = new CompressionState();
+    compressionState.applyCommit({
+      layer: 'tool-result-budget',
+      operation: 'truncate',
+      targetMessageIds: ['tool-msg-1'],
+      timestamp: 1000,
+      metadata: {
+        originalTokens: 10000,
+        truncatedTokens: 1000,
+        archiveRef,
+      },
+    });
+    archiveHydrationMocks.readToolResultArchive.mockReturnValue({
+      content: 'FULL HYDRATED OUTPUT',
+      archiveRef,
+    });
+
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-hydrate',
+      compressionState,
+      messages: [
+        buildMessage('assistant-1', 'assistant', 'The previous tool result was archived.'),
+        buildMessage('user-1', 'user', `请看完整输出 ${archiveRef.artifactId}`),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(archiveHydrationMocks.readToolResultArchive).toHaveBeenCalledWith(
+      expect.objectContaining({ artifactId: archiveRef.artifactId }),
+    );
+    expect(modelMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          content: expect.stringContaining('FULL HYDRATED OUTPUT'),
+        }),
+      ]),
+    );
   });
 
   it('materializes interventions into the actual model input', async () => {

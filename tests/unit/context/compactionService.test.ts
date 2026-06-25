@@ -263,6 +263,49 @@ describe('compactionService', () => {
     expect(plan?.contentToSummarize).toContain('[assistant m90]');
   });
 
+  it('includes archived tool result refs in the survivor manifest and summary prompt', async () => {
+    const archivedToolResults = [
+      {
+        version: 1 as const,
+        artifactId: 'tool_result:session-archive:Bash:call-1:abc123def456',
+        filePath: '/Users/linchen/.code-agent/tmp/session-archive/tool-results/Bash-call-1.txt',
+        toolName: 'Bash',
+        sessionId: 'session-archive',
+        sha256: 'abc123def456'.padEnd(64, '0'),
+        bytes: 2048,
+        createdAt: 1000,
+        reason: 'bash-output-limit',
+        toolCallId: 'call-1',
+        sourceMessageId: 'msg-1',
+      },
+    ];
+    const messages = [
+      message('m1', 'user', 'Run a large command. '.repeat(80)),
+      message('m2', 'assistant', 'The command output was archived. '.repeat(80)),
+      message('m3', 'tool', 'truncated result '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-archive',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 1,
+      archivedToolResults,
+    });
+
+    expect(result.success).toBe(true);
+    expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toContain('## Archived Tool Results');
+    expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toContain(
+      'recover: read_tool_result_archive artifact_id=tool_result:session-archive:Bash:call-1:abc123def456',
+    );
+    expect(result.block?.survivorManifest?.archivedToolResults?.[0]).toMatchObject({
+      label: 'tool_result:session-archive:Bash:call-1:abc123def456',
+      detail: expect.stringContaining('recover=read_tool_result_archive artifact_id=tool_result:session-archive:Bash:call-1:abc123def456'),
+      severity: 'info',
+    });
+  });
+
   it('runs PreCompact and PostCompact hooks around summary compaction', async () => {
     const hookManager = {
       triggerPreCompact: vi.fn().mockResolvedValue({

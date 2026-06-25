@@ -1,4 +1,5 @@
 import type { ModelConfig } from '../../shared/contract/model';
+import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type {
   CompactionBlock,
   CompactionSource,
@@ -55,6 +56,7 @@ export interface CompactionPlanOptions {
   usagePercent?: number | null;
   skipAudit?: boolean;
   now?: number;
+  archivedToolResults?: ToolResultArchiveRef[];
 }
 
 export interface CompactionPlan {
@@ -313,6 +315,20 @@ function toSharedManifest(manifest: ContextSurvivorManifest): CompactionSurvivor
       path: artifact.path,
       reason: artifact.source,
     })),
+    archivedToolResults: manifest.archivedToolResults.map((archive) => ({
+      label: archive.artifactId,
+      detail: [
+        `tool=${archive.toolName}`,
+        `reason=${archive.reason}`,
+        `path=${archive.filePath}`,
+        `bytes=${archive.bytes}`,
+        `sha256=${archive.sha256}`,
+        archive.sourceMessageId ? `message=${archive.sourceMessageId}` : '',
+        archive.toolCallId ? `toolCall=${archive.toolCallId}` : '',
+        `recover=read_tool_result_archive artifact_id=${archive.artifactId}`,
+      ].filter(Boolean).join(' | '),
+      severity: 'info',
+    })),
     dataFingerprint: manifest.dataFingerprintText || undefined,
   };
 }
@@ -383,6 +399,7 @@ export function createCompactionPlan(options: CompactionPlanOptions): Compaction
     maxItemChars: 900,
     fileReadRecords: fileReadTracker.getRecentFiles(80),
     dataFingerprintText: dataFingerprintStore.toSummary(),
+    archivedToolResults: options.archivedToolResults,
   });
   const contentToSummarize = buildTranscript(split.compactedMessages);
 
@@ -469,6 +486,7 @@ export async function compactMessagesWithSummary(
           sessionId: options.sessionId,
           source: options.source,
           preserveRecentCount: options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+          archivedToolResults: options.archivedToolResults,
         }),
         contentToSummarize: '',
         originalTokens: 0,

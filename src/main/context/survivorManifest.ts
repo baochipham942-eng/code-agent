@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import type { CompactionSurvivorManifest, Message } from '../../shared/contract';
 import type { ToolCall, ToolResult } from '../../shared/contract/tool';
+import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type { CompressedMessage } from './tokenOptimizer';
 import { estimateTokens } from './tokenEstimator';
 
@@ -26,6 +27,7 @@ export interface SurvivorManifestBuildOptions {
   maxFileExcerptTotalChars?: number;
   fileReadRecords?: Array<{ path: string; mtime?: number; readTime?: number; size?: number }>;
   dataFingerprintText?: string;
+  archivedToolResults?: ToolResultArchiveRef[];
 }
 
 export interface BuildSurvivorManifestInput extends SurvivorManifestBuildOptions {
@@ -60,6 +62,18 @@ export interface SurvivorArtifactSummary {
   source: 'tool_result' | 'metadata' | 'artifact' | 'message';
 }
 
+export interface SurvivorArchivedToolResultSummary {
+  artifactId: string;
+  filePath: string;
+  toolName: string;
+  sessionId: string;
+  sha256: string;
+  bytes: number;
+  reason: string;
+  toolCallId?: string;
+  sourceMessageId?: string;
+}
+
 export type SurvivorFileSurvival = 'path_only' | 'digest' | 'excerpt';
 
 export interface SurvivorFileMetadata {
@@ -86,7 +100,13 @@ export interface SurvivorFileRecord {
 export interface ContextSurvivorManifest
   extends Omit<
     CompactionSurvivorManifest,
-    'source' | 'preserveRecentCount' | 'commands' | 'errors' | 'openWork' | 'artifacts'
+    'source'
+      | 'preserveRecentCount'
+      | 'commands'
+      | 'errors'
+      | 'openWork'
+      | 'artifacts'
+      | 'archivedToolResults'
   > {
   sessionId?: string;
   source?: SurvivorManifestSource;
@@ -101,6 +121,7 @@ export interface ContextSurvivorManifest
   todos: SurvivorTextItem[];
   openWork: SurvivorTextItem[];
   artifacts: SurvivorArtifactSummary[];
+  archivedToolResults: SurvivorArchivedToolResultSummary[];
   dataFingerprintText: string;
   dataFingerprint?: string;
 }
@@ -624,6 +645,7 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
     todos: manifest.todos.map((todo) => ({ ...todo })),
     openWork: manifest.openWork.map((todo) => ({ ...todo })),
     artifacts: manifest.artifacts.map((artifact) => ({ ...artifact })),
+    archivedToolResults: manifest.archivedToolResults.map((archive) => ({ ...archive })),
     filePaths: [...manifest.filePaths],
     files: manifest.files.map((file) => ({ ...file })),
   };
@@ -639,6 +661,8 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
       copy.openWork.pop();
     } else if (copy.artifacts.length > 0) {
       copy.artifacts.pop();
+    } else if (copy.archivedToolResults.length > 0) {
+      copy.archivedToolResults.pop();
     } else if (copy.filePaths.length > 0) {
       copy.filePaths.pop();
       copy.files.pop();
@@ -650,6 +674,31 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
     }
   }
   return copy;
+}
+
+function normalizeArchiveRef(ref: ToolResultArchiveRef): SurvivorArchivedToolResultSummary {
+  return {
+    artifactId: ref.artifactId,
+    filePath: ref.filePath,
+    toolName: ref.toolName,
+    sessionId: ref.sessionId,
+    sha256: ref.sha256,
+    bytes: ref.bytes,
+    reason: ref.reason,
+    ...(ref.toolCallId ? { toolCallId: ref.toolCallId } : {}),
+    ...(ref.sourceMessageId ? { sourceMessageId: ref.sourceMessageId } : {}),
+  };
+}
+
+function dedupeArchivedToolResults(refs: ToolResultArchiveRef[] | undefined): SurvivorArchivedToolResultSummary[] {
+  const archivedToolResults: SurvivorArchivedToolResultSummary[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs ?? []) {
+    if (!ref?.artifactId || seen.has(ref.artifactId)) continue;
+    seen.add(ref.artifactId);
+    archivedToolResults.push(normalizeArchiveRef(ref));
+  }
+  return archivedToolResults;
 }
 
 export function buildContextSurvivorManifest(
@@ -727,6 +776,7 @@ export function buildContextSurvivorManifest(
     todos,
     openWork: todos,
     artifacts,
+    archivedToolResults: dedupeArchivedToolResults(options.archivedToolResults),
     dataFingerprintText: clampText(options.dataFingerprintText || '', maxChars),
   };
   manifest.dataFingerprint = manifest.dataFingerprintText;
@@ -909,6 +959,25 @@ export function renderSurvivorManifestForPrompt(manifest: ContextSurvivorManifes
     lines.push('## Artifacts');
     for (const artifact of manifest.artifacts) {
       lines.push(`- ${artifact.path} (${artifact.source}${artifact.messageId ? `, message=${artifact.messageId}` : ''})`);
+    }
+  }
+
+  if (manifest.archivedToolResults.length > 0) {
+    lines.push('## Archived Tool Results');
+    for (const archive of manifest.archivedToolResults) {
+      const meta = [
+        `tool=${archive.toolName}`,
+        `reason=${archive.reason}`,
+        archive.sourceMessageId ? `message=${archive.sourceMessageId}` : undefined,
+        archive.toolCallId ? `toolCall=${archive.toolCallId}` : undefined,
+        `bytes=${archive.bytes}`,
+        `sha256=${archive.sha256.slice(0, 12)}`,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      lines.push(`- ${archive.artifactId} (${meta})`);
+      lines.push(`  path: ${archive.filePath}`);
+      lines.push(`  recover: read_tool_result_archive artifact_id=${archive.artifactId}`);
     }
   }
 

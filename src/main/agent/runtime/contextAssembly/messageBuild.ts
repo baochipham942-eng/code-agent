@@ -51,6 +51,7 @@ import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS, getSystemPromptBudget } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getPluginRegistry } from '../../../plugins/pluginRegistry';
+import { applyArchiveHydration } from './archiveHydration';
 import {
   buildArtifactRepairFocusBlock,
   getAllowedArtifactRepairToolCallIds,
@@ -1036,6 +1037,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     logger.error('[ContextAssembly] Compression pipeline evaluation failed, falling back to uncompressed transcript:', error);
     ctx.runtime.compressionState = new CompressionState();
   }
+  contextApiView = applyArchiveHydration(contextApiView, ctx.runtime.compressionState, ctx.runtime.sessionId);
 
   if (!ctx.runtime.agentId) {
     try {

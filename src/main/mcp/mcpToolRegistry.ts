@@ -9,7 +9,7 @@ import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import { maskSensitiveData } from '../security';
 import { MCP_TIMEOUTS } from '../../shared/constants';
-import { spillToolResult, buildSpillNotice } from '../utils/toolResultSpill';
+import { spillToolResultArchive, buildSpillNotice } from '../utils/toolResultSpill';
 import { getToolSearchService } from '../services/toolSearch';
 import type {
   MCPTool,
@@ -678,11 +678,12 @@ function truncateMcpOutput(
     return output;
   }
 
-  const spillPath = spillToolResult({
+  const spillResult = spillToolResultArchive({
     content: output,
     toolName: `mcp__${serverName}__${toolName}`,
     sessionId: spillCtx?.sessionId,
     toolCallId: spillCtx?.toolCallId,
+    reason: 'mcp-output-limit',
   });
 
   const keepStart = Math.floor(MCP_MAX_OUTPUT_CHARS * 0.7);
@@ -693,11 +694,11 @@ function truncateMcpOutput(
     `\n\n... [${output.length - keepStart - keepEnd} characters omitted] ...\n\n` +
     output.slice(-keepEnd) +
     TRUNCATION_NOTICE +
-    (spillPath ? buildSpillNotice(spillPath) : '');
+    (spillResult ? buildSpillNotice(spillResult.archiveRef) : '');
 
   logger.warn(
     `MCP output truncated: ${serverName}/${toolName} ` +
-    `(${output.length} → ${truncated.length} chars${spillPath ? `, full output spilled to ${spillPath}` : ''})`
+    `(${output.length} → ${truncated.length} chars${spillResult ? `, full output spilled to ${spillResult.filePath}` : ''})`
   );
 
   return truncated;

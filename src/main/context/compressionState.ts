@@ -8,6 +8,8 @@
 // - ProjectionEngine uses the snapshot to generate the API view at query time
 // ============================================================================
 
+import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
+
 export interface CompressionCommit {
   layer: 'tool-result-budget' | 'snip' | 'microcompact' | 'contextCollapse' | 'autocompact' | 'overflow-recovery' | 'system';
   operation: 'truncate' | 'snip' | 'compact' | 'collapse' | 'drain' | 'reset';
@@ -24,7 +26,7 @@ export interface CollapsedSpan {
 
 export interface CompressionSnapshot {
   snippedIds: Set<string>;
-  budgetedResults: Map<string, { originalTokens: number; truncatedTokens: number }>;
+  budgetedResults: Map<string, { originalTokens: number; truncatedTokens: number; archiveRef?: ToolResultArchiveRef }>;
   collapsedSpans: CollapsedSpan[];
   microcompactedIds: Set<string>;
 }
@@ -110,8 +112,13 @@ export class CompressionState {
       case 'truncate': {
         const originalTokens = (commit.metadata?.originalTokens as number) ?? 0;
         const truncatedTokens = (commit.metadata?.truncatedTokens as number) ?? 0;
+        const archiveRef = commit.metadata?.archiveRef as ToolResultArchiveRef | undefined;
         for (const id of commit.targetMessageIds) {
-          this.snapshot.budgetedResults.set(id, { originalTokens, truncatedTokens });
+          this.snapshot.budgetedResults.set(id, {
+            originalTokens,
+            truncatedTokens,
+            ...(archiveRef ? { archiveRef } : {}),
+          });
         }
         break;
       }

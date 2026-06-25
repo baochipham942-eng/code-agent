@@ -41,7 +41,7 @@ import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
-import { spillToolResult, buildSpillNotice } from '../../../utils/toolResultSpill';
+import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
@@ -123,18 +123,19 @@ function truncateOutput(
   if (output.length <= BASH.MAX_OUTPUT_LENGTH) return output;
   const originalLength = output.length;
   // 截断前落盘完整输出，模型可用 Read/Grep 回查而不必重跑命令
-  const spillPath = spillToolResult({
+  const spillResult = spillToolResultArchive({
     content: output,
     toolName: schema.name,
     sessionId: spillCtx?.sessionId,
     toolCallId: spillCtx?.toolCallId,
+    reason: 'bash-output-limit',
   });
   const truncated = truncateMiddleErrorAware(output, BASH.MAX_OUTPUT_LENGTH);
   return (
     truncated +
     `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. ` +
     `Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]` +
-    (spillPath ? buildSpillNotice(spillPath) : '')
+    (spillResult ? buildSpillNotice(spillResult.archiveRef) : '')
   );
 }
 

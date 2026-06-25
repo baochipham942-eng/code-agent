@@ -20,8 +20,10 @@ vi.mock('../../../src/main/config/configPaths', async () => {
 
 import {
   spillToolResult,
+  spillToolResultArchive,
   buildSpillNotice,
   getToolResultSpillDir,
+  readToolResultArchive,
   SPILL_NOTICE_MARKER,
 } from '../../../src/main/utils/toolResultSpill';
 import { TOOL_RESULT_SPILL } from '../../../src/shared/constants';
@@ -49,6 +51,53 @@ describe('toolResultSpill (GAP-009)', () => {
     expect(spillPath).toContain(path.join('tmp', 'session-abc', 'tool-results'));
     expect(spillPath).toContain('Bash-call-123');
     expect(fs.readFileSync(spillPath!, 'utf-8')).toBe(content);
+  });
+
+  it('writes an archive ref sidecar with hash and byte metadata', () => {
+    const content = 'archive me\n'.repeat(100);
+
+    const result = spillToolResultArchive({
+      content,
+      toolName: 'Bash',
+      sessionId: 'session-abc',
+      toolCallId: 'call-123',
+      sourceMessageId: 'msg-1',
+      reason: 'unit-test',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.archiveRef.artifactId).toContain('tool_result:session-abc:Bash:call-123');
+    expect(result!.archiveRef.bytes).toBe(Buffer.byteLength(content, 'utf-8'));
+    expect(result!.archiveRef.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(result!.archiveRef.reason).toBe('unit-test');
+    expect(result!.archiveRef.sourceMessageId).toBe('msg-1');
+
+    const sidecarPath = `${result!.filePath}.archive.json`;
+    expect(fs.existsSync(sidecarPath)).toBe(true);
+    const sidecar = JSON.parse(fs.readFileSync(sidecarPath, 'utf-8'));
+    expect(sidecar).toEqual(result!.archiveRef);
+  });
+
+  it('reads archived content only when hash, bytes, and session path match', () => {
+    const content = 'verified archive\n'.repeat(100);
+    const result = spillToolResultArchive({
+      content,
+      toolName: 'Bash',
+      sessionId: 'session-verify',
+      toolCallId: 'call-verify',
+    });
+
+    expect(result).not.toBeNull();
+    expect(readToolResultArchive(result!.archiveRef)?.content).toBe(content);
+
+    const tamperedHashRef = { ...result!.archiveRef, sha256: '0'.repeat(64) };
+    expect(readToolResultArchive(tamperedHashRef)).toBeNull();
+
+    const tamperedBytesRef = { ...result!.archiveRef, bytes: result!.archiveRef.bytes + 1 };
+    expect(readToolResultArchive(tamperedBytesRef)).toBeNull();
+
+    const wrongSessionRef = { ...result!.archiveRef, sessionId: 'another-session' };
+    expect(readToolResultArchive(wrongSessionRef)).toBeNull();
   });
 
   it('falls back to the shared directory when sessionId is missing', () => {
@@ -100,6 +149,23 @@ describe('toolResultSpill (GAP-009)', () => {
     expect(notice).toContain(SPILL_NOTICE_MARKER);
     expect(notice).toContain('/tmp/foo/bar.txt');
     expect(notice).toMatch(/Read\/Grep/);
+  });
+
+  it('buildSpillNotice includes archive id when given an archive ref', () => {
+    const result = spillToolResultArchive({
+      content: 'notice archive',
+      toolName: 'Bash',
+      sessionId: 'session-notice',
+      toolCallId: 'call-notice',
+    });
+
+    expect(result).not.toBeNull();
+    const notice = buildSpillNotice(result!.archiveRef);
+
+    expect(notice).toContain(SPILL_NOTICE_MARKER);
+    expect(notice).toContain(result!.filePath);
+    expect(notice).toContain(`archive=${result!.archiveRef.artifactId}`);
+    expect(notice).toContain(`bytes=${result!.archiveRef.bytes}`);
   });
 
   it('getToolResultSpillDir builds path under the user config dir', () => {

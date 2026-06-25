@@ -357,4 +357,41 @@ describe('survivorManifest', () => {
     expect(renderSurvivorManifestForPrompt(manifest)).toContain('sessionId=session-1 source=manual_current');
     expect(renderSurvivorManifestForPrompt(manifest)).toContain('## Data Fingerprint\nverified rows=3');
   });
+
+  it('renders archived tool result refs with recovery instructions', () => {
+    const manifest = buildContextSurvivorManifest(
+      [{ id: 'm1', role: 'assistant', content: 'old tool result was archived' }],
+      {
+        preserveRecentCount: 1,
+        archivedToolResults: [
+          {
+            version: 1,
+            artifactId: 'tool_result:session-1:Bash:call-1:abc123def456',
+            filePath: '/Users/linchen/.code-agent/tmp/session-1/tool-results/Bash-call-1.txt',
+            toolName: 'Bash',
+            sessionId: 'session-1',
+            sha256: 'abc123def456'.padEnd(64, '0'),
+            bytes: 1234,
+            createdAt: 1000,
+            reason: 'bash-output-limit',
+            toolCallId: 'call-1',
+            sourceMessageId: 'msg-1',
+          },
+        ],
+      },
+    );
+
+    const rendered = renderSurvivorManifestForPrompt(manifest);
+
+    expect(manifest.archivedToolResults).toEqual([
+      expect.objectContaining({
+        artifactId: 'tool_result:session-1:Bash:call-1:abc123def456',
+        toolName: 'Bash',
+        reason: 'bash-output-limit',
+      }),
+    ]);
+    expect(rendered).toContain('## Archived Tool Results');
+    expect(rendered).toContain('tool=Bash');
+    expect(rendered).toContain('recover: read_tool_result_archive artifact_id=tool_result:session-1:Bash:call-1:abc123def456');
+  });
 });

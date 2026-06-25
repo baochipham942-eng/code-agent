@@ -9,7 +9,7 @@ import * as os from 'os';
 import { applyToolResultBudget } from '../../../../src/main/context/layers/toolResultBudget';
 import { CompressionState } from '../../../../src/main/context/compressionState';
 import { estimateTokens } from '../../../../src/main/context/tokenEstimator';
-import { SPILL_NOTICE_MARKER } from '../../../../src/main/utils/toolResultSpill';
+import { SPILL_NOTICE_MARKER, readToolResultArchive } from '../../../../src/main/utils/toolResultSpill';
 
 // mock factory 与测试体各自计算同一确定性路径（避免 vi.hoisted 跨作用域引用）
 const spillTestRoot = path.join(os.tmpdir(), `neo-budget-spill-test-${process.pid}`);
@@ -276,6 +276,13 @@ describe('applyToolResultBudget', () => {
       expect(fs.readFileSync(spillFile, 'utf-8')).toBe(bigContent);
       // 落盘目录按 session 隔离
       expect(spillFile).toContain(path.join('tmp', 'sess-1', 'tool-results'));
+
+      const archiveRef = state.getSnapshot().budgetedResults.get('t1')?.archiveRef;
+      expect(archiveRef).toBeDefined();
+      expect(archiveRef?.artifactId).toContain('tool_result:sess-1:tool-result:t1');
+      expect(archiveRef?.sourceMessageId).toBe('t1');
+      expect(archiveRef?.reason).toBe('tool-result-budget');
+      expect(readToolResultArchive(archiveRef!)?.content).toBe(bigContent);
     });
 
     it('keeps plain truncation behavior when spillSessionId is not provided', () => {

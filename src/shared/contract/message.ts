@@ -160,6 +160,7 @@ export interface CompactionSurvivorManifest {
   errors?: CompactionSurvivorItem[];
   openWork?: CompactionSurvivorItem[];
   artifacts?: CompactionSurvivorFile[];
+  archivedToolResults?: CompactionSurvivorItem[];
   dataFingerprint?: string;
 }
 

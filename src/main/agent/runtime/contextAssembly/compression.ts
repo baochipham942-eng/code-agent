@@ -5,6 +5,7 @@ import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
+import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { assessContextPressure } from '../../../context/contextPressureController';
 import { applyToolResultBudget } from '../../../context/layers/toolResultBudget';
@@ -27,6 +28,18 @@ import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
 
 let toolDefTokensCache: { signature: string; tokens: number } | null = null;
+
+function getArchivedToolResults(state: CompressionState): ToolResultArchiveRef[] {
+  const refs: ToolResultArchiveRef[] = [];
+  const seen = new Set<string>();
+  for (const result of state.getSnapshot().budgetedResults.values()) {
+    const ref = result.archiveRef;
+    if (!ref || seen.has(ref.artifactId)) continue;
+    seen.add(ref.artifactId);
+    refs.push(ref);
+  }
+  return refs;
+}
 
 function estimateActiveToolDefinitionsTokens(): number {
   try {
@@ -442,6 +455,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       modelConfig: ctx.runtime.modelConfig,
       hookManager: ctx.runtime.hookManager,
       usagePercent: health?.usagePercent,
+      archivedToolResults: getArchivedToolResults(ctx.runtime.compressionState),
     });
 
     if (compactionResult.success && compactionResult.block) {

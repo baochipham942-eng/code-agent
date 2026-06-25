@@ -19,6 +19,7 @@ import { multiEditSchema } from './file/multiEdit.schema';
 import { notebookEditSchema } from './file/notebookEdit.schema';
 import { readClipboardSchema } from './file/readClipboard.schema';
 import { readSchema } from './file/read.schema';
+import { toolResultArchiveSchema } from './file/toolResultArchive.schema';
 import { writeSchema } from './file/write.schema';
 import { appendSchema } from './file/append.schema';
 import { globSchema } from './file/glob.schema';
@@ -578,6 +579,10 @@ export function registerMigratedTools(
   registry.register(
     readSchema,
     async () => (await import('./file/read')).readModule,
+  );
+  registry.register(
+    toolResultArchiveSchema,
+    async () => (await import('./file/toolResultArchive')).toolResultArchiveModule,
   );
   registry.register(
     writeSchema,

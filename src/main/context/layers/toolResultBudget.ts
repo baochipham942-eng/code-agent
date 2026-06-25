@@ -9,7 +9,7 @@
 
 import { CompressionState } from '../compressionState';
 import { estimateTokens } from '../tokenEstimator';
-import { spillToolResult, buildSpillNotice } from '../../utils/toolResultSpill';
+import { spillToolResultArchive, buildSpillNotice } from '../../utils/toolResultSpill';
 
 export interface ToolResultBudgetConfig {
   maxTokensPerResult: number; // default: 2000
@@ -213,12 +213,14 @@ export function applyToolResultBudget(
     const wasBudgeted = alreadyBudgeted.has(msg.id);
 
     // GAP-009: 截断前落盘完整输出（已带落盘提示的内容会被 spillToolResult 跳过，防止二次落盘）
-    const spillPath = cfg.spillSessionId !== undefined
-      ? spillToolResult({
+    const spillResult = cfg.spillSessionId !== undefined
+      ? spillToolResultArchive({
           content: msg.content,
           toolName: 'tool-result',
           sessionId: cfg.spillSessionId,
           toolCallId: msg.toolCallId || msg.id,
+          sourceMessageId: msg.id,
+          reason: 'tool-result-budget',
         })
       : null;
 
@@ -226,7 +228,7 @@ export function applyToolResultBudget(
     const truncatedTokens = estimateTokens(truncated);
 
     // Mutate the message content
-    msg.content = spillPath ? truncated + buildSpillNotice(spillPath) : truncated;
+    msg.content = spillResult ? truncated + buildSpillNotice(spillResult.archiveRef) : truncated;
 
     // Record the commit (once per message — re-truncations reuse the original commit)
     if (wasBudgeted) continue;
@@ -235,7 +237,11 @@ export function applyToolResultBudget(
       operation: 'truncate',
       targetMessageIds: [msg.id],
       timestamp: Date.now(),
-      metadata: { originalTokens, truncatedTokens },
+      metadata: {
+        originalTokens,
+        truncatedTokens,
+        ...(spillResult ? { archiveRef: spillResult.archiveRef } : {}),
+      },
     });
   }
 }

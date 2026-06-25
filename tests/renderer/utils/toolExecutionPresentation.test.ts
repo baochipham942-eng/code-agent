@@ -145,6 +145,58 @@ describe('toolExecutionPresentation', () => {
     expect(humanized?.summary).toContain('tavily');
   });
 
+  it('search-source quota 也带 kind/escalate（供 banner 升级）', () => {
+    const humanized = humanizeToolError('perplexity: insufficient_quota, exceeded your current quota', 'WebSearch');
+    expect(humanized?.kind).toBe('quota');
+    expect(humanized?.escalate).toBe(true);
+  });
+
+  it('识别 HTTP 429 限流', () => {
+    const h = humanizeToolError('Error: HTTP 429 Too Many Requests', 'WebFetch');
+    expect(h).not.toBeNull();
+    expect(h?.kind).toBe('rate_limit');
+    expect(h?.summary).toMatch(/限流|频繁/);
+    expect(h?.action).toBe('retry');
+    expect(h?.escalate).toBe(true);
+  });
+
+  it('识别 401/403 鉴权失败（与 quota 区分：纯鉴权不含额度词）', () => {
+    const h = humanizeToolError('401 Unauthorized: invalid api key', 'WebSearch');
+    expect(h?.kind).toBe('auth');
+    expect(h?.settingsHint).toBe(true);
+    expect(h?.summary).toMatch(/鉴权|API Key|无权限|授权/);
+    expect(h?.action).toBe('settings');
+    expect(h?.escalate).toBe(true);
+  });
+
+  it('识别超时', () => {
+    const h = humanizeToolError('Request timed out after 90000ms', 'Bash');
+    expect(h?.kind).toBe('timeout');
+    expect(h?.summary).toMatch(/超时/);
+    expect(h?.action).toBe('retry');
+  });
+
+  it('识别 503/过载', () => {
+    const h = humanizeToolError('503 Service Unavailable: model is overloaded', 'WebFetch');
+    expect(h?.kind).toBe('overloaded');
+    expect(h?.summary).toMatch(/过载|繁忙|稍后/);
+    expect(h?.action).toBe('retry');
+  });
+
+  it('识别网络异常', () => {
+    const h = humanizeToolError('fetch failed: ECONNRESET', 'WebFetch');
+    expect(h?.kind).toBe('network');
+    expect(h?.summary).toMatch(/网络/);
+    expect(h?.action).toBe('retry');
+  });
+
+  it('识别余额不足（402/欠费）', () => {
+    const h = humanizeToolError('402 Payment Required: insufficient balance 余额不足', 'image_generate');
+    expect(h?.kind).toBe('quota');
+    expect(h?.summary).toMatch(/余额|额度/);
+    expect(h?.escalate).toBe(true);
+  });
+
   it('returns null for unrecognized errors so raw output is preserved', () => {
     expect(humanizeToolError('TypeError: cannot read property foo of undefined')).toBeNull();
     expect(humanizeToolError('')).toBeNull();

@@ -21,7 +21,8 @@
         "resizable": true,
         "dragDropEnabled": false,
         "visible": false,
-        "url": "about:blank"
+        "url": "about:blank",
+        "backgroundColor": "#18181b"
       }
     ],
     "security": {

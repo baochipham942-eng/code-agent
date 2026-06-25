@@ -41,6 +41,7 @@ interface DesignCanvasState {
   addNode: (node: CanvasNode) => void;
   updateNode: (id: string, patch: Partial<Omit<CanvasNode, 'id'>>) => void;
   deleteNode: (id: string) => void;
+  deleteNodes: (ids: readonly string[]) => void;
   /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
   discardNode: (id: string) => void;
   /** 选为主版：标记该节点 chosen，并清除同版本槽（groupKey=parentId??id）其他节点的主版标记。 */
@@ -92,13 +93,15 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         nodes: s.nodes.map((n) => (n.id === id ? ({ ...n, ...patch } as CanvasNode) : n)),
       };
     }),
-  deleteNode: (id) =>
+  deleteNode: (id) => get().deleteNodes([id]),
+  deleteNodes: (ids) =>
     set((s) => {
-      if (!s.nodes.some((n) => n.id === id)) return {};
+      const idSet = new Set(ids);
+      if (idSet.size === 0 || !s.nodes.some((n) => idSet.has(n.id))) return {};
       return {
         editHistory: pushSnapshot(s.editHistory, s.nodes),
-        nodes: s.nodes.filter((n) => n.id !== id),
-        selectedIds: s.selectedIds.filter((sid) => sid !== id),
+        nodes: s.nodes.filter((n) => !idSet.has(n.id)),
+        selectedIds: s.selectedIds.filter((sid) => !idSet.has(sid)),
       };
     }),
   discardNode: (id) =>

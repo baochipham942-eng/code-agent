@@ -2,7 +2,7 @@
 // P0：平移/缩放/图片节点/空状态。P1：文生图回灌。
 // P2：点选图 → 圈选红框标注 → 局部重绘(通义万相 inpaint) → 新版回灌画布(带血缘)。
 // 文案走 i18n（t.design.*），不硬编码。
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
 import { Palette, SquareDashedMousePointer, Sparkles, Loader2, X, GitCompare, Download, FileDown, Pencil, Presentation, Film } from 'lucide-react';
@@ -19,7 +19,9 @@ import { DesignLayerPanel } from './DesignLayerPanel';
 import { CanvasImage, KonvaVideoNode } from './DesignCanvasNodes';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
+import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
 import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
+import { saveCanvasDoc } from './designCanvasPersistence';
 import { imagePdfExportName, canvasPptxExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
@@ -186,6 +188,7 @@ export const DesignCanvas: React.FC = () => {
   const renameNode = useDesignCanvasStore((s) => s.renameNode);
   const setChosen = useDesignCanvasStore((s) => s.setChosen);
   const discardNode = useDesignCanvasStore((s) => s.discardNode);
+  const deleteNodes = useDesignCanvasStore((s) => s.deleteNodes);
   const generating = useDesignCanvasStore((s) => s.generating);
   const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
@@ -244,6 +247,37 @@ export const DesignCanvas: React.FC = () => {
           .map((id) => visibleNodes.find((n) => n.id === id))
           .filter((n): n is CanvasImageNode => n !== undefined && isImageNode(n))
       : [];
+
+  const persistCanvasDoc = useCallback((): void => {
+    const state = useDesignCanvasStore.getState();
+    if (state.runDir) void saveCanvasDoc(state.runDir, state.toDoc());
+  }, []);
+
+  const deleteCanvasNodes = useCallback((ids: readonly string[]): void => {
+    const existingIds = new Set(useDesignCanvasStore.getState().nodes.map((node) => node.id));
+    const targetIds = ids.filter((id) => existingIds.has(id));
+    if (targetIds.length === 0) return;
+    deleteNodes(targetIds);
+    if (targetIds.some((id) => id === diffNode?.id)) setDiffNode(null);
+    if (targetIds.some((id) => id === playingVideo?.id)) setPlayingVideo(null);
+    if (targetIds.some((id) => selectedIds.includes(id))) setComparing(false);
+    persistCanvasDoc();
+  }, [deleteNodes, diffNode?.id, persistCanvasDoc, playingVideo?.id, selectedIds]);
+
+  const renameCanvasNode = useCallback((id: string, label: string): void => {
+    renameNode(id, label);
+    persistCanvasDoc();
+  }, [persistCanvasDoc, renameNode]);
+
+  const setCanvasChosen = useCallback((id: string): void => {
+    setChosen(id);
+    persistCanvasDoc();
+  }, [persistCanvasDoc, setChosen]);
+
+  const discardCanvasNode = useCallback((id: string): void => {
+    discardNode(id);
+    persistCanvasDoc();
+  }, [discardNode, persistCanvasDoc]);
 
   // 选择变化时退出对比浮层（除非仍是双选）。
   useEffect(() => {
@@ -317,15 +351,38 @@ export const DesignCanvas: React.FC = () => {
         },
         { annotMode, comparing },
         {
-          undo: () => useDesignCanvasStore.getState().undoEdit(),
-          redo: () => useDesignCanvasStore.getState().redoEdit(),
+          undo: () => {
+            useDesignCanvasStore.getState().undoEdit();
+            persistCanvasDoc();
+          },
+          redo: () => {
+            useDesignCanvasStore.getState().redoEdit();
+            persistCanvasDoc();
+          },
         },
       );
-      if (handled) e.preventDefault();
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
+      const handledDelete = dispatchCanvasDeleteKey(
+        {
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          isComposing: e.isComposing,
+          targetTag: (e.target as HTMLElement | null)?.tagName,
+          targetEditable: (e.target as HTMLElement | null)?.isContentEditable ?? false,
+        },
+        { annotMode, comparing, selectedCount: useDesignCanvasStore.getState().selectedIds.length },
+        { deleteSelected: () => deleteCanvasNodes(useDesignCanvasStore.getState().selectedIds) },
+      );
+      if (handledDelete) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [annotMode, comparing]);
+  }, [annotMode, comparing, deleteCanvasNodes, persistCanvasDoc]);
 
   // 行业常见手势：空格临时手型工具。输入框内不劫持空格，避免影响指令编辑。
   useEffect(() => {
@@ -695,9 +752,10 @@ export const DesignCanvas: React.FC = () => {
         nodes={nodes}
         selectedIds={selectedIds}
         onSelect={(id, additive) => selectNode(id, additive)}
-        onRename={renameNode}
-        onSetChosen={setChosen}
-        onDiscard={discardNode}
+        onRename={renameCanvasNode}
+        onSetChosen={setCanvasChosen}
+        onDiscard={discardCanvasNode}
+        onDelete={(id) => deleteCanvasNodes([id])}
         onFocus={focusNode}
       />
 

@@ -67,6 +67,7 @@ describe('DesignLayerPanel', () => {
         onRename={() => {}}
         onSetChosen={() => {}}
         onDiscard={() => {}}
+        onDelete={() => {}}
         onFocus={() => {}}
       />,
     );
@@ -80,6 +81,7 @@ describe('DesignLayerPanel', () => {
     expect(html).toContain('父节点');
     expect(html).toContain('设为主版');
     expect(html).toContain('淘汰');
+    expect(html).toContain('删除');
   });
 
   it('renders English copy through i18n', () => {
@@ -91,6 +93,7 @@ describe('DesignLayerPanel', () => {
         onRename={() => {}}
         onSetChosen={() => {}}
         onDiscard={() => {}}
+        onDelete={() => {}}
         onFocus={() => {}}
         translations={en}
       />,
@@ -99,5 +102,6 @@ describe('DesignLayerPanel', () => {
     expect(html).toContain('Layer name');
     expect(html).toContain('Set main');
     expect(html).toContain('Discard');
+    expect(html).toContain('Delete');
   });
 });

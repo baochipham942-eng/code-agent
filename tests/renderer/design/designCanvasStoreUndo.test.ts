@@ -45,6 +45,16 @@ describe('designCanvasStore undo/redo (Layer1 编辑历史)', () => {
     expect(useDesignCanvasStore.getState().nodes.map((x) => x.id)).toEqual(['A', 'B']);
   });
 
+  it('deleteNodes 批量删除只产生一个撤销点，undoEdit 一次恢复全部', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A'), n('B'), n('C')]));
+    s.deleteNodes(['B', 'C']);
+    expect(useDesignCanvasStore.getState().nodes.map((x) => x.id)).toEqual(['A']);
+    useDesignCanvasStore.getState().undoEdit();
+    expect(useDesignCanvasStore.getState().nodes.map((x) => x.id)).toEqual(['A', 'B', 'C']);
+    expect(useDesignCanvasStore.getState().canEditUndo()).toBe(false);
+  });
+
   it('renameNode 可撤销', () => {
     const s = useDesignCanvasStore.getState();
     s.loadDoc('run-x', doc([n('A')]));

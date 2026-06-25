@@ -31,9 +31,10 @@ export const DesignLayerPanel: React.FC<{
   onRename: (id: string, label: string) => void;
   onSetChosen: (id: string) => void;
   onDiscard: (id: string) => void;
+  onDelete: (id: string) => void;
   onFocus: (id: string) => void;
   translations?: Translations;
-}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onFocus, translations }) => {
+}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, translations }) => {
   const { t: runtimeT } = useI18n();
   const t = translations ?? runtimeT;
   const ordered = useMemo(() => orderedLayerNodes(nodes), [nodes]);
@@ -131,7 +132,7 @@ export const DesignLayerPanel: React.FC<{
             <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerCost}<br /><span className="text-zinc-200">{typeof selected.costCny === 'number' ? formatCny(selected.costCny) : '—'}</span></div>
             <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerParent}<br /><span className="text-zinc-200">{selected.parentId || '—'}</span></div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => onSetChosen(selected.id)}
@@ -149,6 +150,15 @@ export const DesignLayerPanel: React.FC<{
             >
               <Trash2 className="h-3.5 w-3.5" />
               {t.design.layerDiscard}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(selected.id)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/15 px-2 py-1.5 text-xs text-red-100"
+              aria-label={`${t.common.delete} ${layerDisplayName(selected, t.design.layerUnnamed)}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t.common.delete}
             </button>
           </div>
         </div>

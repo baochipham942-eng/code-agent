@@ -115,6 +115,16 @@ describe('designCanvasStore setChosen / deleteNode', () => {
     expect(st.nodes.map((x) => x.id)).toEqual(['B']);
     expect(st.selectedIds).toEqual(['B']);
   });
+
+  it('deleteNodes 批量移除节点并清出选择', () => {
+    const s = useDesignCanvasStore.getState();
+    s.loadDoc('run-x', doc([n('A'), n('B'), n('C')]));
+    s.setSelected(['A', 'B']);
+    s.deleteNodes(['A', 'B']);
+    const st = useDesignCanvasStore.getState();
+    expect(st.nodes.map((x) => x.id)).toEqual(['C']);
+    expect(st.selectedIds).toEqual([]);
+  });
 });
 
 describe('designCanvasStore renameNode（T2 命名步）', () => {

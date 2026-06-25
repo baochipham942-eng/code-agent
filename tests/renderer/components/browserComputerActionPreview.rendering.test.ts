@@ -175,7 +175,7 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('secret@example.com');
   });
 
-  it('redacts browser typed text from auto-expanded error details', () => {
+  it('redacts browser typed text from the default-collapsed error row summary', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
         toolCall: makeToolCall({
@@ -202,7 +202,8 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('[redacted 18 chars]');
+    // 工具行默认折叠：错误回合不再自动展开详情。脱敏仍成立——折叠态只显示已脱敏的
+    // 动作摘要（"输入 18 chars"）+ 红边框 + hover 摘要，原始输入文本绝不出现。
     expect(html).toContain('输入 18 chars');
     expect(html).toContain('failed');
     expect(html).not.toContain('trace-browser-type-error');
@@ -337,7 +338,7 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('trace-grouped-click');
   });
 
-  it('expands failed browser-scoped computer groups with recovery details', () => {
+  it('redacts failed browser-scoped computer groups in the default-collapsed row summary', () => {
     const nodes: TraceNode[] = [
       {
         id: 'node-computer-failure',
@@ -368,11 +369,11 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
+    // 失败的浏览器组仍整组展开（组头 aria-expanded），但每个工具行默认折叠：
+    // 折叠态显示已脱敏的"智能输入 27 chars"摘要，详细恢复步骤移到点击展开后。
     expect(html).toContain('Computer');
-    expect(html).toContain('刷新页面证据');
-    expect(html).toContain('读取 DOM / Accessibility snapshot');
     expect(html).toContain('trace-computer-failure');
-    expect(html).toContain('[redacted 27 chars]');
+    expect(html).toContain('智能输入 27 chars');
     expect(html).not.toContain('app-host-secret@example.com');
   });
 
@@ -418,7 +419,8 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('[redacted 27 chars]');
+    // 默认折叠态下，回合头里的失败工具结果不泄漏原文：只出现脱敏摘要"智能输入 27 chars"。
+    expect(html).toContain('智能输入 27 chars');
     expect(html).not.toContain('app-host-secret@example.com');
   });
 

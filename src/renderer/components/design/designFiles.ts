@@ -275,6 +275,29 @@ export async function readWorkspaceImageAsDataUrl(filePath: string): Promise<str
   }
 }
 
+/**
+ * 读工作区二进制为 Blob URL（非 data URL）。
+ * 视频走此路径——4MB mp4 的 data: URL 超浏览器 ~2MB 上限会 0:00 放不动；
+ * Blob URL 无大小限制。调用方负责在不用时 URL.revokeObjectURL 回收。
+ */
+export async function readWorkspaceBinaryAsBlobUrl(filePath: string): Promise<string | null> {
+  try {
+    const res = await window.domainAPI?.invoke<{ base64: string; mimeType: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'readBinary',
+      { filePath },
+    );
+    if (!res?.success || !res.data?.base64) return null;
+    const mime = res.data.mimeType || 'application/octet-stream';
+    const binary = atob(res.data.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch {
+    return null;
+  }
+}
+
 /** 列某 run 的版本快照，按创建时间倒序（最新在前）。 */
 export async function listVersions(runDir: string): Promise<DesignVersion[]> {
   const versionsDir = `${runDir.replace(/\/+$/, '')}/${DESIGN_VERSIONS_SUBDIR}`;

@@ -32,7 +32,7 @@ import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
-import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
+import { readWorkspaceImageAsDataUrl, readWorkspaceBinaryAsBlobUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
 import { imagePdfExportName, canvasPptxExportName } from './designTypes';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
@@ -66,14 +66,21 @@ const VideoPlayOverlay: React.FC<{
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
+    let created: string | null = null;
     void (async () => {
       if (!runDir) return;
-      // readBinary 按扩展名返回 video/mp4，readWorkspaceImageAsDataUrl 用真实 mimeType → 可直接喂 <video>。
-      const data = await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`);
-      if (alive) setUrl(data);
+      // 视频走 Blob URL（非 data URL）——4MB mp4 的 data: URL 超浏览器 ~2MB 上限会 0:00 放不动。
+      const blobUrl = await readWorkspaceBinaryAsBlobUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`);
+      if (alive) {
+        created = blobUrl;
+        setUrl(blobUrl);
+      } else if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
     })();
     return () => {
       alive = false;
+      if (created) URL.revokeObjectURL(created);
     };
   }, [runDir, node.src]);
   return (

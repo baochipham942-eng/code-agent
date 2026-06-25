@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ChevronRight, ChevronDown, GitBranch } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -14,8 +14,6 @@ import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   formatToolDuration,
   isAutoLoadedRetry,
-  summarizeToolLoopDecisionFromNodes,
-  type ToolLoopDecisionSummary,
 } from '../../../utils/toolExecutionPresentation';
 
 interface ToolStepGroupProps {
@@ -73,11 +71,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     }
   }, [status]);
 
-  const loopDecision = useMemo(
-    () => summarizeToolLoopDecisionFromNodes(nodes),
-    [nodes],
-  );
-
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
   const toolCalls = useMemo<ToolCall[]>(() => {
     return nodes
@@ -110,17 +103,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
-  const resultSummary = useMemo(() => {
-    if (toolCalls.length === 0) return null;
-    if (toolCalls.length > 1) {
-      return summarizeToolGroupResults(toolCalls);
-    }
-    const summaries = toolCalls
-      .map((toolCall) => summarizeTool(toolCall))
-      .filter((summary): summary is string => Boolean(summary));
-    if (summaries.length === 0) return null;
-    return summaries[0];
-  }, [toolCalls]);
+  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls), [toolCalls]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
@@ -178,8 +161,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span className="flex-shrink-0 text-[10px] text-zinc-600">{totalDuration}</span>
         )}
       </button>
-
-      <LoopDecisionRow decision={loopDecision} />
 
       {expanded && (
         <div className="ml-4 mt-1 space-y-1 border-l border-zinc-800 pl-3">
@@ -266,6 +247,22 @@ function isReadOrSearchTool(name: string): boolean {
   ].includes(name);
 }
 
+/**
+ * 组头摘要（P0 #1 失败去重）：
+ *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
+ *  · 单工具且失败 → null：错误**只**由下方工具 cell 单处渲染（红 glyph + 一行 humanize），
+ *    组头不再重复同一条错误文本（去掉 summarizeTool 对失败返回的错误首行）；
+ *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
+ * 纯函数，便于单测。
+ */
+export function buildToolGroupHeadSummary(toolCalls: ToolCall[]): string | null {
+  if (toolCalls.length === 0) return null;
+  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls);
+  const only = toolCalls[0];
+  if (only.result && only.result.success === false) return null;
+  return summarizeTool(only);
+}
+
 function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
   let failed = 0;
   let emptySearches = 0;
@@ -317,33 +314,3 @@ function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok
   return 'text-emerald-300';
 }
 
-function getLoopDecisionToneClass(tone: ToolLoopDecisionSummary['tone']): string {
-  switch (tone) {
-    case 'neutral':
-      return 'border-white/[0.06] bg-white/[0.02] text-zinc-500';
-    case 'success':
-      return 'border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-300';
-    case 'warning':
-      return 'border-amber-500/15 bg-amber-500/[0.06] text-amber-300';
-    case 'error':
-      return 'border-red-500/15 bg-red-500/[0.06] text-red-300';
-    default:
-      return 'border-sky-500/15 bg-sky-500/[0.06] text-sky-300';
-  }
-}
-
-const LoopDecisionRow: React.FC<{ decision: ToolLoopDecisionSummary | null }> = ({ decision }) => {
-  if (!decision) return null;
-  if (decision.tone === 'success' || decision.tone === 'neutral') return null;
-
-  return (
-    <div className="mt-1 ml-0.5 flex min-w-0 items-center gap-2 rounded-md border border-white/[0.05] bg-white/[0.018] px-2 py-1 text-[11px]">
-      <div className={`inline-flex flex-shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 ${getLoopDecisionToneClass(decision.tone)}`}>
-        <GitBranch className="h-3 w-3" />
-        <span>{decision.action}</span>
-      </div>
-      <span className="min-w-0 flex-1 truncate text-zinc-500">{decision.reason}</span>
-      <span className="hidden max-w-[220px] truncate text-zinc-600 sm:block">{decision.expectedNextAction}</span>
-    </div>
-  );
-};

@@ -198,6 +198,52 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
   safeExec(db, 'ALTER TABLE telemetry_renderer_bundle_attempts ADD COLUMN missing_resources TEXT NOT NULL DEFAULT \'[]\'', logger);
 }
 
+// design-canvas-session 引导 marker 的稳定定界符：按 <system-reminder kind="design-canvas-session">
+// … </system-reminder> 块匹配（非贪婪、跨行），连同紧随其后的换行一并吃掉。**不**按全文匹配——
+// 引导文案随构建版本变化（旧版只提 ProposeCanvasOps，新版含 ProposeVideoOps/ProposeSlidesOps），
+// 只有定界符稳定。畸形残片（有起始无闭合）不匹配 → 不误伤。
+const DESIGN_CANVAS_SESSION_MARKER_BLOCK =
+  /<system-reminder kind="design-canvas-session">[\s\S]*?<\/system-reminder>\n*/g;
+
+/** 从一条消息 content 里剥离所有 design-canvas-session marker 块，保留其余真实文本。纯函数、幂等。 */
+export function stripDesignCanvasSessionMarker(content: string): string {
+  return content.replace(DESIGN_CANVAS_SESSION_MARKER_BLOCK, '');
+}
+
+export function applyDesignCanvasMarkerCleanup(db: BetterSqlite3.Database, logger: Logger): void {
+  // 2026-06-25: R1（设计 Surface 会话化）早期构建有一处缺陷把 design-canvas-session 引导 marker
+  // 漏进了 messages.content（正确行为是只服务端按轮注入、不进 content）。当前代码已不漏；这里一次性
+  // 剥离历史残留行里的 marker 块，保留 marker 之后的真实用户/上下文文本。
+  //   · content_parts 未受污染（核实 0 行），只清 content；
+  //   · FTS 索引由 messages_au_fts / transcript_au_fts（AFTER UPDATE OF content 触发器）自动同步；
+  //   · 幂等（再跑只命中未清的行）、事务、best-effort（异常不连坐 app 启动）。
+  try {
+    const rows = db
+      .prepare(`SELECT id, content FROM messages WHERE content LIKE '%<system-reminder kind="design-canvas-session"%'`)
+      .all() as Array<{ id: string; content: string }>;
+    if (rows.length === 0) return;
+    const update = db.prepare('UPDATE messages SET content = ? WHERE id = ?');
+    const cleanAll = db.transaction((items: Array<{ id: string; content: string }>) => {
+      let cleaned = 0;
+      for (const row of items) {
+        const next = stripDesignCanvasSessionMarker(row.content);
+        if (next !== row.content) {
+          update.run(next, row.id);
+          cleaned += 1;
+        }
+      }
+      return cleaned;
+    });
+    const cleaned = cleanAll(rows);
+    if (cleaned > 0) {
+      logger.info(`[DB] 剥离 design-canvas-session marker 历史残留：${cleaned} 行`);
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn('[DB] design-canvas-session marker 清理失败（best-effort，跳过）:', msg);
+  }
+}
+
 export function applyEvaluationCleanupMigration(db: BetterSqlite3.Database, logger: Logger): void {
   // 2026-05-19: 评测中心子系统下线，drop 不再使用的评测/审阅/反馈表 + 索引。
   // 保留 experiments / experiment_cases / session_events / telemetry_* 表 (testRunner 和 bug report 复现仍在用)。

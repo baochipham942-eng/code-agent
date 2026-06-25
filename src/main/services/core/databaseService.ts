@@ -11,7 +11,7 @@ import { getServiceRegistry } from '../serviceRegistry';
 import { loadBetterSqlite3 } from './database/nativeLoader';
 import { applySchema } from './database/schema';
 import { applyIndexes } from './database/indexes';
-import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
+import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration, applyDesignCanvasMarkerCleanup } from './database/migrations';
 
 const logger = createLogger('DatabaseService');
 const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -195,6 +195,7 @@ export class DatabaseService {
       applySessionsMigrations(this.db, logger);
       applyTelemetryTurnsMigrations(this.db, logger);
       applyEvaluationCleanupMigration(this.db, logger);
+      applyDesignCanvasMarkerCleanup(this.db, logger);
       applyIndexes(this.db);
 
       // 初始化 Repositories

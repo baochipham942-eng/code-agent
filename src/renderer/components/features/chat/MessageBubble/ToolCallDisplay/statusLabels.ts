@@ -137,11 +137,11 @@ function enrichCompletedLabel(toolCall: ToolCall, defaultLabel: string): string 
   }
 
   if (name === 'Bash' || name === 'bash') {
-    // UX③：success 态下若退出码非 0，是个被"已执行"掩盖的矛盾信号（判定不可靠）。
-    // 显式标出退出码，让用户/模型看到，而不是误以为干净成功。退出码为 0 / 未知则保持简洁。
+    // P0 #4：success 态下退出码非 0，仍把退出码 surface 出来（信息保留），但**不再**附「结果判定
+    // 可能不可靠」——success 与「不可靠」自相矛盾（真正失败会走 error 态）。中性展示，去噪不误导。
     const exitCode = (toolCall.result?.metadata as { exitCode?: unknown } | undefined)?.exitCode;
     if (typeof exitCode === 'number' && exitCode !== 0) {
-      return `已执行（退出码 ${exitCode}，结果判定可能不可靠）`;
+      return `已执行（退出码 ${exitCode}）`;
     }
   }
 

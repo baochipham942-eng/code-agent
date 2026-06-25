@@ -28,7 +28,7 @@ import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
@@ -427,6 +427,17 @@ const AssistantTextNode: React.FC<{
       setFeedbackSubmitting(false);
     }
   }, [currentSessionId, feedbackSubmitting, messageId, node.content]);
+
+  // 空壳守卫：空正文 + 清洗后无思考 + 无路由/质量信号 = 没有任何可渲染内容，
+  // 整节点跳过，避免线性 trace 里出现无法解释的空白行（思考去吸收后这条独立路径更常走）。
+  const hasRenderableContent = Boolean(
+    node.content
+    || reasoningContent?.trim()
+    || progressSummary
+    || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
+    || node.metadata?.turnQuality,
+  );
+  if (!hasRenderableContent) return null;
 
   return (
     <div
@@ -852,14 +863,38 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
   );
 };
 
+type ArtifactItem = NonNullable<TurnTimelinePayload['artifactOwnership']>[number];
+
+const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }> = ({ items, className }) => (
+  <div className={`space-y-1.5 ${className ?? ''}`}>
+    {items.map((item, index) => (
+      <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
+        <WorkbenchPill tone={item.kind === 'artifact' ? 'info' : 'neutral'}>
+          {item.kind === 'artifact' ? 'Artifact' : item.kind === 'link' ? 'Link' : 'Note'}
+        </WorkbenchPill>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs text-zinc-100">{item.label}</div>
+          <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId?: string }> = ({ timeline, sessionId }) => {
   const items = (timeline.artifactOwnership || [])
     .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
   if (items.length === 0) return null;
 
-  const fileItems = items.filter((i) => i.kind === 'file');
-  const nonFileItems = items.filter((i) => i.kind !== 'file');
-  const hasOnlyFiles = fileItems.length > 0 && nonFileItems.length === 0;
+  // 来源（WebFetch 抓取的链接）始终从产物里拆出来、单独降级成安静 Sources：
+  // 它是过程性引用，不是模型「产物」。Outputs 绿卡只放真产物（文件 + artifact/note），
+  // 避免搜索网站被混进交付物卡里当产物。
+  const linkItems = items.filter((i) => i.kind === 'link');
+  const outputItems = items.filter((i) => i.kind !== 'link');
+  const fileItems = outputItems.filter((i) => i.kind === 'file');
+  const nonFileOutputItems = outputItems.filter((i) => i.kind !== 'file'); // artifact / note
+  const hasLinks = linkItems.length > 0;
+
   const turnId = timeline.id.endsWith('-artifact-ownership')
     ? timeline.id.slice(0, -'-artifact-ownership'.length)
     : undefined;
@@ -867,45 +902,39 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
     ? { sessionId, turnId }
     : undefined;
 
-  // 纯文件输出保持一行入口，不再额外挂"本轮输出"标题。
-  // 混合/纯非文件：保留 tone 容器，维持原来的视觉层级。
-  // 标题按内容正名：纯链接（如 WebFetch 抓取的网页）是「来源/引用」而非模型「产物」，
-  // 标成 Sources 才不误导；含文件产物时才叫 Outputs。
-  const onlyLinks = fileItems.length === 0 && nonFileItems.every((i) => i.kind === 'link');
-  const sectionLabel = onlyLinks ? 'Sources' : 'Outputs';
-  const header = (
-    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
-      <FileText className="h-3.5 w-3.5 text-emerald-300" />
-      <span>{sectionLabel}</span>
-    </div>
-  );
-
-  if (hasOnlyFiles) {
+  // 纯文件、且无来源：保持原来的一行入口（无标题/无强调边框）。
+  if (outputItems.length > 0 && nonFileOutputItems.length === 0 && !hasLinks) {
     return <FileArtifactCard items={fileItems} mediaContext={mediaContext} />;
   }
 
-  return (
+  const outputsCard = outputItems.length > 0 ? (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      {header}
-
+      <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
+        <FileText className="h-3.5 w-3.5 text-emerald-300" />
+        <span>Outputs</span>
+      </div>
       {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}
-
-      {nonFileItems.length > 0 && (
-        <div className={`space-y-1.5 ${fileItems.length > 0 ? 'mt-1.5' : ''}`}>
-          {nonFileItems.map((item, index) => (
-            <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
-              <WorkbenchPill tone={item.kind === 'artifact' ? 'info' : 'neutral'}>
-                {item.kind === 'artifact' ? 'Artifact' : item.kind === 'link' ? 'Link' : 'Note'}
-              </WorkbenchPill>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs text-zinc-100">{item.label}</div>
-                <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+      {nonFileOutputItems.length > 0 && (
+        <ArtifactItemPills items={nonFileOutputItems} className={fileItems.length > 0 ? 'mt-1.5' : ''} />
       )}
     </div>
+  ) : null;
+
+  const sourcesBlock = hasLinks ? (
+    <div className={`rounded-lg border px-3 py-2 border-white/[0.06] bg-white/[0.02] ${outputsCard ? 'mt-1.5' : ''}`}>
+      <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
+        <Link className="h-3.5 w-3.5 text-zinc-400" />
+        <span>Sources</span>
+      </div>
+      <ArtifactItemPills items={linkItems} />
+    </div>
+  ) : null;
+
+  return (
+    <>
+      {outputsCard}
+      {sourcesBlock}
+    </>
   );
 };
 

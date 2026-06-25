@@ -11,11 +11,11 @@ function bash(output: string, metadata?: Record<string, unknown>): ToolCall {
   };
 }
 
-describe('getToolStatusLabel — Bash exit code (UX③)', () => {
-  it('surfaces a non-zero exit code on a success-labeled bash result', () => {
+describe('getToolStatusLabel — Bash exit code (P0 #4：去矛盾)', () => {
+  it('success 态非零退出码：中性展示退出码，不再说「可能不可靠」（成功≠不可靠，自相矛盾）', () => {
     const label = getToolStatusLabel(bash('build output', { exitCode: 2 }), 'success');
-    expect(label).toContain('退出码 2');
-    expect(label).toContain('判定可能不可靠');
+    expect(label).toContain('退出码 2'); // 保留信息：仍把退出码 surface 出来
+    expect(label).not.toContain('不可靠'); // 去掉与 success 自相矛盾的「判定可能不可靠」
   });
 
   it('keeps the clean label when exit code is 0', () => {

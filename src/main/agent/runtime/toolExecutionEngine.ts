@@ -55,6 +55,7 @@ import {
   enforceArtifactRepairGuard,
   enforceArtifactRepairRepeatedPatchGuard,
 } from './toolArtifactRepairPolicy';
+import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission';
 import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAnchors';
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
@@ -423,9 +424,9 @@ export class ToolExecutionEngine {
     const artifactRepairBlock = enforceArtifactRepairGuard(this.ctx, toolCall);
     if (artifactRepairBlock) {
       const guard = this.ctx.artifactRepairGuard;
-      if (guard) {
-        guard.lastBlockedTool = toolCall.name;
-      }
+      // Block 路径也喂 repairTurnsWithoutProgress 计数器：可用但被闸拦的工具此前不计数，
+      // 当目标不可达时会无限死锁（2026-06-25 dogfood）。连续 N 次无进展即硬停。
+      const repairForceStopped = registerArtifactRepairBlockedToolTurn(this.ctx, guard, toolCall.name);
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: false,
@@ -449,7 +450,9 @@ export class ToolExecutionEngine {
           '</artifact-repair-tool-blocked>',
         ].join('\n'),
       );
-      if (guard?.targetFile) {
+      // 硬停时不再注入恢复提示/重推理——activateArtifactRepairAdmissionStop 已设
+      // forceFinalResponse，让本轮强制收尾，别再对同一被拦动作多花一次模型请求。
+      if (!repairForceStopped && guard?.targetFile) {
         const alreadyValid = await maybeFinishArtifactRepairIfAlreadyValid(this.ctx, this.contextAssembly, guard);
         if (!alreadyValid) {
           this.contextAssembly.pushPersistentSystemContext(

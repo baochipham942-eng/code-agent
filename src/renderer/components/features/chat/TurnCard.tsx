@@ -215,7 +215,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     nodes={d.tools}
                     sessionId={sessionId}
                     defaultExpanded={false}
-                    thinkingNodes={d.thinkingNodes}
                   />
                 );
               }
@@ -652,16 +651,25 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
   </div>
 );
 
+// 顶部 run 横幅可见性：完成态 + 正常流式进度（running / using_tools / waiting_tool）
+// 统一隐藏。这些状态在流式期间随工具边界来回切换，会让蓝色 running 横幅 mount/unmount
+// 「跳上跳下」。正常 live 进度由底部 StreamingIndicator + 工具组内联指示承担；顶部横幅
+// 只在异常/终态（blocked/cancelled/resumable/stale）显示稳定状态。
+export function shouldHideTurnRunHeader(statusLabel: string, statusTone: string): boolean {
+  return statusTone === 'success'
+    || statusLabel === 'running'
+    || statusLabel === 'using_tools'
+    || statusLabel === 'waiting_tool';
+}
+
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const status = getTurnRunStatus(turn, streamingState);
   const phase = getTurnPhase(turn);
   const completionSignal = getTurnCompletionSignal(turn);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
-  const isCompleted = status.tone === 'success';
-  const isNormalToolActivity = status.label === 'using_tools' || status.label === 'waiting_tool';
   const hasPhase = Boolean(phase?.trim());
 
-  if (isCompleted || isNormalToolActivity || (status.label === 'running' && !hasPhase && !completionSignal && !failedTool)) {
+  if (shouldHideTurnRunHeader(status.label, status.tone)) {
     return null;
   }
 

@@ -1,6 +1,7 @@
 import type { ContextAssembly } from './contextAssembly';
 import type { RuntimeContext } from './runtimeContext';
 import { validateGameArtifact } from './gameArtifactValidator';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 
 export type ArtifactRepairStopKind = 'unavailable-tool' | 'attempts-exhausted';
 
@@ -36,6 +37,38 @@ export function activateArtifactRepairAdmissionStop(
   // 注:UI 端的 error event emit 在 forceFinalResponse 处理路径里(messageProcessor.ts forceFinalResponse 分支),
   // 必须在 final assistant message push 之后 emit,这样 useSessionLifecycleEffects 的 lastMessage 检查
   // 能命中 assistant 把 errorContent 合并进去显示。如果在这里 emit, lastMessage 还是上一轮的 tool 消息,UI 不显示。
+}
+
+/**
+ * Block 路径循环断路器：可用但被 repair 闸拦下的工具（区别于 messageProcessorUnavailableTools
+ * 的"工具不可用"路径）此前**不喂** repairTurnsWithoutProgress 计数器，导致逃生门永不触发——
+ * 当 guard 锁了一个不可达 phantom 目标时，每个工具被 block 但计数器不动，无限死锁
+ * (2026-06-25 dogfood：CSDN URL 被错种成目标)。此函数让 block 路径也累加同一计数器，
+ * 连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 次无进展即复用既有 attempts-exhausted 硬停。
+ * 返回是否已触发硬停。
+ */
+export function registerArtifactRepairBlockedToolTurn(
+  ctx: RuntimeContext,
+  guard: NonNullable<RuntimeContext['artifactRepairGuard']> | undefined,
+  blockedTool: string,
+): boolean {
+  if (!guard?.targetFile) return false;
+  // 用独立计数器：repairTurnsWithoutProgress 每回合被 messageProcessor 无条件清零，
+  // 会把这里的累加抹掉（审计 HIGH-1）。blockedToolTurnsWithoutProgress 只在目标文件被
+  // 成功改动(patched, toolFileMutationTracking)时清零，故能真正跨回合累积到硬停。
+  const turns = (guard.blockedToolTurnsWithoutProgress ?? 0) + 1;
+  guard.blockedToolTurnsWithoutProgress = turns;
+  guard.lastBlockedTool = blockedTool;
+  if (turns >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
+    activateArtifactRepairAdmissionStop(
+      ctx,
+      guard.targetFile,
+      `${turns}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} blocked tool calls`,
+      'attempts-exhausted',
+    );
+    return true;
+  }
+  return false;
 }
 
 export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(

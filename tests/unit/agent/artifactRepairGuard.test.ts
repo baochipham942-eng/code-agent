@@ -95,6 +95,30 @@ describe('artifactRepairGuard', () => {
     });
   });
 
+  it('does not seed repair on a URL-derived target from a web result (https://...)', () => {
+    // Regression (2026-06-25 dogfood): a design/PPT run web-searched a CSDN page,
+    // and the `://` in `https://modelengine.csdn.net/<id>.html` let the bare-path
+    // branch latch onto the URL slash, seeding the guard with a phantom target
+    // outside any workdir. Every later tool was then blocked → infinite deadlock.
+    const ctx = makeRuntimeContext(
+      'Artifact validation failed. The artifact at https://modelengine.csdn.net/690c4f2c5511483559e2a50c.html is missing runSmokeTest. Please repair it.',
+    );
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+  });
+
+  it('does not seed repair on a protocol-relative URL target (//host/x.html)', () => {
+    const ctx = makeRuntimeContext(
+      'Artifact validation failed: //modelengine.csdn.net/690c4f2c5511483559e2a50c.html is malformed; please fix.',
+    );
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+  });
+
   it('still detects targeted issue codes but never narrows the repair tool set (Route A)', () => {
     const ctx = makeRuntimeContext([
       'Artifact validation failed for /tmp/code-agent/games/game.html.',

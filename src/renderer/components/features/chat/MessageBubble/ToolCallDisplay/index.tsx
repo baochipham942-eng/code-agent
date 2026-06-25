@@ -106,11 +106,10 @@ export function ToolCallDisplay({
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
   }, [toolCall, currentSessionId, processingSessionIds]);
 
-  // Default expanded state: error or pending shows expanded, success/interrupted collapsed
-  // 默认折叠，仅 error 时自动展开
-  const [expanded, setExpanded] = useState(
-    status === 'error'
-  );
+  // 工具行默认折叠（含 error）：失败回合常常一连十几条同样的报错，全展开会糊成
+  // 一面墙（2026-06-25 dogfood：工件修复死锁 trace 不可读）。折叠态仍保留红左边框 +
+  // 恢复提示行 + hover 结果摘要，安全信息不丢；用户点击可展开看详情。
+  const [expanded, setExpanded] = useState(false);
   // Track if user manually toggled
   const [userToggled, setUserToggled] = useState(false);
   const actionPreview = useMemo(
@@ -130,15 +129,13 @@ export function ToolCallDisplay({
     }
   }, [status, expanded, userToggled]);
 
-  // Auto-expand on error, or while a pending tool is producing live output.
+  // 仅在 pending 工具产出 live output 时自动展开（流式反馈）；error 不再自动展开，
+  // 改为默认折叠，让失败回合的 trace 保持可扫读。
   useEffect(() => {
-    if (status === 'error' || (!toolCall.result && toolCall.liveOutput && !userToggled)) {
+    if (!toolCall.result && toolCall.liveOutput && !userToggled) {
       setExpanded(true);
-      if (status === 'error') {
-        setUserToggled(false);
-      }
     }
-  }, [status, toolCall.result, toolCall.liveOutput, userToggled]);
+  }, [toolCall.result, toolCall.liveOutput, userToggled]);
 
   return (
     <div

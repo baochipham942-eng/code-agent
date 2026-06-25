@@ -89,6 +89,14 @@ export function createCliTables(db: CliDb): void {
     // 列已存在
   }
 
+  // thinking 列：持久化模型推理/思考过程。缺失时 webServer/CLI 落库会丢 thinking，
+  // 刷新后实时态显示过的 ▶思考 凭空消失（与持久态不一致）。
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN thinking TEXT`);
+  } catch {
+    // 列已存在
+  }
+
   // 添加 pr_link 列（如果不存在）
   try {
     db.exec(`ALTER TABLE sessions ADD COLUMN pr_link TEXT`);

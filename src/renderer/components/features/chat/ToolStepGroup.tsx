@@ -4,34 +4,31 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ChevronRight, ChevronDown, GitBranch } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
-import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   formatToolDuration,
   isAutoLoadedRetry,
-  summarizeToolLoopDecisionFromNodes,
-  type ToolLoopDecisionSummary,
 } from '../../../utils/toolExecutionPresentation';
+
+// 网络抓取类工具：失败多为反爬墙/限流瞬态噪音（与浏览器/电脑/文件操作的 actionable 失败不同）。
+const NETWORK_FETCH_TOOLS = new Set(['WebSearch', 'WebFetch', 'web_search', 'web_fetch']);
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
   sessionId?: string;
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
-  /** 被收纳的过渡轮 thinking（无正文的纯思考节点），在组内弱化展示 */
-  thinkingNodes?: TraceNode[];
 }
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   sessionId,
   defaultExpanded = false,
-  thinkingNodes,
 }) => {
   const label = useMemo(() => {
     if (nodes.length === 1) {
@@ -66,17 +63,19 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     if (hasError && hasSuccess) return 'partial';
     return hasError ? 'error' : 'ok';
   }, [nodes]);
-  const [expanded, setExpanded] = useState(defaultExpanded || status === 'error' || status === 'partial');
+  // 纯网络抓取组（WebSearch/WebFetch）的失败多是反爬墙/限流类瞬态噪音，撑开成报错墙
+  // 反而干扰——这类组失败不强制展开，组头状态徽标已传达，需要细节再点开。
+  // 浏览器/电脑操作/文件查找等组的失败是 actionable（且需展开做敏感数据脱敏展示），
+  // 仍保持原来的失败即展开。
+  const isNetworkFetchGroup = nodes.length > 0
+    && nodes.every((n) => NETWORK_FETCH_TOOLS.has(n.toolCall?.name ?? ''));
+  const forceExpandOnFailure = (status === 'error' || status === 'partial') && !isNetworkFetchGroup;
+  const [expanded, setExpanded] = useState(defaultExpanded || forceExpandOnFailure);
   useEffect(() => {
-    if (status === 'error' || status === 'partial') {
+    if (forceExpandOnFailure) {
       setExpanded(true);
     }
-  }, [status]);
-
-  const loopDecision = useMemo(
-    () => summarizeToolLoopDecisionFromNodes(nodes),
-    [nodes],
-  );
+  }, [forceExpandOnFailure]);
 
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
   const toolCalls = useMemo<ToolCall[]>(() => {
@@ -110,17 +109,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
-  const resultSummary = useMemo(() => {
-    if (toolCalls.length === 0) return null;
-    if (toolCalls.length > 1) {
-      return summarizeToolGroupResults(toolCalls);
-    }
-    const summaries = toolCalls
-      .map((toolCall) => summarizeTool(toolCall))
-      .filter((summary): summary is string => Boolean(summary));
-    if (summaries.length === 0) return null;
-    return summaries[0];
-  }, [toolCalls]);
+  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls), [toolCalls]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
@@ -179,8 +168,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      <LoopDecisionRow decision={loopDecision} />
-
       {expanded && (
         <div className="ml-4 mt-1 space-y-1 border-l border-zinc-800 pl-3">
           {toolCalls.map((tc, i) => (
@@ -198,42 +185,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   messageId: nodes.find((node) => node.toolCall?.id === tc.id)?.messageId || tc.id,
                 }}
               />
-            </div>
-          ))}
-          <FoldedThinking thinkingNodes={thinkingNodes} />
-        </div>
-      )}
-    </div>
-  );
-};
-
-/** 收纳的过渡轮 thinking：组展开时以一个弱化折叠行展示，默认收起 */
-const FoldedThinking: React.FC<{ thinkingNodes?: TraceNode[] }> = ({ thinkingNodes }) => {
-  const [open, setOpen] = useState(false);
-  const contents = useMemo(
-    () => (thinkingNodes ?? [])
-      .map((n) => sanitizeThinkingForDisplay(n.thinking || n.reasoning)?.trim())
-      .filter((t): t is string => Boolean(t)),
-    [thinkingNodes],
-  );
-  if (contents.length === 0) return null;
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-sm py-0.5 text-left text-[11px] text-zinc-600 transition-colors hover:text-zinc-400"
-      >
-        <span className="font-mono">{open ? '▼' : '▶'}</span>
-        <span>思考{contents.length > 1 ? ` ×${contents.length}` : ''}</span>
-      </button>
-      {open && (
-        <div className="ml-4 space-y-2 border-l border-zinc-800/60 pl-3 py-1">
-          {contents.map((text, i) => (
-            <div key={i} className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-500">
-              {text}
             </div>
           ))}
         </div>
@@ -264,6 +215,22 @@ function isReadOrSearchTool(name: string): boolean {
     'LS',
     'list_directory',
   ].includes(name);
+}
+
+/**
+ * 组头摘要（P0 #1 失败去重）：
+ *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
+ *  · 单工具且失败 → null：错误**只**由下方工具 cell 单处渲染（红 glyph + 一行 humanize），
+ *    组头不再重复同一条错误文本（去掉 summarizeTool 对失败返回的错误首行）；
+ *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
+ * 纯函数，便于单测。
+ */
+export function buildToolGroupHeadSummary(toolCalls: ToolCall[]): string | null {
+  if (toolCalls.length === 0) return null;
+  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls);
+  const only = toolCalls[0];
+  if (only.result && only.result.success === false) return null;
+  return summarizeTool(only);
 }
 
 function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
@@ -317,33 +284,3 @@ function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok
   return 'text-emerald-300';
 }
 
-function getLoopDecisionToneClass(tone: ToolLoopDecisionSummary['tone']): string {
-  switch (tone) {
-    case 'neutral':
-      return 'border-white/[0.06] bg-white/[0.02] text-zinc-500';
-    case 'success':
-      return 'border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-300';
-    case 'warning':
-      return 'border-amber-500/15 bg-amber-500/[0.06] text-amber-300';
-    case 'error':
-      return 'border-red-500/15 bg-red-500/[0.06] text-red-300';
-    default:
-      return 'border-sky-500/15 bg-sky-500/[0.06] text-sky-300';
-  }
-}
-
-const LoopDecisionRow: React.FC<{ decision: ToolLoopDecisionSummary | null }> = ({ decision }) => {
-  if (!decision) return null;
-  if (decision.tone === 'success' || decision.tone === 'neutral') return null;
-
-  return (
-    <div className="mt-1 ml-0.5 flex min-w-0 items-center gap-2 rounded-md border border-white/[0.05] bg-white/[0.018] px-2 py-1 text-[11px]">
-      <div className={`inline-flex flex-shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 ${getLoopDecisionToneClass(decision.tone)}`}>
-        <GitBranch className="h-3 w-3" />
-        <span>{decision.action}</span>
-      </div>
-      <span className="min-w-0 flex-1 truncate text-zinc-500">{decision.reason}</span>
-      <span className="hidden max-w-[220px] truncate text-zinc-600 sm:block">{decision.expectedNextAction}</span>
-    </div>
-  );
-};

@@ -76,7 +76,7 @@ const ARTIFACT_REPAIR_VALIDATION_CONTEXT_PATTERN =
 // from latching onto a mid-token slash — e.g. matching `/foo.html` inside the
 // bare relative path `games/foo.html`, which seeded the guard with a wrong path.
 const ARTIFACT_TARGET_FILE_PATTERN =
-  /(?:(?:target file|目标文件)\s*:\s*((?:(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?|[A-Za-z0-9_.@-]+(?:\/[A-Za-z0-9_.@-]+)*)\.html?)|((?<![A-Za-z0-9_.@/~-])(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?\.html?))(?=$|[\s"'`<>),;.，。])/gi;
+  /(?:(?:target file|目标文件)\s*:\s*((?:(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?|[A-Za-z0-9_.@-]+(?:\/[A-Za-z0-9_.@-]+)*)\.html?)|((?<![A-Za-z0-9_.@/~:-])(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?\.html?))(?=$|[\s"'`<>),;.，。])/gi;
 
 const RUNTIME_ARTIFACT_REPAIR_CONTEXT_PATTERN =
   /<artifact[-_\s]*(?:repair|validation)|artifact validation failed|game artifact validation failed|artifact repair mode is active/i;
@@ -108,7 +108,11 @@ function extractArtifactRepairTargetFromText(ctx: RuntimeContext, text: string):
   ARTIFACT_TARGET_FILE_PATTERN.lastIndex = 0;
   const matches = [...text.matchAll(ARTIFACT_TARGET_FILE_PATTERN)]
     .map((match) => normalizeCandidatePath(match[1] || match[2] || ''))
-    .filter(Boolean);
+    .filter(Boolean)
+    // 防御：网搜结果里的 URL（`https://host/x.html` 或带空格的 `: //host/x.html`）
+    // 不是本地工件，绝不能当 repair 目标——否则 guard 锁死一个写不进去的 phantom
+    // 路径，后续每个工具都被闸拦（2026-06-25 dogfood：CSDN 链接导致无限死锁）。
+    .filter((candidate) => !candidate.startsWith('//') && !candidate.includes('://'));
 
   if (matches.length === 0) {
     return null;

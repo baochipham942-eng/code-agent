@@ -171,6 +171,11 @@ export interface RuntimeContext {
     // Route A loop guard: repair turns since the last successful target-file
     // mutation. Reaching ARTIFACT_REPAIR_MAX_ATTEMPTS force-stops the repair turn.
     repairTurnsWithoutProgress?: number;
+    // Route A block-path loop guard：可用但被 repair 闸 block 的工具连续无进展次数。
+    // 独立于 repairTurnsWithoutProgress（后者每回合被 messageProcessor 无条件清零，
+    // 无法兜住"目标不可达→每个工具都被 block"的死锁）。仅 block 路径累加、目标文件被
+    // 成功改动(patched)时清零，到 ARTIFACT_REPAIR_MAX_ATTEMPTS 硬停。
+    blockedToolTurnsWithoutProgress?: number;
     lastBlockedTool?: string;
     patched?: boolean;
     lastFailedPatchFingerprint?: string;

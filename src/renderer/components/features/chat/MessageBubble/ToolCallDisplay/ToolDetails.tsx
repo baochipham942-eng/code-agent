@@ -52,6 +52,46 @@ function stripAnsiCodes(str: string): string {
   return str.replace(ANSI_SEQUENCE_PATTERN, '');
 }
 
+// 展开后正文行级硬 cap（P0 #1c）：非用户工具默认只露 5 行，shell 命令输出常合理偏长
+// 给 50 行，超出给「展开」。避免未识别错误/长输出把详情撑成一面墙（即便已默认折叠，
+// 用户点开后也不该被 300+ 字符的原始 JSON/ANSI 糊脸）。
+const RESULT_BODY_LINE_CAP = 5;
+const SHELL_RESULT_BODY_LINE_CAP = 50;
+
+function isShellTool(name: string): boolean {
+  return name === 'Bash' || name === 'bash';
+}
+
+function CappedResultBody({
+  text,
+  lineCap,
+  className,
+}: {
+  text: string;
+  lineCap: number;
+  className: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const allLines = text.split('\n');
+  const overflow = allLines.length - lineCap;
+  const display = overflow > 0 && !showAll ? allLines.slice(0, lineCap).join('\n') : text;
+
+  return (
+    <>
+      <pre className={className}>{display}</pre>
+      {overflow > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-1 block text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+        >
+          {showAll ? '收起' : `展开剩余 ${overflow} 行`}
+        </button>
+      )}
+    </>
+  );
+}
+
 interface Props {
   toolCall: ToolCall;
   compact?: boolean;
@@ -263,21 +303,23 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   )}
                 </div>
               ) : (
-                <pre
+                <CappedResultBody
+                  text={
+                    safeBrowserComputerResult
+                      ? stripAnsiCodes(safeBrowserComputerResult)
+                      : result.error
+                        ? stripAnsiCodes(result.error)
+                        : typeof result.output === 'string'
+                          ? stripAnsiCodes(result.output)
+                          : JSON.stringify(result.output, null, 2)
+                  }
+                  lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}
                   className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                     result.success
                       ? 'text-gray-400 border-gray-800/50'
                       : 'text-red-300 border-red-500/20'
                   }`}
-                >
-                  {safeBrowserComputerResult
-                    ? stripAnsiCodes(safeBrowserComputerResult)
-                    : result.error
-                      ? stripAnsiCodes(result.error)
-                      : typeof result.output === 'string'
-                        ? stripAnsiCodes(result.output)
-                        : JSON.stringify(result.output, null, 2)}
-                </pre>
+                />
               )}
             </>
           )}

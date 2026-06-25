@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract/tool';
 import {
+  deriveApiErrorBanner,
   formatToolDuration,
   getToolCapabilitySource,
   getToolPermissionView,
@@ -9,6 +10,25 @@ import {
   isAutoLoadedRetry,
   summarizeToolLoopDecision,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
+import type { TraceTurn } from '../../../src/shared/contract/trace';
+
+function makeTurn(
+  toolCalls: Array<{ name: string; success?: boolean; result?: string; recovered?: boolean }>,
+): TraceTurn {
+  return {
+    turnNumber: 1,
+    turnId: 'turn-1',
+    status: 'completed',
+    startTime: 0,
+    nodes: toolCalls.map((tc, i) => ({
+      id: `node-${i}`,
+      type: 'tool_call',
+      content: '',
+      timestamp: i,
+      toolCall: { id: `tc-${i}`, name: tc.name, args: {}, success: tc.success, result: tc.result, recovered: tc.recovered },
+    })),
+  };
+}
 
 function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): ToolCall {
   return {
@@ -145,9 +165,116 @@ describe('toolExecutionPresentation', () => {
     expect(humanized?.summary).toContain('tavily');
   });
 
+  it('search-source quota 也带 kind/escalate（供 banner 升级）', () => {
+    const humanized = humanizeToolError('perplexity: insufficient_quota, exceeded your current quota', 'WebSearch');
+    expect(humanized?.kind).toBe('quota');
+    expect(humanized?.escalate).toBe(true);
+  });
+
+  it('识别 HTTP 429 限流', () => {
+    const h = humanizeToolError('Error: HTTP 429 Too Many Requests', 'WebFetch');
+    expect(h).not.toBeNull();
+    expect(h?.kind).toBe('rate_limit');
+    expect(h?.summary).toMatch(/限流|频繁/);
+    expect(h?.action).toBe('retry');
+    expect(h?.escalate).toBe(true);
+  });
+
+  it('识别 401/403 鉴权失败（与 quota 区分：纯鉴权不含额度词）', () => {
+    const h = humanizeToolError('401 Unauthorized: invalid api key', 'WebSearch');
+    expect(h?.kind).toBe('auth');
+    expect(h?.settingsHint).toBe(true);
+    expect(h?.summary).toMatch(/鉴权|API Key|无权限|授权/);
+    expect(h?.action).toBe('settings');
+    expect(h?.escalate).toBe(true);
+  });
+
+  it('识别超时', () => {
+    const h = humanizeToolError('Request timed out after 90000ms', 'Bash');
+    expect(h?.kind).toBe('timeout');
+    expect(h?.summary).toMatch(/超时/);
+    expect(h?.action).toBe('retry');
+  });
+
+  it('识别 503/过载', () => {
+    const h = humanizeToolError('503 Service Unavailable: model is overloaded', 'WebFetch');
+    expect(h?.kind).toBe('overloaded');
+    expect(h?.summary).toMatch(/过载|繁忙|稍后/);
+    expect(h?.action).toBe('retry');
+  });
+
+  it('识别网络异常', () => {
+    const h = humanizeToolError('fetch failed: ECONNRESET', 'WebFetch');
+    expect(h?.kind).toBe('network');
+    expect(h?.summary).toMatch(/网络/);
+    expect(h?.action).toBe('retry');
+  });
+
+  it('识别余额不足（402/欠费）', () => {
+    const h = humanizeToolError('402 Payment Required: insufficient balance 余额不足', 'image_generate');
+    expect(h?.kind).toBe('quota');
+    expect(h?.summary).toMatch(/余额|额度/);
+    expect(h?.escalate).toBe(true);
+  });
+
   it('returns null for unrecognized errors so raw output is preserved', () => {
     expect(humanizeToolError('TypeError: cannot read property foo of undefined')).toBeNull();
     expect(humanizeToolError('')).toBeNull();
     expect(humanizeToolError(undefined)).toBeNull();
+  });
+});
+
+describe('deriveApiErrorBanner (P0 #3 全局 banner 升级)', () => {
+  it('额度/余额错误升级成 banner', () => {
+    const banner = deriveApiErrorBanner([
+      makeTurn([{ name: 'web_search', success: false, result: 'HTTP 402: insufficient_quota' }]),
+    ]);
+    expect(banner).toMatchObject({ kind: 'quota', action: 'settings' });
+    expect(banner?.summary).toContain('额度');
+  });
+
+  it('429 限流升级成 banner（action=retry）', () => {
+    const banner = deriveApiErrorBanner([
+      makeTurn([{ name: 'web_search', success: false, result: 'Error 429: too many requests' }]),
+    ]);
+    expect(banner).toMatchObject({ kind: 'rate_limit', action: 'retry' });
+  });
+
+  it('已恢复(recovered)的失败不升级', () => {
+    expect(
+      deriveApiErrorBanner([
+        makeTurn([{ name: 'web_search', success: false, result: '429 rate limit', recovered: true }]),
+      ]),
+    ).toBeNull();
+  });
+
+  it('瞬态错误(超时/网络)不升 banner', () => {
+    expect(
+      deriveApiErrorBanner([makeTurn([{ name: 'Bash', success: false, result: 'request timed out' }])]),
+    ).toBeNull();
+  });
+
+  it('成功工具 / 无错误不升 banner', () => {
+    expect(deriveApiErrorBanner([makeTurn([{ name: 'Read', success: true, result: 'ok' }])])).toBeNull();
+    expect(deriveApiErrorBanner([])).toBeNull();
+    expect(deriveApiErrorBanner(null)).toBeNull();
+  });
+
+  it('只看最后一轮：早前轮的额度错误不挂在新一轮上', () => {
+    const banner = deriveApiErrorBanner([
+      makeTurn([{ name: 'web_search', success: false, result: 'insufficient_quota' }]),
+      makeTurn([{ name: 'Read', success: true, result: 'ok' }]),
+    ]);
+    expect(banner).toBeNull();
+  });
+
+  it('取最后一轮里最新一条 escalate 错误', () => {
+    const banner = deriveApiErrorBanner([
+      makeTurn([
+        { name: 'web_search', success: false, result: 'insufficient_quota' },
+        { name: 'web_search', success: false, result: '429 too many requests' },
+      ]),
+    ]);
+    expect(banner?.kind).toBe('rate_limit');
   });
 });

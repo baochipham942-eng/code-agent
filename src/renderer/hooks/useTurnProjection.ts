@@ -398,6 +398,16 @@ export function projectTurns(
         const hasNonEmptyPartText = contentParts.some((part) => (
           part.type === 'text' && part.text.trim().length > 0
         ));
+        const hasAnyTextPart = contentParts.some((part) => part.type === 'text');
+
+        // 思考先于工具：纯工具调用消息（content_parts 无任何 text part）若带 reasoning，
+        // 必须在工具节点之前放一个空正文节点承载 ▶思考——否则会被尾随到工具行之后，
+        // 渲染成"搜索完成"排在"第一轮思考"前面（顺序明显错误）。有 text part 时由下方
+        // 循环的首个文本节点携带 reasoning（同样在工具之前），无需在此预放。
+        if (hasReasoning && !hasAnyTextPart) {
+          pushAssistantTextNode('');
+          textIndex += 1;
+        }
 
         for (const part of contentParts) {
           if (part.type === 'text') {
@@ -420,9 +430,11 @@ export function projectTurns(
           if (!referencedToolCallIds.has(tc.id)) pushToolCallNode(tc);
         }
 
-        if (textIndex === 0 && (hasContent || hasReasoning)) {
-          pushAssistantTextNode(msg.content);
-        }
+        // content_parts 是权威交错顺序。走到这里若仍 textIndex===0，说明 parts 里没有
+        // 任何 text part：不能把内存里残留的 msg.content 当尾随正文追加到工具行之后——
+        // 流式期模型先吐的 preamble（如"使用Write工具来创建文件"）被服务端精简成纯工具
+        // 调用后，content 仍残留在内存（落库为空），尾随渲染会让它悬在工具行下方、刷新即
+        // 消失。reasoning 已在循环前以「思考先于工具」的顺序放置，这里不再补任何节点。
         continue;
       }
 

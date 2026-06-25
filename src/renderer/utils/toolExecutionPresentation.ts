@@ -1,5 +1,5 @@
 import type { ToolCall } from '@shared/contract';
-import type { TraceNode } from '@shared/contract/trace';
+import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import type { ToolStatus } from '../components/features/chat/MessageBubble/ToolCallDisplay/styles';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 
@@ -92,6 +92,19 @@ export function formatToolDuration(duration?: number): string | null {
   return `${minutes}m ${rest}s`;
 }
 
+/** 工具错误类别（驱动 banner 升级 + 操作按钮决策，P0 失败去噪）。 */
+export type ToolErrorKind =
+  | 'quota'        // 额度/余额/欠费耗尽
+  | 'rate_limit'   // 429 限流
+  | 'auth'         // 401/403 鉴权
+  | 'overloaded'   // 502/503/504 过载或网关
+  | 'timeout'      // 超时
+  | 'network'      // 网络连接异常
+  | 'auto_loaded'; // 工具自动加载重试（benign）
+
+/** 建议的主操作（驱动「重试 / 去设置」按钮）。 */
+export type ToolErrorAction = 'retry' | 'settings';
+
 export interface HumanizedToolError {
   /** 一行人话摘要，替代满屏原始报错 */
   summary: string;
@@ -99,33 +112,145 @@ export interface HumanizedToolError {
   detail?: string;
   /** 是否提示去「设置 > Service API Keys」换 key */
   settingsHint?: boolean;
+  /** 错误类别（供 banner 升级 / 按钮决策） */
+  kind?: ToolErrorKind;
+  /** 建议的主操作 */
+  action?: ToolErrorAction;
+  /** 是否应升级成全局 banner（API/额度类致命错误，不挂在单个工具 cell 下，P0 #3） */
+  escalate?: boolean;
 }
 
 /**
  * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
- * 目标：报错说人话、可操作，而不是把 HTTP 401/402/432 + JSON 糊用户一脸。
+ * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
+ *
+ * 判别顺序有意为之：**额度/余额排最前**——上游常把额度错误裹成「HTTP 401: insufficient_quota」，
+ * 若 auth(401) 在前会误判成鉴权。auth 不收 `permission denied`（避免误伤 Bash 文件权限错误）。
  */
 export function humanizeToolError(error?: string, _toolName?: string): HumanizedToolError | null {
   if (!error?.trim()) return null;
   const lower = error.toLowerCase();
 
-  // 搜索源额度/计费类（perplexity quota、exa credits、tavily usage limit 等）
-  if (/quota|insufficient_quota|no_more_credits|credits?\b|usage limit|billing|exceeded your/i.test(error)) {
+  // 1. 额度/余额/欠费（最先）：搜索源 quota、exa credits、insufficient balance、402、欠费等
+  if (/quota|insufficient_quota|no_more_credits|credits?\b|usage limit|billing|exceeded your|insufficient[_ ]?balance|余额不足|欠费|arrearage|payment required|\b402\b/i.test(error)) {
     const sources = ['perplexity', 'exa', 'tavily', 'brave', 'serper', 'bing', 'openai']
       .filter((s) => lower.includes(s));
-    const srcLabel = sources.length ? sources.join(' / ') : '部分搜索源';
+    if (sources.length) {
+      return {
+        summary: `联网搜索额度不足：${sources.join(' / ')} 的 API 套餐用量已耗尽`,
+        detail: '要恢复这些源请充值，或换一个还有额度的 key。',
+        settingsHint: true,
+        kind: 'quota',
+        action: 'settings',
+        escalate: true,
+      };
+    }
     return {
-      summary: `联网搜索额度不足：${srcLabel} 的 API 套餐用量已耗尽`,
-      detail: '要恢复这些源请充值，或换一个还有额度的 key。',
+      summary: '额度/余额不足：当前服务的用量或余额已耗尽',
+      detail: '请充值，或在设置里换一个还有额度的 key。',
       settingsHint: true,
+      kind: 'quota',
+      action: 'settings',
+      escalate: true,
     };
   }
 
-  // 工具自动加载重试（villain 修复后一般不会走到这，留作防御）
-  if (lower.includes('auto-loaded')) {
-    return { summary: '工具已自动加载，正在用正确参数重试' };
+  // 2. 限流 429
+  if (/\b429\b|too many requests|rate.?limit|requests per minute|rate exceeded/i.test(error)) {
+    return {
+      summary: '请求过于频繁，被限流',
+      detail: '稍等片刻会自动重试；如持续可降低并发或稍后再试。',
+      kind: 'rate_limit',
+      action: 'retry',
+      escalate: true,
+    };
   }
 
+  // 3. 鉴权 401/403（不收 permission denied，避免误伤 shell/文件权限错误）
+  if (/\b401\b|\b403\b|unauthorized|forbidden|invalid[_ ]?api[_ ]?key|invalid token|authentication failed|authentication error/i.test(error)) {
+    return {
+      summary: '鉴权失败：API Key 无效或无权限',
+      detail: '去「设置 > Service API Keys」检查对应服务的 Key。',
+      settingsHint: true,
+      kind: 'auth',
+      action: 'settings',
+      escalate: true,
+    };
+  }
+
+  // 4. 过载 / 网关（含 504 gateway timeout，排在超时前）
+  if (/\b50[234]\b|overloaded|capacity|service unavailable|bad gateway|gateway timeout|server is busy|temporarily unavailable/i.test(error)) {
+    return {
+      summary: '服务过载或暂时不可用',
+      detail: '稍后会自动重试。',
+      kind: 'overloaded',
+      action: 'retry',
+    };
+  }
+
+  // 5. 超时
+  if (/timeout|timed out|etimedout|inactivity timeout|deadline exceeded/i.test(error)) {
+    return {
+      summary: '请求超时',
+      detail: '稍后重试，或检查网络 / 代理。',
+      kind: 'timeout',
+      action: 'retry',
+    };
+  }
+
+  // 6. 网络连接异常
+  if (/econnreset|econnrefused|enotfound|eai_again|socket hang up|socket disconnected|network error|network request failed|fetch failed/i.test(error)) {
+    return {
+      summary: '网络异常，连接失败',
+      detail: '检查网络或代理后重试。',
+      kind: 'network',
+      action: 'retry',
+    };
+  }
+
+  // 7. 工具自动加载重试（villain 修复后一般不会走到这，留作防御）
+  if (lower.includes('auto-loaded')) {
+    return { summary: '工具已自动加载，正在用正确参数重试', kind: 'auto_loaded' };
+  }
+
+  return null;
+}
+
+/** API/额度类错误升级成全局 banner 的数据（P0 #3）。 */
+export interface ApiErrorBannerData {
+  summary: string;
+  detail?: string;
+  kind: ToolErrorKind;
+  action?: ToolErrorAction;
+}
+
+/**
+ * 从最近一轮的工具节点派生需要升级成全局 banner 的 API/额度错误（P0 #3）。
+ * 设计取舍：
+ * - **只看最后一轮**——新一轮（用户发新消息）开始即自然清空，错误不会无限挂着；
+ * - 已被恢复（recovered，同轮后续重试成功）的失败不再报；
+ * - 只升级 humanize 标了 escalate 的类别（额度/限流/鉴权这类需用户介入或阻塞进度的），
+ *   过载/超时/网络等瞬态可自动重试的不升 banner，避免打扰。
+ * 取最后一轮里**最新**一条未恢复的 escalate 错误。
+ */
+export function deriveApiErrorBanner(
+  turns: readonly TraceTurn[] | null | undefined,
+): ApiErrorBannerData | null {
+  if (!turns || turns.length === 0) return null;
+  const lastTurn = turns[turns.length - 1];
+  for (let i = lastTurn.nodes.length - 1; i >= 0; i -= 1) {
+    const toolCall = lastTurn.nodes[i].toolCall;
+    if (!toolCall || toolCall.success !== false || toolCall.recovered) continue;
+    const humanized = humanizeToolError(toolCall.result, toolCall.name);
+    if (humanized?.escalate && humanized.kind) {
+      return {
+        summary: humanized.summary,
+        detail: humanized.detail,
+        kind: humanized.kind,
+        action: humanized.action,
+      };
+    }
+  }
   return null;
 }
 

@@ -93,6 +93,75 @@ describe('projectTurns', () => {
     expect(assistantNode?.modelDecision?.resolvedModel).toBe('glm-4.5-flash');
   });
 
+  it('drops stale preamble content when contentParts are authoritative tool-only (no trailing text below tool)', () => {
+    // 实时态：模型先吐 preamble 文本"使用Write工具来创建文件"，随后该消息被精简成
+    // 纯工具调用（content_parts 只剩 tool_call，无 text part），但内存里旧 content 仍残留。
+    // 不应把残留 content 作为尾随 assistant_text 节点追加到工具行之后。
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: '建个文件', timestamp: 100 },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '使用Write工具来创建文件', // 残留 preamble（服务端已丢弃，落库 content 为空）
+        timestamp: 150,
+        toolCalls: [{ id: 'call_1', name: 'Write', arguments: { path: 'a.txt' } }],
+        contentParts: [{ type: 'tool_call', toolCallId: 'call_1' }],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const types = projection.turns[0].nodes.map((node) => node.type);
+    expect(types).toEqual(['user', 'tool_call']);
+    expect(types).not.toContain('assistant_text');
+  });
+
+  it('renders thinking BEFORE the tool node for a tool-only message (思考先于工具)', () => {
+    // 纯工具调用消息(content_parts 仅 tool_call、无 text part)带 reasoning 时，
+    // ▶思考 必须排在工具节点之前——否则"搜索完成"会显示在"第一轮思考"前面（顺序错）。
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: '搜一下', timestamp: 100 },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 150,
+        thinking: '我应该先联网搜索再总结。',
+        toolCalls: [{ id: 'call_1', name: 'web_search', arguments: { query: 'x' } }],
+        contentParts: [{ type: 'tool_call', toolCallId: 'call_1' }],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const types = projection.turns[0].nodes.map((node) => node.type);
+    expect(types).toEqual(['user', 'assistant_text', 'tool_call']);
+    // 承载思考的合成节点保持稳定 id，供流式叠加层就地更新。
+    const thinkingNode = projection.turns[0].nodes.find((n) => n.type === 'assistant_text');
+    expect(thinkingNode?.id).toBe('assistant-1-text');
+    expect(thinkingNode?.thinking).toBe('我应该先联网搜索再总结。');
+  });
+
+  it('still renders in-band text when contentParts include a text part', () => {
+    // 对照：content_parts 有真实 text part 时，正文必须照常按交错顺序渲染。
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: '建个文件', timestamp: 100 },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '我来创建文件',
+        timestamp: 150,
+        toolCalls: [{ id: 'call_1', name: 'Write', arguments: { path: 'a.txt' } }],
+        contentParts: [
+          { type: 'text', text: '我来创建文件' },
+          { type: 'tool_call', toolCallId: 'call_1' },
+        ],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const types = projection.turns[0].nodes.map((node) => node.type);
+    expect(types).toEqual(['user', 'assistant_text', 'tool_call']);
+  });
+
   it('deduplicates identical model decisions but keeps changed strategy diagnostics', () => {
     const baseDecision = {
       requestedProvider: 'claude_code',

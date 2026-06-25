@@ -84,7 +84,7 @@ export function buildStepLabel(toolNames: string[]): string {
 
 export type DisplayNode =
   | { kind: 'node'; node: TraceNode }
-  | { kind: 'tool_group'; tools: TraceNode[]; key: string; thinkingNodes?: TraceNode[] };
+  | { kind: 'tool_group'; tools: TraceNode[]; key: string };
 
 /**
  * 最小聚合阈值：1 = 所有非 Edit/Write 工具都包成 tool_group，基础态就是 inline 灰字一行
@@ -104,24 +104,6 @@ function isDiffOwnedToolNode(node: TraceNode): boolean {
 }
 
 /**
- * 过渡轮节点：无正文、纯 thinking 的 assistant 消息（Think 模式每轮工具调用前都会产生）。
- * 不打断工具聚合，被吸收进所在 tool_group 由 ToolStepGroup 弱化展示。
- * 带 modelDecision（路由 chip）/ 附件 / 产物的节点不算过渡轮，保持独立行。
- */
-function isTransitionThinkingNode(node: TraceNode): boolean {
-  return (
-    node.type === 'assistant_text' &&
-    !node.content?.trim() &&
-    Boolean((node.thinking || node.reasoning)?.trim()) &&
-    !node.modelDecision &&
-    !node.attachments?.length &&
-    !node.artifacts?.length &&
-    !node.subtype &&
-    !node.turnTimeline
-  );
-}
-
-/**
  * hoisted 时间线节点（hook/skill 横幅）：TurnCard 把它们吊到 turn 顶部固定槽渲染，
  * 节点流位置上渲染为 null —— 不应打断工具聚合（否则流式期间组被反复拆开导致跳动）。
  */
@@ -132,41 +114,32 @@ function isHoistedTimelineNode(node: TraceNode): boolean {
 
 /**
  * 按相邻关系把 turn.nodes 分组：相邻的"非 diff-owned"工具调用合并成 tool_group
- * （过渡轮 thinking 和 hoisted 时间线节点不打断聚合），
- * 其他节点（user / assistant_text / system / Edit+Write 工具）原样保留
+ * （hoisted 时间线节点不打断聚合），
+ * 其他节点（user / assistant_text 含纯思考 / system / Edit+Write 工具）按时序原样保留
  */
 export function groupAdjacentToolCalls(nodes: TraceNode[]): DisplayNode[] {
   const result: DisplayNode[] = [];
   let buffer: TraceNode[] = [];
-  let bufferThinking: TraceNode[] = [];
 
   const flush = () => {
     if (buffer.length === 0) {
-      // 没有工具可挂载时，吸收的 thinking 退回独立行（不丢内容）
-      for (const n of bufferThinking) result.push({ kind: 'node', node: n });
-      bufferThinking = [];
       return;
     }
     if (buffer.length < MIN_GROUP_SIZE) {
       for (const n of buffer) result.push({ kind: 'node', node: n });
-      for (const n of bufferThinking) result.push({ kind: 'node', node: n });
     } else {
       result.push({
         kind: 'tool_group',
         tools: buffer,
         key: `tool-group-${buffer[0].id}`,
-        ...(bufferThinking.length > 0 ? { thinkingNodes: bufferThinking } : {}),
       });
     }
     buffer = [];
-    bufferThinking = [];
   };
 
   for (const node of nodes) {
     if (node.type === 'tool_call' && node.toolCall && !isDiffOwnedToolNode(node)) {
       buffer.push(node);
-    } else if (buffer.length > 0 && isTransitionThinkingNode(node)) {
-      bufferThinking.push(node);
     } else if (isHoistedTimelineNode(node)) {
       // 顶部固定槽已渲染，这里保持原样输出（TurnCard 渲染为 null），但不打断聚合
       result.push({ kind: 'node', node });

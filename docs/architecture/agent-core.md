@@ -553,6 +553,16 @@ env block 在新 session 注入当前 git 状态，让"继续昨天的活"无需
 
 关键文件：`src/main/utils/toolResultSpill.ts`，常量 `TOOL_RESULT_SPILL`（`src/shared/constants.ts`）。
 
+### 工具结果归档 + 自动回水（spill 演进，2026-06-24）
+
+GAP-009 的"落盘后截断"进一步升级为**可寻址归档 + 按需回水**，让被预算裁掉的大工具结果既不占上下文、又能零成本找回原文：
+
+- **归档引用（ArchiveRef）**：超预算的工具结果落盘时生成稳定句柄 `tool_result:<session>:<tool>:<…>:<hash12>`，挂在 `CompressionState` 的 `budgetedResults` 上（`compressionState.ts` / `layers/toolResultBudget.ts`），并随 survivor manifest 一起带过压缩边界（`survivorManifest.ts`），压缩后下一轮仍能定位原文。
+- **回读工具 `read_tool_result_archive`**：agent 可用 ArchiveRef 分页读归档原文（`offset`/`limit`，默认 1/2000、上限 5000 行，行号对齐 Read 格式），结果走 `createVirtualArtifact` 落虚拟产物、不二次膨胀上下文。文件：`src/main/tools/modules/file/toolResultArchive.ts`(+`.schema.ts`)，经 `tools/modules/index.ts` 注册，MCP 侧在 `mcpToolRegistry.ts` 暴露。
+- **自动回水（archiveHydration）**：组装下一轮上下文时，若最近一条用户消息在要原始证据（"完整输出 / 原始结果 / raw evidence / full output"等模式）或直接引用了某个 archive id，则把对应归档内容**自动注回**上下文（上限 `MAX_AUTO_HYDRATE_CHARS`=24K），agent 无需显式调工具即可拿到原文。文件：`src/main/agent/runtime/contextAssembly/archiveHydration.ts`，接入 `compression.ts` / `messageBuild.ts` / `context/compactionService.ts`。
+
+相比纯 spill（只留路径提示、靠 Read/Grep 回查），归档把"哪段结果、属于哪个工具调用、内容指纹"结构化，并在用户明确要原文时自动补回，省一轮工具往返。归档读写入口：`src/main/utils/toolResultSpill.ts` 的 `findToolResultArchiveRef` / `readToolResultArchive`。
+
 ### System prompt 预算动态化 + 块优先级（GAP-023，PR #196）
 
 原 system prompt 预算是固定 6000 tokens，重记忆 / 大窗口模型下会把能力发现块挤掉。本轮改为三件事：

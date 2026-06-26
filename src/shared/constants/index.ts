@@ -31,3 +31,4 @@ export * from './almaRecommendationPolicy';
 export * from './almaRegistryAudit';
 export * from './engineCompat';
 export * from './autonomy';
+export * from './previewHealth';

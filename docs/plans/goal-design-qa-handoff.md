@@ -40,7 +40,7 @@
 
 ## 阶段 1 - Artifact QA 确定性检测层
 
-状态：待办
+状态：已验
 
 交付物：
 
@@ -58,7 +58,10 @@
 
 验收证据：
 
-- 待补。
+- `npx vitest run tests/unit/agent/runtime/browser/artifactPreviewHealth.test.ts`：1 file / 3 tests passed。
+- `CODE_AGENT_BROWSER_PROVIDER=playwright-bundled npx tsx scripts/acceptance/artifact-preview-health-dogfood.ts`：坏页抓到 `blank_body_text`、`broken_image`、`missing_main_element`、`horizontal_overflow`、`console_error`、`responsive_breakpoint_failure`，好页 `findingCount=0`。
+- `npm run typecheck`：通过。
+- 结论：确定性层已覆盖空白、溢出、console error、断图、主元素缺失、多视口响应式断裂；本阶段没有使用 vision，也没有触碰 `artifactRepairGuard`。
 
 ## 阶段 2 - Artifact QA vision 判断层
 

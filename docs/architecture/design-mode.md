@@ -150,6 +150,7 @@ DesignCanvas.tsx 把交互与渲染拆成可测小模块，并补齐基础画布
 - **批量删除节点**（`canvasDeleteKeybinding.ts` 的 `shouldHandleCanvasDelete` / `dispatchCanvasDeleteKey` + store `deleteNodes`）：Delete/Backspace 删当前多选，编辑框/输入态不误触；删除级联剪掉指向被删节点的悬空连线（`pruneDanglingConnectors`），整批一次快照（一次 undo 撤完）。
 - **图层面板**（`DesignLayerPanel.tsx`）：列出节点（淘汰项沉底 + discarded 徽标），支持选中 / 定位（focus）/ 重命名 / 设主版（setChosen）/ 淘汰（discard）/ 硬删（delete），与画布选择双向同步。
 - **节点渲染与落点抽离**：图/视频节点 Konva 渲染抽到 `DesignCanvasNodes.tsx`；落点策略收敛到 `canvasPlacement.ts`（`CanvasPlacementOperation` 区分 variant / expand / removeWatermark 等），出图 / 扩图 / 去水印共用同一放置入口。
+- **浮层/编辑面板再抽离（2026-06-27 god-file 拆分，DesignCanvas 1142→887 eff）**：视频播放 / diff 证据 / 标注重绘模型下拉三个子组件抽到 `DesignCanvasOverlays.tsx`；选中图编辑面板（圈选重绘 / 导出图片·PDF / 图生视频 / 扩图去水印 / 标注重绘）抽到 `DesignImageEditPanel.tsx`，回调由 DesignCanvas 预绑 `selectedImageNode` 传入，保持纯展示。纯结构抽取，渲染零变化。
 
 ---
 

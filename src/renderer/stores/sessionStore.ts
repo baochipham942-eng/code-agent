@@ -9,6 +9,7 @@ import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionR
 import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
+import { sessionsSignature } from '../utils/sessionListSignature';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
@@ -228,7 +229,7 @@ interface SessionState {
 }
 
 interface SessionActions {
-  loadSessions: () => Promise<void>;
+  loadSessions: (options?: { silent?: boolean }) => Promise<void>;
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   switchSession: (sessionId: string) => Promise<void>;
   refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
@@ -281,9 +282,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     isLoadingOlder: false,
     sessionDesignBriefs: new Map<string, DesignBrief>(),
 
-    loadSessions: async () => {
+    loadSessions: async (options) => {
+      // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
+      const silent = options?.silent ?? false;
       const { filter } = useSessionUIStore.getState();
-      set({ isLoading: true, error: null });
+      if (!silent) set({ isLoading: true, error: null });
       try {
         const includeArchived = filter === 'archived' || filter === 'all';
         const sessions = await invokeSession<Session[]>('list', { includeArchived });
@@ -292,10 +295,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           normalizeSession(session as Session & { messageCount?: number; turnCount?: number })
         );
 
-        if (filter === 'active') {
-          sessionsWithMeta = sessionsWithMeta.filter(s => !s.isArchived);
-        } else if (filter === 'archived') {
-          sessionsWithMeta = sessionsWithMeta.filter(s => s.isArchived);
+        if (filter === 'active' || filter === 'archived') {
+          sessionsWithMeta = sessionsWithMeta.filter(s => filter === 'archived' ? s.isArchived : !s.isArchived);
+        }
+
+        // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
+        if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
+          if (!silent) set({ isLoading: false });
+          return;
         }
 
         set({ sessions: sessionsWithMeta, isLoading: false });
@@ -1092,7 +1099,7 @@ export async function initializeSessionStore(): Promise<void> {
   });
 
   ipcService.on(IPC_CHANNELS.SESSION_LIST_UPDATED, () => {
-    useSessionStore.getState().loadSessions();
+    void useSessionStore.getState().loadSessions({ silent: true }); // 签名去重消除刷新闪烁
   });
 
   ipcService.on(IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED, (event: { dir: string | null }) => {

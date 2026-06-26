@@ -38,3 +38,10 @@ export const ARTIFACT_PREVIEW_VISION = {
 
 export type ArtifactPreviewVisionFindingCode =
   (typeof ARTIFACT_PREVIEW_VISION.SUBJECTIVE_FINDING_CODES)[number];
+
+export const DESIGN_PREVIEW_REPAIR = {
+  VERSION: 1,
+  MAX_ATTEMPTS: 2,
+  MAX_FINDINGS: 16,
+  MAX_PROMPT_CHARS: 10_000,
+} as const;

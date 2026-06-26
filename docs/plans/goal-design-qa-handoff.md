@@ -137,7 +137,7 @@
 
 ## 阶段 5 - Artifact 自动 repair
 
-状态：待办
+状态：已验
 
 交付物：
 
@@ -154,7 +154,11 @@
 
 验收证据：
 
-- 待补。
+- `npx vitest run tests/unit/agent/runtime/browser/artifactPreviewHealth.test.ts tests/unit/agent/runtime/browser/artifactPreviewVision.test.ts tests/unit/agent/runtime/browser/designPreviewRepair.test.ts`：3 files / 10 tests passed。
+- `CODE_AGENT_BROWSER_PROVIDER=playwright-bundled npx tsx scripts/acceptance/design-preview-repair-dogfood.ts`：坏设计初始抓到 `broken_image`、`missing_main_element`、`horizontal_overflow`、`console_error`、`responsive_breakpoint_failure`、`occlusion_issue`、`hierarchy_issue`；repair 1 轮后 `finalFindingCount=0`，selector 点击把 `#state` 更新为 `Confirmed`。
+- `npm run typecheck`：通过。
+- `git diff --check`：通过。
+- 结论：设计 repair 走独立 `designPreviewRepair` ephemeral loop，spec 显式标记 `legacyArtifactRepairGuard=not_used`；没有给旧 `artifactRepairGuard` 扩 design 枚举，也没有把状态持久化进 DB。旧 guard 对 design working dir 的 stale guard 清理行为有回归测试覆盖，未复发 2026-06-25 跨会话 Write 死锁路径。
 
 ## 阶段 6 - Design->Code 桥（B 模型）
 

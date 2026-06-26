@@ -133,6 +133,24 @@ describe('screenshotTool analyze failure handling', () => {
       analysisRequested: true,
       analysis: null,
       cannotObserveScreen: true,
+      browserComputerProof: {
+        evidenceRefs: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'screenshot',
+            source: 'screenshot',
+            freshness: expect.objectContaining({ state: 'fresh' }),
+          }),
+        ]),
+        visualObservation: {
+          observed: false,
+          source: 'none',
+          reason: 'screenshot_analysis_failed',
+          cannotObserveScreen: true,
+        },
+      },
+      browserComputerEvidenceCard: {
+        status: 'not_observed',
+      },
       visionAnalysis: {
         ok: false,
         reason: 'http_error',
@@ -161,6 +179,12 @@ describe('screenshotTool analyze failure handling', () => {
       analysisRequested: true,
       cannotObserveScreen: true,
       tool: 'screenshot',
+      browserComputerProof: {
+        visualObservation: {
+          observed: false,
+          reason: 'screenshot_analysis_failed',
+        },
+      },
     });
     expect(result.meta?.artifact).toMatchObject({
       kind: 'image',
@@ -169,5 +193,40 @@ describe('screenshotTool analyze failure handling', () => {
       mimeType: 'image/png',
       sizeBytes: 8192,
     });
+  });
+
+  it('does not treat a saved screenshot path as visual observation when analyze=false', async () => {
+    const outputPath = '/tmp/work/.screenshots/path-only.png';
+
+    const result = await screenshotTool.execute(
+      { analyze: false, outputPath },
+      makeLegacyCtx(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.metadata).toMatchObject({
+      path: outputPath,
+      analyzed: false,
+      analysisRequested: false,
+      cannotObserveScreen: true,
+      browserComputerProof: {
+        visualObservation: {
+          observed: false,
+          source: 'none',
+          reason: 'screenshot_path_only',
+          cannotObserveScreen: true,
+        },
+      },
+      browserComputerEvidenceCard: {
+        status: 'not_observed',
+      },
+    });
+    expect(result.metadata?.evidenceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'screenshot',
+        freshness: expect.objectContaining({ state: 'fresh' }),
+      }),
+    ]));
+    expect(analyzeImageWithVisionDetailedMock).not.toHaveBeenCalled();
   });
 });

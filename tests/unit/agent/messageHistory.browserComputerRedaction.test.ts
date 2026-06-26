@@ -200,4 +200,73 @@ describe('Browser/Computer history redaction', () => {
     expect(json).not.toContain('storageState');
     expect(json).not.toContain('profileDir');
   });
+
+  it('redacts Browser/Computer EvidenceRef refs before persistence', () => {
+    const typedSecret = 'typed-password-123';
+    const toolCalls: ToolCall[] = [{
+      id: 'tool-1',
+      name: 'browser_action',
+      arguments: {
+        action: 'type',
+        selector: '#password',
+        text: typedSecret,
+      },
+    }];
+    const toolResults: ToolResult[] = [{
+      toolCallId: 'tool-1',
+      success: true,
+      output: `Typed ${typedSecret}`,
+      metadata: {
+        evidenceRefs: [{
+          id: 'evidence-path',
+          kind: 'screenshot',
+          ref: '/Users/linchen/Downloads/ai/code-agent/.screenshots/secret.png',
+          source: 'browserAction.screenshot',
+          freshness: { capturedAtMs: 1, state: 'fresh' },
+          redactionStatus: 'clean',
+        }, {
+          id: 'evidence-storage',
+          kind: 'artifact',
+          ref: '/tmp/storage-state.json',
+          source: 'browserAction.get_account_state',
+          freshness: { capturedAtMs: 1, state: 'read' },
+          redactionStatus: 'clean',
+        }, {
+          id: 'evidence-base64',
+          kind: 'screenshot',
+          ref: 'data:image/png;base64,abcdef',
+          source: 'browserAction.screenshot',
+          freshness: { capturedAtMs: 1, state: 'fresh' },
+          redactionStatus: 'clean',
+        }],
+        browserComputerProof: {
+          evidenceRefs: [{
+            id: 'proof-path',
+            kind: 'screenshot',
+            ref: '/Users/linchen/Desktop/private.png',
+            source: 'screenshot',
+            freshness: { capturedAtMs: 1, state: 'fresh' },
+            redactionStatus: 'clean',
+          }],
+          visualObservation: {
+            observed: false,
+            source: 'none',
+            reason: 'screenshot_path_only',
+          },
+        },
+      },
+    }];
+
+    const sanitized = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
+    const json = JSON.stringify(sanitized);
+
+    expect(json).toContain('.../secret.png');
+    expect(json).toContain('.../storage-state.json');
+    expect(json).toContain('[redacted]');
+    expect(json).toContain('[redacted 18 chars]');
+    expect(json).not.toContain('/Users/linchen');
+    expect(json).not.toContain('/tmp/storage-state.json');
+    expect(json).not.toContain('base64,abcdef');
+    expect(json).not.toContain(typedSecret);
+  });
 });

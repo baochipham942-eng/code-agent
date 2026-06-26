@@ -92,4 +92,51 @@ describe('exportSessionToMarkdown Browser/Computer redaction', () => {
     expect(result.markdown).not.toContain('/Users/linchen');
     expect(result.markdown).toContain('https://example.com/path');
   });
+
+  it('redacts Browser/Computer proof refs in markdown exports', () => {
+    const result = exportSessionToMarkdown({
+      sessionId: 'session-1',
+      startedAt: 1,
+      lastActivityAt: 2,
+      totalTokens: 0,
+      metadata: {
+        evidenceRefs: [{
+          id: 'evidence-path',
+          kind: 'screenshot',
+          ref: '/Users/linchen/Desktop/private.png',
+          source: 'screenshot',
+          freshness: { capturedAtMs: 1, state: 'fresh' },
+          redactionStatus: 'clean',
+        }, {
+          id: 'evidence-base64',
+          kind: 'screenshot',
+          ref: 'data:image/png;base64,abcdef',
+          source: 'screenshot',
+          freshness: { capturedAtMs: 1, state: 'fresh' },
+          redactionStatus: 'clean',
+        }],
+      },
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'Proof test',
+        timestamp: 1,
+        metadata: {
+          toolExecution: {
+            tool: 'screenshot',
+            input: { analyze: false },
+            output: 'Screenshot saved',
+          },
+        },
+      }],
+    }, {
+      includeToolDetails: true,
+      includeMetadata: true,
+      includeTimestamps: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).not.toContain('/Users/linchen');
+    expect(result.markdown).not.toContain('base64,abcdef');
+  });
 });

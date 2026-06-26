@@ -37,6 +37,12 @@ import {
   isSurfaceReadAction,
   withComputerSurfaceMetadata,
 } from './computerUseSurfaceRuntime';
+import {
+  buildBrowserComputerProof,
+  renderBrowserComputerEvidenceCard,
+  type BrowserComputerEvidenceInput,
+  type BrowserComputerVisualObservation,
+} from '../../../shared/utils/browserComputerRedaction';
 
 export { resolveMacOSApplicationAlias };
 
@@ -414,12 +420,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
     const computerSurface = getComputerSurface();
     if (isSurfaceReadAction(action.action)) {
       const result = await executeSurfaceReadAction(computerSurface, action);
-      return appendBrowserWorkbenchNote(result, workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(result, action), workbenchNotes);
     }
 
     const earlySurfaceBlock = buildComputerSurfacePreflightBlockedResult(action, computerSurface);
     if (earlySurfaceBlock) {
-      return appendBrowserWorkbenchNote(earlySurfaceBlock, workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(earlySurfaceBlock, action), workbenchNotes);
     }
 
     const surfaceAuth = isSmartAction(action.action)
@@ -436,7 +442,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       const failureKind = surfaceAuth.failureKind || completedTrace.failureKind || surfaceAuth.state.failureKind || null;
       const blockingReasons = surfaceAuth.blockingReasons || completedTrace.blockingReasons || surfaceAuth.state.blockingReasons;
       const recommendedAction = surfaceAuth.recommendedAction || completedTrace.recommendedAction || surfaceAuth.state.recommendedAction || null;
-      return appendBrowserWorkbenchNote({
+      return appendBrowserWorkbenchNote(withComputerUseProof({
         success: false,
         error: surfaceAuth.reason || 'Computer Surface authorization failed',
         metadata: {
@@ -459,7 +465,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           recommendedAction,
           evidenceSummary: completedTrace.evidenceSummary || surfaceAuth.state.evidenceSummary,
         },
-      }, workbenchNotes);
+      }, action), workbenchNotes);
     }
 
     // Smart actions 走 BrowserService（已经按 agentId 池化，多 agent 并发 OK），
@@ -531,7 +537,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       }
 
       result = attachForegroundKeystrokeWarning(result, action, surfaceAuth?.state.mode || null);
-      return appendBrowserWorkbenchNote(result, workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(result, action), workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const result: ToolExecutionResult = {
@@ -546,7 +552,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           blockingReasons: [errorMessage],
           recommendedAction: 'Inspect the before/after evidence and retry with a verified target.',
         });
-        return appendBrowserWorkbenchNote(withComputerSurfaceMetadata(result, {
+        return appendBrowserWorkbenchNote(withComputerUseProof(withComputerSurfaceMetadata(result, {
           state: computerSurface.getState({
             targetApp: surfaceAuth.state.targetApp || undefined,
             blockedReason: errorMessage,
@@ -554,14 +560,140 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           }),
           trace: completedTrace,
           sensitive: surfaceAuth.sensitive,
-        }), workbenchNotes);
+        }), action), workbenchNotes);
       }
-      return appendBrowserWorkbenchNote(result, workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(result, action), workbenchNotes);
     } finally {
       surfaceLockSlot?.release();
     }
   },
 };
+
+function compactComputerProofText(value: unknown, maxChars = 3000): string {
+  if (typeof value === 'string') return value.slice(0, maxChars);
+  try {
+    return JSON.stringify(value).slice(0, maxChars);
+  } catch {
+    return '';
+  }
+}
+
+function buildComputerEvidenceInputs(result: ToolExecutionResult, action: ComputerAction): BrowserComputerEvidenceInput[] {
+  const metadata = result.metadata || {};
+  const evidence: BrowserComputerEvidenceInput[] = [];
+  const trace = metadata.workbenchTrace as Record<string, unknown> | undefined;
+  const traceId = typeof metadata.traceId === 'string'
+    ? metadata.traceId
+    : typeof trace?.id === 'string'
+      ? trace.id
+      : null;
+  if (traceId) {
+    evidence.push({
+      kind: 'trace',
+      ref: traceId,
+      source: 'computerUse.trace',
+      state: 'fresh',
+    });
+  }
+  const snapshot = metadata.computerSurfaceSnapshot as Record<string, unknown> | undefined;
+  if (snapshot && typeof snapshot.screenshotPath === 'string') {
+    evidence.push({
+      kind: 'screenshot',
+      ref: snapshot.screenshotPath,
+      source: 'computerUse.observe',
+      state: 'fresh',
+    });
+  }
+  if (Array.isArray(metadata.elements) || metadata.axQuality || action.axPath || action.role) {
+    evidence.push({
+      kind: 'computer_ax',
+      ref: `computer_ax:${String(metadata.targetApp || action.targetApp || 'frontmost')}:${traceId || Date.now()}`,
+      source: 'computerUse.ax',
+      state: 'read',
+    });
+  }
+  if (Array.isArray(metadata.windows) || metadata.recommendedWindow) {
+    evidence.push({
+      kind: 'computer_ax',
+      ref: `computer_windows:${String(metadata.targetApp || action.targetApp || 'frontmost')}:${traceId || Date.now()}`,
+      source: 'computerUse.windows',
+      state: 'read',
+    });
+  }
+  if (typeof metadata.path === 'string') {
+    evidence.push({
+      kind: 'screenshot',
+      ref: metadata.path,
+      source: 'computerUse.screenshot',
+      state: metadata.analyzed === true ? 'read' : 'fresh',
+    });
+  }
+  return evidence;
+}
+
+function inferComputerVisualObservation(result: ToolExecutionResult, action: ComputerAction): BrowserComputerVisualObservation {
+  const metadata = result.metadata || {};
+  if (Array.isArray(metadata.elements) || metadata.axQuality || action.axPath || action.role) {
+    return { observed: true, source: 'ax' };
+  }
+  if (Array.isArray(metadata.windows) || metadata.recommendedWindow || metadata.appDiagnosis) {
+    return { observed: true, source: 'trace' };
+  }
+  if ((metadata.computerSurfaceSnapshot as Record<string, unknown> | undefined)?.screenshotPath) {
+    return {
+      observed: false,
+      source: 'none',
+      cannotObserveScreen: true,
+      reason: 'screenshot_path_only',
+    };
+  }
+  return { observed: false, source: 'none', reason: 'no_ax_or_analyzed_screenshot' };
+}
+
+function withComputerUseProof(result: ToolExecutionResult, action: ComputerAction): ToolExecutionResult {
+  const metadata = result.metadata || {};
+  const manualTakeoverText = [
+    result.output,
+    result.error,
+    compactComputerProofText(metadata.blockingReasons),
+    compactComputerProofText(metadata.recommendedAction),
+    compactComputerProofText(metadata.computerSurface),
+  ].filter(Boolean).join('\n');
+  const proof = buildBrowserComputerProof({
+    evidence: buildComputerEvidenceInputs(result, action),
+    targetRef: {
+      targetApp: action.targetApp || metadata.targetApp || null,
+      axPath: action.axPath || null,
+      role: action.role || null,
+      name: action.name || null,
+      windowRef: action.windowRef || metadata.targetWindowRef || null,
+    },
+    approval: {
+      approvalScope: metadata.approvalScope || null,
+      sensitiveAction: metadata.sensitiveAction === true,
+      workbenchBlocked: metadata.workbenchBlocked === true,
+    },
+    manualTakeoverText,
+    manualTakeoverResumeRequires: [
+      'computer_use.observe',
+      'computer_use.get_ax_elements',
+      'browser_action.get_dom_snapshot',
+      'browser_action.get_a11y_snapshot',
+      'browser_action.get_account_state',
+    ],
+    visualObservation: inferComputerVisualObservation(result, action),
+  });
+  return {
+    ...result,
+    metadata: {
+      ...metadata,
+      evidenceRefs: proof.evidenceRefs,
+      browserComputerProof: proof,
+      browserComputerEvidenceCard: renderBrowserComputerEvidenceCard(proof),
+      ...(proof.visualObservation?.cannotObserveScreen ? { cannotObserveScreen: true } : {}),
+    },
+  };
+}
 
 const KEYSTROKE_ACTIONS_NEEDING_BACKGROUND = new Set<ActionType>(['type', 'key']);
 

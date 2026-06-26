@@ -10,12 +10,16 @@ Actions:
 - get: Get full details of a task by ID (requires taskId)
 - list: List all tasks in the current session (no params needed)
 - update: Update a task's status, details, or dependencies (requires taskId; optional status, subject, description, activeForm, owner, addBlockedBy, addBlocks, metadata, desktopAction, desktopSnoozeHours). Set status="cancelled" to abandon a task while keeping it visible; set status="deleted" to remove a task.
+- replace: Replace the whole session task plan with tasks[]; exactly one open task is normalized to in_progress.
+- patch: Batch update/create session tasks with tasks[]; exactly one open task is normalized to in_progress.
 
 Examples:
 - Create: { "action": "create", "subject": "Implement login", "description": "Add OAuth login flow" }
 - Get: { "action": "get", "taskId": "1" }
 - List: { "action": "list" }
 - Update status: { "action": "update", "taskId": "1", "status": "in_progress" }
+- Replace plan: { "action": "replace", "tasks": [{ "subject": "Read code", "status": "in_progress" }, { "subject": "Patch code" }] }
+- Patch plan: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed" }, { "taskId": "2", "status": "in_progress" }] }
 - Cancel: { "action": "update", "taskId": "1", "status": "cancelled" }
 - Add dependency: { "action": "update", "taskId": "2", "addBlockedBy": ["1"] }
 - Snooze desktop task: { "action": "update", "taskId": "3", "desktopAction": "snooze", "desktopSnoozeHours": 24 }
@@ -25,7 +29,7 @@ Examples:
     properties: {
       action: {
         type: 'string',
-        enum: ['create', 'get', 'list', 'update'],
+        enum: ['create', 'get', 'list', 'update', 'replace', 'patch'],
         description: 'The task management action to perform',
       },
       // --- get / update params ---
@@ -92,6 +96,33 @@ Examples:
       desktopSnoozeHours: {
         type: 'number',
         description: '[update] When desktopAction="snooze", suppress recovery for this many hours.',
+      },
+      tasks: {
+        type: 'array',
+        description: '[replace, patch] Batch task plan items. replace requires subject/content for each item; patch accepts taskId/id for updates or subject/content for new tasks.',
+        items: {
+          type: 'object',
+          properties: {
+            taskId: { type: 'string', description: '[patch] Existing task id to update' },
+            id: { type: 'string', description: '[patch] Existing task id alias' },
+            subject: { type: 'string', description: 'Task title' },
+            content: { type: 'string', description: 'Task title alias' },
+            description: { type: 'string', description: 'Task detail' },
+            activeForm: { type: 'string', description: 'Present continuous active form' },
+            status: {
+              type: 'string',
+              enum: ['pending', 'in_progress', 'completed', 'cancelled'],
+              description: 'Task status; batch operations normalize open tasks to exactly one in_progress',
+            },
+            priority: {
+              type: 'string',
+              enum: ['low', 'normal', 'high'],
+              description: 'Task priority for newly created tasks',
+            },
+            owner: { type: 'string', description: 'Task owner' },
+            metadata: { type: 'object', description: 'Task metadata' },
+          },
+        },
       },
     },
     required: ['action'],

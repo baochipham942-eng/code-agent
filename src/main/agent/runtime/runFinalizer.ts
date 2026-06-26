@@ -111,6 +111,51 @@ import {
 
 const logger = createLogger('AgentLoop');
 
+type AutoAdvanceToolCall = {
+  name: string;
+  id: string;
+  arguments?: Record<string, unknown>;
+};
+
+type AutoAdvanceToolResult = {
+  success: boolean;
+  toolCallId: string;
+  metadata?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+};
+
+function isTruthyMarker(value: unknown): boolean {
+  return value === true || value === 'true' || value === 'passed' || value === 'verification' || value === 'task-linked';
+}
+
+function hasAnyMarker(record: Record<string, unknown> | undefined, keys: string[]): boolean {
+  if (!record) return false;
+  return keys.some((key) => isTruthyMarker(record[key]));
+}
+
+function isMarkedBashForTaskAdvance(
+  toolCall: AutoAdvanceToolCall,
+  toolResult: AutoAdvanceToolResult | undefined,
+): boolean {
+  const args = toolCall.arguments;
+  const metadata = toolResult?.metadata ?? toolResult?.meta;
+  const markerKeys = [
+    'verification',
+    'isVerification',
+    'taskLinked',
+    'task_linked',
+    'task-linked',
+    'linkedTaskId',
+    'sessionTaskId',
+  ];
+  if (hasAnyMarker(args, markerKeys) || hasAnyMarker(metadata, markerKeys)) {
+    return true;
+  }
+
+  const purpose = args?.purpose ?? metadata?.purpose ?? args?.kind ?? metadata?.kind ?? args?.category ?? metadata?.category;
+  return purpose === 'verification' || purpose === 'task-linked';
+}
+
 function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
   const trimmed = message.trim();
   if (!trimmed) return;
@@ -487,22 +532,31 @@ export class RunFinalizer {
    */
 
   autoAdvanceTodos(
-    toolCalls: Array<{ name: string; id: string }>,
-    toolResults: Array<{ success: boolean; toolCallId: string }>,
+    toolCalls: AutoAdvanceToolCall[],
+    toolResults: AutoAdvanceToolResult[],
   ): void {
     const todos = getSessionTodos(this.ctx.sessionId);
     if (todos.length === 0) return;
 
-    const hasSuccessfulTool = toolResults.some(r => r.success);
-    if (!hasSuccessfulTool) return;
+    const successfulResultsById = new Map(
+      toolResults
+        .filter((result) => result.success)
+        .map((result) => [result.toolCallId, result]),
+    );
+    if (successfulResultsById.size === 0) return;
 
     const hasInProgress = todos.some(t => t.status === 'in_progress');
     if (!hasInProgress) return;
 
     // 只在有修改类操作时才推进任务（纯读取不算完成任务）
     const hasModification = toolCalls.some(tc => {
+      const result = successfulResultsById.get(tc.id);
+      if (!result) return false;
       const name = tc.name.toLowerCase();
-      return name === 'edit' || name === 'write' || name === 'bash' || name === 'notebookedit';
+      if (name === 'bash') {
+        return isMarkedBashForTaskAdvance(tc, result);
+      }
+      return name === 'edit' || name === 'write' || name === 'notebookedit';
     });
     if (!hasModification) return;
 

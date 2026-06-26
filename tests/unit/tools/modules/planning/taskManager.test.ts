@@ -9,6 +9,7 @@ const createTaskMock = vi.fn();
 const updateTaskMock = vi.fn();
 const getTaskMock = vi.fn();
 const listTasksMock = vi.fn().mockReturnValue([]);
+const clearTasksMock = vi.fn();
 const isDesktopDerivedSessionTaskMock = vi.fn().mockReturnValue(false);
 
 vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
@@ -16,6 +17,7 @@ vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
   updateTask: (...a: unknown[]) => updateTaskMock(...a),
   getTask: (...a: unknown[]) => getTaskMock(...a),
   listTasks: (...a: unknown[]) => listTasksMock(...a),
+  clearTasks: (...a: unknown[]) => clearTasksMock(...a),
   isClosedTaskStatus: (status: string) => status === 'completed' || status === 'cancelled',
 }));
 vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
@@ -52,6 +54,22 @@ beforeEach(() => {
   listTasksMock.mockReturnValue([]);
 });
 
+function makeTask(id: string, status: 'pending' | 'in_progress' | 'completed' | 'cancelled' = 'pending') {
+  return {
+    id,
+    subject: `task ${id}`,
+    description: `task ${id} description`,
+    activeForm: `doing task ${id}`,
+    status,
+    priority: 'normal',
+    blocks: [],
+    blockedBy: [],
+    metadata: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 describe('TaskManager schema', () => {
   it('对齐 legacy schema name/required/enum', () => {
     expect(taskManagerModule.schema.name).toBe('TaskManager');
@@ -59,7 +77,7 @@ describe('TaskManager schema', () => {
     expect(taskManagerModule.schema.permissionLevel).toBe('write');
     expect(taskManagerModule.schema.inputSchema.required).toEqual(['action']);
     const props = taskManagerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.action.enum).toEqual(['create', 'get', 'list', 'update']);
+    expect(props.action.enum).toEqual(['create', 'get', 'list', 'update', 'replace', 'patch']);
     expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled', 'deleted']);
   });
 });
@@ -93,6 +111,63 @@ describe('TaskManager dispatch', () => {
       expect(result.code).toBe('INVALID_ARGS');
       expect(result.error).toContain('Unknown action');
     }
+  });
+
+  it('action=replace replaces the plan and promotes exactly one task to in_progress', async () => {
+    let nextId = 0;
+    createTaskMock.mockImplementation((_sessionId: string, input: Record<string, unknown>) => {
+      nextId += 1;
+      return { ...makeTask(String(nextId)), ...input, id: String(nextId), status: 'pending' };
+    });
+    listTasksMock.mockReturnValue([
+      makeTask('1', 'in_progress'),
+      makeTask('2', 'pending'),
+    ]);
+
+    const handler = await taskManagerModule.createHandler();
+    const result = await handler.execute(
+      {
+        action: 'replace',
+        tasks: [
+          { subject: 'A' },
+          { subject: 'B' },
+        ],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(clearTasksMock).toHaveBeenCalledWith('sess-1');
+    expect(createTaskMock).toHaveBeenCalledTimes(2);
+    expect(updateTaskMock).toHaveBeenCalledTimes(1);
+    expect(updateTaskMock).toHaveBeenCalledWith('sess-1', '1', { status: 'in_progress' });
+  });
+
+  it('action=patch keeps exactly one in_progress task when a batch moves focus', async () => {
+    listTasksMock.mockReturnValue([
+      makeTask('1', 'in_progress'),
+      makeTask('2', 'pending'),
+      makeTask('3', 'pending'),
+    ]);
+
+    const handler = await taskManagerModule.createHandler();
+    const result = await handler.execute(
+      {
+        action: 'patch',
+        tasks: [
+          { taskId: '2', status: 'in_progress' },
+          { taskId: '3', status: 'in_progress' },
+        ],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(updateTaskMock).toHaveBeenCalledWith('sess-1', '1', { status: 'pending' });
+    expect(updateTaskMock).toHaveBeenCalledWith('sess-1', '2', { status: 'in_progress' });
+    expect(updateTaskMock).not.toHaveBeenCalledWith('sess-1', '3', { status: 'in_progress' });
   });
 
   it('action=list dispatch → 调用 list', async () => {

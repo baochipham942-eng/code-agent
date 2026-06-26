@@ -204,7 +204,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-[9998] flex justify-end bg-black/45" role="dialog" aria-modal="true" aria-label={`${title} 项目控制台`}>
-      <button
+      <button /* ds-allow:button: 抽屉背景遮罩点击关闭，绝对铺满透明按钮，primitive 变体会渲染可见样式 */
         type="button"
         aria-label="关闭项目控制台背景"
         className="absolute inset-0 cursor-default"
@@ -246,7 +246,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     placeholder="项目描述"
                   />
                   <div className="flex items-center gap-1.5">
-                    <button
+                    <button /* ds-allow:button: 项目保存按钮，violet 语义色描边超小尺寸（py-0.5），primitive 无对应变体 */
                       type="button"
                       disabled={savingProject}
                       onClick={() => { void handleSaveProject(); }}
@@ -254,7 +254,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     >
                       {savingProject ? '保存中' : '保存'}
                     </button>
-                    <button
+                    <button /* ds-allow:button: 项目编辑取消按钮，描边超小尺寸（py-0.5），primitive 最小 sm 仍更大 */
                       type="button"
                       disabled={savingProject}
                       onClick={handleCancelEdit}
@@ -281,7 +281,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
               <p className="mt-0.5 truncate text-[10px] text-zinc-600">{getPrimaryPath(paths)}</p>
             </div>
             {canEditProject && !editingProject && (
-              <button
+              <button /* ds-allow:button: 项目编辑入口，描边超小尺寸文本按钮（py-1 text-[11px]），primitive 最小 sm 仍更大 */
                 type="button"
                 aria-label={`编辑 ${title} 项目`}
                 onClick={() => setEditingProject(true)}
@@ -290,7 +290,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                 编辑
               </button>
             )}
-            <button
+            <button /* ds-allow:button: 抽屉关闭图标按钮 p-1，primitive 变体会改变尺寸与外观 */
               type="button"
               aria-label="关闭项目控制台"
               onClick={onClose}
@@ -325,7 +325,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
 
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {onNewSession && (
-              <button
+              <button /* ds-allow:button: 新建项目会话 chip，描边小尺寸+图标（text-[11px]），primitive 无对应变体 */
                 type="button"
                 onClick={() => { void onNewSession(); }}
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
@@ -335,7 +335,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
               </button>
             )}
             {onOpenWorkspaceAssets && (
-              <button
+              <button /* ds-allow:button: 打开项目产物 chip，描边小尺寸+图标（text-[11px]），primitive 无对应变体 */
                 type="button"
                 onClick={onOpenWorkspaceAssets}
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
@@ -370,7 +370,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                         </div>
                       </div>
                       {goal.lastRunSessionId && onOpenGoalSession && (
-                        <button
+                        <button /* ds-allow:button: 打开目标上次会话图标按钮 p-1，primitive 变体会改变尺寸 */
                           type="button"
                           aria-label={`打开目标 ${goal.title} 的上次会话`}
                           onClick={() => { void onOpenGoalSession(goal.lastRunSessionId as string); }}
@@ -380,7 +380,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                         </button>
                       )}
                       {goal.status === 'active' && onStartGoal && (
-                        <button
+                        <button /* ds-allow:button: 从目标新建会话图标按钮 p-1，primitive 变体会改变尺寸 */
                           type="button"
                           aria-label={`从目标 ${goal.title} 新建项目会话`}
                           onClick={() => { void onStartGoal(goal); }}
@@ -410,7 +410,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                 {visibleArtifacts.map((artifact) => {
                   const canOpen = Boolean(artifact.sessionId && onOpenArtifactSession);
                   return (
-                    <button
+                    <button /* ds-allow:button: 产物卡片，全宽左对齐多行内容卡，primitive 居中变体不兼容 */
                       key={`${artifact.sessionId}:${artifact.id}:${artifact.createdAt}`}
                       type="button"
                       disabled={!canOpen}
@@ -448,7 +448,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
             {sessions.length > 0 ? (
               <div className="grid gap-1.5">
                 {sessions.slice(0, 12).map((session) => (
-                  <button
+                  <button /* ds-allow:button: 会话卡片，全宽左对齐多行内容+当前态边框，primitive 居中变体不兼容 */
                     key={session.id}
                     type="button"
                     aria-label={`打开项目会话 ${session.title}`}

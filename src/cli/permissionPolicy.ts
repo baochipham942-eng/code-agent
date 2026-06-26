@@ -7,7 +7,7 @@
 // 其余照常放行，防止 CI 挂起或危险操作被静默批准。
 // `--dangerously-skip-permissions` 是显式逃生门，恢复全自动批准。
 
-import type { PermissionRequestData } from '../main/tools/types';
+import type { PermissionRequestData } from '../host/tools/types';
 
 export interface CLIPermissionPolicyOptions {
   /** 显式逃生门：恢复全自动批准（含危险操作） */

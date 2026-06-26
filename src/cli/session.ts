@@ -436,7 +436,7 @@ export class CLISessionManager {
    */
   private async generateSmartTitle(message: string): Promise<string | null> {
     try {
-      const { quickTask, isQuickModelAvailable } = await import('../main/model/quickModel');
+      const { quickTask, isQuickModelAvailable } = await import('../host/model/quickModel');
       if (!isQuickModelAvailable()) return null;
 
       // 截取前 500 字符避免 prompt 太长

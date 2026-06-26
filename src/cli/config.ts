@@ -30,7 +30,7 @@ import fs from 'fs';
 import os from 'os';
 import * as dotenv from 'dotenv';
 import type { IReadConfigService } from '../shared/contract/configService';
-import { getConfigService as getMainConfigService } from '../main/services/core/configService';
+import { getConfigService as getMainConfigService } from '../host/services/core/configService';
 
 // 加载 .env 文件（CLI 模式专用：从 process.cwd() 或 ~/.code-agent/.env 读取）
 function loadEnvFile(): void {

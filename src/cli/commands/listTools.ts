@@ -9,8 +9,8 @@ export const listToolsCommand = new Command('list-tools')
   .action(async () => {
     try {
       // 动态导入避免在顶层加载重量级模块
-      const { getToolResolver } = await import('../../main/tools/dispatch/toolResolver');
-      const { getProtocolRegistry } = await import('../../main/tools/protocolRegistry');
+      const { getToolResolver } = await import('../../host/tools/dispatch/toolResolver');
+      const { getProtocolRegistry } = await import('../../host/tools/protocolRegistry');
       // 触发 protocol registry 初始化（注册所有工具）
       getProtocolRegistry();
       const tools = getToolResolver().listDefinitions();

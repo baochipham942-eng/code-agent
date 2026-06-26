@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import type { ModelConfig, ToolDefinition } from '../../shared/contract';
-import type { AgentTask, AgentTaskResult, ParallelExecutionResult } from '../../main/agent/parallelAgentCoordinator';
-import { getSwarmServices } from '../../main/agent/swarmServices';
-import type { ToolResolver } from '../../main/tools/dispatch/toolResolver';
-import type { ToolContext } from '../../main/tools/types';
+import type { AgentTask, AgentTaskResult, ParallelExecutionResult } from '../../host/agent/parallelAgentCoordinator';
+import { getSwarmServices } from '../../host/agent/swarmServices';
+import type { ToolResolver } from '../../host/tools/dispatch/toolResolver';
+import type { ToolContext } from '../../host/tools/types';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
 

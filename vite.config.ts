@@ -7,7 +7,7 @@ import { builtinModules } from 'module';
 const packageVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
 
 /**
- * Vite plugin: stub out dynamic imports of `src/main/*` from renderer-side code.
+ * Vite plugin: stub out dynamic imports of `src/host/*` from renderer-side code.
  *
  * 背景：shared/commands/definitions/ 里有 `await import('../../main/...')` 这样
  * 的 CLI-only 动态导入，dev 模式 Vite 的 dep-scan 会静态追到 main/ 里，
@@ -17,17 +17,17 @@ const packageVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'packa
  *
  * Stub 模块在 renderer 里若被意外 await，会抛出清晰错误而不是静默失败。
  */
-function stubMainInRendererPlugin(): Plugin {
-  const STUB_ID = '\0virtual:main-stub';
+function stubHostInRendererPlugin(): Plugin {
+  const STUB_ID = '\0virtual:host-stub';
   return {
-    name: 'stub-main-in-renderer',
+    name: 'stub-host-in-renderer',
     enforce: 'pre',
     resolveId(source, importer) {
       if (!importer) return null;
       // 只拦 renderer 方向能追到的路径：shared/ 或 renderer/ 里的动态 import
       if (!/[\\/]src[\\/](shared|renderer)[\\/]/.test(importer)) return null;
       // 匹配相对路径或 alias 形式的 main/* 引用
-      if (/(^|[\\/])main[\\/]/.test(source) && !source.includes('node_modules')) {
+      if (/(^|[\\/])host[\\/]/.test(source) && !source.includes('node_modules')) {
         return STUB_ID;
       }
       return null;
@@ -35,7 +35,7 @@ function stubMainInRendererPlugin(): Plugin {
     load(id) {
       if (id === STUB_ID) {
         return `
-          const handler = { get() { throw new Error('[stub] src/main/* 不可在 renderer/web 运行时调用，仅 CLI/Tauri 主进程可用'); } };
+          const handler = { get() { throw new Error('[stub] src/host/* 不可在 renderer/web 运行时调用，仅 CLI/Tauri 主进程可用'); } };
           export default new Proxy({}, handler);
         `;
       }
@@ -71,7 +71,7 @@ function devAuthTokenPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [stubMainInRendererPlugin(), react(), devAuthTokenPlugin()],
+  plugins: [stubHostInRendererPlugin(), react(), devAuthTokenPlugin()],
   root: 'src/renderer',
   publicDir: path.resolve(__dirname, 'public'),
   base: './',

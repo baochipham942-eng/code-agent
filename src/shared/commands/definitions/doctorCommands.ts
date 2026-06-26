@@ -117,7 +117,7 @@ function formatReport(report: DoctorReport): string {
 
 async function runViaCliSurface(): Promise<DoctorReport> {
   // 动态 import 避免 renderer 打包时把 main 拽进去
-  const { runDoctor } = await import('../../../main/diagnostics/doctorRunner');
+  const { runDoctor } = await import('../../../host/diagnostics/doctorRunner');
   return runDoctor();
 }
 

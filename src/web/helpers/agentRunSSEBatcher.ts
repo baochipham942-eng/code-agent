@@ -1,5 +1,5 @@
 import type { AgentEvent } from '../../shared/contract';
-import { EventBatcher } from '../../main/agent/eventBatcher';
+import { EventBatcher } from '../../host/agent/eventBatcher';
 
 export type AgentRunSSEWriter = (event: string, data: unknown) => void;
 

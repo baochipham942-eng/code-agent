@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getBackgroundTaskManager } from '../../main/session/backgroundTaskManager';
+import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
 

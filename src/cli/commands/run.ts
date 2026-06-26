@@ -11,7 +11,7 @@ import { cleanup, initializeCLIServices, getDatabaseService } from '../bootstrap
 import type { CLIGlobalOptions } from '../types';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
-import { getPromptCommandService } from '../../main/services/commands/promptCommandService';
+import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 
 /**
  * Read stdin when piped (non-TTY)

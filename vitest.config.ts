@@ -5,15 +5,15 @@ export default defineConfig({
   resolve: {
     alias: {
       // electron alias 保留作为安全网（第三方库可能 require('electron')）
-      electron: path.resolve(__dirname, 'src/main/platform/index.ts'),
+      electron: path.resolve(__dirname, 'src/host/platform/index.ts'),
       // keytar 原生模块为 Electron Node.js 编译，在系统 Node.js 中会 SIGSEGV
       keytar: path.resolve(__dirname, 'tests/__mocks__/keytar.ts'),
       // react-konva → konva/index-node 在系统 Node 下 require('canvas') 崩溃，用 stub 兜底
       'react-konva': path.resolve(__dirname, 'tests/__mocks__/react-konva.ts'),
-      // tsconfig paths — 让 @shared/@renderer/@main 别名在 vitest 中生效
+      // tsconfig paths — 让 @shared/@renderer/@host 别名在 vitest 中生效
       '@shared': path.resolve(__dirname, 'src/shared'),
       '@renderer': path.resolve(__dirname, 'src/renderer'),
-      '@main': path.resolve(__dirname, 'src/main'),
+      '@host': path.resolve(__dirname, 'src/host'),
       '@': path.resolve(__dirname, 'src'),
     },
   },
@@ -41,7 +41,7 @@ export default defineConfig({
       exclude: [
         'src/**/*.d.ts',
         'src/**/__tests__/**',
-        'src/main/tools/media/ppt/__tests__/**',
+        'src/host/tools/media/ppt/__tests__/**',
       ],
       thresholds: {
         statements: 38,

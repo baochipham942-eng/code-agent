@@ -84,7 +84,7 @@ async function resolveSkillOps(ctx: Record<string, unknown>): Promise<SkillOpsCo
 
   return {
     listAvailable: async () => {
-      const { getSkillDiscoveryService } = await import('../../../main/services/skills/skillDiscoveryService');
+      const { getSkillDiscoveryService } = await import('../../../host/services/skills/skillDiscoveryService');
       return getSkillDiscoveryService().getAllSkills();
     },
     listMounted: async () => {
@@ -106,15 +106,15 @@ async function resolveMcpOps(ctx: Record<string, unknown>): Promise<McpOpsComman
 
   return {
     getStatus: async () => {
-      const { getMCPClient } = await import('../../../main/mcp/mcpClient');
+      const { getMCPClient } = await import('../../../host/mcp/mcpClient');
       return getMCPClient().getStatus();
     },
     listServerStates: async () => {
-      const { getMCPClient } = await import('../../../main/mcp/mcpClient');
+      const { getMCPClient } = await import('../../../host/mcp/mcpClient');
       return getMCPClient().getServerStates() as McpServerCommandState[];
     },
     listTools: async () => {
-      const { getMCPClient } = await import('../../../main/mcp/mcpClient');
+      const { getMCPClient } = await import('../../../host/mcp/mcpClient');
       return getMCPClient().getTools();
     },
   };
@@ -131,7 +131,7 @@ async function resolveConnectorOps(ctx: Record<string, unknown>): Promise<Connec
 
   return {
     listStatuses: async () => {
-      const { getConnectorRegistry } = await import('../../../main/connectors');
+      const { getConnectorRegistry } = await import('../../../host/connectors');
       const connectors = getConnectorRegistry().list();
       return Promise.all(connectors.map(async (connector) => {
         const status = await connector.getStatus();

@@ -16,7 +16,7 @@
 import './webEnvInit';
 
 // Platform 模块替代 electron mock
-import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../main/platform';
+import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../host/platform';
 
 import http from 'http';
 import os from 'os';
@@ -25,18 +25,18 @@ import fs from 'fs';
 import { execFileSync } from 'child_process';
 import express from 'express';
 import type { Request, Response } from 'express';
-import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
-import { createLogger } from '../main/services/infra/logger';
-import { loadShellEnvironment } from '../main/services/infra/shellEnvironment';
-import { initSentryNode } from '../main/observability/sentryNode';
-import { initCrashMarker } from '../main/observability/crashMarker';
-import { initPostHogNode } from '../main/observability/posthogNode';
+import { setupAllIpcHandlers, type IpcDependencies } from '../host/ipc';
+import { createLogger } from '../host/services/infra/logger';
+import { loadShellEnvironment } from '../host/services/infra/shellEnvironment';
+import { initSentryNode } from '../host/observability/sentryNode';
+import { initCrashMarker } from '../host/observability/crashMarker';
+import { initPostHogNode } from '../host/observability/posthogNode';
 import { IPC_CHANNELS } from '../shared/ipc';
-import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
-import { getModelSessionState } from '../main/session/modelSessionState';
+import { resolveSessionDefaultModelConfig } from '../host/services/core/sessionDefaults';
+import { getModelSessionState } from '../host/session/modelSessionState';
 import type { AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
-import type { PendingApprovalRepository } from '../main/services/core/repositories/PendingApprovalRepository';
+import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
 import {
   initializeWebPluginSystem as initializeWebPluginSystemCore,
@@ -145,9 +145,9 @@ function getWebBootstrapWorkingDirectory(configService?: ConfigServiceForBootstr
 
 async function initializeWebSkillServices(configService: ConfigServiceForBootstrap): Promise<void> {
   try {
-    const { initCloudConfigService, getCloudConfigService } = await import('../main/services/cloud');
-    const { getAuthService } = await import('../main/services/auth/authService');
-    const { getConfigService } = await import('../main/services/core/configService');
+    const { initCloudConfigService, getCloudConfigService } = await import('../host/services/cloud');
+    const { getAuthService } = await import('../host/services/auth/authService');
+    const { getConfigService } = await import('../host/services/core/configService');
     await initCloudConfigService({
       // 发行版跑的就是本 webServer 路径：必须带上 access token，capability 门控的共享 provider 才会被下发。
       getAccessToken: () => getAuthService().getAccessToken(),
@@ -168,7 +168,7 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
   const workingDir = getWebBootstrapWorkingDirectory(configService);
 
   try {
-    const { getSkillRepositoryService, getSkillDiscoveryService, initSkillWatcher } = await import('../main/services/skills');
+    const { getSkillRepositoryService, getSkillDiscoveryService, initSkillWatcher } = await import('../host/services/skills');
     const skillRepoService = getSkillRepositoryService();
     await skillRepoService.initialize();
     logger.info('SkillRepositoryService initialized', {
@@ -221,7 +221,7 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
   const workingDir = getWebBootstrapWorkingDirectory(configService);
 
   try {
-    const { initMCPClient, getMCPClient } = await import('../main/mcp/mcpClient');
+    const { initMCPClient, getMCPClient } = await import('../host/mcp/mcpClient');
     const mcpConfigs = configService.getSettings().mcp?.servers || [];
 
     logger.info('Initializing MCP servers...', {
@@ -314,9 +314,9 @@ import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
 import { createShellRouter } from './routes/shell';
 import { createStaticRouter } from './routes/static';
-import { applyRendererBundleUpdate } from '../main/services/renderer/rendererBundleFetcher';
-import { resolveRendererServeDecision } from '../main/services/renderer/rendererBundleCache';
-import { getAppVersion } from '../main/platform';
+import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
+import { resolveRendererServeDecision } from '../host/services/renderer/rendererBundleCache';
+import { getAppVersion } from '../host/platform';
 import { createAgentRouter } from './routes/agent';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
@@ -393,14 +393,14 @@ async function initializeServices(): Promise<void> {
   ensureUploadRootDir();
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
-  const { initConfigService } = await import('../main/services/core/configService');
+  const { initConfigService } = await import('../host/services/core/configService');
   const configService = initConfigService();
   await configService.initialize();
   logger.info('ConfigService initialized');
 
   // 1b. 按用户设置 replay 原生连接器（默认全空）
   try {
-    const { replayNativeConnectors } = await import('../main/connectors');
+    const { replayNativeConnectors } = await import('../host/connectors');
     const enabled = replayNativeConnectors(configService);
     logger.info('Native connectors configured', { enabled });
   } catch (error) {
@@ -409,7 +409,7 @@ async function initializeServices(): Promise<void> {
 
   // 2. 初始化 Supabase（auth 等服务依赖）
   try {
-    const { initSupabaseFromSettings } = await import('../main/services/infra/supabaseService');
+    const { initSupabaseFromSettings } = await import('../host/services/infra/supabaseService');
     const settings = configService.getSettings();
     const { config } = initSupabaseFromSettings(settings);
     logger.info('Supabase initialized', {
@@ -426,7 +426,7 @@ async function initializeServices(): Promise<void> {
     logger.info('AuthService skipped in E2E mode');
   } else {
     try {
-      const { getAuthService } = await import('../main/services/auth/authService');
+      const { getAuthService } = await import('../host/services/auth/authService');
       const authService = getAuthService();
       // 注册 auth 变更广播：v0.16.79 修复管理员菜单不显示的根因。
       // Tauri 桌面那套 webContents.send 走 main/app/initBackgroundServices.ts，
@@ -450,7 +450,7 @@ async function initializeServices(): Promise<void> {
 
   // 4. 初始化 Database（main 模块的单例，SessionManager 等依赖）
   try {
-    const { initDatabase, onDatabaseRecovered } = await import('../main/services/core/databaseService');
+    const { initDatabase, onDatabaseRecovered } = await import('../host/services/core/databaseService');
     onDatabaseRecovered(() => {
       setDbAvailable(true);
     });
@@ -475,8 +475,8 @@ async function initializeServices(): Promise<void> {
     logger.info('Telemetry uploader skipped in E2E mode');
   } else {
     try {
-      const { getAuthService } = await import('../main/services/auth/authService');
-      const { getTelemetryUploaderService } = await import('../main/telemetry/telemetryUploaderService');
+      const { getAuthService } = await import('../host/services/auth/authService');
+      const { getTelemetryUploaderService } = await import('../host/telemetry/telemetryUploaderService');
       const authService = getAuthService();
       const telemetryUploader = getTelemetryUploaderService();
       const syncTelemetryUploader = (user: AuthUser | null): void => {
@@ -495,7 +495,7 @@ async function initializeServices(): Promise<void> {
 
       // 共享 provider（中转站）是 auth-gated：登录后重拉云端配置，触发 reconcile 下发共享模型。
       // 仅在「未登录→登录」跃迁刷新，避免刷新风暴。
-      const { getCloudConfigService } = await import('../main/services/cloud');
+      const { getCloudConfigService } = await import('../host/services/cloud');
       let lastAuthedCloud = Boolean(authService.getCurrentUser());
       authService.addAuthChangeCallback((user) => {
         const authed = Boolean(user);
@@ -521,7 +521,7 @@ async function initializeServices(): Promise<void> {
   // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块
   void (async () => {
     try {
-      const { probeEnvCapabilities } = await import('../main/services/core/envCapabilities');
+      const { probeEnvCapabilities } = await import('../host/services/core/envCapabilities');
       await probeEnvCapabilities();
     } catch (error) {
       logger.warn('EnvCapabilities probe failed (non-fatal):', (error as Error).message);
@@ -532,7 +532,7 @@ async function initializeServices(): Promise<void> {
   // 的 mainWindow 检查直接 return，前端 SSE 永远收不到 context fill 更新（实测：
   // 工具调用执行 39 turn 但 UI 占比纹丝不动）。
   try {
-    const { getContextHealthService } = await import('../main/context/contextHealthService');
+    const { getContextHealthService } = await import('../host/context/contextHealthService');
     getContextHealthService().setMainWindow(webModeWindow);
     logger.info('contextHealthService bound to web-mode window');
   } catch (error) {
@@ -545,9 +545,9 @@ async function initializeServices(): Promise<void> {
   // 在发行版里从未被加载，spawn_agent 只能用 builtin 角色。持久化角色资产依赖自定义 agent
   // 解析，这里补上（与 fleet telemetry 同类的 web/main 路径分离修复）。
   try {
-    const { installBuiltinRoles } = await import('../main/services/roleAssets');
+    const { installBuiltinRoles } = await import('../host/services/roleAssets');
     await installBuiltinRoles();
-    const { initAgentRegistry } = await import('../main/agent/agentRegistry');
+    const { initAgentRegistry } = await import('../host/agent/agentRegistry');
     await initAgentRegistry(undefined);
     logger.info('Agent registry initialized (user-level agents + builtin roles)');
   } catch (error) {
@@ -559,9 +559,9 @@ async function initializeServices(): Promise<void> {
   // 角色 cadence job 必须在这里初始化，否则角色主动性在发行版里永远不会醒来。
   // 必须在 Agent Registry 之后（cadence 配置解析依赖 registry 的 frontmatter）。
   try {
-    const { initCronService } = await import('../main/cron/cronService');
+    const { initCronService } = await import('../host/cron/cronService');
     await initCronService();
-    const { syncCadenceJobs } = await import('../main/services/roleAssets/roleProactivity');
+    const { syncCadenceJobs } = await import('../host/services/roleAssets/roleProactivity');
     const synced = await syncCadenceJobs();
     logger.info('Cron service initialized + role cadence jobs synced', synced);
   } catch (error) {
@@ -574,11 +574,11 @@ async function initializeServices(): Promise<void> {
   // 路径 —— 不补这里，bridge 在发行版里从不启动，P3-A 只读工具（neo_list_tasks 等）以及现有
   // get_logs/get_status 的 bridge 拉取在发行版里全部失效。
   try {
-    const { logBridge } = await import('../main/mcp/logBridge');
-    const { TaskStatusProvider } = await import('../main/mcp/taskStatusProvider');
-    const { getDatabase } = await import('../main/services/core/databaseService');
-    const { getProjectService } = await import('../main/services/project/projectService');
-    const { getTaskManager } = await import('../main/task/TaskManager');
+    const { logBridge } = await import('../host/mcp/logBridge');
+    const { TaskStatusProvider } = await import('../host/mcp/taskStatusProvider');
+    const { getDatabase } = await import('../host/services/core/databaseService');
+    const { getProjectService } = await import('../host/services/project/projectService');
+    const { getTaskManager } = await import('../host/task/TaskManager');
     logBridge.setTaskStatusProvider(
       new TaskStatusProvider({
         getSwarmRepo: () => {
@@ -605,7 +605,7 @@ async function initializeServices(): Promise<void> {
   // getOrCreateCurrentOrchestrator 永远 unavailable（发行版跑的就是本 webServer 路径）。
   // createAgentRuntime 用 getMainWindow()（web 模式 = webModeWindow → SSE）转发 agent 事件。
   try {
-    const { createAgentRuntime } = await import('../main/app/createAgentRuntime');
+    const { createAgentRuntime } = await import('../host/app/createAgentRuntime');
     createAgentRuntime(configService as unknown as Parameters<typeof createAgentRuntime>[0]);
     logger.info('TaskManager initialized (web path) via createAgentRuntime');
   } catch (error) {
@@ -632,7 +632,7 @@ setBrowserWindowInteractionProbe(() => sseClients.size > 0);
 // 用同步 require 保证 esbuild 把 window.ts 视为单例（避免 dynamic import 切分到独立 chunk）。
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { setMainWindow } = require('../main/app/window') as typeof import('../main/app/window');
+  const { setMainWindow } = require('../host/app/window') as typeof import('../host/app/window');
   setMainWindow(webModeWindow);
   logger.info('webModeWindow registered as mainWindow for SSE bridge');
 } catch (err) {
@@ -648,15 +648,15 @@ function registerHandlers(): void {
   // 被 try/catch 兜底返回空数据，导致 SwarmTraceHistory 等功能在 web 模式永远空。
   try {
     /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerSwarmServices } = require('../main/agent/swarmServices') as typeof import('../main/agent/swarmServices');
-    const { getPlanApprovalGate } = require('../main/agent/planApproval') as typeof import('../main/agent/planApproval');
-    const { getSwarmLaunchApprovalGate } = require('../main/agent/swarmLaunchApproval') as typeof import('../main/agent/swarmLaunchApproval');
-    const { getParallelAgentCoordinator } = require('../main/agent/parallelAgentCoordinator') as typeof import('../main/agent/parallelAgentCoordinator');
-    const { getSpawnGuard } = require('../main/agent/spawnGuard') as typeof import('../main/agent/spawnGuard');
-    const { getTeammateService } = require('../main/agent/teammate/teammateService') as typeof import('../main/agent/teammate/teammateService');
-    const { persistAgentRun, getRecentAgentHistory } = require('../main/session/agentHistoryPersistence') as typeof import('../main/session/agentHistoryPersistence');
-    const { installSwarmTraceWriter } = require('../main/agent/swarmTraceWriter') as typeof import('../main/agent/swarmTraceWriter');
-    const { getDatabase } = require('../main/services/core/databaseService') as typeof import('../main/services/core/databaseService');
+    const { registerSwarmServices } = require('../host/agent/swarmServices') as typeof import('../host/agent/swarmServices');
+    const { getPlanApprovalGate } = require('../host/agent/planApproval') as typeof import('../host/agent/planApproval');
+    const { getSwarmLaunchApprovalGate } = require('../host/agent/swarmLaunchApproval') as typeof import('../host/agent/swarmLaunchApproval');
+    const { getParallelAgentCoordinator } = require('../host/agent/parallelAgentCoordinator') as typeof import('../host/agent/parallelAgentCoordinator');
+    const { getSpawnGuard } = require('../host/agent/spawnGuard') as typeof import('../host/agent/spawnGuard');
+    const { getTeammateService } = require('../host/agent/teammate/teammateService') as typeof import('../host/agent/teammate/teammateService');
+    const { persistAgentRun, getRecentAgentHistory } = require('../host/session/agentHistoryPersistence') as typeof import('../host/session/agentHistoryPersistence');
+    const { installSwarmTraceWriter } = require('../host/agent/swarmTraceWriter') as typeof import('../host/agent/swarmTraceWriter');
+    const { getDatabase } = require('../host/services/core/databaseService') as typeof import('../host/services/core/databaseService');
     /* eslint-enable @typescript-eslint/no-require-imports */
 
     let swarmTraceRepo: SwarmTraceRepo | null = null;
@@ -719,7 +719,7 @@ function registerHandlers(): void {
     getConfigService: () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { getConfigService } = require('../main/services/core/configService') as typeof import('../main/services/core/configService');
+        const { getConfigService } = require('../host/services/core/configService') as typeof import('../host/services/core/configService');
         return getConfigService();
       } catch {
         return null;
@@ -815,10 +815,10 @@ function registerHandlers(): void {
         return { success: true, data: null };
       }
 
-      let sm: Awaited<ReturnType<typeof import('../main/services/infra/sessionManager').getSessionManager>> | null = null;
+      let sm: Awaited<ReturnType<typeof import('../host/services/infra/sessionManager').getSessionManager>> | null = null;
       if (dbAvailable) {
         try {
-          const { getSessionManager } = await import('../main/services/infra/sessionManager');
+          const { getSessionManager } = await import('../host/services/infra/sessionManager');
           sm = getSessionManager();
         } catch { /* DB not available */ }
       }
@@ -859,7 +859,7 @@ function registerHandlers(): void {
               error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' },
             };
           }
-          const { listTasks } = await import('../main/services/planning/taskStore');
+          const { listTasks } = await import('../host/services/planning/taskStore');
           data = listTasks(sessionId);
           break;
         }
@@ -879,14 +879,14 @@ function registerHandlers(): void {
             throw new Error('Cannot rewind while the session is running');
           }
 
-          const { getDatabase } = await import('../main/services/core/databaseService');
+          const { getDatabase } = await import('../host/services/core/databaseService');
           const db = getDatabase();
           const anchorMessage = db.getMessageById(sessionId, userMessageId);
           if (anchorMessage?.role !== 'user') {
             throw new Error(`Active user message not found: ${userMessageId}`);
           }
 
-          const { getFileCheckpointService } = await import('../main/services/checkpoint');
+          const { getFileCheckpointService } = await import('../host/services/checkpoint');
           const checkpointService = getFileCheckpointService();
           const checkpoint = await checkpointService.getFirstCheckpointAtOrAfter(
             sessionId,
@@ -1015,7 +1015,7 @@ function createApp(): express.Express {
   async function tryGetSessionManager() {
     if (!dbAvailable) return null;
     try {
-      const { getSessionManager } = await import('../main/services/infra/sessionManager');
+      const { getSessionManager } = await import('../host/services/infra/sessionManager');
       return getSessionManager();
     } catch {
       return null;
@@ -1027,9 +1027,9 @@ function createApp(): express.Express {
    */
   async function getSupabaseForSession(): Promise<WebSupabaseBinding | null> {
     try {
-      const { getSupabase, isSupabaseInitialized } = await import('../main/services/infra/supabaseService');
+      const { getSupabase, isSupabaseInitialized } = await import('../host/services/infra/supabaseService');
       if (!isSupabaseInitialized()) return null;
-      const { getAuthService } = await import('../main/services/auth/authService');
+      const { getAuthService } = await import('../host/services/auth/authService');
       const user = getAuthService().getCurrentUser();
       if (!user?.id) return null;
       return {
@@ -1180,7 +1180,7 @@ async function main(): Promise<void> {
     cleanupUploadDirs();
     // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿
     try {
-      const { getDevServerManager } = await import('../main/services/infra/devServerManager');
+      const { getDevServerManager } = await import('../host/services/infra/devServerManager');
       await getDevServerManager().disposeAll();
     } catch (err) {
       console.warn('[shutdown] devServerManager dispose failed:', err);

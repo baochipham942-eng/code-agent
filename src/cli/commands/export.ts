@@ -54,8 +54,8 @@ export const exportCommand = new Command('export')
       }
 
       // 动态导入 TranscriptExporter（避免循环依赖）
-      const { TranscriptExporter } = await import('../../main/session/transcriptExporter');
-      const { SessionLocalCache } = await import('../../main/session/localCache');
+      const { TranscriptExporter } = await import('../../host/session/transcriptExporter');
+      const { SessionLocalCache } = await import('../../host/session/localCache');
 
       // 获取会话 ID
       let targetSessionId = sessionId;

@@ -4,7 +4,7 @@ import type {
   AdminReviewDecision,
   ArtifactIssue,
 } from '../../shared/contract/productClosure';
-import { getArtifactIssueRepository } from '../../main/services/core/repositories/ArtifactIssueRepository';
+import { getArtifactIssueRepository } from '../../host/services/core/repositories/ArtifactIssueRepository';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
 

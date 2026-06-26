@@ -7,7 +7,7 @@
 // ============================================================================
 
 import * as path from 'path';
-import { CONFIG_DIR_DEV } from '../main/config/configPaths';
+import { CONFIG_DIR_DEV } from '../host/config/configPaths';
 
 /**
  * 决定当前 node 进程是否应把数据目录切到测试/开发通道。

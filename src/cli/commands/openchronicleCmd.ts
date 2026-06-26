@@ -7,7 +7,7 @@ import {
   setEnabled,
   getStatus,
   loadSettings,
-} from '../../main/services/external/openchronicleSupervisor';
+} from '../../host/services/external/openchronicleSupervisor';
 
 export const openchronicleCommand = new Command('openchronicle')
   .description('屏幕记忆（OpenChronicle daemon）开关')

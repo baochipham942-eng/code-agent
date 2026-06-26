@@ -193,7 +193,7 @@ export const dialog = {
 
 // ── shell ────────────────────────────────────────────────────────────
 // 复用 main/platform/nativeShell 的安全实现（execFile + URL/path 校验）
-import { shell as _shell } from '../main/platform/nativeShell';
+import { shell as _shell } from '../host/platform/nativeShell';
 export const shell = _shell;
 
 // ── clipboard ────────────────────────────────────────────────────────

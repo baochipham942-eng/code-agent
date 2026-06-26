@@ -7,8 +7,8 @@ import {
   activeBundleDir,
   readActiveBundleMeta,
   resolveRendererServeDecision,
-} from '../../main/services/renderer/rendererBundleCache';
-import { createLogger } from '../../main/services/infra/logger';
+} from '../../host/services/renderer/rendererBundleCache';
+import { createLogger } from '../../host/services/infra/logger';
 
 const logger = createLogger('StaticRouter');
 

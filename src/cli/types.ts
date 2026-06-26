@@ -10,7 +10,7 @@ import type { AgentEvent, ModelConfig } from '../shared/contract';
 import type { MessageAttachment } from '../shared/contract';
 import type { AppServiceRunOptions } from '../shared/contract/appService';
 import type { ConversationEnvelopeContext, ConversationExecutionIntent } from '../shared/contract/conversationEnvelope';
-import type { GoalContract } from '../main/agent/goalModeController';
+import type { GoalContract } from '../host/agent/goalModeController';
 
 export interface CLIGlobalOptions {
   project: string;

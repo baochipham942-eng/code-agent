@@ -132,7 +132,7 @@ export const resumeCommand: CommandDefinition = {
       if (!targetId) {
         // No arg: find most recent incomplete session in same working directory
         const { getSessionRecoveryService } = await import(
-          '../../../main/agent/sessionRecovery'
+          '../../../host/agent/sessionRecovery'
         );
         // Get working directory from current session
         const getSessionManager = ctx.getSessionManager as (() => { getSession(id: string): Promise<{ workingDirectory?: string } | null> }) | undefined;

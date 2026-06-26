@@ -12,7 +12,7 @@ import {
 import type { ActiveAgentLoop } from './agent';
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
-import { extractArtifacts } from '../../main/agent/artifactExtractor';
+import { extractArtifacts } from '../../host/agent/artifactExtractor';
 
 interface SessionManagerLike {
   listSessions(options: { includeArchived?: boolean }): Promise<unknown[]>;
@@ -139,7 +139,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       const workingDirectory = parsedBody.data.workingDirectory?.trim() || undefined;
       const sm = await tryGetSessionManager();
       if (sm) {
-        const { resolveSessionDefaultModelConfig } = await import('../../main/services/core/sessionDefaults');
+        const { resolveSessionDefaultModelConfig } = await import('../../host/services/core/sessionDefaults');
         const session = await sm.createSession({
           title,
           workingDirectory,

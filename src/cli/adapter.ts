@@ -4,16 +4,16 @@
 
 import { createAgentLoop, buildCLIConfig, initializeCLIServices, getSessionManager, syncCLIWorkingDirectory, getConfigService } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
-import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
+import { addSwarmEventListener } from '../host/ipc/swarm.ipc';
 import fs from 'fs';
 import path from 'path';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
 import { getModelMaxOutputTokens } from '../shared/constants';
-import { createLogger } from '../main/services/infra/logger';
-import { getSessionSkillService } from '../main/services/skills/sessionSkillService';
-import { MetricsCollector } from '../main/agent/metricsCollector';
-import { retryEvents } from '../main/model/providers/retryStrategy';
+import { createLogger } from '../host/services/infra/logger';
+import { getSessionSkillService } from '../host/services/skills/sessionSkillService';
+import { MetricsCollector } from '../host/agent/metricsCollector';
+import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
 
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';

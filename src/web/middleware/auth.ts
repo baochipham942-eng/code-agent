@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
-import { createLogger } from '../../main/services/infra/logger';
+import { createLogger } from '../../host/services/infra/logger';
 
 const logger = createLogger('AuthMiddleware');
 
@@ -174,7 +174,7 @@ const rateLimitCleanupTimer = setInterval(() => {
 rateLimitCleanupTimer.unref();
 
 // Lazy import 避免 main → web 反向依赖，且 web middleware 单独跑（CLI/test）时不强求 shutdown infra
-import('../../main/services/infra/gracefulShutdown')
+import('../../host/services/infra/gracefulShutdown')
   .then(({ onShutdown }) => {
     onShutdown('web/auth.rateLimitCleanup', async () => {
       clearInterval(rateLimitCleanupTimer);

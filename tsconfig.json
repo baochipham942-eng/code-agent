@@ -15,10 +15,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@main/*": ["src/main/*"],
+      "@host/*": ["src/host/*"],
       "@renderer/*": ["src/renderer/*"],
       "@shared/*": ["src/shared/*"],
-      "electron": ["src/main/platform/index.ts"]
+      "electron": ["src/host/platform/index.ts"]
     },
     "types": ["node"],
     "experimentalDecorators": true,

@@ -17,7 +17,7 @@ export const listAgentsCommand = new Command('list-agents')
 
       // 初始化 registry（CLI 是独立进程，desktop 那边的初始化不会复用过来）
       const { initAgentRegistry, listAllAgents, disposeAgentRegistry } = await import(
-        '../../main/agent/agentRegistry'
+        '../../host/agent/agentRegistry'
       );
       await initAgentRegistry(workingDir);
 

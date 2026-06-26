@@ -39,9 +39,9 @@ export const btwCommand: CommandDefinition = {
 
     try {
       const [{ runReadOnlySideChat }, { getToolResolver }, { getSubagentExecutor }] = await Promise.all([
-        import('../../../main/agent/readOnlySideChat'),
-        import('../../../main/tools/dispatch/toolResolver'),
-        import('../../../main/agent/subagentExecutor'),
+        import('../../../host/agent/readOnlySideChat'),
+        import('../../../host/tools/dispatch/toolResolver'),
+        import('../../../host/agent/subagentExecutor'),
       ]);
 
       const cfg = agent.getConfig();

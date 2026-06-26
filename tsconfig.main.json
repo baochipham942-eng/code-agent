@@ -7,5 +7,5 @@
     "outDir": "dist/main",
     "declaration": true
   },
-  "include": ["src/main/**/*", "src/shared/**/*", "src/preload/**/*"]
+  "include": ["src/host/**/*", "src/shared/**/*", "src/preload/**/*"]
 }

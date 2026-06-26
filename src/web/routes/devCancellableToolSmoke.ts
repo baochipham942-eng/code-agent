@@ -5,7 +5,7 @@ import { promises as fs } from 'fs';
 import http from 'http';
 import os from 'os';
 import path from 'path';
-import type { ToolExecutionResult } from '../../main/tools/types';
+import type { ToolExecutionResult } from '../../host/tools/types';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
 

@@ -9,7 +9,7 @@ import { terminalOutput } from '../output';
 import { cleanup, initializeCLIServices } from '../bootstrap';
 import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse } from '../types';
 import type { AgentEvent } from '../../shared/contract';
-import { createLogger } from '../../main/services/infra/logger';
+import { createLogger } from '../../host/services/infra/logger';
 
 const logger = createLogger('CLI-Serve');
 type RunRequestFacade = Pick<APIRunRequest, 'prompt' | 'project' | 'generation' | 'model' | 'provider'>;
@@ -203,7 +203,7 @@ async function handleRun(
     // prompt 命令展开（/命令协议层，roadmap 2.2）：与 run/chat 入口对齐
     let effectivePrompt = request.prompt;
     if (effectivePrompt.startsWith('/')) {
-      const { getPromptCommandService } = await import('../../main/services/commands/promptCommandService');
+      const { getPromptCommandService } = await import('../../host/services/commands/promptCommandService');
       const resolution = await getPromptCommandService()
         .resolveInvocation(effectivePrompt, process.cwd())
         .catch(() => null);

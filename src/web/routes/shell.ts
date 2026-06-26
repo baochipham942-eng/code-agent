@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getShellCapabilitiesManifest } from '../../main/shellCapabilities';
+import { getShellCapabilitiesManifest } from '../../host/shellCapabilities';
 
 interface ShellRouterDeps {
   getAppVersion: () => string;

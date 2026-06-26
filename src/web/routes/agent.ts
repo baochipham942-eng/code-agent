@@ -10,8 +10,8 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
-import type { ExecuteOptions } from '../../main/tools/toolExecutor';
-import type { DatabaseService } from '../../main/services/core/databaseService';
+import type { ExecuteOptions } from '../../host/tools/toolExecutor';
+import type { DatabaseService } from '../../host/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';
@@ -23,7 +23,7 @@ import {
   dbAvailable,
   seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
-import { buildGoalContract } from '../../main/agent/goalModeController';
+import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
@@ -32,7 +32,7 @@ import {
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
-} from '../../main/services/agentEngine';
+} from '../../host/services/agentEngine';
 import {
   type ExternalAgentEngineFailureContext,
   recordExternalEngineFailure,
@@ -49,7 +49,7 @@ import type {
 } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
-import { extractArtifacts } from '../../main/agent/artifactExtractor';
+import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -151,7 +151,7 @@ async function ensureDbSession(
   title: string,
   modelConfig: { provider: ModelProvider; model: string },
 ): Promise<DatabaseService> {
-  const { getDatabase } = await import('../../main/services/core/databaseService');
+  const { getDatabase } = await import('../../host/services/core/databaseService');
   const db = getDatabase();
   const existing = db.getSession(sessionId);
   if (!existing) {
@@ -327,7 +327,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       //（实测 0.16.89：UI 选"自动"后日志仍报"显式模型 ... 不启用 vision fallback"）。
       let sessionAdaptive = false;
       if (!effectiveModel || !effectiveProvider) {
-        const { getModelSessionState } = await import('../../main/session/modelSessionState');
+        const { getModelSessionState } = await import('../../host/session/modelSessionState');
         const override = getModelSessionState().getOverride(sessionId);
         if (override?.adaptive === true) {
           sessionAdaptive = true;
@@ -704,7 +704,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (dbAvailable) {
         try {
           // 确保 session 在 DB 中存在（SM 和直写都需要）
-          const { getDatabase: ensureDb } = await import('../../main/services/core/databaseService');
+          const { getDatabase: ensureDb } = await import('../../host/services/core/databaseService');
           const dbForSession = ensureDb();
           if (!dbForSession.getSession(sessionId)) {
             dbForSession.createSessionWithId(sessionId, {
@@ -745,7 +745,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             }
           } else {
             // SM 不可用时降级为直写 DB（session 已在上面 ensure 创建）
-            const { getDatabase } = await import('../../main/services/core/databaseService');
+            const { getDatabase } = await import('../../host/services/core/databaseService');
             const db = getDatabase();
             if (!userMsgPrePersistedDb) {
               db.addMessage(sessionId, {
@@ -769,7 +769,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             }
           }
           // 更新会话标题/时间戳
-          const { getDatabase: getDb } = await import('../../main/services/core/databaseService');
+          const { getDatabase: getDb } = await import('../../host/services/core/databaseService');
           const db = getDb();
           if (history.length === 0) {
             const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
@@ -871,7 +871,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
-        const { getTelemetryCollector } = await import('../../main/telemetry');
+        const { getTelemetryCollector } = await import('../../host/telemetry');
         const collector = getTelemetryCollector();
         collector.endSession(sessionId);
       } catch { /* telemetry cleanup failure is non-fatal */ }

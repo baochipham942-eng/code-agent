@@ -11,7 +11,7 @@ import { spawn } from 'child_process';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { wrapCommandForSandbox, getSandboxManager } from '@main/sandbox';
+import { wrapCommandForSandbox, getSandboxManager } from '@host/sandbox';
 
 function run(
   command: string,

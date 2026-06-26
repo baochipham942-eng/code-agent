@@ -1,4 +1,4 @@
-import type { MCPServerConfig } from '../main/mcp/mcpClient';
+import type { MCPServerConfig } from '../host/mcp/mcpClient';
 
 type WorkspaceSettingsForBootstrap = {
   defaultOpenTarget?: string;
@@ -47,9 +47,9 @@ export async function initializeWebPluginSystem(
   options: InitializeWebPluginSystemOptions = {},
 ): Promise<void> {
   const importProtocolRegistry = options.importProtocolRegistry
-    ?? (() => import('../main/tools/protocolRegistry'));
+    ?? (() => import('../host/tools/protocolRegistry'));
   const importPlugins = options.importPlugins
-    ?? (() => import('../main/plugins') as Promise<PluginModule>);
+    ?? (() => import('../host/plugins') as Promise<PluginModule>);
   const broadcastSSE = options.broadcastSSE ?? (() => undefined);
   const logger = options.logger ?? noopLogger;
 

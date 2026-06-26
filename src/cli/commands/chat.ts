@@ -21,10 +21,10 @@ import {
   normalizeProviderId,
 } from '../../shared/constants';
 import type { ModelProvider } from '../../shared/contract';
-import { getPRLinkService } from '../../main/services/github/prLinkService';
+import { getPRLinkService } from '../../host/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
 import type { CommandContext, CommandOutput } from '../../shared/commands';
-import { getPromptCommandService } from '../../main/services/commands/promptCommandService';
+import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 
 /** Provider → env var name mapping */
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -400,7 +400,7 @@ async function handleCommand(
           return getToolExecutor();
         },
         getSessionSkillService: async () => {
-          const { getSessionSkillService } = await import('../../main/services/skills/sessionSkillService');
+          const { getSessionSkillService } = await import('../../host/services/skills/sessionSkillService');
           return getSessionSkillService();
         },
       };
@@ -623,7 +623,7 @@ async function handleCommand(
     // ────────────────────────────────────────────────────
     case 'skills': {
       try {
-        const { getSessionSkillService } = await import('../../main/services/skills/sessionSkillService');
+        const { getSessionSkillService } = await import('../../host/services/skills/sessionSkillService');
         const skillService = getSessionSkillService();
         const sessionId = agent.getSessionId();
         if (sessionId) {

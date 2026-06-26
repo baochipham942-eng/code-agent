@@ -1,4 +1,4 @@
-import type { HandlerFn } from '../main/platform';
+import type { HandlerFn } from '../host/platform';
 import type { AuthStatus, AuthUser } from '../shared/contract';
 import { IPC_DOMAINS } from '../shared/ipc';
 

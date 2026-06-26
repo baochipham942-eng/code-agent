@@ -23,31 +23,31 @@ import fs from 'fs';
 // 初始化走 main initConfigService —— 4c8b5d7d 修复尾巴：消除"配置双胞胎"。
 import './config'; // 副作用：加载 .env（保持原有行为）
 import type { CLIConfigService } from './config';
-import { initConfigService as initMainConfigService } from '../main/services/core/configService';
+import { initConfigService as initMainConfigService } from '../host/services/core/configService';
 import { initCLIDatabase, type CLIDatabaseService } from './database';
 import { createCLIPermissionHandler } from './permissionPolicy';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
 import type { TelemetryAdapter } from '../shared/contract/telemetry';
-import type { PlanningService } from '../main/planning';
-import { SYSTEM_PROMPT } from '../main/prompts/builder';
-import { applyProviderVariant } from '../main/prompts/providerVariants';
+import type { PlanningService } from '../host/planning';
+import { SYSTEM_PROMPT } from '../host/prompts/builder';
+import { applyProviderVariant } from '../host/prompts/providerVariants';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
 import { SWARM_TRACE } from '../shared/constants/storage';
-import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
-import { FileSwarmTraceRepository } from '../main/services/core/repositories/FileSwarmTraceRepository';
-import { getSwarmTraceWriter, installSwarmTraceWriter } from '../main/agent/swarmTraceWriter';
+import { composeTelemetryAdapters } from '../host/agent/metricsCollector';
+import { FileSwarmTraceRepository } from '../host/services/core/repositories/FileSwarmTraceRepository';
+import { getSwarmTraceWriter, installSwarmTraceWriter } from '../host/agent/swarmTraceWriter';
 
 // CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
 // 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
 const cliRequire = typeof require === 'function' ? require : Module.createRequire(import.meta.url);
 
 // 延迟导入的模块
-let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
-let ToolExecutor: typeof import('../main/tools/toolExecutor').ToolExecutor;
-let getSkillDiscoveryService: typeof import('../main/services/skills').getSkillDiscoveryService;
-let getTelemetryCollector: typeof import('../main/telemetry').getTelemetryCollector;
+let AgentLoop: typeof import('../host/agent/agentLoop').AgentLoop;
+let ToolExecutor: typeof import('../host/tools/toolExecutor').ToolExecutor;
+let getSkillDiscoveryService: typeof import('../host/services/skills').getSkillDiscoveryService;
+let getTelemetryCollector: typeof import('../host/telemetry').getTelemetryCollector;
 
 // CLI 数据目录
 function getCLIDataDir(): string {
@@ -169,20 +169,20 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
 
   // 动态导入核心模块
   try {
-    const agentLoopModule = await import('../main/agent/agentLoop');
+    const agentLoopModule = await import('../host/agent/agentLoop');
     AgentLoop = agentLoopModule.AgentLoop;
 
-    const toolExecutorModule = await import('../main/tools/toolExecutor');
+    const toolExecutorModule = await import('../host/tools/toolExecutor');
     ToolExecutor = toolExecutorModule.ToolExecutor;
 
-    const protocolRegistryModule = await import('../main/tools/protocolRegistry');
+    const protocolRegistryModule = await import('../host/tools/protocolRegistry');
     protocolRegistryModule.getProtocolRegistry();
     cliLog('Protocol tool registry initialized');
 
-    const skillsModule = await import('../main/services/skills');
+    const skillsModule = await import('../host/services/skills');
     getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;
 
-    const telemetryModule = await import('../main/telemetry');
+    const telemetryModule = await import('../host/telemetry');
     getTelemetryCollector = telemetryModule.getTelemetryCollector;
   } catch (error) {
     console.error('Fatal: Failed to import core modules:', error);
@@ -193,7 +193,7 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   // 与桌面端同一条 initMCPClient 链路。失败不阻塞 CLI（与数据库初始化同策略）。
   if (cliShouldInitMcp()) {
     try {
-      const { initMCPClient } = await import('../main/mcp/mcpClient');
+      const { initMCPClient } = await import('../host/mcp/mcpClient');
       await initMCPClient(undefined, process.cwd());
       cliLog('MCP client initialized (computer-use enabled)');
     } catch (error) {
@@ -234,7 +234,7 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块
   void (async () => {
     try {
-      const { probeEnvCapabilities } = await import('../main/services/core/envCapabilities');
+      const { probeEnvCapabilities } = await import('../host/services/core/envCapabilities');
       await probeEnvCapabilities();
     } catch (error) {
       cliLog('EnvCapabilities probe failed (non-fatal):', error);
@@ -361,7 +361,7 @@ export function createAgentLoop(
   messages: Message[] = [],
   sessionId?: string,
   extraTelemetryAdapter?: TelemetryAdapter,
-  toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../main/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> }
+  toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../host/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> }
 ): InstanceType<typeof AgentLoop> {
   if (!toolExecutor || !AgentLoop) {
     throw new Error('CLI services not initialized');
@@ -389,7 +389,7 @@ export function createAgentLoop(
   // 创建 PlanningService（如果启用规划模式）
   let planningService: PlanningService | undefined = undefined;
   if (config.enablePlanning) {
-    const { createPlanningService } = cliRequire('../main/planning/planningService') as typeof import('../main/planning/planningService');
+    const { createPlanningService } = cliRequire('../host/planning/planningService') as typeof import('../host/planning/planningService');
     planningService = createPlanningService(config.workingDirectory, effectiveSessionId);
     planningService.initialize().catch((err: unknown) => {
       console.error('Failed to initialize planning service:', err);
@@ -429,7 +429,7 @@ export function createAgentLoop(
   let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
   if (process.env.EVAL_DISABLED !== 'true') {
     try {
-      const mod = cliRequire('../evaluation/sessionEventService') as typeof import('../main/evaluation/sessionEventService');
+      const mod = cliRequire('../evaluation/sessionEventService') as typeof import('../host/evaluation/sessionEventService');
       eventService = mod.getSessionEventService();
     } catch { /* evaluation module not available */ }
   }
@@ -499,7 +499,7 @@ export async function cleanup(): Promise<void> {
   // MCP：断开外部 server 子进程（cua-driver 等），避免 CLI 退出后残留孤儿进程
   if (cliShouldInitMcp()) {
     try {
-      const { getMCPClient } = await import('../main/mcp/mcpClient');
+      const { getMCPClient } = await import('../host/mcp/mcpClient');
       await getMCPClient().disconnectAll();
     } catch {
       // 未初始化或已断开，忽略

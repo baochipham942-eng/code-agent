@@ -51,4 +51,4 @@ export {
 
 // promptSuggestions 故意不在此处 re-export：它通过动态 import 依赖 ../../model/quickModel，
 // 而 quickModel 间接依赖 services barrel，会形成 core ↔ model 循环。
-// 消费方请 `import ... from '@main/services/core/promptSuggestions'` 直接引用。
+// 消费方请 `import ... from '@host/services/core/promptSuggestions'` 直接引用。

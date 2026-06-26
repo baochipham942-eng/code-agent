@@ -12,7 +12,7 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { sseClients, broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
-import { getEventBus } from '../../main/services/eventing/bus';
+import { getEventBus } from '../../host/services/eventing/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { ScriptRunEvent } from '../../shared/contract/scriptRun';
 import type { WebRouteLogger } from './routeTypes';
@@ -22,8 +22,8 @@ import { createDevAgentTeamSmokeRouter } from './devAgentTeamSmoke';
 import { registerDevTelemetrySeedRoutes } from './devTelemetrySeedRoutes';
 import { DevApiError } from './devSeedHelpers';
 import type { ActiveAgentLoop } from './agent';
-import { getBackgroundTaskManager } from '../../main/session/backgroundTaskManager';
-import { notificationService } from '../../main/services/infra/notificationService';
+import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
+import { notificationService } from '../../host/services/infra/notificationService';
 
 export {
   DevApiError,
@@ -142,7 +142,7 @@ const OFFICE_SMOKE_STEPS: OfficeSmokeStep[] = [
 
 // ── Module-level state ────────────────────────────────────────────────────
 
-let devRealApprovalToolExecutor: import('../../main/tools/toolExecutor').ToolExecutor | null = null;
+let devRealApprovalToolExecutor: import('../../host/tools/toolExecutor').ToolExecutor | null = null;
 
 // ── Helper functions ──────────────────────────────────────────────────────
 
@@ -206,7 +206,7 @@ function readOfficeSmokeBody(body: unknown): { project: string; sessionId: strin
 
 async function requestDevToolPermission(
   pendingDevPermissions: Map<string, PendingDevPermissionRequest>,
-  request: import('../../main/tools/types').PermissionRequestData,
+  request: import('../../host/tools/types').PermissionRequestData,
 ): Promise<boolean> {
   if (sseClients.size === 0) {
     throw new DevApiError(
@@ -278,7 +278,7 @@ async function getRealApprovalDevToolExecutor(
   await initializeCLIServices();
 
   if (!devRealApprovalToolExecutor) {
-    const { ToolExecutor } = await import('../../main/tools/toolExecutor');
+    const { ToolExecutor } = await import('../../host/tools/toolExecutor');
 
     devRealApprovalToolExecutor = new ToolExecutor({
       requestPermission: (req) => requestDevToolPermission(pendingDevPermissions, req),

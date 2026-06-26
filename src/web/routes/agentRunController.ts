@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import type { AgentEvent, SessionStatus } from '../../shared/contract';
-import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumulator';
+import { MessageDeltaAccumulator } from '../../host/protocol/messageDeltaAccumulator';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
@@ -121,7 +121,7 @@ export class AgentRunController {
       if (sm?.updateSession) {
         await sm.updateSession(this.deps.sessionId, updates);
       } else {
-        const { getDatabase } = await import('../../main/services/core/databaseService');
+        const { getDatabase } = await import('../../host/services/core/databaseService');
         const db = getDatabase();
         if (db.isReady) {
           db.updateSession(this.deps.sessionId, updates);

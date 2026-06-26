@@ -152,9 +152,9 @@ export async function seedCompletedTelemetryTurn(body: DevTelemetrySeedTurnReque
   const workingDirectory = readOptionalString(body.workingDirectory, process.cwd());
 
   const [{ getAuthService }, { getTelemetryCollector }, { getSessionManager }] = await Promise.all([
-    import('../../main/services/auth/authService'),
-    import('../../main/telemetry'),
-    import('../../main/services/infra/sessionManager'),
+    import('../../host/services/auth/authService'),
+    import('../../host/telemetry'),
+    import('../../host/services/infra/sessionManager'),
   ]);
   const user = getAuthService().getCurrentUser();
   const collector = getTelemetryCollector();
@@ -203,7 +203,7 @@ export async function findCloudTelemetryFeedback(sessionId: string, turnId: stri
   found: boolean;
   feedback?: unknown;
 }> {
-  const { getSupabase } = await import('../../main/services/infra/supabaseService');
+  const { getSupabase } = await import('../../host/services/infra/supabaseService');
   const supabase = getSupabase() as unknown as DevSupabaseClient;
 
   const { data, error } = await supabase
@@ -228,7 +228,7 @@ export async function findCloudTelemetryTrace(sessionId: string, turnId: string)
   session?: unknown;
   turn?: unknown;
 }> {
-  const { getSupabase } = await import('../../main/services/infra/supabaseService');
+  const { getSupabase } = await import('../../host/services/infra/supabaseService');
   const supabase = getSupabase() as unknown as DevSupabaseClient;
 
   const [sessionResult, turnResult] = await Promise.all([
@@ -265,14 +265,14 @@ export async function findCloudTelemetryTrace(sessionId: string, turnId: string)
 export async function seedDevTodos(body: DevTodoSeedRequest): Promise<{ sessionId: string; todos: TodoItem[] }> {
   const sessionId = readRequiredString(body.sessionId, 'sessionId');
   const todos = normalizeDevTodoItems(body.todos);
-  const { setSessionTodos, getSessionTodos } = await import('../../main/agent/todoParser');
+  const { setSessionTodos, getSessionTodos } = await import('../../host/agent/todoParser');
   setSessionTodos(sessionId, todos);
   return { sessionId, todos: getSessionTodos(sessionId) };
 }
 
 export async function readDevTodos(sessionId: unknown): Promise<{ sessionId: string; todos: TodoItem[] }> {
   const resolvedSessionId = readRequiredString(sessionId, 'sessionId');
-  const { getSessionTodos } = await import('../../main/agent/todoParser');
+  const { getSessionTodos } = await import('../../host/agent/todoParser');
   return { sessionId: resolvedSessionId, todos: getSessionTodos(resolvedSessionId) };
 }
 
@@ -291,9 +291,9 @@ export async function seedDevCompactState(body: DevCompactStateSeedRequest): Pro
   const request = normalizeDevCompactStateSeed(body);
   const now = Date.now();
   const [{ getSessionManager }, { getDatabase }, { CompressionState }] = await Promise.all([
-    import('../../main/services/infra/sessionManager'),
-    import('../../main/services/core/databaseService'),
-    import('../../main/context/compressionState'),
+    import('../../host/services/infra/sessionManager'),
+    import('../../host/services/core/databaseService'),
+    import('../../host/context/compressionState'),
   ]);
 
   const compactedTokenCount = request.compactedMessageIds.length * 128;
@@ -379,9 +379,9 @@ export async function readDevCompactState(sessionId: unknown): Promise<{
 }> {
   const resolvedSessionId = readRequiredString(sessionId, 'sessionId');
   const [{ getSessionManager }, { getDatabase }, { CompressionState }] = await Promise.all([
-    import('../../main/services/infra/sessionManager'),
-    import('../../main/services/core/databaseService'),
-    import('../../main/context/compressionState'),
+    import('../../host/services/infra/sessionManager'),
+    import('../../host/services/core/databaseService'),
+    import('../../host/context/compressionState'),
   ]);
   const session = await getSessionManager().getSession(resolvedSessionId, Number.MAX_SAFE_INTEGER);
   const compactionMessages = (session?.messages ?? [])
@@ -416,7 +416,7 @@ export async function readDevReplayState(sessionId: unknown): Promise<{
   telemetryCompleteness: unknown;
 }> {
   const resolvedSessionId = readRequiredString(sessionId, 'sessionId');
-  const { extractStructuredReplay } = await import('../../main/evaluation/replayService');
+  const { extractStructuredReplay } = await import('../../host/evaluation/replayService');
   const replay = await extractStructuredReplay(resolvedSessionId);
 
   return {

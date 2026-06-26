@@ -39,7 +39,7 @@ async function resolveExtensionOpsService(ctx: Record<string, unknown>): Promise
     throw new Error('Extension operations are not wired for GUI commands');
   }
 
-  const mod = await import('../../../main/services/plugins/extensionOpsService');
+  const mod = await import('../../../host/services/plugins/extensionOpsService');
   if (!isExtensionOpsCommandService(mod.getExtensionOpsService?.())) {
     throw new Error('getExtensionOpsService is not available');
   }
@@ -71,7 +71,7 @@ export const agentsCommand: CommandDefinition = {
     // --- 运行中 ---
     try {
       const { getSessionStateManager } = await import(
-        '../../../main/session/sessionStateManager'
+        '../../../host/session/sessionStateManager'
       );
       const manager = getSessionStateManager();
       const running = manager.getRunning();
@@ -95,7 +95,7 @@ export const agentsCommand: CommandDefinition = {
     // --- 最近完成 ---
     try {
       const { getRecentAgentHistory } = await import(
-        '../../../main/session/agentHistoryPersistence'
+        '../../../host/session/agentHistoryPersistence'
       );
       const history = await getRecentAgentHistory(10);
 
@@ -168,7 +168,7 @@ export const statusCommand: CommandDefinition = {
     // Context info
     let contextLine = '';
     try {
-      const { getContextHealthService } = await import('../../../main/context/contextHealthService');
+      const { getContextHealthService } = await import('../../../host/context/contextHealthService');
       const health = getContextHealthService().getLatest();
       if (health.lastUpdated > 0) {
         contextLine = `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`;
@@ -404,7 +404,7 @@ export const costCommand: CommandDefinition = {
 
     // Budget info (optional)
     try {
-      const { getBudgetService } = await import('../../../main/services/core/budgetService');
+      const { getBudgetService } = await import('../../../host/services/core/budgetService');
       const budget = getBudgetService();
       const status = budget.checkBudget();
       if (status.maxBudget > 0) {
@@ -425,7 +425,7 @@ export const contextCommand: CommandDefinition = {
   surfaces: ['cli', 'gui'],
   handler: async (ctx) => {
     try {
-      const { getContextHealthService } = await import('../../../main/context/contextHealthService');
+      const { getContextHealthService } = await import('../../../host/context/contextHealthService');
       const health = getContextHealthService().getLatest();
 
       if (health.lastUpdated === 0 || health.currentTokens === 0) {
@@ -449,7 +449,7 @@ export const contextCommand: CommandDefinition = {
 
       // Compression stats
       try {
-        const { getAutoCompressor } = await import('../../../main/context/autoCompressor');
+        const { getAutoCompressor } = await import('../../../host/context/autoCompressor');
         const stats = getAutoCompressor().getStats();
         if (stats.compressionCount > 0) {
           lines.push(`  Compressed: ${stats.compressionCount} times, saved ${fmtNum(stats.totalSavedTokens)} tokens`);
@@ -485,7 +485,7 @@ export const permissionsCommand: CommandDefinition = {
 
     // Section 1: Mode
     try {
-      const { getPermissionModeManager } = await import('../../../main/permissions/modes');
+      const { getPermissionModeManager } = await import('../../../host/permissions/modes');
       const manager = getPermissionModeManager();
       const mode = manager.getMode();
       const config = manager.getModeConfig();
@@ -500,7 +500,7 @@ export const permissionsCommand: CommandDefinition = {
 
     // Section 2: Exec Policy Rules
     try {
-      const { getExecPolicyStore } = await import('../../../main/security/execPolicy');
+      const { getExecPolicyStore } = await import('../../../host/security/execPolicy');
       const rules = getExecPolicyStore().getRules();
       lines.push(`  Exec Policy (${rules.length} rules):`);
       if (rules.length === 0) {
@@ -524,7 +524,7 @@ export const permissionsCommand: CommandDefinition = {
 
     // Section 3: Recent Decisions
     try {
-      const { getDecisionHistory } = await import('../../../main/security/decisionHistory');
+      const { getDecisionHistory } = await import('../../../host/security/decisionHistory');
       const recent = getDecisionHistory().getRecent(10);
       const total = getDecisionHistory().getAll().length;
       lines.push(`  Recent Decisions (${total} total, showing last ${recent.length}):`);

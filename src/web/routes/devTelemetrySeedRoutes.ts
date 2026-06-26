@@ -63,7 +63,7 @@ export function registerDevTelemetrySeedRoutes(router: Router, deps: DevTelemetr
     if (!ensureDevApiEnabled(res)) return;
 
     try {
-      const { getTelemetryUploaderService } = await import('../../main/telemetry/telemetryUploaderService');
+      const { getTelemetryUploaderService } = await import('../../host/telemetry/telemetryUploaderService');
       const uploaded = await getTelemetryUploaderService().upload();
       res.json({ ok: true, uploaded });
     } catch (error) {

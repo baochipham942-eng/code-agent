@@ -7,8 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
-import { getUserDataPath } from '../../main/platform/appPaths';
-import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../main/services/infra/browser/managedBrowserHelpers';
+import { getUserDataPath } from '../../host/platform/appPaths';
+import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
 import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;

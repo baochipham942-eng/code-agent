@@ -24,10 +24,10 @@ export const initSoulCommand = new Command('init-soul')
   .action(async (opts: InitSoulOptions) => {
     try {
       const { SOUL_TEMPLATE, PROFILE_TEMPLATE } = await import(
-        '../../main/prompts/templates/soulTemplates'
+        '../../host/prompts/templates/soulTemplates'
       );
       const { getUserConfigDir, getProjectConfigDir, ensureUserConfigDir, ensureConfigDir } =
-        await import('../../main/config/configPaths');
+        await import('../../host/config/configPaths');
 
       const results: Array<{ path: string; status: 'created' | 'skipped' | 'overwritten' }> = [];
 

@@ -7,7 +7,7 @@ import {
   DiffTracker,
   getDiffTracker,
   resetDiffTracker,
-} from '../../../src/main/services/diff/diffTracker';
+} from '../../../src/host/services/diff/diffTracker';
 
 describe('DiffTracker', () => {
   let tracker: DiffTracker;

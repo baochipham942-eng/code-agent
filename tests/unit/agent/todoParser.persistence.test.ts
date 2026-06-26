@@ -11,11 +11,11 @@ const dbState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -31,8 +31,8 @@ import {
   parseTodos,
   setSessionTodos,
   syncTodosToSessionTasks,
-} from '../../../src/main/agent/todoParser';
-import { clearTasks, updateTask } from '../../../src/main/services/planning/taskStore';
+} from '../../../src/host/agent/todoParser';
+import { clearTasks, updateTask } from '../../../src/host/services/planning/taskStore';
 
 describe('todoParser persistence', () => {
   beforeEach(() => {

@@ -4,14 +4,14 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { buildGoalContract, GoalModeController } from '../../../src/main/agent/goalModeController';
+import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import {
   applySwarmBudgetClamp,
   recordSwarmSpend,
   goalTokensUsedWithSwarm,
   maybeInjectSwarmGuidance,
   type SwarmGoalRuntimeView,
-} from '../../../src/main/agent/runtime/swarmGoalIntegration';
+} from '../../../src/host/agent/runtime/swarmGoalIntegration';
 import { SWARM_GOAL } from '../../../src/shared/constants';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 

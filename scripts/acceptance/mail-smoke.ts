@@ -1,4 +1,4 @@
-import { mailConnector } from '../../src/main/connectors/native/mail.ts';
+import { mailConnector } from '../../src/host/connectors/native/mail.ts';
 import {
   finishWithError,
   getNumberOption,

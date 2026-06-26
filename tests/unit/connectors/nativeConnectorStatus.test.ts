@@ -4,7 +4,7 @@ const osascriptMocks = vi.hoisted(() => ({
   runAppleScript: vi.fn(async () => 'Work\nPersonal'),
 }));
 
-vi.mock('../../../src/main/connectors/native/osascript', () => ({
+vi.mock('../../../src/host/connectors/native/osascript', () => ({
   runAppleScript: osascriptMocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -12,10 +12,10 @@ vi.mock('../../../src/main/connectors/native/osascript', () => ({
   sharedAppleScriptHandlers: () => [],
 }));
 
-import { mailConnector } from '../../../src/main/connectors/native/mail';
-import { remindersConnector } from '../../../src/main/connectors/native/reminders';
-import { calendarConnector } from '../../../src/main/connectors/native/calendar';
-import { ConnectorRegistry } from '../../../src/main/connectors/registry';
+import { mailConnector } from '../../../src/host/connectors/native/mail';
+import { remindersConnector } from '../../../src/host/connectors/native/reminders';
+import { calendarConnector } from '../../../src/host/connectors/native/calendar';
+import { ConnectorRegistry } from '../../../src/host/connectors/registry';
 
 describe('native office connector lazy status', () => {
   const platformReadiness = process.platform === 'darwin' ? 'unchecked' : 'unavailable';

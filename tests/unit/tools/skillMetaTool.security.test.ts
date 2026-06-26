@@ -1,7 +1,7 @@
 // ============================================================================
 // Skill module security boundaries — covers shell rendering + allowed-tools
 // 来源：legacy skillMetaTool 已删除 (2026-05-04)，本文件迁移到测 native
-// `skillModule`（src/main/tools/modules/skill/skill.ts），保持原 3 项安全断言。
+// `skillModule`（src/host/tools/modules/skill/skill.ts），保持原 3 项安全断言。
 // ============================================================================
 
 import { promises as fs } from 'fs';
@@ -13,7 +13,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../src/main/protocol/tools';
+} from '../../../src/host/protocol/tools';
 
 const mocks = vi.hoisted(() => ({
   skill: null as ParsedSkill | null,
@@ -28,11 +28,11 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/skills', () => ({
+vi.mock('../../../src/host/services/skills', () => ({
   getSkillDiscoveryService: () => mocks.discoveryService,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -47,7 +47,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: vi.fn(async () => ({
       success: true,
@@ -58,7 +58,7 @@ vi.mock('../../../src/main/agent/subagentExecutor', () => ({
   }),
 }));
 
-const { skillModule } = await import('../../../src/main/tools/modules/skill/skill');
+const { skillModule } = await import('../../../src/host/tools/modules/skill/skill');
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

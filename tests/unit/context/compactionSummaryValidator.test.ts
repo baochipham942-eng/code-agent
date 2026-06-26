@@ -3,13 +3,13 @@ import {
   buildSummaryRepairInstruction,
   validateCompactionSummary,
   type CompactionSummaryManifest,
-} from '../../../src/main/context/compactionSummaryValidator';
+} from '../../../src/host/context/compactionSummaryValidator';
 import type { CompactionSurvivorManifest } from '../../../src/shared/contract';
 
 describe('validateCompactionSummary', () => {
   const manifest: CompactionSummaryManifest = {
     files: [
-      { path: 'src/main/context/autoCompressor.ts' },
+      { path: 'src/host/context/autoCompressor.ts' },
       { path: 'tests/unit/context/autoCompressor.test.ts' },
     ],
     errors: [
@@ -23,7 +23,7 @@ describe('validateCompactionSummary', () => {
   it('passes when all survivor manifest items are covered', () => {
     const sharedManifest: CompactionSurvivorManifest = manifest;
     const summary = [
-      'Files covered: src/main/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
+      'Files covered: src/host/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
       'Unresolved error: autoCompressor retry test is still failing.',
       'Open work: wire validator into the retry prompt later.',
     ].join('\n');
@@ -39,7 +39,7 @@ describe('validateCompactionSummary', () => {
 
   it('fails when a required file path is missing', () => {
     const summary = [
-      'Files covered: src/main/context/autoCompressor.ts.',
+      'Files covered: src/host/context/autoCompressor.ts.',
       'Unresolved error: autoCompressor retry test is still failing.',
       'Open work: wire validator into the retry prompt later.',
     ].join('\n');
@@ -52,7 +52,7 @@ describe('validateCompactionSummary', () => {
 
   it('fails when an unresolved error is missing', () => {
     const summary = [
-      'Files covered: src/main/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
+      'Files covered: src/host/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
       'Open work: wire validator into the retry prompt later.',
     ].join('\n');
 
@@ -64,7 +64,7 @@ describe('validateCompactionSummary', () => {
 
   it('fails when open work is missing', () => {
     const summary = [
-      'Files covered: src/main/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
+      'Files covered: src/host/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
       'Unresolved error: autoCompressor retry test is still failing.',
     ].join('\n');
 
@@ -76,7 +76,7 @@ describe('validateCompactionSummary', () => {
 
   it('weakly passes basename coverage when needs re-read is explicit', () => {
     const summary = [
-      'Files covered: src/main/context/autoCompressor.ts.',
+      'Files covered: src/host/context/autoCompressor.ts.',
       'autoCompressor.test.ts needs re-read before continuing because the full path was compacted away.',
       'Unresolved error: autoCompressor retry test is still failing.',
       'Open work: wire validator into the retry prompt later.',
@@ -96,13 +96,13 @@ describe('buildSummaryRepairInstruction', () => {
   it('includes missing paths, unresolved errors, and open work', () => {
     const instruction = buildSummaryRepairInstruction({
       ok: false,
-      missingPaths: ['src/main/context/autoCompressor.ts'],
+      missingPaths: ['src/host/context/autoCompressor.ts'],
       missingErrors: ['Vitest failure: autoCompressor retry test is still failing'],
       missingOpenWork: ['Todo: wire validator into the retry prompt later'],
       warnings: [],
     });
 
-    expect(instruction).toContain('src/main/context/autoCompressor.ts');
+    expect(instruction).toContain('src/host/context/autoCompressor.ts');
     expect(instruction).toContain('Vitest failure: autoCompressor retry test is still failing');
     expect(instruction).toContain('Todo: wire validator into the retry prompt later');
   });

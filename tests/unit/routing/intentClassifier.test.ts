@@ -3,12 +3,12 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifyIntent, IntentClassifier } from '../../../src/main/routing/intentClassifier';
-import { quickTask } from '../../../src/main/model/quickModel';
-import type { ModelRouter } from '../../../src/main/model/modelRouter';
+import { classifyIntent, IntentClassifier } from '../../../src/host/routing/intentClassifier';
+import { quickTask } from '../../../src/host/model/quickModel';
+import type { ModelRouter } from '../../../src/host/model/modelRouter';
 
 // Mock logger to suppress console output during tests
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/model/quickModel', () => ({
+vi.mock('../../../src/host/model/quickModel', () => ({
   quickTask: vi.fn(),
 }));
 
@@ -203,7 +203,7 @@ describe('IntentClassifier — Research Intent Classification', () => {
     });
 
     it('should detect file path and classify as code_task', async () => {
-      const result = await classifier.classify('看看 /src/main/model/modelRouter.ts 这个文件');
+      const result = await classifier.classify('看看 /src/host/model/modelRouter.ts 这个文件');
       expect(result.intent).toBe('code_task');
       expect(result.confidence).toBe(0.95);
       expect(result.suggestsResearch).toBe(false);

@@ -3,7 +3,7 @@ import {
   createCheckpointTemplate,
   replaceSectionBody,
   validateCheckpointDocument,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
 function validDocument(): string {
   let doc = createCheckpointTemplate();

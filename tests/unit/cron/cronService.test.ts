@@ -12,7 +12,7 @@ const automationState = vi.hoisted(() => ({
   upsert: vi.fn(() => undefined),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getDb: () => ({
       prepare: (sql: string) => ({
@@ -25,11 +25,11 @@ vi.mock('../../../src/main/services/core/databaseService', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/sessionAutomation', () => ({
+vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => automationState,
 }));
 
-import { CronService } from '../../../src/main/cron/cronService';
+import { CronService } from '../../../src/host/cron/cronService';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 

@@ -9,7 +9,7 @@ import {
   createWorkspaceResourceRoute,
   redactPreviewHealthUrl,
   runInAppArtifactPreviewHealth,
-} from '../../../../../src/main/agent/runtime/browser/inAppArtifactPreviewHealth';
+} from '../../../../../src/host/agent/runtime/browser/inAppArtifactPreviewHealth';
 
 const TOKEN = 'unit-test-token';
 

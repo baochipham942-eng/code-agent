@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 
 import type { EvidenceRef } from '../../../src/shared/contract/evidence';
-import { createCodeIndexServer } from '../../../src/main/mcp/servers/codeIndexServer';
+import { createCodeIndexServer } from '../../../src/host/mcp/servers/codeIndexServer';
 
 let tempDir: string | undefined;
 

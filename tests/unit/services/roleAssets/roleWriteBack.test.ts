@@ -10,16 +10,16 @@ import os from 'os';
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const mockQuickTask = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../../src/main/model/quickModel', () => ({
+vi.mock('../../../../src/host/model/quickModel', () => ({
   quickTask: mockQuickTask,
 }));
 
@@ -27,13 +27,13 @@ import {
   applyWriteGate,
   runRoleWriteBack,
   type WriteBackCandidate,
-} from '../../../../src/main/services/roleAssets/roleWriteBack';
+} from '../../../../src/host/services/roleAssets/roleWriteBack';
 import {
   ensureRoleAssetDirs,
   listScopedMemories,
   loadRoleHistory,
   writeScopedMemory,
-} from '../../../../src/main/services/roleAssets/roleAssetService';
+} from '../../../../src/host/services/roleAssets/roleAssetService';
 
 function candidate(overrides: Partial<WriteBackCandidate> = {}): WriteBackCandidate {
   return {

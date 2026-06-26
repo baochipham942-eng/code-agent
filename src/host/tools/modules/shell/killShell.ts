@@ -1,7 +1,7 @@
 // ============================================================================
 // KillShell (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/shell/killShell.ts (registered as 'kill_shell')
+// 旧版: src/host/tools/shell/killShell.ts (registered as 'kill_shell')
 // 改造点：4 参数签名 + canUseTool 真权限闸门 + ctx.logger
 // 业务依赖（backgroundTasks）保留——它是 sibling tool 模块
 // ============================================================================

@@ -8,13 +8,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
 const runAgentCallMock = vi.fn();
-vi.mock('../../../../src/main/agent/scriptRuntime/agentBridge', () => ({
+vi.mock('../../../../src/host/agent/scriptRuntime/agentBridge', () => ({
   runAgentCall: (...a: unknown[]) => runAgentCallMock(...a),
 }));
 
-import { handleRpc } from '../../../../src/main/agent/scriptRuntime/primitives';
-import { BudgetTracker } from '../../../../src/main/agent/scriptRuntime/budget';
-import type { ScriptRunContext } from '../../../../src/main/agent/scriptRuntime/agentBridge';
+import { handleRpc } from '../../../../src/host/agent/scriptRuntime/primitives';
+import { BudgetTracker } from '../../../../src/host/agent/scriptRuntime/budget';
+import type { ScriptRunContext } from '../../../../src/host/agent/scriptRuntime/agentBridge';
 
 function makeCtx(budget: BudgetTracker): ScriptRunContext {
   return { runId: 'r', budget, emit: vi.fn(), now: () => 0 } as unknown as ScriptRunContext;

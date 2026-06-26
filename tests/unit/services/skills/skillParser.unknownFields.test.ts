@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { parseSkillMd, parseSkillMetadataOnly } from '../../../../src/main/services/skills/skillParser';
+import { parseSkillMd, parseSkillMetadataOnly } from '../../../../src/host/services/skills/skillParser';
 
 describe('Skill frontmatter unknown field warnings (GAP-007)', () => {
   let tempDir: string;
@@ -130,7 +130,7 @@ describe('Hooks config unknown event/field warnings (GAP-007)', () => {
     const hooksJsonPath = path.join(hooksDir, 'hooks.json');
     fs.writeFileSync(hooksJsonPath, JSON.stringify(config), 'utf-8');
 
-    const { parseHooksConfig } = await import('../../../../src/main/hooks/configParser');
+    const { parseHooksConfig } = await import('../../../../src/host/hooks/configParser');
     await parseHooksConfig(hooksJsonPath, 'project', 'hooks-json');
   }
 

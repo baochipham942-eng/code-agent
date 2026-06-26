@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { classifyError } from '../../../src/main/model/errorClassifier';
-import type { ErrorClass } from '../../../src/main/model/errorClassifier';
+import { classifyError } from '../../../src/host/model/errorClassifier';
+import type { ErrorClass } from '../../../src/host/model/errorClassifier';
 
 // --------------------------------------------------------------------------
 // Helpers

@@ -1,7 +1,7 @@
 // ============================================================================
 // Explore (P1 Wave 3 — planning: native ToolModule rewrite, cross-cat dispatch)
 //
-// 旧版: src/main/agent/multiagentTools/explore.ts (legacy Tool exploreTool)
+// 旧版: src/host/agent/multiagentTools/explore.ts (legacy Tool exploreTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：INVALID_ARGS / PERMISSION_DENIED / ABORTED / DOMAIN_ERROR

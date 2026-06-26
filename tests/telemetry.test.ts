@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { classifyIntent, evaluateOutcome, IntentType } from '../src/main/telemetry/intentClassifier';
+import { classifyIntent, evaluateOutcome, IntentType } from '../src/host/telemetry/intentClassifier';
 
 // ============================================================================
 // Test Suite: classifyIntent

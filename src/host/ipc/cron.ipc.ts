@@ -2,7 +2,7 @@
 // Cron IPC Handlers
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';
@@ -88,7 +88,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 只返回 JSON，不要任何解释`;
 
 export function registerCronHandlers(): void {
-  ipcMain.handle(IPC_DOMAINS.CRON, async (_event, request: IPCRequest) => {
+  ipcHost.handle(IPC_DOMAINS.CRON, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
     const cronService = getCronService();
 

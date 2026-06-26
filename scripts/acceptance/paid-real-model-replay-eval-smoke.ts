@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import process from 'process';
 import { config as loadDotenv } from 'dotenv';
-import { redactSecrets, sanitizeLogValue } from '../../src/main/security/secretRedaction';
+import { redactSecrets, sanitizeLogValue } from '../../src/host/security/secretRedaction';
 
 loadDotenv({ path: path.resolve(process.cwd(), '.env'), quiet: true });
 
@@ -295,12 +295,12 @@ async function main(): Promise<void> {
       || 'legacy';
     process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
 
-    const { getProtocolRegistry } = await import('../../src/main/tools/protocolRegistry');
+    const { getProtocolRegistry } = await import('../../src/host/tools/protocolRegistry');
     getProtocolRegistry();
 
-    const { getDatabase } = await import('../../src/main/services/core/databaseService');
-    const testing = await import('../../src/main/testing/index');
-    const { getTelemetryQueryService } = await import('../../src/main/evaluation/telemetryQueryService');
+    const { getDatabase } = await import('../../src/host/services/core/databaseService');
+    const testing = await import('../../src/host/testing/index');
+    const { getTelemetryQueryService } = await import('../../src/host/evaluation/telemetryQueryService');
 
     await getDatabase().initialize();
 

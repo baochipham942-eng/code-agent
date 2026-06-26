@@ -10,31 +10,31 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock heavy peers to keep tests isolated / fast
 // -----------------------------------------------------------------------------
 
-vi.mock('../../../../../src/main/tools/shell/dynamicDescription', () => ({
+vi.mock('../../../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: () => Promise.resolve(null),
 }));
 
-vi.mock('../../../../../src/main/tools/dataFingerprint', () => ({
+vi.mock('../../../../../src/host/tools/dataFingerprint', () => ({
   extractBashFacts: () => null,
   dataFingerprintStore: { recordFact: () => {} },
 }));
 
-vi.mock('../../../../../src/main/services/codex/codexSandbox', () => ({
+vi.mock('../../../../../src/host/services/codex/codexSandbox', () => ({
   isCodexSandboxEnabled: () => false,
   runInCodexSandbox: () => Promise.resolve({ success: false }),
 }));
 
-vi.mock('../../../../../src/main/security/commandSafety', () => ({
+vi.mock('../../../../../src/host/security/commandSafety', () => ({
   isKnownSafeCommand: () => true,
 }));
 
-vi.mock('../../../../../src/main/services/infra/shellEnvironment', () => ({
+vi.mock('../../../../../src/host/services/infra/shellEnvironment', () => ({
   getShellPathDiagnostics: () => ({
     path: process.env.PATH || '',
     source: 'process',
@@ -50,11 +50,11 @@ const startBackgroundTaskMock = vi.fn();
 const createPtySessionMock = vi.fn();
 const getPtySessionOutputMock = vi.fn();
 
-vi.mock('../../../../../src/main/tools/shell/backgroundTasks', () => ({
+vi.mock('../../../../../src/host/tools/shell/backgroundTasks', () => ({
   startBackgroundTask: (...args: unknown[]) => startBackgroundTaskMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/shell/ptyExecutor', () => ({
+vi.mock('../../../../../src/host/tools/shell/ptyExecutor', () => ({
   createPtySession: (...args: unknown[]) => createPtySessionMock(...args),
   getPtySessionOutput: (...args: unknown[]) => getPtySessionOutputMock(...args),
 }));
@@ -65,8 +65,8 @@ const { wrapMock, cleanupMock } = vi.hoisted(() => {
   process.env.OS_SANDBOX_ENABLED = 'true';
   return { wrapMock: vi.fn(), cleanupMock: vi.fn() };
 });
-vi.mock('../../../../../src/main/sandbox', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../../src/main/sandbox')>()),
+vi.mock('../../../../../src/host/sandbox', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../../src/host/sandbox')>()),
   wrapCommandForSandbox: (...args: unknown[]) => wrapMock(...args),
 }));
 
@@ -74,8 +74,8 @@ import {
   bashModule,
   rewriteImplicitBackgroundCommand,
   looksLikeCodeImageGeneration,
-} from '../../../../../src/main/tools/modules/shell/bash';
-import { getPermissionModeManager } from '../../../../../src/main/permissions/modes';
+} from '../../../../../src/host/tools/modules/shell/bash';
+import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
 
 // -----------------------------------------------------------------------------
 // Helpers

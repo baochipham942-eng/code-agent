@@ -1,4 +1,4 @@
-// src/main/tools/middleware/fileCheckpointMiddleware.ts
+// src/host/tools/middleware/fileCheckpointMiddleware.ts
 
 import { getFileCheckpointService } from '../../services/checkpoint';
 import { createLogger } from '../../services/infra/logger';

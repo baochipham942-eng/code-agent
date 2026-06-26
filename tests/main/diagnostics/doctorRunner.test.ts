@@ -4,7 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('../../../src/main/diagnostics/checks/environment', () => ({
+vi.mock('../../../src/host/diagnostics/checks/environment', () => ({
   checkNodeVersion: () => ({
     category: 'environment',
     name: 'Node.js version',
@@ -32,34 +32,34 @@ vi.mock('../../../src/main/diagnostics/checks/environment', () => ({
 }));
 
 const networkMock = vi.fn();
-vi.mock('../../../src/main/diagnostics/checks/network', () => ({
+vi.mock('../../../src/host/diagnostics/checks/network', () => ({
   checkProviderConnectivity: () => networkMock(),
 }));
 
 const providerHealthMock = vi.fn();
-vi.mock('../../../src/main/diagnostics/checks/providerHealth', () => ({
+vi.mock('../../../src/host/diagnostics/checks/providerHealth', () => ({
   checkProviderHealth: () => providerHealthMock(),
 }));
 
 const mcpMock = vi.fn();
-vi.mock('../../../src/main/diagnostics/checks/mcp', () => ({
+vi.mock('../../../src/host/diagnostics/checks/mcp', () => ({
   checkMcpServers: () => mcpMock(),
 }));
 
 const hooksMock = vi.fn();
-vi.mock('../../../src/main/diagnostics/checks/hooks', () => ({
+vi.mock('../../../src/host/diagnostics/checks/hooks', () => ({
   checkHooksConfig: (cwd: string) => hooksMock(cwd),
 }));
 
 const versionMock = vi.fn();
-vi.mock('../../../src/main/diagnostics/checks/version', () => ({
+vi.mock('../../../src/host/diagnostics/checks/version', () => ({
   checkAppVersion: () => versionMock(),
 }));
 
 // ---------------------------------------------------------------------------
 // Import AFTER mocks
 // ---------------------------------------------------------------------------
-import { runDoctor } from '../../../src/main/diagnostics/doctorRunner';
+import { runDoctor } from '../../../src/host/diagnostics/doctorRunner';
 
 beforeEach(() => {
   vi.clearAllMocks();

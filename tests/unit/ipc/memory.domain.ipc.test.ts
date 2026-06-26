@@ -35,12 +35,12 @@ const light = vi.hoisted(() => ({
   rebuildLightMemoryIndex: vi.fn(async () => ({ rebuilt: true })),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: () => db,
   getSessionManager: () => ({}),
 }));
-vi.mock('../../../src/main/lightMemory/lightMemoryIpc', () => light);
-vi.mock('../../../src/main/memory/memoryEntryRuntime', () => ({
+vi.mock('../../../src/host/lightMemory/lightMemoryIpc', () => light);
+vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
   ...rt,
   buildActiveMemoryEntryFromInbox: vi.fn(),
   createMemoryMirrorRecord: vi.fn(),
@@ -48,18 +48,18 @@ vi.mock('../../../src/main/memory/memoryEntryRuntime', () => ({
   storedMemoryToEntry: vi.fn(),
   writeActiveEntryToLightMemory: vi.fn(),
 }));
-vi.mock('../../../src/main/memory/memoryInjectionTrace', () => ({ listMemoryInjectionTraces: vi.fn(async () => []) }));
-vi.mock('../../../src/main/memory/knowledgeInboxDecision', () => ({
+vi.mock('../../../src/host/memory/memoryInjectionTrace', () => ({ listMemoryInjectionTraces: vi.fn(async () => []) }));
+vi.mock('../../../src/host/memory/knowledgeInboxDecision', () => ({
   KNOWLEDGE_INBOX_DECISION_CATEGORY: 'inbox',
   hashInboxContent: vi.fn(() => 'hash'),
   parseKnowledgeInboxDecision: vi.fn(() => null),
   shouldSuppressMemoryByInboxDecision: vi.fn(() => false),
 }));
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { registerMemoryHandlers } from '../../../src/main/ipc/memory.ipc';
+import { registerMemoryHandlers } from '../../../src/host/ipc/memory.ipc';
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 let handlers: Map<string, HandlerFn>;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   filterDiscoveredModelsForProvider,
   parseDiscoveredModelsResponse,
-} from '../../../src/main/ipc/provider.ipc';
+} from '../../../src/host/ipc/provider.ipc';
 
 describe('provider model discovery parsing', () => {
   it('parses OpenAI-compatible /models responses', () => {

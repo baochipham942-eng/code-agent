@@ -1,15 +1,15 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import evalSet from './fixtures/websearch-eval-set.json';
 import beforeBaseline from './fixtures/websearch-p0-before-baseline.json';
-import { handleToolResultBookkeeping } from '../../src/main/agent/runtime/toolResultLifecycle';
-import type { ContextAssembly } from '../../src/main/agent/runtime/contextAssembly';
-import type { RuntimeContext } from '../../src/main/agent/runtime/runtimeContext';
-import type { RuntimeControlPort } from '../../src/main/agent/runtime/runtimeControl';
-import { resetInputSanitizer } from '../../src/main/security/inputSanitizer';
-import { resetCitationService } from '../../src/main/services/citation/citationService';
-import { extractCitations } from '../../src/main/services/citation/citationExtractor';
+import { handleToolResultBookkeeping } from '../../src/host/agent/runtime/toolResultLifecycle';
+import type { ContextAssembly } from '../../src/host/agent/runtime/contextAssembly';
+import type { RuntimeContext } from '../../src/host/agent/runtime/runtimeContext';
+import type { RuntimeControlPort } from '../../src/host/agent/runtime/runtimeControl';
+import { resetInputSanitizer } from '../../src/host/security/inputSanitizer';
+import { resetCitationService } from '../../src/host/services/citation/citationService';
+import { extractCitations } from '../../src/host/services/citation/citationExtractor';
 import type { AgentEvent, ToolCall, ToolResult } from '../../src/shared/contract';
-import type { ToolExecutionResult } from '../../src/main/tools/types';
+import type { ToolExecutionResult } from '../../src/host/tools/types';
 
 type WebSearchEvalCase = {
   id: string;

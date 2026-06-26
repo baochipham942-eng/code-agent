@@ -20,12 +20,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { stat, unlink } from 'fs/promises';
-import { getComputerSurface } from '../../src/main/services/desktop/computerSurface';
+import { getComputerSurface } from '../../src/host/services/desktop/computerSurface';
 import {
   setMultiAgentMode,
   resetMultiAgentModeForTests,
-} from '../../src/main/services/multiAgentMode';
-import { backgroundCgEventSurface } from '../../src/main/services/desktop/backgroundCgEventSurface';
+} from '../../src/host/services/multiAgentMode';
+import { backgroundCgEventSurface } from '../../src/host/services/desktop/backgroundCgEventSurface';
 
 const execFileAsync = promisify(execFile);
 const TARGET_APP = 'Calculator';

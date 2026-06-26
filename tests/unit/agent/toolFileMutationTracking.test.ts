@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { trackFileMutationSideEffects } from '../../../src/main/agent/runtime/toolFileMutationTracking';
+import { trackFileMutationSideEffects } from '../../../src/host/agent/runtime/toolFileMutationTracking';
 
-vi.mock('../../../src/main/services/diff/diffTracker', () => ({
+vi.mock('../../../src/host/services/diff/diffTracker', () => ({
   getDiffTracker: () => ({
     computeAndStore: vi.fn(),
   }),

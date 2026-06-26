@@ -4,13 +4,13 @@ vi.hoisted(() => {
   process.env.CODE_AGENT_CLI_MODE = 'true';
 });
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: {
     getPath: () => '/tmp/code-agent-log-collector-test',
   },
 }));
 
-import { createLogCollector } from '../../../src/main/mcp/logCollector';
+import { createLogCollector } from '../../../src/host/mcp/logCollector';
 
 describe('LogCollector secret redaction', () => {
   it('redacts secrets in messages and metadata before storing logs', () => {

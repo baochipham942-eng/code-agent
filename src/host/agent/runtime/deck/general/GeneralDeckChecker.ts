@@ -4,7 +4,7 @@
  * 通用 deck checker，没有领域特化（executive-deck / academic-paper / data-report
  * 这些 future subtypes 会按需注册更窄的 probe 集合）。
  *
- * 行为镜像 src/main/tools/media/ppt/narrativeValidator.ts。
+ * 行为镜像 src/host/tools/media/ppt/narrativeValidator.ts。
  *
  * Probe runner 设计：
  * - imperative probe → 直接调用 evaluate(deck) 拿 ProbeResult

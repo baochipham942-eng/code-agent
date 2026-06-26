@@ -12,14 +12,14 @@ import * as path from 'path';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
-import { WorkflowJournalRepository } from '../../../src/main/services/core/repositories/WorkflowJournalRepository';
+import { WorkflowJournalRepository } from '../../../src/host/services/core/repositories/WorkflowJournalRepository';
 
 // 注入一个 in-memory repo（替代依赖全局 getDatabase 的访问器）
 const repoState = vi.hoisted(() => ({ repo: null as WorkflowJournalRepository | null }));
-vi.mock('../../../src/main/services/core/repositories/WorkflowJournalRepository', async () => {
+vi.mock('../../../src/host/services/core/repositories/WorkflowJournalRepository', async () => {
   const actual = await vi.importActual<
-    typeof import('../../../src/main/services/core/repositories/WorkflowJournalRepository')
-  >('../../../src/main/services/core/repositories/WorkflowJournalRepository');
+    typeof import('../../../src/host/services/core/repositories/WorkflowJournalRepository')
+  >('../../../src/host/services/core/repositories/WorkflowJournalRepository');
   return {
     ...actual,
     getWorkflowJournalRepository: () => repoState.repo,
@@ -28,15 +28,15 @@ vi.mock('../../../src/main/services/core/repositories/WorkflowJournalRepository'
 
 // patch 落到临时目录
 const cfgState = vi.hoisted(() => ({ dir: '' }));
-vi.mock('../../../src/main/config/configPaths', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/main/config/configPaths')>(
-    '../../../src/main/config/configPaths'
+vi.mock('../../../src/host/config/configPaths', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/config/configPaths')>(
+    '../../../src/host/config/configPaths'
   );
   return { ...actual, getUserConfigDir: () => cfgState.dir };
 });
 
-import { deleteWorkflowRunWithPatch } from '../../../src/main/services/checkpoint/workflowRunDeletionService';
-import { getTrashedPatchDir } from '../../../src/main/services/checkpoint/taskPatchService';
+import { deleteWorkflowRunWithPatch } from '../../../src/host/services/checkpoint/workflowRunDeletionService';
+import { getTrashedPatchDir } from '../../../src/host/services/checkpoint/taskPatchService';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`

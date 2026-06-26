@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   callTool: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/protocolRegistry', () => ({
+vi.mock('../../../src/host/tools/protocolRegistry', () => ({
   getProtocolRegistry: () => ({
     getSchemas: mocks.getSchemas,
     has: mocks.has,
@@ -33,13 +33,13 @@ vi.mock('../../../src/main/tools/protocolRegistry', () => ({
   resetProtocolRegistry: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/cloud', () => ({
+vi.mock('../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({
     getAllToolMeta: () => ({}),
   }),
 }));
 
-vi.mock('../../../src/main/mcp', () => ({
+vi.mock('../../../src/host/mcp', () => ({
   getMCPClient: () => ({
     getToolDefinitions: mocks.getToolDefinitions,
     parseMCPToolName: mocks.parseMCPToolName,
@@ -47,7 +47,7 @@ vi.mock('../../../src/main/mcp', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -62,8 +62,8 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-const { ToolExecutor } = await import('../../../src/main/tools/toolExecutor');
-const { resetToolResolver } = await import('../../../src/main/tools/dispatch/toolResolver');
+const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
+const { resetToolResolver } = await import('../../../src/host/tools/dispatch/toolResolver');
 
 describe('ToolExecutor MCP dynamic direct execution', () => {
   beforeEach(() => {

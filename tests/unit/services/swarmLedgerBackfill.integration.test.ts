@@ -7,19 +7,19 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-vi.mock('../../../src/main/services/core/database/nativeLoader', () => ({
+vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => class MockDatabase {},
 }));
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
-import { SwarmLedgerRepository } from '../../../src/main/services/core/repositories/SwarmLedgerRepository';
-import { rebuildRunDetail } from '../../../src/main/services/core/swarmRollupProjection';
-import { reconcileRun } from '../../../src/main/services/core/swarmReconcile';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
+import { SwarmLedgerRepository } from '../../../src/host/services/core/repositories/SwarmLedgerRepository';
+import { rebuildRunDetail } from '../../../src/host/services/core/swarmRollupProjection';
+import { reconcileRun } from '../../../src/host/services/core/swarmReconcile';
 import {
   backfillSwarmLedger,
   type SwarmLedgerBackfillDeps,
-} from '../../../src/main/services/core/database/backfillSwarmLedger';
+} from '../../../src/host/services/core/database/backfillSwarmLedger';
 import type { SwarmLedgerAppendInput } from '../../../src/shared/contract/swarmLedger';
 
 const NOW = 1_700_000_000_000;

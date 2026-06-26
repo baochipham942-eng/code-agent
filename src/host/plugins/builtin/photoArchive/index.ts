@@ -11,9 +11,9 @@
 // 字面量与 builtinSkills 文档里的工具名引用。
 //
 // 留在 host 的依赖（plugin 通过 import 调用）：
-// - src/main/services/desktop/photoLibraryTagger.ts — archiveAlbum 编排层
-// - src/main/services/desktop/visionAnalysisService.ts — VLM HTTP 调用层
-// - src/main/connectors/native/photos.ts — Photos.app osascript connector
+// - src/host/services/desktop/photoLibraryTagger.ts — archiveAlbum 编排层
+// - src/host/services/desktop/visionAnalysisService.ts — VLM HTTP 调用层
+// - src/host/connectors/native/photos.ts — Photos.app osascript connector
 // 这些 service 形态本身可被多处复用（不止本插件），不复制到 plugin 目录。
 //
 // `platforms: ['darwin']` 声明仅 macOS（依赖 Vision Framework + Photos.app +

@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mocks ──
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
@@ -15,12 +15,12 @@ const quickModelMocks = vi.hoisted(() => ({
   quickTask: vi.fn<(prompt: string, maxTokens?: number) => Promise<{ success: boolean; content?: string; error?: string }>>(),
 }));
 
-vi.mock('../../../src/main/model/quickModel', () => ({
+vi.mock('../../../src/host/model/quickModel', () => ({
   quickTask: quickModelMocks.quickTask,
 }));
 
 // withTimeout 直接透传被包裹的 promise（超时分支单独用 reject 模拟）
-vi.mock('../../../src/main/services/infra/timeoutController', () => ({
+vi.mock('../../../src/host/services/infra/timeoutController', () => ({
   withTimeout: <T>(promise: Promise<T>) => promise,
 }));
 
@@ -31,7 +31,7 @@ import {
   buildReviewSnippet,
   buildReviewPrompt,
   reviewConversationForSkill,
-} from '../../../src/main/lightMemory/conversationReview';
+} from '../../../src/host/lightMemory/conversationReview';
 import { SKILL_REVIEW, SESSION_JUDGE } from '../../../src/shared/constants';
 
 beforeEach(() => {

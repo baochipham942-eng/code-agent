@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSessionLedger,
   type LedgerSources,
-} from '../../../src/main/services/core/sessionLedgerProjection';
+} from '../../../src/host/services/core/sessionLedgerProjection';
 import type { Message } from '../../../src/shared/contract/message';
 import type { SwarmRunListItem, SwarmRunEventRecord } from '../../../src/shared/contract/swarmTrace';
-import type { PermissionDecisionRecord } from '../../../src/main/services/core/repositories/PermissionDecisionRepository';
-import type { ToolExecutionEventRecord } from '../../../src/main/services/core/repositories/ToolExecutionEventRepository';
+import type { PermissionDecisionRecord } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
+import type { ToolExecutionEventRecord } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
 
 const SID = 'sess-1';
 const GEN_AT = 9_999;

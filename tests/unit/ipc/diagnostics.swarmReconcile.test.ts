@@ -5,17 +5,17 @@ import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 // "从 ledger 重建的 rollup vs 现存表"的影子对账结果。
 const dbState = vi.hoisted(() => ({ result: null as unknown, throwOnGet: false }));
 
-vi.mock('../../../src/main/security/decisionHistory', () => ({
+vi.mock('../../../src/host/security/decisionHistory', () => ({
   getDecisionHistory: () => ({ getRecent: () => [], getAll: () => [] }),
 }));
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => {
     if (dbState.throwOnGet) throw new Error('db boom');
     return { reconcileSwarmRun: () => dbState.result };
   },
 }));
 
-import { registerDiagnosticsHandlers } from '../../../src/main/ipc/diagnostics.ipc';
+import { registerDiagnosticsHandlers } from '../../../src/host/ipc/diagnostics.ipc';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 function captureHandler() {

@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 // 把 prompts/builder mock 掉，避免单测引入 soul / 真实配置依赖
-vi.mock('../../src/main/prompts/builder', () => ({
+vi.mock('../../src/host/prompts/builder', () => ({
   buildProfilePrompt: vi.fn(() => 'mocked-prompt'),
 }));
 
@@ -21,7 +21,7 @@ import {
   DEFAULT_INHERITANCE_MODE,
   type ParentContext,
   type ChildContextConfig,
-} from '../../src/main/agent/childContext';
+} from '../../src/host/agent/childContext';
 
 beforeAll(() => {
   // 静默单测里的 logger 输出

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { PROVIDER_REGISTRY, getAvailableModels } from '../../../src/main/model/providerRegistry';
+import { PROVIDER_REGISTRY, getAvailableModels } from '../../../src/host/model/providerRegistry';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,

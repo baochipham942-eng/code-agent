@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const createTaskMock = vi.fn();
 const updateTaskMock = vi.fn();
@@ -12,7 +12,7 @@ const listTasksMock = vi.fn().mockReturnValue([]);
 const clearTasksMock = vi.fn();
 const isDesktopDerivedSessionTaskMock = vi.fn().mockReturnValue(false);
 
-vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../../../src/host/services/planning/taskStore', () => ({
   createTask: (...a: unknown[]) => createTaskMock(...a),
   updateTask: (...a: unknown[]) => updateTaskMock(...a),
   getTask: (...a: unknown[]) => getTaskMock(...a),
@@ -20,7 +20,7 @@ vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
   clearTasks: (...a: unknown[]) => clearTasksMock(...a),
   isClosedTaskStatus: (status: string) => status === 'completed' || status === 'cancelled',
 }));
-vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
     recordTodoFeedbackForTask: vi.fn(),
     clearTodoFeedbackForTask: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', (
   isDesktopDerivedSessionTask: (...a: unknown[]) => isDesktopDerivedSessionTaskMock(...a),
 }));
 
-import { taskManagerModule } from '../../../../../src/main/tools/modules/planning/taskManager';
+import { taskManagerModule } from '../../../../../src/host/tools/modules/planning/taskManager';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

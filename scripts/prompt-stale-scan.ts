@@ -10,7 +10,7 @@ type ScanTarget = {
 
 const TARGETS: ScanTarget[] = [
   {
-    path: 'src/main/prompts',
+    path: 'src/host/prompts',
     tokens: [
       'old_string',
       'new_string',
@@ -33,7 +33,7 @@ const TARGETS: ScanTarget[] = [
     ],
   },
   {
-    path: 'src/main/agent/runtime/contextAssembly/messageBuild.ts',
+    path: 'src/host/agent/runtime/contextAssembly/messageBuild.ts',
     tokens: [
       'ToolSearch("',
       '<think>',
@@ -46,7 +46,7 @@ const TARGETS: ScanTarget[] = [
     ],
   },
   {
-    path: 'src/main/agent/hybrid/coreAgents.ts',
+    path: 'src/host/agent/hybrid/coreAgents.ts',
     tokens: [
       'execute_command',
       'read_file',
@@ -59,7 +59,7 @@ const TARGETS: ScanTarget[] = [
     ],
   },
   {
-    path: 'src/main/agent/multiagentTools/spawnAgent.ts',
+    path: 'src/host/agent/multiagentTools/spawnAgent.ts',
     tokens: [
       'execute_command',
       'read_file',
@@ -72,7 +72,7 @@ const TARGETS: ScanTarget[] = [
     ],
   },
   {
-    path: 'src/main/agent/nudgeManager.ts',
+    path: 'src/host/agent/nudgeManager.ts',
     tokens: [
       'ToolSearch("',
       '<think>',

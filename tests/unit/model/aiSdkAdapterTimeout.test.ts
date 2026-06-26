@@ -5,18 +5,18 @@
 // 迁移漏带 → provider 卡住会一直挂到外层预算（子代理 90s 硬超时）耗尽，无 per-request 早退+重试。
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { streamText, generateText } from 'ai';
-import { inferenceViaAiSdk } from '../../../src/main/model/adapters/aiSdkAdapter';
-import type { StreamChunk, StreamCallback } from '../../../src/main/model/types';
-import type { ModelConfig } from '../../../src/main/shared/contract';
+import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
+import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
+import type { ModelConfig } from '../../../src/host/shared/contract';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderBaseUrl: () => 'https://test.local/v1',
   resolveProviderApiKey: () => 'test-key',
 }));
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({ recordSuccess: vi.fn(), recordFailure: vi.fn() }),
 }));
 vi.mock('ai', async (importActual) => {

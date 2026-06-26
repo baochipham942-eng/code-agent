@@ -9,16 +9,16 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { proposeRoleModule } from '../../../../src/main/tools/modules/roleAuthoring/proposeRole';
+import { proposeRoleModule } from '../../../../src/host/tools/modules/roleAuthoring/proposeRole';
 
 function makeCtx(overrides: Record<string, unknown> = {}) {
   return {

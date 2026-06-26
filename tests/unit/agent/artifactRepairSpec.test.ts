@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { GameArtifactValidationSummary } from '../../../src/main/agent/runtime/gameArtifactValidator';
+import type { GameArtifactValidationSummary } from '../../../src/host/agent/runtime/gameArtifactValidator';
 import {
   createArtifactRepairSpec,
   formatArtifactRepairSpecForPrompt,
   inferArtifactRepairIssueCodesFromText,
-} from '../../../src/main/agent/runtime/artifactRepairSpec';
+} from '../../../src/host/agent/runtime/artifactRepairSpec';
 
 function summary(failures: string[]): GameArtifactValidationSummary {
   return {

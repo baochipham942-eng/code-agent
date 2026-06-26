@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalToolName, normalizeToolName, sameToolName } from '../../../src/main/tools/toolNames';
+import { canonicalToolName, normalizeToolName, sameToolName } from '../../../src/host/tools/toolNames';
 
 describe('toolNames', () => {
   it('keeps existing bash normalization behavior', () => {

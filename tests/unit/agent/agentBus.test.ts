@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Mocks
 // --------------------------------------------------------------------------
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -18,8 +18,8 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { AgentBus, resetAgentBus, getAgentBus, initAgentBus } from '../../../src/main/agent/agentBus';
-import type { AgentMessage } from '../../../src/main/agent/agentBus';
+import { AgentBus, resetAgentBus, getAgentBus, initAgentBus } from '../../../src/host/agent/agentBus';
+import type { AgentMessage } from '../../../src/host/agent/agentBus';
 
 describe('AgentBus', () => {
   let bus: AgentBus;

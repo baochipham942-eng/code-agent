@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeChannelMessage } from '../../../src/main/channels/privacy/channelPrivacyFirewall';
+import { sanitizeChannelMessage } from '../../../src/host/channels/privacy/channelPrivacyFirewall';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 
 const CARD = '4111 1111 1111 1111'; // Luhn-valid test card → guardSensitiveText redacts

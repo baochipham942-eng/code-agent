@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
 import { attachBrowserComputerProofTimeline } from '../../../src/shared/utils/browserComputerProofTimeline';
-import { buildAgentTrajectoryFromReplay } from '../../../src/main/evaluation/trajectory/trajectoryExporter';
+import { buildAgentTrajectoryFromReplay } from '../../../src/host/evaluation/trajectory/trajectoryExporter';
 import { evaluateAgentTrajectoryReplay, resolveAgentTrajectoryCollectionMetadata } from '../../../src/shared/contract/agentTrajectory';
-import { attachEvidenceControlProjectionToReplay, buildEvidenceControlSummary } from '../../../src/main/session/evidenceControlSummary';
+import { attachEvidenceControlProjectionToReplay, buildEvidenceControlSummary } from '../../../src/host/session/evidenceControlSummary';
 
 function replay(): StructuredReplay {
   return {

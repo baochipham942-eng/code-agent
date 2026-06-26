@@ -4,7 +4,7 @@ import {
   normalizeBrowserProviderPreference,
   resolveBrowserProvider,
   resolveCdpEndpointUrl,
-} from '../../../../src/main/services/infra/browserProvider';
+} from '../../../../src/host/services/infra/browserProvider';
 
 describe('browser provider resolution', () => {
   it('prefers system Chrome CDP on macOS when the executable exists', () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TelemetryPushEvent, TelemetryToolCall } from '../../../src/shared/contract/telemetry';
-import { classifyError, TelemetryCollector } from '../../../src/main/telemetry/telemetryCollector';
+import { classifyError, TelemetryCollector } from '../../../src/host/telemetry/telemetryCollector';
 
 describe('TelemetryCollector computer surface reliability fields', () => {
   let collector: TelemetryCollector | null = null;

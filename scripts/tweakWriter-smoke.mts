@@ -6,7 +6,7 @@
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { registerLivePreviewHandlers } from '../src/main/ipc/livePreview.ipc';
+import { registerLivePreviewHandlers } from '../src/host/ipc/livePreview.ipc';
 import { IPC_DOMAINS } from '../src/shared/ipc';
 import type { IPCRequest, IPCResponse } from '../src/shared/ipc';
 import type { TweakResult } from '../src/shared/livePreview/tweak';

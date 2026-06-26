@@ -4,7 +4,7 @@
  * Run: npx ts-node scripts/test-agent.ts
  */
 
-import { ModelRouter } from '../src/main/model/ModelRouter';
+import { ModelRouter } from '../src/host/model/ModelRouter';
 
 // Test 1: Verify embedded tool call parsing
 function testEmbeddedToolCallParsing() {

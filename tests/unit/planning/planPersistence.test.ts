@@ -6,9 +6,9 @@ import {
   PlanPersistence,
   createPlanPersistence,
   type PersistenceConfig,
-} from '../../../src/main/planning/planPersistence';
-import { CONFIG_DIR_NEW } from '../../../src/main/config/configPaths';
-import type { TaskPlan } from '../../../src/main/planning/types';
+} from '../../../src/host/planning/planPersistence';
+import { CONFIG_DIR_NEW } from '../../../src/host/config/configPaths';
+import type { TaskPlan } from '../../../src/host/planning/types';
 
 let workingDirectory: string;
 const SESSION_ID = 'sess-persist';

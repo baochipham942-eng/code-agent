@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { applySnip } from '../../../../src/main/context/layers/snip';
-import { CompressionState } from '../../../../src/main/context/compressionState';
+import { applySnip } from '../../../../src/host/context/layers/snip';
+import { CompressionState } from '../../../../src/host/context/compressionState';
 
 type SnipMessage = { id: string; role: string; content: string; turnIndex: number };
 

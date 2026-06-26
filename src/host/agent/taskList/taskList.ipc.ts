@@ -2,8 +2,8 @@
 // TaskList IPC Handlers - 前端 ↔ 后端通信
 // ============================================================================
 
-import { ipcMain } from '../../platform';
-import { BrowserWindow } from '../../platform';
+import { ipcHost } from '../../platform';
+import { AppWindow } from '../../platform';
 import { getTaskListManager } from './index';
 import { createLogger } from '../../services/infra/logger';
 import type { TaskItemIpc, TaskListEventIpc } from '../../../shared/ipc';
@@ -16,23 +16,23 @@ export function registerTaskListHandlers(): void {
 
   // 订阅事件并转发到所有 renderer
   manager.subscribe((event: TaskListEventIpc) => {
-    for (const win of BrowserWindow.getAllWindows()) {
+    for (const win of AppWindow.getAllWindows()) {
       win.webContents.send(IPC_CHANNELS.TASKLIST_EVENT, event);
     }
   });
 
   // getState
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_GET_STATE, () => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_GET_STATE, () => {
     return manager.getState();
   });
 
   // getTasks
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_GET_TASKS, () => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_GET_TASKS, () => {
     return manager.getTasks();
   });
 
   // updateTask
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.TASKLIST_UPDATE_TASK,
     (_event, taskId: string, changes: Partial<TaskItemIpc>) => {
       return manager.updateTask(taskId, changes);
@@ -40,7 +40,7 @@ export function registerTaskListHandlers(): void {
   );
 
   // reassign
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.TASKLIST_REASSIGN,
     (_event, taskId: string, assignee: string) => {
       return manager.reassign(taskId, assignee);
@@ -48,27 +48,27 @@ export function registerTaskListHandlers(): void {
   );
 
   // approve
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_APPROVE, (_event, taskId: string) => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_APPROVE, (_event, taskId: string) => {
     manager.approve(taskId);
   });
 
   // approveAll
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_APPROVE_ALL, () => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_APPROVE_ALL, () => {
     manager.approveAll();
   });
 
   // deleteTask
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_DELETE_TASK, (_event, taskId: string) => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_DELETE_TASK, (_event, taskId: string) => {
     return manager.deleteTask(taskId);
   });
 
   // setAutoAssign
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_SET_AUTO_ASSIGN, (_event, enabled: boolean) => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_SET_AUTO_ASSIGN, (_event, enabled: boolean) => {
     manager.setAutoAssign(enabled);
   });
 
   // setRequireApproval
-  ipcMain.handle(IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL, (_event, enabled: boolean) => {
+  ipcHost.handle(IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL, (_event, enabled: boolean) => {
     manager.setRequireApproval(enabled);
   });
 

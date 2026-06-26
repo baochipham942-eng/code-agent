@@ -3,17 +3,17 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
-import { resolveModelDecision } from '../../../src/main/model/modelDecision';
-import type { ModelDecisionInput } from '../../../src/main/model/modelDecision';
+import { resolveModelDecision } from '../../../src/host/model/modelDecision';
+import type { ModelDecisionInput } from '../../../src/host/model/modelDecision';
 import type { ModelConfig, TaskModelStrategySettings } from '../../../src/shared/contract';
 import { DEFAULT_MODELS } from '../../../src/shared/constants';
-import { getProviderHealthMonitor } from '../../../src/main/model/providerHealthMonitor';
+import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 
 // --------------------------------------------------------------------------
 // Mocks
 // --------------------------------------------------------------------------
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -318,7 +318,7 @@ describe('resolveModelDecision — task strategy routing', () => {
 
 describe('resolveProviderBillingMode — 计费方式判定', () => {
   it('returns user-configured billing mode when set', async () => {
-    const { resolveProviderBillingMode } = await import('../../../src/main/model/modelDecision');
+    const { resolveProviderBillingMode } = await import('../../../src/host/model/modelDecision');
     const providers = {
       moonshot: { enabled: true, billingMode: 'plan' as const },
     };
@@ -326,19 +326,19 @@ describe('resolveProviderBillingMode — 计费方式判定', () => {
   });
 
   it('defaults to payg for regular providers without config (API Key 主流形态)', async () => {
-    const { resolveProviderBillingMode } = await import('../../../src/main/model/modelDecision');
+    const { resolveProviderBillingMode } = await import('../../../src/host/model/modelDecision');
     expect(resolveProviderBillingMode('deepseek', {})).toBe('payg');
     expect(resolveProviderBillingMode('moonshot', { moonshot: { enabled: true } })).toBe('payg');
   });
 
   it('defaults to unknown for dynamic custom providers (中转站保守处理)', async () => {
-    const { resolveProviderBillingMode } = await import('../../../src/main/model/modelDecision');
+    const { resolveProviderBillingMode } = await import('../../../src/host/model/modelDecision');
     expect(resolveProviderBillingMode('custom-commonstack', {})).toBe('unknown');
     expect(resolveProviderBillingMode('custom-my-relay-2', {})).toBe('unknown');
   });
 
   it('user config overrides custom provider default', async () => {
-    const { resolveProviderBillingMode } = await import('../../../src/main/model/modelDecision');
+    const { resolveProviderBillingMode } = await import('../../../src/host/model/modelDecision');
     const providers = {
       'custom-commonstack': { enabled: true, billingMode: 'payg' as const },
     };
@@ -346,7 +346,7 @@ describe('resolveProviderBillingMode — 计费方式判定', () => {
   });
 
   it('zhipu provider defaults to payg (免费档由模型决定，不是 provider)', async () => {
-    const { resolveProviderBillingMode } = await import('../../../src/main/model/modelDecision');
+    const { resolveProviderBillingMode } = await import('../../../src/host/model/modelDecision');
     // provider 级别的计费方式和"某个模型免费"是两回事：
     // zhipu 既有免费模型（glm-4-flash）也有付费模型（glm-5）
     expect(resolveProviderBillingMode('zhipu', {})).toBe('payg');
@@ -372,21 +372,21 @@ describe('resolveTierModelConfig — 角色档位解析', () => {
   };
 
   it('powerful 档 = 用户默认模型（不硬编码厂商）', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const result = resolveTierModelConfig('powerful', BUILTIN_POWERFUL, userSettings);
     expect(result.provider).toBe('deepseek');
     expect(result.model).toBe('deepseek-v4-flash');
   });
 
   it('fast 档：用户配了智谱 key → 用内置免费推荐 glm-4-flash', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const result = resolveTierModelConfig('fast', BUILTIN_FAST, userSettings);
     expect(result.provider).toBe('zhipu');
     expect(result.model).toBe('glm-4-flash');
   });
 
   it('fast 档：用户没配智谱 key → 降级到用户默认模型（分发版不坏）', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const noZhipu = {
       ...userSettings,
       providers: { deepseek: { enabled: true, apiKeyConfigured: true } },
@@ -397,7 +397,7 @@ describe('resolveTierModelConfig — 角色档位解析', () => {
   });
 
   it('balanced 档：用户没配智谱 key → 同样降级到用户默认模型', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const noZhipu = {
       ...userSettings,
       providers: { deepseek: { enabled: true, apiKeyConfigured: true } },
@@ -408,7 +408,7 @@ describe('resolveTierModelConfig — 角色档位解析', () => {
   });
 
   it('fast 档：用户在 routing 设置里指定了 fast 模型 → 用户偏好优先于内置推荐', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const withRouting = {
       ...userSettings,
       providers: {
@@ -424,14 +424,14 @@ describe('resolveTierModelConfig — 角色档位解析', () => {
   });
 
   it('无 settings（测试/CLI 环境）→ 沿用内置默认，行为不变', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const result = resolveTierModelConfig('fast', BUILTIN_FAST, undefined);
     expect(result.provider).toBe('zhipu');
     expect(result.model).toBe('glm-4-flash');
   });
 
   it('禁用的 provider 视为不可用', async () => {
-    const { resolveTierModelConfig } = await import('../../../src/main/model/modelDecision');
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const zhipuDisabled = {
       ...userSettings,
       providers: {

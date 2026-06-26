@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPostHogDistinctId } from '../../../src/main/observability/posthogNode';
+import { getPostHogDistinctId } from '../../../src/host/observability/posthogNode';
 
 describe('PostHog Node privacy helpers', () => {
   it('derives a stable distinct_id without exposing the raw user id', () => {

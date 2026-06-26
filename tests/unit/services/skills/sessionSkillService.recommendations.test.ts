@@ -3,7 +3,7 @@ import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 
 const skills: ParsedSkill[] = [];
 
-vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => ({
     getAllSkills: () => skills,
     getUserInvocableSkills: () => skills.filter((skill) => skill.userInvocable),
@@ -11,7 +11,7 @@ vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -20,23 +20,23 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/context/contextHealthService', () => ({
+vi.mock('../../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: () => ({
     recordSourceContribution: vi.fn(),
     clearSourceContribution: vi.fn(),
   }),
 }));
 
-vi.mock('../../../../src/main/context/tokenEstimator', () => ({
+vi.mock('../../../../src/host/context/tokenEstimator', () => ({
   estimateTokens: () => 1,
 }));
 
-vi.mock('../../../../src/main/services/skills/skillLoader', () => ({
+vi.mock('../../../../src/host/services/skills/skillLoader', () => ({
   loadSkillContent: vi.fn(),
 }));
 
 // 推荐目录用真实内置数据（与生产兜底一致），让"未安装可获取"推荐可被测试
-vi.mock('../../../../src/main/services/cloud', async () => {
+vi.mock('../../../../src/host/services/cloud', async () => {
   const { getBuiltinSkillCatalogPayload } = await import('../../../../src/shared/constants/skillCatalog');
   return {
     getCloudConfigService: () => ({
@@ -61,7 +61,7 @@ function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'des
 describe('SessionSkillService recommendations', () => {
   beforeEach(async () => {
     skills.length = 0;
-    const { resetSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { resetSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     resetSessionSkillService();
   });
 
@@ -72,7 +72,7 @@ describe('SessionSkillService recommendations', () => {
       aliases: ['Word 文档', 'DOCX'],
     }));
 
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const recommendations = getSessionSkillService().recommendSkills('session-1', '帮我整理这个 Word 文档');
 
     expect(recommendations[0]).toMatchObject({
@@ -88,7 +88,7 @@ describe('SessionSkillService recommendations', () => {
       aliases: ['Word 文档'],
     }));
 
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const service = getSessionSkillService();
     service.mountSkill('session-1', 'docx', 'user', 'manual');
 
@@ -104,7 +104,7 @@ describe('SessionSkillService recommendations', () => {
       source: 'builtin',
     }));
 
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const recommendations = getSessionSkillService().recommendSkills(
       'session-1',
       '帮我做一个小红书和知乎的复杂搜索，最好复用登录态抓取帖子'
@@ -138,7 +138,7 @@ describe('SessionSkillService recommendations', () => {
       }),
     );
 
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const service = getSessionSkillService();
 
     expect(service.recommendSkills('session-1', '帮我做一下竞品对标研究')[0]).toMatchObject({
@@ -159,13 +159,13 @@ describe('SessionSkillService recommendations', () => {
 describe('SessionSkillService install recommendations (catalog 导购)', () => {
   beforeEach(async () => {
     skills.length = 0;
-    const { resetSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { resetSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     resetSessionSkillService();
   });
 
   it('recommends installable catalog skills when not installed locally', async () => {
     // 本地没有任何 skill，用户输入命中 pptx 关键词
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const recommendations = getSessionSkillService().recommendSkills('session-1', '帮我做个ppt汇报');
 
     const pptxRec = recommendations.find((rec) => rec.skillName === 'pptx');
@@ -179,7 +179,7 @@ describe('SessionSkillService install recommendations (catalog 导购)', () => {
 
   it('does not recommend installing builtin catalog entries missing locally', async () => {
     // xlsx 在目录中标记为 builtin，本地缺失说明环境异常，不应推荐安装
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const recommendations = getSessionSkillService().recommendSkills('session-1', '帮我处理 excel 表格数据');
 
     const xlsxRec = recommendations.find((rec) => rec.skillName === 'xlsx');
@@ -194,7 +194,7 @@ describe('SessionSkillService install recommendations (catalog 导购)', () => {
       aliases: ['PPT', '演示文稿'],
     }));
 
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const recommendations = getSessionSkillService().recommendSkills('session-1', '帮我做个PPT汇报');
 
     const pptxRecs = recommendations.filter((rec) => rec.skillName === 'pptx');
@@ -203,7 +203,7 @@ describe('SessionSkillService install recommendations (catalog 导购)', () => {
   });
 
   it('caps install recommendation scores at 0.8', async () => {
-    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const { getSessionSkillService } = await import('../../../../src/host/services/skills/sessionSkillService');
     const recommendations = getSessionSkillService().recommendSkills(
       'session-1',
       '帮我写个营销文案做个落地页文案'

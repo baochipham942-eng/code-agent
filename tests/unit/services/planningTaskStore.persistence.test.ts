@@ -9,11 +9,11 @@ const dbState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -32,7 +32,7 @@ describe('taskStore persistence', () => {
   });
 
   it('persists task changes to session-scoped storage', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
 
     const task = taskStore.createTask('task-session-1', {
       subject: 'Implement persistence',
@@ -49,7 +49,7 @@ describe('taskStore persistence', () => {
   });
 
   it('does not count cancelled tasks as incomplete', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
 
     const pending = taskStore.createTask('task-session-closed', {
       subject: 'Pending task',
@@ -83,7 +83,7 @@ describe('taskStore persistence', () => {
     ];
     dbState.db.getSessionTasks.mockReturnValue(persisted);
 
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     expect(taskStore.listTasks('task-session-reload')).toEqual(persisted);
 
     const next = taskStore.createTask('task-session-reload', {
@@ -112,7 +112,7 @@ describe('taskStore persistence', () => {
     dbState.db.isReady = false;
     dbState.db.getSessionTasks.mockReturnValue(persisted);
 
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
 
     expect(taskStore.listTasks('task-session-late-db')).toEqual([]);
     expect(dbState.db.getSessionTasks).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe('taskStore persistence', () => {
     dbState.db.isReady = false;
     dbState.db.getSessionTasks.mockReturnValue(persisted);
 
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const transient = taskStore.createTask('task-session-merge-late-db', {
       subject: 'Transient task',
       description: 'Created before DB readiness',

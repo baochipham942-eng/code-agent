@@ -1,21 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../../src/shared/contract';
 import type { MemoryEntry } from '../../../../src/shared/contract/memory';
-import type { MemoryRecord } from '../../../../src/main/services/core/repositories';
-import { BUILTIN_SKILLS } from '../../../../src/main/services/skills/builtinSkills';
+import type { MemoryRecord } from '../../../../src/host/services/core/repositories';
+import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkills';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocationFromSkills,
-} from '../../../../src/main/services/skills/skillInvocationResolver';
-import { unregisterSkillExecutor } from '../../../../src/main/services/skills/skillExecutorRegistry';
+} from '../../../../src/host/services/skills/skillInvocationResolver';
+import { unregisterSkillExecutor } from '../../../../src/host/services/skills/skillExecutorRegistry';
 import {
   DREAM_SKILL_NAME,
   executeDreamRun,
   registerDreamSkillExecutor,
   type DreamExecutorOverrides,
-} from '../../../../src/main/services/memory/dreamExecutor';
-import type { SkillExecutionRequest } from '../../../../src/main/services/skills/skillExecutorRegistry';
-import type { DreamCandidate } from '../../../../src/main/services/memory/dreamMemoryService';
+} from '../../../../src/host/services/memory/dreamExecutor';
+import type { SkillExecutionRequest } from '../../../../src/host/services/skills/skillExecutorRegistry';
+import type { DreamCandidate } from '../../../../src/host/services/memory/dreamMemoryService';
 
 const NOW = Date.UTC(2026, 5, 11, 9, 0, 0);
 

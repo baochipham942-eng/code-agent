@@ -11,8 +11,8 @@ import {
   sessionActivityTracker,
   observerHooks,
   getObserversForPoint,
-} from '../../../src/main/planning/hooks/observerHooks';
-import type { HookContext } from '../../../src/main/planning/types';
+} from '../../../src/host/planning/hooks/observerHooks';
+import type { HookContext } from '../../../src/host/planning/types';
 
 const ctx = (over: Partial<HookContext> = {}): HookContext => ({ ...over });
 

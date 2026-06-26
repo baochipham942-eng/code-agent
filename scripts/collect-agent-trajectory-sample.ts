@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'os';
 import path from 'path';
 import process from 'process';
 
-import type { AgentTrajectoryAuditItem } from '../src/main/evaluation/trajectory/trajectoryExporter';
+import type { AgentTrajectoryAuditItem } from '../src/host/evaluation/trajectory/trajectoryExporter';
 
 const MARKER = 'AGENT_TRAJECTORY_COLLECTION_SAMPLE';
 
@@ -190,13 +190,13 @@ async function main(): Promise<void> {
   process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
 
-  const { getProtocolRegistry } = await import('../src/main/tools/protocolRegistry');
+  const { getProtocolRegistry } = await import('../src/host/tools/protocolRegistry');
   getProtocolRegistry();
 
-  const { getDatabase } = await import('../src/main/services/core/databaseService');
-  const testing = await import('../src/main/testing/index');
+  const { getDatabase } = await import('../src/host/services/core/databaseService');
+  const testing = await import('../src/host/testing/index');
   const { exportAgentTrajectories, writeAgentTrajectoryJsonl } =
-    await import('../src/main/evaluation/trajectory/trajectoryExporter');
+    await import('../src/host/evaluation/trajectory/trajectoryExporter');
 
   await getDatabase().initialize();
 

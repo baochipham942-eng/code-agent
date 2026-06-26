@@ -38,7 +38,7 @@ function makeRedirectResponse(location: string) {
 }
 
 async function importUpdateService() {
-  const { UpdateService } = await import('../../../../src/main/services/cloud/updateService');
+  const { UpdateService } = await import('../../../../src/host/services/cloud/updateService');
   return UpdateService;
 }
 

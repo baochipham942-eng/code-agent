@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ModelRouter } from '../../../src/main/model/modelRouter';
-import { PROVIDER_REGISTRY } from '../../../src/main/model/providerRegistry';
+import { ModelRouter } from '../../../src/host/model/modelRouter';
+import { PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistry';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODELS,
@@ -53,7 +53,7 @@ const ARTIFACT_REPAIR_FULL_REWRITE_TIMEOUT_OPTIONS = {
 // Mocks
 // --------------------------------------------------------------------------
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -63,7 +63,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // Mock MoonshotProvider
-vi.mock('../../../src/main/model/providers/moonshotProvider', () => ({
+vi.mock('../../../src/host/model/providers/moonshotProvider', () => ({
   MoonshotProvider: class MockMoonshotProvider {
     inference = vi.fn().mockResolvedValue({ type: 'text', content: 'moonshot provider response', finishReason: 'stop' });
   },
@@ -71,7 +71,7 @@ vi.mock('../../../src/main/model/providers/moonshotProvider', () => ({
 
 // Mock configService
 const mockGetSettings = vi.hoisted(() => vi.fn(() => ({} as Record<string, unknown>)));
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getApiKey: vi.fn().mockReturnValue('mock-api-key'),
     getSettings: mockGetSettings,
@@ -79,7 +79,7 @@ vi.mock('../../../src/main/services/core/configService', () => ({
 }));
 
 // Mock inferenceCache
-vi.mock('../../../src/main/model/inferenceCache', () => ({
+vi.mock('../../../src/host/model/inferenceCache', () => ({
   getInferenceCache: () => ({
     computeKey: vi.fn().mockReturnValue('cache-key'),
     get: vi.fn().mockReturnValue(null),
@@ -88,7 +88,7 @@ vi.mock('../../../src/main/model/inferenceCache', () => ({
 }));
 
 // Mock adaptiveRouter
-vi.mock('../../../src/main/model/adaptiveRouter', () => ({
+vi.mock('../../../src/host/model/adaptiveRouter', () => ({
   getAdaptiveRouter: () => ({
     estimateComplexity: vi.fn().mockReturnValue({ level: 'moderate', score: 50, signals: [] }),
     selectModel: vi.fn(),
@@ -97,18 +97,18 @@ vi.mock('../../../src/main/model/adaptiveRouter', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => healthMonitorMock,
 }));
 
 const broadcastToRendererMock = vi.fn();
-vi.mock('../../../src/main/platform/windowBridge', () => ({
+vi.mock('../../../src/host/platform/windowBridge', () => ({
   broadcastToRenderer: broadcastToRendererMock,
 }));
 
 // Mock retryStrategy（保留 abortableSleep 等真实实现，只桩 isFallbackEligible）
-vi.mock('../../../src/main/model/providers/retryStrategy', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/model/providers/retryStrategy')>();
+vi.mock('../../../src/host/model/providers/retryStrategy', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/providers/retryStrategy')>();
   return { ...actual, isFallbackEligible: vi.fn().mockReturnValue(true) };
 });
 

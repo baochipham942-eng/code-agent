@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { TestRunner, type AgentInterface } from '../../../src/main/testing/testRunner';
+import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
 
 const telemetryMocks = vi.hoisted(() => ({
@@ -13,13 +13,13 @@ const databaseMocks = vi.hoisted(() => ({
   insertExperimentCases: vi.fn(),
 }));
 
-vi.mock('../../../src/main/evaluation/telemetryQueryService', () => ({
+vi.mock('../../../src/host/evaluation/telemetryQueryService', () => ({
   getTelemetryQueryService: () => ({
     getStructuredReplay: telemetryMocks.getStructuredReplay,
   }),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => databaseMocks,
 }));
 

@@ -2,7 +2,7 @@
 // Soul IPC Handlers
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { loadSoul, getSoul } from '../prompts/soulLoader';
 import { IDENTITY } from '../prompts/identity';
@@ -20,7 +20,7 @@ function getStringField(source: unknown, field: string): string | undefined {
 }
 
 export function registerSoulHandlers(): void {
-  ipcMain.handle(IPC_DOMAINS.SOUL, async (_event, request: IPCRequest) => {
+  ipcHost.handle(IPC_DOMAINS.SOUL, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
     try {
       switch (action) {

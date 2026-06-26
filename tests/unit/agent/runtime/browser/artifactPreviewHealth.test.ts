@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateArtifactPreviewHealthDiagnostics,
   type ArtifactPreviewHealthDiagnostics,
-} from '../../../../../src/main/agent/runtime/browser/artifactPreviewHealth';
+} from '../../../../../src/host/agent/runtime/browser/artifactPreviewHealth';
 
 function baseDiagnostics(overrides: Partial<ArtifactPreviewHealthDiagnostics> = {}): ArtifactPreviewHealthDiagnostics {
   return {

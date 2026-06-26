@@ -81,7 +81,7 @@ export function onRendererPush(listener: (channel: string, data: unknown) => voi
 // BrowserWindow 兼容类 — 渐进迁移用
 // ---------------------------------------------------------------------------
 
-const liveWindows = new Set<BrowserWindow>();
+const liveWindows = new Set<AppWindow>();
 let nextWindowId = 1;
 let rendererInteractionProbe: (() => boolean) | null = null;
 
@@ -89,7 +89,7 @@ export function setBrowserWindowInteractionProbe(probe: (() => boolean) | null):
   rendererInteractionProbe = probe;
 }
 
-export class BrowserWindow implements WindowLike {
+export class AppWindow implements WindowLike {
   id: number;
   private _destroyed = false;
   webContents: WindowLike['webContents'] = {
@@ -139,16 +139,16 @@ export class BrowserWindow implements WindowLike {
   once(..._args: unknown[]) { return this; }
   removeListener(..._args: unknown[]) { return this; }
 
-  static getAllWindows(): BrowserWindow[] { return Array.from(liveWindows); }
+  static getAllWindows(): AppWindow[] { return Array.from(liveWindows); }
   static hasInteractiveRenderer(): boolean {
     return rendererInteractionProbe ? rendererInteractionProbe() : liveWindows.size > 0;
   }
-  static getFocusedWindow(): BrowserWindow | null {
+  static getFocusedWindow(): AppWindow | null {
     const iter = liveWindows.values().next();
     return iter.done ? null : iter.value;
   }
-  static fromWebContents(..._args: unknown[]): BrowserWindow | null { return null; }
-  static fromId(id: number): BrowserWindow | null {
+  static fromWebContents(..._args: unknown[]): AppWindow | null { return null; }
+  static fromId(id: number): AppWindow | null {
     for (const win of liveWindows) {
       if (win.id === id) return win;
     }

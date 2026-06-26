@@ -18,9 +18,9 @@ import {
   buildProtocolContext,
   buildCanUseToolFromLegacy,
   executePocToolViaProtocol,
-} from '../../../src/main/tools/dispatch/shadowAdapter';
-import { buildLegacyCtxFromProtocol } from '../../../src/main/tools/modules/_helpers/legacyAdapter';
-import type { ToolContext as LegacyToolContext } from '../../../src/main/tools/types';
+} from '../../../src/host/tools/dispatch/shadowAdapter';
+import { buildLegacyCtxFromProtocol } from '../../../src/host/tools/modules/_helpers/legacyAdapter';
+import type { ToolContext as LegacyToolContext } from '../../../src/host/tools/types';
 
 // ----------------------------------------------------------------------------
 // helpers

@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock fs and qrcode
@@ -31,7 +31,7 @@ vi.mock('qrcode', () => ({
   toFile: (...args: unknown[]) => toFileMock(...args),
 }));
 
-import { qrcodeGenerateModule } from '../../../../../src/main/tools/modules/network/qrcodeGenerate';
+import { qrcodeGenerateModule } from '../../../../../src/host/tools/modules/network/qrcodeGenerate';
 
 // -----------------------------------------------------------------------------
 // Helpers

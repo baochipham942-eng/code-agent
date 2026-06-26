@@ -8,8 +8,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'path';
-import { MCPClient, type MCPCapabilitiesChangedEvent } from '../../../src/main/mcp/mcpClient';
-import { resetToolSearchService, getToolSearchService } from '../../../src/main/services/toolSearch';
+import { MCPClient, type MCPCapabilitiesChangedEvent } from '../../../src/host/mcp/mcpClient';
+import { resetToolSearchService, getToolSearchService } from '../../../src/host/services/toolSearch';
 
 const loggerMocks = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -18,7 +18,7 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: loggerMocks,
   createLogger: () => loggerMocks,
 }));

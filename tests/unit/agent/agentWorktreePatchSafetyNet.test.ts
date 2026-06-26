@@ -10,9 +10,9 @@ import * as os from 'os';
 import * as path from 'path';
 
 const cfgState = vi.hoisted(() => ({ dir: '' }));
-vi.mock('../../../src/main/config/configPaths', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/main/config/configPaths')>(
-    '../../../src/main/config/configPaths'
+vi.mock('../../../src/host/config/configPaths', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/config/configPaths')>(
+    '../../../src/host/config/configPaths'
   );
   return { ...actual, getUserConfigDir: () => cfgState.dir };
 });
@@ -21,8 +21,8 @@ import {
   createAgentWorktree,
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
-} from '../../../src/main/agent/agentWorktree';
-import { getTrashedPatchDir } from '../../../src/main/services/checkpoint/taskPatchService';
+} from '../../../src/host/agent/agentWorktree';
+import { getTrashedPatchDir } from '../../../src/host/services/checkpoint/taskPatchService';
 
 function git(repo: string, args: string): void {
   execSync(`git ${args}`, {

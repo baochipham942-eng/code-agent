@@ -13,8 +13,8 @@ import {
   maskText,
   maskCommand,
   type MaskingOptions,
-} from '../../../src/main/security/logMasker';
-import { resetSensitiveDetector } from '../../../src/main/security/sensitiveDetector';
+} from '../../../src/host/security/logMasker';
+import { resetSensitiveDetector } from '../../../src/host/security/sensitiveDetector';
 
 describe('LogMasker', () => {
   let masker: LogMasker;

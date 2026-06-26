@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEffortControls } from '../../../src/main/agent/runtime/contextAssembly/effortControls';
+import { applyEffortControls } from '../../../src/host/agent/runtime/contextAssembly/effortControls';
 import type { ModelConfig } from '../../../src/shared/contract/model';
 
 const baseConfig: ModelConfig = {

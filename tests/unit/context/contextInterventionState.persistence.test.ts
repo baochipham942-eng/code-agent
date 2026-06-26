@@ -8,11 +8,11 @@ const dbState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { ContextInterventionState } from '../../../src/main/context/contextInterventionState';
+import { ContextInterventionState } from '../../../src/host/context/contextInterventionState';
 
 describe('ContextInterventionState persistence', () => {
   beforeEach(() => {

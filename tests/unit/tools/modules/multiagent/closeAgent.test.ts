@@ -3,15 +3,15 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const getSpawnGuardMock = vi.fn();
 
-vi.mock('../../../../../src/main/agent/spawnGuard', () => ({
+vi.mock('../../../../../src/host/agent/spawnGuard', () => ({
   getSpawnGuard: () => getSpawnGuardMock(),
 }));
 
-import { closeAgentModule } from '../../../../../src/main/tools/modules/multiagent/closeAgent';
+import { closeAgentModule } from '../../../../../src/host/tools/modules/multiagent/closeAgent';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

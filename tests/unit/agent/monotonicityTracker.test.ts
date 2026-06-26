@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MonotonicityTracker } from '../../../src/main/agent/runtime/repair/monotonicityTracker';
+import { MonotonicityTracker } from '../../../src/host/agent/runtime/repair/monotonicityTracker';
 
 describe('MonotonicityTracker', () => {
   it('keeps improved rounds and warns on regressions', () => {

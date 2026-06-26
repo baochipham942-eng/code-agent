@@ -4,7 +4,7 @@
 // and compression status to the renderer.
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { Message } from '../../shared/contract';
@@ -843,7 +843,7 @@ export async function buildContextViewFromSession(
 // ----------------------------------------------------------------------------
 
 export function registerContextHandlers(dependencies: ContextViewDependencies): void {
-  ipcMain.handle(IPC_CHANNELS.CONTEXT_GET_VIEW, async (_event, request?: ContextViewRequest) => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_GET_VIEW, async (_event, request?: ContextViewRequest) => {
     try {
       logger.info(`Context view requested for session: ${request?.sessionId}`);
       return await buildContextViewFromSession(request, dependencies);
@@ -853,14 +853,14 @@ export function registerContextHandlers(dependencies: ContextViewDependencies): 
     }
   });
 
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.CONTEXT_INTERVENTION_GET,
     (_event, request: ContextInterventionRequest) => {
       return interventionState.getEffectiveSnapshot(request?.sessionId, request?.agentId);
     },
   );
 
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.CONTEXT_INTERVENTION_SET,
     (_event, request: ContextInterventionSetRequest) => {
       if (!request?.messageId || !request?.action) {

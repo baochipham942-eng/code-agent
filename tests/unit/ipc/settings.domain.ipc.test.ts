@@ -30,34 +30,34 @@ const env = vi.hoisted(() => ({
   runtimeConfigured: vi.fn(() => false),
 }));
 
-vi.mock('../../../src/main/ipc/adminGuard', () => ({
+vi.mock('../../../src/host/ipc/adminGuard', () => ({
   isCurrentUserAdmin: () => env.isAdmin,
   getAdminAccessIpcError: () => env.adminAccessError,
   assertAdminAccess: vi.fn(),
 }));
-vi.mock('../../../src/main/model/providerConnectionTest', () => ({
+vi.mock('../../../src/host/model/providerConnectionTest', () => ({
   resolveConnectionTestModel: () => 'test-model',
 }));
-vi.mock('../../../src/main/services/providerIconAssets', () => ({
+vi.mock('../../../src/host/services/providerIconAssets', () => ({
   saveProviderIconAsset: (...a: unknown[]) => env.saveIcon(...a),
   resolveProviderIconAsset: (...a: unknown[]) => env.resolveIcon(...a),
 }));
 vi.mock('../../../src/shared/modelRuntime', () => ({
   isRuntimeProviderConfigured: (...a: unknown[]) => env.runtimeConfigured(...a),
 }));
-vi.mock('../../../src/main/services/core/secureStorage', () => ({
+vi.mock('../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => env.secureStorage,
 }));
-vi.mock('../../../src/main/services/core/budgetService', () => ({
+vi.mock('../../../src/host/services/core/budgetService', () => ({
   getBudgetService: () => env.budget,
   syncBudgetServiceFromConfig: (...a: unknown[]) => env.syncBudget(...a),
 }));
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: { getVersion: () => '9.9.9' },
-  BrowserWindow: { getFocusedWindow: () => null },
+  AppWindow: { getFocusedWindow: () => null },
 }));
 
-import { registerSettingsHandlers } from '../../../src/main/ipc/settings.ipc';
+import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 

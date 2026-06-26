@@ -111,7 +111,7 @@ export function createMockApp(tempDir: string): MockElectronApp {
 }
 
 /**
- * Creates a mock BrowserWindow
+ * Creates a mock AppWindow
  */
 export function createMockBrowserWindow(): MockBrowserWindow {
   return {
@@ -173,7 +173,7 @@ export function createMockClipboard(): MockClipboard {
 }
 
 /**
- * Creates a mock ipcMain module
+ * Creates a mock ipcHost module
  */
 export function createMockIpcMain(): MockIpcMain {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -208,7 +208,7 @@ export function createMockIpcMain(): MockIpcMain {
 }
 
 /**
- * Creates a mock ipcRenderer module
+ * Creates a mock ipcClient module
  */
 export function createMockIpcRenderer(): MockIpcRenderer {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -241,12 +241,12 @@ export function createMockIpcRenderer(): MockIpcRenderer {
 
 export interface MockElectron {
   app: MockElectronApp;
-  BrowserWindow: ReturnType<typeof vi.fn>;
+  AppWindow: ReturnType<typeof vi.fn>;
   dialog: MockDialog;
   shell: MockShell;
   clipboard: MockClipboard;
-  ipcMain: MockIpcMain;
-  ipcRenderer: MockIpcRenderer;
+  ipcHost: MockIpcMain;
+  ipcClient: MockIpcRenderer;
 }
 
 /**
@@ -257,12 +257,12 @@ export function createMockElectron(tempDir: string): MockElectron {
 
   return {
     app: createMockApp(tempDir),
-    BrowserWindow: mockBrowserWindow,
+    AppWindow: mockBrowserWindow,
     dialog: createMockDialog(),
     shell: createMockShell(),
     clipboard: createMockClipboard(),
-    ipcMain: createMockIpcMain(),
-    ipcRenderer: createMockIpcRenderer(),
+    ipcHost: createMockIpcMain(),
+    ipcClient: createMockIpcRenderer(),
   };
 }
 

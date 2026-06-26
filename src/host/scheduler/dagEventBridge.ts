@@ -2,7 +2,7 @@
 // DAG Event Bridge - Forwards DAG events to renderer process
 // ============================================================================
 
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 import type {
   DAGVisualizationEvent,
@@ -236,7 +236,7 @@ function toVisualizationEvent(event: DAGEvent): DAGVisualizationEvent | null {
  * 发送事件到所有渲染进程窗口
  */
 function sendToRenderer(event: DAGVisualizationEvent): void {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = AppWindow.getAllWindows();
 
   for (const win of windows) {
     if (!win.isDestroyed() && win.webContents) {

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { rebuildRunDetail } from '../../../src/main/services/core/swarmRollupProjection';
+import { rebuildRunDetail } from '../../../src/host/services/core/swarmRollupProjection';
 import {
   runReconcileScan,
   formatReconcileScanReport,
   createDatabaseReconcileReader,
   type ReconcileScanReader,
-} from '../../../src/main/services/core/swarmReconcileService';
+} from '../../../src/host/services/core/swarmReconcileService';
 import type { SwarmLedgerEvent } from '../../../src/shared/contract/swarmLedger';
 import type { SwarmRunDetail } from '../../../src/shared/contract/swarmTrace';
 

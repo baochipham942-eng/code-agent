@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
@@ -20,12 +20,12 @@ const logger = createLogger('BackgroundTaskManager');
  */
 class BackgroundTaskManager extends EventEmitter {
   private backgroundTasks: Map<string, BackgroundTaskInfo> = new Map();
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: AppWindow | null = null;
 
   /**
    * 设置主窗口引用（用于发送事件）
    */
-  setMainWindow(window: BrowserWindow | null): void {
+  setMainWindow(window: AppWindow | null): void {
     this.mainWindow = window;
   }
 

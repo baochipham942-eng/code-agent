@@ -1,4 +1,4 @@
-import { ipcMain, globalShortcut, clipboard, BrowserWindow } from '../platform';
+import { ipcHost, globalShortcut, clipboard, AppWindow } from '../platform';
 import { spawn, ChildProcess, execFile } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -203,7 +203,7 @@ async function pasteText(text: string): Promise<void> {
 }
 
 function notifyRenderer(event: 'voice-paste:status', data?: VoicePasteStatusPayload): void {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = AppWindow.getAllWindows();
   windows.forEach(win => {
     if (!win.isDestroyed()) {
       win.webContents.send(event, data);
@@ -266,7 +266,7 @@ async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
   return { isRecording };
 }
 
-export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): void {
+export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcHost): void {
   const isWebMode = process.env.CODE_AGENT_WEB_MODE === 'true' || !process.versions.electron;
 
   // Register global shortcut Cmd+`

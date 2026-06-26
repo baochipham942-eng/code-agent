@@ -8,8 +8,8 @@ import {
   runArtifactPreviewHealth,
   runSelfStartedArtifactPreviewHealth,
   type ArtifactPreviewHealthFinding,
-} from '../../../../../src/main/agent/runtime/browser/artifactPreviewHealth';
-import { browserService } from '../../../../../src/main/services/infra/browserService';
+} from '../../../../../src/host/agent/runtime/browser/artifactPreviewHealth';
+import { browserService } from '../../../../../src/host/services/infra/browserService';
 
 const TOKEN = 'parity-token';
 const VIEWPORTS = [

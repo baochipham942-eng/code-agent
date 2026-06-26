@@ -6,9 +6,9 @@ import { join } from 'node:path';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { ToolExecutionEventRepository } from '../../../src/main/services/core/repositories/ToolExecutionEventRepository';
-import { buildRecoverySnapshot, acknowledgeRecovery } from '../../../src/main/services/core/crashRecovery';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { ToolExecutionEventRepository } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
+import { buildRecoverySnapshot, acknowledgeRecovery } from '../../../src/host/services/core/crashRecovery';
 
 function createLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -10,18 +10,18 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { executePythonScriptMock } = vi.hoisted(() => ({
   executePythonScriptMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/utils/pythonBridge', () => ({
+vi.mock('../../../../../src/host/tools/utils/pythonBridge', () => ({
   executePythonScript: (...args: unknown[]) => executePythonScriptMock(...args),
   resolveScriptPath: (n: string) => n,
 }));
 
-import { xlwingsExecuteModule } from '../../../../../src/main/tools/modules/network/xlwingsExecute';
+import { xlwingsExecuteModule } from '../../../../../src/host/tools/modules/network/xlwingsExecute';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

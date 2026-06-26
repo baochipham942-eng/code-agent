@@ -11,9 +11,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly/shared';
+import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly/shared';
 import type { ModelConfig } from '../../../src/shared/contract';
-import type { ModelMessage } from '../../../src/main/agent/loopTypes';
+import type { ModelMessage } from '../../../src/host/agent/loopTypes';
 import { DEFAULT_MODELS } from '../../../src/shared/constants';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -32,7 +32,7 @@ const { mockAiSdkSupportsProvider, mockGetApiKey, mockGetProviderHealth, mockGet
   mockInferenceViaAiSdk: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -47,7 +47,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
   getAuthService: () => ({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) }),
   getLangfuseService: () => ({
@@ -57,18 +57,18 @@ vi.mock('../../../src/main/services', () => ({
 }));
 
 // modelDecision.ts 直接 import configService（绕过 services barrel），需单独 mock
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
 }));
 
-vi.mock('../../../src/main/mcp/logCollector.js', () => ({
+vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   logCollector: {
     agent: vi.fn(),
     browser: vi.fn(),
   },
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
   getCoreToolDefinitions: vi.fn().mockReturnValue([]),
   getLoadedDeferredToolDefinitions: vi.fn().mockReturnValue([]),
   getAllToolDefinitions: vi.fn().mockReturnValue([]),
@@ -76,20 +76,20 @@ vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
   withoutGenericMediaToolsInDesign: vi.fn((tools) => tools),
 }));
 
-vi.mock('../../../src/main/tools/workbenchToolScope', () => ({
+vi.mock('../../../src/host/tools/workbenchToolScope', () => ({
   filterToolDefinitionsByWorkbenchScope: vi.fn((tools) => tools),
 }));
 
-vi.mock('../../../src/main/session/streamSnapshot', () => ({
+vi.mock('../../../src/host/session/streamSnapshot', () => ({
   createSnapshotHandler: vi.fn().mockReturnValue(vi.fn()),
 }));
 
-vi.mock('../../../src/main/context/tokenOptimizer', () => ({
+vi.mock('../../../src/host/context/tokenOptimizer', () => ({
   estimateModelMessageTokens: vi.fn().mockReturnValue(12),
   estimateTokens: vi.fn().mockReturnValue(5),
 }));
 
-vi.mock('../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../src/host/model/modelRouter', () => ({
   ContextLengthExceededError: class ContextLengthExceededError extends Error {
     requestedTokens = 0;
     maxTokens = 0;
@@ -97,18 +97,18 @@ vi.mock('../../../src/main/model/modelRouter', () => ({
   },
 }));
 
-vi.mock('../../../src/main/model/adapters/aiSdkAdapter', () => ({
+vi.mock('../../../src/host/model/adapters/aiSdkAdapter', () => ({
   aiSdkSupportsProvider: mockAiSdkSupportsProvider,
   inferenceViaAiSdk: mockInferenceViaAiSdk,
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({
     getHealth: mockGetProviderHealth,
   }),
 }));
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   needsArtifactTaskBrief: vi.fn(() => false),
 }));
 
@@ -116,7 +116,7 @@ import {
   buildAiSdkAdaptiveFallbackInfo,
   resolveMainChatModelDecision,
   runAiSdkInferenceWithProviderFallback,
-} from '../../../src/main/agent/runtime/contextAssembly/inference';
+} from '../../../src/host/agent/runtime/contextAssembly/inference';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -461,7 +461,7 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
 
 describe('model_decision 事件接线契约（ADR-019 批 3）', () => {
   const AGENT_CONTRACT_PATH = path.join(ROOT, 'src/shared/contract/agent.ts');
-  const INFERENCE_PATH = path.join(ROOT, 'src/main/agent/runtime/contextAssembly/inference.ts');
+  const INFERENCE_PATH = path.join(ROOT, 'src/host/agent/runtime/contextAssembly/inference.ts');
 
   it('AgentEvent union 必须包含 model_decision 事件类型', () => {
     const source = readFileSync(AGENT_CONTRACT_PATH, 'utf8');
@@ -473,7 +473,7 @@ describe('model_decision 事件接线契约（ADR-019 批 3）', () => {
     expect(sharedSource).toMatch(/export interface ModelDecision/);
     expect(sharedSource).toMatch(/export type BillingMode/);
 
-    const mainSource = readFileSync(path.join(ROOT, 'src/main/model/modelDecision.ts'), 'utf8');
+    const mainSource = readFileSync(path.join(ROOT, 'src/host/model/modelDecision.ts'), 'utf8');
     expect(mainSource).toMatch(/from '\.\.\/\.\.\/shared\/contract\/modelDecision'/);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PROMPT_VERSION } from '../../../../src/shared/constants/agent';
-import { DYNAMIC_BOUNDARY_MARKER } from '../../../../src/main/prompts/cacheBreakDetection';
-import { summarizePromptStack } from '../../../../src/main/services/promptStack/promptStackSummary';
+import { DYNAMIC_BOUNDARY_MARKER } from '../../../../src/host/prompts/cacheBreakDetection';
+import { summarizePromptStack } from '../../../../src/host/services/promptStack/promptStackSummary';
 
 describe('summarizePromptStack', () => {
   it('summarizes stable and dynamic prompt layers without exposing full text fields', () => {

@@ -49,21 +49,21 @@ vi.mock('../../../src/cli/commands/_runToolDirectly', () => ({
   runToolDirectly: mocks.runToolDirectly,
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ listDefinitions: mocks.listDefinitions }),
 }));
 
-vi.mock('../../../src/main/tools/protocolRegistry', () => ({
+vi.mock('../../../src/host/tools/protocolRegistry', () => ({
   getProtocolRegistry: mocks.getProtocolRegistry,
 }));
 
-vi.mock('../../../src/main/agent/agentRegistry', () => ({
+vi.mock('../../../src/host/agent/agentRegistry', () => ({
   initAgentRegistry: mocks.initAgentRegistry,
   listAllAgents: mocks.listAllAgents,
   disposeAgentRegistry: mocks.disposeAgentRegistry,
 }));
 
-vi.mock('../../../src/main/services/external/openchronicleSupervisor', () => ({
+vi.mock('../../../src/host/services/external/openchronicleSupervisor', () => ({
   setEnabled: mocks.setEnabled,
   getStatus: mocks.getStatus,
   loadSettings: mocks.loadSettings,
@@ -84,7 +84,7 @@ vi.mock('../../../src/cli/output', () => ({
   jsonOutput: mocks.jsonOutput,
 }));
 
-vi.mock('../../../src/main/session/localCache', () => ({
+vi.mock('../../../src/host/session/localCache', () => ({
   SessionLocalCache: vi.fn(function SessionLocalCache(options: unknown) {
     mocks.sessionLocalCacheConstructor(options);
     return {
@@ -93,7 +93,7 @@ vi.mock('../../../src/main/session/localCache', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/session/transcriptExporter', () => ({
+vi.mock('../../../src/host/session/transcriptExporter', () => ({
   TranscriptExporter: vi.fn(function TranscriptExporter(options: unknown) {
     mocks.transcriptExporterConstructor(options);
     return {

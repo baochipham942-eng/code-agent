@@ -9,10 +9,10 @@ import {
   isFallbackEligible,
   isTransientError,
   withTransientRetry,
-} from '../../../src/main/model/providers/retryStrategy';
+} from '../../../src/host/model/providers/retryStrategy';
 
 // Mock logger to suppress console output during tests
-vi.mock('../../../src/main/model/providers/shared', () => ({
+vi.mock('../../../src/host/model/providers/shared', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),

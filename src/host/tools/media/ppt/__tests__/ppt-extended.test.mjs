@@ -1,9 +1,9 @@
 // ============================================================================
 // PPT 生成系统 — 扩展测试 Part A（布局选择精确性）
-// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-extended.test.mjs
+// 运行: npx tsx src/host/tools/media/ppt/__tests__/ppt-extended.test.mjs
 // ============================================================================
 // History: Part B/C/D/E/F (全主题生成 / 边界 / 回归 / 对比 / 图表) 依赖已删除
-// 的 src/main/tools/media/ppt/index.ts (pptGenerateTool)。顶层工具 API + 9 主题
+// 的 src/host/tools/media/ppt/index.ts (pptGenerateTool)。顶层工具 API + 9 主题
 // 已被 tests/unit/tools/modules/network/pptGenerate.test.ts 用 vitest 覆盖。
 // 此文件保留 Part A — selectMasterAndLayout 路由决策的纯函数测试。
 // ============================================================================

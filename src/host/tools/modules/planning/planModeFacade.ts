@@ -1,7 +1,7 @@
 // ============================================================================
 // PlanMode facade (P0-6.3 Batch B1 — planning: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/planning/PlanModeTool.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/planning/PlanModeTool.ts (legacy Tool + wrapLegacyTool)
 // 统一 enter/exit 入口，按 action 派发到 enterPlanMode/exitPlanMode 的核心函数
 // （不绕 module.handler 一圈，直接调 execute* 导出函数）
 // ============================================================================

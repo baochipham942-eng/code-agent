@@ -6,7 +6,7 @@
 # promptVersion × errorType 聚合失败率。如果改了 prompt 却忘了 bump，归因就会把
 # 两版提示词混成一版，诊断失真。本钩子在 pre-commit 拦下这种遗漏。
 #
-# 规则：本次 staged 改动里若有 src/main/prompts/ 下的文件，则 agent.ts 里的
+# 规则：本次 staged 改动里若有 src/host/prompts/ 下的文件，则 agent.ts 里的
 # PROMPT_VERSION 常量值也必须在本次提交中变更，否则 fail。
 #
 # 用法：
@@ -20,7 +20,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-PROMPTS_DIR="src/main/prompts/"
+PROMPTS_DIR="src/host/prompts/"
 VERSION_FILE="src/shared/constants/agent.ts"
 
 # staged 文件列表（含增/改/删/改名）
@@ -53,7 +53,7 @@ if [ "$version_bumped" = true ]; then
   exit 0
 fi
 
-echo -e "${RED}✗ 提交被拦下：改了 src/main/prompts/ 但没有 bump PROMPT_VERSION${NC}"
+echo -e "${RED}✗ 提交被拦下：改了 src/host/prompts/ 但没有 bump PROMPT_VERSION${NC}"
 echo ""
 echo -e "${YELLOW}本次涉及的 prompt 文件：${NC}"
 echo "$staged" | grep "^${PROMPTS_DIR}" | sed 's/^/  /'

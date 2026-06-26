@@ -15,7 +15,7 @@ import {
   getAgentTools,
   isCoreAgent,
   type CoreAgentId,
-} from '../../../src/main/agent/agentDefinition';
+} from '../../../src/host/agent/agentDefinition';
 
 describe('AgentDefinition - Hybrid Architecture', () => {
   // --------------------------------------------------------------------------

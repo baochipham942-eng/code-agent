@@ -12,11 +12,11 @@ const dbState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -31,13 +31,13 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { RunFinalizer } from '../../../../src/main/agent/runtime/runFinalizer';
+import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import {
   clearSessionTodos,
   getSessionTodos,
   setSessionTodos,
-} from '../../../../src/main/agent/todoParser';
-import { clearTasks } from '../../../../src/main/services/planning/taskStore';
+} from '../../../../src/host/agent/todoParser';
+import { clearTasks } from '../../../../src/host/services/planning/taskStore';
 
 function makeFinalizer(onEvent = vi.fn()): RunFinalizer {
   return new RunFinalizer({

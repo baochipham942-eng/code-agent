@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSearchPlan } from '../../../../src/main/tools/web/search';
+import { buildSearchPlan } from '../../../../src/host/tools/web/search';
 
 describe('searchPlanner', () => {
   it('keeps quick mode to the primary query', () => {

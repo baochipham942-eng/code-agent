@@ -14,13 +14,13 @@ import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
   CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT,
-} from '../../../src/main/services/cloud/controlPlaneTrust';
-import { applyRendererBundleUpdate } from '../../../src/main/services/renderer/rendererBundleFetcher';
+} from '../../../src/host/services/cloud/controlPlaneTrust';
+import { applyRendererBundleUpdate } from '../../../src/host/services/renderer/rendererBundleFetcher';
 import {
   activeBundleDir,
   readActiveBundleMeta,
   readRendererBundleStatus,
-} from '../../../src/main/services/renderer/rendererBundleCache';
+} from '../../../src/host/services/renderer/rendererBundleCache';
 
 let dataDir: string;
 let workDir: string;

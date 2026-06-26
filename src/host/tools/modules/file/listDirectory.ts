@@ -1,7 +1,7 @@
 // ============================================================================
 // ListDirectory (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/file/listDirectory.ts (registered as 'ListDirectory')
+// 旧版: src/host/tools/file/listDirectory.ts (registered as 'ListDirectory')
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 不 import services/infra/logger，走 ctx.logger

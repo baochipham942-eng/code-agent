@@ -1,6 +1,6 @@
 // ============================================================================
 // Protocol — GitHub 相关类型
-// 原位置: src/main/services/github/prLinkService.ts
+// 原位置: src/host/services/github/prLinkService.ts
 // ============================================================================
 
 export interface PRContext {

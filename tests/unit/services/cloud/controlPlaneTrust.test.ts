@@ -9,7 +9,7 @@ import {
   formatControlPlaneDiagnostics,
   getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
-} from '../../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../../src/host/services/cloud/controlPlaneTrust';
 
 function buildSignedEnvelope(
   payload: Record<string, unknown>,

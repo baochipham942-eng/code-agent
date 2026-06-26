@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock logger before importing the module under test
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
     debug: vi.fn(),
@@ -25,7 +25,7 @@ import {
   observationMask,
   type CompressedMessage,
   type ObservationMaskConfig,
-} from '../../../src/main/context/tokenOptimizer';
+} from '../../../src/host/context/tokenOptimizer';
 import { OBSERVATION_MASKING } from '../../../src/shared/constants/agent';
 
 // Helper: create a tool message with given content
@@ -300,7 +300,7 @@ describe('observationMask', () => {
 // 第一行就超预算 → 整个尾部被清空 → 模型永远看不到完整输出的路径。
 // ============================================================================
 
-import { compressToolResult } from '../../../src/main/context/tokenOptimizer';
+import { compressToolResult } from '../../../src/host/context/tokenOptimizer';
 import { TOOL_RESULT_SPILL } from '../../../src/shared/constants';
 
 describe('compressToolResult spill notice preservation (GAP-009)', () => {

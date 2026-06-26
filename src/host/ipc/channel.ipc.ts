@@ -3,7 +3,7 @@
 // 处理多通道接入相关的 IPC 通信
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from '../platform';
+import type { IpcMain, AppWindow } from '../platform';
 import { CHANNEL_CHANNELS } from '../../shared/ipc/channels';
 import { getChannelManager } from '../channels';
 import type {
@@ -29,7 +29,7 @@ const logger = createLogger('ChannelIPC');
  */
 export function registerChannelHandlers(
   ipcMain: IpcMain,
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => AppWindow | null
 ): void {
   const channelManager = getChannelManager();
 

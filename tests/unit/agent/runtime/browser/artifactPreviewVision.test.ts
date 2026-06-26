@@ -4,7 +4,7 @@ import {
   parseArtifactPreviewVisionAnalysis,
   runArtifactPreviewVision,
   type ArtifactPreviewVisionAnalyzer,
-} from '../../../../../src/main/agent/runtime/browser/artifactPreviewVision';
+} from '../../../../../src/host/agent/runtime/browser/artifactPreviewVision';
 
 describe('artifactPreviewVision subjective layer', () => {
   it('builds a prompt scoped to subjective visual judgment', () => {

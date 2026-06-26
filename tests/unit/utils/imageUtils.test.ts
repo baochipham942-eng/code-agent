@@ -16,7 +16,7 @@ import {
   isValidBase64,
   type NormalizedImageData,
   type ImageAttachmentInput,
-} from '../../../src/main/utils/imageUtils';
+} from '../../../src/host/utils/imageUtils';
 
 describe('ImageUtils', () => {
   let testDir: string;

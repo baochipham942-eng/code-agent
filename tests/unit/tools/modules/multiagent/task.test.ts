@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 // ----- Mocks (vi.mock 上提到顶部，所以 mock 内部访问的变量必须 hoisted) -----
 const { executorExecuteMock, taskDedupMock } = vi.hoisted(() => ({
@@ -19,15 +19,15 @@ const { executorExecuteMock, taskDedupMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({ execute: executorExecuteMock }),
 }));
 
-vi.mock('../../../../../src/main/agent/taskDeduplication', () => ({
+vi.mock('../../../../../src/host/agent/taskDeduplication', () => ({
   taskDeduplication: taskDedupMock,
 }));
 
-vi.mock('../../../../../src/main/agent/agentDefinition', () => ({
+vi.mock('../../../../../src/host/agent/agentDefinition', () => ({
   CORE_AGENT_IDS: ['coder', 'reviewer', 'explore', 'plan', 'awaiter'],
   isCoreAgent: (s: string) => ['coder', 'reviewer', 'explore', 'plan', 'awaiter'].includes(s),
   getPredefinedAgent: (id: string) =>
@@ -43,7 +43,7 @@ vi.mock('../../../../../src/main/agent/agentDefinition', () => ({
   getSubagentModelConfig: () => ({ provider: 'kimi', model: 'kimi-k2.5' }),
 }));
 
-vi.mock('../../../../../src/main/agent/subagentContextBuilder', () => ({
+vi.mock('../../../../../src/host/agent/subagentContextBuilder', () => ({
   SubagentContextBuilder: class {
     async build() { return {}; }
     formatForSystemPrompt() { return ''; }
@@ -51,11 +51,11 @@ vi.mock('../../../../../src/main/agent/subagentContextBuilder', () => ({
   getAgentContextLevel: () => 'relevant',
 }));
 
-vi.mock('../../../../../src/main/tools/modules/_helpers/legacyAdapter', () => ({
+vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
   buildLegacyCtxFromProtocol: (ctx: ToolContext) => ({ workingDirectory: ctx.workingDir }),
 }));
 
-import { taskModule } from '../../../../../src/main/tools/modules/multiagent/task';
+import { taskModule } from '../../../../../src/host/tools/modules/multiagent/task';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

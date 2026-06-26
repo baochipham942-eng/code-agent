@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolExecutionResult } from '../../../src/main/tools/types';
+import type { ToolExecutionResult } from '../../../src/host/tools/types';
 
 const resolverState = vi.hoisted(() => ({
   getDefinition: vi.fn(),
   execute: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -28,8 +28,8 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { resetWriteIsolationForTests } from '../../../src/main/security/writeIsolation';
-import { ToolExecutor } from '../../../src/main/tools/toolExecutor';
+import { resetWriteIsolationForTests } from '../../../src/host/security/writeIsolation';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

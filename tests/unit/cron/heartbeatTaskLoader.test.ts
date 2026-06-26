@@ -10,8 +10,8 @@ vi.mock('fs', async (importOriginal) => ({ ...(await importOriginal<typeof impor
 import {
   HeartbeatTaskLoader,
   isWithinActiveHours,
-} from '../../../src/main/cron/heartbeatTaskLoader';
-import { getProjectConfigDir } from '../../../src/main/config/configPaths';
+} from '../../../src/host/cron/heartbeatTaskLoader';
+import { getProjectConfigDir } from '../../../src/host/config/configPaths';
 
 describe('isWithinActiveHours', () => {
   afterEach(() => {

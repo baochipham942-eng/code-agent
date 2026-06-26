@@ -12,7 +12,7 @@ const mockConfigDir = vi.hoisted(() => {
   return { dir: '' };
 });
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getSkillsDir: () => ({
     user: {
@@ -22,7 +22,7 @@ vi.mock('../../../../src/main/config/configPaths', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -38,7 +38,7 @@ import {
   rejectSkillDraft,
   getSkillDraftsDir,
   generateDraftSkillMd,
-} from '../../../../src/main/services/skills/skillDraftQueue';
+} from '../../../../src/host/services/skills/skillDraftQueue';
 import { LEARNING_PIPELINE } from '../../../../src/shared/constants';
 
 function makeDraftInput(overrides: Record<string, unknown> = {}) {

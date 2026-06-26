@@ -7,11 +7,11 @@ import {
   DocumentContextService,
   getDocumentContextService,
   resetDocumentContextService,
-} from '../../../src/main/context/documentContext/documentContextService';
-import { CodeParser } from '../../../src/main/context/documentContext/parsers/codeParser';
-import { MarkdownParser } from '../../../src/main/context/documentContext/parsers/markdownParser';
-import { PdfParser } from '../../../src/main/context/documentContext/parsers/pdfParser';
-import { ParsedDocumentImpl, estimateTokenCount } from '../../../src/main/context/documentContext/parsedDocumentImpl';
+} from '../../../src/host/context/documentContext/documentContextService';
+import { CodeParser } from '../../../src/host/context/documentContext/parsers/codeParser';
+import { MarkdownParser } from '../../../src/host/context/documentContext/parsers/markdownParser';
+import { PdfParser } from '../../../src/host/context/documentContext/parsers/pdfParser';
+import { ParsedDocumentImpl, estimateTokenCount } from '../../../src/host/context/documentContext/parsedDocumentImpl';
 
 // --------------------------------------------------------------------------
 // ParsedDocumentImpl

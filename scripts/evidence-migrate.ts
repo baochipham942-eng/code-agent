@@ -16,7 +16,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { EvidenceDb } from '../src/main/evaluation/evidence/evidenceDb';
+import { EvidenceDb } from '../src/host/evaluation/evidence/evidenceDb';
 
 // ---- Config ----
 

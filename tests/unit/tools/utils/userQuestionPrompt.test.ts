@@ -18,15 +18,15 @@ ipcMainHandleMock.mockImplementation((channel: string, fn: (e: unknown, r: unkno
   if (channel === 'user-question:response') responseHandlerRef.fn = fn;
 });
 
-vi.mock('../../../../src/main/platform', () => ({
-  ipcMain: { handle: ipcMainHandleMock },
-  BrowserWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
+vi.mock('../../../../src/host/platform', () => ({
+  ipcHost: { handle: ipcMainHandleMock },
+  AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
-vi.mock('../../../../src/main/services/infra/notificationService', () => ({
+vi.mock('../../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyNeedsInput: vi.fn() },
 }));
 
-import { promptUserInChat } from '../../../../src/main/tools/utils/userQuestionPrompt';
+import { promptUserInChat } from '../../../../src/host/tools/utils/userQuestionPrompt';
 import { IPC_CHANNELS } from '../../../../src/shared/ipc';
 import type { UserQuestion, UserQuestionResponse } from '../../../../src/shared/contract';
 

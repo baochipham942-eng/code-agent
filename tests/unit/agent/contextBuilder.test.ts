@@ -6,7 +6,7 @@ import { execSync } from 'child_process';
 import {
   injectWorkingDirectoryContext,
   resetGitContextCache,
-} from '../../../src/main/agent/messageHandling/contextBuilder';
+} from '../../../src/host/agent/messageHandling/contextBuilder';
 
 describe('injectWorkingDirectoryContext', () => {
   it('clarifies that cwd is not the boundary for machine-level local tasks', () => {
@@ -116,7 +116,7 @@ describe('buildComputerUseBlock — 验证信号独立性', () => {
     process.env.CODE_AGENT_ENABLE_CUA = '1';
     try {
       const { buildComputerUseBlock } = await import(
-        '../../../src/main/agent/messageHandling/contextBuilder'
+        '../../../src/host/agent/messageHandling/contextBuilder'
       );
       const block = buildComputerUseBlock();
       expect(block).toContain('independent signal');

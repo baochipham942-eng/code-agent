@@ -12,11 +12,11 @@ const detectorMocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('../../../src/main/security/sensitiveDetector', () => ({
+vi.mock('../../../src/host/security/sensitiveDetector', () => ({
   getSensitiveDetector: () => ({ detect: detectorMocks.detect }),
 }));
 
-import { extractCodeSegments, scanSkillContent, normalizeForScan } from '../../../src/main/security/skillContentGuard';
+import { extractCodeSegments, scanSkillContent, normalizeForScan } from '../../../src/host/security/skillContentGuard';
 
 beforeEach(() => {
   detectorMocks.detect.mockReset();

@@ -24,7 +24,7 @@ import {
   TOKEN_RATIOS,
   type Message,
   type ContentAnalysis,
-} from '../../../src/main/context/tokenEstimator';
+} from '../../../src/host/context/tokenEstimator';
 
 describe('TokenEstimator', () => {
   // --------------------------------------------------------------------------

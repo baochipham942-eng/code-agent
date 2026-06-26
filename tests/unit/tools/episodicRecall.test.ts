@@ -10,12 +10,12 @@ const mockDb = {
   searchSessionMessagesFts: mockSearch,
 };
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: () => mockDb,
 }));
 
 const { episodicRecallModule } = await import(
-  '../../../src/main/tools/modules/lightMemory/episodicRecall'
+  '../../../src/host/tools/modules/lightMemory/episodicRecall'
 );
 
 function makeCtx() {

@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
-import { FeishuChannel } from '../../../src/main/channels/feishu/feishuChannel';
+import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 import type { ChannelAttachment, ChannelMessage } from '../../../src/shared/contract/channel';
 
 type FeishuChannelHarness = FeishuChannel & {

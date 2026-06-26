@@ -3,13 +3,13 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { ToolCall } from '../../../src/shared/contract';
-import { fileReadTracker } from '../../../src/main/tools/fileReadTracker';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import {
   clearSearchCandidateIndexForTest,
   getSearchToReadPreflightBlock,
   recordSearchCandidatesFromResult,
-} from '../../../src/main/agent/runtime/toolPreflightGuards';
+} from '../../../src/host/agent/runtime/toolPreflightGuards';
 
 function makeCtx(workingDirectory: string): RuntimeContext {
   return {

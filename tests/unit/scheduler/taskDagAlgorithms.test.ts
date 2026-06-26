@@ -9,7 +9,7 @@ import {
   computeExecutionLevels,
   computeCriticalPath,
   validateDAG,
-} from '../../../src/main/scheduler/taskDagAlgorithms';
+} from '../../../src/host/scheduler/taskDagAlgorithms';
 import type { DAGTask, DAGOptions } from '../../../src/shared/contract/taskDAG';
 import { DEFAULT_DAG_OPTIONS, createDefaultMetadata } from '../../../src/shared/contract/taskDAG';
 

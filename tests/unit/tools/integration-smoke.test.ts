@@ -3,11 +3,11 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { grepModule } from '../../../src/main/tools/modules/shell/grep';
-import { smartHtmlToText } from '../../../src/main/tools/web/htmlUtils';
-import { clearFetchCache } from '../../../src/main/tools/web/fetchDocument';
+import { grepModule } from '../../../src/host/tools/modules/shell/grep';
+import { smartHtmlToText } from '../../../src/host/tools/web/htmlUtils';
+import { clearFetchCache } from '../../../src/host/tools/web/fetchDocument';
 import { WEB_FETCH, GREP } from '../../../src/shared/constants';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../src/host/protocol/tools';
 
 const cwd = process.cwd();
 
@@ -75,7 +75,7 @@ describe('Grep Tool — execFile + pagination', () => {
   it('should support type filter', async () => {
     const result = await runGrep({
       pattern: 'fetchDocument',
-      path: 'src/main/tools/web',
+      path: 'src/host/tools/web',
       type: 'ts',
     });
     expect(result.ok).toBe(true);

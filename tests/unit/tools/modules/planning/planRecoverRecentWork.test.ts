@@ -3,19 +3,19 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const recoverRecentWorkIntoPlanningMock = vi.fn();
 const publishPlanningStateToRendererMock = vi.fn();
 
-vi.mock('../../../../../src/main/planning/recoveredWorkOrchestrator', () => ({
+vi.mock('../../../../../src/host/planning/recoveredWorkOrchestrator', () => ({
   recoverRecentWorkIntoPlanning: (...args: unknown[]) => recoverRecentWorkIntoPlanningMock(...args),
 }));
-vi.mock('../../../../../src/main/planning', () => ({
+vi.mock('../../../../../src/host/planning', () => ({
   publishPlanningStateToRenderer: (...args: unknown[]) => publishPlanningStateToRendererMock(...args),
 }));
 
-import { planRecoverRecentWorkModule } from '../../../../../src/main/tools/modules/planning/planRecoverRecentWork';
+import { planRecoverRecentWorkModule } from '../../../../../src/host/tools/modules/planning/planRecoverRecentWork';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

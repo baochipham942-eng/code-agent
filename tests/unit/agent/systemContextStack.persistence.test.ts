@@ -10,15 +10,15 @@ const ledgerState = vi.hoisted(() => ({
   upsertEvents: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
-vi.mock('../../../src/main/context/contextEventLedger', () => ({
+vi.mock('../../../src/host/context/contextEventLedger', () => ({
   getContextEventLedger: () => ledgerState,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/runtime/contextAssembly', () => ({
+vi.mock('../../../src/host/agent/runtime/contextAssembly', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -46,7 +46,7 @@ vi.mock('../../../src/main/agent/runtime/contextAssembly', () => ({
   normalizePersistentSystemContextKey: (content: string) => content.trim().replace(/\s+/g, ' '),
 }));
 
-import { addAndPersistMessage } from '../../../src/main/agent/runtime/contextAssembly/systemContextStack';
+import { addAndPersistMessage } from '../../../src/host/agent/runtime/contextAssembly/systemContextStack';
 
 function makeCtx(sessionId: string): any {
   return {

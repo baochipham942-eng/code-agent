@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-import { applyTelemetryTurnsMigrations } from '../../../../src/main/services/core/database/migrations';
+import { applyTelemetryTurnsMigrations } from '../../../../src/host/services/core/database/migrations';
 
 function createLogger() {
   return {

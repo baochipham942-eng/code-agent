@@ -6,14 +6,14 @@ const resolverState = vi.hoisted(() => {
   return { getDefinition, execute };
 });
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,
   }),
 }));
 
-import { ToolExecutor } from '../../../src/main/tools/toolExecutor';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 describe('ToolExecutor executionIntent propagation', () => {
   beforeEach(() => {

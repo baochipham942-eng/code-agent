@@ -8,14 +8,14 @@ const dbState = vi.hoisted(() => ({
   throwOnGet: false,
 }));
 
-vi.mock('../../../src/main/security/decisionHistory', () => ({
+vi.mock('../../../src/host/security/decisionHistory', () => ({
   getDecisionHistory: () => ({
     getRecent: () => [],
     getAll: () => [],
   }),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => {
     if (dbState.throwOnGet) throw new Error('db boom');
     return {
@@ -25,7 +25,7 @@ vi.mock('../../../src/main/services/core/databaseService', () => ({
   },
 }));
 
-import { registerDiagnosticsHandlers } from '../../../src/main/ipc/diagnostics.ipc';
+import { registerDiagnosticsHandlers } from '../../../src/host/ipc/diagnostics.ipc';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 // 捕获注册的 handler

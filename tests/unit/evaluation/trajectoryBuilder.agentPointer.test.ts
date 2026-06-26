@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TrajectoryBuilder } from '../../../src/main/evaluation/trajectory/trajectoryBuilder';
+import { TrajectoryBuilder } from '../../../src/host/evaluation/trajectory/trajectoryBuilder';
 import type { AgentPointerEvent } from '../../../src/shared/contract/desktop';
 
 describe('TrajectoryBuilder Agent Pointer evidence', () => {

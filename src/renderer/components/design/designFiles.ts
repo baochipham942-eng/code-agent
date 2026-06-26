@@ -317,7 +317,7 @@ export async function listVersions(runDir: string): Promise<DesignVersion[]> {
 
 // ----------------------------------------------------------------------------
 // 品牌契约 registry（CD-Parity §1）：renderer → main WORKSPACE IPC 薄封装。
-// 后端读写在 src/main/services/design/brandRegistry.ts，4 个 action 已登记
+// 后端读写在 src/host/services/design/brandRegistry.ts，4 个 action 已登记
 // shellCapabilities。失败一律静默返回安全默认（null / false / 空列表）。
 // ----------------------------------------------------------------------------
 

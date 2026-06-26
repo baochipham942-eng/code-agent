@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { existsSyncMock, mkdirSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn().mockReturnValue(true),
@@ -25,11 +25,11 @@ const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/services', () => ({
+vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-import { textToSpeechModule, executeTextToSpeech } from '../../../../../src/main/plugins/builtin/audioProcessing/textToSpeech';
+import { textToSpeechModule, executeTextToSpeech } from '../../../../../src/host/plugins/builtin/audioProcessing/textToSpeech';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

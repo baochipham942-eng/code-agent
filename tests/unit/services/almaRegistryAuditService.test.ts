@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { refreshAlmaRegistryAudit } from '../../../src/main/services/almaRegistry/almaRegistryAuditService';
+import { refreshAlmaRegistryAudit } from '../../../src/host/services/almaRegistry/almaRegistryAuditService';
 import {
   ALMA_MCP_REGISTRY_URL,
   ALMA_PLUGIN_REGISTRY_URL,

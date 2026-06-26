@@ -18,14 +18,14 @@ const { runStateChangeProbeMock } = vi.hoisted(() => ({
   runStateChangeProbeMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/agent/runtime/dashboard/general/interactionProbeRunner', () => ({
+vi.mock('../../../../../src/host/agent/runtime/dashboard/general/interactionProbeRunner', () => ({
   runStateChangeProbe: runStateChangeProbeMock,
 }));
 
 import {
   STATE_CHANGE_ON_CLICK_PROBE,
   INTERACTION_PROBES,
-} from '../../../../../src/main/agent/runtime/dashboard/general/interactionProbes';
+} from '../../../../../src/host/agent/runtime/dashboard/general/interactionProbes';
 
 const DUMMY_INPUT = { filePath: '/tmp/whatever.html' };
 

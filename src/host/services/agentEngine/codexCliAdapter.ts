@@ -7,7 +7,7 @@ import { createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { BrowserWindow, getLogsPath } from '../../platform';
+import { AppWindow, getLogsPath } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
 import type {
@@ -610,7 +610,7 @@ function emitAgentEvent(
     ...event,
     sessionId,
   };
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of AppWindow.getAllWindows()) {
     win.webContents.send(IPC_CHANNELS.AGENT_EVENT, payload);
   }
 }

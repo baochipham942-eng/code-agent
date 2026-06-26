@@ -8,9 +8,9 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
-import { guiAgentSchema } from '../../../../../src/main/plugins/builtin/computerUse/guiAgent.schema';
-import { guiAgentModule } from '../../../../../src/main/plugins/builtin/computerUse/guiAgent';
+} from '../../../../../src/host/protocol/tools';
+import { guiAgentSchema } from '../../../../../src/host/plugins/builtin/computerUse/guiAgent.schema';
+import { guiAgentModule } from '../../../../../src/host/plugins/builtin/computerUse/guiAgent';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

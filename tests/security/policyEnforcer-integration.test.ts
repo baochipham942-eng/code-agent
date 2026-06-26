@@ -13,12 +13,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ToolExecutor } from '../../src/main/tools/toolExecutor';
-import { resetPolicyEnforcer } from '../../src/main/security/policyEnforcer';
-import { getDecisionHistory, resetDecisionHistory } from '../../src/main/security/decisionHistory';
+import { ToolExecutor } from '../../src/host/tools/toolExecutor';
+import { resetPolicyEnforcer } from '../../src/host/security/policyEnforcer';
+import { getDecisionHistory, resetDecisionHistory } from '../../src/host/security/decisionHistory';
 
 // Mock tool resolver — bash + write_file 两个工具
-vi.mock('../../src/main/tools/dispatch/toolResolver', () => {
+vi.mock('../../src/host/tools/dispatch/toolResolver', () => {
   const bashDef = {
     name: 'bash',
     description: 'Execute bash commands',
@@ -59,8 +59,8 @@ vi.mock('../../src/main/tools/dispatch/toolResolver', () => {
 });
 
 // Mock security barrel：隔离 exec policy / audit，但保留真实的 PolicyEnforcer
-vi.mock('../../src/main/security', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../src/main/security')>();
+vi.mock('../../src/host/security', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/host/security')>();
   return {
     ...original,
     getAuditLogger: () => ({
@@ -77,7 +77,7 @@ vi.mock('../../src/main/security', async (importOriginal) => {
   };
 });
 
-vi.mock('../../src/main/services', () => ({
+vi.mock('../../src/host/services', () => ({
   getToolCache: () => ({
     isCacheable: () => false,
     get: () => null,
@@ -85,19 +85,19 @@ vi.mock('../../src/main/services', () => ({
   }),
 }));
 
-vi.mock('../../src/main/agent/confirmationGate', () => ({
+vi.mock('../../src/host/agent/confirmationGate', () => ({
   getConfirmationGate: () => ({
     buildPreview: () => null,
     assessRiskLevel: () => 'low',
   }),
 }));
 
-vi.mock('../../src/main/tools/middleware/fileCheckpointMiddleware', () => ({
+vi.mock('../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
   createFileCheckpointIfNeeded: vi.fn(),
 }));
 
 // classifier 永远放行 — 用来证明 policy deny 优先级高于 classifier approve
-vi.mock('../../src/main/tools/permissionClassifier', () => ({
+vi.mock('../../src/host/tools/permissionClassifier', () => ({
   classifyPermission: vi.fn().mockResolvedValue({
     decision: 'approve',
     reason: 'test auto-approve',

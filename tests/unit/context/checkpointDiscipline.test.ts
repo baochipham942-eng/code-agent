@@ -3,7 +3,7 @@ import {
   classifyUserPromptIntent,
   renderVerbatimBlockQuote,
   shouldUpdateActiveIntent,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
 describe('checkpoint writer active-intent discipline', () => {
   it('updates §1 for commitment-style verbs', () => {

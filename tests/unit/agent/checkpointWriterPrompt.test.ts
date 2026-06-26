@@ -4,9 +4,9 @@ import type { SessionTask } from '../../../src/shared/contract/planning';
 import {
   buildCheckpointWriterPrompt,
   renderInertDataBlock,
-} from '../../../src/main/agent/checkpointWriterPrompt';
-import { createCheckpointTemplate } from '../../../src/main/context/checkpoint';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+} from '../../../src/host/agent/checkpointWriterPrompt';
+import { createCheckpointTemplate } from '../../../src/host/context/checkpoint';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 const BEGIN = '<<<CODE_AGENT_INERT_DATA:CONVERSATION:BEGIN>>>';
 const END = '<<<CODE_AGENT_INERT_DATA:CONVERSATION:END>>>';

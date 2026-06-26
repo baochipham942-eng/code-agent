@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const existsSyncMock = vi.fn();
 const readFileSyncMock = vi.fn();
@@ -31,7 +31,7 @@ vi.mock('mammoth', () => ({
   },
 }));
 
-import { readDocxModule } from '../../../../../src/main/tools/modules/network/readDocx';
+import { readDocxModule } from '../../../../../src/host/tools/modules/network/readDocx';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import { getDatabase } from '../../../src/main/services/core/databaseService';
-import { TelemetryStorage, prepareRawPayload } from '../../../src/main/telemetry/telemetryStorage';
+import { getDatabase } from '../../../src/host/services/core/databaseService';
+import { TelemetryStorage, prepareRawPayload } from '../../../src/host/telemetry/telemetryStorage';
 import { TELEMETRY_RAW } from '../../../src/shared/constants';
 import type { TelemetryModelCall, TelemetryToolCall } from '../../../src/shared/contract/telemetry';
 

@@ -4,7 +4,7 @@ import {
   annotateFirecrawlError,
   scrapeWithFirecrawl,
   searchWithFirecrawl,
-} from '../../../../src/main/tools/web/firecrawlClient';
+} from '../../../../src/host/tools/web/firecrawlClient';
 
 function makeResponse(body: unknown, ok = true, status = 200): Response {
   return {

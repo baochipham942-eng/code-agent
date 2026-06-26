@@ -7,7 +7,7 @@ import {
   getProviderKeys,
   markProviderKeyCooldown,
   resetProviderHealthForTests,
-} from '../../../../src/main/tools/web/search';
+} from '../../../../src/host/tools/web/search';
 
 const noConfig = { getServiceApiKey: () => undefined } as never;
 

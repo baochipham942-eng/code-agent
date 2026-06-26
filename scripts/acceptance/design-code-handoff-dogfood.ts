@@ -7,8 +7,8 @@ import {
   normalizeDesignCodeHandoffContext,
   type DesignCodeHandoffContext,
 } from '../../src/shared/contract/designHandoff';
-import { runArtifactPreviewHealth } from '../../src/main/agent/runtime/browser/artifactPreviewHealth';
-import { loadPlaywrightChromium } from '../../src/main/agent/runtime/browser/playwrightRuntime';
+import { runArtifactPreviewHealth } from '../../src/host/agent/runtime/browser/artifactPreviewHealth';
+import { loadPlaywrightChromium } from '../../src/host/agent/runtime/browser/playwrightRuntime';
 
 function buildImplementedArtifact(handoff: DesignCodeHandoffContext): string {
   const variant = handoff.selectedVariants[0];

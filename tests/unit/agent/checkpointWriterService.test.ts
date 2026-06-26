@@ -3,7 +3,7 @@ import type { Message } from '../../../src/shared/contract';
 import {
   CheckpointWriterService,
   type CheckpointWriterRunner,
-} from '../../../src/main/agent/checkpointWriterService';
+} from '../../../src/host/agent/checkpointWriterService';
 
 function message(id: string): Message {
   return {

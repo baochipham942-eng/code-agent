@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { exploreSchema } from '../../../src/main/tools/modules/planning/explore.schema';
-import { taskSchema } from '../../../src/main/tools/modules/multiagent/task.schema';
-import { sendInputSchema } from '../../../src/main/tools/modules/multiagent/sendInput.schema';
-import { spawnAgentSchema, agentSpawnSchema } from '../../../src/main/tools/modules/multiagent/spawnAgent.schema';
-import { workflowSchema } from '../../../src/main/tools/modules/multiagent/workflow.schema';
-import { workflowOrchestrateSchema } from '../../../src/main/tools/modules/multiagent/workflowOrchestrate.schema';
-import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { exploreSchema } from '../../../src/host/tools/modules/planning/explore.schema';
+import { taskSchema } from '../../../src/host/tools/modules/multiagent/task.schema';
+import { sendInputSchema } from '../../../src/host/tools/modules/multiagent/sendInput.schema';
+import { spawnAgentSchema, agentSpawnSchema } from '../../../src/host/tools/modules/multiagent/spawnAgent.schema';
+import { workflowSchema } from '../../../src/host/tools/modules/multiagent/workflow.schema';
+import { workflowOrchestrateSchema } from '../../../src/host/tools/modules/multiagent/workflowOrchestrate.schema';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
 describe('multiagent protocol schemas', () => {
   beforeEach(() => {

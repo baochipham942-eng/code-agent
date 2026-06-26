@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ToolArgsRepairGate,
   buildRepairExhaustedMessage,
-} from '../../../src/main/agent/runtime/toolArgsRepairGate';
+} from '../../../src/host/agent/runtime/toolArgsRepairGate';
 
 describe('ToolArgsRepairGate', () => {
   it('counts consecutive failures and only exhausts past the max', () => {

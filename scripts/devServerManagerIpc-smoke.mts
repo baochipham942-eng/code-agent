@@ -3,7 +3,7 @@
 // 验证：直接调 livePreview.ipc.ts 的 handler，覆盖 detect/start/wait/stop/logs
 //      不依赖 webServer 起来，直接 mock IpcMain 注入。
 
-import { registerLivePreviewHandlers } from '../src/main/ipc/livePreview.ipc';
+import { registerLivePreviewHandlers } from '../src/host/ipc/livePreview.ipc';
 import { IPC_DOMAINS } from '../src/shared/ipc';
 import type { IPCRequest, IPCResponse } from '../src/shared/ipc';
 

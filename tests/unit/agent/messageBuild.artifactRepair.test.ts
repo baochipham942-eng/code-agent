@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildArtifactRepairFocusBlock,
   formatArtifactRepairToolResultContent,
-} from '../../../src/main/agent/runtime/contextAssembly/artifactRepairProjection';
+} from '../../../src/host/agent/runtime/contextAssembly/artifactRepairProjection';
 
 const TARGET_FILE = '/Users/test/.code-agent/work/big-game.html';
 

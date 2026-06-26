@@ -5,8 +5,8 @@ import * as path from 'path';
 import {
   activateCommandDraft,
   emitCommandFile,
-} from '../../../../src/main/services/commands/commandFileEmitter';
-import { PromptCommandService } from '../../../../src/main/services/commands/promptCommandService';
+} from '../../../../src/host/services/commands/commandFileEmitter';
+import { PromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
 import { parsePromptCommandFile } from '../../../../src/shared/commands/promptCommands';
 
 async function makeTmpWorkspace() {

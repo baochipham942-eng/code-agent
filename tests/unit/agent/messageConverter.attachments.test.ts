@@ -3,7 +3,7 @@ import type { MessageAttachment } from '../../../src/shared/contract';
 import {
   buildMultimodalContent,
   stripImagesFromMessages,
-} from '../../../src/main/agent/messageHandling/converter';
+} from '../../../src/host/agent/messageHandling/converter';
 
 describe('message attachment conversion', () => {
   it('keeps an image analysis path hint when vision content is stripped', () => {

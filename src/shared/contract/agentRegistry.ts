@@ -2,7 +2,7 @@
 // Agent Registry - 渲染端 / 主进程共享类型
 // ============================================================================
 //
-// 主进程 src/main/agent/agentRegistry.ts 是单一真理源（builtin + user + project）。
+// 主进程 src/host/agent/agentRegistry.ts 是单一真理源（builtin + user + project）。
 // 这里只暴露跨进程序列化后的列表条目类型，供 IPC + 渲染端 store 共用。
 
 export type AgentSource = 'builtin' | 'user' | 'project';

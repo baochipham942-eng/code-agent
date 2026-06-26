@@ -7,7 +7,7 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const {
   existsSyncMock,
@@ -35,7 +35,7 @@ vi.mock('util', () => ({
 import {
   executeLocalSpeechToText,
   localSpeechToTextModule,
-} from '../../../../../src/main/tools/modules/network/localSpeechToText';
+} from '../../../../../src/host/tools/modules/network/localSpeechToText';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

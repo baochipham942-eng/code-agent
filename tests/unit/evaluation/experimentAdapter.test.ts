@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ExperimentAdapter, type EvalHarnessExperimentResultLike } from '../../../src/main/evaluation/experimentAdapter';
-import type { TestRunSummary } from '../../../src/main/testing/types';
+import { ExperimentAdapter, type EvalHarnessExperimentResultLike } from '../../../src/host/evaluation/experimentAdapter';
+import type { TestRunSummary } from '../../../src/host/testing/types';
 
 function createDbWriter() {
   return {

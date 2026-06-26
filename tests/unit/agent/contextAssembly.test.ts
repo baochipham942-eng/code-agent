@@ -8,18 +8,18 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { CompressionPipeline } from '../../../src/main/context/compressionPipeline';
-import { CompressionState } from '../../../src/main/context/compressionState';
+import { CompressionPipeline } from '../../../src/host/context/compressionPipeline';
+import { CompressionState } from '../../../src/host/context/compressionState';
 import {
   createCheckpointTemplate,
   ensureCheckpointStore,
   replaceSectionBody,
   resolveCheckpointStorePaths,
   writeCheckpointFile,
-} from '../../../src/main/context/checkpoint';
-import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';
-import { getContextHealthService } from '../../../src/main/context/contextHealthService';
-import { PROVIDER_VARIANT_MARKER } from '../../../src/main/prompts/providerVariants';
+} from '../../../src/host/context/checkpoint';
+import { getContextInterventionState } from '../../../src/host/context/contextInterventionState';
+import { getContextHealthService } from '../../../src/host/context/contextHealthService';
+import { PROVIDER_VARIANT_MARKER } from '../../../src/host/prompts/providerVariants';
 
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
@@ -35,8 +35,8 @@ const archiveHydrationMocks = vi.hoisted(() => ({
 // checkpointWriterService 的可注入 holder（audit C-H3 测试用）：默认透传真实单例，
 // 单个测试可临时替换实例，afterEach 清空
 const checkpointWriterHolder = vi.hoisted(() => ({ instance: undefined as unknown }));
-vi.mock('../../../src/main/agent/checkpointWriterService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/agent/checkpointWriterService')>();
+vi.mock('../../../src/host/agent/checkpointWriterService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/agent/checkpointWriterService')>();
   return {
     ...actual,
     getCheckpointWriterService: () =>
@@ -45,7 +45,7 @@ vi.mock('../../../src/main/agent/checkpointWriterService', async (importActual) 
   };
 });
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -60,7 +60,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: {
     agent: vi.fn(),
     addLog: vi.fn(),
@@ -69,7 +69,7 @@ vi.mock('../../../src/main/mcp/logCollector', () => ({
   },
 }));
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   getPromptForTask: vi.fn().mockReturnValue('system prompt'),
   buildDynamicPromptV2: vi.fn(),
   buildEnhancedPrompt: vi.fn(),
@@ -80,35 +80,35 @@ vi.mock('../../../src/main/prompts/builder', () => ({
   needsArtifactTaskBrief: vi.fn((message: string) => /生成|create|build|write|implement/i.test(message)),
 }));
 
-vi.mock('../../../src/main/agent/messageHandling/contextBuilder', () => ({
+vi.mock('../../../src/host/agent/messageHandling/contextBuilder', () => ({
   injectWorkingDirectoryContext: vi.fn((prompt: string) => prompt),
   buildEnhancedSystemPrompt: vi.fn().mockImplementation(async (prompt: string) => prompt),
   buildRuntimeModeBlock: vi.fn().mockReturnValue(''),
 }));
 
-vi.mock('../../../src/main/lightMemory/sessionMetadata', () => ({
+vi.mock('../../../src/host/lightMemory/sessionMetadata', () => ({
   buildSessionMetadataBlock: vi.fn().mockResolvedValue(''),
 }));
 
-vi.mock('../../../src/main/lightMemory/recentConversations', () => ({
+vi.mock('../../../src/host/lightMemory/recentConversations', () => ({
   buildRecentConversationsBlock: vi.fn().mockResolvedValue(''),
 }));
 
-vi.mock('../../../src/main/lightMemory/indexLoader', () => ({
+vi.mock('../../../src/host/lightMemory/indexLoader', () => ({
   loadMemoryIndex: vi.fn().mockResolvedValue(null),
 }));
 
 // GAP-005: messageBuild 注入 failure journal 的依赖
-vi.mock('../../../src/main/lightMemory/failureJournal', () => ({
+vi.mock('../../../src/host/lightMemory/failureJournal', () => ({
   buildFailureJournalBlock: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../../src/main/lightMemory/skillLoader', () => ({
+vi.mock('../../../src/host/lightMemory/skillLoader', () => ({
   loadRelevantSkills: vi.fn().mockResolvedValue([]),
   buildSkillInjectionBlock: vi.fn().mockReturnValue(null),
 }));
 
-vi.mock('../../../src/main/context/repoMap', () => ({
+vi.mock('../../../src/host/context/repoMap', () => ({
   getRepoMap: vi.fn().mockResolvedValue({
     text: '',
     fileCount: 0,
@@ -117,22 +117,22 @@ vi.mock('../../../src/main/context/repoMap', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
   getDeferredToolsSummary: vi.fn().mockReturnValue(''),
 }));
 
-vi.mock('../../../src/main/agent/activeAgentContext', () => ({
+vi.mock('../../../src/host/agent/activeAgentContext', () => ({
   buildActiveAgentContext: vi.fn().mockReturnValue(''),
   drainCompletionNotifications: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('../../../src/main/telemetry/systemPromptCache', () => ({
+vi.mock('../../../src/host/telemetry/systemPromptCache', () => ({
   getSystemPromptCache: () => ({
     store: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: vi.fn().mockReturnValue('mock-key') }),
   getAuthService: () => ({}),
   getLangfuseService: () => ({
@@ -151,19 +151,19 @@ vi.mock('../../../src/main/services', () => ({
   getSessionManager: () => serviceMocks.sessionManager,
 }));
 
-vi.mock('../../../src/main/context/contextHealthService', () => ({
+vi.mock('../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/fileReadTracker', () => ({
+vi.mock('../../../src/host/tools/fileReadTracker', () => ({
   fileReadTracker: { getRecentFiles: vi.fn().mockReturnValue([]) },
 }));
 
-vi.mock('../../../src/main/tools/dataFingerprint', () => ({
+vi.mock('../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: { toSummary: vi.fn().mockReturnValue('') },
 }));
 
-vi.mock('../../../src/main/context/compactModel', () => ({
+vi.mock('../../../src/host/context/compactModel', () => ({
   compactModelSummarize: vi.fn().mockResolvedValue('summary'),
   compactModelSummarizeWithMetadata: vi.fn().mockResolvedValue({
     summary: 'summary',
@@ -220,12 +220,12 @@ vi.mock('../../../src/shared/constants', () => ({
   },
 }));
 
-vi.mock('../../../src/main/agent/toolExecution/parallelStrategy', () => ({
+vi.mock('../../../src/host/agent/toolExecution/parallelStrategy', () => ({
   isParallelSafeTool: vi.fn(),
   classifyToolCalls: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/toolExecution/circuitBreaker', () => ({
+vi.mock('../../../src/host/agent/toolExecution/circuitBreaker', () => ({
   CircuitBreaker: class {
     isTripped = vi.fn().mockReturnValue(false);
     recordSuccess = vi.fn();
@@ -233,61 +233,61 @@ vi.mock('../../../src/main/agent/toolExecution/circuitBreaker', () => ({
   },
 }));
 
-vi.mock('../../../src/main/context/autoCompressor', () => ({
+vi.mock('../../../src/host/context/autoCompressor', () => ({
   AutoContextCompressor: class {},
   getAutoCompressor: vi.fn(),
 }));
 
-vi.mock('../../../src/main/utils/toolResultSpill', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/utils/toolResultSpill')>();
+vi.mock('../../../src/host/utils/toolResultSpill', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/utils/toolResultSpill')>();
   return {
     ...actual,
     readToolResultArchive: archiveHydrationMocks.readToolResultArchive,
   };
 });
 
-vi.mock('../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../src/host/model/modelRouter', () => ({
   ModelRouter: class {},
   ContextLengthExceededError: class extends Error {},
 }));
 
-vi.mock('../../../src/main/security/inputSanitizer', () => ({
+vi.mock('../../../src/host/security/inputSanitizer', () => ({
   getInputSanitizer: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/diff/diffTracker', () => ({
+vi.mock('../../../src/host/services/diff/diffTracker', () => ({
   getDiffTracker: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/citation/citationService', () => ({
+vi.mock('../../../src/host/services/citation/citationService', () => ({
   getCitationService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/hooks', () => ({
+vi.mock('../../../src/host/hooks', () => ({
   HookManager: class {},
   createHookManager: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/goalTracker', () => ({
+vi.mock('../../../src/host/agent/goalTracker', () => ({
   GoalTracker: class {},
 }));
 
-vi.mock('../../../src/main/agent/nudgeManager', () => ({
+vi.mock('../../../src/host/agent/nudgeManager', () => ({
   NudgeManager: class {},
 }));
 
-vi.mock('../../../src/main/agent/antiPattern/detector', () => ({
+vi.mock('../../../src/host/agent/antiPattern/detector', () => ({
   AntiPatternDetector: class {},
 }));
 
-vi.mock('../../../src/main/agent/sessionRecovery', () => ({
+vi.mock('../../../src/host/agent/sessionRecovery', () => ({
   getSessionRecoveryService: () => ({
     checkPreviousSession: vi.fn().mockResolvedValue(null),
     saveSessionState: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/agent/todoParser', () => ({
+vi.mock('../../../src/host/agent/todoParser', () => ({
   parseTodos: vi.fn().mockReturnValue([]),
   mergeTodos: vi.fn().mockReturnValue([]),
   advanceTodoStatus: vi.fn().mockReturnValue({ todos: [] }),
@@ -297,39 +297,39 @@ vi.mock('../../../src/main/agent/todoParser', () => ({
   clearSessionTodos: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../src/host/services/planning/taskStore', () => ({
   getIncompleteTasks: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('../../../src/main/agent/runtime/messageProcessor', () => ({
+vi.mock('../../../src/host/agent/runtime/messageProcessor', () => ({
   MessageProcessor: class {},
 }));
 
-vi.mock('../../../src/main/agent/runtime/streamHandler', () => ({
+vi.mock('../../../src/host/agent/runtime/streamHandler', () => ({
   StreamHandler: class {},
 }));
 
-vi.mock('../../../src/main/agent/runtime/runFinalizer', () => ({
+vi.mock('../../../src/host/agent/runtime/runFinalizer', () => ({
   RunFinalizer: class {},
 }));
 
-vi.mock('../../../src/main/agent/runtime/learningPipeline', () => ({
+vi.mock('../../../src/host/agent/runtime/learningPipeline', () => ({
   LearningPipeline: class {},
 }));
 
-vi.mock('../../../src/main/agent/runtime/conversationRuntime', () => ({
+vi.mock('../../../src/host/agent/runtime/conversationRuntime', () => ({
   ConversationRuntime: class {},
 }));
 
-vi.mock('../../../src/main/agent/runtime/toolExecutionEngine', () => ({
+vi.mock('../../../src/host/agent/runtime/toolExecutionEngine', () => ({
   ToolExecutionEngine: class {},
 }));
 
-vi.mock('../../../src/main/agent/runtime/contextAssembly/inference', () => ({
+vi.mock('../../../src/host/agent/runtime/contextAssembly/inference', () => ({
   inference: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/runtime/contextAssembly/modeInjection', () => ({
+vi.mock('../../../src/host/agent/runtime/contextAssembly/modeInjection', () => ({
   loadResearchSkillPrompt: vi.fn().mockReturnValue(null),
   injectResearchModePrompt: vi.fn(),
   buildPlanContextMessage: vi.fn().mockResolvedValue(null),
@@ -338,21 +338,21 @@ vi.mock('../../../src/main/agent/runtime/contextAssembly/modeInjection', () => (
   maybeInjectThinking: vi.fn(),
 }));
 
-import { ContextAssembly, MAX_SYSTEM_PROMPT_TOKENS } from '../../../src/main/agent/runtime/contextAssembly';
-import { estimateTokens } from '../../../src/main/context/tokenOptimizer';
-import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../../src/main/agent/messageHandling/contextBuilder';
-import { getPromptForTask } from '../../../src/main/prompts/builder';
-import { needsArtifactTaskBrief, needsGenerativeUI } from '../../../src/main/prompts/builder';
-import { buildSessionMetadataBlock } from '../../../src/main/lightMemory/sessionMetadata';
-import { loadMemoryIndex } from '../../../src/main/lightMemory/indexLoader';
-import { buildRecentConversationsBlock } from '../../../src/main/lightMemory/recentConversations';
-import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../src/main/lightMemory/skillLoader';
-import { getRepoMap } from '../../../src/main/context/repoMap';
-import { getDeferredToolsSummary } from '../../../src/main/tools/dispatch/toolDefinitions';
+import { ContextAssembly, MAX_SYSTEM_PROMPT_TOKENS } from '../../../src/host/agent/runtime/contextAssembly';
+import { estimateTokens } from '../../../src/host/context/tokenOptimizer';
+import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../../src/host/agent/messageHandling/contextBuilder';
+import { getPromptForTask } from '../../../src/host/prompts/builder';
+import { needsArtifactTaskBrief, needsGenerativeUI } from '../../../src/host/prompts/builder';
+import { buildSessionMetadataBlock } from '../../../src/host/lightMemory/sessionMetadata';
+import { loadMemoryIndex } from '../../../src/host/lightMemory/indexLoader';
+import { buildRecentConversationsBlock } from '../../../src/host/lightMemory/recentConversations';
+import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../src/host/lightMemory/skillLoader';
+import { getRepoMap } from '../../../src/host/context/repoMap';
+import { getDeferredToolsSummary } from '../../../src/host/tools/dispatch/toolDefinitions';
 import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
-} from '../../../src/main/memory/memoryInjectionTrace';
+} from '../../../src/host/memory/memoryInjectionTrace';
 
 function buildMessage(id: string, role: Message['role'], content: string): Message {
   return {
@@ -1877,7 +1877,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
   });
 
   it('prefers checkpoint rebuild boundary over pure summary compaction when a checkpoint exists', async () => {
-    const { CheckpointWriterService } = await import('../../../src/main/agent/checkpointWriterService');
+    const { CheckpointWriterService } = await import('../../../src/host/agent/checkpointWriterService');
     const sessionId = `session-checkpoint-rebuild-${Date.now()}`;
     const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-'));
     const checkpointPaths = resolveCheckpointStorePaths({
@@ -1970,7 +1970,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
   });
 
   it('skips rebuild boundary when this round checkpoint write fails (audit C-H3, fail-closed on stale)', async () => {
-    const { CheckpointWriterService } = await import('../../../src/main/agent/checkpointWriterService');
+    const { CheckpointWriterService } = await import('../../../src/host/agent/checkpointWriterService');
     const sessionId = `session-checkpoint-stale-${Date.now()}`;
     const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-stale-'));
     const checkpointPaths = resolveCheckpointStorePaths({
@@ -2058,7 +2058,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
   });
 
   it('fail-closes when writer leaves no success result (undefined lastResult, audit FAIL-2)', async () => {
-    const { CheckpointWriterService } = await import('../../../src/main/agent/checkpointWriterService');
+    const { CheckpointWriterService } = await import('../../../src/host/agent/checkpointWriterService');
     const sessionId = `session-checkpoint-undef-${Date.now()}`;
     const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-undef-'));
     const checkpointPaths = resolveCheckpointStorePaths({

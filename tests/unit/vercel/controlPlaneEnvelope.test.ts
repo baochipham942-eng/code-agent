@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 import {
   buildControlPlaneContentHash as buildClientContentHash,
   verifyControlPlaneEnvelope,
-} from '../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../src/host/services/cloud/controlPlaneTrust';
 import {
   buildControlPlaneContentHash,
   createControlPlaneEnvelope,

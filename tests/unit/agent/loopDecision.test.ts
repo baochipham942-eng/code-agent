@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { decideNextAction } from '../../../src/main/agent/loopDecision';
-import type { LoopState, LoopDecision } from '../../../src/main/agent/loopDecision';
+import { decideNextAction } from '../../../src/host/agent/loopDecision';
+import type { LoopState, LoopDecision } from '../../../src/host/agent/loopDecision';
 
 // --------------------------------------------------------------------------
 // Helpers

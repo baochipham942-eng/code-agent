@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseGeminiResponse,
   parseGeminiStreamChunk,
-} from '../../src/main/model/providers/wrappers/geminiWrapper';
+} from '../../src/host/model/providers/wrappers/geminiWrapper';
 
 describe('geminiWrapper / parseGeminiResponse', () => {
   it('success: parses text-only response', () => {

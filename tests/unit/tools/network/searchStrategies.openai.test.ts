@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAvailableSources, SEARCH_SOURCES, resetProviderHealthForTests } from '../../../../src/main/tools/web/search';
+import { getAvailableSources, SEARCH_SOURCES, resetProviderHealthForTests } from '../../../../src/host/tools/web/search';
 import { OPENAI_WEB_SEARCH_DEFAULT_MODEL } from '../../../../src/shared/constants';
 
 describe('OpenAI web search source', () => {

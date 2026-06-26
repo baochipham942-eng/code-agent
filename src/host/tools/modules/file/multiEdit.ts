@@ -1,7 +1,7 @@
 // ============================================================================
 // Edit (multi-edit, P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/file/multiEdit.ts (registered as 'Edit')
+// 旧版: src/host/tools/file/multiEdit.ts (registered as 'Edit')
 // 复刻所有 legacy 行为：
 // - file_path 必须先 Read（fileReadTracker）— 除非 force=true
 // - external modification 检测

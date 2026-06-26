@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { SwarmLedgerRepository } from '../../../src/main/services/core/repositories/SwarmLedgerRepository';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SwarmLedgerRepository } from '../../../src/host/services/core/repositories/SwarmLedgerRepository';
 import type { SwarmLedgerAppendInput } from '../../../src/shared/contract/swarmLedger';
 
 function createLogger() {

@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -12,24 +12,24 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/builtinSkills', () => ({
+vi.mock('../../../../src/host/services/skills/builtinSkills', () => ({
   getBuiltinSkills: () => [],
 }));
 
-vi.mock('../../../../src/main/services/cloud', () => ({
+vi.mock('../../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({
     getSkills: () => [],
   }),
 }));
 
-vi.mock('../../../../src/main/services/toolSearch', () => ({
+vi.mock('../../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
     clearSkills: vi.fn(),
     registerSkills: vi.fn(),
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   getSkillRepositoryService: () => ({
     initialize: vi.fn().mockResolvedValue(undefined),
     isSkillEnabled: () => true,
@@ -38,11 +38,11 @@ vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
 
 const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
 
-vi.mock('../../../../src/main/skills/marketplace/installService', () => ({
+vi.mock('../../../../src/host/skills/marketplace/installService', () => ({
   getEnabledSkillDirs: async () => [...marketplaceSkillDirs],
 }));
 
-import { SkillDiscoveryService } from '../../../../src/main/services/skills/skillDiscoveryService';
+import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
 
 async function writeSkill(baseDir: string, name: string): Promise<void> {
   const skillDir = path.join(baseDir, name);

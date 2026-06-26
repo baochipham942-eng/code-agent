@@ -3,14 +3,14 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { Message } from '../../../src/shared/contract';
 
 const mockConfig = vi.hoisted(() => ({
   userConfigDir: '',
 }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfig.userConfigDir,
 }));
 
@@ -21,7 +21,7 @@ import {
   readCompletionSummaryRecordsBySession,
   readLatestCompletionSummaryRecord,
   readRecentCompletionSummaryRecords,
-} from '../../../src/main/session/completionSummaryService';
+} from '../../../src/host/session/completionSummaryService';
 
 function git(args: string[], cwd: string): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });

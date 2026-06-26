@@ -11,11 +11,11 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const SVC = '../../../src/main/services/media/imageGenerationService';
-const REG = '../../../src/main/services/media/customImageModelRegistry';
+const SVC = '../../../src/host/services/media/imageGenerationService';
+const REG = '../../../src/host/services/media/customImageModelRegistry';
 
-vi.mock('../../../src/main/services/media/imageGenerationService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/media/imageGenerationService')>();
+vi.mock('../../../src/host/services/media/imageGenerationService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/media/imageGenerationService')>();
   return {
     ...actual,
     getDashscopeApiKey: vi.fn(() => 'sk-test'),
@@ -28,7 +28,7 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
   };
 });
 
-vi.mock('../../../src/main/services/media/customImageModelRegistry', () => ({
+vi.mock('../../../src/host/services/media/customImageModelRegistry', () => ({
   getCustomImageModel: vi.fn(),
   getCustomModelApiKey: vi.fn(),
   listCustomImageModels: vi.fn(async () => []),
@@ -40,19 +40,19 @@ vi.mock('../../../src/main/services/media/customImageModelRegistry', () => ({
 }));
 
 const cfg = vi.hoisted(() => ({ root: '' }));
-vi.mock('../../../src/main/config/configPaths', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/config/configPaths')>();
+vi.mock('../../../src/host/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/config/configPaths')>();
   return { ...actual, getUserConfigDir: () => cfg.root };
 });
 
-vi.mock('../../../src/main/services/core/configService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/core/configService')>();
+vi.mock('../../../src/host/services/core/configService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
   return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: vi.fn(() => undefined) })) };
 });
 
 // handleDownloadFile 用 app.getPath('downloads')；mock 成 cfg.root（每测的 workDir）使下载目录确定可断言。
-vi.mock('../../../src/main/platform', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/platform')>();
+vi.mock('../../../src/host/platform', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/platform')>();
   return { ...actual, app: { ...actual.app, getPath: (k: string) => (k === 'downloads' ? cfg.root : actual.app?.getPath?.(k)) } };
 });
 
@@ -63,7 +63,7 @@ import {
   handleListCustomImageModels,
   handleDeleteCustomImageModel,
   handleDownloadFile,
-} from '../../../src/main/ipc/workspace.ipc';
+} from '../../../src/host/ipc/workspace.ipc';
 
 const CUSTOM = { id: 'sdxl-abc', label: '我的 SDXL', baseUrl: 'https://api.x.com/v1', modelName: 'sdxl', createdAt: 0, updatedAt: 0 };
 

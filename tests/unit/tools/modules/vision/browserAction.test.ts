@@ -8,9 +8,9 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
-import { browserActionSchema } from '../../../../../src/main/plugins/builtin/browserControl/browserAction.schema';
-import { browserActionModule } from '../../../../../src/main/plugins/builtin/browserControl/browserAction';
+} from '../../../../../src/host/protocol/tools';
+import { browserActionSchema } from '../../../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { browserActionModule } from '../../../../../src/host/plugins/builtin/browserControl/browserAction';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

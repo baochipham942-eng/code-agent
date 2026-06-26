@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractHandoffProposalTail } from '../../../src/main/handoff/handoffTail';
+import { extractHandoffProposalTail } from '../../../src/host/handoff/handoffTail';
 
 describe('handoff tail parser', () => {
   it('strips a false handoff block from the final assistant content', () => {

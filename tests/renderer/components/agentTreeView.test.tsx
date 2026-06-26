@@ -25,7 +25,7 @@ describe('AgentTreeSnapshotView', () => {
             path: '/tmp/code-agent-worktrees/agent-coder',
             branch: 'agent/agent-coder',
             changedFiles: [
-              { path: 'src/main/agent/agentTreeService.ts', status: 'modified' },
+              { path: 'src/host/agent/agentTreeService.ts', status: 'modified' },
             ],
             diffSummary: '1 file changed',
           },
@@ -62,10 +62,10 @@ describe('AgentTreeSnapshotView', () => {
             branch: 'agent/agent-coder',
             updatedAt: 456,
             changedFiles: [
-              { path: 'src/main/agent/agentTreeService.ts', status: 'modified' },
+              { path: 'src/host/agent/agentTreeService.ts', status: 'modified' },
             ],
             diffSummary: '1 file changed',
-            diff: 'diff --git a/src/main/agent/agentTreeService.ts b/src/main/agent/agentTreeService.ts\n+done',
+            diff: 'diff --git a/src/host/agent/agentTreeService.ts b/src/host/agent/agentTreeService.ts\n+done',
           },
         }}
         onReviewWorktree={() => undefined}
@@ -79,7 +79,7 @@ describe('AgentTreeSnapshotView', () => {
     expect(html).toContain('正在用：命令行');
     expect(html).toContain('失败原因：可用预算已经用完');
     expect(html).toContain('/tmp/code-agent-worktrees/agent-coder');
-    expect(html).toContain('已修改 src/main/agent/agentTreeService.ts');
+    expect(html).toContain('已修改 src/host/agent/agentTreeService.ts');
     expect(html).toContain('查看变更');
     expect(html).not.toContain('typecheck');
     expect(html).not.toContain('exitCode');

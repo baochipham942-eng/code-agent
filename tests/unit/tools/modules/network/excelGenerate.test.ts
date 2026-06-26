@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -78,7 +78,7 @@ vi.mock('exceljs', () => {
   return { default: { Workbook: FakeWorkbook } };
 });
 
-import { excelGenerateModule } from '../../../../../src/main/tools/modules/network/excelGenerate';
+import { excelGenerateModule } from '../../../../../src/host/tools/modules/network/excelGenerate';
 
 // -----------------------------------------------------------------------------
 // Helpers

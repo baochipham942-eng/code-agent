@@ -5,14 +5,14 @@ import {
   getDesignCanvasToolDefinitions,
   withDesignCanvasTools,
   withoutGenericMediaToolsInDesign,
-} from '../../../src/main/tools/dispatch/toolDefinitions';
-import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../../src/main/services/toolSearch/deferredTools';
+} from '../../../src/host/tools/dispatch/toolDefinitions';
+import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/deferredTools';
 import {
   findToolSearchExecutionContractFailures,
   resolveToolSearchExecutionContract,
-} from '../../../src/main/tools/dispatch/toolSearchExecutionContract';
-import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
-import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+} from '../../../src/host/tools/dispatch/toolSearchExecutionContract';
+import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
+import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import type { ToolSearchItem } from '../../../src/shared/contract/toolSearch';
 
 const mcpToolDefinition = {
@@ -29,19 +29,19 @@ const mcpToolDefinition = {
   permissionLevel: 'network' as const,
 };
 
-vi.mock('../../../src/main/services/cloud', () => ({
+vi.mock('../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({
     getAllToolMeta: () => ({}),
   }),
 }));
 
-vi.mock('../../../src/main/mcp', () => ({
+vi.mock('../../../src/host/mcp', () => ({
   getMCPClient: () => ({
     getToolDefinitions: () => [mcpToolDefinition],
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),

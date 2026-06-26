@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SEARCH_API_ENDPOINTS } from '../../../../src/shared/constants';
-import { getAvailableSources, routeSources, SEARCH_SOURCES } from '../../../../src/main/tools/web/search';
+import { getAvailableSources, routeSources, SEARCH_SOURCES } from '../../../../src/host/tools/web/search';
 
 function makeResponse(body: unknown, ok = true, status = 200): Response {
   return {

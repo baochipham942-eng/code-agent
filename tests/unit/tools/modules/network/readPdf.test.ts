@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const accessMock = vi.fn();
 const readFileMock = vi.fn();
@@ -26,11 +26,11 @@ vi.mock('fs/promises', () => ({
 
 const getApiKeyMock = vi.fn();
 
-vi.mock('../../../../../src/main/services', () => ({
+vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: getApiKeyMock }),
 }));
 
-import { readPdfModule } from '../../../../../src/main/tools/modules/network/readPdf';
+import { readPdfModule } from '../../../../../src/host/tools/modules/network/readPdf';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

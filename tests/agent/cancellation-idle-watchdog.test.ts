@@ -25,7 +25,7 @@ describe('Idle-progress watchdog — AC-D', () => {
 
   /**
    * Mirrors subagentExecutor.execute's watchdog wiring. Keep this in sync
-   * with src/main/agent/subagentExecutor.ts when the implementation changes.
+   * with src/host/agent/subagentExecutor.ts when the implementation changes.
    */
   function startWatchdog(controller: AbortController) {
     let lastProgressAt = Date.now();

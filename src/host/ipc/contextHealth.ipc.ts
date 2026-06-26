@@ -2,7 +2,7 @@
 // Context Health IPC Handlers - 上下文健康度 IPC 处理
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getAutoCompressor } from '../context/autoCompressor';
@@ -555,7 +555,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
   const contextHealthService = getContextHealthService();
   applyCompressionConfig(getPersistedCompressionConfig());
 
-  ipcMain.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET, async () => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET, async () => {
     try {
       return getCompressionChannelState();
     } catch (error) {
@@ -564,7 +564,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET, async (_event, patch: ContextCompressionConfigPatch) => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET, async (_event, patch: ContextCompressionConfigPatch) => {
     try {
       return await updateCompressionConfig(patch);
     } catch (error) {
@@ -574,7 +574,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
   });
 
   // 获取指定会话的上下文健康状态
-  ipcMain.handle(IPC_CHANNELS.CONTEXT_HEALTH_GET, async (_event, sessionId: string) => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_HEALTH_GET, async (_event, sessionId: string) => {
     try {
       return await resolveContextHealthForSession(deps, sessionId);
     } catch (error) {
@@ -584,7 +584,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
   });
 
   // 手动 Compact：从指定消息处压缩之前的上下文
-  ipcMain.handle(IPC_CHANNELS.CONTEXT_COMPACT_FROM, async (_event, messageId: string) => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPACT_FROM, async (_event, messageId: string) => {
     try {
       return await compactSession(deps, { messageId });
     } catch (error) {
@@ -594,7 +594,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
   });
 
   // 手动 Compact：主动压缩当前会话，保留最近消息
-  ipcMain.handle(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, async (_event, sessionId?: string) => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, async (_event, sessionId?: string) => {
     try {
       return await compactSession(deps, { sessionId });
     } catch (error) {

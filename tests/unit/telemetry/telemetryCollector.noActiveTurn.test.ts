@@ -22,27 +22,27 @@ const mocks = vi.hoisted(() => ({
   trackNode: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => mocks.logger,
 }));
 
-vi.mock('../../../src/main/services/serviceRegistry', () => ({
+vi.mock('../../../src/host/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({ register: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/services/auth/authService', () => ({
+vi.mock('../../../src/host/services/auth/authService', () => ({
   getAuthService: () => ({ getCurrentUser: () => null }),
 }));
 
-vi.mock('../../../src/main/observability/posthogNode', () => ({
+vi.mock('../../../src/host/observability/posthogNode', () => ({
   trackNode: mocks.trackNode,
 }));
 
-vi.mock('../../../src/main/telemetry/systemPromptCache', () => ({
+vi.mock('../../../src/host/telemetry/systemPromptCache', () => ({
   getSystemPromptCache: () => ({ ensureTable: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/telemetry/diagnosticVersions', () => ({
+vi.mock('../../../src/host/telemetry/diagnosticVersions', () => ({
   getDiagnosticVersions: () => ({
     agentVersion: 'test-agent',
     promptVersion: 'test-prompt',
@@ -50,11 +50,11 @@ vi.mock('../../../src/main/telemetry/diagnosticVersions', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/telemetry/telemetryStorage', () => ({
+vi.mock('../../../src/host/telemetry/telemetryStorage', () => ({
   getTelemetryStorage: () => mocks.storage,
 }));
 
-const { TelemetryCollector } = await import('../../../src/main/telemetry/telemetryCollector');
+const { TelemetryCollector } = await import('../../../src/host/telemetry/telemetryCollector');
 
 function modelCall(overrides: Partial<TelemetryModelCall> = {}): TelemetryModelCall {
   return {

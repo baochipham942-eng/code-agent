@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import {
   getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
-} from '../src/main/services/cloud/controlPlaneTrust.ts';
+} from '../src/host/services/cloud/controlPlaneTrust.ts';
 
 export class RuntimeAssetsPublishVerificationError extends Error {
   constructor(message, options = {}) {

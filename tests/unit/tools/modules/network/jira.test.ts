@@ -7,17 +7,17 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const getIntegrationMock = vi.fn();
 
-vi.mock('../../../../../src/main/services', () => ({
+vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => ({
     getIntegration: getIntegrationMock,
   }),
 }));
 
-import { jiraModule } from '../../../../../src/main/tools/modules/network/jira';
+import { jiraModule } from '../../../../../src/host/tools/modules/network/jira';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -7,18 +7,18 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const execMock = vi.fn();
 const getMock = vi.fn();
 
-vi.mock('../../../../../src/main/connectors', () => ({
+vi.mock('../../../../../src/host/connectors', () => ({
   getConnectorRegistry: () => ({
     get: getMock,
   }),
 }));
 
-import { remindersDeleteModule } from '../../../../../src/main/tools/modules/connectors/remindersDelete';
+import { remindersDeleteModule } from '../../../../../src/host/tools/modules/connectors/remindersDelete';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

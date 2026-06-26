@@ -5,12 +5,12 @@ import type { BrandContract } from '../../../../src/shared/contract/brandContrac
 // 强绑注入测试：mock brandRegistry.getActiveBrandSync，验证 enrich（经
 // buildWorkbenchTurnSystemContext → <design_brief_json>）把 active 品牌 tokens +
 // brandContract 注入进序列化 brief。
-vi.mock('../../../../src/main/services/design/brandRegistry', () => ({
+vi.mock('../../../../src/host/services/design/brandRegistry', () => ({
   getActiveBrandSync: vi.fn(),
 }));
 
-import { getActiveBrandSync } from '../../../../src/main/services/design/brandRegistry';
-import { buildWorkbenchTurnSystemContext } from '../../../../src/main/app/workbenchTurnContext';
+import { getActiveBrandSync } from '../../../../src/host/services/design/brandRegistry';
+import { buildWorkbenchTurnSystemContext } from '../../../../src/host/app/workbenchTurnContext';
 
 const mockActive = getActiveBrandSync as unknown as ReturnType<typeof vi.fn>;
 

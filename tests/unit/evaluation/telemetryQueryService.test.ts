@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services/serviceRegistry', () => ({
+vi.mock('../../../src/host/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({
     register: vi.fn(),
   }),
@@ -25,8 +25,8 @@ vi.mock('../../../src/main/services/serviceRegistry', () => ({
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { buildSessionTraceIdentity } from '../../../src/shared/contract/reviewQueue';
-import { getDatabase } from '../../../src/main/services/core/databaseService';
-import { getTelemetryQueryService } from '../../../src/main/evaluation/telemetryQueryService';
+import { getDatabase } from '../../../src/host/services/core/databaseService';
+import { getTelemetryQueryService } from '../../../src/host/evaluation/telemetryQueryService';
 
 const dbState = vi.hoisted(() => ({
   sqlite: null as import('better-sqlite3').Database | null,

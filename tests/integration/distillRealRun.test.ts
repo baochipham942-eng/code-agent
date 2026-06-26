@@ -17,21 +17,21 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { SessionRepository } from '../../src/main/services/core/repositories/SessionRepository';
-import { applySessionsMigrations } from '../../src/main/services/core/database/migrations';
+import { SessionRepository } from '../../src/host/services/core/repositories/SessionRepository';
+import { applySessionsMigrations } from '../../src/host/services/core/database/migrations';
 import { applyTranscriptFtsSchema } from '../../src/shared/transcriptFts.sql';
-import { createLogger } from '../../src/main/services/infra/logger';
-import { executeDistillRun } from '../../src/main/services/skills/distillExecutor';
-import { llmDistillProposalGenerator } from '../../src/main/services/skills/distillProposalGenerator';
-import { emitCommandFile } from '../../src/main/services/commands/commandFileEmitter';
-import { PromptCommandService } from '../../src/main/services/commands/promptCommandService';
+import { createLogger } from '../../src/host/services/infra/logger';
+import { executeDistillRun } from '../../src/host/services/skills/distillExecutor';
+import { llmDistillProposalGenerator } from '../../src/host/services/skills/distillProposalGenerator';
+import { emitCommandFile } from '../../src/host/services/commands/commandFileEmitter';
+import { PromptCommandService } from '../../src/host/services/commands/promptCommandService';
 import type {
   DistillDatabase,
   DistillEmitters,
   DistillProposal,
   DistillSignal,
   DistillVerifiedCandidate,
-} from '../../src/main/services/skills/distillService';
+} from '../../src/host/services/skills/distillService';
 
 const ENABLED = process.env.DISTILL_REAL_DB === '1';
 const REAL_DB_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'code-agent', 'code-agent.db');

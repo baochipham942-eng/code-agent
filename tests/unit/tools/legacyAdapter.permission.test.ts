@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Tool } from '../../../src/main/tools/types';
-import { buildProtocolContext } from '../../../src/main/tools/dispatch/shadowAdapter';
-import { wrapLegacyTool } from '../../../src/main/tools/modules/_helpers/legacyAdapter';
-import type { CanUseToolFn } from '../../../src/main/protocol/tools';
+import type { Tool } from '../../../src/host/tools/types';
+import { buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
+import { wrapLegacyTool } from '../../../src/host/tools/modules/_helpers/legacyAdapter';
+import type { CanUseToolFn } from '../../../src/host/protocol/tools';
 
 function makeProtocolCtx() {
   return buildProtocolContext({

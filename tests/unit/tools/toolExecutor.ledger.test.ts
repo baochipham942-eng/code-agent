@@ -10,28 +10,28 @@ const ledgerState = vi.hoisted(() => ({
   throwOnGet: false,
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
 // 关键：mock databaseService，让 getDatabase() 返回可观测的账本桩
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => {
     if (ledgerState.throwOnGet) throw new Error('db boom');
     return { appendPermissionDecision: ledgerState.appendPermissionDecision };
   },
 }));
 
-import { resetDecisionHistory } from '../../../src/main/security/decisionHistory';
-import { ToolExecutor } from '../../../src/main/tools/toolExecutor';
+import { resetDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 describe('ToolExecutor → 权限决策事件账本 接入', () => {
   beforeEach(() => {

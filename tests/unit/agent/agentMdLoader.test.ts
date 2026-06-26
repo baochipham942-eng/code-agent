@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { parseAgentMd } from '../../../src/main/agent/hybrid/agentMdLoader';
+import { parseAgentMd } from '../../../src/host/agent/hybrid/agentMdLoader';
 
 describe('parseAgentMd', () => {
   it('should return null for content without frontmatter', () => {

@@ -9,7 +9,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createAgentWorktree } from '../../../src/main/agent/agentWorktree';
+import { createAgentWorktree } from '../../../src/host/agent/agentWorktree';
 
 function git(repo: string, args: string): void {
   execSync(`git ${args}`, {

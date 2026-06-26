@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
-import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
+import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     discoverLazyServersForSearch: vi.fn().mockResolvedValue([]),
   }),

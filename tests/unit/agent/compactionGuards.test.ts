@@ -1,19 +1,19 @@
 // Item2 压缩系统 B 护栏的纯逻辑单测：剪枝测量 + 卡死计数状态转移。
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: { agent: vi.fn(), addLog: vi.fn(), tool: vi.fn(), browser: vi.fn() },
 }));
 
 import {
   estimatePrunedTranscriptTokens,
   nextCompactionGuardState,
-} from '../../../src/main/agent/runtime/contextAssembly/compression';
-import { estimateTokens } from '../../../src/main/context/tokenOptimizer';
+} from '../../../src/host/agent/runtime/contextAssembly/compression';
+import { estimateTokens } from '../../../src/host/context/tokenOptimizer';
 import type { Message } from '../../../src/shared/contract';
 
 function msg(id: string, role: Message['role'], content: string, toolCallId?: string): Message {

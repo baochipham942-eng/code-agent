@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { CompactContext } from '../../../src/main/protocol/events';
+import type { CompactContext } from '../../../src/host/protocol/events';
 import type { Message } from '../../../src/shared/contract';
 
 // ----------------------------------------------------------------------------
@@ -35,12 +35,12 @@ const mockDb = {
   listMemories,
 };
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: () => mockDb,
 }));
 
 // Import AFTER the mock is wired so the module picks up our getDatabase
-const { preCompactContextHook } = await import('../../../src/main/hooks/builtins/contextHooks');
+const { preCompactContextHook } = await import('../../../src/host/hooks/builtins/contextHooks');
 
 // ----------------------------------------------------------------------------
 // Helpers

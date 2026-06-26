@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { filterToolDefinitionsByStrictSkillBoundary } from '../../../src/main/tools/skillBoundaryScope';
+import { filterToolDefinitionsByStrictSkillBoundary } from '../../../src/host/tools/skillBoundaryScope';
 import type { SkillToolBoundary } from '../../../src/shared/contract/agentSkill';
 
 const tools = [

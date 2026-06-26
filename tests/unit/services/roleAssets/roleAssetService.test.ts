@@ -9,12 +9,12 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
@@ -22,7 +22,7 @@ import {
   isSafeRoleId,
   getProjectKey,
   getRoleDir,
-} from '../../../../src/main/services/roleAssets/roleAssetPaths';
+} from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import {
   isPersistentRole,
   listPersistentRoles,
@@ -37,7 +37,7 @@ import {
   loadRoleHistory,
   buildRoleContextBlock,
   instantiateRole,
-} from '../../../../src/main/services/roleAssets/roleAssetService';
+} from '../../../../src/host/services/roleAssets/roleAssetService';
 
 describe('roleAssetPaths', () => {
   beforeEach(async () => {

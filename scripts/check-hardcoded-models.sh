@@ -18,8 +18,8 @@ NC='\033[0m'
 EXCLUDE_FILES=(
   "src/shared/constants.ts"
   "src/shared/constants/"
-  "src/main/model/providerRegistry.ts"
-  "src/main/model/providerRegistryBase.ts"
+  "src/host/model/providerRegistry.ts"
+  "src/host/model/providerRegistryBase.ts"
   "scripts/check-hardcoded-models.sh"
   # 废弃名检测的测试本身必须列出废弃模型名，豁免
   "tests/unit/model/modelValidator.test.ts"

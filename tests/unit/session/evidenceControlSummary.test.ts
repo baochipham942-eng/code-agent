@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { makeEvidenceRef } from '../../../src/shared/contract/evidence';
-import type { CachedSession } from '../../../src/main/session/localCache';
-import type { BrowserComputerProofRecord } from '../../../src/main/session/browserComputerProofStore';
+import type { CachedSession } from '../../../src/host/session/localCache';
+import type { BrowserComputerProofRecord } from '../../../src/host/session/browserComputerProofStore';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import {
   attachEvidenceControlProjectionToReplay,
   buildEvidenceControlSummary,
   formatEvidenceControlSummaryForMarkdown,
-} from '../../../src/main/session/evidenceControlSummary';
+} from '../../../src/host/session/evidenceControlSummary';
 import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
 
 function session(overrides: Partial<CachedSession> = {}): CachedSession {

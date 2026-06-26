@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock fs and fetch
@@ -28,7 +28,7 @@ vi.mock('fs', () => ({
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
-import { mermaidExportModule } from '../../../../../src/main/tools/modules/network/mermaidExport';
+import { mermaidExportModule } from '../../../../../src/host/tools/modules/network/mermaidExport';
 
 // -----------------------------------------------------------------------------
 // Helpers

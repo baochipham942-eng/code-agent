@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { rankSearchResults, scoreSearchResult } from '../../../../src/main/tools/web/search';
-import type { SearchResult } from '../../../../src/main/tools/web/search';
+import { rankSearchResults, scoreSearchResult } from '../../../../src/host/tools/web/search';
+import type { SearchResult } from '../../../../src/host/tools/web/search';
 
 describe('searchResultRanker', () => {
   it('boosts official and canonical evidence over SEO listicles', () => {

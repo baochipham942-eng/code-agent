@@ -1,7 +1,7 @@
 /**
  * Schema probe — Phase 4 PR-3 step 1.
  *
- * 把 src/main/tools/media/ppt/slideSchemas.ts validateStructuredSlides
+ * 把 src/host/tools/media/ppt/slideSchemas.ts validateStructuredSlides
  * 包装成 DeckProbeDeclaration 的 imperative 形态。
  *
  * 为什么是 imperative：schema 验证是 multi-error / per-slide 的复合判定，

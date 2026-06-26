@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { existsSyncMock, statSyncMock, readFileSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn().mockReturnValue(true),
@@ -40,7 +40,7 @@ const { sharpFactoryMock, sharpInstanceMock, toFileMock, metadataMock, composite
   };
 });
 
-vi.mock('../../../../../src/main/runtime/sharpRuntime', () => ({
+vi.mock('../../../../../src/host/runtime/sharpRuntime', () => ({
   requireSharp: () => sharpFactoryMock,
 }));
 
@@ -48,11 +48,11 @@ const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/services', () => ({
+vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-import { imageAnnotateModule, executeImageAnnotate } from '../../../../../src/main/plugins/builtin/imageCreation/imageAnnotate';
+import { imageAnnotateModule, executeImageAnnotate } from '../../../../../src/host/plugins/builtin/imageCreation/imageAnnotate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

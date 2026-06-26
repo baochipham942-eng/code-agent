@@ -4,8 +4,8 @@ import * as path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
-import { gitCommitModule } from '../../../../../src/main/tools/modules/shell/gitCommit';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
+import { gitCommitModule } from '../../../../../src/host/tools/modules/shell/gitCommit';
 
 const execFileAsync = promisify(execFile);
 

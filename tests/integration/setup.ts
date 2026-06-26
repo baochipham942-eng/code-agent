@@ -381,7 +381,7 @@ export function mockElectronAPIs(tempDir: string) {
       writeText: vi.fn(),
       readImage: vi.fn().mockReturnValue({ isEmpty: () => true }),
     },
-    BrowserWindow: vi.fn().mockImplementation(() => ({
+    AppWindow: vi.fn().mockImplementation(() => ({
       loadURL: vi.fn(),
       loadFile: vi.fn(),
       webContents: {
@@ -392,7 +392,7 @@ export function mockElectronAPIs(tempDir: string) {
       show: vi.fn(),
       close: vi.fn(),
     })),
-    ipcMain: {
+    ipcHost: {
       handle: vi.fn(),
       on: vi.fn(),
       removeHandler: vi.fn(),
@@ -509,7 +509,7 @@ export function setupIntegrationTest() {
     mockLogger = createMockLogger();
     // NOTE: Module mocks (vi.mock) are statically hoisted by Vitest and cannot
     // be registered per-test from inside a shared helper. Tests that need
-    // ../../src/main/services or the logger module mocked must declare
+    // ../../src/host/services or the logger module mocked must declare
     // vi.mock(...) at the top level of their own test file.
   });
 

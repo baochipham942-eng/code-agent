@@ -45,7 +45,7 @@ export type ExtensionOrigin = 'builtin' | 'user' | 'project' | 'plugin' | 'libra
 export type ExtensionPlatform = 'darwin' | 'win32' | 'linux';
 
 /**
- * 扩展运行时状态。语义对齐 `PluginState`(`src/main/plugins/types.ts`),
+ * 扩展运行时状态。语义对齐 `PluginState`(`src/host/plugins/types.ts`),
  * 这里独立声明避免 extension 模块反向依赖 plugins。
  *
  * - `active`: 已激活,可被消费方使用

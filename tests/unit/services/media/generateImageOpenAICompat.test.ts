@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateImageOpenAICompat, sniffImageMimeFromBase64 } from '../../../../src/main/services/media/imageGenerationService';
+import { generateImageOpenAICompat, sniffImageMimeFromBase64 } from '../../../../src/host/services/media/imageGenerationService';
 
 // 用 magic bytes 造各格式的 base64 头（只需头部，余下补零）。
 const b64Of = (bytes: number[]) => Buffer.from([...bytes, ...new Array(12).fill(0)]).toString('base64');

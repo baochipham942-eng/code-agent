@@ -154,26 +154,26 @@ function candidateTestsForFile(file: string): string[] {
     return ['tests/unit/shared/contract/evidence.test.ts'];
   }
 
-  if (file === 'src/main/agent/verification.ts') {
+  if (file === 'src/host/agent/verification.ts') {
     return ['tests/unit/agent/verification.test.ts'];
   }
 
-  if (file.startsWith('src/main/agent/runtime/')) {
+  if (file.startsWith('src/host/agent/runtime/')) {
     return [
       `tests/unit/agent/runtime/${basename}.test.ts`,
       `tests/unit/agent/${basename}.test.ts`,
     ];
   }
 
-  if (file.startsWith('src/main/agent/')) {
+  if (file.startsWith('src/host/agent/')) {
     return [`tests/unit/agent/${basename}.test.ts`];
   }
 
-  if (file.startsWith('src/main/testing/ci/')) {
+  if (file.startsWith('src/host/testing/ci/')) {
     return [`tests/unit/testing/${basename}.test.ts`];
   }
 
-  if (file.startsWith('src/main/tools/vision/')) {
+  if (file.startsWith('src/host/tools/vision/')) {
     return [
       `tests/unit/tools/vision/${basename}.test.ts`,
       `tests/unit/tools/modules/vision/${basename}.test.ts`,
@@ -181,8 +181,8 @@ function candidateTestsForFile(file: string): string[] {
   }
 
   if (
-    file.startsWith('src/main/plugins/builtin/browserControl/')
-    || file.startsWith('src/main/plugins/builtin/computerUse/')
+    file.startsWith('src/host/plugins/builtin/browserControl/')
+    || file.startsWith('src/host/plugins/builtin/computerUse/')
   ) {
     return [`tests/unit/tools/modules/vision/${basename}.test.ts`];
   }

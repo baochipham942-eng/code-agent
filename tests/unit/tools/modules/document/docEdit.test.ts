@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock legacy executors
@@ -16,15 +16,15 @@ import type {
 const executeExcelEditMock = vi.fn();
 const executeDocxEditMock = vi.fn();
 
-vi.mock('../../../../../src/main/tools/excel/excelEdit', () => ({
+vi.mock('../../../../../src/host/tools/excel/excelEdit', () => ({
   executeExcelEdit: (...args: unknown[]) => executeExcelEditMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/modules/document/docxEditCore', () => ({
+vi.mock('../../../../../src/host/tools/modules/document/docxEditCore', () => ({
   executeDocxEdit: (...args: unknown[]) => executeDocxEditMock(...args),
 }));
 
-import { docEditModule } from '../../../../../src/main/tools/modules/document/docEdit';
+import { docEditModule } from '../../../../../src/host/tools/modules/document/docEdit';
 
 // -----------------------------------------------------------------------------
 // Helpers

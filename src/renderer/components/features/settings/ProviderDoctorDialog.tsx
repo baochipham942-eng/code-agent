@@ -27,7 +27,7 @@ import ipcService from '../../../services/ipcService';
 import { toast } from '../../../hooks/useToast';
 
 // ============================================================================
-// Types — 与 src/main/diagnostics/types.ts 对齐
+// Types — 与 src/host/diagnostics/types.ts 对齐
 // ============================================================================
 
 type DoctorCategory =

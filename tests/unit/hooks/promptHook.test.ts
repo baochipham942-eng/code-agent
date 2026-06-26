@@ -17,8 +17,8 @@ import {
   createPromptHookExecutor,
   createMockAICompletion,
   type AICompletionFn,
-} from '../../../src/main/hooks/promptHook';
-import type { ToolHookContext, UserPromptContext, SessionContext } from '../../../src/main/hooks/events';
+} from '../../../src/host/hooks/promptHook';
+import type { ToolHookContext, UserPromptContext, SessionContext } from '../../../src/host/hooks/events';
 
 describe('Prompt Hook', () => {
   // --------------------------------------------------------------------------

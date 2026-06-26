@@ -25,7 +25,7 @@ const {
   },
 }));
 
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getZhipuOfficialKey: () => getApiKeyMock(),
     getApiKey: (provider: string) => getApiKeyMock(provider),
@@ -34,7 +34,7 @@ vi.mock('../../../../src/main/services/core/configService', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../../src/host/model/modelRouter', () => ({
   ModelRouter: class {
     getModelInfo(provider: string, model: string) {
       return getModelInfoMock(provider, model);
@@ -48,7 +48,7 @@ vi.mock('../../../../src/main/model/modelRouter', () => ({
   },
 }));
 
-vi.mock('../../../../src/main/runtime/sharpRuntime', () => ({
+vi.mock('../../../../src/host/runtime/sharpRuntime', () => ({
   loadSharp: () => ({
     ok: false,
     error: 'sharp not available in unit test',
@@ -56,7 +56,7 @@ vi.mock('../../../../src/main/runtime/sharpRuntime', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => loggerMock,
 }));
 
@@ -70,7 +70,7 @@ vi.mock('fs', () => ({
 import {
   analyzeImageWithVision,
   analyzeImageWithVisionDetailed,
-} from '../../../../src/main/services/desktop/visionAnalysisService';
+} from '../../../../src/host/services/desktop/visionAnalysisService';
 
 const HAPPY_VISION_ROUTING = { provider: 'zhipu' as const, model: 'glm-4.6v' };
 const HAPPY_MODEL_INFO = { supportsVision: true };

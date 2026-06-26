@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ModelSessionState } from '../../../src/main/session/modelSessionState';
+import { ModelSessionState } from '../../../src/host/session/modelSessionState';
 
 describe('ModelSessionState', () => {
   it('preserves adaptive mode in effective config', () => {

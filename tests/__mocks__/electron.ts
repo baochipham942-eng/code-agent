@@ -15,7 +15,7 @@ export const app = {
   whenReady: () => Promise.resolve(),
 };
 
-export class BrowserWindow {
+export class AppWindow {
   static getAllWindows() { return []; }
   static getFocusedWindow() { return null; }
   webContents = { send: () => {}, on: () => {} };
@@ -28,7 +28,7 @@ export class BrowserWindow {
   loadFile() { return Promise.resolve(); }
 }
 
-export const ipcMain = {
+export const ipcHost = {
   on: () => {},
   once: () => {},
   handle: () => {},
@@ -36,7 +36,7 @@ export const ipcMain = {
   removeAllListeners: () => {},
 };
 
-export const ipcRenderer = {
+export const ipcClient = {
   on: () => {},
   once: () => {},
   send: () => {},
@@ -70,9 +70,9 @@ export const dialog = {
 
 export default {
   app,
-  BrowserWindow,
-  ipcMain,
-  ipcRenderer,
+  AppWindow,
+  ipcHost,
+  ipcClient,
   clipboard,
   nativeImage,
   shell,

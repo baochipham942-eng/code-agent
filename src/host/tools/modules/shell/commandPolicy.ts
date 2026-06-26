@@ -8,7 +8,7 @@
 // - 这是 defense-in-depth 第一层，不是密封防线
 // - 正则 pattern 不抗混淆（c\url、变量间接、$(echo cu)$(echo rl) 等可绕过）
 // - CONFIRM 档（rm/git push/sudo/chmod 等需要二次确认的）由
-//   src/main/agent/confirmationGate.ts 的 HIGH_RISK_PATTERNS 处理，不重复造轮子
+//   src/host/agent/confirmationGate.ts 的 HIGH_RISK_PATTERNS 处理，不重复造轮子
 // ============================================================================
 
 import { checkWindowsBlockRules } from '../../../security/shellRules/windowsRules';

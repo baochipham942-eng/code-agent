@@ -1,7 +1,7 @@
 // ============================================================================
 // TaskGet (P1 Wave 3 — planning: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/planning/taskGet.ts
+// 旧版: src/host/tools/planning/taskGet.ts
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：INVALID_ARGS / PERMISSION_DENIED / ABORTED / NOT_FOUND

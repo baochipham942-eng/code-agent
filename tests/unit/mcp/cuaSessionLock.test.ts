@@ -7,7 +7,7 @@ import {
   releaseCuaLock,
   gateCuaToolCall,
   CUA_LOCK_TTL_MS,
-} from '../../../src/main/mcp/cuaSessionLock';
+} from '../../../src/host/mcp/cuaSessionLock';
 
 describe('cuaSessionLock — 跨会话 computer-use 文件锁', () => {
   let dir: string;

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { collectRendererShellCapabilities } from '../../../scripts/renderer-capability-scanner.mjs';
-import { getShellCapabilities, getShellCapabilityIds } from '../../../src/main/shellCapabilities';
+import { getShellCapabilities, getShellCapabilityIds } from '../../../src/host/shellCapabilities';
 import { makeShellCapabilityId, makeTauriCommandCapabilityId } from '../../../src/shared/contract/shellCapabilities';
 
 describe('shell capabilities', () => {

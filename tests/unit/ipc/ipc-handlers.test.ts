@@ -2,7 +2,7 @@
 // ============================================================================
 // IPC Handlers Unit Tests
 // 测试 IPC handler 的输入验证、返回格式、错误处理
-// 不启动 Electron，通过 mock ipcMain 捕获注册的 handler 并直接调用
+// 不启动 Electron，通过 mock ipcHost 捕获注册的 handler 并直接调用
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -10,7 +10,7 @@ import type { IpcMain } from 'electron';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
 // ---------------------------------------------------------------------------
-// Mock ipcMain: 捕获 handler 注册，支持按 channel 调用
+// Mock ipcHost: 捕获 handler 注册，支持按 channel 调用
 // ---------------------------------------------------------------------------
 
 type HandlerFn = (event: unknown, ...args: unknown[]) => Promise<unknown>;
@@ -58,7 +58,7 @@ function createMockIpcMain() {
 // ---------------------------------------------------------------------------
 
 // Mock getSessionManager (session.ipc.ts 通过模块级函数获取)
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => ({
     listSessions: vi.fn().mockResolvedValue([
       { id: 'session-1', title: 'Test Session', createdAt: Date.now() },
@@ -88,19 +88,19 @@ vi.mock('../../../src/main/services', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/memory/memoryService', () => ({
+vi.mock('../../../src/host/memory/memoryService', () => ({
   getMemoryService: () => ({
     setContext: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/memory/memoryTriggerService', () => ({
+vi.mock('../../../src/host/memory/memoryTriggerService', () => ({
   getMemoryTriggerService: () => ({
     onSessionStart: vi.fn().mockResolvedValue({ memories: [] }),
   }),
 }));
 
-vi.mock('../../../src/main/session/modelSessionState', () => ({
+vi.mock('../../../src/host/session/modelSessionState', () => ({
   getModelSessionState: () => ({
     setOverride: vi.fn(),
     getOverride: vi.fn().mockReturnValue(null),
@@ -112,9 +112,9 @@ vi.mock('../../../src/main/session/modelSessionState', () => ({
 // Import handlers (after mocks)
 // ---------------------------------------------------------------------------
 
-import { registerAgentHandlers } from '../../../src/main/ipc/agent.ipc';
-import { registerSessionHandlers } from '../../../src/main/ipc/session.ipc';
-import { registerSettingsHandlers } from '../../../src/main/ipc/settings.ipc';
+import { registerAgentHandlers } from '../../../src/host/ipc/agent.ipc';
+import { registerSessionHandlers } from '../../../src/host/ipc/session.ipc';
+import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 
 // ===========================================================================
 // Tests

@@ -4,7 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import { v4 as uuidv4 } from 'uuid';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type {
@@ -555,13 +555,13 @@ export class HeartbeatService {
         },
       };
 
-      for (const window of BrowserWindow.getAllWindows()) {
+      for (const window of AppWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.AGENT_EVENT, event);
       }
     }
 
     if (alert.notification) {
-      for (const window of BrowserWindow.getAllWindows()) {
+      for (const window of AppWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.AGENT_EVENT, {
           type: 'notification',
           data: {

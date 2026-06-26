@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'path';
 import process from 'process';
-import { installRuntimeAssetFromManifest } from '../src/main/runtime/runtimeAssetInstaller';
+import { installRuntimeAssetFromManifest } from '../src/host/runtime/runtimeAssetInstaller';
 
 function readArg(name: string): string | undefined {
   const index = process.argv.indexOf(name);

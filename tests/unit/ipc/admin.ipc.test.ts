@@ -15,18 +15,18 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/auth', () => ({
+vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
     hasVerifiedSession: () => mocks.sessionVerified,
   }),
 }));
 
-vi.mock('../../../src/main/services/admin', () => ({
+vi.mock('../../../src/host/services/admin', () => ({
   getAdminService: () => mocks.adminService,
 }));
 
-import { registerAdminHandlers } from '../../../src/main/ipc/admin.ipc';
+import { registerAdminHandlers } from '../../../src/host/ipc/admin.ipc';
 
 type DomainHandler = (_: unknown, request: unknown) => Promise<IPCResponse>;
 

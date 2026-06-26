@@ -1,7 +1,7 @@
 /**
  * Narrative probes — Phase 4 PR-2 step 2.
  *
- * Backward-compatible port of src/main/tools/media/ppt/narrativeValidator.ts
+ * Backward-compatible port of src/host/tools/media/ppt/narrativeValidator.ts
  * (4 rules: missing_intro / consecutive_data / no_evidence / missing_summary)
  * into the DeckProbeDeclaration shape.
  *

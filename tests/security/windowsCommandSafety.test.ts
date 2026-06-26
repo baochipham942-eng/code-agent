@@ -6,8 +6,8 @@ import {
   checkWindowsBlockRules,
   evaluateWindowsDanger,
   isKnownSafeWindowsCommand,
-} from '../../src/main/security/shellRules/windowsRules';
-import { validateCommand, isKnownSafeCommand } from '../../src/main/security/commandSafety';
+} from '../../src/host/security/shellRules/windowsRules';
+import { validateCommand, isKnownSafeCommand } from '../../src/host/security/commandSafety';
 
 describe('checkWindowsBlockRules — 硬毙清单', () => {
   describe('删除保护根：别名/参数变体爆破', () => {

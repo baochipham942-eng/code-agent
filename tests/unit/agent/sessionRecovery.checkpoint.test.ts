@@ -9,15 +9,15 @@ import {
   replaceSectionBody,
   resolveCheckpointStorePaths,
   writeCheckpointFile,
-} from '../../../src/main/context/checkpoint';
-import { SessionRecoveryService } from '../../../src/main/agent/sessionRecovery';
+} from '../../../src/host/context/checkpoint';
+import { SessionRecoveryService } from '../../../src/host/agent/sessionRecovery';
 
 const dbMock = vi.hoisted(() => ({
   listSessions: vi.fn(),
   getMessages: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/core', () => ({
+vi.mock('../../../src/host/services/core', () => ({
   getDatabase: () => dbMock,
 }));
 

@@ -8,7 +8,7 @@ import type { TelemetryToolCall } from '../../../../src/shared/contract/telemetr
 
 // ── Mocks ──
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -21,7 +21,7 @@ const telemetryMocks = vi.hoisted(() => ({
   getToolCallsBySession: vi.fn<(sessionId: string) => unknown[]>(() => []),
 }));
 
-vi.mock('../../../../src/main/telemetry/telemetryStorage', () => ({
+vi.mock('../../../../src/host/telemetry/telemetryStorage', () => ({
   getTelemetryStorage: () => ({
     getToolCallsBySession: telemetryMocks.getToolCallsBySession,
   }),
@@ -32,8 +32,8 @@ const journalMocks = vi.hoisted(() => ({
 }));
 
 // 保留纯函数（buildFailurePatternKey / normalizeErrorMessage），只 mock 落盘
-vi.mock('../../../../src/main/lightMemory/failureJournal', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../../../src/main/lightMemory/failureJournal')>();
+vi.mock('../../../../src/host/lightMemory/failureJournal', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../../src/host/lightMemory/failureJournal')>();
   return {
     ...original,
     recordFailurePatterns: journalMocks.recordFailurePatterns,
@@ -41,7 +41,7 @@ vi.mock('../../../../src/main/lightMemory/failureJournal', async (importOriginal
 });
 
 // failureJournal 原模块依赖 configPaths（路径函数仅在落盘时调用，这里兜底 mock）
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => '/tmp/lp-test-config',
   getSkillsDir: () => ({
     user: { new: '/tmp/lp-test-config/skills', legacy: '/tmp/lp-test-config/skills-legacy' },
@@ -66,7 +66,7 @@ const draftMocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillDraftQueue', () => ({
+vi.mock('../../../../src/host/services/skills/skillDraftQueue', () => ({
   enqueueSkillDraft: draftMocks.enqueueSkillDraft,
 }));
 
@@ -75,15 +75,15 @@ const reviewMocks = vi.hoisted(() => ({
   reviewConversationForSkill: vi.fn<() => Promise<unknown>>(async () => null),
 }));
 
-vi.mock('../../../../src/main/lightMemory/conversationReview', () => ({
+vi.mock('../../../../src/host/lightMemory/conversationReview', () => ({
   reviewConversationForSkill: reviewMocks.reviewConversationForSkill,
 }));
 
 import {
   LearningPipeline,
   extractFailurePatterns,
-} from '../../../../src/main/agent/runtime/learningPipeline';
-import { onRendererPush } from '../../../../src/main/platform/windowBridge';
+} from '../../../../src/host/agent/runtime/learningPipeline';
+import { onRendererPush } from '../../../../src/host/platform/windowBridge';
 import type { AgentEvent } from '../../../../src/shared/contract';
 
 // ── Fixtures ──

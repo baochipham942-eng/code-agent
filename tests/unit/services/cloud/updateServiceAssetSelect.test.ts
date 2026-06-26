@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { selectReleaseAssetForPlatform } from '../../../../src/main/services/cloud/updateService';
+import { selectReleaseAssetForPlatform } from '../../../../src/host/services/cloud/updateService';
 
 // 对抗性排序：sidecar 与 runtime manifest 排在安装包之前（真实 release.json 顺序可变）
 const ASSETS = [

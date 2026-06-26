@@ -3,7 +3,7 @@
 // Gen 7: Multi-Agent capability
 //
 // P1 Wave 3 multiagent native: 原 workflowOrchestrateTool / WorkflowOrchestrateTool
-// (legacy Tool) 已删除，protocol 入口在 src/main/tools/modules/multiagent/
+// (legacy Tool) 已删除，protocol 入口在 src/host/tools/modules/multiagent/
 // workflowOrchestrate.ts。本文件仅保留：
 //   - executeWorkflowOrchestrate(params, ctx)
 //   - getAvailableWorkflows  — service helper
@@ -351,7 +351,7 @@ function extractGeneratedFiles(output: string): Array<{ path: string; type: 'ima
 /**
  * workflow_orchestrate 的执行入口（接 legacy ToolContext）
  *
- * Schema 在 src/main/tools/modules/multiagent/workflowOrchestrate.schema.ts；
+ * Schema 在 src/host/tools/modules/multiagent/workflowOrchestrate.schema.ts；
  * protocol 入口在同目录的 .ts native module。
  */
 export async function executeWorkflowOrchestrate(

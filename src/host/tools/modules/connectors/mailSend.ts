@@ -1,7 +1,7 @@
 // ============================================================================
 // MailSend (P0-6.3 Batch 4 — connectors: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/connectors/mailSend.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/connectors/mailSend.ts (legacy Tool + wrapLegacyTool)
 // ============================================================================
 
 import type {

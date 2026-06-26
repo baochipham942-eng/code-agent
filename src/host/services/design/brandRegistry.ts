@@ -10,7 +10,7 @@
 // 生成期强绑：enrichDesignBriefForPrompt 经 getActiveBrandSync() 读 active 品牌，
 // hydrate 进 brief.directionTokens + brief.brandContract，复用现成三处注入/护栏。
 // 写路径用 Date.now() 取 createdAt/updatedAt —— 这不是 DB repository（no-Date.now
-// 规则针对 src/main/services/core/repositories），是文件型配置资产，可直接取时戳。
+// 规则针对 src/host/services/core/repositories），是文件型配置资产，可直接取时戳。
 // ============================================================================
 
 import { promises as fsp } from 'fs';

@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
   userConfigDir: '',
 }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mocks.userConfigDir,
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
 import {
   addMarketplace,
   listAllPlugins,
-} from '../../../../src/main/skills/marketplace/marketplaceService';
+} from '../../../../src/host/skills/marketplace/marketplaceService';
 
 describe('marketplace service registry normalization', () => {
   let tempRoot: string;

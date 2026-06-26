@@ -6,18 +6,18 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-vi.mock('../../../src/main/services/core/database/nativeLoader', () => ({
+vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => class MockDatabase {},
 }));
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
-import { SwarmLedgerRepository } from '../../../src/main/services/core/repositories/SwarmLedgerRepository';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
+import { SwarmLedgerRepository } from '../../../src/host/services/core/repositories/SwarmLedgerRepository';
 import {
   runReconcileScan,
   createDatabaseRebuildWriter,
   type ReconcileScanReader,
-} from '../../../src/main/services/core/swarmReconcileService';
+} from '../../../src/host/services/core/swarmReconcileService';
 
 const NOW = 1_700_000_000_000;
 const RUN = 'run-int-1';

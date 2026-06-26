@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractArtifacts } from '../../../src/main/agent/artifactExtractor';
+import { extractArtifacts } from '../../../src/host/agent/artifactExtractor';
 
 describe('artifactExtractor', () => {
   it('rebuilds stable artifact ids from persisted assistant content', () => {

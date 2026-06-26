@@ -1,7 +1,7 @@
 // ============================================================================
 // WorkflowOrchestrate (P1 Wave 3 — multiagent: native ToolModule rewrite)
 //
-// 旧版: src/main/agent/multiagentTools/workflowOrchestrate.ts
+// 旧版: src/host/agent/multiagentTools/workflowOrchestrate.ts
 //   - workflowOrchestrateTool: Tool / WorkflowOrchestrateTool: Tool 已删
 //   - executeWorkflowOrchestrate(params, legacyCtx) 保留作业务函数
 // 改造点：

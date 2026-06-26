@@ -7,7 +7,7 @@ const logState = vi.hoisted(() => ({
   calls: [] as Array<{ context: string; message: string; args: unknown[] }>,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: (context: string) => ({
     error: (message: string, ...args: unknown[]) => {
       logState.calls.push({ context, message, args });
@@ -15,7 +15,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { registerDiagnosticsHandlers } from '../../../src/main/ipc/diagnostics.ipc';
+import { registerDiagnosticsHandlers } from '../../../src/host/ipc/diagnostics.ipc';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 function captureHandler() {

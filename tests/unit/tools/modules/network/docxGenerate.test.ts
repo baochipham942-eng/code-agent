@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -34,7 +34,7 @@ vi.mock('docx', async () => {
   };
 });
 
-import { docxGenerateModule } from '../../../../../src/main/tools/modules/network/docxGenerate';
+import { docxGenerateModule } from '../../../../../src/host/tools/modules/network/docxGenerate';
 
 // -----------------------------------------------------------------------------
 // Helpers

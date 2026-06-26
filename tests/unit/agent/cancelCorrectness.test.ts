@@ -17,7 +17,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -26,31 +26,31 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/teammate/teammateService', () => ({
+vi.mock('../../../src/host/agent/teammate/teammateService', () => ({
   getTeammateService: () => ({
     sendPlanReview: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/services/core/permissionPresets', () => ({
+vi.mock('../../../src/host/services/core/permissionPresets', () => ({
   isDangerousCommand: (cmd: string) => /\brm\s+-rf?\b/.test(cmd),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../src/host/platform', () => ({
+  AppWindow: {
     // 返回非空数组，避免 launch approval 走 headless auto-approve fast path
     getAllWindows: () => [{}],
   },
 }));
 
-import { PlanApprovalGate } from '../../../src/main/agent/planApproval';
-import { SwarmLaunchApprovalGate } from '../../../src/main/agent/swarmLaunchApproval';
-import { getSpawnGuard, resetSpawnGuard } from '../../../src/main/agent/spawnGuard';
-import { createChildAbortController } from '../../../src/main/agent/shutdownProtocol';
+import { PlanApprovalGate } from '../../../src/host/agent/planApproval';
+import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import { createChildAbortController } from '../../../src/host/agent/shutdownProtocol';
 
 // ---------------------------------------------------------------------------
 // PlanApprovalGate.cancelAll
@@ -215,7 +215,7 @@ describe('SpawnGuard.cancelAll — ADR-010 #6', () => {
     // 模拟两个 running agent
     const aborts = [new AbortController(), new AbortController()];
     for (let i = 0; i < 2; i += 1) {
-      const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/main/agent/subagentExecutor').SubagentResult>;
+      const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/host/agent/subagentExecutor').SubagentResult>;
       guard.register(`agent-${i}`, 'worker', 'test', never, aborts[i]);
     }
 
@@ -242,7 +242,7 @@ describe('SpawnGuard.cancelAll — ADR-010 #6', () => {
     const guard = getSpawnGuard();
 
     const successController = new AbortController();
-    const finished: import('../../../src/main/agent/subagentExecutor').SubagentResult = {
+    const finished: import('../../../src/host/agent/subagentExecutor').SubagentResult = {
       success: true,
       output: 'done',
       iterations: 1,
@@ -272,7 +272,7 @@ describe('SpawnGuard.cancelAll — ADR-010 #6', () => {
       controllers.set(id, new AbortController());
     }
 
-    const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/main/agent/subagentExecutor').SubagentResult>;
+    const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/host/agent/subagentExecutor').SubagentResult>;
     guard.register('root', 'root', 'root task', never, controllers.get('root')!, { treeId: 'tree' });
     guard.register('child-a', 'worker', 'child a', never, controllers.get('child-a')!, { treeId: 'tree', parentId: 'root' });
     guard.register('grandchild-a', 'worker', 'grandchild a', never, controllers.get('grandchild-a')!, { treeId: 'tree', parentId: 'child-a' });
@@ -293,14 +293,14 @@ describe('SpawnGuard.cancelAll — ADR-010 #6', () => {
     const rootController = new AbortController();
     const childController = new AbortController();
     const grandchildController = new AbortController();
-    const finished: import('../../../src/main/agent/subagentExecutor').SubagentResult = {
+    const finished: import('../../../src/host/agent/subagentExecutor').SubagentResult = {
       success: true,
       output: 'done',
       iterations: 1,
       toolsUsed: [],
       cost: 0,
     };
-    const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/main/agent/subagentExecutor').SubagentResult>;
+    const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/host/agent/subagentExecutor').SubagentResult>;
 
     guard.register('root', 'root', 'root task', Promise.resolve(finished), rootController, { treeId: 'tree' });
     guard.register('child', 'worker', 'child task', never, childController, { treeId: 'tree', parentId: 'root' });

@@ -7,14 +7,14 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
-import { ModelRouter } from '../../../src/main/model/modelRouter';
+import { ModelRouter } from '../../../src/host/model/modelRouter';
 import type { ModelConfig } from '../../../src/shared/contract';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({
     getHealth: vi.fn().mockReturnValue(null),
     recordSuccess: vi.fn(),
@@ -22,13 +22,13 @@ vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/model/modelRouterTimeouts', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/model/modelRouterTimeouts')>();
+vi.mock('../../../src/host/model/modelRouterTimeouts', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/modelRouterTimeouts')>();
   return { ...actual, ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS: [60_000, 60_000] };
 });
 
-vi.mock('../../../src/main/services/core/configService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/core/configService')>();
+vi.mock('../../../src/host/services/core/configService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
   return {
     ...actual,
     getConfigService: () => ({

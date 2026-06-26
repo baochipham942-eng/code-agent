@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSelfCritiquePromptSection, SELF_CRITIQUE_CONFIG } from '../../../../src/main/prompts/selfCritique';
+import { buildSelfCritiquePromptSection, SELF_CRITIQUE_CONFIG } from '../../../../src/host/prompts/selfCritique';
 import { directionTokens } from '../../../../src/design/direction-tokens';
 import { CRITIQUE_DIMENSIONS } from '../../../../src/design/critique/types';
 import type { DesignBrief } from '../../../../src/shared/contract/designBrief';

@@ -1,5 +1,5 @@
 // V2-B Tweak 5 类原子操作的声明式 API 类型
-// renderer 和 main 共享，实现在 src/main/tools/livePreview/tailwindCategories.ts
+// renderer 和 main 共享，实现在 src/host/tools/livePreview/tailwindCategories.ts
 
 export type ColorTarget = 'text' | 'bg' | 'border';
 export type SpacingAxis = 'p' | 'px' | 'py' | 'pt' | 'pr' | 'pb' | 'pl' | 'm' | 'mx' | 'my' | 'gap';

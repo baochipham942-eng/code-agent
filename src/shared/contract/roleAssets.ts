@@ -2,7 +2,7 @@
 // Role Assets - 渲染端 / 主进程共享类型（持久化角色资产）
 // ============================================================================
 //
-// 主进程 src/main/services/roleAssets/ 是单一真理源。
+// 主进程 src/host/services/roleAssets/ 是单一真理源。
 // 这里只暴露跨进程序列化后的角色面板类型，供 IPC + 渲染端共用。
 
 import type { AgentSource } from './agentRegistry';

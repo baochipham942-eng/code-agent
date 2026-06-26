@@ -1,7 +1,7 @@
 // ============================================================================
 // ConfirmAction (P1 Wave 3 — planning: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/planning/confirmAction.ts
+// 旧版: src/host/tools/planning/confirmAction.ts
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：INVALID_ARGS / PERMISSION_DENIED / ABORTED / DOMAIN_ERROR
@@ -23,7 +23,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { BrowserWindow, ipcMain } from '../../../platform';
+import { AppWindow, ipcHost } from '../../../platform';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import { createLogger } from '../../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
@@ -44,7 +44,7 @@ function registerResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
 
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.CONFIRM_ACTION_RESPONSE,
     async (_event, response: { requestId: string; confirmed: boolean }) => {
       const pending = pendingConfirms.get(response.requestId);
@@ -99,7 +99,7 @@ export async function executeConfirmAction(
     timestamp: Date.now(),
   };
 
-  const mainWindow = BrowserWindow.getAllWindows()[0];
+  const mainWindow = AppWindow.getAllWindows()[0];
   if (!mainWindow) {
     logger.warn('No window available for confirmation dialog, denying action');
     onProgress?.({ stage: 'completing', percent: 100 });

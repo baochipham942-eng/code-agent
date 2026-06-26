@@ -13,8 +13,8 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
-import { pptEditModule, executePptEdit } from '../../../../../src/main/tools/modules/network/pptEdit';
+} from '../../../../../src/host/protocol/tools';
+import { pptEditModule, executePptEdit } from '../../../../../src/host/tools/modules/network/pptEdit';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const JSZip = require('jszip') as new () => {

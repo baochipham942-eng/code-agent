@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import type { Request, Response } from 'express';
 
-vi.mock('../../../src/main/platform/appPaths', () => ({
+vi.mock('../../../src/host/platform/appPaths', () => ({
   getUserDataPath: () => '/fake/userdata',
 }));
 
-vi.mock('../../../src/main/services/infra/browser/managedBrowserHelpers', () => ({
+vi.mock('../../../src/host/services/infra/browser/managedBrowserHelpers', () => ({
   MANAGED_BROWSER_ARTIFACT_DIR: 'screenshots',
 }));
 

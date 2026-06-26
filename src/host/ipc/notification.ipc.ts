@@ -5,7 +5,7 @@
 // （dry-run 模式下 notificationService 也会记录，E2E 据此断言）。不提供写操作。
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { notificationService } from '../services/infra/notificationService';
 import { createLogger } from '../services/infra/logger';
@@ -13,7 +13,7 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('NotificationIPC');
 
 export function registerNotificationHandlers(): void {
-  ipcMain.handle(IPC_DOMAINS.NOTIFICATION, async (_event, request: IPCRequest) => {
+  ipcHost.handle(IPC_DOMAINS.NOTIFICATION, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
     try {
       switch (action) {

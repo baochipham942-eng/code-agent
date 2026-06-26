@@ -29,30 +29,30 @@ const mockSessionAutomation = vi.hoisted(() => ({
   recordEvent: vi.fn(async () => undefined),
 }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../../src/main/services/infra/sessionManager', () => ({
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => mockSessionManager,
 }));
 
 // settings 可变 mock：默认空（= 出厂 silent），各测试按需 opt-in
 const mockSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getSettings: () => mockSettings.value,
     getApiKey: () => '',
   }),
 }));
 
-vi.mock('../../../../src/main/services/core/sessionDefaults', () => ({
+vi.mock('../../../../src/host/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: () => ({
     provider: 'xiaomi',
     model: 'mimo-v2.5-pro',
@@ -62,7 +62,7 @@ vi.mock('../../../../src/main/services/core/sessionDefaults', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/task', () => ({
+vi.mock('../../../../src/host/task', () => ({
   getTaskManager: () => ({
     getOrCreateCurrentOrchestrator: () => mockOrchestrator,
     setWorkingDirectory: vi.fn(),
@@ -70,25 +70,25 @@ vi.mock('../../../../src/main/task', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/roleAssets/roleWriteBack', () => ({
+vi.mock('../../../../src/host/services/roleAssets/roleWriteBack', () => ({
   runRoleWriteBack: mockRunRoleWriteBack,
 }));
 
-vi.mock('../../../../src/main/services/sessionAutomation', () => ({
+vi.mock('../../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => mockSessionAutomation,
 }));
 
-vi.mock('../../../../src/main/evaluation/sessionEventService', () => ({
+vi.mock('../../../../src/host/evaluation/sessionEventService', () => ({
   getSessionEventService: () => mockSessionEvents,
 }));
 
 // agentRegistry：测试角色无 frontmatter 配置 → 走 settings / 出厂默认
-vi.mock('../../../../src/main/agent/agentRegistry', () => ({
+vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   resolveAgent: () => undefined,
 }));
 
 // hooks：RoleWake 事件 fire-and-forget，测试中不关心
-vi.mock('../../../../src/main/hooks', () => ({
+vi.mock('../../../../src/host/hooks', () => ({
   createHookManager: () => ({
     initialize: vi.fn(),
     hasHooksFor: () => false,
@@ -105,8 +105,8 @@ import {
   inferAdvanceGoalProposalFromWake,
   resolveRoleProactivityConfig,
   cadenceForConfig,
-} from '../../../../src/main/services/roleAssets/roleProactivity';
-import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/main/services/roleAssets/roleAssetService';
+} from '../../../../src/host/services/roleAssets/roleProactivity';
+import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
 const RESEARCHER = '研究员';

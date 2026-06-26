@@ -8,8 +8,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../src/main/services/media/imageGenerationService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../../src/main/services/media/imageGenerationService')>();
+vi.mock('../../../../src/host/services/media/imageGenerationService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../../src/host/services/media/imageGenerationService')>();
   return {
     ...actual,
     getDashscopeApiKey: vi.fn(() => undefined),
@@ -18,8 +18,8 @@ vi.mock('../../../../src/main/services/media/imageGenerationService', async (imp
   };
 });
 
-vi.mock('../../../../src/main/services/core/configService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../../src/main/services/core/configService')>();
+vi.mock('../../../../src/host/services/core/configService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../../src/host/services/core/configService')>();
   return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: vi.fn(() => undefined) })) };
 });
 
@@ -30,10 +30,10 @@ import {
   configuredImageModelIds,
   isImageBalanceError,
   IMAGE_MODEL_HEALTH_PRIORITY,
-} from '../../../../src/main/services/media/imageModelHealth';
+} from '../../../../src/host/services/media/imageModelHealth';
 import { IMAGE_MODELS } from '../../../../src/shared/constants/visualModels';
-import * as svc from '../../../../src/main/services/media/imageGenerationService';
-import * as cfgSvc from '../../../../src/main/services/core/configService';
+import * as svc from '../../../../src/host/services/media/imageGenerationService';
+import * as cfgSvc from '../../../../src/host/services/core/configService';
 
 const ALL = ['wanx-t2i', 'gpt-image-2', 'cogview-4', 'flux-2'];
 

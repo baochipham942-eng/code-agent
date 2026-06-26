@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
-import type { PermissionRequestData } from '../../../src/main/tools/types';
+import type { PermissionRequestData } from '../../../src/host/tools/types';
 
 function makeRequest(overrides: Partial<PermissionRequestData> = {}): PermissionRequestData {
   return {

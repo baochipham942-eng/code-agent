@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { cleanXmlResidues } from '../../../src/main/agent/antiPattern/cleanXml';
+import { cleanXmlResidues } from '../../../src/host/agent/antiPattern/cleanXml';
 
 describe('cleanXmlResidues', () => {
   // --------------------------------------------------------------------------

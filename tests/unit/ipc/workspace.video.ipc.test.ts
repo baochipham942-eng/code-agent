@@ -7,20 +7,20 @@ const { generateVideoMock, downloadVideoMock } = vi.hoisted(() => ({
   generateVideoMock: vi.fn(),
   downloadVideoMock: vi.fn(),
 }));
-vi.mock('../../../src/main/services/media/videoGenerationService', () => ({
+vi.mock('../../../src/host/services/media/videoGenerationService', () => ({
   generateVideo: generateVideoMock,
   downloadVideoAsBuffer: downloadVideoMock,
 }));
 
 // 只 mock getDashscopeApiKey（handler i2v 路径用它做 key 守卫）；其余保留真实实现。
 const { getDashscopeKeyMock } = vi.hoisted(() => ({ getDashscopeKeyMock: vi.fn() }));
-vi.mock('../../../src/main/services/media/imageGenerationService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/media/imageGenerationService')>();
+vi.mock('../../../src/host/services/media/imageGenerationService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/media/imageGenerationService')>();
   return { ...actual, getDashscopeApiKey: getDashscopeKeyMock };
 });
 
-import { handleGenerateDesignVideo, handleListVisualVideoModels } from '../../../src/main/ipc/workspace.ipc';
-import { getUserConfigDir } from '../../../src/main/config/configPaths';
+import { handleGenerateDesignVideo, handleListVisualVideoModels } from '../../../src/host/ipc/workspace.ipc';
+import { getUserConfigDir } from '../../../src/host/config/configPaths';
 
 const DESIGN_DIR = path.resolve(getUserConfigDir(), 'design');
 

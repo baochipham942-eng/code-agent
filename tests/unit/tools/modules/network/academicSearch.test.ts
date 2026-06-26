@@ -7,9 +7,9 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
-import { academicSearchModule } from '../../../../../src/main/tools/modules/network/academicSearch';
+import { academicSearchModule } from '../../../../../src/host/tools/modules/network/academicSearch';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

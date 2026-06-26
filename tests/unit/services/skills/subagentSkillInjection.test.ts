@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -19,7 +19,7 @@ const discoveryMocks = vi.hoisted(() => ({
   getSkill: vi.fn<(name: string) => unknown>(),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => ({
     getSkill: discoveryMocks.getSkill,
   }),
@@ -29,11 +29,11 @@ const loaderMocks = vi.hoisted(() => ({
   loadSkillContent: vi.fn(async () => undefined),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillLoader', () => ({
+vi.mock('../../../../src/host/services/skills/skillLoader', () => ({
   loadSkillContent: loaderMocks.loadSkillContent,
 }));
 
-import { buildSubagentSkillsBlock } from '../../../../src/main/services/skills/subagentSkillInjection';
+import { buildSubagentSkillsBlock } from '../../../../src/host/services/skills/subagentSkillInjection';
 
 function makeSkill(overrides: Partial<ParsedSkill> = {}): Partial<ParsedSkill> {
   return {

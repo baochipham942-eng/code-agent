@@ -26,7 +26,7 @@ Module.prototype.require = function(id: string) {
 // 2. Now safe to import everything
 import path from 'path';
 import fs from 'fs/promises';
-import * as testing from '../src/main/testing/index';
+import * as testing from '../src/host/testing/index';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 
 // ============================================================================

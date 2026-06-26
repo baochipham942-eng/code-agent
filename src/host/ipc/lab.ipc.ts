@@ -3,7 +3,7 @@
 // 处理实验室模型训练相关的 IPC 通信
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from '../platform';
+import type { IpcMain, AppWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getLabService } from '../services/lab';
 import type {
@@ -23,7 +23,7 @@ import type {
  */
 export function registerLabHandlers(
   ipcMain: IpcMain,
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => AppWindow | null
 ): void {
   const labService = getLabService();
 

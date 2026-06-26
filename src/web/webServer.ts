@@ -16,7 +16,7 @@
 import './webEnvInit';
 
 // Platform 模块替代 electron mock
-import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../host/platform';
+import { handlers, ipcHost as mockIpcMain, AppWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../host/platform';
 
 import http from 'http';
 import os from 'os';
@@ -623,7 +623,7 @@ async function initializeServices(): Promise<void> {
  * 注册所有 IPC handler 到 mock ipcMain
  */
 // Web 模式的全局 BrowserWindow 实例（webContents.send → broadcastSSE）
-const webModeWindow = new BrowserWindow();
+const webModeWindow = new AppWindow();
 setBrowserWindowInteractionProbe(() => sseClients.size > 0);
 
 // 注册到 main/app/window.ts 的 module-level mainWindow，让所有调
@@ -643,7 +643,7 @@ function registerHandlers(): void {
   let currentSessionId: string | null = null;
 
   // ADR-010: 注入 swarm 业务依赖到 SwarmServices 注册表（web 模式 wiring）
-  // 此前只有 src/main/index.ts (Tauri 桌面入口) 调用过 registerSwarmServices，
+  // 此前只有 src/host/index.ts (Tauri 桌面入口) 调用过 registerSwarmServices，
   // web/e2e 路径下 swarm.ipc.ts 的 handler 触发时会抛 "SwarmServices not registered"
   // 被 try/catch 兜底返回空数据，导致 SwarmTraceHistory 等功能在 web 模式永远空。
   try {

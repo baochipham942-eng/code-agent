@@ -18,7 +18,7 @@ const platformState = vi.hoisted(() => ({
   encryptionAvailable: false,
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: {
     getPath: (name: string) => (name === 'userData' ? platformState.dataDir : platformState.dataDir),
   },
@@ -38,7 +38,7 @@ function freshDir(): string {
 async function loadService() {
   process.env.CODE_AGENT_CLI_MODE = '1'; // 跳过 keytar（native 模块），只走 electron-store 加密路径
   vi.resetModules();
-  const mod = await import('../../../src/main/services/core/secureStorage');
+  const mod = await import('../../../src/host/services/core/secureStorage');
   return mod.getSecureStorage();
 }
 

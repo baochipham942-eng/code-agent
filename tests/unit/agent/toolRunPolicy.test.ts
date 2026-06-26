@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolDefinition } from '../../../src/shared/contract';
-import { filterToolsByRunPolicy, isToolDeniedForRun } from '../../../src/main/agent/runtime/toolRunPolicy';
+import { filterToolsByRunPolicy, isToolDeniedForRun } from '../../../src/host/agent/runtime/toolRunPolicy';
 
 const tool = (name: string): ToolDefinition => ({
   name,

@@ -14,7 +14,7 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
-import { classifyAgentEngineFailure } from '../../src/main/services/agentEngine/agentEngineFailureDiagnostics';
+import { classifyAgentEngineFailure } from '../../src/host/services/agentEngine/agentEngineFailureDiagnostics';
 
 export interface CodexCliEngineSmokeConfig {
   binary: string;

@@ -2,20 +2,20 @@
 // 放到顶层 system option，并确保传给 streamText/generateText 的 messages 不再含 system。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText, streamText } from 'ai';
-import { inferenceViaAiSdk } from '../../../src/main/model/adapters/aiSdkAdapter';
-import type { ModelMessage, StreamCallback } from '../../../src/main/model/types';
-import type { ModelConfig, ToolDefinition } from '../../../src/main/shared/contract';
+import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
+import type { ModelMessage, StreamCallback } from '../../../src/host/model/types';
+import type { ModelConfig, ToolDefinition } from '../../../src/host/shared/contract';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderBaseUrl: () => 'https://test.local/v1',
   resolveProviderApiKey: () => 'test-key',
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({ recordSuccess: vi.fn(), recordFailure: vi.fn() }),
 }));
 

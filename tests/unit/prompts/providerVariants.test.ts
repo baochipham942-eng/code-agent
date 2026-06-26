@@ -11,7 +11,7 @@ import {
   applyProviderVariant,
   isProviderVariantDisabled,
   PROVIDER_VARIANT_MARKER,
-} from '../../../src/main/prompts/providerVariants';
+} from '../../../src/host/prompts/providerVariants';
 
 afterEach(() => {
   delete process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT;

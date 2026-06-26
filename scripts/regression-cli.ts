@@ -17,7 +17,7 @@ import {
   decideGate,
   readBaseline,
   writeBaseline,
-} from '../src/main/evaluation/regression';
+} from '../src/host/evaluation/regression';
 
 const CASES_DIR = path.join(os.homedir(), '.claude', 'regression-cases');
 const BASELINE_FILE = path.join(CASES_DIR, 'baseline.json');

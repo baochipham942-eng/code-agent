@@ -24,7 +24,7 @@ async function loadConfigServiceForDataDir(dataDir: string) {
   setProviderConcurrencyOverrides.mockClear();
   setProviderProxyOverrides.mockClear();
 
-  vi.doMock('../../../../src/main/platform', () => ({
+  vi.doMock('../../../../src/host/platform', () => ({
     app: {
       isPackaged: false,
       getPath: (name: string) => {
@@ -33,10 +33,10 @@ async function loadConfigServiceForDataDir(dataDir: string) {
       },
     },
   }));
-  vi.doMock('../../../../src/main/services/core/secureStorage', () => ({
+  vi.doMock('../../../../src/host/services/core/secureStorage', () => ({
     getSecureStorage: () => secureStorageMock,
   }));
-  vi.doMock('../../../../src/main/services/infra/logger', () => ({
+  vi.doMock('../../../../src/host/services/infra/logger', () => ({
     createLogger: () => ({
       debug: vi.fn(),
       info: vi.fn(),
@@ -44,17 +44,17 @@ async function loadConfigServiceForDataDir(dataDir: string) {
       error: vi.fn(),
     }),
   }));
-  vi.doMock('../../../../src/main/permissions/policyEngine', () => ({
+  vi.doMock('../../../../src/host/permissions/policyEngine', () => ({
     getPolicyEngine: () => ({ loadUserRules }),
   }));
-  vi.doMock('../../../../src/main/model/concurrencyLimiter', () => ({
+  vi.doMock('../../../../src/host/model/concurrencyLimiter', () => ({
     setProviderConcurrencyOverrides,
   }));
-  vi.doMock('../../../../src/main/model/providers/shared', () => ({
+  vi.doMock('../../../../src/host/model/providers/shared', () => ({
     setProviderProxyOverrides,
   }));
 
-  return import('../../../../src/main/services/core/configService');
+  return import('../../../../src/host/services/core/configService');
 }
 
 async function createDataDir(): Promise<string> {
@@ -63,12 +63,12 @@ async function createDataDir(): Promise<string> {
 
 describe('ConfigService.reloadFromDisk', () => {
   afterEach(() => {
-    vi.doUnmock('../../../../src/main/platform');
-    vi.doUnmock('../../../../src/main/services/core/secureStorage');
-    vi.doUnmock('../../../../src/main/services/infra/logger');
-    vi.doUnmock('../../../../src/main/permissions/policyEngine');
-    vi.doUnmock('../../../../src/main/model/concurrencyLimiter');
-    vi.doUnmock('../../../../src/main/model/providers/shared');
+    vi.doUnmock('../../../../src/host/platform');
+    vi.doUnmock('../../../../src/host/services/core/secureStorage');
+    vi.doUnmock('../../../../src/host/services/infra/logger');
+    vi.doUnmock('../../../../src/host/permissions/policyEngine');
+    vi.doUnmock('../../../../src/host/model/concurrencyLimiter');
+    vi.doUnmock('../../../../src/host/model/providers/shared');
     vi.resetModules();
   });
 

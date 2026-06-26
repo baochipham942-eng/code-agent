@@ -5,7 +5,7 @@
 // 所有写操作前自动 createSnapshot，失败 restoreLatest 回滚。
 //
 // 行为保真：legacy 输出格式（中文文案 + emoji + snapshot id）必须 1:1 复刻。
-// 内部 helpers (styleExtractor) 保留在 src/main/tools/media/ppt/。
+// 内部 helpers (styleExtractor) 保留在 src/host/tools/media/ppt/。
 // ============================================================================
 
 import * as fs from 'fs';

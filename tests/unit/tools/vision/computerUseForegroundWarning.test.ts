@@ -1,10 +1,10 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import type { ComputerAction } from '../../../../src/main/tools/vision/computerUse';
-import { attachForegroundKeystrokeWarning } from '../../../../src/main/tools/vision/computerUse';
+import type { ComputerAction } from '../../../../src/host/tools/vision/computerUse';
+import { attachForegroundKeystrokeWarning } from '../../../../src/host/tools/vision/computerUse';
 import {
   setMultiAgentMode,
   resetMultiAgentModeForTests,
-} from '../../../../src/main/services/multiAgentMode';
+} from '../../../../src/host/services/multiAgentMode';
 
 const okResult = { success: true, output: 'done' };
 

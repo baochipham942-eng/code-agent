@@ -7,12 +7,12 @@ import type { SessionTask } from '../../../src/shared/contract/planning';
 import {
   runCheckpointWriterAgent,
   type CheckpointWriterJob,
-} from '../../../src/main/agent/checkpointWriterAgent';
+} from '../../../src/host/agent/checkpointWriterAgent';
 import {
   createCheckpointTemplate,
   replaceSectionBody,
   resolveCheckpointStorePaths,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
 function message(id: string, role: 'user' | 'assistant', content: string): Message {
   return { id, role, content, timestamp: 1 } as Message;
@@ -44,7 +44,7 @@ function validLlmCheckpoint(): string {
   doc = replaceSectionBody(doc, 3, 'Preserve exact backtick: `--seed 42`');
   doc = replaceSectionBody(doc, 4, ['✅ 1 implement checkpoint writer', '  🔄 1.1 write writer tests'].join('\n'));
   doc = replaceSectionBody(doc, 5, 'Was wiring the LLM writer runner.');
-  doc = replaceSectionBody(doc, 6, '- src/main/agent/checkpointWriterAgent.ts - runner under rework');
+  doc = replaceSectionBody(doc, 6, '- src/host/agent/checkpointWriterAgent.ts - runner under rework');
   doc = replaceSectionBody(doc, 7, 'Vitest fake timers conflict with waitForIdle loops.');
   doc = replaceSectionBody(doc, 8, 'EXDEV rename failure fixed by copy+unlink fallback.');
   doc = replaceSectionBody(doc, 9, '- branch: main\n- reason: test');

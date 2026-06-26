@@ -4,11 +4,11 @@ const eventBusState = vi.hoisted(() => ({
   publish: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => eventBusState,
 }));
 
-import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
+import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
 
 describe('SwarmEventEmitter', () => {
   beforeEach(() => {

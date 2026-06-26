@@ -4,13 +4,13 @@
 // ============================================================================
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { getDeferredToolsSummary } from '../../../src/main/tools/dispatch/toolDefinitions';
+import { getDeferredToolsSummary } from '../../../src/host/tools/dispatch/toolDefinitions';
 import {
   getToolSearchService,
   resetToolSearchService,
-} from '../../../src/main/services/toolSearch/toolSearchService';
+} from '../../../src/host/services/toolSearch/toolSearchService';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -25,15 +25,15 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/cloud', () => ({
+vi.mock('../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({ getAllToolMeta: () => ({}) }),
 }));
 
-vi.mock('../../../src/main/mcp', () => ({
+vi.mock('../../../src/host/mcp', () => ({
   getMCPClient: () => ({ getToolDefinitions: () => [] }),
 }));
 
-vi.mock('../../../src/main/tools/protocolToolRegistration', () => ({
+vi.mock('../../../src/host/tools/protocolToolRegistration', () => ({
   getProtocolToolSchemas: () => [],
 }));
 

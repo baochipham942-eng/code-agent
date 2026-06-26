@@ -23,35 +23,35 @@
   },
   "mjs_tests": [
     {
-      "file": "src/main/tools/media/ppt/__tests__/ppt-d3d4.test.mjs",
+      "file": "src/host/tools/media/ppt/__tests__/ppt-d3d4.test.mjs",
       "exit_code": 0,
       "summary_line": "═══ Summary: 65 passed, 0 failed (65 total) ═══",
       "parsed_pass": 65,
       "parsed_fail": 0
     },
     {
-      "file": "src/main/tools/media/ppt/__tests__/ppt-schema.test.mjs",
+      "file": "src/host/tools/media/ppt/__tests__/ppt-schema.test.mjs",
       "exit_code": 0,
       "summary_line": "55 项: 55 通过, 0 失败",
       "parsed_pass": 55,
       "parsed_fail": 0
     },
     {
-      "file": "src/main/tools/media/ppt/__tests__/ppt.test.mjs",
+      "file": "src/host/tools/media/ppt/__tests__/ppt.test.mjs",
       "exit_code": 0,
       "summary_line": null,
       "parsed_pass": null,
       "parsed_fail": null
     },
     {
-      "file": "src/main/tools/media/ppt/__tests__/ppt-extended.test.mjs",
+      "file": "src/host/tools/media/ppt/__tests__/ppt-extended.test.mjs",
       "exit_code": 0,
       "summary_line": null,
       "parsed_pass": null,
       "parsed_fail": null
     },
     {
-      "file": "src/main/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs",
+      "file": "src/host/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs",
       "exit_code": 0,
       "summary_line": "═══ Summary: 42 passed, 0 failed (42 total) ═══",
       "parsed_pass": 42,

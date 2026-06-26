@@ -5,12 +5,12 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
-import { SwarmLedgerRepository } from '../../../src/main/services/core/repositories/SwarmLedgerRepository';
-import { SwarmTraceWriter } from '../../../src/main/agent/swarmTraceWriter';
-import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
-import { shutdownEventBus } from '../../../src/main/services/eventing/bus';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
+import { SwarmLedgerRepository } from '../../../src/host/services/core/repositories/SwarmLedgerRepository';
+import { SwarmTraceWriter } from '../../../src/host/agent/swarmTraceWriter';
+import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
+import { shutdownEventBus } from '../../../src/host/services/eventing/bus';
 
 function createLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

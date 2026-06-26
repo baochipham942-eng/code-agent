@@ -6,15 +6,15 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { applyToolResultBudget } from '../../../../src/main/context/layers/toolResultBudget';
-import { CompressionState } from '../../../../src/main/context/compressionState';
-import { estimateTokens } from '../../../../src/main/context/tokenEstimator';
-import { SPILL_NOTICE_MARKER, readToolResultArchive } from '../../../../src/main/utils/toolResultSpill';
+import { applyToolResultBudget } from '../../../../src/host/context/layers/toolResultBudget';
+import { CompressionState } from '../../../../src/host/context/compressionState';
+import { estimateTokens } from '../../../../src/host/context/tokenEstimator';
+import { SPILL_NOTICE_MARKER, readToolResultArchive } from '../../../../src/host/utils/toolResultSpill';
 
 // mock factory 与测试体各自计算同一确定性路径（避免 vi.hoisted 跨作用域引用）
 const spillTestRoot = path.join(os.tmpdir(), `neo-budget-spill-test-${process.pid}`);
 
-vi.mock('../../../../src/main/config/configPaths', async () => {
+vi.mock('../../../../src/host/config/configPaths', async () => {
   const osMod = await import('os');
   const pathMod = await import('path');
   return {

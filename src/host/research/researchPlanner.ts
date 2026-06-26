@@ -160,7 +160,7 @@ export class ResearchPlanner {
       // Try multiple possible locations since __dirname may differ in esbuild bundle
       const possiblePaths = [
         path.join(__dirname, 'SKILL.md'),
-        path.join(process.cwd(), 'src/main/research/SKILL.md'),
+        path.join(process.cwd(), 'src/host/research/SKILL.md'),
       ];
 
       for (const skillPath of possiblePaths) {

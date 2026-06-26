@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatSchemaForModel,
   validateToolArgs,
-} from '../../../src/main/agent/runtime/toolArgsValidator';
+} from '../../../src/host/agent/runtime/toolArgsValidator';
 import type { JSONSchema, JSONSchemaProperty } from '../../../src/shared/contract';
 
 const props: Record<string, JSONSchemaProperty> = {

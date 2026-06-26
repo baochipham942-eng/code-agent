@@ -4,12 +4,12 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { isVerificationCommand } from '../../../src/main/agent/runtime/toolResultLifecycle';
-import { NudgeManager } from '../../../src/main/agent/nudgeManager';
+import { isVerificationCommand } from '../../../src/host/agent/runtime/toolResultLifecycle';
+import { NudgeManager } from '../../../src/host/agent/nudgeManager';
 
 describe('isVerificationCommand (#7)', () => {
   it('识别 npm/pnpm/yarn 的 test/typecheck/lint/build', () => {

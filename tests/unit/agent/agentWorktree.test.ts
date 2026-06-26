@@ -11,7 +11,7 @@ import * as path from 'path';
 // 与 agentWorktree.ts 同源：WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees')
 const WORKTREE_BASE = path.join(os.tmpdir(), 'code-agent-worktrees');
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -124,7 +124,7 @@ import {
   parseGitStatusPorcelain,
   parseGitignoreTopLevelDirs,
   resetAgentWorktreeArtifactsForTest,
-} from '../../../src/main/agent/agentWorktree';
+} from '../../../src/host/agent/agentWorktree';
 
 describe('AgentWorktree', () => {
   beforeEach(() => {

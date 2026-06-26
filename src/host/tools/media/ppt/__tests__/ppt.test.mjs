@@ -1,9 +1,9 @@
 // ============================================================================
 // PPT 生成系统 — Helper 单元测试
-// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt.test.mjs
+// 运行: npx tsx src/host/tools/media/ppt/__tests__/ppt.test.mjs
 // ============================================================================
 // History: 原文件包含 Part 4 (集成测试) + Part 5 (python-pptx 结构验证)，
-// 依赖已删除的 src/main/tools/media/ppt/index.ts (pptGenerateTool)。
+// 依赖已删除的 src/host/tools/media/ppt/index.ts (pptGenerateTool)。
 // 顶层 ppt_generate 工具 API + schema 已被 tests/unit/tools/modules/network/
 // pptGenerate.test.ts 用 vitest 覆盖（13 cases），此文件只保留 helper 单测。
 // ============================================================================

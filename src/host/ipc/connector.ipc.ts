@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { exec } from 'child_process';
-import type { IpcMain, BrowserWindow } from '../platform';
+import type { IpcMain, AppWindow } from '../platform';
 import { broadcastToRenderer } from '../platform';
 import {
   IPC_CHANNELS,
@@ -329,7 +329,7 @@ async function handleOpenConnectorApp(connectorId: string | undefined): Promise<
 }
 
 async function pollAndBroadcastConnectorStatuses(
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => AppWindow | null,
 ): Promise<void> {
   const statuses = await handleListStatuses();
   const nextSnapshot = serializeConnectorStatuses(statuses);
@@ -353,7 +353,7 @@ async function pollAndBroadcastConnectorStatuses(
 }
 
 function ensureConnectorStatusWatcher(
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => AppWindow | null,
 ): void {
   if (connectorStatusWatchTimer) {
     return;
@@ -379,7 +379,7 @@ function ensureConnectorStatusWatcher(
 
 export function registerConnectorHandlers(
   ipcMain: IpcMain,
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => AppWindow | null,
   getConfigService: () => ConfigService | null,
 ): void {
   ensureConnectorStatusWatcher(getMainWindow);

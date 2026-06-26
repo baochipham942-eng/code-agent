@@ -6,12 +6,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
-import { FailureAttributor } from '../../../../../src/main/evaluation/trajectory/attribution/failureAttributor';
+import { FailureAttributor } from '../../../../../src/host/evaluation/trajectory/attribution/failureAttributor';
 import type {
   Trajectory,
   TrajectoryStep,
   DeviationMarker,
-} from '../../../../../src/main/testing/types';
+} from '../../../../../src/host/testing/types';
 
 function toolStep(index: number, name: string, success: boolean): TrajectoryStep {
   return {

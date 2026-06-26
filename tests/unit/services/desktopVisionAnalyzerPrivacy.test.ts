@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScreenshotRedactionOptionsForAnalysis,
   sanitizeDesktopVisionAnalyzeText,
-} from '../../../src/main/services/desktop/desktopVisionAnalyzer';
+} from '../../../src/host/services/desktop/desktopVisionAnalyzer';
 
 describe('DesktopVisionAnalyzer privacy', () => {
   it('sanitizes local screenshot analysis before persistence', () => {

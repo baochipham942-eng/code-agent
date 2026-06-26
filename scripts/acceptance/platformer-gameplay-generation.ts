@@ -13,8 +13,8 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
-import { StandaloneAgentAdapter } from '../../src/main/testing/agentAdapter.ts';
-import { validateGameArtifact } from '../../src/main/agent/runtime/gameArtifactValidator.ts';
+import { StandaloneAgentAdapter } from '../../src/host/testing/agentAdapter.ts';
+import { validateGameArtifact } from '../../src/host/agent/runtime/gameArtifactValidator.ts';
 import {
   ACCEPTANCE_DEFAULTS,
   type AcceptanceMonotonicMode,
@@ -232,7 +232,7 @@ async function resolveApiKey(provider: string): Promise<string | undefined> {
   const envKey = apiKeyForProvider(provider);
   if (envKey) return envKey;
   try {
-    const { getSecureStorage } = await import('../../src/main/services/core/secureStorage.ts');
+    const { getSecureStorage } = await import('../../src/host/services/core/secureStorage.ts');
     return getSecureStorage().getApiKey(provider) || undefined;
   } catch {
     return undefined;

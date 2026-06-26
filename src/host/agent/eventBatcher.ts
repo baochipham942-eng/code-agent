@@ -2,7 +2,7 @@
 // Event Batcher - 高频 IPC 事件批处理器
 // 将多个事件合并为一次 IPC 调用，减少渲染进程压力
 //
-// 事件分类（BATCHABLE / IMMEDIATE）已迁至 src/main/protocol/events.ts，
+// 事件分类（BATCHABLE / IMMEDIATE）已迁至 src/host/protocol/events.ts，
 // 本文件专注于批处理调度策略。下一阶段（P0-5+）整个 batcher 应纳入 protocol 层的
 // Event Bus，成为 Submission/Event 模式的实现之一。
 // ============================================================================

@@ -927,7 +927,7 @@ export class ToolExecutionEngine {
       }
 
       // Builtin 设计质量自检（Kun 借鉴）：写/改前端文件后扫 AI 痕迹，advisory 回注让模型下一轮自我修正。
-      // 纯 advisory：不把工具标记为失败、不拦截本轮。详见 src/main/quality 与借鉴清单。
+      // 纯 advisory：不把工具标记为失败、不拦截本轮。详见 src/host/quality 与借鉴清单。
       if (normalizedResult.success && (DESIGN_QUALITY.REVIEW_TOOLS as readonly string[]).includes(toolCall.name)) {
         try {
           const args = toolCall.arguments as Record<string, unknown> | undefined;

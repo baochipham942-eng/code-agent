@@ -5,9 +5,9 @@ import path from 'path';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import { getDatabase } from '../../../src/main/services/core/databaseService';
-import { TelemetryStorage } from '../../../src/main/telemetry/telemetryStorage';
-import { buildDiagnosticBundle, buildSessionLogExport, sanitizeDiagnosticBundle } from '../../../src/main/telemetry/diagnosticBundleService';
+import { getDatabase } from '../../../src/host/services/core/databaseService';
+import { TelemetryStorage } from '../../../src/host/telemetry/telemetryStorage';
+import { buildDiagnosticBundle, buildSessionLogExport, sanitizeDiagnosticBundle } from '../../../src/host/telemetry/diagnosticBundleService';
 import type { DiagnosticBundle, TelemetrySession, TelemetryModelCall } from '../../../src/shared/contract/telemetry';
 
 const dbState = vi.hoisted(() => ({

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.unmock('better-sqlite3');
 
-vi.mock('../../../src/main/tools/modules/shell/backgroundTaskSources', () => ({
+vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', () => ({
   getAllBackgroundTasks: mocks.getAllBackgroundTasks,
   getAllPtySessions: mocks.getAllPtySessions,
   onBackgroundTaskLifecycleEvent: mocks.onBackgroundTaskLifecycleEvent,
@@ -20,12 +20,12 @@ vi.mock('../../../src/main/tools/modules/shell/backgroundTaskSources', () => ({
 }));
 
 import Database from 'better-sqlite3';
-import { BackgroundTaskLedger } from '../../../src/main/tasks/backgroundTaskLedger';
-import { SqliteBackgroundTaskStore } from '../../../src/main/tasks/backgroundTaskStore';
+import { BackgroundTaskLedger } from '../../../src/host/tasks/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../../../src/host/tasks/backgroundTaskStore';
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
-} from '../../../src/main/tasks/backgroundTaskSnapshotAdapters';
+} from '../../../src/host/tasks/backgroundTaskSnapshotAdapters';
 
 describe('backgroundTaskSnapshotAdapters', () => {
   beforeEach(() => {

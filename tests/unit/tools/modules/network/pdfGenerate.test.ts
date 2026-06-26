@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 import { EventEmitter } from 'events';
 
 const { existsSyncMock, mkdirSyncMock, statSyncMock, createWriteStreamMock } = vi.hoisted(() => ({
@@ -65,7 +65,7 @@ vi.mock('pdfkit', () => {
   return { default: FakePDFDocument };
 });
 
-import { pdfGenerateModule } from '../../../../../src/main/tools/modules/network/pdfGenerate';
+import { pdfGenerateModule } from '../../../../../src/host/tools/modules/network/pdfGenerate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

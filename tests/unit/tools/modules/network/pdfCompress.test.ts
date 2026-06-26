@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const {
   existsSyncMock,
@@ -48,7 +48,7 @@ vi.mock('util', () => ({
   },
 }));
 
-import { pdfCompressModule } from '../../../../../src/main/tools/modules/network/pdfCompress';
+import { pdfCompressModule } from '../../../../../src/host/tools/modules/network/pdfCompress';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

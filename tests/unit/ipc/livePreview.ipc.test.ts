@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveLivePreviewSourceLocation,
   validateLivePreviewDevServerUrl,
-} from '../../../src/main/ipc/livePreview.ipc';
-import { getDevServerManager } from '../../../src/main/services/infra/devServerManager';
+} from '../../../src/host/ipc/livePreview.ipc';
+import { getDevServerManager } from '../../../src/host/services/infra/devServerManager';
 
 describe('livePreview IPC helpers', () => {
   it('accepts only dev server URLs that match renderer frame-src', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rebuildRunDetail } from '../../../src/main/services/core/swarmRollupProjection';
+import { rebuildRunDetail } from '../../../src/host/services/core/swarmRollupProjection';
 import type { SwarmLedgerEvent } from '../../../src/shared/contract/swarmLedger';
 
 let autoId = 1;

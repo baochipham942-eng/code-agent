@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { detectTaskFeatures, getSystemReminders } from '../../../src/main/prompts/systemReminders';
+import { detectTaskFeatures, getSystemReminders } from '../../../src/host/prompts/systemReminders';
 
 describe('detectTaskFeatures — isScreenCaptureTask', () => {
   it.each([

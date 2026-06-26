@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import type { Session } from '../../../../../src/shared/contract/session';
 
 const mocks = vi.hoisted(() => ({
@@ -20,19 +20,19 @@ const mocks = vi.hoisted(() => ({
   resolveSessionDefaultModelConfig: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/services/infra/sessionManager', () => ({
+vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => mocks.sessionManager,
 }));
 
-vi.mock('../../../../../src/main/task/TaskManager', () => ({
+vi.mock('../../../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => mocks.taskManager,
 }));
 
-vi.mock('../../../../../src/main/services/core/sessionDefaults', () => ({
+vi.mock('../../../../../src/host/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: (...args: unknown[]) => mocks.resolveSessionDefaultModelConfig(...args),
 }));
 
-import { sessionManagerModule } from '../../../../../src/main/tools/modules/session/sessionManager';
+import { sessionManagerModule } from '../../../../../src/host/tools/modules/session/sessionManager';
 
 const parentModel = { provider: 'openai', model: 'gpt-test-parent' } as const;
 const defaultModel = { provider: 'openai', model: 'gpt-test-default' } as const;

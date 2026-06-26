@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock connector registry
@@ -16,13 +16,13 @@ import type {
 const execMock = vi.fn();
 const getMock = vi.fn();
 
-vi.mock('../../../../../src/main/connectors', () => ({
+vi.mock('../../../../../src/host/connectors', () => ({
   getConnectorRegistry: () => ({
     get: getMock,
   }),
 }));
 
-import { mailModule } from '../../../../../src/main/tools/modules/connectors/mail';
+import { mailModule } from '../../../../../src/host/tools/modules/connectors/mail';
 
 // -----------------------------------------------------------------------------
 // Helpers

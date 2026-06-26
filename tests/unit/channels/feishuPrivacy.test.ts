@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import {
   sanitizeFeishuInboundMessage,
-} from '../../../src/main/channels/feishu/feishuPrivacy';
+} from '../../../src/host/channels/feishu/feishuPrivacy';
 
 function makeMessage(content: string): ChannelMessage {
   return {

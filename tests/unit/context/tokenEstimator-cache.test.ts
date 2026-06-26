@@ -8,7 +8,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 describe('TokenEstimator LRU Cache', () => {
   // --------------------------------------------------------------------------

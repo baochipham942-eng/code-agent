@@ -2,7 +2,7 @@
 // Workspace IPC Handlers - workspace:* 通道
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from '../platform';
+import type { IpcMain, AppWindow } from '../platform';
 import path from 'path';
 import { app, dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
@@ -479,7 +479,7 @@ export async function handleListVisualVideoModels(): Promise<{
 // ----------------------------------------------------------------------------
 
 async function handleSelectDirectory(
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => AppWindow | null,
   getAppService: () => AgentApplicationService | null,
   getConfigService: () => ConfigService | null,
 ): Promise<string | null> {
@@ -511,7 +511,7 @@ async function handleGetCurrent(getAppService: () => AgentApplicationService | n
 async function handleSetCurrent(
   payload: { dir: string | null | undefined },
   getAppService: () => AgentApplicationService | null,
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => AppWindow | null,
   getConfigService: () => ConfigService | null,
 ): Promise<string | null> {
   const nextDir = payload.dir?.trim();
@@ -1279,7 +1279,7 @@ async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePat
  */
 export function registerWorkspaceHandlers(
   ipcMain: IpcMain,
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => AppWindow | null,
   getAppService: () => AgentApplicationService | null,
   getConfigService: () => ConfigService | null,
 ): void {

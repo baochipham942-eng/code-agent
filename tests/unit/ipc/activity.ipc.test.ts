@@ -8,26 +8,26 @@ const mocks = vi.hoisted(() => ({
   getAudioCaptureStatus: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/external/openchronicleSupervisor', () => ({
+vi.mock('../../../src/host/services/external/openchronicleSupervisor', () => ({
   getStatus: mocks.getOpenchronicleStatus,
 }));
 
-vi.mock('../../../src/main/services/desktop/nativeDesktopService', () => ({
+vi.mock('../../../src/host/services/desktop/nativeDesktopService', () => ({
   getNativeDesktopService: mocks.getNativeDesktopService,
 }));
 
-vi.mock('../../../src/main/services/desktop/desktopAudioCapture', () => ({
+vi.mock('../../../src/host/services/desktop/desktopAudioCapture', () => ({
   getAudioCaptureStatus: mocks.getAudioCaptureStatus,
 }));
 
-import { registerActivityHandlers } from '../../../src/main/ipc/activity.ipc';
+import { registerActivityHandlers } from '../../../src/host/ipc/activity.ipc';
 
 type HandlerFn = (event: unknown, request: unknown) => Promise<unknown>;
 
 function createMockIpcMain() {
   const handlers = new Map<string, HandlerFn>();
   return {
-    ipcMain: {
+    ipcHost: {
       handle: vi.fn((channel: string, handler: HandlerFn) => {
         handlers.set(channel, handler);
       }),
@@ -88,7 +88,7 @@ describe('activity provider IPC', () => {
 
   it('lists OpenChronicle and Native Desktop providers through one domain', async () => {
     const ipc = createMockIpcMain();
-    registerActivityHandlers(ipc.ipcMain as any);
+    registerActivityHandlers(ipc.ipcHost as any);
 
     const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.ACTIVITY, {
       action: 'listProviders',
@@ -113,7 +113,7 @@ describe('activity provider IPC', () => {
 
   it('rejects unknown activity actions', async () => {
     const ipc = createMockIpcMain();
-    registerActivityHandlers(ipc.ipcMain as any);
+    registerActivityHandlers(ipc.ipcHost as any);
 
     const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.ACTIVITY, {
       action: 'missing',

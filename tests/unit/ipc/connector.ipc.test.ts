@@ -6,7 +6,7 @@ import {
   getEnabledNativeConnectorIdsAfterRetry,
   normalizeConnectorStatuses,
   serializeConnectorStatuses,
-} from '../../../src/main/ipc/connector.ipc';
+} from '../../../src/host/ipc/connector.ipc';
 
 describe('connector.ipc helpers', () => {
   it('normalizes connector statuses into a stable order', () => {

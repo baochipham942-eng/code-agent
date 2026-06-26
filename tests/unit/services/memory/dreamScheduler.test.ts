@@ -5,7 +5,7 @@ import {
   DREAM_INTERVAL_DAYS,
   buildDreamCronJobDefinition,
   syncDreamCronJob,
-} from '../../../../src/main/services/memory/dreamScheduler';
+} from '../../../../src/host/services/memory/dreamScheduler';
 
 const NOW = Date.UTC(2026, 5, 11, 9, 0, 0);
 

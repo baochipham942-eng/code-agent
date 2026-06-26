@@ -5,7 +5,7 @@ import { join } from 'path';
 import {
   classifyCuaFailure,
   recordCuaFailure,
-} from '../../../src/main/mcp/cuaFailureStats';
+} from '../../../src/host/mcp/cuaFailureStats';
 
 describe('classifyCuaFailure — 失败六分类（灰度决策数据口径）', () => {
   it('权限缺失', () => {

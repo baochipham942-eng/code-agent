@@ -5,7 +5,7 @@
 // 验证只读路由端到端可用 + 缺参 400 + 未找到 404。
 // 单一生命周期（beforeAll start / afterAll stop），避免反复 start/stop 抢占端口的 race。
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { logBridge, type TaskStatusBridgeProvider } from '../../../src/main/mcp/logBridge';
+import { logBridge, type TaskStatusBridgeProvider } from '../../../src/host/mcp/logBridge';
 
 // 用 OS 分配的临时端口（start(0)）隔离测试，避免撞固定 51820（本机跑着 app 或并行测试时会 EADDRINUSE）。
 let BASE = '';

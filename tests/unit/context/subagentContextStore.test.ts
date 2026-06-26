@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { CompressionState } from '../../../src/main/context/compressionState';
-import { SubagentContextStore } from '../../../src/main/context/subagentContextStore';
+import { CompressionState } from '../../../src/host/context/compressionState';
+import { SubagentContextStore } from '../../../src/host/context/subagentContextStore';
 import type { Message } from '../../../src/shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../../src/shared/contract/swarm';
 

@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock logger
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // Mock logCollector
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: {
     agent: vi.fn(),
     addLog: vi.fn(),
@@ -25,9 +25,9 @@ vi.mock('../../../src/main/mcp/logCollector', () => ({
 }));
 
 // Mock planning taskStore (legacy tools/planning/ barrel removed in P1 Wave 3 —
-// see src/main/tools/modules/planning/; getIncompleteTasks 直接来自 services)
+// see src/host/tools/modules/planning/; getIncompleteTasks 直接来自 services)
 const mockGetIncompleteTasks = vi.fn().mockReturnValue([]);
-vi.mock('../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../src/host/services/planning/taskStore', () => ({
   getIncompleteTasks: (...args: unknown[]) => mockGetIncompleteTasks(...args),
 }));
 
@@ -43,9 +43,9 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
-import { NudgeManager, isTaskMutationToolCall } from '../../../src/main/agent/nudgeManager';
-import type { NudgeCheckContext } from '../../../src/main/agent/nudgeManager';
-import { GoalTracker } from '../../../src/main/agent/goalTracker';
+import { NudgeManager, isTaskMutationToolCall } from '../../../src/host/agent/nudgeManager';
+import type { NudgeCheckContext } from '../../../src/host/agent/nudgeManager';
+import { GoalTracker } from '../../../src/host/agent/goalTracker';
 
 // ── Helpers ──
 

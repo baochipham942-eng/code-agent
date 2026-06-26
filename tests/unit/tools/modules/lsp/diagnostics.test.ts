@@ -9,7 +9,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock LSP manager
@@ -17,11 +17,11 @@ import type {
 
 const getLSPManagerMock = vi.fn();
 
-vi.mock('../../../../../src/main/lsp', () => ({
+vi.mock('../../../../../src/host/lsp', () => ({
   getLSPManager: () => getLSPManagerMock(),
 }));
 
-import { diagnosticsModule } from '../../../../../src/main/tools/modules/lsp/diagnostics';
+import { diagnosticsModule } from '../../../../../src/host/tools/modules/lsp/diagnostics';
 
 // -----------------------------------------------------------------------------
 // Helpers

@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -17,11 +17,11 @@ import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/
 
 const getPlanApprovalGateMock = vi.fn();
 
-vi.mock('../../../../../src/main/agent/planApproval', () => ({
+vi.mock('../../../../../src/host/agent/planApproval', () => ({
   getPlanApprovalGate: () => getPlanApprovalGateMock(),
 }));
 
-import { planReviewModule } from '../../../../../src/main/tools/modules/multiagent/planReview';
+import { planReviewModule } from '../../../../../src/host/tools/modules/multiagent/planReview';
 
 // -----------------------------------------------------------------------------
 // Helpers

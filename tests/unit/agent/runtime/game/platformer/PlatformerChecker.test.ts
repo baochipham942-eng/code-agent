@@ -4,18 +4,18 @@ import {
   PlatformerChecker,
   isPlatformerArtifact,
   platformerChecker,
-} from '../../../../../../src/main/agent/runtime/game/platformer/PlatformerChecker';
+} from '../../../../../../src/host/agent/runtime/game/platformer/PlatformerChecker';
 import type {
   Snapshot,
   SmokeResult,
   SubtypeContext,
-} from '../../../../../../src/main/agent/runtime/game/types';
-import { gameSubtypeRegistry } from '../../../../../../src/main/agent/runtime/game/registry';
+} from '../../../../../../src/host/agent/runtime/game/types';
+import { gameSubtypeRegistry } from '../../../../../../src/host/agent/runtime/game/registry';
 import {
   PLATFORMER_REPAIR_CODES,
   classifyPlatformerFailure,
   lookupPlatformerRepair,
-} from '../../../../../../src/main/agent/runtime/game/platformer/repairCodes';
+} from '../../../../../../src/host/agent/runtime/game/platformer/repairCodes';
 
 const META_FRAGMENT_PLATFORMER = `
   window.__GAME_META__ = {

@@ -10,7 +10,7 @@ import {
   handleInspectArchive,
   handleInspectPresentation,
   handleWriteFile,
-} from '../../../src/main/ipc/workspace.ipc';
+} from '../../../src/host/ipc/workspace.ipc';
 
 describe('workspace.ipc create handlers', () => {
   let workDir: string;

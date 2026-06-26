@@ -4,7 +4,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { ArtifactIssueRepository } from '../../../src/main/services/core/repositories/ArtifactIssueRepository';
+import { ArtifactIssueRepository } from '../../../src/host/services/core/repositories/ArtifactIssueRepository';
 import { buildSessionTraceIdentity } from '../../../src/shared/contract/reviewQueue';
 import type { ArtifactIssue, EvalReplayQualityReport } from '../../../src/shared/contract/productClosure';
 

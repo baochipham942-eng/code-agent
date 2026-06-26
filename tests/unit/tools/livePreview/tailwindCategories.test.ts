@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   applyMutation,
   classifyClassName,
-} from '../../../../src/main/tools/livePreview/tailwindCategories';
+} from '../../../../src/host/tools/livePreview/tailwindCategories';
 
 describe('classifyClassName', () => {
   it('双字符 padding axis 不被单字符 p 吞掉', () => {

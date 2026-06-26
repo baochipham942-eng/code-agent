@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -14,11 +14,11 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({ isReady: false }),
 }));
 
-import { extractPlanTitle } from '../../../src/main/agent/todoParser';
+import { extractPlanTitle } from '../../../src/host/agent/todoParser';
 
 describe('extractPlanTitle', () => {
   it('returns null for empty / short content', () => {

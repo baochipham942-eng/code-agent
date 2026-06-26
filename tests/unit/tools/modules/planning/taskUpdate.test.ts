@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const desktopActivityServiceMock = {
   recordTodoFeedbackForTask: vi.fn(),
@@ -14,17 +14,17 @@ const updateTaskMock = vi.fn();
 const getTaskMock = vi.fn();
 const listTasksMock = vi.fn().mockReturnValue([]);
 
-vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => desktopActivityServiceMock,
   isDesktopDerivedSessionTask: (...args: unknown[]) => isDesktopDerivedSessionTaskMock(...args),
 }));
-vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../../../src/host/services/planning/taskStore', () => ({
   updateTask: (...args: unknown[]) => updateTaskMock(...args),
   getTask: (...args: unknown[]) => getTaskMock(...args),
   listTasks: (...args: unknown[]) => listTasksMock(...args),
 }));
 
-import { taskUpdateModule } from '../../../../../src/main/tools/modules/planning/taskUpdate';
+import { taskUpdateModule } from '../../../../../src/host/tools/modules/planning/taskUpdate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

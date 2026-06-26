@@ -17,8 +17,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelConfig } from '../../src/shared/contract';
-import type { ToolContext } from '../../src/main/protocol/tools';
-import { workflowModule } from '../../src/main/tools/modules/multiagent/workflow';
+import type { ToolContext } from '../../src/host/protocol/tools';
+import { workflowModule } from '../../src/host/tools/modules/multiagent/workflow';
 
 function loadEnv(): Record<string, string> {
   const out: Record<string, string> = {};

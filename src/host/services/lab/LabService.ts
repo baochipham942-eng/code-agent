@@ -7,7 +7,7 @@ import { spawn, ChildProcess, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow } from '../../platform';
+import { app, AppWindow } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type {
   LabProjectType,
@@ -46,7 +46,7 @@ const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
 export class LabService implements Disposable {
   private labDir: string;
   private trainingProcesses: Map<LabProjectType, ChildProcess> = new Map();
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: AppWindow | null = null;
 
   constructor() {
     // 实验室目录位于应用数据目录下
@@ -57,7 +57,7 @@ export class LabService implements Disposable {
   /**
    * 设置主窗口引用（用于发送事件）
    */
-  setMainWindow(window: BrowserWindow): void {
+  setMainWindow(window: AppWindow): void {
     this.mainWindow = window;
   }
 

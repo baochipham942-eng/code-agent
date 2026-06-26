@@ -8,24 +8,24 @@ const mocks = vi.hoisted(() => ({
   resolveProviderIconAsset: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/auth', () => ({
+vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
   }),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: {
     getVersion: vi.fn(() => '0.0.0-test'),
   },
 }));
 
-vi.mock('../../../src/main/services/providerIconAssets', () => ({
+vi.mock('../../../src/host/services/providerIconAssets', () => ({
   saveProviderIconAsset: mocks.saveProviderIconAsset,
   resolveProviderIconAsset: mocks.resolveProviderIconAsset,
 }));
 
-import { registerSettingsHandlers } from '../../../src/main/ipc/settings.ipc';
+import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 
 type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;
 

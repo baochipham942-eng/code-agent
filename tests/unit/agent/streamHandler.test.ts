@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { StreamHandler } from '../../../src/main/agent/runtime/streamHandler';
+import { StreamHandler } from '../../../src/host/agent/runtime/streamHandler';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

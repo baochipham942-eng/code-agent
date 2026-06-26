@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { BrowserVisualSmokeSummary } from '../../../../../src/main/agent/runtime/browser/types';
+import type { BrowserVisualSmokeSummary } from '../../../../../src/host/agent/runtime/browser/types';
 
 // vi.mock factory 是 hoisted 到文件顶部的 — 直接引用 outer 变量会报
 // "Cannot access X before initialization"。用 vi.hoisted 让 mock fn 跟着
@@ -21,12 +21,12 @@ const { runBrowserVisualSmokeMock } = vi.hoisted(() => ({
   runBrowserVisualSmokeMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
+vi.mock('../../../../../src/host/agent/runtime/browser/visualSmoke', () => ({
   runBrowserVisualSmoke: runBrowserVisualSmokeMock,
   DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS: 10000,
 }));
 
-import { BROWSER_VISUAL_SMOKE_PROBE, BROWSER_PROBES } from '../../../../../src/main/agent/runtime/dashboard/general/browserProbes';
+import { BROWSER_VISUAL_SMOKE_PROBE, BROWSER_PROBES } from '../../../../../src/host/agent/runtime/dashboard/general/browserProbes';
 
 const DUMMY_INPUT = { filePath: '/tmp/whatever.html' };
 

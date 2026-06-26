@@ -17,7 +17,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -26,7 +26,7 @@ import type {
 const getLSPManagerMock = vi.fn();
 const fsReadFileMock = vi.fn();
 
-vi.mock('../../../../../src/main/lsp', () => ({
+vi.mock('../../../../../src/host/lsp', () => ({
   getLSPManager: () => getLSPManagerMock(),
 }));
 
@@ -35,7 +35,7 @@ vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => fsReadFileMock(...args),
 }));
 
-import { lspModule } from '../../../../../src/main/tools/modules/lsp/lsp';
+import { lspModule } from '../../../../../src/host/tools/modules/lsp/lsp';
 
 // -----------------------------------------------------------------------------
 // Helpers

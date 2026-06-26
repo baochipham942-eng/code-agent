@@ -9,7 +9,7 @@ import {
   type DistillEmitters,
   type DistillProposal,
   type DistillSignal,
-} from '../../../../src/main/services/skills/distillService';
+} from '../../../../src/host/services/skills/distillService';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 const DAY = 24 * 60 * 60 * 1000;

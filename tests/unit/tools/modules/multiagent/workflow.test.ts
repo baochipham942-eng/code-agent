@@ -7,33 +7,33 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
-import type { ScriptRunSpec, ScriptRunState } from '../../../../../src/main/agent/scriptRuntime';
-import type { ScriptRunHostDeps } from '../../../../../src/main/agent/scriptRuntime';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
+import type { ScriptRunSpec, ScriptRunState } from '../../../../../src/host/agent/scriptRuntime';
+import type { ScriptRunHostDeps } from '../../../../../src/host/agent/scriptRuntime';
 
 // ── mock 运行时 facade 的 startRun：捕获 spec/deps，返回可控终态 ──────────────
 const startRunMock = vi.fn();
-vi.mock('../../../../../src/main/agent/scriptRuntime', async (orig) => {
-  const actual = await orig<typeof import('../../../../../src/main/agent/scriptRuntime')>();
+vi.mock('../../../../../src/host/agent/scriptRuntime', async (orig) => {
+  const actual = await orig<typeof import('../../../../../src/host/agent/scriptRuntime')>();
   return { ...actual, startRun: (spec: ScriptRunSpec, deps: ScriptRunHostDeps) => startRunMock(spec, deps) };
 });
 
 // ── mock per-call model 解析（模拟 configService 未初始化返回空 apiKey）──────────
 const resolveSessionDefaultMock = vi.fn();
-vi.mock('../../../../../src/main/services/core/sessionDefaults', () => ({
+vi.mock('../../../../../src/host/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: (args: unknown) => resolveSessionDefaultMock(args),
 }));
 
 // ── mock EventBus：捕获 emit → 'workflow' domain 的 publish（P3a 进度树事件通道）──
 const { publishMock } = vi.hoisted(() => ({ publishMock: vi.fn() }));
-vi.mock('../../../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: publishMock }),
 }));
 
 // ── mock 审批闸（P3b）：默认批准；单测可切 approved=false 验证拒绝时不 startRun ──
 const { approvalHolder } = vi.hoisted(() => ({ approvalHolder: { approved: true } }));
-vi.mock('../../../../../src/main/agent/workflowLaunchApproval', async (orig) => {
-  const actual = await orig<typeof import('../../../../../src/main/agent/workflowLaunchApproval')>();
+vi.mock('../../../../../src/host/agent/workflowLaunchApproval', async (orig) => {
+  const actual = await orig<typeof import('../../../../../src/host/agent/workflowLaunchApproval')>();
   return {
     ...actual,
     getWorkflowLaunchApprovalGate: () => ({
@@ -47,7 +47,7 @@ vi.mock('../../../../../src/main/agent/workflowLaunchApproval', async (orig) => 
   };
 });
 
-import { workflowModule } from '../../../../../src/main/tools/modules/multiagent/workflow';
+import { workflowModule } from '../../../../../src/host/tools/modules/multiagent/workflow';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

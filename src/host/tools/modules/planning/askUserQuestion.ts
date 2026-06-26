@@ -1,7 +1,7 @@
 // ============================================================================
 // AskUserQuestion (P1 Wave 3 — planning: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/planning/askUserQuestion.ts
+// 旧版: src/host/tools/planning/askUserQuestion.ts
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：INVALID_ARGS / PERMISSION_DENIED / ABORTED / TIMEOUT_ERROR /
@@ -31,7 +31,7 @@ import type {
   UserQuestion,
 } from '../../../../shared/contract';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
-import { BrowserWindow, ipcMain } from '../../../platform';
+import { AppWindow, ipcHost } from '../../../platform';
 import { createLogger } from '../../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
@@ -65,7 +65,7 @@ function registerResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
 
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.USER_QUESTION_RESPONSE,
     async (_event, response: UserQuestionResponse) => {
       const pending = pendingQuestions.get(response.requestId);
@@ -138,8 +138,8 @@ export async function executeAskUserQuestion(
     timestamp: Date.now(),
   };
 
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+  const mainWindow = AppWindow.getAllWindows()[0];
+  if (!mainWindow || !AppWindow.hasInteractiveRenderer()) {
     // CLI/headless webServer 模式：返回 fallback 文案（与 legacy 1:1 复刻，模型无法假装"用户没反对"）
     onProgress?.({ stage: 'completing', percent: 100 });
     return {

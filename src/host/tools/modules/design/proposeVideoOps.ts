@@ -18,7 +18,7 @@ import type {
 } from '../../../protocol/tools';
 import type { CanvasVideoRequest, CanvasVideoDecision } from '../../../../shared/contract';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
-import { BrowserWindow, ipcMain } from '../../../platform';
+import { AppWindow, ipcHost } from '../../../platform';
 import { createLogger } from '../../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { videoModelById, videoModelsWithCap, clampVideoDuration } from '../../../../shared/constants/visualModels';
@@ -38,7 +38,7 @@ let handlerRegistered = false;
 function registerResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.CANVAS_VIDEO_RESPONSE,
     async (_event, decision: CanvasVideoDecision) => {
       const p = pendingVideo.get(decision.requestId);
@@ -123,8 +123,8 @@ export async function executeProposeVideoOps(
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
   };
 
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+  const mainWindow = AppWindow.getAllWindows()[0];
+  if (!mainWindow || !AppWindow.hasInteractiveRenderer()) {
     // 成本确认能过说明刚才有 renderer；走到这里基本不会发生，兜底不假装已出图。
     return {
       ok: true,

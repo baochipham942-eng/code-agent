@@ -7,9 +7,9 @@ import {
   getIncompleteToolCallIds,
   loadStreamSnapshot,
   saveStreamSnapshot,
-} from '../../../src/main/session/streamSnapshot';
+} from '../../../src/host/session/streamSnapshot';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

@@ -8,9 +8,9 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
-import { computerSchema } from '../../../../../src/main/plugins/builtin/computerUse/computer.schema';
-import { computerModule } from '../../../../../src/main/plugins/builtin/computerUse/computer';
+} from '../../../../../src/host/protocol/tools';
+import { computerSchema } from '../../../../../src/host/plugins/builtin/computerUse/computer.schema';
+import { computerModule } from '../../../../../src/host/plugins/builtin/computerUse/computer';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

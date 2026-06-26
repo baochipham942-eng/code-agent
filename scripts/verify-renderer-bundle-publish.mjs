@@ -8,8 +8,8 @@ import nodeFetch from 'node-fetch';
 import {
   getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
-} from '../src/main/services/cloud/controlPlaneTrust.ts';
-import { getShellCapabilityIds } from '../src/main/shellCapabilities.ts';
+} from '../src/host/services/cloud/controlPlaneTrust.ts';
+import { getShellCapabilityIds } from '../src/host/shellCapabilities.ts';
 import { missingShellCapabilities } from '../src/shared/contract/shellCapabilities.ts';
 
 export const DEFAULT_MIN_MANIFEST_VALIDITY_SECONDS = 7 * 24 * 60 * 60;

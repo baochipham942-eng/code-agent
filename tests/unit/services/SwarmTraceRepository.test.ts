@@ -16,7 +16,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
+import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
 import { SWARM_TRACE } from '../../../src/shared/constants/storage';
 
 function createSchema(db: BetterSqlite3.Database): void {

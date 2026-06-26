@@ -50,11 +50,11 @@ const eventBusState = vi.hoisted(() => ({
   subscribe: vi.fn(),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../src/host/platform', () => ({
+  AppWindow: {
     getAllWindows: () => [],
   },
-  ipcMain: {
+  ipcHost: {
     handle: (channel: string, handler: (event: unknown, payload?: unknown) => unknown) => {
       platformState.handlers.set(channel, handler);
     },
@@ -64,11 +64,11 @@ vi.mock('../../../src/main/platform', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
-vi.mock('../../../src/main/agent/swarmServices', () => ({
+vi.mock('../../../src/host/agent/swarmServices', () => ({
   getSwarmServices: () => ({
     planApproval: planApprovalState,
     launchApproval: launchApprovalState,
@@ -78,15 +78,15 @@ vi.mock('../../../src/main/agent/swarmServices', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/swarmEventPublisher', () => ({
+vi.mock('../../../src/host/agent/swarmEventPublisher', () => ({
   getSwarmEventEmitter: () => swarmEmitterState,
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => eventBusState,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -95,7 +95,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { registerSwarmHandlers } from '../../../src/main/ipc/swarm.ipc';
+import { registerSwarmHandlers } from '../../../src/host/ipc/swarm.ipc';
 
 describe('swarm.ipc send-user-message', () => {
   beforeEach(() => {

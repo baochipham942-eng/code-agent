@@ -7,7 +7,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -22,11 +22,11 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/builtinSkills', () => ({
+vi.mock('../../../../src/host/services/skills/builtinSkills', () => ({
   getBuiltinSkills: () => [],
 }));
 
-vi.mock('../../../../src/main/services/cloud', () => ({
+vi.mock('../../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({
     getSkills: () => [],
   }),
@@ -35,7 +35,7 @@ vi.mock('../../../../src/main/services/cloud', () => ({
 const registerSkillsMock = vi.fn();
 const clearSkillsMock = vi.fn();
 
-vi.mock('../../../../src/main/services/toolSearch', () => ({
+vi.mock('../../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
     clearSkills: clearSkillsMock,
     registerSkills: registerSkillsMock,
@@ -45,14 +45,14 @@ vi.mock('../../../../src/main/services/toolSearch', () => ({
 // 用可控的 mock 替代真实仓库服务，模拟黑名单状态
 const disabledSkills = new Set<string>();
 
-vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   getSkillRepositoryService: () => ({
     initialize: vi.fn().mockResolvedValue(undefined),
     isSkillEnabled: (name: string) => !disabledSkills.has(name),
   }),
 }));
 
-import { SkillDiscoveryService } from '../../../../src/main/services/skills/skillDiscoveryService';
+import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
 
 async function writeSkill(baseDir: string, name: string): Promise<void> {
   const skillDir = path.join(baseDir, name);
@@ -158,8 +158,8 @@ describe('SkillRepositoryService blacklist semantics', () => {
   it('defaults all skills to enabled and persists disabled list', async () => {
     // 动态导入真实仓库服务（绕开上面的 mock）
     const { SkillRepositoryService } = await vi.importActual<
-      typeof import('../../../../src/main/services/skills/skillRepositoryService')
-    >('../../../../src/main/services/skills/skillRepositoryService');
+      typeof import('../../../../src/host/services/skills/skillRepositoryService')
+    >('../../../../src/host/services/skills/skillRepositoryService');
 
     const service = new SkillRepositoryService();
     await service.initialize();

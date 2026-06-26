@@ -34,24 +34,24 @@ const svc = vi.hoisted(() => ({
   openPath: vi.fn(async () => {}),
 }));
 
-vi.mock('../../../src/main/services/desktop/nativeDesktopService', () => ({ getNativeDesktopService: () => svc.native }));
-vi.mock('../../../src/main/services/desktop/computerSurface', () => ({ getComputerSurface: () => ({ observe: vi.fn(), getState: vi.fn(), listBackgroundElements: vi.fn() }) }));
-vi.mock('../../../src/main/services/desktop/desktopVisionAnalyzer', () => ({ startDesktopVisionAnalyzer: vi.fn() }));
-vi.mock('../../../src/main/services/desktop/desktopAudioCapture', () => ({
+vi.mock('../../../src/host/services/desktop/nativeDesktopService', () => ({ getNativeDesktopService: () => svc.native }));
+vi.mock('../../../src/host/services/desktop/computerSurface', () => ({ getComputerSurface: () => ({ observe: vi.fn(), getState: vi.fn(), listBackgroundElements: vi.fn() }) }));
+vi.mock('../../../src/host/services/desktop/desktopVisionAnalyzer', () => ({ startDesktopVisionAnalyzer: vi.fn() }));
+vi.mock('../../../src/host/services/desktop/desktopAudioCapture', () => ({
   startDesktopAudioCapture: (...a: unknown[]) => svc.startAudio(...a),
   stopDesktopAudioCapture: () => svc.stopAudio(),
   getAudioCaptureStatus: () => svc.audioStatus,
 }));
-vi.mock('../../../src/main/services/infra/browserService', () => ({ browserService: svc.browser, getManagedBrowserService: () => svc.browser }));
-vi.mock('../../../src/main/services/infra/browserRelayService', () => ({ browserRelayService: svc.relay }));
-vi.mock('../../../src/main/platform', () => ({ shell: { openPath: (...a: unknown[]) => svc.openPath(...a) } }));
-vi.mock('../../../src/main/services/infra/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
+vi.mock('../../../src/host/services/infra/browserService', () => ({ browserService: svc.browser, getManagedBrowserService: () => svc.browser }));
+vi.mock('../../../src/host/services/infra/browserRelayService', () => ({ browserRelayService: svc.relay }));
+vi.mock('../../../src/host/platform', () => ({ shell: { openPath: (...a: unknown[]) => svc.openPath(...a) } }));
+vi.mock('../../../src/host/services/infra/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
 async function setup() {
   vi.resetModules();
-  const { registerDesktopHandlers } = await import('../../../src/main/ipc/desktop.ipc');
+  const { registerDesktopHandlers } = await import('../../../src/host/ipc/desktop.ipc');
   const handlers = new Map<string, HandlerFn>();
   registerDesktopHandlers({ handle: (ch: string, fn: HandlerFn) => handlers.set(ch, fn) } as never);
   const handler = handlers.get(IPC_DOMAINS.DESKTOP)!;

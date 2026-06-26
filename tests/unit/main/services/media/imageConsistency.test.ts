@@ -12,7 +12,7 @@ import {
   REGION_LOCK_STRICT_SHARP_UNAVAILABLE,
   REGION_LOCK_STRICT_GATE_FAILED,
   type RawImage,
-} from '../../../../../src/main/services/media/imageConsistency';
+} from '../../../../../src/host/services/media/imageConsistency';
 import { REGION_LOCK } from '../../../../../src/shared/constants/designWorkspace';
 
 // ---- 手搓 RawImage 工具 ----

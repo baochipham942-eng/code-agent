@@ -45,7 +45,7 @@ export const CAPABILITIES: CapabilityEvidence[] = [
     name: 'checkpoint-writer',
     deliverables: [
       {
-        path: 'src/main/agent/checkpointWriterAgent.ts',
+        path: 'src/host/agent/checkpointWriterAgent.ts',
         minLines: 120,
         // 规格要求真 LLM 子代理写入，而非本地模板填充：必须真的发起推理
         markers: ['ModelRouter', '.inference('],
@@ -58,19 +58,19 @@ export const CAPABILITIES: CapabilityEvidence[] = [
   },
   {
     name: 'max-mode',
-    deliverables: [{ path: 'src/main/agent/runtime/maxMode.ts', minLines: 120 }],
+    deliverables: [{ path: 'src/host/agent/runtime/maxMode.ts', minLines: 120 }],
     evidence: ['tests/unit/agent/runtime/maxMode.test.ts'],
   },
   {
     name: 'distill',
-    deliverables: [{ path: 'src/main/agent/runtime/learningPipeline.ts', minLines: 80 }],
+    deliverables: [{ path: 'src/host/agent/runtime/learningPipeline.ts', minLines: 80 }],
     evidence: ['tests/integration/distillRealRun.test.ts'],
   },
   {
     name: 'dream',
     deliverables: [
       {
-        path: 'src/main/services/memory/dreamMemoryService.ts',
+        path: 'src/host/services/memory/dreamMemoryService.ts',
         minLines: 200,
         // 防幻觉门的核心信号：置信度阈值 + 同源 sessionId 约束
         markers: ['confidence', 'sessionId'],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exportSessionToMarkdown } from '../../../src/main/session/exportMarkdown';
+import { exportSessionToMarkdown } from '../../../src/host/session/exportMarkdown';
 
 describe('exportSessionToMarkdown Browser/Computer redaction', () => {
   it('redacts Browser/Computer tool details when markdown tool details are enabled', () => {

@@ -37,7 +37,7 @@ import {
   type Proposal,
   type ProposalStatus,
   type ShadowEvalResult,
-} from '../src/main/evaluation/proposals';
+} from '../src/host/evaluation/proposals';
 
 function parseArgs(): {
   cmd: string;

@@ -6,7 +6,7 @@ import {
   resolveManagedBrowserProfile,
   resolveManagedBrowserProxyConfig,
   shouldCleanupManagedBrowserProfile,
-} from '../../../../src/main/services/infra/browserService';
+} from '../../../../src/host/services/infra/browserService';
 
 describe('browser service profile resolver', () => {
   it('keeps the default persistent profile compatible with managed-browser-profile', () => {

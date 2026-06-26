@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { executeScript } from '../../../src/main/hooks/scriptExecutor';
-import type { ToolHookContext } from '../../../src/main/protocol/events';
+import { executeScript } from '../../../src/host/hooks/scriptExecutor';
+import type { ToolHookContext } from '../../../src/host/protocol/events';
 
 function buildPostToolContext(): ToolHookContext {
   return {

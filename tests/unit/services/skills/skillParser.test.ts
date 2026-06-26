@@ -6,7 +6,7 @@ import { SkillValidationError } from '../../../../src/shared/contract/agentSkill
 import {
   parseSkillMd,
   parseSkillMetadataOnly,
-} from '../../../../src/main/services/skills/skillParser';
+} from '../../../../src/host/services/skills/skillParser';
 
 describe('skillParser allowed-tools validation', () => {
   let tmpDir: string;

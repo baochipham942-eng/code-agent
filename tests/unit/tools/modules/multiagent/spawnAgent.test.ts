@@ -11,18 +11,18 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const { executeSpawnAgentMock, buildLegacyCtxMock } = vi.hoisted(() => ({
   executeSpawnAgentMock: vi.fn(),
   buildLegacyCtxMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/agent/multiagentTools/spawnAgent', () => ({
+vi.mock('../../../../../src/host/agent/multiagentTools/spawnAgent', () => ({
   executeSpawnAgent: executeSpawnAgentMock,
 }));
 
-vi.mock('../../../../../src/main/tools/modules/_helpers/legacyAdapter', () => ({
+vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
   buildLegacyCtxFromProtocol: (...args: unknown[]) => buildLegacyCtxMock(...args),
   adaptLegacyResult: (r: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }) =>
     r.success
@@ -33,7 +33,7 @@ vi.mock('../../../../../src/main/tools/modules/_helpers/legacyAdapter', () => ({
 import {
   spawnAgentModule,
   agentSpawnModule,
-} from '../../../../../src/main/tools/modules/multiagent/spawnAgent';
+} from '../../../../../src/host/tools/modules/multiagent/spawnAgent';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

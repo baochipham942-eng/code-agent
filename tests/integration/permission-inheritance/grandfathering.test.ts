@@ -9,12 +9,12 @@
 //
 // 本测试聚焦数据契约与 ParentContext 默认行为，不涉及真实 ConfigService 加载流
 // （后者依赖 Electron app userData，单测代价过高）。ConfigService init 逻辑已
-// 在 src/main/services/core/configService.ts:L244-250 实现并由集成测试承载。
+// 在 src/host/services/core/configService.ts:L244-250 实现并由集成测试承载。
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   buildProfilePrompt: vi.fn(() => 'mocked-prompt'),
 }));
 
@@ -22,7 +22,7 @@ import {
   buildChildContext,
   DEFAULT_INHERITANCE_MODE,
   type ParentContext,
-} from '../../../src/main/agent/childContext';
+} from '../../../src/host/agent/childContext';
 
 function makeParent(overrides: Partial<ParentContext> = {}): ParentContext {
   return {

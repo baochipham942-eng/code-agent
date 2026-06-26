@@ -1,7 +1,7 @@
 // ============================================================================
 // ExcelAutomate (Wave 2 — excel: native ToolModule)
 //
-// 旧版: src/main/tools/excel/excelAutomate.ts (legacy Tool dispatcher)
+// 旧版: src/host/tools/excel/excelAutomate.ts (legacy Tool dispatcher)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + abort 检查 + onProgress 事件

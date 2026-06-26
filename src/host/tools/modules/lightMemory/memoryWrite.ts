@@ -1,7 +1,7 @@
 // ============================================================================
 // MemoryWrite (P0-6.3 Batch 3: native ToolModule rewrite)
 //
-// 旧版: src/main/lightMemory/memoryWriteTool.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/lightMemory/memoryWriteTool.ts (legacy Tool + wrapLegacyTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

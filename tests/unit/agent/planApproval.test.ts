@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // TeammateService 只负责把 review 推给 coordinator — 测试场景不关心递送
-vi.mock('../../../src/main/agent/teammate/teammateService', () => ({
+vi.mock('../../../src/host/agent/teammate/teammateService', () => ({
   getTeammateService: () => ({
     sendPlanReview: vi.fn(),
   }),
@@ -27,14 +27,14 @@ const busState = vi.hoisted(() => ({
   publishMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({
     publish: busState.publishMock,
   }),
 }));
 
 // isDangerousCommand — 用真实逻辑即可，但为隔离副作用这里桩一个
-vi.mock('../../../src/main/services/core/permissionPresets', () => ({
+vi.mock('../../../src/host/services/core/permissionPresets', () => ({
   isDangerousCommand: (cmd: string) =>
     /\brm\s+-rf?\b/.test(cmd) || /\bsudo\b/.test(cmd),
 }));
@@ -42,7 +42,7 @@ vi.mock('../../../src/main/services/core/permissionPresets', () => ({
 import {
   PlanApprovalGate,
   type RiskAssessment,
-} from '../../../src/main/agent/planApproval';
+} from '../../../src/host/agent/planApproval';
 
 type ToolRequest = {
   tool?: string;

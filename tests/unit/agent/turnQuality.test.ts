@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import {
   buildTurnQualitySummary,
   recordTurnMemoryBlock,
   recordTurnMemoryDisabled,
-} from '../../../src/main/agent/runtime/turnQuality';
+} from '../../../src/host/agent/runtime/turnQuality';
 
 function runtime(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
   return {

@@ -27,26 +27,26 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../src/main/platform', () => ({
+vi.mock('../../../../src/host/platform', () => ({
   shell: {
     openExternal: vi.fn(),
   },
 }));
 
-vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
+vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   ensureSupabaseInitialized: (settings?: unknown) => mocks.ensureSupabaseInitialized(settings),
   getSupabase: () => mocks.getSupabase(),
   isSupabaseInitialized: () => mocks.isSupabaseInitialized(),
 }));
 
-vi.mock('../../../../src/main/services/core', () => ({
+vi.mock('../../../../src/host/services/core', () => ({
   getConfigService: () => ({
     getSettings: () => ({}),
   }),
   getSecureStorage: () => mocks.storage,
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => mocks.logger,
 }));
 
@@ -84,7 +84,7 @@ describe('authService session trust', () => {
   });
 
   it('treats cached users as unverified and clears them on sign out without Supabase', async () => {
-    const { getAuthService } = await import('../../../../src/main/services/auth/authService');
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
     const authService = getAuthService();
 
     await authService.initialize();
@@ -134,7 +134,7 @@ describe('authService session trust', () => {
       }),
     });
 
-    const { getAuthService } = await import('../../../../src/main/services/auth/authService');
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
     const authService = getAuthService();
 
     await authService.initialize();
@@ -165,7 +165,7 @@ describe('authService session trust', () => {
     mocks.isSupabaseInitialized.mockReturnValue(true);
     mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
 
-    const { getAuthService } = await import('../../../../src/main/services/auth/authService');
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
     const authService = getAuthService();
 
     await authService.initialize();
@@ -212,7 +212,7 @@ describe('authService session trust', () => {
       error: null,
     });
 
-    const { getAuthService } = await import('../../../../src/main/services/auth/authService');
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
     const authService = getAuthService();
 
     const result = await authService.signInWithEmail('user@example.com', 'password');

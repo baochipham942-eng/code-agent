@@ -55,5 +55,5 @@ import './tools/task';
 // Templates
 import './templates/soulTemplates';
 
-// Subagent core prompts (in src/main/agent/hybrid/coreAgents.ts)
+// Subagent core prompts (in src/host/agent/hybrid/coreAgents.ts)
 import '../agent/hybrid/coreAgents';

@@ -21,7 +21,7 @@ import * as path from 'path';
 // ⚠️ vi.mock 会被 hoist 到文件顶端;闭包捕获 homeTmp by reference,运行时取最新值
 let homeTmp: string;
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: (): string => path.join(homeTmp, '.code-agent'),
   getProjectConfigDir: (wd: string): string => path.join(wd, '.code-agent'),
 }));
@@ -29,7 +29,7 @@ vi.mock('../../../src/main/config/configPaths', () => ({
 import {
   loadProjectSystemPrompt,
   SYSTEM_PROMPT_FILES,
-} from '../../../src/main/prompts/projectSystemPrompt';
+} from '../../../src/host/prompts/projectSystemPrompt';
 
 function writeFile(dir: string, name: string, content: string): string {
   fs.mkdirSync(dir, { recursive: true });

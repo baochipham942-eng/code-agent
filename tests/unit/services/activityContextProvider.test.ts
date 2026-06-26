@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildActivityContext } from '../../../src/main/services/activity/activityContextProvider';
+import { buildActivityContext } from '../../../src/host/services/activity/activityContextProvider';
 import type { AudioSegment, DesktopActivityEvent } from '../../../src/shared/contract';
 
 const NOW = 1_800_000;

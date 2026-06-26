@@ -33,8 +33,8 @@ describe('MessageBubble compaction metadata', () => {
         warnings: ['summary missed one open item'],
         survivorManifest: {
           files: [
-            { path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts' },
-            { path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts' },
+            { path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts' },
+            { path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts' },
           ],
           errors: [
             { label: 'Unresolved error', detail: 'vitest failed', severity: 'error' },

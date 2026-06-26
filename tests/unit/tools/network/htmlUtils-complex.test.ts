@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { smartHtmlToText, smartTruncate, fallbackHtmlToText } from '../../../../src/main/tools/web/htmlUtils';
+import { smartHtmlToText, smartTruncate, fallbackHtmlToText } from '../../../../src/host/tools/web/htmlUtils';
 
 describe('HTML Utils - Complex Scenarios', () => {
   // --------------------------------------------------------------------------

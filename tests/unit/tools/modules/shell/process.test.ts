@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 
 const {
   getAllBackgroundTasksMock,
@@ -34,7 +34,7 @@ const {
   isPtySessionIdMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/shell/backgroundTasks', () => ({
+vi.mock('../../../../../src/host/tools/shell/backgroundTasks', () => ({
   getAllBackgroundTasks: (...args: unknown[]) => getAllBackgroundTasksMock(...args),
   getTaskOutput: (...args: unknown[]) => getTaskOutputMock(...args),
   killBackgroundTask: (...args: unknown[]) => killBackgroundTaskMock(...args),
@@ -42,7 +42,7 @@ vi.mock('../../../../../src/main/tools/shell/backgroundTasks', () => ({
   getBackgroundTask: (...args: unknown[]) => getBackgroundTaskMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/shell/ptyExecutor', () => ({
+vi.mock('../../../../../src/host/tools/shell/ptyExecutor', () => ({
   getAllPtySessions: (...args: unknown[]) => getAllPtySessionsMock(...args),
   getPtySessionOutput: (...args: unknown[]) => getPtySessionOutputMock(...args),
   getPtySessionLog: (...args: unknown[]) => getPtySessionLogMock(...args),
@@ -53,7 +53,7 @@ vi.mock('../../../../../src/main/tools/shell/ptyExecutor', () => ({
   isPtySessionId: (...args: unknown[]) => isPtySessionIdMock(...args),
 }));
 
-import { processModule } from '../../../../../src/main/tools/modules/shell/process';
+import { processModule } from '../../../../../src/host/tools/modules/shell/process';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

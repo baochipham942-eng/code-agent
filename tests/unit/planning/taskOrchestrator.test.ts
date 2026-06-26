@@ -7,11 +7,11 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => loggerMocks,
 }));
 
-import { TaskOrchestrator } from '../../../src/main/planning/taskOrchestrator';
+import { TaskOrchestrator } from '../../../src/host/planning/taskOrchestrator';
 
 function mockModelResponse(content: string): void {
   vi.stubGlobal(

@@ -22,7 +22,7 @@ const mp = vi.hoisted(() => ({
   isAdmin: true,
 }));
 
-vi.mock('../../../src/main/skills/marketplace', () => ({
+vi.mock('../../../src/host/skills/marketplace', () => ({
   listMarketplaces: (...a: unknown[]) => mp.listMarketplaces(...a),
   addMarketplace: (...a: unknown[]) => mp.addMarketplace(...a),
   removeMarketplace: (...a: unknown[]) => mp.removeMarketplace(...a),
@@ -36,12 +36,12 @@ vi.mock('../../../src/main/skills/marketplace', () => ({
   enablePlugin: (...a: unknown[]) => mp.enablePlugin(...a),
   disablePlugin: (...a: unknown[]) => mp.disablePlugin(...a),
 }));
-vi.mock('../../../src/main/ipc/adminGuard', () => ({ isCurrentUserAdmin: () => mp.isAdmin }));
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/ipc/adminGuard', () => ({ isCurrentUserAdmin: () => mp.isAdmin }));
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { registerMarketplaceHandlers } from '../../../src/main/ipc/marketplace.ipc';
+import { registerMarketplaceHandlers } from '../../../src/host/ipc/marketplace.ipc';
 
 type HandlerFn = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 let handlers: Map<string, HandlerFn>;

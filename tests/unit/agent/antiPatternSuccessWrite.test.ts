@@ -4,14 +4,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: { agent: vi.fn() },
 }));
 
-import { AntiPatternDetector } from '../../../src/main/agent/antiPattern/detector';
+import { AntiPatternDetector } from '../../../src/host/agent/antiPattern/detector';
 import type { ToolCall } from '../../../src/shared/contract';
 
 function write(filePath: string, content: string, name = 'write_file'): ToolCall {

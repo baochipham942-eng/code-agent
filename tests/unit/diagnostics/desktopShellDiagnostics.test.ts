@@ -15,19 +15,19 @@ const state = vi.hoisted(() => ({
   } as RuntimeAssetsStatus,
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: {
     getPath: (name: string) => (name === 'userData' ? state.userData : os.tmpdir()),
     getVersion: () => state.version,
   },
 }));
 
-vi.mock('../../../src/main/runtime/runtimeAssetStatus', () => ({
+vi.mock('../../../src/host/runtime/runtimeAssetStatus', () => ({
   getRuntimeAssetsStatus: async () => state.runtimeAssets,
 }));
 
-vi.mock('../../../src/main/services/renderer/rendererBundleCache', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/main/services/renderer/rendererBundleCache')>();
+vi.mock('../../../src/host/services/renderer/rendererBundleCache', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/renderer/rendererBundleCache')>();
   return {
     ...actual,
     readRendererBundleStatus: () => ({
@@ -41,7 +41,7 @@ vi.mock('../../../src/main/services/renderer/rendererBundleCache', async (import
 import {
   getDesktopShellDiagnostics,
   getDesktopShellResourceChecks,
-} from '../../../src/main/diagnostics/desktopShellDiagnostics';
+} from '../../../src/host/diagnostics/desktopShellDiagnostics';
 
 describe('desktop shell diagnostics aggregator', () => {
   let root: string;

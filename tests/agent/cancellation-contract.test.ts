@@ -16,7 +16,7 @@ import {
   routeFailureCode,
   type CancellationReason,
 } from '../../src/shared/contract/cancellation';
-import { createChildAbortController } from '../../src/main/agent/shutdownProtocol';
+import { createChildAbortController } from '../../src/host/agent/shutdownProtocol';
 
 describe('CancellationReason partition', () => {
   it('CASCADE_REASONS and NON_CASCADE_REASONS are mutually exclusive', () => {

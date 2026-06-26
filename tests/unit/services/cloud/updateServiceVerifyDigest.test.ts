@@ -5,7 +5,7 @@ import {
   normalizeUpdateSha256,
   resolveExpectedUpdateSha256,
   verifyDigestMatch,
-} from '../../../../src/main/services/cloud/updateService';
+} from '../../../../src/host/services/cloud/updateService';
 
 // ============================================================================
 // M6.a — sha256 verification logic for cloud update artifacts

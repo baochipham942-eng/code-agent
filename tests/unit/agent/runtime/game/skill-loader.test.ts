@@ -7,7 +7,7 @@ import {
   extractSection,
   loadAllSkills,
   loadSkill,
-} from '../../../../../src/main/agent/runtime/game/skill-loader';
+} from '../../../../../src/host/agent/runtime/game/skill-loader';
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../../../../../tests/fixtures/skills');
 const SAMPLE_DIR = path.join(FIXTURE_ROOT, 'sample');

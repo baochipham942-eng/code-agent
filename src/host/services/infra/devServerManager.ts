@@ -5,7 +5,7 @@
 // 范围（V2-A）：Vite / CRA 真起；Next.js 仅探测，不启动（V2-C 再扩）。
 //
 // 设计要点：
-//  - 子进程 spawn 模式参考 src/main/services/infra/browserService.ts
+//  - 子进程 spawn 模式参考 src/host/services/infra/browserService.ts
 //  - 每个 session 一个 UUID，可同时跑多个项目
 //  - 就绪检测：监听 stdout 匹配框架特定 pattern + URL，或 STARTUP 超时失败
 //  - 日志：stdout/stderr 混合 ring buffer 保留 200 行

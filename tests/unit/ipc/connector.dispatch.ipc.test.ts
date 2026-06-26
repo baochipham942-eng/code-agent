@@ -23,12 +23,12 @@ const env = vi.hoisted(() => ({
   exec: vi.fn((_cmd: string, cb: (err: Error | null) => void) => cb(null)),
 }));
 
-vi.mock('../../../src/main/connectors', () => ({ getConnectorRegistry: () => env.registry }));
-vi.mock('../../../src/main/platform', () => ({ broadcastToRenderer: (...a: unknown[]) => env.broadcast(...a) }));
+vi.mock('../../../src/host/connectors', () => ({ getConnectorRegistry: () => env.registry }));
+vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: (...a: unknown[]) => env.broadcast(...a) }));
 vi.mock('child_process', () => ({ exec: (cmd: string, cb: (err: Error | null) => void) => env.exec(cmd, cb) }));
-vi.mock('../../../src/main/services/infra/gracefulShutdown', () => ({ onShutdown: vi.fn() }));
+vi.mock('../../../src/host/services/infra/gracefulShutdown', () => ({ onShutdown: vi.fn() }));
 
-import { registerConnectorHandlers } from '../../../src/main/ipc/connector.ipc';
+import { registerConnectorHandlers } from '../../../src/host/ipc/connector.ipc';
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 

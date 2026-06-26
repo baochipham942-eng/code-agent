@@ -54,13 +54,13 @@ vi.mock('../../../src/cli/bootstrap', () => ({
 }));
 
 const mockGetOverride = vi.hoisted(() => vi.fn<() => unknown>(() => null));
-vi.mock('../../../src/main/session/modelSessionState', () => ({
+vi.mock('../../../src/host/session/modelSessionState', () => ({
   getModelSessionState: () => ({
     getOverride: mockGetOverride,
   }),
 }));
 
-vi.mock('../../../src/main/services/agentEngine', () => ({
+vi.mock('../../../src/host/services/agentEngine', () => ({
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return {
       run: agentEngineMocks.codexRun,
@@ -89,7 +89,7 @@ vi.mock('../../../src/main/services/agentEngine', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/tasks/backgroundTaskLedger', () => ({
+vi.mock('../../../src/host/tasks/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ({
     upsertTask: agentEngineMocks.ledgerUpsertTask,
     appendEvent: agentEngineMocks.ledgerAppendEvent,
@@ -97,7 +97,7 @@ vi.mock('../../../src/main/tasks/backgroundTaskLedger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/evaluation/reviewQueueService', () => ({
+vi.mock('../../../src/host/evaluation/reviewQueueService', () => ({
   ReviewQueueService: {
     getInstance: () => ({
       enqueueSession: agentEngineMocks.enqueueReviewSession,
@@ -105,11 +105,11 @@ vi.mock('../../../src/main/evaluation/reviewQueueService', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => mockDb,
 }));
 
-vi.mock('../../../src/main/telemetry', () => ({
+vi.mock('../../../src/host/telemetry', () => ({
   getTelemetryCollector: () => ({
     endSession: vi.fn(),
   }),

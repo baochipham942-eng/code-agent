@@ -51,7 +51,7 @@ if [ "$CIRC_COUNT" -gt "$MAX_CIRCULAR" ]; then
   echo "$OUTPUT" | tail -30
   echo ""
   echo -e "${YELLOW}修复建议:${NC}"
-  echo "  1. 新增的循环请先抽象到 src/main/protocol/"
+  echo "  1. 新增的循环请先抽象到 src/host/protocol/"
   echo "  2. 确实需要强合入，用: git commit --no-verify"
   echo "  3. 如果降低了循环数，请同步更新本脚本的 MAX_CIRCULAR"
   echo ""

@@ -1,7 +1,7 @@
 // ============================================================================
 // LSP (Wave 1 — lsp: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/lsp/lsp.ts (legacy Tool + wrapLegacyTool, 706 行)
+// 旧版: src/host/tools/lsp/lsp.ts (legacy Tool + wrapLegacyTool, 706 行)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + abort 检查 + onProgress 事件
@@ -371,7 +371,7 @@ export const lspModule: ToolModule<Record<string, unknown>, string> = {
 };
 
 // ============================================================================
-// Helper Functions (内联自 legacy src/main/tools/lsp/lsp.ts)
+// Helper Functions (内联自 legacy src/host/tools/lsp/lsp.ts)
 // ============================================================================
 
 function buildLSPRequest(

@@ -7,20 +7,20 @@
 // 移到 tool-result 之后；迁移到 AI SDK 适配器时漏带这层重排，导致主 loop + 子代理(Task)场景 RUN_FAILED。
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText } from 'ai';
-import { inferenceViaAiSdk } from '../../../src/main/model/adapters/aiSdkAdapter';
-import type { ModelMessage, StreamCallback } from '../../../src/main/model/types';
-import type { ModelConfig, ToolDefinition } from '../../../src/main/shared/contract';
+import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
+import type { ModelMessage, StreamCallback } from '../../../src/host/model/types';
+import type { ModelConfig, ToolDefinition } from '../../../src/host/shared/contract';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderBaseUrl: () => 'https://test.local/v1',
   resolveProviderApiKey: () => 'test-key',
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({ recordSuccess: vi.fn(), recordFailure: vi.fn() }),
 }));
 

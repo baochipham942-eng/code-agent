@@ -7,7 +7,7 @@ import type {
   CanUseToolFn,
   Logger,
   ToolModule,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const legacyExecute = vi.hoisted(() => ({
   browser: vi.fn(),
@@ -19,41 +19,41 @@ const legacyExecute = vi.hoisted(() => ({
   guiAgent: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/vision/BrowserTool', () => ({
+vi.mock('../../../../../src/host/tools/vision/BrowserTool', () => ({
   BrowserTool: { execute: legacyExecute.browser },
 }));
 
-vi.mock('../../../../../src/main/tools/vision/browserAction', () => ({
+vi.mock('../../../../../src/host/tools/vision/browserAction', () => ({
   browserActionTool: { execute: legacyExecute.browserAction },
 }));
 
-vi.mock('../../../../../src/main/tools/vision/browserNavigate', () => ({
+vi.mock('../../../../../src/host/tools/vision/browserNavigate', () => ({
   browserNavigateTool: { execute: legacyExecute.browserNavigate },
 }));
 
-vi.mock('../../../../../src/main/tools/vision/ComputerTool', () => ({
+vi.mock('../../../../../src/host/tools/vision/ComputerTool', () => ({
   ComputerTool: { execute: legacyExecute.computer },
 }));
 
-vi.mock('../../../../../src/main/tools/vision/computerUse', () => ({
+vi.mock('../../../../../src/host/tools/vision/computerUse', () => ({
   computerUseTool: { execute: legacyExecute.computerUse },
 }));
 
-vi.mock('../../../../../src/main/tools/vision/screenshot', () => ({
+vi.mock('../../../../../src/host/tools/vision/screenshot', () => ({
   screenshotTool: { execute: legacyExecute.screenshot },
 }));
 
-vi.mock('../../../../../src/main/tools/vision/guiAgent', () => ({
+vi.mock('../../../../../src/host/tools/vision/guiAgent', () => ({
   guiAgentTool: { execute: legacyExecute.guiAgent },
 }));
 
-import { browserModule } from '../../../../../src/main/plugins/builtin/browserControl/browser';
-import { browserActionModule } from '../../../../../src/main/plugins/builtin/browserControl/browserAction';
-import { browserNavigateModule } from '../../../../../src/main/plugins/builtin/browserControl/browserNavigate';
-import { computerModule } from '../../../../../src/main/plugins/builtin/computerUse/computer';
-import { computerUseModule } from '../../../../../src/main/plugins/builtin/computerUse/computerUse';
-import { screenshotModule } from '../../../../../src/main/plugins/builtin/computerUse/screenshot';
-import { guiAgentModule } from '../../../../../src/main/plugins/builtin/computerUse/guiAgent';
+import { browserModule } from '../../../../../src/host/plugins/builtin/browserControl/browser';
+import { browserActionModule } from '../../../../../src/host/plugins/builtin/browserControl/browserAction';
+import { browserNavigateModule } from '../../../../../src/host/plugins/builtin/browserControl/browserNavigate';
+import { computerModule } from '../../../../../src/host/plugins/builtin/computerUse/computer';
+import { computerUseModule } from '../../../../../src/host/plugins/builtin/computerUse/computerUse';
+import { screenshotModule } from '../../../../../src/host/plugins/builtin/computerUse/screenshot';
+import { guiAgentModule } from '../../../../../src/host/plugins/builtin/computerUse/guiAgent';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

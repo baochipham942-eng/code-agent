@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactBrowserWorkbenchTraceParams } from '../../../../src/main/services/infra/browserService';
+import { redactBrowserWorkbenchTraceParams } from '../../../../src/host/services/infra/browserService';
 
 describe('browser service trace redaction', () => {
   it('redacts browser typed text from workbench trace params', () => {

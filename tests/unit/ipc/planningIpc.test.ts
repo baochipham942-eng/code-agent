@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPlanningServiceScopedToSession } from '../../../src/main/ipc/planning.ipc';
+import { isPlanningServiceScopedToSession } from '../../../src/host/ipc/planning.ipc';
 
 describe('Planning IPC session scoping', () => {
   it('allows unscoped planning requests', () => {

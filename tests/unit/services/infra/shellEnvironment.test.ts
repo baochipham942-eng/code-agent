@@ -6,7 +6,7 @@ vi.mock('child_process', () => ({
   execSync: execSyncMock,
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -19,7 +19,7 @@ const originalEnv = { ...process.env };
 
 async function loadModule() {
   vi.resetModules();
-  return import('../../../../src/main/services/infra/shellEnvironment');
+  return import('../../../../src/host/services/infra/shellEnvironment');
 }
 
 describe('shellEnvironment', () => {

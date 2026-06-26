@@ -9,7 +9,7 @@ import {
   readRendererBundleStatus,
   resolveRendererServeDecision,
   resolveRendererServeDir,
-} from '../../src/main/services/renderer/rendererBundleCache';
+} from '../../src/host/services/renderer/rendererBundleCache';
 import {
   RENDERER_BUNDLE_CHANNEL_ENV,
   RENDERER_BUNDLE_MANIFEST_URL_ENV,

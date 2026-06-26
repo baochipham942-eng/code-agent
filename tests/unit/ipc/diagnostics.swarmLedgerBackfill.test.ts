@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
 // 第四期 步骤5：opt-in 老库迁移出口（默认不自动跑，仅手动/诊断触发）。fail-safe。
-vi.mock('../../../src/main/security/decisionHistory', () => ({
+vi.mock('../../../src/host/security/decisionHistory', () => ({
   getDecisionHistory: () => ({ getRecent: () => [], getAll: () => [] }),
 }));
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({ getDb: () => null }),
 }));
 
-import { registerDiagnosticsHandlers } from '../../../src/main/ipc/diagnostics.ipc';
+import { registerDiagnosticsHandlers } from '../../../src/host/ipc/diagnostics.ipc';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 function captureHandler() {

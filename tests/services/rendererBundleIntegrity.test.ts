@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import {
   computeFileSha256,
   verifyBundleIntegrity,
-} from '../../src/main/services/renderer/rendererBundleIntegrity';
+} from '../../src/host/services/renderer/rendererBundleIntegrity';
 
 // 'hello' 的 sha256（固定常量，自证测试不依赖实现）
 const HELLO_SHA = '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824';

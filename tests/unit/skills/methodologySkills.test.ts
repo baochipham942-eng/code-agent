@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { getBuiltinSkills } from '../../../src/main/services/skills/builtinSkills';
+import { getBuiltinSkills } from '../../../src/host/services/skills/builtinSkills';
 
 const METHODOLOGY_SKILLS = ['brainstorm', 'tdd', 'debug', 'verify', 'merge', 'work-review'];
 

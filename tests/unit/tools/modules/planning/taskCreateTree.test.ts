@@ -13,11 +13,11 @@ const dbState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-vi.mock('../../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
@@ -42,7 +42,7 @@ describe('taskCreate — tree/owner semantics', () => {
   });
 
   it('defaults owner to the creating subagent', async () => {
-    const { executeTaskCreate } = await import('../../../../../src/main/tools/modules/planning/taskCreate');
+    const { executeTaskCreate } = await import('../../../../../src/host/tools/modules/planning/taskCreate');
     const result = await executeTaskCreate(
       { subject: 'Sub work', description: 'd' },
       makeCtx({ agentId: 'subagent_123_xyz' }),
@@ -56,7 +56,7 @@ describe('taskCreate — tree/owner semantics', () => {
   });
 
   it('does not assign owner for main-loop creations', async () => {
-    const { executeTaskCreate } = await import('../../../../../src/main/tools/modules/planning/taskCreate');
+    const { executeTaskCreate } = await import('../../../../../src/host/tools/modules/planning/taskCreate');
     const result = await executeTaskCreate(
       { subject: 'Main work', description: 'd' },
       makeCtx(),
@@ -69,7 +69,7 @@ describe('taskCreate — tree/owner semantics', () => {
   });
 
   it('creates hierarchical children and rejects unknown parents', async () => {
-    const { executeTaskCreate } = await import('../../../../../src/main/tools/modules/planning/taskCreate');
+    const { executeTaskCreate } = await import('../../../../../src/host/tools/modules/planning/taskCreate');
     const ctx = makeCtx();
     const parent = await executeTaskCreate({ subject: 'P', description: 'p' }, ctx, canUseTool);
     expect(parent.ok).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ComputerSurfaceMutex } from '../../../../src/main/services/desktop/computerSurfaceLock';
+import { ComputerSurfaceMutex } from '../../../../src/host/services/desktop/computerSurfaceLock';
 
 describe('ComputerSurfaceMutex', () => {
   it('grants the first acquire immediately and blocks subsequent ones', async () => {

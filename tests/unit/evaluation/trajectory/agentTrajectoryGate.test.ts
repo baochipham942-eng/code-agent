@@ -9,12 +9,12 @@ import {
   mergeAgentTrajectoryCollectionMetadata,
   resolveAgentTrajectoryCollectionMetadata,
 } from '../../../../src/shared/contract/agentTrajectory';
-import { evaluateAgentTrajectoryReplay } from '../../../../src/main/evaluation/trajectory/trajectoryGate';
+import { evaluateAgentTrajectoryReplay } from '../../../../src/host/evaluation/trajectory/trajectoryGate';
 import {
   buildAgentTrajectoryFromReplay,
   normalizeAgentTrajectorySampleWindow,
   shouldExportTrajectory,
-} from '../../../../src/main/evaluation/trajectory/trajectoryExporter';
+} from '../../../../src/host/evaluation/trajectory/trajectoryExporter';
 import {
   buildGateThresholdCalibration,
   buildP3ActionPlan,

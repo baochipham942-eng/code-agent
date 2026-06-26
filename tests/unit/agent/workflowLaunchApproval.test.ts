@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   WorkflowLaunchApprovalGate,
   buildWorkflowLaunchRequest,
-} from '../../../src/main/agent/workflowLaunchApproval';
-import type { ScriptPreview } from '../../../src/main/agent/scriptRuntime/scriptPreview';
+} from '../../../src/host/agent/workflowLaunchApproval';
+import type { ScriptPreview } from '../../../src/host/agent/scriptRuntime/scriptPreview';
 
 const PREVIEW: ScriptPreview = {
   phases: ['decompose', 'investigate'],

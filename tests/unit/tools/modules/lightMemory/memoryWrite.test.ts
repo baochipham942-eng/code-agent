@@ -11,15 +11,15 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
 }));
 
-vi.mock('../../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('../../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { memoryWriteModule } from '../../../../../src/main/tools/modules/lightMemory/memoryWrite';
+import { memoryWriteModule } from '../../../../../src/host/tools/modules/lightMemory/memoryWrite';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

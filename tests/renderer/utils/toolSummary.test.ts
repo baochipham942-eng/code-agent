@@ -83,7 +83,7 @@ describe('summarizeToolCall', () => {
   });
 
   it('should summarize Read tool with filename', () => {
-    const tc = makeToolCall({ name: 'Read', arguments: { file_path: '/src/main/index.ts' } });
+    const tc = makeToolCall({ name: 'Read', arguments: { file_path: '/src/host/index.ts' } });
     expect(summarizeToolCall(tc)).toBe('读取文件: index.ts');
   });
 

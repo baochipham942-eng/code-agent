@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { toolResultArchiveSchema } from '../../../src/main/tools/modules/file/toolResultArchive.schema';
-import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { toolResultArchiveSchema } from '../../../src/host/tools/modules/file/toolResultArchive.schema';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
 describe('read_tool_result_archive protocol schema', () => {
   beforeEach(() => {

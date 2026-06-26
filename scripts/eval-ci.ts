@@ -18,10 +18,10 @@ import { execSync } from 'child_process';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import { ChangeDetector } from '../src/main/testing/ci/changeDetector';
-import { BaselineManager } from '../src/main/testing/ci/baselineManager';
-import { TrendTracker } from '../src/main/testing/ci/trendTracker';
-import { generateDeltaConsole } from '../src/main/testing/ci/deltaReporter';
+import { ChangeDetector } from '../src/host/testing/ci/changeDetector';
+import { BaselineManager } from '../src/host/testing/ci/baselineManager';
+import { TrendTracker } from '../src/host/testing/ci/trendTracker';
+import { generateDeltaConsole } from '../src/host/testing/ci/deltaReporter';
 import {
   TestRunner,
   createDefaultConfig,
@@ -31,11 +31,11 @@ import {
   filterTestCases,
   generateConsoleReport,
   saveReport,
-} from '../src/main/testing/index';
-import type { AgentInterface } from '../src/main/testing/testRunner';
-import type { TestRunSummary, TrendDataPoint } from '../src/main/testing/types';
+} from '../src/host/testing/index';
+import type { AgentInterface } from '../src/host/testing/testRunner';
+import type { TestRunSummary, TrendDataPoint } from '../src/host/testing/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
-import { isProviderVariantDisabled } from '../src/main/prompts/providerVariants';
+import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -413,11 +413,11 @@ async function prepareRealEvalRuntime(): Promise<void> {
   process.env.CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS ||= 'false';
   process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
 
-  const { getProtocolRegistry } = await import('../src/main/tools/protocolRegistry');
+  const { getProtocolRegistry } = await import('../src/host/tools/protocolRegistry');
   getProtocolRegistry();
 
   try {
-    const { getDatabase } = await import('../src/main/services/core/databaseService');
+    const { getDatabase } = await import('../src/host/services/core/databaseService');
     const db = getDatabase();
     if (!db.isReady) {
       await db.initialize();
@@ -643,7 +643,7 @@ async function main() {
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
   // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据
   if (effectiveReal) {
-    const { getBudgetService } = await import('../src/main/services');
+    const { getBudgetService } = await import('../src/host/services');
     const usage = getBudgetService().getUsageHistory();
     const totalIn = usage.reduce((s, u) => s + u.inputTokens, 0);
     const totalOut = usage.reduce((s, u) => s + u.outputTokens, 0);

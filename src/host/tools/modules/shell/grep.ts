@@ -1,7 +1,7 @@
 // ============================================================================
 // Grep (P0-6.3 Batch 2b — shell: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/shell/grep.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/shell/grep.ts (legacy Tool + wrapLegacyTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

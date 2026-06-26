@@ -3,7 +3,7 @@
  * 测试 TaskOrchestrator 的并行判断能力
  */
 
-import { getTaskOrchestrator, resetTaskOrchestrator } from '../src/main/orchestrator/taskOrchestrator';
+import { getTaskOrchestrator, resetTaskOrchestrator } from '../src/host/orchestrator/taskOrchestrator';
 
 // 需要设置环境变量
 import * as dotenv from 'dotenv';

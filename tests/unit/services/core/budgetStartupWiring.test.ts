@@ -16,16 +16,16 @@ async function loadModulesForDataDir(dataDir: string) {
   secureStorageMock.getSettingsFromKeychain.mockClear();
   secureStorageMock.saveSettingsToKeychain.mockClear();
 
-  vi.doMock('../../../../src/main/platform', () => ({
+  vi.doMock('../../../../src/host/platform', () => ({
     app: {
       isPackaged: false,
       getPath: (_name: string) => dataDir,
     },
   }));
-  vi.doMock('../../../../src/main/services/core/secureStorage', () => ({
+  vi.doMock('../../../../src/host/services/core/secureStorage', () => ({
     getSecureStorage: () => secureStorageMock,
   }));
-  vi.doMock('../../../../src/main/services/infra/logger', () => ({
+  vi.doMock('../../../../src/host/services/infra/logger', () => ({
     createLogger: () => ({
       debug: vi.fn(),
       info: vi.fn(),
@@ -33,19 +33,19 @@ async function loadModulesForDataDir(dataDir: string) {
       error: vi.fn(),
     }),
   }));
-  vi.doMock('../../../../src/main/permissions/policyEngine', () => ({
+  vi.doMock('../../../../src/host/permissions/policyEngine', () => ({
     getPolicyEngine: () => ({ loadUserRules: vi.fn() }),
   }));
-  vi.doMock('../../../../src/main/model/concurrencyLimiter', () => ({
+  vi.doMock('../../../../src/host/model/concurrencyLimiter', () => ({
     setProviderConcurrencyOverrides: vi.fn(),
   }));
-  vi.doMock('../../../../src/main/model/providers/shared', () => ({
+  vi.doMock('../../../../src/host/model/providers/shared', () => ({
     setProviderProxyOverrides: vi.fn(),
   }));
 
   return {
-    configModule: await import('../../../../src/main/services/core/configService'),
-    budgetModule: await import('../../../../src/main/services/core/budgetService'),
+    configModule: await import('../../../../src/host/services/core/configService'),
+    budgetModule: await import('../../../../src/host/services/core/budgetService'),
   };
 }
 
@@ -58,12 +58,12 @@ async function createDataDir(): Promise<string> {
 // （这正是 initCoreServices 启动期所做的事，此处对其核心逻辑做单元覆盖。）
 describe('Budget startup wiring — initBudgetService(getBudgetConfig())', () => {
   afterEach(() => {
-    vi.doUnmock('../../../../src/main/platform');
-    vi.doUnmock('../../../../src/main/services/core/secureStorage');
-    vi.doUnmock('../../../../src/main/services/infra/logger');
-    vi.doUnmock('../../../../src/main/permissions/policyEngine');
-    vi.doUnmock('../../../../src/main/model/concurrencyLimiter');
-    vi.doUnmock('../../../../src/main/model/providers/shared');
+    vi.doUnmock('../../../../src/host/platform');
+    vi.doUnmock('../../../../src/host/services/core/secureStorage');
+    vi.doUnmock('../../../../src/host/services/infra/logger');
+    vi.doUnmock('../../../../src/host/permissions/policyEngine');
+    vi.doUnmock('../../../../src/host/model/concurrencyLimiter');
+    vi.doUnmock('../../../../src/host/model/providers/shared');
     vi.resetModules();
   });
 

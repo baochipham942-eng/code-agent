@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SEARCH_API_ENDPOINTS } from '../../../../src/shared/constants';
 
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getServiceApiKey: vi.fn(() => undefined),
   }),
 }));
 
-import { clearFetchCache, fetchDocument } from '../../../../src/main/tools/web/fetchDocument';
+import { clearFetchCache, fetchDocument } from '../../../../src/host/tools/web/fetchDocument';
 
 function makeResponse(options: {
   ok: boolean;

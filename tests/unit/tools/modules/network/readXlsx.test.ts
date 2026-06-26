@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // --- fs mock ---
 const existsSyncMock = vi.fn();
@@ -24,7 +24,7 @@ vi.mock('fs', async () => {
 
 // --- dataFingerprintStore mock ---
 const recordMock = vi.fn();
-vi.mock('../../../../../src/main/tools/dataFingerprint', () => ({
+vi.mock('../../../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: { record: (...args: unknown[]) => recordMock(...args) },
 }));
 
@@ -82,7 +82,7 @@ vi.mock('exceljs', () => {
   return { default: { Workbook: MockWorkbook } };
 });
 
-import { readXlsxModule } from '../../../../../src/main/tools/modules/network/readXlsx';
+import { readXlsxModule } from '../../../../../src/host/tools/modules/network/readXlsx';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

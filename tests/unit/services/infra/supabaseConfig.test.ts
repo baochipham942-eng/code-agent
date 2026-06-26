@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from '../../../../src/shared/constants';
-import { resolveSupabaseInitConfig } from '../../../../src/main/services/infra/supabaseService';
+import { resolveSupabaseInitConfig } from '../../../../src/host/services/infra/supabaseService';
 
 describe('resolveSupabaseInitConfig', () => {
   it('uses the built-in production Supabase config when no override exists', () => {

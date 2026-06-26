@@ -1,7 +1,7 @@
 // ============================================================================
 // MCP Unified (Wave 2 — mcp: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/mcp/MCPUnifiedTool.ts (legacy Tool dispatching to 6 sub
+// 旧版: src/host/tools/mcp/MCPUnifiedTool.ts (legacy Tool dispatching to 6 sub
 // tools: mcpTool / mcpListToolsTool / mcpListResourcesTool / mcpReadResourceTool /
 // mcpGetStatusTool / mcpAddServerTool)
 //

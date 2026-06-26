@@ -4,7 +4,7 @@
 // 为 DOCX 文件添加 Track Changes（修订追踪）能力
 // 用于合同审阅、法务修订等协作场景
 //
-// P1 Wave 2 — document 迁移：从 src/main/tools/document/docxTrackChanges.ts
+// P1 Wave 2 — document 迁移：从 src/host/tools/document/docxTrackChanges.ts
 // 整体搬迁过来，作为 docxEditCore.ts 的内部 helper（仅被本目录引用）。
 // ============================================================================
 

@@ -1,6 +1,6 @@
 // RequestDesignAutonomy（ADR-027）：schema/IPC 协议契约 + 校验 + 降级 + 阻塞解析（grant/decline）+ abort。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
@@ -8,19 +8,19 @@ const hasInteractiveRendererMock = vi.hoisted(() => vi.fn());
 const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
 const captured = vi.hoisted(() => ({ responseCb: undefined as undefined | ((e: unknown, d: unknown) => unknown) }));
 
-vi.mock('../../../../../src/main/platform', () => ({
-  ipcMain: {
+vi.mock('../../../../../src/host/platform', () => ({
+  ipcHost: {
     handle: (channel: string, cb: (e: unknown, d: unknown) => unknown) => {
       if (channel === 'canvas-autonomy:response') captured.responseCb = cb;
     },
   },
-  BrowserWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
+  AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
-vi.mock('../../../../../src/main/services/infra/notificationService', () => ({
+vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyNeedsInput: notifyNeedsInputMock },
 }));
 
-import { requestDesignAutonomyModule } from '../../../../../src/main/tools/modules/design/requestDesignAutonomy';
+import { requestDesignAutonomyModule } from '../../../../../src/host/tools/modules/design/requestDesignAutonomy';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
 import { MAX_AUTONOMY_VARIANTS, DEFAULT_AUTONOMY_VARIANTS } from '../../../../../src/shared/constants';
 

@@ -12,7 +12,7 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getSkillsDir: () => ({
     user: {
@@ -22,7 +22,7 @@ vi.mock('../../../../src/main/config/configPaths', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
@@ -30,7 +30,7 @@ import {
   enqueueSkillDraft,
   confirmSkillDraft,
   listSkillDrafts,
-} from '../../../../src/main/services/skills/skillDraftQueue';
+} from '../../../../src/host/services/skills/skillDraftQueue';
 
 beforeEach(async () => {
   mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-sediment-'));

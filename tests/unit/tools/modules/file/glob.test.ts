@@ -10,9 +10,9 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
-vi.mock('../../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('../../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { globModule } from '../../../../../src/main/tools/modules/file/glob';
+import { globModule } from '../../../../../src/host/tools/modules/file/glob';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

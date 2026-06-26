@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 
-import { validateGameArtifact } from '../../../src/main/agent/runtime/gameArtifactValidator';
+import { validateGameArtifact } from '../../../src/host/agent/runtime/gameArtifactValidator';
 
 async function writeFixture(content: string, filename: string): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-breakout-validator-'));

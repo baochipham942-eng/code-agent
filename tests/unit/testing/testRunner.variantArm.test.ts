@@ -10,9 +10,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { TestRunner, type AgentInterface } from '../../../src/main/testing/testRunner';
+import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     insertExperiment: vi.fn(),
     insertExperimentCases: vi.fn(),

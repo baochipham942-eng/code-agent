@@ -10,7 +10,7 @@
 // 避免破坏 executionPhase 分类、ToolSearch deferredTools、LLM prompt /
 // cache / eval baseline。
 //
-// resultMeta.ts 留在 host（`src/main/tools/modules/vision/resultMeta.ts`），
+// resultMeta.ts 留在 host（`src/host/tools/modules/vision/resultMeta.ts`），
 // 多个 vision plugin 共享该 adapter；本插件 3 个 browser 工具仍从 host
 // 路径 import resultMeta，不复制一份到 plugin 目录。
 //

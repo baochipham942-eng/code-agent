@@ -15,24 +15,24 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { PlanApprovalGate } from '../../../src/main/agent/planApproval';
-import { SwarmLaunchApprovalGate } from '../../../src/main/agent/swarmLaunchApproval';
-import { PendingApprovalRepository } from '../../../src/main/services/core/repositories/PendingApprovalRepository';
+import { PlanApprovalGate } from '../../../src/host/agent/planApproval';
+import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
+import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 
-vi.mock('../../../src/main/agent/teammate/teammateService', () => ({
+vi.mock('../../../src/host/agent/teammate/teammateService', () => ({
   getTeammateService: () => ({
     sendPlanReview: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({
     publish: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../src/host/platform', () => ({
+  AppWindow: {
     getAllWindows: () => [{ id: 1 }],
   },
 }));

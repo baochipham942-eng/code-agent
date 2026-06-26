@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openAISSEStream, type StreamSnapshot } from '../../../src/main/model/providers/sseStream';
+import { openAISSEStream, type StreamSnapshot } from '../../../src/host/model/providers/sseStream';
 
 describe('openAISSEStream snapshot and incomplete tool calls', () => {
   let server: http.Server | null = null;

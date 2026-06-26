@@ -7,7 +7,7 @@ import {
   readProviderIconAssetManifest,
   resolveProviderIconAsset,
   saveProviderIconAsset,
-} from '../../../src/main/services/providerIconAssets';
+} from '../../../src/host/services/providerIconAssets';
 
 describe('provider icon assets', () => {
   let tempDir: string;

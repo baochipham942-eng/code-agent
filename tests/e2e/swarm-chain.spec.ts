@@ -7,7 +7,7 @@
 //     → EventBus.publish('swarm', ...)
 //     → swarm.ipc ensureSwarmBusBridge 订阅器
 //     → deliverSwarmEvent
-//     → BrowserWindow.getAllWindows() [webModeWindow]
+//     → AppWindow.getAllWindows() [webModeWindow]
 //     → webContents.send('swarm:event', ...) [shim]
 //     → broadcastToRenderer
 //     → onRendererPush → broadcastSSE

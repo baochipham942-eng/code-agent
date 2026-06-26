@@ -1,7 +1,7 @@
 // ============================================================================
 // SpawnAgent / AgentSpawn (P1 Wave 3 — multiagent: native ToolModule rewrite)
 //
-// 旧版: src/main/agent/multiagentTools/spawnAgent.ts
+// 旧版: src/host/agent/multiagentTools/spawnAgent.ts
 //   - spawnAgentTool: Tool / agentSpawnTool: Tool 已删
 //   - executeSpawnAgent(params, legacyCtx) 保留作业务函数（接 legacy ToolContext）
 // 改造点：

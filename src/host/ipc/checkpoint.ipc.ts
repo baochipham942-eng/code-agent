@@ -1,4 +1,4 @@
-// src/main/ipc/checkpoint.ipc.ts
+// src/host/ipc/checkpoint.ipc.ts
 
 import type { IpcMain } from '../platform';
 import { getFileCheckpointService } from '../services/checkpoint';

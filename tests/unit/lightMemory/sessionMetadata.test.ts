@@ -12,11 +12,11 @@ const mockConfigDir = vi.hoisted(() => {
   return { dir: '' };
 });
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -29,7 +29,7 @@ import {
   recordSessionStart,
   recordSessionEnd,
   buildSessionMetadataBlock,
-} from '../../../src/main/lightMemory/sessionMetadata';
+} from '../../../src/host/lightMemory/sessionMetadata';
 
 describe('sessionMetadata', () => {
   let tmpDir: string;

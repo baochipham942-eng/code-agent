@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderSkillContent } from '../../../../src/main/services/skills/skillRenderer';
+import { renderSkillContent } from '../../../../src/host/services/skills/skillRenderer';
 
 describe('skillRenderer', () => {
   let tmpDir: string;

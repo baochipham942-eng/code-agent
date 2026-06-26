@@ -4,7 +4,7 @@ import path from 'path';
 import {
   runArtifactPreviewHealth,
   type ArtifactPreviewHealthFindingCode,
-} from '../../src/main/agent/runtime/browser/artifactPreviewHealth';
+} from '../../src/host/agent/runtime/browser/artifactPreviewHealth';
 
 const badHtml = String.raw`<!doctype html>
 <html>

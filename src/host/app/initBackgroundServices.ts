@@ -2,7 +2,7 @@
 // Phase 2: Background Services - 窗口创建后异步执行，不阻塞用户交互
 // ============================================================================
 
-import { app, BrowserWindow } from '../platform';
+import { app, AppWindow } from '../platform';
 import path from 'path';
 import fs from 'fs';
 import { createLogger } from '../services/infra/logger';
@@ -98,7 +98,7 @@ function getDesktopBootstrapWorkingDirectory(configService?: ConfigService): str
  * Initialize cloud config, skills discovery, MCP, and codex detection.
  * These are chained because skills and MCP depend on CloudConfig.
  */
-async function initializeCloudAndMCP(configService: ConfigService, mainWindow: BrowserWindow | null): Promise<void> {
+async function initializeCloudAndMCP(configService: ConfigService, mainWindow: AppWindow | null): Promise<void> {
   await initCloudConfigService({
     getAccessToken: () => getAuthService().getAccessToken(),
     // 把控制面下发的团队共享 provider / 服务 key reconcile 进本地配置（web/main 路径都要接）。
@@ -222,7 +222,7 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
 /**
  * Initialize Supabase-dependent services: auth and sync
  */
-function initializeSupabaseServices(mainWindow: BrowserWindow | null): void {
+function initializeSupabaseServices(mainWindow: AppWindow | null): void {
   if (!isSupabaseInitialized()) {
     logger.info('Supabase not configured (offline mode)');
     return;
@@ -283,7 +283,7 @@ function initializeSupabaseServices(mainWindow: BrowserWindow | null): void {
 /**
  * Initialize update service and auto-check for updates
  */
-function initializeUpdateService(configService: ConfigService, mainWindow: BrowserWindow | null): void {
+function initializeUpdateService(configService: ConfigService, mainWindow: AppWindow | null): void {
   const settings = configService.getSettings();
 
   try {

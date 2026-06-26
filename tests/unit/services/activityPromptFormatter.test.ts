@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatActivityPromptContext,
   sanitizeActivityText,
-} from '../../../src/main/services/activity/activityPromptFormatter';
+} from '../../../src/host/services/activity/activityPromptFormatter';
 
 describe('activityPromptFormatter', () => {
   it('returns legacy screen and desktop blocks without adding wrapper tags', () => {

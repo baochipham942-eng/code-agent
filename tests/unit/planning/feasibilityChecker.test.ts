@@ -7,8 +7,8 @@ import {
   createFeasibilityChecker,
   type EnhancedTaskStep,
   type Precondition,
-} from '../../../src/main/planning/feasibilityChecker';
-import type { TaskPlan, TaskPhase } from '../../../src/main/planning/types';
+} from '../../../src/host/planning/feasibilityChecker';
+import type { TaskPlan, TaskPhase } from '../../../src/host/planning/types';
 
 let workingDirectory: string;
 

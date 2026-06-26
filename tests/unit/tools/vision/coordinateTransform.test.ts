@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { imageCoordsToScreenPoints } from '../../../../src/main/tools/vision/coordinateTransform';
+import { imageCoordsToScreenPoints } from '../../../../src/host/tools/vision/coordinateTransform';
 
 describe('imageCoordsToScreenPoints', () => {
   it('按 displayPointWidth / analyzedWidth 等比换算（残差比例情形）', () => {

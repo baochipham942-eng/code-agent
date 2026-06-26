@@ -2,7 +2,7 @@
 // Session Automation IPC
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionAutomationService } from '../services/sessionAutomation';
 import { createLogger } from '../services/infra/logger';
@@ -26,7 +26,7 @@ function getStringArray(source: unknown, field: string): string[] {
 }
 
 export function registerSessionAutomationHandlers(): void {
-  ipcMain.handle(IPC_DOMAINS.SESSION_AUTOMATION, async (_event, request: IPCRequest): Promise<IPCResponse> => {
+  ipcHost.handle(IPC_DOMAINS.SESSION_AUTOMATION, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     const service = getSessionAutomationService();
     try {
       switch (request.action) {

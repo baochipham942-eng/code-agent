@@ -3,7 +3,7 @@ import {
   DEFAULT_CHANNEL_PRIVACY_MODE,
   resolveChannelPrivacyMode,
   sanitizeChannelMessage,
-} from '../../../src/main/channels/privacy/channelPrivacyFirewall';
+} from '../../../src/host/channels/privacy/channelPrivacyFirewall';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 
 function makeMessage(): ChannelMessage {

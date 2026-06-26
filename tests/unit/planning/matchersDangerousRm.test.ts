@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { matchDangerousBash } from '../../../src/main/planning/matchers';
-import type { HookContext } from '../../../src/main/planning/types';
+import { matchDangerousBash } from '../../../src/host/planning/matchers';
+import type { HookContext } from '../../../src/host/planning/types';
 
 // Dedicated file (separate from matchers.test.ts) for the rm long/mixed-flag
 // hardening, so it doesn't collide with parallel edits to matchers.test.ts.

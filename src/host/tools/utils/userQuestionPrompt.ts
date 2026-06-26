@@ -1,7 +1,7 @@
 // ============================================================================
 // promptUserInChat — 共享「会话内交互」round-trip（Slice A 地基）
 //
-// 抽自 AskUserQuestion（src/main/tools/modules/planning/askUserQuestion.ts）的
+// 抽自 AskUserQuestion（src/host/tools/modules/planning/askUserQuestion.ts）的
 // IPC round-trip，供任意 tool 内部复用（成本确认等）。复用同一条
 // USER_QUESTION_ASK/RESPONSE 通道 + 同一个 pending map + 同一个 once-guard
 // handler，渲染层无需区分来源。electron / web(SSE) 共用 platform 抽象。
@@ -17,7 +17,7 @@ import type {
   UserQuestionResponse,
 } from '../../../shared/contract';
 import { IPC_CHANNELS } from '../../../shared/ipc';
-import { BrowserWindow, ipcMain } from '../../platform';
+import { AppWindow, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 
 export type PromptUserStatus = 'answered' | 'no-renderer' | 'timeout' | 'aborted';
@@ -46,7 +46,7 @@ let handlerRegistered = false;
 function ensureResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.USER_QUESTION_RESPONSE,
     async (_event, response: UserQuestionResponse) => {
       const p = pending.get(response.requestId);
@@ -77,8 +77,8 @@ export async function promptUserInChat(
     timestamp: Date.now(),
   };
 
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+  const mainWindow = AppWindow.getAllWindows()[0];
+  if (!mainWindow || !AppWindow.hasInteractiveRenderer()) {
     return { status: 'no-renderer' };
   }
 

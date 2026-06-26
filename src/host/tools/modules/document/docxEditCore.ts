@@ -4,7 +4,7 @@
 // DOCX is ZIP + XML (like PPTX). We use JSZip to manipulate document.xml
 // directly for incremental edits instead of full-file regeneration.
 //
-// P1 Wave 2 — document 迁移：从 src/main/tools/document/docxEdit.ts 整体搬迁过来。
+// P1 Wave 2 — document 迁移：从 src/host/tools/document/docxEdit.ts 整体搬迁过来。
 // 仍依赖 cross-cat 共享基础设施 snapshotManager（被 excel/media 共用），保留 import。
 // ============================================================================
 

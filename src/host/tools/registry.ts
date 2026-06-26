@@ -7,7 +7,7 @@
 //   getSchemas() / getSchemasForMode() —— 不加载 handler，只返回 schema
 //   resolve(name) —— 首次调用时执行 loader，缓存 handler 实例
 //
-// 与旧 ToolRegistry (src/main/tools/registry/toolRegistry.ts 之类) 并存。旧系统
+// 与旧 ToolRegistry (src/host/tools/registry/toolRegistry.ts 之类) 并存。旧系统
 // 不动，新路径由 modules/index.ts 的 registerMigratedTools() 统一注册。
 // ============================================================================
 

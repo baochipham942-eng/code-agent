@@ -13,11 +13,11 @@ const mockConfigDir = vi.hoisted(() => {
   return { dir: '' };
 });
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -31,7 +31,7 @@ import {
   getMemoryIndexPath,
   loadMemoryIndex,
   ensureMemoryDir,
-} from '../../../src/main/lightMemory/indexLoader';
+} from '../../../src/host/lightMemory/indexLoader';
 
 describe('indexLoader', () => {
   let tmpDir: string;

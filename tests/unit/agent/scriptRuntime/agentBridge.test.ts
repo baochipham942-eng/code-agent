@@ -9,24 +9,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const inferenceMock = vi.fn();
-vi.mock('../../../../src/main/model/adapters/aiSdkAdapter', () => ({
+vi.mock('../../../../src/host/model/adapters/aiSdkAdapter', () => ({
   inferenceViaAiSdk: (...args: unknown[]) => inferenceMock(...args),
 }));
 
 // 共享 execute mock：agentBridge 模块加载时 new SubagentExecutor() 的实例 execute 惰性转发到它。
 // vi.hoisted 让 mock 在 vi.mock 工厂（被提升）执行前就已初始化，避免 TDZ。
 const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
-vi.mock('../../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
   SubagentExecutor: class {
     execute = (...a: unknown[]) => executeMock(...a);
   },
 }));
 
-import { runAgentCall, type ScriptRunContext } from '../../../../src/main/agent/scriptRuntime/agentBridge';
-import type { AgentCallPayload } from '../../../../src/main/agent/scriptRuntime/types';
-import { BudgetTracker } from '../../../../src/main/agent/scriptRuntime/budget';
-import { resolveToolProfile } from '../../../../src/main/agent/scriptRuntime/toolProfiles';
-import { SerialWriteGate } from '../../../../src/main/agent/scriptRuntime/writeGate';
+import { runAgentCall, type ScriptRunContext } from '../../../../src/host/agent/scriptRuntime/agentBridge';
+import type { AgentCallPayload } from '../../../../src/host/agent/scriptRuntime/types';
+import { BudgetTracker } from '../../../../src/host/agent/scriptRuntime/budget';
+import { resolveToolProfile } from '../../../../src/host/agent/scriptRuntime/toolProfiles';
+import { SerialWriteGate } from '../../../../src/host/agent/scriptRuntime/writeGate';
 
 function makeCtx(budget: BudgetTracker = new BudgetTracker(null)): ScriptRunContext {
   const modelConfig = { provider: 'xiaomi', model: 'm', apiKey: 'k' } as never;

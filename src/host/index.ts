@@ -2,7 +2,7 @@
 // Code Agent - Main Process Entry
 // ============================================================================
 
-import { app, BrowserWindow, ipcMain, globalShortcut } from './platform';
+import { app, AppWindow, ipcHost, globalShortcut } from './platform';
 import { createLogger } from './services/infra/logger';
 import { initSentryNode, setSentryNodeRuntimeTagProvider } from './observability/sentryNode';
 import { initCrashMarker } from './observability/crashMarker';
@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
     }
 
     // 3. Setup IPC handlers
-    setupAllIpcHandlers(ipcMain, {
+    setupAllIpcHandlers(ipcHost, {
       getMainWindow,
       getAppService: getAppServiceInstance,
       getConfigService: getConfigServiceInstance,
@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (AppWindow.getAllWindows().length === 0) {
       await createWindow();
     }
   });

@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../src/main/services/media/customVideoModelRegistry', () => ({
+vi.mock('../../../src/host/services/media/customVideoModelRegistry', () => ({
   getCustomVideoModelApiKey: vi.fn((id: string) => (id === 'has-key' ? 'sk-x' : undefined)),
   listCustomVideoModels: vi.fn(async () => [
     { id: 'has-key', label: 'V1', baseUrl: 'https://a.com/v1', modelName: 'm', costCnyPerVideo: 1.2, createdAt: 0, updatedAt: 0 },
@@ -22,11 +22,11 @@ import {
   handleListCustomVideoModels,
   handleSaveCustomVideoModel,
   handleDeleteCustomVideoModel,
-} from '../../../src/main/ipc/workspace.ipc';
+} from '../../../src/host/ipc/workspace.ipc';
 import {
   saveCustomVideoModel as regSave,
   setCustomVideoModelApiKey as regSetKey,
-} from '../../../src/main/services/media/customVideoModelRegistry';
+} from '../../../src/host/services/media/customVideoModelRegistry';
 
 beforeEach(() => vi.clearAllMocks());
 

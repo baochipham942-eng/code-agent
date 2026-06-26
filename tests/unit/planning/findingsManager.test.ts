@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { FindingsManager } from '../../../src/main/planning/findingsManager';
-import { CONFIG_DIR_NEW } from '../../../src/main/config/configPaths';
-import type { Finding, PlanningConfig } from '../../../src/main/planning/types';
+import { FindingsManager } from '../../../src/host/planning/findingsManager';
+import { CONFIG_DIR_NEW } from '../../../src/host/config/configPaths';
+import type { Finding, PlanningConfig } from '../../../src/host/planning/types';
 
 let workingDirectory: string;
 const SESSION_ID = 'sess-find';

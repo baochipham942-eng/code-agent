@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   inferConversationTurnNumbers,
   searchSessions,
-} from '../../../src/main/session/search';
-import { SessionLocalCache } from '../../../src/main/session/localCache';
+} from '../../../src/host/session/search';
+import { SessionLocalCache } from '../../../src/host/session/localCache';
 
 describe('session search', () => {
   it('infers conversation turn numbers from cached message order', () => {

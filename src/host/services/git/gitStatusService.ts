@@ -4,7 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { BrowserWindow } from '../../platform';
+import { AppWindow } from '../../platform';
 import { createLogger } from '../infra/logger';
 
 const execAsync = promisify(exec);
@@ -53,7 +53,7 @@ class GitStatusService {
     const status = await this.getGitStatus(workingDirectory);
 
     // 推送到所有 BrowserWindow
-    const windows = BrowserWindow.getAllWindows();
+    const windows = AppWindow.getAllWindows();
     for (const win of windows) {
       if (!win.isDestroyed()) {
         win.webContents.send('status:git-update', status);

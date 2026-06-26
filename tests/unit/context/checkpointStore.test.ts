@@ -3,7 +3,7 @@ import { promises as fsPromises } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { writeCheckpointFile } from '../../../src/main/context/checkpoint';
+import { writeCheckpointFile } from '../../../src/host/context/checkpoint';
 
 describe('writeCheckpointFile cross-device fallback (audit C-M4)', () => {
   afterEach(() => {

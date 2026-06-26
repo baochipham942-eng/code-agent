@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BackgroundAxBridge, type BackgroundAxElement } from '../../../../src/main/services/desktop/backgroundAxBridge';
+import { BackgroundAxBridge, type BackgroundAxElement } from '../../../../src/host/services/desktop/backgroundAxBridge';
 
 describe('BackgroundAxBridge Agent Pointer metadata', () => {
   it('carries the located AX frame into pointer metadata', () => {

@@ -17,7 +17,7 @@ const mcpMocks = vi.hoisted(() => ({
   getPrompt: vi.fn(async () => 'mcp template body'),
 }));
 
-vi.mock('../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => mcpMocks,
 }));
 
@@ -25,8 +25,8 @@ const configMocks = vi.hoisted(() => ({
   userDir: '',
 }));
 
-vi.mock('../../../src/main/config/configPaths', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../../src/main/config/configPaths')>();
+vi.mock('../../../src/host/config/configPaths', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/host/config/configPaths')>();
   const path = await import('path');
   return {
     ...original,
@@ -38,7 +38,7 @@ vi.mock('../../../src/main/config/configPaths', async (importOriginal) => {
 });
 
 const { PromptCommandService, applyPromptCommandExpansion } = await import(
-  '../../../src/main/services/commands/promptCommandService'
+  '../../../src/host/services/commands/promptCommandService'
 );
 
 describe('PromptCommandService', () => {

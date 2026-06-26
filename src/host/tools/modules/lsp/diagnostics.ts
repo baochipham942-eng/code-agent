@@ -1,7 +1,7 @@
 // ============================================================================
 // Diagnostics (Wave 1 — lsp: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/lsp/diagnostics.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/lsp/diagnostics.ts (legacy Tool + wrapLegacyTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + abort 检查 + onProgress 事件

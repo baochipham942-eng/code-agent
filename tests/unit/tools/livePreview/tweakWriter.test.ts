@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyTweak } from '../../../../src/main/tools/livePreview/tweakWriter';
+import { applyTweak } from '../../../../src/host/tools/livePreview/tweakWriter';
 
 let dir: string;
 

@@ -1,7 +1,7 @@
 // ============================================================================
 // GitDiff (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/shell/gitDiff.ts (registered as 'git_diff')
+// 旧版: src/host/tools/shell/gitDiff.ts (registered as 'git_diff')
 // 改造点：4 参数签名 + ctx.logger + ctx.workingDir + canUseTool
 // 业务依赖：child_process exec, NETWORK_TOOL_TIMEOUTS（共享 constants）
 // ============================================================================

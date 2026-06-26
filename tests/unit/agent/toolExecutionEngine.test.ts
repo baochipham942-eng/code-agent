@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectStructuredToolFailure } from '../../../src/main/agent/runtime/toolResultNormalization';
+import { detectStructuredToolFailure } from '../../../src/host/agent/runtime/toolResultNormalization';
 
 describe('detectStructuredToolFailure', () => {
   it('detects explicit error payloads returned inside successful tool output', () => {

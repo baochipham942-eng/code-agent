@@ -121,7 +121,7 @@ function withRegistryTrust<T extends Record<string, unknown>>(registry: T, expir
   };
 }
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -136,7 +136,7 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => ({
     ensureInitialized: vi.fn(),
     getAllSkills: () => [projectSkill, librarySkill],
@@ -144,7 +144,7 @@ vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   getSkillRepositoryService: () => ({
     initialize: vi.fn(),
     getLocalLibraries: () => [
@@ -173,7 +173,7 @@ vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getServerStates: () => mcpStates,
     getServerState: (serverName: string) => mcpStates.find((state) => state.config.name === serverName),
@@ -187,13 +187,13 @@ vi.mock('../../../../src/main/mcp/mcpClient', () => ({
   isInProcessConfig: (config: { type?: string }) => config.type === 'in-process',
 }));
 
-vi.mock('../../../../src/main/context/contextHealthService', () => ({
+vi.mock('../../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: () => ({
     clearMcpServerAcrossSessions: clearMcpContext,
   }),
 }));
 
-vi.mock('../../../../src/main/connectors', () => ({
+vi.mock('../../../../src/host/connectors', () => ({
   getConnectorRegistry: () => ({
     list: () => [
       {
@@ -210,7 +210,7 @@ vi.mock('../../../../src/main/connectors', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/channels', () => ({
+vi.mock('../../../../src/host/channels', () => ({
   getChannelManager: () => ({
     getRegisteredPlugins: () => [
       {
@@ -235,16 +235,16 @@ vi.mock('../../../../src/main/channels', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/lightMemory/indexLoader', () => ({
+vi.mock('../../../../src/host/lightMemory/indexLoader', () => ({
   getMemoryDir: () => '/tmp/code-agent-missing-memory-dir',
 }));
 
-import { CapabilityCenterService } from '../../../../src/main/services/capabilities/capabilityCenterService';
-import { RemoteCapabilityRegistryService } from '../../../../src/main/services/capabilities/remoteCapabilityRegistryService';
+import { CapabilityCenterService } from '../../../../src/host/services/capabilities/capabilityCenterService';
+import { RemoteCapabilityRegistryService } from '../../../../src/host/services/capabilities/remoteCapabilityRegistryService';
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
-} from '../../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../../src/host/services/cloud/controlPlaneTrust';
 
 function buildSignedCapabilityRegistryEnvelope(
   payload: Record<string, unknown>,

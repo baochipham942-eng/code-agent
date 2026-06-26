@@ -1,7 +1,7 @@
 // ============================================================================
 // TaskOutput (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/shell/taskOutput.ts (registered as 'task_output')
+// 旧版: src/host/tools/shell/taskOutput.ts (registered as 'task_output')
 // 改造点：4 参数签名 + canUseTool + ctx.logger
 // ============================================================================
 

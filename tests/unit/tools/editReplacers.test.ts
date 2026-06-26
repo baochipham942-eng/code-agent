@@ -5,7 +5,7 @@ import {
   IndentationFlexibleReplacer,
   findFlexibleMatch,
   levenshtein,
-} from '../../../src/main/tools/utils/editReplacers';
+} from '../../../src/host/tools/utils/editReplacers';
 
 describe('levenshtein', () => {
   it('computes edit distance', () => {

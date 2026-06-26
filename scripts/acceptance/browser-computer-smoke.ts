@@ -10,13 +10,13 @@ import {
   makeSystemChromeProviderOptions,
   SYSTEM_CHROME_CDP_PROVIDER,
 } from './browser-computer-system-chrome.ts';
-import { browserService } from '../../src/main/services/infra/browserService.ts';
-import { browserActionTool } from '../../src/main/tools/vision/browserAction.ts';
-import { computerUseTool } from '../../src/main/tools/vision/computerUse.ts';
-import type { Tool, ToolContext, ToolExecutionResult } from '../../src/main/tools/types.ts';
+import { browserService } from '../../src/host/services/infra/browserService.ts';
+import { browserActionTool } from '../../src/host/tools/vision/browserAction.ts';
+import { computerUseTool } from '../../src/host/tools/vision/computerUse.ts';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../src/host/tools/types.ts';
 import type {
   BrowserDomSnapshot,
-} from '../../src/main/services/infra/browserService.ts';
+} from '../../src/host/services/infra/browserService.ts';
 import type {
   ComputerSurfaceSnapshot,
   ComputerSurfaceState,

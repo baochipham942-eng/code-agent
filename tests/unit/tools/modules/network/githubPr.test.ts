@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock child_process.exec (used via promisify)
@@ -80,7 +80,7 @@ const parsePRUrlMock = vi.fn();
 const fetchPRContextMock = vi.fn();
 const createPRLinkMock = vi.fn();
 
-vi.mock('../../../../../src/main/services/github/prLinkService', () => ({
+vi.mock('../../../../../src/host/services/github/prLinkService', () => ({
   getPRLinkService: () => ({
     parsePRUrl: parsePRUrlMock,
     fetchPRContext: fetchPRContextMock,
@@ -88,7 +88,7 @@ vi.mock('../../../../../src/main/services/github/prLinkService', () => ({
   }),
 }));
 
-import { githubPrModule } from '../../../../../src/main/tools/modules/network/githubPr';
+import { githubPrModule } from '../../../../../src/host/tools/modules/network/githubPr';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

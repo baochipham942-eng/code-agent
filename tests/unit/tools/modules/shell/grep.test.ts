@@ -10,10 +10,10 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // Lazy-import because we may monkey-patch rg binary path between tests.
-import { grepModule, __setRgBinaryPathForTest } from '../../../../../src/main/tools/modules/shell/grep';
+import { grepModule, __setRgBinaryPathForTest } from '../../../../../src/host/tools/modules/shell/grep';
 
 // -----------------------------------------------------------------------------
 // Helpers

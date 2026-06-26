@@ -7,7 +7,7 @@ import {
   ConfirmationGate,
   getConfirmationGate,
   resetConfirmationGate,
-} from '../../../src/main/agent/confirmationGate';
+} from '../../../src/host/agent/confirmationGate';
 
 describe('ConfirmationGate', () => {
   let gate: ConfirmationGate;

@@ -2,7 +2,7 @@
 // Swarm IPC - Agent Swarm 事件推送到渲染进程
 // ============================================================================
 
-import { BrowserWindow, ipcMain } from '../platform';
+import { AppWindow, ipcHost } from '../platform';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 import type { AgentApplicationService } from '../../shared/contract/appService';
@@ -69,7 +69,7 @@ export function addSwarmEventListener(listener: SwarmEventListener): () => void 
  * 业务模块通过 getEventBus().publish('swarm', ...) 发布，不直接调本函数。
  */
 function deliverSwarmEvent(event: SwarmEvent): void {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = AppWindow.getAllWindows();
   for (const win of windows) {
     if (!win.isDestroyed()) {
       win.webContents.send('swarm:event', event);
@@ -114,7 +114,7 @@ export function registerSwarmHandlers(
   ensureSwarmBusBridge();
 
   // 用户发送消息给 Agent
-  ipcMain.handle('swarm:send-user-message', async (_, payload: SwarmSendUserMessagePayload) => {
+  ipcHost.handle('swarm:send-user-message', async (_, payload: SwarmSendUserMessagePayload) => {
     try {
       const services = getSwarmServices();
       const canDeliverToParallel = services.parallelCoordinator.canReceiveMessage(payload.agentId);
@@ -172,7 +172,7 @@ export function registerSwarmHandlers(
   });
 
   // 获取 Agent 消息历史
-  ipcMain.handle('swarm:get-agent-messages', async (_, agentId: string) => {
+  ipcHost.handle('swarm:get-agent-messages', async (_, agentId: string) => {
     try {
       const services = getSwarmServices();
       const history = services.teammateService.getHistory(200);
@@ -191,7 +191,7 @@ export function registerSwarmHandlers(
   });
 
   // 切换 delegate 模式
-  ipcMain.handle('swarm:set-delegate-mode', async (_, enabled: boolean) => {
+  ipcHost.handle('swarm:set-delegate-mode', async (_, enabled: boolean) => {
     try {
       const appService = getAppService();
       if (appService) {
@@ -202,7 +202,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:get-delegate-mode', async () => {
+  ipcHost.handle('swarm:get-delegate-mode', async () => {
     try {
       const appService = getAppService();
       return appService?.isDelegateMode() ?? false;
@@ -212,7 +212,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:approve-launch', async (_, payload: { requestId: string; feedback?: string }) => {
+  ipcHost.handle('swarm:approve-launch', async (_, payload: { requestId: string; feedback?: string }) => {
     try {
       return getSwarmServices().launchApproval.approve(payload.requestId, payload.feedback);
     } catch (error) {
@@ -221,7 +221,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:reject-launch', async (_, payload: { requestId: string; feedback: string }) => {
+  ipcHost.handle('swarm:reject-launch', async (_, payload: { requestId: string; feedback: string }) => {
     try {
       return getSwarmServices().launchApproval.reject(payload.requestId, payload.feedback);
     } catch (error) {
@@ -230,7 +230,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:cancel-run', async (_, payload?: { sessionId?: string }) => {
+  ipcHost.handle('swarm:cancel-run', async (_, payload?: { sessionId?: string }) => {
     try {
       const appService = getAppService();
       if (appService) {
@@ -251,7 +251,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:cancel-agent', async (_, payload: { agentId: string }) => {
+  ipcHost.handle('swarm:cancel-agent', async (_, payload: { agentId: string }) => {
     try {
       const services = getSwarmServices();
       const cancelled =
@@ -269,7 +269,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:retry-agent', async (_, payload: { agentId: string }) => {
+  ipcHost.handle('swarm:retry-agent', async (_, payload: { agentId: string }) => {
     try {
       const coordinator = getSwarmServices().parallelCoordinator;
       const task = coordinator.getTaskDefinition(payload.agentId);
@@ -304,7 +304,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:approve-plan', async (_, payload: { planId: string; feedback?: string }) => {
+  ipcHost.handle('swarm:approve-plan', async (_, payload: { planId: string; feedback?: string }) => {
     try {
       const services = getSwarmServices();
       const plan = services.planApproval.getPlan(payload.planId);
@@ -327,7 +327,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:reject-plan', async (_, payload: { planId: string; feedback: string }) => {
+  ipcHost.handle('swarm:reject-plan', async (_, payload: { planId: string; feedback: string }) => {
     try {
       const services = getSwarmServices();
       const plan = services.planApproval.getPlan(payload.planId);
@@ -351,7 +351,7 @@ export function registerSwarmHandlers(
   });
 
   // Agent 历史持久化
-  ipcMain.handle('swarm:persist-agent-run', async (_, payload: { sessionId: string; run: CompletedAgentRun }) => {
+  ipcHost.handle('swarm:persist-agent-run', async (_, payload: { sessionId: string; run: CompletedAgentRun }) => {
     try {
       await getSwarmServices().agentHistory.persistAgentRun(payload.sessionId, payload.run);
       return true;
@@ -362,7 +362,7 @@ export function registerSwarmHandlers(
   });
 
   // 获取最近完成的 agent runs
-  ipcMain.handle('swarm:get-agent-history', async (_, payload?: { limit?: number }) => {
+  ipcHost.handle('swarm:get-agent-history', async (_, payload?: { limit?: number }) => {
     try {
       return await getSwarmServices().agentHistory.getRecentAgentHistory(payload?.limit);
     } catch (error) {
@@ -372,7 +372,7 @@ export function registerSwarmHandlers(
   });
 
   // ADR-010 #5: Swarm Trace 历史查询
-  ipcMain.handle('swarm:list-trace-runs', async (_, payload?: { limit?: number }) => {
+  ipcHost.handle('swarm:list-trace-runs', async (_, payload?: { limit?: number }) => {
     try {
       const repo = getSwarmServices().swarmTraceRepo;
       if (!repo) return [];
@@ -383,7 +383,7 @@ export function registerSwarmHandlers(
     }
   });
 
-  ipcMain.handle('swarm:get-trace-run-detail', async (_, payload: { runId: string }) => {
+  ipcHost.handle('swarm:get-trace-run-detail', async (_, payload: { runId: string }) => {
     try {
       // ADR-023 D2 切换降级：以协同账本(ledger)为真理源，无账回退 rollup 缓存。
       try {

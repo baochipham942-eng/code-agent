@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { existsSyncMock, mkdirSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn().mockReturnValue(true),
@@ -26,15 +26,15 @@ const { getConfigServiceMock, getAuthServiceMock } = vi.hoisted(() => ({
   getAuthServiceMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/services', () => ({
+vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-vi.mock('../../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../../src/host/services/core/configService', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-vi.mock('../../../../../src/main/services/auth/authService', () => ({
+vi.mock('../../../../../src/host/services/auth/authService', () => ({
   getAuthService: () => getAuthServiceMock(),
 }));
 
@@ -42,12 +42,12 @@ const { safeExecDetachedMock } = vi.hoisted(() => ({
   safeExecDetachedMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/utils/safeShell', () => ({
+vi.mock('../../../../../src/host/utils/safeShell', () => ({
   safeExecDetached: (...args: unknown[]) => safeExecDetachedMock(...args),
 }));
 
-import { imageGenerateModule, executeImageGenerate } from '../../../../../src/main/plugins/builtin/imageCreation/imageGenerate';
-import { determineImageEngine } from '../../../../../src/main/services/media/imageGenerationService';
+import { imageGenerateModule, executeImageGenerate } from '../../../../../src/host/plugins/builtin/imageCreation/imageGenerate';
+import { determineImageEngine } from '../../../../../src/host/services/media/imageGenerationService';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

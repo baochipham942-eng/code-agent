@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
-import { notebookEditModule } from '../../../../../src/main/tools/modules/file/notebookEdit';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
+import { notebookEditModule } from '../../../../../src/host/tools/modules/file/notebookEdit';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

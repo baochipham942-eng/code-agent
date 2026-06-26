@@ -17,10 +17,10 @@ import path from 'path';
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Message } from '../../src/shared/contract';
-import { runCheckpointWriterAgent } from '../../src/main/agent/checkpointWriterAgent';
-import { createTask, updateTask } from '../../src/main/services/planning/taskStore';
-import { tryInsertCheckpointRebuildBoundary } from '../../src/main/context/checkpoint';
-import { CompressionState } from '../../src/main/context/compressionState';
+import { runCheckpointWriterAgent } from '../../src/host/agent/checkpointWriterAgent';
+import { createTask, updateTask } from '../../src/host/services/planning/taskStore';
+import { tryInsertCheckpointRebuildBoundary } from '../../src/host/context/checkpoint';
+import { CompressionState } from '../../src/host/context/compressionState';
 
 // ---------------------------------------------------------------------------
 // env 加载（~/.code-agent/.env，不覆盖已有值）
@@ -126,7 +126,7 @@ function fillerMessages(count: number): Message[] {
       'export interface CheckpointSection { number: number; heading: string; instruction: string; budgetTokens: number; }'.repeat(60),
       `第 ${i + 1} 批分析结论：结构与模板一致，继续下一批。`,
     ].join('\n'), [
-      { id: `tf${i}`, name: 'Read', arguments: { file_path: `src/main/context/checkpoint/file${i}.ts` } },
+      { id: `tf${i}`, name: 'Read', arguments: { file_path: `src/host/context/checkpoint/file${i}.ts` } },
     ] as Message['toolCalls']));
   }
   return fillers;
@@ -137,12 +137,12 @@ function buildConversation(): Message[] {
     msg('user', '帮我把 checkpoint writer 从本地模板函数改成真 LLM 后台子代理，11 段都要由 LLM 从会话内容产出。注意保留配置 `CHECKPOINT_WRITER.LLM_MAX_ATTEMPTS=2`，跑测试用 `npx vitest run tests/unit/agent/`。'),
     ...fillerMessages(8),
     msg('assistant', '收到。我先读现有实现：checkpointWriterAgent.ts 里 buildCheckpoint 是纯模板填充，§4/§7/§8/§10/§11 硬编码 (none)。计划：新增 checkpointWriterPrompt 模块 + runner 内 spawn LLM 子代理。', [
-      { id: 't1', name: 'Read', arguments: { file_path: 'src/main/agent/checkpointWriterAgent.ts' } },
-      { id: 't2', name: 'Read', arguments: { file_path: 'src/main/context/checkpoint/templates.ts' } },
+      { id: 't1', name: 'Read', arguments: { file_path: 'src/host/agent/checkpointWriterAgent.ts' } },
+      { id: 't2', name: 'Read', arguments: { file_path: 'src/host/context/checkpoint/templates.ts' } },
     ] as Message['toolCalls']),
     msg('user', '对，按 TDD 来。先写失败测试再实现。'),
     msg('assistant', '写了 5 个失败测试后实现完成。期间发现并修了一个潜在 bug：getSectionBody 的正则带 m 标志，\\s*$ 在每个行尾命中，多行 section body 被静默截断成首行——§4 多行任务树直接踩中。去掉 m 标志后修复。', [
-      { id: 't3', name: 'Edit', arguments: { file_path: 'src/main/context/checkpoint/templates.ts' } },
+      { id: 't3', name: 'Edit', arguments: { file_path: 'src/host/context/checkpoint/templates.ts' } },
       { id: 't4', name: 'Bash', arguments: { command: 'npx vitest run tests/unit/agent/' } },
     ] as Message['toolCalls']),
     msg('user', '验证策略你怎么定的？'),

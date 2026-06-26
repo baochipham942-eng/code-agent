@@ -6,7 +6,7 @@ flow.
 
 Current product evaluation data should flow through the canonical eval run
 contract in `src/shared/contract/evaluation.ts` and be persisted by
-`src/main/evaluation/experimentAdapter.ts`.
+`src/host/evaluation/experimentAdapter.ts`.
 
 Use this harness only for historical comparison or by importing its results
 through an adapter into the canonical contract.

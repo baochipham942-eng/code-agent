@@ -3,16 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockRunVerifyGate = vi.fn();
 const mockRunReviewGate = vi.fn();
 
-vi.mock('../../../../src/main/agent/goalVerifyGate', () => ({
+vi.mock('../../../../src/host/agent/goalVerifyGate', () => ({
   runVerifyGate: (...args: unknown[]) => mockRunVerifyGate(...args),
 }));
-vi.mock('../../../../src/main/agent/goalReviewGate', () => ({
+vi.mock('../../../../src/host/agent/goalReviewGate', () => ({
   runReviewGate: (...args: unknown[]) => mockRunReviewGate(...args),
 }));
 
-import { handleGoalCompletionGate } from '../../../../src/main/agent/runtime/goalCompletionGate';
-import type { RuntimeContext } from '../../../../src/main/agent/runtime/runtimeContext';
-import type { ContextAssembly } from '../../../../src/main/agent/runtime/contextAssembly';
+import { handleGoalCompletionGate } from '../../../../src/host/agent/runtime/goalCompletionGate';
+import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
+import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
 
 function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
   const goalMode = {

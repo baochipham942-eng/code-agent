@@ -6,7 +6,7 @@ vi.mock('child_process', () => ({
   spawn: spawnMock,
 }));
 
-import { killProcessTree } from '../../../../src/main/tools/shell/platformShell';
+import { killProcessTree } from '../../../../src/host/tools/shell/platformShell';
 
 function makeChild(pid: number | undefined) {
   return { pid, kill: vi.fn() };

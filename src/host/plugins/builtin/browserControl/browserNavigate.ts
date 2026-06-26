@@ -1,7 +1,7 @@
 // ============================================================================
 // browser_navigate (Level 1 native module — wrapper-mode)
 //
-// 旧版: src/main/tools/vision/browserNavigate.ts (legacy Tool)
+// 旧版: src/host/tools/vision/browserNavigate.ts (legacy Tool)
 // 当前版本：手写 wrapper boilerplate，仍 delegate 给 legacy browserNavigateTool。
 // 后续 Level 2 rewrite 时，把 legacy 调用替换为直调 OS-level scripting，schema 保持。
 // ============================================================================

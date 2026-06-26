@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 用法：
-//   import { app, BrowserWindow, shell } from '../platform';
+//   import { app, AppWindow, shell } from '../platform';
 //   import type { IpcMain } from '../platform';
 //
 // ============================================================================
@@ -18,10 +18,10 @@ export type { IpcMain, IpcMainInvokeEvent, IpcMainEvent, HandlerFn } from './ipc
 export { type Electron } from './ipcTypes';
 
 // IPC runtime (handler registry)
-export { ipcMain, handlers, eventListeners } from './ipcRegistry';
+export { ipcHost, handlers, eventListeners } from './ipcRegistry';
 
 // Window bridge
-export { BrowserWindow, broadcastToRenderer, onRendererPush, setBrowserWindowInteractionProbe } from './windowBridge';
+export { AppWindow, broadcastToRenderer, onRendererPush, setBrowserWindowInteractionProbe } from './windowBridge';
 export type { WindowLike, WebContentsSender } from './windowBridge';
 
 // Shell
@@ -40,4 +40,4 @@ export { globalShortcut } from './globalShortcuts';
 export { dialog, safeStorage, screen, desktopCapturer, nativeTheme,
   Menu, MenuItem, Tray, session, net, autoUpdater, powerMonitor,
   systemPreferences, contentTracing, protocol, crashReporter,
-  webContents, contextBridge, webUtils, ipcRenderer } from './miscCompat';
+  webContents, contextBridge, webUtils, ipcClient } from './miscCompat';

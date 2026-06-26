@@ -9,15 +9,15 @@ const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { quickTask, getQuickModelInfo, resetQuickModel } from '../../../src/main/model/quickModel';
+import { quickTask, getQuickModelInfo, resetQuickModel } from '../../../src/host/model/quickModel';
 
 /** 构造一个 configService mock，可指定哪些 provider 有 key */
 function mockConfig(opts: {

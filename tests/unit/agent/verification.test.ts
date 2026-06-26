@@ -5,7 +5,7 @@ import path from 'path';
 
 const mockRunVerifyGate = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../src/main/agent/goalVerifyGate', () => ({
+vi.mock('../../../src/host/agent/goalVerifyGate', () => ({
   runVerifyGate: (...args: unknown[]) => mockRunVerifyGate(...args),
 }));
 
@@ -13,7 +13,7 @@ import {
   buildVerificationPlan,
   classifyVerificationFailure,
   runVerificationPlan,
-} from '../../../src/main/agent/verification';
+} from '../../../src/host/agent/verification';
 
 function writeRepoFile(root: string, file: string, content = ''): void {
   const absolute = path.join(root, file);
@@ -46,7 +46,7 @@ describe('verification plan and runner', () => {
       cwd: root,
       goal: 'verify runtime goal completion',
       verifyCommand: 'npm run typecheck',
-      changedFiles: ['src/main/agent/runtime/goalCompletionGate.ts'],
+      changedFiles: ['src/host/agent/runtime/goalCompletionGate.ts'],
     });
 
     expect(plan.required).toMatchObject([{

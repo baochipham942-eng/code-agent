@@ -63,8 +63,8 @@ async function main(): Promise<void> {
 
   console.log('=== initializeCLIServices ===');
   const { initializeCLIServices } = await import('../../src/cli/bootstrap');
-  const { resolveSessionDefaultModelConfig } = await import('../../src/main/services/core/sessionDefaults');
-  const { StandaloneAgentAdapter } = await import('../../src/main/testing/agentAdapter');
+  const { resolveSessionDefaultModelConfig } = await import('../../src/host/services/core/sessionDefaults');
+  const { StandaloneAgentAdapter } = await import('../../src/host/testing/agentAdapter');
   await initializeCLIServices();
   const mc = resolveSessionDefaultModelConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
   console.log('  xiaomi(mimo) apiKey:', mc.apiKey ? 'present ✓' : 'MISSING ✗');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMarketplaceExtensionStatus } from '../../../../src/main/services/plugins/extensionOpsService';
+import { getMarketplaceExtensionStatus } from '../../../../src/host/services/plugins/extensionOpsService';
 
 describe('ExtensionOpsService marketplace status mapping', () => {
   it('marks enabled skill and command plugins as active runtime extensions', () => {

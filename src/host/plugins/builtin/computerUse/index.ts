@@ -3,14 +3,14 @@
 //
 // 与 host 同 bundle 编译/分发：5 个工具（Computer / computer_use / screenshot /
 // gui_agent / ocr_search）通过 plugin 注册到 ToolRegistry。前 4 个 delegate 给
-// legacy 实现（src/main/tools/vision/<X>），ocr_search 自包含调用 macOS Vision
+// legacy 实现（src/host/tools/vision/<X>），ocr_search 自包含调用 macOS Vision
 // Framework 的 vision-ocr binary。
 //
 // 调用 `registerToolModule(module, { prefixWithPluginId: false })` 保留原工具名，
 // 避免破坏 executionPhase 分类、ToolSearch deferredTools、LLM prompt /
 // cache / eval baseline。
 //
-// resultMeta.ts 留在 host（`src/main/tools/modules/vision/resultMeta.ts`），
+// resultMeta.ts 留在 host（`src/host/tools/modules/vision/resultMeta.ts`），
 // 多个 vision plugin 共享该 adapter；本插件 4 个 delegate 工具仍从 host 路径
 // import resultMeta，不复制一份到 plugin 目录。
 //

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LoopController } from '../../src/main/loop/loopController';
+import { LoopController } from '../../src/host/loop/loopController';
 
 const orchestratorState = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -23,29 +23,29 @@ const automationState = vi.hoisted(() => ({
   recordEvent: vi.fn(async () => undefined),
 }));
 
-vi.mock('../../src/main/task', () => ({
+vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
     getOrCreateCurrentOrchestrator: () => orchestratorState,
   }),
 }));
 
-vi.mock('../../src/main/services/infra/sessionManager', () => ({
+vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
-vi.mock('../../src/main/tasks/backgroundTaskLedger', () => ({
+vi.mock('../../src/host/tasks/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ledgerState,
 }));
 
-vi.mock('../../src/main/services/infra/notificationService', () => ({
+vi.mock('../../src/host/services/infra/notificationService', () => ({
   notificationService: notificationState,
 }));
 
-vi.mock('../../src/main/services/sessionAutomation', () => ({
+vi.mock('../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => automationState,
 }));
 
-vi.mock('../../src/main/services/infra/logger', () => ({
+vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

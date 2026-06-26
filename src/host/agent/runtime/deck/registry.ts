@@ -1,7 +1,7 @@
 /**
  * Deck subtype registry — Phase 4 PR-2 step 4.
  *
- * 镜像 src/main/agent/runtime/game/registry 的注册中心模式。
+ * 镜像 src/host/agent/runtime/game/registry 的注册中心模式。
  * PR-2 只占位 'general' 一个 subtype；future subtypes（executive-deck /
  * academic-paper / data-report）通过 createDefaultRegistry().set('xxx', ...)
  * 或者在外部 wire 时按需注册。

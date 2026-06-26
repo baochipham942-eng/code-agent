@@ -2,7 +2,7 @@
 // Session State Manager - 会话运行时状态管理（支持多会话并行）
 // ============================================================================
 
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import type { Message } from '../../shared/contract';
 import type { ContextHealthState } from '../../shared/contract/contextHealth';
 import { createEmptyHealthState } from '../../shared/contract/contextHealth';
@@ -60,12 +60,12 @@ export interface SessionRuntimeState {
  */
 export class SessionStateManager {
   private states: Map<string, SessionRuntimeState> = new Map();
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: AppWindow | null = null;
 
   /**
    * 设置主窗口用于发送事件
    */
-  setMainWindow(window: BrowserWindow | null): void {
+  setMainWindow(window: AppWindow | null): void {
     this.mainWindow = window;
   }
 
@@ -377,7 +377,7 @@ export function cleanupSessionStateManager(): void {
 /**
  * 初始化 SessionStateManager
  */
-export function initSessionStateManager(mainWindow: BrowserWindow): SessionStateManager {
+export function initSessionStateManager(mainWindow: AppWindow): SessionStateManager {
   const manager = getSessionStateManager();
   manager.setMainWindow(mainWindow);
 

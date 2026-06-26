@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   LogLevel: {
     DEBUG: 0,
     INFO: 1,
@@ -27,12 +27,12 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   },
 }));
 
-import { initParallelAgentCoordinator } from '../../../src/main/agent/parallelAgentCoordinator';
-import type { AgentTask } from '../../../src/main/agent/parallelAgentCoordinator';
-import { sendInputModule } from '../../../src/main/tools/modules/multiagent/sendInput';
-import { getSpawnGuard, resetSpawnGuard } from '../../../src/main/agent/spawnGuard';
-import type { SubagentResult } from '../../../src/main/agent/subagentExecutor';
-import type { ToolContext, CanUseToolFn } from '../../../src/main/protocol/tools';
+import { initParallelAgentCoordinator } from '../../../src/host/agent/parallelAgentCoordinator';
+import type { AgentTask } from '../../../src/host/agent/parallelAgentCoordinator';
+import { sendInputModule } from '../../../src/host/tools/modules/multiagent/sendInput';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
+import type { ToolContext, CanUseToolFn } from '../../../src/host/protocol/tools';
 
 function keepRunning(): Promise<SubagentResult> {
   return new Promise(() => {});

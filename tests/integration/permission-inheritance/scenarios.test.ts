@@ -24,7 +24,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   buildProfilePrompt: vi.fn(() => 'mocked-prompt'),
 }));
 
@@ -33,15 +33,15 @@ import {
   buildParentContextFromToolContext,
   checkReadonlyParentRule,
   type ParentContext,
-} from '../../../src/main/agent/childContext';
+} from '../../../src/host/agent/childContext';
 import {
   getPolicyEngine,
   resetPolicyEngine,
-} from '../../../src/main/permissions/policyEngine';
+} from '../../../src/host/permissions/policyEngine';
 import {
   getGuardFabric,
   resetGuardFabric,
-} from '../../../src/main/permissions/guardFabric';
+} from '../../../src/host/permissions/guardFabric';
 
 // ----------------------------------------------------------------------------
 // Helpers

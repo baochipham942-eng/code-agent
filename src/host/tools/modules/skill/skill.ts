@@ -1,7 +1,7 @@
 // ============================================================================
 // Skill (P0-6.x — native ToolModule rewrite)
 //
-// 旧版（已删除）: src/main/agent/skillTools/skillMetaTool.ts
+// 旧版（已删除）: src/host/agent/skillTools/skillMetaTool.ts
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

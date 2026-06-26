@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isUnsafeChannelErrorText,
   summarizeChannelError,
-} from '../../../src/main/channels/channelErrorSummary';
+} from '../../../src/host/channels/channelErrorSummary';
 
 describe('channel error summary', () => {
   it('maps operational errors to short user-facing messages', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TaskComplexityAnalyzer } from '../../../src/main/planning/taskComplexityAnalyzer';
+import { TaskComplexityAnalyzer } from '../../../src/host/planning/taskComplexityAnalyzer';
 
 describe('TaskComplexityAnalyzer', () => {
   const analyzer = new TaskComplexityAnalyzer();

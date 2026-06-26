@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetProviderHealthForTests, SEARCH_SOURCES } from '../../../../src/main/tools/web/search';
+import { resetProviderHealthForTests, SEARCH_SOURCES } from '../../../../src/host/tools/web/search';
 
 const source = (name: string) => SEARCH_SOURCES.find((entry) => entry.name === name)!;
 const noConfig = {

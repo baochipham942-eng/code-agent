@@ -3,9 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { getProfileOverlays } from '../../../src/main/prompts/profiles';
-import { buildProfilePrompt } from '../../../src/main/prompts/builder';
-import { DYNAMIC_BOUNDARY_MARKER } from '../../../src/main/prompts/cacheBreakDetection';
+import { getProfileOverlays } from '../../../src/host/prompts/profiles';
+import { buildProfilePrompt } from '../../../src/host/prompts/builder';
+import { DYNAMIC_BOUNDARY_MARKER } from '../../../src/host/prompts/cacheBreakDetection';
 
 // ---------------------------------------------------------------------------
 // getProfileOverlays

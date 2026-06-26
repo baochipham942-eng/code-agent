@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
-} from '../src/main/services/cloud/controlPlaneTrust.ts';
+} from '../src/host/services/cloud/controlPlaneTrust.ts';
 
 const DIFF_FIELDS = [
   'version',

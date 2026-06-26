@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createHookManager } from '../../../src/main/hooks';
+import { createHookManager } from '../../../src/host/hooks';
 
 const activityMocks = vi.hoisted(() => ({
   getCurrentActivityContext: vi.fn(),
@@ -17,7 +17,7 @@ const activityMocks = vi.hoisted(() => ({
 // Mocks — must be declared before imports
 // --------------------------------------------------------------------------
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -26,14 +26,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: {
     agent: vi.fn(),
     addLog: vi.fn(),
   },
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: vi.fn().mockReturnValue('mock-key') }),
   getAuthService: () => ({}),
   getLangfuseService: () => ({
@@ -54,7 +54,7 @@ vi.mock('../../../src/main/services', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/planning/taskComplexityAnalyzer', () => ({
+vi.mock('../../../src/host/planning/taskComplexityAnalyzer', () => ({
   taskComplexityAnalyzer: {
     analyze: vi.fn().mockReturnValue({
       complexity: 'simple',
@@ -66,22 +66,22 @@ vi.mock('../../../src/main/planning/taskComplexityAnalyzer', () => ({
   },
 }));
 
-vi.mock('../../../src/main/routing/intentClassifier', () => ({
+vi.mock('../../../src/host/routing/intentClassifier', () => ({
   classifyIntent: vi.fn().mockResolvedValue('general'),
 }));
 
-vi.mock('../../../src/main/planning/taskOrchestrator', () => ({
+vi.mock('../../../src/host/planning/taskOrchestrator', () => ({
   getTaskOrchestrator: () => ({
     judge: vi.fn().mockResolvedValue({ shouldParallel: false, confidence: 0.5 }),
     generateParallelHint: vi.fn().mockReturnValue(''),
   }),
 }));
 
-vi.mock('../../../src/main/services/cloud/featureFlagService', () => ({
+vi.mock('../../../src/host/services/cloud/featureFlagService', () => ({
   getMaxIterations: vi.fn().mockReturnValue(25),
 }));
 
-vi.mock('../../../src/main/hooks', () => ({
+vi.mock('../../../src/host/hooks', () => ({
   HookManager: class MockHookManager {
     initialize = vi.fn();
     triggerUserPromptSubmit = vi.fn().mockResolvedValue({ shouldProceed: true });
@@ -94,27 +94,27 @@ vi.mock('../../../src/main/hooks', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/sessionRecovery', () => ({
+vi.mock('../../../src/host/agent/sessionRecovery', () => ({
   getSessionRecoveryService: () => ({
     checkPreviousSession: vi.fn().mockResolvedValue(null),
     saveSessionState: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/utils/seedMemoryInjector', () => ({
+vi.mock('../../../src/host/utils/seedMemoryInjector', () => ({
   buildPackedSeedMemory: vi.fn().mockResolvedValue(null),
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),
 }));
 
-vi.mock('../../../src/main/services/activity/activityContextProvider', () => ({
+vi.mock('../../../src/host/services/activity/activityContextProvider', () => ({
   getCurrentActivityContext: activityMocks.getCurrentActivityContext,
 }));
 
-vi.mock('../../../src/main/services/activity/activityPromptFormatter', () => ({
+vi.mock('../../../src/host/services/activity/activityPromptFormatter', () => ({
   formatActivityPromptContext: activityMocks.formatActivityPromptContext,
 }));
 
-vi.mock('../../../src/main/memory/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../src/host/memory/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
     ensureFreshData: vi.fn(),
     listTodoItems: vi.fn().mockReturnValue([]),
@@ -123,7 +123,7 @@ vi.mock('../../../src/main/memory/desktopActivityUnderstandingService', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/memory/desktopActivityPlanningBridge', () => ({
+vi.mock('../../../src/host/memory/desktopActivityPlanningBridge', () => ({
   syncDesktopTasksToPlanningService: vi.fn().mockResolvedValue({
     createdPlan: false,
     createdPhase: false,
@@ -132,21 +132,21 @@ vi.mock('../../../src/main/memory/desktopActivityPlanningBridge', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/memory/workspaceActivitySearchService', () => ({
+vi.mock('../../../src/host/memory/workspaceActivitySearchService', () => ({
   buildWorkspaceActivityContextBlock: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../../src/main/planning/recoveredWorkOrchestrator', () => ({
+vi.mock('../../../src/host/planning/recoveredWorkOrchestrator', () => ({
   buildRecoveredWorkOrchestrationHint: vi.fn().mockResolvedValue(null),
   isContinuationLikeRequest: vi.fn().mockReturnValue(false),
   recoverRecentWorkIntoPlanning: vi.fn().mockResolvedValue({ planChanged: false, planningSync: { addedSteps: [] } }),
 }));
 
-vi.mock('../../../src/main/planning', () => ({
+vi.mock('../../../src/host/planning', () => ({
   publishPlanningStateToRenderer: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/todoParser', () => ({
+vi.mock('../../../src/host/agent/todoParser', () => ({
   parseTodos: vi.fn().mockReturnValue([]),
   mergeTodos: vi.fn().mockReturnValue([]),
   advanceTodoStatus: vi.fn().mockReturnValue({ todos: [] }),
@@ -156,11 +156,11 @@ vi.mock('../../../src/main/agent/todoParser', () => ({
   clearSessionTodos: vi.fn(),
 }));
 
-vi.mock('../../../src/main/lightMemory/sessionMetadata', () => ({
+vi.mock('../../../src/host/lightMemory/sessionMetadata', () => ({
   recordSessionStart: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   getPromptForTask: vi.fn().mockReturnValue(''),
   buildDynamicPromptV2: vi.fn().mockReturnValue({
     mode: 'code',
@@ -172,15 +172,15 @@ vi.mock('../../../src/main/prompts/builder', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/structuredOutput', () => ({
+vi.mock('../../../src/host/agent/structuredOutput', () => ({
   generateFormatCorrectionPrompt: vi.fn().mockReturnValue('correction prompt'),
 }));
 
-vi.mock('../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../src/host/services/planning/taskStore', () => ({
   getIncompleteTasks: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('../../../src/main/context/tokenOptimizer', () => ({
+vi.mock('../../../src/host/context/tokenOptimizer', () => ({
   compressToolResult: vi.fn().mockReturnValue('compressed'),
   HookMessageBuffer: class { append() {} flush() { return []; } },
   estimateModelMessageTokens: vi.fn().mockReturnValue(100),
@@ -188,16 +188,16 @@ vi.mock('../../../src/main/context/tokenOptimizer', () => ({
   estimateTokens: vi.fn().mockReturnValue(100),
 }));
 
-vi.mock('../../../src/main/context/autoCompressor', () => ({
+vi.mock('../../../src/host/context/autoCompressor', () => ({
   AutoContextCompressor: class { compress() {} },
   getAutoCompressor: vi.fn(),
 }));
 
-vi.mock('../../../src/main/memory/sanitizeMemoryContent', () => ({
+vi.mock('../../../src/host/memory/sanitizeMemoryContent', () => ({
   sanitizeMemoryContent: vi.fn().mockReturnValue('sanitized'),
 }));
 
-vi.mock('../../../src/main/agent/runtime/messageProcessor', () => ({
+vi.mock('../../../src/host/agent/runtime/messageProcessor', () => ({
   MessageProcessor: class MockMessageProcessor {
     handleTextResponse = vi.fn().mockResolvedValue('break');
     handleToolResponse = vi.fn().mockResolvedValue('continue');
@@ -209,7 +209,7 @@ vi.mock('../../../src/main/agent/runtime/messageProcessor', () => ({
   },
 }));
 
-vi.mock('../../../src/main/agent/runtime/streamHandler', () => ({
+vi.mock('../../../src/host/agent/runtime/streamHandler', () => ({
   StreamHandler: class MockStreamHandler {
     setupIteration = vi.fn();
     injectPlanContext = vi.fn();
@@ -235,49 +235,49 @@ vi.mock('../../../src/shared/constants', () => ({
   TOOL_TIMEOUT_THRESHOLDS: {},
 }));
 
-vi.mock('../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../src/host/model/modelRouter', () => ({
   ModelRouter: class {},
   ContextLengthExceededError: class extends Error {},
 }));
 
-vi.mock('../../../src/main/context/contextHealthService', () => ({
+vi.mock('../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/telemetry/systemPromptCache', () => ({
+vi.mock('../../../src/host/telemetry/systemPromptCache', () => ({
   getSystemPromptCache: vi.fn(),
 }));
 
-vi.mock('../../../src/main/security/inputSanitizer', () => ({
+vi.mock('../../../src/host/security/inputSanitizer', () => ({
   getInputSanitizer: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/diff/diffTracker', () => ({
+vi.mock('../../../src/host/services/diff/diffTracker', () => ({
   getDiffTracker: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/citation/citationService', () => ({
+vi.mock('../../../src/host/services/citation/citationService', () => ({
   getCitationService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/fileReadTracker', () => ({
+vi.mock('../../../src/host/tools/fileReadTracker', () => ({
   fileReadTracker: { getRecentFiles: vi.fn().mockReturnValue([]) },
 }));
 
-vi.mock('../../../src/main/tools/dataFingerprint', () => ({
+vi.mock('../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: {},
 }));
 
-vi.mock('../../../src/main/agent/loopTypes', () => ({
+vi.mock('../../../src/host/agent/loopTypes', () => ({
   MAX_PARALLEL_TOOLS: 4,
 }));
 
-vi.mock('../../../src/main/agent/toolExecution/parallelStrategy', () => ({
+vi.mock('../../../src/host/agent/toolExecution/parallelStrategy', () => ({
   isParallelSafeTool: vi.fn(),
   classifyToolCalls: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/toolExecution/circuitBreaker', () => ({
+vi.mock('../../../src/host/agent/toolExecution/circuitBreaker', () => ({
   CircuitBreaker: class {
     isTripped = vi.fn().mockReturnValue(false);
     recordSuccess = vi.fn();
@@ -286,11 +286,11 @@ vi.mock('../../../src/main/agent/toolExecution/circuitBreaker', () => ({
   },
 }));
 
-vi.mock('../../../src/main/tools/executionPhase', () => ({
+vi.mock('../../../src/host/tools/executionPhase', () => ({
   classifyExecutionPhase: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/messageHandling/converter', () => ({
+vi.mock('../../../src/host/agent/messageHandling/converter', () => ({
   formatToolCallForHistory: vi.fn(),
   sanitizeToolResultsForHistory: vi.fn(),
   buildMultimodalContent: vi.fn(),
@@ -298,24 +298,24 @@ vi.mock('../../../src/main/agent/messageHandling/converter', () => ({
   extractUserRequestText: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/messageHandling/contextBuilder', () => ({
+vi.mock('../../../src/host/agent/messageHandling/contextBuilder', () => ({
   injectWorkingDirectoryContext: vi.fn(),
   buildEnhancedSystemPrompt: vi.fn().mockReturnValue('system prompt'),
   buildRuntimeModeBlock: vi.fn().mockReturnValue(''),
 }));
 
-vi.mock('../../../src/main/agent/antiPattern/detector', () => ({
+vi.mock('../../../src/host/agent/antiPattern/detector', () => ({
   AntiPatternDetector: class {
     detect = vi.fn().mockReturnValue([]);
     reset = vi.fn();
   },
 }));
 
-vi.mock('../../../src/main/agent/antiPattern/cleanXml', () => ({
+vi.mock('../../../src/host/agent/antiPattern/cleanXml', () => ({
   cleanXmlResidues: vi.fn().mockReturnValue(''),
 }));
 
-vi.mock('../../../src/main/agent/goalTracker', () => ({
+vi.mock('../../../src/host/agent/goalTracker', () => ({
   GoalTracker: class {
     initialize = vi.fn();
     shouldInject = vi.fn().mockReturnValue(false);
@@ -329,15 +329,15 @@ vi.mock('../../../src/shared/utils/id', () => ({
   generateMessageId: vi.fn().mockReturnValue('mock-msg-id'),
 }));
 
-vi.mock('../../../src/main/memory/continuousLearningService', () => ({
+vi.mock('../../../src/host/memory/continuousLearningService', () => ({
   getContinuousLearningService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/toolSearch', () => ({
+vi.mock('../../../src/host/services/toolSearch', () => ({
   getToolSearchService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/skills/skillInvocationResolver', () => ({
+vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
   resolveSkillInvocation: vi.fn().mockResolvedValue(null),
   buildSkillInvocationContext: vi.fn(),
 }));
@@ -346,18 +346,18 @@ vi.mock('../../../src/main/services/skills/skillInvocationResolver', () => ({
 // Import after mocks
 // --------------------------------------------------------------------------
 
-import { ConversationRuntime } from '../../../src/main/agent/runtime/conversationRuntime';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
-import { GoalModeController } from '../../../src/main/agent/goalModeController';
-import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/main/utils/seedMemoryInjector';
+import { ConversationRuntime } from '../../../src/host/agent/runtime/conversationRuntime';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { GoalModeController } from '../../../src/host/agent/goalModeController';
+import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
 import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
-} from '../../../src/main/memory/memoryInjectionTrace';
+} from '../../../src/host/memory/memoryInjectionTrace';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
-} from '../../../src/main/services/skills/skillInvocationResolver';
+} from '../../../src/host/services/skills/skillInvocationResolver';
 
 // --------------------------------------------------------------------------
 // Helper — create a minimal RuntimeContext mock

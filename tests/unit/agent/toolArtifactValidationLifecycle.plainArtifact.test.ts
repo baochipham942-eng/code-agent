@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
-import type { ContextAssembly } from '../../../src/main/agent/runtime/contextAssembly';
-import type { RunFinalizer } from '../../../src/main/agent/runtime/runFinalizer';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
+import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 
 const gameValidatorState = vi.hoisted(() => ({
   validateGameArtifact: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', () => ({
+vi.mock('../../../src/host/agent/runtime/gameArtifactValidator', () => ({
   validateGameArtifact: gameValidatorState.validateGameArtifact,
 }));
 
-import { handleModifiedArtifactValidation } from '../../../src/main/agent/runtime/toolArtifactValidationLifecycle';
+import { handleModifiedArtifactValidation } from '../../../src/host/agent/runtime/toolArtifactValidationLifecycle';
 
 const TARGET_FILE = '/tmp/interactive-artifact-5.html';
 

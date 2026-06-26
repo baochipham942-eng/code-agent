@@ -4,7 +4,7 @@ import {
   parseAgentEngineModelCatalogPayload,
   RemoteAgentEngineModelCatalogService,
   resolveAgentEngineCatalogModel,
-} from '../../../src/main/services/agentEngine/agentEngineModelCatalog';
+} from '../../../src/host/services/agentEngine/agentEngineModelCatalog';
 import { createControlPlaneEnvelope } from '../../../vercel-api/lib/controlPlaneEnvelope';
 import { BUILTIN_AGENT_ENGINE_MODEL_CATALOG } from '../../../src/shared/agentEngineModelCatalog';
 

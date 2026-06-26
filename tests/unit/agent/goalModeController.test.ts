@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { buildGoalContract, GoalModeController } from '../../../src/main/agent/goalModeController';
+import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import { GOAL_MODE } from '../../../src/shared/constants';
 
 function ctrl(opts?: {

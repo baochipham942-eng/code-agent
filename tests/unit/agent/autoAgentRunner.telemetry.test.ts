@@ -13,7 +13,7 @@ const sessionManagerState = vi.hoisted(() => ({
   addMessageToSession: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -22,43 +22,43 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/autoAgentCoordinator', () => ({
+vi.mock('../../../src/host/agent/autoAgentCoordinator', () => ({
   getAutoAgentCoordinator: () => ({
     execute: coordinatorState.execute,
   }),
 }));
 
-vi.mock('../../../src/main/agent/dynamicAgentFactory', () => ({
+vi.mock('../../../src/host/agent/dynamicAgentFactory', () => ({
   getDynamicAgentFactory: () => ({
     create: factoryState.create,
   }),
 }));
 
-vi.mock('../../../src/main/agent/agentRequirementsAnalyzer', () => ({
+vi.mock('../../../src/host/agent/agentRequirementsAnalyzer', () => ({
   getAgentRequirementsAnalyzer: () => ({
     analyze: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
-vi.mock('../../../src/main/scheduler/TaskDAG', () => ({
+vi.mock('../../../src/host/scheduler/TaskDAG', () => ({
   TaskDAG: class {
     addAgentTask = vi.fn();
   },
 }));
 
-vi.mock('../../../src/main/scheduler/dagEventBridge', () => ({
+vi.mock('../../../src/host/scheduler/dagEventBridge', () => ({
   sendDAGInitEvent: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ name: 'mock-tool-resolver' }),
 }));
 
-import { runAutoAgentMode } from '../../../src/main/agent/orchestrator/autoAgentRunner';
+import { runAutoAgentMode } from '../../../src/host/agent/orchestrator/autoAgentRunner';
 
 function makeTaskListManager() {
   return {

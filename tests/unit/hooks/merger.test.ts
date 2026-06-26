@@ -17,8 +17,8 @@ import {
   getHooksForTool,
   hasHooksForEvent,
   type MergedHookConfig,
-} from '../../../src/main/hooks/merger';
-import type { ParsedHookConfig, HookDefinition } from '../../../src/main/hooks/configParser';
+} from '../../../src/host/hooks/merger';
+import type { ParsedHookConfig, HookDefinition } from '../../../src/host/hooks/configParser';
 
 describe('Hook Merger', () => {
   // --------------------------------------------------------------------------

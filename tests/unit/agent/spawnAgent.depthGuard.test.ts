@@ -23,27 +23,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SPAWN_AGENT_PATH = path.resolve(
   __dirname,
-  '../../../src/main/agent/multiagentTools/spawnAgent.ts',
+  '../../../src/host/agent/multiagentTools/spawnAgent.ts',
 );
 const TOOL_TYPES_PATH = path.resolve(
   __dirname,
-  '../../../src/main/tools/types.ts',
+  '../../../src/host/tools/types.ts',
 );
 const PROTOCOL_TYPES_PATH = path.resolve(
   __dirname,
-  '../../../src/main/protocol/tools.ts',
+  '../../../src/host/protocol/tools.ts',
 );
 const LEGACY_ADAPTER_PATH = path.resolve(
   __dirname,
-  '../../../src/main/tools/modules/_helpers/legacyAdapter.ts',
+  '../../../src/host/tools/modules/_helpers/legacyAdapter.ts',
 );
 const SHADOW_ADAPTER_PATH = path.resolve(
   __dirname,
-  '../../../src/main/tools/dispatch/shadowAdapter.ts',
+  '../../../src/host/tools/dispatch/shadowAdapter.ts',
 );
 const TASK_PATH = path.resolve(
   __dirname,
-  '../../../src/main/tools/modules/multiagent/task.ts',
+  '../../../src/host/tools/modules/multiagent/task.ts',
 );
 
 describe('executeSpawnAgent 深度截断接线', () => {

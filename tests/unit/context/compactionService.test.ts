@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 const compactionServiceMocks = vi.hoisted(() => ({
   summary: [
     '# Context Handoff',
     '',
     '## Current State',
-    'Changed /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts.',
+    'Changed /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts.',
     '',
     '## Files And Changes',
-    '/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts needs re-read before editing.',
+    '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts needs re-read before editing.',
     '',
     '## Commands And Evidence',
     'npm test failed with AssertionError.',
@@ -28,7 +28,7 @@ const compactionServiceMocks = vi.hoisted(() => ({
     'Continue integration.',
     '',
     '## Needs Re-read',
-    '/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts',
+    '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts',
   ].join('\n'),
   summaryModel: {
     provider: 'moonshot',
@@ -39,25 +39,25 @@ const compactionServiceMocks = vi.hoisted(() => ({
   summarizeWithMetadata: vi.fn(),
 }));
 
-vi.mock('../../../src/main/context/compactModel', () => ({
+vi.mock('../../../src/host/context/compactModel', () => ({
   compactModelSummarize: vi.fn(async () => compactionServiceMocks.summary),
   compactModelSummarizeWithMetadata: compactionServiceMocks.summarizeWithMetadata,
 }));
 
-vi.mock('../../../src/main/tools/dataFingerprint', () => ({
+vi.mock('../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: {
     toSummary: vi.fn(() => 'Data fingerprint: sheet columns are stable.'),
   },
 }));
 
-vi.mock('../../../src/main/context/compactionAuditRecorder', () => ({
+vi.mock('../../../src/host/context/compactionAuditRecorder', () => ({
   recordCompactionAuditSnapshot: compactionServiceMocks.recordAudit,
 }));
 
 import {
   compactMessagesWithSummary,
   createCompactionPlan,
-} from '../../../src/main/context/compactionService';
+} from '../../../src/host/context/compactionService';
 
 function message(id: string, role: Message['role'], content: string): Message {
   return { id, role, content, timestamp: Number(id.replace(/\D/g, '') || 1) };
@@ -76,7 +76,7 @@ describe('compactionService', () => {
 
   it('creates a plan with compacted and preserved messages plus survivor manifest', () => {
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts'),
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts'),
       message('m2', 'assistant', 'TODO: wire service into IPC.'),
       message('m3', 'tool', 'AssertionError: expected true'),
       message('m4', 'assistant', 'recent answer'),
@@ -93,7 +93,7 @@ describe('compactionService', () => {
     expect(plan).not.toBeNull();
     expect(plan?.compactedMessages.map((item) => item.id)).toEqual(['m1', 'm2', 'm3']);
     expect(plan?.preservedMessages.map((item) => item.id)).toEqual(['m4']);
-    expect(plan?.manifest.filePaths).toContain('/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts');
+    expect(plan?.manifest.filePaths).toContain('/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts');
     expect(plan?.manifest.todos.some((item) => item.text.includes('TODO'))).toBe(true);
     expect(plan?.manifest.errors.some((item) => item.text.includes('AssertionError'))).toBe(true);
   });
@@ -103,14 +103,14 @@ describe('compactionService', () => {
       {
         id: 'm1',
         role: 'assistant',
-        content: 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/survivorManifest.ts '.repeat(80),
+        content: 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts '.repeat(80),
         timestamp: 1,
         toolCalls: [
           {
             id: 'call-1',
             name: 'read_file',
             arguments: {
-              file_path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/survivorManifest.ts',
+              file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
             },
           },
         ],
@@ -140,7 +140,7 @@ describe('compactionService', () => {
     );
     expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toContain('survival=excerpt');
     expect(result.block?.survivorManifest?.files?.[0]).toMatchObject({
-      path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/survivorManifest.ts',
+      path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
       needsReRead: true,
       survival: 'excerpt',
       excerpt: expect.stringContaining('export const survivor = true'),
@@ -150,7 +150,7 @@ describe('compactionService', () => {
 
   it('compacts messages into one system handoff plus preserved tail', async () => {
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts '.repeat(80)),
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
       message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
       message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
       message('m4', 'assistant', 'recent answer'),
@@ -176,7 +176,7 @@ describe('compactionService', () => {
       model: 'kimi-k2.5',
       useMainModel: false,
     });
-    expect(result.block?.survivorManifest?.files?.[0].path).toBe('/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts');
+    expect(result.block?.survivorManifest?.files?.[0].path).toBe('/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts');
     expect(compactionServiceMocks.recordAudit).toHaveBeenCalledWith({
       result: expect.objectContaining({
         success: true,
@@ -193,14 +193,14 @@ describe('compactionService', () => {
       {
         id: 'm1',
         role: 'assistant',
-        content: 'I will read /Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts',
+        content: 'I will read /Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts',
         timestamp: 1,
         toolCalls: [
           {
             id: 'call-1',
             name: 'read_file',
             arguments: {
-              file_path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts',
+              file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts',
             },
           },
         ],
@@ -233,7 +233,7 @@ describe('compactionService', () => {
     expect(plan?.contentToSummarize).toContain('[omitted ');
     expect(plan?.contentToSummarize).toContain('tool output omitted from compaction transcript');
     expect(plan?.manifest.files[0]).toMatchObject({
-      path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts',
+      path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts',
       needsReRead: true,
     });
   });
@@ -314,7 +314,7 @@ describe('compactionService', () => {
       triggerPostCompact: vi.fn().mockResolvedValue({}),
     };
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts '.repeat(80)),
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
       message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
       message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
       message('m4', 'assistant', 'recent answer'),
@@ -356,7 +356,7 @@ describe('compactionService', () => {
       },
     });
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts '.repeat(80)),
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
       message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
       message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
       message('m4', 'assistant', 'recent answer'),
@@ -387,7 +387,7 @@ describe('compactionService', () => {
       metadata: compactionServiceMocks.summaryModel,
     });
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts '.repeat(80)),
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
       message('m2', 'assistant', 'recent answer'),
       message('m3', 'assistant', 'recent tail'),
     ];
@@ -401,7 +401,7 @@ describe('compactionService', () => {
 
     expect(result.success).toBe(true);
     expect(result.summary).toContain('# Deterministic Survivor Manifest');
-    expect(result.summary).toContain('/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts');
+    expect(result.summary).toContain('/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts');
     expect(result.warnings).toContain('Summary missed survivor manifest items; deterministic manifest was prepended.');
     expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
   });

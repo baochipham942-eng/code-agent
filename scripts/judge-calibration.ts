@@ -12,7 +12,7 @@
 import { promises as fs, readFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { computeCalibration, type CalibrationPair, type CalibrationLabel } from '../src/main/testing/calibration/judgeCalibration';
+import { computeCalibration, type CalibrationPair, type CalibrationLabel } from '../src/host/testing/calibration/judgeCalibration';
 
 // ---- zhipu(0ki 代理) 单次 chat 调用 ---------------------------------------
 const ZHIPU_ENDPOINT = 'https://api.0ki.cn/api/paas/v4';

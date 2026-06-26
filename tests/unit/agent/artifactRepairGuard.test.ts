@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getArtifactRepairToolPolicy,
   seedArtifactRepairGuardFromContext,
-} from '../../../src/main/agent/runtime/artifactRepairGuard';
+} from '../../../src/host/agent/runtime/artifactRepairGuard';
 
 function makeRuntimeContext(content: string): any {
   return {

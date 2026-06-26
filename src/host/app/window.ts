@@ -2,7 +2,7 @@
 // Window Management - 窗口创建和管理
 // ============================================================================
 
-import { BrowserWindow, shell } from '../platform';
+import { AppWindow, shell } from '../platform';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { initContextHealthService } from '../context/contextHealthService';
@@ -10,19 +10,19 @@ import { initSessionStateManager } from '../session/sessionStateManager';
 
 const logger = createLogger('Window');
 
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: AppWindow | null = null;
 
 /**
  * 获取主窗口实例
  */
-export function getMainWindow(): BrowserWindow | null {
+export function getMainWindow(): AppWindow | null {
   return mainWindow;
 }
 
 /**
  * 设置主窗口实例（内部使用）
  */
-export function setMainWindow(window: BrowserWindow | null): void {
+export function setMainWindow(window: AppWindow | null): void {
   mainWindow = window;
 }
 
@@ -40,7 +40,7 @@ export async function createWindow(): Promise<void> {
   const rendererPath = path.join(__dirname, '../renderer/index.html');
   logger.debug('Paths', { preloadPath, rendererPath });
 
-  mainWindow = new BrowserWindow({
+  mainWindow = new AppWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,

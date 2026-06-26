@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolContext } from '../../../../src/main/tools/types';
+import type { ToolContext } from '../../../../src/host/tools/types';
 import type { WorkbenchActionTrace } from '../../../../src/shared/contract/desktop';
 
 const browserMocks = vi.hoisted(() => {
@@ -254,7 +254,7 @@ const browserMocks = vi.hoisted(() => {
   return { state, page, logger, service, targetRef, accountState, artifact };
 });
 
-vi.mock('../../../../src/main/services/infra/browserService.js', () => ({
+vi.mock('../../../../src/host/services/infra/browserService.js', () => ({
   browserService: browserMocks.service,
   redactBrowserWorkbenchTraceParams: (_toolName: string, params: Record<string, unknown>) => {
     const redacted = { ...(params || {}) };
@@ -271,19 +271,19 @@ vi.mock('../../../../src/main/services/infra/browserService.js', () => ({
   },
 }));
 
-vi.mock('../../../../src/main/services/cloud/featureFlagService', () => ({
+vi.mock('../../../../src/host/services/cloud/featureFlagService', () => ({
   isComputerUseEnabled: () => true,
 }));
 
-vi.mock('../../../../src/main/services', () => ({
+vi.mock('../../../../src/host/services', () => ({
   getConfigService: () => ({
     getApiKey: () => null,
   }),
 }));
 
-import { BrowserTool } from '../../../../src/main/tools/vision/BrowserTool';
-import { browserActionTool } from '../../../../src/main/tools/vision/browserAction';
-import { computerUseTool } from '../../../../src/main/tools/vision/computerUse';
+import { BrowserTool } from '../../../../src/host/tools/vision/BrowserTool';
+import { browserActionTool } from '../../../../src/host/tools/vision/browserAction';
+import { computerUseTool } from '../../../../src/host/tools/vision/computerUse';
 
 function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {

@@ -9,20 +9,20 @@ const logger = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: vi.fn(() => logger),
 }));
 
-import { CloudConfigService } from '../../../../src/main/services/cloud/cloudConfigService';
+import { CloudConfigService } from '../../../../src/host/services/cloud/cloudConfigService';
 import {
   getBuiltinConfig,
   type CloudConfig,
-} from '../../../../src/main/services/cloud/builtinConfig';
+} from '../../../../src/host/services/cloud/builtinConfig';
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
   CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT,
-} from '../../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../../src/host/services/cloud/controlPlaneTrust';
 
 function mockJsonResponse(body: unknown) {
   return {

@@ -4,7 +4,7 @@
 // （取消不发出图请求、不花钱）/ applied·rejected·failed 三态回灌。
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
@@ -16,15 +16,15 @@ ipcMainHandleMock.mockImplementation((channel: string, fn: (e: unknown, r: unkno
   if (channel === 'canvas-video:response') responseHandlerRef.fn = fn;
 });
 
-vi.mock('../../../../../src/main/platform', () => ({
-  ipcMain: { handle: ipcMainHandleMock },
-  BrowserWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
+vi.mock('../../../../../src/host/platform', () => ({
+  ipcHost: { handle: ipcMainHandleMock },
+  AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
-vi.mock('../../../../../src/main/tools/modules/design/generationCostConfirm', () => ({
+vi.mock('../../../../../src/host/tools/modules/design/generationCostConfirm', () => ({
   confirmGenerationCost: confirmMock,
 }));
 
-import { proposeVideoOpsModule } from '../../../../../src/main/tools/modules/design/proposeVideoOps';
+import { proposeVideoOpsModule } from '../../../../../src/host/tools/modules/design/proposeVideoOps';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

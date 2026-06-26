@@ -16,7 +16,7 @@ process.env.CODE_AGENT_CLI_MODE = '1';
 process.env.CODE_AGENT_BROWSER_PROVIDER ||= 'playwright-bundled';
 
 // electron: vitest 跑在纯 Node.js 环境，没有 Electron runtime
-// ToolRegistry 导入链中 5 个工具文件直接 import electron (app/BrowserWindow/ipcMain 等)
+// ToolRegistry 导入链中 5 个工具文件直接 import electron (app/AppWindow/ipcHost 等)
 // 必须在 setup 阶段提供完整 mock，否则 worker 进程直接崩
 vi.mock('electron', () => ({
   app: {
@@ -29,14 +29,14 @@ vi.mock('electron', () => ({
     once: () => {},
     quit: () => {},
   },
-  BrowserWindow: class MockBrowserWindow {
+  AppWindow: class MockBrowserWindow {
     static getAllWindows() { return []; }
     static getFocusedWindow() { return null; }
     webContents = { send: () => {} };
     on() { return this; }
     once() { return this; }
   },
-  ipcMain: {
+  ipcHost: {
     on: () => {},
     once: () => {},
     handle: () => {},

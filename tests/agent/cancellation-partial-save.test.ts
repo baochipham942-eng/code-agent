@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { AgentTask } from '../../src/main/agent/agentTask';
+import { AgentTask } from '../../src/host/agent/agentTask';
 
 describe('AgentTask.saveToDisk — AC-B partial save', () => {
   let sessionDir: string;

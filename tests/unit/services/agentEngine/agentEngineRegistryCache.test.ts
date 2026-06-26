@@ -19,11 +19,11 @@ vi.mock('child_process', () => ({
   },
 }));
 
-vi.mock('../../../../src/main/services/infra/shellEnvironment', () => ({
+vi.mock('../../../../src/host/services/infra/shellEnvironment', () => ({
   getShellPath: () => '/usr/local/bin',
 }));
 
-import { AgentEngineRegistry } from '../../../../src/main/services/agentEngine/agentEngineRegistry';
+import { AgentEngineRegistry } from '../../../../src/host/services/agentEngine/agentEngineRegistry';
 
 beforeEach(() => {
   execFileCalls.length = 0;

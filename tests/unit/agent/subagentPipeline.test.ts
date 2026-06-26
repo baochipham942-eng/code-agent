@@ -10,12 +10,12 @@ import {
   resetSubagentPipeline,
   type SubagentExecutionContext,
   type ToolExecutionRequest,
-} from '../../../src/main/agent/subagentPipeline';
-import type { AgentDefinition, DynamicAgentConfig } from '../../../src/main/agent/agentDefinition';
-import type { PermissionConfig } from '../../../src/main/services/core/permissionPresets';
+} from '../../../src/host/agent/subagentPipeline';
+import type { AgentDefinition, DynamicAgentConfig } from '../../../src/host/agent/agentDefinition';
+import type { PermissionConfig } from '../../../src/host/services/core/permissionPresets';
 
 // Mock the budgetService
-vi.mock('../../../src/main/services/core/budgetService', () => ({
+vi.mock('../../../src/host/services/core/budgetService', () => ({
   BudgetAlertLevel: {
     NORMAL: 'normal',
     WARNING: 'warning',
@@ -36,7 +36,7 @@ vi.mock('../../../src/main/services/core/budgetService', () => ({
 }));
 
 // Mock the permissionPresets
-vi.mock('../../../src/main/services/core/permissionPresets', () => ({
+vi.mock('../../../src/host/services/core/permissionPresets', () => ({
   getPresetConfig: vi.fn().mockImplementation((preset, workingDir) => ({
     name: preset,
     description: `${preset} preset`,

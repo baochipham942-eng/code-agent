@@ -1,7 +1,7 @@
 // ============================================================================
 // image_process — 首个 builtin plugin（P2 剥离首发流程验证）
 //
-// 由 `src/main/tools/modules/network/imageProcess.ts` 迁入。运行行为 1:1 保留：
+// 由 `src/host/tools/modules/network/imageProcess.ts` 迁入。运行行为 1:1 保留：
 // sharp 图像处理（convert/compress/resize/upscale）+ 4 输出格式 + 输出路径管理 +
 // 中文文案 + emoji（🖼️ 📥 📤 📦 📄）+ metadata.attachment（id 前缀 image-、
 // category=image）。

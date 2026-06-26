@@ -4,13 +4,13 @@ import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/contr
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
-} from '../../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../../src/host/services/cloud/controlPlaneTrust';
 
-vi.mock('../../../../src/main/prompts/builder', () => ({
+vi.mock('../../../../src/host/prompts/builder', () => ({
   SYSTEM_PROMPT: 'builtin prompt',
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     debug: vi.fn(),
@@ -63,7 +63,7 @@ function buildSignedPromptRegistry(
 async function loadPromptService() {
   vi.resetModules();
   global.fetch = mockFetch;
-  return import('../../../../src/main/services/cloud/promptService');
+  return import('../../../../src/host/services/cloud/promptService');
 }
 
 describe('promptService control-plane trust', () => {
@@ -79,7 +79,7 @@ describe('promptService control-plane trust', () => {
       prompts: { policyAddon: 'unsigned addon', fullSystemPrompt: 'remote prompt' },
     }));
     const { initPromptService, getPromptsInfo } = await loadPromptService();
-    const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
+    const { listTrustedRemotePromptFragments } = await import('../../../../src/host/prompts/remoteFragments');
 
     await initPromptService();
 
@@ -108,7 +108,7 @@ describe('promptService control-plane trust', () => {
     const { envelope, publicKeys } = buildSignedPromptRegistry(payload);
     mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
     const { initPromptService, getPromptsInfo } = await loadPromptService();
-    const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
+    const { listTrustedRemotePromptFragments } = await import('../../../../src/host/prompts/remoteFragments');
 
     await initPromptService({ controlPlanePublicKeys: publicKeys });
 
@@ -138,7 +138,7 @@ describe('promptService control-plane trust', () => {
     });
     mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
     const { initPromptService, getPromptsInfo, getSystemPrompt } = await loadPromptService();
-    const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
+    const { listTrustedRemotePromptFragments } = await import('../../../../src/host/prompts/remoteFragments');
 
     await initPromptService({ controlPlanePublicKeys: publicKeys });
 

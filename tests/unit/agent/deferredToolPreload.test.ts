@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/tools/protocolRegistry', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/main/tools/protocolRegistry')>(
-    '../../../src/main/tools/protocolRegistry',
+vi.mock('../../../src/host/tools/protocolRegistry', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/tools/protocolRegistry')>(
+    '../../../src/host/tools/protocolRegistry',
   );
     return {
       ...actual,
@@ -16,16 +16,16 @@ vi.mock('../../../src/main/tools/protocolRegistry', async () => {
     };
   });
 
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
-import type { ToolModule, ToolSchema } from '../../../src/main/protocol/tools';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import type { ToolModule, ToolSchema } from '../../../src/host/protocol/tools';
 import {
   getDeferredToolsToPreloadForTurn,
   preloadDeferredToolsForTurn,
-} from '../../../src/main/agent/runtime/contextAssembly/deferredToolPreload';
-import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch';
-import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+} from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
+import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

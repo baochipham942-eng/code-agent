@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createControlPlaneEnvelopeFromEnv } from '../vercel-api/lib/controlPlaneEnvelope.ts';
-import { getShellCapabilityIds } from '../src/main/shellCapabilities.ts';
+import { getShellCapabilityIds } from '../src/host/shellCapabilities.ts';
 import { collectRendererShellCapabilities } from './renderer-capability-scanner.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

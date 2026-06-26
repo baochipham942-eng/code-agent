@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCuaAgentCursorCapabilityForToolCall } from '../../../src/main/mcp/cuaAgentCursor';
+import { buildCuaAgentCursorCapabilityForToolCall } from '../../../src/host/mcp/cuaAgentCursor';
 
 describe('cuaAgentCursor capability bridge', () => {
   it('falls back to renderer cursor when CUA is disabled', () => {

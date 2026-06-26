@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
-import { fileReadTracker } from '../../../../../src/main/tools/fileReadTracker';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
+import { fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
 
-vi.mock('../../../../../src/main/tools/lsp/diagnosticsHelper', () => ({
+vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
   getPostEditDiagnostics: async () => null,
 }));
 
-import { editModule } from '../../../../../src/main/tools/modules/file/multiEdit';
+import { editModule } from '../../../../../src/host/tools/modules/file/multiEdit';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

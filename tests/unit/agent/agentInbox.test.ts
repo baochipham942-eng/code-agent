@@ -9,22 +9,22 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 import {
   peekUnifiedInbox,
   type InboxSources,
-} from '../../../src/main/agent/agentInbox';
+} from '../../../src/host/agent/agentInbox';
 import {
   getSpawnGuard,
   resetSpawnGuard,
   createTextMessage,
   type AgentMessage,
-} from '../../../src/main/agent/spawnGuard';
-import type { SubagentResult } from '../../../src/main/agent/subagentExecutor';
-import type { TeammateMessage } from '../../../src/main/agent/teammate/types';
+} from '../../../src/host/agent/spawnGuard';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
+import type { TeammateMessage } from '../../../src/host/agent/teammate/types';
 
 describe('peekUnifiedInbox 桥接聚合', () => {
   const agentMsg = (from: string, payload: string, ts: number): AgentMessage => ({

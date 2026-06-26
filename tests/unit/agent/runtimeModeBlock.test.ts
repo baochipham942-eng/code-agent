@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildRuntimeModeBlock } from '../../../src/main/agent/messageHandling/contextBuilder';
+import { buildRuntimeModeBlock } from '../../../src/host/agent/messageHandling/contextBuilder';
 
 describe('buildRuntimeModeBlock', () => {
   const previousCliMode = process.env.CODE_AGENT_CLI_MODE;

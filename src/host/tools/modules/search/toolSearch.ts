@@ -1,7 +1,7 @@
 // ============================================================================
 // ToolSearch (P1 Wave 1 — search: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/search/toolSearch.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/search/toolSearch.ts (legacy Tool + wrapLegacyTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

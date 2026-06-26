@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock service singletons
@@ -16,19 +16,19 @@ import type {
 const searchToolsMock = vi.fn();
 const discoverLazyServersForSearchMock = vi.fn();
 
-vi.mock('../../../../../src/main/services/toolSearch/toolSearchService', () => ({
+vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => ({
   getToolSearchService: () => ({
     searchTools: searchToolsMock,
   }),
 }));
 
-vi.mock('../../../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     discoverLazyServersForSearch: discoverLazyServersForSearchMock,
   }),
 }));
 
-import { toolSearchModule } from '../../../../../src/main/tools/modules/search/toolSearch';
+import { toolSearchModule } from '../../../../../src/host/tools/modules/search/toolSearch';
 
 // -----------------------------------------------------------------------------
 // Helpers

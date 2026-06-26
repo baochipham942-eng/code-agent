@@ -2,7 +2,7 @@
 // Lifecycle - App 生命周期管理
 // ============================================================================
 
-import { app, BrowserWindow } from '../platform';
+import { app, AppWindow } from '../platform';
 import { getDatabase, getLangfuseService } from '../services';
 import { getMCPClient } from '../mcp/mcpClient';
 import { cleanupSessionStateManager } from '../session/sessionStateManager';
@@ -87,7 +87,7 @@ export function setupLifecycleHandlers(
 
   // Handle activate (macOS dock click)
   app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (AppWindow.getAllWindows().length === 0) {
       await onActivate();
     }
   });

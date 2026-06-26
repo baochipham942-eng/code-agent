@@ -25,10 +25,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hasFlag, parseArgs, finishWithError, getStringOption } from './_helpers.ts';
-import { validateStructuredSlides, type StructuredSlide } from '../../src/main/tools/media/ppt/slideSchemas.ts';
-import { validateNarrative } from '../../src/main/tools/media/ppt/narrativeValidator.ts';
-import type { SlideData } from '../../src/main/tools/media/ppt/types.ts';
-import { DeckVerifier } from '../../src/main/agent/runtime/deck/DeckVerifier.ts';
+import { validateStructuredSlides, type StructuredSlide } from '../../src/host/tools/media/ppt/slideSchemas.ts';
+import { validateNarrative } from '../../src/host/tools/media/ppt/narrativeValidator.ts';
+import type { SlideData } from '../../src/host/tools/media/ppt/types.ts';
+import { DeckVerifier } from '../../src/host/agent/runtime/deck/DeckVerifier.ts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '..', '..');
@@ -40,11 +40,11 @@ const liveSlidesPath = path.join(fixtureDir, 'live-slides.json');
 const liveBaselinePath = path.join(fixtureDir, 'live-baseline.json');
 
 const PPT_MJS_FILES = [
-  'src/main/tools/media/ppt/__tests__/ppt-d3d4.test.mjs',
-  'src/main/tools/media/ppt/__tests__/ppt-schema.test.mjs',
-  'src/main/tools/media/ppt/__tests__/ppt.test.mjs',
-  'src/main/tools/media/ppt/__tests__/ppt-extended.test.mjs',
-  'src/main/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs',
+  'src/host/tools/media/ppt/__tests__/ppt-d3d4.test.mjs',
+  'src/host/tools/media/ppt/__tests__/ppt-schema.test.mjs',
+  'src/host/tools/media/ppt/__tests__/ppt.test.mjs',
+  'src/host/tools/media/ppt/__tests__/ppt-extended.test.mjs',
+  'src/host/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs',
 ] as const;
 
 // ---------------------------------------------------------------------------

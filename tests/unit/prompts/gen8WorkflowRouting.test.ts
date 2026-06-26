@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
+import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
 
 // P3c 回归守卫：base tools prompt 必须保留 /workflow → workflow 工具的路由 carve-out（否则模型会把
 // /workflow 当普通 /xxx 路由到 Skill，触发不了 workflow 工具）。

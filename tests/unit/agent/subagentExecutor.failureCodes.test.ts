@@ -19,7 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SUBAGENT_EXECUTOR_PATH = path.resolve(
   __dirname,
-  '../../../src/main/agent/subagentExecutor.ts',
+  '../../../src/host/agent/subagentExecutor.ts',
 );
 
 describe('subagentExecutor 结构化失败码 producer', () => {

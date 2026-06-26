@@ -2,8 +2,8 @@
 // 标题页只放短标题（不再像旧 bug 那样把整份大纲塞进标题页溢出炸版）。
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
-import { generateSlidesDeck } from '../../../../src/main/services/design/slidesGenerator';
-import type { SlideData } from '../../../../src/main/tools/media/ppt/types';
+import { generateSlidesDeck } from '../../../../src/host/services/design/slidesGenerator';
+import type { SlideData } from '../../../../src/host/tools/media/ppt/types';
 
 async function slideTexts(buffer: Buffer): Promise<string[]> {
   const zip = await JSZip.loadAsync(buffer);

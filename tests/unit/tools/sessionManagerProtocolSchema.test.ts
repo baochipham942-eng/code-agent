@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { sessionManagerSchema } from '../../../src/main/tools/modules/session/sessionManager.schema';
-import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { sessionManagerSchema } from '../../../src/host/tools/modules/session/sessionManager.schema';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 
 describe('SessionManager protocol schema', () => {
   beforeEach(() => {

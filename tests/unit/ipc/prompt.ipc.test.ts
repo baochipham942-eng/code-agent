@@ -12,27 +12,27 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/auth', () => ({
+vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
     hasVerifiedSession: () => mocks.sessionVerified,
   }),
 }));
 
-vi.mock('../../../src/main/prompts/registry', () => ({
+vi.mock('../../../src/host/prompts/registry', () => ({
   listPrompts: mocks.registry.listPrompts,
   getPromptDetail: mocks.registry.getPromptDetail,
   setPromptOverride: mocks.registry.setPromptOverride,
   resetPromptOverride: mocks.registry.resetPromptOverride,
 }));
 
-vi.mock('../../../src/main/prompts/promptIndex', () => ({}));
+vi.mock('../../../src/host/prompts/promptIndex', () => ({}));
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   SYSTEM_PROMPT: 'FULL SYSTEM PROMPT',
 }));
 
-import { registerPromptHandlers } from '../../../src/main/ipc/prompt.ipc';
+import { registerPromptHandlers } from '../../../src/host/ipc/prompt.ipc';
 
 type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;
 

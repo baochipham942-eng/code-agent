@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runDesignPreviewRepairLoop, type DesignPreviewRepairAgent } from '../../../../../src/main/agent/runtime/browser/designPreviewRepair';
-import { browserService } from '../../../../../src/main/services/infra/browserService';
+import { runDesignPreviewRepairLoop, type DesignPreviewRepairAgent } from '../../../../../src/host/agent/runtime/browser/designPreviewRepair';
+import { browserService } from '../../../../../src/host/services/infra/browserService';
 
 const TOKEN = 'repair-in-app-token';
 

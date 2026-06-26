@@ -27,8 +27,8 @@ const gen = vi.hoisted(() => ({
   impl: null as null | ((engine: string) => Promise<{ imageData: string; actualModel: string }>),
 }));
 
-vi.mock('../../../src/main/services/media/imageGenerationService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/media/imageGenerationService')>();
+vi.mock('../../../src/host/services/media/imageGenerationService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/media/imageGenerationService')>();
   return {
     ...actual,
     getDashscopeApiKey: vi.fn(() => health.dashscope),
@@ -45,7 +45,7 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
   };
 });
 
-vi.mock('../../../src/main/services/media/customImageModelRegistry', () => ({
+vi.mock('../../../src/host/services/media/customImageModelRegistry', () => ({
   getCustomImageModel: vi.fn(async () => null),
   getCustomModelApiKey: vi.fn(),
   listCustomImageModels: vi.fn(async () => []),
@@ -53,17 +53,17 @@ vi.mock('../../../src/main/services/media/customImageModelRegistry', () => ({
 }));
 
 const cfg = vi.hoisted(() => ({ root: '' }));
-vi.mock('../../../src/main/config/configPaths', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/config/configPaths')>();
+vi.mock('../../../src/host/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/config/configPaths')>();
   return { ...actual, getUserConfigDir: () => cfg.root };
 });
 
-vi.mock('../../../src/main/services/core/configService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/core/configService')>();
+vi.mock('../../../src/host/services/core/configService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
   return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: (k: string) => (k === 'openrouter' ? health.openrouter : undefined) })) };
 });
 
-import { handleGenerateDesignImage } from '../../../src/main/ipc/workspace.ipc';
+import { handleGenerateDesignImage } from '../../../src/host/ipc/workspace.ipc';
 
 const PNG = 'data:image/png;base64,QUJD';
 let workDir: string;

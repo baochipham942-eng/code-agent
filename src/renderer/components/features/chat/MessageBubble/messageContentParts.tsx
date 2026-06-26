@@ -562,7 +562,7 @@ const OPENABLE_FILE_EXTENSIONS = [
 
 // Check if text looks like an openable file path
 // Supports: /abs/path.ext, ./rel/path.ext, ~/path.ext, src/multi/segment.ext
-// Also supports :lineNumber suffix (e.g., src/main/agent.ts:42)
+// Also supports :lineNumber suffix (e.g., src/host/agent.ts:42)
 const isFilePath = (text: string): boolean => {
   const trimmed = text.trim();
 

@@ -11,7 +11,7 @@ const service = {
   recordEvent: vi.fn(),
 };
 
-vi.mock('../../../src/main/services/sessionAutomation', () => ({
+vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => service,
 }));
 
@@ -24,7 +24,7 @@ import {
   syncCronAutomationFromJob,
   recordCronAutomationArchived,
   recordCronAutomationExecution,
-} from '../../../src/main/cron/cronAutomationBridge';
+} from '../../../src/host/cron/cronAutomationBridge';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
   id: 'job-1',

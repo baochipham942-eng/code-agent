@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractScriptPreview } from '../../../../src/main/agent/scriptRuntime/scriptPreview';
+import { extractScriptPreview } from '../../../../src/host/agent/scriptRuntime/scriptPreview';
 
 describe('extractScriptPreview', () => {
   it('按源码顺序抽出 phase(字面量) 标题并去重', () => {

@@ -22,21 +22,21 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mocks.spawn(...args),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   getLogsPath: () => mocks.getLogsPath(),
-  BrowserWindow: {
+  AppWindow: {
     getAllWindows: () => [{ webContents: { send: mocks.webContentsSend } }],
   },
 }));
 
-vi.mock('../../../src/main/services/infra/sessionManager', () => ({
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     addMessageToSession: mocks.addMessageToSession,
     updateSession: mocks.updateSession,
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/tasks/backgroundTaskLedger', () => ({
+vi.mock('../../../src/host/tasks/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ({
     upsertTask: mocks.upsertTask,
     appendEvent: mocks.appendEvent,
@@ -54,7 +54,7 @@ vi.mock('../../../src/main/tasks/backgroundTaskLedger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/evaluation/reviewQueueService', () => ({
+vi.mock('../../../src/host/evaluation/reviewQueueService', () => ({
   ReviewQueueService: {
     getInstance: () => ({
       enqueueSession: mocks.enqueueSession,
@@ -62,7 +62,7 @@ vi.mock('../../../src/main/evaluation/reviewQueueService', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services/agentEngine/agentEngineRegistry', () => ({
+vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
   getAgentEngineRegistry: () => ({
     get: mocks.registryGet,
   }),
@@ -72,7 +72,7 @@ import {
   buildClaudeCodeArgs,
   ClaudeCodeAdapter,
   parseClaudeCodeJsonLine,
-} from '../../../src/main/services/agentEngine/claudeCodeAdapter';
+} from '../../../src/host/services/agentEngine/claudeCodeAdapter';
 
 describe('Claude Code adapter helpers', () => {
   it('uses Claude Code print mode with plan permissions and read-only tools', () => {

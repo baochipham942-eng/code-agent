@@ -7,7 +7,7 @@ import {
   redactScreenshotFile,
   selectScreenshotRedactionRegions,
   shouldRedactScreenshotFromText,
-} from '../../../src/main/services/activity/screenshotPrivacyRedactor';
+} from '../../../src/host/services/activity/screenshotPrivacyRedactor';
 
 let tmpDir: string;
 

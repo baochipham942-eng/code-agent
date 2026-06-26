@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { TaskDAG } from '../../../src/main/scheduler/TaskDAG';
+import { TaskDAG } from '../../../src/host/scheduler/TaskDAG';
 import type {
   DAGTask,
   TaskStatus,
@@ -13,7 +13,7 @@ import type {
 } from '../../../src/shared/contract/taskDAG';
 
 // Mock logger
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

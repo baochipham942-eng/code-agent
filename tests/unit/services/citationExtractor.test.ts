@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { extractCitations } from '../../../src/main/services/citation/citationExtractor';
+import { extractCitations } from '../../../src/host/services/citation/citationExtractor';
 
 describe('CitationExtractor', () => {
   // --------------------------------------------------------------------------

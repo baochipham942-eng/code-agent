@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ConcurrencyGate } from '../../../../src/main/agent/scriptRuntime/concurrencyGate';
-import { setProviderConcurrencyOverrides } from '../../../../src/main/model/concurrencyLimiter';
+import { ConcurrencyGate } from '../../../../src/host/agent/scriptRuntime/concurrencyGate';
+import { setProviderConcurrencyOverrides } from '../../../../src/host/model/concurrencyLimiter';
 
 afterEach(() => {
   setProviderConcurrencyOverrides({});

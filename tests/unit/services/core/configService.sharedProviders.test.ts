@@ -11,7 +11,7 @@ import type {
   SharedProviderConfig,
   SharedProviderKeyConfig,
   SharedServiceKeyConfig,
-} from '../../../../src/main/services/cloud/builtinConfig';
+} from '../../../../src/host/services/cloud/builtinConfig';
 
 const keyStore = new Map<string, string>();
 const secureStorageMock = {
@@ -28,28 +28,28 @@ const secureStorageMock = {
 
 async function loadConfigService(dataDir: string) {
   vi.resetModules();
-  vi.doMock('../../../../src/main/platform', () => ({
+  vi.doMock('../../../../src/host/platform', () => ({
     app: {
       isPackaged: false,
       getPath: () => dataDir,
     },
   }));
-  vi.doMock('../../../../src/main/services/core/secureStorage', () => ({
+  vi.doMock('../../../../src/host/services/core/secureStorage', () => ({
     getSecureStorage: () => secureStorageMock,
   }));
-  vi.doMock('../../../../src/main/services/infra/logger', () => ({
+  vi.doMock('../../../../src/host/services/infra/logger', () => ({
     createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   }));
-  vi.doMock('../../../../src/main/permissions/policyEngine', () => ({
+  vi.doMock('../../../../src/host/permissions/policyEngine', () => ({
     getPolicyEngine: () => ({ loadUserRules: vi.fn() }),
   }));
-  vi.doMock('../../../../src/main/model/concurrencyLimiter', () => ({
+  vi.doMock('../../../../src/host/model/concurrencyLimiter', () => ({
     setProviderConcurrencyOverrides: vi.fn(),
   }));
-  vi.doMock('../../../../src/main/model/providers/shared', () => ({
+  vi.doMock('../../../../src/host/model/providers/shared', () => ({
     setProviderProxyOverrides: vi.fn(),
   }));
-  return import('../../../../src/main/services/core/configService');
+  return import('../../../../src/host/services/core/configService');
 }
 
 const relayProvider: SharedProviderConfig = {

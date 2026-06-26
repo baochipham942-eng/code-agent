@@ -20,8 +20,8 @@ import {
   parsedSkillToMetadata,
   loadedPluginToExtension,
   parsedSkillToExtension,
-} from '../../../src/main/extension/adapters';
-import type { LoadedPlugin, PluginManifest, PluginState } from '../../../src/main/plugins/types';
+} from '../../../src/host/extension/adapters';
+import type { LoadedPlugin, PluginManifest, PluginState } from '../../../src/host/plugins/types';
 import type { ParsedSkill, SkillSource } from '../../../src/shared/contract/agentSkill';
 
 // ----------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
-import type { ModelMessage } from '../../../src/main/model/types';
-import { XiaomiProvider } from '../../../src/main/model/providers/xiaomiProvider';
+import type { ModelMessage } from '../../../src/host/model/types';
+import { XiaomiProvider } from '../../../src/host/model/providers/xiaomiProvider';
 
 class InspectableXiaomiProvider extends XiaomiProvider {
   inspectRequestBody(

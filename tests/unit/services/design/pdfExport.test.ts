@@ -9,11 +9,11 @@ import sharp from 'sharp';
 // playwrightRuntime 被 mock：ok 路返回伪 chromium（launch→newPage→pdf→close），
 // !ok 路返回不可用，断言 htmlToPdf 抛出包含可读前缀的错误。绝不真启 chromium。
 const loadPlaywrightChromiumMock = vi.fn();
-vi.mock('../../../../src/main/runtime/playwrightRuntime', () => ({
+vi.mock('../../../../src/host/runtime/playwrightRuntime', () => ({
   loadPlaywrightChromium: (...args: unknown[]) => loadPlaywrightChromiumMock(...args),
 }));
 
-import { htmlToPdf, imageToPdf } from '../../../../src/main/services/design/pdfExport';
+import { htmlToPdf, imageToPdf } from '../../../../src/host/services/design/pdfExport';
 
 afterEach(() => {
   vi.clearAllMocks();

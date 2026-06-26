@@ -5,14 +5,14 @@ const resolverState = vi.hoisted(() => ({
   execute: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -27,8 +27,8 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { resetDecisionHistory, getDecisionHistory } from '../../../src/main/security/decisionHistory';
-import { ToolExecutor } from '../../../src/main/tools/toolExecutor';
+import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 describe('ToolExecutor decision trace history', () => {
   beforeEach(() => {

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from '../../../src/main/ipc/workspaceSaveExport';
+import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from '../../../src/host/ipc/workspaceSaveExport';
 
 let fakeHome: string;
 

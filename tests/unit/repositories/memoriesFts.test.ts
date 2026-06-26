@@ -18,8 +18,8 @@ import {
   applyMemoriesFtsSchema,
   runMemoriesFtsBackfill,
 } from '../../../src/shared/memoriesFts.sql';
-import { MemoryRepository } from '../../../src/main/services/core/repositories/MemoryRepository';
-import type { MemoryRecord } from '../../../src/main/protocol/types';
+import { MemoryRepository } from '../../../src/host/services/core/repositories/MemoryRepository';
+import type { MemoryRecord } from '../../../src/host/protocol/types';
 
 function createMemoriesSchema(db: BetterSqlite3.Database): void {
   db.exec(`

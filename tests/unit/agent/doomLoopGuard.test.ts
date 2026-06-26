@@ -5,7 +5,7 @@ import {
   DOOM_LOOP_THRESHOLD,
   REPEATED_STEP_THRESHOLD,
   EMPTY_OUTPUT_CONTINUATION_LIMIT,
-} from '../../../src/main/agent/runtime/doomLoopGuard';
+} from '../../../src/host/agent/runtime/doomLoopGuard';
 
 const call = (name: string, args: Record<string, unknown>) => ({ name, arguments: args });
 

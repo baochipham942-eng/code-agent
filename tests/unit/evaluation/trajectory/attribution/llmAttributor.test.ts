@@ -3,11 +3,11 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
-import { attributeByLLM } from '../../../../../src/main/evaluation/trajectory/attribution/llmAttributor';
+import { attributeByLLM } from '../../../../../src/host/evaluation/trajectory/attribution/llmAttributor';
 import type {
   Trajectory,
   TrajectoryStep,
-} from '../../../../../src/main/testing/types';
+} from '../../../../../src/host/testing/types';
 
 function toolStep(index: number, name: string, success: boolean): TrajectoryStep {
   return {

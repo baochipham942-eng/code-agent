@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { CompressionState } from '../../../src/main/context/compressionState';
-import { applyArchiveHydration } from '../../../src/main/agent/runtime/contextAssembly/archiveHydration';
-import type { ContextTranscriptEntry } from '../../../src/main/agent/runtime/contextAssembly/shared';
+import { CompressionState } from '../../../src/host/context/compressionState';
+import { applyArchiveHydration } from '../../../src/host/agent/runtime/contextAssembly/archiveHydration';
+import type { ContextTranscriptEntry } from '../../../src/host/agent/runtime/contextAssembly/shared';
 
 const testRoot = path.join(os.tmpdir(), `neo-context-archive-hydration-${process.pid}`);
 
-vi.mock('../../../src/main/config/configPaths', async () => {
+vi.mock('../../../src/host/config/configPaths', async () => {
   const osMod = await import('os');
   const pathMod = await import('path');
   return {
@@ -16,7 +16,7 @@ vi.mock('../../../src/main/config/configPaths', async () => {
   };
 });
 
-import { spillToolResultArchive } from '../../../src/main/utils/toolResultSpill';
+import { spillToolResultArchive } from '../../../src/host/utils/toolResultSpill';
 
 function makeEntry(id: string, role: string, content: string): ContextTranscriptEntry {
   return {

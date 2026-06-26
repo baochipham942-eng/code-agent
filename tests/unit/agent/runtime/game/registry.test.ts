@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { gameSubtypeRegistry } from '../../../../../src/main/agent/runtime/game/registry';
+import { gameSubtypeRegistry } from '../../../../../src/host/agent/runtime/game/registry';
 import type {
   GameSubtypeChecker,
   MechanicsResult,
   RuntimeEvidenceResult,
-} from '../../../../../src/main/agent/runtime/game/types';
+} from '../../../../../src/host/agent/runtime/game/types';
 
 function makeChecker(subtype: string): GameSubtypeChecker {
   return {

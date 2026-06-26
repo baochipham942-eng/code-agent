@@ -5,7 +5,7 @@
 //  2. Next 项目探测返回 supported=false（不启动）
 //  3. 不存在目录返回 supported=false
 
-import { getDevServerManager, detectProjectFramework } from '../src/main/services/infra/devServerManager';
+import { getDevServerManager, detectProjectFramework } from '../src/host/services/infra/devServerManager';
 
 const SPIKE_APP = '/Users/linchen/Downloads/ai/visual-grounding-eval/spike-app';
 

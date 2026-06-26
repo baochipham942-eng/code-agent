@@ -4,8 +4,8 @@ import * as path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
-import { gitDiffModule } from '../../../../../src/main/tools/modules/shell/gitDiff';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
+import { gitDiffModule } from '../../../../../src/host/tools/modules/shell/gitDiff';
 
 const execFileAsync = promisify(execFile);
 

@@ -3,11 +3,11 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { IngressPipeline, type IngressMessage } from '../../../src/main/channels/ingressPipeline';
+import { IngressPipeline, type IngressMessage } from '../../../src/host/channels/ingressPipeline';
 import type { ChannelAttachment } from '../../../src/shared/contract/channel';
 
 // Mock logger
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

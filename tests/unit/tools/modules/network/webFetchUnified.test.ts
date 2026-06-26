@@ -3,13 +3,13 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { fetchDocumentMock } = vi.hoisted(() => ({
   fetchDocumentMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/web/fetchDocument', () => ({
+vi.mock('../../../../../src/host/tools/web/fetchDocument', () => ({
   fetchDocument: (...args: unknown[]) => fetchDocumentMock(...args),
 }));
 
@@ -19,7 +19,7 @@ const { smartHtmlToTextMock, smartTruncateMock, buildExtractionPromptMock } = vi
   buildExtractionPromptMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/web/htmlUtils', () => ({
+vi.mock('../../../../../src/host/tools/web/htmlUtils', () => ({
   smartHtmlToText: (...args: unknown[]) => smartHtmlToTextMock(...args),
   smartTruncate: (...args: unknown[]) => smartTruncateMock(...args),
   buildExtractionPrompt: (...args: unknown[]) => buildExtractionPromptMock(...args),
@@ -29,12 +29,12 @@ const { executeHttpRequestMock } = vi.hoisted(() => ({
   executeHttpRequestMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/modules/network/httpRequest', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/httpRequest', () => ({
   executeHttpRequest: (...args: unknown[]) => executeHttpRequestMock(...args),
 }));
 
-import { webFetchUnifiedSchema } from '../../../../../src/main/tools/modules/network/webFetchUnified.schema';
-import { webFetchUnifiedModule } from '../../../../../src/main/tools/modules/network/webFetchUnified';
+import { webFetchUnifiedSchema } from '../../../../../src/host/tools/modules/network/webFetchUnified.schema';
+import { webFetchUnifiedModule } from '../../../../../src/host/tools/modules/network/webFetchUnified';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

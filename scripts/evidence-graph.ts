@@ -16,14 +16,14 @@
 //   snapshot <category>          记录当前 category 成功率快照
 // ============================================================================
 
-import { EvidenceDb, DEFAULT_DB_PATH } from '../src/main/evaluation/evidence/evidenceDb';
+import { EvidenceDb, DEFAULT_DB_PATH } from '../src/host/evaluation/evidence/evidenceDb';
 import {
   getRuleCoverage,
   getCategoryImpact,
   getRuleEvolution,
   getRuleEffectiveness,
   getSummary,
-} from '../src/main/evaluation/evidence/evidenceQueries';
+} from '../src/host/evaluation/evidence/evidenceQueries';
 
 function usage(): void {
   console.log(`

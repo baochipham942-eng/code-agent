@@ -8,12 +8,12 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 // worker 用 mock 隔离（不真起 worker_threads）
-vi.mock('../../../../src/main/agent/scriptRuntime/sandbox', () => ({
+vi.mock('../../../../src/host/agent/scriptRuntime/sandbox', () => ({
   runScriptInWorker: vi.fn(async () => ({ ok: true, result: 'ok' })),
 }));
 
-import { runScriptInWorker } from '../../../../src/main/agent/scriptRuntime/sandbox';
-import { startRun, cancelRun, getRunState, type ScriptRunHostDeps } from '../../../../src/main/agent/scriptRuntime';
+import { runScriptInWorker } from '../../../../src/host/agent/scriptRuntime/sandbox';
+import { startRun, cancelRun, getRunState, type ScriptRunHostDeps } from '../../../../src/host/agent/scriptRuntime';
 
 const baseModel = { provider: 'xiaomi', model: 'm', apiKey: 'k' };
 

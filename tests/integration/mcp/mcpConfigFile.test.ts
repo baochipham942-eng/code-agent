@@ -10,8 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { loadMcpConfigFiles } from '../../../src/main/mcp/mcpConfigFile';
-import { MCPClient } from '../../../src/main/mcp/mcpClient';
+import { loadMcpConfigFiles } from '../../../src/host/mcp/mcpConfigFile';
+import { MCPClient } from '../../../src/host/mcp/mcpClient';
 
 const loggerMocks = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -20,7 +20,7 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: loggerMocks,
   createLogger: () => loggerMocks,
 }));

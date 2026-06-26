@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runReadOnlySideChat } from '../../../src/main/agent/readOnlySideChat';
-import type { SubagentConfig, SubagentContext, SubagentResult } from '../../../src/main/agent/subagentExecutorTypes';
+import { runReadOnlySideChat } from '../../../src/host/agent/readOnlySideChat';
+import type { SubagentConfig, SubagentContext, SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import type { Message } from '../../../src/shared/contract';
 
 function fakeResult(output: string): SubagentResult {

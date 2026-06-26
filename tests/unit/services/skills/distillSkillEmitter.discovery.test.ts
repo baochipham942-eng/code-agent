@@ -22,12 +22,12 @@ function skillsDirs(workingDirectory?: string) {
   };
 }
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockPaths.userConfigDir,
   getSkillsDir: (workingDirectory?: string) => skillsDirs(workingDirectory),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -42,35 +42,35 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/builtinSkills', () => ({
+vi.mock('../../../../src/host/services/skills/builtinSkills', () => ({
   getBuiltinSkills: () => [],
 }));
 
-vi.mock('../../../../src/main/services/cloud', () => ({
+vi.mock('../../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({
     getSkills: () => [],
   }),
 }));
 
-vi.mock('../../../../src/main/services/toolSearch', () => ({
+vi.mock('../../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
     clearSkills: vi.fn(),
     registerSkills: vi.fn(),
   }),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   getSkillRepositoryService: () => ({
     initialize: vi.fn().mockResolvedValue(undefined),
     isSkillEnabled: () => true,
   }),
 }));
 
-import { emitSkillAsset } from '../../../../src/main/services/skills/distillSkillEmitter';
+import { emitSkillAsset } from '../../../../src/host/services/skills/distillSkillEmitter';
 import {
   getSkillDiscoveryService,
   resetSkillDiscoveryService,
-} from '../../../../src/main/services/skills/skillDiscoveryService';
+} from '../../../../src/host/services/skills/skillDiscoveryService';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 

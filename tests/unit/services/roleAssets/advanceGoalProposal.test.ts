@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { parseAdvanceGoalProposal } from '../../../../src/main/services/roleAssets/roleProactivity';
+import { parseAdvanceGoalProposal } from '../../../../src/host/services/roleAssets/roleProactivity';
 
 describe('parseAdvanceGoalProposal', () => {
   it('提取 <goal> + <verify> 双标记', () => {

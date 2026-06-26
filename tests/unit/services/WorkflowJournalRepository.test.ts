@@ -13,7 +13,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { WorkflowJournalRepository } from '../../../src/main/services/core/repositories/WorkflowJournalRepository';
+import { WorkflowJournalRepository } from '../../../src/host/services/core/repositories/WorkflowJournalRepository';
 
 // 与 schema.ts 的 workflow_runs / workflow_run_calls 逐字一致（测试自带 schema，解耦全量 applySchema）。
 function createSchema(db: BetterSqlite3.Database): void {

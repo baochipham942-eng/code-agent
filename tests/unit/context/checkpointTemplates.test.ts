@@ -5,7 +5,7 @@ import {
   getSectionBody,
   replaceSectionBody,
   validateCheckpointDocument,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
 describe('checkpoint templates', () => {
   it('renders all 11 required checkpoint sections', () => {

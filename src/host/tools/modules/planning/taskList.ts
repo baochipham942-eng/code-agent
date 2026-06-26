@@ -1,7 +1,7 @@
 // ============================================================================
 // TaskList (P1 Wave 3 — planning: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/planning/taskList.ts
+// 旧版: src/host/tools/planning/taskList.ts
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：PERMISSION_DENIED / ABORTED

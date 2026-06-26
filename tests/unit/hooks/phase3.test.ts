@@ -4,22 +4,22 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HookManager } from '../../../src/main/hooks/hookManager';
-import type { MergedHookConfig } from '../../../src/main/hooks/merger';
+import { HookManager } from '../../../src/host/hooks/hookManager';
+import type { MergedHookConfig } from '../../../src/host/hooks/merger';
 
 
 // Mock dependencies
-vi.mock('../../../src/main/hooks/configParser', () => ({
+vi.mock('../../../src/host/hooks/configParser', () => ({
   loadAllHooksConfig: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../../../src/main/hooks/merger', () => ({
+vi.mock('../../../src/host/hooks/merger', () => ({
   mergeHooks: vi.fn().mockReturnValue([]),
   getHooksForTool: vi.fn().mockReturnValue([]),
   getHooksForEvent: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('../../../src/main/hooks/builtinHookExecutor', () => ({
+vi.mock('../../../src/host/hooks/builtinHookExecutor', () => ({
   getBuiltinHookExecutor: vi.fn().mockReturnValue({
     executeForEvent: vi.fn().mockResolvedValue([]),
   }),
@@ -59,7 +59,7 @@ describe('Trigger History', () => {
   });
 
   it('records hook sources, type, and matcher in trigger history', async () => {
-    const { getHooksForTool } = await import('../../../src/main/hooks/merger');
+    const { getHooksForTool } = await import('../../../src/host/hooks/merger');
     const matchingConfig: MergedHookConfig = {
       event: 'PreToolUse',
       matcher: /Bash/,
@@ -189,8 +189,8 @@ describe('Observer Downgrade in configParser', () => {
     const fs = await import('fs');
     const path = await import('path');
     const os = await import('os');
-    const { parseHooksConfig } = await vi.importActual<typeof import('../../../src/main/hooks/configParser')>(
-      '../../../src/main/hooks/configParser',
+    const { parseHooksConfig } = await vi.importActual<typeof import('../../../src/host/hooks/configParser')>(
+      '../../../src/host/hooks/configParser',
     );
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-observer-test-'));

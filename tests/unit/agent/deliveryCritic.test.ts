@@ -12,24 +12,24 @@ const providerResolutionState = vi.hoisted(() => ({
   resolveProviderApiKey: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => executorState,
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({}),
 }));
 
-vi.mock('../../../src/main/agent/hybrid/coreAgents', () => ({
+vi.mock('../../../src/host/agent/hybrid/coreAgents', () => ({
   getModelConfig: () => ({ provider: 'zhipu', model: 'glm-5' }),
 }));
 
 // critic 经 resolveReviewModelConfig（goalReviewGate）解析模型，依赖 key 可用性检查
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderApiKey: providerResolutionState.resolveProviderApiKey,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { runDeliveryCritic } from '../../../src/main/agent/deliveryCritic';
+import { runDeliveryCritic } from '../../../src/host/agent/deliveryCritic';
 
 const deps = {
   workingDirectory: '/tmp/project',

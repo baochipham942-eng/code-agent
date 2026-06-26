@@ -8,8 +8,8 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { PluginManifest, LoadedPlugin } from '../../../../src/main/plugins/types';
-import type { AgentExtension, ExtensionRuntimeState } from '../../../../src/main/extension/types';
+import type { PluginManifest, LoadedPlugin } from '../../../../src/host/plugins/types';
+import type { AgentExtension, ExtensionRuntimeState } from '../../../../src/host/extension/types';
 
 // --- Mock layer ---------------------------------------------------------
 
@@ -18,7 +18,7 @@ import type { AgentExtension, ExtensionRuntimeState } from '../../../../src/main
 // 通过 `pluginToExtension` helper 转成 AgentExtension 形态。
 
 const getExtensionsMock = vi.fn<() => AgentExtension[]>();
-vi.mock('../../../../src/main/extension/extensionRegistry', () => ({
+vi.mock('../../../../src/host/extension/extensionRegistry', () => ({
   getExtensionRegistry: () => ({
     getExtensions: getExtensionsMock,
   }),
@@ -26,7 +26,7 @@ vi.mock('../../../../src/main/extension/extensionRegistry', () => ({
 
 const hasConfiguredKeyMock = vi.fn<(provider: string) => boolean>();
 const getApiKeyMock = vi.fn<(provider: string) => string | undefined>();
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     hasConfiguredKey: hasConfiguredKeyMock,
     getApiKey: getApiKeyMock,
@@ -34,11 +34,11 @@ vi.mock('../../../../src/main/services/core/configService', () => ({
 }));
 
 const findCapableModelsMock = vi.fn();
-vi.mock('../../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../../src/host/model/modelRouter', () => ({
   findCapableModels: findCapableModelsMock,
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -104,7 +104,7 @@ describe('CapabilityRecommender', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     const { resetCapabilityRecommender } = await import(
-      '../../../../src/main/services/capability/CapabilityRecommender'
+      '../../../../src/host/services/capability/CapabilityRecommender'
     );
     resetCapabilityRecommender();
   });
@@ -118,7 +118,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(true);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().scanForCapability('browser-control');
 
@@ -139,7 +139,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(true);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().scanForCapability('browser-control');
 
@@ -166,7 +166,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(true);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().scanForCapability('vision');
 
@@ -190,7 +190,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(false);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().scanForCapability('vision');
 
@@ -212,7 +212,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(true);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().scanForCapability('audio-processing');
       expect(gaps.some((g) => g.type === 'plugin')).toBe(true);
@@ -231,7 +231,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(true);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().scanForCapability('browser-control');
       const pluginGap = gaps.find((g) => g.type === 'plugin');
@@ -246,7 +246,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(false);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().recommendForToolError(
         'image_analyze',
@@ -265,7 +265,7 @@ describe('CapabilityRecommender', () => {
       hasConfiguredKeyMock.mockReturnValue(true);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().recommendForToolError(
         'web_search',
@@ -286,7 +286,7 @@ describe('CapabilityRecommender', () => {
       findCapableModelsMock.mockReturnValue([]);
 
       const { getCapabilityRecommender } = await import(
-        '../../../../src/main/services/capability/CapabilityRecommender'
+        '../../../../src/host/services/capability/CapabilityRecommender'
       );
       const gaps = getCapabilityRecommender().recommendForToolError(
         'totally_unknown_tool',
@@ -308,21 +308,21 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
   it('已配 key 的 provider 排在未配的前面', async () => {
     // 局部 mock configService：仅 zhipu 已配 key
     vi.resetModules();
-    vi.doUnmock('../../../../src/main/model/modelRouter');
-    vi.doMock('../../../../src/main/services/core/configService', () => ({
+    vi.doUnmock('../../../../src/host/model/modelRouter');
+    vi.doMock('../../../../src/host/services/core/configService', () => ({
       getConfigService: () => ({
         hasConfiguredKey: (p: string) => p === 'zhipu',
         getApiKey: (p: string) => (p === 'zhipu' ? 'mock-key' : undefined),
       }),
     }));
-    vi.doMock('../../../../src/main/services/infra/logger', () => ({
+    vi.doMock('../../../../src/host/services/infra/logger', () => ({
       createLogger: () => ({
         debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
       }),
     }));
 
     const { findCapableModels } = await import(
-      '../../../../src/main/model/modelRouter'
+      '../../../../src/host/model/modelRouter'
     );
     const candidates = findCapableModels('vision');
     expect(candidates.length).toBeGreaterThan(0);
@@ -332,21 +332,21 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
 
   it('全部 provider 都没配 key 时返回非空数组但首项按 chain 顺序（claude 链优先）', async () => {
     vi.resetModules();
-    vi.doUnmock('../../../../src/main/model/modelRouter');
-    vi.doMock('../../../../src/main/services/core/configService', () => ({
+    vi.doUnmock('../../../../src/host/model/modelRouter');
+    vi.doMock('../../../../src/host/services/core/configService', () => ({
       getConfigService: () => ({
         hasConfiguredKey: () => false,
         getApiKey: () => undefined,
       }),
     }));
-    vi.doMock('../../../../src/main/services/infra/logger', () => ({
+    vi.doMock('../../../../src/host/services/infra/logger', () => ({
       createLogger: () => ({
         debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
       }),
     }));
 
     const { findCapableModels } = await import(
-      '../../../../src/main/model/modelRouter'
+      '../../../../src/host/model/modelRouter'
     );
     const candidates = findCapableModels('vision');
     expect(candidates.length).toBeGreaterThan(0);
@@ -362,21 +362,21 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
 
   it('search capability returns search-specialized model candidates', async () => {
     vi.resetModules();
-    vi.doUnmock('../../../../src/main/model/modelRouter');
-    vi.doMock('../../../../src/main/services/core/configService', () => ({
+    vi.doUnmock('../../../../src/host/model/modelRouter');
+    vi.doMock('../../../../src/host/services/core/configService', () => ({
       getConfigService: () => ({
         hasConfiguredKey: () => false,
         getApiKey: () => undefined,
       }),
     }));
-    vi.doMock('../../../../src/main/services/infra/logger', () => ({
+    vi.doMock('../../../../src/host/services/infra/logger', () => ({
       createLogger: () => ({
         debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
       }),
     }));
 
     const { findCapableModels } = await import(
-      '../../../../src/main/model/modelRouter'
+      '../../../../src/host/model/modelRouter'
     );
     const candidates = findCapableModels('search');
     expect(candidates.length).toBeGreaterThan(0);
@@ -389,13 +389,13 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
 describe('configService.hasConfiguredKey', () => {
   it('getApiKey 返回 string → hasConfiguredKey = true', async () => {
     vi.resetModules();
-    vi.doUnmock('../../../../src/main/services/core/configService');
-    vi.doMock('../../../../src/main/services/infra/logger', () => ({
+    vi.doUnmock('../../../../src/host/services/core/configService');
+    vi.doMock('../../../../src/host/services/infra/logger', () => ({
       createLogger: () => ({
         debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
       }),
     }));
-    const mod = await import('../../../../src/main/services/core/configService');
+    const mod = await import('../../../../src/host/services/core/configService');
     // 创建实例，stub getApiKey
     const svc = mod.getConfigService();
     const spy = vi.spyOn(svc, 'getApiKey').mockReturnValue('mock-key');
@@ -405,13 +405,13 @@ describe('configService.hasConfiguredKey', () => {
 
   it('getApiKey 返回 undefined → hasConfiguredKey = false', async () => {
     vi.resetModules();
-    vi.doUnmock('../../../../src/main/services/core/configService');
-    vi.doMock('../../../../src/main/services/infra/logger', () => ({
+    vi.doUnmock('../../../../src/host/services/core/configService');
+    vi.doMock('../../../../src/host/services/infra/logger', () => ({
       createLogger: () => ({
         debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
       }),
     }));
-    const mod = await import('../../../../src/main/services/core/configService');
+    const mod = await import('../../../../src/host/services/core/configService');
     const svc = mod.getConfigService();
     const spy = vi.spyOn(svc, 'getApiKey').mockReturnValue(undefined);
     expect(svc.hasConfiguredKey('local')).toBe(false);

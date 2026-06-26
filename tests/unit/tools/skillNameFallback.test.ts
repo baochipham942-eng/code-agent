@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveSkillByNameOrAlias,
   suggestClosestSkills,
-} from '../../../src/main/tools/modules/skill/skill';
+} from '../../../src/host/tools/modules/skill/skill';
 import type { ParsedSkill } from '../../../src/shared/contract/agentSkill';
 
 // 最小 mock：兜底解析只读 name / aliases，其余字段用断言绕过

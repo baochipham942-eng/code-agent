@@ -4,12 +4,12 @@ import {
   isFrontendPath,
   extensionOf,
   listDesignRules,
-} from '../../../src/main/quality/detect';
+} from '../../../src/host/quality/detect';
 import {
   runDesignQualityReview,
   formatDesignReview,
-} from '../../../src/main/quality/designQualityHook';
-import type { DesignFinding } from '../../../src/main/quality/types';
+} from '../../../src/host/quality/designQualityHook';
+import type { DesignFinding } from '../../../src/host/quality/types';
 
 const ruleIds = (findings: DesignFinding[]): string[] => findings.map((f) => f.ruleId);
 

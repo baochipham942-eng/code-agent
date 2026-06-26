@@ -10,12 +10,12 @@ import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => {
+vi.mock('../../../src/host/services/infra/logger', () => {
   const stub = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   // serviceRegistry 经 sessionAutomation→sessionManager 链拉入时会读取 `logger` 默认实例，
   // 这里一并导出，避免「No "logger" export」模块加载错误。
@@ -25,7 +25,7 @@ vi.mock('../../../src/main/services/infra/logger', () => {
 // agentRegistry 返回固定的 agent 列表（研究员有定义，孤儿角色没有）
 // 注意：预设角色（研究员）安装到用户目录后 registry 报 source: 'user'，
 // list action 需要对照 BUILTIN_ROLE_IDS 改写为 'builtin'
-vi.mock('../../../src/main/agent/agentRegistry', () => ({
+vi.mock('../../../src/host/agent/agentRegistry', () => ({
   listAllAgents: () => [
     {
       id: '研究员',
@@ -53,7 +53,7 @@ vi.mock('../../../src/main/agent/agentRegistry', () => ({
 const mockSettingsStore = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const mockUpdateSettings = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../src/main/services/core/configService', () => {
+vi.mock('../../../src/host/services/core/configService', () => {
   const deepMerge = (base: Record<string, unknown>, updates: Record<string, unknown>): Record<string, unknown> => {
     const result = { ...base };
     for (const [key, value] of Object.entries(updates)) {
@@ -80,7 +80,7 @@ vi.mock('../../../src/main/services/core/configService', () => {
 const mockCronCreateJob = vi.hoisted(() => vi.fn(async (def: unknown) => ({ ...(def as object), id: 'job-1' })));
 const mockCronDeleteJob = vi.hoisted(() => vi.fn(async () => true));
 
-vi.mock('../../../src/main/cron/cronService', () => ({
+vi.mock('../../../src/host/cron/cronService', () => ({
   getCronService: () => ({
     listJobs: () => [],
     createJob: mockCronCreateJob,
@@ -89,16 +89,16 @@ vi.mock('../../../src/main/cron/cronService', () => ({
   }),
 }));
 
-import { registerRolesHandlers } from '../../../src/main/ipc/roles.ipc';
+import { registerRolesHandlers } from '../../../src/host/ipc/roles.ipc';
 import {
   ensureRoleAssetDirs,
   writeScopedMemory,
   appendRoleHistory,
   listScopedMemories,
-} from '../../../src/main/services/roleAssets/roleAssetService';
+} from '../../../src/host/services/roleAssets/roleAssetService';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 
-// 捕获注册的 handler，模拟 ipcMain
+// 捕获注册的 handler，模拟 ipcHost
 type Handler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 let registeredHandler: Handler;
 

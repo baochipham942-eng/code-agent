@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
-import { buildAgentTreeSnapshot } from '../../../src/main/agent/agentTreeService';
+import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 import type { EvidenceRef } from '../../../src/shared/contract/evidence';
 
 describe('agentTreeService', () => {
@@ -133,7 +133,7 @@ describe('agentTreeService', () => {
           path: '/tmp/coder-worktree',
           branch: 'codex/coder-1',
           changedFiles: [
-            { path: 'src/main/agent/foo.ts', status: 'modified' },
+            { path: 'src/host/agent/foo.ts', status: 'modified' },
           ],
           diffSummary: '1 file changed',
           evidenceRefs: [evidence],
@@ -150,7 +150,7 @@ describe('agentTreeService', () => {
       diffSummary: '1 file changed',
     });
     expect(node?.worktreeState.changedFiles).toEqual([
-      { path: 'src/main/agent/foo.ts', status: 'modified' },
+      { path: 'src/host/agent/foo.ts', status: 'modified' },
     ]);
     expect(node?.evidenceRefs).toEqual([evidence]);
     expect(node?.sources).toContain('agentWorktree');

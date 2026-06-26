@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getSearchErrorCircuitBreakerCooldown } from '../../../../src/main/tools/web/search';
+import { getSearchErrorCircuitBreakerCooldown } from '../../../../src/host/tools/web/search';
 
 describe('search error circuit breaker classification', () => {
   it('treats provider quota exhaustion as a long cooldown', () => {

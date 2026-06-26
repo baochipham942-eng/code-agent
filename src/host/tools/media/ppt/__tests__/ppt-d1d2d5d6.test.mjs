@@ -1,6 +1,6 @@
 // ============================================================================
 // PPT D1/D2/D5/D6 测试 — 模板引擎 + 数据驱动 + 人机协作 + 排版
-// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs
+// 运行: npx tsx src/host/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs
 // ============================================================================
 
 import { createRequire } from 'module';
@@ -408,7 +408,7 @@ const { outlineToSlideData } = await import('../parser.ts');
 // ============================================================================
 // Part F (Edit Tool D5) 已迁移至 vitest，参见
 //   tests/unit/tools/modules/network/pptEdit.test.ts (19 cases)
-// 该 part 依赖已删除的 src/main/tools/media/ppt/{index.ts, editTool.ts}。
+// 该 part 依赖已删除的 src/host/tools/media/ppt/{index.ts, editTool.ts}。
 // ============================================================================
 
 // ============================================================================

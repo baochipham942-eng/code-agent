@@ -1,9 +1,9 @@
 // ============================================================================
 // Doctor IPC - 旧入口，保留向后兼容
-// 实际检查逻辑已迁移到 src/main/diagnostics/checks/*。
+// 实际检查逻辑已迁移到 src/host/diagnostics/checks/*。
 // runDiagnostics 现在委托 runDoctor 并按 environment+database+config+disk
 // 过滤，保证"4 项快速诊断"和完整诊断走同一根真理。
-// 新代码请直接调用 `src/main/diagnostics/doctorRunner.ts` 的 `runDoctor()`。
+// 新代码请直接调用 `src/host/diagnostics/doctorRunner.ts` 的 `runDoctor()`。
 // ============================================================================
 
 import { runDoctor } from '../diagnostics/doctorRunner';

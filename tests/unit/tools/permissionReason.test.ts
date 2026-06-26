@@ -11,14 +11,14 @@ const resolverState = vi.hoisted(() => ({
   execute: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/toolCache', () => ({
+vi.mock('../../../src/host/services/infra/toolCache', () => ({
   getToolCache: () => ({
     isCacheable: () => false,
     get: () => null,
@@ -26,11 +26,11 @@ vi.mock('../../../src/main/services/infra/toolCache', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/tools/middleware/fileCheckpointMiddleware', () => ({
+vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
   createFileCheckpointIfNeeded: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/confirmationGate', () => ({
+vi.mock('../../../src/host/agent/confirmationGate', () => ({
   getConfirmationGate: () => ({
     buildPreview: () => null,
     assessRiskLevel: () => 'low',
@@ -38,19 +38,19 @@ vi.mock('../../../src/main/agent/confirmationGate', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/security/writeIsolation', () => ({
+vi.mock('../../../src/host/security/writeIsolation', () => ({
   getWriteIsolationManager: () => ({
     acquire: vi.fn(async () => () => {}),
   }),
   getWriteIsolationScope: () => null,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-const { ToolExecutor } = await import('../../../src/main/tools/toolExecutor');
+const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
 
 describe('permissionReasonText 枚举文案映射', () => {
   it('每个枚举值都映射到非空、互不相同的文案（无 default 漏网）', () => {

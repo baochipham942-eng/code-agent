@@ -10,7 +10,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 import type { ParsedSkill } from '../../../../../src/shared/contract/agentSkill';
 
 // -----------------------------------------------------------------------------
@@ -21,7 +21,7 @@ const ensureInitializedMock = vi.fn(async (_dir: string) => {});
 const getSkillMock = vi.fn<(name: string) => ParsedSkill | undefined>();
 let registryAvailable = true;
 
-vi.mock('../../../../../src/main/services/skills', () => ({
+vi.mock('../../../../../src/host/services/skills', () => ({
   getSkillDiscoveryService: () =>
     registryAvailable
       ? {
@@ -33,11 +33,11 @@ vi.mock('../../../../../src/main/services/skills', () => ({
 
 let tmpRoot = '';
 const getSkillsDirMock = vi.fn<() => { user: { new: string }; project?: { new: string } }>();
-vi.mock('../../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../../src/host/config/configPaths', () => ({
   getSkillsDir: () => getSkillsDirMock(),
 }));
 
-import { skillCreateModule } from '../../../../../src/main/tools/modules/skill/skillCreate';
+import { skillCreateModule } from '../../../../../src/host/tools/modules/skill/skillCreate';
 
 // -----------------------------------------------------------------------------
 // Helpers

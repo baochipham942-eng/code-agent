@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseOpenAIResponse,
   parseOpenAIStreamChunk,
-} from '../../src/main/model/providers/wrappers/openaiWrapper';
+} from '../../src/host/model/providers/wrappers/openaiWrapper';
 
 describe('openaiWrapper / parseOpenAIResponse', () => {
   it('success: parses text-only response', () => {

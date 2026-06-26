@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   clearAgentsDiscoveryCache,
   discoverAgentFilesCached,
-} from '../../../src/main/context/agentsDiscovery';
+} from '../../../src/host/context/agentsDiscovery';
 
 describe('agentsDiscovery', () => {
   let rootDir: string;

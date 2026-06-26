@@ -12,13 +12,13 @@ import {
   TaskStatusProvider,
   type ProjectServiceLike,
   type TaskManagerLike,
-} from '../../../src/main/mcp/taskStatusProvider';
+} from '../../../src/host/mcp/taskStatusProvider';
 import type {
   SwarmTraceRepo,
   SwarmRunListItem,
   SwarmRunDetail,
 } from '../../../src/shared/contract/swarmTrace';
-import type { SessionState } from '../../../src/main/task/TaskManager';
+import type { SessionState } from '../../../src/host/task/TaskManager';
 
 // ---- fakes ----
 

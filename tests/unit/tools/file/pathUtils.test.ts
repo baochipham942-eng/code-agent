@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import os from 'os';
-import { expandTilde, resolvePath } from '../../../../src/main/tools/file/pathUtils';
+import { expandTilde, resolvePath } from '../../../../src/host/tools/file/pathUtils';
 
 describe('Path Utilities', () => {
   const homeDir = os.homedir();

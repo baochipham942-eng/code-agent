@@ -6,21 +6,21 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { browserSchema } from '../../../../../src/main/plugins/builtin/browserControl/browser.schema';
-import { computerSchema } from '../../../../../src/main/plugins/builtin/computerUse/computer.schema';
-import { browserActionSchema } from '../../../../../src/main/plugins/builtin/browserControl/browserAction.schema';
-import { browserNavigateSchema } from '../../../../../src/main/plugins/builtin/browserControl/browserNavigate.schema';
-import { computerUseSchema } from '../../../../../src/main/plugins/builtin/computerUse/computerUse.schema';
-import { screenshotSchema } from '../../../../../src/main/plugins/builtin/computerUse/screenshot.schema';
-import { guiAgentSchema } from '../../../../../src/main/plugins/builtin/computerUse/guiAgent.schema';
+import { browserSchema } from '../../../../../src/host/plugins/builtin/browserControl/browser.schema';
+import { computerSchema } from '../../../../../src/host/plugins/builtin/computerUse/computer.schema';
+import { browserActionSchema } from '../../../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { browserNavigateSchema } from '../../../../../src/host/plugins/builtin/browserControl/browserNavigate.schema';
+import { computerUseSchema } from '../../../../../src/host/plugins/builtin/computerUse/computerUse.schema';
+import { screenshotSchema } from '../../../../../src/host/plugins/builtin/computerUse/screenshot.schema';
+import { guiAgentSchema } from '../../../../../src/host/plugins/builtin/computerUse/guiAgent.schema';
 
-import { BrowserTool } from '../../../../../src/main/tools/vision/BrowserTool';
-import { ComputerTool } from '../../../../../src/main/tools/vision/ComputerTool';
-import { browserActionTool } from '../../../../../src/main/tools/vision/browserAction';
-import { browserNavigateTool } from '../../../../../src/main/tools/vision/browserNavigate';
-import { computerUseTool } from '../../../../../src/main/tools/vision/computerUse';
-import { screenshotTool } from '../../../../../src/main/tools/vision/screenshot';
-import { guiAgentTool } from '../../../../../src/main/tools/vision/guiAgent';
+import { BrowserTool } from '../../../../../src/host/tools/vision/BrowserTool';
+import { ComputerTool } from '../../../../../src/host/tools/vision/ComputerTool';
+import { browserActionTool } from '../../../../../src/host/tools/vision/browserAction';
+import { browserNavigateTool } from '../../../../../src/host/tools/vision/browserNavigate';
+import { computerUseTool } from '../../../../../src/host/tools/vision/computerUse';
+import { screenshotTool } from '../../../../../src/host/tools/vision/screenshot';
+import { guiAgentTool } from '../../../../../src/host/tools/vision/guiAgent';
 
 const pairs = [
   ['Browser', browserSchema, BrowserTool] as const,

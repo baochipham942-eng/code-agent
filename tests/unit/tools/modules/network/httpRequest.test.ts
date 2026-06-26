@@ -7,9 +7,9 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
-import { httpRequestModule } from '../../../../../src/main/tools/modules/network/httpRequest';
+import { httpRequestModule } from '../../../../../src/host/tools/modules/network/httpRequest';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

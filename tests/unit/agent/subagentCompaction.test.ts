@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   compactSubagentMessages,
   type SubagentMessage,
-} from '../../../src/main/agent/subagentCompaction';
+} from '../../../src/host/agent/subagentCompaction';
 import {
   CONTEXT_WINDOWS,
   DEFAULT_CONTEXT_WINDOW,
@@ -14,7 +14,7 @@ import {
 } from '../../../src/shared/constants';
 
 // Mock logger to capture log output
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn((...args: unknown[]) => console.log('[SubagentCompaction]', ...args)),
@@ -30,14 +30,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 function buildConversation(rounds: number, resultSize = 2000): SubagentMessage[] {
   const messages: SubagentMessage[] = [
     { role: 'system', content: 'You are a helpful coding assistant. Use tools to solve the task.' },
-    { role: 'user', content: 'Please analyze the file src/main/agent/agentLoop.ts and fix any bugs.' },
+    { role: 'user', content: 'Please analyze the file src/host/agent/agentLoop.ts and fix any bugs.' },
   ];
 
   for (let i = 0; i < rounds; i++) {
     // Assistant: tool call description
     messages.push({
       role: 'assistant',
-      content: `Calling read_file({"file_path":"src/main/agent/agentLoop.ts","offset":${i * 100},"limit":100})`,
+      content: `Calling read_file({"file_path":"src/host/agent/agentLoop.ts","offset":${i * 100},"limit":100})`,
     });
     // User: tool result (simulating large output)
     const tokenDenseResult = '测试内容'.repeat(Math.ceil(resultSize / 4)).slice(0, resultSize);

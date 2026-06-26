@@ -3,7 +3,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { CompressionState } from '../../../src/main/context/compressionState';
+import { CompressionState } from '../../../src/host/context/compressionState';
 import {
   createCheckpointTemplate,
   ensureCheckpointStore,
@@ -11,9 +11,9 @@ import {
   resolveCheckpointStorePaths,
   tryInsertCheckpointRebuildBoundary,
   writeCheckpointFile,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
-vi.mock('../../../src/main/context/contextEventLedger', () => ({
+vi.mock('../../../src/host/context/contextEventLedger', () => ({
   getContextEventLedger: () => ({
     upsertEvents: vi.fn(),
   }),

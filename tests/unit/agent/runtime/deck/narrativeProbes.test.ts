@@ -2,7 +2,7 @@
 // Backward-compat tests — Phase 4 PR-2 step 5.
 //
 // Pin GeneralDeckChecker / NARRATIVE_PROBES to the exact same behaviour as
-// the legacy validateNarrative (src/main/tools/media/ppt/narrativeValidator.ts).
+// the legacy validateNarrative (src/host/tools/media/ppt/narrativeValidator.ts).
 //
 // Strategy: on each fixture, run BOTH implementations and compare the set of
 // firing probe ids vs issue types. Any drift in either side fails the test —
@@ -16,11 +16,11 @@
 
 import { describe, it, expect } from 'vitest';
 
-import type { SlideData } from '../../../../../src/main/tools/media/ppt/types';
-import type { NarrativeIssue } from '../../../../../src/main/tools/media/ppt/narrativeValidator';
-import { validateNarrative } from '../../../../../src/main/tools/media/ppt/narrativeValidator';
-import { GeneralDeckChecker } from '../../../../../src/main/agent/runtime/deck/general/GeneralDeckChecker';
-import { DeckVerifier } from '../../../../../src/main/agent/runtime/deck/DeckVerifier';
+import type { SlideData } from '../../../../../src/host/tools/media/ppt/types';
+import type { NarrativeIssue } from '../../../../../src/host/tools/media/ppt/narrativeValidator';
+import { validateNarrative } from '../../../../../src/host/tools/media/ppt/narrativeValidator';
+import { GeneralDeckChecker } from '../../../../../src/host/agent/runtime/deck/general/GeneralDeckChecker';
+import { DeckVerifier } from '../../../../../src/host/agent/runtime/deck/DeckVerifier';
 
 function legacyTypes(issues: NarrativeIssue[]): Set<string> {
   return new Set(issues.map((i) => i.type));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Notification } from '../../../src/main/platform/notifications';
+import { Notification } from '../../../src/host/platform/notifications';
 
 describe('platform Notification', () => {
   it('retains click listeners instead of dropping them', () => {

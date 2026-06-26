@@ -12,12 +12,12 @@ interface TriggerPattern {
 
 const TRIGGER_PATTERNS: TriggerPattern[] = [
   // Full re-run triggers
-  { glob: 'src/main/prompts/**', scope: 'full' },
-  { glob: 'src/main/tools/**', scope: 'full' },
-  { glob: 'src/main/model/**', scope: 'full' },
+  { glob: 'src/host/prompts/**', scope: 'full' },
+  { glob: 'src/host/tools/**', scope: 'full' },
+  { glob: 'src/host/model/**', scope: 'full' },
   { glob: 'src/shared/constants.ts', scope: 'full' },
   // Smoke test triggers
-  { glob: 'src/main/agent/agent*.ts', scope: 'smoke' },
+  { glob: 'src/host/agent/agent*.ts', scope: 'smoke' },
 ];
 
 const SKIP_PATTERNS = [

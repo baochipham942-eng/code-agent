@@ -32,7 +32,7 @@ const compactModelMocks = vi.hoisted(() => {
   return state;
 });
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -41,14 +41,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({
     getSettings: () => compactModelMocks.settings,
     getApiKey: compactModelMocks.getApiKey,
   }),
 }));
 
-vi.mock('../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../src/host/model/modelRouter', () => ({
   ContextLengthExceededError: class MockContextLengthExceededError extends Error {
     readonly code = 'CONTEXT_LENGTH_EXCEEDED';
   },
@@ -62,7 +62,7 @@ import {
   compactModelSummarize,
   compactModelSummarizeWithMetadata,
   resetCompactModel,
-} from '../../../src/main/context/compactModel';
+} from '../../../src/host/context/compactModel';
 
 describe('compactModelSummarize', () => {
   beforeEach(() => {

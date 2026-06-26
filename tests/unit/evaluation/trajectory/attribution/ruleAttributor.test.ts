@@ -3,13 +3,13 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { attributeByRules } from '../../../../../src/main/evaluation/trajectory/attribution/ruleAttributor';
+import { attributeByRules } from '../../../../../src/host/evaluation/trajectory/attribution/ruleAttributor';
 import type {
   Trajectory,
   TrajectoryStep,
   DeviationMarker,
   CausalChainNode,
-} from '../../../../../src/main/testing/types';
+} from '../../../../../src/host/testing/types';
 
 /** Minimal trajectory builder for tests. */
 function makeTrajectory(opts: {

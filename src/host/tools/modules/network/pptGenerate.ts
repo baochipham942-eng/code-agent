@@ -5,7 +5,7 @@
 //   → 大纲生成 → 资产生成 → 组装 PPT → 截图 → VLM 审查 → 自动修正
 //
 // 行为保真：legacy 输出格式（中文文案、字段排版）必须 1:1 复刻（评测集依赖）。
-// 内部 helpers (themes/parser/layouts/...) 保留在 src/main/tools/media/ppt/。
+// 内部 helpers (themes/parser/layouts/...) 保留在 src/host/tools/media/ppt/。
 // ============================================================================
 
 import * as fs from 'fs';

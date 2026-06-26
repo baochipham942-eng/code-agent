@@ -316,7 +316,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           ].filter((item) => !isNegativeEvidence(item)).join(' | ').toLowerCase();
         };
         // platformer 等 subtype-specific 的 runtime evidence 检查已经迁移到
-        // src/main/agent/runtime/game/<subtype>/<Subtype>Checker.ts，由 TS 侧
+        // src/host/agent/runtime/game/<subtype>/<Subtype>Checker.ts，由 TS 侧
         // 根据 page.evaluate 返回的 before/after snapshot + smoke + meta + coverage
         // 派发到对应 checker 上跑。这里的 inline JS 只负责采集运行时证据。
         const executableKeySet = new Set(keyControls);

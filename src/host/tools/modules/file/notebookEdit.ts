@@ -1,7 +1,7 @@
 // ============================================================================
 // NotebookEdit (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/file/notebookEdit.ts (registered as 'notebook_edit')
+// 旧版: src/host/tools/file/notebookEdit.ts (registered as 'notebook_edit')
 // 改造点：
 // - 4 参数签名
 // - canUseTool 真权限闸门

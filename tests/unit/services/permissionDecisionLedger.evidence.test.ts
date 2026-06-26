@@ -6,8 +6,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { PermissionDecisionRepository } from '../../../src/main/services/core/repositories/PermissionDecisionRepository';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
 import type { DecisionTrace } from '../../../src/shared/contract/decisionTrace';
 
 function createLogger() {

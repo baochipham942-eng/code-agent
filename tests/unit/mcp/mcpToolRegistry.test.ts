@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MCPClient } from '../../../src/main/mcp/mcpClient';
-import { MCPToolRegistry } from '../../../src/main/mcp/mcpToolRegistry';
-import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch';
+import { MCPClient } from '../../../src/host/mcp/mcpClient';
+import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
+import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
 
 const loggerMocks = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -10,7 +10,7 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: loggerMocks.debug,
     info: loggerMocks.info,

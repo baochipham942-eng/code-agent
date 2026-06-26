@@ -32,10 +32,10 @@ import {
   type PolishChatFn,
   type StaticRecipe,
   type PolishedRecipe,
-} from '../src/main/evaluation/proposals';
-import type { Proposal } from '../src/main/evaluation/proposals';
+} from '../src/host/evaluation/proposals';
+import type { Proposal } from '../src/host/evaluation/proposals';
 import { DEFAULT_MODELS } from '../src/shared/constants/models';
-import { buildChatFn } from '../src/main/evaluation/llmChatFactory';
+import { buildChatFn } from '../src/host/evaluation/llmChatFactory';
 // NOTE: We intentionally do NOT import ModelRouter here — it pulls in
 // configService which references __dirname and fails under tsx's ESM loader.
 // `buildChatFn` from llmChatFactory provides a direct-HTTP ChatFn instead.

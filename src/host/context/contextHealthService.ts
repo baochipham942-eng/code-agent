@@ -2,7 +2,7 @@
 // Context Health Service - 上下文健康状态管理服务
 // ============================================================================
 
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getContextWindow, DEFAULT_MODEL } from '../../shared/constants';
 import {
@@ -57,7 +57,7 @@ const SOURCE_CONTRIBUTION_DEBOUNCE_MS = 200;
 
 export class ContextHealthService {
   private sessionStates: Map<string, ContextHealthState> = new Map();
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: AppWindow | null = null;
   private averageUserMessageTokens: number = 200; // 用户消息平均 tokens
   private averageAssistantMessageTokens: number = 800; // 助手消息平均 tokens
 
@@ -67,7 +67,7 @@ export class ContextHealthService {
   /**
    * 设置主窗口用于发送事件
    */
-  setMainWindow(window: BrowserWindow | null): void {
+  setMainWindow(window: AppWindow | null): void {
     this.mainWindow = window;
   }
 
@@ -476,7 +476,7 @@ export function getContextHealthService(): ContextHealthService {
 /**
  * 初始化 ContextHealthService
  */
-export function initContextHealthService(mainWindow: BrowserWindow): ContextHealthService {
+export function initContextHealthService(mainWindow: AppWindow): ContextHealthService {
   const service = getContextHealthService();
   service.setMainWindow(mainWindow);
   return service;

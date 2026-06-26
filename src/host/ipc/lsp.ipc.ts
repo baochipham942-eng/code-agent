@@ -2,7 +2,7 @@
 // LSP IPC Handlers - 语言服务器状态查询
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { LSP_CHANNELS } from '../../shared/ipc/channels';
 import {
   getLSPManager,
@@ -37,7 +37,7 @@ export interface LSPStatus {
  */
 export function registerLSPHandlers(): void {
   // 获取 LSP 状态
-  ipcMain.handle(LSP_CHANNELS.GET_STATUS, async (): Promise<LSPStatus> => {
+  ipcHost.handle(LSP_CHANNELS.GET_STATUS, async (): Promise<LSPStatus> => {
     const manager = getLSPManager();
 
     if (!manager) {
@@ -79,7 +79,7 @@ export function registerLSPHandlers(): void {
   });
 
   // 检查语言服务器安装状态
-  ipcMain.handle(LSP_CHANNELS.CHECK_SERVERS, async (): Promise<Record<string, boolean>> => {
+  ipcHost.handle(LSP_CHANNELS.CHECK_SERVERS, async (): Promise<Record<string, boolean>> => {
     const result: Record<string, boolean> = {};
 
     for (const config of defaultLSPConfigs) {
@@ -90,7 +90,7 @@ export function registerLSPHandlers(): void {
   });
 
   // 手动初始化 LSP
-  ipcMain.handle(LSP_CHANNELS.INITIALIZE, async (_event, workspaceRoot: string): Promise<boolean> => {
+  ipcHost.handle(LSP_CHANNELS.INITIALIZE, async (_event, workspaceRoot: string): Promise<boolean> => {
     try {
       logger.info('Manually initializing LSP', { workspaceRoot });
       await initializeLSPManager(workspaceRoot);

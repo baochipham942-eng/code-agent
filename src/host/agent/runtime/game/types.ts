@@ -11,7 +11,7 @@
  *
  * 顶层 dispatch（"Layer A: ArtifactKindVerifier"）的接口曾经声明在此文件，
  * 但从未有任何类 implements。生产路径走的是 validateGameArtifact 自由函数
- * （src/main/agent/runtime/gameArtifactValidator.ts），deck 那边自己一套
+ * （src/host/agent/runtime/gameArtifactValidator.ts），deck 那边自己一套
  * DeckVerifier 类。两边形态分歧到无法共用同一接口。详见
  * 内部文档。
  */

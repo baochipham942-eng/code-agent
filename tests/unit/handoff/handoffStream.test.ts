@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createHandoffTailStreamFilter } from '../../../src/main/handoff/handoffStream';
+import { createHandoffTailStreamFilter } from '../../../src/host/handoff/handoffStream';
 
 describe('handoff stream filter', () => {
   it('suppresses streamed handoff proposal tails split across chunks', () => {

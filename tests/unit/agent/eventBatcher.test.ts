@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/shared/contract';
-import { EventBatcher } from '../../../src/main/agent/eventBatcher';
+import { EventBatcher } from '../../../src/host/agent/eventBatcher';
 
 describe('EventBatcher', () => {
   afterEach(() => {

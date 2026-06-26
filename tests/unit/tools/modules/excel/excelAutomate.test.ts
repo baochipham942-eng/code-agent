@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock subordinate executors / legacy tools
@@ -19,27 +19,27 @@ const excelGenerateExecuteMock = vi.fn();
 const xlwingsExecuteMock = vi.fn();
 const executePythonScriptMock = vi.fn();
 
-vi.mock('../../../../../src/main/tools/modules/network/readXlsx', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/readXlsx', () => ({
   executeReadXlsx: (...args: unknown[]) => executeReadXlsxMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/excel/excelEdit', () => ({
+vi.mock('../../../../../src/host/tools/excel/excelEdit', () => ({
   executeExcelEdit: (...args: unknown[]) => executeExcelEditMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/modules/network/excelGenerate', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/excelGenerate', () => ({
   executeExcelGenerate: (...args: unknown[]) => excelGenerateExecuteMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/modules/network/xlwingsExecute', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/xlwingsExecute', () => ({
   executeXlwingsExecute: (...args: unknown[]) => xlwingsExecuteMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/utils/pythonBridge', () => ({
+vi.mock('../../../../../src/host/tools/utils/pythonBridge', () => ({
   executePythonScript: (...args: unknown[]) => executePythonScriptMock(...args),
 }));
 
-import { excelAutomateModule } from '../../../../../src/main/tools/modules/excel/excelAutomate';
+import { excelAutomateModule } from '../../../../../src/host/tools/modules/excel/excelAutomate';
 
 // -----------------------------------------------------------------------------
 // Helpers

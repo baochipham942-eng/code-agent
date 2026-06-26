@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildInitialSubagentMessages,
   flattenMessageContent,
-} from '../../../src/main/agent/subagentExecutorProjection';
+} from '../../../src/host/agent/subagentExecutorProjection';
 import {
   createSubagentCancellationLifecycle,
   getSubagentExecutionTimeout,
-} from '../../../src/main/agent/subagentExecutorCancellation';
+} from '../../../src/host/agent/subagentExecutorCancellation';
 
 describe('subagentExecutor helper extraction', () => {
   it('builds the same text-only system and user projection shape', () => {

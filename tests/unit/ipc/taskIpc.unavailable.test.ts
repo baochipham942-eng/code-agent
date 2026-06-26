@@ -21,7 +21,7 @@ const platformState = vi.hoisted(() => ({
   rendererListeners: [] as Array<(channel: string, data: unknown) => void>,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   broadcastToRenderer: (channel: string, data: unknown) => {
     for (const listener of platformState.rendererListeners) {
       listener(channel, data);
@@ -45,8 +45,8 @@ vi.mock('../../../src/main/platform', () => ({
   },
 }));
 
-import { registerTaskHandlers } from '../../../src/main/ipc/task.ipc';
-import { onRendererPush } from '../../../src/main/platform';
+import { registerTaskHandlers } from '../../../src/host/ipc/task.ipc';
+import { onRendererPush } from '../../../src/host/platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
 type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;

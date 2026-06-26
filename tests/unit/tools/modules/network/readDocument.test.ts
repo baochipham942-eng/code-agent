@@ -7,23 +7,23 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const readPdfMock = vi.fn();
 const readDocxMock = vi.fn();
 const readXlsxMock = vi.fn();
 
-vi.mock('../../../../../src/main/tools/modules/network/readPdf', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/readPdf', () => ({
   executeReadPdf: (...args: unknown[]) => readPdfMock(...args),
 }));
-vi.mock('../../../../../src/main/tools/modules/network/readDocx', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/readDocx', () => ({
   executeReadDocx: (...args: unknown[]) => readDocxMock(...args),
 }));
-vi.mock('../../../../../src/main/tools/modules/network/readXlsx', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/readXlsx', () => ({
   executeReadXlsx: (...args: unknown[]) => readXlsxMock(...args),
 }));
 
-import { readDocumentModule } from '../../../../../src/main/tools/modules/network/readDocument';
+import { readDocumentModule } from '../../../../../src/host/tools/modules/network/readDocument';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

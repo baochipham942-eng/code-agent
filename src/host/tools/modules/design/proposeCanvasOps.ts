@@ -19,7 +19,7 @@ import type {
 import type { CanvasOpProposal, CanvasProposalDecision } from '../../../../shared/contract';
 import { normalizeProposal } from '../../../../shared/contract/canvasProposal';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
-import { BrowserWindow, ipcMain } from '../../../platform';
+import { AppWindow, ipcHost } from '../../../platform';
 import { createLogger } from '../../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { proposeCanvasOpsSchema as schema } from './proposeCanvasOps.schema';
@@ -37,7 +37,7 @@ let handlerRegistered = false;
 function registerResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE,
     async (_event, decision: CanvasProposalDecision) => {
       const pending = pendingProposals.get(decision.requestId);
@@ -101,8 +101,8 @@ export async function executeProposeCanvasOps(
     ...(rationale ? { rationale } : {}),
   };
 
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+  const mainWindow = AppWindow.getAllWindows()[0];
+  if (!mainWindow || !AppWindow.hasInteractiveRenderer()) {
     // 无交互 renderer：不假装已应用——明确告诉模型无法在此模式提议画布操作。
     onProgress?.({ stage: 'completing', percent: 100 });
     return {

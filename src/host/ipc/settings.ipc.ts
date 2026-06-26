@@ -382,8 +382,8 @@ export function registerSettingsHandlers(
   // ========== Window Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WINDOW, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action } = request;
-    const { BrowserWindow } = await import('../platform');
-    const mainWindow = BrowserWindow.getFocusedWindow();
+    const { AppWindow } = await import('../platform');
+    const mainWindow = AppWindow.getFocusedWindow();
 
     try {
       switch (action) {
@@ -421,22 +421,22 @@ export function registerSettingsHandlers(
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
-    const { BrowserWindow } = await import('../platform');
-    BrowserWindow.getFocusedWindow()?.minimize();
+    const { AppWindow } = await import('../platform');
+    AppWindow.getFocusedWindow()?.minimize();
   });
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'maximize' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, async () => {
-    const { BrowserWindow } = await import('../platform');
-    const mainWindow = BrowserWindow.getFocusedWindow();
+    const { AppWindow } = await import('../platform');
+    const mainWindow = AppWindow.getFocusedWindow();
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
     else mainWindow?.maximize();
   });
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'close' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
-    const { BrowserWindow } = await import('../platform');
-    BrowserWindow.getFocusedWindow()?.close();
+    const { AppWindow } = await import('../platform');
+    AppWindow.getFocusedWindow()?.close();
   });
 
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, async (): Promise<string> => app.getVersion());

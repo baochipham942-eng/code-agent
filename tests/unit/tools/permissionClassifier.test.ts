@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -9,8 +9,8 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { classifyPermission, getPermissionClassifier } from '../../../src/main/tools/permissionClassifier';
-import { setCommandPolicyRulesForTest } from '../../../src/main/tools/modules/shell/commandPolicy';
+import { classifyPermission, getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
 describe('PermissionClassifier', () => {
   beforeEach(() => {

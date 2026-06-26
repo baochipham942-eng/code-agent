@@ -6,9 +6,9 @@
 
 import { describe, it, expect } from 'vitest';
 
-import type { DeckArtifactInput } from '../../../../../src/main/agent/runtime/deck/types';
-import { SCHEMA_PROBE } from '../../../../../src/main/agent/runtime/deck/general/schemaProbe';
-import type { StructuredSlide } from '../../../../../src/main/tools/media/ppt/slideSchemas';
+import type { DeckArtifactInput } from '../../../../../src/host/agent/runtime/deck/types';
+import { SCHEMA_PROBE } from '../../../../../src/host/agent/runtime/deck/general/schemaProbe';
+import type { StructuredSlide } from '../../../../../src/host/tools/media/ppt/slideSchemas';
 
 function evaluate(input: Partial<DeckArtifactInput>) {
   if (SCHEMA_PROBE.kind !== 'imperative') throw new Error('expected imperative probe');

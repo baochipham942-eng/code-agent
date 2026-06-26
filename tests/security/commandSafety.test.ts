@@ -1,9 +1,9 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { isKnownSafeCommand, classifyCommand, validateCommand } from '../../src/main/security/commandSafety';
+import { isKnownSafeCommand, classifyCommand, validateCommand } from '../../src/host/security/commandSafety';
 import {
   checkCommandPolicy,
   setCommandPolicyRulesForTest,
-} from '../../src/main/tools/modules/shell/commandPolicy';
+} from '../../src/host/tools/modules/shell/commandPolicy';
 
 afterEach(() => {
   setCommandPolicyRulesForTest([]);

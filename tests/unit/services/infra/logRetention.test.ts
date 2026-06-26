@@ -6,7 +6,7 @@ import {
   cleanupDirByMtime,
   runLogRetention,
   DEFAULT_LOG_RETENTION_DAYS,
-} from '../../../../src/main/services/infra/logRetention';
+} from '../../../../src/host/services/infra/logRetention';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

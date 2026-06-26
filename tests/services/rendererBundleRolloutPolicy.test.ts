@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decideRendererBundleRollout,
   rendererBundleRolloutBucket,
-} from '../../src/main/services/renderer/rendererBundleRolloutPolicy';
+} from '../../src/host/services/renderer/rendererBundleRolloutPolicy';
 
 const fallbackEndpoint = {
   channel: 'latest',

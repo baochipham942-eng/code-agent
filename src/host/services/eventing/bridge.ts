@@ -2,12 +2,12 @@
 // EventBridge - EventBus → IPC 桥接
 // 订阅 EventBus 的 '*' 通道，过滤后转发到渲染进程
 // 向后兼容现有 IPC channel 名
-// 原 src/main/events/eventBridge.ts，P0-5 阶段 A 迁入 protocol 层；
+// 原 src/host/events/eventBridge.ts，P0-5 阶段 A 迁入 protocol 层；
 // 2026-04-27 从 protocol/events/ 搬到 services/eventing/，因为 EventBridge 是
 // runtime singleton，违反 protocol/ "只放类型和常量" 约束。
 // ============================================================================
 
-import type { BrowserWindow } from '../../platform';
+import type { AppWindow } from '../../platform';
 import type { BusEvent, EventDomain } from '../../protocol/events/busTypes';
 import { getEventBus } from './bus';
 import { createLogger } from '../infra/logger';
@@ -29,10 +29,10 @@ const DOMAIN_TO_CHANNEL: Partial<Record<EventDomain, string>> = {
 };
 
 export class EventBridge {
-  private getWindow: () => BrowserWindow | null;
+  private getWindow: () => AppWindow | null;
   private unsubscribe: (() => void) | null = null;
 
-  constructor(getWindow: () => BrowserWindow | null) {
+  constructor(getWindow: () => AppWindow | null) {
     this.getWindow = getWindow;
   }
 
@@ -80,7 +80,7 @@ export class EventBridge {
 
 let globalBridge: EventBridge | null = null;
 
-export function initEventBridge(getWindow: () => BrowserWindow | null): EventBridge {
+export function initEventBridge(getWindow: () => AppWindow | null): EventBridge {
   if (globalBridge) {
     globalBridge.stop();
   }

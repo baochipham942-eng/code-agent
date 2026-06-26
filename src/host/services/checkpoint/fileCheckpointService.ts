@@ -1,4 +1,4 @@
-// src/main/services/checkpoint/fileCheckpointService.ts
+// src/host/services/checkpoint/fileCheckpointService.ts
 
 import fs from 'fs/promises';
 import path from 'path';

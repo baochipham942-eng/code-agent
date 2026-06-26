@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { validateScript, validateForcedSchema } from '../../../../src/main/agent/scriptRuntime/scriptValidator';
+import { validateScript, validateForcedSchema } from '../../../../src/host/agent/scriptRuntime/scriptValidator';
 import { SCRIPT_RUNTIME } from '../../../../src/shared/constants';
 
 describe('validateScript', () => {

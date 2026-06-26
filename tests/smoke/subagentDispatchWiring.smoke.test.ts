@@ -16,9 +16,9 @@
  */
 
 import { describe, expect, it, afterAll } from 'vitest';
-import type { ToolContext } from '../../src/main/tools/types';
-import { BrowserTool } from '../../src/main/tools/vision/BrowserTool';
-import { browserPool } from '../../src/main/services/infra/browserPool';
+import type { ToolContext } from '../../src/host/tools/types';
+import { BrowserTool } from '../../src/host/tools/vision/BrowserTool';
+import { browserPool } from '../../src/host/services/infra/browserPool';
 
 const TIMEOUT_MS = 90_000;
 

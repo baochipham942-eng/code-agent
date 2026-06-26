@@ -1,7 +1,7 @@
 // ============================================================================
 // PrivacySettings — 隐私防线设置 tab (B3 一键启用本地 PII 防线)
 //
-// 后端 IPC: domain:pii (src/main/ipc/pii.ipc.ts)
+// 后端 IPC: domain:pii (src/host/ipc/pii.ipc.ts)
 //   actions: setup:start / setup:cancel / setup:status / setup:isReady
 //   push  : IPC_CHANNELS.PII_SETUP_EVENT (log/step/state)
 //

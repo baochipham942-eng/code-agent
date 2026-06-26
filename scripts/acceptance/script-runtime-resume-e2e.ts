@@ -25,10 +25,10 @@ const TMP_DIR = mkdtempSync(join(tmpdir(), 'wf-resume-e2e-'));
 process.chdir(TMP_DIR);
 
 import type { ModelConfig } from '../../src/shared/contract';
-import type { ToolContext } from '../../src/main/protocol/tools';
-import { workflowModule } from '../../src/main/tools/modules/multiagent/workflow';
-import { initDatabase, getDatabase } from '../../src/main/services/core/databaseService';
-import { getWorkflowJournalRepository } from '../../src/main/services/core/repositories/WorkflowJournalRepository';
+import type { ToolContext } from '../../src/host/protocol/tools';
+import { workflowModule } from '../../src/host/tools/modules/multiagent/workflow';
+import { initDatabase, getDatabase } from '../../src/host/services/core/databaseService';
+import { getWorkflowJournalRepository } from '../../src/host/services/core/repositories/WorkflowJournalRepository';
 
 function loadEnv(): Record<string, string> {
   const envPath = join(homedir(), '.code-agent', '.env');

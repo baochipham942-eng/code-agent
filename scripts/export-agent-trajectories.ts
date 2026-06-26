@@ -1283,9 +1283,9 @@ async function main(): Promise<void> {
   const runtimeDataDir = await prepareRuntimeDataDir(options.dataDir, options.liveDataDir);
   process.env.CODE_AGENT_DATA_DIR = runtimeDataDir;
 
-  const { getDatabase } = await import('../src/main/services/core/databaseService');
+  const { getDatabase } = await import('../src/host/services/core/databaseService');
   const { exportAgentTrajectories, writeAgentTrajectoryJsonl } =
-    await import('../src/main/evaluation/trajectory/trajectoryExporter');
+    await import('../src/host/evaluation/trajectory/trajectoryExporter');
 
   try {
     await getDatabase().initialize();

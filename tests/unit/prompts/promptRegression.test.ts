@@ -9,9 +9,9 @@
 
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, buildDynamicPromptV2 } from '../../../src/main/prompts/builder';
-import { injectWorkingDirectoryContext } from '../../../src/main/agent/messageHandling/contextBuilder';
-import { CORE_AGENTS } from '../../../src/main/agent/hybrid/coreAgents';
+import { buildPrompt, buildDynamicPromptV2 } from '../../../src/host/prompts/builder';
+import { injectWorkingDirectoryContext } from '../../../src/host/agent/messageHandling/contextBuilder';
+import { CORE_AGENTS } from '../../../src/host/agent/hybrid/coreAgents';
 
 const repoRoot = process.cwd();
 
@@ -80,7 +80,7 @@ describe('prompt regressions', () => {
 
   it('documents deferred ToolSearch calls with schema-shaped JSON arguments', () => {
     const messageBuildSource = readFileSync(
-      `${repoRoot}/src/main/agent/runtime/contextAssembly/messageBuild.ts`,
+      `${repoRoot}/src/host/agent/runtime/contextAssembly/messageBuild.ts`,
       'utf8',
     );
 
@@ -127,9 +127,9 @@ describe('prompt regressions', () => {
 
   it('keeps stale prompt tokens out of prompt source surfaces', () => {
     const files = [
-      ...collectPromptSurfaceFiles(`${repoRoot}/src/main/prompts`),
-      `${repoRoot}/src/main/agent/messageHandling/contextBuilder.ts`,
-      `${repoRoot}/src/main/agent/runtime/contextAssembly/messageBuild.ts`,
+      ...collectPromptSurfaceFiles(`${repoRoot}/src/host/prompts`),
+      `${repoRoot}/src/host/agent/messageHandling/contextBuilder.ts`,
+      `${repoRoot}/src/host/agent/runtime/contextAssembly/messageBuild.ts`,
     ];
     const combined = files
       .map((file) => `\n--- ${file} ---\n${readFileSync(file, 'utf8')}`)
@@ -186,7 +186,7 @@ describe('prompt regressions', () => {
   });
 
   it('keeps runtime nudge wording on current tool names', () => {
-    const nudgeSource = readFileSync(`${repoRoot}/src/main/agent/nudgeManager.ts`, 'utf8');
+    const nudgeSource = readFileSync(`${repoRoot}/src/host/agent/nudgeManager.ts`, 'utf8');
 
     expect(nudgeSource).toContain('use TaskManager with action="update"');
     expect(nudgeSource).toContain('Edit 或 Write');

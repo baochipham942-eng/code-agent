@@ -15,7 +15,7 @@ const state: {
   rpcCalls: [],
 };
 
-vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
+vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   isSupabaseInitialized: () => true,
   getSupabase: () => ({
     rpc: vi.fn(async (name: string, args?: unknown) => {
@@ -37,7 +37,7 @@ vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
   }),
 }));
 
-import { getAdminService } from '../../../../src/main/services/admin/adminService';
+import { getAdminService } from '../../../../src/host/services/admin/adminService';
 
 describe('adminService.setUserSharedRelay', () => {
   beforeEach(() => {

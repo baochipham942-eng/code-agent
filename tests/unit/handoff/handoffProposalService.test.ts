@@ -6,8 +6,8 @@ const dbState = vi.hoisted(() => ({
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import { getDatabase } from '../../../src/main/services/core/databaseService';
-import { HandoffProposalService } from '../../../src/main/handoff/handoffProposalService';
+import { getDatabase } from '../../../src/host/services/core/databaseService';
+import { HandoffProposalService } from '../../../src/host/handoff/handoffProposalService';
 
 describe('HandoffProposalService', () => {
   let service: HandoffProposalService;

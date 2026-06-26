@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { ExecPolicyStore } from '../../src/main/security/execPolicy';
+import { ExecPolicyStore } from '../../src/host/security/execPolicy';
 
 describe('ExecPolicyStore', () => {
   let tmpDir: string;

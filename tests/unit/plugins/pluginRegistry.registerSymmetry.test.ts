@@ -12,16 +12,16 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PluginRegistry } from '../../../src/main/plugins/pluginRegistry';
-import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { PluginRegistry } from '../../../src/host/plugins/pluginRegistry';
+import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import type {
   LoadedPlugin,
   PluginAPI,
   PluginEntry,
   PluginManifest,
-} from '../../../src/main/plugins/types';
-import type { Tool } from '../../../src/main/tools/types';
-import type { ToolModule } from '../../../src/main/protocol/tools';
+} from '../../../src/host/plugins/types';
+import type { Tool } from '../../../src/host/tools/types';
+import type { ToolModule } from '../../../src/host/protocol/tools';
 
 // ----------------------------------------------------------------------------
 // Helpers

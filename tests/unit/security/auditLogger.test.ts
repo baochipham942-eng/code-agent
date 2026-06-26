@@ -16,7 +16,7 @@ import {
   getAuditLogger,
   resetAuditLogger,
   type AuditEntry,
-} from '../../../src/main/security/auditLogger';
+} from '../../../src/host/security/auditLogger';
 
 describe('AuditLogger', () => {
   let logger: AuditLogger;

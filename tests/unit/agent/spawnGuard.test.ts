@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -22,8 +22,8 @@ import {
   resetSpawnGuard,
   createTextMessage,
   createAgentMessage,
-} from '../../../src/main/agent/spawnGuard';
-import type { SubagentResult } from '../../../src/main/agent/subagentExecutor';
+} from '../../../src/host/agent/spawnGuard';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
 import { SPAWN_GUARD } from '../../../src/shared/constants/agent';
 
 type Guard = ReturnType<typeof getSpawnGuard>;

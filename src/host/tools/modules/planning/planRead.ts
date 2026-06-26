@@ -1,7 +1,7 @@
 // ============================================================================
 // PlanRead (P1 Wave 3 — planning: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/planning/planRead.ts (legacy Tool planReadTool)
+// 旧版: src/host/tools/planning/planRead.ts (legacy Tool planReadTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链：参数校验 / canUseTool / abort / onProgress / 错误码规范化

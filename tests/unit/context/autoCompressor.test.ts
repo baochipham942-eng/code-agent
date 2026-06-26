@@ -8,8 +8,8 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { AutoContextCompressor } from '../../../src/main/context/autoCompressor';
-import type { CompressedMessage } from '../../../src/main/context/tokenOptimizer';
+import { AutoContextCompressor } from '../../../src/host/context/autoCompressor';
+import type { CompressedMessage } from '../../../src/host/context/tokenOptimizer';
 
 type CompressionStrategy = 'truncate' | 'code_extract' | 'ai_summary';
 

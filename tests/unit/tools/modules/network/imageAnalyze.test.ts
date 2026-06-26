@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { accessMock, statMock, readFileMock } = vi.hoisted(() => ({
   accessMock: vi.fn().mockResolvedValue(undefined),
@@ -38,11 +38,11 @@ const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/services', () => ({
+vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-import { imageAnalyzeModule, executeImageAnalyze } from '../../../../../src/main/tools/modules/network/imageAnalyze';
+import { imageAnalyzeModule, executeImageAnalyze } from '../../../../../src/host/tools/modules/network/imageAnalyze';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

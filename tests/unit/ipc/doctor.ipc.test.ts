@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runDiagnostics } from '../../../src/main/ipc/doctor.ipc';
-import type { DiagnosticItem, DiagnosticReport } from '../../../src/main/ipc/doctor.ipc';
+import { runDiagnostics } from '../../../src/host/ipc/doctor.ipc';
+import type { DiagnosticItem, DiagnosticReport } from '../../../src/host/ipc/doctor.ipc';
 
 const VALID_STATUSES = new Set<DiagnosticItem['status']>(['pass', 'warn', 'fail']);
 const VALID_CATEGORIES = new Set<DiagnosticItem['category']>(['environment', 'network', 'config', 'database', 'disk']);

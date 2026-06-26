@@ -1,7 +1,7 @@
 /**
  * Dashboard artifact verification — public interfaces.
  *
- * 镜像 src/main/agent/runtime/deck/types.ts 的两层 dispatch 结构（顶层
+ * 镜像 src/host/agent/runtime/deck/types.ts 的两层 dispatch 结构（顶层
  * verifier + subtype checker + probe declaration），但跟 deck 三处不同：
  *
  * 1. validate 是 async — dashboard 验证要真起 browser 跑 Playwright probe。

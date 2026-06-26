@@ -4,7 +4,7 @@ import {
   getRunTerminalPostHogEvent,
   RUN_TERMINAL_POSTHOG_EVENT,
   type RunTerminalStatus,
-} from '../../../src/main/agent/runtime/runTerminalStatus';
+} from '../../../src/host/agent/runtime/runTerminalStatus';
 import { POSTHOG_EVENTS } from '../../../src/shared/observability/posthog-events';
 
 describe('run terminal status mapping', () => {

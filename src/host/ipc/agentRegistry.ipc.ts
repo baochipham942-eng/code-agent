@@ -7,7 +7,7 @@
 // - 主进程主动推送 'agents:changed' 事件给所有 BrowserWindow
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from '../platform';
+import type { IpcMain, AppWindow } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import {
   listAllAgents,
@@ -25,7 +25,7 @@ export const AGENT_REGISTRY_EVENT = IPC_CHANNELS.AGENTS_CHANGED;
 
 export function registerAgentRegistryHandlers(
   ipcMain: IpcMain,
-  getAllWindows: () => BrowserWindow[],
+  getAllWindows: () => AppWindow[],
 ): void {
   ipcMain.handle(IPC_DOMAINS.AGENT_REGISTRY, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     const { action } = request;

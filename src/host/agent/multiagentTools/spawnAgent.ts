@@ -3,7 +3,7 @@
 // Gen 7: Multi-Agent capability
 //
 // P1 Wave 3 multiagent native: 原 spawnAgentTool / agentSpawnTool (legacy Tool)
-// 已删除，protocol 入口在 src/main/tools/modules/multiagent/spawnAgent.ts。
+// 已删除，protocol 入口在 src/host/tools/modules/multiagent/spawnAgent.ts。
 // 本文件仅保留：
 //   - executeSpawnAgent(params, ctx)  — single + parallel mode 入口
 //   - getSpawnedAgent / listSpawnedAgents / getAvailableAgents — service helpers
@@ -72,8 +72,8 @@ const DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
 /**
  * spawn_agent / AgentSpawn 的执行入口（接 legacy ToolContext）
  *
- * Schema 在 src/main/tools/modules/multiagent/spawnAgent.schema.ts，
- * protocol 入口在 src/main/tools/modules/multiagent/spawnAgent.ts。
+ * Schema 在 src/host/tools/modules/multiagent/spawnAgent.schema.ts，
+ * protocol 入口在 src/host/tools/modules/multiagent/spawnAgent.ts。
  * 本函数签名保留 legacy ToolContext 以避免大规模 refactor 932 行业务逻辑；
  * native module 用 buildLegacyCtxFromProtocol 桥接 protocol → legacy ctx。
  */

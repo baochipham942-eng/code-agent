@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyExecutionPhase } from '../../../src/main/tools/executionPhase';
+import { classifyExecutionPhase } from '../../../src/host/tools/executionPhase';
 
 describe('classifyExecutionPhase', () => {
   it('classifies both dynamic workflow and legacy workflow_orchestrate as execute', () => {

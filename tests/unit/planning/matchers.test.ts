@@ -4,9 +4,9 @@ import {
   matchCategory,
   matchers,
   matchDangerousBash,
-} from '../../../src/main/planning/matchers';
-import { TOOL_CATEGORIES } from '../../../src/main/planning/hooks/types';
-import type { HookContext } from '../../../src/main/planning/types';
+} from '../../../src/host/planning/matchers';
+import { TOOL_CATEGORIES } from '../../../src/host/planning/hooks/types';
+import type { HookContext } from '../../../src/host/planning/types';
 
 const ctx = (over: Partial<HookContext> = {}): HookContext => ({ ...over });
 
@@ -136,7 +136,7 @@ describe('matchDangerousBash', () => {
   });
 
   // The bash tool registers at runtime as 'Bash' (capital B — see
-  // src/main/tools/modules/shell/bash.schema.ts). The dangerous-command
+  // src/host/tools/modules/shell/bash.schema.ts). The dangerous-command
   // safety blocker must fire for the real tool name, not just lowercase.
   it.each(['Bash', 'BASH'])('flags dangerous commands for tool name "%s"', (toolName) => {
     expect(m(ctx({ toolName, toolParams: { command: 'rm -rf /' } }))).toBe(true);

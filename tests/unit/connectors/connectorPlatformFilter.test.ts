@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/connectors/native/osascript', () => ({
+vi.mock('../../../src/host/connectors/native/osascript', () => ({
   runAppleScript: vi.fn(async () => ''),
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -15,9 +15,9 @@ vi.mock('../../../src/main/connectors/native/osascript', () => ({
   sharedAppleScriptHandlers: () => [],
 }));
 
-import { ConnectorRegistry } from '../../../src/main/connectors/registry';
-import { ToolRegistry } from '../../../src/main/tools/registry';
-import { registerMigratedTools } from '../../../src/main/tools/modules';
+import { ConnectorRegistry } from '../../../src/host/connectors/registry';
+import { ToolRegistry } from '../../../src/host/tools/registry';
+import { registerMigratedTools } from '../../../src/host/tools/modules';
 import { NATIVE_CONNECTOR_IDS } from '../../../src/shared/constants';
 
 const CONNECTOR_TOOL_NAMES = [

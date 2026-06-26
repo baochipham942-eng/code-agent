@@ -8,7 +8,7 @@ import {
   extractAbsoluteFilePaths,
   renderSurvivorManifestForPrompt,
   type SurvivorManifestMessage,
-} from '../../../src/main/context/survivorManifest';
+} from '../../../src/host/context/survivorManifest';
 
 describe('survivorManifest', () => {
   it('extracts absolute file paths from message and tool output text', () => {
@@ -17,7 +17,7 @@ describe('survivorManifest', () => {
         id: 'm1',
         role: 'assistant',
         content:
-          'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts and wrote /tmp/context-survivor.json.',
+          'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts and wrote /tmp/context-survivor.json.',
       },
       {
         id: 'm2',
@@ -29,7 +29,7 @@ describe('survivorManifest', () => {
     const manifest = buildContextSurvivorManifest(messages, { preserveRecentCount: 1 });
 
     expect(manifest.filePaths).toEqual([
-      '/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts',
+      '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts',
       '/tmp/context-survivor.json',
       '/var/folders/test/result.log',
     ]);
@@ -214,7 +214,7 @@ describe('survivorManifest', () => {
               id: 'call-1',
               name: 'read_file',
               arguments: {
-                file_path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/survivorManifest.ts',
+                file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
               },
             },
           ],
@@ -235,7 +235,7 @@ describe('survivorManifest', () => {
         maxFileExcerptChars: 80,
         fileReadRecords: [
           {
-            path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/survivorManifest.ts',
+            path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
             mtime: 100,
             readTime: 200,
             size: 2048,
@@ -245,7 +245,7 @@ describe('survivorManifest', () => {
     );
 
     expect(manifest.files[0]).toMatchObject({
-      path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/survivorManifest.ts',
+      path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
       lastKnownReason: 'read_file_observed_text',
       needsReRead: true,
       survival: 'excerpt',
@@ -271,7 +271,7 @@ describe('survivorManifest', () => {
           content: [
             'Read /Users/linchen/Downloads/ai/code-agent/.env.local',
             'Read /Users/linchen/Downloads/report.pdf',
-            'Read /Users/linchen/Downloads/ai/code-agent/src/main/huge.ts',
+            'Read /Users/linchen/Downloads/ai/code-agent/src/host/huge.ts',
           ].join('\n'),
           toolCalls: [
             {
@@ -282,7 +282,7 @@ describe('survivorManifest', () => {
             {
               id: 'call-2',
               name: 'read_file',
-              arguments: { file_path: '/Users/linchen/Downloads/ai/code-agent/src/main/huge.ts' },
+              arguments: { file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/huge.ts' },
             },
           ],
           toolResults: [
@@ -295,7 +295,7 @@ describe('survivorManifest', () => {
         preserveRecentCount: 1,
         fileReadRecords: [
           {
-            path: '/Users/linchen/Downloads/ai/code-agent/src/main/huge.ts',
+            path: '/Users/linchen/Downloads/ai/code-agent/src/host/huge.ts',
             size: 200_000,
           },
         ],
@@ -325,7 +325,7 @@ describe('survivorManifest', () => {
     expect(manifest.files[1].excerpt).toBeUndefined();
     expect(manifest.files[2]).toMatchObject(
       expect.objectContaining({
-        path: '/Users/linchen/Downloads/ai/code-agent/src/main/huge.ts',
+        path: '/Users/linchen/Downloads/ai/code-agent/src/host/huge.ts',
         survival: 'path_only',
         needsReRead: true,
         metadata: expect.objectContaining({ size: 200_000 }),

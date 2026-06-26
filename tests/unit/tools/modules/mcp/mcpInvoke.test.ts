@@ -16,7 +16,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -24,11 +24,11 @@ import type {
 
 const getMCPClientMock = vi.fn();
 
-vi.mock('../../../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => getMCPClientMock(),
 }));
 
-import { mcpInvokeModule } from '../../../../../src/main/tools/modules/mcp/mcpInvoke';
+import { mcpInvokeModule } from '../../../../../src/host/tools/modules/mcp/mcpInvoke';
 
 // -----------------------------------------------------------------------------
 // Helpers

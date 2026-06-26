@@ -10,7 +10,7 @@ import {
   resetSwarmServices,
   hasSwarmServices,
   type SwarmServices,
-} from '../../../src/main/agent/swarmServices';
+} from '../../../src/host/agent/swarmServices';
 
 function makeStubServices(): SwarmServices {
   return {

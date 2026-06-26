@@ -4,9 +4,9 @@ import {
   buildE2ELocalAgentModelResponse,
   shouldUseE2ELocalAgentModel,
   shouldUseE2ELocalAgentModelForMessages,
-} from '../../../src/main/model/e2eLocalAgentModel';
+} from '../../../src/host/model/e2eLocalAgentModel';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
-import type { ModelMessage } from '../../../src/main/model/types';
+import type { ModelMessage } from '../../../src/host/model/types';
 
 const config: ModelConfig = {
   provider: 'openai',

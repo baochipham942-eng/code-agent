@@ -1,8 +1,8 @@
 // ============================================================================
 // Process (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/shell/ProcessTool.ts (registered as 'Process')
-//      + src/main/tools/shell/process.ts (6 个 process_* sub tools)
+// 旧版: src/host/tools/shell/ProcessTool.ts (registered as 'Process')
+//      + src/host/tools/shell/process.ts (6 个 process_* sub tools)
 //
 // 整合方案：单个 'Process' 模块内部 switch(action) 调 backgroundTasks /
 // ptyExecutor helper。原来 7 个 sub tools 的逻辑被合并到一个 ToolHandler。

@@ -23,18 +23,18 @@ import {
   GAME_ARTIFACT_CONTRACT_PROMPT,
   needsArtifactTaskBrief,
   needsGameArtifactContract,
-} from '../../../src/main/prompts/builder';
+} from '../../../src/host/prompts/builder';
 import {
   resetTrustedRemotePromptFragments,
   setTrustedRemotePromptFragments,
-} from '../../../src/main/prompts/remoteFragments';
-import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
+} from '../../../src/host/prompts/remoteFragments';
+import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
 import {
   BASH_TOOL_DESCRIPTION,
   EDIT_TOOL_DESCRIPTION,
   TASK_TOOL_DESCRIPTION,
-} from '../../../src/main/prompts/tools';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+} from '../../../src/host/prompts/tools';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 const promptText = (value: string): string => String(value);
 

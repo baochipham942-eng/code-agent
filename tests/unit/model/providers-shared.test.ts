@@ -9,8 +9,8 @@ import {
   normalizeJsonSchema,
   convertToolsToOpenAI,
   convertToolsToClaude,
-} from '../../../src/main/model/providers/shared';
-import type { ModelMessage } from '../../../src/main/model/types';
+} from '../../../src/host/model/providers/shared';
+import type { ModelMessage } from '../../../src/host/model/types';
 import type { ToolDefinition } from '../../../src/shared/contract';
 
 // ----------------------------------------------------------------------------

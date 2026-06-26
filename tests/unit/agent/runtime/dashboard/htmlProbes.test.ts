@@ -15,7 +15,7 @@ import { join } from 'path';
 // PR-D/E 起 GeneralDashboardChecker 含 imperative browser + interaction probe；
 // 这里只关心 declarative html probe 的行为，mock 掉两个 imperative 让它们总
 // pass 不污染 result。
-vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
+vi.mock('../../../../../src/host/agent/runtime/browser/visualSmoke', () => ({
   runBrowserVisualSmoke: vi.fn().mockResolvedValue({
     attempted: true,
     passed: true,
@@ -24,7 +24,7 @@ vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
   }),
   DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS: 10000,
 }));
-vi.mock('../../../../../src/main/agent/runtime/dashboard/general/interactionProbeRunner', () => ({
+vi.mock('../../../../../src/host/agent/runtime/dashboard/general/interactionProbeRunner', () => ({
   runStateChangeProbe: vi.fn().mockResolvedValue({
     mode: 'pass',
     selector: 'button',
@@ -36,8 +36,8 @@ import {
   HTML_COMPLETE_PROBE,
   NO_LOREM_IPSUM_PROBE,
   HTML_PROBES,
-} from '../../../../../src/main/agent/runtime/dashboard/general/htmlProbes';
-import { GeneralDashboardChecker } from '../../../../../src/main/agent/runtime/dashboard/general/GeneralDashboardChecker';
+} from '../../../../../src/host/agent/runtime/dashboard/general/htmlProbes';
+import { GeneralDashboardChecker } from '../../../../../src/host/agent/runtime/dashboard/general/GeneralDashboardChecker';
 
 const checker = new GeneralDashboardChecker();
 

@@ -10,7 +10,7 @@
 // 经构造注入（默认走 BrowserWindow + EventBus），方便单测无需 mock platform/bus。
 // ============================================================================
 
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getEventBus } from '../services/eventing/bus';
 import { SCRIPT_RUNTIME } from '../../shared/constants';
@@ -96,7 +96,7 @@ export class WorkflowLaunchApprovalGate {
 
   constructor(options?: WorkflowLaunchGateOptions) {
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? 120_000;
-    this.hasRenderer = options?.hasRenderer ?? (() => BrowserWindow.getAllWindows().length > 0);
+    this.hasRenderer = options?.hasRenderer ?? (() => AppWindow.getAllWindows().length > 0);
     this.deliver = options?.deliver ?? defaultDeliver;
     this.now = options?.now ?? (() => Date.now());
   }

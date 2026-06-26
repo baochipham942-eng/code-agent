@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { existsSyncMock, mkdirSyncMock, statSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn().mockReturnValue(true),
@@ -44,13 +44,13 @@ const { sharpFactoryMock, sharpInstanceMock, toFileMock, metadataMock } = vi.hoi
   };
 });
 
-vi.mock('../../../../../src/main/runtime/sharpRuntime', () => {
+vi.mock('../../../../../src/host/runtime/sharpRuntime', () => {
   return {
     requireSharp: () => sharpFactoryMock,
   };
 });
 
-import { imageProcessModule, executeImageProcess } from '../../../../../src/main/plugins/builtin/imageProcess/imageProcess';
+import { imageProcessModule, executeImageProcess } from '../../../../../src/host/plugins/builtin/imageProcess/imageProcess';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

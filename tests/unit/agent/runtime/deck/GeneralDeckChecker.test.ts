@@ -9,9 +9,9 @@
 
 import { describe, it, expect } from 'vitest';
 
-import type { SlideData } from '../../../../../src/main/tools/media/ppt/types';
-import type { StructuredSlide } from '../../../../../src/main/tools/media/ppt/slideSchemas';
-import { GeneralDeckChecker } from '../../../../../src/main/agent/runtime/deck/general/GeneralDeckChecker';
+import type { SlideData } from '../../../../../src/host/tools/media/ppt/types';
+import type { StructuredSlide } from '../../../../../src/host/tools/media/ppt/slideSchemas';
+import { GeneralDeckChecker } from '../../../../../src/host/agent/runtime/deck/general/GeneralDeckChecker';
 
 const checker = new GeneralDeckChecker();
 

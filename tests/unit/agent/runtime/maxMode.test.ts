@@ -16,8 +16,8 @@ import {
   JUDGE_SYSTEM_PROMPT,
   MaxModeAbortError,
   type MaxModeEngine,
-} from '../../../../src/main/agent/runtime/maxMode';
-import type { ModelResponse, ModelMessage } from '../../../../src/main/agent/loopTypes';
+} from '../../../../src/host/agent/runtime/maxMode';
+import type { ModelResponse, ModelMessage } from '../../../../src/host/agent/loopTypes';
 import type { ToolDefinition } from '../../../../src/shared/contract';
 
 function makeTool(name: string, extra?: Record<string, unknown>): ToolDefinition {

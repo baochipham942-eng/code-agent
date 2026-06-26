@@ -2,7 +2,7 @@
 // 协作可见性（P1-3）：子代理自报 STATUS / DECISION 解析（讨论流人话状态来源）
 // ============================================================================
 import { describe, it, expect } from 'vitest';
-import { parseStatusReport, SWARM_STATUS_REPORT_SUFFIX } from '../../../src/main/agent/multiagentTools/statusReport';
+import { parseStatusReport, SWARM_STATUS_REPORT_SUFFIX } from '../../../src/host/agent/multiagentTools/statusReport';
 
 describe('parseStatusReport', () => {
   it('提取末尾的 STATUS 与 DECISION 行', () => {

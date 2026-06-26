@@ -18,7 +18,7 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/code-agent-test') },
 }));
 
-vi.mock('../../src/main/services/infra/logger', () => ({
+vi.mock('../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
   createLogger: vi.fn(() => ({
     info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(),
@@ -26,8 +26,8 @@ vi.mock('../../src/main/services/infra/logger', () => ({
   LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
 }));
 
-import { AgentAppServiceImpl } from '../../src/main/app/agentAppService';
-import { registerSwarmServices, resetSwarmServices } from '../../src/main/agent/swarmServices';
+import { AgentAppServiceImpl } from '../../src/host/app/agentAppService';
+import { registerSwarmServices, resetSwarmServices } from '../../src/host/agent/swarmServices';
 
 type AnyMock = ReturnType<typeof vi.fn>;
 

@@ -4,8 +4,8 @@ import {
   buildSkillInvocationContext,
   getSkillInvocationAliases,
   resolveSkillInvocationFromSkills,
-} from '../../../../src/main/services/skills/skillInvocationResolver';
-import { BUILTIN_SKILLS } from '../../../../src/main/services/skills/builtinSkills';
+} from '../../../../src/host/services/skills/skillInvocationResolver';
+import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkills';
 
 function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'description'>): ParsedSkill {
   return {
@@ -94,7 +94,7 @@ describe('skillInvocationResolver', () => {
 
     it('注册了 executor 的 skill 显式触发 → 运行报告注入上下文块', async () => {
       const { registerSkillExecutor, unregisterSkillExecutor } = await import(
-        '../../../../src/main/services/skills/skillExecutorRegistry'
+        '../../../../src/host/services/skills/skillExecutorRegistry'
       );
       registerSkillExecutor(EXEC_SKILL, async (req) => `EXECUTED with args=${req.args ?? ''}`);
       try {
@@ -109,7 +109,7 @@ describe('skillInvocationResolver', () => {
 
     it('executor 抛错 → 降级为失败说明块，不打断上下文构建', async () => {
       const { registerSkillExecutor, unregisterSkillExecutor } = await import(
-        '../../../../src/main/services/skills/skillExecutorRegistry'
+        '../../../../src/host/services/skills/skillExecutorRegistry'
       );
       registerSkillExecutor(EXEC_SKILL, async () => {
         throw new Error('service down');
@@ -126,7 +126,7 @@ describe('skillInvocationResolver', () => {
 
     it('alias 模糊匹配不执行 executor，块中无执行报告', async () => {
       const { registerSkillExecutor, unregisterSkillExecutor } = await import(
-        '../../../../src/main/services/skills/skillExecutorRegistry'
+        '../../../../src/host/services/skills/skillExecutorRegistry'
       );
       const executor = vi.fn(async () => 'should not run');
       registerSkillExecutor(EXEC_SKILL, executor);

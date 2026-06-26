@@ -9,7 +9,7 @@ import {
   resolveHelperBinary,
   resolveNodeModule,
   resolveRuntimeRoot,
-} from '../../../src/main/runtime/runtimeAssetResolver';
+} from '../../../src/host/runtime/runtimeAssetResolver';
 
 const tempRoots: string[] = [];
 

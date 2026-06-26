@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { sessionStartAgentsInjectHook } from '../../../src/main/hooks/builtins/agentsHooks';
-import { discoverAgentFilesCached } from '../../../src/main/context/agentsDiscovery';
+import { sessionStartAgentsInjectHook } from '../../../src/host/hooks/builtins/agentsHooks';
+import { discoverAgentFilesCached } from '../../../src/host/context/agentsDiscovery';
 
-vi.mock('../../../src/main/context/agentsDiscovery', () => ({
+vi.mock('../../../src/host/context/agentsDiscovery', () => ({
   discoverAgentFilesCached: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

@@ -11,7 +11,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { BrowserWindow, ipcMain } from '../platform';
+import { AppWindow, ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -37,7 +37,7 @@ function registerElicitationResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
 
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.MCP_ELICITATION_RESPONSE,
     async (_event, response: MCPElicitationResponse) => {
       const pending = pendingElicitations.get(response.requestId);
@@ -108,7 +108,7 @@ export function registerElicitationHandler(
     });
 
     // Send to renderer via IPC
-    const mainWindow = BrowserWindow.getAllWindows()[0];
+    const mainWindow = AppWindow.getAllWindows()[0];
     if (!mainWindow) {
       // CLI mode: no UI available, decline the request
       logger.warn('No window available for elicitation, declining', { serverName });

@@ -5,22 +5,22 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HookManager } from '../../../src/main/hooks/hookManager';
-import type { MergedHookConfig } from '../../../src/main/hooks/merger';
-import { createHookEnvVars, type StopContext } from '../../../src/main/protocol/events';
+import { HookManager } from '../../../src/host/hooks/hookManager';
+import type { MergedHookConfig } from '../../../src/host/hooks/merger';
+import { createHookEnvVars, type StopContext } from '../../../src/host/protocol/events';
 
-vi.mock('../../../src/main/hooks/configParser', () => ({
+vi.mock('../../../src/host/hooks/configParser', () => ({
   loadAllHooksConfig: vi.fn().mockResolvedValue([]),
   matchesCondition: vi.fn().mockReturnValue(true),
 }));
 
-vi.mock('../../../src/main/hooks/merger', () => ({
+vi.mock('../../../src/host/hooks/merger', () => ({
   mergeHooks: vi.fn().mockReturnValue([]),
   getHooksForTool: vi.fn().mockReturnValue([]),
   getHooksForEvent: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('../../../src/main/hooks/builtinHookExecutor', () => ({
+vi.mock('../../../src/host/hooks/builtinHookExecutor', () => ({
   getBuiltinHookExecutor: vi.fn().mockReturnValue({
     executeForEvent: vi.fn().mockResolvedValue([]),
   }),
@@ -45,7 +45,7 @@ describe('SubagentStop trace query entry (GAP-012)', () => {
   });
 
   it('passes agentId into the hook context for matching hooks', async () => {
-    const { getHooksForEvent } = await import('../../../src/main/hooks/merger');
+    const { getHooksForEvent } = await import('../../../src/host/hooks/merger');
     // 用 command hook 验证 env vars（createHookEnvVars 从 context 取值）
     const matchingConfig: MergedHookConfig = {
       event: 'SubagentStop',
@@ -107,7 +107,7 @@ describe('Hook trigger history sanitization (GAP-015)', () => {
   });
 
   it('masks API keys in trigger history message', async () => {
-    const { getHooksForEvent } = await import('../../../src/main/hooks/merger');
+    const { getHooksForEvent } = await import('../../../src/host/hooks/merger');
     const leakedKey = 'sk-ant-api03-' + 'a'.repeat(90);
     const matchingConfig: MergedHookConfig = {
       event: 'Stop',
@@ -128,7 +128,7 @@ describe('Hook trigger history sanitization (GAP-015)', () => {
   });
 
   it('keeps non-sensitive messages intact in trigger history', async () => {
-    const { getHooksForEvent } = await import('../../../src/main/hooks/merger');
+    const { getHooksForEvent } = await import('../../../src/host/hooks/merger');
     const matchingConfig: MergedHookConfig = {
       event: 'Stop',
       hooks: [{ type: 'command', command: 'printf "lint passed: 0 errors"' }],
@@ -145,7 +145,7 @@ describe('Hook trigger history sanitization (GAP-015)', () => {
   });
 
   it('onTrigger observer also receives the masked message', async () => {
-    const { getHooksForEvent } = await import('../../../src/main/hooks/merger');
+    const { getHooksForEvent } = await import('../../../src/host/hooks/merger');
     const leakedKey = 'ghp_' + 'b'.repeat(40);
     const onTrigger = vi.fn();
     const observed = new HookManager({ workingDirectory: '/tmp', onTrigger });

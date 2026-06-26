@@ -6,8 +6,8 @@ import {
   evaluatePredicateWithReason,
   extractByPath,
   getVerbMetadata,
-} from '../../../../../src/main/agent/runtime/game/verbs';
-import type { PredicateExpr, VerbId } from '../../../../../src/main/agent/runtime/game/types';
+} from '../../../../../src/host/agent/runtime/game/verbs';
+import type { PredicateExpr, VerbId } from '../../../../../src/host/agent/runtime/game/types';
 
 describe('extractByPath', () => {
   it('extracts dotted path', () => {

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   CompressionState,
   type CompressionCommit,
-} from '../../../src/main/context/compressionState';
+} from '../../../src/host/context/compressionState';
 
 describe('CompressionState', () => {
   let state: CompressionState;

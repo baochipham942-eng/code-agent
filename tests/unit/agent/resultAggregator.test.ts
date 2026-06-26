@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateTeamResults } from '../../../src/main/agent/resultAggregator';
-import type { AgentTaskResult } from '../../../src/main/agent/parallelAgentCoordinator';
+import { aggregateTeamResults } from '../../../src/host/agent/resultAggregator';
+import type { AgentTaskResult } from '../../../src/host/agent/parallelAgentCoordinator';
 
 function result(overrides: Partial<AgentTaskResult>): AgentTaskResult {
   return {

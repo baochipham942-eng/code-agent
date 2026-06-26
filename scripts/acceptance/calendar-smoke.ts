@@ -1,4 +1,4 @@
-import { calendarConnector } from '../../src/main/connectors/native/calendar.ts';
+import { calendarConnector } from '../../src/host/connectors/native/calendar.ts';
 import {
   finishWithError,
   getNumberOption,

@@ -26,29 +26,29 @@ const dbMock = {
 
 const supabaseLimitMock = vi.fn();
 
-vi.mock('../../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../../src/host/platform', () => ({
+  AppWindow: {
     getAllWindows: () => [{ webContents: { send: sendMock } }],
   },
 }));
 
-vi.mock('../../../../src/main/services/core', () => ({
+vi.mock('../../../../src/host/services/core', () => ({
   getDatabase: () => dbMock,
 }));
 
-vi.mock('../../../../src/main/services/infra/toolCache', () => ({
+vi.mock('../../../../src/host/services/infra/toolCache', () => ({
   getToolCache: () => ({
     clearSession: vi.fn(),
   }),
 }));
 
-vi.mock('../../../../src/main/services/auth/authService', () => ({
+vi.mock('../../../../src/host/services/auth/authService', () => ({
   getAuthService: () => ({
     getCurrentUser: () => ({ id: 'user-1' }),
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
+vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   isSupabaseInitialized: () => true,
   getSupabase: () => ({
     from: () => ({
@@ -74,7 +74,7 @@ describe('SessionManager cloud sync notifications', () => {
   });
 
   it('broadcasts session:list-updated after creating a local session', async () => {
-    const { SessionManager } = await import('../../../../src/main/services/infra/sessionManager');
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
     const manager = new SessionManager();
 
     const session = await manager.createSession({
@@ -113,7 +113,7 @@ describe('SessionManager cloud sync notifications', () => {
       error: null,
     });
 
-    const { SessionManager } = await import('../../../../src/main/services/infra/sessionManager');
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
     const manager = new SessionManager();
 
     const sessions = await manager.listSessions();
@@ -149,7 +149,7 @@ describe('SessionManager cloud sync notifications', () => {
       error: null,
     });
 
-    const { SessionManager } = await import('../../../../src/main/services/infra/sessionManager');
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
     const manager = new SessionManager();
 
     await manager.listSessions();
@@ -181,7 +181,7 @@ describe('SessionManager cloud sync notifications', () => {
       error: null,
     });
 
-    const { SessionManager } = await import('../../../../src/main/services/infra/sessionManager');
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
     const manager = new SessionManager();
 
     const sessions = await manager.listSessions();

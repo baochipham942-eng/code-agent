@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
-import type { ConnectorStatus } from '../../../src/main/connectors';
-import { getConnectorRegistry } from '../../../src/main/connectors';
+import type { ConnectorStatus } from '../../../src/host/connectors';
+import { getConnectorRegistry } from '../../../src/host/connectors';
 import {
   buildWorkbenchToolScope,
   buildWorkbenchTurnSystemContext,
   withWorkbenchTurnSystemContext,
-} from '../../../src/main/app/workbenchTurnContext';
+} from '../../../src/host/app/workbenchTurnContext';
 import { directionTokens } from '../../../src/design/direction-tokens';
 
 describe('workbenchTurnContext', () => {

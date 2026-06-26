@@ -19,8 +19,8 @@ import {
   ExtensionRegistry,
   type PluginsSource,
   type SkillsSource,
-} from '../../../src/main/extension/extensionRegistry';
-import type { LoadedPlugin, PluginManifest, PluginState } from '../../../src/main/plugins/types';
+} from '../../../src/host/extension/extensionRegistry';
+import type { LoadedPlugin, PluginManifest, PluginState } from '../../../src/host/plugins/types';
 import type { ParsedSkill, SkillSource } from '../../../src/shared/contract/agentSkill';
 
 // ----------------------------------------------------------------------------

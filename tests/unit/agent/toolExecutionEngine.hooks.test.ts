@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setProtocolToolRegistryPort } from '../../../src/main/tools/protocolToolRegistration';
+import { setProtocolToolRegistryPort } from '../../../src/host/tools/protocolToolRegistration';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
-import { ToolExecutionEngine } from '../../../src/main/agent/runtime/toolExecutionEngine';
-import { AntiPatternDetector } from '../../../src/main/agent/antiPattern/detector';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
-import { fileReadTracker } from '../../../src/main/tools/fileReadTracker';
+import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
+import { AntiPatternDetector } from '../../../src/host/agent/antiPattern/detector';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
 import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -18,8 +18,8 @@ const serviceMocks = vi.hoisted(() => {
   return { langfuse };
 });
 
-vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/main/agent/runtime/gameArtifactValidator')>();
+vi.mock('../../../src/host/agent/runtime/gameArtifactValidator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/agent/runtime/gameArtifactValidator')>();
 
   return {
     ...actual,
@@ -49,8 +49,8 @@ vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', async (importOr
   };
 });
 
-vi.mock('../../../src/main/agent/runtime/browser/visualSmoke', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/main/agent/runtime/browser/visualSmoke')>();
+vi.mock('../../../src/host/agent/runtime/browser/visualSmoke', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/agent/runtime/browser/visualSmoke')>();
 
   return {
     ...actual,
@@ -63,7 +63,7 @@ vi.mock('../../../src/main/agent/runtime/browser/visualSmoke', async (importOrig
   };
 });
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getConfigService: vi.fn(),
   getAuthService: vi.fn(),
   getBudgetService: vi.fn(),
@@ -72,26 +72,26 @@ vi.mock('../../../src/main/services', () => ({
   BudgetAlertLevel: {},
 }));
 
-vi.mock('../../../src/main/services/citation/citationService', () => ({
+vi.mock('../../../src/host/services/citation/citationService', () => ({
   getCitationService: () => ({
     extractAndStore: vi.fn().mockReturnValue([]),
   }),
 }));
 
-vi.mock('../../../src/main/services/git/fileWatcherService', () => ({
+vi.mock('../../../src/host/services/git/fileWatcherService', () => ({
   getFileWatcherService: () => ({
     getRecentExternalChanges: vi.fn().mockReturnValue([]),
     markAsAgentModified: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/services/git/gitStatusService', () => ({
+vi.mock('../../../src/host/services/git/gitStatusService', () => ({
   getGitStatusService: () => ({
     onPostToolUse: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getToolAnnotationsMap: () => new Map(),
     getToolDefinitions: () => [],
@@ -395,7 +395,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
   });
 
   it('injects an artifact file-write correction after mkdir-only bootstrap', async () => {
-    const { MessageProcessor } = await import('../../../src/main/agent/runtime/messageProcessor');
+    const { MessageProcessor } = await import('../../../src/host/agent/runtime/messageProcessor');
     const userMessage: Message = {
       id: 'u1',
       role: 'user',
@@ -1743,7 +1743,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       {
         id: 'repair-bash-read-validator',
         name: 'Bash',
-        arguments: { command: 'sed -n "1,200p" src/main/agent/runtime/gameArtifactValidator.ts' },
+        arguments: { command: 'sed -n "1,200p" src/host/agent/runtime/gameArtifactValidator.ts' },
       },
     ]);
     expect(blockedValidatorSourceBash.success).toBe(false);

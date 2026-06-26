@@ -11,23 +11,23 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { memoryWriteModule } from '../../../../../src/main/tools/modules/lightMemory/memoryWrite';
-import { memoryReadModule } from '../../../../../src/main/tools/modules/lightMemory/memoryRead';
-import { ensureRoleAssetDirs } from '../../../../../src/main/services/roleAssets/roleAssetService';
-import { getProjectKey } from '../../../../../src/main/services/roleAssets/roleAssetPaths';
+import { memoryWriteModule } from '../../../../../src/host/tools/modules/lightMemory/memoryWrite';
+import { memoryReadModule } from '../../../../../src/host/tools/modules/lightMemory/memoryRead';
+import { ensureRoleAssetDirs } from '../../../../../src/host/services/roleAssets/roleAssetService';
+import { getProjectKey } from '../../../../../src/host/services/roleAssets/roleAssetPaths';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

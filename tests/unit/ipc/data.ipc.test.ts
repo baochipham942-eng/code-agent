@@ -25,32 +25,32 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/auth', () => ({
+vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
     hasVerifiedSession: () => mocks.sessionVerified,
   }),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: mocks.getDatabase,
 }));
 
-vi.mock('../../../src/main/services/infra/toolCache', () => ({
+vi.mock('../../../src/host/services/infra/toolCache', () => ({
   getToolCache: () => mocks.toolCache,
 }));
 
-vi.mock('../../../src/main/services/infra/sessionManager', () => ({
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => mocks.sessionManager,
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: {
     getPath: vi.fn(() => '/tmp/code-agent-test'),
   },
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { registerDataHandlers } from '../../../src/main/ipc/data.ipc';
+import { registerDataHandlers } from '../../../src/host/ipc/data.ipc';
 
 type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;
 

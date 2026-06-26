@@ -5,7 +5,7 @@ import {
   resetFirecrawlHealth,
   shouldUseFirecrawlForUrl,
   FIRECRAWL_HEALTH,
-} from '../../../../src/main/tools/web/firecrawlClient';
+} from '../../../../src/host/tools/web/firecrawlClient';
 
 describe('Firecrawl 健康门 (P4 失败兜底)', () => {
   beforeEach(() => {

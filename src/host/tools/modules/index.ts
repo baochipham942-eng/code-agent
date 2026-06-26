@@ -534,7 +534,7 @@ export function registerMigratedTools(
   );
 
   // Media (2) — imageProcess + speech_to_text + text_to_speech + video_generate + image_generate + image_annotate 已剥离为 builtin plugin
-  // （src/main/plugins/builtin/imageProcess/、audioProcessing/、videoGeneration/、imageCreation/）
+  // （src/host/plugins/builtin/imageProcess/、audioProcessing/、videoGeneration/、imageCreation/）
   registry.register(
     imageAnalyzeSchema,
     async () => (await import('./network/imageAnalyze')).imageAnalyzeModule,

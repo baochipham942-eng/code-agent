@@ -7,7 +7,7 @@ import {
   detectCacheBreak,
   splitAtDynamicBoundary,
   DYNAMIC_BOUNDARY_MARKER,
-} from '../../../src/main/prompts/cacheBreakDetection';
+} from '../../../src/host/prompts/cacheBreakDetection';
 
 const STABLE = 'You are Agent Neo.\n\n## Tools\n\nBash, Read, Write';
 const DYNAMIC = '## Rules\n\nBe concise.\n\n## Generative UI\n\nEnabled.';

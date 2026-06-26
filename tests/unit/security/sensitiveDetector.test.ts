@@ -11,7 +11,7 @@ import {
   getSensitiveDetector,
   resetSensitiveDetector,
   maskSensitiveData,
-} from '../../../src/main/security/sensitiveDetector';
+} from '../../../src/host/security/sensitiveDetector';
 
 describe('SensitiveDetector', () => {
   let detector: SensitiveDetector;

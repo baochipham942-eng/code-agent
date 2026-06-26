@@ -9,15 +9,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const cfg = vi.hoisted(() => ({ root: '' }));
-vi.mock('../../../../src/main/config/configPaths', async (importActual) => {
-  const actual = await importActual<typeof import('../../../../src/main/config/configPaths')>();
+vi.mock('../../../../src/host/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../../src/host/config/configPaths')>();
   return { ...actual, getUserConfigDir: () => cfg.root };
 });
 
 import {
   readDesignSettings,
   updateDesignSettings,
-} from '../../../../src/main/services/design/designSettings';
+} from '../../../../src/host/services/design/designSettings';
 
 let workDir: string;
 function storeFile(): string {

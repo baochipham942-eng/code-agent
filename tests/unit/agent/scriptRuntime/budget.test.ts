@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { BudgetTracker } from '../../../../src/main/agent/scriptRuntime/budget';
+import { BudgetTracker } from '../../../../src/host/agent/scriptRuntime/budget';
 
 describe('BudgetTracker', () => {
   it('with no total: remaining is Infinity and never exceeded', () => {

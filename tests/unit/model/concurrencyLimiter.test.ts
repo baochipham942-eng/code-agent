@@ -9,7 +9,7 @@ import {
   getProviderConcurrencyKey,
   getProviderLimiter,
   setProviderConcurrencyOverrides,
-} from '../../../src/main/model/concurrencyLimiter';
+} from '../../../src/host/model/concurrencyLimiter';
 
 afterEach(() => {
   setProviderConcurrencyOverrides({});

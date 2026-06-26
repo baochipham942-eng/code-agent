@@ -6,11 +6,11 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const testRoot = path.join(os.tmpdir(), `neo-tool-result-archive-test-${process.pid}`);
 
-vi.mock('../../../../../src/main/config/configPaths', async () => {
+vi.mock('../../../../../src/host/config/configPaths', async () => {
   const osMod = await import('os');
   const pathMod = await import('path');
   return {
@@ -18,8 +18,8 @@ vi.mock('../../../../../src/main/config/configPaths', async () => {
   };
 });
 
-import { toolResultArchiveModule } from '../../../../../src/main/tools/modules/file/toolResultArchive';
-import { spillToolResultArchive } from '../../../../../src/main/utils/toolResultSpill';
+import { toolResultArchiveModule } from '../../../../../src/host/tools/modules/file/toolResultArchive';
+import { spillToolResultArchive } from '../../../../../src/host/utils/toolResultSpill';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

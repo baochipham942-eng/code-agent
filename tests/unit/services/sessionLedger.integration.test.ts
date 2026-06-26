@@ -3,17 +3,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-vi.mock('../../../src/main/services/core/database/nativeLoader', () => ({
+vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => class MockDatabase {},
 }));
 
 import type BetterSqlite3 from 'better-sqlite3';
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { DatabaseService } from '../../../src/main/services/core/databaseService';
-import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
-import { PermissionDecisionRepository } from '../../../src/main/services/core/repositories/PermissionDecisionRepository';
-import { ToolExecutionEventRepository } from '../../../src/main/services/core/repositories/ToolExecutionEventRepository';
-import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { DatabaseService } from '../../../src/host/services/core/databaseService';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
+import { ToolExecutionEventRepository } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
+import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
 import type { Message } from '../../../src/shared/contract/message';
 
 function createLogger() {

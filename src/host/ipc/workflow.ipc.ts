@@ -16,7 +16,7 @@
 // 通用 bridge 再转发一次 → renderer 收到重复事件。设 false 让本专用 bridge 独家投递。
 // ============================================================================
 
-import { BrowserWindow, ipcMain } from '../platform';
+import { AppWindow, ipcHost } from '../platform';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../../shared/contract/scriptRun';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getEventBus } from '../services/eventing/bus';
@@ -28,7 +28,7 @@ const logger = createLogger('WorkflowIPC');
 
 /** 把 payload 投递到所有渲染进程窗口（web 模式下 webContents.send 被拦成 SSE 广播）。 */
 function deliverToRenderers(channel: string, payload: unknown): void {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = AppWindow.getAllWindows();
   for (const win of windows) {
     if (!win.isDestroyed()) {
       win.webContents.send(channel, payload);
@@ -59,13 +59,13 @@ let handlersRegistered = false;
 export function registerWorkflowHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
-  ipcMain.handle(IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH, async (_event, payload: { requestId: string; feedback?: string; sessionId?: string }) => {
+  ipcHost.handle(IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH, async (_event, payload: { requestId: string; feedback?: string; sessionId?: string }) => {
     return getWorkflowLaunchApprovalGate().approve(payload.requestId, payload.feedback, payload.sessionId);
   });
-  ipcMain.handle(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, async (_event, payload: { requestId: string; feedback: string; sessionId?: string }) => {
+  ipcHost.handle(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, async (_event, payload: { requestId: string; feedback: string; sessionId?: string }) => {
     return getWorkflowLaunchApprovalGate().reject(payload.requestId, payload.feedback, payload.sessionId);
   });
-  ipcMain.handle(IPC_CHANNELS.WORKFLOW_CANCEL_RUN, async (_event, payload: { runId: string; sessionId?: string }) => {
+  ipcHost.handle(IPC_CHANNELS.WORKFLOW_CANCEL_RUN, async (_event, payload: { runId: string; sessionId?: string }) => {
     if (!payload?.runId) return false;
     return cancelRun(payload.runId, { sessionId: payload.sessionId });
   });

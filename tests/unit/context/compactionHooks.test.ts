@@ -3,7 +3,7 @@ import {
   runPostCompactHooks,
   runPreCompactHooks,
   type CompactionHookManagerLike,
-} from '../../../src/main/context/compactionHooks';
+} from '../../../src/host/context/compactionHooks';
 
 const messages = [
   {

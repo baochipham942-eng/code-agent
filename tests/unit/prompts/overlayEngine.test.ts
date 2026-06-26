@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { applyOverlays, type OverlayConfig } from '../../../src/main/prompts/overlayEngine';
+import { applyOverlays, type OverlayConfig } from '../../../src/host/prompts/overlayEngine';
 
 describe('applyOverlays', () => {
   it('returns substrate when no overlays provided', () => {

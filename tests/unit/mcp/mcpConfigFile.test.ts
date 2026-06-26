@@ -14,7 +14,7 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: loggerMocks,
   createLogger: () => loggerMocks,
 }));
@@ -24,15 +24,15 @@ const scopePaths = vi.hoisted(() => ({
   current: {} as { user: string; project?: string; local?: string },
 }));
 
-vi.mock('../../../src/main/config/configPaths', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/main/config/configPaths')>();
+vi.mock('../../../src/host/config/configPaths', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/config/configPaths')>();
   return {
     ...actual,
     getMcpScopedConfigPaths: () => scopePaths.current,
   };
 });
 
-import { loadMcpConfigFiles } from '../../../src/main/mcp/mcpConfigFile';
+import { loadMcpConfigFiles } from '../../../src/host/mcp/mcpConfigFile';
 
 let tmpDir: string;
 

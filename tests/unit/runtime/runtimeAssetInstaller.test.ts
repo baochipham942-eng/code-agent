@@ -9,7 +9,7 @@ import {
   readActiveRuntimeAssets,
   validateRuntimeArchiveEntries,
   type RuntimeAssetsManifest,
-} from '../../../src/main/runtime/runtimeAssetInstaller';
+} from '../../../src/host/runtime/runtimeAssetInstaller';
 
 const tempRoots: string[] = [];
 

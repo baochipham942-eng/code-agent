@@ -9,11 +9,11 @@ import type {
   Logger,
   PlanModeController,
   AgentEvent,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 import {
   exitPlanModeModule,
   PLAN_CONFIRMATION_TYPE,
-} from '../../../../../src/main/tools/modules/planning/exitPlanMode';
+} from '../../../../../src/host/tools/modules/planning/exitPlanMode';
 
 // -----------------------------------------------------------------------------
 // Helpers

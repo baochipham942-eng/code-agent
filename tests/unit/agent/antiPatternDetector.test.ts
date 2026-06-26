@@ -7,14 +7,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock toolRegistry before importing detector
 const mockGet = vi.fn();
-vi.mock('../../../src/main/tools/toolRegistry', () => ({
+vi.mock('../../../src/host/tools/toolRegistry', () => ({
   getToolRegistry: () => ({
     get: mockGet,
   }),
 }));
 
 // Mock logger
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -24,14 +24,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // Mock logCollector
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: {
     addLog: vi.fn(),
   },
 }));
 
 // Import after mocks are set up
-import { AntiPatternDetector } from '../../../src/main/agent/antiPattern/detector';
+import { AntiPatternDetector } from '../../../src/host/agent/antiPattern/detector';
 
 // Simulate common registered tools
 const REGISTERED_TOOLS = new Set([

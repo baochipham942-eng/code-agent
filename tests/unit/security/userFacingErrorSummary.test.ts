@@ -3,7 +3,7 @@ import {
   formatUserFacingError,
   scrubUserFacingText,
   summarizeUserFacingError,
-} from '../../../src/main/security/userFacingError';
+} from '../../../src/host/security/userFacingError';
 
 describe('user-facing error boundary', () => {
   it('scrubs secrets, stack traces and local paths from user-facing summaries', () => {

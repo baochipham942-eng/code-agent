@@ -1,7 +1,7 @@
 // ============================================================================
 // ReadClipboard (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/file/readClipboard.ts (registered as 'read_clipboard')
+// 旧版: src/host/tools/file/readClipboard.ts (registered as 'read_clipboard')
 // 改造点：
 // - 4 参数签名
 // - canUseTool 真权限闸门

@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AgentEngineHistoryImportService } from '../../../src/main/services/agentEngine/agentEngineHistoryImport';
+import { AgentEngineHistoryImportService } from '../../../src/host/services/agentEngine/agentEngineHistoryImport';
 
 const tempRoots: string[] = [];
 

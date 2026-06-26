@@ -3,22 +3,22 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const getSpawnedAgentMock = vi.fn();
 const listSpawnedAgentsMock = vi.fn();
 const getSpawnGuardMock = vi.fn();
 
-vi.mock('../../../../../src/main/agent/multiagentTools/spawnAgent', () => ({
+vi.mock('../../../../../src/host/agent/multiagentTools/spawnAgent', () => ({
   getSpawnedAgent: (...args: unknown[]) => getSpawnedAgentMock(...args),
   listSpawnedAgents: (...args: unknown[]) => listSpawnedAgentsMock(...args),
 }));
 
-vi.mock('../../../../../src/main/agent/spawnGuard', () => ({
+vi.mock('../../../../../src/host/agent/spawnGuard', () => ({
   getSpawnGuard: () => getSpawnGuardMock(),
 }));
 
-import { agentMessageModule } from '../../../../../src/main/tools/modules/multiagent/agentMessage';
+import { agentMessageModule } from '../../../../../src/host/tools/modules/multiagent/agentMessage';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

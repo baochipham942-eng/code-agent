@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ModelResponse } from '../../../src/main/agent/loopTypes';
-import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
-import type { ContextAssembly } from '../../../src/main/agent/runtime/contextAssembly';
-import type { RunFinalizer } from '../../../src/main/agent/runtime/runFinalizer';
-import type { ToolExecutionEngine } from '../../../src/main/agent/runtime/toolExecutionEngine';
+import type { ModelResponse } from '../../../src/host/agent/loopTypes';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
+import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
+import type { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessage: vi.fn(),
@@ -14,15 +14,15 @@ const gameValidatorState = vi.hoisted(() => ({
   validateGameArtifact: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
-vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', () => ({
+vi.mock('../../../src/host/agent/runtime/gameArtifactValidator', () => ({
   validateGameArtifact: gameValidatorState.validateGameArtifact,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -41,7 +41,7 @@ vi.mock('../../../src/shared/utils/id', () => ({
   generateMessageId: () => 'steer-message-1',
 }));
 
-vi.mock('../../../src/main/mcp/logCollector.js', () => ({
+vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   logCollector: {
     agent: vi.fn(),
     tool: vi.fn(),
@@ -54,7 +54,7 @@ vi.mock('../../../src/main/mcp/logCollector.js', () => ({
   },
 }));
 
-import { MessageProcessor } from '../../../src/main/agent/runtime/messageProcessor';
+import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,

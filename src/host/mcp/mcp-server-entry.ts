@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ============================================================================
 // Agent Neo MCP Server - Standalone entry point
-// Run this as: npx ts-node src/main/mcp/mcp-server-entry.ts
+// Run this as: npx ts-node src/host/mcp/mcp-server-entry.ts
 // Or after build: node dist/main/mcp/mcp-server-entry.js
 // ============================================================================
 

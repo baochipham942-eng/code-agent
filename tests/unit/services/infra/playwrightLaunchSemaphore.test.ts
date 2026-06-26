@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PlaywrightLaunchSemaphore } from '../../../../src/main/services/infra/playwrightLaunchSemaphore';
+import { PlaywrightLaunchSemaphore } from '../../../../src/host/services/infra/playwrightLaunchSemaphore';
 
 describe('PlaywrightLaunchSemaphore', () => {
   it('grants slots immediately while under max concurrent', async () => {

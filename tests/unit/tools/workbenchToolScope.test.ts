@@ -5,7 +5,7 @@ import {
   isSkillCommandAllowedByWorkbenchScope,
   isToolNameAllowedByWorkbenchScope,
   normalizeWorkbenchToolScope,
-} from '../../../src/main/tools/workbenchToolScope';
+} from '../../../src/host/tools/workbenchToolScope';
 
 function makeTool(name: string): ToolDefinition {
   return {

@@ -4,19 +4,19 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext } from '../../../../src/main/tools/types';
+import type { ToolContext } from '../../../../src/host/tools/types';
 
 const { executeSubagentMock } = vi.hoisted(() => ({
   executeSubagentMock: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executeSubagentMock,
   }),
 }));
 
-import { executeWorkflowOrchestrate } from '../../../../src/main/agent/multiagentTools/workflowOrchestrate';
+import { executeWorkflowOrchestrate } from '../../../../src/host/agent/multiagentTools/workflowOrchestrate';
 
 function makeContext(overrides: Record<string, unknown> = {}): ToolContext {
   return {

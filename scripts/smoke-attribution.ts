@@ -11,9 +11,9 @@
 import Database from 'better-sqlite3';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { TrajectoryBuilder } from '../src/main/evaluation/trajectory/trajectoryBuilder';
-import { DeviationDetector } from '../src/main/evaluation/trajectory/deviationDetector';
-import { FailureAttributor } from '../src/main/evaluation/trajectory/attribution';
+import { TrajectoryBuilder } from '../src/host/evaluation/trajectory/trajectoryBuilder';
+import { DeviationDetector } from '../src/host/evaluation/trajectory/deviationDetector';
+import { FailureAttributor } from '../src/host/evaluation/trajectory/attribution';
 
 interface EventRow {
   session_id: string;

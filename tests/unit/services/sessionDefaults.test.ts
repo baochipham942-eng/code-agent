@@ -18,14 +18,14 @@ const settingsState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getSettings: () => settingsState.settings,
     getApiKey: vi.fn(() => 'mock-key'),
   }),
 }));
 
-import { resolveSessionDefaultModelConfig } from '../../../src/main/services/core/sessionDefaults';
+import { resolveSessionDefaultModelConfig } from '../../../src/host/services/core/sessionDefaults';
 
 describe('resolveSessionDefaultModelConfig', () => {
   beforeEach(() => {

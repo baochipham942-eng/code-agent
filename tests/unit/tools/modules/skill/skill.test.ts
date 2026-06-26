@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 import type { ParsedSkill } from '../../../../../src/shared/contract/agentSkill';
 
 // -----------------------------------------------------------------------------
@@ -23,7 +23,7 @@ const isSkillEnabledMock = vi.fn<(name: string) => boolean>(() => true);
 
 let registryAvailable = true;
 
-vi.mock('../../../../../src/main/services/skills', () => ({
+vi.mock('../../../../../src/host/services/skills', () => ({
   getSkillDiscoveryService: () =>
     registryAvailable
       ? {
@@ -39,29 +39,29 @@ vi.mock('../../../../../src/main/services/skills', () => ({
 }));
 
 const loadSkillContentMock = vi.fn(async (_skill: ParsedSkill) => {});
-vi.mock('../../../../../src/main/services/skills/skillLoader', () => ({
+vi.mock('../../../../../src/host/services/skills/skillLoader', () => ({
   loadSkillContent: (skill: ParsedSkill) => loadSkillContentMock(skill),
 }));
 
 const recordSkillUsageMock = vi.fn(() => {});
-vi.mock('../../../../../src/main/services/skills/skillUsageTracker', () => ({
+vi.mock('../../../../../src/host/services/skills/skillUsageTracker', () => ({
   recordSkillUsage: (...args: unknown[]) => recordSkillUsageMock(...args),
 }));
 
 const renderSkillContentMock = vi.fn(
   (content: string, _opts: { arguments?: string; workingDirectory?: string }) => content,
 );
-vi.mock('../../../../../src/main/services/skills/skillRenderer', () => ({
+vi.mock('../../../../../src/host/services/skills/skillRenderer', () => ({
   renderSkillContent: (...args: Parameters<typeof renderSkillContentMock>) =>
     renderSkillContentMock(...args),
 }));
 
 const subagentExecuteMock = vi.fn();
-vi.mock('../../../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({ execute: subagentExecuteMock }),
 }));
 
-vi.mock('../../../../../src/main/tools/workbenchToolScope', () => ({
+vi.mock('../../../../../src/host/tools/workbenchToolScope', () => ({
   isSkillCommandAllowedByWorkbenchScope: (
     command: string,
     scope: { skills?: string[] } | undefined,
@@ -71,7 +71,7 @@ vi.mock('../../../../../src/main/tools/workbenchToolScope', () => ({
   },
 }));
 
-import { skillModule } from '../../../../../src/main/tools/modules/skill/skill';
+import { skillModule } from '../../../../../src/host/tools/modules/skill/skill';
 
 // -----------------------------------------------------------------------------
 // Helpers

@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { executePythonScriptMock, pdfGenerateMock, pdfCompressMock, readPdfMock } = vi.hoisted(() => ({
   executePythonScriptMock: vi.fn(),
@@ -16,24 +16,24 @@ const { executePythonScriptMock, pdfGenerateMock, pdfCompressMock, readPdfMock }
   readPdfMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/utils/pythonBridge', () => ({
+vi.mock('../../../../../src/host/tools/utils/pythonBridge', () => ({
   executePythonScript: (...args: unknown[]) => executePythonScriptMock(...args),
   resolveScriptPath: (n: string) => n,
 }));
 
-vi.mock('../../../../../src/main/tools/modules/network/pdfGenerate', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/pdfGenerate', () => ({
   executePdfGenerate: (...args: unknown[]) => pdfGenerateMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/modules/network/pdfCompress', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/pdfCompress', () => ({
   executePdfCompress: (...args: unknown[]) => pdfCompressMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/modules/network/readPdf', () => ({
+vi.mock('../../../../../src/host/tools/modules/network/readPdf', () => ({
   executeReadPdf: (...args: unknown[]) => readPdfMock(...args),
 }));
 
-import { pdfAutomateModule } from '../../../../../src/main/tools/modules/network/pdfAutomate';
+import { pdfAutomateModule } from '../../../../../src/host/tools/modules/network/pdfAutomate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

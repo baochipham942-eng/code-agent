@@ -3,7 +3,7 @@ import {
   mapAgentEventToDAGStatus,
   mapAutoAgentStatusToDAGStatus,
   buildDAGStatusEvent,
-} from '../../../../src/main/agent/orchestrator/dagManager';
+} from '../../../../src/host/agent/orchestrator/dagManager';
 import type { AgentEvent } from '../../../../src/shared/contract';
 import type { TaskStatusEventData } from '../../../../src/shared/contract/dagVisualization';
 

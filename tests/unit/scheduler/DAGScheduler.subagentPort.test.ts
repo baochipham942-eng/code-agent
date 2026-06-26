@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DAGScheduler } from '../../../src/main/scheduler/DAGScheduler';
-import { TaskDAG } from '../../../src/main/scheduler/TaskDAG';
+import { DAGScheduler } from '../../../src/host/scheduler/DAGScheduler';
+import { TaskDAG } from '../../../src/host/scheduler/TaskDAG';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

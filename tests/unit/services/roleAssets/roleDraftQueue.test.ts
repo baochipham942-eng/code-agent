@@ -9,12 +9,12 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
@@ -25,7 +25,7 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getRoleDraftsDir,
-} from '../../../../src/main/services/roleAssets/roleDraftQueue';
+} from '../../../../src/host/services/roleAssets/roleDraftQueue';
 
 const agentsDir = () => path.join(mockConfigDir.dir, 'agents');
 const rolesDir = () => path.join(mockConfigDir.dir, 'roles');

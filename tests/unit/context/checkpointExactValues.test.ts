@@ -4,7 +4,7 @@ import {
   createCheckpointTemplate,
   replaceSectionBody,
   validateCheckpointDocument,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
 describe('checkpoint exact-form preservation', () => {
   it('collects exact values that must survive byte-for-byte', () => {

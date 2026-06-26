@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/core/database/nativeLoader', () => ({
+vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => class MockDatabase {},
 }));
 
 import {
   DatabaseService,
   onDatabaseRecovered,
-} from '../../../src/main/services/core/databaseService';
+} from '../../../src/host/services/core/databaseService';
 import {
   getPersistenceHealth,
   setDbAvailable,

@@ -5,7 +5,7 @@ import {
   getChildSubagentExecutionTimeout,
   getSubagentIdleTimeout,
   getSubagentExecutionTimeout,
-} from '../../../src/main/agent/subagentExecutorCancellation';
+} from '../../../src/host/agent/subagentExecutorCancellation';
 import { CANCELLATION_TIMEOUTS } from '../../../src/shared/constants';
 
 describe('getSubagentIdleTimeout', () => {

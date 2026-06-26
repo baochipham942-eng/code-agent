@@ -9,13 +9,13 @@ import {
   assertWorkspaceCwd,
   buildManualAgentEngineSelection,
   resolveExternalEngineLaunch,
-} from '../../../src/main/services/agentEngine/agentEngineGuards';
+} from '../../../src/host/services/agentEngine/agentEngineGuards';
 import {
   DEFAULT_CODEX_CLI_TIMEOUT_MS,
   MIN_CODEX_CLI_TIMEOUT_MS,
   normalizeCodexCliRunTiming,
-} from '../../../src/main/services/agentEngine/agentEngineTiming';
-import { normalizeVersionOutput as normalizeRegistryVersionOutput } from '../../../src/main/services/agentEngine/agentEngineRegistry';
+} from '../../../src/host/services/agentEngine/agentEngineTiming';
+import { normalizeVersionOutput as normalizeRegistryVersionOutput } from '../../../src/host/services/agentEngine/agentEngineRegistry';
 import type { Session } from '../../../src/shared/contract/session';
 
 describe('Agent Engine contract', () => {

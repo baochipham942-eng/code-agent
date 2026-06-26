@@ -10,10 +10,10 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
-import { fileReadTracker } from '../../../../../src/main/tools/fileReadTracker';
+} from '../../../../../src/host/protocol/tools';
+import { fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
 
-vi.mock('../../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock('../../../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { readModule } from '../../../../../src/main/tools/modules/file/read';
+import { readModule } from '../../../../../src/host/tools/modules/file/read';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

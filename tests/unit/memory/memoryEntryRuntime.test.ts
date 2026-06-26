@@ -2,15 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
-import type { MemoryRecord } from '../../../src/main/services/core/repositories';
+import type { MemoryRecord } from '../../../src/host/services/core/repositories';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -30,7 +30,7 @@ import {
   rebuildMemoryMirrorFromLightFiles,
   updateMemoryEntry,
   writeActiveEntryToLightMemory,
-} from '../../../src/main/memory/memoryEntryRuntime';
+} from '../../../src/host/memory/memoryEntryRuntime';
 
 function record(overrides: Partial<MemoryRecord>): MemoryRecord {
   return {

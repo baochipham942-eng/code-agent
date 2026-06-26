@@ -10,8 +10,8 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
-import { computerUseTool } from '../../src/main/tools/vision/computerUse.ts';
-import type { ToolContext, ToolExecutionResult } from '../../src/main/tools/types.ts';
+import { computerUseTool } from '../../src/host/tools/vision/computerUse.ts';
+import type { ToolContext, ToolExecutionResult } from '../../src/host/tools/types.ts';
 import type { ComputerSurfaceSnapshot, WorkbenchActionTrace } from '../../src/shared/contract/desktop.ts';
 
 const execFileAsync = promisify(execFile);

@@ -13,26 +13,26 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
-// Hoisted mocks: ipcMain.handle / BrowserWindow.getAllWindows / webContents.send
+// Hoisted mocks: ipcHost.handle / AppWindow.getAllWindows / webContents.send
 const ipcMainHandleMock = vi.hoisted(() => vi.fn());
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
 const hasInteractiveRendererMock = vi.hoisted(() => vi.fn());
 const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../../../src/main/platform', () => ({
-  ipcMain: { handle: ipcMainHandleMock },
-  BrowserWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
+vi.mock('../../../../../src/host/platform', () => ({
+  ipcHost: { handle: ipcMainHandleMock },
+  AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
-vi.mock('../../../../../src/main/services/infra/notificationService', () => ({
+vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
   notificationService: {
     notifyNeedsInput: notifyNeedsInputMock,
   },
 }));
 
-import { askUserQuestionModule } from '../../../../../src/main/tools/modules/planning/askUserQuestion';
+import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
 
 function makeLogger(): Logger {
@@ -90,7 +90,7 @@ describe('AskUserQuestion IPC protocol invariants', () => {
     expect(IPC_CHANNELS.USER_QUESTION_RESPONSE).toBe('user-question:response');
   });
 
-  it('webContents.send(USER_QUESTION_ASK, request) shape = {id, questions, timestamp} + ipcMain.handle 注册 USER_QUESTION_RESPONSE', async () => {
+  it('webContents.send(USER_QUESTION_ASK, request) shape = {id, questions, timestamp} + ipcHost.handle 注册 USER_QUESTION_RESPONSE', async () => {
     const window = { webContents: { send: sendMock } };
     getAllWindowsMock.mockReturnValue([window]);
     hasInteractiveRendererMock.mockReturnValue(true);
@@ -136,9 +136,9 @@ describe('AskUserQuestion IPC protocol invariants', () => {
     expect(payload.id).toMatch(/^q-\d+/);
     expect(typeof payload.timestamp).toBe('number');
 
-    // ── ipcMain.handle 注册 response channel ──
+    // ── ipcHost.handle 注册 response channel ──
     // 注：handlerRegistered 是 module 级 once-guard。第一次执行时注册，
-    // 后续执行不再重新注册（避免 ipcMain 报错）。所以这里只断言 channel 名正确。
+    // 后续执行不再重新注册（避免 ipcHost 报错）。所以这里只断言 channel 名正确。
     const handleCalls = ipcMainHandleMock.mock.calls.filter(
       (c) => c[0] === 'user-question:response',
     );

@@ -2,13 +2,13 @@ import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolExecutionResult } from '../../../src/main/tools/types';
+import type { ToolExecutionResult } from '../../../src/host/tools/types';
 
 const mockConfig = vi.hoisted(() => ({
   userConfigDir: '',
 }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfig.userConfigDir,
 }));
 
@@ -16,8 +16,8 @@ import {
   getBrowserComputerProofLedgerPath,
   persistBrowserComputerProofFromResult,
   readBrowserComputerProofRecordsBySession,
-} from '../../../src/main/session/browserComputerProofStore';
-import { exportSessionToMarkdown } from '../../../src/main/session/exportMarkdown';
+} from '../../../src/host/session/browserComputerProofStore';
+import { exportSessionToMarkdown } from '../../../src/host/session/exportMarkdown';
 
 describe('browserComputerProofStore', () => {
   let tempRoot: string;

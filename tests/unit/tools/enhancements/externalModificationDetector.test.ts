@@ -21,8 +21,8 @@ import {
   watchForModifications,
   formatModificationWarning,
   type ModificationCheckResult,
-} from '../../../../src/main/tools/utils/externalModificationDetector';
-import { fileReadTracker } from '../../../../src/main/tools/fileReadTracker';
+} from '../../../../src/host/tools/utils/externalModificationDetector';
+import { fileReadTracker } from '../../../../src/host/tools/fileReadTracker';
 
 describe('ExternalModificationDetector', () => {
   let tempDir: string;

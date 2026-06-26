@@ -12,12 +12,12 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { applySessionsMigrations } from '../../../src/main/services/core/database/migrations';
-import { applyIndexes } from '../../../src/main/services/core/database/indexes';
-import { ProjectRepository } from '../../../src/main/services/core/repositories/ProjectRepository';
-import { buildProjectArtifacts } from '../../../src/main/services/project/projectService';
-import { getProjectKey } from '../../../src/main/services/roleAssets/roleAssetPaths';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
+import { applyIndexes } from '../../../src/host/services/core/database/indexes';
+import { ProjectRepository } from '../../../src/host/services/core/repositories/ProjectRepository';
+import { buildProjectArtifacts } from '../../../src/host/services/project/projectService';
+import { getProjectKey } from '../../../src/host/services/roleAssets/roleAssetPaths';
 import { UNSORTED_PROJECT_ID, type Project } from '../../../src/shared/contract/project';
 
 const noopLogger = {

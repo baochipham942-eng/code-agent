@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveMacOSApplicationAlias } from '../../../../src/main/tools/vision/computerUse';
+import { resolveMacOSApplicationAlias } from '../../../../src/host/tools/vision/computerUse';
 
 describe('resolveMacOSApplicationAlias', () => {
   it.each([

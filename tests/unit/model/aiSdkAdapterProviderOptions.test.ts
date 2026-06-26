@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { generateText } from 'ai';
-import { inferenceViaAiSdk } from '../../../src/main/model/adapters/aiSdkAdapter';
+import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
 const providerMocks = vi.hoisted(() => ({
@@ -20,21 +20,21 @@ const networkMocks = vi.hoisted(() => ({
   getHttpsAgent: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderBaseUrl: resolutionMocks.resolveProviderBaseUrl,
   resolveProviderApiKey: resolutionMocks.resolveProviderApiKey,
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({ recordSuccess: vi.fn(), recordFailure: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/model/providers/shared', async (importActual) => ({
-  ...(await importActual<typeof import('../../../src/main/model/providers/shared')>()),
+vi.mock('../../../src/host/model/providers/shared', async (importActual) => ({
+  ...(await importActual<typeof import('../../../src/host/model/providers/shared')>()),
   getHttpsAgent: networkMocks.getHttpsAgent,
 }));
 

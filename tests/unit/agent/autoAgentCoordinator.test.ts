@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -26,7 +26,7 @@ const executorState = vi.hoisted(() => ({
   executeMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executorState.executeMock,
   }),
@@ -70,7 +70,7 @@ const sessionState = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../../src/main/session/sessionStateManager', () => ({
+vi.mock('../../../src/host/session/sessionStateManager', () => ({
   getSessionStateManager: () => ({
     addSubagent: sessionState.addSubagent,
     updateSubagent: sessionState.updateSubagent,
@@ -80,30 +80,30 @@ vi.mock('../../../src/main/session/sessionStateManager', () => ({
 
 // Unused-at-runtime imports still need stubs so module load doesn't pull in
 // heavy dependencies.
-vi.mock('../../../src/main/agent/resourceLockManager', () => ({
+vi.mock('../../../src/host/agent/resourceLockManager', () => ({
   getResourceLockManager: () => ({}),
 }));
-vi.mock('../../../src/main/agent/progressAggregator', () => ({
+vi.mock('../../../src/host/agent/progressAggregator', () => ({
   createProgressAggregator: () => ({}),
 }));
-vi.mock('../../../src/main/agent/parallelErrorHandler', () => ({
+vi.mock('../../../src/host/agent/parallelErrorHandler', () => ({
   createParallelErrorHandler: () => ({}),
 }));
 
 // Redirect checkpoint dir to a test tmp dir
 const configDirState = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => configDirState.dir,
 }));
 
-import { AutoAgentCoordinator } from '../../../src/main/agent/autoAgentCoordinator';
-import type { DynamicAgentDefinition } from '../../../src/main/agent/dynamicAgentFactory';
+import { AutoAgentCoordinator } from '../../../src/host/agent/autoAgentCoordinator';
+import type { DynamicAgentDefinition } from '../../../src/host/agent/dynamicAgentFactory';
 import type {
   AgentRequirements,
   ExecutionStrategy,
-} from '../../../src/main/agent/agentRequirementsAnalyzer';
-import type { SubagentResult } from '../../../src/main/agent/subagentExecutor';
+} from '../../../src/host/agent/agentRequirementsAnalyzer';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
 
 // ---------------------------------------------------------------------------
 // Helpers

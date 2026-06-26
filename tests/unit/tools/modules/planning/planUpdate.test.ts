@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const desktopActivityServiceMock = {
   recordTodoFeedbackForTask: vi.fn(),
@@ -16,22 +16,22 @@ const recordWorkspaceActivityFeedbackMock = vi.fn();
 const clearWorkspaceActivityFeedbackMock = vi.fn();
 const listTasksMock = vi.fn().mockReturnValue([]);
 
-vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => desktopActivityServiceMock,
   isDesktopDerivedSessionTask: (...args: unknown[]) => isDesktopDerivedSessionTaskMock(...args),
 }));
-vi.mock('../../../../../src/main/desktop/workspaceActivitySearchService', () => ({
+vi.mock('../../../../../src/host/desktop/workspaceActivitySearchService', () => ({
   recordWorkspaceActivityFeedback: (...args: unknown[]) => recordWorkspaceActivityFeedbackMock(...args),
   clearWorkspaceActivityFeedback: (...args: unknown[]) => clearWorkspaceActivityFeedbackMock(...args),
 }));
-vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../../../src/host/services/planning/taskStore', () => ({
   listTasks: (...args: unknown[]) => listTasksMock(...args),
 }));
-vi.mock('../../../../../src/main/planning/recoveredWorkOrchestrator', () => ({
+vi.mock('../../../../../src/host/planning/recoveredWorkOrchestrator', () => ({
   WORKSPACE_RECOVERY_PHASE_TITLE: 'Recovered Workspace Activity',
 }));
 
-import { planUpdateModule } from '../../../../../src/main/tools/modules/planning/planUpdate';
+import { planUpdateModule } from '../../../../../src/host/tools/modules/planning/planUpdate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

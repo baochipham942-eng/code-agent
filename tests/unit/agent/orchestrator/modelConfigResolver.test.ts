@@ -3,8 +3,8 @@ import {
   resolveModelConfig,
   getDefaultModelByProvider,
   getPermissionLevel,
-} from '../../../../src/main/agent/orchestrator/modelConfigResolver';
-import type { ConfigService } from '../../../../src/main/services/core/configService';
+} from '../../../../src/host/agent/orchestrator/modelConfigResolver';
+import type { ConfigService } from '../../../../src/host/services/core/configService';
 import type { PermissionRequest } from '../../../../src/shared/contract';
 
 describe('modelConfigResolver', () => {

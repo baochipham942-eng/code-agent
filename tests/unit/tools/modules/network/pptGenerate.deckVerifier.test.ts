@@ -16,10 +16,10 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 import {
   pptGenerateModule,
-} from '../../../../../src/main/tools/modules/network/pptGenerate';
+} from '../../../../../src/host/tools/modules/network/pptGenerate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

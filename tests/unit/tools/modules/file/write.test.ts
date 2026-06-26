@@ -10,10 +10,10 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
-import { fileReadTracker } from '../../../../../src/main/tools/fileReadTracker';
+} from '../../../../../src/host/protocol/tools';
+import { fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
 
-vi.mock('../../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -23,11 +23,11 @@ vi.mock('../../../../../src/main/services/infra/logger', () => ({
 }));
 
 // LSP 诊断桩 — 不做实际 LSP 查询
-vi.mock('../../../../../src/main/tools/lsp/diagnosticsHelper', () => ({
+vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
   getPostEditDiagnostics: async () => null,
 }));
 
-import { writeModule } from '../../../../../src/main/tools/modules/file/write';
+import { writeModule } from '../../../../../src/host/tools/modules/file/write';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCResponse } from '../../../src/shared/ipc';
-import type { MemoryRecord } from '../../../src/main/services/core/repositories';
+import type { MemoryRecord } from '../../../src/host/services/core/repositories';
 
 const mocks = vi.hoisted(() => ({
   database: {
@@ -21,12 +21,12 @@ const mocks = vi.hoisted(() => ({
   loggerWarn: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: mocks.getDatabase,
   getSessionManager: mocks.getSessionManager,
 }));
 
-vi.mock('../../../src/main/lightMemory/lightMemoryIpc', () => ({
+vi.mock('../../../src/host/lightMemory/lightMemoryIpc', () => ({
   listMemoryFiles: mocks.listMemoryFiles,
   readMemoryFile: mocks.readMemoryFile,
   deleteMemoryFile: mocks.deleteMemoryFile,
@@ -36,7 +36,7 @@ vi.mock('../../../src/main/lightMemory/lightMemoryIpc', () => ({
   writeLightMemoryFile: mocks.writeLightMemoryFile,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: mocks.loggerWarn,
@@ -45,19 +45,19 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { registerMemoryHandlers } from '../../../src/main/ipc/memory.ipc';
+import { registerMemoryHandlers } from '../../../src/host/ipc/memory.ipc';
 import {
   clearMemoryInjectionTracesForTest,
   recordMemoryInjectionTrace,
-} from '../../../src/main/memory/memoryInjectionTrace';
-import { hashInboxContent } from '../../../src/main/memory/knowledgeInboxDecision';
+} from '../../../src/host/memory/memoryInjectionTrace';
+import { hashInboxContent } from '../../../src/host/memory/knowledgeInboxDecision';
 
 type HandlerFn = (event: unknown, request: unknown) => Promise<unknown>;
 
 function createMockIpcMain() {
   const handlers = new Map<string, HandlerFn>();
   return {
-    ipcMain: {
+    ipcHost: {
       handle: vi.fn((channel: string, handler: HandlerFn) => {
         handlers.set(channel, handler);
       }),
@@ -279,7 +279,7 @@ describe('memory.ipc memoryAudit', () => {
       .mockReturnValueOnce([seedLow, desktopActivity, seedHigh]);
 
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.MEMORY, {
       action: 'memoryAudit',
@@ -363,7 +363,7 @@ describe('memory.ipc memoryAudit', () => {
     });
 
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const response = await ipc.invoke<IPCResponse>(IPC_CHANNELS.MEMORY, {
       action: 'memoryAudit',
@@ -391,7 +391,7 @@ describe('memory.ipc memoryAudit', () => {
 
   it('routes lightHealth through the domain memory handler', async () => {
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.MEMORY, {
       action: 'lightHealth',
@@ -410,7 +410,7 @@ describe('memory.ipc memoryAudit', () => {
 
   it('routes lightRebuildIndex through the simple memory channel', async () => {
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const response = await ipc.invoke<{ success: boolean; data: unknown }>(IPC_CHANNELS.MEMORY, {
       action: 'lightRebuildIndex',
@@ -444,7 +444,7 @@ describe('memory.ipc memoryAudit', () => {
     ]);
 
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const packResponse = await ipc.invoke<IPCResponse>(IPC_DOMAINS.MEMORY, {
       action: 'memoryPack',
@@ -610,7 +610,7 @@ describe('memory.ipc memoryAudit', () => {
     });
 
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const updateResponse = await ipc.invoke<{ success: boolean; data: unknown }>(IPC_CHANNELS.MEMORY, {
       action: 'memoryEntryUpdate',
@@ -677,7 +677,7 @@ describe('memory.ipc memoryAudit', () => {
       }));
 
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
 
     const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.MEMORY, {
       action: 'memoryInboxResolve',
@@ -773,7 +773,7 @@ describe('memory.ipc memoryAudit', () => {
       }));
 
     const ipc = createMockIpcMain();
-    registerMemoryHandlers(ipc.ipcMain as never);
+    registerMemoryHandlers(ipc.ipcHost as never);
     const content = '最近会话里的一条旧摘要';
 
     const response = await ipc.invoke<{ success: boolean; data: { memory: unknown; decisionMemoryId: string } }>(IPC_CHANNELS.MEMORY, {

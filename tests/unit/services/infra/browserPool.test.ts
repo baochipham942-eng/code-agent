@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { BrowserPool } from '../../../../src/main/services/infra/browserPool';
+import { BrowserPool } from '../../../../src/host/services/infra/browserPool';
 
 describe('BrowserPool', () => {
   let pool: BrowserPool;

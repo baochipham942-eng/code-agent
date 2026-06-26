@@ -7,12 +7,12 @@ import {
   installCLISwarmTraceWriterIfNeeded,
   persistAgentLoopMessageToSession,
 } from '../../../src/cli/bootstrap';
-import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
+import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
 import {
   getSwarmTraceWriter,
   resetSwarmTraceWriter,
-} from '../../../src/main/agent/swarmTraceWriter';
-import { shutdownEventBus } from '../../../src/main/services/eventing/bus';
+} from '../../../src/host/agent/swarmTraceWriter';
+import { shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { SWARM_TRACE } from '../../../src/shared/constants/storage';
 
 const modelConfig: ModelConfig = {

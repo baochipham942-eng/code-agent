@@ -10,7 +10,7 @@
 // 课程依据：《Claude Code 工程化实战》H3 五项上下文工程优化之"分界标记 + 全局缓存"
 
 import { describe, it, expect } from 'vitest';
-import { applyAnthropicCacheBreakpoints } from '../../../src/main/model/adapters/aiSdkAdapter';
+import { applyAnthropicCacheBreakpoints } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { ModelMessage as AiModelMessage } from 'ai';
 
 type MessageWithOptions = AiModelMessage & {

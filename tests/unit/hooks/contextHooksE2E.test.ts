@@ -13,7 +13,7 @@ import { vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
-import type { CompactContext } from '../../../src/main/protocol/events';
+import type { CompactContext } from '../../../src/host/protocol/events';
 import type { Message } from '../../../src/shared/contract';
 
 // ----------------------------------------------------------------------------
@@ -125,11 +125,11 @@ function makeRealDbAdapter(sqlite: BetterSqlite3.Database) {
 
 // Set up the mock BEFORE importing contextHooks
 let adapter: ReturnType<typeof makeRealDbAdapter>;
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: () => adapter,
 }));
 
-const { preCompactContextHook } = await import('../../../src/main/hooks/builtins/contextHooks');
+const { preCompactContextHook } = await import('../../../src/host/hooks/builtins/contextHooks');
 
 // ----------------------------------------------------------------------------
 // Helpers

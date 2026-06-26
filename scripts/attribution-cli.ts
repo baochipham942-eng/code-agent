@@ -17,11 +17,11 @@
 import Database from 'better-sqlite3';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { TrajectoryBuilder } from '../src/main/evaluation/trajectory/trajectoryBuilder';
-import { DeviationDetector } from '../src/main/evaluation/trajectory/deviationDetector';
-import { FailureAttributor } from '../src/main/evaluation/trajectory/attribution';
-import { buildAttributionChatFnFromEnv } from '../src/main/evaluation/llmChatFactory';
-import type { FailureAttribution } from '../src/main/testing/types';
+import { TrajectoryBuilder } from '../src/host/evaluation/trajectory/trajectoryBuilder';
+import { DeviationDetector } from '../src/host/evaluation/trajectory/deviationDetector';
+import { FailureAttributor } from '../src/host/evaluation/trajectory/attribution';
+import { buildAttributionChatFnFromEnv } from '../src/host/evaluation/llmChatFactory';
+import type { FailureAttribution } from '../src/host/testing/types';
 
 interface EventRow {
   event_type: string;

@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROVIDER_FALLBACK_CHAIN } from '../../../src/shared/constants';
-import type { ModelMessage } from '../../../src/main/model/types';
+import type { ModelMessage } from '../../../src/host/model/types';
 import type { ModelProvider } from '../../../src/shared/contract';
 import {
   getFallbackChainForRequest,
   resetModelRoutingOverride,
   setModelRoutingOverride,
-} from '../../../src/main/model/modelRouterPolicy';
-import { AdaptiveRouter } from '../../../src/main/model/adaptiveRouter';
+} from '../../../src/host/model/modelRouterPolicy';
+import { AdaptiveRouter } from '../../../src/host/model/adaptiveRouter';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 

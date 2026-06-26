@@ -3,18 +3,18 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const ipcMainHandleMock = vi.hoisted(() => vi.fn());
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../../../src/main/platform', () => ({
-  ipcMain: { handle: ipcMainHandleMock },
-  BrowserWindow: { getAllWindows: getAllWindowsMock },
+vi.mock('../../../../../src/host/platform', () => ({
+  ipcHost: { handle: ipcMainHandleMock },
+  AppWindow: { getAllWindows: getAllWindowsMock },
 }));
 
-import { confirmActionModule } from '../../../../../src/main/tools/modules/planning/confirmAction';
+import { confirmActionModule } from '../../../../../src/host/tools/modules/planning/confirmAction';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
 
 function makeLogger(): Logger {
@@ -90,7 +90,7 @@ describe('confirm_action IPC protocol invariants', () => {
     expect(payload.id).toMatch(/^confirm-\d+/);
     expect(typeof payload.timestamp).toBe('number');
 
-    // ipcMain.handle once-guard
+    // ipcHost.handle once-guard
     const responseChannelCalls = ipcMainHandleMock.mock.calls.filter(
       (c) => c[0] === IPC_CHANNELS.CONFIRM_ACTION_RESPONSE,
     );

@@ -2,7 +2,7 @@
 // AgentApplicationService — IPC 层与业务实现之间的窄接口
 //
 // IPC handler 只依赖此接口，不直接 import AgentOrchestrator / TaskManager 等
-// 具体实现类。适配器（src/main/app/agentAppService.ts）负责委托给实际服务。
+// 具体实现类。适配器（src/host/app/agentAppService.ts）负责委托给实际服务。
 // ============================================================================
 
 import type { PermissionResponse } from './permission';

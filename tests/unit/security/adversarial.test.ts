@@ -8,15 +8,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   InputSanitizer,
   resetInputSanitizer,
-} from '../../../src/main/security/inputSanitizer';
+} from '../../../src/host/security/inputSanitizer';
 import {
   SensitiveDetector,
   resetSensitiveDetector,
-} from '../../../src/main/security/sensitiveDetector';
+} from '../../../src/host/security/sensitiveDetector';
 import {
   LogMasker,
   resetLogMasker,
-} from '../../../src/main/security/logMasker';
+} from '../../../src/host/security/logMasker';
 
 describe('Adversarial Security Tests', () => {
   // --------------------------------------------------------------------------

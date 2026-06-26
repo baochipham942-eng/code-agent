@@ -4,8 +4,8 @@ import {
   selectIllustrationTargets,
   buildIllustrationPrompt,
   estimateIllustrateCost,
-} from '../../../../src/main/services/design/slidesIllustrator';
-import type { SlideData } from '../../../../src/main/tools/media/ppt/types';
+} from '../../../../src/host/services/design/slidesIllustrator';
+import type { SlideData } from '../../../../src/host/tools/media/ppt/types';
 
 const deck = (): SlideData[] => [
   { title: '封面', points: [], isTitle: true },

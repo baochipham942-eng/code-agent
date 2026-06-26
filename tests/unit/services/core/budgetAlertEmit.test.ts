@@ -3,7 +3,7 @@ import {
   BudgetService,
   BudgetAlertLevel,
   type BudgetStatus,
-} from '../../../../src/main/services/core/budgetService';
+} from '../../../../src/host/services/core/budgetService';
 
 function usage(inputTokens: number, outputTokens: number) {
   return { inputTokens, outputTokens, model: 'default', provider: 'test', timestamp: 1 };

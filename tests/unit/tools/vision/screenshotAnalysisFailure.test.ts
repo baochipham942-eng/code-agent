@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolContext } from '../../../../src/main/tools/types';
+import type { ToolContext } from '../../../../src/host/tools/types';
 import type {
   CanUseToolFn,
   Logger,
   ToolContext as ProtocolToolContext,
-} from '../../../../src/main/protocol/tools';
+} from '../../../../src/host/protocol/tools';
 
 const {
   execMock,
@@ -42,13 +42,13 @@ vi.mock('fs', () => ({
   statSync: (...args: unknown[]) => statSyncMock(...args),
 }));
 
-vi.mock('../../../../src/main/services/desktop/visionAnalysisService', () => ({
+vi.mock('../../../../src/host/services/desktop/visionAnalysisService', () => ({
   analyzeImageWithVisionDetailed: (...args: unknown[]) => analyzeImageWithVisionDetailedMock(...args),
 }));
 
 // screenshot.ts 现在依赖 computerSurface（Gap 2：取 displayInfo + 写尺寸记账）。
 // 直接 mock 这个依赖，避免拉入 backgroundCgEventSurface 的 native helper 栈。
-vi.mock('../../../../src/main/services/desktop/computerSurface', () => ({
+vi.mock('../../../../src/host/services/desktop/computerSurface', () => ({
   getComputerSurface: () => ({
     getDisplayInfo: vi.fn().mockResolvedValue(null),
     setLastAnalyzedImageDims: vi.fn(),
@@ -56,15 +56,15 @@ vi.mock('../../../../src/main/services/desktop/computerSurface', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/tools/artifacts/artifactMeta', () => ({
+vi.mock('../../../../src/host/tools/artifacts/artifactMeta', () => ({
   // createFileArtifactMock 是带类型签名的 vi.fn，直接引用避免 unknown[] 展开类型不匹配
   createFileArtifact: createFileArtifactMock,
   createVirtualArtifact: vi.fn(),
   inferArtifactKind: vi.fn().mockReturnValue('image'),
 }));
 
-import { screenshotTool } from '../../../../src/main/tools/vision/screenshot';
-import { screenshotModule } from '../../../../src/main/plugins/builtin/computerUse/screenshot';
+import { screenshotTool } from '../../../../src/host/tools/vision/screenshot';
+import { screenshotModule } from '../../../../src/host/plugins/builtin/computerUse/screenshot';
 
 function makeLegacyCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {

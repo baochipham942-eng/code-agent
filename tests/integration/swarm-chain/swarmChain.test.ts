@@ -3,18 +3,18 @@
 // ============================================================================
 //
 // 验证 IPC handler → SwarmServices → 业务 gate/coordinator → SwarmEventEmitter
-// → EventBus → swarm.ipc bridge → mock BrowserWindow.webContents.send 的整条
+// → EventBus → swarm.ipc bridge → mock AppWindow.webContents.send 的整条
 // 链路真实接通。覆盖单测拿不到的盲区：
 //
 // - IPC channel 名 + payload 契约 + service 路由
 // - PlanApproval / SwarmLaunchApproval / Coordinator / SpawnGuard 的事件回流
-// - SwarmEventEmitter → EventBus → swarm bridge → BrowserWindow 的桥接
+// - SwarmEventEmitter → EventBus → swarm bridge → AppWindow 的桥接
 // - SharedContext finding 自动抽取在 IPC retry 链路里能正确触发
 // - cancel-agent 的 spawnGuard / coordinator 双源 OR 兜底
 //
 // 不覆盖（明确边界）：
 // - 真 LLM provider 行为（subagentExecutor 被 stub）
-// - 真 Electron IPC 进程间序列化（ipcMain 被 stub 成 in-memory dispatcher）
+// - 真 Electron IPC 进程间序列化（ipcHost 被 stub 成 in-memory dispatcher）
 // - 真 Renderer 的 React 渲染
 // - spawnAgent.ts 的 agent 生命周期（用 coordinator.executeParallel 直驱）
 // ============================================================================
@@ -25,7 +25,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Mocks (must be hoisted)
 // ---------------------------------------------------------------------------
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -63,11 +63,11 @@ const platformState = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../src/host/platform', () => ({
+  AppWindow: {
     getAllWindows: () => [platformState.mockWindow],
   },
-  ipcMain: {
+  ipcHost: {
     handle: (
       channel: string,
       fn: (event: unknown, payload?: unknown) => unknown
@@ -89,18 +89,18 @@ const sessionManagerState = vi.hoisted(() => ({
   addMessageToSession: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executorState.executeMock,
   }),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
 // scheduler — full DAG scheduler isn't part of this scope
-vi.mock('../../../src/main/scheduler', () => {
+vi.mock('../../../src/host/scheduler', () => {
   class MockTaskDAG {
     tasks = new Map<string, unknown>();
     constructor(public id: string, public name: string, public config: unknown) {}
@@ -128,7 +128,7 @@ const teammateState = vi.hoisted(() => ({
   sendPlanReviewMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/teammate/teammateService', () => ({
+vi.mock('../../../src/host/agent/teammate/teammateService', () => ({
   getTeammateService: () => ({
     approvePlan: teammateState.approvePlanMock,
     rejectPlan: teammateState.rejectPlanMock,
@@ -142,15 +142,15 @@ vi.mock('../../../src/main/agent/teammate/teammateService', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { ParallelAgentCoordinator } from '../../../src/main/agent/parallelAgentCoordinator';
-import { PlanApprovalGate } from '../../../src/main/agent/planApproval';
-import { SwarmLaunchApprovalGate } from '../../../src/main/agent/swarmLaunchApproval';
+import { ParallelAgentCoordinator } from '../../../src/host/agent/parallelAgentCoordinator';
+import { PlanApprovalGate } from '../../../src/host/agent/planApproval';
+import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
 import {
   registerSwarmServices,
   resetSwarmServices,
   type SpawnGuardLike,
-} from '../../../src/main/agent/swarmServices';
-import { registerSwarmHandlers } from '../../../src/main/ipc/swarm.ipc';
+} from '../../../src/host/agent/swarmServices';
+import { registerSwarmHandlers } from '../../../src/host/ipc/swarm.ipc';
 import type { SwarmEvent } from '../../../src/shared/contract/swarm';
 import type { CompletedAgentRun } from '../../../src/shared/contract/agentHistory';
 
@@ -280,11 +280,11 @@ describe('Swarm Chain Integration', () => {
   });
 
   // ==========================================================================
-  // 1. Bridge wiring：任意 swarm event 必须穿过 EventBus 到达 BrowserWindow
+  // 1. Bridge wiring：任意 swarm event 必须穿过 EventBus 到达 AppWindow
   // ==========================================================================
 
   describe('event bridge', () => {
-    it('SwarmLaunchApprovalGate.requestApproval 发布的 launch:requested 事件能到达 mock BrowserWindow', async () => {
+    it('SwarmLaunchApprovalGate.requestApproval 发布的 launch:requested 事件能到达 mock AppWindow', async () => {
       // 直接调 gate（绕过 IPC），模拟业务模块从内部触发审批请求
       void chain.launchGate.requestApproval({
         tasks: [

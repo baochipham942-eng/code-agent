@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -23,7 +23,7 @@ const executorState = vi.hoisted(() => ({
   executeMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executorState.executeMock,
   }),
@@ -38,7 +38,7 @@ const schedulerState = vi.hoisted(() => ({
   capturedDAG: null as unknown,
 }));
 
-vi.mock('../../../src/main/scheduler', () => {
+vi.mock('../../../src/host/scheduler', () => {
   class MockTaskDAG {
     id: string;
     tasks: Map<string, unknown> = new Map();
@@ -75,9 +75,9 @@ import {
   ParallelAgentCoordinator,
   type AgentTask,
   type CoordinatorEvent,
-} from '../../../src/main/agent/parallelAgentCoordinator';
-import { getSpawnGuard, resetSpawnGuard } from '../../../src/main/agent/spawnGuard';
-import { aggregateTeamResults } from '../../../src/main/agent/resultAggregator';
+} from '../../../src/host/agent/parallelAgentCoordinator';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import { aggregateTeamResults } from '../../../src/host/agent/resultAggregator';
 
 function makeFakeContext() {
   return {

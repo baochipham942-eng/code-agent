@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CloudConfigService } from '../../../../src/main/services/cloud/cloudConfigService';
-import { getBuiltinConfig } from '../../../../src/main/services/cloud/builtinConfig';
-import type { CloudConfig } from '../../../../src/main/services/cloud/builtinConfig';
+import { CloudConfigService } from '../../../../src/host/services/cloud/cloudConfigService';
+import { getBuiltinConfig } from '../../../../src/host/services/cloud/builtinConfig';
+import type { CloudConfig } from '../../../../src/host/services/cloud/builtinConfig';
 import {
   getBuiltinSkillCatalogPayload,
 } from '../../../../src/shared/constants/skillCatalog';

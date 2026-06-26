@@ -34,11 +34,11 @@ const channelState = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../../src/main/channels', () => ({
+vi.mock('../../../src/host/channels', () => ({
   getChannelManager: () => channelState.manager,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -47,14 +47,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { registerChannelHandlers } from '../../../src/main/ipc/channel.ipc';
+import { registerChannelHandlers } from '../../../src/host/ipc/channel.ipc';
 
 type HandlerFn = (event: unknown, ...args: unknown[]) => unknown;
 
 function createMockIpcMain() {
   const handlers = new Map<string, HandlerFn>();
   return {
-    ipcMain: {
+    ipcHost: {
       handle: vi.fn((channel: string, handler: HandlerFn) => {
         handlers.set(channel, handler);
       }),
@@ -108,7 +108,7 @@ describe('channel.ipc inbox handlers', () => {
 
   it('registers list and dismiss handlers for channel inbox', async () => {
     const ipc = createMockIpcMain();
-    registerChannelHandlers(ipc.ipcMain as never, () => null);
+    registerChannelHandlers(ipc.ipcHost as never, () => null);
 
     await expect(ipc.invoke(CHANNEL_CHANNELS.LIST_INBOX)).resolves.toEqual([inboxItem]);
     await expect(ipc.invoke(CHANNEL_CHANNELS.DISMISS_INBOX_ITEM, inboxItem.id)).resolves.toBe(true);
@@ -118,7 +118,7 @@ describe('channel.ipc inbox handlers', () => {
   it('forwards inbox_changed events to the renderer', () => {
     const ipc = createMockIpcMain();
     const mainWindow = createMainWindow();
-    registerChannelHandlers(ipc.ipcMain as never, () => mainWindow as never);
+    registerChannelHandlers(ipc.ipcHost as never, () => mainWindow as never);
 
     channelState.manager.emit('inbox_changed', [inboxItem]);
 

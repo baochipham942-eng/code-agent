@@ -3,7 +3,7 @@ import {
   createCheckpointTemplate,
   replaceSectionBody,
   validateCheckpointDocument,
-} from '../../../src/main/context/checkpoint';
+} from '../../../src/host/context/checkpoint';
 
 const PATH_TABLE = {
   CHECKPOINT_PATH: '/tmp/checkpoints/session/checkpoint.md',
@@ -16,14 +16,14 @@ describe('checkpoint path discipline', () => {
     const checkpoint = replaceSectionBody(
       createCheckpointTemplate(),
       1,
-      '> "build checkpoint writer"\n\nRead /Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts',
+      '> "build checkpoint writer"\n\nRead /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts',
     );
 
     const result = validateCheckpointDocument(checkpoint, { pathTable: PATH_TABLE });
     expect(result.valid).toBe(false);
     expect(result.pathViolations).toEqual([
       expect.objectContaining({
-        path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/autoCompressor.ts',
+        path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts',
       }),
     ]);
   });

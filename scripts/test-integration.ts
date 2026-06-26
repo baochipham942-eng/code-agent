@@ -5,7 +5,7 @@
  */
 
 import { config } from 'dotenv';
-import { ModelRouter } from '../src/main/model/ModelRouter';
+import { ModelRouter } from '../src/host/model/ModelRouter';
 import type { ToolDefinition, ModelConfig } from '../src/shared/types';
 
 // Load environment variables

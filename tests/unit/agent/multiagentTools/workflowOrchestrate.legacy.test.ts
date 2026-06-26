@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext } from '../../../../src/main/tools/types';
-import { CORE_AGENT_IDS } from '../../../../src/main/agent/hybrid/coreAgents';
+import type { ToolContext } from '../../../../src/host/tools/types';
+import { CORE_AGENT_IDS } from '../../../../src/host/agent/hybrid/coreAgents';
 import { getBuiltInWorkflow, listBuiltInWorkflowIds, validateWorkflowDependencies } from '../../../../src/shared/contract/workflow';
 
 const { executeSubagentMock } = vi.hoisted(() => ({
   executeSubagentMock: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executeSubagentMock,
   }),
@@ -16,7 +16,7 @@ vi.mock('../../../../src/main/agent/subagentExecutor', () => ({
 import {
   DEFAULT_WORKFLOW_STAGE_TIMEOUT_MS,
   executeWorkflowOrchestrate,
-} from '../../../../src/main/agent/multiagentTools/workflowOrchestrate';
+} from '../../../../src/host/agent/multiagentTools/workflowOrchestrate';
 
 function makeContext(overrides: Record<string, unknown> = {}): ToolContext {
   return {

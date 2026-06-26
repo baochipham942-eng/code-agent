@@ -3,7 +3,7 @@
 // 支持云端优先的渐进加载策略
 // ============================================================================
 
-import { BrowserWindow } from '../../platform';
+import { AppWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
 import { getAuthService } from '../auth/authService';
@@ -600,7 +600,7 @@ export class SessionManager implements Disposable {
    * 通知前端会话列表已更新
    */
   private notifySessionListUpdated(): void {
-    const windows = BrowserWindow.getAllWindows();
+    const windows = AppWindow.getAllWindows();
     for (const win of windows) {
       win.webContents.send(IPC_CHANNELS.SESSION_LIST_UPDATED);
     }
@@ -638,7 +638,7 @@ export class SessionManager implements Disposable {
    * 通知前端会话已更新
    */
   private notifySessionUpdated(sessionId: string, updates: Partial<Session>): void {
-    const windows = BrowserWindow.getAllWindows();
+    const windows = AppWindow.getAllWindows();
     for (const win of windows) {
       win.webContents.send(IPC_CHANNELS.SESSION_UPDATED, {
         sessionId,

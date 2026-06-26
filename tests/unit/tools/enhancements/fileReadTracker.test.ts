@@ -18,7 +18,7 @@ import {
   computeContentDigest,
   FileReadTracker,
   fileReadTracker,
-} from '../../../../src/main/tools/fileReadTracker';
+} from '../../../../src/host/tools/fileReadTracker';
 
 describe('FileReadTracker', () => {
   let tracker: FileReadTracker;

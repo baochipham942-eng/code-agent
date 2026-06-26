@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MCPServerCloudConfig } from '../../../src/main/services/cloud/cloudConfigService';
-import type { MCPClient, MCPServerConfig, MCPServerState } from '../../../src/main/mcp/mcpClient';
+import type { MCPServerCloudConfig } from '../../../src/host/services/cloud/cloudConfigService';
+import type { MCPClient, MCPServerConfig, MCPServerState } from '../../../src/host/mcp/mcpClient';
 import {
   convertCloudConfigToInternal,
   initMCPClient,
   refreshMCPServersFromCloud,
-} from '../../../src/main/mcp/mcpDefaultServers';
+} from '../../../src/host/mcp/mcpDefaultServers';
 
 const testState = vi.hoisted(() => ({
   cloudConfigService: {} as {
@@ -17,20 +17,20 @@ const testState = vi.hoisted(() => ({
   loadMcpConfigFiles: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/cloud/cloudConfigService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/main/services/cloud/cloudConfigService')>()),
+vi.mock('../../../src/host/services/cloud/cloudConfigService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/services/cloud/cloudConfigService')>()),
   getCloudConfigService: () => testState.cloudConfigService,
 }));
 
-vi.mock('../../../src/main/mcp/mcpConfigFile', () => ({
+vi.mock('../../../src/host/mcp/mcpConfigFile', () => ({
   loadMcpConfigFiles: testState.loadMcpConfigFiles,
 }));
 
-vi.mock('../../../src/main/mcp/servers/memoryKVServer', () => ({
+vi.mock('../../../src/host/mcp/servers/memoryKVServer', () => ({
   createMemoryKVServer: () => ({ name: 'memory-kv' }),
 }));
 
-vi.mock('../../../src/main/mcp/servers/codeIndexServer', () => ({
+vi.mock('../../../src/host/mcp/servers/codeIndexServer', () => ({
   createCodeIndexServer: () => ({ name: 'code-index' }),
 }));
 

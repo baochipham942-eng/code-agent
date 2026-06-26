@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 
 /**
  * Mirrors the bridge wiring inserted in
- * `src/main/agent/multiagentTools/spawnAgent.ts` right after
+ * `src/host/agent/multiagentTools/spawnAgent.ts` right after
  * `const abortController = new AbortController()`. Keep in sync.
  */
 function bridgeParentToChild(

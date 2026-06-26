@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../../src/shared/contract';
-import { TranscriptHistoryService } from '../../../../src/main/services/history/transcriptHistoryService';
+import { TranscriptHistoryService } from '../../../../src/host/services/history/transcriptHistoryService';
 
 function message(overrides: Partial<Message>): Message {
   return {

@@ -13,7 +13,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { Message } from '../../../src/shared/contract';
 
 // ----------------------------------------------------------------------------

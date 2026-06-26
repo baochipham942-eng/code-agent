@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractBrandFromImage,
   parseBrandDraftJson,
-} from '../../../../src/main/services/design/brandExtract';
+} from '../../../../src/host/services/design/brandExtract';
 
 // 一份模型可能返回的「干净」JSON（5 色 + serif/sans + posture + 三桶）。
 const cleanJson = JSON.stringify({

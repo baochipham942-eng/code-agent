@@ -121,7 +121,7 @@ vi.mock('electron', () => ({
 }));
 
 // Mock services
-vi.mock('../../src/main/services', () => ({
+vi.mock('../../src/host/services', () => ({
   getSessionManager: vi.fn(() => ({
     addMessage: vi.fn().mockResolvedValue(undefined),
     getCurrentSessionId: vi.fn().mockReturnValue('test-session-id'),
@@ -129,23 +129,23 @@ vi.mock('../../src/main/services', () => ({
 }));
 
 // Mock logger
-vi.mock('../../src/main/services/infra/logger', () => loggerMocks);
-vi.mock('../../src/main/services/infra/logger.js', () => loggerMocks);
+vi.mock('../../src/host/services/infra/logger', () => loggerMocks);
+vi.mock('../../src/host/services/infra/logger.js', () => loggerMocks);
 
-vi.mock('../../src/main/mcp/logCollector', () => logCollectorMocks);
-vi.mock('../../src/main/mcp/logCollector.js', () => logCollectorMocks);
+vi.mock('../../src/host/mcp/logCollector', () => logCollectorMocks);
+vi.mock('../../src/host/mcp/logCollector.js', () => logCollectorMocks);
 
-vi.mock('../../src/main/services/core/configService', () => configServiceMocks);
-vi.mock('../../src/main/services/core/configService.js', () => configServiceMocks);
+vi.mock('../../src/host/services/core/configService', () => configServiceMocks);
+vi.mock('../../src/host/services/core/configService.js', () => configServiceMocks);
 
 // Mock browser service at the actual infra layer used by ToolExecutor imports.
-vi.mock('../../src/main/services/infra/browserService.js', () => ({
+vi.mock('../../src/host/services/infra/browserService.js', () => ({
   browserService: browserMocks.service,
   BrowserService: vi.fn(() => browserMocks.service),
   redactBrowserWorkbenchTraceParams: (_toolName: string, params: Record<string, unknown>) => params,
 }));
 
-vi.mock('../../src/main/services/infra/browserPool.js', () => ({
+vi.mock('../../src/host/services/infra/browserPool.js', () => ({
   browserPool: {
     acquire: vi.fn(() => browserMocks.service),
   },
@@ -153,15 +153,15 @@ vi.mock('../../src/main/services/infra/browserPool.js', () => ({
 }));
 
 // Mock cloud config service
-vi.mock('../../src/main/services/cloud/cloudConfigService', () => ({
+vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
   getCloudConfigService: vi.fn(() => ({
     getAllToolMeta: vi.fn().mockReturnValue({}),
     getToolMeta: vi.fn().mockReturnValue(undefined),
   })),
 }));
 
-import { AgentOrchestrator } from '../../src/main/agent/agentOrchestrator';
-import type { ConfigService } from '../../src/main/services/core/configService';
+import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
+import type { ConfigService } from '../../src/host/services/core/configService';
 import type { Message } from '../../src/shared/contract';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）

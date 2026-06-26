@@ -16,7 +16,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
-import { BrowserWindow } from '../../../platform';
+import { AppWindow } from '../../../platform';
 import { createLogger } from '../../../services/infra/logger';
 import { buildSlidesOutline } from '../../../services/design/slidesGenerator';
 import { estimateIllustrateCost } from '../../../services/design/slidesIllustrator';
@@ -120,7 +120,7 @@ export async function executeProposeSlidesOps(
 
   // 单向请求 renderer 打开预览 tab（按当前会话过滤；无 renderer 则跳过，agent 仍拿到路径）。
   try {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
+    const mainWindow = AppWindow.getAllWindows()[0];
     if (mainWindow) {
       mainWindow.webContents.send(IPC_CHANNELS.WORKSPACE_OPEN_PREVIEW, {
         filePath: result.filePath,

@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadPlaywright, loadPlaywrightChromium } from '../../../src/main/runtime/playwrightRuntime';
+import { loadPlaywright, loadPlaywrightChromium } from '../../../src/host/runtime/playwrightRuntime';
 
 const tempRoots: string[] = [];
 

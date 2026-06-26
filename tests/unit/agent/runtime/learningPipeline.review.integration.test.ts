@@ -16,7 +16,7 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
   getSkillsDir: () => ({
     user: {
@@ -26,12 +26,12 @@ vi.mock('../../../../src/main/config/configPaths', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 // telemetry 无工具调用：迫使只走 LLM 复盘链
-vi.mock('../../../../src/main/telemetry/telemetryStorage', () => ({
+vi.mock('../../../../src/host/telemetry/telemetryStorage', () => ({
   getTelemetryStorage: () => ({ getToolCallsBySession: () => [] }),
 }));
 
@@ -48,13 +48,13 @@ const quickMocks = vi.hoisted(() => ({
     }),
   })),
 }));
-vi.mock('../../../../src/main/model/quickModel', () => ({ quickTask: quickMocks.quickTask }));
-vi.mock('../../../../src/main/services/infra/timeoutController', () => ({
+vi.mock('../../../../src/host/model/quickModel', () => ({ quickTask: quickMocks.quickTask }));
+vi.mock('../../../../src/host/services/infra/timeoutController', () => ({
   withTimeout: <T>(p: Promise<T>) => p,
 }));
 
-import { LearningPipeline } from '../../../../src/main/agent/runtime/learningPipeline';
-import { listSkillDrafts, confirmSkillDraft } from '../../../../src/main/services/skills/skillDraftQueue';
+import { LearningPipeline } from '../../../../src/host/agent/runtime/learningPipeline';
+import { listSkillDrafts, confirmSkillDraft } from '../../../../src/host/services/skills/skillDraftQueue';
 import type { AgentEvent } from '../../../../src/shared/contract';
 
 beforeEach(async () => {

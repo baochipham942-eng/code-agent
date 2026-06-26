@@ -7,7 +7,7 @@ import {
   InputSanitizer,
   getInputSanitizer,
   resetInputSanitizer,
-} from '../../../src/main/security/inputSanitizer';
+} from '../../../src/host/security/inputSanitizer';
 
 describe('InputSanitizer', () => {
   let sanitizer: InputSanitizer;

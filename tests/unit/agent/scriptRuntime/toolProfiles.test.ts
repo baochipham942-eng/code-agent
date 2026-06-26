@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { resolveToolProfile } from '../../../../src/main/agent/scriptRuntime/toolProfiles';
+import { resolveToolProfile } from '../../../../src/host/agent/scriptRuntime/toolProfiles';
 
 describe('resolveToolProfile', () => {
   it('defaults to readonly (no write capability)', () => {

@@ -8,7 +8,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { PendingApprovalRepository } from '../../../src/main/services/core/repositories/PendingApprovalRepository';
+import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`

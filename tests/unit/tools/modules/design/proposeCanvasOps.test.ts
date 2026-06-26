@@ -1,28 +1,28 @@
 // ProposeCanvasOps（ADR-026）：schema/IPC 协议契约 + 校验 + CLI fallback + 阻塞解析。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
 const hasInteractiveRendererMock = vi.hoisted(() => vi.fn());
 const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
-// 持久捕获 response handler 回调：ipcMain.handle 是 module 级 once-guard，clearAllMocks 会
+// 持久捕获 response handler 回调：ipcHost.handle 是 module 级 once-guard，clearAllMocks 会
 // 抹掉 vi.fn 记录，故用一个不被清的 holder 捕获注册时的回调（跨 test 存活）。
 const captured = vi.hoisted(() => ({ responseCb: undefined as undefined | ((e: unknown, d: unknown) => unknown) }));
 
-vi.mock('../../../../../src/main/platform', () => ({
-  ipcMain: {
+vi.mock('../../../../../src/host/platform', () => ({
+  ipcHost: {
     handle: (channel: string, cb: (e: unknown, d: unknown) => unknown) => {
       if (channel === 'canvas-proposal:response') captured.responseCb = cb;
     },
   },
-  BrowserWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
+  AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
-vi.mock('../../../../../src/main/services/infra/notificationService', () => ({
+vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyNeedsInput: notifyNeedsInputMock },
 }));
 
-import { proposeCanvasOpsModule, computeProposalTimeoutMs } from '../../../../../src/main/tools/modules/design/proposeCanvasOps';
+import { proposeCanvasOpsModule, computeProposalTimeoutMs } from '../../../../../src/host/tools/modules/design/proposeCanvasOps';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
 import { INTERACTION_TIMEOUTS } from '../../../../../src/shared/constants';
 

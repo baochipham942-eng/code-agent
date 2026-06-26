@@ -1,6 +1,6 @@
 // ============================================================================
 // Doctor Check - Environment / Database / Config / Disk
-// 从原 src/main/ipc/doctor.ipc.ts 抽出，逻辑保持一致
+// 从原 src/host/ipc/doctor.ipc.ts 抽出，逻辑保持一致
 // ============================================================================
 
 import { existsSync } from 'fs';

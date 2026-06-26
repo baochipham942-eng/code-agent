@@ -1,25 +1,25 @@
  
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentAppServiceImpl } from '../../../src/main/app/agentAppService';
-import type { SessionStatus } from '../../../src/main/task';
-import { getSessionManager } from '../../../src/main/services';
-import { getDatabase } from '../../../src/main/services/core/databaseService';
-import { getFileCheckpointService } from '../../../src/main/services/checkpoint';
-import { loadStreamSnapshot } from '../../../src/main/session/streamSnapshot';
+import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
+import type { SessionStatus } from '../../../src/host/task';
+import { getSessionManager } from '../../../src/host/services';
+import { getDatabase } from '../../../src/host/services/core/databaseService';
+import { getFileCheckpointService } from '../../../src/host/services/checkpoint';
+import { loadStreamSnapshot } from '../../../src/host/session/streamSnapshot';
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: vi.fn(),
 }));
 
-vi.mock('../../../src/main/session/streamSnapshot', () => ({
+vi.mock('../../../src/host/session/streamSnapshot', () => ({
   loadStreamSnapshot: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/checkpoint', () => ({
+vi.mock('../../../src/host/services/checkpoint', () => ({
   getFileCheckpointService: vi.fn(),
 }));
 

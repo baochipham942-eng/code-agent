@@ -2,7 +2,7 @@
 // Status IPC Handlers - 状态相关的 IPC 通道
 // ============================================================================
 
-import { ipcMain, type BrowserWindow } from '../platform';
+import { ipcHost, type AppWindow } from '../platform';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../services/infra/logger';
@@ -26,7 +26,7 @@ export const STATUS_CHANNELS = {
  */
 export function registerStatusHandlers(): void {
   // 获取 Git 信息
-  ipcMain.handle(STATUS_CHANNELS.GET_GIT_INFO, async (_, workingDir: string) => {
+  ipcHost.handle(STATUS_CHANNELS.GET_GIT_INFO, async (_, workingDir: string) => {
     try {
       const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', {
         cwd: workingDir,
@@ -40,7 +40,7 @@ export function registerStatusHandlers(): void {
   });
 
   // 网络状态检测
-  ipcMain.handle(STATUS_CHANNELS.CHECK_NETWORK, async () => {
+  ipcHost.handle(STATUS_CHANNELS.CHECK_NETWORK, async () => {
     try {
       const start = Date.now();
       const controller = new AbortController();
@@ -76,7 +76,7 @@ export function registerStatusHandlers(): void {
  * 发送 Token 使用更新到渲染进程
  */
 export function sendTokenUpdate(
-  window: BrowserWindow | null,
+  window: AppWindow | null,
   inputTokens: number,
   outputTokens: number
 ): void {
@@ -91,7 +91,7 @@ export function sendTokenUpdate(
 /**
  * 发送费用更新到渲染进程
  */
-export function sendCostUpdate(window: BrowserWindow | null, cost: number): void {
+export function sendCostUpdate(window: AppWindow | null, cost: number): void {
   if (window && !window.isDestroyed()) {
     window.webContents.send(STATUS_CHANNELS.COST_UPDATE, { cost });
   }
@@ -100,7 +100,7 @@ export function sendCostUpdate(window: BrowserWindow | null, cost: number): void
 /**
  * 发送上下文使用更新到渲染进程
  */
-export function sendContextUpdate(window: BrowserWindow | null, percent: number): void {
+export function sendContextUpdate(window: AppWindow | null, percent: number): void {
   if (window && !window.isDestroyed()) {
     window.webContents.send(STATUS_CHANNELS.CONTEXT_UPDATE, { percent });
   }
@@ -144,7 +144,7 @@ export async function getGitChanges(workingDir: string): Promise<{ staged: numbe
  * 发送 Git 变更统计到渲染进程
  */
 export function sendGitChangesUpdate(
-  window: BrowserWindow | null,
+  window: AppWindow | null,
   changes: { staged: number; unstaged: number; untracked: number } | null
 ): void {
   if (window && !window.isDestroyed()) {
@@ -156,7 +156,7 @@ export function sendGitChangesUpdate(
  * 发送完整 Git 信息（branch + changes）到渲染进程
  */
 export async function refreshGitStatus(
-  window: BrowserWindow | null,
+  window: AppWindow | null,
   workingDir: string
 ): Promise<void> {
   if (!window || window.isDestroyed()) return;

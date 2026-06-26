@@ -5,7 +5,7 @@ import {
   DISTILL_CRON_JOB_TAG,
   buildDistillCronJobDefinition,
   syncDistillCronJob,
-} from '../../../../src/main/services/skills/distillScheduler';
+} from '../../../../src/host/services/skills/distillScheduler';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 

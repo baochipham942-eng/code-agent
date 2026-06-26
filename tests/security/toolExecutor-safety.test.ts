@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ToolExecutor } from '../../src/main/tools/toolExecutor';
-import { resetToolResolver } from '../../src/main/tools/dispatch/toolResolver';
+import { ToolExecutor } from '../../src/host/tools/toolExecutor';
+import { resetToolResolver } from '../../src/host/tools/dispatch/toolResolver';
 
 // Mock tool resolver — register a fake 'bash' tool with permission required
-vi.mock('../../src/main/tools/dispatch/toolResolver', () => {
+vi.mock('../../src/host/tools/dispatch/toolResolver', () => {
   const bashDef = {
     name: 'bash',
     description: 'Execute bash commands',
@@ -29,8 +29,8 @@ vi.mock('../../src/main/tools/dispatch/toolResolver', () => {
 });
 
 // Mock security modules
-vi.mock('../../src/main/security', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../src/main/security')>();
+vi.mock('../../src/host/security', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/host/security')>();
   return {
     ...original,
     getCommandMonitor: () => ({
@@ -51,7 +51,7 @@ vi.mock('../../src/main/security', async (importOriginal) => {
 });
 
 // Mock services
-vi.mock('../../src/main/services', () => ({
+vi.mock('../../src/host/services', () => ({
   getToolCache: () => ({
     isCacheable: () => false,
     get: () => null,
@@ -60,7 +60,7 @@ vi.mock('../../src/main/services', () => ({
 }));
 
 // Mock confirmation gate
-vi.mock('../../src/main/agent/confirmationGate', () => ({
+vi.mock('../../src/host/agent/confirmationGate', () => ({
   getConfirmationGate: () => ({
     buildPreview: () => null,
     assessRiskLevel: () => 'low',
@@ -68,12 +68,12 @@ vi.mock('../../src/main/agent/confirmationGate', () => ({
 }));
 
 // Mock file checkpoint
-vi.mock('../../src/main/tools/middleware/fileCheckpointMiddleware', () => ({
+vi.mock('../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
   createFileCheckpointIfNeeded: vi.fn(),
 }));
 
 // Mock permission classifier — 强制走 ask 路径，让 mockRequestPermission 生效
-vi.mock('../../src/main/tools/permissionClassifier', () => ({
+vi.mock('../../src/host/tools/permissionClassifier', () => ({
   classifyPermission: vi.fn().mockResolvedValue({ decision: 'ask', reason: 'test' }),
 }));
 

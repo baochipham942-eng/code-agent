@@ -20,11 +20,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SUBAGENT_EXECUTOR_PATH = path.resolve(
   __dirname,
-  '../../../src/main/agent/subagentExecutor.ts',
+  '../../../src/host/agent/subagentExecutor.ts',
 );
 const SUBAGENT_EXECUTOR_TYPES_PATH = path.resolve(
   __dirname,
-  '../../../src/main/agent/subagentExecutorTypes.ts',
+  '../../../src/host/agent/subagentExecutorTypes.ts',
 );
 
 describe('subagentExecutor abort signal propagation (D.1)', () => {

@@ -30,7 +30,7 @@ Smoke test for swarm trace JSONL backend. Follow these tool requirements exactly
 (1) Your first tool call must be ToolSearch with query 'select:AgentSpawn' and maxResults 1.
 (2) After ToolSearch returns, your next tool call must be AgentSpawn (NOT TaskManager, NOT Bash, NOT Write).
 (3) AgentSpawn arguments: parallel=true, agents=[
-    {role:'explore', task:'Count files under src/main/agent and reply with just the count.'},
+    {role:'explore', task:'Count files under src/host/agent and reply with just the count.'},
     {role:'coder', task:'Write the string smoke-ok to /tmp/swarm-jsonl-smoke.txt.'}
    ].
 (4) Wait for both agents to complete, then reply with a one-line summary.

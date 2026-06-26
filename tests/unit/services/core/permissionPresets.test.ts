@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPathTrusted } from '../../../../src/main/services/core/permissionPresets';
+import { isPathTrusted } from '../../../../src/host/services/core/permissionPresets';
 
 describe('isPathTrusted', () => {
   describe('posix', () => {

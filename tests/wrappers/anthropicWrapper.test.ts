@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseClaudeResponse,
   parseClaudeSSEEvent,
-} from '../../src/main/model/providers/wrappers/anthropicWrapper';
+} from '../../src/host/model/providers/wrappers/anthropicWrapper';
 
 describe('anthropicWrapper / parseClaudeResponse', () => {
   it('success: parses text-only message', () => {

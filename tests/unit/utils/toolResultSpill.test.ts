@@ -10,7 +10,7 @@ import * as os from 'os';
 // mock factory 与测试体各自计算同一确定性路径（避免 vi.hoisted 跨作用域引用）
 const testRoot = path.join(os.tmpdir(), `neo-spill-test-${process.pid}`);
 
-vi.mock('../../../src/main/config/configPaths', async () => {
+vi.mock('../../../src/host/config/configPaths', async () => {
   const osMod = await import('os');
   const pathMod = await import('path');
   return {
@@ -25,7 +25,7 @@ import {
   getToolResultSpillDir,
   readToolResultArchive,
   SPILL_NOTICE_MARKER,
-} from '../../../src/main/utils/toolResultSpill';
+} from '../../../src/host/utils/toolResultSpill';
 import { TOOL_RESULT_SPILL } from '../../../src/shared/constants';
 
 describe('toolResultSpill (GAP-009)', () => {

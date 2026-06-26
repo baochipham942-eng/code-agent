@@ -4,7 +4,7 @@
 //
 // 历史背景：
 // 在 4c8b5d7d 之前，CLI/webServer 走本文件的 CLIConfigService 类，Tauri main
-// 走 src/main/services/core/configService.ts 的 ConfigService。两个类各自维护
+// 走 src/host/services/core/configService.ts 的 ConfigService。两个类各自维护
 // read 路径与 fallback，导致"UI 选了 A、推理走 B"事故（UI 显示 MiMo v2.5 Pro，
 // webServer 实际把请求路由到 zhipu/glm-5）。
 //

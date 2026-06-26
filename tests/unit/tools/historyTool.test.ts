@@ -12,12 +12,12 @@ const mockDb = {
   getTranscriptAround: mockAround,
 };
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: () => mockDb,
 }));
 
 const { historyModule } = await import(
-  '../../../src/main/tools/modules/lightMemory/history'
+  '../../../src/host/tools/modules/lightMemory/history'
 );
 
 function makeCtx() {

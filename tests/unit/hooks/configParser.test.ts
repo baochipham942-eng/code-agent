@@ -21,7 +21,7 @@ import {
   getHooksConfigPaths,
   type HooksConfig,
   type ParsedHookConfig,
-} from '../../../src/main/hooks/configParser';
+} from '../../../src/host/hooks/configParser';
 
 describe('Hook Config Parser', () => {
   let tempDir: string;

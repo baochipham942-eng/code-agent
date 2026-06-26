@@ -7,11 +7,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const promptMock = vi.hoisted(() => vi.fn());
-vi.mock('../../../../../src/main/tools/utils/userQuestionPrompt', () => ({
+vi.mock('../../../../../src/host/tools/utils/userQuestionPrompt', () => ({
   promptUserInChat: promptMock,
 }));
 
-import { confirmGenerationCost } from '../../../../../src/main/tools/modules/design/generationCostConfirm';
+import { confirmGenerationCost } from '../../../../../src/host/tools/modules/design/generationCostConfirm';
 import { formatCny } from '../../../../../src/shared/media/imageCost';
 
 beforeEach(() => vi.clearAllMocks());

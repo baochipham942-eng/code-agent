@@ -266,9 +266,9 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('npm run renderer:capability-diff');
     expect(workflow).toContain('--summary-output "${GITHUB_STEP_SUMMARY}"');
     expect(workflow).toContain('--fail-on-unsupported');
-    expect(workflow).toContain("'src/main/services/renderer/**'");
-    expect(workflow).toContain("'src/main/services/cloud/controlPlaneTrust.ts'");
-    expect(workflow).toContain("'src/main/ipc/update.ipc.ts'");
+    expect(workflow).toContain("'src/host/services/renderer/**'");
+    expect(workflow).toContain("'src/host/services/cloud/controlPlaneTrust.ts'");
+    expect(workflow).toContain("'src/host/ipc/update.ipc.ts'");
     expect(workflow).toContain("'src/web/routes/static.ts'");
     expect(workflow).toContain("'vercel-api/api/v1/control-plane.ts'");
     expect(workflow).toContain("'vercel-api/lib/controlPlanePayloads.ts'");

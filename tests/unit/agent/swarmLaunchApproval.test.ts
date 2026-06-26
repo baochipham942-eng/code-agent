@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -17,15 +17,15 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock platform.BrowserWindow — 控制是否有 renderer 附加
+// Mock platform.AppWindow — 控制是否有 renderer 附加
 // ---------------------------------------------------------------------------
 
 const windowState = vi.hoisted(() => ({
   count: 1, // 默认有 renderer
 }));
 
-vi.mock('../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../src/host/platform', () => ({
+  AppWindow: {
     getAllWindows: () => new Array(windowState.count).fill({}),
   },
 }));
@@ -38,11 +38,11 @@ const busState = vi.hoisted(() => ({
   publishMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: busState.publishMock }),
 }));
 
-import { SwarmLaunchApprovalGate } from '../../../src/main/agent/swarmLaunchApproval';
+import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
 import type { SwarmLaunchTaskPreview } from '../../../src/shared/contract/swarm';
 
 // ---------------------------------------------------------------------------

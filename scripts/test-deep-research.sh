@@ -46,7 +46,7 @@ elif [ "scripts/_test-research-runner.cjs" -nt "$BUNDLE" ]; then
   needs_build=true
 else
   # Check if any relevant source file is newer than bundle
-  changed=$(find src/main/research src/main/model src/main/tools/toolExecutor.ts src/main/tools/toolRegistry.ts src/cli/electron-mock.ts src/main/services/core/configService.ts -newer "$BUNDLE" -name '*.ts' 2>/dev/null | head -1)
+  changed=$(find src/host/research src/host/model src/host/tools/toolExecutor.ts src/host/tools/toolRegistry.ts src/cli/electron-mock.ts src/host/services/core/configService.ts -newer "$BUNDLE" -name '*.ts' 2>/dev/null | head -1)
   if [ -n "$changed" ]; then
     needs_build=true
   fi

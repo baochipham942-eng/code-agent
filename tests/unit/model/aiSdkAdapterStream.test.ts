@@ -3,22 +3,22 @@
 // 主 loop 是 HOT 路径 + 用户可见聊天，这套映射的语义漂移最危险，故用受控事件流单测覆盖。
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText, generateText } from 'ai';
-import { inferenceViaAiSdk } from '../../../src/main/model/adapters/aiSdkAdapter';
-import type { StreamChunk, StreamCallback } from '../../../src/main/model/types';
-import type { ModelConfig, ToolDefinition } from '../../../src/main/shared/contract';
+import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
+import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
+import type { ModelConfig, ToolDefinition } from '../../../src/host/shared/contract';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 // baseURL/apiKey 解析与本测试无关：固定返回，避免依赖 configService/env。
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderBaseUrl: () => 'https://test.local/v1',
   resolveProviderApiKey: () => 'test-key',
 }));
 
 // provider 健康监控是 app 级单例：桩掉，只验证调用不报错。
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({ recordSuccess: vi.fn(), recordFailure: vi.fn() }),
 }));
 

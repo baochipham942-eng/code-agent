@@ -4,11 +4,11 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { AgentEngineKind, AgentEngineSessionMetadata } from '../../../src/shared/contract/agentEngine';
 import type { Session } from '../../../src/shared/contract/session';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

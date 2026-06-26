@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildVerificationCard } from '../../../src/main/agent/verification';
-import { attributeCiFailure, ingestCiLogEvidence } from '../../../src/main/agent/verificationCi';
+import { buildVerificationCard } from '../../../src/host/agent/verification';
+import { attributeCiFailure, ingestCiLogEvidence } from '../../../src/host/agent/verificationCi';
 
 describe('CI log verification ingest', () => {
   const log = [
     'Job build-and-test',
     '##[group]Run npm run typecheck',
     '> code-agent@0.20.0 typecheck',
-    'src/main/foo.ts(12,7): error TS2322: Type string is not assignable to type number.',
+    'src/host/foo.ts(12,7): error TS2322: Type string is not assignable to type number.',
     'Error: Process completed with exit code 2.',
   ].join('\n');
 
@@ -24,7 +24,7 @@ describe('CI log verification ingest', () => {
       failingStep: 'npm run typecheck',
       command: 'npm run typecheck',
       failureType: 'typecheck',
-      candidateFiles: ['src/main/foo.ts'],
+      candidateFiles: ['src/host/foo.ts'],
     });
     expect(attribution.topErrorLines).toEqual(expect.arrayContaining([
       expect.stringContaining('TS2322'),

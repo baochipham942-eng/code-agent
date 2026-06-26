@@ -14,10 +14,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { BaselineManager } from '../../../src/main/testing/ci/baselineManager';
-import { TrendTracker } from '../../../src/main/testing/ci/trendTracker';
-import { CONFIG_DIR_NEW } from '../../../src/main/config/configPaths';
-import type { TestRunSummary, TrendDataPoint } from '../../../src/main/testing/types';
+import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
+import { TrendTracker } from '../../../src/host/testing/ci/trendTracker';
+import { CONFIG_DIR_NEW } from '../../../src/host/config/configPaths';
+import type { TestRunSummary, TrendDataPoint } from '../../../src/host/testing/types';
 
 function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
   return {

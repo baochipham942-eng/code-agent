@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAgentTeamFailureRecoveryProposal,
   buildWorkflowFailureRecoveryProposal,
-} from '../../../src/main/handoff/longTaskRecoveryProposal';
+} from '../../../src/host/handoff/longTaskRecoveryProposal';
 
 describe('long-task recovery proposal builders', () => {
   it('builds workflow failure proposals with replay resume evidence', () => {

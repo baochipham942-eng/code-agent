@@ -10,8 +10,8 @@
 // CI/约定：npx tsx scripts/acceptance/script-runtime-sandbox-smoke.ts
 // ============================================================================
 
-import { runScriptInWorker } from '../../src/main/agent/scriptRuntime/sandbox';
-import type { RpcRequest, RpcResponse } from '../../src/main/agent/scriptRuntime/types';
+import { runScriptInWorker } from '../../src/host/agent/scriptRuntime/sandbox';
+import type { RpcRequest, RpcResponse } from '../../src/host/agent/scriptRuntime/types';
 
 const script = `
   await phase('research');

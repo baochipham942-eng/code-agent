@@ -5,8 +5,8 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { getHookId } from '../../../src/main/hooks/hookExecutionEngine';
-import type { HookDefinition } from '../../../src/main/hooks/configParser';
+import { getHookId } from '../../../src/host/hooks/hookExecutionEngine';
+import type { HookDefinition } from '../../../src/host/hooks/configParser';
 
 describe('getHookId', () => {
   it('command hook 用 command 串生成 ID', () => {

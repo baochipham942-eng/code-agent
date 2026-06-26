@@ -3,8 +3,8 @@ import {
   ExecutionMonitor,
   createExecutionMonitor,
   type MonitorConfig,
-} from '../../../src/main/planning/executionMonitor';
-import type { TaskPlan, TaskPhase } from '../../../src/main/planning/types';
+} from '../../../src/host/planning/executionMonitor';
+import type { TaskPlan, TaskPhase } from '../../../src/host/planning/types';
 
 const phase = (over: Partial<TaskPhase> & { id: string }): TaskPhase => ({
   title: 'Phase',

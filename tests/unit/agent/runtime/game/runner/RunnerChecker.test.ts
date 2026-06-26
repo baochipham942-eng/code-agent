@@ -4,18 +4,18 @@ import {
   RunnerChecker,
   isRunnerArtifact,
   runnerChecker,
-} from '../../../../../../src/main/agent/runtime/game/runner/RunnerChecker';
+} from '../../../../../../src/host/agent/runtime/game/runner/RunnerChecker';
 import type {
   Snapshot,
   SmokeResult,
   SubtypeContext,
-} from '../../../../../../src/main/agent/runtime/game/types';
-import { gameSubtypeRegistry } from '../../../../../../src/main/agent/runtime/game/registry';
+} from '../../../../../../src/host/agent/runtime/game/types';
+import { gameSubtypeRegistry } from '../../../../../../src/host/agent/runtime/game/registry';
 import {
   RUNNER_REPAIR_CODES,
   classifyRunnerFailure,
   lookupRunnerRepair,
-} from '../../../../../../src/main/agent/runtime/game/runner/repairCodes';
+} from '../../../../../../src/host/agent/runtime/game/runner/repairCodes';
 
 const META_FRAGMENT_RUNNER = `
   window.__GAME_META__ = {

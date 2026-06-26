@@ -20,11 +20,11 @@ const dbState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
@@ -45,7 +45,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('creates hierarchical child ids without consuming the top-level counter', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'tree-session';
 
     const parent = taskStore.createTask(s, { subject: 'Parent', description: 'p' });
@@ -66,14 +66,14 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('throws on unknown parentTaskId', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     expect(() =>
       taskStore.createTask('tree-bad-parent', { subject: 'x', description: 'x', parentTaskId: '99' })
     ).toThrow(/parent/i);
   });
 
   it('hydrated child ids keep the numbering sequence after reload', async () => {
-    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore1 = await import('../../../src/host/services/planning/taskStore');
     const s = 'tree-hydrate';
     const parent = taskStore1.createTask(s, { subject: 'P', description: 'p' });
     taskStore1.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
@@ -81,13 +81,13 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
 
     vi.resetModules();
     dbState.db.getSessionTasks.mockReturnValue(saved);
-    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore2 = await import('../../../src/host/services/planning/taskStore');
     const child2 = taskStore2.createTask(s, { subject: 'C2', description: 'c', parentTaskId: '1' });
     expect(child2.id).toBe('1.2');
   });
 
   it('records owner on create and emits lifecycle events', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'event-session';
 
     const task = taskStore.createTask(s, { subject: 'Owned', description: 'o', owner: 'subagent_1_abc' });
@@ -107,7 +107,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('emits abandoned for cancellation and blocked for dependency additions', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'event-session-2';
     const a = taskStore.createTask(s, { subject: 'A', description: 'a' });
     const b = taskStore.createTask(s, { subject: 'B', description: 'b' });
@@ -121,7 +121,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('adoptOrphanTasks releases open tasks owned by a finished subagent', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'orphan-session';
     const owner = 'subagent_99_zzz';
 
@@ -142,7 +142,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('does not reuse a deleted child id (no event-history inheritance)', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'tree-no-reuse';
     const parent = taskStore.createTask(s, { subject: 'P', description: 'p' });
     taskStore.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
@@ -155,7 +155,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('child counter survives module reload via parent persistence', async () => {
-    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore1 = await import('../../../src/host/services/planning/taskStore');
     const s = 'tree-counter-reload';
     const parent = taskStore1.createTask(s, { subject: 'P', description: 'p' });
     const c1 = taskStore1.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
@@ -164,13 +164,13 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
 
     vi.resetModules();
     dbState.db.getSessionTasks.mockReturnValue(saved);
-    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore2 = await import('../../../src/host/services/planning/taskStore');
     const c2 = taskStore2.createTask(s, { subject: 'C2', description: 'c', parentTaskId: '1' });
     expect(c2.id).toBe('1.2'); // 已删 1.1 不复用
   });
 
   it('deleting a parent detaches children instead of leaving dangling parentTaskId', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'tree-detach';
     const parent = taskStore.createTask(s, { subject: 'P', description: 'p' });
     const child = taskStore.createTask(s, { subject: 'C', description: 'c', parentTaskId: parent.id });
@@ -183,7 +183,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
   });
 
   it('top-level ids are not reused after reload when events record deleted tasks', async () => {
-    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore1 = await import('../../../src/host/services/planning/taskStore');
     const s = 'top-no-reuse';
     taskStore1.createTask(s, { subject: 'T1', description: 't' });
     const t2 = taskStore1.createTask(s, { subject: 'T2', description: 't' });
@@ -195,13 +195,13 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     dbState.db.getSessionTasks.mockReturnValue(saved);
     const maxTop = Math.max(...events.map((e) => Number(String(e.taskId).split('.')[0]) || 0));
     (dbState.db as Record<string, unknown>).getMaxTopLevelTaskIdFromEvents = vi.fn(() => maxTop);
-    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore2 = await import('../../../src/host/services/planning/taskStore');
     const t3 = taskStore2.createTask(s, { subject: 'T3', description: 't' });
     expect(t3.id).toBe('3'); // 不复用已删的 2
   });
 
   it('top-level counter uses unbounded max-id query, not a capped event scan', async () => {
-    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore1 = await import('../../../src/host/services/planning/taskStore');
     const s = 'top-max-id';
     taskStore1.createTask(s, { subject: 'T1', description: 't' });
     const saved = dbState.db.saveSessionTasks.mock.calls.at(-1)?.[1];
@@ -210,13 +210,13 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     dbState.db.getSessionTasks.mockReturnValue(saved);
     // 已删的最高顶层 id 是 7（长会话场景：早已滚出最近 200 条事件窗口）
     (dbState.db as Record<string, unknown>).getMaxTopLevelTaskIdFromEvents = vi.fn(() => 7);
-    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const taskStore2 = await import('../../../src/host/services/planning/taskStore');
     const t = taskStore2.createTask(s, { subject: 'T8', description: 't' });
     expect(t.id).toBe('8');
   });
 
   it('reserved __childIdCounter cannot be wiped through public metadata merge', async () => {
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'meta-guard';
     const parent = taskStore.createTask(s, { subject: 'P', description: 'p' });
     const c1 = taskStore.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
@@ -234,7 +234,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     dbState.db.appendSessionTaskEvents.mockImplementation(() => {
       throw new Error('disk full');
     });
-    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
     const task = taskStore.createTask('event-fail', { subject: 'X', description: 'x' });
     expect(task.id).toBe('1');
   });

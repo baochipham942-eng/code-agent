@@ -1,4 +1,4 @@
-import type { ModelResponse } from '../../src/main/model/types';
+import type { ModelResponse } from '../../src/host/model/types';
 import type { ToolCall } from '../../src/shared/contract';
 
 export interface XiaomiProviderResponseArtifact {

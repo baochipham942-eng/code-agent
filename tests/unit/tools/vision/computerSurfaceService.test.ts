@@ -69,7 +69,7 @@ function installMacOsSurfaceMocks(options: {
 
 async function loadSurface() {
   vi.resetModules();
-  const mod = await import('../../../../src/main/services/desktop/computerSurface');
+  const mod = await import('../../../../src/host/services/desktop/computerSurface');
   return mod.getComputerSurface();
 }
 

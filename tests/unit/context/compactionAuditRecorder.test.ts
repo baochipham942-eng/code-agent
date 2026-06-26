@@ -14,18 +14,18 @@ const recorderMocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => recorderMocks.db,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => recorderMocks.logger,
 }));
 
 import {
   buildCompactionAuditSummary,
   recordCompactionAuditSnapshot,
-} from '../../../src/main/context/compactionAuditRecorder';
+} from '../../../src/host/context/compactionAuditRecorder';
 
 function message(id: string, role: Message['role'], content: string): Message {
   return { id, role, content, timestamp: Number(id.replace(/\D/g, '') || 1) };
@@ -33,7 +33,7 @@ function message(id: string, role: Message['role'], content: string): Message {
 
 function compactionResult() {
   const messages = [
-    message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts'),
+    message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts'),
     message('m2', 'assistant', 'TODO: preserve validation warnings.'),
     message('m3', 'tool', 'AssertionError: expected warnings to include basename coverage.'),
     message('m4', 'assistant', 'recent answer'),
@@ -53,8 +53,8 @@ function compactionResult() {
       manifest: {
         compactedMessageIds: ['m1', 'm2', 'm3'],
         preservedMessageIds: ['m4'],
-        filePaths: ['/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts'],
-        files: [{ path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts' }],
+        filePaths: ['/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts'],
+        files: [{ path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts' }],
         commands: [{ command: 'npm test', success: false }],
         errors: [{ text: 'AssertionError: expected warnings to include basename coverage.' }],
         todos: [{ text: 'TODO: preserve validation warnings.' }],
@@ -82,7 +82,7 @@ function compactionResult() {
         preserveRecentCount: 1,
         compactedMessageIds: ['m1', 'm2', 'm3'],
         preservedMessageIds: ['m4'],
-        files: [{ path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts' }],
+        files: [{ path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts' }],
         commands: [{ label: 'npm test', detail: 'exit=1', severity: 'error' as const }],
         errors: [{ label: 'Unresolved error', detail: 'AssertionError: expected warnings to include basename coverage.', severity: 'error' as const }],
         openWork: [{ label: 'Open work', detail: 'TODO: preserve validation warnings.', severity: 'warning' as const }],
@@ -95,7 +95,7 @@ function compactionResult() {
     savedTokens: 780,
     validation: {
       ok: false,
-      missingPaths: ['/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts'],
+      missingPaths: ['/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts'],
       missingErrors: ['Unresolved error: AssertionError: expected warnings to include basename coverage.'],
       missingOpenWork: ['Open work: TODO: preserve validation warnings.'],
       warnings: ['Path compactionService.ts was covered only by basename with needs re-read instruction.'],
@@ -140,7 +140,7 @@ describe('compactionAuditRecorder', () => {
       validation: {
         ok: false,
         missing: {
-          paths: ['/Users/linchen/Downloads/ai/code-agent/src/main/context/compactionService.ts'],
+          paths: ['/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts'],
           errors: ['Unresolved error: AssertionError: expected warnings to include basename coverage.'],
           openWork: ['Open work: TODO: preserve validation warnings.'],
         },

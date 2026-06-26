@@ -4,8 +4,8 @@ import path from 'path';
 import {
   runArtifactPreviewVision,
   type ArtifactPreviewVisionAnalyzer,
-} from '../../src/main/agent/runtime/browser/artifactPreviewVision';
-import { runArtifactPreviewHealth } from '../../src/main/agent/runtime/browser/artifactPreviewHealth';
+} from '../../src/host/agent/runtime/browser/artifactPreviewVision';
+import { runArtifactPreviewHealth } from '../../src/host/agent/runtime/browser/artifactPreviewHealth';
 
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',

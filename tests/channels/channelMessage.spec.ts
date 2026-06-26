@@ -57,7 +57,7 @@ test.describe('Channel Message UI', () => {
         '`code` **bold** _italic_',
         '```python\nprint("hello")\n```',
         '<script>alert("xss")</script>',
-        '路径: ~/Downloads/ai/code-agent/src/main/channels/',
+        '路径: ~/Downloads/ai/code-agent/src/host/channels/',
       ];
 
       for (const input of specialInputs) {

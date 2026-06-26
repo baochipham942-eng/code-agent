@@ -10,7 +10,7 @@ import {
   listBrands,
   saveBrand,
   setActiveBrand,
-} from '../../../../src/main/services/design/brandRegistry';
+} from '../../../../src/host/services/design/brandRegistry';
 import { directionTokens } from '../../../../src/design/direction-tokens';
 
 // getUserConfigDir() = process.env.CODE_AGENT_HOME / '.code-agent'，每次调用读 env，

@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // 显式 mock configService，让 getGptImageConfig 的 config 回落路径可控（不依赖测试环境恰好返回 undefined）。
 const { getApiKeyMock } = vi.hoisted(() => ({ getApiKeyMock: vi.fn() }));
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getApiKey: getApiKeyMock }),
 }));
 
@@ -19,7 +19,7 @@ import {
   removeWatermark,
   expandScalesForDirection,
   isSafeImageUrl,
-} from '../../../../src/main/services/media/imageGenerationService';
+} from '../../../../src/host/services/media/imageGenerationService';
 
 function jsonResponse(obj: unknown): Response {
   return {
@@ -167,7 +167,7 @@ describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => 
     process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'AAA' }] }) });
     vi.stubGlobal('fetch', fetchMock);
-    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
     const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
     expect(r.actualModel).toBe('gpt-image-2');
     expect(r.imageData.startsWith('data:image/png;base64,')).toBe(true);
@@ -185,7 +185,7 @@ describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => 
     });
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'BBB' }] }) });
     vi.stubGlobal('fetch', fetchMock);
-    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
     const r = await generateImage('gptimage', '', '深色仪表盘', '1:1');
     expect(r.actualModel).toBe('gpt-image-2');
     expect(r.imageData).toBe('data:image/png;base64,BBB');
@@ -203,14 +203,14 @@ describe('gptimage engine — gpt-image-2 自定义 OpenAI 兼容端点', () => 
       text: async () => '{"error":"quota exceeded"}',
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/429.*quota exceeded/);
   });
 
   it('gptimage 缺 key 报去设置配置', async () => {
     // env 已在 beforeEach 删除，且 config 显式返回 undefined（mockReturnValue(undefined)）
     // → 走的是真·缺 key 路径，断言抛含「配置」字样错误。
-    const { generateImage } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(generateImage('gptimage', '', 'x', '1:1')).rejects.toThrow(/配置/);
   });
 });
@@ -239,7 +239,7 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
       return { ok: true, json: async () => ({ data: [{ b64_json: 'QUJD' }] }) };
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { editImageByAnnotation } = await import('../../../../src/host/services/media/imageGenerationService');
     const r = await editImageByAnnotation({
       engine: 'gptimage',
       annotatedImageDataUrl: 'data:image/png;base64,QUJD',
@@ -257,7 +257,7 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
   it('editImageByAnnotation 缺 key 报配置', async () => {
     delete process.env.GPTIMAGE_PROXY_BASE; delete process.env.GPTIMAGE_PROXY_KEY;
     getApiKeyMock.mockReturnValue(undefined);
-    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { editImageByAnnotation } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
       .rejects.toThrow(/配置/);
   });
@@ -265,13 +265,13 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
   it('editImageByAnnotation 非 ok 透出错误体', async () => {
     process.env.GPTIMAGE_PROXY_BASE = 'https://example.test'; process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429, text: async () => 'quota exceeded' }));
-    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { editImageByAnnotation } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
       .rejects.toThrow(/429.*quota exceeded/);
   });
 
   it('editImageByAnnotation 非 gptimage engine 抛不支持', async () => {
-    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { editImageByAnnotation } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(editImageByAnnotation({ engine: 'wanx', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x' }))
       .rejects.toThrow(/不支持|标注重绘/);
   });
@@ -280,7 +280,7 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
     process.env.GPTIMAGE_PROXY_KEY = 'sk-test';
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const { editImageByAnnotation } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { editImageByAnnotation } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,', instruction: 'x' }))
       .rejects.toThrow(/base64 为空/);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -314,7 +314,7 @@ describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
   it('downloadImageAsBase64 下载前拦截不安全 url（不发起 fetch）', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const { downloadImageAsBase64 } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { downloadImageAsBase64 } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(downloadImageAsBase64('http://127.0.0.1/x')).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
@@ -327,7 +327,7 @@ describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
       return { ok: false, status: 302, headers: { get: () => 'https://169.254.169.254/' }, arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Response;
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { downloadImageAsBase64 } = await import('../../../../src/main/services/media/imageGenerationService');
+    const { downloadImageAsBase64 } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(downloadImageAsBase64('https://cdn.public.example.com/img.png')).rejects.toThrow(/跳转|redirect|下载失败/);
     vi.unstubAllGlobals();
   });

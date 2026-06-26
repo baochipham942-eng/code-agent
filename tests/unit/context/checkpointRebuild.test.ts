@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { renderCheckpointRebuildContext } from '../../../src/main/context/checkpoint';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+import { renderCheckpointRebuildContext } from '../../../src/host/context/checkpoint';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 function message(id: string, content: string): Message {
   return {

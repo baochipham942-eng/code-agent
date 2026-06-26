@@ -6,9 +6,9 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
-import { listDirectoryModule } from '../../../../../src/main/tools/modules/file/listDirectory';
+import { listDirectoryModule } from '../../../../../src/host/tools/modules/file/listDirectory';
 
 function makeLogger(): Logger {
   return { debug: () => void 0, info: () => void 0, warn: () => void 0, error: () => void 0 };

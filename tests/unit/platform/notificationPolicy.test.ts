@@ -3,7 +3,7 @@ import {
   evaluateNotificationPolicy,
   sanitizeNotificationText,
   type NotificationIntent,
-} from '../../../src/main/services/infra/notificationPolicy';
+} from '../../../src/host/services/infra/notificationPolicy';
 
 describe('notification policy gate', () => {
   it('only allows terminal or user-intervention intents into system notifications', () => {

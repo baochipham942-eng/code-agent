@@ -4,8 +4,8 @@ import * as path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
-import { gitWorktreeModule } from '../../../../../src/main/tools/modules/shell/gitWorktree';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
+import { gitWorktreeModule } from '../../../../../src/host/tools/modules/shell/gitWorktree';
 
 const execFileAsync = promisify(execFile);
 

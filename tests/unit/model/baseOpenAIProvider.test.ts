@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ModelConfig } from '../../../src/shared/contract';
-import { BaseOpenAIProvider } from '../../../src/main/model/providers/baseOpenAIProvider';
-import { electronFetch } from '../../../src/main/model/providers/shared';
+import { BaseOpenAIProvider } from '../../../src/host/model/providers/baseOpenAIProvider';
+import { electronFetch } from '../../../src/host/model/providers/shared';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -12,16 +12,16 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({
     recordSuccess: vi.fn(),
     recordFailure: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/model/providers/shared', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/main/model/providers/shared')>(
-    '../../../src/main/model/providers/shared',
+vi.mock('../../../src/host/model/providers/shared', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/model/providers/shared')>(
+    '../../../src/host/model/providers/shared',
   );
   return {
     ...actual,

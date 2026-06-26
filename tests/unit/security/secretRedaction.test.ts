@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactSecrets, sanitizeLogValue } from '../../../src/main/security/secretRedaction';
+import { redactSecrets, sanitizeLogValue } from '../../../src/host/security/secretRedaction';
 
 describe('secret redaction', () => {
   it('fully redacts OpenAI-style raw and partially masked keys', () => {

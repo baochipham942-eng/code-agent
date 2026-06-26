@@ -3,7 +3,7 @@ import {
   activateArtifactRepairAdmissionStop,
   registerArtifactRepairBlockedToolTurn,
   ARTIFACT_REPAIR_STOP_PREFIXES,
-} from '../../../src/main/agent/runtime/artifactRepairAdmission';
+} from '../../../src/host/agent/runtime/artifactRepairAdmission';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../src/shared/constants/repair';
 
 function makeCtx(): any {

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDistillProposalPrompt,
   parseDistillProposals,
-} from '../../../../src/main/services/skills/distillProposalGenerator';
-import type { DistillVerifiedCandidate } from '../../../../src/main/services/skills/distillService';
+} from '../../../../src/host/services/skills/distillProposalGenerator';
+import type { DistillVerifiedCandidate } from '../../../../src/host/services/skills/distillService';
 
 function candidate(id: string): DistillVerifiedCandidate {
   return {

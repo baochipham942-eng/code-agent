@@ -11,8 +11,8 @@ import { join } from 'path';
 import {
   AgentTask,
   InvalidStateTransitionError,
-} from '../../../src/main/agent/agentTask';
-import type { SidecarMetadata, TranscriptEntry } from '../../../src/main/agent/agentTask';
+} from '../../../src/host/agent/agentTask';
+import type { SidecarMetadata, TranscriptEntry } from '../../../src/host/agent/agentTask';
 
 // --------------------------------------------------------------------------
 // Helpers

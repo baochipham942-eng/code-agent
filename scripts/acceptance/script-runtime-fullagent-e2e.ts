@@ -15,11 +15,11 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { ToolContext } from '../../src/main/protocol/tools';
-import { workflowModule } from '../../src/main/tools/modules/multiagent/workflow';
+import type { ToolContext } from '../../src/host/protocol/tools';
+import { workflowModule } from '../../src/host/tools/modules/multiagent/workflow';
 import { initializeCLIServices } from '../../src/cli/bootstrap';
-import { getToolResolver } from '../../src/main/tools/dispatch/toolResolver';
-import { resolveSessionDefaultModelConfig } from '../../src/main/services/core/sessionDefaults';
+import { getToolResolver } from '../../src/host/tools/dispatch/toolResolver';
+import { resolveSessionDefaultModelConfig } from '../../src/host/services/core/sessionDefaults';
 
 function loadEnvIntoProcess(): void {
   const envPath = join(homedir(), '.code-agent', '.env');
@@ -41,7 +41,7 @@ const ORCHESTRATION_SCRIPT = `
 phase('scan');
 log('full-agent path: counting scriptRuntime .ts files via glob');
 const answer = await agent(
-  'Use the glob tool with pattern "src/main/agent/scriptRuntime/*.ts" to list the TypeScript files there, ' +
+  'Use the glob tool with pattern "src/host/agent/scriptRuntime/*.ts" to list the TypeScript files there, ' +
   'then reply with exactly how many there are and their base filenames. Be concise.'
 );
 return { answer };

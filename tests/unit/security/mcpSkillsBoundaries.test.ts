@@ -15,7 +15,7 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   StdioClientTransport: mocks.stdioTransport,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
     debug: vi.fn(),
@@ -24,15 +24,15 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   })),
 }));
 
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: vi.fn(() => ({
     getServiceApiKey: vi.fn(() => ''),
   })),
 }));
 
-const { createStdioMCPEnv, createTransport } = await import('../../../src/main/mcp/mcpTransport');
-const { getDefaultMCPServers } = await import('../../../src/main/mcp/mcpDefaultServers');
-const { checkSkillDependencies, loadSkillContent, loadSkillReferences } = await import('../../../src/main/services/skills/skillLoader');
+const { createStdioMCPEnv, createTransport } = await import('../../../src/host/mcp/mcpTransport');
+const { getDefaultMCPServers } = await import('../../../src/host/mcp/mcpDefaultServers');
+const { checkSkillDependencies, loadSkillContent, loadSkillReferences } = await import('../../../src/host/services/skills/skillLoader');
 
 function makeSkill(basePath: string, references: string[]): ParsedSkill {
   return {

@@ -3,7 +3,7 @@ import {
   buildTurnPrompt,
   detectDoneMarker,
   parseWaitMs,
-} from '../../src/main/loop/loopPrompt';
+} from '../../src/host/loop/loopPrompt';
 import { LOOP_DONE_MARKER } from '../../src/shared/contract/loop';
 
 const base = {

@@ -18,8 +18,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { validateGameArtifact } from '../../src/main/agent/runtime/gameArtifactValidator.ts';
-import { loadPlaywrightChromium } from '../../src/main/agent/runtime/browser/playwrightRuntime.ts';
+import { validateGameArtifact } from '../../src/host/agent/runtime/gameArtifactValidator.ts';
+import { loadPlaywrightChromium } from '../../src/host/agent/runtime/browser/playwrightRuntime.ts';
 import {
   PLATFORMER_MILESTONES,
   evaluateMilestone,

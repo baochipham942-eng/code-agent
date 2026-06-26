@@ -4,21 +4,21 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HookManager, createHookManager } from '../../../src/main/hooks/hookManager';
-import type { HookManagerConfig } from '../../../src/main/hooks/hookManager';
+import { HookManager, createHookManager } from '../../../src/host/hooks/hookManager';
+import type { HookManagerConfig } from '../../../src/host/hooks/hookManager';
 
 // Mock the config parser and merger
-vi.mock('../../../src/main/hooks/configParser', () => ({
+vi.mock('../../../src/host/hooks/configParser', () => ({
   loadAllHooksConfig: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../../../src/main/hooks/merger', () => ({
+vi.mock('../../../src/host/hooks/merger', () => ({
   mergeHooks: vi.fn().mockReturnValue([]),
   getHooksForTool: vi.fn().mockReturnValue([]),
   getHooksForEvent: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('../../../src/main/hooks/builtinHookExecutor', () => ({
+vi.mock('../../../src/host/hooks/builtinHookExecutor', () => ({
   getBuiltinHookExecutor: vi.fn().mockReturnValue({
     executeForEvent: vi.fn().mockResolvedValue([]),
   }),
@@ -75,7 +75,7 @@ describe('HookManager', () => {
     });
 
     it('should only initialize once', async () => {
-      const { loadAllHooksConfig } = await import('../../../src/main/hooks/configParser');
+      const { loadAllHooksConfig } = await import('../../../src/host/hooks/configParser');
       manager = new HookManager({ workingDirectory: '/tmp' });
 
       await manager.initialize();
@@ -85,7 +85,7 @@ describe('HookManager', () => {
     });
 
     it('should handle initialization errors gracefully', async () => {
-      const { loadAllHooksConfig } = await import('../../../src/main/hooks/configParser');
+      const { loadAllHooksConfig } = await import('../../../src/host/hooks/configParser');
       vi.mocked(loadAllHooksConfig).mockRejectedValueOnce(new Error('Config error'));
 
       manager = new HookManager({ workingDirectory: '/tmp' });
@@ -95,7 +95,7 @@ describe('HookManager', () => {
 
   describe('reload', () => {
     it('should reinitialize hooks', async () => {
-      const { loadAllHooksConfig } = await import('../../../src/main/hooks/configParser');
+      const { loadAllHooksConfig } = await import('../../../src/host/hooks/configParser');
       manager = new HookManager({ workingDirectory: '/tmp' });
 
       await manager.initialize();

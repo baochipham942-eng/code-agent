@@ -3,7 +3,7 @@ import type { DesktopActivityEvent } from '../../../src/shared/contract';
 import {
   sanitizeLocalActivityEvent,
   sanitizeLocalActivityText,
-} from '../../../src/main/services/activity/localActivityPrivacyFirewall';
+} from '../../../src/host/services/activity/localActivityPrivacyFirewall';
 
 function makeEvent(overrides: Partial<DesktopActivityEvent> = {}): DesktopActivityEvent {
   return {

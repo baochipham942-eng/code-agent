@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MemoryRecord } from '../../../src/main/services/core/repositories';
-import { hashInboxContent } from '../../../src/main/memory/knowledgeInboxDecision';
+import type { MemoryRecord } from '../../../src/host/services/core/repositories';
+import { hashInboxContent } from '../../../src/host/memory/knowledgeInboxDecision';
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
   packMemoryEntries: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getDatabase: mocks.getDatabase,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -23,11 +23,11 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/memory/memoryEntryRuntime', () => ({
+vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
   packMemoryEntries: mocks.packMemoryEntries,
 }));
 
-import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../../src/main/utils/seedMemoryInjector';
+import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
 
 function memory(overrides: Partial<MemoryRecord>): MemoryRecord {
   return {

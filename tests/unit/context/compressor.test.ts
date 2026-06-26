@@ -22,8 +22,8 @@ import {
   DEFAULT_STRATEGIES,
   type Message,
   type CompressionResult,
-} from '../../../src/main/context/compressor';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+} from '../../../src/host/context/compressor';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 describe('ContextCompressor', () => {
   // --------------------------------------------------------------------------

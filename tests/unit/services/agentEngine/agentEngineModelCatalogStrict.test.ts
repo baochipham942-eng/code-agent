@@ -3,7 +3,7 @@ import type { AgentEngineModelCatalog } from '../../../../src/shared/contract/ag
 import {
   resolveAgentEngineCatalogModel,
   AgentEngineModelIncompatibleError,
-} from '../../../../src/main/services/agentEngine/agentEngineModelCatalog';
+} from '../../../../src/host/services/agentEngine/agentEngineModelCatalog';
 
 const CATALOG: AgentEngineModelCatalog = {
   version: 'test',

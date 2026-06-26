@@ -19,7 +19,7 @@ import type { AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, AutonomyGrant }
 import { grantEnvelope } from '../../../../shared/contract/designAutonomy';
 import { formatCny } from '../../../../shared/media/imageCost';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
-import { BrowserWindow, ipcMain } from '../../../platform';
+import { AppWindow, ipcHost } from '../../../platform';
 import { createLogger } from '../../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { requestDesignAutonomySchema as schema } from './requestDesignAutonomy.schema';
@@ -37,7 +37,7 @@ let handlerRegistered = false;
 function registerResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
-  ipcMain.handle(
+  ipcHost.handle(
     IPC_CHANNELS.CANVAS_AUTONOMY_RESPONSE,
     async (_event, decision: AutonomyEnvelopeDecision) => {
       const pending = pendingRequests.get(decision.requestId);
@@ -86,8 +86,8 @@ export async function executeRequestDesignAutonomy(
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}), // 信封绑 session，run 终态作废（HIGH-2）
   };
 
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+  const mainWindow = AppWindow.getAllWindows()[0];
+  if (!mainWindow || !AppWindow.hasInteractiveRenderer()) {
     // 降级（红线⑤）：非交互环境无法启动自主——明确回告，不假装已进入自主。
     onProgress?.({ stage: 'completing', percent: 100 });
     return {

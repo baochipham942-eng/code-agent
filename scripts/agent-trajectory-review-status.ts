@@ -7,7 +7,7 @@ import process from 'process';
 import { pathToFileURL } from 'url';
 
 import type { AgentTrajectoryDatasetRole } from '../src/shared/contract/agentTrajectory';
-import type { AgentTrajectoryExportResult } from '../src/main/evaluation/trajectory/trajectoryExporter';
+import type { AgentTrajectoryExportResult } from '../src/host/evaluation/trajectory/trajectoryExporter';
 
 interface CliOptions {
   dataDir: string;
@@ -442,8 +442,8 @@ async function main(): Promise<void> {
   const runtimeDataDir = await prepareRuntimeDataDir(options.dataDir, options.liveDataDir);
   process.env.CODE_AGENT_DATA_DIR = runtimeDataDir;
 
-  const { getDatabase } = await import('../src/main/services/core/databaseService');
-  const { exportAgentTrajectories } = await import('../src/main/evaluation/trajectory/trajectoryExporter');
+  const { getDatabase } = await import('../src/host/services/core/databaseService');
+  const { exportAgentTrajectories } = await import('../src/host/evaluation/trajectory/trajectoryExporter');
 
   try {
     await getDatabase().initialize();

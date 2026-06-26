@@ -6,7 +6,7 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const {
   getTaskOutputMock,
@@ -20,14 +20,14 @@ const {
   getBackgroundTaskMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/shell/backgroundTasks', () => ({
+vi.mock('../../../../../src/host/tools/shell/backgroundTasks', () => ({
   getTaskOutput: (...args: unknown[]) => getTaskOutputMock(...args),
   getAllBackgroundTasks: (...args: unknown[]) => getAllBackgroundTasksMock(...args),
   isTaskId: (...args: unknown[]) => isTaskIdMock(...args),
   getBackgroundTask: (...args: unknown[]) => getBackgroundTaskMock(...args),
 }));
 
-import { taskOutputModule } from '../../../../../src/main/tools/modules/shell/taskOutput';
+import { taskOutputModule } from '../../../../../src/host/tools/modules/shell/taskOutput';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

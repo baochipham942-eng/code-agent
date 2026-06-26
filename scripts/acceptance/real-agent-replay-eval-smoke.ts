@@ -84,13 +84,13 @@ async function main(): Promise<void> {
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
     process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
 
-    const { getProtocolRegistry } = await import('../../src/main/tools/protocolRegistry');
+    const { getProtocolRegistry } = await import('../../src/host/tools/protocolRegistry');
     getProtocolRegistry();
 
-    const { getDatabase } = await import('../../src/main/services/core/databaseService');
-    const testing = await import('../../src/main/testing/index');
-    const { getTelemetryQueryService } = await import('../../src/main/evaluation/telemetryQueryService');
-    const { buildAgentTrajectoryFromReplay } = await import('../../src/main/evaluation/trajectory/trajectoryExporter');
+    const { getDatabase } = await import('../../src/host/services/core/databaseService');
+    const testing = await import('../../src/host/testing/index');
+    const { getTelemetryQueryService } = await import('../../src/host/evaluation/telemetryQueryService');
+    const { buildAgentTrajectoryFromReplay } = await import('../../src/host/evaluation/trajectory/trajectoryExporter');
 
     await getDatabase().initialize();
 

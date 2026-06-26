@@ -2,7 +2,7 @@
 // IPC Module - 统一注册所有 IPC handlers
 // ============================================================================
 
-import { app, type IpcMain, type BrowserWindow } from '../platform';
+import { app, type IpcMain, type AppWindow } from '../platform';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';
@@ -79,7 +79,7 @@ import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
  * IPC handler 注册所需的依赖
  */
 export interface IpcDependencies {
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => AppWindow | null;
   getAppService: () => AgentApplicationService | null;
   getConfigService: () => ConfigService | null;
   getPlanningService: () => PlanningService | null;
@@ -276,8 +276,8 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerAgentRegistryHandlers(ipcMain, () => {
     // 用 BrowserWindow.getAllWindows() 拿全部窗口（不光是 main），保证 Lab/Inspector 等子窗口也能收到变更
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { BrowserWindow } = require('../platform') as typeof import('../platform');
-    return BrowserWindow.getAllWindows();
+    const { AppWindow } = require('../platform') as typeof import('../platform');
+    return AppWindow.getAllWindows();
   });
 
   // Roles handlers (持久化角色资产面板：列表/详情/记忆删改)

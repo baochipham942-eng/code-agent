@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   hasGameCanvasAspectRatioMismatch,
   isPrimaryGameCanvasUndersizedForViewport,
-} from '../../../../../src/main/agent/runtime/browser/visualSmoke';
+} from '../../../../../src/host/agent/runtime/browser/visualSmoke';
 
 describe('browser visual smoke layout heuristics', () => {
   it('flags fixed small game canvases on wide desktop previews', () => {

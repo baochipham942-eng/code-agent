@@ -329,8 +329,8 @@ export async function applyAgentTrajectoryReviewManifest(
   const runtimeDataDir = await prepareRuntimeDataDir(options.dataDir, options.liveDataDir);
   process.env.CODE_AGENT_DATA_DIR = runtimeDataDir;
 
-  const { getDatabase } = await import('../src/main/services/core/databaseService');
-  const { getTelemetryQueryService } = await import('../src/main/evaluation/telemetryQueryService');
+  const { getDatabase } = await import('../src/host/services/core/databaseService');
+  const { getTelemetryQueryService } = await import('../src/host/evaluation/telemetryQueryService');
 
   const reviewItems = readReviewItemsFromText(await readFile(options.manifestPath, 'utf8'), options.manifestPath);
   const skippedItems: AgentTrajectoryReviewApplySummary['skippedItems'] = [];

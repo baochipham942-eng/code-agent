@@ -7,7 +7,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mock fs and fetch
@@ -28,7 +28,7 @@ vi.mock('fs', () => ({
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
-import { chartGenerateModule } from '../../../../../src/main/tools/modules/network/chartGenerate';
+import { chartGenerateModule } from '../../../../../src/host/tools/modules/network/chartGenerate';
 
 // -----------------------------------------------------------------------------
 // Helpers

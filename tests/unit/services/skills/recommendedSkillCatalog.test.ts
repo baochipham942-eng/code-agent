@@ -9,7 +9,7 @@ import {
   groupRecommendedSkillsByCategory,
 } from '../../../../src/shared/constants/skillCatalog';
 import { BUILTIN_REPO_ID } from '../../../../src/shared/contract/skillRepository';
-import { getBuiltinSkills } from '../../../../src/main/services/skills/builtinSkills';
+import { getBuiltinSkills } from '../../../../src/host/services/skills/builtinSkills';
 import {
   getBundleMissingRepoIds,
   isBundleReady,

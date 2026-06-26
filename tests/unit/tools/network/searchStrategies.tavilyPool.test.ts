@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getTavilyKeys, getAvailableSources, SEARCH_SOURCES, resetProviderHealthForTests } from '../../../../src/main/tools/web/search';
+import { getTavilyKeys, getAvailableSources, SEARCH_SOURCES, resetProviderHealthForTests } from '../../../../src/host/tools/web/search';
 
 const tavilySource = () => SEARCH_SOURCES.find((s) => s.name === 'tavily')!;
 const noConfig = { getServiceApiKey: () => undefined } as never;

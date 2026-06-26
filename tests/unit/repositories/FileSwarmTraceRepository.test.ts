@@ -24,7 +24,7 @@ import {
   type UpsertAgentInput,
   type AppendEventInput,
   type CloseRunInput,
-} from '../../../src/main/services/core/repositories/FileSwarmTraceRepository';
+} from '../../../src/host/services/core/repositories/FileSwarmTraceRepository';
 import { SWARM_TRACE } from '../../../src/shared/constants/storage';
 
 // ============================================================================

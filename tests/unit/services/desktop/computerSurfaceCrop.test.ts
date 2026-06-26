@@ -17,7 +17,7 @@ const fsMocks = vi.hoisted(() => ({
   unlink: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/services/desktop/backgroundCgEventSurface', () => ({
+vi.mock('../../../../src/host/services/desktop/backgroundCgEventSurface', () => ({
   backgroundCgEventSurface: { listWindows: surfaceMocks.listWindows },
 }));
 
@@ -67,7 +67,7 @@ describe('ComputerSurface.screenshotApp (multi-agent crop path)', () => {
     ]);
     defaultExecFileMock();
 
-    const { getComputerSurface } = await import('../../../../src/main/services/desktop/computerSurface');
+    const { getComputerSurface } = await import('../../../../src/host/services/desktop/computerSurface');
     const surface = getComputerSurface();
     const filepath = await surface.screenshotApp('TestApp');
 
@@ -107,7 +107,7 @@ describe('ComputerSurface.screenshotApp (multi-agent crop path)', () => {
         }
       });
 
-    const { getComputerSurface } = await import('../../../../src/main/services/desktop/computerSurface');
+    const { getComputerSurface } = await import('../../../../src/host/services/desktop/computerSurface');
     const surface = getComputerSurface();
     const filepath = await surface.screenshotApp('TestApp');
 
@@ -126,7 +126,7 @@ describe('ComputerSurface.screenshotApp (multi-agent crop path)', () => {
     surfaceMocks.listWindows.mockResolvedValue([]);
     defaultExecFileMock();
 
-    const { getComputerSurface } = await import('../../../../src/main/services/desktop/computerSurface');
+    const { getComputerSurface } = await import('../../../../src/host/services/desktop/computerSurface');
     const result = await getComputerSurface().screenshotApp('TestApp');
     expect(result).toBeNull();
     expect(childProcessMocks.execFile).not.toHaveBeenCalledWith(
@@ -143,7 +143,7 @@ describe('ComputerSurface.screenshotApp (multi-agent crop path)', () => {
     ]);
     defaultExecFileMock();
 
-    const { getComputerSurface } = await import('../../../../src/main/services/desktop/computerSurface');
+    const { getComputerSurface } = await import('../../../../src/host/services/desktop/computerSurface');
     const result = await getComputerSurface().screenshotApp('TestApp');
     expect(result).toBeNull();
   });
@@ -152,7 +152,7 @@ describe('ComputerSurface.screenshotApp (multi-agent crop path)', () => {
     surfaceMocks.listWindows.mockRejectedValue(new Error('AX permission denied'));
     defaultExecFileMock();
 
-    const { getComputerSurface } = await import('../../../../src/main/services/desktop/computerSurface');
+    const { getComputerSurface } = await import('../../../../src/host/services/desktop/computerSurface');
     const result = await getComputerSurface().screenshotApp('TestApp');
     expect(result).toBeNull();
   });
@@ -160,7 +160,7 @@ describe('ComputerSurface.screenshotApp (multi-agent crop path)', () => {
   it('returns null on non-darwin platforms (no-op)', async () => {
     setProcessPlatform('linux');
 
-    const { getComputerSurface } = await import('../../../../src/main/services/desktop/computerSurface');
+    const { getComputerSurface } = await import('../../../../src/host/services/desktop/computerSurface');
     const result = await getComputerSurface().screenshotApp('TestApp');
     expect(result).toBeNull();
     expect(surfaceMocks.listWindows).not.toHaveBeenCalled();

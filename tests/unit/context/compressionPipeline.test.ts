@@ -3,10 +3,10 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CompressionPipeline, type PipelineConfig } from '../../../src/main/context/compressionPipeline';
-import { CompressionState } from '../../../src/main/context/compressionState';
-import { type ProjectableMessage } from '../../../src/main/context/projectionEngine';
-import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+import { CompressionPipeline, type PipelineConfig } from '../../../src/host/context/compressionPipeline';
+import { CompressionState } from '../../../src/host/context/compressionState';
+import { type ProjectableMessage } from '../../../src/host/context/projectionEngine';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 function makeMsg(id: string, role: string, content: string, turnIndex = 0): ProjectableMessage {
   return { id, role, content, turnIndex };

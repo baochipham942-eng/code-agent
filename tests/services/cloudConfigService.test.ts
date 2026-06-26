@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 import type { ControlPlaneEnvelope } from '../../src/shared/contract/controlPlane';
 
 // Mock logger
-vi.mock('../../src/main/services/infra/logger', () => ({
+vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
     debug: vi.fn(),
@@ -21,13 +21,13 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 // Import after mocks
-import { CloudConfigService, getCloudConfigService } from '../../src/main/services/cloud/cloudConfigService';
-import { FeatureFlagService } from '../../src/main/services/cloud/featureFlagService';
-import { getBuiltinConfig } from '../../src/main/services/cloud/builtinConfig';
+import { CloudConfigService, getCloudConfigService } from '../../src/host/services/cloud/cloudConfigService';
+import { FeatureFlagService } from '../../src/host/services/cloud/featureFlagService';
+import { getBuiltinConfig } from '../../src/host/services/cloud/builtinConfig';
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
-} from '../../src/main/services/cloud/controlPlaneTrust';
+} from '../../src/host/services/cloud/controlPlaneTrust';
 
 function mockJsonResponse(body: unknown) {
   return {

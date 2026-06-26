@@ -4,24 +4,24 @@
 // fail-closed（取消不出图、不调 deck）/ 生成成功发 WORKSPACE_OPEN_PREVIEW。
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
 const confirmMock = vi.hoisted(() => vi.fn());
 const deckMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../../../src/main/platform', () => ({
-  BrowserWindow: { getAllWindows: getAllWindowsMock },
+vi.mock('../../../../../src/host/platform', () => ({
+  AppWindow: { getAllWindows: getAllWindowsMock },
 }));
-vi.mock('../../../../../src/main/tools/modules/design/generationCostConfirm', () => ({
+vi.mock('../../../../../src/host/tools/modules/design/generationCostConfirm', () => ({
   confirmGenerationCost: confirmMock,
 }));
-vi.mock('../../../../../src/main/ipc/workspaceSlidesExport', () => ({
+vi.mock('../../../../../src/host/ipc/workspaceSlidesExport', () => ({
   handleGenerateSlidesDeck: deckMock,
 }));
 
-import { proposeSlidesOpsModule } from '../../../../../src/main/tools/modules/design/proposeSlidesOps';
+import { proposeSlidesOpsModule } from '../../../../../src/host/tools/modules/design/proposeSlidesOps';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

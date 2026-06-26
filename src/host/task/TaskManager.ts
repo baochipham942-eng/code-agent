@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { app, BrowserWindow } from '../platform';
+import { app, AppWindow } from '../platform';
 import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, ToolCall } from '../../shared/contract';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
@@ -755,7 +755,7 @@ export class TaskManager extends EventEmitter {
         onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event),
         getHomeDir: () => app.getPath('home'),
         broadcastDAGEvent: (event) => {
-          for (const win of BrowserWindow.getAllWindows()) {
+          for (const win of AppWindow.getAllWindows()) {
             if (!win.isDestroyed() && win.webContents) {
               try {
                 win.webContents.send(DAG_CHANNELS.EVENT, event);

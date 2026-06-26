@@ -49,7 +49,7 @@ function prepareIsolatedHome(): { fakeHome: string; dataDir: string } {
   return { fakeHome, dataDir };
 }
 
-// 复刻 src/main/agent/agentOrchestrator.ts:943 applyTurnSystemContext 的拼装格式，
+// 复刻 src/host/agent/agentOrchestrator.ts:943 applyTurnSystemContext 的拼装格式，
 // 保证 E2E 喂给模型的 prompt 与生产主循环逐字一致。
 function applyTurnSystemContext(content: string, turnSystemContext: string[]): string {
   const lines = turnSystemContext.filter((i) => i.trim().length > 0);
@@ -69,10 +69,10 @@ async function main(): Promise<void> {
 
   console.log('=== initializeCLIServices ===');
   const { initializeCLIServices } = await import('../../src/cli/bootstrap');
-  const { getConfigService } = await import('../../src/main/services/core/configService');
-  const { resolveSessionDefaultModelConfig } = await import('../../src/main/services/core/sessionDefaults');
-  const { buildWorkbenchTurnSystemContext } = await import('../../src/main/app/workbenchTurnContext');
-  const { StandaloneAgentAdapter } = await import('../../src/main/testing/agentAdapter');
+  const { getConfigService } = await import('../../src/host/services/core/configService');
+  const { resolveSessionDefaultModelConfig } = await import('../../src/host/services/core/sessionDefaults');
+  const { buildWorkbenchTurnSystemContext } = await import('../../src/host/app/workbenchTurnContext');
+  const { StandaloneAgentAdapter } = await import('../../src/host/testing/agentAdapter');
   await initializeCLIServices();
 
   // 前置：key 探针（缺则早退，不白烧 mimo）

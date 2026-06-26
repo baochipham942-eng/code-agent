@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeManagedBrowserRecoverySnapshotData } from '../../../src/main/ipc/desktop.ipc';
+import { summarizeManagedBrowserRecoverySnapshotData } from '../../../src/host/ipc/desktop.ipc';
 
 describe('desktop recovery snapshot summaries', () => {
   it('returns recovery evidence summaries without raw DOM or Accessibility payloads', () => {

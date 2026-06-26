@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ToolRegistry } from '../../../src/main/tools/registry';
-import { registerMigratedTools } from '../../../src/main/tools/modules';
-import { browserSchema } from '../../../src/main/plugins/builtin/browserControl/browser.schema';
-import { browserActionSchema } from '../../../src/main/plugins/builtin/browserControl/browserAction.schema';
-import { computerSchema } from '../../../src/main/plugins/builtin/computerUse/computer.schema';
-import { computerUseSchema } from '../../../src/main/plugins/builtin/computerUse/computerUse.schema';
-import type { ToolSchema } from '../../../src/main/protocol/tools';
+import { ToolRegistry } from '../../../src/host/tools/registry';
+import { registerMigratedTools } from '../../../src/host/tools/modules';
+import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
+import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { computerSchema } from '../../../src/host/plugins/builtin/computerUse/computer.schema';
+import { computerUseSchema } from '../../../src/host/plugins/builtin/computerUse/computerUse.schema';
+import type { ToolSchema } from '../../../src/host/protocol/tools';
 
 const pluginSchemas = new Map<string, ToolSchema>([
   [browserSchema.name, browserSchema],

@@ -4,9 +4,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { TestRunSummary, HarnessVariantConfig } from '../../../src/main/testing/types';
+import type { TestRunSummary, HarnessVariantConfig } from '../../../src/host/testing/types';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -21,7 +21,7 @@ const captured = vi.hoisted(() => ({
   adapterConfigs: [] as Array<Record<string, unknown>>,
 }));
 
-vi.mock('../../../src/main/testing/testRunner', () => ({
+vi.mock('../../../src/host/testing/testRunner', () => ({
   createDefaultConfig: vi.fn((workingDirectory: string, overrides: Record<string, unknown>) => ({
     testCaseDir: '/tmp/test-cases',
     resultsDir: '/tmp/results',
@@ -49,7 +49,7 @@ vi.mock('../../../src/main/testing/testRunner', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/testing/agentAdapter', () => ({
+vi.mock('../../../src/host/testing/agentAdapter', () => ({
   StandaloneAgentAdapter: vi.fn().mockImplementation(function (config: Record<string, unknown>) {
     captured.adapterConfigs.push(config);
     return {};
@@ -59,7 +59,7 @@ vi.mock('../../../src/main/testing/agentAdapter', () => ({
 import {
   runHarnessComparison,
   buildVariantRunIds,
-} from '../../../src/main/testing/harnessComparison';
+} from '../../../src/host/testing/harnessComparison';
 
 const VARIANTS: HarnessVariantConfig[] = [
   { name: 'baseline', contextCompression: true, hooksEnabled: false, toolMode: 'deferred' },

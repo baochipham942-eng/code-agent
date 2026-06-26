@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolDefinition } from '../../src/shared/contract';
 
 // Mock services
-vi.mock('../../src/main/services', () => ({
+vi.mock('../../src/host/services', () => ({
   getToolCache: vi.fn(() => ({
     isCacheable: vi.fn().mockReturnValue(false),
     get: vi.fn().mockReturnValue(null),
@@ -15,7 +15,7 @@ vi.mock('../../src/main/services', () => ({
 }));
 
 // Mock logger
-vi.mock('../../src/main/services/infra/logger', () => ({
+vi.mock('../../src/host/services/infra/logger', () => ({
   logger: {
     info: vi.fn(),
     debug: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock('../../src/main/services/infra/logger', () => ({
 }));
 
 // Mock permission classifier — 强制走"ask"路径，让 mockRequestPermission 生效
-vi.mock('../../src/main/tools/permissionClassifier', () => ({
+vi.mock('../../src/host/tools/permissionClassifier', () => ({
   classifyPermission: vi.fn().mockResolvedValue({ decision: 'ask', reason: 'test' }),
 }));
 
@@ -43,7 +43,7 @@ let mockExecuteResult: { success: boolean; output?: string; error?: string } | E
   output: 'Test output',
 };
 
-vi.mock('../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     list: () => (mockToolDef ? [mockToolDef.name] : []),
     getDefinition: (name: string) =>
@@ -57,7 +57,7 @@ vi.mock('../../src/main/tools/dispatch/toolResolver', () => ({
   }),
 }));
 
-import { ToolExecutor } from '../../src/main/tools/toolExecutor';
+import { ToolExecutor } from '../../src/host/tools/toolExecutor';
 
 function setMockTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   const def: ToolDefinition = {

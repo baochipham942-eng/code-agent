@@ -3,7 +3,7 @@
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
 // ============================================================================
 
-import { Notification, BrowserWindow, broadcastToRenderer } from '../../platform';
+import { Notification, AppWindow, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
@@ -84,7 +84,7 @@ class NotificationService implements Disposable {
     if (force) return true;
 
     // 前台 agent 任务：仅在 app 整体失焦时提醒，避免你正盯着看时被打扰。
-    const focusedWindow = BrowserWindow.getFocusedWindow();
+    const focusedWindow = AppWindow.getFocusedWindow();
     return focusedWindow === null;
   }
 

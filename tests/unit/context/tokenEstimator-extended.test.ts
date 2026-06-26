@@ -14,7 +14,7 @@ import {
   fitsInBudget,
   truncateToTokenBudget,
   TOKEN_RATIOS,
-} from '../../../src/main/context/tokenEstimator';
+} from '../../../src/host/context/tokenEstimator';
 
 describe('Token Estimator - Extended', () => {
   // --------------------------------------------------------------------------

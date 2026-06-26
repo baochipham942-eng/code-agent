@@ -130,13 +130,13 @@ function bucketFor(relativePath) {
     return 'src/web/routes';
   }
   if (parts[0] === 'src' && parts[1] === 'main' && parts[2] === 'model' && parts[3] === 'providers') {
-    return 'src/main/model/providers';
+    return 'src/host/model/providers';
   }
   if (parts[0] === 'src' && parts[1] === 'main' && parts[2] === 'tools' && parts[3]) {
-    return `src/main/tools/${parts[3]}`;
+    return `src/host/tools/${parts[3]}`;
   }
   if (parts[0] === 'src' && parts[1] === 'main' && parts[2] === 'ipc') {
-    return 'src/main/ipc';
+    return 'src/host/ipc';
   }
   return parts.slice(0, 4).join('/');
 }

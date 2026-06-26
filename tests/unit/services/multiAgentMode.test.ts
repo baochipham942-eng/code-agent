@@ -3,7 +3,7 @@ import {
   isMultiAgentMode,
   setMultiAgentMode,
   resetMultiAgentModeForTests,
-} from '../../../src/main/services/multiAgentMode';
+} from '../../../src/host/services/multiAgentMode';
 
 describe('multiAgentMode', () => {
   beforeEach(() => {

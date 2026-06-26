@@ -5,7 +5,7 @@ import {
   normalizeArtifactPreviewResourceUrl,
   normalizeArtifactPreviewHealthDiagnostics,
   type ArtifactPreviewHealthDiagnostics,
-} from '../../../../../src/main/agent/runtime/browser/artifactPreviewHealthProbe';
+} from '../../../../../src/host/agent/runtime/browser/artifactPreviewHealthProbe';
 
 const artifactPath = path.join('/tmp', 'preview-fixture', 'index.html');
 

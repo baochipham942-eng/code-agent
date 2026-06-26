@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PROVIDER_FALLBACK_CHAIN } from '../../../src/shared/constants';
-import type { ModelMessage } from '../../../src/main/model/types';
+import type { ModelMessage } from '../../../src/host/model/types';
 import {
   classifyProviderFallbackReason,
   extractMessageText,
@@ -12,7 +12,7 @@ import {
   shouldKeepArtifactRequestOnSelectedProvider,
   shouldRetryArtifactNonStreaming,
   shouldRetrySelectedArtifactProvider,
-} from '../../../src/main/model/modelRouterPolicy';
+} from '../../../src/host/model/modelRouterPolicy';
 
 const artifactMessages: ModelMessage[] = [
   { role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUnusedSourcesHint } from '../../../../src/main/tools/web/search';
+import { buildUnusedSourcesHint } from '../../../../src/host/tools/web/search';
 
 describe('buildUnusedSourcesHint (P2 可发现性)', () => {
   it('提示已配置但本次未命中的 premium 源', () => {

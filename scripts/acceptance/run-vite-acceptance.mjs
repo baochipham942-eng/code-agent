@@ -32,7 +32,7 @@ const server = await createServer({
       '@main': path.resolve(root, 'src/main'),
       '@renderer': path.resolve(root, 'src/renderer'),
       '@shared': path.resolve(root, 'src/shared'),
-      electron: path.resolve(root, 'src/main/platform/index.ts'),
+      electron: path.resolve(root, 'src/host/platform/index.ts'),
       keytar: path.resolve(root, 'tests/__mocks__/keytar.ts'),
     },
   },

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isWithinActiveHours } from '../../../src/main/cron/heartbeatTaskLoader';
+import { isWithinActiveHours } from '../../../src/host/cron/heartbeatTaskLoader';
 
 // Mock dependencies
 vi.mock('fs', () => ({
@@ -12,7 +12,7 @@ vi.mock('fs', () => ({
   watch: vi.fn(() => ({ close: vi.fn() })),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getProjectConfigDir: (dir: string) => `${dir}/.code-agent`,
 }));
 
@@ -101,7 +101,7 @@ describe('isWithinActiveHours', () => {
 describe('HeartbeatTaskLoader parsing', () => {
   it('should parse HEARTBEAT.md format', async () => {
     const fs = await import('fs');
-    const { HeartbeatTaskLoader } = await import('../../../src/main/cron/heartbeatTaskLoader');
+    const { HeartbeatTaskLoader } = await import('../../../src/host/cron/heartbeatTaskLoader');
 
     const content = `### 每日代码检查
 - cron: 0 9 * * 1-5
@@ -156,7 +156,7 @@ describe('HeartbeatTaskLoader parsing', () => {
   it('should cleanup old jobs before registering new ones', async () => {
     const fs = await import('fs');
     vi.resetModules();
-    const { HeartbeatTaskLoader } = await import('../../../src/main/cron/heartbeatTaskLoader');
+    const { HeartbeatTaskLoader } = await import('../../../src/host/cron/heartbeatTaskLoader');
 
     (fs.existsSync as any).mockReturnValue(true);
     (fs.readFileSync as any).mockReturnValue(`### Task1

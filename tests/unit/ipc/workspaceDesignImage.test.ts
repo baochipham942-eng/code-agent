@@ -11,10 +11,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const SVC = '../../../src/main/services/media/imageGenerationService';
+const SVC = '../../../src/host/services/media/imageGenerationService';
 
-vi.mock('../../../src/main/services/media/imageGenerationService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/media/imageGenerationService')>();
+vi.mock('../../../src/host/services/media/imageGenerationService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/media/imageGenerationService')>();
   return {
     ...actual, // 保留真 expandScalesForDirection
     getDashscopeApiKey: vi.fn(() => 'sk-test'),
@@ -41,14 +41,14 @@ vi.mock('../../../src/main/services/media/imageGenerationService', async (import
 
 // 设计目录根可变 mock：让 handler 的路径越界守卫以 <cfg.root>/design 为边界（M1）。
 const cfg = vi.hoisted(() => ({ root: '' }));
-vi.mock('../../../src/main/config/configPaths', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/config/configPaths')>();
+vi.mock('../../../src/host/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/config/configPaths')>();
   return { ...actual, getUserConfigDir: () => cfg.root };
 });
 
 // configService mock：openrouter key 走 getApiKey('openrouter')，默认未配（确定性，不读真配置）。
-vi.mock('../../../src/main/services/core/configService', async (importActual) => {
-  const actual = await importActual<typeof import('../../../src/main/services/core/configService')>();
+vi.mock('../../../src/host/services/core/configService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
   return {
     ...actual,
     getConfigService: vi.fn(() => ({ getApiKey: vi.fn(() => undefined) })),
@@ -61,7 +61,7 @@ import {
   handleGenerateDesignImage,
   handleListVisualImageModels,
   handleEditImageByAnnotation,
-} from '../../../src/main/ipc/workspace.ipc';
+} from '../../../src/host/ipc/workspace.ipc';
 
 let workDir: string;
 let designRoot: string;
@@ -83,7 +83,7 @@ beforeEach(async () => {
   (svcReset.getDashscopeApiKey as any).mockReturnValue('sk-test');
   (svcReset.getZhipuOfficialApiKey as any).mockReturnValue(undefined);
   (svcReset.getGptImageConfig as any).mockReturnValue(undefined);
-  const cfgReset = await import('../../../src/main/services/core/configService');
+  const cfgReset = await import('../../../src/host/services/core/configService');
   (cfgReset.getConfigService as any).mockReturnValue({ getApiKey: () => undefined });
 });
 
@@ -175,7 +175,7 @@ describe('handleGenerateDesignImage 模型路由', () => {
   it('model=flux-2 路由到 flux engine 且传 DESIGN_FLUX_MODEL 作 fluxModel 入参', async () => {
     const svc = await import(SVC);
     // avoid 语义：flux 已配 openrouter key 才直连 flux。
-    const cfgSvc = await import('../../../src/main/services/core/configService');
+    const cfgSvc = await import('../../../src/host/services/core/configService');
     (cfgSvc.getConfigService as any).mockReturnValue({ getApiKey: (id: string) => (id === 'openrouter' ? 'or-key' : undefined) });
     await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'flux-2' });
     const call = (svc.generateImage as any).mock.calls[0];

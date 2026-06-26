@@ -16,9 +16,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '../../..');
 
-const INFERENCE_PATH = path.join(ROOT, 'src/main/agent/runtime/contextAssembly/inference.ts');
-const MODEL_ROUTER_PATH = path.join(ROOT, 'src/main/model/modelRouter.ts');
-const AGENT_DEFINITION_PATH = path.join(ROOT, 'src/main/agent/agentDefinition.ts');
+const INFERENCE_PATH = path.join(ROOT, 'src/host/agent/runtime/contextAssembly/inference.ts');
+const MODEL_ROUTER_PATH = path.join(ROOT, 'src/host/model/modelRouter.ts');
+const AGENT_DEFINITION_PATH = path.join(ROOT, 'src/host/agent/agentDefinition.ts');
 
 describe('单一决策入口接线（ADR-019 批 2）', () => {
   it('aiSdk 引擎（inference.ts）的 adaptive 判断必须经 resolveModelDecision + 计费门控', () => {

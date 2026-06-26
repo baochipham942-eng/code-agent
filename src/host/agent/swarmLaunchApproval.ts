@@ -2,7 +2,7 @@
 // Swarm Launch Approval Gate - 并行编排启动前确认
 // ============================================================================
 
-import { BrowserWindow } from '../platform';
+import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import type {
   SwarmEvent,
@@ -116,7 +116,7 @@ export class SwarmLaunchApprovalGate {
   }): Promise<SwarmLaunchApprovalResult> {
     const request = this.createRequest(params.tasks, params.summary, params.sessionId);
 
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (AppWindow.getAllWindows().length === 0) {
       logger.info(`No renderer available, auto-approving launch ${request.id}`);
       request.status = 'approved';
       request.feedback = 'Auto-approved (headless mode)';

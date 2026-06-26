@@ -1,15 +1,15 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { ToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
-import { DEFERRED_TOOLS_META } from '../../../src/main/services/toolSearch/deferredTools';
-import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
-import { resetToolSearchService } from '../../../src/main/services/toolSearch';
-import type { ToolModule, ToolSchema } from '../../../src/main/protocol/tools';
+import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
+import { DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/deferredTools';
+import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { resetToolSearchService } from '../../../src/host/services/toolSearch';
+import type { ToolModule, ToolSchema } from '../../../src/host/protocol/tools';
 
 const mcpClientMocks = vi.hoisted(() => ({
   discoverLazyServersForSearch: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => mcpClientMocks,
 }));
 

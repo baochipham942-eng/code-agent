@@ -1,6 +1,6 @@
 // AI 大纲：prompt 构造 + 空 topic 守卫单测（真 LLM 调用付费，不在单测内触发）。
 import { describe, expect, it } from 'vitest';
-import { buildOutlinePrompt, buildAiOutline } from '../../../../src/main/services/design/slidesAiOutline';
+import { buildOutlinePrompt, buildAiOutline } from '../../../../src/host/services/design/slidesAiOutline';
 
 describe('buildOutlinePrompt', () => {
   it('含主题、页数与 Markdown 格式约束', () => {

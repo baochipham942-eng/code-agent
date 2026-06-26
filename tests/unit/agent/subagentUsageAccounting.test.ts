@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addSubagentUsage,
   extractSubagentUsage,
-} from '../../../src/main/agent/subagentUsageAccounting';
+} from '../../../src/host/agent/subagentUsageAccounting';
 
 describe('subagent usage accounting', () => {
   it('extracts Task child usage from multiagent result metadata', () => {

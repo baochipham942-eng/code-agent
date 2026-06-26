@@ -14,7 +14,7 @@ import { promises as fsPromises } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 
 const configDirState = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => configDirState.dir,
   getUserConfigDirLegacy: () => configDirState.dir,
 }));
@@ -42,7 +42,7 @@ const executorState = vi.hoisted(() => ({
   executeMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executorState.executeMock,
   }),
@@ -58,7 +58,7 @@ const dagState = vi.hoisted(() => ({
   taskMetadata: new Map<string, { startedAt?: number; completedAt?: number; duration?: number }>(),
 }));
 
-vi.mock('../../../src/main/scheduler', () => ({
+vi.mock('../../../src/host/scheduler', () => ({
   TaskDAG: class {
     private addedIds: string[] = [];
     constructor() {}
@@ -96,7 +96,7 @@ import {
   ParallelAgentCoordinator,
   type AgentTask,
   type AgentTaskResult,
-} from '../../../src/main/agent/parallelAgentCoordinator';
+} from '../../../src/host/agent/parallelAgentCoordinator';
 import { COORDINATION_CHECKPOINTS } from '../../../src/shared/constants';
 
 function makeContext(sessionId: string) {

@@ -9,11 +9,11 @@ import type {
   Logger,
   PlanModeController,
   AgentEvent,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 import {
   enterPlanModeModule,
   DEFAULT_ENTER_REASON,
-} from '../../../../../src/main/tools/modules/planning/enterPlanMode';
+} from '../../../../../src/host/tools/modules/planning/enterPlanMode';
 
 // -----------------------------------------------------------------------------
 // Helpers

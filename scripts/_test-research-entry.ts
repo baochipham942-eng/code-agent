@@ -22,11 +22,11 @@ Module.prototype.require = function (id: string) {
 };
 
 // 2. 导出测试需要的模块
-export { DeepResearchMode } from '../src/main/research/deepResearchMode';
-export type { DeepResearchModeConfig, DeepResearchResult } from '../src/main/research/deepResearchMode';
-export type { DeepResearchConfig } from '../src/main/research/types';
-export { ModelRouter } from '../src/main/model/modelRouter';
-export { ToolRegistry } from '../src/main/tools/toolRegistry';
-export { ToolExecutor } from '../src/main/tools/toolExecutor';
-export type { ToolExecutorConfig } from '../src/main/tools/toolExecutor';
-export { getConfigService } from '../src/main/services/core/configService';
+export { DeepResearchMode } from '../src/host/research/deepResearchMode';
+export type { DeepResearchModeConfig, DeepResearchResult } from '../src/host/research/deepResearchMode';
+export type { DeepResearchConfig } from '../src/host/research/types';
+export { ModelRouter } from '../src/host/model/modelRouter';
+export { ToolRegistry } from '../src/host/tools/toolRegistry';
+export { ToolExecutor } from '../src/host/tools/toolExecutor';
+export type { ToolExecutorConfig } from '../src/host/tools/toolExecutor';
+export { getConfigService } from '../src/host/services/core/configService';

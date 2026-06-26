@@ -22,7 +22,7 @@ import {
   TRANSCRIPT_FTS_BODY_CAP,
 } from '../../../src/shared/transcriptFts.sql';
 import { MEMORY } from '../../../src/shared/constants';
-import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { Message, ToolCall, ToolResult } from '../../../src/shared/contract';
 
 // ----------------------------------------------------------------------------

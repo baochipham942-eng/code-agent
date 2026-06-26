@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { truncateMiddle, truncateHead, truncateMiddleErrorAware } from '../../src/main/utils/truncate';
+import { truncateMiddle, truncateHead, truncateMiddleErrorAware } from '../../src/host/utils/truncate';
 
 describe('truncateMiddle', () => {
   it('returns original text if within limit', () => {

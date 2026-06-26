@@ -9,9 +9,9 @@ import {
   getRuntimeAssetUpdateInfoFromManifest,
   UpdateService,
   type UpdateInfo,
-} from '../../src/main/services/cloud/updateService';
-import type { RuntimeAssetsManifest } from '../../src/main/runtime/runtimeAssetInstaller';
-import { verifyControlPlaneEnvelope } from '../../src/main/services/cloud/controlPlaneTrust';
+} from '../../src/host/services/cloud/updateService';
+import type { RuntimeAssetsManifest } from '../../src/host/runtime/runtimeAssetInstaller';
+import { verifyControlPlaneEnvelope } from '../../src/host/services/cloud/controlPlaneTrust';
 import { createControlPlaneEnvelope } from '../../vercel-api/lib/controlPlaneEnvelope';
 
 const tempRoots: string[] = [];

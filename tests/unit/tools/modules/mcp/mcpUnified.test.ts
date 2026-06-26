@@ -15,7 +15,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -28,11 +28,11 @@ const pathExistsMock = vi.fn();
 const fsReadFileMock = vi.fn();
 const fsWriteFileMock = vi.fn();
 
-vi.mock('../../../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => getMCPClientMock(),
 }));
 
-vi.mock('../../../../../src/main/config', () => ({
+vi.mock('../../../../../src/host/config', () => ({
   getMcpConfigPath: (...args: unknown[]) => getMcpConfigPathMock(...args),
   ensureConfigDir: (...args: unknown[]) => ensureConfigDirMock(...args),
   pathExists: (...args: unknown[]) => pathExistsMock(...args),
@@ -47,7 +47,7 @@ vi.mock('fs/promises', () => ({
   writeFile: (...args: unknown[]) => fsWriteFileMock(...args),
 }));
 
-import { mcpUnifiedModule } from '../../../../../src/main/tools/modules/mcp/mcpUnified';
+import { mcpUnifiedModule } from '../../../../../src/host/tools/modules/mcp/mcpUnified';
 
 // -----------------------------------------------------------------------------
 // Helpers

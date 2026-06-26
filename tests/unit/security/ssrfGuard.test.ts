@@ -11,7 +11,7 @@ import {
   isPrivateOrLocalHost,
   assertSafeCustomBaseUrl,
   assertSafeDownloadUrl,
-} from '../../../src/main/security/ssrfGuard';
+} from '../../../src/host/security/ssrfGuard';
 
 describe('isPrivateOrLocalHost', () => {
   it('私网/环回/链路本地/元数据 IPv4 判为私有', () => {

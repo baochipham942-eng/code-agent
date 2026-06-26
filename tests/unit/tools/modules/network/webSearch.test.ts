@@ -5,13 +5,13 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../../src/host/services/core/configService', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
@@ -35,7 +35,7 @@ const {
   rankSearchResultDataMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/web/search', () => ({
+vi.mock('../../../../../src/host/tools/web/search', () => ({
   routeSources: (...args: unknown[]) => routeSourcesMock(...args),
   getAvailableSources: (...args: unknown[]) => getAvailableSourcesMock(...args),
   parallelSearch: (...args: unknown[]) => parallelSearchMock(...args),
@@ -61,12 +61,12 @@ const {
   autoExtractFallbackMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/web/search/contentExtractor', () => ({
+vi.mock('../../../../../src/host/tools/web/search/contentExtractor', () => ({
   autoExtractFromResults: (...args: unknown[]) => autoExtractFromResultsMock(...args),
   autoExtractFallback: (...args: unknown[]) => autoExtractFallbackMock(...args),
 }));
 
-import { webSearchModule } from '../../../../../src/main/tools/modules/network/webSearch';
+import { webSearchModule } from '../../../../../src/host/tools/modules/network/webSearch';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

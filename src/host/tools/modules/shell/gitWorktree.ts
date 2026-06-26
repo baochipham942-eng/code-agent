@@ -1,7 +1,7 @@
 // ============================================================================
 // GitWorktree (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/shell/gitWorktree.ts (registered as 'git_worktree')
+// 旧版: src/host/tools/shell/gitWorktree.ts (registered as 'git_worktree')
 // 改造点：
 // - 4 参数签名
 // - remove 操作的 inline requestPermission → inline canUseTool

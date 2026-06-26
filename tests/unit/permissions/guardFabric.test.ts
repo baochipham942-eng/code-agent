@@ -11,8 +11,8 @@ import {
   type GuardSource,
   type GuardRequest,
   type GuardSourceResult,
-} from '../../../src/main/permissions/guardFabric';
-import { HookGuardSource } from '../../../src/main/permissions/hookSource';
+} from '../../../src/host/permissions/guardFabric';
+import { HookGuardSource } from '../../../src/host/permissions/hookSource';
 
 // ----------------------------------------------------------------------------
 // Helpers

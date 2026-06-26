@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { runArtifactPreviewHealth } from '../../src/main/agent/runtime/browser/artifactPreviewHealth';
-import { browserService } from '../../src/main/services/infra/browserService';
+import { runArtifactPreviewHealth } from '../../src/host/agent/runtime/browser/artifactPreviewHealth';
+import { browserService } from '../../src/host/services/infra/browserService';
 
 interface StartedWebServer {
   baseUrl: string;

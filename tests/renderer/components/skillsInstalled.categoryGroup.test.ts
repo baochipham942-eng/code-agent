@@ -7,7 +7,7 @@ import type { ParsedSkill } from '../../../src/shared/contract/agentSkill';
 import type { SkillCategory } from '../../../src/shared/contract/skillRepository';
 import { SKILL_CATEGORIES } from '../../../src/shared/constants/skillCatalog';
 import { groupBuiltinSkillsByCategory } from '../../../src/renderer/components/features/settings/tabs/SkillsInstalledTab';
-import { getBuiltinSkills } from '../../../src/main/services/skills/builtinSkills';
+import { getBuiltinSkills } from '../../../src/host/services/skills/builtinSkills';
 
 function makeSkill(name: string, category?: SkillCategory): ParsedSkill {
   return {

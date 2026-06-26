@@ -12,24 +12,24 @@ const providerResolutionState = vi.hoisted(() => ({
   resolveProviderApiKey: vi.fn(),
 }));
 
-vi.mock('../../../src/main/agent/subagentExecutor', () => ({
+vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => executorState,
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({}),
 }));
 
 // powerful tier 固定模拟成生产默认（xiaomi/mimo）
-vi.mock('../../../src/main/agent/hybrid/coreAgents', () => ({
+vi.mock('../../../src/host/agent/hybrid/coreAgents', () => ({
   getModelConfig: () => ({ provider: 'xiaomi', model: 'mimo-v2.5-pro' }),
 }));
 
-vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderApiKey: providerResolutionState.resolveProviderApiKey,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { parseVerdict, resolveReviewModelConfig, runReviewGate, REVIEW_SYSTEM_PROMPT } from '../../../src/main/agent/goalReviewGate';
+import { parseVerdict, resolveReviewModelConfig, runReviewGate, REVIEW_SYSTEM_PROMPT } from '../../../src/host/agent/goalReviewGate';
 import type { ModelConfig } from '../../../src/shared/contract';
 
 const parentModelConfig: ModelConfig = { provider: 'zhipu', model: 'glm-5' } as ModelConfig;

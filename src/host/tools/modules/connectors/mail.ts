@@ -1,7 +1,7 @@
 // ============================================================================
 // Mail (P0-6.3 Batch 4 — connectors: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/connectors/mail.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/connectors/mail.ts (legacy Tool + wrapLegacyTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

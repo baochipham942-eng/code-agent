@@ -3,7 +3,7 @@ import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import {
   sanitizeToolCallsForHistory,
   sanitizeToolResultsForHistoryWithCalls,
-} from '../../../src/main/agent/messageHandling/converter';
+} from '../../../src/host/agent/messageHandling/converter';
 
 const SECRET = 'secret@example.com';
 

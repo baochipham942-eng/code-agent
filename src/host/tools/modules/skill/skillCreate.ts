@@ -1,7 +1,7 @@
 // ============================================================================
 // SkillCreate (P0-6.x — native ToolModule rewrite)
 //
-// 旧版（已删除）: src/main/tools/skill/skillCreateTool.ts
+// 旧版（已删除）: src/host/tools/skill/skillCreateTool.ts
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

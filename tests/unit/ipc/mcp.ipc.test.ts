@@ -6,7 +6,7 @@ const pathExistsMock = vi.fn();
 const readFileMock = vi.fn();
 const writeFileMock = vi.fn();
 
-vi.mock('../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getStatus: vi.fn(),
     getTools: vi.fn(),
@@ -20,13 +20,13 @@ vi.mock('../../../src/main/mcp/mcpClient', () => ({
   refreshMCPServersFromCloud: vi.fn(),
 }));
 
-vi.mock('../../../src/main/context/contextHealthService', () => ({
+vi.mock('../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: () => ({
     clearMcpServerAcrossSessions: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/config', () => ({
+vi.mock('../../../src/host/config', () => ({
   getMcpConfigPath: (...args: unknown[]) => getMcpConfigPathMock(...args),
   ensureConfigDir: (...args: unknown[]) => ensureConfigDirMock(...args),
   pathExists: (...args: unknown[]) => pathExistsMock(...args),
@@ -44,7 +44,7 @@ vi.mock('fs/promises', () => ({
 import {
   normalizeMcpSettingsServerConfig,
   persistMcpSettingsServerConfig,
-} from '../../../src/main/ipc/mcp.ipc';
+} from '../../../src/host/ipc/mcp.ipc';
 
 beforeEach(() => {
   getMcpConfigPathMock.mockReset();

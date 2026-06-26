@@ -13,14 +13,14 @@ import { join } from 'node:path';
 
 // 设计根目录可变 mock：registry 文件落 <cfg>/design 下。
 const cfg = vi.hoisted(() => ({ root: '' }));
-vi.mock('../../../../src/main/config/configPaths', async (importActual) => {
-  const actual = await importActual<typeof import('../../../../src/main/config/configPaths')>();
+vi.mock('../../../../src/host/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../../src/host/config/configPaths')>();
   return { ...actual, getUserConfigDir: () => cfg.root };
 });
 
 // SecureStorage in-memory mock：避免落真 ~/.code-agent，且断言 key 进/出/删。
 const keyStore = vi.hoisted(() => new Map<string, string>());
-vi.mock('../../../../src/main/services/core/secureStorage', () => ({
+vi.mock('../../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => ({
     setApiKey: (p: string, k: string) => keyStore.set(p, k),
     getApiKey: (p: string) => keyStore.get(p),
@@ -36,7 +36,7 @@ import {
   setCustomModelApiKey,
   getCustomModelApiKey,
   toVisualImageModel,
-} from '../../../../src/main/services/media/customImageModelRegistry';
+} from '../../../../src/host/services/media/customImageModelRegistry';
 
 let workDir: string;
 

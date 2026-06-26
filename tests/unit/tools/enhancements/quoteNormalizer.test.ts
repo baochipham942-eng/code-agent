@@ -19,7 +19,7 @@ import {
   replaceWithNormalization,
   findSmartChars,
   SMART_CHAR_MAP,
-} from '../../../../src/main/tools/utils/quoteNormalizer';
+} from '../../../../src/host/tools/utils/quoteNormalizer';
 
 describe('Quote Normalizer', () => {
   // --------------------------------------------------------------------------

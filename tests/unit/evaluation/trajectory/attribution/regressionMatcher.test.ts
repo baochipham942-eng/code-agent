@@ -6,11 +6,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
-import { matchRegressionCases } from '../../../../../src/main/evaluation/trajectory/attribution/regressionMatcher';
+import { matchRegressionCases } from '../../../../../src/host/evaluation/trajectory/attribution/regressionMatcher';
 import type {
   Trajectory,
   TrajectoryStep,
-} from '../../../../../src/main/testing/types';
+} from '../../../../../src/host/testing/types';
 
 function toolStep(index: number, name: string, success: boolean): TrajectoryStep {
   return {

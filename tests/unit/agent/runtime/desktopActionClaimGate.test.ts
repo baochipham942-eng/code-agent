@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDesktopActionClaimGate } from '../../../../src/main/agent/runtime/desktopActionClaimGate';
+import { applyDesktopActionClaimGate } from '../../../../src/host/agent/runtime/desktopActionClaimGate';
 
 describe('applyDesktopActionClaimGate', () => {
   it('retries when a desktop task response claims observation without tool evidence', () => {

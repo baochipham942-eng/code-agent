@@ -19,7 +19,7 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   initializeCLIServices: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     error: mocks.loggerError,
   }),

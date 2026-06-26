@@ -16,8 +16,8 @@
 import { createServer, type Server } from 'http';
 import type { AddressInfo } from 'net';
 import { describe, expect, it, afterAll, beforeAll } from 'vitest';
-import { BrowserPool } from '../../src/main/services/infra/browserPool';
-import { browserService as defaultBrowserService } from '../../src/main/services/infra/browserService';
+import { BrowserPool } from '../../src/host/services/infra/browserPool';
+import { browserService as defaultBrowserService } from '../../src/host/services/infra/browserService';
 
 const TIMEOUT_MS = 90_000;
 

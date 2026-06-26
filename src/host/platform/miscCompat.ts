@@ -217,11 +217,11 @@ export const webUtils = {
 
 // ── ipcRenderer ────────────────────────────────────────────────────────
 
-export const ipcRenderer = {
+export const ipcClient = {
   invoke: async () => undefined,
-  on: () => ipcRenderer,
-  once: () => ipcRenderer,
+  on: () => ipcClient,
+  once: () => ipcClient,
   send: () => {},
-  removeListener: () => ipcRenderer,
-  removeAllListeners: () => ipcRenderer,
+  removeListener: () => ipcClient,
+  removeAllListeners: () => ipcClient,
 };

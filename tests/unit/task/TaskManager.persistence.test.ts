@@ -27,7 +27,7 @@ const orchestratorMocks = vi.hoisted(() => ({
   handlePermissionResponse: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -36,7 +36,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/agent/agentOrchestrator', () => ({
+vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
   AgentOrchestrator: class {
     sendMessage = (...args: unknown[]) => orchestratorMocks.sendMessage(...args);
     interruptAndContinue = (...args: unknown[]) => orchestratorMocks.interruptAndContinue(...args);
@@ -51,12 +51,12 @@ vi.mock('../../../src/main/agent/agentOrchestrator', () => ({
   },
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: { getPath: () => '/tmp' },
-  BrowserWindow: { getAllWindows: () => [] },
+  AppWindow: { getAllWindows: () => [] },
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
   notificationService: {
     notifyNeedsInput: vi.fn(),
@@ -64,11 +64,11 @@ vi.mock('../../../src/main/services', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
 
-import { TaskManager } from '../../../src/main/task/TaskManager';
+import { TaskManager } from '../../../src/host/task/TaskManager';
 
 const persistedMessageSymbol = Symbol.for('code-agent.contextAssembly.persistedMessage');
 

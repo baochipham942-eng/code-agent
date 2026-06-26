@@ -3,20 +3,20 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 // Mocks for sub-tools' downstream services
 const recoverRecentWorkIntoPlanningMock = vi.fn();
 const publishPlanningStateToRendererMock = vi.fn();
 
-vi.mock('../../../../../src/main/planning/recoveredWorkOrchestrator', () => ({
+vi.mock('../../../../../src/host/planning/recoveredWorkOrchestrator', () => ({
   recoverRecentWorkIntoPlanning: (...a: unknown[]) => recoverRecentWorkIntoPlanningMock(...a),
   WORKSPACE_RECOVERY_PHASE_TITLE: 'Recovered Workspace Activity',
 }));
-vi.mock('../../../../../src/main/planning', () => ({
+vi.mock('../../../../../src/host/planning', () => ({
   publishPlanningStateToRenderer: (...a: unknown[]) => publishPlanningStateToRendererMock(...a),
 }));
-vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
     recordTodoFeedbackForTask: vi.fn(),
     recordTodoFeedback: vi.fn(),
@@ -25,15 +25,15 @@ vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', (
   }),
   isDesktopDerivedSessionTask: () => false,
 }));
-vi.mock('../../../../../src/main/desktop/workspaceActivitySearchService', () => ({
+vi.mock('../../../../../src/host/desktop/workspaceActivitySearchService', () => ({
   recordWorkspaceActivityFeedback: vi.fn(),
   clearWorkspaceActivityFeedback: vi.fn(),
 }));
-vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../../../src/host/services/planning/taskStore', () => ({
   listTasks: vi.fn().mockReturnValue([]),
 }));
 
-import { planFacadeModule } from '../../../../../src/main/tools/modules/planning/planFacade';
+import { planFacadeModule } from '../../../../../src/host/tools/modules/planning/planFacade';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

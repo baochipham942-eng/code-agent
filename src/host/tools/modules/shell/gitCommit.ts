@@ -1,7 +1,7 @@
 // ============================================================================
 // GitCommit (P0-5 Migrated to ToolModule)
 //
-// 旧版: src/main/tools/shell/gitCommit.ts (registered as 'git_commit')
+// 旧版: src/host/tools/shell/gitCommit.ts (registered as 'git_commit')
 // 改造点：
 // - 4 参数签名
 // - push 操作的 inline requestPermission → inline canUseTool 调用

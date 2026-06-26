@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   pickEnvGatedComputerUseServers,
   getDefaultMCPServers,
-} from '../../../src/main/mcp/mcpDefaultServers';
+} from '../../../src/host/mcp/mcpDefaultServers';
 
 // 背景（2026-06-11 真机验证）：initMCPClient 里云端 MCP 清单与本地默认清单
 // 是「二选一」，云端清单存在时本地默认清单整体被跳过——导致 cua-driver/argus

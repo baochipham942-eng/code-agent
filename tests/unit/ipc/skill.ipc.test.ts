@@ -50,37 +50,37 @@ const svc = vi.hoisted(() => {
   return { repo, discovery, session, cloud, config, recorder, drafts };
 });
 
-vi.mock('../../../src/main/services/skills/skillRepositoryService', () => ({
+vi.mock('../../../src/host/services/skills/skillRepositoryService', () => ({
   getSkillRepositoryService: () => svc.repo,
 }));
-vi.mock('../../../src/main/services/skills/skillDiscoveryService', () => ({
+vi.mock('../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => svc.discovery,
 }));
-vi.mock('../../../src/main/services/skills/sessionSkillService', () => ({
+vi.mock('../../../src/host/services/skills/sessionSkillService', () => ({
   getSessionSkillService: () => svc.session,
 }));
-vi.mock('../../../src/main/services/skills/skillRepositories', () => ({
+vi.mock('../../../src/host/services/skills/skillRepositories', () => ({
   RECOMMENDED_REPOSITORIES: [{ id: 'builtin-repo' }],
 }));
-vi.mock('../../../src/main/services/cloud', () => ({
+vi.mock('../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => svc.cloud,
 }));
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => svc.config,
 }));
-vi.mock('../../../src/main/services/skills/comboRecorder', () => ({
+vi.mock('../../../src/host/services/skills/comboRecorder', () => ({
   getComboRecorder: () => svc.recorder,
 }));
-vi.mock('../../../src/main/services/skills/skillDraftQueue', () => ({
+vi.mock('../../../src/host/services/skills/skillDraftQueue', () => ({
   listSkillDrafts: (...a: unknown[]) => svc.drafts.listSkillDrafts(...a),
   confirmSkillDraft: (...a: unknown[]) => svc.drafts.confirmSkillDraft(...a),
   rejectSkillDraft: (...a: unknown[]) => svc.drafts.rejectSkillDraft(...a),
 }));
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { registerSkillHandlers } from '../../../src/main/ipc/skill.ipc';
+import { registerSkillHandlers } from '../../../src/host/ipc/skill.ipc';
 
 type HandlerFn = (event: unknown, ...args: unknown[]) => unknown;
 

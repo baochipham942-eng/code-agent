@@ -5,8 +5,8 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { getDeferredToolsToPreloadForTurn } from '../../../src/main/agent/runtime/contextAssembly/deferredToolPreload';
-import { buildGoalContract, GoalModeController } from '../../../src/main/agent/goalModeController';
+import { getDeferredToolsToPreloadForTurn } from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
+import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import type { Message } from '../../../src/shared/contract';
 
 function runtime(opts: { goalMode?: GoalModeController; userText?: string }) {

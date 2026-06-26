@@ -50,7 +50,7 @@ const compactMocks = vi.hoisted(() => {
   return {
     state,
     handlers,
-    ipcMain: {
+    ipcHost: {
       handle: vi.fn((channel: string, handler: (event: unknown, ...args: any[]) => Promise<unknown>) => {
         handlers.set(channel, handler);
       }),
@@ -72,9 +72,9 @@ const compactMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../../src/main/platform', () => ({
-  ipcMain: compactMocks.ipcMain,
-  BrowserWindow: class MockBrowserWindow {},
+vi.mock('../../../src/host/platform', () => ({
+  ipcHost: compactMocks.ipcHost,
+  AppWindow: class MockBrowserWindow {},
   app: {
     getPath: vi.fn((_name: string) => '/tmp/test-userdata'),
     getVersion: vi.fn(() => '0.0.0-test'),
@@ -100,26 +100,26 @@ vi.mock('../../../src/main/platform', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => compactMocks.sessionManager,
   getConfigService: () => compactMocks.configService,
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => compactMocks.database,
 }));
 
-vi.mock('../../../src/main/context/compactModel', () => ({
+vi.mock('../../../src/host/context/compactModel', () => ({
   compactModelSummarize: compactMocks.compactModelSummarize,
   compactModelSummarizeWithMetadata: compactMocks.compactModelSummarizeWithMetadata,
   resetCompactModel: compactMocks.resetCompactModel,
   getCompactModelInfo: compactMocks.getCompactModelInfo,
 }));
 
-import { registerContextHealthHandlers, resolveContextHealthForSession } from '../../../src/main/ipc/contextHealth.ipc';
-import { getContextHealthService } from '../../../src/main/context/contextHealthService';
-import { initAutoCompressor } from '../../../src/main/context/autoCompressor';
-import { getSessionStateManager } from '../../../src/main/session/sessionStateManager';
+import { registerContextHealthHandlers, resolveContextHealthForSession } from '../../../src/host/ipc/contextHealth.ipc';
+import { getContextHealthService } from '../../../src/host/context/contextHealthService';
+import { initAutoCompressor } from '../../../src/host/context/autoCompressor';
+import { getSessionStateManager } from '../../../src/host/session/sessionStateManager';
 import { DEFAULT_MODEL, getContextWindow } from '../../../src/shared/constants';
 import type { AgentApplicationService } from '../../../src/shared/contract/appService';
 import type { CompactResult } from '../../../src/shared/contract/contextHealth';
@@ -248,7 +248,7 @@ describe('resolveContextHealthForSession', () => {
             id: 'call-1',
             name: 'Read',
             arguments: {
-              file_path: '/Users/linchen/Downloads/ai/code-agent/src/main/context/contextHealthService.ts',
+              file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/contextHealthService.ts',
               note: 'tool call arguments should count toward context usage '.repeat(120),
             },
           },

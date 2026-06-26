@@ -48,11 +48,11 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockState.spawn(...args),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   broadcastToRenderer: (...args: unknown[]) => mockState.broadcast(...args),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
@@ -68,7 +68,7 @@ function createMockIpcMain() {
 
 async function setup() {
   vi.resetModules();
-  const { registerPiiHandlers } = await import('../../../src/main/ipc/pii.ipc');
+  const { registerPiiHandlers } = await import('../../../src/host/ipc/pii.ipc');
   const ipc = createMockIpcMain();
   registerPiiHandlers(ipc as never);
   const handler = ipc.handlers.get(IPC_DOMAINS.PII)!;

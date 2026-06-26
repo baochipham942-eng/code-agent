@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ToolExecutionResult } from '../../../../src/main/tools/types';
+import type { ToolExecutionResult } from '../../../../src/host/tools/types';
 
 const { fetchDocumentMock } = vi.hoisted(() => ({
   fetchDocumentMock: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/tools/web/fetchDocument', () => ({
+vi.mock('../../../../src/host/tools/web/fetchDocument', () => ({
   fetchDocument: (...args: unknown[]) => fetchDocumentMock(...args),
 }));
 
-import { autoExtractFallback } from '../../../../src/main/tools/web/search';
+import { autoExtractFallback } from '../../../../src/host/tools/web/search';
 
 describe('autoExtract primary evidence selection', () => {
   it('fetches ranked primary evidence before SEO-looking results', async () => {

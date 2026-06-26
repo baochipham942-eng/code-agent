@@ -11,9 +11,9 @@ import * as path from 'path';
 const tmpHomeBase = path.join(os.tmpdir(), 'skill-loader-test');
 let tmpHome: string;
 
-vi.mock('../../../src/main/config/configPaths', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/main/config/configPaths')>(
-    '../../../src/main/config/configPaths',
+vi.mock('../../../src/host/config/configPaths', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/config/configPaths')>(
+    '../../../src/host/config/configPaths',
   );
   return {
     ...actual,
@@ -22,7 +22,7 @@ vi.mock('../../../src/main/config/configPaths', async () => {
 });
 
 const { loadRelevantSkills, buildSkillInjectionBlock } = await import(
-  '../../../src/main/lightMemory/skillLoader'
+  '../../../src/host/lightMemory/skillLoader'
 );
 
 // ----------------------------------------------------------------------------

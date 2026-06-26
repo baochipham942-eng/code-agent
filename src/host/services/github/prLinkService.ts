@@ -13,7 +13,7 @@ const execAsync = promisify(exec);
 const logger = createLogger('PRLinkService');
 
 // ----------------------------------------------------------------------------
-// Types — 定义迁移至 src/main/protocol/types/github.ts
+// Types — 定义迁移至 src/host/protocol/types/github.ts
 // ----------------------------------------------------------------------------
 
 import type { PRContext, ParsedPRUrl } from '../../protocol/types/github';

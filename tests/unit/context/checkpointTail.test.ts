@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { selectCheckpointTail } from '../../../src/main/context/checkpoint';
+import { selectCheckpointTail } from '../../../src/host/context/checkpoint';
 
 function msg(id: string, role: Message['role'], content: string): Message {
   return { id, role, content, timestamp: Date.now() };

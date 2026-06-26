@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldApplyRendererBundle } from '../../src/main/services/renderer/rendererBundlePolicy';
+import { shouldApplyRendererBundle } from '../../src/host/services/renderer/rendererBundlePolicy';
 
 const validManifest = {
   version: '0.16.91',

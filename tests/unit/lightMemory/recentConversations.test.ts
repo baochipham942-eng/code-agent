@@ -12,11 +12,11 @@ const mockConfigDir = vi.hoisted(() => {
   return { dir: '' };
 });
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -29,8 +29,8 @@ import {
   appendConversationSummary,
   buildRecentConversationsBlock,
   isLoopAutomationSummaryText,
-} from '../../../src/main/lightMemory/recentConversations';
-import type { ConversationSummary } from '../../../src/main/lightMemory/recentConversations';
+} from '../../../src/host/lightMemory/recentConversations';
+import type { ConversationSummary } from '../../../src/host/lightMemory/recentConversations';
 
 describe('recentConversations', () => {
   let tmpDir: string;

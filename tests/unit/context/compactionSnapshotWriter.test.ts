@@ -10,15 +10,15 @@ const snapshotWriterMocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => snapshotWriterMocks.db,
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => snapshotWriterMocks.logger,
 }));
 
-import { writeCompactionSnapshot } from '../../../src/main/context/compactionSnapshotWriter';
+import { writeCompactionSnapshot } from '../../../src/host/context/compactionSnapshotWriter';
 
 describe('compactionSnapshotWriter', () => {
   beforeEach(() => {

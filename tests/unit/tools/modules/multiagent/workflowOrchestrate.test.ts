@@ -4,18 +4,18 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const { executeWorkflowMock, buildLegacyCtxMock } = vi.hoisted(() => ({
   executeWorkflowMock: vi.fn(),
   buildLegacyCtxMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/agent/multiagentTools/workflowOrchestrate', () => ({
+vi.mock('../../../../../src/host/agent/multiagentTools/workflowOrchestrate', () => ({
   executeWorkflowOrchestrate: executeWorkflowMock,
 }));
 
-vi.mock('../../../../../src/main/tools/modules/_helpers/legacyAdapter', () => ({
+vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
   buildLegacyCtxFromProtocol: (...args: unknown[]) => buildLegacyCtxMock(...args),
   adaptLegacyResult: (r: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }) =>
     r.success
@@ -23,7 +23,7 @@ vi.mock('../../../../../src/main/tools/modules/_helpers/legacyAdapter', () => ({
       : { ok: false, error: r.error ?? 'unknown', meta: r.metadata },
 }));
 
-import { workflowOrchestrateModule } from '../../../../../src/main/tools/modules/multiagent/workflowOrchestrate';
+import { workflowOrchestrateModule } from '../../../../../src/host/tools/modules/multiagent/workflowOrchestrate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

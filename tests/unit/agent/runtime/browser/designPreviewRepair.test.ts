@@ -1,24 +1,24 @@
 import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { getUserConfigDir } from '../../../../../src/main/config/configPaths';
+import { getUserConfigDir } from '../../../../../src/host/config/configPaths';
 import {
   isDesignDraftWorkingDir,
   seedArtifactRepairGuardFromContext,
-} from '../../../../../src/main/agent/runtime/artifactRepairGuard';
-import type { RuntimeContext } from '../../../../../src/main/agent/runtime/runtimeContext';
+} from '../../../../../src/host/agent/runtime/artifactRepairGuard';
+import type { RuntimeContext } from '../../../../../src/host/agent/runtime/runtimeContext';
 import type {
   ArtifactPreviewHealthSummary,
-} from '../../../../../src/main/agent/runtime/browser/artifactPreviewHealth';
+} from '../../../../../src/host/agent/runtime/browser/artifactPreviewHealth';
 import type {
   ArtifactPreviewVisionSummary,
-} from '../../../../../src/main/agent/runtime/browser/artifactPreviewVision';
+} from '../../../../../src/host/agent/runtime/browser/artifactPreviewVision';
 import {
   createDesignPreviewRepairSpec,
   runDesignPreviewRepairLoop,
   type DesignPreviewHealthRunner,
   type DesignPreviewRepairAgent,
   type DesignPreviewVisionRunner,
-} from '../../../../../src/main/agent/runtime/browser/designPreviewRepair';
+} from '../../../../../src/host/agent/runtime/browser/designPreviewRepair';
 
 function healthSummary(overrides: Partial<ArtifactPreviewHealthSummary> = {}): ArtifactPreviewHealthSummary {
   return {

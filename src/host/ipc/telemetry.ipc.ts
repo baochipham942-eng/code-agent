@@ -2,7 +2,7 @@
 // Telemetry IPC Handlers - 遥测系统 IPC 处理器
 // ============================================================================
 
-import { ipcMain, BrowserWindow } from '../platform';
+import { ipcHost, AppWindow } from '../platform';
 import { TELEMETRY_CHANNELS } from '../../shared/ipc/channels';
 import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 // extractStructuredReplay loaded dynamically — excluded from production bundle
@@ -106,65 +106,65 @@ async function buildTrajectoryQualitySummary(
 /**
  * 注册遥测相关的 IPC handlers
  */
-export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | null): void {
+export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null): void {
   const storage = getTelemetryStorage();
 
   // 获取会话详情
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_SESSION, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_SESSION, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getSession(sessionId);
   });
 
   // 获取会话列表
-  ipcMain.handle(TELEMETRY_CHANNELS.LIST_SESSIONS, async (_event, payload?: TelemetrySessionListOptions) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.LIST_SESSIONS, async (_event, payload?: TelemetrySessionListOptions) => {
     assertAdminAccess('Telemetry');
     return storage.listSessions(payload ?? {});
   });
 
   // 获取轮次列表（默认只返回主代理轮次）
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_TURNS, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_TURNS, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getTurnsBySession(sessionId, 'main');
   });
 
   // 获取轮次详情
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_TURN_DETAIL, async (_event, turnId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_TURN_DETAIL, async (_event, turnId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getTurnDetail(turnId);
   });
 
   // 获取工具统计
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_TOOL_STATS, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_TOOL_STATS, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getToolUsageStats(sessionId);
   });
 
   // 获取 Computer Surface 可靠性聚合
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_COMPUTER_SURFACE_SUMMARY, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_COMPUTER_SURFACE_SUMMARY, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getComputerSurfaceReliabilitySummary(sessionId);
   });
 
   // 获取意图分布
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_INTENT_DIST, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_INTENT_DIST, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getIntentDistribution(sessionId);
   });
 
   // 成本日历聚合（日/周/月，跨会话）
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_COST_BY_PERIOD, async (_event, options: TelemetryCostByPeriodOptions) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_COST_BY_PERIOD, async (_event, options: TelemetryCostByPeriodOptions) => {
     assertAdminAccess('Telemetry');
     return storage.getCostByPeriod(options);
   });
 
   // 获取会话所有事件（用于时间线视图）
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_EVENTS, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_EVENTS, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     return storage.getEventsBySession(sessionId);
   });
 
   // 获取系统提示词（按 hash）
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT, async (_event, hash: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT, async (_event, hash: string) => {
     assertAdminAccess('Telemetry');
     try {
       const { getSystemPromptCache } = await import('../telemetry/systemPromptCache');
@@ -175,14 +175,14 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
   });
 
   // 获取结构化回放数据
-  ipcMain.handle(TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     if (process.env.EVAL_DISABLED === 'true') return null;
     const { extractStructuredReplay } = await import('../evaluation/replayService');
     return extractStructuredReplay(sessionId);
   });
 
-  ipcMain.handle(
+  ipcHost.handle(
     TELEMETRY_CHANNELS.GET_TRAJECTORY_QUALITY,
     async (
       _event,
@@ -210,7 +210,7 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
     },
   );
 
-  ipcMain.handle(
+  ipcHost.handle(
     TELEMETRY_CHANNELS.UPDATE_TRAJECTORY_COLLECTION,
     async (_event, payload: AgentTrajectoryCollectionUpdateRequest): Promise<AgentTrajectorySessionQualitySummary> => {
       assertAdminAccess('Telemetry');
@@ -229,14 +229,14 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
   );
 
   // 删除会话遥测数据
-  ipcMain.handle(TELEMETRY_CHANNELS.DELETE_SESSION, async (_event, sessionId: string) => {
+  ipcHost.handle(TELEMETRY_CHANNELS.DELETE_SESSION, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     storage.deleteSession(sessionId);
     return { success: true };
   });
 
   // 用户显式质量反馈：普通登录用户可写；读取仍只走 admin-only 云端/本地查询。
-  ipcMain.handle(
+  ipcHost.handle(
     TELEMETRY_CHANNELS.SUBMIT_FEEDBACK,
     async (_event, payload: TelemetryFeedbackSubmitRequest): Promise<TelemetryFeedbackSubmitResult> => {
       const feedback = storage.recordFeedback(payload);
@@ -249,7 +249,7 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
   );
 
   // 健康摘要：是否启用 + session 数 + 存储占用 + 最近事件时间
-  ipcMain.handle(TELEMETRY_CHANNELS.HEALTH, async (): Promise<TelemetryHealth> => {
+  ipcHost.handle(TELEMETRY_CHANNELS.HEALTH, async (): Promise<TelemetryHealth> => {
     assertAdminAccess('Telemetry');
     return {
       enabled: storage.dbAvailable,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { validateGameArtifact } from '../../../src/main/agent/runtime/gameArtifactValidator';
+import { validateGameArtifact } from '../../../src/host/agent/runtime/gameArtifactValidator';
 
 async function writeTempHtml(content: string, fileName = 'game.html'): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-validator-'));

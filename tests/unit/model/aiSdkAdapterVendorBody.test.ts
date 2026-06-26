@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildVendorCompatSettings } from '../../../src/main/model/adapters/aiSdkAdapter';
+import { buildVendorCompatSettings } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { ModelConfig } from '../../../src/shared/contract/model';
 
 const xiaomi = (over: Partial<ModelConfig> = {}): ModelConfig =>

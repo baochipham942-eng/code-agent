@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   handleTestConnection,
   resolveConnectionTestModel,
-} from '../../../src/main/model/providerConnectionTest';
+} from '../../../src/host/model/providerConnectionTest';
 
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getApiKey: vi.fn(() => ''),
   }),

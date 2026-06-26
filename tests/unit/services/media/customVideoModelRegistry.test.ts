@@ -11,13 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const cfg = vi.hoisted(() => ({ root: '' }));
-vi.mock('../../../../src/main/config/configPaths', async (importActual) => {
-  const actual = await importActual<typeof import('../../../../src/main/config/configPaths')>();
+vi.mock('../../../../src/host/config/configPaths', async (importActual) => {
+  const actual = await importActual<typeof import('../../../../src/host/config/configPaths')>();
   return { ...actual, getUserConfigDir: () => cfg.root };
 });
 
 const keyStore = vi.hoisted(() => new Map<string, string>());
-vi.mock('../../../../src/main/services/core/secureStorage', () => ({
+vi.mock('../../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => ({
     setApiKey: (p: string, k: string) => keyStore.set(p, k),
     getApiKey: (p: string) => keyStore.get(p),
@@ -32,7 +32,7 @@ import {
   deleteCustomVideoModel,
   setCustomVideoModelApiKey,
   getCustomVideoModelApiKey,
-} from '../../../../src/main/services/media/customVideoModelRegistry';
+} from '../../../../src/host/services/media/customVideoModelRegistry';
 
 let workDir: string;
 

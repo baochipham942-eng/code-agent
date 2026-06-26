@@ -3,7 +3,7 @@
 // priority and the threshold semantics.
 
 import { describe, it, expect } from 'vitest';
-import { assessContextPressure } from '../../../src/main/context/contextPressureController';
+import { assessContextPressure } from '../../../src/host/context/contextPressureController';
 
 const BASE = {
   currentTokens: 10_000,

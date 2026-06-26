@@ -7,8 +7,8 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ProjectionEngine, type ProjectableMessage } from '../../../src/main/context/projectionEngine';
-import { CompressionState } from '../../../src/main/context/compressionState';
+import { ProjectionEngine, type ProjectableMessage } from '../../../src/host/context/projectionEngine';
+import { CompressionState } from '../../../src/host/context/compressionState';
 
 function makeMsg(id: string, role: string, content: string): ProjectableMessage {
   return { id, role, content };

@@ -7,7 +7,7 @@ import type { ControlPlaneEnvelope } from '../../../src/shared/contract/controlP
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
-} from '../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../src/host/services/cloud/controlPlaneTrust';
 import {
   DEFAULT_MIN_MANIFEST_VALIDITY_SECONDS,
   RendererBundlePublishVerificationError,

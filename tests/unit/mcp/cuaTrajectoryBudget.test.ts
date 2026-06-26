@@ -4,7 +4,7 @@ import {
   resetCuaBudget,
   getCuaBudgetLimit,
   CUA_DEFAULT_BUDGET,
-} from '../../../src/main/mcp/cuaTrajectoryBudget';
+} from '../../../src/host/mcp/cuaTrajectoryBudget';
 
 // 轨迹预算上限：一次 run 内 CUA 操控类动作的软停约束。
 // 动机：2026-06-11 真机 E2E 计算器任务跑了 35 回合 / 334 万 tokens，

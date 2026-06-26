@@ -23,20 +23,20 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../../src/main/services/infra', () => ({
+vi.mock('../../../src/host/services/infra', () => ({
   getSupabase: () => ({ from: mocks.from }),
   isSupabaseInitialized: mocks.isSupabaseInitialized,
 }));
 
-vi.mock('../../../src/main/services/auth', () => ({
+vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({ getCurrentUser: mocks.getCurrentUser }),
 }));
 
-vi.mock('../../../src/main/services/core', () => ({
+vi.mock('../../../src/host/services/core', () => ({
   getSecureStorage: () => ({ getDeviceId: () => 'device-test' }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -44,15 +44,15 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/serviceRegistry', () => ({
+vi.mock('../../../src/host/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({ register: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   app: { getVersion: () => '0.0.0-test' },
 }));
 
-vi.mock('../../../src/main/telemetry/telemetryStorage', () => ({
+vi.mock('../../../src/host/telemetry/telemetryStorage', () => ({
   getTelemetryStorage: () => mocks.storage,
 }));
 
@@ -175,7 +175,7 @@ describe('TelemetryUploaderService', () => {
       }),
     }));
 
-    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
     const service = new TelemetryUploaderService();
 
     await expect(service.upload()).resolves.toBe(1);
@@ -212,7 +212,7 @@ describe('TelemetryUploaderService', () => {
       })),
     }));
 
-    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
     const service = new TelemetryUploaderService();
 
     await expect(service.upload()).resolves.toBe(0);
@@ -239,7 +239,7 @@ describe('TelemetryUploaderService', () => {
       }),
     }));
 
-    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
     const service = new TelemetryUploaderService();
 
     await expect(service.upload()).resolves.toBe(1);
@@ -293,7 +293,7 @@ describe('TelemetryUploaderService', () => {
       }),
     }));
 
-    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
     const service = new TelemetryUploaderService();
 
     await expect(service.upload()).resolves.toBe(0);

@@ -5,9 +5,9 @@ import { pathToFileURL } from 'url';
 import {
   runDesignPreviewRepairLoop,
   type DesignPreviewRepairAgent,
-} from '../../src/main/agent/runtime/browser/designPreviewRepair';
-import type { ArtifactPreviewVisionAnalyzer } from '../../src/main/agent/runtime/browser/artifactPreviewVision';
-import { loadPlaywrightChromium } from '../../src/main/agent/runtime/browser/playwrightRuntime';
+} from '../../src/host/agent/runtime/browser/designPreviewRepair';
+import type { ArtifactPreviewVisionAnalyzer } from '../../src/host/agent/runtime/browser/artifactPreviewVision';
+import { loadPlaywrightChromium } from '../../src/host/agent/runtime/browser/playwrightRuntime';
 
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',

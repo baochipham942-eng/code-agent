@@ -8,9 +8,9 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { buildDynamicPromptCacheKey } from '../../../src/main/agent/runtime/contextAssembly/messageBuild';
-import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly';
-import type { ProjectSystemPromptResult } from '../../../src/main/prompts/projectSystemPrompt';
+import { buildDynamicPromptCacheKey } from '../../../src/host/agent/runtime/contextAssembly/messageBuild';
+import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
+import type { ProjectSystemPromptResult } from '../../../src/host/prompts/projectSystemPrompt';
 
 function makeCtx(): ContextAssemblyCtx {
   // cacheKey 只读以下字段,其余字段不会被触达 —— 用 as unknown as 跳过完整接口

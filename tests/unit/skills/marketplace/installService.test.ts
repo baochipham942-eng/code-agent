@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   reloadSkills: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mocks.userConfigDir,
   getProjectConfigDir: () => mocks.projectConfigDir,
   getCommandsDir: (workingDirectory?: string) => ({
@@ -22,24 +22,24 @@ vi.mock('../../../../src/main/config/configPaths', () => ({
   }),
 }));
 
-vi.mock('../../../../src/main/skills/marketplace/marketplaceService', () => ({
+vi.mock('../../../../src/host/skills/marketplace/marketplaceService', () => ({
   getMarketplaceInfo: (...args: unknown[]) => mocks.getMarketplaceInfo(...args),
   listMarketplaces: (...args: unknown[]) => mocks.listMarketplaces(...args),
 }));
 
-vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
+vi.mock('../../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => ({
     reload: mocks.reloadSkills,
   }),
 }));
 
-vi.mock('../../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getPrompts: () => [],
   }),
 }));
 
-vi.mock('../../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -55,8 +55,8 @@ import {
   installPlugin,
   listInstalledPlugins,
   uninstallPlugin,
-} from '../../../../src/main/skills/marketplace/installService';
-import { getPromptCommandService } from '../../../../src/main/services/commands/promptCommandService';
+} from '../../../../src/host/skills/marketplace/installService';
+import { getPromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
 
 describe('marketplace install service trust defaults', () => {
   let tempRoot: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUNTIME_ASSET_DEFINITIONS } from '../../../src/main/runtime/runtimeAssetRegistry';
+import { RUNTIME_ASSET_DEFINITIONS } from '../../../src/host/runtime/runtimeAssetRegistry';
 
 describe('runtimeAssetRegistry', () => {
   it('classifies managed runtimes and bundled helpers in one registry', () => {

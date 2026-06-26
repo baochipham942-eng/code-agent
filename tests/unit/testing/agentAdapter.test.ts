@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentLoop } from '../../../src/main/agent/agentLoop';
-import { AgentLoopAdapter, MockAgentAdapter } from '../../../src/main/testing/agentAdapter';
-import type { ToolExecutionRecord } from '../../../src/main/testing/types';
+import type { AgentLoop } from '../../../src/host/agent/agentLoop';
+import { AgentLoopAdapter, MockAgentAdapter } from '../../../src/host/testing/agentAdapter';
+import type { ToolExecutionRecord } from '../../../src/host/testing/types';
 
 function createToolExecutionRecord(): ToolExecutionRecord {
   return {

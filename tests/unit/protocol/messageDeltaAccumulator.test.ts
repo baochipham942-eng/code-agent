@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MessageDeltaAccumulator } from '../../../src/main/protocol/messageDeltaAccumulator';
+import { MessageDeltaAccumulator } from '../../../src/host/protocol/messageDeltaAccumulator';
 
 describe('MessageDeltaAccumulator', () => {
   it('accumulates assistant content and reasoning deltas per session', () => {

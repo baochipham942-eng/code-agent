@@ -1,13 +1,13 @@
 // ============================================================================
 // PPT Schema & Template 测试
-// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-schema.test.mjs
+// 运行: npx tsx src/host/tools/media/ppt/__tests__/ppt-schema.test.mjs
 // ============================================================================
 // 覆盖: slideSchemas 验证、layoutTemplates 预设、StructuredSlide 端到端、
 //       modelCallback fallback、normalizeSlideContent 容错
 // ============================================================================
 
 // History: Part 6 (端到端 StructuredSlide → PPTX) + Part 8 (python-pptx 结构验证)
-// 依赖已删除的 src/main/tools/media/ppt/index.ts (pptGenerateTool)。
+// 依赖已删除的 src/host/tools/media/ppt/index.ts (pptGenerateTool)。
 // 顶层工具 API 已被 tests/unit/tools/modules/network/pptGenerate.test.ts 用 vitest
 // 覆盖（13 cases）。此文件保留 Part 1–5 + Part 7（schema / template / decoration /
 // description / modelCallback 的纯函数测试）。

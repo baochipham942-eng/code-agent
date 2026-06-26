@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   materializeFeishuMedia,
   parseFeishuMediaContent,
-} from '../../../src/main/channels/feishu/feishuMedia';
+} from '../../../src/host/channels/feishu/feishuMedia';
 
 let tmpRoot: string | null = null;
 

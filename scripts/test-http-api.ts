@@ -4,7 +4,7 @@
  * 运行: npx tsx scripts/test-http-api.ts
  */
 
-import { ApiChannel } from '../src/main/channels/api/apiChannel';
+import { ApiChannel } from '../src/host/channels/api/apiChannel';
 
 const API_KEY = 'test-api-key-12345';
 const PORT = 3100;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { emitSkillAsset } from '../../../../src/main/services/skills/distillSkillEmitter';
+import { emitSkillAsset } from '../../../../src/host/services/skills/distillSkillEmitter';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 

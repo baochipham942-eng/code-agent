@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import sharp from 'sharp';
-import { prepareImageForVision } from '../../../../src/main/services/desktop/visionAnalysisService';
+import { prepareImageForVision } from '../../../../src/host/services/desktop/visionAnalysisService';
 import { VISION_IMAGE } from '../../../../src/shared/constants';
 
 // 真 sharp + 真临时文件，验证 Gap 1 的降采样 + 尺寸记账逻辑。

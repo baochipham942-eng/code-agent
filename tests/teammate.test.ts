@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TeammateService, getTeammateService, resetTeammateService } from '../src/main/agent/teammate/teammateService';
+import { TeammateService, getTeammateService, resetTeammateService } from '../src/host/agent/teammate/teammateService';
 
 describe('TeammateService', () => {
   let service: TeammateService;

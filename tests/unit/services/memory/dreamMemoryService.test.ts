@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../../src/shared/contract';
 import type { MemoryEntry } from '../../../../src/shared/contract/memory';
-import type { MemoryRecord } from '../../../../src/main/services/core/repositories';
-import { BUILTIN_SKILLS } from '../../../../src/main/services/skills/builtinSkills';
-import { resolveSkillInvocationFromSkills } from '../../../../src/main/services/skills/skillInvocationResolver';
+import type { MemoryRecord } from '../../../../src/host/services/core/repositories';
+import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkills';
+import { resolveSkillInvocationFromSkills } from '../../../../src/host/services/skills/skillInvocationResolver';
 import {
   DREAM_MEMORY_SOURCE,
   runDreamMemoryConsolidation,
   supportsCandidate,
   type DreamCandidate,
-} from '../../../../src/main/services/memory/dreamMemoryService';
+} from '../../../../src/host/services/memory/dreamMemoryService';
 
 const NOW = Date.UTC(2026, 5, 11, 9, 0, 0);
 

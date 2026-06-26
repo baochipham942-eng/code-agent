@@ -33,7 +33,7 @@ protocol/
 
 | Codex Rust            | 本项目 TS                |
 |-----------------------|-------------------------|
-| `codex-protocol` crate| `src/main/protocol/`    |
+| `codex-protocol` crate| `src/host/protocol/`    |
 | `EventMsg` enum       | `AgentEvent` union      |
 | `Op` enum             | 待建（P0-5+）             |
 | `Submission` struct   | 待建（P0-5+）             |

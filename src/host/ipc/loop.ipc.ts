@@ -2,7 +2,7 @@
 // Loop IPC Handlers — 会话内循环（/loop）的 start / stop / list / get
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getLoopController } from '../loop';
 import { createLogger } from '../services/infra/logger';
@@ -27,7 +27,7 @@ function getNumber(source: unknown, field: string): number | undefined {
 }
 
 export function registerLoopHandlers(): void {
-  ipcMain.handle(IPC_DOMAINS.LOOP, async (_event, request: IPCRequest) => {
+  ipcHost.handle(IPC_DOMAINS.LOOP, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
     const controller = getLoopController();
 

@@ -3,18 +3,18 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/protocol/tools';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 const getTaskMock = vi.fn();
 const listTasksMock = vi.fn().mockReturnValue([]);
 
-vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
+vi.mock('../../../../../src/host/services/planning/taskStore', () => ({
   getTask: (...args: unknown[]) => getTaskMock(...args),
   listTasks: (...args: unknown[]) => listTasksMock(...args),
   isClosedTaskStatus: (status: string) => status === 'completed' || status === 'cancelled',
 }));
 
-import { taskGetModule } from '../../../../../src/main/tools/modules/planning/taskGet';
+import { taskGetModule } from '../../../../../src/host/tools/modules/planning/taskGet';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

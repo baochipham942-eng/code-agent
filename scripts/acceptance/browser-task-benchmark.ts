@@ -19,9 +19,9 @@ import {
   browserService,
   type BrowserArtifactSummary,
   type BrowserDomSnapshot,
-} from '../../src/main/services/infra/browserService.ts';
-import { browserActionTool } from '../../src/main/tools/vision/browserAction.ts';
-import type { Tool, ToolContext, ToolExecutionResult } from '../../src/main/tools/types.ts';
+} from '../../src/host/services/infra/browserService.ts';
+import { browserActionTool } from '../../src/host/tools/vision/browserAction.ts';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../src/host/tools/types.ts';
 import type {
   ManagedBrowserAccountStateSummary,
   WorkbenchActionTrace,

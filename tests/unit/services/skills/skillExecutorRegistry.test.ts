@@ -4,7 +4,7 @@ import {
   registerSkillExecutor,
   runRegisteredSkillExecutor,
   unregisterSkillExecutor,
-} from '../../../../src/main/services/skills/skillExecutorRegistry';
+} from '../../../../src/host/services/skills/skillExecutorRegistry';
 
 const NAME = 'test-executor-skill';
 

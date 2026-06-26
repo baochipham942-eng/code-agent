@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAvailableSources } from '../../../../src/main/tools/web/search';
+import { getAvailableSources } from '../../../../src/host/tools/web/search';
 
 // 所有 premium 源都给 key（tavily 经 getTavilyKeys(cs) 也读 getServiceApiKey('tavily')），
 // 使其全部 available；firecrawl/cloud 受外部状态影响，断言时只看 premium 子集，确定性。

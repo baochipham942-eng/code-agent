@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { generateSlidesDeck, buildSlidesOutline } from '../../../../src/main/services/design/slidesGenerator';
+import { generateSlidesDeck, buildSlidesOutline } from '../../../../src/host/services/design/slidesGenerator';
 
 describe('generateSlidesDeck', () => {
   it('从 topic 确定性大纲生成有效 PPTX（ZIP 魔数 PK，非平凡体积）', async () => {

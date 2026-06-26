@@ -14,8 +14,8 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-import { XiaomiProvider } from '../../src/main/model/providers/xiaomiProvider';
-import type { ModelMessage } from '../../src/main/model/types';
+import { XiaomiProvider } from '../../src/host/model/providers/xiaomiProvider';
+import type { ModelMessage } from '../../src/host/model/types';
 import type { ToolDefinition } from '../../src/shared/contract';
 import { buildXiaomiProviderResponseArtifact } from './xiaomi-provider-response-artifact.ts';
 

@@ -11,11 +11,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const inferenceMock = vi.fn();
-vi.mock('../../../../src/main/model/adapters/aiSdkAdapter', () => ({
+vi.mock('../../../../src/host/model/adapters/aiSdkAdapter', () => ({
   inferenceViaAiSdk: (...a: unknown[]) => inferenceMock(...a),
 }));
 
-import { startRun, type ScriptRunHostDeps, type ScriptRunJournal } from '../../../../src/main/agent/scriptRuntime';
+import { startRun, type ScriptRunHostDeps, type ScriptRunJournal } from '../../../../src/host/agent/scriptRuntime';
 
 const baseModel = { provider: 'xiaomi', model: 'm', apiKey: 'k' };
 

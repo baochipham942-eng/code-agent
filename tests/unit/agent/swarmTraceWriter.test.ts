@@ -16,10 +16,10 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
-import { SwarmTraceWriter } from '../../../src/main/agent/swarmTraceWriter';
-import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
-import { getEventBus, shutdownEventBus } from '../../../src/main/services/eventing/bus';
+import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
+import { SwarmTraceWriter } from '../../../src/host/agent/swarmTraceWriter';
+import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
+import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import type { SwarmAgentState, SwarmEvent, SwarmExecutionState } from '../../../src/shared/contract/swarm';
 
 function createSchema(db: BetterSqlite3.Database): void {

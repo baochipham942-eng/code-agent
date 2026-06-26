@@ -10,7 +10,7 @@ import {
   collectDescendantAgentIds,
   collectRunningOrphanAgentIds,
   isParentRunAlive,
-} from '../../../src/main/agent/orphanLiveness';
+} from '../../../src/host/agent/orphanLiveness';
 
 describe('isParentRunAlive', () => {
   const SPAWN_TS = 1000;

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { getApiKeyMock } = vi.hoisted(() => ({ getApiKeyMock: vi.fn() }));
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getApiKey: getApiKeyMock }),
 }));
 
-import { generateVideo, downloadVideoAsBuffer } from '../../../../src/main/services/media/videoGenerationService';
+import { generateVideo, downloadVideoAsBuffer } from '../../../../src/host/services/media/videoGenerationService';
 
 function jsonResponse(obj: unknown): Response {
   return { ok: true, status: 200, json: async () => obj, text: async () => JSON.stringify(obj) } as unknown as Response;

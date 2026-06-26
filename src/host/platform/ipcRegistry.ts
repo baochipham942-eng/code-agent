@@ -27,7 +27,7 @@ export const eventListeners = new Map<string, HandlerFn>();
 /**
  * ipcMain 运行时 — 兼容 Electron ipcMain API
  */
-export const ipcMain: IpcMain & {
+export const ipcHost: IpcMain & {
   removeHandler(channel: string): void;
   removeAllListeners(channel?: string): void;
 } = {
@@ -75,7 +75,7 @@ export const ipcMain: IpcMain & {
 export function defineHandler<S extends ChannelSchema>(
   schema: S,
   handler: (event: IpcMainInvokeEvent, payload: PayloadOf<S>) => Promise<ResponseOf<S>>,
-  target: Pick<IpcMain, 'handle'> = ipcMain,
+  target: Pick<IpcMain, 'handle'> = ipcHost,
 ): void {
   target.handle(schema.channel, async (event: IpcMainInvokeEvent, rawPayload: unknown) => {
     const parsed = schema.payload.safeParse(rawPayload);

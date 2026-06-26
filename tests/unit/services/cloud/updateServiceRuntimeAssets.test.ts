@@ -8,8 +8,8 @@ import {
   getRuntimeAssetUpdateInfoFromManifest,
   UpdateService,
   type UpdateInfo,
-} from '../../../../src/main/services/cloud/updateService';
-import type { RuntimeAssetsManifest } from '../../../../src/main/runtime/runtimeAssetInstaller';
+} from '../../../../src/host/services/cloud/updateService';
+import type { RuntimeAssetsManifest } from '../../../../src/host/runtime/runtimeAssetInstaller';
 import { createControlPlaneEnvelope } from '../../../../vercel-api/lib/controlPlaneEnvelope';
 
 const tempRoots: string[] = [];

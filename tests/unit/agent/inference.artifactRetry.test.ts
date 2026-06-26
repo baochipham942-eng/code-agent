@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly';
-import { inference } from '../../../src/main/agent/runtime/contextAssembly/inference';
+import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
+import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
   mockGetSettings: vi.fn(() => ({ models: { providers: {} } })),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   },
 }));
 
-vi.mock('../../../src/main/services', () => ({
+vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
   getAuthService: () => ({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) }),
   getLangfuseService: () => ({
@@ -31,7 +31,7 @@ vi.mock('../../../src/main/services', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/mcp/logCollector.js', () => ({
+vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   logCollector: {
     agent: vi.fn(),
     browser: vi.fn(),
@@ -49,7 +49,7 @@ const { mockToolDefinitions } = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
   getCoreToolDefinitions: vi.fn().mockReturnValue(mockToolDefinitions),
   getLoadedDeferredToolDefinitions: vi.fn().mockReturnValue([]),
   getAllToolDefinitions: vi.fn().mockReturnValue(mockToolDefinitions),
@@ -57,20 +57,20 @@ vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
   withoutGenericMediaToolsInDesign: vi.fn((tools) => tools),
 }));
 
-vi.mock('../../../src/main/tools/workbenchToolScope', () => ({
+vi.mock('../../../src/host/tools/workbenchToolScope', () => ({
   filterToolDefinitionsByWorkbenchScope: vi.fn((tools) => tools),
 }));
 
-vi.mock('../../../src/main/session/streamSnapshot', () => ({
+vi.mock('../../../src/host/session/streamSnapshot', () => ({
   createSnapshotHandler: vi.fn().mockReturnValue(vi.fn()),
 }));
 
-vi.mock('../../../src/main/context/tokenOptimizer', () => ({
+vi.mock('../../../src/host/context/tokenOptimizer', () => ({
   estimateModelMessageTokens: vi.fn().mockReturnValue(12),
   estimateTokens: vi.fn().mockReturnValue(5),
 }));
 
-vi.mock('../../../src/main/model/modelRouter', () => ({
+vi.mock('../../../src/host/model/modelRouter', () => ({
   ContextLengthExceededError: class ContextLengthExceededError extends Error {
     requestedTokens = 0;
     maxTokens = 0;
@@ -78,7 +78,7 @@ vi.mock('../../../src/main/model/modelRouter', () => ({
   },
 }));
 
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   needsArtifactTaskBrief: vi.fn((message: string) => /生成|html|game|write|create|build/i.test(message)),
 }));
 

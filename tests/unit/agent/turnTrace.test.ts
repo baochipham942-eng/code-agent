@@ -8,11 +8,11 @@ import os from 'os';
 
 const traceRoot = path.join(os.tmpdir(), `turntrace-test-${Date.now()}`);
 
-vi.mock('../../../src/main/platform/appPaths', () => ({
+vi.mock('../../../src/host/platform/appPaths', () => ({
   getPath: () => traceRoot,
 }));
 
-import { TurnTraceRecorder } from '../../../src/main/agent/runtime/turnTrace';
+import { TurnTraceRecorder } from '../../../src/host/agent/runtime/turnTrace';
 
 describe('TurnTraceRecorder', () => {
   afterEach(() => {

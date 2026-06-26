@@ -13,7 +13,7 @@ import type {
   CommandResult,
 } from '../types';
 
-// 与 src/main/diagnostics/types.ts 对齐的轻量副本，避免 shared 引用 main
+// 与 src/host/diagnostics/types.ts 对齐的轻量副本，避免 shared 引用 main
 type DoctorCategory =
   | 'environment'
   | 'database'

@@ -24,13 +24,13 @@ const state = vi.hoisted(() => ({
   sessionStatus: 'idle' as string,
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   broadcastToRenderer: (channel: string, data: unknown) => {
     state.broadcasts.push({ channel, data });
   },
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getDb: () => ({
       prepare: (sql: string) => ({
@@ -87,7 +87,7 @@ vi.mock('../../../src/main/services/core/databaseService', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/sessionManager', () => ({
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     addMessageToSession: vi.fn(async (sessionId: string, message: unknown) => {
       state.messages.push({ sessionId, message });
@@ -95,11 +95,11 @@ vi.mock('../../../src/main/services/infra/sessionManager', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/task', () => ({
+vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
     getSessionState: () => ({ status: state.sessionStatus }),
     startTask: async (
@@ -125,7 +125,7 @@ vi.mock('../../../src/main/task', () => ({
   }),
 }));
 
-import { SessionAutomationService } from '../../../src/main/services/sessionAutomation/sessionAutomationService';
+import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 
 describe('SessionAutomationService', () => {
   beforeEach(() => {

@@ -7,7 +7,7 @@ import {
   getDefaultAutoDownloadRepos,
   getDefaultEnabledSkills,
   isRecommendedSkillAutoDownloadAllowed,
-} from '../../../../src/main/services/skills/skillRepositories';
+} from '../../../../src/host/services/skills/skillRepositories';
 
 describe('skill repository trust defaults', () => {
   it('does not auto-download remote recommended repositories by default', () => {

@@ -3,7 +3,7 @@ import type {
   ToolContext,
   CanUseToolFn,
   Logger,
-} from '../../../../../src/main/protocol/tools';
+} from '../../../../../src/host/protocol/tools';
 
 const clipboardMock = vi.hoisted(() => ({
   availableFormats: vi.fn<() => string[]>(),
@@ -16,11 +16,11 @@ const clipboardMock = vi.hoisted(() => ({
   }>(),
 }));
 
-vi.mock('../../../../../src/main/platform', () => ({
+vi.mock('../../../../../src/host/platform', () => ({
   clipboard: clipboardMock,
 }));
 
-import { readClipboardModule } from '../../../../../src/main/tools/modules/file/readClipboard';
+import { readClipboardModule } from '../../../../../src/host/tools/modules/file/readClipboard';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

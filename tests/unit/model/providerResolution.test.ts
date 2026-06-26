@@ -15,13 +15,13 @@ import { MODEL_API_ENDPOINTS } from '../../../src/shared/constants';
 import {
   resolveProviderBaseUrl,
   resolveProviderApiKey,
-} from '../../../src/main/model/providers/providerResolution';
+} from '../../../src/host/model/providers/providerResolution';
 
 // configService 单例：adapter 模式（trustConfigKey:false）会查它，受控返回。
 // getSettings：动态 custom provider 的 baseUrl 兜底来源（settings.models.providers[id].baseUrl）。
 const mockGetApiKey = vi.fn<(provider: string) => string | undefined>();
 const mockGetSettings = vi.fn<() => unknown>();
-vi.mock('../../../src/main/services/core/configService', () => ({
+vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
 }));
 

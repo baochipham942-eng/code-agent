@@ -14,13 +14,13 @@ vi.mock('fs/promises', () => ({
   stat: statMock,
 }));
 
-vi.mock('../../../../../src/main/services/desktop/computerSurface', () => ({
+vi.mock('../../../../../src/host/services/desktop/computerSurface', () => ({
   getComputerSurface: () => ({
     observe: observeMock,
   }),
 }));
 
-import { runComputerUseVisualFallback } from '../../../../../src/main/agent/runtime/browser/computerUseVisualFallback';
+import { runComputerUseVisualFallback } from '../../../../../src/host/agent/runtime/browser/computerUseVisualFallback';
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
 const originalFallbackFlag = process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;

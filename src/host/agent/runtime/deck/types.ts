@@ -1,7 +1,7 @@
 /**
  * Deck artifact verification — public interfaces.
  *
- * 镜像 src/main/agent/runtime/game/types.ts 的两层 dispatch 结构，但 deck
+ * 镜像 src/host/agent/runtime/game/types.ts 的两层 dispatch 结构，但 deck
  * 的 verb 词汇表跟 game 完全不同（game 是 runtime 动作，deck 是 structural
  * 性质），因此**不复用 game 的 VerbId / VerbDeclaration / PredicateExpr**。
  *

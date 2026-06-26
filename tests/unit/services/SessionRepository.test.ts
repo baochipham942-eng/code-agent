@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock logger
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
     debug: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 // But the global setup.ts mocks it. We'll create our own mock DB that
 // properly simulates SQL behavior for the scenarios we need to test.
 
-import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 
 type TransactionFn = (...args: unknown[]) => unknown;
 

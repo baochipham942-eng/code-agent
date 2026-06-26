@@ -41,14 +41,14 @@ const diagnosticsState = vi.hoisted(() => ({
   } as DesktopShellDiagnostics,
 }));
 
-vi.mock('../../../src/main/diagnostics/desktopShellDiagnostics', () => ({
+vi.mock('../../../src/host/diagnostics/desktopShellDiagnostics', () => ({
   getDesktopShellDiagnostics: async () => {
     diagnosticsState.calls += 1;
     return diagnosticsState.diagnostics;
   },
 }));
 
-import { registerDiagnosticsHandlers } from '../../../src/main/ipc/diagnostics.ipc';
+import { registerDiagnosticsHandlers } from '../../../src/host/ipc/diagnostics.ipc';
 
 function captureHandler() {
   let handler: ((e: unknown, req: IPCRequest) => Promise<IPCResponse>) | null = null;

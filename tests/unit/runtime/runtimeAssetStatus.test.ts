@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { getRuntimeAssetsStatus } from '../../../src/main/runtime/runtimeAssetStatus';
+import { getRuntimeAssetsStatus } from '../../../src/host/runtime/runtimeAssetStatus';
 
 const tempRoots: string[] = [];
 

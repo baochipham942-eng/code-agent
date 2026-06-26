@@ -4,7 +4,7 @@ import type { ControlPlaneEnvelope } from '../../../src/shared/contract/controlP
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
-} from '../../../src/main/services/cloud/controlPlaneTrust';
+} from '../../../src/host/services/cloud/controlPlaneTrust';
 import {
   RuntimeAssetsPublishVerificationError,
   verifyRuntimeAssetsPublish,

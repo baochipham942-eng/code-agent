@@ -1,4 +1,4 @@
-import { remindersConnector } from '../../src/main/connectors/native/reminders.ts';
+import { remindersConnector } from '../../src/host/connectors/native/reminders.ts';
 import {
   finishWithError,
   getBooleanOption,

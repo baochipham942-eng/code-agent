@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolContext } from '../../../../src/main/tools/types';
+import type { ToolContext } from '../../../../src/host/tools/types';
 
 const surfaceMocks = vi.hoisted(() => {
   const state = {
@@ -222,7 +222,7 @@ const childProcessMocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('../../../../src/main/services/desktop/computerSurface', () => ({
+vi.mock('../../../../src/host/services/desktop/computerSurface', () => ({
   getComputerSurface: () => surfaceMocks.surface,
 }));
 
@@ -230,11 +230,11 @@ vi.mock('child_process', () => ({
   execFile: childProcessMocks.execFile,
 }));
 
-vi.mock('../../../../src/main/services/cloud/featureFlagService', () => ({
+vi.mock('../../../../src/host/services/cloud/featureFlagService', () => ({
   isComputerUseEnabled: () => true,
 }));
 
-import { computerUseTool } from '../../../../src/main/tools/vision/computerUse';
+import { computerUseTool } from '../../../../src/host/tools/vision/computerUse';
 
 const originalPlatform = process.platform;
 

@@ -256,7 +256,7 @@ const ATTACHMENT_HANDLING_RULES = `
 - 可以使用 offset 和 limit 参数分段读取超大文件
 `;
 
-// Prompt building logic lives in src/main/prompts/builder.
+// Prompt building logic lives in src/host/prompts/builder.
 
 // ----------------------------------------------------------------------------
 // Skills

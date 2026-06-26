@@ -8,19 +8,19 @@ const sourceMocks = vi.hoisted(() => ({
   onPtySessionLifecycleEvent: vi.fn(() => () => {}),
 }));
 
-vi.mock('../../../src/main/tools/modules/shell/backgroundTaskSources', () => ({
+vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', () => ({
   getAllBackgroundTasks: sourceMocks.getAllBackgroundTasks,
   getAllPtySessions: sourceMocks.getAllPtySessions,
   onBackgroundTaskLifecycleEvent: sourceMocks.onBackgroundTaskLifecycleEvent,
   onPtySessionLifecycleEvent: sourceMocks.onPtySessionLifecycleEvent,
 }));
 
-import { registerBackgroundTaskLedgerHandlers } from '../../../src/main/ipc/backgroundTaskLedger.ipc';
+import { registerBackgroundTaskLedgerHandlers } from '../../../src/host/ipc/backgroundTaskLedger.ipc';
 import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
-} from '../../../src/main/tasks/backgroundTaskLedger';
-import { resetBackgroundTaskEventAdaptersForTest } from '../../../src/main/tasks/backgroundTaskSnapshotAdapters';
+} from '../../../src/host/tasks/backgroundTaskLedger';
+import { resetBackgroundTaskEventAdaptersForTest } from '../../../src/host/tasks/backgroundTaskSnapshotAdapters';
 
 type DomainHandler = (_: unknown, request: unknown) => Promise<IPCResponse>;
 

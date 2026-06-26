@@ -14,13 +14,13 @@ vi.mock('child_process', () => ({
   execFile: execFileMock,
 }));
 
-vi.mock('../../../../src/main/services/core/configService', () => ({
+vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: getConfigServiceMock,
 }));
 
-vi.mock('../../../../src/main/services/speech/whisperCppTranscriber', async () => {
-  const actual = await vi.importActual<typeof import('../../../../src/main/services/speech/whisperCppTranscriber')>(
-    '../../../../src/main/services/speech/whisperCppTranscriber',
+vi.mock('../../../../src/host/services/speech/whisperCppTranscriber', async () => {
+  const actual = await vi.importActual<typeof import('../../../../src/host/services/speech/whisperCppTranscriber')>(
+    '../../../../src/host/services/speech/whisperCppTranscriber',
   );
   return {
     ...actual,
@@ -42,11 +42,11 @@ vi.mock('groq-sdk', () => ({
 
 import {
   LocalSpeechTranscriptionError,
-} from '../../../../src/main/services/speech/whisperCppTranscriber';
+} from '../../../../src/host/services/speech/whisperCppTranscriber';
 import {
   clearRetainedSpeechAudio,
   SpeechTranscriptionService,
-} from '../../../../src/main/services/speech/speechTranscriptionService';
+} from '../../../../src/host/services/speech/speechTranscriptionService';
 
 function makeAudioData(size = 2048): string {
   return Buffer.alloc(size, 1).toString('base64');

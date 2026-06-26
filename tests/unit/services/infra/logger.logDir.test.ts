@@ -38,7 +38,7 @@ describe('logger file sink log directory', () => {
   });
 
   it('uses CODE_AGENT_LOG_DIR for local runtime logs', async () => {
-    const { createLogger, getCurrentLogFilePath } = await import('../../../../src/main/services/infra/logger');
+    const { createLogger, getCurrentLogFilePath } = await import('../../../../src/host/services/infra/logger');
     const logger = createLogger('LoggerLogDirTest');
     const logFile = getCurrentLogFilePath();
 

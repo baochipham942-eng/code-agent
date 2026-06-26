@@ -2,7 +2,7 @@
 // Diff IPC Handlers
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { createLogger } from '../services/infra/logger';
@@ -10,7 +10,7 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('DiffIPC');
 
 export function registerDiffHandlers(): void {
-  ipcMain.handle(IPC_DOMAINS.DIFF, async (_event, request: IPCRequest) => {
+  ipcHost.handle(IPC_DOMAINS.DIFF, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
     const tracker = getDiffTracker();
 

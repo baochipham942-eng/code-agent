@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // 用户把「我的品牌」（色板/字体/气质 + Keep/Change/Do-not-copy）固化成一份可复用
 // 契约，强制注入每一次设计生成。本文件只含纯逻辑（无 fs/IPC），可单测；
-// registry 读写在 src/main/services/design/brandRegistry.ts。
+// registry 读写在 src/host/services/design/brandRegistry.ts。
 //
 // tokens 复用现有 DirectionTokens 形状（palette+fonts+posture+refs），从而能直接
 // hydrate 进 brief.directionTokens，复用现成三处注入/护栏（workbenchTurnContext /

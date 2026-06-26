@@ -11,7 +11,7 @@ const svc = vi.hoisted(() => ({
   read: vi.fn(),
   update: vi.fn(),
 }));
-vi.mock('../../../src/main/services/design/designSettings', () => ({
+vi.mock('../../../src/host/services/design/designSettings', () => ({
   readDesignSettings: svc.read,
   updateDesignSettings: svc.update,
 }));
@@ -19,7 +19,7 @@ vi.mock('../../../src/main/services/design/designSettings', () => ({
 import {
   handleGetDesignSettings,
   handleUpdateDesignSettings,
-} from '../../../src/main/ipc/workspace.ipc';
+} from '../../../src/host/ipc/workspace.ipc';
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -11,7 +11,7 @@ import {
   groupRecommendedMcpServersByCategory,
   mergeMcpCatalogWithBuiltinOfficialFeatured,
 } from '../../../../src/shared/constants/mcpCatalog';
-import { getBuiltinConfig } from '../../../../src/main/services/cloud/builtinConfig';
+import { getBuiltinConfig } from '../../../../src/host/services/cloud/builtinConfig';
 import { getEntryAction } from '../../../../src/renderer/components/features/settings/tabs/McpDiscoverTab';
 
 describe('recommended MCP catalog integrity', () => {

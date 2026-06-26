@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import os from 'os';
 import path from 'path';
-import { ContextEventLedger } from '../../../src/main/context/contextEventLedger';
-import { CompressionState } from '../../../src/main/context/compressionState';
+import { ContextEventLedger } from '../../../src/host/context/contextEventLedger';
+import { CompressionState } from '../../../src/host/context/compressionState';
 
 describe('ContextEventLedger', () => {
   let tempDir: string;

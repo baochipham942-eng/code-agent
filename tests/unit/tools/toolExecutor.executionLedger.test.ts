@@ -12,19 +12,19 @@ const ledgerState = vi.hoisted(() => ({
   throwOnGet: false,
 }));
 
-vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,
   }),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-vi.mock('../../../src/main/services/core/databaseService', () => ({
+vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => {
     if (ledgerState.throwOnGet) throw new Error('db boom');
     return {
@@ -35,8 +35,8 @@ vi.mock('../../../src/main/services/core/databaseService', () => ({
   },
 }));
 
-import { resetDecisionHistory } from '../../../src/main/security/decisionHistory';
-import { ToolExecutor } from '../../../src/main/tools/toolExecutor';
+import { resetDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 function readDef() {
   return {

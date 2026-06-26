@@ -3,10 +3,10 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
-import { buildChildContext, type ParentContext, type ChildContextConfig } from '../../../src/main/agent/childContext';
+import { buildChildContext, type ParentContext, type ChildContextConfig } from '../../../src/host/agent/childContext';
 
 // Mock buildProfilePrompt to avoid heavy prompt-building side-effects
-vi.mock('../../../src/main/prompts/builder', () => ({
+vi.mock('../../../src/host/prompts/builder', () => ({
   buildProfilePrompt: vi.fn((profile: string, ctx: Record<string, unknown>) => {
     return `[profile:${profile}] rules=${JSON.stringify(ctx.rules)} memory=${JSON.stringify(ctx.memory)} mode=${ctx.mode ?? ''}`;
   }),

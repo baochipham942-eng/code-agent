@@ -4,11 +4,11 @@ import {
   guardSensitiveText,
   guardSensitiveTextAsync,
   guardSensitiveValue,
-} from '../../../src/main/security/sensitiveDataGuard';
+} from '../../../src/host/security/sensitiveDataGuard';
 import {
   getPiiEntityDetectorConfig,
   setPiiEntityDetectorForTesting,
-} from '../../../src/main/security/piiEntityDetector';
+} from '../../../src/host/security/piiEntityDetector';
 
 describe('Sensitive Data Guard', () => {
   afterEach(() => {

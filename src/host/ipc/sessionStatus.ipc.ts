@@ -2,7 +2,7 @@
 // Session Status IPC Handlers - 会话状态 IPC 处理
 // ============================================================================
 
-import { ipcMain } from '../platform';
+import { ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { createLogger } from '../services/infra/logger';
@@ -16,7 +16,7 @@ export function registerSessionStatusHandlers(): void {
   const sessionStateManager = getSessionStateManager();
 
   // 获取指定会话的运行状态
-  ipcMain.handle(IPC_CHANNELS.SESSION_STATUS_GET, async (_event, sessionId: string) => {
+  ipcHost.handle(IPC_CHANNELS.SESSION_STATUS_GET, async (_event, sessionId: string) => {
     try {
       const summary = sessionStateManager.getSummary(sessionId);
       return summary;
@@ -27,7 +27,7 @@ export function registerSessionStatusHandlers(): void {
   });
 
   // 获取所有会话的运行状态
-  ipcMain.handle(IPC_CHANNELS.SESSION_STATUS_GET_ALL, async () => {
+  ipcHost.handle(IPC_CHANNELS.SESSION_STATUS_GET_ALL, async () => {
     try {
       const summaries = sessionStateManager.getAllSummariesArray();
       return summaries;

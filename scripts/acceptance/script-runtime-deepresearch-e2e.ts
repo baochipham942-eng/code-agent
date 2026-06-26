@@ -15,8 +15,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelConfig } from '../../src/shared/contract';
-import type { ToolContext } from '../../src/main/protocol/tools';
-import { workflowModule } from '../../src/main/tools/modules/multiagent/workflow';
+import type { ToolContext } from '../../src/host/protocol/tools';
+import { workflowModule } from '../../src/host/tools/modules/multiagent/workflow';
 
 // ── 1. 从 ~/.code-agent/.env 读 xiaomi 凭证（standalone 无 configService）────────
 function loadEnv(): Record<string, string> {

@@ -3,13 +3,13 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { createRequire } from 'module';
 import { describe, expect, it, vi } from 'vitest';
-import { executeDesignMode } from '../../../../../../src/main/tools/media/ppt/designMode';
-import { getThemeConfig } from '../../../../../../src/main/tools/media/ppt/themes';
+import { executeDesignMode } from '../../../../../../src/host/tools/media/ppt/designMode';
+import { getThemeConfig } from '../../../../../../src/host/tools/media/ppt/themes';
 
 const require = createRequire(import.meta.url);
 
-vi.mock('../../../../../../src/main/tools/media/ppt/designExecutor', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../../../src/main/tools/media/ppt/designExecutor')>();
+vi.mock('../../../../../../src/host/tools/media/ppt/designExecutor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../../src/host/tools/media/ppt/designExecutor')>();
 
   return {
     ...actual,

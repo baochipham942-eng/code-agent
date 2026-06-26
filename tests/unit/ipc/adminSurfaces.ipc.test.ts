@@ -13,43 +13,43 @@ const mocks = vi.hoisted(() => ({
   listMarketplaces: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/auth', () => ({
+vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
   }),
 }));
 
-vi.mock('../../../src/main/services/capabilities/capabilityCenterService', () => ({
+vi.mock('../../../src/host/services/capabilities/capabilityCenterService', () => ({
   getCapabilityCenterService: () => mocks.capabilityService,
 }));
 
-vi.mock('../../../src/main/hooks/configParser', () => ({
+vi.mock('../../../src/host/hooks/configParser', () => ({
   loadAllHooksConfig: mocks.loadAllHooksConfig,
   getHooksConfigPaths: vi.fn(() => ({ global: [], project: [] })),
 }));
 
-vi.mock('../../../src/main/hooks/merger', () => ({
+vi.mock('../../../src/host/hooks/merger', () => ({
   mergeHooks: vi.fn(() => []),
 }));
 
-vi.mock('../../../src/main/protocol/events', () => ({
+vi.mock('../../../src/host/protocol/events', () => ({
   HOOK_EVENT_DESCRIPTIONS: {
     Stop: 'Stop',
   },
 }));
 
-vi.mock('../../../src/main/platform', () => ({
+vi.mock('../../../src/host/platform', () => ({
   shell: {
     openPath: vi.fn(),
     showItemInFolder: vi.fn(),
   },
 }));
 
-vi.mock('../../../src/main/config/configPaths', () => ({
+vi.mock('../../../src/host/config/configPaths', () => ({
   CONFIG_DIR_NEW: '.code-agent',
 }));
 
-vi.mock('../../../src/main/skills/marketplace', () => ({
+vi.mock('../../../src/host/skills/marketplace', () => ({
   listMarketplaces: mocks.listMarketplaces,
   addMarketplace: vi.fn(),
   removeMarketplace: vi.fn(),
@@ -64,7 +64,7 @@ vi.mock('../../../src/main/skills/marketplace', () => ({
   disablePlugin: vi.fn(),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -73,7 +73,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/mcp/mcpClient', () => ({
+vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getStatus: vi.fn(),
     getTools: vi.fn(),
@@ -87,21 +87,21 @@ vi.mock('../../../src/main/mcp/mcpClient', () => ({
   refreshMCPServersFromCloud: vi.fn(),
 }));
 
-vi.mock('../../../src/main/context/contextHealthService', () => ({
+vi.mock('../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: () => ({
     clearMcpServerAcrossSessions: vi.fn(),
   }),
 }));
 
-vi.mock('../../../src/main/config', () => ({
+vi.mock('../../../src/host/config', () => ({
   getMcpConfigPath: vi.fn(),
   ensureConfigDir: vi.fn(),
   pathExists: vi.fn(),
 }));
 
-import { registerCapabilityHandlers } from '../../../src/main/ipc/capability.ipc';
-import { registerHookHandlers } from '../../../src/main/ipc/hook.ipc';
-import { registerMarketplaceHandlers } from '../../../src/main/ipc/marketplace.ipc';
+import { registerCapabilityHandlers } from '../../../src/host/ipc/capability.ipc';
+import { registerHookHandlers } from '../../../src/host/ipc/hook.ipc';
+import { registerMarketplaceHandlers } from '../../../src/host/ipc/marketplace.ipc';
 
 type HandlerFn = (_: unknown, request?: IPCRequest, ...args: unknown[]) => Promise<unknown>;
 

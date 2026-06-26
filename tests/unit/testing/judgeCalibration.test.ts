@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { computeCalibration, type CalibrationPair } from '../../../src/main/testing/calibration/judgeCalibration';
+import { computeCalibration, type CalibrationPair } from '../../../src/host/testing/calibration/judgeCalibration';
 
 // 构造一组 judge 与金标的配对，命中已知的混淆矩阵：TP=4, TN=3, FP=2, FN=1
 function fixedPairs(): CalibrationPair[] {

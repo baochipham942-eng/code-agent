@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
-import { imagesToPptx } from '../../../../src/main/services/design/pptxExport';
+import { imagesToPptx } from '../../../../src/host/services/design/pptxExport';
 
 async function smallPng(color: { r: number; g: number; b: number }): Promise<Buffer> {
   return sharp({

@@ -5,8 +5,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
-import { runAssertions } from '../../../src/main/testing/assertionEngine';
-import type { TestExpectations, ToolExecutionRecord } from '../../../src/main/testing/types';
+import { runAssertions } from '../../../src/host/testing/assertionEngine';
+import type { TestExpectations, ToolExecutionRecord } from '../../../src/host/testing/types';
 
 // ---- Helper: 构造最小 ToolExecutionRecord ----
 function makeTool(overrides: Partial<ToolExecutionRecord> = {}): ToolExecutionRecord {

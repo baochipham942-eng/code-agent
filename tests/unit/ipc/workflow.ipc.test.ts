@@ -24,30 +24,30 @@ const eventBusState = vi.hoisted(() => ({
   subscribe: vi.fn(),
 }));
 
-vi.mock('../../../src/main/platform', () => ({
-  BrowserWindow: {
+vi.mock('../../../src/host/platform', () => ({
+  AppWindow: {
     getAllWindows: () => [],
   },
-  ipcMain: {
+  ipcHost: {
     handle: (channel: string, handler: (event: unknown, payload?: unknown) => unknown) => {
       platformState.handlers.set(channel, handler);
     },
   },
 }));
 
-vi.mock('../../../src/main/services/eventing/bus', () => ({
+vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => eventBusState,
 }));
 
-vi.mock('../../../src/main/agent/workflowLaunchApproval', () => ({
+vi.mock('../../../src/host/agent/workflowLaunchApproval', () => ({
   getWorkflowLaunchApprovalGate: () => workflowLaunchApprovalState,
 }));
 
-vi.mock('../../../src/main/agent/scriptRuntime', () => ({
+vi.mock('../../../src/host/agent/scriptRuntime', () => ({
   cancelRun: (...args: unknown[]) => scriptRuntimeState.cancelRun(...args),
 }));
 
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     warn: vi.fn(),
@@ -56,7 +56,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { registerWorkflowHandlers } from '../../../src/main/ipc/workflow.ipc';
+import { registerWorkflowHandlers } from '../../../src/host/ipc/workflow.ipc';
 
 describe('workflow.ipc', () => {
   beforeEach(() => {

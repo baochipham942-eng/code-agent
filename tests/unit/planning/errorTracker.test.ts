@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { ErrorTracker } from '../../../src/main/planning/errorTracker';
-import { CONFIG_DIR_NEW } from '../../../src/main/config/configPaths';
-import type { PlanningConfig } from '../../../src/main/planning/types';
+import { ErrorTracker } from '../../../src/host/planning/errorTracker';
+import { CONFIG_DIR_NEW } from '../../../src/host/config/configPaths';
+import type { PlanningConfig } from '../../../src/host/planning/types';
 
 let workingDirectory: string;
 const SESSION_ID = 'sess-err';

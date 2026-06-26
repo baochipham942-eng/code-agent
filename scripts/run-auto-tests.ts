@@ -257,7 +257,7 @@ async function main(): Promise<void> {
 
   // Mock mode: run directly via tsx (no CJS bundling needed)
   try {
-    const testing = await import('../src/main/testing/index.js');
+    const testing = await import('../src/host/testing/index.js');
 
     const workingDirectory = projectRoot;
     const config = testing.createDefaultConfig(workingDirectory, {

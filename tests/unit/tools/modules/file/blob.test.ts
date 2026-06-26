@@ -6,8 +6,8 @@ import type {
   CanUseToolFn,
   Logger,
   ToolContext,
-} from '../../../../../src/main/protocol/tools';
-import { blobModule } from '../../../../../src/main/tools/modules/file/blob';
+} from '../../../../../src/host/protocol/tools';
+import { blobModule } from '../../../../../src/host/tools/modules/file/blob';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

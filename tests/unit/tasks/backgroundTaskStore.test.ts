@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 
 import Database from 'better-sqlite3';
-import { BackgroundTaskLedger } from '../../../src/main/tasks/backgroundTaskLedger';
-import { SqliteBackgroundTaskStore } from '../../../src/main/tasks/backgroundTaskStore';
+import { BackgroundTaskLedger } from '../../../src/host/tasks/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../../../src/host/tasks/backgroundTaskStore';
 
 describe('SqliteBackgroundTaskStore', () => {
   let tempDir: string | null = null;

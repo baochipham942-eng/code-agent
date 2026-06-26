@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-import { applySchema } from '../../../src/main/services/core/database/schema';
-import { PermissionDecisionRepository } from '../../../src/main/services/core/repositories/PermissionDecisionRepository';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
 import type { DecisionTrace } from '../../../src/shared/contract/decisionTrace';
 
 function createLogger() {

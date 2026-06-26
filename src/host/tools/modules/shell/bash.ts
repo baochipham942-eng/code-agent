@@ -1,7 +1,7 @@
 // ============================================================================
 // Bash (P0-6.3 Batch 2a — shell: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/shell/bash.ts (legacy Tool + wrapLegacyTool)
+// 旧版: src/host/tools/shell/bash.ts (legacy Tool + wrapLegacyTool)
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件

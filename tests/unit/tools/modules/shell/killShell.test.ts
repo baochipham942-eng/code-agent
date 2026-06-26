@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/main/protocol/tools';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 
 const {
   killBackgroundTaskMock,
@@ -13,14 +13,14 @@ const {
   getBackgroundTaskMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/main/tools/shell/backgroundTasks', () => ({
+vi.mock('../../../../../src/host/tools/shell/backgroundTasks', () => ({
   killBackgroundTask: (...args: unknown[]) => killBackgroundTaskMock(...args),
   isTaskId: (...args: unknown[]) => isTaskIdMock(...args),
   getAllBackgroundTasks: (...args: unknown[]) => getAllBackgroundTasksMock(...args),
   getBackgroundTask: (...args: unknown[]) => getBackgroundTaskMock(...args),
 }));
 
-import { killShellModule } from '../../../../../src/main/tools/modules/shell/killShell';
+import { killShellModule } from '../../../../../src/host/tools/modules/shell/killShell';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

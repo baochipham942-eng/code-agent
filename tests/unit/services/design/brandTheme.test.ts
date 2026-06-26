@@ -5,7 +5,7 @@ import {
   colorToHex6,
   rgbToHex6,
   themeConfigFromBrand,
-} from '../../../../src/main/services/design/brandTheme';
+} from '../../../../src/host/services/design/brandTheme';
 import type { BrandContract } from '../../../../src/shared/contract/brandContract';
 
 describe('oklchToRgb / colorToHex6', () => {

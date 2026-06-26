@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock logger
-vi.mock('../../../src/main/services/infra/logger', () => ({
+vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -17,14 +17,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // Mock logCollector
-vi.mock('../../../src/main/mcp/logCollector', () => ({
+vi.mock('../../../src/host/mcp/logCollector', () => ({
   logCollector: {
     addLog: vi.fn(),
     agent: vi.fn(),
   },
 }));
 
-import { AntiPatternDetector, TOOL_ALTERNATIVES } from '../../../src/main/agent/antiPattern/detector';
+import { AntiPatternDetector, TOOL_ALTERNATIVES } from '../../../src/host/agent/antiPattern/detector';
 
 describe('AntiPatternDetector - Extended', () => {
   let detector: AntiPatternDetector;

@@ -23,7 +23,7 @@ const workspaceMocks = vi.hoisted(() => ({
   searchWorkspaceActivity: vi.fn(),
 }));
 
-vi.mock('../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../src/host/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
     ensureFreshData: desktopMocks.ensureFreshData,
     refreshRecentActivity: desktopMocks.refreshRecentActivity,
@@ -32,26 +32,26 @@ vi.mock('../../../src/main/desktop/desktopActivityUnderstandingService', () => (
   }),
 }));
 
-vi.mock('../../../src/main/desktop/desktopActivityPlanningBridge', async () => {
+vi.mock('../../../src/host/desktop/desktopActivityPlanningBridge', async () => {
   const actual = await vi.importActual<
-    typeof import('../../../src/main/desktop/desktopActivityPlanningBridge')
-  >('../../../src/main/desktop/desktopActivityPlanningBridge');
+    typeof import('../../../src/host/desktop/desktopActivityPlanningBridge')
+  >('../../../src/host/desktop/desktopActivityPlanningBridge');
   return {
     ...actual,
     syncDesktopTasksToPlanningService: planningBridgeMocks.syncDesktopTasksToPlanningService,
   };
 });
 
-vi.mock('../../../src/main/desktop/workspaceActivitySearchService', () => ({
+vi.mock('../../../src/host/desktop/workspaceActivitySearchService', () => ({
   searchWorkspaceActivity: workspaceMocks.searchWorkspaceActivity,
 }));
 
-import { createPlanningService } from '../../../src/main/planning';
+import { createPlanningService } from '../../../src/host/planning';
 import {
   buildRecoveredWorkOrchestrationHint,
   buildRecoveredWorkSuggestions,
   recoverRecentWorkIntoPlanning,
-} from '../../../src/main/planning/recoveredWorkOrchestrator';
+} from '../../../src/host/planning/recoveredWorkOrchestrator';
 
 const tempDirs: string[] = [];
 

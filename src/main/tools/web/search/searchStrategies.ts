@@ -154,18 +154,45 @@ export const SEARCH_SOURCES: SearchSource[] = [
   },
 ];
 
+/** 用户搜索源偏好（ADR-026），取自 AppSettings.search。 */
+export interface SearchSourcePrefs {
+  /** 用户禁用的搜索源 id */
+  disabledSources?: string[];
+  /** 源优先级覆盖（id 顺序，越靠前越优先） */
+  sourceOrder?: string[];
+}
+
 export function getAvailableSources(
   configService: ReturnType<typeof getConfigService>,
-  requestedSources?: string[]
+  requestedSources?: string[],
+  prefs?: SearchSourcePrefs
 ): SearchSource[] {
   let sources = SEARCH_SOURCES.filter(s => s.isAvailable(configService));
+
+  // 用户禁用的源直接剔除（ADR-026）
+  const disabled = prefs?.disabledSources;
+  if (disabled && disabled.length > 0) {
+    sources = sources.filter(s => !disabled.includes(s.name));
+  }
 
   // 如果指定了特定数据源，只使用这些
   if (requestedSources && requestedSources.length > 0) {
     sources = sources.filter(s => requestedSources.includes(s.name));
   }
 
-  // 按优先级排序
+  // 排序：用户自定义优先级在前（按 sourceOrder 顺序），未列出的随后按内置 priority
+  const order = prefs?.sourceOrder;
+  if (order && order.length > 0) {
+    const rank = new Map(order.map((id, index) => [id, index]));
+    return sources.sort((a, b) => {
+      const ra = rank.has(a.name) ? (rank.get(a.name) as number) : Number.POSITIVE_INFINITY;
+      const rb = rank.has(b.name) ? (rank.get(b.name) as number) : Number.POSITIVE_INFINITY;
+      if (ra !== rb) return ra - rb;
+      return a.priority - b.priority;
+    });
+  }
+
+  // 默认按内置优先级排序
   return sources.sort((a, b) => a.priority - b.priority);
 }
 

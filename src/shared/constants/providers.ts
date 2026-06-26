@@ -353,6 +353,38 @@ export const SEARCH_API_ENDPOINTS = {
 } as const;
 
 // ============================================================================
+// 搜索源展示元数据（ADR-026）— main 的 SEARCH_SOURCES 与 renderer 的搜索设置面板
+// 共用同一组 id，避免漂移。此处只放展示/分类元数据，不含 key/endpoint/执行逻辑。
+// ============================================================================
+
+export interface SearchSourceCatalogEntry {
+  /** 源 id，须与 main SEARCH_SOURCES[].name 一致 */
+  id: string;
+  /** 展示名 */
+  label: string;
+  /** 一行说明（中文） */
+  description: string;
+  /** 是否需要用户配置 API key（premium 源） */
+  requiresKey: boolean;
+  /** premium 源对应的 ServiceApiKey（用于查 key 状态）；infra 源为 null */
+  serviceKey: 'perplexity' | 'openai' | 'exa' | 'tavily' | 'brave' | null;
+  /** 分类：infra=默认基础设施源（免 key），premium=付费/需 key 源 */
+  kind: 'infra' | 'premium';
+  /** 内置默认优先级（数字越小越优先），与 main SEARCH_SOURCES 对齐 */
+  defaultPriority: number;
+}
+
+export const SEARCH_SOURCE_CATALOG: SearchSourceCatalogEntry[] = [
+  { id: 'firecrawl', label: 'Firecrawl', description: '默认网页数据层，免 key 搜索 / 抓取，正文提取强', requiresKey: false, serviceKey: null, kind: 'infra', defaultPriority: 1 },
+  { id: 'cloud', label: '云端搜索', description: '桌面端云代理搜索（内置基础设施，免配置）', requiresKey: false, serviceKey: null, kind: 'infra', defaultPriority: 2 },
+  { id: 'perplexity', label: 'Perplexity', description: 'AI 摘要 + 引文，中文查询友好', requiresKey: true, serviceKey: 'perplexity', kind: 'premium', defaultPriority: 3 },
+  { id: 'openai', label: 'OpenAI', description: '模型原生 web_search 工具，零额外厂商兜底', requiresKey: true, serviceKey: 'openai', kind: 'premium', defaultPriority: 4 },
+  { id: 'exa', label: 'Exa', description: '语义搜索，擅长技术 / 学术内容', requiresKey: true, serviceKey: 'exa', kind: 'premium', defaultPriority: 5 },
+  { id: 'tavily', label: 'Tavily', description: '结构化提取 + AI 答案，可靠兜底（支持多 key 轮转）', requiresKey: true, serviceKey: 'tavily', kind: 'premium', defaultPriority: 6 },
+  { id: 'brave', label: 'Brave', description: '实时新闻 / 社交，覆盖广（免费档限流）', requiresKey: true, serviceKey: 'brave', kind: 'premium', defaultPriority: 7 },
+];
+
+// ============================================================================
 // Provider Fallback Chain — 跨 Provider 降级（429/瞬态错误时自动切换）
 // ============================================================================
 

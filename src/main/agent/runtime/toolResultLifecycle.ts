@@ -108,7 +108,8 @@ function recordVerificationEvidenceIfApplicable(
   if (!isBashToolName(toolCall.name)) return;
   const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command : '';
   if (!command || !isVerificationCommand(command)) return;
-  ctx.nudgeManager.recordVerification(success);
+  // 可选调用：真实 NudgeManager 必有此方法；旧测试用精简 mock 时安全跳过，不污染工具结果。
+  ctx.nudgeManager?.recordVerification?.(success);
 }
 
 type HandleToolResultBookkeepingArgs = {
@@ -264,7 +265,8 @@ export function handleToolResultBookkeeping({
     }
 
     // #5 成功写 storm：反复成功写同一文件、内容仅"略变"的隐性空转
-    const writeStormWarning = ctx.antiPatternDetector.trackSuccessfulWrite(toolCall);
+    // 可选调用：真实 AntiPatternDetector 必有此方法；旧测试用精简 mock 时安全跳过。
+    const writeStormWarning = ctx.antiPatternDetector.trackSuccessfulWrite?.(toolCall);
     if (writeStormWarning) {
       contextAssembly.injectSystemMessage(writeStormWarning);
     }

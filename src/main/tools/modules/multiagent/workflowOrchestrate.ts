@@ -30,6 +30,7 @@ import { executeWorkflowOrchestrate as executeWorkflowOrchestrateLegacy } from '
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { workflowOrchestrateSchema as schema } from './workflowOrchestrate.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { AgentFailureCode } from '../../../../shared/contract/agentFailure';
 
 class WorkflowOrchestrateHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,16 +42,27 @@ class WorkflowOrchestrateHandler implements ToolHandler<Record<string, unknown>,
   ): Promise<ToolResult<string>> {
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
-      return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+      return {
+        ok: false,
+        error: `permission denied: ${permit.reason}`,
+        code: 'PERMISSION_DENIED',
+        meta: { failureCode: AgentFailureCode.PermissionDenied },
+      };
     }
     if (ctx.abortSignal.aborted) {
-      return { ok: false, error: 'aborted', code: 'ABORTED' };
+      return {
+        ok: false,
+        error: 'aborted',
+        code: 'ABORTED',
+        meta: { failureCode: AgentFailureCode.CancelledByUser },
+      };
     }
     if (!ctx.modelConfig) {
       return {
         ok: false,
         error: 'workflow_orchestrate requires modelConfig in context',
         code: 'NOT_INITIALIZED',
+        meta: { failureCode: AgentFailureCode.ModelError },
       };
     }
 

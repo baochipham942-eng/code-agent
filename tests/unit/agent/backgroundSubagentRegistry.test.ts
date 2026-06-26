@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundSubagentRegistry } from '../../../src/main/agent/backgroundSubagentRegistry';
 import type { SubagentResult } from '../../../src/main/agent/subagentExecutorTypes';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -48,6 +49,24 @@ describe('BackgroundSubagentRegistry', () => {
     const status = reg.getStatus(agentId);
     expect(status?.status).toBe('failed');
     expect(status?.error).toContain('boom');
+    expect(status?.failureCode).toBe(AgentFailureCode.Unknown);
+  });
+
+  it('marks failed result payloads as failed and keeps their unified failure code', async () => {
+    const reg = new BackgroundSubagentRegistry();
+    const agentId = reg.spawn(async () => ({
+      success: false,
+      output: '',
+      error: 'budget exhausted',
+      toolsUsed: [],
+      iterations: 1,
+      failureCode: AgentFailureCode.BudgetExhausted,
+    }));
+
+    await reg.await(agentId);
+    const status = reg.getStatus(agentId);
+    expect(status?.status).toBe('failed');
+    expect(status?.failureCode).toBe(AgentFailureCode.BudgetExhausted);
   });
 
   it('issues distinct ids for concurrent background subagents', () => {

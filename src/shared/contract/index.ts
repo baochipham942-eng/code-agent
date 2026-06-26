@@ -29,6 +29,7 @@ export * from './planning';
 export * from './question';
 export * from './elicitation';
 export * from './agent';
+export * from './agentFailure';
 export * from './agentEngine';
 export * from './skill';
 export * from './agentSkill';

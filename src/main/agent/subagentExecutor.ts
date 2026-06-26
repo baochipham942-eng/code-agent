@@ -28,6 +28,11 @@ import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { initiateShutdown } from './shutdownProtocol';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
+import {
+  AgentFailureCode,
+  agentFailureCodeFromCancellationReason,
+  inferAgentFailureCode,
+} from '../../shared/contract/agentFailure';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
 import { getUserDataPath } from '../platform/appPaths';
 import { join as pathJoin } from 'path';
@@ -460,6 +465,7 @@ export class SubagentExecutor {
           // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
           // 编排层 routeFailureCode 据此降级（'degrade'）而非 parse error 字符串。
           cancellationReason: 'child-max-tokens',
+          failureCode: AgentFailureCode.BudgetExhausted,
         };
       }
 
@@ -571,6 +577,8 @@ export class SubagentExecutor {
             agentId: agentTask.id,
             contextSnapshot: latestContextSnapshot,
             cancellationReason,
+            failureCode: agentFailureCodeFromCancellationReason(cancellationReason)
+              ?? inferAgentFailureCode({ error: errorMsg }),
           };
         }
 

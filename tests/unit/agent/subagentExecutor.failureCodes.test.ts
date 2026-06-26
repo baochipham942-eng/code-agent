@@ -36,5 +36,9 @@ describe('subagentExecutor 结构化失败码 producer', () => {
       block,
       '初始预算耗尽返回应携带 cancellationReason: child-max-tokens',
     ).toMatch(/cancellationReason:\s*['"]child-max-tokens['"]/);
+    expect(
+      block,
+      '初始预算耗尽返回应携带统一 AgentFailureCode',
+    ).toMatch(/failureCode:\s*AgentFailureCode\.BudgetExhausted/);
   });
 });

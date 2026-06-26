@@ -39,6 +39,10 @@ import { applyEffortControls } from '../runtime/contextAssembly/effortControls';
 import { WORKFLOW_ANTI_LOOP } from '../../../shared/constants';
 import { validateAgainstSchema, type JsonSchema } from '../structuredOutput';
 import { createLogger } from '../../services/infra/logger';
+import {
+  AgentFailureCode,
+  inferAgentFailureCode,
+} from '../../../shared/contract/agentFailure';
 
 const logger = createLogger('WorkflowOrchestrate');
 export const DEFAULT_WORKFLOW_STAGE_TIMEOUT_MS = 240_000;
@@ -364,6 +368,9 @@ export async function executeWorkflowOrchestrate(
       return {
         success: false,
         error: 'workflow_orchestrate requires modelConfig in context',
+        metadata: {
+          failureCode: AgentFailureCode.ModelError,
+        },
       };
     }
 
@@ -374,6 +381,9 @@ export async function executeWorkflowOrchestrate(
         return {
           success: false,
           error: 'Custom workflow requires stages array',
+          metadata: {
+            failureCode: AgentFailureCode.ToolUnavailable,
+          },
         };
       }
       workflow = {
@@ -389,6 +399,9 @@ export async function executeWorkflowOrchestrate(
         return {
           success: false,
           error: `Unknown workflow: ${workflowName}. Available: ${availableWorkflows}`,
+          metadata: {
+            failureCode: AgentFailureCode.ToolUnavailable,
+          },
         };
       }
       workflow = builtInWorkflow;
@@ -478,6 +491,7 @@ export async function executeWorkflowOrchestrate(
               workflow: workflowName,
               workflowName: workflow.name,
               circuitBreakerTripped: true,
+              failureCode: AgentFailureCode.WorkflowStageFailed,
               stageCount: workflow.stages.length,
               completedStages: results.filter(r => r.success).length,
               failedStages: results.filter(r => !r.success).length,
@@ -491,6 +505,7 @@ export async function executeWorkflowOrchestrate(
                 toolsUsed: result.context?.toolsUsed ?? [],
                 toolPolicy: result.context?.toolPolicy,
                 error: result.error,
+                failureCode: result.failureCode,
               })),
             },
           };
@@ -532,6 +547,7 @@ ${stagesSummary}`,
           stageCount: results.length,
           completedStages: successCount,
           failedStages: failedStages.length,
+          ...(workflowError ? { failureCode: AgentFailureCode.WorkflowStageFailed } : {}),
           totalDuration,
           stages: results.map((result) => ({
             name: result.stage,
@@ -541,6 +557,7 @@ ${stagesSummary}`,
             toolsUsed: result.context?.toolsUsed ?? [],
             toolPolicy: result.context?.toolPolicy,
             error: result.error,
+            failureCode: result.failureCode,
           })),
         },
       };
@@ -551,6 +568,10 @@ ${stagesSummary}`,
         metadata: {
           workflow: workflowName,
           workflowName: workflow.name,
+          failureCode: inferAgentFailureCode({
+            error,
+            defaultCode: AgentFailureCode.WorkflowStageFailed,
+          }),
           stageCount: workflow.stages.length,
           completedStages: results.filter(r => r.success).length,
           failedStages: Math.max(1, workflow.stages.length - results.filter(r => r.success).length),
@@ -562,6 +583,7 @@ ${stagesSummary}`,
             toolsUsed: result.context?.toolsUsed ?? [],
             toolPolicy: result.context?.toolPolicy,
             error: result.error,
+            failureCode: result.failureCode,
           })),
         },
       };
@@ -802,6 +824,7 @@ async function executeStage(
       success: false,
       output: '',
       error: `Unknown role: ${stage.role}. Use predefined agents or legacy roles.`,
+      failureCode: AgentFailureCode.ToolUnavailable,
       duration: 0,
     };
   }
@@ -828,6 +851,7 @@ async function executeStage(
       success: false,
       output: '',
       error: toolPolicyResult.error ?? 'Failed to resolve stage tool policy',
+      failureCode: AgentFailureCode.ToolUnavailable,
       duration: Date.now() - startTime,
     };
   }
@@ -841,6 +865,7 @@ async function executeStage(
       success: false,
       output: '',
       error: stageTimeoutResult.error,
+      failureCode: AgentFailureCode.Timeout,
       duration: Date.now() - startTime,
     };
   }
@@ -999,6 +1024,16 @@ async function executeStage(
       success: stageSuccess,
       output: result.output,
       error: outputValidationError ?? result.error,
+      failureCode: stageSuccess
+        ? undefined
+        : outputValidationError
+          ? AgentFailureCode.WorkflowStageFailed
+          : result.failureCode
+            ?? inferAgentFailureCode({
+              cancellationReason: result.cancellationReason,
+              error: result.error,
+              defaultCode: AgentFailureCode.WorkflowStageFailed,
+            }),
       duration,
       context: stageContext,
     };
@@ -1013,6 +1048,10 @@ async function executeStage(
       success: false,
       output: '',
       error: error instanceof Error ? error.message : 'Unknown error',
+      failureCode: inferAgentFailureCode({
+        error,
+        defaultCode: AgentFailureCode.WorkflowStageFailed,
+      }),
       duration: Date.now() - startTime,
       context: {
         textOutput: '',

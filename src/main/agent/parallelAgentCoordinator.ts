@@ -45,6 +45,11 @@ import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { SubagentResult } from './subagentExecutorTypes';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
+import {
+  AgentFailureCode,
+  agentFailureCodeFromCancellationReason,
+  inferAgentFailureCode,
+} from '../../shared/contract/agentFailure';
 import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
@@ -77,6 +82,7 @@ export interface AgentTaskResult extends SubagentResult {
   duration: number;
   blocked?: boolean;
   cancelled?: boolean;
+  failureCode?: AgentFailureCode;
 }
 
 export interface ParallelExecutionResult {
@@ -258,7 +264,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
           const cancelled = this.createSkippedResult(
             task,
             `Cancelled before start (${this.cancelReason})`,
-            'cancelled'
+            'cancelled',
+            agentFailureCodeFromCancellationReason(this.cancelReason) ?? AgentFailureCode.CancelledByUser,
           );
           remaining.delete(task.id);
           results.push(cancelled);
@@ -283,7 +290,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
         const reason = missing.length > 0
           ? `Blocked by missing dependencies: ${missing.join(', ')}`
           : `Blocked by failed dependencies: ${failed.join(', ')}`;
-        const blockedResult = this.createSkippedResult(task, reason, 'blocked');
+        const blockedResult = this.createSkippedResult(
+          task,
+          reason,
+          'blocked',
+          missing.length > 0 ? AgentFailureCode.DependencyMissing : AgentFailureCode.DependencyFailed,
+        );
         remaining.delete(task.id);
         results.push(blockedResult);
         errors.push({ taskId: blockedResult.taskId, error: blockedResult.error || reason });
@@ -305,7 +317,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
         logger.warn('Circular or unsatisfied dependency detected');
         for (const task of Array.from(remaining.values())) {
           const reason = `Blocked by unsatisfied dependencies: ${(task.dependsOn || []).join(', ') || 'unknown'}`;
-          const blockedResult = this.createSkippedResult(task, reason, 'blocked');
+          const blockedResult = this.createSkippedResult(
+            task,
+            reason,
+            'blocked',
+            AgentFailureCode.DependencyFailed,
+          );
           remaining.delete(task.id);
           results.push(blockedResult);
           errors.push({ taskId: blockedResult.taskId, error: blockedResult.error || reason });
@@ -500,6 +517,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
         endTime,
         duration: endTime - startTime,
         cancelled: this.isCancellationError(result.error),
+        failureCode: result.success
+          ? undefined
+          : inferAgentFailureCode({
+              failureCode: result.failureCode,
+              cancellationReason: result.cancellationReason,
+              error: result.error,
+            }),
       };
 
       this.emit('task:complete', { taskId: task.id, result: taskResult });
@@ -534,6 +558,11 @@ export class ParallelAgentCoordinator extends EventEmitter {
         endTime,
         duration: endTime - startTime,
         cancelled: this.isCancellationError(errorMessage),
+        failureCode: inferAgentFailureCode({
+          cancellationReason: taskAbortController.signal.reason,
+          error: errorMessage,
+          defaultCode: AgentFailureCode.ModelError,
+        }),
       };
       this.completedTasks.set(task.id, failedResult);
 
@@ -799,7 +828,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private createSkippedResult(
     task: AgentTask,
     reason: string,
-    type: 'blocked' | 'cancelled'
+    type: 'blocked' | 'cancelled',
+    failureCode: AgentFailureCode,
   ): AgentTaskResult {
     const now = Date.now();
     return {
@@ -815,6 +845,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       duration: 0,
       blocked: type === 'blocked',
       cancelled: type === 'cancelled',
+      failureCode,
     };
   }
 
@@ -1003,6 +1034,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
         startTime: task.metadata.startedAt || 0,
         endTime: task.metadata.completedAt || 0,
         duration: task.metadata.duration || 0,
+        failureCode: task.status === 'completed'
+          ? undefined
+          : inferAgentFailureCode({
+              failureCode: (task.failure as { failureCode?: unknown } | undefined)?.failureCode,
+              error: task.failure?.message,
+              defaultCode: AgentFailureCode.ModelError,
+            }),
       };
 
       if (taskResult.success) {

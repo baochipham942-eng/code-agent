@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'timers/promises';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
+import { AgentFailureCode, agentFailureCodeFromCancellationReason } from '../../shared/contract/agentFailure';
 import type { AgentMessage } from './spawnGuard';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
@@ -42,6 +43,7 @@ export async function executeE2ELocalSubagent(
         iterations: 1,
         cost: 0,
         cancellationReason: reason,
+        failureCode: agentFailureCodeFromCancellationReason(reason) ?? AgentFailureCode.Unknown,
       };
     }
     await delay(Math.min(25, Math.max(1, delayMs - (Date.now() - startedAt))));
@@ -56,6 +58,7 @@ export async function executeE2ELocalSubagent(
       toolsUsed: [],
       iterations: 1,
       cost: 0,
+      failureCode: AgentFailureCode.ModelError,
     };
   }
 

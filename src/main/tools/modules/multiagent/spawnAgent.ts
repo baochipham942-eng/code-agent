@@ -37,6 +37,10 @@ import { getContextHealthService } from '../../../context/contextHealthService';
 import { estimateTokens } from '../../../context/tokenEstimator';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
+import {
+  AgentFailureCode,
+  inferAgentFailureCode,
+} from '../../../../shared/contract/agentFailure';
 
 const ROLE_ALIASES: Record<string, string> = {
   explorer: 'explore',
@@ -78,10 +82,20 @@ async function runSpawnAgent(
 ): Promise<ToolResult<string>> {
   const permit = await canUseTool(schemaName, args);
   if (!permit.allow) {
-    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+    return {
+      ok: false,
+      error: `permission denied: ${permit.reason}`,
+      code: 'PERMISSION_DENIED',
+      meta: { failureCode: AgentFailureCode.PermissionDenied },
+    };
   }
   if (ctx.abortSignal.aborted) {
-    return { ok: false, error: 'aborted', code: 'ABORTED' };
+    return {
+      ok: false,
+      error: 'aborted',
+      code: 'ABORTED',
+      meta: { failureCode: AgentFailureCode.CancelledByUser },
+    };
   }
   // Opaque service handle 早判：缺 modelConfig 直接 NOT_INITIALIZED（与 legacy
   // 内部 check_modelConfig 等价但更清晰的错误码）
@@ -90,6 +104,7 @@ async function runSpawnAgent(
       ok: false,
       error: 'spawn_agent requires modelConfig in context',
       code: 'NOT_INITIALIZED',
+      meta: { failureCode: AgentFailureCode.ModelError },
     };
   }
 
@@ -108,11 +123,18 @@ async function runSpawnAgent(
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       const bgResult = await executeSpawnAgentLegacy(normalizedArgs, bgLegacyCtx);
       const adapted = adaptLegacyResult(bgResult);
+      const failureCode = adapted.ok ? undefined : inferAgentFailureCode({
+        failureCode: bgResult.metadata?.failureCode,
+        error: adapted.error,
+        defaultCode: AgentFailureCode.ModelError,
+      });
       return {
         success: adapted.ok,
         output: adapted.ok && typeof adapted.output === 'string' ? adapted.output : '',
+        error: adapted.ok ? undefined : adapted.error,
         toolsUsed: [],
         iterations: 0,
+        ...(failureCode ? { failureCode } : {}),
       };
     });
     onProgress?.({ stage: 'completing', percent: 100 });

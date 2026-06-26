@@ -40,6 +40,11 @@ import { checkReadonlyParentRule, buildParentContextFromToolContext, type Parent
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
+import {
+  AgentFailureCode,
+  agentFailureCodeFromCancellationReason,
+  inferAgentFailureCode,
+} from '../../../shared/contract/agentFailure';
 import { isParentRunAlive } from '../orphanLiveness';
 import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
 import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../agentWorktree';
@@ -84,6 +89,9 @@ export async function executeSpawnAgent(
       return {
         success: false,
         error: 'spawn_agent requires modelConfig in context',
+        metadata: {
+          failureCode: AgentFailureCode.ModelError,
+        },
       };
     }
 
@@ -102,6 +110,7 @@ export async function executeSpawnAgent(
         metadata: {
           cancellationReason: 'depth-limit',
           failureRouting: routeFailureCode('depth-limit'),
+          failureCode: inferAgentFailureCode({ cancellationReason: 'depth-limit' }),
           childDepth,
           maxDepth,
         },
@@ -266,6 +275,7 @@ export async function executeSpawnAgent(
         metadata: {
           cancellationReason: 'child-refusal',
           failureRouting: routeFailureCode('child-refusal'),
+          failureCode: AgentFailureCode.BlockedByParentRole,
         },
       };
     }
@@ -319,6 +329,9 @@ export async function executeSpawnAgent(
           return {
             success: false,
             error: `Failed to create worktree for agent: ${errMsg}. Ensure you are in a git repository.`,
+            metadata: {
+              failureCode: AgentFailureCode.WorktreeCreateFailed,
+            },
           };
         }
       }
@@ -481,6 +494,9 @@ Stats:
               cost: result.cost,
               tokensUsed: result.tokensUsed,
               cancellationReason: result.cancellationReason,
+              failureCode: result.failureCode
+                ?? agentFailureCodeFromCancellationReason(result.cancellationReason)
+                ?? inferAgentFailureCode({ error: result.error }),
             },
           };
         }
@@ -532,6 +548,9 @@ Use wait_agent to block until done, or close_agent to cancel.`,
       return {
         success: false,
         error: `Failed to spawn agent: ${errorMsg}`,
+        metadata: {
+          failureCode: inferAgentFailureCode({ error: errorMsg, defaultCode: AgentFailureCode.ModelError }),
+        },
       };
     }
 }

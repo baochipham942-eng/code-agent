@@ -2,6 +2,7 @@
 // Workflow Types - Type-safe definitions for multi-agent workflows
 // ============================================================================
 
+import type { AgentFailureCode } from './agentFailure';
 
 // ============================================================================
 // Core Types
@@ -156,6 +157,8 @@ export interface StageResult {
   output: string;
   /** 错误信息 */
   error?: string;
+  /** 统一 agent 失败码（tool-platform P0#4） */
+  failureCode?: AgentFailureCode;
   /** 执行时间（毫秒） */
   duration: number;
   /** 结构化上下文 */

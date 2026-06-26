@@ -1,6 +1,7 @@
 import type { ModelConfig, PermissionPreset } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { CancellationReason } from '../../shared/contract/cancellation';
+import type { AgentFailureCode } from '../../shared/contract/agentFailure';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { HookManager } from '../hooks/hookManager';
@@ -61,6 +62,7 @@ export interface SubagentResult {
    * decide whether to retry, surface to UI, or treat as terminal.
    */
   cancellationReason?: CancellationReason;
+  failureCode?: AgentFailureCode;
 }
 
 export interface SubagentContext {

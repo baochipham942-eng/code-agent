@@ -79,6 +79,7 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(idx).toBeGreaterThan(-1);
     const block = source.slice(idx, idx + 900);
     expect(block).toMatch(/cancellationReason:\s*['"]depth-limit['"]/);
+    expect(block).toMatch(/failureCode:/);
     expect(block).toMatch(/childDepth/);
     expect(block).toMatch(/maxDepth/);
   });
@@ -103,6 +104,7 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(idx).toBeGreaterThan(-1);
     const block = source.slice(idx, idx + 600);
     expect(block).toMatch(/cancellationReason:\s*['"]child-refusal['"]/);
+    expect(block).toMatch(/failureCode:\s*AgentFailureCode\.BlockedByParentRole/);
   });
 
   it('spawn 时失败码带上 routeFailureCode 算出的消费策略', () => {
@@ -124,6 +126,7 @@ describe('Task 深度截断接线', () => {
     const block = source.slice(idx, idx + 900);
     expect(block).toMatch(/code:\s*['"]DOMAIN_ERROR['"]/);
     expect(block).toMatch(/cancellationReason:\s*['"]depth-limit['"]/);
+    expect(block).toMatch(/failureCode:/);
     expect(block).toMatch(/childDepth/);
     expect(block).toMatch(/maxDepth/);
   });

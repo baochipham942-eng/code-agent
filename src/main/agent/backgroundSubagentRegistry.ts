@@ -10,6 +10,7 @@
 // ============================================================================
 
 import type { SubagentResult } from './subagentExecutorTypes';
+import { inferAgentFailureCode, type AgentFailureCode } from '../../shared/contract/agentFailure';
 
 export type BackgroundSubagentStatus = 'running' | 'completed' | 'failed';
 
@@ -18,6 +19,7 @@ export interface BackgroundSubagentHandle {
   status: BackgroundSubagentStatus;
   result?: SubagentResult;
   error?: string;
+  failureCode?: AgentFailureCode;
   startedAt: number;
   finishedAt?: number;
 }
@@ -47,8 +49,16 @@ export class BackgroundSubagentRegistry {
         const result = await run();
         const entry = this.entries.get(agentId);
         if (entry) {
-          entry.status = 'completed';
+          entry.status = result.success ? 'completed' : 'failed';
           entry.result = result;
+          if (!result.success) {
+            entry.error = result.error ?? 'Subagent failed';
+            entry.failureCode = inferAgentFailureCode({
+              failureCode: result.failureCode,
+              cancellationReason: result.cancellationReason,
+              error: result.error,
+            });
+          }
           entry.finishedAt = this.now();
         }
         return result;
@@ -57,6 +67,7 @@ export class BackgroundSubagentRegistry {
         if (entry) {
           entry.status = 'failed';
           entry.error = err instanceof Error ? err.message : String(err);
+          entry.failureCode = inferAgentFailureCode({ error: err, defaultCode: undefined });
           entry.finishedAt = this.now();
         }
         return undefined;

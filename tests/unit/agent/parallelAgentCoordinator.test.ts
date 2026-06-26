@@ -69,6 +69,9 @@ vi.mock('../../../src/main/scheduler', () => {
 });
 
 import {
+  AgentFailureCode,
+} from '../../../src/shared/contract/agentFailure';
+import {
   ParallelAgentCoordinator,
   type AgentTask,
   type CoordinatorEvent,
@@ -279,6 +282,7 @@ describe('ParallelAgentCoordinator', () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].taskId).toBe('b');
       expect(result.errors[0].error).toBe('assertion failed');
+      expect(result.results.find((entry) => entry.taskId === 'b')?.failureCode).toBe(AgentFailureCode.Unknown);
     });
 
     it('上游失败时 downstream 标记 blocked 且不会启动', async () => {
@@ -314,6 +318,7 @@ describe('ParallelAgentCoordinator', () => {
       const child = result.results.find((entry) => entry.taskId === 'child');
       expect(child?.blocked).toBe(true);
       expect(child?.error).toContain('Blocked by failed dependencies: parent');
+      expect(child?.failureCode).toBe(AgentFailureCode.DependencyFailed);
     });
 
     it('aggregation 按总任务数计算 successRate，失败 agent 也进入结果结构', async () => {
@@ -403,6 +408,7 @@ describe('ParallelAgentCoordinator', () => {
       const pending = result.results.find((entry) => entry.taskId === 'b');
       expect(pending?.cancelled).toBe(true);
       expect(pending?.error).toContain('Cancelled before start');
+      expect(pending?.failureCode).toBe(AgentFailureCode.CancelledByUser);
     });
 
     it('通过 SpawnGuard tree quota 排队执行，不丢弃超额 ready task', async () => {

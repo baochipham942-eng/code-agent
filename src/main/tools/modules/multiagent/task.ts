@@ -57,6 +57,10 @@ import { getContextHealthService } from '../../../context/contextHealthService';
 import { estimateTokens } from '../../../context/tokenEstimator';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { routeFailureCode } from '../../../../shared/contract/cancellation';
+import {
+  AgentFailureCode,
+  inferAgentFailureCode,
+} from '../../../../shared/contract/agentFailure';
 
 // ----------------------------------------------------------------------------
 // 参数验证（与 legacy parseAndValidateTaskParams 对齐）
@@ -158,10 +162,20 @@ export async function executeTask(
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
-    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+    return {
+      ok: false,
+      error: `permission denied: ${permit.reason}`,
+      code: 'PERMISSION_DENIED',
+      meta: { failureCode: AgentFailureCode.PermissionDenied },
+    };
   }
   if (ctx.abortSignal.aborted) {
-    return { ok: false, error: 'aborted', code: 'ABORTED' };
+    return {
+      ok: false,
+      error: 'aborted',
+      code: 'ABORTED',
+      meta: { failureCode: AgentFailureCode.CancelledByUser },
+    };
   }
 
   const guard = getSpawnGuard();
@@ -177,6 +191,7 @@ export async function executeTask(
       meta: {
         cancellationReason: 'depth-limit',
         failureRouting: routeFailureCode('depth-limit'),
+        failureCode: inferAgentFailureCode({ cancellationReason: 'depth-limit' }),
         childDepth,
         maxDepth,
       },
@@ -225,6 +240,7 @@ export async function executeTask(
       ok: false,
       error: 'Task requires modelConfig in context',
       code: 'NOT_INITIALIZED',
+      meta: { failureCode: AgentFailureCode.ModelError },
     };
   }
 
@@ -236,6 +252,7 @@ export async function executeTask(
       ok: false,
       error: `Unknown agent type: ${subagentType}. Available: ${availableIds.join(', ')}`,
       code: 'INVALID_ARGS',
+      meta: { failureCode: AgentFailureCode.ToolUnavailable },
     };
   }
 
@@ -414,7 +431,14 @@ Stats:
       error: `Agent [${agentName}] failed: ${result.error ?? 'unknown error'}`
         + (result.output ? `\n${result.output}` : ''),
       code: 'DOMAIN_ERROR',
-      meta: result.output ? { output: result.output } : undefined,
+      meta: {
+        ...(result.output ? { output: result.output } : {}),
+        failureCode: result.failureCode
+          ?? inferAgentFailureCode({
+            cancellationReason: result.cancellationReason,
+            error: result.error,
+          }),
+      },
     }, ctx, schema.name, {
       action: 'task',
       status: 'failed',
@@ -454,6 +478,9 @@ Stats:
       ok: false,
       error: `Task execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       code: 'DOMAIN_ERROR',
+      meta: {
+        failureCode: inferAgentFailureCode({ error, defaultCode: AgentFailureCode.ModelError }),
+      },
     };
   } finally {
     slotLease?.release();

@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import type { ToolExecutionResult } from '../../tools/types';
-import { isBashToolName } from '../../tools/toolNames';
+import { canonicalToolName, isBashToolName } from '../../tools/toolNames';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getCitationService } from '../../services/citation/citationService';
 import { createLogger } from '../../services/infra/logger';
@@ -16,6 +16,11 @@ import {
 const logger = createLogger('AgentLoop');
 
 const EXTERNAL_DATA_TOOLS = ['web_fetch', 'web_search', 'mcp', 'read_pdf', 'read_xlsx', 'read_docx', 'mcp_read_resource'];
+
+function isExternalDataTool(toolName: string): boolean {
+  const canonicalName = canonicalToolName(toolName);
+  return EXTERNAL_DATA_TOOLS.some(t => canonicalName.startsWith(t));
+}
 
 // #7 deliveryCritic 证据驱动：识别"验证类"bash 命令（测试/类型检查/构建/lint）。
 // 命中即把本次运行的成功/失败作为验证证据记给 nudgeManager。
@@ -156,21 +161,24 @@ export function handleToolResultBookkeeping({
     ctx.needsReinference = true;
   }
 
-  if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && normalizedResult.success && toolResult.output) {
+  const canonicalName = canonicalToolName(toolCall.name);
+  const isExternalData = isExternalDataTool(toolCall.name);
+
+  if (isExternalData && normalizedResult.success && toolResult.output) {
     try {
       const sanitizer = getInputSanitizer();
-      const sanitized = sanitizer.sanitize(toolResult.output, toolCall.name);
+      const sanitized = sanitizer.sanitize(toolResult.output, canonicalName);
       if (sanitized.blocked) {
-        toolResult.output = `[BLOCKED] Content from ${toolCall.name} was blocked due to security concerns: ${sanitized.warnings.map(w => w.description).join('; ')}`;
+        toolResult.output = `[BLOCKED] Content from ${canonicalName} was blocked due to security concerns: ${sanitized.warnings.map(w => w.description).join('; ')}`;
         toolResult.success = false;
         logger.warn('External data blocked by InputSanitizer', {
-          tool: toolCall.name,
+          tool: canonicalName,
           riskScore: sanitized.riskScore,
           warnings: sanitized.warnings.length,
         });
       } else if (sanitized.warnings.length > 0) {
         contextAssembly.injectSystemMessage(
-          `<security-warning source="${toolCall.name}">\n` +
+          `<security-warning source="${canonicalName}">\n` +
           `⚠️ The following security concerns were detected in external data:\n` +
           sanitized.warnings.map(w => `- [${w.severity}] ${w.description}`).join('\n') + '\n' +
           `Risk score: ${sanitized.riskScore.toFixed(2)}\n` +
@@ -183,7 +191,7 @@ export function handleToolResultBookkeeping({
     }
   }
 
-  if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && normalizedResult.success) {
+  if (isExternalData && normalizedResult.success) {
     ctx.externalDataCallCount++;
     if (ctx.externalDataCallCount % 2 === 0) {
       contextAssembly.injectSystemMessage(
@@ -201,7 +209,7 @@ export function handleToolResultBookkeeping({
       const citationService = getCitationService();
       const newCitations = citationService.extractAndStore(
         ctx.sessionId,
-        toolCall.name,
+        canonicalName,
         toolCall.id,
         toolCall.arguments,
         toolResult.output

@@ -14,6 +14,24 @@ export function normalizeToolName(toolName: string): string {
   return trimmed.toLowerCase() === 'bash' ? 'bash' : trimmed;
 }
 
+const CANONICAL_TOOL_ALIASES: Record<string, string> = {
+  websearch: 'web_search',
+  web_search: 'web_search',
+  webfetch: 'web_fetch',
+  web_fetch: 'web_fetch',
+};
+
+/**
+ * Collapse protocol-era aliases for downstream policy/citation code.
+ *
+ * Keep this intentionally smaller than a general case-insensitive normalizer:
+ * only names with a proven compatibility contract are folded.
+ */
+export function canonicalToolName(toolName: string): string {
+  const normalized = normalizeToolName(toolName);
+  return CANONICAL_TOOL_ALIASES[normalized.toLowerCase()] ?? normalized;
+}
+
 export function isBashToolName(toolName: string): boolean {
   return normalizeToolName(toolName) === 'bash';
 }

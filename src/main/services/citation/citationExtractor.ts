@@ -6,6 +6,7 @@
 
 import path from 'path';
 import type { Citation, CitationType } from '../../../shared/contract/citation';
+import { canonicalToolName } from '../../tools/toolNames';
 
 let citationCounter = 0;
 
@@ -23,8 +24,9 @@ export function extractCitations(
   output: string | undefined
 ): Citation[] {
   if (!output) return [];
+  const canonicalName = canonicalToolName(toolName);
 
-  switch (toolName) {
+  switch (canonicalName) {
     case 'read_file':
       return extractFileReadCitations(toolCallId, params, output);
     case 'grep':
@@ -38,7 +40,7 @@ export function extractCitations(
     case 'read_xlsx':
     case 'read_pdf':
     case 'read_docx':
-      return extractDocumentCitations(toolCallId, toolName, params);
+      return extractDocumentCitations(toolCallId, canonicalName, params);
     case 'memory_search':
       return extractMemoryCitations(toolCallId, output);
     default:

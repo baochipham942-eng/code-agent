@@ -77,6 +77,18 @@ src/utils.ts`;
       expect(citations[0].type).toBe('url');
       expect(citations[0].source).toBe('https://example.com/api');
     });
+
+    it('should extract URL citation from PascalCase WebFetch alias', () => {
+      const citations = extractCitations(
+        'WebFetch',
+        'tc-1',
+        { url: 'https://example.com/api' },
+        'Response body...'
+      );
+      expect(citations).toHaveLength(1);
+      expect(citations[0].type).toBe('url');
+      expect(citations[0].source).toBe('https://example.com/api');
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -88,6 +100,19 @@ src/utils.ts`;
 2. Test - https://test.com/page`;
       const citations = extractCitations(
         'web_search',
+        'tc-1',
+        { query: 'test' },
+        output
+      );
+      expect(citations.length).toBeGreaterThanOrEqual(2);
+      expect(citations.every(c => c.type === 'url')).toBe(true);
+    });
+
+    it('should extract URLs from PascalCase WebSearch alias', () => {
+      const output = `1. Example - https://example.com
+2. Test - https://test.com/page`;
+      const citations = extractCitations(
+        'WebSearch',
         'tc-1',
         { query: 'test' },
         output

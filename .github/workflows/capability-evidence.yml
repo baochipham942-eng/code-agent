@@ -10,10 +10,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'src/main/agent/checkpointWriterAgent.ts'
-      - 'src/main/agent/runtime/maxMode.ts'
-      - 'src/main/agent/runtime/learningPipeline.ts'
-      - 'src/main/services/memory/dreamMemoryService.ts'
+      - 'src/host/agent/checkpointWriterAgent.ts'
+      - 'src/host/agent/runtime/maxMode.ts'
+      - 'src/host/agent/runtime/learningPipeline.ts'
+      - 'src/host/services/memory/dreamMemoryService.ts'
       - 'tests/unit/agent/checkpointWriterAgent.test.ts'
       - 'tests/manual/checkpointWriterLive.ts'
       - 'tests/unit/agent/runtime/maxMode.test.ts'
@@ -24,10 +24,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/main/agent/checkpointWriterAgent.ts'
-      - 'src/main/agent/runtime/maxMode.ts'
-      - 'src/main/agent/runtime/learningPipeline.ts'
-      - 'src/main/services/memory/dreamMemoryService.ts'
+      - 'src/host/agent/checkpointWriterAgent.ts'
+      - 'src/host/agent/runtime/maxMode.ts'
+      - 'src/host/agent/runtime/learningPipeline.ts'
+      - 'src/host/services/memory/dreamMemoryService.ts'
       - 'tests/unit/agent/checkpointWriterAgent.test.ts'
       - 'tests/manual/checkpointWriterLive.ts'
       - 'tests/unit/agent/runtime/maxMode.test.ts'

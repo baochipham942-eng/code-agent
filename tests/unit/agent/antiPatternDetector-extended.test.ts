@@ -167,7 +167,7 @@ describe('AntiPatternDetector - Extended', () => {
 
     it('detects read-only shell commands separately from semantic shell actions', () => {
       expect(detector.isReadOnlyShellCommand('cat ~/.code-agent/logs/app.log')).toBe(true);
-      expect(detector.isReadOnlyShellCommand('rg "forceFinalResponseReason" src/main')).toBe(true);
+      expect(detector.isReadOnlyShellCommand('rg "forceFinalResponseReason" src/host')).toBe(true);
       expect(detector.isReadOnlyShellCommand('ssh lobster "node --version"')).toBe(false);
       expect(detector.isReadOnlyShellCommand('sed -i "" s/foo/bar/g src/file.ts')).toBe(false);
     });

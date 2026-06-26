@@ -5,7 +5,7 @@
 // （ScriptRunEvent）+ 状态枚举（RunStatus）。运行时内部类型（RPC/WorkerInit/
 // ScriptRunSpec 等）仍留在 src/host/agent/scriptRuntime/types.ts。
 //
-// 分层约束：renderer 从不 import @main（见 swarmStore 范式），故所有「事件流 → 可渲染
+// 分层约束：renderer 从不 import @host（见 swarmStore 范式），故所有「事件流 → 可渲染
 // 快照」的契约必须落在 @shared。main 侧的 scriptRuntime/types.ts re-export 本文件，
 // 既有 importer 零改动。
 // ============================================================================

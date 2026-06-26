@@ -277,7 +277,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
           {
             id: 'tool-read-2',
             name: 'read_file',
-            arguments: { file_path: 'src/main.ts' },
+            arguments: { file_path: 'src/host.ts' },
             result: {
               toolCallId: 'tool-read-2',
               success: true,
@@ -290,7 +290,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
                   sourceTool: 'Read',
                   createdAt: '2026-05-07T00:00:00.000Z',
                   name: 'main.ts',
-                  path: 'src/main.ts',
+                  path: 'src/host.ts',
                 },
               },
             },
@@ -326,7 +326,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
     expect(toolBlocks[1]?.toolCall).toMatchObject({
       id: 'tool-read-2',
       name: 'read_file',
-      args: { file_path: 'src/main.ts' },
+      args: { file_path: 'src/host.ts' },
       result: 'export const ok = true;',
       resultMetadata: {
         artifact: {
@@ -335,7 +335,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
           sourceTool: 'Read',
           createdAt: '2026-05-07T00:00:00.000Z',
           name: 'main.ts',
-          path: 'src/main.ts',
+          path: 'src/host.ts',
         },
       },
       success: true,
@@ -379,7 +379,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
       'tool-read-1',
       'read_file',
       '{"file_path":"[redacted]"}',
-      '{"file_path":"src/main.ts"}',
+      '{"file_path":"src/host.ts"}',
       'ok',
       1,
       8,
@@ -399,8 +399,8 @@ describe('TelemetryQueryService transcript replay fallback', () => {
     expect(toolBlock?.toolCall).toMatchObject({
       id: 'tool-read-1',
       name: 'read_file',
-      args: { file_path: 'src/main.ts' },
-      actualArgs: { file_path: 'src/main.ts' },
+      args: { file_path: 'src/host.ts' },
+      actualArgs: { file_path: 'src/host.ts' },
       argsSource: 'telemetry_actual',
     });
   });

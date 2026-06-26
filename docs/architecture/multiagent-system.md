@@ -1,10 +1,10 @@
 # 多 Agent 编排系统架构设计
 
 > 核心代码：
-> - `src/main/agent/autoAgentCoordinator.ts` — 唯一的多 Agent 协调器
-> - `src/main/agent/parallelAgentCoordinator.ts` — 并行 Agent 协调器（含 SharedContext）
-> - `src/main/agent/taskDag.ts` — DAG 依赖调度
-> - `src/main/agent/multiagentTools/` — spawnAgent / sendInput / waitAgent 等工具
+> - `src/host/agent/autoAgentCoordinator.ts` — 唯一的多 Agent 协调器
+> - `src/host/agent/parallelAgentCoordinator.ts` — 并行 Agent 协调器（含 SharedContext）
+> - `src/host/agent/taskDag.ts` — DAG 依赖调度
+> - `src/host/agent/multiagentTools/` — spawnAgent / sendInput / waitAgent 等工具
 
 ## 0. 通信级别模型 (Communication Levels)
 
@@ -49,11 +49,11 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 | 能力 | 当前状态 | 关键文件 / 测试 |
 |------|----------|----------------|
-| parallel executor inbox | `send_input` 先写 SpawnGuard agent queue；找不到时会退到 `ParallelAgentCoordinator` 的 task inbox，executor 迭代前可 drain | `src/main/agent/multiagentTools/sendInput.ts`、`tests/unit/agent/sendInput.test.ts` |
+| parallel executor inbox | `send_input` 先写 SpawnGuard agent queue；找不到时会退到 `ParallelAgentCoordinator` 的 task inbox，executor 迭代前可 drain | `src/host/agent/multiagentTools/sendInput.ts`、`tests/unit/agent/sendInput.test.ts` |
 | dependsOn gate | 下游只在所有依赖成功后启动；上游失败时下游标 `blocked`，不再继续跑 | `parallelAgentCoordinator.ts`、`tests/unit/agent/parallelAgentCoordinator.test.ts` |
-| aggregation shape | 成功、失败、blocked、cancelled agent 都进入结果结构；`successRate` 按总任务数计算 | `src/main/agent/resultAggregator.ts`、`tests/unit/agent/resultAggregator.test.ts` |
-| run-level cancel | `abortAllRunning()` 会中止 running task，并把 pending task 标 cancelled；`swarm:cancel-run` 同时取消 plan/launch approval、SpawnGuard 和 parallel coordinator | `parallelAgentCoordinator.ts`、`src/main/ipc/swarm.ipc.ts` |
-| send_input interrupt | schema 已移除未实现的 `interrupt` 参数，避免承诺抢占式中断 | `src/main/agent/multiagentTools/sendInput.ts` |
+| aggregation shape | 成功、失败、blocked、cancelled agent 都进入结果结构；`successRate` 按总任务数计算 | `src/host/agent/resultAggregator.ts`、`tests/unit/agent/resultAggregator.test.ts` |
+| run-level cancel | `abortAllRunning()` 会中止 running task，并把 pending task 标 cancelled；`swarm:cancel-run` 同时取消 plan/launch approval、SpawnGuard 和 parallel coordinator | `parallelAgentCoordinator.ts`、`src/host/ipc/swarm.ipc.ts` |
+| send_input interrupt | schema 已移除未实现的 `interrupt` 参数，避免承诺抢占式中断 | `src/host/agent/multiagentTools/sendInput.ts` |
 
 当前边界：
 
@@ -67,13 +67,13 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 | 能力 | 当前状态 | 关键文件 / 验证 |
 |------|----------|----------------|
-| Per-agent BrowserService pool | 命名 agent 有独立 BrowserService；cookie/localStorage/sessionStorage 不串号；命名 agent 有 LRU 上限 | `src/main/services/infra/browserPool.ts`、`src/main/services/infra/browserService.ts`、`tests/smoke/*browser-pool*` |
-| Ephemeral Chromium semaphore | 临时浏览器启动通过 FIFO semaphore 限流，避免多个子 agent 同时拉起 Chromium | `src/main/services/infra/playwrightLaunchSemaphore.ts` |
-| ToolContext agentId | `spawn_agent` / subagent dispatch 将 `agentId` 传给工具执行上下文，Browser/Computer 能按 owner 取资源 | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/main/tools/toolExecutor.ts` |
-| ComputerSurface write lock | `type/click/key/clipboard` 等写动作串行执行；observe/launch 这类读或准备动作不阻塞 | `src/main/services/desktop/computerSurfaceLock.ts` |
-| 新 Computer 原语 | 支持 `mouse_down/up`、`open_application`、`write_clipboard`、`computer_batch`、`hold_key`、`triple_click`、`cursor_position` | `src/main/tools/vision/computerUse.ts` |
-| targetApp 截图裁剪 | 多 agent 模式下可对目标 app 截图裁剪并显示 escalated warning，减少无关桌面上下文泄漏 | `src/main/tools/vision/computerUse.ts`、browser/computer smoke |
-| effectiveSignal 透传 | 子 agent cancel / abort signal 下沉到 `modelRouter.inference`，减少取消后模型请求继续跑 | `src/main/model/modelRouter.ts` |
+| Per-agent BrowserService pool | 命名 agent 有独立 BrowserService；cookie/localStorage/sessionStorage 不串号；命名 agent 有 LRU 上限 | `src/host/services/infra/browserPool.ts`、`src/host/services/infra/browserService.ts`、`tests/smoke/*browser-pool*` |
+| Ephemeral Chromium semaphore | 临时浏览器启动通过 FIFO semaphore 限流，避免多个子 agent 同时拉起 Chromium | `src/host/services/infra/playwrightLaunchSemaphore.ts` |
+| ToolContext agentId | `spawn_agent` / subagent dispatch 将 `agentId` 传给工具执行上下文，Browser/Computer 能按 owner 取资源 | `src/host/agent/multiagentTools/spawnAgent.ts`、`src/host/tools/toolExecutor.ts` |
+| ComputerSurface write lock | `type/click/key/clipboard` 等写动作串行执行；observe/launch 这类读或准备动作不阻塞 | `src/host/services/desktop/computerSurfaceLock.ts` |
+| 新 Computer 原语 | 支持 `mouse_down/up`、`open_application`、`write_clipboard`、`computer_batch`、`hold_key`、`triple_click`、`cursor_position` | `src/host/tools/vision/computerUse.ts` |
+| targetApp 截图裁剪 | 多 agent 模式下可对目标 app 截图裁剪并显示 escalated warning，减少无关桌面上下文泄漏 | `src/host/tools/vision/computerUse.ts`、browser/computer smoke |
+| effectiveSignal 透传 | 子 agent cancel / abort signal 下沉到 `modelRouter.inference`，减少取消后模型请求继续跑 | `src/host/model/modelRouter.ts` |
 
 产品口径：这是并发隔离和隐私边界，不改变单 agent 默认浏览器/桌面语义。Browser 隔离 smoke 是证据，不单独作为功能入口。
 
@@ -87,10 +87,10 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 | 能力 | 当前状态 | 关键文件 / 验证 |
 |------|----------|----------------|
-| 三层 agent 合并 | builtin、user、project 同名时按 project > user > builtin 覆盖；需要原始内置定义时走 `getBuiltinAgent()` | `src/main/agent/agentRegistry.ts`、`src/main/agent/agentDefinition.ts` |
-| Double-buffer 热加载 | chokidar 触发重扫时先构建 next map，再原子替换当前 registry，避免 in-flight spawn 读到半填充状态 | `src/main/agent/agentRegistry.ts` |
-| Spawn / Task 共用 registry | `spawn_agent` 和 Task 工具不再只读 `PREDEFINED_AGENTS`；错误提示和 validation 使用最新 agent id 集 | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/main/tools/modules/multiagent/task.ts` |
-| CLI / UI 暴露 | `ca list-agents` 显示 builtin/user/project 来源；renderer 通过 `agents:list` 和 `agents:changed` 刷新 StatusBar AgentSwitcher | `src/cli/commands/listAgents.ts`、`src/main/ipc/agentRegistry.ipc.ts`、`src/renderer/components/StatusBar/AgentSwitcher.tsx` |
+| 三层 agent 合并 | builtin、user、project 同名时按 project > user > builtin 覆盖；需要原始内置定义时走 `getBuiltinAgent()` | `src/host/agent/agentRegistry.ts`、`src/host/agent/agentDefinition.ts` |
+| Double-buffer 热加载 | chokidar 触发重扫时先构建 next map，再原子替换当前 registry，避免 in-flight spawn 读到半填充状态 | `src/host/agent/agentRegistry.ts` |
+| Spawn / Task 共用 registry | `spawn_agent` 和 Task 工具不再只读 `PREDEFINED_AGENTS`；错误提示和 validation 使用最新 agent id 集 | `src/host/agent/multiagentTools/spawnAgent.ts`、`src/host/tools/modules/multiagent/task.ts` |
+| CLI / UI 暴露 | `ca list-agents` 显示 builtin/user/project 来源；renderer 通过 `agents:list` 和 `agents:changed` 刷新 StatusBar AgentSwitcher | `src/cli/commands/listAgents.ts`、`src/host/ipc/agentRegistry.ipc.ts`、`src/renderer/components/StatusBar/AgentSwitcher.tsx` |
 
 当前边界：`activeAgentId` 已进入 renderer store 和切换 UI，但自动作为下一轮默认 spawn role 的 chat send pipeline 还留在后续小切片。
 
@@ -100,10 +100,10 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 | 能力 | 当前状态 | 关键文件 / 验证 |
 |------|----------|----------------|
-| 三档继承模式 | `strict-inherit` / `child-narrow` / `independent`；默认 `strict-inherit` | `src/main/agent/childContext.ts`、`src/shared/contract/settings.ts` |
+| 三档继承模式 | `strict-inherit` / `child-narrow` / `independent`；默认 `strict-inherit` | `src/host/agent/childContext.ts`、`src/shared/contract/settings.ts` |
 | 权限合并算法 | 子 tools = parent tools ∩ child declared；deny = parent deny ∪ child deny；permission mode 取更严格者 | `tests/agent/permissionInheritance.test.ts` |
-| 用户规则级联 | `settings.permissions.deny/ask/allow` 经 `UserConfigSource` 进入 GuardFabric，主 agent 和 subagent 同时生效 | `src/main/permissions/userConfigSource.ts`、`src/main/permissions/index.ts` |
-| Spawn parentContext | `spawn_agent` 注入父级权限、工具和 role 信息；`subagentExecutor` 可为旧 caller auto-derive parentContext | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/main/agent/subagentExecutor.ts` |
+| 用户规则级联 | `settings.permissions.deny/ask/allow` 经 `UserConfigSource` 进入 GuardFabric，主 agent 和 subagent 同时生效 | `src/host/permissions/userConfigSource.ts`、`src/host/permissions/index.ts` |
+| Spawn parentContext | `spawn_agent` 注入父级权限、工具和 role 信息；`subagentExecutor` 可为旧 caller auto-derive parentContext | `src/host/agent/multiagentTools/spawnAgent.ts`、`src/host/agent/subagentExecutor.ts` |
 | Reviewer / readonly 保护 | reviewer / readonly 父 agent 禁止派生带写能力的 coder 类子 agent | `tests/permission-inheritance/scenarios.test.ts` |
 | 设置入口 | General settings 暴露继承模式和用户 deny/ask/allow 规则 | `src/renderer/components/features/settings/tabs/GeneralSettings.tsx` |
 
@@ -126,10 +126,10 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 | 能力 | 当前状态 | 关键文件 |
 |------|----------|---------|
-| 四阶段 initiateShutdown | Signal（`abort(reason)`）→ Grace（5s 等 in-flight 工具收尾）→ Flush（2s 经 TeamManager 持久化 findings）→ Force（返回 partial results） | `src/main/agent/shutdownProtocol.ts` |
-| Idle watchdog | `subagentExecutor` 每 `IDLE_CHECK_INTERVAL`（5s）轮询，`IDLE_TIMEOUT`（2 分钟）无 stream/progress 则 `abort('idle-timeout')` | `src/main/agent/subagentExecutor.ts`、`src/shared/constants/timeouts.ts`（`CANCELLATION_TIMEOUTS`） |
-| 父子信号单向桥接 | `createChildAbortController` 把 parent abortSignal 与内部 timeout 汇入子控制器；子控制器 abort 不反向传播到 parent/sibling，对应 NON_CASCADE 语义 | `src/main/agent/subagentExecutor.ts` |
-| Per-agent Stop UI | `SwarmMonitor` 每个 agent 卡片可独立 Stop，走 `swarm:cancel-agent` IPC（`spawnGuard.cancel` 或 `parallelCoordinator.abortTask`），触发 `agentCancelled` 但不级联兄弟 | `src/renderer/components/features/swarm/SwarmMonitor.tsx`、`src/main/ipc/swarm.ipc.ts` |
+| 四阶段 initiateShutdown | Signal（`abort(reason)`）→ Grace（5s 等 in-flight 工具收尾）→ Flush（2s 经 TeamManager 持久化 findings）→ Force（返回 partial results） | `src/host/agent/shutdownProtocol.ts` |
+| Idle watchdog | `subagentExecutor` 每 `IDLE_CHECK_INTERVAL`（5s）轮询，`IDLE_TIMEOUT`（2 分钟）无 stream/progress 则 `abort('idle-timeout')` | `src/host/agent/subagentExecutor.ts`、`src/shared/constants/timeouts.ts`（`CANCELLATION_TIMEOUTS`） |
+| 父子信号单向桥接 | `createChildAbortController` 把 parent abortSignal 与内部 timeout 汇入子控制器；子控制器 abort 不反向传播到 parent/sibling，对应 NON_CASCADE 语义 | `src/host/agent/subagentExecutor.ts` |
+| Per-agent Stop UI | `SwarmMonitor` 每个 agent 卡片可独立 Stop，走 `swarm:cancel-agent` IPC（`spawnGuard.cancel` 或 `parallelCoordinator.abortTask`），触发 `agentCancelled` 但不级联兄弟 | `src/renderer/components/features/swarm/SwarmMonitor.tsx`、`src/host/ipc/swarm.ipc.ts` |
 
 验证口径：`feature/cancellation-cascading` 分支带 AC 测试套件覆盖 cascade / non-cascade 场景。产品口径里，它把多 agent 取消从"取消一个可能误伤一片"升级为"取消语义按 reason 显式分层"。
 
@@ -145,12 +145,12 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 | 能力 | 当前状态 | 关键文件 |
 |------|----------|---------|
-| 5 原语脚本运行时 | `agent/parallel/pipeline/phase/log` + `args`/`budget`，worker_threads 沙箱（`eval` 字符串规避打包陷阱）+ 超时/内存上限 | `src/main/agent/scriptRuntime/{sandbox,primitives,runService}.ts` |
+| 5 原语脚本运行时 | `agent/parallel/pipeline/phase/log` + `args`/`budget`，worker_threads 沙箱（`eval` 字符串规避打包陷阱）+ 超时/内存上限 | `src/host/agent/scriptRuntime/{sandbox,primitives,runService}.ts` |
 | forced 结构化输出 | `agent({schema})`=单轮 forced tool_choice 取稳定判断值（命令式控制流地基）；无 schema=完整 SubagentExecutor loop | `…/agentBridge.ts`、`InferenceOptions.toolChoice` |
 | 多 run 隔离 | runService 自持 activeRuns，**破 swarm 单 active-run 假设**（ADR-009/010）；agent() 直连 executor 绕 4 条灌历史高层入口 | `…/runService.ts`、`…/agentBridge.ts` |
 | provider-aware 并发闸 | 全局上限 16，确认 provider capacity 后再占全局槽，防 zhipu/3 饿死 | `…/concurrencyGate.ts` |
 | token budget + 三档工具 | per-run BudgetTracker（reserve/commit 消 TOCTOU）+ readonly/edit/full 工具档 + 并行写护栏 | `…/budget.ts`、`…/toolProfiles.ts` |
-| UI（进度树/审批卡/触发）| WorkflowPanel/InlineMonitor + 跑前审批卡（4 维度成本）+ `/workflow` gen8 carve-out；专用 IPC bridge | `src/renderer/components/features/workflow/*`、`src/main/ipc/workflow.ipc.ts`、`src/main/agent/workflowLaunchApproval.ts` |
+| UI（进度树/审批卡/触发）| WorkflowPanel/InlineMonitor + 跑前审批卡（4 维度成本）+ `/workflow` gen8 carve-out；专用 IPC bridge | `src/renderer/components/features/workflow/*`、`src/host/ipc/workflow.ipc.ts`、`src/host/agent/workflowLaunchApproval.ts` |
 | resumable | 源码重放 + agent 结果缓存（不序列化 VM 状态）；专用表 `workflow_runs`/`workflow_run_calls`；命中 0 token | `WorkflowJournalRepository`、`…/scriptValidator.ts`（确定性加固）|
 
 安全边界：威胁模型是**半信任模型代码**（非对抗者）；已知缺口 = worker `new AsyncFunction` 字符串求值逃逸（`isolated-vm` 硬沙箱排后单独排期）。完整设计见 **[dynamic-workflow.md](./dynamic-workflow.md)**。
@@ -177,17 +177,17 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 子 agent 结束时触发的 `SubagentStop` hook 此前缺少回溯入口——无法把单次 subagent 的 stop 事件关联回 swarm 里的具体 agent。本轮给 `SubagentStop` hook context 补上 `agentId`，作为 swarm trace 的查询入口，并新增 `HOOK_SUBAGENT_ID`（及 `HOOK_SUBAGENT_TYPE`）环境变量给 command hook 使用；`subagentExecutor` 里 4 个 `triggerSubagentStop` 调用点全部带上 `agentTask.id`。
 
-关键文件：`src/main/agent/subagentExecutor.ts`、`src/main/protocol/events/hookTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+关键文件：`src/host/agent/subagentExecutor.ts`、`src/host/protocol/events/hookTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
 
 ## 0.0.7 2026-06 子代理 skills 全文预注入（GAP-011，PR #194）
 
 课程"方向 A"：让自定义 agent 可以预装领域知识。`SubagentConfig` / `AgentCore` / `CoreAgentConfig` 新增 `skills?: string[]` 字段，自定义 agent `.md` frontmatter 支持 `skills:` 列表，从而定义"预装领域知识"的专家子代理。
 
-- spawn 时 `buildSubagentSkillsBlock`（`src/main/services/skills/subagentSkillInjection.ts`）把 SKILL.md 全文一次性拼进子代理 system prompt 的 `<preloaded_skills>` 块——**全量加载**，非 Skill 元工具的渐进式披露。
+- spawn 时 `buildSubagentSkillsBlock`（`src/host/services/skills/subagentSkillInjection.ts`）把 SKILL.md 全文一次性拼进子代理 system prompt 的 `<preloaded_skills>` 块——**全量加载**，非 Skill 元工具的渐进式披露。
 - 与 GAP-001 fork 限权**正交**：注入 skill 只加知识，不扩张子代理 `availableTools` 的权限边界。
 - 链路：`agentMdLoader → CoreAgentConfig → toFullAgentConfig → spawnAgent / executeFromDefinition → SubagentConfig → subagentExecutor`。
 
-关键文件：`src/main/services/skills/subagentSkillInjection.ts`、`src/main/agent/subagentExecutor.ts`、`src/main/agent/subagentExecutorTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+关键文件：`src/host/services/skills/subagentSkillInjection.ts`、`src/host/agent/subagentExecutor.ts`、`src/host/agent/subagentExecutorTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
 
 ## 0.0.8 2026-06-03 Swarm goal + 主动性合流（P4）
 
@@ -195,10 +195,10 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 
 | 能力 | 当前口径 | 关键文件 |
 |------|----------|---------|
-| `GoalContract.allowSwarm` | 默认 true；advance→goal 路径强制 false（防 token burn）；开启时以 dynamic-workflow scriptRuntime 为编排基底，复用 BudgetTracker / ConcurrencyGate / SerialWriteGate，不引入新并行运行时 | `src/main/agent/goalModeController.ts`、`src/shared/contract/appService.ts` |
-| 三层闸只在总体层 | goal 闸1/2/3 语义不变；子任务校验交给脚本 verification 阶段；不做子级 DAG / 子级闸（P4.2+ 再做） | `src/main/agent/goalModeController.ts` |
-| 预算双向打通 | swarm 子运行 token 经 `ToolResult.metadata.tokensSpent` 上报回灌 goal 预算；`SWARM_GOAL` 常量约束总预算分数与 advance 预算（200k token / 30 turn） | `src/main/agent/runtime/contextAssembly/deferredToolPreload.ts`、`src/shared/constants/agent.ts`（`SWARM_GOAL`） |
-| 闸2 / delivery critic 降级链 | powerful tier 无 key 时软评审/交付 critic 复用同一模型可用性降级链 | `src/main/agent/goalModeController.ts` |
+| `GoalContract.allowSwarm` | 默认 true；advance→goal 路径强制 false（防 token burn）；开启时以 dynamic-workflow scriptRuntime 为编排基底，复用 BudgetTracker / ConcurrencyGate / SerialWriteGate，不引入新并行运行时 | `src/host/agent/goalModeController.ts`、`src/shared/contract/appService.ts` |
+| 三层闸只在总体层 | goal 闸1/2/3 语义不变；子任务校验交给脚本 verification 阶段；不做子级 DAG / 子级闸（P4.2+ 再做） | `src/host/agent/goalModeController.ts` |
+| 预算双向打通 | swarm 子运行 token 经 `ToolResult.metadata.tokensSpent` 上报回灌 goal 预算；`SWARM_GOAL` 常量约束总预算分数与 advance 预算（200k token / 30 turn） | `src/host/agent/runtime/contextAssembly/deferredToolPreload.ts`、`src/shared/constants/agent.ts`（`SWARM_GOAL`） |
+| 闸2 / delivery critic 降级链 | powerful tier 无 key 时软评审/交付 critic 复用同一模型可用性降级链 | `src/host/agent/goalModeController.ts` |
 
 ## 0.0.9 2026-06-03 Swarm 执行层护栏（P1-2 / P1-4）
 
@@ -206,11 +206,11 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 
 | 能力 | 当前口径 | 关键文件 |
 |------|----------|---------|
-| 结构化失败码 | NON_CASCADE 新增 `depth-limit` / `child-refusal` / `child-max-tokens` / `parent-gone`；`routeFailureCode()` 路由为 throw / degrade / retry / surface | `src/shared/contract/cancellation.ts`、`src/main/agent/subagentExecutorTypes.ts` |
-| spawn 深度截断 | `SPAWN_GUARD.MAX_DEPTH=1` / `MAX_AGENTS=6`，执行层 2 线防御（非工具黑名单）；越界注入 depth-limit prompt | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/shared/constants/agent.ts`（`SPAWN_GUARD`） |
-| SharedContext 新鲜度 | `lastUpdated` 版本戳 + `isStale` 判定，避免读到过期共享态 | `src/main/agent/parallelAgentCoordinator.ts` |
-| Agent Inbox 桥接 | `peekUnifiedInbox()` 只读统一查询入口，非破坏（不碰 write/drain 路径） | `src/main/agent/agentInbox.ts`、`src/main/agent/spawnGuard.ts` |
-| 孤儿回收父探活 | 后台 detached 子代理每轮迭代探活父 run（`isParentRunAlive`），父已不在则自 abort（`parent-gone`）——结构化并发回收，非 heartbeat/WeakRef | `src/main/agent/orphanLiveness.ts`、`src/main/agent/subagentExecutor.ts` |
+| 结构化失败码 | NON_CASCADE 新增 `depth-limit` / `child-refusal` / `child-max-tokens` / `parent-gone`；`routeFailureCode()` 路由为 throw / degrade / retry / surface | `src/shared/contract/cancellation.ts`、`src/host/agent/subagentExecutorTypes.ts` |
+| spawn 深度截断 | `SPAWN_GUARD.MAX_DEPTH=1` / `MAX_AGENTS=6`，执行层 2 线防御（非工具黑名单）；越界注入 depth-limit prompt | `src/host/agent/multiagentTools/spawnAgent.ts`、`src/shared/constants/agent.ts`（`SPAWN_GUARD`） |
+| SharedContext 新鲜度 | `lastUpdated` 版本戳 + `isStale` 判定，避免读到过期共享态 | `src/host/agent/parallelAgentCoordinator.ts` |
+| Agent Inbox 桥接 | `peekUnifiedInbox()` 只读统一查询入口，非破坏（不碰 write/drain 路径） | `src/host/agent/agentInbox.ts`、`src/host/agent/spawnGuard.ts` |
+| 孤儿回收父探活 | 后台 detached 子代理每轮迭代探活父 run（`isParentRunAlive`），父已不在则自 abort（`parent-gone`）——结构化并发回收，非 heartbeat/WeakRef | `src/host/agent/orphanLiveness.ts`、`src/host/agent/subagentExecutor.ts` |
 
 ## 0.0.10 2026-06-04 Swarm 协作可见性（P1-3）
 
@@ -220,7 +220,7 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 - 发布：`SwarmEventEmitter.contextUpdate()` 发 `swarm:context:update` 事件；子代理 `STATUS:` / `DECISION:` 自报行经 `statusReport.ts` 解析喂入；discovery 事件映射为 finding。
 - 渲染：`stores/swarmStore.ts` 的 `buildTimelineEntry()` 映射到 eventLog；`DiscussionStream.tsx` 按 `kind` 给图标、决策高亮、相对时间；`SwarmInlineMonitor.tsx` 嵌入悬浮层，收起态显近 3 条、展开全时间线。
 
-关键文件：`src/main/agent/swarmEventPublisher.ts`、`src/main/agent/multiagentTools/statusReport.ts`、`src/renderer/components/features/swarm/DiscussionStream.tsx`。
+关键文件：`src/host/agent/swarmEventPublisher.ts`、`src/host/agent/multiagentTools/statusReport.ts`、`src/renderer/components/features/swarm/DiscussionStream.tsx`。
 
 ## 0.0.11 2026-06-03 角色主动性（role-proactivity，P0-1 下半）
 
@@ -228,8 +228,8 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 
 | 能力 | 当前口径 | 关键文件 |
 |------|----------|---------|
-| 双触发入口 | cadence（启动 `syncCadenceJobs()` 注册 per-role cron，幂等 tag `role-cadence`）+ event（长任务 Stop hook，turn≥5 且未超日配额，经 `runFinalizer`） | `src/main/services/roleAssets/roleProactivity.ts`、`src/main/agent/runtime/runFinalizer.ts` |
-| 8 步 wakeRole 循环 | 日配额检查 → `instantiateRole` 注入 memory+history → 建 schedule 会话 → 双路执行（Electron orchestrator / headless cli bootstrap）→ 解析 `<decision>advance\|report\|suggest\|silence</decision>` → silence 归档/非 silence 推 `SESSION_LIST_UPDATED` → 写回 history | `src/main/services/roleAssets/roleProactivity.ts` |
+| 双触发入口 | cadence（启动 `syncCadenceJobs()` 注册 per-role cron，幂等 tag `role-cadence`）+ event（长任务 Stop hook，turn≥5 且未超日配额，经 `runFinalizer`） | `src/host/services/roleAssets/roleProactivity.ts`、`src/host/agent/runtime/runFinalizer.ts` |
+| 8 步 wakeRole 循环 | 日配额检查 → `instantiateRole` 注入 memory+history → 建 schedule 会话 → 双路执行（Electron orchestrator / headless cli bootstrap）→ 解析 `<decision>advance\|report\|suggest\|silence</decision>` → silence 归档/非 silence 推 `SESSION_LIST_UPDATED` → 写回 history | `src/host/services/roleAssets/roleProactivity.ts` |
 | 硬预算 | 每次醒来 15 turn、每角色每天 4 次（cadence + event 合并计数）；醒来会话标 `origin=role-cadence`，Stop hook 跳过此类会话防递归 | `src/shared/constants/memory.ts`（`ROLE_PROACTIVITY`）|
 | 配置分层 + 出厂默认 | 角色 frontmatter `proactivity-level` > `settings.roleAssets.proactivity.defaultLevel` > 常量；`RoleProactivityLevel = silent\|daily\|realtime`，**出厂默认 silent（opt-in）**；设置页角色面板露主动等级开关 | `src/shared/contract/roleAssets.ts`、`src/renderer/components/features/settings/tabs/RolesTab.tsx` |
 
@@ -241,8 +241,8 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 
 | 能力 | 当前口径 | 关键文件 |
 |------|----------|----------|
-| 深度限制 | 默认允许主→子→孙，配置值会 clamp 到硬上限 5；超限错误包含当前深度与上限，方便模型改路由 | `src/shared/constants/agent.ts`、`src/main/agent/spawnGuard.ts` |
-| 工具放行边界 | 子 agent 内只放行 `Task` / `spawn_agent` 等内部 delegation 工具；`workflow`、`ask_user_question`、agent 间自由通信和 plan review 仍禁用 | `spawnGuard.ts`、`src/main/tools/permissionClassifier.ts` |
+| 深度限制 | 默认允许主→子→孙，配置值会 clamp 到硬上限 5；超限错误包含当前深度与上限，方便模型改路由 | `src/shared/constants/agent.ts`、`src/host/agent/spawnGuard.ts` |
+| 工具放行边界 | 子 agent 内只放行 `Task` / `spawn_agent` 等内部 delegation 工具；`workflow`、`ask_user_question`、agent 间自由通信和 plan review 仍禁用 | `spawnGuard.ts`、`src/host/tools/permissionClassifier.ts` |
 | 全树配额 | 不再按每层 `MAX_AGENTS` 乘法扩张；根 run 拥有 tree quota，超额请求 FIFO 等待并可超时 | `spawnGuard.ts`、`parallelAgentCoordinator.ts` |
 | 超时与 token | 子层超时取角色默认值和父剩余时间的较小值；`parentRemainingBudget` 多层传递，tokens/cost 逐层回灌到根 | `subagentPipeline.ts`、`subagentUsageAccounting.ts` |
 | 取消与孤儿 | 用户取消/会话切换向整棵树穿透；中间层超时或失败只清理对应子树；父 run 消失时 DFS 回收后代 | `subagentExecutorCancellation.ts`、`orphanLiveness.ts` |
@@ -646,8 +646,8 @@ class WorkflowEngine {
 
 | 文件 | 变更类型 | 描述 |
 |-----|---------|------|
-| `src/main/agent/subagentExecutor.ts` | 修改 | 修复图片 base64 处理 |
-| `src/main/agent/agentDefinition.ts` | 修改 | 添加新 Agent 定义 |
-| `src/main/tools/multiagent/workflowOrchestrate.ts` | 重构 | 实现结构化上下文传递 |
-| `src/main/utils/imageUtils.ts` | 新增 | 图片数据规范化工具 |
-| `src/main/agent/workflowEngine.ts` | 新增 | 工作流执行引擎 |
+| `src/host/agent/subagentExecutor.ts` | 修改 | 修复图片 base64 处理 |
+| `src/host/agent/agentDefinition.ts` | 修改 | 添加新 Agent 定义 |
+| `src/host/tools/multiagent/workflowOrchestrate.ts` | 重构 | 实现结构化上下文传递 |
+| `src/host/utils/imageUtils.ts` | 新增 | 图片数据规范化工具 |
+| `src/host/agent/workflowEngine.ts` | 新增 | 工作流执行引擎 |

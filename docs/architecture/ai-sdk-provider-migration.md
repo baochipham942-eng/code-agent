@@ -59,7 +59,7 @@ Agent Neo 目前**自己拥有整个 provider 矩阵**：`ModelRouter` + `provid
 ### 适配器接缝（草图）
 
 ```ts
-// src/main/model/adapters/aiSdkAdapter.ts（新增，flag-gated）
+// src/host/model/adapters/aiSdkAdapter.ts（新增，flag-gated）
 import { streamText, stepCountIs, tool as aiTool } from 'ai';
 import { resolveAiSdkModel } from './aiSdkProviderResolver'; // 按 modelConfig 选 @ai-sdk/* provider
 

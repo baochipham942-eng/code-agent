@@ -2,7 +2,7 @@
 
 > Gen 5-8 演进的核心基础设施
 >
-> 2026-05-17 状态：本文大部分 cloud task / cloud agent / orchestrator 内容是历史设计归档。近两周已删除旧 `src/main/cloud/*`、cloud agent module、POC cloud tools 和相关 legacy provider path。2026-05-15 之后，服务器侧 `cloud-proxy` provider 也已退场，模型请求默认依赖用户本机配置的 Provider API Key。当前仍保留的 cloud 相关代码主要在 `src/main/services/cloud/`，用于 cloud config、prompt/update、feature flag、orchestrator config 和 Tauri update/同步边界；不要把本文里的云端任务调度当作当前 active path。
+> 2026-05-17 状态：本文大部分 cloud task / cloud agent / orchestrator 内容是历史设计归档。近两周已删除旧 `src/host/cloud/*`、cloud agent module、POC cloud tools 和相关 legacy provider path。2026-05-15 之后，服务器侧 `cloud-proxy` provider 也已退场，模型请求默认依赖用户本机配置的 Provider API Key。当前仍保留的 cloud 相关代码主要在 `src/host/services/cloud/`，用于 cloud config、prompt/update、feature flag、orchestrator config 和 Tauri update/同步边界；不要把本文里的云端任务调度当作当前 active path。
 
 ## 架构总览
 
@@ -89,7 +89,7 @@
 ### 任务路由器设计
 
 ```typescript
-// src/main/cloud/TaskRouter.ts
+// src/host/cloud/TaskRouter.ts
 
 export type TaskTarget = 'local' | 'cloud' | 'hybrid';
 
@@ -632,7 +632,7 @@ async function getApiKey(userId: string, keyType: ApiKeyType) {
 ### 客户端 Orchestrator（v0.6.4 实现）
 
 ```
-src/main/orchestrator/
+src/host/orchestrator/
 ├── types.ts                    # 核心类型定义
 ├── index.ts                    # 模块导出入口
 ├── UnifiedOrchestrator.ts      # 统一指挥家（核心协调）
@@ -654,7 +654,7 @@ src/main/orchestrator/
     ├── StrategyManager.ts     # 策略管理（支持用户反馈学习）
     └── StrategySyncer.ts      # 云端同步（冲突检测）
 
-src/main/cloud/
+src/host/cloud/
 ├── TaskRouter.ts           # 任务路由器
 ├── CloudClient.ts          # 云端客户端
 ├── CloudTaskService.ts     # 任务服务
@@ -665,7 +665,7 @@ src/main/cloud/
 ### 云端配置服务（v0.7.22 实现）
 
 ```
-src/main/services/cloud/
+src/host/services/cloud/
 ├── CloudConfigService.ts     # 云端配置拉取与缓存
 ├── FeatureFlagService.ts     # Feature Flags 便捷函数
 └── builtinConfig.ts          # 内置离线配置
@@ -696,8 +696,8 @@ vercel-api/api/v1/
 
 Skill / MCP 的推荐目录从"纯内置常量"升级为**云端下发优先 + 内置兜底**。运营可以在控制平面调整推荐目录而无需发版，客户端拉不到或数据不完整时无缝降级到打包内置数据。
 
-- **下发字段**：`CloudConfig.skillCatalog` / `mcpCatalog`（`src/main/services/cloud/builtinConfig.ts`），由控制平面 payload (`vercel-api/lib/controlPlanePayloads.ts:CloudConfigPayload`) 携带。
-- **取数 + 降级**：`CloudConfigService.getSkillCatalog()` / `getMcpCatalog()`（`src/main/services/cloud/cloudConfigService.ts`）。云端 `categories` 与 `skills`/`servers` 同时非空才采信，否则回落 `getBuiltinSkillCatalogPayload()` / `getBuiltinMcpCatalogPayload()`（`src/shared/constants/skillCatalog.ts` / `mcpCatalog.ts`）。
+- **下发字段**：`CloudConfig.skillCatalog` / `mcpCatalog`（`src/host/services/cloud/builtinConfig.ts`），由控制平面 payload (`vercel-api/lib/controlPlanePayloads.ts:CloudConfigPayload`) 携带。
+- **取数 + 降级**：`CloudConfigService.getSkillCatalog()` / `getMcpCatalog()`（`src/host/services/cloud/cloudConfigService.ts`）。云端 `categories` 与 `skills`/`servers` 同时非空才采信，否则回落 `getBuiltinSkillCatalogPayload()` / `getBuiltinMcpCatalogPayload()`（`src/shared/constants/skillCatalog.ts` / `mcpCatalog.ts`）。
 - **配套**：聊天输入框新增 skill 导购（`CapabilitySuggestionStrip` + `useSkillRecommendations`），设置页 Skill/MCP 发现 tab 改读云端目录。回归脚本 `scripts/claude-e2e/verify-chat-skill-recommend.mjs`。
 
 **Feature Flags**：

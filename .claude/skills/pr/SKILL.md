@@ -18,7 +18,7 @@ description: Create a pull request after typecheck, targeted tests, branch, comm
 |----------|----------|
 | `src/renderer/` | `npm run build:web` |
 | `src-tauri/` | `cargo tauri build --debug` |
-| `src/main/` | `npm run build && cargo tauri build --debug` |
+| `src/host/` | `npm run build && cargo tauri build --debug` |
 | `package.json` 版本 | `npm run build && npm run build:web && cargo tauri build` |
 
 - Tauri 构建需要 Rust 工具链: `PATH="$HOME/.cargo/bin:$PATH"`

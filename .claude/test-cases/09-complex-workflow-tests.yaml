@@ -130,7 +130,7 @@ cases:
   - id: workflow-analyze-and-document
     type: task
     description: "分析代码并生成文档"
-    prompt: "分析 src/main/tools 目录的结构，列出所有工具文件及其用途，生成 test-tools-doc.md 文档"
+    prompt: "分析 src/host/tools 目录的结构，列出所有工具文件及其用途，生成 test-tools-doc.md 文档"
     expect:
       min_tool_calls: 3
       files_created:

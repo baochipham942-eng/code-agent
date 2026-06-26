@@ -40,11 +40,11 @@ describe('CitationExtractor', () => {
   describe('grep', () => {
     it('should extract file references from grep output', () => {
       const output = `src/app.ts:10:const x = 1;
-src/main.ts:5:import { x } from './app';`;
+src/host.ts:5:import { x } from './app';`;
       const citations = extractCitations('grep', 'tc-1', { pattern: 'x' }, output);
       expect(citations.length).toBeGreaterThanOrEqual(2);
       expect(citations.some(c => c.source === 'src/app.ts')).toBe(true);
-      expect(citations.some(c => c.source === 'src/main.ts')).toBe(true);
+      expect(citations.some(c => c.source === 'src/host.ts')).toBe(true);
     });
   });
 
@@ -54,7 +54,7 @@ src/main.ts:5:import { x } from './app';`;
   describe('glob', () => {
     it('should extract file paths', () => {
       const output = `src/app.ts
-src/main.ts
+src/host.ts
 src/utils.ts`;
       const citations = extractCitations('glob', 'tc-1', { pattern: '**/*.ts' }, output);
       expect(citations).toHaveLength(3);

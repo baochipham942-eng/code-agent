@@ -127,7 +127,7 @@ Trace 层只新增一种 wrapper 节点 `turn_timeline`，不同种类通过 `ki
 
 ### 2.4 SessionWorkspace 派生
 
-**文件**：`src/shared/contract/sessionWorkspace.ts` + `src/main/app/workbenchTurnContext.ts`
+**文件**：`src/shared/contract/sessionWorkspace.ts` + `src/host/app/workbenchTurnContext.ts`
 
 Session 维度的 workbench provenance：哪条消息用了哪些能力、最近一次 direct routing 分发到哪里、历史 session 的 workbench 快照。用于：
 
@@ -137,7 +137,7 @@ Session 维度的 workbench provenance：哪条消息用了哪些能力、最近
 
 ### 2.5 Artifact Issue / Admin Review Queue
 
-**文件**：`src/shared/contract/productClosure.ts` + `src/main/services/core/repositories/ArtifactIssueRepository.ts` + `src/web/routes/adminReviewQueue.ts`
+**文件**：`src/shared/contract/productClosure.ts` + `src/host/services/core/repositories/ArtifactIssueRepository.ts` + `src/web/routes/adminReviewQueue.ts`
 
 把生成物质量和 replay/eval gate 接到主产品。`ArtifactIssue` 带稳定 `UnifiedTraceIdentity`、severity、status、evidence refs 和 admin review 决策；Admin Review Queue 是从 issue 派生的本地控制面。旧 session review queue / failure asset draft 不再是当前产品级数据面。
 
@@ -376,9 +376,9 @@ Browser/Computer 当前已经超过“工具存在”层，进入 workbench prod
 
 | 层 | 职责 | 文件 |
 |----|----|----|
-| ActivityProvider | 描述来源、生命周期、capture source、privacy boundary。OpenChronicle 是 daemon provider；Tauri Native Desktop 是 bundled provider | `src/shared/contract/activityProvider.ts`、`src/main/services/activity/activityProviderRegistry.ts` |
-| ActivityContextProvider | 把 OpenChronicle、Tauri native desktop、audio、screenshot-analysis 归一成 `ActivityContext`，保留 sources、evidenceRefs、token budget hint | `src/shared/contract/activityContext.ts`、`src/main/services/activity/activityContextProvider.ts` |
-| ActivityPromptFormatter | 控制注入形态：legacy separate blocks 或 unified block；注入失败不阻塞 agent run | `src/main/services/activity/activityPromptFormatter.ts`、`src/main/agent/runtime/conversationRuntime.ts` |
+| ActivityProvider | 描述来源、生命周期、capture source、privacy boundary。OpenChronicle 是 daemon provider；Tauri Native Desktop 是 bundled provider | `src/shared/contract/activityProvider.ts`、`src/host/services/activity/activityProviderRegistry.ts` |
+| ActivityContextProvider | 把 OpenChronicle、Tauri native desktop、audio、screenshot-analysis 归一成 `ActivityContext`，保留 sources、evidenceRefs、token budget hint | `src/shared/contract/activityContext.ts`、`src/host/services/activity/activityContextProvider.ts` |
+| ActivityPromptFormatter | 控制注入形态：legacy separate blocks 或 unified block；注入失败不阻塞 agent run | `src/host/services/activity/activityPromptFormatter.ts`、`src/host/agent/runtime/conversationRuntime.ts` |
 
 边界：activity context 只提供理解上下文，不授予桌面动作权限。截图、窗口标题、URL、音频、screenshot analysis 都必须带来源和隐私状态。
 
@@ -409,9 +409,9 @@ prompt builder 要求 _meta
 | 面板 | 职责 | 关键文件 |
 |------|------|---------|
 | Context Health | workbench 新增 `context` tab，`ContextPanel` 挂载 `ContextHealthPanel`：一级展开按消息结构、二级展开按产品来源（rules/skills/mcp/subagents/fileReads/conversation），Skills/MCP/Subagents 可嵌套折叠；每项提供跳转（联动 SkillsPanel highlight）和 ✕ 卸载（MCP 走 `setServerEnabled` IPC，skill 走 unmount）。数据模型见 [agent-core.md](./agent-core.md) | `src/renderer/components/ContextPanel.tsx`、`ContextHealthPanel.tsx` |
-| Knowledge Memory Audit | 展示数据库 memory + 轻记忆文件 + 种子候选；`memory.ipc.ts` 的 `MemoryAuditRequest` / `serializedAuditMemory` 负责序列化，`formatValueForDisplay` 把工具偏好、编码风格等 metadata 格式化供 UI 展示 | `src/renderer/components/features/knowledge/KnowledgeMemoryPanel.tsx`、`src/main/ipc/memory.ipc.ts` |
-| Activity Entry | 从 OpenChronicle / Tauri native desktop / audio / screenshot-analysis 多源采集活动快照，`ActivityNativeSnapshot` / `ActivityPanelModel` 描述展示模型，受 char limit 隔离和敏感数据守护约束 | `src/renderer/components/features/activity/ActivityPanel.tsx`、`src/main/services/activity/activityContextProvider.ts` |
-| Computer-use Diagnostics | `ComputerUseTarget` / `ComputerUseActionTraceSummary` / `ComputerUseFailureExplanation` 追踪渲染状态、权限、失败原因；main 侧 `computerSurface.ts` 提供权限上下文和操作追踪 | `src/renderer/utils/computerUseWorkbench.ts`、`src/main/services/desktop/computerSurface.ts` |
+| Knowledge Memory Audit | 展示数据库 memory + 轻记忆文件 + 种子候选；`memory.ipc.ts` 的 `MemoryAuditRequest` / `serializedAuditMemory` 负责序列化，`formatValueForDisplay` 把工具偏好、编码风格等 metadata 格式化供 UI 展示 | `src/renderer/components/features/knowledge/KnowledgeMemoryPanel.tsx`、`src/host/ipc/memory.ipc.ts` |
+| Activity Entry | 从 OpenChronicle / Tauri native desktop / audio / screenshot-analysis 多源采集活动快照，`ActivityNativeSnapshot` / `ActivityPanelModel` 描述展示模型，受 char limit 隔离和敏感数据守护约束 | `src/renderer/components/features/activity/ActivityPanel.tsx`、`src/host/services/activity/activityContextProvider.ts` |
+| Computer-use Diagnostics | `ComputerUseTarget` / `ComputerUseActionTraceSummary` / `ComputerUseFailureExplanation` 追踪渲染状态、权限、失败原因；main 侧 `computerSurface.ts` 提供权限上下文和操作追踪 | `src/renderer/utils/computerUseWorkbench.ts`、`src/host/services/desktop/computerSurface.ts` |
 | Time Capability | 把 MCP / DAG scheduler / service / interaction 等超时策略集中到 `timeouts.ts`，workbench 可查询当前 timeout 配置，避免魔法数字散布 | `src/shared/constants/timeouts.ts` |
 | Workspace Assets | `WorkspacePreviewPanel` 露出 Document / Spreadsheet / PPT / HTML 等工作区产物，`memoryActivityNavigation.ts` 的 `MemoryActivityFocus` 支持快速导航活动中提及的文件 | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/utils/memoryActivityNavigation.ts` |
 
@@ -423,10 +423,10 @@ prompt builder 要求 _meta
 
 | 面板 / 卡片 | 职责 | 关键文件 |
 |------|------|---------|
-| Browser Surface | 托管浏览器/relay 状态从工具输出上移到右侧工作面，展示 readiness、session 状态和浏览器连接面 | `src/renderer/components/features/browser/BrowserSurfacePanel.tsx`、`src/main/services/infra/browserRelayService.ts` |
+| Browser Surface | 托管浏览器/relay 状态从工具输出上移到右侧工作面，展示 readiness、session 状态和浏览器连接面 | `src/renderer/components/features/browser/BrowserSurfacePanel.tsx`、`src/host/services/infra/browserRelayService.ts` |
 | Agent Pointer Overlay | Browser/Computer surface 的虚拟鼠标反馈层，展示当前动作位置、阶段和最近轨迹记录 | `src/renderer/components/workbench/AgentPointerOverlay.tsx`、`src/renderer/stores/agentPointerStore.ts`、`src/shared/utils/agentPointer.ts` |
 | In-App Validation | HTML artifact 验证面板，iframe 中执行 interaction steps 并显示 pass/fail，配合 `validate_html_in_app` 工具形成可见验收轨迹 | `src/renderer/components/features/inAppValidation/InAppValidationPanel.tsx`、`src/renderer/hooks/useInAppValidationBridge.ts` |
-| HandoffCard | 长任务或外部 engine 接力时，把 handoff proposal 呈现在 TaskPanel 里，用户可判断是否继续、复盘或换 engine | `src/renderer/components/TaskPanel/HandoffCard.tsx`、`src/main/handoff/*` |
+| HandoffCard | 长任务或外部 engine 接力时，把 handoff proposal 呈现在 TaskPanel 里，用户可判断是否继续、复盘或换 engine | `src/renderer/components/TaskPanel/HandoffCard.tsx`、`src/host/handoff/*` |
 | Agent Engine 状态卡 | TaskPanel 投影外部 engine 的 ledger status、输出引用和权限 profile，避免把 Codex/Claude 执行伪装成普通 Native turn | `src/renderer/hooks/useRunWorkbenchModel.ts`、`src/renderer/types/runWorkbench.ts` |
 
 边界：这些面板改变的是可见性和可操作性；外部 engine 的权限仍由 main guard 控制，In-App Validation 只验证本地/生成 HTML。
@@ -452,27 +452,27 @@ prompt builder 要求 _meta
 
 ### 5.2 Main Process
 
-- `src/main/app/agentAppService.ts` — envelope → orchestrator 接入点
-- `src/main/ipc/session.ipc.ts` — `rewindToPrompt` domain action
-- `src/main/app/workbenchTurnContext.ts` — turn 维度 workbench context 组装
-- `src/main/agent/agentOrchestrator.ts` — `sendMessage / interruptAndContinue` 接 `messageMetadata`；发出结构化 `routing_resolved` 事件
-- `src/main/ipc/agent.ipc.ts` — `normalizeEnvelope()` 兼容 legacy payload
-- `src/main/ipc/swarm.ipc.ts` — `swarm:send-user-message` 持久化先于 fanout
-- `src/main/tools/workbenchToolScope.ts` — 当前 turn capability 硬作用域
-- `src/main/tools/vision/browserWorkbenchIntent.ts` — browser/desktop workbench intent
-- `src/main/services/core/repositories/ArtifactIssueRepository.ts` — artifact issue / quality report / admin review 持久化
+- `src/host/app/agentAppService.ts` — envelope → orchestrator 接入点
+- `src/host/ipc/session.ipc.ts` — `rewindToPrompt` domain action
+- `src/host/app/workbenchTurnContext.ts` — turn 维度 workbench context 组装
+- `src/host/agent/agentOrchestrator.ts` — `sendMessage / interruptAndContinue` 接 `messageMetadata`；发出结构化 `routing_resolved` 事件
+- `src/host/ipc/agent.ipc.ts` — `normalizeEnvelope()` 兼容 legacy payload
+- `src/host/ipc/swarm.ipc.ts` — `swarm:send-user-message` 持久化先于 fanout
+- `src/host/tools/workbenchToolScope.ts` — 当前 turn capability 硬作用域
+- `src/host/tools/vision/browserWorkbenchIntent.ts` — browser/desktop workbench intent
+- `src/host/services/core/repositories/ArtifactIssueRepository.ts` — artifact issue / quality report / admin review 持久化
 - `src/web/routes/adminReviewQueue.ts` — app-host admin review queue API
-- `src/main/services/core/repositories/SessionRepository.ts` — message visibility filter + `session_rewinds`
-- `src/main/services/checkpoint/fileCheckpointService.ts` — rewind anchor checkpoint lookup
-- `src/main/evaluation/telemetryQueryService.ts` — trace identity + replay fallback
-- `src/main/services/infra/devServerManager.ts` — Live Preview V2-A dev server lifecycle
-- `src/main/tools/livePreview/tweakWriter.ts` / `tailwindCategories.ts` — V2-B Tailwind 原子改写
-- `src/main/services/infra/browserService.ts` / `browserProvider.ts` — managed browser provider/session/profile/artifact
-- `src/main/services/infra/browserRelayService.ts` — Browser Surface relay readiness
-- `src/main/services/inAppValidationService.ts` — main → renderer 的 HTML 验证请求桥
-- `src/main/services/agentEngine/*` — Codex / Claude / Native engine 检测、guard、adapter、history import
-- `src/main/tasks/backgroundTaskLedger.ts` — shell/PTy/external engine 统一 task ledger
-- `src/main/services/activity/activityContextProvider.ts` / `activityPromptFormatter.ts` — activity context 构造与 prompt 注入
+- `src/host/services/core/repositories/SessionRepository.ts` — message visibility filter + `session_rewinds`
+- `src/host/services/checkpoint/fileCheckpointService.ts` — rewind anchor checkpoint lookup
+- `src/host/evaluation/telemetryQueryService.ts` — trace identity + replay fallback
+- `src/host/services/infra/devServerManager.ts` — Live Preview V2-A dev server lifecycle
+- `src/host/tools/livePreview/tweakWriter.ts` / `tailwindCategories.ts` — V2-B Tailwind 原子改写
+- `src/host/services/infra/browserService.ts` / `browserProvider.ts` — managed browser provider/session/profile/artifact
+- `src/host/services/infra/browserRelayService.ts` — Browser Surface relay readiness
+- `src/host/services/inAppValidationService.ts` — main → renderer 的 HTML 验证请求桥
+- `src/host/services/agentEngine/*` — Codex / Claude / Native engine 检测、guard、adapter、history import
+- `src/host/tasks/backgroundTaskLedger.ts` — shell/PTy/external engine 统一 task ledger
+- `src/host/services/activity/activityContextProvider.ts` / `activityPromptFormatter.ts` — activity context 构造与 prompt 注入
 
 ### 5.3 Renderer
 

@@ -401,8 +401,8 @@ services fan-in 408 是最严重的问题，但修它需要 1 个月。
 ```bash
 # 重新扫 code-agent
 cd ~/Downloads/ai/code-agent
-npx madge --ts-config tsconfig.json --extensions ts,tsx src/main --json > /tmp/madge-new.json
-npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main
+npx madge --ts-config tsconfig.json --extensions ts,tsx src/host --json > /tmp/madge-new.json
+npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/host
 
 # 对比 CodePilot
 cd ~/Downloads/ai/code-agent-compare/CodePilot

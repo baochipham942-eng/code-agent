@@ -140,7 +140,7 @@ describe('TelemetryCollector computer surface reliability fields', () => {
       toolCalls: [{
         toolCallId: 'tool-1',
         name: 'read_file',
-        arguments: { file_path: 'src/main.ts' },
+        arguments: { file_path: 'src/host.ts' },
         resultSummary: 'ok',
         success: true,
         durationMs: 8,

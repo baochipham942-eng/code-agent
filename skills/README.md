@@ -28,7 +28,7 @@ skills/
 
 ## SKILL.md frontmatter schema
 
-精确字段定义见 `src/main/agent/runtime/game/skill-loader.ts` 的 `SkillFrontmatter`。
+精确字段定义见 `src/host/agent/runtime/game/skill-loader.ts` 的 `SkillFrontmatter`。
 最小可用 frontmatter:
 
 ```yaml
@@ -53,7 +53,7 @@ declared_verbs:
 可选字段:
 
 - `subtype`: 仅 `artifact_kind: game` 时需要（`'platformer' | 'runner' | 'tower-defense' | ...`）
-- `declared_verbs`: 用 6-class verb taxonomy 声明的 verbs（见 `src/main/agent/runtime/game/verbs.ts`）
+- `declared_verbs`: 用 6-class verb taxonomy 声明的 verbs（见 `src/host/agent/runtime/game/verbs.ts`）
 
 ## Body 约定（progressive disclosure）
 

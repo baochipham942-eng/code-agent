@@ -34,7 +34,7 @@
 命令：
 
 ```bash
-NPM_CONFIG_CACHE=/tmp/code-agent-npm-cache npx tsx -e "import { validateGameArtifact } from './src/main/agent/runtime/gameArtifactValidator.ts'; (async () => { const result = await validateGameArtifact('./games/generated-platformer-mechanics.html', { runRuntimeSmoke: true, runBrowserVisualSmoke: true, runtimeSmokeTimeoutMs: 8000 }); console.log(JSON.stringify({ shouldValidate: result.shouldValidate, passed: result.passed, failures: result.failures }, null, 2)); })();"
+NPM_CONFIG_CACHE=/tmp/code-agent-npm-cache npx tsx -e "import { validateGameArtifact } from './src/host/agent/runtime/gameArtifactValidator.ts'; (async () => { const result = await validateGameArtifact('./games/generated-platformer-mechanics.html', { runRuntimeSmoke: true, runBrowserVisualSmoke: true, runtimeSmokeTimeoutMs: 8000 }); console.log(JSON.stringify({ shouldValidate: result.shouldValidate, passed: result.passed, failures: result.failures }, null, 2)); })();"
 ```
 
 结果：
@@ -67,7 +67,7 @@ NPM_CONFIG_CACHE=/tmp/code-agent-npm-cache npx tsx -e "import { validateGameArti
 回验命令：
 
 ```bash
-npx tsx -e 'import { validateGameArtifact } from "./src/main/agent/runtime/gameArtifactValidator.ts"; async function main() { const result = await validateGameArtifact("/Users/linchen/Downloads/ai/code-agent/games/generated-platformer-mechanics.html", { runRuntimeSmoke: true, runtimeSmokeTimeoutMs: 7000, runBrowserVisualSmoke: true, browserVisualSmokeTimeoutMs: 10000 }); console.log(JSON.stringify({ passed: result.passed, failures: result.failures, runtimeFailures: result.runtimeSmoke?.failures, runtimeChecks: result.runtimeSmoke?.checks, browserPassed: result.browserVisualSmoke?.passed }, null, 2)); } main().catch((error) => { console.error(error); process.exit(1); });'
+npx tsx -e 'import { validateGameArtifact } from "./src/host/agent/runtime/gameArtifactValidator.ts"; async function main() { const result = await validateGameArtifact("/Users/linchen/Downloads/ai/code-agent/games/generated-platformer-mechanics.html", { runRuntimeSmoke: true, runtimeSmokeTimeoutMs: 7000, runBrowserVisualSmoke: true, browserVisualSmokeTimeoutMs: 10000 }); console.log(JSON.stringify({ passed: result.passed, failures: result.failures, runtimeFailures: result.runtimeSmoke?.failures, runtimeChecks: result.runtimeSmoke?.checks, browserPassed: result.browserVisualSmoke?.passed }, null, 2)); } main().catch((error) => { console.error(error); process.exit(1); });'
 ```
 
 结果：

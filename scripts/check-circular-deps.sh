@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================================
 # Circular Dependency Check
-# 用 madge 扫描 src/main，循环依赖数超过 baseline 即阻断。
+# 用 madge 扫描 src/host，循环依赖数超过 baseline 即阻断。
 #
 # History:
 #   2026-04-12 baseline: 4 条（protocol 层迁移后实测）
@@ -14,14 +14,14 @@
 set -e
 
 MAX_CIRCULAR=0
-SCAN_ROOT="src/main"
+SCAN_ROOT="src/host"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# 只在改动涉及 src/main 时才跑（加速非后端改动的 commit）
+# 只在改动涉及 src/host 时才跑（加速非后端改动的 commit）
 if git rev-parse --git-dir > /dev/null 2>&1; then
   STAGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E "^${SCAN_ROOT}/.+\.tsx?$" || true)
   if [ -z "$STAGED" ]; then

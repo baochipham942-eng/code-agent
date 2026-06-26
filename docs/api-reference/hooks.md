@@ -187,9 +187,9 @@ Key files:
 
 | File | Role |
 |------|------|
-| `src/main/hooks/configParser.ts` | Reads new and legacy config files, validates hooks, downgrades observer-only events |
-| `src/main/hooks/merger.ts` | Merges global/project hooks by append/replace/prepend strategy |
-| `src/main/hooks/hookExecutionEngine.ts` | Executes hooks, handles once/async/parallel/observer semantics |
-| `src/main/hooks/hookManager.ts` | Lifecycle API, trigger history, UI observer callback |
-| `src/main/ipc/hook.ipc.ts` | Settings-facing summary and config file actions |
+| `src/host/hooks/configParser.ts` | Reads new and legacy config files, validates hooks, downgrades observer-only events |
+| `src/host/hooks/merger.ts` | Merges global/project hooks by append/replace/prepend strategy |
+| `src/host/hooks/hookExecutionEngine.ts` | Executes hooks, handles once/async/parallel/observer semantics |
+| `src/host/hooks/hookManager.ts` | Lifecycle API, trigger history, UI observer callback |
+| `src/host/ipc/hook.ipc.ts` | Settings-facing summary and config file actions |
 | `src/renderer/components/features/chat/TurnCard.tsx` | Chat hook activity banner |

@@ -4,7 +4,7 @@
 
 ## 平台
 
-桌面端基于 **Tauri 2.x**（Rust），替代早期的 Electron 方案。Tauri 壳层（`src-tauri/src/main.rs`）负责：
+桌面端基于 **Tauri 2.x**（Rust），替代早期的 Electron 方案。Tauri 壳层（`src-tauri/src/host.rs`）负责：
 
 - 启动 Node.js Web Server 子进程
 - System Tray 菜单（新建对话 / 粘贴上下文 / 退出）
@@ -438,7 +438,7 @@ case 'agent_complete':     // 解锁输入
 
 `neo://` 是应用内导航协议，让模型在回答里直接给出可点击的导航/动作卡片（IACT = inline action 契约）。
 
-- **协议定义**：`src/main/prompts/identity.ts` 的 `CONCISENESS_RULES > <inline_actions>` 块。核心两类：`[label](neo://thread/{sessionId|new})` 打开/切换/新建会话；`[label](neo://settings/{tab})` 跳设置页（tab 经 `SETTINGS_TAB_IDS` 白名单校验）。另有 `!send / !add / !run / !open / !copy` 等内联动作。
+- **协议定义**：`src/host/prompts/identity.ts` 的 `CONCISENESS_RULES > <inline_actions>` 块。核心两类：`[label](neo://thread/{sessionId|new})` 打开/切换/新建会话；`[label](neo://settings/{tab})` 跳设置页（tab 经 `SETTINGS_TAB_IDS` 白名单校验）。另有 `!send / !add / !run / !open / !copy` 等内联动作。
 - **渲染**：`MessageBubble/MessageContent.tsx` 的 `IACTNavCard` 解析 `neo://` head/arg，调 `useSessionStore` / `useAppStore` 执行导航，渲染为带图标的内联按钮；未识别链接退化为纯文本，不渲染破卡片。
 - **净化白名单**：react-markdown v10 默认 `urlTransform` 会把 `neo://` 剥空，故加 `neoUrlTransform` 显式放行 `neo://`，其余仍走 `defaultUrlTransform`。
 

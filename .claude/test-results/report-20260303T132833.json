@@ -312,7 +312,7 @@
       "endTime": 1772544511480,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 列出 src/main 目录下的所有子目录，并简单说明每个目录的用途"
+        "Mock response for: 列出 src/host 目录下的所有子目录，并简单说明每个目录的用途"
       ],
       "errors": [],
       "turnCount": 1,
@@ -325,8 +325,8 @@
         ],
         "actual": [
           0,
-          "Mock response for: 列出 src/main 目录下的所有子目录，并简单说明每个目录的用途",
-          "Mock response for: 列出 src/main 目录下的所有子目录，并简单说明每个目录的用途"
+          "Mock response for: 列出 src/host 目录下的所有子目录，并简单说明每个目录的用途",
+          "Mock response for: 列出 src/host 目录下的所有子目录，并简单说明每个目录的用途"
         ],
         "assertion": "min_tool_calls, response_contains, response_contains"
       }
@@ -340,7 +340,7 @@
       "endTime": 1772544511480,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 读取 src/main/testing/types.ts 文件，解释 TestCase 接口的用途"
+        "Mock response for: 读取 src/host/testing/types.ts 文件，解释 TestCase 接口的用途"
       ],
       "errors": [],
       "turnCount": 1,
@@ -1400,7 +1400,7 @@
       "endTime": 1772544511669,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 分析 src/main/tools 目录的结构，列出所有工具文件及其用途，生成 test-tools-doc.md 文档"
+        "Mock response for: 分析 src/host/tools 目录的结构，列出所有工具文件及其用途，生成 test-tools-doc.md 文档"
       ],
       "errors": [],
       "turnCount": 1,
@@ -1860,7 +1860,7 @@
       "endTime": 1772544512498,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 扫描 src/main/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
+        "Mock response for: 扫描 src/host/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
       ],
       "errors": [],
       "turnCount": 1,
@@ -1884,7 +1884,7 @@
       "endTime": 1772544512504,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 读取 package.json 和 src/main 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
+        "Mock response for: 读取 package.json 和 src/host 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
       ],
       "errors": [],
       "turnCount": 1,
@@ -2348,7 +2348,7 @@
       "endTime": 1772544512588,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 列出 src/main 目录下有哪些子目录",
+        "Mock response for: 列出 src/host 目录下有哪些子目录",
         "Mock response for: tools 目录下有什么？",
         "Mock response for: 找一个最大的工具文件，读取前 20 行"
       ],
@@ -2403,7 +2403,7 @@
       "toolExecutions": [],
       "responses": [
         "Mock response for: 帮我看看 src 目录",
-        "Mock response for: 不是 src 目录结构，我是说帮我看看 src/main/testing 下面有几个文件"
+        "Mock response for: 不是 src 目录结构，我是说帮我看看 src/host/testing 下面有几个文件"
       ],
       "errors": [],
       "turnCount": 2,
@@ -2542,7 +2542,7 @@
       "endTime": 1772544513269,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 帮我完成一个完整的代码审查流程：\n1. 读取 src/main/testing/types.ts\n2. 检查是否有未使用的类型定义\n3. 列出所有导出的接口名称\n4. 生成一份简要的审查报告保存为 test-review-report.md\n"
+        "Mock response for: 帮我完成一个完整的代码审查流程：\n1. 读取 src/host/testing/types.ts\n2. 检查是否有未使用的类型定义\n3. 列出所有导出的接口名称\n4. 生成一份简要的审查报告保存为 test-review-report.md\n"
       ],
       "errors": [],
       "turnCount": 1,
@@ -2620,7 +2620,7 @@
       "endTime": 1772544513274,
       "toolExecutions": [],
       "responses": [
-        "Mock response for: 找出 src/main/testing/ 目录下所有文件，分析它们之间的 import 依赖关系，告诉我哪些文件被引用最多"
+        "Mock response for: 找出 src/host/testing/ 目录下所有文件，分析它们之间的 import 依赖关系，告诉我哪些文件被引用最多"
       ],
       "errors": [],
       "turnCount": 1,

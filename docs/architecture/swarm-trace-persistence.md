@@ -132,9 +132,9 @@ Context 把 trace id 作为 message header 一等公民的实践。`runId` 由
 
 | 后端 | 选择条件 | 文件 |
 |------|----------|------|
-| `SwarmTraceRepository` (SQLite) | env 缺省或 `CODE_AGENT_SWARM_STORAGE` 非 `'file'` | `src/main/services/core/repositories/SwarmTraceRepository.ts` |
-| `FileSwarmTraceRepository` (JSONL) | `CODE_AGENT_SWARM_STORAGE=file` | `src/main/services/core/repositories/FileSwarmTraceRepository.ts` |
-| Factory | 按 env 路由 + 支持 `storageDirOverride` 测试隔离 | `src/main/services/core/repositories/swarmTraceFactory.ts` |
+| `SwarmTraceRepository` (SQLite) | env 缺省或 `CODE_AGENT_SWARM_STORAGE` 非 `'file'` | `src/host/services/core/repositories/SwarmTraceRepository.ts` |
+| `FileSwarmTraceRepository` (JSONL) | `CODE_AGENT_SWARM_STORAGE=file` | `src/host/services/core/repositories/FileSwarmTraceRepository.ts` |
+| Factory | 按 env 路由 + 支持 `storageDirOverride` 测试隔离 | `src/host/services/core/repositories/swarmTraceFactory.ts` |
 
 **JSONL 文件布局**：
 ```
@@ -159,8 +159,8 @@ Context 把 trace id 作为 message header 一等公民的实践。`runId` 由
 | 入口 | 实际做法 |
 |------|----------|
 | `src/cli/bootstrap.ts` | 未提供 SQLite DB 时**直接** `new FileSwarmTraceRepository(storageDir)`（不走 factory，硬编码 JSONL），通过 `installCLISwarmTraceWriterIfNeeded()` 把 writer 装进事件链 |
-| `src/main/services/core/databaseService.ts` | **唯一调用 `createSwarmTraceRepo` 的地方**（line 192），按 env 路由 SQLite vs JSONL |
-| `src/main/index.ts` / `src/web/webServer.ts` | 通过 `db.getSwarmTraceRepo()` 间接拿到 factory 产物，不直接调 factory |
+| `src/host/services/core/databaseService.ts` | **唯一调用 `createSwarmTraceRepo` 的地方**（line 192），按 env 路由 SQLite vs JSONL |
+| `src/host/index.ts` / `src/web/webServer.ts` | 通过 `db.getSwarmTraceRepo()` 间接拿到 factory 产物，不直接调 factory |
 | `src/cli/adapter.ts` / `src/cli/commands/run.ts` | 不直接持有 swarm trace repo —— CLI 路径的 trace 接线全部在 bootstrap.ts |
 
 > ⚠️ bootstrap.ts 没走 factory 是已知不一致。新增第三种后端（如 cloud）时需要把 bootstrap.ts 一并切到 `createSwarmTraceRepo(...)`，否则 CLI 会继续硬编码 JSONL。

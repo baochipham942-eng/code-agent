@@ -10,7 +10,7 @@ The security module provides runtime security monitoring, sensitive information 
 
 ## Modules
 
-### Command Monitor (`src/main/security/commandMonitor.ts`)
+### Command Monitor (`src/host/security/commandMonitor.ts`)
 
 Monitors bash command execution for security concerns.
 
@@ -56,7 +56,7 @@ Records execution result for audit logging.
 
 ---
 
-### Sensitive Detector (`src/main/security/sensitiveDetector.ts`)
+### Sensitive Detector (`src/host/security/sensitiveDetector.ts`)
 
 Detects sensitive information patterns in text content.
 
@@ -101,7 +101,7 @@ type SensitiveType =
 
 ---
 
-### Audit Logger (`src/main/security/auditLogger.ts`)
+### Audit Logger (`src/host/security/auditLogger.ts`)
 
 Records all tool executions to JSONL audit logs.
 
@@ -155,7 +155,7 @@ Logs are stored at `~/.code-agent/audit/YYYY-MM-DD.jsonl`
 
 ---
 
-### Log Masker (`src/main/security/logMasker.ts`)
+### Log Masker (`src/host/security/logMasker.ts`)
 
 Automatically masks sensitive information in log output.
 

@@ -15,8 +15,8 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'src/main/testing/**'
-      - 'src/main/evaluation/**'
+      - 'src/host/testing/**'
+      - 'src/host/evaluation/**'
       - 'scripts/eval-ci.ts'
       - '.claude/test-cases/**'
       - 'tests/unit/testing/**'
@@ -25,8 +25,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/main/testing/**'
-      - 'src/main/evaluation/**'
+      - 'src/host/testing/**'
+      - 'src/host/evaluation/**'
       - 'scripts/eval-ci.ts'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'

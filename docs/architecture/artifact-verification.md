@@ -37,14 +37,14 @@ Artifact / replay / eval evidence
 | 层 | 文件 | 职责 |
 |----|------|------|
 | Product quality contract | `src/shared/contract/productClosure.ts` | `ArtifactIssue`、`ArtifactEvidenceRef`、`EvalReplayQualityReport`、`AdminReviewQueueItem` |
-| Persistence | `src/main/services/core/repositories/ArtifactIssueRepository.ts` | 持久化 issue、evidence、quality report 和 admin review 决策 |
+| Persistence | `src/host/services/core/repositories/ArtifactIssueRepository.ts` | 持久化 issue、evidence、quality report 和 admin review 决策 |
 | App-host review API | `src/web/routes/adminReviewQueue.ts` | list / upsert issue / apply decision |
-| Eval adapter | `src/main/evaluation/experimentAdapter.ts` | replay-backed case 转成 quality report，并把 artifact issues 绑到 `UnifiedTraceIdentity` |
-| Game verifier | `src/main/agent/runtime/game/*` | generated game subtype checker、runtime evidence 和 repair issue codes |
-| Deck verifier | `src/main/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
-| Dashboard verifier | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
-| Browser visual smoke | `src/main/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow |
-| Repair guard | `src/main/agent/runtime/repair/*` | repair scope、monotonicity、prompt limit 和修复轮次限制 |
+| Eval adapter | `src/host/evaluation/experimentAdapter.ts` | replay-backed case 转成 quality report，并把 artifact issues 绑到 `UnifiedTraceIdentity` |
+| Game verifier | `src/host/agent/runtime/game/*` | generated game subtype checker、runtime evidence 和 repair issue codes |
+| Deck verifier | `src/host/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
+| Dashboard verifier | `src/host/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
+| Browser visual smoke | `src/host/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow |
+| Repair guard | `src/host/agent/runtime/repair/*` | repair scope、monotonicity、prompt limit 和修复轮次限制 |
 
 ## Verifier Family
 
@@ -57,7 +57,7 @@ Artifact / replay / eval evidence
 
 ## Repair Guard
 
-通用 repair toolkit 位于 `src/main/agent/runtime/repair/`：
+通用 repair toolkit 位于 `src/host/agent/runtime/repair/`：
 
 | 模块 | 作用 |
 |------|------|

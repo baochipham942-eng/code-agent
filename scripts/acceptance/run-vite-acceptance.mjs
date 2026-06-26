@@ -29,7 +29,7 @@ const server = await createServer({
   resolve: {
     alias: {
       '@': path.resolve(root, 'src'),
-      '@main': path.resolve(root, 'src/main'),
+      '@host': path.resolve(root, 'src/host'),
       '@renderer': path.resolve(root, 'src/renderer'),
       '@shared': path.resolve(root, 'src/shared'),
       electron: path.resolve(root, 'src/host/platform/index.ts'),

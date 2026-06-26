@@ -144,7 +144,7 @@ cases:
   - id: longtext-scan-directory
     type: task
     description: "扫描大量文件提取信息"
-    prompt: "扫描 src/main/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
+    prompt: "扫描 src/host/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
     expect:
       min_tool_calls: 2
       no_crash: true
@@ -167,7 +167,7 @@ cases:
   - id: longtext-generate-doc
     type: task
     description: "生成结构化长文档"
-    prompt: "读取 package.json 和 src/main 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
+    prompt: "读取 package.json 和 src/host 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
     expect:
       min_tool_calls: 2
       files_created:

@@ -114,7 +114,7 @@
 | **状态管理** | Zustand 5 | 轻量级状态管理 |
 | **UI 组件** | Tailwind CSS 3.4 | 快速开发 |
 | **构建工具** | esbuild (main/preload) + Vite (renderer) | 双构建管线 |
-| **IPC 通信** | Platform Abstraction Layer (`src/main/platform/`) | 统一替代直接 Electron 导入，跨平台兼容 |
+| **IPC 通信** | Platform Abstraction Layer (`src/host/platform/`) | 统一替代直接 Electron 导入，跨平台兼容 |
 | **本地存储** | SQLite (better-sqlite3) | 会话/配置持久化 |
 | **云端存储** | Supabase + pgvector | 同步 + 向量存储 |
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
@@ -239,7 +239,7 @@
 
 | 能力域 | 当前形态 | 详细文档 |
 |------|----------|----------|
-| Native ToolModule registry | `src/main/tools/registry.ts` 三段式 schema/loader/handler registry；`modules/index.ts` 注册 108 个 native ToolModule；旧 wrapper 只保留兼容 | [tool-system.md](./tool-system.md) |
+| Native ToolModule registry | `src/host/tools/registry.ts` 三段式 schema/loader/handler registry；`modules/index.ts` 注册 108 个 native ToolModule；旧 wrapper 只保留兼容 | [tool-system.md](./tool-system.md) |
 | Runtime / Context hardening | CompactionService + SurvivorManifest + audit/validation/hooks；partial-failure trace、Web session recovery、assistant persistence、failure-mode loop breaker | [agent-core.md](./agent-core.md) |
 | Artifact quality gate | Game/Deck/Dashboard verifier 和 repair guard 产出真实证据；产品级质量问题进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线 | [artifact-verification.md](./artifact-verification.md) |
 | Browser / Computer multi-agent isolation | BrowserService pool、ephemeral launch semaphore、ComputerSurface write lock、targetApp screenshot crop | [multiagent-system.md](./multiagent-system.md) |
@@ -283,7 +283,7 @@
 
 ## 平台抽象层
 
-`src/main/platform/` 是连接前后端的关键层，统一替代所有直接 Electron 导入：
+`src/host/platform/` 是连接前后端的关键层，统一替代所有直接 Electron 导入：
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
@@ -301,22 +301,22 @@
 
 | 子系统 | 位置 | 说明 |
 |--------|------|------|
-| **Light Memory** | `src/main/lightMemory/` | File-as-Memory，~700 行代码替代旧 13K+ 行 vector/embedding 系统。6 层上下文注入 |
+| **Light Memory** | `src/host/lightMemory/` | File-as-Memory，~700 行代码替代旧 13K+ 行 vector/embedding 系统。6 层上下文注入 |
 | **Generative UI** | renderer `MessageBubble/` | ChartBlock（6 种 Recharts 图表）+ GenerativeUIBlock（沙箱 iframe HTML 小程序） |
-| **Combo Skills** | `src/main/skills/` | 用户可定义技能，关键词自动匹配 |
+| **Combo Skills** | `src/host/skills/` | 用户可定义技能，关键词自动匹配 |
 | **System Tray** | platform `miscCompat.ts` → Tray | 系统托盘集成 |
 | **Desktop Vision** | `desktopVisionAnalyzer.ts` + Rust FFI | 后台截图 + 视觉模型语义描述（Ollama 本地 / 智谱云端） |
 | **Cron Center** | renderer `features/cron/` | 定时任务管理面板 |
-| **Activity Providers** | `src/main/services/activity/` + `src/shared/contract/activity*.ts` | 统一 OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 的上下文来源和注入边界 |
-| **Live Preview V2** | `src/main/services/infra/devServerManager.ts` + `src/renderer/components/LivePreview/` | 自动启动本地 dev server、iframe source grounding、TweakPanel 原子样式编辑 |
-| **Browser / Computer Workbench** | `src/main/services/infra/browserService.ts` + `browserPool.ts` + `src/main/services/desktop/` | 托管浏览器会话、per-agent 隔离、TargetRef、artifact、Computer Surface 安全动作面 |
-| **Artifact Quality Gate** | `src/main/agent/runtime/{game,deck,dashboard}/` + `src/main/agent/runtime/repair/` + `src/shared/contract/productClosure.ts` + `ArtifactIssueRepository` | kind-specific 验收、真实证据采集、artifact issue、replay quality report、admin review queue |
-| **Context Health 溯源** | `src/main/context/contextHealthService.ts` + `src/shared/contract/contextHealth.ts` + renderer `ContextPanel/ContextHealthPanel` | `TokenBreakdown.bySource` 六维来源溯源（rules/skills/mcp/subagents/fileReads/conversation），workbench context tab 二级展开，✕ 卸载接 `setServerEnabled` IPC |
-| **取消级联 / Shutdown Protocol** | `src/shared/contract/cancellation.ts` + `src/main/agent/shutdownProtocol.ts` + `src/main/agent/subagentExecutor.ts` | `CancellationReason` 区分 CASCADE/NON_CASCADE，四阶段 shutdown，idle watchdog，per-agent Stop UI |
-| **Agent Engine Adapters** | `src/shared/contract/agentEngine.ts` + `src/main/services/agentEngine/` + `src/main/ipc/agentEngine.ipc.ts` | Native / Codex CLI / Claude Code engine 元数据、检测、read-only 执行、历史导入和 task ledger 回带 |
-| **Capability Center** | `src/shared/contract/capability.ts` + `src/main/services/capabilities/` + `docs/capabilities/` | 本地能力货架，覆盖 skill、MCP template、workflow recipe、connector、agent engine，MCP draft 默认 disabled |
-| **In-App HTML Validation** | `src/shared/contract/browserInteraction.ts` + `src/main/tools/modules/vision/validateHtmlInApp.ts` + `InAppValidationPanel.tsx` | HTML artifact 在 app 内 iframe 中运行交互脚本和 expect 断言，形成用户可见的验证轨迹 |
-| **Admin / Invite Management** | `src/main/ipc/adminGuard.ts` + `src/main/services/admin/` + `supabase/migrations/20260516000000_user_invite_management.sql` | 管理员用户 dashboard、邀请码管理、RLS/RPC admin guard |
+| **Activity Providers** | `src/host/services/activity/` + `src/shared/contract/activity*.ts` | 统一 OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 的上下文来源和注入边界 |
+| **Live Preview V2** | `src/host/services/infra/devServerManager.ts` + `src/renderer/components/LivePreview/` | 自动启动本地 dev server、iframe source grounding、TweakPanel 原子样式编辑 |
+| **Browser / Computer Workbench** | `src/host/services/infra/browserService.ts` + `browserPool.ts` + `src/host/services/desktop/` | 托管浏览器会话、per-agent 隔离、TargetRef、artifact、Computer Surface 安全动作面 |
+| **Artifact Quality Gate** | `src/host/agent/runtime/{game,deck,dashboard}/` + `src/host/agent/runtime/repair/` + `src/shared/contract/productClosure.ts` + `ArtifactIssueRepository` | kind-specific 验收、真实证据采集、artifact issue、replay quality report、admin review queue |
+| **Context Health 溯源** | `src/host/context/contextHealthService.ts` + `src/shared/contract/contextHealth.ts` + renderer `ContextPanel/ContextHealthPanel` | `TokenBreakdown.bySource` 六维来源溯源（rules/skills/mcp/subagents/fileReads/conversation），workbench context tab 二级展开，✕ 卸载接 `setServerEnabled` IPC |
+| **取消级联 / Shutdown Protocol** | `src/shared/contract/cancellation.ts` + `src/host/agent/shutdownProtocol.ts` + `src/host/agent/subagentExecutor.ts` | `CancellationReason` 区分 CASCADE/NON_CASCADE，四阶段 shutdown，idle watchdog，per-agent Stop UI |
+| **Agent Engine Adapters** | `src/shared/contract/agentEngine.ts` + `src/host/services/agentEngine/` + `src/host/ipc/agentEngine.ipc.ts` | Native / Codex CLI / Claude Code engine 元数据、检测、read-only 执行、历史导入和 task ledger 回带 |
+| **Capability Center** | `src/shared/contract/capability.ts` + `src/host/services/capabilities/` + `docs/capabilities/` | 本地能力货架，覆盖 skill、MCP template、workflow recipe、connector、agent engine，MCP draft 默认 disabled |
+| **In-App HTML Validation** | `src/shared/contract/browserInteraction.ts` + `src/host/tools/modules/vision/validateHtmlInApp.ts` + `InAppValidationPanel.tsx` | HTML artifact 在 app 内 iframe 中运行交互脚本和 expect 断言，形成用户可见的验证轨迹 |
+| **Admin / Invite Management** | `src/host/ipc/adminGuard.ts` + `src/host/services/admin/` + `supabase/migrations/20260516000000_user_invite_management.sql` | 管理员用户 dashboard、邀请码管理、RLS/RPC admin guard |
 | **Conversation Automation Cards** | `ScheduleComposerCard` + `scheduleTemplates` + `LoopStatusBar` + `TaskStatusBar` | `/schedule` 空参模板创建，`/loop` 后台任务状态进入主聊天和 task rail |
 | **Role Authoring Drafts** | `roleDraftQueue` + `propose_role` + `RoleDraftCard` + `create-role/edit-role` builtin skills | 对话式创建/修改持久化角色，草稿隔离，用户确认后落盘 |
 | **Notification Delivery Bridge** | `notificationService` + `notification.ipc.ts` + `osNotification.ts` | 主进程记录通知，renderer 负责原生投递和投递结果回报 |

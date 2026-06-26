@@ -35,7 +35,7 @@ collision. Distance is the score. No level progression — survival as long as p
 
 Subtype identifier (`subtype: runner`) goes in `__GAME_META__` and triggers the
 `RunnerChecker` validation pipeline at
-`src/main/agent/runtime/game/runner/RunnerChecker.ts`.
+`src/host/agent/runtime/game/runner/RunnerChecker.ts`.
 
 Genre conventions:
 
@@ -145,8 +145,8 @@ Runner snapshots are expected to expose at least the following paths:
 ## Reference Examples
 
 - Static mechanics check & runtime evidence assertions:
-  `src/main/agent/runtime/game/runner/RunnerChecker.ts`
+  `src/host/agent/runtime/game/runner/RunnerChecker.ts`
 - Repair codes (failure pattern → hint):
-  `src/main/agent/runtime/game/runner/repairCodes.ts`
+  `src/host/agent/runtime/game/runner/repairCodes.ts`
 - Architecture audit & migration plan:
   `docs/audits/2026-05-07-game-acceptance-architecture.md` §4.4 (runner column)

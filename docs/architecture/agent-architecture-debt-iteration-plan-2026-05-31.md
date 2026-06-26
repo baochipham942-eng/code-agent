@@ -44,7 +44,7 @@ Maintenance follow-up verification:
 
 - `npx vitest run tests/unit/model/providers-shared.test.ts tests/unit/model/baseOpenAIProvider.test.ts tests/unit/model/sseStream.snapshot.test.ts tests/unit/web/agentRouter.test.ts tests/channels/channelMessageReply.test.ts tests/unit/ipc/channel.ipc.test.ts tests/unit/cli/agentDispatch.test.ts`
 - `npm run typecheck`
-- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main src/web/routes`
+- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/host src/web/routes`
 - `npm run debt:report -- --skip-eslint --limit 20`
 
 ## Iteration 2: Workflow Resume And Provider Fairness
@@ -79,7 +79,7 @@ Verification:
 
 - `npx vitest run tests/unit/agent/contextAssembly.test.ts tests/unit/agent/conversationRuntime.test.ts tests/unit/agent/toolExecutionEngine.hooks.test.ts`
 - `npx vitest run tests/unit/agent/parallelAgentCoordinator.test.ts tests/unit/agent/parallelAgentCoordinatorCheckpoint.test.ts tests/unit/scheduler/TaskDAG.test.ts tests/unit/scheduler/taskDagAlgorithms.test.ts`
-- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main`
+- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/host`
 
 ## Iteration 4: Model And App-Host Boundaries
 
@@ -94,7 +94,7 @@ Deliverables:
 
 Verification:
 
-- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main src/web/routes`
+- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/host src/web/routes`
 - `npx vitest run tests/unit/model/modelRouterPolicy.test.ts tests/unit/model/modelRouter.test.ts tests/unit/model/baseOpenAIProvider.test.ts tests/unit/model/sseStream.snapshot.test.ts tests/unit/web/devRouter.test.ts tests/unit/web/agentRouter.test.ts`
 - `npm run typecheck`
 
@@ -126,7 +126,7 @@ The architecture debt effort is complete only when:
 
 - The P0 runtime/workflow safety changes are implemented and covered by tests.
 - `debt:report` has no unwhitelisted effective-over-limit files.
-- `madge` reports no circular dependencies for `src/main` and relevant `src/web/routes`.
+- `madge` reports no circular dependencies for `src/host` and relevant `src/web/routes`.
 - Workflow resume, provider concurrency, and runtime port boundaries have targeted tests.
 - Prompt/tool contract gates and session owner scope tests pass.
 - Remaining high-risk extractions are either implemented or explicitly tracked as later product work with verification commands.

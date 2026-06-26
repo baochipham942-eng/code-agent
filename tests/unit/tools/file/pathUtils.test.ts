@@ -30,7 +30,7 @@ describe('Path Utilities', () => {
     });
 
     it('should not modify relative paths without tilde', () => {
-      expect(expandTilde('src/main.ts')).toBe('src/main.ts');
+      expect(expandTilde('src/host.ts')).toBe('src/host.ts');
     });
 
     it('should not expand tilde in middle of path', () => {
@@ -53,7 +53,7 @@ describe('Path Utilities', () => {
     const workingDir = '/home/user/project';
 
     it('should resolve relative paths against working directory', () => {
-      expect(resolvePath('src/main.ts', workingDir)).toBe('/home/user/project/src/main.ts');
+      expect(resolvePath('src/host.ts', workingDir)).toBe('/home/user/project/src/host.ts');
     });
 
     it('should preserve absolute paths', () => {

@@ -20,7 +20,7 @@ describe('EvidenceRef contract', () => {
     });
 
     expect(evidence).toEqual({
-      id: 'evidence_b2afa713',
+      id: 'evidence_88780bfa',
       kind: 'read',
       ref: 'src/host/example.ts#L1-L5',
       source: 'Read',

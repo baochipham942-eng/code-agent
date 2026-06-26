@@ -158,7 +158,7 @@ cases:
   - id: task-analyze-structure
     type: task
     description: "分析项目结构"
-    prompt: "列出 src/main 目录下的所有子目录，并简单说明每个目录的用途"
+    prompt: "列出 src/host 目录下的所有子目录，并简单说明每个目录的用途"
     expect:
       min_tool_calls: 1
       response_contains:
@@ -193,7 +193,7 @@ cases:
   - id: task-explain-code
     type: task
     description: "代码解释任务"
-    prompt: "读取 src/main/testing/types.ts 文件，解释 TestCase 接口的用途"
+    prompt: "读取 src/host/testing/types.ts 文件，解释 TestCase 接口的用途"
     expect:
       response_contains:
         - test

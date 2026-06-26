@@ -54,30 +54,30 @@ Admin / Observability
 
 | 模块 | Owner | 职责 |
 |---|---|---|
-| `src/main/tools/modules/multiagent/workflow.ts` | 命令层入口 | 把 ToolContext 转成 `ScriptRunHostDeps`，校验入参，启动或恢复 run。 |
-| `src/main/agent/scriptRuntime/runService.ts` | workflow runtime | 多 run 隔离、预算、journal 网关、cancel/get state。 |
-| `src/main/agent/scriptRuntime/sandbox.ts` | workflow runtime | worker_threads 沙箱和脚本原语 stub。 |
-| `src/main/agent/scriptRuntime/primitives.ts` | workflow runtime | worker RPC dispatcher，转发 agent/phase/log。 |
-| `src/main/agent/scriptRuntime/agentBridge.ts` | workflow runtime | forced schema 单轮判断和完整 SubagentExecutor 两条路径。 |
-| `src/main/agent/scriptRuntime/concurrencyGate.ts` | workflow runtime | run 内全局并发公平，读取 provider 有效 cap。 |
-| `src/main/agent/scriptRuntime/writeGate.ts` | workflow runtime | 同一 run 内 edit/full agent 串行放行，并支持 queued abort。 |
-| `src/main/agent/runtime/runtimePorts.ts` | agent runtime | 用端口替代 runtime peer 之间的直接反向依赖。 |
-| `src/main/agent/runtime/runtimeControl.ts` | agent runtime | ToolExecutionEngine 与 runtime cancel/control 的窄接口。 |
-| `src/main/agent/subagentExecutorPort.ts` | multiagent runtime | ParallelAgentCoordinator / DAGScheduler 依赖的 subagent 执行端口。 |
-| `src/main/agent/workflowLaunchApproval.ts` | approval gate | 跑前审批请求、自动批准策略和 pending resolver。 |
-| `src/main/ipc/workflow.ipc.ts` | IPC | workflow run 和 launch 的专用 renderer bridge。 |
+| `src/host/tools/modules/multiagent/workflow.ts` | 命令层入口 | 把 ToolContext 转成 `ScriptRunHostDeps`，校验入参，启动或恢复 run。 |
+| `src/host/agent/scriptRuntime/runService.ts` | workflow runtime | 多 run 隔离、预算、journal 网关、cancel/get state。 |
+| `src/host/agent/scriptRuntime/sandbox.ts` | workflow runtime | worker_threads 沙箱和脚本原语 stub。 |
+| `src/host/agent/scriptRuntime/primitives.ts` | workflow runtime | worker RPC dispatcher，转发 agent/phase/log。 |
+| `src/host/agent/scriptRuntime/agentBridge.ts` | workflow runtime | forced schema 单轮判断和完整 SubagentExecutor 两条路径。 |
+| `src/host/agent/scriptRuntime/concurrencyGate.ts` | workflow runtime | run 内全局并发公平，读取 provider 有效 cap。 |
+| `src/host/agent/scriptRuntime/writeGate.ts` | workflow runtime | 同一 run 内 edit/full agent 串行放行，并支持 queued abort。 |
+| `src/host/agent/runtime/runtimePorts.ts` | agent runtime | 用端口替代 runtime peer 之间的直接反向依赖。 |
+| `src/host/agent/runtime/runtimeControl.ts` | agent runtime | ToolExecutionEngine 与 runtime cancel/control 的窄接口。 |
+| `src/host/agent/subagentExecutorPort.ts` | multiagent runtime | ParallelAgentCoordinator / DAGScheduler 依赖的 subagent 执行端口。 |
+| `src/host/agent/workflowLaunchApproval.ts` | approval gate | 跑前审批请求、自动批准策略和 pending resolver。 |
+| `src/host/ipc/workflow.ipc.ts` | IPC | workflow run 和 launch 的专用 renderer bridge。 |
 | `src/shared/contract/scriptRun.ts` | shared contract | 可序列化 run event、launch event、snapshot reducer。 |
 | `src/renderer/stores/workflowStore.ts` | renderer state | 按 runId/sessionId 管理进度树。 |
 | `WorkflowJournalRepository` | data | `workflow_runs` 与 `workflow_run_calls` 的持久化和缓存查询。 |
 | `ConfigService.applyProviderConcurrencyOverrides` | settings runtime | 将 UI 保存的 provider 并发覆盖热更新到 limiter。 |
 | `ConfigService.applyProviderProxyOverrides` | settings runtime | 将 UI 保存的 provider 代理模式热更新到 provider shared layer。 |
-| `src/main/model/modelRouterPolicy.ts` | model runtime | provider fallback、artifact fallback 和 retry 判断的纯策略层。 |
-| `src/main/model/providers/providerHttp.ts` / `providerJson.ts` / `providerResponseParsers.ts` | model runtime | provider HTTP、JSON 和响应解析 helper。 |
+| `src/host/model/modelRouterPolicy.ts` | model runtime | provider fallback、artifact fallback 和 retry 判断的纯策略层。 |
+| `src/host/model/providers/providerHttp.ts` / `providerJson.ts` / `providerResponseParsers.ts` | model runtime | provider HTTP、JSON 和响应解析 helper。 |
 | `src/web/routes/agentRunController.ts` | web app-host | SSE 写入、terminal 去重、disconnect cancel、session status 更新。 |
 | `src/web/routes/agentRunEventCollector.ts` | web app-host | active run event 收集和 replay/eval 证据聚合。 |
 | `src/web/routes/background.ts` | web app-host | move-to-background / move-to-foreground 控制面。 |
 | `src/web/routes/adminReviewQueue.ts` | web app-host | artifact issue 的 admin review queue API。 |
-| `src/main/services/core/repositories/ArtifactIssueRepository.ts` | data / release gate | artifact issue、evidence refs、quality report、admin review 决策。 |
+| `src/host/services/core/repositories/ArtifactIssueRepository.ts` | data / release gate | artifact issue、evidence refs、quality report、admin review 决策。 |
 
 ## Workflow 执行流
 
@@ -170,7 +170,7 @@ Admin 访问边界保持三层：Vercel SSO、Next proxy、Supabase RLS。app-ho
 | `TaskPanel/ConnectorsCard` | 展示全局能力清单，和当前任务语义错位 | InlineWorkbenchBar、TaskMonitor 能力区、Capability Center。 |
 | decorator tool framework | 未进入 registry，形成第二套定义范式 | native ToolModule `schema / registry / handler`。 |
 | `cloudStorageService` | 旧同步残留，无 live 引用 | Supabase sync、telemetry upload、cloud config/update。 |
-| legacy file/shell wrappers | 与 native ToolModule 重叠，容易让 prompt 和实现分叉 | `src/main/tools/modules/*` native handlers。 |
+| legacy file/shell wrappers | 与 native ToolModule 重叠，容易让 prompt 和实现分叉 | `src/host/tools/modules/*` native handlers。 |
 | old research aggregation helpers | 未接入 live runtime | 当前研究能力由 prompt policy + current tools 组合承载。 |
 | stale renderer diagnostic panels | 未进入当前 Workbench/TaskPanel 信息架构 | Chat 主链路、TaskPanel、Workspace Preview、Settings。 |
 

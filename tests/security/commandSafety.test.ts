@@ -263,7 +263,7 @@ describe('isKnownSafeCommand', () => {
       expect(isKnownSafeCommand('git ls-files')).toBe(true);
     });
     it('git blame is safe', () => {
-      expect(isKnownSafeCommand('git blame src/main.ts')).toBe(true);
+      expect(isKnownSafeCommand('git blame src/host.ts')).toBe(true);
     });
     it('npm list --depth=0 is safe', () => {
       expect(isKnownSafeCommand('npm list --depth=0')).toBe(true);

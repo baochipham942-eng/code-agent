@@ -21,7 +21,7 @@ Raw session messages remain full fidelity in this slice. They are the operationa
 
 ## Policy
 
-The shared entrypoint is `src/main/security/sensitiveDataGuard.ts`.
+The shared entrypoint is `src/host/security/sensitiveDataGuard.ts`.
 
 It handles:
 
@@ -41,7 +41,7 @@ Two firewall layers wrap the shared guard so that inbound channel messages and l
 
 ### Channel privacy firewall
 
-`src/main/channels/privacy/channelPrivacyFirewall.ts` sanitizes channel messages, attachments and raw payloads through `guardSensitiveText`. It exposes a per-channel `ChannelPrivacyMode`:
+`src/host/channels/privacy/channelPrivacyFirewall.ts` sanitizes channel messages, attachments and raw payloads through `guardSensitiveText`. It exposes a per-channel `ChannelPrivacyMode`:
 
 | Mode | Behavior |
 | --- | --- |
@@ -53,7 +53,7 @@ Two firewall layers wrap the shared guard so that inbound channel messages and l
 
 ### Local activity privacy firewall
 
-`src/main/services/activity/localActivityPrivacyFirewall.ts` sanitizes `DesktopActivityEvent` fields (appName, windowTitle, browserUrl, documentPath, analyzeText, etc.) on the `local-persist` mode. `NativeDesktopService.parseEventLine` runs it on every collected event line, and `desktopVisionAnalyzer` sanitizes vision analyze-text before it is written back to SQLite.
+`src/host/services/activity/localActivityPrivacyFirewall.ts` sanitizes `DesktopActivityEvent` fields (appName, windowTitle, browserUrl, documentPath, analyzeText, etc.) on the `local-persist` mode. `NativeDesktopService.parseEventLine` runs it on every collected event line, and `desktopVisionAnalyzer` sanitizes vision analyze-text before it is written back to SQLite.
 
 `screenshotPrivacyRedactor.ts` adds pixel-level redaction: it extracts explicit / OCR redaction regions from event metadata (multi-format bbox parsing, normalized-coordinate detection), blurs them with `sharp`, and falls back to full-frame blur when analyze-text is sensitive but no regions are available.
 

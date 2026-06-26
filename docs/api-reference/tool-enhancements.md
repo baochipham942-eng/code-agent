@@ -10,7 +10,7 @@ Tool enhancements improve file operations and search capabilities with smart tra
 
 ## Modules
 
-### File Read Tracker (`src/main/tools/fileReadTracker.ts`)
+### File Read Tracker (`src/host/tools/fileReadTracker.ts`)
 
 Tracks file read operations to enforce read-before-edit and detect external modifications.
 
@@ -71,7 +71,7 @@ if (tracker.checkExternalModification(filePath, currentStats.mtimeMs)) {
 
 ---
 
-### Quote Normalizer (`src/main/tools/utils/quoteNormalizer.ts`)
+### Quote Normalizer (`src/host/tools/utils/quoteNormalizer.ts`)
 
 Converts smart/curly quotes to straight quotes for reliable string matching.
 
@@ -130,7 +130,7 @@ const result = normalizer.fuzzyMatch(
 
 ---
 
-### External Modification Detector (`src/main/tools/utils/externalModificationDetector.ts`)
+### External Modification Detector (`src/host/tools/utils/externalModificationDetector.ts`)
 
 Detects when files have been modified outside the current session.
 
@@ -187,7 +187,7 @@ if (result.modified) {
 
 ---
 
-### Background Task Persistence (`src/main/tools/backgroundTaskPersistence.ts`)
+### Background Task Persistence (`src/host/tools/backgroundTaskPersistence.ts`)
 
 Persists running background task information for recovery after restart.
 
@@ -303,5 +303,5 @@ grep({
 ## See Also
 
 - [Tool Enhancement Test Scaffolds](../../tests/unit/tools/enhancements/)
-- [Edit File Implementation](../../src/main/tools/gen1/edit_file.ts)
-- [Grep Implementation](../../src/main/tools/gen2/grep.ts)
+- [Edit File Implementation](../../src/host/tools/gen1/edit_file.ts)
+- [Grep Implementation](../../src/host/tools/gen2/grep.ts)

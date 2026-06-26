@@ -45,7 +45,7 @@ Genre conventions:
   `height: auto`; narrow windows must not crop the playfield.
 
 Subtype identifier (`subtype: platformer`) goes in `__GAME_META__` and triggers the
-`PlatformerChecker` validation pipeline at `src/main/agent/runtime/game/platformer/PlatformerChecker.ts`.
+`PlatformerChecker` validation pipeline at `src/host/agent/runtime/game/platformer/PlatformerChecker.ts`.
 
 ## Generation Hints
 
@@ -130,8 +130,8 @@ Platformer snapshots are expected to expose at least the following paths so
 ## Reference Examples
 
 - Static mechanics check & runtime evidence assertions:
-  `src/main/agent/runtime/game/platformer/PlatformerChecker.ts`
+  `src/host/agent/runtime/game/platformer/PlatformerChecker.ts`
 - Repair codes (failure pattern → hint):
-  `src/main/agent/runtime/game/platformer/repairCodes.ts`
+  `src/host/agent/runtime/game/platformer/repairCodes.ts`
 - Architecture audit & migration plan:
   `docs/audits/2026-05-07-game-acceptance-architecture.md` §5–§6

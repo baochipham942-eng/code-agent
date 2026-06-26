@@ -7,7 +7,7 @@
 // Usage: npx tsx eval/excel-benchmark/run_eval.ts
 // ============================================================================
 
-import { ExcelAutomateTool } from '../../src/main/tools/excel/excelAutomate';
+import { ExcelAutomateTool } from '../../src/host/tools/excel/excelAutomate';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';

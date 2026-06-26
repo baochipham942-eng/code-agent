@@ -86,8 +86,8 @@ function createReplay(
             toolCall: {
               id: 'tool-1',
               name: 'read_file',
-              args: { file_path: 'src/main.ts' },
-              actualArgs: { file_path: 'src/main.ts' },
+              args: { file_path: 'src/host.ts' },
+              actualArgs: { file_path: 'src/host.ts' },
               argsSource: 'telemetry_actual',
               result: 'ok',
               success: true,
@@ -163,7 +163,7 @@ function createRunner(sessionId = 'session-gate'): TestRunner {
       toolExecutions: [
         {
           tool: 'read_file',
-          input: { file_path: 'src/main.ts' },
+          input: { file_path: 'src/host.ts' },
           output: 'ok',
           success: true,
           duration: 8,
@@ -340,7 +340,7 @@ describe('TestRunner real-agent-run replay gate', () => {
           toolExecutions: [
             {
               tool: 'read_file',
-              input: { file_path: 'src/main.ts' },
+              input: { file_path: 'src/host.ts' },
               output: 'ok',
               success: true,
               duration: 8,

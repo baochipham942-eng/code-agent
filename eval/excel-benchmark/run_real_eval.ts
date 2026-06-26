@@ -13,7 +13,7 @@ import {
   loadAllTestSuites,
   generateConsoleReport,
   saveReport,
-} from '../../src/main/testing/index';
+} from '../../src/host/testing/index';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../src/shared/constants';
 
 async function main() {

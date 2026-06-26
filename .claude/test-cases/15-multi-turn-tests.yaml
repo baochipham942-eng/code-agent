@@ -155,7 +155,7 @@ cases:
   - id: multi-turn-drill-down
     type: task
     description: "逐步深入分析"
-    prompt: "列出 src/main 目录下有哪些子目录"
+    prompt: "列出 src/host 目录下有哪些子目录"
     follow_up_prompts:
       - "tools 目录下有什么？"
       - "找一个最大的工具文件，读取前 20 行"
@@ -231,7 +231,7 @@ cases:
     description: "纠正误解"
     prompt: "帮我看看 src 目录"
     follow_up_prompts:
-      - "不是 src 目录结构，我是说帮我看看 src/main/testing 下面有几个文件"
+      - "不是 src 目录结构，我是说帮我看看 src/host/testing 下面有几个文件"
     expect:
       min_tool_calls: 2
       no_crash: true

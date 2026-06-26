@@ -259,41 +259,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Semantic Tool UI: `_meta.shortDescription` schema/parser path, fallback shortDescription generator, target context icons, memory citation group, session diff summary, and raw URL preview chips.
 
 #### Security Module (Session A: A1-A5)
-- **Command Monitor** (`src/main/security/commandMonitor.ts`)
+- **Command Monitor** (`src/host/security/commandMonitor.ts`)
   - Pre-execution validation for shell commands
   - Configurable blocked/warning patterns
   - Post-execution auditing
 
-- **Sensitive Information Detector** (`src/main/security/sensitiveDetector.ts`)
+- **Sensitive Information Detector** (`src/host/security/sensitiveDetector.ts`)
   - Detection of 20+ sensitive patterns
   - API keys, AWS secrets, GitHub tokens, private keys
   - Password and database URL detection
 
-- **Audit Logger** (`src/main/security/auditLogger.ts`)
+- **Audit Logger** (`src/host/security/auditLogger.ts`)
   - JSONL audit log files at `~/.code-agent/audit/`
   - Tool execution recording with duration and status
   - Query support by time range, session, tool name
 
-- **Log Masker** (`src/main/security/logMasker.ts`)
+- **Log Masker** (`src/host/security/logMasker.ts`)
   - Automatic masking of sensitive information in logs
   - Configurable masking patterns
 
 #### Tool Enhancements (Session B: B1-B6)
-- **File Read Tracker** (`src/main/tools/fileReadTracker.ts`)
+- **File Read Tracker** (`src/host/tools/fileReadTracker.ts`)
   - Tracks file read operations
   - Enforces read-before-edit pattern
   - Records read timestamps and mtimes
 
-- **Quote Normalizer** (`src/main/tools/utils/quoteNormalizer.ts`)
+- **Quote Normalizer** (`src/host/tools/utils/quoteNormalizer.ts`)
   - Converts smart/curly quotes to straight quotes
   - Enables fuzzy string matching
   - Improves edit_file reliability
 
-- **External Modification Detector** (`src/main/tools/utils/externalModificationDetector.ts`)
+- **External Modification Detector** (`src/host/tools/utils/externalModificationDetector.ts`)
   - Detects files modified outside Code Agent
   - Warns before overwriting external changes
 
-- **Background Task Persistence** (`src/main/tools/backgroundTaskPersistence.ts`)
+- **Background Task Persistence** (`src/host/tools/backgroundTaskPersistence.ts`)
   - Persists running background tasks
   - Recovery after application restart
 
@@ -302,7 +302,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--type` file type filtering
 
 #### Prompt Enhancements (Session C: C1-C4, C8)
-- **Injection Defense Rules** (`src/main/generation/prompts/rules/injection/`)
+- **Injection Defense Rules** (`src/host/generation/prompts/rules/injection/`)
   - Core instruction source verification
   - Response verification guidelines
   - Meta-level rule protection
@@ -313,25 +313,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Task tool: subagent types, use cases
 
 #### Hooks System (Session C: C9-C14)
-- **Hook Configuration Parser** (`src/main/hooks/configParser.ts`)
+- **Hook Configuration Parser** (`src/host/hooks/configParser.ts`)
   - Parse `.claude/settings.json` hooks configuration
   - Validation and error reporting
 
-- **Script Executor** (`src/main/hooks/scriptExecutor.ts`)
+- **Script Executor** (`src/host/hooks/scriptExecutor.ts`)
   - Execute external shell scripts
   - Environment variable injection
   - Timeout handling
 
-- **11 Event Types** (`src/main/hooks/events.ts`)
+- **11 Event Types** (`src/host/hooks/events.ts`)
   - PreToolUse, PostToolUse, PostToolUseFailure
   - UserPromptSubmit, Stop, SubagentStop
   - PreCompact, Setup, SessionStart, SessionEnd, Notification
 
-- **Multi-Source Hook Merging** (`src/main/hooks/merger.ts`)
+- **Multi-Source Hook Merging** (`src/host/hooks/merger.ts`)
   - Merge global and project-level hooks
   - Priority handling and deduplication
 
-- **Prompt-Based Hooks** (`src/main/hooks/promptHook.ts`)
+- **Prompt-Based Hooks** (`src/host/hooks/promptHook.ts`)
   - AI-powered hook evaluation
   - Dynamic prompt support
 

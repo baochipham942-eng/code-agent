@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { initDatabase } from '../../src/main/services/core/databaseService';
+import { initDatabase } from '../../src/host/services/core/databaseService';
 import { persistSweBenchRun } from './persistence';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

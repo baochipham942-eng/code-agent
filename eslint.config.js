@@ -14,7 +14,7 @@ export default tseslint.config(
       'vercel-api/**',
       '*.config.js',
       '*.config.ts',
-      'src/main/tools/media/ppt/__tests__/**/*.mjs',
+      'src/host/tools/media/ppt/__tests__/**/*.mjs',
       // SWE-bench sandbox 是 clone 的第三方 repo (django 等), 不该被项目 lint 管
       'eval/swe-bench/sandbox/**',
       'eval/swe-bench/runs/**',
@@ -129,7 +129,7 @@ export default tseslint.config(
     // God File 历史白名单：有意为之的数据表/目录，max-lines 不适用（architecture-debt-report 据此豁免）。
     // builtinSkillsData.ts — 内置 skill 扁平目录（~2960 行纯数据），accessor 逻辑已分离至 builtinSkills.ts。
     files: [
-      'src/main/services/skills/builtinSkillsData.ts',
+      'src/host/services/skills/builtinSkillsData.ts',
     ],
     rules: {
       'max-lines': 'off',
@@ -161,7 +161,7 @@ export default tseslint.config(
   },
   {
     // MCP 文件允许 console
-    files: ['src/main/mcp/**/*.ts'],
+    files: ['src/host/mcp/**/*.ts'],
     rules: {
       'no-console': 'off',
     },
@@ -178,26 +178,26 @@ export default tseslint.config(
     // 背景：P0-5 完成 protocol registry 100% 迁移后，legacy tool 源文件仅作为
     // modules/<category>/wrappers.ts 的委托目标保留。任何非 modules/ 的代码路径
     // 都不应直接 import 这些 legacy 实现，必须通过 protocol registry 走。
-    // 详情见 src/main/tools/LEGACY.md。
-    files: ['src/main/**/*.ts'],
+    // 详情见 src/host/tools/LEGACY.md。
+    files: ['src/host/**/*.ts'],
     ignores: [
       // migrated wrappers 合法引用 legacy 实现
-      'src/main/tools/modules/**',
+      'src/host/tools/modules/**',
       // builtin plugin 替代 tools/modules/<category>/ 成为新的合法 wrapper 层
-      'src/main/plugins/builtin/**',
+      'src/host/plugins/builtin/**',
       // legacy tool 目录内部（同 category 或跨 category）允许相互引用
-      'src/main/tools/file/**',
-      'src/main/tools/shell/**',
-      'src/main/tools/search/**',
-      'src/main/tools/skill/**',
-      'src/main/tools/lsp/**',
-      'src/main/tools/planning/**',
-      'src/main/tools/network/**',
-      'src/main/tools/document/**',
-      'src/main/tools/excel/**',
-      'src/main/tools/mcp/**',
-      'src/main/tools/connectors/**',
-      'src/main/tools/vision/**',
+      'src/host/tools/file/**',
+      'src/host/tools/shell/**',
+      'src/host/tools/search/**',
+      'src/host/tools/skill/**',
+      'src/host/tools/lsp/**',
+      'src/host/tools/planning/**',
+      'src/host/tools/network/**',
+      'src/host/tools/document/**',
+      'src/host/tools/excel/**',
+      'src/host/tools/mcp/**',
+      'src/host/tools/connectors/**',
+      'src/host/tools/vision/**',
     ],
     rules: {
       'no-restricted-imports': [
@@ -220,7 +220,7 @@ export default tseslint.config(
                 '**/tools/vision/**',
               ],
               message:
-                '禁止直接 import legacy tool 实现。所有 tool 请通过 protocol registry 访问（src/main/tools/modules/<category>/ 下的 wrapper），详见 src/main/tools/LEGACY.md',
+                '禁止直接 import legacy tool 实现。所有 tool 请通过 protocol registry 访问（src/host/tools/modules/<category>/ 下的 wrapper），详见 src/host/tools/LEGACY.md',
             },
           ],
         },
@@ -230,8 +230,8 @@ export default tseslint.config(
   {
     // protocol 层严禁反向依赖 agent/tools/services/ipc/context
     // 参考 Codex codex-protocol crate 的约束：protocol 只能被别人依赖，不能依赖别人
-    // 规则见 src/main/protocol/README.md
-    files: ['src/main/protocol/**/*.ts'],
+    // 规则见 src/host/protocol/README.md
+    files: ['src/host/protocol/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',

@@ -20,6 +20,6 @@ globs: "src/**/*.ts,.env*,**/*.json"
 ## 提交前安全自检
 
 ```bash
-grep -rn "|| 'deepseek'" src/main/ --include="*.ts"
-grep -rn "Date.now()" src/main/services/core/repositories/ --include="*.ts"
+grep -rn "|| 'deepseek'" src/host/ --include="*.ts"
+grep -rn "Date.now()" src/host/services/core/repositories/ --include="*.ts"
 ```

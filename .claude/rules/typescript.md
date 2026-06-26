@@ -35,8 +35,8 @@ globs: "src/**/*.ts,src/**/*.tsx"
 
 **自检清单**（提交前）：
 ```bash
-grep -rn "|| 'deepseek'" src/main/ --include="*.ts"
-grep -rn "|| 'gen3'" src/main/ --include="*.ts"
-grep -rn "'300000\|300_000'" src/main/ --include="*.ts"
-grep -rn "Date.now()" src/main/services/core/repositories/ --include="*.ts"
+grep -rn "|| 'deepseek'" src/host/ --include="*.ts"
+grep -rn "|| 'gen3'" src/host/ --include="*.ts"
+grep -rn "'300000\|300_000'" src/host/ --include="*.ts"
+grep -rn "Date.now()" src/host/services/core/repositories/ --include="*.ts"
 ```

@@ -20,7 +20,7 @@ cases:
     description: "复杂任务自动分解为子任务"
     prompt: |
       帮我完成一个完整的代码审查流程：
-      1. 读取 src/main/testing/types.ts
+      1. 读取 src/host/testing/types.ts
       2. 检查是否有未使用的类型定义
       3. 列出所有导出的接口名称
       4. 生成一份简要的审查报告保存为 test-review-report.md
@@ -113,7 +113,7 @@ cases:
   - id: multiagent-cross-file-analysis
     type: task
     description: "跨文件关联分析"
-    prompt: "找出 src/main/testing/ 目录下所有文件，分析它们之间的 import 依赖关系，告诉我哪些文件被引用最多"
+    prompt: "找出 src/host/testing/ 目录下所有文件，分析它们之间的 import 依赖关系，告诉我哪些文件被引用最多"
     expect:
       min_tool_calls: 3
       no_crash: true

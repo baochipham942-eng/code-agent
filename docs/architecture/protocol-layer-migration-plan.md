@@ -17,7 +17,7 @@
 | agent↔tools 双向 import | 26+29=55 条 | **必须消除** |
 | 循环路径 | 全部集中在 `agent/hybrid/agentSwarm` + `parallelAgentCoordinator` + `subagentExecutor` | - |
 
-## 核心决策：建立 `src/main/protocol/` 中介层
+## 核心决策：建立 `src/host/protocol/` 中介层
 
 **同时吸取 Codex 和 Claude Code 的经验：**
 - **目录结构学 Codex** — 独立 protocol 目录做类型中介层
@@ -27,7 +27,7 @@
 ## 目标架构
 
 ```
-src/main/protocol/
+src/host/protocol/
 ├── events.ts      // CC 16 种 hook event + 自定义 agent 事件 → discriminated union
 ├── messages.ts    // { type, subtype } tagged union 消息类型
 ├── tools.ts       // Tool Schema 接口定义（参考 CC tool() factory）
@@ -58,7 +58,7 @@ TaskCompleted, ConfigChange
 
 | # | 任务 | 工作量 | 预期收益 | 参考 |
 |---|------|:---:|---------|------|
-| 1 | 新建 `src/main/protocol/` 空目录 + README + index.ts | 30 分钟 | 占位，声明架构意图 | Codex `codex-rs/protocol/` |
+| 1 | 新建 `src/host/protocol/` 空目录 + README + index.ts | 30 分钟 | 占位，声明架构意图 | Codex `codex-rs/protocol/` |
 | 2 | 迁移 services 里的纯类型文件到 protocol/types/ | 1 天 | services fan-in 降 30-50 | Codex protocol crate |
 | 3 | 把 `agent/eventBatcher.ts` 的事件类型抽到 `protocol/events.ts` | 半天 | EventBus 雏形升级成真 Event Bus | CC 16 hook events |
 | 4 | 加 pre-commit 循环依赖检测（madge --circular）| 30 分钟 | 防回归 | 通用工程最佳实践 |
@@ -97,10 +97,10 @@ TaskCompleted, ConfigChange
 ```bash
 cd ~/Downloads/ai/code-agent
 # 1. 循环依赖数
-npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main
+npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/host
 
 # 2. services fan-in 变化
-npx madge --ts-config tsconfig.json --extensions ts,tsx src/main --json > /tmp/madge-current.json
+npx madge --ts-config tsconfig.json --extensions ts,tsx src/host --json > /tmp/madge-current.json
 # 然后用 Python 脚本计算 fan-in，对比 baseline 408
 
 # 3. TypeScript 类型检查

@@ -32,7 +32,7 @@
 
 ## 1. 现状盘点：哪些地方死锁了 macOS
 
-`src/main` 下 ~90 处 `process.platform` 分支盘点结论：**已兼容 16 处 / 需新增修正 ~8 处 / 随砍掉功能消失 10+ 处 / 现存 win32 分支全部是活代码（无死代码）**——CLI 时期遗产（where/which、.cmd 后缀、PowerShell 截图等）在桌面主链路仍被引用，是资产不是负债。
+`src/host` 下 ~90 处 `process.platform` 分支盘点结论：**已兼容 16 处 / 需新增修正 ~8 处 / 随砍掉功能消失 10+ 处 / 现存 win32 分支全部是活代码（无死代码）**——CLI 时期遗产（where/which、.cmd 后缀、PowerShell 截图等）在桌面主链路仍被引用，是资产不是负债。
 
 ### 1.1 Shell / 工具执行层（方向 A 重点）
 
@@ -41,7 +41,7 @@
 | 1 | PTY shell 选型 | win32 已选 `powershell.exe`，但 ConPTY 未显式配置、未真机验证 | `ptyExecutor.ts:228,231-241` | 中 |
 | 2 | 后台任务 spawn | **硬编码 `spawn('bash', ['-c', ...])`**，Windows 直接起不来 | `backgroundTasks.ts:203` | 易 |
 | 3 | 进程组 kill | `process.kill(-pid)` 负 PID Windows 不支持（有 fallback 但未验证）；SIGTERM 语义弱化 | `bash.ts:251,258`、`backgroundTasks.ts:235-241` | 中 |
-| 4 | 命令安全分级 | `commandSafety.ts`（497 行）：47 白名单 + 15 条件检查 + 38 危险模式，**全 POSIX 语义** | `src/main/tools/.../commandSafety.ts:20-445` | **难（重设计）** |
+| 4 | 命令安全分级 | `commandSafety.ts`（497 行）：47 白名单 + 15 条件检查 + 38 危险模式，**全 POSIX 语义** | `src/host/tools/.../commandSafety.ts:20-445` | **难（重设计）** |
 | 5 | 命令硬阻断 | `commandPolicy.ts` 11 条 BLOCK_RULES（curl\|sh、/dev/tcp 反弹、fork bomb…），全 POSIX | `commandPolicy.ts:24-115` | 难（同上） |
 | 6 | 复合命令解析 | 自研 regex 分词（无 shell-quote 依赖），解 `bash -c` 包裹、&&/;/\|，**不识别 PowerShell 语法**（别名、`-EncodedCommand`、子表达式） | `commandSafety.ts:145-219` | 难（同上） |
 | 7 | exec 策略学习 | BANNED_PREFIXES 只禁 bash/sh/zsh/eval 等，**缺 powershell/pwsh/cmd/iex** | `execPolicy.ts:40-44` | 易 |
@@ -68,7 +68,7 @@
 | 18 | resources macOS-only | Swift ×3、CUA .app、sharp-darwin、node-pty darwin-arm64、rtk/uv（Mach-O）、PII .sh——**缺任何资源 `tauri build` 直接失败（x64 先例 v0.16.89）** | `tauri.conf.json:44-91` | 中 |
 | 19 | 架构资源覆盖机制 | `tauri-arch-config.mjs` 只做 arch 维度（darwin-arm64↔x64），需扩成平台维度 | `scripts/tauri-arch-config.mjs` | 中 |
 | 20 | bundled-node | `prepare-bundled-node.mjs` 硬拒非 darwin（`platform !== 'darwin' return null`）；官方有 win-x64.zip，需加 .zip 解压 + node.exe 布局 | `prepare-bundled-node.mjs:26` | 易 |
-| 21 | Rust 侧 node 拉起 | 系统 node 候选路径全 Unix（/usr/local/bin…）、bundled 路径 `bin/node` 无 .exe | `src-tauri/src/main.rs:45-50,250-281` | 易（cfg 分支） |
+| 21 | Rust 侧 node 拉起 | 系统 node 候选路径全 Unix（/usr/local/bin…）、bundled 路径 `bin/node` 无 .exe | `src-tauri/src/host.rs:45-50,250-281` | 易（cfg 分支） |
 | 22 | prebuild-cleanup | 内嵌 3 个 Swift 编译脚本，Windows 侧需跳过 | `scripts/tauri-prebuild-cleanup.sh` | 易 |
 
 ### 1.4 分发 / 更新层
@@ -189,7 +189,7 @@ commandSafety.ts（框架层，保留）
 - [x] `prepare-bundled-node.mjs` win32 分支（.zip / node.exe 顶层布局）
 - [x] `fetch-rtk.sh` / `fetch-uv.sh` windows-msvc 分支 + sha256 实拉锁定（macOS 交叉实测通过，uv zip 与官方 .sha256 一致）
 - [x] `tauri-platform-config.mjs`（剔 mac 资源 + win32 路径 + NSIS currentUser + updater pubkey 注入；base tauri.conf.json 零改动）
-- [x] `src-tauri/src/main.rs` cfg(windows)（node.exe 候选 + Program Files + CREATE_NO_WINDOW），cargo check 通过
+- [x] `src-tauri/src/host.rs` cfg(windows)（node.exe 候选 + Program Files + CREATE_NO_WINDOW），cargo check 通过
 - [x] ptyExecutor：pwsh 探测（platformShell 共享）+ useConpty 显式 + UTF-8 编码注入（5.1 地板决策）
 
 **P1 CI（先试验后生产，复刻 x64 节奏）**

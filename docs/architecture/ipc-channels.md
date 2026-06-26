@@ -11,7 +11,7 @@ Code Agent 使用类型安全的 IPC 通道进行 Electron 主进程和渲染进
 | 层 | 文件 | 说明 |
 |----|------|------|
 | schema | `src/shared/ipc/schemas/` | 定义 payload / response zod schema |
-| main handler | `src/main/platform/ipcRegistry.ts` | `defineHandler(schema, handler)` 注册时做 payload 校验 |
+| main handler | `src/host/platform/ipcRegistry.ts` | `defineHandler(schema, handler)` 注册时做 payload 校验 |
 | renderer | `src/renderer/services/typedInvoke.ts` | dev 模式校验 response，避免 renderer 误读 |
 | Web HTTP | `src/web/helpers/typedBody.ts` | Express body 用 `parseBody(req, schema)` 校验 |
 
@@ -295,7 +295,7 @@ await window.domainAPI.invoke('domain:agent', 'send', {
 ## 文件结构
 
 ```
-src/main/ipc/
+src/host/ipc/
 ├── index.ts           # IPC 初始化入口
 ├── agent.ipc.ts       # Agent 通道
 ├── session.ipc.ts     # Session 通道

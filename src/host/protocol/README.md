@@ -44,8 +44,8 @@ protocol/
 每次改动后跑：
 
 ```bash
-npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main
-npx madge --ts-config tsconfig.json --extensions ts,tsx src/main --json > /tmp/madge.json
+npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/host
+npx madge --ts-config tsconfig.json --extensions ts,tsx src/host --json > /tmp/madge.json
 npm run typecheck
 ```
 

@@ -65,7 +65,7 @@ export interface RpcResponse {
 // ── run 生命周期 ─────────────────────────────────────────────────────────────
 
 // RunStatus / ScriptRunEventType / ScriptRunEvent 是跨层可序列化契约，已下沉到
-// @shared/contract/scriptRun（renderer 视图层也要消费，renderer 从不 import @main）。
+// @shared/contract/scriptRun（renderer 视图层也要消费，renderer 从不 import @host）。
 // 此处 re-export 保持 main 侧既有 importer 零改动。
 export type { RunStatus, ScriptRunEventType, ScriptRunEvent } from '../../../shared/contract/scriptRun';
 import type { RunStatus } from '../../../shared/contract/scriptRun';

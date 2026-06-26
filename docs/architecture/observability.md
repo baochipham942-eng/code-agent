@@ -30,15 +30,15 @@
 
 | 路径 | 角色 |
 |------|------|
-| `src/main/observability/sentryNode.ts` | Node 侧 Sentry init + transport 走 scrubEvent |
-| `src/main/observability/crashMarker.ts` | Node 脏标记：进程异常退出时下次启动回传 crash event |
-| `src/main/observability/posthogNode.ts` | Node 侧 PostHog client（distinct_id 用 sha256 hash，不暴露 raw Supabase UUID） |
+| `src/host/observability/sentryNode.ts` | Node 侧 Sentry init + transport 走 scrubEvent |
+| `src/host/observability/crashMarker.ts` | Node 脏标记：进程异常退出时下次启动回传 crash event |
+| `src/host/observability/posthogNode.ts` | Node 侧 PostHog client（distinct_id 用 sha256 hash，不暴露 raw Supabase UUID） |
 | `src/renderer/observability/sentryRenderer.ts` | renderer 侧 Sentry init |
 | `src/renderer/observability/posthogRenderer.ts` | renderer 侧 PostHog client |
 | `src/shared/observability/scrubEvent.ts` | 共用脱敏：递归扫描 `extra` / `contexts` / `tags` / `user`，剥密钥 / 家目录 / 信用卡 / Bearer token / SSN |
 | `src/shared/observability/posthog-events.ts` | 7 个 event key 常量（`app_opened` / `session_started` / `run_completed` / `run_failed` / `run_cancelled` / `tool_used` / `model_selected`）；`identify` 是 SDK 方法名（`identifyNode` / `identifyRenderer`），不是 event key |
-| `src/main/telemetry/telemetryUploaderService.ts` | LLM trace + renderer hot-update attempt 上传器；turn 失败不标记 `synced_at`，热更 attempt 上传失败只保留该批 retry，不阻塞 session/turn |
-| `src/main/telemetry/telemetryStorage.ts` | 本地 SQLite 在 `telemetry_sessions` 表加 `synced_at` 列 + 迁移；另存 `telemetry_renderer_bundle_attempts` 作为系统级热更状态事件 |
+| `src/host/telemetry/telemetryUploaderService.ts` | LLM trace + renderer hot-update attempt 上传器；turn 失败不标记 `synced_at`，热更 attempt 上传失败只保留该批 retry，不阻塞 session/turn |
+| `src/host/telemetry/telemetryStorage.ts` | 本地 SQLite 在 `telemetry_sessions` 表加 `synced_at` 列 + 迁移；另存 `telemetry_renderer_bundle_attempts` 作为系统级热更状态事件 |
 | `scripts/observability/posthog-dashboards.py` | 幂等创建 3 个 PostHog 看板并反查 8 个 insight；`npm run acceptance:posthog-dashboards:dry-run` 可离线输出规格，`npm run acceptance:posthog-dashboards:verify` 可只做线上核验 |
 | `scripts/acceptance/posthog-live-event-smoke.py` | 用 PostHog Project API Key 发无 PII smoke event；优先 HogQL 回读，缺 `query:read` 时 fallback 到临时 insight refresh 回读 |
 

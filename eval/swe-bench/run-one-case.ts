@@ -29,8 +29,8 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../../');
 dotenv.config({ path: path.join(REPO_ROOT, '.env') });
 
-import { XiaomiProvider } from '../../src/main/model/providers/xiaomiProvider';
-import type { ModelMessage, ModelResponse } from '../../src/main/model/types';
+import { XiaomiProvider } from '../../src/host/model/providers/xiaomiProvider';
+import type { ModelMessage, ModelResponse } from '../../src/host/model/types';
 import type { JSONSchema, ToolCall, ToolDefinition } from '../../src/shared/contract';
 import { judgePatchEquivalence } from './judges/patchEquivalence';
 import {
@@ -419,7 +419,7 @@ async function main() {
   );
 
   try {
-    const { initDatabase } = await import('../../src/main/services/core/databaseService');
+    const { initDatabase } = await import('../../src/host/services/core/databaseService');
     const db = await initDatabase();
     const experimentId = persistSweBenchRun(db, runDir);
     db.close();

@@ -3,7 +3,9 @@
 // 从 telemetryStorage.ts 拆出；TelemetryStorage 各方法 import 使用。
 // ============================================================================
 
+import { randomUUID } from 'crypto';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, ComputerSurfaceReliabilitySummary, QualitySignals, TelemetryFeedback, TelemetryRendererBundleAttempt } from '../../shared/contract/telemetry';
+import type { RendererBundleStatus } from '../../shared/contract/update';
 import { TELEMETRY_RAW } from '../../shared/constants';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
 import { redactSecrets } from '../security/secretRedaction';
@@ -313,5 +315,47 @@ export function rowToEvent(row: Record<string, unknown>): TelemetryTimelineEvent
     summary: row.summary as string,
     data: row.data as string | undefined,
     durationMs: row.duration_ms as number | undefined
+  };
+}
+
+/**
+ * 从 RendererBundleStatus 构建待插入的 attempt 记录（纯映射，无 DB）。
+ * status.lastAttempt 缺失时返回 null。
+ */
+export function buildRendererBundleAttemptRecord(
+  status: RendererBundleStatus,
+): TelemetryRendererBundleAttempt | null {
+  if (!status.lastAttempt) return null;
+  const attempt = status.lastAttempt;
+  const manifest = attempt.manifest;
+  const source = status.source;
+  const active = status.activeBundle;
+  return {
+    id: randomUUID(),
+    checkedAt: parseTelemetryTimestamp(attempt.checkedAt),
+    manifestUrl: attempt.manifestUrl,
+    sourceChannel: source?.channel ?? null,
+    sourceManifestUrlOverride: source?.manifestUrlOverride === true,
+    sourceErrorReason: source?.errorReason ?? null,
+    sourceErrorMessage: source?.errorMessage ?? null,
+    sourceErrorTarget: source?.errorTarget ?? null,
+    currentShellVersion: attempt.currentShellVersion,
+    activeVersion: active?.version ?? null,
+    activeContentHash: active?.contentHash ?? null,
+    outcome: attempt.outcome,
+    reason: attempt.reason ?? null,
+    manifestVersion: manifest?.version ?? null,
+    manifestContentHash: manifest?.contentHash ?? null,
+    manifestMinShellVersion: manifest?.minShellVersion ?? null,
+    manifestBundleUrl: manifest?.bundleUrl ?? null,
+    requiredShellCapabilitiesCount: manifest?.requiredShellCapabilitiesCount ?? 0,
+    rollbackToBuiltin: manifest?.rollbackToBuiltin === true,
+    rollbackReason: manifest?.rollbackReason ?? null,
+    missingShellCapabilities: attempt.missingShellCapabilities ?? [],
+    missingRuntimeAssets: attempt.missingRuntimeAssets ?? [],
+    missingResources: attempt.missingResources ?? [],
+    diagnostics: attempt.diagnostics ?? [],
+    errorMessage: attempt.errorMessage ?? null,
+    syncedAt: null,
   };
 }

@@ -22,6 +22,7 @@ import {
   rowToToolCall,
   rowToFeedback,
   rowToRendererBundleAttempt,
+  buildRendererBundleAttemptRecord,
   rowToEvent,
 } from './telemetryStorageParsers';
 // prepareRawPayload 历史上是 telemetryStorage 的公开导出，保持向后兼容。
@@ -318,39 +319,9 @@ export class TelemetryStorage {
   }
 
   recordRendererBundleAttempt(status: RendererBundleStatus): TelemetryRendererBundleAttempt | null {
-    if (!this.isDbAvailable() || !status.lastAttempt) return null;
-    const attempt = status.lastAttempt;
-    const manifest = attempt.manifest;
-    const source = status.source;
-    const active = status.activeBundle;
-    const record: TelemetryRendererBundleAttempt = {
-      id: randomUUID(),
-      checkedAt: parseTelemetryTimestamp(attempt.checkedAt),
-      manifestUrl: attempt.manifestUrl,
-      sourceChannel: source?.channel ?? null,
-      sourceManifestUrlOverride: source?.manifestUrlOverride === true,
-      sourceErrorReason: source?.errorReason ?? null,
-      sourceErrorMessage: source?.errorMessage ?? null,
-      sourceErrorTarget: source?.errorTarget ?? null,
-      currentShellVersion: attempt.currentShellVersion,
-      activeVersion: active?.version ?? null,
-      activeContentHash: active?.contentHash ?? null,
-      outcome: attempt.outcome,
-      reason: attempt.reason ?? null,
-      manifestVersion: manifest?.version ?? null,
-      manifestContentHash: manifest?.contentHash ?? null,
-      manifestMinShellVersion: manifest?.minShellVersion ?? null,
-      manifestBundleUrl: manifest?.bundleUrl ?? null,
-      requiredShellCapabilitiesCount: manifest?.requiredShellCapabilitiesCount ?? 0,
-      rollbackToBuiltin: manifest?.rollbackToBuiltin === true,
-      rollbackReason: manifest?.rollbackReason ?? null,
-      missingShellCapabilities: attempt.missingShellCapabilities ?? [],
-      missingRuntimeAssets: attempt.missingRuntimeAssets ?? [],
-      missingResources: attempt.missingResources ?? [],
-      diagnostics: attempt.diagnostics ?? [],
-      errorMessage: attempt.errorMessage ?? null,
-      syncedAt: null,
-    };
+    if (!this.isDbAvailable()) return null;
+    const record = buildRendererBundleAttemptRecord(status);
+    if (!record) return null;
 
     try {
       this.getStmt(

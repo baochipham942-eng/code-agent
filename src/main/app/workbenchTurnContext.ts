@@ -3,6 +3,15 @@ import type { SelectedElementInfo } from '../../shared/livePreview/protocol';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { normalizeDesignBrief } from '../../shared/contract/designBrief';
 import type { DesignBrief } from '../../shared/contract/designBrief';
+import {
+  designAcceptanceBrandRefFromBrandContract,
+  designAcceptanceCriteriaFromConstraints,
+  formatDesignAcceptanceContractForPrompt,
+  normalizeDesignAcceptanceContract,
+  type DesignAcceptanceBrandRef,
+  type DesignAcceptanceContract,
+  type DesignAcceptanceCriterion,
+} from '../../shared/contract/designAcceptanceContract';
 import { directionTokens } from '../../design/direction-tokens';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { getActiveBrandSync } from '../services/design/brandRegistry';
@@ -54,6 +63,14 @@ export function buildWorkbenchTurnSystemContext(
     if (selfCritique) {
       lines.push(selfCritique);
     }
+  }
+
+  const acceptanceContract = buildDesignAcceptanceContractPromptPayload(context);
+  if (acceptanceContract) {
+    lines.push('<design_acceptance_contract_json>');
+    lines.push(acceptanceContract);
+    lines.push('</design_acceptance_contract_json>');
+    lines.push('这份契约是给 agent 收敛产物的隐藏意图：用于产物自检、QA 修复和 handoff，不要把它当成给用户看的开发规格。');
   }
 
   // ADR-026 D1-B：设计画布快照注入——agent 据此引用真实节点 id 用 ProposeCanvasOps 提议。
@@ -279,6 +296,80 @@ function enrichDesignBriefForPrompt(
     directionTokens: directionTokensResolved,
     brandContract: brandContractResolved,
   });
+}
+
+function buildDesignAcceptanceContractPromptPayload(context?: ConversationEnvelopeContext): string | null {
+  const contract = enrichDesignAcceptanceContractForPrompt(context);
+  return formatDesignAcceptanceContractForPrompt(contract);
+}
+
+function enrichDesignAcceptanceContractForPrompt(
+  context?: ConversationEnvelopeContext,
+): DesignAcceptanceContract | undefined {
+  const contract = normalizeDesignAcceptanceContract(context?.designAcceptanceContract);
+  if (!contract) {
+    return undefined;
+  }
+
+  const acceptanceCriteria = mergeAcceptanceCriteria(
+    contract.acceptanceCriteria,
+    designAcceptanceCriteriaFromConstraints(context?.designBrief?.constraints),
+  );
+  const brandRefs = mergeBrandRefs(
+    contract.brandRefs,
+    buildDesignAcceptanceBrandRefs(context),
+  );
+
+  return normalizeDesignAcceptanceContract({
+    ...contract,
+    acceptanceCriteria,
+    brandRefs,
+  });
+}
+
+function mergeAcceptanceCriteria(
+  current: DesignAcceptanceCriterion[],
+  additions: DesignAcceptanceCriterion[],
+): DesignAcceptanceCriterion[] {
+  const merged = [...current];
+  const seen = new Set(merged.map((item) => item.text));
+  for (const item of additions) {
+    if (seen.has(item.text)) continue;
+    seen.add(item.text);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function mergeBrandRefs(
+  current: DesignAcceptanceBrandRef[],
+  additions: DesignAcceptanceBrandRef[],
+): DesignAcceptanceBrandRef[] {
+  const merged = [...current];
+  const seen = new Set(merged.map((item) => item.id ?? item.name).filter((item): item is string => Boolean(item)));
+  for (const item of additions) {
+    const key = item.id ?? item.name;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function buildDesignAcceptanceBrandRefs(context?: ConversationEnvelopeContext): DesignAcceptanceBrandRef[] {
+  const refs: DesignAcceptanceBrandRef[] = [];
+  const activeBrand = getActiveBrandSync();
+  if (activeBrand) {
+    refs.push(designAcceptanceBrandRefFromBrandContract(activeBrand, 'active_brand'));
+  } else if (context?.designBrief?.brandContract) {
+    refs.push({
+      id: 'design-brief-brand',
+      name: 'Design brief brand contract',
+      source: 'design_brief',
+      contract: context.designBrief.brandContract,
+    });
+  }
+  return refs;
 }
 
 function isConnectorReadyForTurnScope(connectorId: string): boolean {

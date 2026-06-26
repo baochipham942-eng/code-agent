@@ -89,7 +89,7 @@
 
 ## 阶段 3 - Acceptance/Constraint Contract
 
-状态：待办
+状态：已验
 
 交付物：
 
@@ -106,7 +106,10 @@
 
 验收证据：
 
-- 待补。
+- `npx vitest run tests/unit/shared/designAcceptanceContract.test.ts tests/unit/app/workbenchTurnContext.test.ts tests/unit/main/design/brandInjection.test.ts`：3 files / 26 tests passed。
+- `npm run typecheck`：通过。
+- `git diff --check`：通过。
+- 结论：已新增 `designAcceptanceContract` 共享契约，覆盖验收标准、锁定区和品牌引用；contract round-trip 已测；`buildWorkbenchTurnSystemContext` 会注入 `<design_acceptance_contract_json>`，direct routing 会把该契约作为隐藏 reminder 传给目标 agent。契约定位为 agent 收敛意图，未做成给用户看的开发规格，也未触碰 ADR-026 的 main 直接 mutate 红线。
 
 ## 阶段 4 - Canvas op per-op intent
 

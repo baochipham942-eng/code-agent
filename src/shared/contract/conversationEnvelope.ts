@@ -3,6 +3,7 @@ import type { AppServiceRunOptions } from './appService';
 import type { SelectedElementInfo } from '../livePreview/protocol';
 import type { ManagedBrowserProfileMode } from './desktop';
 import type { DesignBrief } from './designBrief';
+import type { DesignAcceptanceContract } from './designAcceptanceContract';
 import type { CanvasSnapshot } from './canvasProposal';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
@@ -105,6 +106,7 @@ export interface ConversationEnvelopeContext {
   selectedMcpServerIds?: string[];
   turnCapabilityScopeMode?: TurnCapabilityScopeMode;
   designBrief?: DesignBrief;
+  designAcceptanceContract?: DesignAcceptanceContract;
   /** 设计画布当前快照（ADR-026 D1-B）：design 模式发轮时 renderer 附带，注入 agent 上下文供 ProposeCanvasOps 引用真实节点 id。运行时态，不进 DB。 */
   canvasSnapshot?: CanvasSnapshot;
   executionIntent?: ConversationExecutionIntent;
@@ -139,6 +141,7 @@ export interface WorkbenchMessageMetadata {
   selectedMcpServerIds?: string[];
   turnCapabilityScopeMode?: TurnCapabilityScopeMode;
   designBrief?: DesignBrief;
+  designAcceptanceContract?: DesignAcceptanceContract;
   executionIntent?: ConversationExecutionIntent;
   runtimeInputMode?: RuntimeInputMode;
   runtimeInputDelivery?: RuntimeInputDelivery;

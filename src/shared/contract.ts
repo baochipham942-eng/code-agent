@@ -21,6 +21,7 @@ export * from './contract/session';
 export * from './contract/workspace';
 export * from './contract/workspacePreview';
 export * from './contract/designBrief';
+export * from './contract/designAcceptanceContract';
 export * from './contract/canvasProposal';
 export * from './contract/canvasVideo';
 export * from './contract/designAutonomy';

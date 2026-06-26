@@ -10,6 +10,10 @@ import type {
 } from '@shared/contract/conversationEnvelope';
 import type { MessageMetadata } from '@shared/contract/message';
 import { normalizeDesignBrief, type DesignBrief } from '@shared/contract/designBrief';
+import {
+  formatDesignAcceptanceContractForPrompt,
+  type DesignAcceptanceContract,
+} from '@shared/contract/designAcceptanceContract';
 import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
@@ -49,6 +53,26 @@ function applyDesignBriefToContent(content: string, brief: DesignBrief | undefin
   if (!brief) return content;
   const reminder = formatDesignBriefReminder(brief);
   return `${reminder}\n\n${content}`;
+}
+
+function formatDesignAcceptanceContractReminder(contract: DesignAcceptanceContract): string | null {
+  const payload = formatDesignAcceptanceContractForPrompt(contract);
+  if (!payload) return null;
+  return [
+    '<system-reminder kind="design-acceptance-contract-json">',
+    '当前 turn 携带验收/约束契约：这是给 agent 收敛产物的隐藏意图，用于自检、QA 修复和 handoff，不要把它当成给用户看的开发规格。',
+    payload,
+    '</system-reminder>',
+  ].join('\n');
+}
+
+function applyDesignAcceptanceContractToContent(
+  content: string,
+  contract: DesignAcceptanceContract | undefined,
+): string {
+  if (!contract) return content;
+  const reminder = formatDesignAcceptanceContractReminder(contract);
+  return reminder ? `${reminder}\n\n${content}` : content;
 }
 
 function enrichDesignBrief(brief: DesignBrief | undefined): DesignBrief | undefined {
@@ -307,6 +331,9 @@ function toWorkbenchMetadata(
   if (context.designBrief) {
     metadata.designBrief = context.designBrief;
   }
+  if (context.designAcceptanceContract) {
+    metadata.designAcceptanceContract = context.designAcceptanceContract;
+  }
   if (context.executionIntent) {
     metadata.executionIntent = {
       ...context.executionIntent,
@@ -432,7 +459,10 @@ export function useAgentIPC({
         };
 
         try {
-          const directMessage = applyDesignBriefToContent(content.trim(), sessionDesignBrief);
+          const directMessage = applyDesignAcceptanceContractToContent(
+            applyDesignBriefToContent(content.trim(), sessionDesignBrief),
+            contextWithDesignBrief?.designAcceptanceContract,
+          );
           const results = await Promise.all(
             directRouting.targets.map((target) =>
               ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {

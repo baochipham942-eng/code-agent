@@ -20,6 +20,7 @@ export * from './project';
 export * from './workspace';
 export * from './workspacePreview';
 export * from './designBrief';
+export * from './designAcceptanceContract';
 export * from './canvasProposal';
 export * from './canvasVideo';
 export * from './designAutonomy';

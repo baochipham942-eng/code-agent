@@ -88,4 +88,33 @@ describe('brand force-injection via buildWorkbenchTurnSystemContext', () => {
     expect(brief.directionTokens).toBeUndefined();
     expect(brief.brandContract).toBeUndefined();
   });
+
+  it('injects active brand as acceptance contract brand ref without overwriting contract intent', () => {
+    mockActive.mockReturnValue(activeBrand);
+    const lines = buildWorkbenchTurnSystemContext({
+      designAcceptanceContract: {
+        version: 1,
+        intent: 'agent_convergence',
+        acceptanceCriteria: ['必须保留用户选中的主版视觉方向'],
+        lockedRegions: [],
+        brandRefs: [],
+      },
+    } as any);
+    const joined = lines.join('\n');
+    const match = joined.match(/<design_acceptance_contract_json>\n([\s\S]*?)\n<\/design_acceptance_contract_json>/);
+    expect(match).toBeTruthy();
+    const contract = JSON.parse(match![1]);
+    expect(contract.intent).toBe('agent_convergence');
+    expect(contract.brandRefs[0]).toMatchObject({
+      id: 'porsche-x',
+      name: 'Porsche 数字化',
+      source: 'active_brand',
+      contract: {
+        keep: ['克制留白'],
+        change: ['主色可浮动'],
+        doNotCopy: ['不要渐变按钮', '不要 emoji 图标'],
+      },
+    });
+    expect(contract.brandRefs[0].tokens).toEqual(directionTokens.premium);
+  });
 });

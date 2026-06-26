@@ -155,6 +155,53 @@ describe('workbenchTurnContext', () => {
     expect(blocks[0]).toContain(directionTokens.technical.posture);
   });
 
+  it('injects the design acceptance contract as hidden agent convergence JSON', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      designBrief: {
+        constraints: ['Keep the signed-off CTA label unchanged'],
+      },
+      designAcceptanceContract: {
+        version: 1,
+        intent: 'agent_convergence',
+        source: 'handoff',
+        acceptanceCriteria: [
+          { id: 'interactive-state', text: 'CTA hover and pressed states work', priority: 'must', source: 'user' },
+        ],
+        lockedRegions: [
+          {
+            id: 'signed-off-hero',
+            nodeId: 'hero-node',
+            label: 'Signed-off hero',
+            preserve: ['layout', 'visual'],
+            lockMode: 'strict',
+            regionLock: { epsilon: 8, strict: true },
+          },
+        ],
+        brandRefs: [
+          {
+            id: 'manual-brand',
+            name: 'Manual Brand',
+            source: 'manual',
+            contract: {
+              keep: ['quiet typography'],
+              change: [],
+              doNotCopy: ['gradient blobs'],
+            },
+          },
+        ],
+      },
+    });
+
+    const joined = blocks.join('\n');
+    expect(joined).toContain('<design_acceptance_contract_json>');
+    expect(joined).toContain('"intent": "agent_convergence"');
+    expect(joined).toContain('CTA hover and pressed states work');
+    expect(joined).toContain('Keep the signed-off CTA label unchanged');
+    expect(joined).toContain('hero-node');
+    expect(joined).toContain('gradient blobs');
+    expect(joined).toContain('隐藏意图');
+  });
+
   it('merges turn system context into existing run options', () => {
     expect(withWorkbenchTurnSystemContext(
       { mode: 'normal', researchMode: false },

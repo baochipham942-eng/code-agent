@@ -58,6 +58,22 @@ export {
 } from './searchOrchestrator';
 
 export {
+  buildSearchPlan,
+} from './searchPlanner';
+
+export type {
+  PlannedSearchQuery,
+  SearchIntent,
+  SearchPlan,
+} from './searchPlanner';
+
+export {
+  rankSearchResultData,
+  rankSearchResults,
+  scoreSearchResult,
+} from './resultScoring';
+
+export {
   autoExtractFromResults,
   autoExtractFallback,
 } from './contentExtractor';

@@ -9,8 +9,8 @@ import {
   SEARCH_ENGINE_DOMAINS,
   isDomainBlocked,
   recordDomainFailure,
-  PREFERRED_EXTRACT_DOMAINS,
 } from './searchUtils';
+import { rankSearchResults } from './resultScoring';
 import { smartHtmlToText, smartTruncate, buildExtractionPrompt } from '../htmlUtils';
 import { fetchDocument } from '../fetchDocument';
 import { createLogger } from '../../../services/infra/logger';
@@ -53,30 +53,18 @@ export async function autoExtractFromResults(
 ): Promise<string | null> {
   // Extract URLs from search results, filtering blocked domains and sorting by quality
   const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
-  const candidateUrls = (resultData?.results || [])
-    .map(r => r.url)
-    .filter(url => {
+  const urls = rankSearchResults(resultData?.results || [])
+    .filter(result => {
       try {
-        const hostname = new URL(url).hostname;
+        const hostname = new URL(result.url).hostname;
         if (SEARCH_ENGINE_DOMAINS.some(d => hostname.endsWith(d))) return false;
-        if (isDomainBlocked(url)) return false;
+        if (isDomainBlocked(result.url)) return false;
         return true;
       } catch {
         return false;
       }
-    });
-
-  // Sort: preferred authoritative domains first
-  const urls = candidateUrls
-    .sort((a, b) => {
-      const aPreferred = PREFERRED_EXTRACT_DOMAINS.some(d => {
-        try { return new URL(a).hostname.endsWith(d); } catch { return false; }
-      }) ? 0 : 1;
-      const bPreferred = PREFERRED_EXTRACT_DOMAINS.some(d => {
-        try { return new URL(b).hostname.endsWith(d); } catch { return false; }
-      }) ? 0 : 1;
-      return aPreferred - bPreferred;
     })
+    .map(result => result.url)
     .slice(0, extractCount);
 
   if (urls.length === 0) return null;
@@ -145,18 +133,18 @@ export async function autoExtractFallback(
   extractCount: number,
 ): Promise<string | null> {
   const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
-  const urls = (resultData?.results || [])
-    .map(r => r.url)
-    .filter(url => {
+  const urls = rankSearchResults(resultData?.results || [])
+    .filter(result => {
       try {
-        const hostname = new URL(url).hostname;
+        const hostname = new URL(result.url).hostname;
         if (SEARCH_ENGINE_DOMAINS.some(d => hostname.endsWith(d))) return false;
-        if (isDomainBlocked(url)) return false;
+        if (isDomainBlocked(result.url)) return false;
         return true;
       } catch {
         return false;
       }
     })
+    .map(result => result.url)
     .slice(0, extractCount);
 
   if (urls.length === 0) return null;

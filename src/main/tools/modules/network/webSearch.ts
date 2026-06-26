@@ -30,6 +30,10 @@ import {
   getCircuitBreakerRemaining,
   SEARCH_PROVIDER_SETUP_MESSAGE,
   SEARCH_FAILURE_GUIDANCE,
+  buildSearchPlan,
+  rankSearchResultData,
+  type SearchPlan,
+  type PlannedSearchQuery,
 } from '../../web/search';
 import {
   autoExtractFromResults,
@@ -98,6 +102,45 @@ function buildRecencyMeta(recency: string | undefined, sources: string[]): {
     recencyEnforcedBy: uniqueSources.filter(source => RECENCY_ENFORCED_SOURCES.has(source)),
     recencyBestEffortBy: uniqueSources.filter(source => RECENCY_BEST_EFFORT_SOURCES.has(source)),
   };
+}
+
+function mergePlannedSearchResults(
+  originalQuery: string,
+  queryPlan: SearchPlan,
+  results: Array<{ plannedQuery: PlannedSearchQuery; result: ToolExecutionResult }>,
+): ToolExecutionResult {
+  const outputParts: string[] = [
+    `# Search results for: "${originalQuery}"`,
+    `Search plan: ${queryPlan.intent} (${results.length}/${queryPlan.queries.length} queries succeeded)`,
+    '',
+  ];
+  const mergedResults: SearchResult[] = [];
+  const mergedSources: string[] = [];
+  let duration = 0;
+
+  for (const item of results) {
+    const resultData = getResultData(item.result);
+    mergedResults.push(...resultData.results);
+    mergedSources.push(...resultData.sources);
+    duration += resultData.duration ?? 0;
+    outputParts.push(`## Query: ${item.plannedQuery.query}`);
+    if (item.result.output) outputParts.push(item.result.output);
+    outputParts.push('');
+  }
+
+  const merged: ToolExecutionResult = {
+    success: true,
+    output: outputParts.join('\n'),
+    result: {
+      results: mergedResults,
+      sources: uniqueSourceNames(mergedSources),
+      duration,
+      queryPlan,
+    },
+  };
+  deduplicateResults(merged);
+  rankSearchResultData(merged);
+  return merged;
 }
 
 async function translateOutputIfNeeded(
@@ -230,6 +273,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
       };
     }
 
+    const queryPlan = buildSearchPlan(query, { mode, requestedSources });
     const routing = routeSources(query, { mode, requestedSources });
     const routedAvailable = allAvailable.filter(s => routing.sources.includes(s.name));
 
@@ -270,13 +314,29 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
       ...routingMeta,
     });
 
-    let searchResult = parallel && availableSources.length > 1
-      ? await parallelSearch(query, count, availableSources, configService, domainFilter, recency)
-      : await serialSearch(query, count, availableSources, configService, domainFilter, recency);
-
-    if (searchResult.success) {
-      deduplicateResults(searchResult);
+    const successfulSearches: Array<{ plannedQuery: PlannedSearchQuery; result: ToolExecutionResult }> = [];
+    const failedSearches: string[] = [];
+    for (const plannedQuery of queryPlan.queries) {
+      const result = parallel && availableSources.length > 1
+        ? await parallelSearch(plannedQuery.query, count, availableSources, configService, domainFilter, recency)
+        : await serialSearch(plannedQuery.query, count, availableSources, configService, domainFilter, recency);
+      if (result.success) {
+        deduplicateResults(result);
+        rankSearchResultData(result);
+        successfulSearches.push({ plannedQuery, result });
+      } else {
+        failedSearches.push(`${plannedQuery.query}: ${result.error || 'Search failed'}`);
+      }
     }
+
+    let searchResult = successfulSearches.length === 1
+      ? successfulSearches[0].result
+      : successfulSearches.length > 1
+        ? mergePlannedSearchResults(query, queryPlan, successfulSearches)
+        : {
+            success: false,
+            error: failedSearches.join('\n') || 'WebSearch failed',
+          } satisfies ToolExecutionResult;
 
     if (autoExtract && searchResult.success) {
       const extractedContent = ctx.modelCallback
@@ -304,7 +364,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
         ok: false,
         error: `${searchResult.error || 'WebSearch failed'}\n\n${SEARCH_FAILURE_GUIDANCE}`,
         code: 'NETWORK_ERROR',
-        meta: { routing: routingMeta, ...recencyMeta },
+        meta: { routing: routingMeta, queryPlan, ...recencyMeta },
       };
     }
 
@@ -353,6 +413,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
             resultCount: resultData.results.length,
             sources: resultData.sources,
             routingReason: routing.reason,
+            queryPlan,
             ...recencyMeta,
           },
         }),
@@ -366,6 +427,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
         outputFormat,
         language,
         routing: routingMeta,
+        queryPlan,
         resultCount: resultData.results.length,
         results: resultData.results,
         sources: resultData.sources,

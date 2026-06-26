@@ -22,6 +22,8 @@ const {
   serialSearchMock,
   deduplicateResultsMock,
   formatAsTableMock,
+  buildSearchPlanMock,
+  rankSearchResultDataMock,
 } = vi.hoisted(() => ({
   routeSourcesMock: vi.fn(),
   getAvailableSourcesMock: vi.fn(),
@@ -29,6 +31,8 @@ const {
   serialSearchMock: vi.fn(),
   deduplicateResultsMock: vi.fn(),
   formatAsTableMock: vi.fn(),
+  buildSearchPlanMock: vi.fn(),
+  rankSearchResultDataMock: vi.fn(),
 }));
 
 vi.mock('../../../../../src/main/tools/web/search', () => ({
@@ -38,6 +42,8 @@ vi.mock('../../../../../src/main/tools/web/search', () => ({
   serialSearch: (...args: unknown[]) => serialSearchMock(...args),
   deduplicateResults: (...args: unknown[]) => deduplicateResultsMock(...args),
   formatAsTable: (...args: unknown[]) => formatAsTableMock(...args),
+  buildSearchPlan: (...args: unknown[]) => buildSearchPlanMock(...args),
+  rankSearchResultData: (...args: unknown[]) => rankSearchResultDataMock(...args),
   getCircuitBreakerRemaining: () => 0,
   SEARCH_PROVIDER_SETUP_MESSAGE: [
     '当前没有可用的联网搜索源。',
@@ -122,6 +128,18 @@ beforeEach(() => {
   serialSearchMock.mockResolvedValue(makeSearchResult());
   deduplicateResultsMock.mockImplementation(() => undefined);
   formatAsTableMock.mockReturnValue('### 1. Result One\nfirst snippet\nhttps://example.com/a\n');
+  buildSearchPlanMock.mockImplementation((query: string, options: { mode?: 'quick' | 'research' } = {}) => ({
+    intent: query.includes('OpenAI Responses API') ? 'official_docs' : 'general',
+    maxQueryRewrites: options.mode === 'research' ? 1 : 0,
+    expectedSourceTypes: query.includes('OpenAI Responses API') ? ['official', 'documentation'] : ['general'],
+    queries: options.mode === 'research' && query.includes('OpenAI Responses API')
+      ? [
+          { query, purpose: 'primary' },
+          { query: `${query} official documentation`, purpose: 'official' },
+        ]
+      : [{ query, purpose: 'primary' }],
+  }));
+  rankSearchResultDataMock.mockImplementation((result) => result);
   autoExtractFromResultsMock.mockResolvedValue('---\n# Auto-Extracted Content\n\nextracted');
   autoExtractFallbackMock.mockResolvedValue('---\n# Fetched Page Content\n\nfallback');
 });
@@ -278,6 +296,25 @@ describe('webSearchModule (native)', () => {
     if (result.ok) {
       expect(result.output).toContain('# Fetched Page Content');
       expect(result.meta?.autoExtract).toBe(true);
+    }
+  });
+
+  it('runs at most one complementary planned query in research mode', async () => {
+    const result = await run({ query: 'OpenAI Responses API web_search parameters', mode: 'research' });
+
+    expect(result.ok).toBe(true);
+    expect(parallelSearchMock).toHaveBeenCalledTimes(2);
+    expect(parallelSearchMock.mock.calls[0][0]).toBe('OpenAI Responses API web_search parameters');
+    expect(parallelSearchMock.mock.calls[1][0]).toBe('OpenAI Responses API web_search parameters official documentation');
+    if (result.ok) {
+      expect(result.meta?.queryPlan).toMatchObject({
+        intent: 'official_docs',
+        maxQueryRewrites: 1,
+        queries: [
+          { query: 'OpenAI Responses API web_search parameters', purpose: 'primary' },
+          { query: 'OpenAI Responses API web_search parameters official documentation', purpose: 'official' },
+        ],
+      });
     }
   });
 

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import fs from 'fs/promises';
-import { fileReadTracker } from '../fileReadTracker';
+import { computeContentDigest, fileReadTracker } from '../fileReadTracker';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ExternalModificationDetector');
@@ -29,6 +29,12 @@ export interface ModificationCheckResult {
     readSize: number;
     /** Current file size */
     currentSize: number;
+    /** digest when file was last read */
+    readDigest?: string;
+    /** current digest of the file */
+    currentDigest?: string;
+    /** Whether digest changed */
+    digestChanged: boolean;
   };
 }
 
@@ -55,23 +61,29 @@ export async function checkExternalModification(
     const stats = await fs.stat(filePath);
     const currentMtime = stats.mtimeMs;
     const currentSize = stats.size;
+    const currentDigest = computeContentDigest(await fs.readFile(filePath));
 
     // Check mtime difference (allow 1ms tolerance for filesystem precision)
     const mtimeChanged = Math.abs(currentMtime - record.mtime) > 1;
     // Check size difference
     const sizeChanged = currentSize !== record.size;
+    // Check content digest when the read record has one
+    const digestChanged = Boolean(record.digest && record.digest !== currentDigest);
 
-    if (mtimeChanged || sizeChanged) {
+    if (mtimeChanged || sizeChanged || digestChanged) {
       const timeSinceRead = Date.now() - record.readTime;
 
       logger.warn('External modification detected', {
         filePath,
         mtimeChanged,
         sizeChanged,
+        digestChanged,
         readMtime: record.mtime,
         currentMtime,
         readSize: record.size,
         currentSize,
+        readDigest: record.digest,
+        currentDigest,
       });
 
       return {
@@ -79,6 +91,7 @@ export async function checkExternalModification(
         message: buildModificationMessage(
           mtimeChanged,
           sizeChanged,
+          digestChanged,
           timeSinceRead
         ),
         details: {
@@ -87,6 +100,9 @@ export async function checkExternalModification(
           timeSinceRead,
           readSize: record.size,
           currentSize,
+          readDigest: record.digest,
+          currentDigest,
+          digestChanged,
         },
       };
     }
@@ -118,11 +134,14 @@ export async function checkExternalModification(
 function buildModificationMessage(
   mtimeChanged: boolean,
   sizeChanged: boolean,
+  digestChanged: boolean,
   timeSinceReadMs: number
 ): string {
   const parts: string[] = [];
 
-  if (mtimeChanged && sizeChanged) {
+  if (digestChanged) {
+    parts.push('File was modified externally (content digest changed)');
+  } else if (mtimeChanged && sizeChanged) {
     parts.push('File was modified externally (content and timestamp changed)');
   } else if (mtimeChanged) {
     parts.push('File was modified externally (timestamp changed)');

@@ -31,6 +31,16 @@ export const writeSchema: ToolSchema = {
             'For JSON files, use JSON.stringify() format. ' +
             'For code files, include proper indentation and newlines.',
       },
+      force: {
+        type: 'boolean',
+        description:
+          'Bypass the existing-file pre-read and stale digest gate. Only valid for overwrites when force_reason is provided.',
+      },
+      force_reason: {
+        type: 'string',
+        description:
+          'Required when force=true for overwriting an existing file. Explain why bypassing the read/digest safety gate is intentional.',
+      },
     },
     required: ['file_path', 'content'],
   },

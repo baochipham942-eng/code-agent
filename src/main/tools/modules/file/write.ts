@@ -34,6 +34,8 @@ import { getResourceLockManager } from '../../../services/infra/resourceLockMana
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { writeSchema as schema } from './write.schema';
+import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
+import { checkExternalModification } from '../../utils/externalModificationDetector';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -213,6 +215,8 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
   ): Promise<ToolResult<string>> {
     const rawPath = args.file_path;
     const content = args.content;
+    const force = Boolean(args.force);
+    const forceReason = typeof args.force_reason === 'string' ? args.force_reason.trim() : '';
 
     if (typeof rawPath !== 'string' || !rawPath) {
       return {
@@ -277,6 +281,54 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         // 不存在，正常创建
       }
 
+      let forceAudit: Record<string, unknown> | undefined;
+      if (existed) {
+        const readRecord = fileReadTracker.getReadRecord(resolvedPath);
+        if (force && !forceReason) {
+          return {
+            ok: false,
+            error: 'force=true for overwriting an existing file requires force_reason for audit.',
+            code: 'FORCE_REASON_REQUIRED',
+          };
+        }
+
+        if (!force) {
+          if (!readRecord) {
+            return {
+              ok: false,
+              error:
+                'Existing file must be read before overwrite. Use Read first to bind the latest digest, ' +
+                'then retry Write. Use force=true with force_reason only when intentionally overriding.',
+              code: 'NOT_READ_FOR_OVERWRITE',
+              meta: { outputPath: resolvedPath },
+            };
+          }
+
+          const modCheck = await checkExternalModification(resolvedPath);
+          if (modCheck.modified) {
+            return {
+              ok: false,
+              error: `${modCheck.message}. Re-read the file before overwriting it.`,
+              code: 'STALE_FILE',
+              meta: {
+                outputPath: resolvedPath,
+                modification: modCheck.details,
+                evidenceRef: readRecord.evidenceRef,
+              },
+            };
+          }
+        } else {
+          forceAudit = {
+            action: 'write_overwrite_force',
+            path: resolvedPath,
+            reason: forceReason,
+            hadRead: Boolean(readRecord),
+            readDigest: readRecord?.digest,
+          };
+          ctx.logger.warn('Write overwrite safety overridden', forceAudit);
+        }
+      }
+
       const largeSingleWriteArtifact = isLargeSingleWriteArtifact(resolvedPath, content, existed);
       if (shouldRejectOversizedSingleWriteArtifact(resolvedPath, content, existed)) {
         return {
@@ -295,6 +347,11 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
       }
 
       await atomicWriteFile(resolvedPath, content, 'utf-8');
+      const newStats = await fs.stat(resolvedPath);
+      const newDigest = computeContentDigest(content);
+      if (fileReadTracker.hasBeenRead(resolvedPath)) {
+        fileReadTracker.updateAfterEdit(resolvedPath, newStats.mtimeMs, newStats.size, newDigest);
+      }
       const action = existed ? 'Updated' : 'Created';
 
       // 代码完整性检测（仅代码文件）
@@ -321,12 +378,15 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
                   completenessIssues: check.issues,
                   contentLength: content.length,
                   largeSingleWriteArtifact,
+                  ...(forceAudit ? { audit: forceAudit } : {}),
                 },
               }),
               outputPath: resolvedPath,
               completenessIssues: check.issues,
               largeSingleWriteArtifact,
               contentLength: content.length,
+              digest: newDigest,
+              ...(forceAudit ? { audit: forceAudit } : {}),
             },
           };
         }
@@ -358,11 +418,14 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
               action: action.toLowerCase(),
               contentLength: content.length,
               largeSingleWriteArtifact,
+              ...(forceAudit ? { audit: forceAudit } : {}),
             },
           }),
           outputPath: resolvedPath,
           largeSingleWriteArtifact,
           contentLength: content.length,
+          digest: newDigest,
+          ...(forceAudit ? { audit: forceAudit } : {}),
         },
       };
     } catch (err) {

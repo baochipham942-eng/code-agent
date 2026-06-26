@@ -6,10 +6,18 @@
 // unread files and warn about external modifications.
 // ============================================================================
 
+import { createHash } from 'crypto';
 import fs from 'fs/promises';
+import type { EvidenceRef } from '../../shared/contract/evidence';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('FileReadTracker');
+
+export interface FileReadShownRange {
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+}
 
 interface FileReadRecord {
   /** Modification time when file was read */
@@ -18,6 +26,22 @@ interface FileReadRecord {
   readTime: number;
   /** File size at read time (for additional verification) */
   size: number;
+  /** Short sha256 digest of the file content at read time */
+  digest?: string;
+  /** ADR-029 read evidence ref produced by the Read tool */
+  evidenceRef?: EvidenceRef;
+  /** Visible line range that backed the read evidence ref */
+  shownRange?: FileReadShownRange;
+}
+
+export interface RecordReadOptions {
+  digest?: string;
+  evidenceRef?: EvidenceRef;
+  shownRange?: FileReadShownRange;
+}
+
+export function computeContentDigest(content: string | Buffer): string {
+  return createHash('sha256').update(content).digest('hex').slice(0, 16);
 }
 
 /**
@@ -48,23 +72,31 @@ class FileReadTracker {
    * @param mtime - File's modification time (from fs.stat)
    * @param size - File size in bytes
    */
-  recordRead(filePath: string, mtime: number, size: number): void {
+  recordRead(filePath: string, mtime: number, size: number, options: RecordReadOptions = {}): void {
     this.readFiles.set(filePath, {
       mtime,
       readTime: Date.now(),
       size,
+      ...(options.digest ? { digest: options.digest } : {}),
+      ...(options.evidenceRef ? { evidenceRef: options.evidenceRef } : {}),
+      ...(options.shownRange ? { shownRange: options.shownRange } : {}),
     });
-    logger.debug('Recorded file read', { filePath, mtime, size });
+    logger.debug('Recorded file read', { filePath, mtime, size, digest: options.digest });
   }
 
   /**
    * Record a file read by fetching stats automatically
    * @param filePath - Absolute path to the file
    */
-  async recordReadWithStats(filePath: string): Promise<void> {
+  async recordReadWithStats(filePath: string, options: RecordReadOptions = {}): Promise<void> {
     try {
       const stats = await fs.stat(filePath);
-      this.recordRead(filePath, stats.mtimeMs, stats.size);
+      let digest = options.digest;
+      if (!digest) {
+        const content = await fs.readFile(filePath);
+        digest = computeContentDigest(content);
+      }
+      this.recordRead(filePath, stats.mtimeMs, stats.size, { ...options, digest });
     } catch (error) {
       logger.warn('Failed to record file read stats', { filePath, error });
     }
@@ -94,14 +126,17 @@ class FileReadTracker {
    * @param currentMtime - Current modification time of the file
    * @returns true if the file was modified externally
    */
-  checkExternalModification(filePath: string, currentMtime: number): boolean {
+  checkExternalModification(filePath: string, currentMtime: number, currentSize?: number, currentDigest?: string): boolean {
     const record = this.readFiles.get(filePath);
     if (!record) {
       // File was never read - can't determine external modification
       return false;
     }
     // Allow 1ms tolerance for filesystem timestamp precision
-    return Math.abs(currentMtime - record.mtime) > 1;
+    const mtimeChanged = Math.abs(currentMtime - record.mtime) > 1;
+    const sizeChanged = typeof currentSize === 'number' && currentSize !== record.size;
+    const digestChanged = Boolean(record.digest && currentDigest && record.digest !== currentDigest);
+    return mtimeChanged || sizeChanged || digestChanged;
   }
 
   /**
@@ -116,6 +151,8 @@ class FileReadTracker {
     message?: string;
     originalMtime?: number;
     currentMtime?: number;
+    originalDigest?: string;
+    currentDigest?: string;
   }> {
     const record = this.readFiles.get(filePath);
     if (!record) {
@@ -124,7 +161,9 @@ class FileReadTracker {
 
     try {
       const stats = await fs.stat(filePath);
-      const modified = Math.abs(stats.mtimeMs - record.mtime) > 1;
+      const content = await fs.readFile(filePath);
+      const currentDigest = computeContentDigest(content);
+      const modified = this.checkExternalModification(filePath, stats.mtimeMs, stats.size, currentDigest);
 
       if (modified) {
         return {
@@ -132,6 +171,8 @@ class FileReadTracker {
           message: `File was modified externally since last read`,
           originalMtime: record.mtime,
           currentMtime: stats.mtimeMs,
+          originalDigest: record.digest,
+          currentDigest,
         };
       }
 
@@ -148,12 +189,15 @@ class FileReadTracker {
    * @param newMtime - New modification time after edit
    * @param newSize - New file size after edit
    */
-  updateAfterEdit(filePath: string, newMtime: number, newSize: number): void {
+  updateAfterEdit(filePath: string, newMtime: number, newSize: number, newDigest?: string): void {
     const record = this.readFiles.get(filePath);
     if (record) {
       record.mtime = newMtime;
       record.size = newSize;
-      logger.debug('Updated file record after edit', { filePath, newMtime });
+      if (newDigest) {
+        record.digest = newDigest;
+      }
+      logger.debug('Updated file record after edit', { filePath, newMtime, digest: newDigest });
     }
   }
 
@@ -197,7 +241,7 @@ class FileReadTracker {
   /**
    * 获取最近读取的 N 个文件（按 readTime 降序）
    */
-  getRecentFiles(n: number): Array<{ path: string; mtime: number; readTime: number; size: number }> {
+  getRecentFiles(n: number): Array<{ path: string; mtime: number; readTime: number; size: number; digest?: string }> {
     return Array.from(this.readFiles.entries())
       .sort((a, b) => b[1].readTime - a[1].readTime)
       .slice(0, n)
@@ -206,6 +250,7 @@ class FileReadTracker {
         mtime: record.mtime,
         readTime: record.readTime,
         size: record.size,
+        digest: record.digest,
       }));
   }
 }

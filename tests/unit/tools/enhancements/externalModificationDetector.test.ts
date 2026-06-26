@@ -93,6 +93,26 @@ describe('ExternalModificationDetector', () => {
       expect(result.message).toContain('has not been modified');
     });
 
+    it('should detect digest changes when size and mtime are unchanged', async () => {
+      fs.writeFileSync(testFile, 'abc');
+      await fileReadTracker.recordReadWithStats(testFile);
+      const originalStats = fs.statSync(testFile);
+
+      fs.writeFileSync(testFile, 'xyz');
+      fs.utimesSync(testFile, originalStats.atime, originalStats.mtime);
+
+      const result = await checkExternalModification(testFile);
+      expect(result.modified).toBe(true);
+      expect(result.message).toContain('digest changed');
+      expect(result.details).toMatchObject({
+        readSize: 3,
+        currentSize: 3,
+        digestChanged: true,
+        readDigest: expect.any(String),
+        currentDigest: expect.any(String),
+      });
+    });
+
     it('should detect when tracked file is deleted', async () => {
       const stats = fs.statSync(testFile);
       fileReadTracker.recordRead(testFile, stats.mtimeMs, stats.size);

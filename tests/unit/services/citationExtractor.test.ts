@@ -106,6 +106,7 @@ src/utils.ts`;
       );
       expect(citations.length).toBeGreaterThanOrEqual(2);
       expect(citations.every(c => c.type === 'url')).toBe(true);
+      expect(citations[0].label).toBe('Example');
     });
 
     it('should extract URLs from PascalCase WebSearch alias', () => {
@@ -119,6 +120,37 @@ src/utils.ts`;
       );
       expect(citations.length).toBeGreaterThanOrEqual(2);
       expect(citations.every(c => c.type === 'url')).toBe(true);
+    });
+
+    it('should prefer table result titles for URL citation labels', () => {
+      const output = `### 1. OpenAI Web Search Guide (2 days ago)
+Official documentation for the Responses API web search tool.
+https://developers.openai.com/api/docs/guides/tools-web-search
+
+### 2. Pricing
+https://openai.com/api/pricing`;
+      const citations = extractCitations('WebSearch', 'tc-1', { query: 'openai web search' }, output);
+
+      expect(citations).toHaveLength(2);
+      expect(citations[0].source).toBe('https://developers.openai.com/api/docs/guides/tools-web-search');
+      expect(citations[0].label).toBe('OpenAI Web Search Guide');
+      expect(citations[1].label).toBe('Pricing');
+    });
+
+    it('should prefer merged provider result titles for URL citation labels', () => {
+      const output = `## Results from exa
+- **Vitest worker timeout issue** (3 days ago)
+  https://github.com/vitest-dev/vitest/issues/123
+  Primary issue discussion.
+
+- **Best Vitest fixes**
+  https://best-tools.example.com/vitest-timeout
+  SEO listicle.`;
+      const citations = extractCitations('web_search', 'tc-1', { query: 'vitest timeout' }, output);
+
+      expect(citations).toHaveLength(2);
+      expect(citations[0].label).toBe('Vitest worker timeout issue');
+      expect(citations[1].label).toBe('Best Vitest fixes');
     });
   });
 

@@ -133,13 +133,13 @@ function extractWebFetchCitations(
 // web_search → 搜索结果 URL
 function extractWebSearchCitations(toolCallId: string, output: string): Citation[] {
   const citations: Citation[] = [];
-  // 提取输出中的 URL
+  const urlTitles = extractWebSearchUrlTitles(output);
   const urlPattern = /https?:\/\/[^\s"'<>\]]+/g;
   const seen = new Set<string>();
 
   let match;
   while ((match = urlPattern.exec(output)) !== null && citations.length < 5) {
-    const url = match[0].replace(/[.,;:!?)]+$/, ''); // 移除尾部标点
+    const url = normalizeExtractedUrl(match[0]);
     if (seen.has(url)) continue;
     seen.add(url);
 
@@ -147,13 +147,73 @@ function extractWebSearchCitations(toolCallId: string, output: string): Citation
       id: nextCitationId(),
       type: 'url',
       source: url,
-      label: truncateUrl(url),
+      label: urlTitles.get(url) || truncateUrl(url),
       toolCallId,
       timestamp: Date.now(),
     });
   }
 
   return citations;
+}
+
+function extractWebSearchUrlTitles(output: string): Map<string, string> {
+  const urlTitles = new Map<string, string>();
+  const urlPattern = /https?:\/\/[^\s"'<>\]]+/g;
+  let currentTitle: string | undefined;
+
+  for (const line of output.split('\n')) {
+    const standaloneTitle = extractStandaloneSearchTitle(line);
+    if (standaloneTitle) currentTitle = standaloneTitle;
+
+    let match;
+    while ((match = urlPattern.exec(line)) !== null) {
+      const url = normalizeExtractedUrl(match[0]);
+      const sameLineTitle = cleanCitationTitle(line.slice(0, match.index));
+      const title = sameLineTitle || currentTitle;
+      if (title && !urlTitles.has(url)) {
+        urlTitles.set(url, title);
+      }
+    }
+  }
+
+  return urlTitles;
+}
+
+function extractStandaloneSearchTitle(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (/https?:\/\//.test(trimmed)) return undefined;
+
+  const heading = trimmed.match(/^#{1,6}\s+\d+\.\s+(.+)$/);
+  if (heading) return cleanCitationTitle(heading[1]);
+
+  const bulletBold = trimmed.match(/^[-*]\s+\*\*(.+?)\*\*/);
+  if (bulletBold) return cleanCitationTitle(bulletBold[1]);
+
+  const numbered = trimmed.match(/^\d+\.\s+(.+)$/);
+  if (numbered) return cleanCitationTitle(numbered[1]);
+
+  return undefined;
+}
+
+function cleanCitationTitle(raw: string | undefined): string | undefined {
+  let title = raw?.trim();
+  if (!title) return undefined;
+
+  title = title
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^\d+\.\s+/, '')
+    .replace(/^[-*]\s+/, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+[-–—:]\s*$/, '')
+    .replace(/\s+\([^)]{1,40}\)$/, '')
+    .trim();
+
+  if (!title || /^sources:?$/i.test(title) || /^citations:?$/i.test(title)) return undefined;
+  return title.length > 80 ? `${title.slice(0, 77)}...` : title;
+}
+
+function normalizeExtractedUrl(url: string): string {
+  return url.replace(/[.,;:!?)]+$/, '');
 }
 
 // read_xlsx / read_pdf / read_docx → 文档引用

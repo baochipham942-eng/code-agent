@@ -271,3 +271,33 @@ export function nextNodePlacement(
   }
   return { x: maxRight + gap, y: topY };
 }
+
+/**
+ * 计算把全部节点 bbox 居中并缩放到适配视口的相机（留 padding）。
+ * 用于「节点新增时自动 fit-to-view」，避免出图回灌后内容跑出视口看不见。
+ * 退化 bbox（单点/零尺寸）只居中不缩放；空集 / 无效视口返回 null。
+ */
+export function computeFitCamera(
+  nodes: readonly CanvasNode[],
+  viewW: number,
+  viewH: number,
+  padding = 0.9,
+): CanvasCamera | null {
+  if (nodes.length === 0 || viewW <= 0 || viewH <= 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x + n.width > maxX) maxX = n.x + n.width;
+    if (n.y + n.height > maxY) maxY = n.y + n.height;
+  }
+  const bboxW = maxX - minX;
+  const bboxH = maxY - minY;
+  const scale = bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1;
+  const cx = minX + bboxW / 2;
+  const cy = minY + bboxH / 2;
+  return { scale, x: viewW / 2 - cx * scale, y: viewH / 2 - cy * scale };
+}

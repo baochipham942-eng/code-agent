@@ -162,6 +162,9 @@ class LogBridge {
     const server = this.server;
     return new Promise((resolve, reject) => {
       server.listen(this.port, '127.0.0.1', () => {
+        // 传入端口 0 时由 OS 分配空闲端口，回填实际端口供调用方读取（测试隔离用）。
+        const address = server.address();
+        if (address && typeof address === 'object') this.port = address.port;
         console.error(`[LogBridge] HTTP log server started on http://127.0.0.1:${this.port}`);
         resolve();
       });

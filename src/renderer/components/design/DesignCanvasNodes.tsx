@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
 import { useI18n } from '../../hooks/useI18n';
-import { readWorkspaceImageAsDataUrl } from './designFiles';
+import { readWorkspaceImageAsDataUrl, readWorkspaceBinaryAsBlobUrl } from './designFiles';
+import { captureVideoFirstFrame } from './designVideoPoster';
 import {
   formatDurationLabel,
   isReferenceNode,
@@ -194,7 +195,23 @@ export const KonvaVideoNode: React.FC<{
   onSelect: (additive: boolean) => void;
   onPlay: () => void;
 }> = ({ node, runDir, selected, panModifierActive, onSelect, onPlay }) => {
-  const poster = useNodeImage(runDir, node.poster ?? '');
+  // 老视频节点（封面落地前生成的）没有 poster：懒抽首帧补一张封面，避免画布上黑底看不出内容。
+  const [lazyPoster, setLazyPoster] = useState<string | null>(null);
+  useEffect(() => {
+    if (node.poster || !runDir) return;
+    let alive = true;
+    void (async () => {
+      const blobUrl = await readWorkspaceBinaryAsBlobUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`);
+      if (!blobUrl) return;
+      const data = await captureVideoFirstFrame(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+      if (alive && data) setLazyPoster(data);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [runDir, node.src, node.poster]);
+  const poster = useNodeImage(runDir, node.poster || lazyPoster || '');
   const pick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
     const evt = e.evt as MouseEvent;
     if (

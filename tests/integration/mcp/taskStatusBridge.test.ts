@@ -6,9 +6,9 @@
 // 单一生命周期（beforeAll start / afterAll stop），避免反复 start/stop 抢占端口的 race。
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { logBridge, type TaskStatusBridgeProvider } from '../../../src/main/mcp/logBridge';
-import { PORTS } from '../../../src/shared/constants/index';
 
-const BASE = `http://127.0.0.1:${PORTS.logBridge}`;
+// 用 OS 分配的临时端口（start(0)）隔离测试，避免撞固定 51820（本机跑着 app 或并行测试时会 EADDRINUSE）。
+let BASE = '';
 
 const fakeProvider: TaskStatusBridgeProvider = {
   listTasks: (opts) => ({ swarmRuns: [{ id: 'run-1', limit: opts.limit ?? null }], liveSessions: [{ sessionId: 's1', status: 'running' }] }),
@@ -25,7 +25,8 @@ async function getJson(path: string): Promise<{ status: number; body: unknown }>
 describe('LogBridge P3-A read-only task routes', () => {
   beforeAll(async () => {
     logBridge.setTaskStatusProvider(fakeProvider);
-    await logBridge.start();
+    await logBridge.start(0);
+    BASE = `http://127.0.0.1:${logBridge.getPort()}`;
   });
 
   afterAll(async () => {

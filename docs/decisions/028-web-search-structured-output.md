@@ -1,7 +1,20 @@
 # ADR-028: WebSearch 结构化证据输出
 
-> 状态: proposed
+> 状态: deferred
 > 日期: 2026-06-26
+
+## 更新 2026-06-26（deferred 决议）
+
+P0/P1 合并后跑了一轮 live eval（每类各 1 条真实搜索）。结论是结构化输出的边际价值已显著下降，故**暂缓**本 ADR，不立即改 tool result 契约：
+
+- citation 已恢复且**标签质量高**（真实标题，非裸 URL），markdown URL 抽取在实测中已够用——“证据绑定的稳定 citationId”相对现状的增量收益比预估小。
+- provider 失败已对用户可见（markdown `sources failed` note），且聚合优雅降级实测有效（perplexity 401 / exa 402 均不阻塞）。
+- 第 7 步剩余的真增量仅 search trace 面板 + 未来 hosted trace 契约落脚，属锦上添花、非关键缺口。
+- 本 eval 仅覆盖“管道层”（引用/源/失败是否正确捕获），**未覆盖答案 grounding 质量**；若后续要提升“claim 必须由证据支撑”，优先走计划 §6 的 prompt policy 切片（不改契约、成本低），而非本 ADR。
+
+重新启用条件：产品需要结构化引用 UI / trace 面板，或 P2 hosted trace 映射需要稳定契约时，再恢复 proposed 推进。下方原提案内容保留备查。
+
+---
 
 ## 背景
 

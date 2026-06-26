@@ -25,7 +25,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { fileReadTracker } from '../../fileReadTracker';
+import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { checkExternalModification } from '../../utils/externalModificationDetector';
 import {
   findMatchingString,
@@ -78,6 +78,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
   ): Promise<ToolResult<string>> {
     const inputPath = args.file_path as string | undefined;
     const force = Boolean(args.force);
+    const forceReason = typeof args.force_reason === 'string' ? args.force_reason.trim() : '';
 
     if (!inputPath || typeof inputPath !== 'string') {
       return {
@@ -109,15 +110,36 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       : path.resolve(ctx.workingDir, inputPath);
     const filePath = confineEvalPath(inputFilePath, ctx.workingDir);
 
+    if (force && !forceReason) {
+      return {
+        ok: false,
+        error: 'force=true requires force_reason for audit.',
+        code: 'FORCE_REASON_REQUIRED',
+      };
+    }
+
     // Safety: file 必须先 Read
     if (!force && !fileReadTracker.hasBeenRead(filePath)) {
       return {
         ok: false,
         error:
           'File must be read before editing. Use Read first to view the current content, ' +
-          'then make your edit. (Use force: true to bypass this check)',
+          'then make your edit. (Use force: true with force_reason to bypass this check)',
         code: 'NOT_READ',
       };
+    }
+    const readRecord = fileReadTracker.getReadRecord(filePath);
+    const forceAudit = force
+      ? {
+          action: 'edit_force',
+          path: filePath,
+          reason: forceReason,
+          hadRead: Boolean(readRecord),
+          readDigest: readRecord?.digest,
+        }
+      : undefined;
+    if (forceAudit) {
+      ctx.logger.warn('Edit safety overridden', forceAudit);
     }
 
     onProgress?.({ stage: 'starting', detail: `edit ${path.basename(filePath)}` });
@@ -147,8 +169,12 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         if (modCheck.modified) {
           return {
             ok: false,
-            error: `${modCheck.message}. Re-read the file to see the current content. (Use force: true to bypass)`,
-            code: 'EXTERNAL_MODIFIED',
+            error: `${modCheck.message}. Re-read the file to see the current content.`,
+            code: 'STALE_FILE',
+            meta: {
+              modification: modCheck.details,
+              evidenceRef: readRecord?.evidenceRef,
+            },
           };
         }
       }
@@ -258,7 +284,8 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       await atomicWriteFile(filePath, content, 'utf-8');
 
       const stats = await fs.stat(filePath);
-      fileReadTracker.updateAfterEdit(filePath, stats.mtimeMs, stats.size);
+      const newDigest = computeContentDigest(content);
+      fileReadTracker.updateAfterEdit(filePath, stats.mtimeMs, stats.size, newDigest);
 
       const lineCount = content.split('\n').length;
       let output = `Edited ${filePath}: ${edits.length} edit(s) applied, ${totalReplacements} total replacement(s). File has ${lineCount} lines.\n`;
@@ -284,6 +311,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           editCount: edits.length,
           replacementCount: totalReplacements,
           lineCount,
+          ...(forceAudit ? { audit: forceAudit } : {}),
         },
       }).catch(() => undefined);
 
@@ -299,6 +327,8 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           replacementCount: totalReplacements,
           lineCount,
           edits: editResults,
+          digest: newDigest,
+          ...(forceAudit ? { audit: forceAudit } : {}),
           ...(artifact ? { artifact } : {}),
         },
       };

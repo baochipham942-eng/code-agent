@@ -36,7 +36,11 @@ Tips:
           required: ['old_text', 'new_text'],
         },
       },
-      force: { type: 'boolean', description: 'Bypass safety checks (default: false)' },
+      force: { type: 'boolean', description: 'Bypass safety checks (default: false); requires force_reason.' },
+      force_reason: {
+        type: 'string',
+        description: 'Required when force=true. Explain why bypassing the read/digest safety gate is intentional.',
+      },
     },
     required: ['file_path', 'edits'],
   },

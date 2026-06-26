@@ -11,6 +11,7 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/main/protocol/tools';
+import { fileReadTracker } from '../../../../../src/main/tools/fileReadTracker';
 
 vi.mock('../../../../../src/main/services/infra/logger', () => ({
   createLogger: () => ({
@@ -47,9 +48,11 @@ describe('readModule (native)', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'read-native-'));
+    fileReadTracker.clear();
   });
 
   afterEach(async () => {
+    fileReadTracker.clear();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -122,6 +125,40 @@ describe('readModule (native)', () => {
           sourceTool: 'Read',
           path: file,
         });
+      }
+    });
+
+    it('returns a read EvidenceRef with digest and shown range metadata', async () => {
+      const file = path.join(tmpDir, 'evidence.txt');
+      await fs.writeFile(file, 'alpha\nbeta\ngamma\n', 'utf-8');
+
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, offset: 2, limit: 1 },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.meta?.evidenceRef).toMatchObject({
+          kind: 'read',
+          ref: `${file}#L2-L2`,
+          source: 'Read',
+          freshness: {
+            state: 'read',
+            digest: expect.any(String),
+          },
+          redactionStatus: 'clean',
+        });
+        expect(result.meta?.shownRange).toEqual({
+          startLine: 2,
+          endLine: 2,
+          totalLines: 4,
+        });
+        const record = fileReadTracker.getReadRecord(file);
+        expect(record?.digest).toBe(result.meta?.digest);
+        expect(record?.evidenceRef).toEqual(result.meta?.evidenceRef);
       }
     });
 

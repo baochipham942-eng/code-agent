@@ -28,7 +28,8 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { fileReadTracker } from '../../fileReadTracker';
+import { makeEvidenceRef } from '../../../../shared/contract/evidence';
+import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
@@ -163,15 +164,33 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
     try {
       const stats = await fs.stat(filePath);
       const content = await fs.readFile(filePath, 'utf-8');
+      const digest = computeContentDigest(content);
       const lines = content.split('\n');
-
-      // 记录到 fileReadTracker（供 Edit 做外改检测）
-      const resolvedAbs = path.resolve(filePath);
-      fileReadTracker.recordRead(resolvedAbs, stats.mtimeMs, stats.size);
 
       const startLine = Math.max(0, parsed.offset - 1);
       const endLine = Math.min(lines.length, startLine + parsed.limit);
       const selectedLines = lines.slice(startLine, endLine);
+      const shownRange = {
+        startLine: selectedLines.length > 0 ? startLine + 1 : parsed.offset,
+        endLine: selectedLines.length > 0 ? endLine : Math.max(parsed.offset - 1, 0),
+        totalLines: lines.length,
+      };
+
+      // 记录到 fileReadTracker（供 Edit/Write 做外改检测）
+      const resolvedAbs = path.resolve(filePath);
+      const evidenceRef = makeEvidenceRef({
+        kind: 'read',
+        ref: `${resolvedAbs}#L${shownRange.startLine}-L${shownRange.endLine}`,
+        source: schema.name,
+        digest,
+        state: 'read',
+        redactionStatus: 'clean',
+      });
+      fileReadTracker.recordRead(resolvedAbs, stats.mtimeMs, stats.size, {
+        digest,
+        evidenceRef,
+        shownRange,
+      });
 
       const formatted = selectedLines
         .map((line, index) => {
@@ -219,7 +238,16 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         ctx.logger.debug('Failed to report fileRead token contribution', { err });
       }
 
-      return { ok: true, output: result, meta: { artifact } };
+      return {
+        ok: true,
+        output: result,
+        meta: {
+          artifact,
+          evidenceRef,
+          digest,
+          shownRange,
+        },
+      };
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {

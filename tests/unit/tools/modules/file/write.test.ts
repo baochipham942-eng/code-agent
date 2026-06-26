@@ -11,6 +11,7 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/main/protocol/tools';
+import { fileReadTracker } from '../../../../../src/main/tools/fileReadTracker';
 
 vi.mock('../../../../../src/main/services/infra/logger', () => ({
   createLogger: () => ({
@@ -52,9 +53,11 @@ describe('writeModule (native)', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'write-native-'));
+    fileReadTracker.clear();
   });
 
   afterEach(async () => {
+    fileReadTracker.clear();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -146,6 +149,7 @@ describe('writeModule (native)', () => {
     it('overwrites an existing file and reports "Updated"', async () => {
       const file = path.join(tmpDir, 'exist.txt');
       await fs.writeFile(file, 'old', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
 
       const handler = await writeModule.createHandler();
       const result = await handler.execute(
@@ -155,6 +159,99 @@ describe('writeModule (native)', () => {
       );
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.output).toContain('Updated');
+      expect(await fs.readFile(file, 'utf-8')).toBe('new');
+    });
+
+    it('rejects overwriting an existing file that has not been read', async () => {
+      const file = path.join(tmpDir, 'unread.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'new' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('NOT_READ_FOR_OVERWRITE');
+      }
+      expect(await fs.readFile(file, 'utf-8')).toBe('old');
+    });
+
+    it('rejects overwrite when digest changed after read even if size and mtime are restored', async () => {
+      const file = path.join(tmpDir, 'stale-same-shape.txt');
+      await fs.writeFile(file, 'abc', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
+      const originalStats = await fs.stat(file);
+
+      await fs.writeFile(file, 'xyz', 'utf-8');
+      await fs.utimes(file, originalStats.atime, originalStats.mtime);
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'new' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('STALE_FILE');
+        expect(result.meta?.modification).toMatchObject({
+          digestChanged: true,
+          readDigest: expect.any(String),
+          currentDigest: expect.any(String),
+        });
+      }
+      expect(await fs.readFile(file, 'utf-8')).toBe('xyz');
+    });
+
+    it('requires force_reason when force overwrites an existing file', async () => {
+      const file = path.join(tmpDir, 'force-needs-reason.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'new', force: true },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('FORCE_REASON_REQUIRED');
+      }
+      expect(await fs.readFile(file, 'utf-8')).toBe('old');
+    });
+
+    it('allows force overwrite with an audited reason', async () => {
+      const file = path.join(tmpDir, 'force-with-reason.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        {
+          file_path: file,
+          content: 'new',
+          force: true,
+          force_reason: 'user confirmed overwrite of generated output',
+        },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('Updated');
+        expect(result.meta?.audit).toMatchObject({
+          action: 'write_overwrite_force',
+          path: file,
+          reason: 'user confirmed overwrite of generated output',
+          hadRead: false,
+        });
+      }
       expect(await fs.readFile(file, 'utf-8')).toBe('new');
     });
 

@@ -15,9 +15,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import {
+  computeContentDigest,
   FileReadTracker,
   fileReadTracker,
-  type FileReadRecord,
 } from '../../../../src/main/tools/fileReadTracker';
 
 describe('FileReadTracker', () => {
@@ -95,6 +95,33 @@ describe('FileReadTracker', () => {
       expect(record).toBeDefined();
       expect(record?.mtime).toBeGreaterThan(0);
       expect(record?.size).toBeGreaterThan(0);
+      expect(record?.digest).toBe(computeContentDigest('initial content'));
+    });
+
+    it('should store digest and EvidenceRef metadata when provided', () => {
+      const digest = computeContentDigest('hello');
+      const evidenceRef = {
+        id: 'evidence_test',
+        kind: 'read' as const,
+        ref: '/file.ts#L1-L1',
+        source: 'Read',
+        freshness: {
+          capturedAtMs: 1,
+          digest,
+          state: 'read' as const,
+        },
+        redactionStatus: 'clean' as const,
+      };
+      tracker.recordRead('/file.ts', 1000, 5, {
+        digest,
+        evidenceRef,
+        shownRange: { startLine: 1, endLine: 1, totalLines: 1 },
+      });
+
+      const record = tracker.getReadRecord('/file.ts');
+      expect(record?.digest).toBe(digest);
+      expect(record?.evidenceRef).toEqual(evidenceRef);
+      expect(record?.shownRange).toEqual({ startLine: 1, endLine: 1, totalLines: 1 });
     });
   });
 
@@ -147,6 +174,14 @@ describe('FileReadTracker', () => {
       const mtime = 1000;
       tracker.recordRead('/file.ts', mtime, 100);
       expect(tracker.checkExternalModification('/file.ts', mtime)).toBe(false);
+    });
+
+    it('should detect digest changes even when mtime and size match', () => {
+      const mtime = 1000;
+      const originalDigest = computeContentDigest('abc');
+      const currentDigest = computeContentDigest('xyz');
+      tracker.recordRead('/file.ts', mtime, 3, { digest: originalDigest });
+      expect(tracker.checkExternalModification('/file.ts', mtime, 3, currentDigest)).toBe(true);
     });
 
     it('should allow 1ms tolerance for filesystem precision', () => {

@@ -205,6 +205,83 @@ describe('multiEditModule evidence metadata', () => {
     if (!result.ok) expect(result.code).toBe('NOT_FOUND');
   });
 
+  it('rejects editing when the read digest is stale', async () => {
+    const file = path.join(tmpDir, 'stale-edit.txt');
+    await fs.writeFile(file, 'abc', 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+    const originalStats = await fs.stat(file);
+
+    await fs.writeFile(file, 'xyz', 'utf-8');
+    await fs.utimes(file, originalStats.atime, originalStats.mtime);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'xyz', new_text: 'new' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('STALE_FILE');
+      expect(result.meta?.modification).toMatchObject({
+        digestChanged: true,
+      });
+    }
+    expect(await fs.readFile(file, 'utf-8')).toBe('xyz');
+  });
+
+  it('requires a force_reason when force bypasses edit safety', async () => {
+    const file = path.join(tmpDir, 'force-edit.txt');
+    await fs.writeFile(file, 'alpha', 'utf-8');
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'alpha', new_text: 'beta' }],
+        force: true,
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('FORCE_REASON_REQUIRED');
+    expect(await fs.readFile(file, 'utf-8')).toBe('alpha');
+  });
+
+  it('allows force edit with an audited reason', async () => {
+    const file = path.join(tmpDir, 'force-edit-audited.txt');
+    await fs.writeFile(file, 'alpha', 'utf-8');
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'alpha', new_text: 'beta' }],
+        force: true,
+        force_reason: 'user requested emergency patch',
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta?.audit).toMatchObject({
+        action: 'edit_force',
+        path: file,
+        reason: 'user requested emergency patch',
+        hadRead: false,
+      });
+    }
+    expect(await fs.readFile(file, 'utf-8')).toBe('beta');
+  });
+
   it('reports AMBIGUOUS_MATCH when the fuzzy match occurs multiple times without replace_all', async () => {
     const file = path.join(tmpDir, 'dup.ts');
     await fs.writeFile(file, 'x\n  a();\ny\n  a();\n', 'utf-8');

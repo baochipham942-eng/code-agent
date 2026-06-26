@@ -162,7 +162,7 @@
 
 ## 阶段 6 - Design->Code 桥（B 模型）
 
-状态：待办
+状态：已验
 
 交付物：
 
@@ -180,4 +180,10 @@
 
 验收证据：
 
-- 待补。
+- ADR 已落地：`docs/decisions/028-design-code-handoff-b-model.md`，只采用 B 模型，写明 code 对用户隐形、Preview QA 自闭合保真、用户只验收运行产物。
+- `npx vitest run tests/unit/shared/designHandoff.test.ts tests/unit/app/workbenchTurnContext.test.ts tests/renderer/hooks/useAgentIPC.designHandoff.test.ts tests/unit/design/buildCanvasSnapshot.test.ts`：4 files / 28 tests passed。
+- `CODE_AGENT_BROWSER_PROVIDER=playwright-bundled npx tsx scripts/acceptance/design-code-handoff-dogfood.ts`：通过；handoff context 使用选中变体 `checkout-v2`，`coordinateSpace=canvas_absolute`，mock code agent 只返回运行产物路径，Preview QA 通过，selector 点击把 `#state` 更新为 `Confirmed`。
+- Headless 截图人工回看：`/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/design-code-handoff-dogfood-odsxxk/handoff-product-mobile.png`，移动端不空白、不重叠，确认状态可见。
+- `npm run typecheck`：通过。
+- `git diff --check`：通过。
+- 结论：新增 `DesignCodeHandoffContext` 和独立 `withHandoffContext()`；普通 turn 走 main 的 `<design_code_handoff_json>` 隐藏注入，direct routing 走同等 hidden reminder；没有拆/旁路 `withCanvasSnapshotContext()` 的 design guard，也没有改变 ADR-026 的 main 不 mutate 画布不变量。端到端 dogfood 覆盖绝对定位和真实交互状态，验收面是跑起来的产物，不是源码或 React diff。

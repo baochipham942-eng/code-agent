@@ -17,6 +17,7 @@ export * from './repair';
 export * from './designQuality';
 export * from './designWorkspace';
 export * from './designAcceptanceContract';
+export * from './designHandoff';
 export * from './acceptance';
 export * from './game';
 export * from './vision';

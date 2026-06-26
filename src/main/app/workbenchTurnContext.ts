@@ -12,6 +12,7 @@ import {
   type DesignAcceptanceContract,
   type DesignAcceptanceCriterion,
 } from '../../shared/contract/designAcceptanceContract';
+import { formatDesignCodeHandoffForPrompt } from '../../shared/contract/designHandoff';
 import { directionTokens } from '../../design/direction-tokens';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { getActiveBrandSync } from '../services/design/brandRegistry';
@@ -71,6 +72,14 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(acceptanceContract);
     lines.push('</design_acceptance_contract_json>');
     lines.push('这份契约是给 agent 收敛产物的隐藏意图：用于产物自检、QA 修复和 handoff，不要把它当成给用户看的开发规格。');
+  }
+
+  const handoffContext = formatDesignCodeHandoffForPrompt(context.designCodeHandoff);
+  if (handoffContext) {
+    lines.push('<design_code_handoff_json>');
+    lines.push(handoffContext);
+    lines.push('</design_code_handoff_json>');
+    lines.push('Design->Code handoff 采用 B 模型：code 对用户隐形，agent 用 Preview QA 自闭合保真，用户只验收跑起来的产物。');
   }
 
   // ADR-026 D1-B：设计画布快照注入——agent 据此引用真实节点 id 用 ProposeCanvasOps 提议。

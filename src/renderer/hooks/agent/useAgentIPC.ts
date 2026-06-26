@@ -14,6 +14,13 @@ import {
   formatDesignAcceptanceContractForPrompt,
   type DesignAcceptanceContract,
 } from '@shared/contract/designAcceptanceContract';
+import { DESIGN_CODE_HANDOFF } from '@shared/constants/designHandoff';
+import {
+  formatDesignCodeHandoffForPrompt,
+  normalizeDesignCodeHandoffContext,
+  type DesignCodeHandoffContext,
+  type DesignCodeHandoffVariant,
+} from '@shared/contract/designHandoff';
 import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
@@ -22,6 +29,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
 import { buildCanvasSnapshot } from '../../components/design/buildCanvasSnapshot';
+import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/design/designCanvasTypes';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
@@ -75,6 +83,27 @@ function applyDesignAcceptanceContractToContent(
   return reminder ? `${reminder}\n\n${content}` : content;
 }
 
+function formatDesignCodeHandoffReminder(handoff: DesignCodeHandoffContext): string | null {
+  const payload = formatDesignCodeHandoffForPrompt(handoff);
+  if (!payload) return null;
+  return [
+    '<system-reminder kind="design-code-handoff-json">',
+    'Design->Code handoff uses B model: code stays hidden, Preview QA closes fidelity, and the user judges the running artifact.',
+    'Use the selected variant, absolute canvas layout, acceptance contract, locked regions, brand refs, and QA evidence as hidden implementation intent.',
+    payload,
+    '</system-reminder>',
+  ].join('\n');
+}
+
+function applyDesignCodeHandoffToContent(
+  content: string,
+  handoff: DesignCodeHandoffContext | undefined,
+): string {
+  if (!handoff) return content;
+  const reminder = formatDesignCodeHandoffReminder(handoff);
+  return reminder ? `${reminder}\n\n${content}` : content;
+}
+
 function enrichDesignBrief(brief: DesignBrief | undefined): DesignBrief | undefined {
   if (!brief) return undefined;
   return normalizeDesignBrief({
@@ -123,6 +152,92 @@ export function withDesignCanvasActiveIntent(
       ...(context?.executionIntent || {}),
       designCanvasActive: active,
     },
+  };
+}
+
+function compactSourcePath(runDir: string | null, src: string): string {
+  if (!runDir || src.startsWith('/') || /^[a-z]+:\/\//i.test(src)) return src;
+  return `${runDir.replace(/\/+$/, '')}/${src.replace(/^\/+/, '')}`;
+}
+
+function handoffLabelForNode(node: CanvasNode): string | undefined {
+  const label = node.label?.trim() || node.prompt?.trim();
+  return label ? label.slice(0, DESIGN_CODE_HANDOFF.MAX_TEXT_CHARS) : undefined;
+}
+
+function pickHandoffNodes(nodes: CanvasNode[], selectedIds: readonly string[]): CanvasNode[] {
+  const liveOutputs = nodes.filter((node) => !node.discarded && !isReferenceNode(node));
+  const byId = new Map(liveOutputs.map((node) => [node.id, node]));
+  const selected = selectedIds
+    .map((id) => byId.get(id))
+    .filter((node): node is CanvasNode => Boolean(node));
+  if (selected.length > 0) return selected.slice(0, DESIGN_CODE_HANDOFF.MAX_SELECTED_VARIANTS);
+
+  const chosen = liveOutputs.filter((node) => node.chosen);
+  if (chosen.length > 0) return chosen.slice(0, DESIGN_CODE_HANDOFF.MAX_SELECTED_VARIANTS);
+
+  const latest = [...liveOutputs].sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0];
+  return latest ? [latest] : [];
+}
+
+function handoffVariantFromNode(
+  node: CanvasNode,
+  runDir: string | null,
+  prior?: DesignCodeHandoffVariant,
+): DesignCodeHandoffVariant {
+  const variant: DesignCodeHandoffVariant = {
+    id: node.id,
+    mediaType: isVideoNode(node) ? 'video' : 'image',
+    sourcePath: compactSourcePath(runDir, node.src),
+    chosen: node.chosen === true,
+    bounds: {
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+      coordinateSpace: 'canvas_absolute',
+    },
+  };
+  const label = handoffLabelForNode(node);
+  if (label) variant.label = label;
+  if (prior?.interactionStates?.length) {
+    variant.interactionStates = prior.interactionStates;
+  }
+  return variant;
+}
+
+export function buildDesignCodeHandoffContextFromCanvas(
+  context: ConversationEnvelopeContext | undefined,
+): DesignCodeHandoffContext | undefined {
+  const existing = normalizeDesignCodeHandoffContext(context?.designCodeHandoff);
+  const canvas = useDesignCanvasStore.getState();
+  const nodes = pickHandoffNodes(canvas.nodes, canvas.selectedIds);
+  if (nodes.length === 0) return existing;
+
+  const priorById = new Map(existing?.selectedVariants.map((variant) => [variant.id, variant]) ?? []);
+  return normalizeDesignCodeHandoffContext({
+    ...(existing || {}),
+    selectedVariants: nodes.map((node) => handoffVariantFromNode(node, canvas.runDir, priorById.get(node.id))),
+    acceptanceContract: context?.designAcceptanceContract ?? existing?.acceptanceContract,
+    canvasSnapshot: context?.canvasSnapshot ?? buildCanvasSnapshot({
+      nodes: canvas.nodes,
+      connectors: canvas.connectors,
+      shapes: canvas.shapes,
+    }),
+    previewQa: existing?.previewQa,
+    notes: existing?.notes,
+  });
+}
+
+export function withHandoffContext(
+  context: ConversationEnvelopeContext | undefined,
+): ConversationEnvelopeContext | undefined {
+  if (useWorkspaceModeStore.getState().workspaceMode !== 'design') return context;
+  const designCodeHandoff = buildDesignCodeHandoffContextFromCanvas(context);
+  if (!designCodeHandoff) return context;
+  return {
+    ...(context || {}),
+    designCodeHandoff,
   };
 }
 
@@ -334,6 +449,9 @@ function toWorkbenchMetadata(
   if (context.designAcceptanceContract) {
     metadata.designAcceptanceContract = context.designAcceptanceContract;
   }
+  if (context.designCodeHandoff) {
+    metadata.designCodeHandoff = context.designCodeHandoff;
+  }
   if (context.executionIntent) {
     metadata.executionIntent = {
       ...context.executionIntent,
@@ -420,9 +538,11 @@ export function useAgentIPC({
       const sessionDesignBrief = enrichDesignBrief(effectiveSessionId
         ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
         : undefined);
-      const contextWithDesignBrief = withDesignCanvasActiveIntent(
-        withCanvasSnapshotContext(
-          withDesignBriefContext(context, sessionDesignBrief),
+      const contextWithDesignContext = withDesignCanvasActiveIntent(
+        withHandoffContext(
+          withCanvasSnapshotContext(
+            withDesignBriefContext(context, sessionDesignBrief),
+          ),
         ),
       );
 
@@ -449,7 +569,7 @@ export function useAgentIPC({
           role: 'user',
           content,
           timestamp: Date.now(),
-          metadata: toMessageMetadata(contextWithDesignBrief, directRouting.targets, directRouting.missingTargetIds),
+          metadata: toMessageMetadata(contextWithDesignContext, directRouting.targets, directRouting.missingTargetIds),
         };
         addMessage(userMessage);
 
@@ -459,9 +579,12 @@ export function useAgentIPC({
         };
 
         try {
-          const directMessage = applyDesignAcceptanceContractToContent(
-            applyDesignBriefToContent(content.trim(), sessionDesignBrief),
-            contextWithDesignBrief?.designAcceptanceContract,
+          const directMessage = applyDesignCodeHandoffToContent(
+            applyDesignAcceptanceContractToContent(
+              applyDesignBriefToContent(content.trim(), sessionDesignBrief),
+              contextWithDesignContext?.designAcceptanceContract,
+            ),
+            contextWithDesignContext?.designCodeHandoff,
           );
           const results = await Promise.all(
             directRouting.targets.map((target) =>
@@ -538,16 +661,16 @@ export function useAgentIPC({
 
       // 运行中发送的新输入默认排到下一轮，当前流式回复继续完成。
       if (isCurrentSessionProcessing) {
-        const runtimeInputMode = getRuntimeInputMode(contextWithDesignBrief);
+        const runtimeInputMode = getRuntimeInputMode(contextWithDesignContext);
         logger.info('sendMessage - session processing, queueing runtime input for next turn', {
           isCurrentSessionProcessing,
           runtimeInputMode,
         });
 
         const queuedMessageId = generateMessageId();
-        const queuedContext: ConversationEnvelopeContext | undefined = contextWithDesignBrief
+        const queuedContext: ConversationEnvelopeContext | undefined = contextWithDesignContext
           ? {
-              ...contextWithDesignBrief,
+              ...contextWithDesignContext,
               runtimeInput: {
                 mode: runtimeInputMode,
                 delivery: 'queued_next_turn',
@@ -586,7 +709,7 @@ export function useAgentIPC({
         content,
         timestamp: Date.now(),
         attachments,
-        metadata: toMessageMetadata(contextWithDesignBrief),
+        metadata: toMessageMetadata(contextWithDesignContext),
       };
       logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
       addMessage(userMessage);
@@ -612,7 +735,7 @@ export function useAgentIPC({
         const messagePayload: ConversationEnvelope = {
           ...envelope,
           clientMessageId: userMessage.id,
-          context: contextWithDesignBrief,
+          context: contextWithDesignContext,
           sessionId: effectiveSessionId,
         };
         logger.debug('messagePayload', { type: typeof messagePayload, isObject: typeof messagePayload === 'object' });

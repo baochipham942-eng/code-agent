@@ -202,6 +202,76 @@ describe('workbenchTurnContext', () => {
     expect(joined).toContain('隐藏意图');
   });
 
+  it('injects Design->Code handoff as hidden B-model context', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      designCodeHandoff: {
+        version: 1,
+        mode: 'design_to_code_b',
+        codeVisibility: 'hidden',
+        userSuccessSignal: 'running_artifact',
+        selectedVariants: [
+          {
+            id: 'checkout-v2',
+            label: 'Checkout confirmed state',
+            mediaType: 'image',
+            chosen: true,
+            sourcePath: '/tmp/design/assets/checkout.png',
+            bounds: {
+              x: 120,
+              y: 80,
+              width: 640,
+              height: 420,
+              coordinateSpace: 'canvas_absolute',
+            },
+            interactionStates: [
+              {
+                id: 'confirm-click',
+                description: 'Confirm button changes the state text.',
+                selector: '#confirm',
+                trigger: 'click',
+                expectedState: '#state text is Confirmed',
+              },
+            ],
+          },
+        ],
+        acceptanceContract: {
+          version: 1,
+          intent: 'agent_convergence',
+          acceptanceCriteria: [
+            { id: 'confirm-state', text: 'Confirm interaction works', priority: 'must' },
+          ],
+          lockedRegions: [
+            {
+              id: 'locked-hero',
+              nodeId: 'checkout-v2',
+              preserve: ['layout', 'interaction'],
+              lockMode: 'strict',
+              regionLock: { epsilon: 8, strict: true },
+            },
+          ],
+          brandRefs: [],
+        },
+        previewQa: {
+          deterministicPassed: true,
+          visionPassed: true,
+          finalFindingCount: 0,
+          repairAttempts: 1,
+        },
+      },
+    });
+
+    const joined = blocks.join('\n');
+    expect(joined).toContain('<design_code_handoff_json>');
+    expect(joined).toContain('"mode": "design_to_code_b"');
+    expect(joined).toContain('"codeVisibility": "hidden"');
+    expect(joined).toContain('"userSuccessSignal": "running_artifact"');
+    expect(joined).toContain('checkout-v2');
+    expect(joined).toContain('canvas_absolute');
+    expect(joined).toContain('Confirm button changes the state text.');
+    expect(joined).toContain('Preview QA');
+    expect(joined).toContain('B 模型');
+  });
+
   it('merges turn system context into existing run options', () => {
     expect(withWorkbenchTurnSystemContext(
       { mode: 'normal', researchMode: false },

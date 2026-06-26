@@ -48,7 +48,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
   const name = stringValue(frontmatter.name) || path.basename(filename, '.md');
   const description = stringValue(frontmatter.description);
 
-  // 角色主动性（docs/designs/role-proactivity.md §4）：扁平 key 适配 simple YAML parser
+  // 角色主动性（内部文档 §4）：扁平 key 适配 simple YAML parser
   const proactivityLevel = proactivityLevelValue(frontmatter['proactivity-level']);
   const proactivityCadence = stringValue(frontmatter['proactivity-cadence']);
 

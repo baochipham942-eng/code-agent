@@ -89,7 +89,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
   const braveApiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY || '';
   const githubToken = configService?.getServiceApiKey('github') || process.env.GITHUB_TOKEN || '';
   const argusEnabled = process.env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
-  // cua-driver (trycua) — computer-use 新底座，逐步替代 argus（详见 docs/proposals/computer-use-cua-migration.md）
+  // cua-driver (trycua) — computer-use 新底座，逐步替代 argus（详见 内部文档）
   // 启用: CODE_AGENT_ENABLE_CUA=1；默认指向 bundle 内重签的 Agent Neo Computer Use.app，
   // 可用 CODE_AGENT_CUA_DRIVER_PATH 覆盖，最终回退 PATH 上的 `cua-driver`。
   const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
@@ -190,7 +190,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
     // ========== Phase 4: Argus Computer Use（旧底座，迁移期保留作回退） ==========
     // 桌面自动化 — 24 工具 (截图/点击/输入/batch)，无安全限制版
     // 基于 Anthropic Chicago MCP 架构，使用 OSS 原生层 (screencapture + cliclick)
-    // 注：正被 cua-driver 替代，验证稳定后退役（docs/proposals/computer-use-cua-migration.md §7）
+    // 注：正被 cua-driver 替代，验证稳定后退役（内部文档 §7）
     {
       name: 'argus',
       command: 'node',

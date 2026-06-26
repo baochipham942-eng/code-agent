@@ -610,7 +610,7 @@ export class HookManager {
 
   /**
    * Trigger hooks when a persistent role wakes up proactively (observer-only)
-   * 角色主动性醒来事件（docs/designs/role-proactivity.md §2.3）
+   * 角色主动性醒来事件（内部文档 §2.3）
    * @experimental API may change between minor versions
    */
   async triggerRoleWake(params: {

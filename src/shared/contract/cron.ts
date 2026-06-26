@@ -180,7 +180,7 @@ export interface MemoryConsolidationAction {
 }
 
 /**
- * Role wake action — 角色主动性 cadence 触发器（docs/designs/role-proactivity.md）。
+ * Role wake action — 角色主动性 cadence 触发器（内部文档）。
  * cron 到点后调 roleProactivityService.wakeRole() 执行完整醒来循环
  * （带记忆实例化 → 检查履历产物 → 推进/汇报/建议/沉默 → 写回销毁）。
  */

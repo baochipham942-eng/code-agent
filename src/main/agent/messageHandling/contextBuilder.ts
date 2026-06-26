@@ -192,7 +192,7 @@ GUI features (screenshot, browser_action) are unavailable.${appIdentity}
   }
 
   // Computer-use 操作协议：仅当 cua-driver 启用时注入，避免污染普通会话的上下文预算。
-  // 实现 docs/proposals/computer-use-cua-migration.md §3（任务分流）+ §11（快照不变量/错误自纠）。
+  // 实现 内部文档 §3（任务分流）+ §11（快照不变量/错误自纠）。
   const cuaBlock = buildComputerUseBlock();
 
   if (isWebMode) {
@@ -214,7 +214,7 @@ When explaining solutions, frame them from the user's perspective — describe w
 /**
  * cua-driver computer-use 操作协议块。
  * 仅当 CODE_AGENT_ENABLE_CUA=1 时返回内容，否则空串（零上下文开销）。
- * 内容对齐 docs/proposals/computer-use-cua-migration.md §3 / §11。
+ * 内容对齐 内部文档 §3 / §11。
  */
 export function buildComputerUseBlock(): string {
   if (process.env.CODE_AGENT_ENABLE_CUA !== '1') return '';

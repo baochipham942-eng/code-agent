@@ -1,6 +1,6 @@
 // 设计画布运行态 store（Cowart 式无限画布）。
 // 真理源是磁盘 canvas.json（见 designCanvasPersistence），本 store 只持运行态，
-// 不挂 persist——避免与磁盘存档双源（详见 docs/designs/design-canvas-cowart.md §2.2）。
+// 不挂 persist——避免与磁盘存档双源（详见 内部文档 §2.2）。
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {

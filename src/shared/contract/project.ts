@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 项目 = 目标（goals）+ 产物集（artifacts）+ 围绕产物工作的 agent（roles）+ 关联会话（sessions）。
-// 设计：docs/designs/project-space.md
+// 设计：内部文档
 //
 // 关键边界：ProjectGoal 是 goal 的"持久化存储模型"，不复用也不修改 P4 的
 // GoalContract（contract/agent.ts）/ GoalRunInput（contract/appService.ts）。

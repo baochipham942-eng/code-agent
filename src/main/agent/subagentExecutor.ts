@@ -217,7 +217,7 @@ export class SubagentExecutor {
       logger.info(`[${config.name}] skills preloaded into system prompt`, { loaded, missing });
     }
 
-    // 持久化角色资产注入（设计 docs/designs/persistent-role-assets.md §5 步骤 1）：
+    // 持久化角色资产注入（设计 内部文档 §5 步骤 1）：
     // roles/<roleId>/ 目录存在 → 注入角色记忆索引 + 项目记忆索引 + 最近履历。
     // 非持久角色返回 null，行为与此功能上线前完全一致。失败不阻塞 spawn。
     if (config.roleId) {
@@ -1108,7 +1108,7 @@ export class SubagentExecutor {
           artifacts: instanceArtifacts,
         }).catch(silence(logger, 'runRoleWriteBack', 'warn'));
 
-        // 角色参与记录：主 run 结束后据此触发 event 醒来（docs/designs/role-proactivity.md §2.2）
+        // 角色参与记录：主 run 结束后据此触发 event 醒来（内部文档 §2.2）
         recordRoleParticipation(sessionId, config.roleId);
       }
 

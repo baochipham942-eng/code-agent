@@ -1015,7 +1015,7 @@ export class CronService implements Disposable {
       }
 
       case 'role-wake': {
-        // 角色主动性：cadence 到点 → 完整醒来循环（docs/designs/role-proactivity.md）
+        // 角色主动性：cadence 到点 → 完整醒来循环（内部文档）
         const { wakeRole } = await import('../services/roleAssets/roleProactivity');
         const wakeResult = await wakeRole(action.roleId, 'cadence');
         console.error(

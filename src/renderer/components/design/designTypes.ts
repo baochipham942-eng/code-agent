@@ -1,6 +1,6 @@
 // 设计工作区的纯类型 + 常量 + prompt 构造器（无 React 依赖，可单测）。
 // 原型 prompt 的硬约束与设计上下文移植自竞品 Kun（sdd-prototype-prompt /
-// sdd-design-context），详见 docs/competitive/kun-设计tab-借鉴清单.md。
+// sdd-design-context），详见 内部文档。
 import { DESIGN_DEVICE_PRESETS, type DesignDeviceId } from '@shared/constants';
 import type { DesignSelectionContext } from './designSelectionContext';
 import { selectionPromptHint } from './designSelectionContext';

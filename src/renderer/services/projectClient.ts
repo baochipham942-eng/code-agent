@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 走 ipcService.invokeDomain(IPC_DOMAINS.PROJECT, action, payload)，桌面原生 IPC
-// 与 HTTP 双链路统一（见 docs/designs/project-space.md §5.3）。
+// 与 HTTP 双链路统一（见 内部文档 §5.3）。
 // ============================================================================
 
 import { IPC_DOMAINS } from '@shared/ipc';

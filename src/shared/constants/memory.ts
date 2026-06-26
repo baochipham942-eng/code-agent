@@ -91,7 +91,7 @@ export const MEMORY_CONSOLIDATION = {
   JOB_TAG: 'light-memory-consolidation',
 } as const;
 
-/** 持久化角色资产（roles/<name>/ 三层记忆 + 履历 + 写回，docs/designs/persistent-role-assets.md） */
+/** 持久化角色资产（roles/<name>/ 三层记忆 + 履历 + 写回，内部文档） */
 export const ROLE_ASSETS = {
   /** 角色资产根目录名（相对 getUserConfigDir()）：~/.code-agent/roles/ */
   ROLES_DIR: 'roles',
@@ -126,7 +126,7 @@ export const ROLE_ASSETS = {
   DRAFTS_DIR_NAME: 'role-drafts',
 } as const;
 
-/** 角色主动性（cadence 触发器 + 醒来循环，docs/designs/role-proactivity.md） */
+/** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
 export const ROLE_PROACTIVITY = {
   /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations） */
   WAKE_MAX_ITERATIONS: 15,
@@ -157,7 +157,7 @@ export const ROLE_PROACTIVITY = {
 export const LEARNING_PIPELINE = {
   // 注：原 telemetry n-gram 成功蒸馏（SUCCESS_PATTERN_THRESHOLD / SUCCESS_SEQUENCE_*）已废弃移除，
   // 纯频次无语义会产 bash-bash-bash 垃圾草稿；skill 沉淀统一走 conversationReview 的 LLM 反思路
-  // （SKILL_REVIEW），见 docs/designs/experience-distillation-and-uninstall-fixes.md Part 1。
+  // （SKILL_REVIEW），见 内部文档 Part 1。
   /** 同一失败模式累计出现次数达到该阈值才写入 failure journal */
   FAILURE_PATTERN_THRESHOLD: 3,
   /** failure journal 最多保留的模式条数（超出按 lastSeen 淘汰最旧的） */

@@ -1,6 +1,6 @@
 // 设计画布（Cowart 式）纯数据模型 + 序列化（无 React 依赖，可单测）。
 // 画布存档落 run 目录下的 canvas.json；图片落 assets/，节点只存相对路径，
-// 避免 JSON 内嵌 base64 膨胀（详见 docs/designs/design-canvas-cowart.md §2.2）。
+// 避免 JSON 内嵌 base64 膨胀（详见 内部文档 §2.2）。
 import type { RegionLockReport } from '@shared/contract/imageConsistency';
 import {
   normalizeConnector,

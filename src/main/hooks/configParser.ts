@@ -228,7 +228,7 @@ function parseHooksObject(
     'PermissionDenied',   // Phase 3
     'PostCompact',        // Phase 3
     'StopFailure',        // Phase 3
-    'RoleWake',           // 角色主动性（docs/designs/role-proactivity.md §2.3）
+    'RoleWake',           // 角色主动性（内部文档 §2.3）
   ];
 
   // GAP-007: 未知事件名告警。

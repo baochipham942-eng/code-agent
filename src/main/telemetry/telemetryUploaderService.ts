@@ -2,7 +2,7 @@
 // Telemetry Uploader - 把本地会话遥测回传到开发者中央台（Supabase）
 // ============================================================================
 //
-// 设计见 docs/plans/2026-05-28-fleet-observability-plan.md。
+// 设计见 内部文档。
 // 复用 syncService 模式：客户端以登录用户身份直连 supabase-js 写自己的行，RLS 管控
 // （用户只能写自己、只有 admin 能读）。上传 auth-gated：未登录不传。
 //

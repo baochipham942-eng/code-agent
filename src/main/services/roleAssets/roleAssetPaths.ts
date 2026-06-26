@@ -2,7 +2,7 @@
 // Role Asset Paths — 持久化角色资产的目录布局
 // ============================================================================
 //
-// 三层记忆目录结构（docs/designs/persistent-role-assets.md §3/§4）：
+// 三层记忆目录结构（内部文档 §3/§4）：
 //   全局   ~/.code-agent/memory/                    ← 现有 Light Memory，不动
 //   角色   ~/.code-agent/roles/<roleId>/             ← 本模块
 //   项目   ~/.code-agent/projects/<key>/memory/      ← 本模块（workspace hash 过渡 key）

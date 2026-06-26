@@ -260,7 +260,7 @@ export interface StopFailureContext extends HookEventContext {
 
 /**
  * Context for role wake events (observer-only) — 角色主动性醒来
- * docs/designs/role-proactivity.md §2.3
+ * 内部文档 §2.3
  * @experimental
  */
 export interface RoleWakeContext extends HookEventContext {

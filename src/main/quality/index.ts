@@ -7,7 +7,7 @@
  *
  * 设计启发式移植自公开的 impeccable（Apache-2.0）lint 规则——仅算法，
  * 命名与中文文案为本项目自有。借鉴自竞品 Kun（DeepSeek-GUI）的设计
- * 质量自检机制，详见 docs/competitive/kun-设计tab-借鉴清单.md。
+ * 质量自检机制，详见 内部文档。
  */
 
 export {

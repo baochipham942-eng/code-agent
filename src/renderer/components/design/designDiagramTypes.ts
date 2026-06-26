@@ -1,7 +1,7 @@
 // 设计画布「图解层」纯数据模型 + 归一化（无 React 依赖，可单测）。
 // 图解层 = 连线(connector) + freeform 形状(shape)，与 nodes 平级存 canvas.json，
 // 但不进 variant spine（无 chosen/discarded/parentId 语义，是图解脚手架非生成产物）。
-// 设计要点见 docs/plans/design-node-connectors.md。
+// 设计要点见 内部文档。
 
 /** 图解配色板（konva 画布字面色，CSS 变量够不到；与 AnnotationLayer 同例 ds-allow:viz）。 */
 export const DIAGRAM_PALETTE = [

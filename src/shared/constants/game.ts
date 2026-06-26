@@ -1,7 +1,7 @@
 /**
  * Game acceptance architecture — shared constants.
  *
- * 背景: docs/audits/2026-05-07-game-acceptance-architecture.md §5。
+ * 背景: 内部文档 §5。
  * 这里收口所有 game subtype dispatcher / skill loader / verb taxonomy 用到的字面量，
  * 避免 game/types.ts、game/verbs.ts、game/skill-loader.ts 各自硬编码。
  */

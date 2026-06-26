@@ -4,7 +4,7 @@
 //
 // 与闸1（goalVerifyGate）的本质区别：闸1 是确定性的（看退出码），闸2 靠 LLM 判
 // 软条件，天然非确定性。所以 verdict 解析必须 robust——找不到明确 VERDICT 时默认
-// FAIL，宁可让模型多跑一轮也别误放行（见 docs/designs/goal-mode.md §3 闸2）。
+// FAIL，宁可让模型多跑一轮也别误放行（见 内部文档 §3 闸2）。
 // ============================================================================
 
 import { getSubagentExecutor } from './subagentExecutor';

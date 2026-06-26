@@ -13,7 +13,7 @@
  * 但从未有任何类 implements。生产路径走的是 validateGameArtifact 自由函数
  * （src/main/agent/runtime/gameArtifactValidator.ts），deck 那边自己一套
  * DeckVerifier 类。两边形态分歧到无法共用同一接口。详见
- * docs/decisions/016-no-cross-kind-verifier-interface.md。
+ * 内部文档。
  */
 
 import type { ARTIFACT_KINDS, VERB_CLASSES } from '@shared/constants';
@@ -77,7 +77,7 @@ export type VerbClass = (typeof VERB_CLASSES)[number];
 
 /**
  * 通用 verb id — 跨流派的最小动词集。
- * 与 docs/audits/2026-05-07-game-acceptance-architecture.md §4.4 完全对齐。
+ * 与 内部文档 §4.4 完全对齐。
  *
  * 单一 subtype 的特化（如 platformer 的 'stomp'）不是新 VerbId，
  * 而是 'defeat' 的 VerbDeclaration 加上特定 successPredicate。

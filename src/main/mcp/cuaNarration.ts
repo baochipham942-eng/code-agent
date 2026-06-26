@@ -13,7 +13,7 @@
 //
 // 落点：结果侧 recordCuaResult() 挂在 toolResolver MCP 分支；
 //   消费侧 narrateCuaToolCall() 挂在 shared.ts buildToolCallFromAccumulator。
-// 详见 docs/proposals/computer-use-cua-migration.md §10。
+// 详见 内部文档 §10。
 // ============================================================================
 
 import type { ToolCallTargetContext } from '../../shared/contract';

@@ -99,7 +99,7 @@ export function getToolIcon(name: string): React.ReactNode {
     findings_write: React.createElement(FileText, { size: 14 }),
   };
 
-  // cua-driver computer-use 工具 — 按操作类型差异化图标（docs/proposals/computer-use-cua-migration.md §10）
+  // cua-driver computer-use 工具 — 按操作类型差异化图标（内部文档 §10）
   // 点击=箭头光标，输入=文本光标，观察=扫描线（非眼睛），打开 app=窗口，等
   if (name.includes('cua-driver')) {
     const cuaTool = name.replace(/^mcp_+cua-driver_+/, '');

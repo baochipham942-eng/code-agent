@@ -1,7 +1,7 @@
 /**
  * Verb taxonomy — 6-class library + declarative predicate interpreter.
  *
- * 与 docs/audits/2026-05-07-game-acceptance-architecture.md §4.4 跨流派词汇表对齐。
+ * 与 内部文档 §4.4 跨流派词汇表对齐。
  *
  * 核心职责：
  * 1. VERB_REGISTRY: 通用 verb 元信息（class / 描述 / 常见 selector / 默认 success predicate）

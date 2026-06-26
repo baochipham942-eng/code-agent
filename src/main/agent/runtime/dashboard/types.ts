@@ -13,7 +13,7 @@
  *    SlideScope / SlidePredicate**。
  *
  * 跨 kind 顶层接口仍按 ADR 016 不抽象（详见
- * docs/decisions/016-no-cross-kind-verifier-interface.md）。
+ * 内部文档）。
  *
  * PR-B 的 scope：定类型 + 骨架 + 占位空 probes 集合。具体 probe（declarative
  * html_complete / no_lorem_ipsum / consistent_styling，imperative loads_no_error

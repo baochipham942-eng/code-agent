@@ -4,7 +4,7 @@
 //
 // 薄编排层：ID/时间戳在此生成，委托 ProjectRepository 落库；接管 workspace
 // 记忆 key（写 meta.json projectId，记忆文件不动）。
-// 设计：docs/designs/project-space.md §5.2
+// 设计：内部文档 §5.2
 // ============================================================================
 
 import * as path from 'path';

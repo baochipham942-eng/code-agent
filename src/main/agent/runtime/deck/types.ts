@@ -6,7 +6,7 @@
  * 性质），因此**不复用 game 的 VerbId / VerbDeclaration / PredicateExpr**。
  *
  *   顶层 verifier            — DeckVerifier（独立类，不与 game 共享接口；
- *                              详见 docs/decisions/016-no-cross-kind-verifier-interface.md）
+ *                              详见 内部文档）
  *
  *   subtype checker          — DeckSubtypeChecker，每个 deck 子流派
  *                              (general / executive-deck / academic-paper / ...)

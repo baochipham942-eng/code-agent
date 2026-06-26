@@ -2,7 +2,7 @@
 // Role Proactivity — 角色主动性（cadence 触发器 + 醒来循环）
 // ============================================================================
 //
-// 设计：docs/designs/role-proactivity.md
+// 设计：内部文档
 //
 // 核心循环（§3 八步）：
 //   预算检查 → 实例化（带记忆）→ 创建会话 → 跑实例 → 解析四选一决策
@@ -137,7 +137,7 @@ export function parseWakeDecision(finalOutput: string): RoleWakeDecision {
   return ROLE_PROACTIVITY.FALLBACK_DECISION as RoleWakeDecision;
 }
 
-/** advance 多步推进时模型给出的 goal 提案（docs/designs/swarm-goal.md §3.2） */
+/** advance 多步推进时模型给出的 goal 提案（内部文档 §3.2） */
 export interface AdvanceGoalProposal {
   goal: string;
   /** 可选的闸1 验证命令；缺省时把 goal 文本作为闸2 软评审条件 */
@@ -632,7 +632,7 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
 
     await cron.createJob({
       name: `[Cadence] ${roleId}`,
-      description: `角色主动性：${roleId} 定时醒来巡检（docs/designs/role-proactivity.md）`,
+      description: `角色主动性：${roleId} 定时醒来巡检（内部文档）`,
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: cadence },
       action: { type: 'role-wake', roleId },
@@ -698,7 +698,7 @@ async function runWakeViaCliLoop(params: {
 }
 
 // ----------------------------------------------------------------------------
-// advance → goal run（P4 合流，docs/designs/swarm-goal.md §3.2）
+// advance → goal run（P4 合流，内部文档 §3.2）
 // ----------------------------------------------------------------------------
 
 /** advance goal run 的初始 prompt（goal 本体经 goalContract 注入，这里只下达任务指令） */

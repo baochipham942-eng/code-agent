@@ -2,7 +2,7 @@
 // Agent 写/改前端文件后，检测器扫"AI 痕迹"与品味问题，把发现回注给模型
 // 让其下一轮自我修正。与 ToolArgsRepairGate（工具入参）是两条独立机制：
 // 这条针对"产出的前端代码一眼是 AI 生成"，纯 advisory、不拦截、不报错。
-// 详见 docs/competitive/kun-设计tab-借鉴清单.md。
+// 详见 内部文档。
 export const DESIGN_QUALITY = {
   // 默认开启（影子模式起步：只报告不拦截，先量误杀率）。
   ENABLED: true,

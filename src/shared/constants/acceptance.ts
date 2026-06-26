@@ -3,7 +3,7 @@
  *
  * 背景：v8 platformer acceptance 17 轮（v10–v26）盲改踩坑。同一 prompt 在 v11/v18 PASS、
  * 其他轮 fail，是概率性失败被当 deterministic bug 修。Audit 详见
- * docs/audits/2026-05-07-game-acceptance-architecture.md §7。
+ * 内部文档 §7。
  *
  * 这里是 acceptance 脚本的硬上限，env 可覆盖（CLI flag 优先级最高）。
  */

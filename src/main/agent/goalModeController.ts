@@ -1,6 +1,6 @@
 // ============================================================================
 // GoalModeController — /goal 自治循环的状态机 + 闸3 兜底
-// 设计见 docs/designs/goal-mode.md
+// 设计见 内部文档
 // ============================================================================
 
 import { GOAL_MODE, SWARM_GOAL } from '../../shared/constants';
@@ -32,7 +32,7 @@ export interface GoalContract {
    */
   wallClockBudgetMs?: number;
   /**
-   * 是否允许 swarm 扇出（控制 workflow 工具预加载 + 预算注入，docs/designs/swarm-goal.md）。
+   * 是否允许 swarm 扇出（控制 workflow 工具预加载 + 预算注入，内部文档）。
    * 交互式 /goal 默认 true；主动性 advance 发起的 goal run 强制 false（无人值守不扇出）。
    */
   allowSwarm?: boolean;
@@ -78,7 +78,7 @@ export function buildGoalContract(input: {
 /**
  * GoalModeController — /goal 自治循环的状态机 + 闸3 兜底
  *
- * 职责边界（见 docs/designs/goal-mode.md §3）：
+ * 职责边界（见 内部文档 §3）：
  * - 完成判定权在代码层。模型调 attempt_completion 只是"申请退出"。
  * - 闸1（Awaiter 跑 verify 命令）/ 闸2（Reviewer 评审）由 loop 编排——它们要派
  *   子代理、依赖 provider 层，不放本类，以保持本类无 provider 依赖、可独立单测。
@@ -93,7 +93,7 @@ export class GoalModeController {
   /** 模型是否已调 attempt_completion 申请退出（待闸1/闸2 验证；不直接改 status） */
   private completionRequested = false;
   private pendingSummary?: string;
-  /** swarm（workflow 子 agent）累计消耗的 token —— 计入闸3 预算（docs/designs/swarm-goal.md §4） */
+  /** swarm（workflow 子 agent）累计消耗的 token —— 计入闸3 预算（内部文档 §4） */
   private swarmTokensUsed = 0;
 
   constructor(contract: GoalContract) {
@@ -114,7 +114,7 @@ export class GoalModeController {
   allowsSwarm(): boolean { return this.contract.allowSwarm ?? true; }
 
   // ==========================================================================
-  // Swarm 预算（P4：上行记账 + 下行 clamp，docs/designs/swarm-goal.md §4.1）
+  // Swarm 预算（P4：上行记账 + 下行 clamp，内部文档 §4.1）
   // ==========================================================================
 
   /**

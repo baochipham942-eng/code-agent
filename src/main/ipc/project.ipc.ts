@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 单一 domain 处理器同时服务桌面原生 IPC 和 HTTP（domain.ts 的
-// POST /api/domain/project/:action 走同一处理器）。设计：docs/designs/project-space.md §5.3
+// POST /api/domain/project/:action 走同一处理器）。设计：内部文档 §5.3
 //
 // actions:
 // - list            -> 项目列表（{ includeArchived? }）

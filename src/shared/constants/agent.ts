@@ -143,7 +143,7 @@ export const GOAL_MODE = {
   REVIEW_OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
-/** Swarm goal 配置（P4：goal 内 swarm 执行 + 主动性 advance 合流，docs/designs/swarm-goal.md） */
+/** Swarm goal 配置（P4：goal 内 swarm 执行 + 主动性 advance 合流，内部文档） */
 export const SWARM_GOAL = {
   /** 单次 workflow 扇出预算占 goal 剩余预算的最大比例（留余量给主 agent 收尾 + 闸2 评审） */
   MAX_BUDGET_FRACTION: 0.8,

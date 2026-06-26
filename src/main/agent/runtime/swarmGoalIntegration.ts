@@ -1,6 +1,6 @@
 // ============================================================================
 // Swarm Goal（P4）集成胶水 — goal 循环与 workflow 扇出之间的预算双向打通 + 编排引导
-// 设计见 docs/designs/swarm-goal.md §4.1
+// 设计见 内部文档 §4.1
 //
 // 独立成模块的原因：
 // 1. toolExecutionEngine / conversationRuntime 都贴着 max-lines 上限，胶水逻辑不进主文件

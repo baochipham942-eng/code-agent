@@ -4,7 +4,7 @@
  * Deck artifact 顶层入口。Game 那边走的是 validateGameArtifact 自由函数，
  * deck 这边走类 + subtype dispatch。两边形态分歧到无法共用同一接口，
  * 因此 DeckVerifier 不 extends 任何跨 kind 顶层接口（详见
- * docs/decisions/016-no-cross-kind-verifier-interface.md）。
+ * 内部文档）。
  *
  * 职责：
  * - 接受 DeckArtifactInput + 可选 subtype（默认 'general'）

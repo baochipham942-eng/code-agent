@@ -1066,7 +1066,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
 
   // Projects 表 (P0-2 项目空间容器) — 项目 = 目标 + 产物 + 角色 + 会话
-  // 1:1 绑定 workspace（独立 ID）；workspace_key 接管项目记忆目录（docs/designs/project-space.md §3.1）
+  // 1:1 绑定 workspace（独立 ID）；workspace_key 接管项目记忆目录（内部文档 §3.1）
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,

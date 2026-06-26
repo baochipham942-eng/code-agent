@@ -194,7 +194,7 @@ function explainPermission(
 ): void {
   const label = getPermissionCopy(kind);
   // cua 默认 capture_mode=ax（只读 AX 树，免录屏）。录屏是可选增强：未授权不阻断，
-  // 仅提示「需要视觉消歧时再开」。详见 docs/proposals/computer-use-cua-migration.md §11.1。
+  // 仅提示「需要视觉消歧时再开」。详见 内部文档 §11.1。
   if (optional && (permission?.status !== 'granted')) {
     addExplanation(items, {
       id: `${kind}:optional`,

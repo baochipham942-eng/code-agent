@@ -2,7 +2,7 @@
 // Role Asset Service — 持久化角色资产核心服务
 // ============================================================================
 //
-// 核心论点（docs/designs/persistent-role-assets.md）：
+// 核心论点（内部文档）：
 //   持久的是资产（角色定义 + 记忆 + 履历），瞬时的是实例。
 //   角色和记忆是户口，实例是上班。
 //
@@ -355,7 +355,7 @@ export async function buildRoleContextBlock(roleId: string, workspacePath?: stri
 }
 
 // ----------------------------------------------------------------------------
-// 主动性实例化入口（设计 §9 → docs/designs/role-proactivity.md）
+// 主动性实例化入口（设计 §9 → 内部文档）
 // ----------------------------------------------------------------------------
 
 export interface InstantiationContext {

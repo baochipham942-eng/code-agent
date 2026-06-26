@@ -4,7 +4,7 @@
 //
 // 纯 SQL CRUD（照 ExperimentRepository 模式）。ID 与时间戳由 ProjectService 生成
 // 传入，repository 内禁止 Date.now()（遵守项目硬编码红线）。
-// 设计：docs/designs/project-space.md §5.1
+// 设计：内部文档 §5.1
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';

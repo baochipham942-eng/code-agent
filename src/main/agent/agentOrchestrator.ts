@@ -943,7 +943,7 @@ export class AgentOrchestrator {
       toolScope,
       executionIntent,
       goalContract,
-      // 迭代数硬上限（角色主动性醒来等预算受限场景，docs/designs/role-proactivity.md §6）
+      // 迭代数硬上限（角色主动性醒来等预算受限场景，内部文档 §6）
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
       deniedToolNames,

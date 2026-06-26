@@ -4,7 +4,7 @@
 //   (a) 重复失败模式（≥3 次）→ 全自动写入 Light Memory failure journal（telemetry）
 //   (b) LLM 语义复盘 → class-level skill 草稿进待确认队列（conversationReview，严禁自动入库）
 // 注：原 telemetry n-gram 成功蒸馏路已废弃移除——纯频次无语义会产 bash-bash-bash 垃圾草稿，
-//   skill 沉淀统一走 (b) 的 LLM 反思路（见 docs/designs/experience-distillation-and-uninstall-fixes.md）。
+//   skill 沉淀统一走 (b) 的 LLM 反思路（见 内部文档）。
 // 失败分类原料来自 telemetryCollector（telemetry_tool_calls 表），journal 长期整理复用 consolidation cron。
 // ============================================================================
 

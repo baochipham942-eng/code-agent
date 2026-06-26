@@ -424,7 +424,7 @@ export class RunFinalizer {
     });
 
     // 角色主动性：长任务跑完 → 参与过的持久化角色 event 醒来总结 + 提 next steps
-    // （fire-and-forget；门槛/防递归/预算护栏都在 triggerEventWakes 内部，docs/designs/role-proactivity.md §2.2）
+    // （fire-and-forget；门槛/防递归/预算护栏都在 triggerEventWakes 内部，内部文档 §2.2）
     if (terminalStatus === 'completed') {
       const lastAssistant = [...this.ctx.messages].reverse().find((m) => m.role === 'assistant' && m.content);
       import('../../services/roleAssets/roleProactivity')

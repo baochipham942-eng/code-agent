@@ -21,7 +21,7 @@ const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
 
 // 设计决策（WS5b）：本 MCP server 只暴露只读/安全能力。控屏（computer）/反向命令执行
 // （execute_command）不 MCP 化——外部 agent 要控屏必须由 Neo 主导（走 agentEngine），不能
-// 反向通过 MCP 控制本机。详见 docs/designs/ws5b-computeruse-mcp-security.md。
+// 反向通过 MCP 控制本机。详见 内部文档。
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

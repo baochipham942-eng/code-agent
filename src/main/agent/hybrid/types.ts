@@ -29,6 +29,6 @@ export interface CoreAgentConfig {
   model: ModelTier;
   maxIterations: number;
   readonly: boolean;
-  /** 角色主动性配置（frontmatter proactivity-level / proactivity-cadence，docs/designs/role-proactivity.md §4） */
+  /** 角色主动性配置（frontmatter proactivity-level / proactivity-cadence，内部文档 §4） */
   proactivity?: RoleProactivityConfig;
 }

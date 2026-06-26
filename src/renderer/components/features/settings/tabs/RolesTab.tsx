@@ -279,7 +279,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
 };
 
 // ----------------------------------------------------------------------------
-// 主动性等级选择（docs/designs/role-proactivity.md §4.2）
+// 主动性等级选择（内部文档 §4.2）
 // ----------------------------------------------------------------------------
 
 const PROACTIVITY_OPTIONS: Array<{ value: RoleProactivityLevel; label: string; hint: string }> = [

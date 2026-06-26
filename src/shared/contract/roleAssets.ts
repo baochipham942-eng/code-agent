@@ -42,7 +42,7 @@ export interface RolePanelMemory {
 }
 
 // ----------------------------------------------------------------------------
-// 角色主动性（docs/designs/role-proactivity.md §4 配置设计）
+// 角色主动性（内部文档 §4 配置设计）
 // ----------------------------------------------------------------------------
 
 /** 主动等级：静默（不醒来）/ 每日简报（默认）/ 实时介入（自定义频率 + 桌面通知） */
@@ -83,7 +83,7 @@ export interface RoleWakeResult {
   sessionId?: string;
   /** 醒来产出摘要（履历同款） */
   summary?: string;
-  /** advance 升级为 goal run 时的终态（met/aborted）；未升级则缺省（P4，docs/designs/swarm-goal.md） */
+  /** advance 升级为 goal run 时的终态（met/aborted）；未升级则缺省（P4，内部文档） */
   advanceGoalStatus?: 'met' | 'aborted';
 }
 

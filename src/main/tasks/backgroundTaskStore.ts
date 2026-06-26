@@ -10,6 +10,7 @@ import type {
   TaskStatus,
 } from '../../shared/contract/backgroundTask';
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
 
 interface PersistedTaskRow {
   task_json: string;
@@ -310,15 +311,24 @@ function recoverPersistedRunningTask(task: Task): Task {
   };
 
   if (isNeoManagedTask(task) && hasUsableOutputRef(task) && isLiveProcessReferenced(task)) {
+    const recoveryStatus = 'running-recovered';
+    const outputFile = getPrimaryLogPath(task);
     return {
       ...task,
       metadata: {
         ...metadata,
-        recoveryStatus: 'running-recovered',
+        recoveryStatus,
+        recoveryPlan: buildBackgroundTaskRecoveryPlan({
+          status: 'running',
+          recoveryStatus,
+          outputFile,
+        }),
       },
     };
   }
 
+  const recoveryStatus = 'dead-log-only';
+  const outputFile = getPrimaryLogPath(task);
   return {
     ...task,
     status: 'orphaned',
@@ -329,9 +339,19 @@ function recoverPersistedRunningTask(task: Task): Task {
     },
     metadata: {
       ...metadata,
-      recoveryStatus: 'dead-log-only',
+      recoveryStatus,
+      recoveryPlan: buildBackgroundTaskRecoveryPlan({
+        status: 'orphaned',
+        recoveryStatus,
+        outputFile,
+      }),
     },
   };
+}
+
+function getPrimaryLogPath(task: Task): string | undefined {
+  const ref = task.outputRefs.find((candidate) => candidate.type === 'log' && typeof candidate.path === 'string');
+  return ref?.path;
 }
 
 function isNeoManagedTask(task: Task): boolean {

@@ -62,6 +62,7 @@ import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseCont
 import {
   findBrowserElementByText,
   findBrowserElements,
+  getBrowserElementBoundingBox,
   getBrowserPageContent,
   getBrowserPageHtml,
 } from './browser/pageInspectionHelpers';
@@ -523,6 +524,10 @@ export class BrowserService implements Disposable {
   async click(selector: string, tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     await tab.page.click(selector);
+  }
+
+  async getElementBoundingBox(selector: string, tabId?: string): Promise<ElementInfo['rect'] | null> {
+    return getBrowserElementBoundingBox(this.getTab(tabId), selector);
   }
 
   async clickTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {

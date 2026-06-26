@@ -14,6 +14,7 @@ import type {
   UpdateInfo,
 } from '@shared/contract';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
+import type { GoalGateVerificationCard } from '@shared/contract/agent';
 import type { GoalRunInput } from '@shared/contract/appService';
 import { defaultLanguage, type Language } from '../i18n';
 import {
@@ -160,7 +161,9 @@ export interface GoalRunState {
   /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
   finishedAt?: number;
   /** 最近一次闸判定（UI 可显示"验证中/评审中"反馈） */
-  lastGate?: { gate: number; pass: boolean; reason?: string };
+  lastGate?: { gate: number; pass: boolean; reason?: string; verificationCard?: GoalGateVerificationCard };
+  /** goal gate history for final verification card rendering. */
+  gates: Array<{ gate: number; pass: boolean; reason?: string; verificationCard?: GoalGateVerificationCard }>;
 }
 
 export interface PendingProjectGoalChatSeed {
@@ -360,7 +363,7 @@ interface AppState {
   setPendingProjectGoalChatSeed: (seed: PendingProjectGoalChatSeed | null) => void;
   startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
-  recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string }) => void;
+  recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string; verificationCard?: GoalGateVerificationCard }) => void;
   finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string) => void;
   /** ③ session 内暂停/恢复：仅切换 running↔paused，不动 met/aborted（UI 态，配合后端 isPaused 循环挂起） */
   setGoalPaused: (sessionId: string, paused: boolean) => void;
@@ -1014,6 +1017,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           tokensUsed: 0,
           tokenBudget: init.tokenBudget ?? 0,
           wallClockBudgetMs: init.wallClockBudgetMs,
+          gates: [],
         },
       },
     })),
@@ -1042,7 +1046,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const prev = state.goalRuns[sessionId];
       if (!prev) return {};
       return {
-        goalRuns: { ...state.goalRuns, [sessionId]: { ...prev, lastGate: gate } },
+        goalRuns: {
+          ...state.goalRuns,
+          [sessionId]: {
+            ...prev,
+            lastGate: gate,
+            gates: [...(prev.gates ?? []), gate],
+          },
+        },
       };
     }),
 

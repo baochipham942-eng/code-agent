@@ -732,7 +732,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
       126,
       'tool_call_end',
       'Tool completed: failed',
-      '{"toolCallId":"tool-write-1","success":false,"metadata":{"validationFailed":true,"validationIssues":[{"field":"file_path","reason":"missing","expected":"string"},{"field":"content","reason":"missing","expected":"string"}]}}',
+      '{"toolCallId":"tool-write-1","success":false,"metadata":{"validationFailed":true,"validationIssues":[{"field":"file_path","reason":"missing","expected":"string"},{"field":"content","reason":"missing","expected":"string"}],"agentPointerEvent":{"id":"pointer-telemetry","surface":"computer","tone":"blocked","phase":"failed","coordSpace":"windowLocal","point":{"x":10,"y":20,"unit":"px"},"targetLabel":"Write button","targetSource":"axPath","traceId":"trace-telemetry","success":false}}}',
       null,
     );
 
@@ -781,14 +781,24 @@ describe('TelemetryQueryService transcript replay fallback', () => {
         }),
       ],
     });
-    expect(writeToolBlock?.toolCall?.permissionTrace).toBeUndefined();
-    expect(writeToolBlock?.toolCall?.resultMetadata).toEqual({
+    expect(writeToolBlock?.toolCall?.permissionTrace?.map(trace => trace.eventType)).toEqual([
+      'tool_call_end',
+    ]);
+    expect(writeToolBlock?.toolCall?.resultMetadata).toMatchObject({
       validationFailed: true,
       validationIssues: [
         { field: 'file_path', reason: 'missing', expected: 'string' },
         { field: 'content', reason: 'missing', expected: 'string' },
       ],
     });
+    expect(writeToolBlock?.toolCall?.agentPointerEvent).toMatchObject({
+      id: 'pointer-telemetry',
+      surface: 'computer',
+      targetLabel: 'Write button',
+    });
+    expect(writeToolBlock?.toolCall?.agentPointerTimeline).toEqual([
+      expect.objectContaining({ id: 'pointer-telemetry' }),
+    ]);
     expect(replay?.summary.telemetryCompleteness).toMatchObject({
       sessionId: 'session-replay-join',
       replayKey: 'session-replay-join',

@@ -6,13 +6,9 @@ import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinition
 import type { Message } from '../../shared/contract';
 import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
 import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
-import {
-  buildMemoryAuditBlock,
-  buildTranscriptReplay,
-  createEmptyToolDistribution,
-  normalizeToolCategory,
-} from './transcriptReplayBuilder';
+import { buildMemoryAuditBlock, buildTranscriptReplay, createEmptyToolDistribution, normalizeToolCategory } from './transcriptReplayBuilder';
 import { attachSessionQualityScoring } from './sessionQualityScoring';
+import { attachTelemetryReplayEvidence, buildAgentPointerReplayProjection } from './telemetryReplayEvidence';
 import type {
   ReplayBlock,
   ReplayMetricAvailability,
@@ -708,10 +704,11 @@ class TelemetryQueryService {
     try {
       const data = this.loadTelemetryRows(sessionId);
       if (!data) {
-        return buildTranscriptReplay(
+        const replay = buildTranscriptReplay(
           sessionId,
           (sid, turns, count) => this.buildTranscriptTelemetryCompleteness(sid, turns, count),
         );
+        return replay ? attachTelemetryReplayEvidence(replay) : replay;
       }
 
       const toolDistribution = createEmptyToolDistribution();
@@ -816,6 +813,7 @@ class TelemetryQueryService {
             turnEvents,
             tc.tool_call_id as string,
           );
+          const agentPointerProjection = buildAgentPointerReplayProjection(resultMetadata);
           toolDistribution[category]++;
 
           timelineBlocks.push({
@@ -831,6 +829,7 @@ class TelemetryQueryService {
               permissionTrace,
               result: (tc.result_summary as string) || undefined,
               resultMetadata,
+              ...agentPointerProjection,
               success: (tc.success as number) === 1,
               successKnown: true,
               duration: (tc.duration_ms as number) || 0,
@@ -1068,7 +1067,7 @@ class TelemetryQueryService {
           failureAttribution,
         },
       };
-      return attachSessionQualityScoring(replay);
+      return attachTelemetryReplayEvidence(attachSessionQualityScoring(replay));
     } catch (error) {
       logger.warn('Failed to build structured replay from telemetry', { error, sessionId });
       return null;

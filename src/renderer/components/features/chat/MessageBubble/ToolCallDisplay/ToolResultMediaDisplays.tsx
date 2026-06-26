@@ -6,9 +6,11 @@
 
 import React, { useState } from 'react';
 import { ExternalLink, Folder, Image as ImageIcon, FileText, Play, Video } from 'lucide-react';
+import type { AgentPointerEvent } from '@shared/contract';
 import type { SessionMediaAsset } from '@shared/utils/sessionMediaAssets';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
+import { AgentPointerOverlay } from '../../../../workbench/AgentPointerOverlay';
 import {
   getMediaAssetFileName,
   getMediaAssetSourceSummary,
@@ -21,9 +23,10 @@ interface ImageResultDisplayProps {
   imagePath?: string;
   imageBase64?: string;
   asset?: SessionMediaAsset;
+  pointerEvent?: AgentPointerEvent | null;
 }
 
-export function ImageResultDisplay({ imagePath, imageBase64, asset }: ImageResultDisplayProps) {
+export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent }: ImageResultDisplayProps) {
   const [imageError, setImageError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [lightboxAsset, setLightboxAsset] = useState<SessionMediaAsset | null>(null);
@@ -123,6 +126,7 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset }: ImageResul
           className={`w-full object-contain ${isExpanded ? '' : 'max-h-64'}`}
           onError={() => setImageError(true)}
         />
+        {pointerEvent && <AgentPointerOverlay event={pointerEvent} compact={!isExpanded} />}
         {!isExpanded && (
           <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-900/80 to-transparent flex items-end justify-center pb-1">
             <span className="text-xs text-gray-400">Click to expand</span>
@@ -168,7 +172,13 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset }: ImageResul
   );
 }
 
-export function GenericMediaResultDisplay({ asset }: { asset: SessionMediaAsset }) {
+export function GenericMediaResultDisplay({
+  asset,
+  pointerEvent,
+}: {
+  asset: SessionMediaAsset;
+  pointerEvent?: AgentPointerEvent | null;
+}) {
   const [lightboxAsset, setLightboxAsset] = useState<SessionMediaAsset | null>(null);
   const mediaSrc = getRenderableMediaSrc(asset);
   const fileName = getMediaAssetFileName(asset);
@@ -184,7 +194,7 @@ export function GenericMediaResultDisplay({ asset }: { asset: SessionMediaAsset 
       {asset.kind === 'image' && mediaSrc && (
         <button
           type="button"
-          className="block w-full cursor-zoom-in bg-black/20"
+          className="relative block w-full cursor-zoom-in bg-black/20"
           onClick={() => setLightboxAsset(asset)}
           title="放大查看"
         >
@@ -194,6 +204,7 @@ export function GenericMediaResultDisplay({ asset }: { asset: SessionMediaAsset 
             className="max-h-64 w-full object-contain"
             loading="lazy"
           />
+          {pointerEvent && <AgentPointerOverlay event={pointerEvent} compact />}
         </button>
       )}
       {asset.kind === 'video' && mediaSrc && (

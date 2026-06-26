@@ -473,6 +473,7 @@ describe('SpawnGuard', () => {
       expect(raw.agents).toHaveLength(1);
       expect(raw.agents[0].id).toBe('a1');
       expect(raw.agents[0].status).toBe('completed');
+      expect(raw.agents[0].recoveryPlan).toBeUndefined();
       expect(raw.pendingNotifications.length).toBeGreaterThan(0);
     });
 
@@ -500,6 +501,28 @@ describe('SpawnGuard', () => {
       const a = restored!.get('a1');
       expect(a?.status).toBe('dead-log-only');
       expect(a?.error).toMatch(/log is available only/);
+      expect(a?.recoveryPlan).toMatchObject({
+        status: 'interrupted-by-restart',
+        recoverable: false,
+        recommendedActions: ['review_messages', 'restart_subagent_if_needed'],
+      });
+    });
+
+    it('restoreState 给已完成 agent 补 before-restart 恢复语义', async () => {
+      await registerSettled(guard, 'a1', 'coder', makeResult({ output: 'done' }));
+      await guard.persistState(tmpDir);
+
+      const SpawnGuardClass = getSpawnGuardCtor();
+      const restored = await SpawnGuardClass.restoreState(tmpDir);
+
+      expect(restored).not.toBeNull();
+      const a = restored!.get('a1');
+      expect(a?.status).toBe('completed');
+      expect(a?.recoveryPlan).toMatchObject({
+        status: 'completed-before-restart',
+        recoverable: true,
+        recommendedActions: ['review_result'],
+      });
     });
 
     it('restoreState 对不存在的 state 文件返回 null', async () => {

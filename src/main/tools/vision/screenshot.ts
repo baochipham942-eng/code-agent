@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { analyzeImageWithVisionDetailed } from '../../services/desktop/visionAnalysisService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
+import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
 import {
   buildBrowserComputerProof,
   renderBrowserComputerEvidenceCard,
@@ -40,6 +41,7 @@ function buildAnalysisFailureMessage(args: {
 
 function withScreenshotProof(
   result: ToolExecutionResult,
+  context: ToolContext,
   args: {
     outputPath: string;
     analyzed: boolean;
@@ -64,7 +66,7 @@ function withScreenshotProof(
     }],
     visualObservation,
   });
-  return {
+  const resultWithProof: ToolExecutionResult = {
     ...result,
     metadata: {
       ...(result.metadata || {}),
@@ -74,6 +76,12 @@ function withScreenshotProof(
       ...(visualObservation.cannotObserveScreen ? { cannotObserveScreen: true } : {}),
     },
   };
+  persistBrowserComputerProofFromResult(resultWithProof, {
+    sessionId: context.sessionId,
+    toolCallId: context.currentToolCallId,
+    toolName: 'screenshot',
+  });
+  return resultWithProof;
 }
 
 export const screenshotTool: Tool = {
@@ -289,7 +297,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
               analyzedWidth: analysisResult.analyzedWidth,
               analyzedHeight: analysisResult.analyzedHeight,
             },
-          }, {
+          }, context, {
             outputPath,
             analyzed: false,
             analysisRequested: true,
@@ -336,7 +344,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
           analyzedWidth: visionDims?.analyzedWidth ?? null,
           analyzedHeight: visionDims?.analyzedHeight ?? null,
         },
-      }, {
+      }, context, {
         outputPath,
         analyzed: !!analysis,
         analysisRequested: !!analyze,

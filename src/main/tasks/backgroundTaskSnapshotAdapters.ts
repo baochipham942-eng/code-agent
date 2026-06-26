@@ -15,6 +15,7 @@ import {
   type TaskInfo,
 } from '../tools/modules/shell/backgroundTaskSources';
 import { type BackgroundTaskLedger, getBackgroundTaskLedger } from './backgroundTaskLedger';
+import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
 
 type ShellLikeStatus = 'running' | 'completed' | 'failed';
 
@@ -134,6 +135,7 @@ export function syncShellTaskSnapshotToLedger(
   const status = mapShellStatus(task.status);
   const taskId = `shell:${task.taskId}`;
   const previous = ledger.getTask(taskId);
+  const recoveryStatus = status === 'running' ? 'running-live' : status;
   ledger.upsertTask({
     id: taskId,
     kind: 'shell',
@@ -155,7 +157,13 @@ export function syncShellTaskSnapshotToLedger(
       createdBy: 'neo',
       originalTaskId: task.taskId,
       exitCode: task.exitCode,
-      recoveryStatus: status === 'running' ? 'running-live' : status,
+      recoveryStatus,
+      recoveryPlan: buildBackgroundTaskRecoveryPlan({
+        status,
+        recoveryStatus,
+        outputFile: task.outputFile,
+        exitCode: task.exitCode,
+      }),
     },
   });
 
@@ -205,6 +213,7 @@ export function syncPtySessionSnapshotToLedger(
   const taskId = `pty:${session.sessionId}`;
   const command = [session.command, ...session.args].filter(Boolean).join(' ');
   const previous = ledger.getTask(taskId);
+  const recoveryStatus = status === 'running' ? 'running-live' : status;
   ledger.upsertTask({
     id: taskId,
     kind: 'pty',
@@ -228,7 +237,13 @@ export function syncPtySessionSnapshotToLedger(
       exitCode: session.exitCode,
       cols: session.cols,
       rows: session.rows,
-      recoveryStatus: status === 'running' ? 'running-live' : status,
+      recoveryStatus,
+      recoveryPlan: buildBackgroundTaskRecoveryPlan({
+        status,
+        recoveryStatus,
+        outputFile: session.outputFile,
+        exitCode: session.exitCode,
+      }),
     },
   });
 

@@ -393,11 +393,17 @@ export const useConversationStreamEffects = ({
         case 'goal_gate': {
           logHandledEvent();
           if (eventSessionId) {
-            const d = event.data as { gate: number; pass: boolean; reason?: string };
+            const d = event.data as {
+              gate: number;
+              pass: boolean;
+              reason?: string;
+              verificationCard?: import('@shared/contract/agent').GoalGateVerificationCard;
+            };
             useAppStore.getState().recordGoalGate(eventSessionId, {
               gate: d.gate,
               pass: d.pass,
               reason: d.reason,
+              verificationCard: d.verificationCard,
             });
           }
           break;
@@ -418,6 +424,7 @@ export const useConversationStreamEffects = ({
                 turns: d.turns,
                 tokensUsed: d.tokensUsed,
                 durationMs: run ? Date.now() - run.startedAt : undefined,
+                verificationCard: [...(run?.gates ?? [])].reverse().find((gate) => gate.verificationCard)?.verificationCard,
               }));
             }
           }

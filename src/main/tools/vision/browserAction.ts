@@ -13,7 +13,9 @@ import { browserService, redactBrowserWorkbenchTraceParams } from '../../service
 import { getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
+import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
 import { attachBrowserActionProof } from '../../../shared/utils/browserComputerRedaction';
+import { buildAgentPointerEventFromToolCall } from '../../../shared/utils/agentPointer';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -390,8 +392,19 @@ Examples:
           if (!selector) {
             return { success: false, error: 'selector or targetRef required for click' };
           }
+          const clickBoundingBox = await browserService.getElementBoundingBox(selector, tabId);
           await browserService.click(selector, tabId);
-          return { success: true, output: `Clicked element: ${selector}` };
+          return {
+            success: true,
+            output: `Clicked element: ${selector}`,
+            metadata: {
+              pointerTarget: {
+                label: selector,
+                selector,
+                boundingBox: clickBoundingBox,
+              },
+            },
+          };
 
         case 'click_text': {
           if (!text) {
@@ -406,7 +419,17 @@ Examples:
           if (tab) {
             await tab.page.click(`text=${text}`);
           }
-          return { success: true, output: `Clicked element with text: "${text}"` };
+          return {
+            success: true,
+            output: `Clicked element with text: "${text}"`,
+            metadata: {
+              pointerTarget: {
+                label: text,
+                selector: `text=${text}`,
+                boundingBox: element.rect,
+              },
+            },
+          };
         }
 
         case 'type':
@@ -433,6 +456,7 @@ Examples:
           if (!selector) {
             return { success: false, error: 'selector or targetRef required for type' };
           }
+          const typeBoundingBox = await browserService.getElementBoundingBox(selector, tabId);
           await browserService.type(selector, textToType, tabId);
           return {
             success: true,
@@ -441,6 +465,11 @@ Examples:
               : `Typed ${textToType.length} chars into ${selector}`,
             metadata: {
               secretRef: secretRef ? summarizeSecretRef(secretRef) : undefined,
+              pointerTarget: {
+                label: selector,
+                selector,
+                boundingBox: typeBoundingBox,
+              },
             },
           };
 
@@ -675,7 +704,7 @@ Examples:
         error: rawResult.error || null,
         screenshotPath: getScreenshotPathFromResult(rawResult),
       });
-      return appendBrowserWorkbenchNote(withWorkbenchTrace(rawResult, completedTrace), workbenchNotes);
+      return appendBrowserWorkbenchNote(withWorkbenchTrace(rawResult, completedTrace, context), workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
@@ -710,25 +739,25 @@ Examples:
               retryHint: targetRefError.retryHint,
             },
           },
-        }, completedTrace), workbenchNotes);
+        }, completedTrace, context), workbenchNotes);
       }
       if (errorMessage.includes('No active tab')) {
         return appendBrowserWorkbenchNote(withWorkbenchTrace({
           success: false,
           error: `${errorMessage}. Use "launch" then "new_tab" first.\n\n--- Recent Logs ---\n${recentLogs}`,
-        }, completedTrace), workbenchNotes);
+        }, completedTrace, context), workbenchNotes);
       }
       if (errorMessage.includes('Timeout')) {
         return appendBrowserWorkbenchNote(withWorkbenchTrace({
           success: false,
           error: `Timeout: ${errorMessage}. Try increasing timeout or check if element exists.\n\n--- Recent Logs ---\n${recentLogs}`,
-        }, completedTrace), workbenchNotes);
+        }, completedTrace, context), workbenchNotes);
       }
 
       return appendBrowserWorkbenchNote(withWorkbenchTrace({
         success: false,
         error: `${errorMessage}\n\n--- Recent Logs ---\n${recentLogs}`,
-      }, completedTrace), workbenchNotes);
+      }, completedTrace, context), workbenchNotes);
     }
   },
 };
@@ -751,6 +780,8 @@ function summarizeBrowserTargetRefForTool(targetRef: BrowserTargetRef): Record<s
     capturedAtMs: targetRef.capturedAtMs,
     ttlMs: targetRef.ttlMs,
     confidence: targetRef.confidence,
+    rect: targetRef.rect || null,
+    boundingBox: targetRef.rect || null,
   };
 }
 
@@ -893,12 +924,46 @@ function getPathBasenameForUpload(value: string): string {
   return parts.at(-1) || value;
 }
 
-function withWorkbenchTrace(result: ToolExecutionResult, trace: ReturnType<typeof browserService.finishTrace>): ToolExecutionResult {
+function withWorkbenchTrace(
+  result: ToolExecutionResult,
+  trace: ReturnType<typeof browserService.finishTrace>,
+  context?: ToolContext,
+): ToolExecutionResult {
+  const metadata = { ...(result.metadata || {}) };
+  const pointerEvent = buildAgentPointerEventFromToolCall({
+    id: trace.id,
+    name: trace.toolName || 'browser_action',
+    arguments: trace.params || {},
+    result: {
+      success: result.success,
+      error: result.error,
+      metadata: {
+        ...metadata,
+        traceId: trace.id,
+        workbenchTrace: trace,
+      },
+    },
+  });
   const safeTrace = {
     ...trace,
     params: redactBrowserWorkbenchTraceParams(trace.toolName || 'browser_action', trace.params || {}),
+    agentPointerEvent: pointerEvent,
   };
-  return attachBrowserActionProof({ ...result, metadata: { ...(result.metadata || {}), traceId: safeTrace.id, workbenchTrace: safeTrace } }, safeTrace);
+  const resultWithProof = attachBrowserActionProof({
+    ...result,
+    metadata: {
+      ...metadata,
+      traceId: safeTrace.id,
+      workbenchTrace: safeTrace,
+      agentPointerEvent: pointerEvent,
+    },
+  }, safeTrace);
+  persistBrowserComputerProofFromResult(resultWithProof, {
+    sessionId: context?.sessionId,
+    toolCallId: context?.currentToolCallId,
+    toolName: 'browser_action',
+  });
+  return resultWithProof;
 }
 
 function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserService.getSessionState>): Record<string, unknown> {

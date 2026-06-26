@@ -52,6 +52,7 @@ export interface BrowserTargetRef {
   capturedAtMs: number;
   ttlMs: number;
   confidence: number;
+  rect?: { x: number; y: number; width: number; height: number } | null;
 }
 
 export interface BrowserDomSnapshot {

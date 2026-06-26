@@ -96,6 +96,7 @@ export interface AgentTrajectoryAuditItem {
   collectionUpdatedAt: number;
   startedAt?: number;
   metrics: AgentTrajectory['quality']['metrics'];
+  evidenceControl?: AgentTrajectory['summary']['evidenceControl'];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -254,6 +255,7 @@ export function buildAgentTrajectoryFromReplay(
           args: normalizeArgs(toolCall.actualArgs ?? toolCall.args),
           argsSource: toolCall.argsSource,
           hasDefinition: Boolean(toolCall.toolSchema),
+          agentPointerEvent: toolCall.agentPointerEvent || null,
         },
       });
       pushStep({
@@ -268,6 +270,8 @@ export function buildAgentTrajectoryFromReplay(
           result,
           durationMs: toolCall.duration,
           pendingCloseout,
+          agentPointerEvent: toolCall.agentPointerEvent || null,
+          agentPointerTimeline: toolCall.agentPointerTimeline,
         },
       });
       continue;
@@ -350,6 +354,9 @@ export function buildAgentTrajectoryFromReplay(
       toolDistribution: distribution,
       models: summarizeModels(steps),
       finalAnswer: finalTextBlock?.content,
+      browserComputerProofCount: replay.summary.browserComputerProofTimeline?.length,
+      browserComputerProofTimeline: replay.summary.browserComputerProofTimeline,
+      evidenceControl: replay.summary.evidenceControl,
     },
     toolDefinitions: [...definitions.values()],
     steps,
@@ -608,6 +615,7 @@ export async function exportAgentTrajectories(
       collectionUpdatedAt: trajectory.collection.updatedAt,
       startedAt: trajectory.startedAt,
       metrics: trajectory.quality.metrics,
+      evidenceControl: trajectory.summary.evidenceControl,
     });
     if (shouldExportTrajectory(trajectory, minTier, includeRejected, options.exportCollectionSource)) {
       trajectories.push(trajectory);

@@ -19,6 +19,7 @@ import {
   formatBrowserComputerActionArguments,
   formatBrowserComputerActionResultDetails,
 } from '../../../../../utils/browserComputerActionPreview';
+import { buildAgentPointerEvent } from '../../../../../utils/agentPointer';
 import { LiveToolOutput } from './LiveToolOutput';
 import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
@@ -157,6 +158,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const createdFilePath = extractCreatedFilePath(toolCall);
   const imageResult = extractImageResult(toolCall);
   const videoResult = extractVideoResult(toolCall);
+  const pointerEvent = buildAgentPointerEvent(toolCall);
   const mediaAssets = buildToolResultMediaAssets(toolCall, mediaContext);
   const imageAsset = mediaAssets.find((asset) => asset.kind === 'image' && asset.role === 'output')
     || mediaAssets.find((asset) => asset.kind === 'image');
@@ -244,7 +246,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
 
       {!result && (
         <>
-          {genericMediaAsset && <GenericMediaResultDisplay asset={genericMediaAsset} />}
+          {genericMediaAsset && <GenericMediaResultDisplay asset={genericMediaAsset} pointerEvent={pointerEvent} />}
           <LiveToolOutput toolCall={toolCall} />
         </>
       )}
@@ -265,6 +267,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
               imagePath={imageResult.imagePath}
               imageBase64={imageResult.imageBase64}
               asset={imageAsset}
+              pointerEvent={pointerEvent}
             />
           )}
 
@@ -281,7 +284,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
           )}
 
           {genericMediaAsset && (result.success || genericMediaAsset.state === 'failed') && (
-            <GenericMediaResultDisplay asset={genericMediaAsset} />
+            <GenericMediaResultDisplay asset={genericMediaAsset} pointerEvent={pointerEvent} />
           )}
 
           {/* Generated file display (ppt_generate, etc.) */}

@@ -10,6 +10,7 @@
 
 import { IPC_DOMAINS, type IPCResponse } from '@shared/ipc';
 import type {
+  AgentPointerEvent,
   NativePermissionKind,
   NativePermissionSnapshot,
   NativePermissionStatus,
@@ -98,6 +99,7 @@ export interface WorkbenchActionTrace {
   recommendedAction?: string | null;
   evidenceSummary?: string[];
   axQuality?: ComputerSurfaceAxQuality | null;
+  agentPointerEvent?: AgentPointerEvent | null;
 }
 
 export type ComputerSurfaceFailureKind =

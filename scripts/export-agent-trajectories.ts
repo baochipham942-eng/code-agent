@@ -10,6 +10,7 @@ import type {
   AgentTrajectoryCollectionSource,
   AgentTrajectoryQualityTier,
 } from '../src/shared/contract/agentTrajectory';
+import type { EvidenceControlSummaryProjection } from '../src/shared/contract/evaluation';
 
 interface CliOptions {
   dataDir: string;
@@ -364,6 +365,7 @@ type ReviewPacketItem = {
   taskKind: string;
   collectionSource: string;
   failures: string[];
+  evidenceControl?: EvidenceControlSummaryProjection;
 };
 
 export interface P3ReviewWorklistItem {
@@ -418,6 +420,37 @@ function reviewPriorityRank(item: ReviewPacketItem): number {
   if (item.priority === 'high') return 3;
   if (item.priority === 'medium') return 4;
   return 5;
+}
+
+function sanitizeEvidenceControlText(value: string): string {
+  return value
+    .replace(/^data:[^\s]+/gi, '[redacted]')
+    .replace(/base64[,=][^\s]+/gi, 'base64,[redacted]')
+    .replace(
+      /(?:\/Users\/[^\s"'`]+|\/private\/tmp\/[^\s"'`]+|\/tmp\/[^\s"'`]+|\/var\/folders\/[^\s"'`]+|\/Volumes\/[^\s"'`]+)(?:\/[^\s"'`]*)*/g,
+      (match) => `.../${match.split('/').filter(Boolean).at(-1) || 'path'}`,
+    )
+    .replace(/\b(cookie|cookies|localStorage|sessionStorage|storageState)(\s*[:=]\s*)[^\s,;]+/gi, '$1$2[redacted]')
+    .replace(/([?&](?:token|password|secret|credential)=)[^&\s]+/gi, '$1[redacted]');
+}
+
+function formatEvidenceControlForReviewPacket(
+  evidenceControl: EvidenceControlSummaryProjection | undefined,
+): string {
+  if (!evidenceControl) return 'none';
+  const gaps = evidenceControl.gaps.length > 0
+    ? ` · gaps ${evidenceControl.gaps.slice(0, 3).map(sanitizeEvidenceControlText).join('<br>')}`
+    : '';
+  const conflicts = evidenceControl.conflicts.length > 0
+    ? ` · conflicts ${evidenceControl.conflicts.slice(0, 3).map(sanitizeEvidenceControlText).join('<br>')}`
+    : '';
+  return [
+    evidenceControl.trustLevel,
+    `${evidenceControl.totalItems} items/${evidenceControl.totalEvidenceRefs} refs`,
+    `blocked ${evidenceControl.blockedItems}`,
+    `stale ${evidenceControl.staleItems}`,
+    `conflicts ${evidenceControl.conflictItems}`,
+  ].join(' · ') + gaps + conflicts;
 }
 
 function toWorklistItem(item: ReviewPacketItem): P3ReviewWorklistItem {
@@ -1193,6 +1226,7 @@ export function buildReviewPacketMarkdown(summary: {
         item.taskKind,
         item.collectionSource,
         item.failures.length > 0 ? item.failures.join('<br>') : 'none',
+        formatEvidenceControlForReviewPacket(item.evidenceControl),
         '',
         '',
       ]
@@ -1232,9 +1266,9 @@ export function buildReviewPacketMarkdown(summary: {
     '',
     '## Review Items',
     '',
-    '| # | Priority | P3 scope | Session | Suggested action | Current role | Tier | Task | Source | Failures | Final review.datasetRole | Notes |',
-    '| -: | -------- | -------- | ------- | ---------------- | ------------ | ---- | ---- | ------ | -------- | ------------------------ | ----- |',
-    rows || '| | | | | | | | | | | |',
+    '| # | Priority | P3 scope | Session | Suggested action | Current role | Tier | Task | Source | Failures | Evidence Control | Final review.datasetRole | Notes |',
+    '| -: | -------- | -------- | ------- | ---------------- | ------------ | ---- | ---- | ------ | -------- | ---------------- | ------------------------ | ----- |',
+    rows || '| | | | | | | | | | | | |',
     '',
   ].join('\n');
 }
@@ -1410,6 +1444,7 @@ async function main(): Promise<void> {
         datasetVersion: item.datasetVersion,
         collectionSource: item.collectionSource,
         failures: item.failures.slice(0, 8),
+        evidenceControl: item.evidenceControl,
         metrics: item.metrics,
         review: buildEmptyReviewDecision(item),
       }))

@@ -70,6 +70,18 @@ describe('Browser/Computer history redaction', () => {
           },
           success: false,
           error: `Fill failed after ${SECRET}`,
+          agentPointerEvent: {
+            id: 'pointer-redaction',
+            surface: 'browser',
+            tone: 'blocked',
+            phase: 'failed',
+            coordSpace: 'browserViewport',
+            point: { x: 42, y: 24, unit: 'px' },
+            targetLabel: SECRET,
+            targetSource: 'selector',
+            traceId: 'trace-1',
+            success: false,
+          },
         },
         browserComputerRecoveryActionOutcome: {
           status: 'success',
@@ -82,8 +94,16 @@ describe('Browser/Computer history redaction', () => {
 
     const sanitized = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
     const json = JSON.stringify(sanitized);
+    const timeline = sanitized[0]?.metadata?.agentPointerTimeline as Array<Record<string, unknown>> | undefined;
 
     expect(json).toContain('[redacted 18 chars]');
+    expect(json).toContain('agentPointerEvent');
+    expect(timeline).toEqual([
+      expect.objectContaining({
+        id: 'pointer-redaction',
+        targetLabel: '[redacted 18 chars]',
+      }),
+    ]);
     expect(json).toContain('页面证据已刷新');
     expect(json).toContain('https://example.test/account');
     expect(json).not.toContain('token=abc');

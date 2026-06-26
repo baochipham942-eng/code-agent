@@ -17,7 +17,21 @@ import {
   sanitizeBrowserComputerToolArguments,
   redactBrowserComputerInputPayloadsInValue,
 } from '../../shared/utils/browserComputerRedaction';
+import type { AgentPointerEvent } from '../../shared/contract/desktop';
+import { getAgentPointerLabel } from '../../shared/utils/agentPointer';
+import {
+  buildAgentPointerTimeline,
+  extractAgentPointerEvent,
+} from '../../shared/utils/agentPointerEvidence';
 import { guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
+import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import {
+  readBrowserComputerProofRecordsBySession,
+} from './browserComputerProofStore';
+import {
+  buildEvidenceControlSummary,
+  formatEvidenceControlSummaryForMarkdown,
+} from './evidenceControlSummary';
 import {
   SessionLocalCache,
   CachedSession,
@@ -148,10 +162,12 @@ function sanitizeToolExecutionForMarkdown(tool: {
   tool?: string;
   input?: unknown;
   output?: unknown;
+  metadata?: unknown;
 }): {
   tool?: string;
   input?: unknown;
   output?: unknown;
+  metadata?: unknown;
 } {
   if (!isBrowserComputerToolName(tool.tool)) {
     return guardSensitiveValue(tool, {
@@ -166,16 +182,105 @@ function sanitizeToolExecutionForMarkdown(tool: {
   const input = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
     ? sanitizeBrowserComputerToolArguments(tool.tool, tool.input as Record<string, unknown>) || tool.input
     : tool.input;
+  const metadata = tool.metadata && typeof tool.metadata === 'object' && !Array.isArray(tool.metadata)
+    ? sanitizeBrowserComputerMetadata(tool.tool, rawArgs, tool.metadata as Record<string, unknown>)
+    : tool.metadata;
+  let output = redactBrowserComputerInputPayloadsInValue(tool.tool, rawArgs, tool.output);
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    const outputRecord = output as Record<string, unknown>;
+    output = {
+      ...outputRecord,
+      metadata: outputRecord.metadata && typeof outputRecord.metadata === 'object' && !Array.isArray(outputRecord.metadata)
+        ? sanitizeBrowserComputerMetadata(tool.tool, rawArgs, outputRecord.metadata as Record<string, unknown>)
+        : outputRecord.metadata,
+    };
+  }
   const sanitized = {
     ...tool,
     input,
-    output: redactBrowserComputerInputPayloadsInValue(tool.tool, rawArgs, tool.output),
+    output,
+    metadata,
   };
   return guardSensitiveValue(sanitized, {
     surface: 'export',
     mode: 'share',
     maxLength: 20_000,
   }) as typeof tool;
+}
+
+function formatAgentPointerForMarkdown(event: AgentPointerEvent): string {
+  const coords = event.point
+    ? `${Math.round(event.point.x)},${Math.round(event.point.y)}${event.point.unit === 'percent' ? '%' : 'px'}`
+    : 'unknown';
+  const time = event.completedAtMs || event.occurredAtMs
+    ? ` · ${new Date(event.completedAtMs || event.occurredAtMs || 0).toISOString()}`
+    : '';
+  const trace = event.traceId ? ` · trace ${event.traceId}` : '';
+  const label = guardSensitiveText(getAgentPointerLabel(event), {
+    surface: 'export',
+    mode: 'share',
+    maxLength: 500,
+  })
+    .replace(/\bdata:[^\s]+base64,[^\s]+/gi, '[data-url hidden]')
+    .replace(/\bbase64,[a-zA-Z0-9+/=]+/gi, 'base64,[redacted]');
+  return `${label} · ${event.coordSpace} ${coords}${trace}${time}`;
+}
+
+function extractAgentPointerTimelineForMarkdown(tool: {
+  output?: unknown;
+  metadata?: unknown;
+}): AgentPointerEvent[] {
+  const seen = new Set<string>();
+  const events: AgentPointerEvent[] = [];
+  for (const event of [
+    ...buildAgentPointerTimeline(tool.metadata),
+    ...buildAgentPointerTimeline(tool.output),
+  ]) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    events.push(event);
+  }
+  if (events.length > 0) {
+    return events.slice(0, 8);
+  }
+  const fallback = extractAgentPointerEvent(tool.metadata)
+    || extractAgentPointerEvent(tool.output);
+  return fallback ? [fallback] : [];
+}
+
+type BrowserComputerEvidenceCardForMarkdown = {
+  title: string;
+  status: string;
+  summary: string;
+  evidenceRefIds: string[];
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeBrowserComputerEvidenceCard(value: unknown): BrowserComputerEvidenceCardForMarkdown | null {
+  if (!isPlainRecord(value)) return null;
+  const title = typeof value.title === 'string' ? value.title : 'Browser/Computer Evidence';
+  const status = typeof value.status === 'string' ? value.status : null;
+  const summary = typeof value.summary === 'string' ? value.summary : null;
+  if (!status || !summary) return null;
+  const evidenceRefIds = Array.isArray(value.evidenceRefIds)
+    ? value.evidenceRefIds.filter((item): item is string => typeof item === 'string')
+    : [];
+  return { title, status, summary, evidenceRefIds };
+}
+
+function extractBrowserComputerEvidenceCard(value: unknown): BrowserComputerEvidenceCardForMarkdown | null {
+  if (!isPlainRecord(value)) return null;
+  return normalizeBrowserComputerEvidenceCard(value.browserComputerEvidenceCard);
+}
+
+function formatBrowserComputerEvidenceCardForMarkdown(card: BrowserComputerEvidenceCardForMarkdown): string {
+  const refs = card.evidenceRefIds.length > 0
+    ? ` · refs ${card.evidenceRefIds.slice(0, 5).join(', ')}${card.evidenceRefIds.length > 5 ? ` +${card.evidenceRefIds.length - 5}` : ''}`
+    : '';
+  return `${card.title}: ${card.status} · ${card.summary}${refs}`;
 }
 
 /**
@@ -292,7 +397,11 @@ function exportChatStyle(
         tool?: string;
         input?: unknown;
         output?: unknown;
+        metadata?: unknown;
       });
+      const pointerTimeline = extractAgentPointerTimelineForMarkdown(tool);
+      const evidenceCard = extractBrowserComputerEvidenceCard(tool.metadata)
+        || extractBrowserComputerEvidenceCard(tool.output);
       lines.push('');
       lines.push('<details>');
       lines.push(`<summary>Tool: ${tool.tool || 'unknown'}</summary>`);
@@ -306,6 +415,16 @@ function exportChatStyle(
         lines.push('```');
         lines.push(String(tool.output).substring(0, 1000));
         lines.push('```');
+      }
+      if (pointerTimeline.length > 0) {
+        lines.push('**Pointer:**');
+        for (const pointerEvent of pointerTimeline) {
+          lines.push(`- ${formatAgentPointerForMarkdown(pointerEvent)}`);
+        }
+      }
+      if (evidenceCard) {
+        lines.push('**Evidence:**');
+        lines.push(`- ${formatBrowserComputerEvidenceCardForMarkdown(evidenceCard)}`);
       }
       lines.push('</details>');
     }
@@ -455,6 +574,16 @@ export function exportSessionToMarkdown(
     // Metadata header
     if (includeMetadata) {
       parts.push(generateMetadataHeader(session, options));
+      const evidenceSummarySection = formatEvidenceControlSummaryForMarkdown(
+        buildEvidenceControlSummary({
+          session,
+          browserComputerProofRecords: readBrowserComputerProofRecordsBySession(session.sessionId, 50),
+          backgroundTasks: getBackgroundTaskLedger().listTasks({ sessionId: session.sessionId }),
+        }),
+      );
+      if (evidenceSummarySection) {
+        parts.push(evidenceSummarySection);
+      }
     }
 
     // Table of contents

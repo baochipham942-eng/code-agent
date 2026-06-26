@@ -117,6 +117,52 @@ describe('MCPToolRegistry permission metadata', () => {
     });
   });
 
+  it('maps CUA agent cursor lifecycle tools as read-only permissions', () => {
+    const registry = new MCPToolRegistry();
+    registry.tools = [
+      {
+        serverName: 'cua-driver',
+        name: 'start_session',
+        description: 'Declare CUA run session',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        serverName: 'cua-driver',
+        name: 'end_session',
+        description: 'Clean up CUA run session',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        serverName: 'cua-driver',
+        name: 'get_agent_cursor_state',
+        description: 'Read agent cursor state',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        serverName: 'cua-driver',
+        name: 'click',
+        description: 'Click desktop target',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    const definitions = registry.getToolDefinitions();
+    for (const name of [
+      'mcp__cua-driver__start_session',
+      'mcp__cua-driver__end_session',
+      'mcp__cua-driver__get_agent_cursor_state',
+    ]) {
+      expect(definitions.find((definition) => definition.name === name)).toMatchObject({
+        requiresPermission: false,
+        permissionLevel: 'read',
+      });
+    }
+    expect(definitions.find((definition) => definition.name === 'mcp__cua-driver__click')).toMatchObject({
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    });
+  });
+
   it('redacts sensitive MCP arguments before logging', async () => {
     loggerMocks.info.mockClear();
     const registry = new MCPToolRegistry();

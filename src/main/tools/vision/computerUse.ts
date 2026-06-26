@@ -9,6 +9,7 @@ import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
 import { acquireComputerSurfaceLock } from '../../services/desktop/computerSurfaceLock';
 import { isMultiAgentMode } from '../../services/multiAgentMode';
+import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -43,6 +44,7 @@ import {
   type BrowserComputerEvidenceInput,
   type BrowserComputerVisualObservation,
 } from '../../../shared/utils/browserComputerRedaction';
+import { buildAgentPointerEventFromToolCall } from '../../../shared/utils/agentPointer';
 
 export { resolveMacOSApplicationAlias };
 
@@ -420,12 +422,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
     const computerSurface = getComputerSurface();
     if (isSurfaceReadAction(action.action)) {
       const result = await executeSurfaceReadAction(computerSurface, action);
-      return appendBrowserWorkbenchNote(withComputerUseProof(result, action), workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(result, action, context), workbenchNotes);
     }
 
     const earlySurfaceBlock = buildComputerSurfacePreflightBlockedResult(action, computerSurface);
     if (earlySurfaceBlock) {
-      return appendBrowserWorkbenchNote(withComputerUseProof(earlySurfaceBlock, action), workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(earlySurfaceBlock, action, context), workbenchNotes);
     }
 
     const surfaceAuth = isSmartAction(action.action)
@@ -465,7 +467,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           recommendedAction,
           evidenceSummary: completedTrace.evidenceSummary || surfaceAuth.state.evidenceSummary,
         },
-      }, action), workbenchNotes);
+      }, action, context), workbenchNotes);
     }
 
     // Smart actions 走 BrowserService（已经按 agentId 池化，多 agent 并发 OK），
@@ -521,6 +523,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
                 ? 'Run get_windows again and retry with the current pid, windowId, and window-local point.'
                 : 'Observe the foreground window and retry with a verified target.',
           evidenceSummary: getEvidenceSummaryFromMetadata(result.metadata),
+          resultMetadata: result.metadata,
         });
         result = withComputerSurfaceMetadata(result, {
           state: computerSurface.getState({
@@ -537,7 +540,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       }
 
       result = attachForegroundKeystrokeWarning(result, action, surfaceAuth?.state.mode || null);
-      return appendBrowserWorkbenchNote(withComputerUseProof(result, action), workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(result, action, context), workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const result: ToolExecutionResult = {
@@ -560,9 +563,9 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           }),
           trace: completedTrace,
           sensitive: surfaceAuth.sensitive,
-        }), action), workbenchNotes);
+        }), action, context), workbenchNotes);
       }
-      return appendBrowserWorkbenchNote(withComputerUseProof(result, action), workbenchNotes);
+      return appendBrowserWorkbenchNote(withComputerUseProof(result, action, context), workbenchNotes);
     } finally {
       surfaceLockSlot?.release();
     }
@@ -650,8 +653,42 @@ function inferComputerVisualObservation(result: ToolExecutionResult, action: Com
   return { observed: false, source: 'none', reason: 'no_ax_or_analyzed_screenshot' };
 }
 
-function withComputerUseProof(result: ToolExecutionResult, action: ComputerAction): ToolExecutionResult {
+function withComputerUseProof(
+  result: ToolExecutionResult,
+  action: ComputerAction,
+  context?: ToolContext,
+): ToolExecutionResult {
   const metadata = result.metadata || {};
+  const trace = metadata.workbenchTrace && typeof metadata.workbenchTrace === 'object'
+    ? metadata.workbenchTrace as Record<string, unknown>
+    : null;
+  const traceId = typeof metadata.traceId === 'string'
+    ? metadata.traceId
+    : typeof trace?.id === 'string'
+      ? trace.id
+      : `computer_pointer_${Date.now()}`;
+  const pointerEvent = buildAgentPointerEventFromToolCall({
+    id: traceId,
+    name: 'computer_use',
+    arguments: action as unknown as Record<string, unknown>,
+    result: {
+      success: result.success,
+      error: result.error,
+      metadata,
+    },
+  });
+  const traceWithPointer = trace
+    ? { ...trace, agentPointerEvent: pointerEvent }
+    : trace;
+  const computerSurfaceWithPointer = traceWithPointer
+    && metadata.computerSurface
+    && typeof metadata.computerSurface === 'object'
+    && !Array.isArray(metadata.computerSurface)
+    ? {
+        ...(metadata.computerSurface as Record<string, unknown>),
+        lastAction: traceWithPointer,
+      }
+    : metadata.computerSurface;
   const manualTakeoverText = [
     result.output,
     result.error,
@@ -682,17 +719,27 @@ function withComputerUseProof(result: ToolExecutionResult, action: ComputerActio
       'browser_action.get_account_state',
     ],
     visualObservation: inferComputerVisualObservation(result, action),
+    agentPointerEvent: pointerEvent,
   });
-  return {
+  const resultWithProof: ToolExecutionResult = {
     ...result,
     metadata: {
       ...metadata,
+      workbenchTrace: traceWithPointer || metadata.workbenchTrace,
+      computerSurface: computerSurfaceWithPointer,
+      agentPointerEvent: pointerEvent,
       evidenceRefs: proof.evidenceRefs,
       browserComputerProof: proof,
       browserComputerEvidenceCard: renderBrowserComputerEvidenceCard(proof),
       ...(proof.visualObservation?.cannotObserveScreen ? { cannotObserveScreen: true } : {}),
     },
   };
+  persistBrowserComputerProofFromResult(resultWithProof, {
+    sessionId: context?.sessionId,
+    toolCallId: context?.currentToolCallId,
+    toolName: 'computer_use',
+  });
+  return resultWithProof;
 }
 
 const KEYSTROKE_ACTIONS_NEEDING_BACKGROUND = new Set<ActionType>(['type', 'key']);

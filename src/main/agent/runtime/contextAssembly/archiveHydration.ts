@@ -8,7 +8,7 @@ import type { ContextTranscriptEntry } from './shared';
 
 const ARCHIVE_ID_RE = /\btool_result:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[a-f0-9]{12}\b/g;
 const RAW_EVIDENCE_REQUEST_RE =
-  /(?:完整(?:输出|结果|日志|原文)|原始(?:输出|结果|日志|数据)|tool result 原文|tool_result|archive=|read_tool_result_archive|复查(?:输出|结果|日志|原文)|回看(?:输出|结果|日志|原文)|刚才(?:命令|工具).*?(?:输出|结果|日志)|raw evidence|full output|original output|full tool result)/i;
+  /(?:完整(?:输出|结果|日志|原文)|原始(?:输出|结果|日志|数据)|tool result 原文|tool_result|archive=|read_tool_result_archive|next-read|复查(?:输出|结果|日志|原文)|回看(?:输出|结果|日志|原文)|刚才(?:命令|工具).*?(?:输出|结果|日志)|raw evidence|full output|original output|full tool result)/i;
 const MAX_AUTO_HYDRATE_CHARS = 24_000;
 
 function getLatestUserContent(entries: ContextTranscriptEntry[]): string {
@@ -86,6 +86,7 @@ function renderHydratedArchive(ref: ToolResultArchiveRef, content: string, trunc
     truncated
       ? 'note: This automatic hydrate is truncated; call read_tool_result_archive with the artifact_id for precise paging.'
       : '',
+    'next-read: If this archive contains search/list results, call Read on the exact source file before Edit or overwrite Write.',
     '',
     content,
   ].filter(Boolean).join('\n');

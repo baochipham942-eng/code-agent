@@ -107,6 +107,7 @@ describe('grepModule (native)', () => {
       expect(props.after_context).toBeDefined();
       expect(props.context).toBeDefined();
       expect(props.head_limit).toBeDefined();
+      expect(props.limit).toBeDefined();
       expect(props.offset).toBeDefined();
     });
   });
@@ -314,6 +315,30 @@ describe('grepModule (native)', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('showing 1-3');
+        expect(result.output).toContain('nextOffset: 3');
+        expect(result.meta).toMatchObject({
+          nextOffset: 3,
+          limit: 3,
+          truncated: true,
+          archiveRef: expect.objectContaining({ reason: 'discovery-full-results' }),
+        });
+      }
+    });
+
+    it('supports limit as an alias for head_limit', async () => {
+      await fs.writeFile(
+        path.join(tempDir, 'limit-alias.txt'),
+        Array.from({ length: 5 }, (_, i) => `alias_${i}`).join('\n'),
+      );
+      const result = await run({
+        pattern: 'alias_',
+        path: tempDir,
+        limit: 2,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('showing 1-2');
+        expect(result.output).toContain('nextOffset: 2');
       }
     });
 
@@ -331,15 +356,18 @@ describe('grepModule (native)', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('showing 3-4');
+        expect(result.output).toContain('nextOffset: 4');
       }
     });
   });
 
   describe('default output limit', () => {
     it('caps total matches at GREP.MAX_TOTAL_MATCHES with a truncation notice', async () => {
-      // Create a file with > MAX_TOTAL_MATCHES lines
-      const big = Array.from({ length: 250 }, (_, i) => `bighit_${i}`).join('\n');
-      await fs.writeFile(path.join(tempDir, 'big.txt'), big);
+      // Cross several files so ripgrep's per-file cap does not hide total truncation.
+      const big = Array.from({ length: 120 }, (_, i) => `bighit_${i}`).join('\n');
+      await fs.writeFile(path.join(tempDir, 'big-a.txt'), big);
+      await fs.writeFile(path.join(tempDir, 'big-b.txt'), big);
+      await fs.writeFile(path.join(tempDir, 'big-c.txt'), big);
       const result = await run({ pattern: 'bighit_', path: tempDir });
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -349,6 +377,9 @@ describe('grepModule (native)', () => {
         // Both rg and grep should hit at least MAX_MATCHES_PER_FILE per file cap,
         // so we just assert the handler does not crash and meta.totalMatches is a number.
         expect(typeof meta?.totalMatches).toBe('number');
+        expect(result.output).toContain('nextOffset:');
+        expect(result.output).toContain('[next-read]');
+        expect(result.meta?.archiveRef).toMatchObject({ reason: 'discovery-full-results' });
       }
     });
   });

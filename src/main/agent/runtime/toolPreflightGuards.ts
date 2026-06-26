@@ -1,8 +1,155 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
+import { existsSync, statSync } from 'fs';
+import path from 'path';
 import { READ_ONLY_TOOLS } from '../../agent/loopTypes';
+import { fileReadTracker } from '../../tools/fileReadTracker';
 import type { ContextAssembly } from './contextAssembly';
 import type { RuntimeContext } from './runtimeContext';
 import { validateGameArtifact } from './gameArtifactValidator';
+
+interface SearchCandidateRecord {
+  path: string;
+  sourceTool: string;
+  discoveredAtMs: number;
+}
+
+interface SearchCandidateResult {
+  success: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+const searchCandidatesBySession = new Map<string, Map<string, SearchCandidateRecord>>();
+
+function sessionKey(ctx: Pick<RuntimeContext, 'sessionId' | 'agentId'>): string {
+  return `${ctx.sessionId || 'session'}::${ctx.agentId || 'main'}`;
+}
+
+function normalizeFilePath(rawPath: string, workingDirectory: string): string {
+  return path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(workingDirectory, rawPath);
+}
+
+function isSearchDiscoveryTool(name: string): boolean {
+  return name === 'Glob' || name === 'Grep' || name === 'ListDirectory';
+}
+
+function isSearchGuardedMutationTool(name: string): boolean {
+  return name === 'Edit' || name === 'MultiEdit' || name === 'Write';
+}
+
+function getToolFilePath(toolCall: Pick<ToolCall, 'arguments'>, workingDirectory: string): string | null {
+  const rawPath = toolCall.arguments?.file_path;
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return null;
+  return normalizeFilePath(rawPath, workingDirectory);
+}
+
+function getCandidatePathsFromResult(
+  ctx: RuntimeContext,
+  toolCall: Pick<ToolCall, 'name'>,
+  result: SearchCandidateResult,
+): string[] {
+  if (!result.success || !isSearchDiscoveryTool(toolCall.name)) return [];
+  const metadata = result.metadata ?? {};
+  const searchPath = typeof metadata.searchPath === 'string'
+    ? metadata.searchPath
+    : ctx.workingDirectory;
+  const candidates = new Set<string>();
+
+  if (Array.isArray(metadata.matches)) {
+    for (const match of metadata.matches) {
+      if (typeof match === 'string') {
+        candidates.add(normalizeFilePath(match, searchPath));
+      } else if (
+        match &&
+        typeof match === 'object' &&
+        typeof (match as { file?: unknown }).file === 'string'
+      ) {
+        candidates.add(normalizeFilePath((match as { file: string }).file, searchPath));
+      }
+    }
+  }
+
+  if (Array.isArray(metadata.entries)) {
+    for (const entry of metadata.entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const typed = entry as { path?: unknown; isDirectory?: unknown };
+      if (typed.isDirectory === true || typeof typed.path !== 'string') continue;
+      candidates.add(normalizeFilePath(typed.path, searchPath));
+    }
+  }
+
+  return Array.from(candidates);
+}
+
+export function clearSearchCandidateIndexForTest(): void {
+  searchCandidatesBySession.clear();
+}
+
+export function recordSearchCandidatesFromResult(
+  ctx: RuntimeContext,
+  toolCall: Pick<ToolCall, 'name'>,
+  result: SearchCandidateResult,
+): void {
+  const paths = getCandidatePathsFromResult(ctx, toolCall, result);
+  if (paths.length === 0) return;
+
+  const key = sessionKey(ctx);
+  let sessionCandidates = searchCandidatesBySession.get(key);
+  if (!sessionCandidates) {
+    sessionCandidates = new Map();
+    searchCandidatesBySession.set(key, sessionCandidates);
+  }
+
+  const discoveredAtMs = Date.now();
+  for (const candidatePath of paths) {
+    sessionCandidates.set(candidatePath, {
+      path: candidatePath,
+      sourceTool: toolCall.name,
+      discoveredAtMs,
+    });
+  }
+}
+
+export function getSearchToReadPreflightBlock(
+  ctx: RuntimeContext,
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+): { error: string; code: 'READ_REQUIRED_AFTER_SEARCH'; metadata: Record<string, unknown> } | null {
+  if (!isSearchGuardedMutationTool(toolCall.name)) return null;
+
+  const targetPath = getToolFilePath(toolCall, ctx.workingDirectory);
+  if (!targetPath) return null;
+
+  if (toolCall.name === 'Write') {
+    try {
+      const stats = statSync(targetPath);
+      if (!stats.isFile()) return null;
+    } catch {
+      // New files and missing targets are not constrained by search-to-read.
+      return null;
+    }
+  } else if (!existsSync(targetPath)) {
+    return null;
+  }
+
+  if (fileReadTracker.hasBeenRead(targetPath)) return null;
+
+  const candidate = searchCandidatesBySession.get(sessionKey(ctx))?.get(targetPath);
+  if (!candidate) return null;
+
+  return {
+    code: 'READ_REQUIRED_AFTER_SEARCH',
+    error:
+      `File ${targetPath} only appeared in ${candidate.sourceTool} search results. ` +
+      'Read the exact file first to bind fresh evidence before Edit or overwrite Write.',
+    metadata: {
+      blocked: true,
+      skipped: true,
+      code: 'READ_REQUIRED_AFTER_SEARCH',
+      path: targetPath,
+      sourceTool: candidate.sourceTool,
+      discoveredAtMs: candidate.discoveredAtMs,
+    },
+  };
+}
 
 export function activateForceFinalResponse(ctx: RuntimeContext, reason: string): void {
   if (ctx.forceFinalResponseReason) return;

@@ -155,6 +155,54 @@ describe('globModule (native)', () => {
       }
     });
 
+    it('paginates sorted results with nextOffset', async () => {
+      const handler = await globModule.createHandler();
+      const result = await handler.execute(
+        { pattern: '**/*.ts', path: tmpDir, sort: 'name', offset: 1, limit: 1 },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('b.ts');
+        expect(result.output).not.toContain('a.ts');
+        expect(result.output).toContain('nextOffset: 2');
+        expect(result.output).toContain('[next-read]');
+        expect(result.meta).toMatchObject({
+          offset: 1,
+          limit: 1,
+          nextOffset: 2,
+          returned: 1,
+          truncated: true,
+          archiveRef: expect.objectContaining({ reason: 'discovery-full-results' }),
+        });
+      }
+    });
+
+    it('respects top-level .gitignore by default and can opt out', async () => {
+      await fs.writeFile(path.join(tmpDir, '.gitignore'), 'ignored/\n', 'utf-8');
+      await fs.mkdir(path.join(tmpDir, 'ignored'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'ignored', 'hidden.ts'), 'x', 'utf-8');
+
+      const handler = await globModule.createHandler();
+      const respected = await handler.execute(
+        { pattern: '**/*.ts', path: tmpDir },
+        makeCtx(),
+        allowAll,
+      );
+      const ignored = await handler.execute(
+        { pattern: '**/*.ts', path: tmpDir, respect_gitignore: false },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(respected.ok).toBe(true);
+      if (respected.ok) expect(respected.output).not.toContain('hidden.ts');
+      expect(ignored.ok).toBe(true);
+      if (ignored.ok) expect(ignored.output).toContain('hidden.ts');
+    });
+
     it('returns "No files matched" on empty results', async () => {
       const handler = await globModule.createHandler();
       const result = await handler.execute(

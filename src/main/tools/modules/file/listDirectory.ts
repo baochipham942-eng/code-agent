@@ -20,6 +20,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
 interface DirEntry {
@@ -29,6 +30,22 @@ interface DirEntry {
   size?: number;
   children?: DirEntry[];
 }
+
+interface FlatDirEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+  depth: number;
+}
+
+type DirectorySort = 'path' | 'name' | 'type' | 'size';
+
+const DEFAULT_LIMIT = 200;
+const MAX_LIMIT = 1000;
+const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
+const NEXT_READ_HINT =
+  '\n[next-read] Before Edit or overwrite Write on any listed file path, call Read on that exact file first.';
 
 const IGNORED_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__',
@@ -46,6 +63,8 @@ async function listDir(
   recursive: boolean,
   maxDepth: number,
   currentDepth: number,
+  rootPath: string,
+  shouldIgnore: (relativePath: string, isDirectory: boolean) => boolean,
 ): Promise<DirEntry[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   const result: DirEntry[] = [];
@@ -54,9 +73,11 @@ async function listDir(
     if (entry.name.startsWith('.') && entry.name !== '.env.example') {
       if (entry.isDirectory()) continue;
     }
-    if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) continue;
-
     const fullPath = path.join(dirPath, entry.name);
+    const relativePath = path.relative(rootPath, fullPath);
+    if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) continue;
+    if (shouldIgnore(relativePath, entry.isDirectory())) continue;
+
     const dirEntry: DirEntry = {
       name: entry.name,
       path: fullPath,
@@ -74,7 +95,7 @@ async function listDir(
 
     if (entry.isDirectory() && recursive && currentDepth < maxDepth) {
       try {
-        dirEntry.children = await listDir(fullPath, recursive, maxDepth, currentDepth + 1);
+        dirEntry.children = await listDir(fullPath, recursive, maxDepth, currentDepth + 1, rootPath, shouldIgnore);
       } catch {
         // permission errors on subdir
       }
@@ -92,33 +113,20 @@ async function listDir(
   return result;
 }
 
-function formatEntries(entries: DirEntry[], indent = ''): string {
+function formatEntries(entries: FlatDirEntry[], rootPath: string): string {
   const lines: string[] = [];
   for (const entry of entries) {
     const icon = entry.isDirectory ? '📁' : '📄';
     const size = entry.size ? ` (${formatFileSize(entry.size)})` : '';
-    lines.push(`${indent}${icon} ${entry.name}${size}`);
-    if (entry.children && entry.children.length > 0) {
-      lines.push(formatEntries(entry.children, indent + '  '));
-    }
+    const rel = path.relative(rootPath, entry.path) || entry.name;
+    const suffix = entry.isDirectory ? '/' : '';
+    lines.push(`${icon} ${rel}${suffix}${size}`);
   }
   return lines.join('\n');
 }
 
-function flattenEntries(entries: DirEntry[], depth = 0): Array<{
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size?: number;
-  depth: number;
-}> {
-  const flat: Array<{
-    name: string;
-    path: string;
-    isDirectory: boolean;
-    size?: number;
-    depth: number;
-  }> = [];
+function flattenEntries(entries: DirEntry[], depth = 0): FlatDirEntry[] {
+  const flat: FlatDirEntry[] = [];
   for (const entry of entries) {
     flat.push({
       name: entry.name,
@@ -134,6 +142,76 @@ function flattenEntries(entries: DirEntry[], depth = 0): Array<{
   return flat;
 }
 
+function parsePositiveInteger(value: unknown, fallback: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(Math.floor(value), max));
+}
+
+function parseSort(value: unknown): DirectorySort {
+  return value === 'name' || value === 'type' || value === 'size' ? value : 'path';
+}
+
+async function readGitignoreLines(rootPath: string): Promise<string[]> {
+  try {
+    const content = await fs.readFile(path.join(rootPath, '.gitignore'), 'utf-8');
+    return content
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith('#') && !line.startsWith('!'))
+      .map(line => line.replace(/^\//, ''));
+  } catch {
+    return [];
+  }
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`);
+}
+
+function buildGitignoreMatcher(lines: string[]): (relativePath: string, isDirectory: boolean) => boolean {
+  const patterns = lines.map(line => ({
+    raw: line,
+    directoryOnly: line.endsWith('/'),
+    regex: wildcardToRegExp(line.replace(/\/$/, '')),
+  }));
+  return (relativePath: string, isDirectory: boolean) => {
+    const rel = relativePath.split(path.sep).join('/');
+    return patterns.some(({ raw, directoryOnly, regex }) => {
+      const base = raw.replace(/\/$/, '');
+      if (directoryOnly && !isDirectory && !rel.startsWith(`${base}/`) && !rel.includes(`/${base}/`)) {
+        return false;
+      }
+      if (regex.test(rel)) return true;
+      if (!base.includes('/')) {
+        return rel === base || rel.startsWith(`${base}/`) || rel.includes(`/${base}/`);
+      }
+      return rel === base || rel.startsWith(`${base}/`);
+    });
+  };
+}
+
+function sortEntries(entries: FlatDirEntry[], sort: DirectorySort): FlatDirEntry[] {
+  return [...entries].sort((a, b) => {
+    if (sort === 'type' && a.isDirectory !== b.isDirectory) {
+      return a.isDirectory ? -1 : 1;
+    }
+    if (sort === 'size') {
+      return (b.size ?? 0) - (a.size ?? 0) || a.path.localeCompare(b.path);
+    }
+    const left = sort === 'name' ? a.name : a.path;
+    const right = sort === 'name' ? b.name : b.path;
+    return left.localeCompare(right) || a.path.localeCompare(b.path);
+  });
+}
+
+function appendArchiveHint(output: string, archiveRef: ToolResultArchiveRef | undefined): string {
+  if (!archiveRef) return output;
+  return `${output}${buildSpillNotice(archiveRef)}${NEXT_READ_HINT}`;
+}
+
 class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
@@ -146,6 +224,10 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
     const inputPath = (args.path as string | undefined) ?? ctx.workingDir;
     const recursive = Boolean(args.recursive);
     const maxDepth = (args.max_depth as number | undefined) ?? 3;
+    const offset = parsePositiveInteger(args.offset, 0, Number.MAX_SAFE_INTEGER);
+    const limit = parsePositiveInteger(args.limit, DEFAULT_LIMIT, MAX_LIMIT) || DEFAULT_LIMIT;
+    const sort = parseSort(args.sort);
+    const respectGitignore = args.respect_gitignore !== false;
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
@@ -162,9 +244,25 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
       : path.resolve(ctx.workingDir, inputPath);
 
     try {
-      const entries = await listDir(dirPath, recursive, maxDepth, 0);
-      const output = formatEntries(entries);
-      const flatEntries = flattenEntries(entries);
+      const gitignoreLines = respectGitignore ? await readGitignoreLines(dirPath) : [];
+      const shouldIgnore = buildGitignoreMatcher(gitignoreLines);
+      const entries = await listDir(dirPath, recursive, maxDepth, 0, dirPath, shouldIgnore);
+      const flatEntries = sortEntries(flattenEntries(entries), sort);
+      const pageEntries = flatEntries.slice(offset, offset + limit);
+      const nextOffset = offset + pageEntries.length < flatEntries.length ? offset + pageEntries.length : null;
+      let output = formatEntries(pageEntries, dirPath) || '(empty page)';
+      output += `\n\nnextOffset: ${nextOffset === null ? 'null' : nextOffset}`;
+      const fullOutput = formatEntries(flatEntries, dirPath);
+      const archive = (nextOffset !== null || fullOutput.length > DISCOVERY_ARCHIVE_CHAR_LIMIT)
+        ? spillToolResultArchive({
+            content: fullOutput,
+            toolName: schema.name,
+            sessionId: ctx.sessionId,
+            toolCallId: ctx.currentToolCallId,
+            reason: 'discovery-full-results',
+          })
+        : null;
+      output = appendArchiveHint(output, archive?.archiveRef);
       const directoryCount = flatEntries.filter(entry => entry.isDirectory).length;
       const fileCount = flatEntries.length - directoryCount;
       onProgress?.({ stage: 'completing', percent: 100 });
@@ -176,11 +274,17 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
           dirPath,
           recursive,
           maxDepth,
+          offset,
+          limit,
+          sort,
+          respectGitignore,
           entryCount: flatEntries.length,
           fileCount,
           directoryCount,
-          entries: flatEntries.slice(0, 500),
-          entriesTruncated: flatEntries.length > 500,
+          entries: pageEntries,
+          nextOffset,
+          entriesTruncated: nextOffset !== null,
+          ...(archive ? { archiveRef: archive.archiveRef } : {}),
           artifact: createVirtualArtifact({
             sourceTool: schema.name,
             kind: 'text',
@@ -193,9 +297,14 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
               dirPath,
               recursive,
               maxDepth,
+              offset,
+              limit,
+              nextOffset,
               entryCount: flatEntries.length,
               fileCount,
               directoryCount,
+              entriesTruncated: nextOffset !== null,
+              ...(archive ? { archiveRef: archive.archiveRef } : {}),
             },
           }),
         },

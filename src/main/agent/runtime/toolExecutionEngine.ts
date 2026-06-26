@@ -66,7 +66,9 @@ import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration'
 import {
   activateForceFinalResponse,
   getReadOnlyPreflightWarning,
+  getSearchToReadPreflightBlock,
   maybeFinishArtifactRepairIfAlreadyValid,
+  recordSearchCandidatesFromResult,
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
 
@@ -674,6 +676,18 @@ export class ToolExecutionEngine {
       return emitBlockedToolResult(hardLimitResult);
     }
 
+    const searchToReadBlock = getSearchToReadPreflightBlock(this.ctx, toolCall);
+    if (searchToReadBlock) {
+      const blockedResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: searchToReadBlock.error,
+        duration: Date.now() - startTime,
+        metadata: searchToReadBlock.metadata,
+      };
+      return emitBlockedToolResult(blockedResult);
+    }
+
     emitToolCallStart();
 
     // Langfuse: Start tool span
@@ -791,6 +805,8 @@ export class ToolExecutionEngine {
       };
 
       logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
+
+      recordSearchCandidatesFromResult(this.ctx, toolCall, normalizedResult);
 
       handleToolResultBookkeeping({
         ctx: this.ctx,

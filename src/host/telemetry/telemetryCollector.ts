@@ -27,6 +27,8 @@ import {
   extractComputerSurfaceFields,
   sanitizeToolArgsForTelemetry,
   parseSerializedArguments,
+  summarizeEvent,
+  extractEventData,
   type SessionConfig,
   type PendingToolCall,
   type DetachedToolCallInput,
@@ -946,8 +948,8 @@ export class TelemetryCollector {
       sessionId,
       timestamp: Date.now(),
       eventType: event.type,
-      summary: this.summarizeEvent(event),
-      data: this.extractEventData(event)
+      summary: summarizeEvent(event),
+      data: extractEventData(event)
     };
     this.turnEvents.push(timelineEvent);
   }
@@ -1107,116 +1109,6 @@ export class TelemetryCollector {
     // All data is flushed in endTurn, this is a safety net
   }
 
-  // --------------------------------------------------------------------------
-  // Helpers
-  // --------------------------------------------------------------------------
-
-  private summarizeEvent(event: AgentEvent): string {
-    const data = event.data as Record<string, unknown> | undefined;
-    switch (event.type) {
-      case 'turn_start':
-        return `Turn ${data?.iteration ?? '?'} started`;
-      case 'turn_end':
-        return `Turn ended`;
-      case 'tool_schema_snapshot':
-        return `${Number(data?.toolCount ?? 0)} tool schemas available`;
-      case 'model_decision':
-        return `Model decision: ${String(data?.requestedProvider ?? '?')}/${String(data?.requestedModel ?? '?')} -> ${String(data?.resolvedProvider ?? '?')}/${String(data?.resolvedModel ?? '?')} (${String(data?.reason ?? 'unknown')})`;
-      case 'tool_call_start':
-        return `Tool: ${data?.name ?? 'unknown'} started`;
-      case 'tool_call_end':
-        return `Tool completed: ${(data as { success?: boolean })?.success ? 'success' : 'failed'}`;
-      case 'message':
-        return `Message: ${((data as { content?: string })?.content ?? '').substring(0, 80)}`;
-      case 'error':
-        return `Error: ${(data as { message?: string })?.message?.substring(0, 100) ?? 'unknown'}`;
-      case 'notification':
-        return `Notification: ${(data as { message?: string })?.message?.substring(0, 100) ?? ''}`;
-      case 'context_compressed':
-        return `Context compaction triggered`;
-      case 'message_delta':
-        return data?.path === 'reasoning' ? `Thinking...` : `Streaming response...`;
-      case 'stream_reasoning':
-        return `Thinking...`;
-      default:
-        return `Event: ${event.type}`;
-    }
-  }
-
-  private extractEventData(event: AgentEvent): string | undefined {
-    const data = event.data as Record<string, unknown> | undefined;
-    if (!data) return undefined;
-
-    if (event.type === 'tool_schema_snapshot') {
-      return JSON.stringify({
-        turnId: data.turnId,
-        toolCount: data.toolCount,
-        tools: data.tools,
-      });
-    }
-
-    if (event.type === 'model_decision') {
-      const extracted: Record<string, unknown> = {};
-      for (const key of [
-        'turnId',
-        'timestamp',
-        'requestedProvider',
-        'requestedModel',
-        'resolvedProvider',
-        'resolvedModel',
-        'reason',
-        'billingMode',
-        'fallbackFrom',
-        'role',
-      ]) {
-        if (key in data) {
-          extracted[key] = data[key];
-        }
-      }
-      return JSON.stringify(extracted);
-    }
-
-    if (event.type === 'tool_call_end') {
-      const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
-        ? data.metadata as Record<string, unknown>
-        : undefined;
-      const extracted: Record<string, unknown> = {};
-      for (const key of ['toolCallId', 'success', 'error', 'duration']) {
-        if (key in data) {
-          const val = data[key];
-          extracted[key] = typeof val === 'string'
-            ? val.substring(0, TELEMETRY_TRUNCATION.EVENT_SUMMARY)
-            : val;
-        }
-      }
-      if (metadata?.validationFailed === true) {
-        extracted.metadata = {
-          validationFailed: true,
-          validationIssues: Array.isArray(metadata.validationIssues)
-            ? metadata.validationIssues
-            : undefined,
-        };
-      }
-      return Object.keys(extracted).length > 0 ? JSON.stringify(extracted) : undefined;
-    }
-
-    // Extract only key fields, exclude large content
-    const extracted: Record<string, unknown> = {};
-    const allowedKeys = ['turnId', 'iteration', 'name', 'toolCallId', 'success', 'error', 'code', 'message', 'duration'];
-    for (const key of allowedKeys) {
-      if (key in data) {
-        const val = data[key];
-        if (typeof val === 'string') {
-          extracted[key] = val.substring(0, TELEMETRY_TRUNCATION.EVENT_SUMMARY);
-        } else {
-          extracted[key] = val;
-        }
-      }
-    }
-
-    if (Object.keys(extracted).length === 0) return undefined;
-    return JSON.stringify(extracted);
-  }
 }
 
 // Singleton accessor

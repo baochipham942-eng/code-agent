@@ -9,6 +9,7 @@ import { glob } from 'glob';
 import { InProcessMCPServer } from '../inProcessServer';
 import { createLogger } from '../../services/infra/logger';
 import type { ToolResult } from '../../../shared/contract';
+import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 
 const logger = createLogger('CodeIndexServer');
 
@@ -40,6 +41,22 @@ interface SymbolIndex {
   fileSymbols: Map<string, string[]>;
 }
 
+interface IndexedFile {
+  filePath: string;
+  content: string;
+  lines: string[];
+}
+
+interface CodeSearchMatch {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  score: number;
+  reasons: string[];
+  snippet: string;
+  evidenceRef: EvidenceRef;
+}
+
 /**
  * Code Index In-Process MCP Server
  *
@@ -69,6 +86,8 @@ export class CodeIndexServer extends InProcessMCPServer {
     symbols: new Map(),
     fileSymbols: new Map(),
   };
+
+  private fileIndex: Map<string, IndexedFile> = new Map();
 
   constructor() {
     super('code-index');
@@ -207,6 +226,138 @@ export class CodeIndexServer extends InProcessMCPServer {
     return references;
   }
 
+  private tokenizeQuery(query: string): string[] {
+    return Array.from(new Set(
+      query
+        .toLowerCase()
+        .split(/[^a-z0-9_]+/i)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2),
+    ));
+  }
+
+  private scoreLine(line: string, query: string, queryTerms: string[]): { score: number; matchedTerms: string[] } {
+    const lowerLine = line.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    let score = lowerLine.includes(lowerQuery) ? 8 : 0;
+    const matchedTerms: string[] = [];
+
+    for (const term of queryTerms) {
+      const pattern = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+      const matches = lowerLine.match(pattern);
+      if (matches?.length) {
+        score += matches.length * 2;
+        matchedTerms.push(term);
+      } else if (lowerLine.includes(term)) {
+        score += 1;
+        matchedTerms.push(term);
+      }
+    }
+
+    return { score, matchedTerms };
+  }
+
+  private buildSnippet(lines: string[], startLine: number, endLine: number): string {
+    return lines
+      .slice(startLine - 1, endLine)
+      .map((line, index) => `${String(startLine + index).padStart(4, ' ')} | ${line}`)
+      .join('\n');
+  }
+
+  private makeCandidateEvidence(filePath: string, startLine: number, endLine: number): EvidenceRef {
+    return makeEvidenceRef({
+      kind: 'file',
+      ref: `${filePath}#L${startLine}-L${endLine}`,
+      source: 'code_search',
+      capturedAtMs: Date.now(),
+      state: 'candidate',
+      redactionStatus: 'clean',
+    });
+  }
+
+  private addSearchMatch(
+    matchesByRef: Map<string, CodeSearchMatch>,
+    match: Omit<CodeSearchMatch, 'evidenceRef'>,
+  ): void {
+    const evidenceRef = this.makeCandidateEvidence(match.filePath, match.startLine, match.endLine);
+    const existing = matchesByRef.get(evidenceRef.ref);
+    if (!existing || match.score > existing.score) {
+      matchesByRef.set(evidenceRef.ref, { ...match, evidenceRef });
+    } else {
+      existing.reasons = Array.from(new Set([...existing.reasons, ...match.reasons]));
+    }
+  }
+
+  private searchIndexedCode(query: string, limit: number): CodeSearchMatch[] {
+    const queryTerms = this.tokenizeQuery(query);
+    const matchesByRef = new Map<string, CodeSearchMatch>();
+    const boundedLimit = Math.max(1, Math.min(limit, 20));
+
+    for (const file of this.fileIndex.values()) {
+      file.lines.forEach((line, index) => {
+        const { score, matchedTerms } = this.scoreLine(line, query, queryTerms);
+        if (score <= 0) return;
+
+        const startLine = Math.max(1, index + 1 - 2);
+        const endLine = Math.min(file.lines.length, index + 1 + 2);
+        this.addSearchMatch(matchesByRef, {
+          filePath: file.filePath,
+          startLine,
+          endLine,
+          score,
+          reasons: [`lexical: ${matchedTerms.join(', ') || query}`],
+          snippet: this.buildSnippet(file.lines, startLine, endLine),
+        });
+      });
+    }
+
+    const lowerQuery = query.toLowerCase();
+    for (const [symbolName, symbols] of this.symbolIndex.symbols.entries()) {
+      const lowerSymbol = symbolName.toLowerCase();
+      const symbolMatches = lowerSymbol.includes(lowerQuery)
+        || queryTerms.some((term) => lowerSymbol.includes(term));
+      if (!symbolMatches) continue;
+
+      for (const symbol of symbols) {
+        const file = this.fileIndex.get(symbol.filePath);
+        if (!file) continue;
+        const startLine = Math.max(1, symbol.line - 2);
+        const endLine = Math.min(file.lines.length, symbol.line + 2);
+        const exactBoost = lowerSymbol === lowerQuery ? 12 : 6;
+        this.addSearchMatch(matchesByRef, {
+          filePath: symbol.filePath,
+          startLine,
+          endLine,
+          score: 20 + exactBoost,
+          reasons: [`symbol: ${symbol.kind} ${symbol.name}`],
+          snippet: this.buildSnippet(file.lines, startLine, endLine),
+        });
+      }
+    }
+
+    return Array.from(matchesByRef.values())
+      .sort((a, b) => b.score - a.score || a.filePath.localeCompare(b.filePath))
+      .slice(0, boundedLimit);
+  }
+
+  private formatCodeSearchResults(query: string, matches: CodeSearchMatch[]): string {
+    const header = `Found ${matches.length} candidate code result(s) for "${query}" (lexical FTS + symbol search).`;
+    const body = matches.map((match, index) => {
+      const readLimit = match.endLine - match.startLine + 1;
+      return [
+        `${index + 1}. ${match.filePath}:${match.startLine}-${match.endLine} (score ${match.score})`,
+        `   reasons: ${match.reasons.join('; ')}`,
+        `   EvidenceRef: ${JSON.stringify(match.evidenceRef)}`,
+        `   Next read: Read {"file_path":"${match.filePath}","offset":${match.startLine},"limit":${readLimit}} before using this candidate in a conclusion.`,
+        '```',
+        match.snippet,
+        '```',
+      ].join('\n');
+    }).join('\n\n');
+
+    return `${header}\n\n${body}\n\nCandidate results are discovery hints only; bind them with Read before citing them as evidence.`;
+  }
+
   // --------------------------------------------------------------------------
   // Tool Registration
   // --------------------------------------------------------------------------
@@ -256,7 +407,10 @@ Parameters:
 
           this.stats.totalFiles = files.length;
           this.stats.indexedFiles = 0;
-          this.stats.indexedPatterns.push(pattern);
+          this.stats.indexedPatterns = [pattern];
+          this.symbolIndex.symbols.clear();
+          this.symbolIndex.fileSymbols.clear();
+          this.fileIndex.clear();
 
           const errors: string[] = [];
           const filesToIndex = files.slice(0, maxFiles);
@@ -276,6 +430,11 @@ Parameters:
               }
 
               this.symbolIndex.fileSymbols.set(filePath, symbols.map(s => s.name));
+              this.fileIndex.set(filePath, {
+                filePath,
+                content,
+                lines: content.split('\n'),
+              });
               this.stats.indexedFiles++;
             } catch (err) {
               errors.push(`${file}: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -300,19 +459,19 @@ Parameters:
       },
     });
 
-    // code_search - 语义搜索代码
+    // code_search - lexical/FTS + symbol search
     this.addTool({
       definition: {
         name: 'code_search',
-        description: `Search indexed code using semantic/natural language queries.
+        description: `Search indexed code using lexical full-text matching and symbol lookup.
 
 Parameters:
-- query (required): Natural language search query
+- query (required): Search query
 - limit (optional): Maximum results (default: 5)`,
         inputSchema: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Natural language search query' },
+            query: { type: 'string', description: 'Search query' },
             limit: { type: 'number', description: 'Maximum results' },
           },
           required: ['query'],
@@ -327,8 +486,27 @@ Parameters:
           return { toolCallId, success: false, error: 'Query is required' };
         }
 
-        // Memory service removed — code search unavailable
-        return { toolCallId, success: true, output: `No indexed code found matching: "${query}"\n\nTip: Code search via memory service has been removed.` };
+        const matches = this.searchIndexedCode(query, limit);
+        const evidenceRefs = matches.map((match) => match.evidenceRef);
+
+        if (matches.length === 0) {
+          const tip = this.fileIndex.size === 0
+            ? 'Tip: Run code_index first to index your codebase.'
+            : 'Tip: Try a more specific symbol, function name, filename, or exact term.';
+          return {
+            toolCallId,
+            success: true,
+            output: `No indexed code found matching: "${query}"\n\n${tip}`,
+            metadata: { evidenceRefs },
+          };
+        }
+
+        return {
+          toolCallId,
+          success: true,
+          output: this.formatCodeSearchResults(query, matches),
+          metadata: { evidenceRefs },
+        };
       },
     });
 

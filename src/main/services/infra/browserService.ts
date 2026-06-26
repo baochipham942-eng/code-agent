@@ -4,7 +4,7 @@
 // Logs are transparent and returned to the agent for visibility
 // ============================================================================
 
-import type { Browser, BrowserContext } from 'playwright';
+import type { Browser, BrowserContext, Page, Route } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
@@ -694,6 +694,65 @@ export class BrowserService implements Disposable {
   async runScript<T>(script: string, tabId?: string): Promise<T> {
     const tab = this.getTab(tabId);
     return await tab.page.evaluate(script) as T;
+  }
+
+  async withIsolatedPage<T>(options: {
+    viewport?: { width: number; height: number };
+    leaseOwner?: string;
+    leaseTtlMs?: number;
+    route?: (route: Route) => Promise<boolean>;
+    run: (page: Page) => Promise<T>;
+  }): Promise<T> {
+    await this.ensureBrowser({
+      leaseOwner: options.leaseOwner || 'isolated-page',
+      leaseTtlMs: options.leaseTtlMs,
+    });
+    const browser = this.browser || this.context?.browser();
+    if (!browser) {
+      throw new Error('Managed browser cannot create an isolated context in this runtime.');
+    }
+
+    const viewport = options.viewport
+      ? {
+          width: Math.max(320, Math.floor(options.viewport.width)),
+          height: Math.max(240, Math.floor(options.viewport.height)),
+        }
+      : this.viewport;
+    const context = await browser.newContext({
+      viewport,
+      acceptDownloads: false,
+      ignoreHTTPSErrors: false,
+      proxy: this.getPlaywrightProxyOptions(),
+      userAgent: getDefaultUserAgent(),
+    });
+
+    await context.route('**/*', async (route) => {
+      try {
+        if (await options.route?.(route)) {
+          return;
+        }
+        const url = route.request().url();
+        if (!this.isUrlAllowed(url)) {
+          this.logger.log('WARN', `Blocked isolated browser request: ${summarizeBrowserUrlForLog(url)}`);
+          await route.abort('blockedbyclient');
+          return;
+        }
+        await route.continue();
+      } catch (error) {
+        this.logger.log('WARN', `Isolated browser route handler failed: ${error instanceof Error ? error.message : String(error)}`);
+        await route.abort('failed').catch(() => undefined);
+      }
+    });
+
+    const page = await context.newPage();
+    try {
+      return await options.run(page);
+    } finally {
+      await context.close().catch((error) => {
+        this.logger.log('WARN', `Failed to close isolated browser context: ${error instanceof Error ? error.message : String(error)}`);
+      });
+      this.leaseController.heartbeat();
+    }
   }
 
   // --------------------------------------------------------------------------

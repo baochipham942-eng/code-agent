@@ -318,6 +318,7 @@ import { applyRendererBundleUpdate } from '../main/services/renderer/rendererBun
 import { resolveRendererServeDecision } from '../main/services/renderer/rendererBundleCache';
 import { getAppVersion } from '../main/platform';
 import { createAgentRouter } from './routes/agent';
+import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
 import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
 import { createSessionsRouter } from './routes/sessions';
@@ -1114,8 +1115,8 @@ async function killPortHolder(port: number): Promise<void> {
 // ============================================================================
 
 async function main(): Promise<void> {
-  const port = parseInt(process.env.WEB_PORT || '8180', 10);
-  const host = process.env.WEB_HOST || '127.0.0.1';
+  const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
+  const host = process.env.WEB_HOST || WEB_SERVER_DEFAULTS.HOST;
 
   console.log('╔══════════════════════════════════════════╗');
   console.log('║   Agent Neo — Web Standalone Mode        ║');

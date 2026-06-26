@@ -365,6 +365,9 @@ Browser/Computer 当前已经超过“工具存在”层，进入 workbench prod
 | Snapshot / TargetRef | DOM/a11y snapshot 带 `snapshotId`，interactive element 带 `targetRef`；stale ref 返回 recoverable metadata | TargetRef 只保证当前 snapshot/短 TTL，不承诺跨页面长期稳定 |
 | Artifact | download/upload 进入 managed browser artifact 区，暴露 name/hash/mime/size/session 摘要 | 不把本地真实路径或文件内容写进 trace/export |
 | Computer Surface | `foreground_fallback`、`background_ax`、`background_cgevent` 三类面向不同风险级别；AX/CGEvent 都有临时 native target smoke | 前台 fallback 是当前前台 app/window 动作，必须保持人工确认语义 |
+| Proof timeline | Browser/Computer/Screenshot 结果写入 `EvidenceRef` proof timeline，并通过 replay、trajectory、markdown export 和 sidebar evidence summary 复用 | Proof 只证明已观察/已执行/需接管的事实，不给登录、MFA、CAPTCHA 或支付路径自动授权 |
+| Agent Pointer | `AgentPointerEvent` 从 Browser/Computer tool call、workbench trace 和 CUA bridge 派生，renderer 通过 `AgentPointerOverlay` 展示 Neo 的虚拟鼠标位置和阶段 | Pointer 是 app 内可视反馈，不声明系统光标所有权，不保留拖尾式动效 |
+| Recovery summary | background task、PTY、subagent restart 后进入 recovery plan，session review 可区分 live、recovered、dead-log-only 和 interrupted | Recovery plan 给 review/retry 建议，不自动重启旧进程 |
 | Acceptance | `acceptance:browser-computer-all` 串起 system Chrome/CDP、workflow、benchmark、UI、app-host、background AX/CGEvent | 外部网站、真实账号、反 bot/CAPTCHA 不纳入自动 smoke |
 
 ### 4.5 Activity Providers 与 prompt 注入边界
@@ -421,6 +424,7 @@ prompt builder 要求 _meta
 | 面板 / 卡片 | 职责 | 关键文件 |
 |------|------|---------|
 | Browser Surface | 托管浏览器/relay 状态从工具输出上移到右侧工作面，展示 readiness、session 状态和浏览器连接面 | `src/renderer/components/features/browser/BrowserSurfacePanel.tsx`、`src/main/services/infra/browserRelayService.ts` |
+| Agent Pointer Overlay | Browser/Computer surface 的虚拟鼠标反馈层，展示当前动作位置、阶段和最近轨迹记录 | `src/renderer/components/workbench/AgentPointerOverlay.tsx`、`src/renderer/stores/agentPointerStore.ts`、`src/shared/utils/agentPointer.ts` |
 | In-App Validation | HTML artifact 验证面板，iframe 中执行 interaction steps 并显示 pass/fail，配合 `validate_html_in_app` 工具形成可见验收轨迹 | `src/renderer/components/features/inAppValidation/InAppValidationPanel.tsx`、`src/renderer/hooks/useInAppValidationBridge.ts` |
 | HandoffCard | 长任务或外部 engine 接力时，把 handoff proposal 呈现在 TaskPanel 里，用户可判断是否继续、复盘或换 engine | `src/renderer/components/TaskPanel/HandoffCard.tsx`、`src/main/handoff/*` |
 | Agent Engine 状态卡 | TaskPanel 投影外部 engine 的 ledger status、输出引用和权限 profile，避免把 Codex/Claude 执行伪装成普通 Native turn | `src/renderer/hooks/useRunWorkbenchModel.ts`、`src/renderer/types/runWorkbench.ts` |

@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；详见 specs/2026-06-26-neo-tools-evidence-control-and-agent-pointer.md 与 ADR-029)
 > 版本: 9.27 (9.26 + 2026-06-22 设计 tab 4 媒介重规划 + 厚版演示稿全链路：引擎从 agent 工具抽 service、SlideData[] 单一真源、大纲编辑器/逐页预览/就地改字、4 增强〔品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型可选〕，PR #260；详见 design-mode.md §15)
 > 版本: 9.26 (9.25 + 2026-06-16~17 迭代治理与账本收口：permission/tool execution append-only ledger、Swarm ledger 真理源 + reconcile/backfill、console/a11y/stale-dist 静态门、设计系统契约 + ratchet gate、预算告警、工具失败 action、Bash 输出头尾预览、auto-compaction stuck guard)
 > 版本: 9.25 (9.24 + 2026-06-13~15 会话页、设置页与运行证据门收口：能力证据硬门 + judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织)
@@ -8,7 +9,7 @@
 > 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
-> 日期: 2026-06-17
+> 日期: 2026-06-26
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -45,6 +46,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [Neo Tools Evidence Control and Agent Pointer](./specs/2026-06-26-neo-tools-evidence-control-and-agent-pointer.md) | 6 月 26 日 as-built：统一 `EvidenceRef`、goal verification card、CI log ingest、Browser/Computer durable proof timeline、Neo virtual pointer、session evidence control summary、background/subagent recovery plan、Browser launch helper split |
 | [Iteration Governance / Ledger / Budget / Design System](./specs/2026-06-17-neo-iteration-governance-and-ledger.md) | 6 月 16~17 日 as-built：权限决策和工具执行 append-only ledger、Swarm ledger 真理源、reconcile scan 和 opt-in backfill、console/a11y/stale-dist 静态门、设计系统契约与 ratchet gate、预算告警、失败工具 action、Bash 输出头尾预览和 auto-compaction 卡死护栏 |
 | [Session Surface / Settings IA / Eval Gates](./specs/2026-06-15-session-settings-eval-gates.md) | 6 月 13~15 日 as-built：能力证据硬门、judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织 |
 | [Agent Runtime / MiMoCode / Ops Batch](./specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md) | MiMoCode 快赢与 hardening、transcript FTS + History、命令协议层、superpowers 方法论 skill、provider prompt variants、memory BM25、dream consolidation、Max Mode、嵌套 subagent、CUA 治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer stale active bundle fallback、renderer production verifier timeout、checkpoint 前台短等、skill draft 名称质量闸、vision failure reason、诊断导出失败日志兜底 |
@@ -82,6 +84,7 @@
 | [019](./decisions/019-auto-mode-scope.md) | 自动模式（Auto Mode）的能力边界与取舍 | accepted |
 | [020](./decisions/020-experience-distillation-redesign.md) | 经验沉淀重做（废弃 telemetry n-gram，统一 LLM 反思路） | accepted |
 | [021](./decisions/021-computer-use-cua-driver.md) | Computer Use 底座 argus → cua-driver | accepted |
+| [029](./decisions/029-unified-evidence-provenance-contract.md) | 统一 Evidence / Provenance 契约 | accepted |
 
 ---
 
@@ -615,7 +618,7 @@ findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
 |---|---|---|
 | Workbench B+ 信息架构 | 低频动作收进 `+`；Code/Plan/Ask 收进 `+` 菜单；模型和 effort 合并成单胶囊；Routing 由 `InlineWorkbenchBar` 和 Settings “对话”tab 承载；Live Preview 在 `SessionActionsMenu`；Settings 分组导航与页面骨架落地；TitleBar 只保留核心入口，全局工具移入 Sidebar User Menu | `ChatInput/InputAddMenu.tsx`、`InlineWorkbenchBar.tsx`、`ConversationSettings.tsx`、`SettingsModal.tsx`、`SettingsLayout.tsx`、`settingsTabs.ts`、`SessionActionsMenu.tsx`、`Sidebar.tsx`、`WorkbenchTabs.tsx` |
 | Live Preview V2-A/B | `devServerManager` 能探测并启动本地 dev server，DevServerLauncher 作为模态入口；bridge protocol 升级到 0.3.0，选中元素带 `className` 与 `computedStyle`；TweakPanel 支持 spacing/color/fontSize/radius/align 5 类 Tailwind 原子改写；V2-C Next.js App Router 支持按 ADR-012 延期 | `devServerManager.ts`、`LivePreviewFrame.tsx`、`TweakPanel.tsx`、`tweakWriter.ts`、`tailwindCategories.ts`、`docs/decisions/012-live-preview-v2-c-deferred.md` |
-| Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径 | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`computerUse.ts`、`desktop.ts`、`docs/acceptance/browser-computer-workbench-smoke.md` |
+| Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径；2026-06-26 起 Browser/Computer proof 持久化为 `EvidenceRef` 时间线并带 Neo virtual pointer | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`computerUse.ts`、`desktop.ts`、`browserComputerProofStore.ts`、`AgentPointerOverlay.tsx`、`docs/acceptance/browser-computer-workbench-smoke.md` |
 | Activity Providers | OpenChronicle 与 Tauri Native Desktop 不再各自直塞 prompt；新增 provider-neutral `ActivityContextProvider`、`ActivityProvider` contract、prompt formatter 与 renderer preview。OpenChronicle 仍是外部 daemon provider，Tauri Native Desktop 是 bundled provider | `activityContextProvider.ts`、`activityProviderRegistry.ts`、`activityPromptFormatter.ts`、`activityContext.ts`、`activityProvider.ts` |
 | Semantic Tool UI | 工具 input schema 强制注入 `_meta.shortDescription`；provider parser 抽出 `_meta` 写到 ToolCall 顶层并剥离执行参数；SessionRepository 对无 `_meta` 的历史/弱模型工具调用生成 fallback shortDescription。前端用语义标题、target icon、memory citation 折叠卡、会话 diff 聚合卡和 URL favicon chip 改善可读性 | `prompts/builder.ts`、`model/providers/shared.ts`、`SessionRepository.ts`、`ToolHeader.tsx`、`MemoryCitationGroup.tsx`、`SessionDiffSummary.tsx`、`LinkPreviewCard.tsx` |
 | Eval / model 协议修复 | 评测实验支持 SSE 进度、行点击进详情、fatal inference error 熔断、DB 去重；multi-turn adapter 真保留 messages；recent memory 在评测中隔离；thinking-mode provider 补齐 `reasoning_content` history 字段；`max_tool_calls` 从 critical gate 降为 weighted score | `testRunner.ts`、`agentAdapter.ts`、`retryStrategy.ts`、`providers/shared.ts`、`docs/knowledge/eval-tracking.md`、`docs/knowledge/bug-fixes.md` |
@@ -626,7 +629,7 @@ V2 的稳定口径是 **Vite-only MVP**：自动起 dev server + 点击源码定
 
 #### Browser / Computer 当前边界
 
-Browser 主路径是 in-app managed browser，默认验收走 System Chrome headless + CDP。远程浏览器池、外部 Chrome profile、外部 CDP attach、extension bridge 仍保留为 backlog，不写成当前已完成。Computer Surface 的 background AX / CGEvent 只对显式 target app/window 和本地受控 smoke 成立，foreground fallback 仍是需要人工确认的当前前台动作面。
+Browser 主路径是 in-app managed browser，默认验收走 System Chrome headless + CDP。远程浏览器池、外部 Chrome profile、外部 CDP attach、extension bridge 仍保留为 backlog，不写成当前已完成。Computer Surface 的 background AX / CGEvent 只对显式 target app/window 和本地受控 smoke 成立，foreground fallback 仍是需要人工确认的当前前台动作面。Agent Pointer 是 app surface 内的可视化反馈，不声明系统鼠标所有权；登录、MFA、CAPTCHA、支付和账号安全路径仍走 manual takeover / unsupported 分流。
 
 ---
 
@@ -1328,6 +1331,7 @@ agentLoop.executeTool(Read)
 | **v0.16.76-79** | 插件化 + 能力路由 + 死代码瘦身 + 依赖大版本 | PluginAPI v2 + 7 个 builtin plugins、Plugin 化三层边界 (ADR-017)、desktop facade 收口、Marvis 能力路由 + chat capability triggers、删 evaluation 子系统 (-20K 行/5 表)、quick model 并发限流 + glm-4-flash、工具失败输出对模型可见、依赖 ~25 个大版本升级 (TS6/Vite8/React19/Tailwind4)、release staple/公证管线 |
 | **v0.16.80** | Goal Mode + AI SDK 双引擎 + Appshots + OS 沙箱 | `/goal` 三层闸（确定性 verify exec + Reviewer 子代理 + 代码层兜底，判定权落代码层）、Provider 迁 Vercel AI SDK 双引擎（可一键回退/消灭流式-非流式解析不对称 bug）、Appshots 左右 Cmd 双击截窗注入多模态、bypassPermissions 接 sandbox-exec/bwrap 命令包装 + fail-fast |
 | **v0.16.88** | AI SDK 全量收口 + Light Memory 质量闭环 + MCP 只读边界 + Alma 渲染 | 全 provider 迁 AI SDK（gemini/openrouter 官方包、zhipu/moonshot/xiaomi openai-compatible，`AISDK_UNSUPPORTED_PROVIDERS` 清空）、Light Memory 会话判定 (WS4-A) + 整理 cron (WS4-B)、MCP server 控屏永不暴露收敛为 5 个只读工具 (WS5)、聊天 `contentParts` 交错渲染 + 流式动效 + neo:// 深链卡片 + computer-use PiP |
+| **2026-06-26** | Neo Tools Evidence + Pointer | `EvidenceRef` 成为统一证据底座；goal gate 输出 verification card；Browser/Computer/Screenshot 结果持久化 proof timeline；Browser/Computer surface 显示 Neo virtual pointer；background task/subagent restart recovery plan 进入 replay/export；agent tree/worktree review 保持 read-only |
 
 </details>
 

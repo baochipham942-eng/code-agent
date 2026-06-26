@@ -1,4 +1,5 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3';
+import { existsSync } from 'fs';
 import type {
   ListTasksFilter,
   Task,
@@ -79,7 +80,7 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
   }
 
   upsertTask(task: Task): void {
-    this.persistTerminalTask(task);
+    this.persistTaskSnapshot(task);
   }
 
   appendEvent(task: Task, _event: TaskEvent): void {
@@ -142,6 +143,10 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
     if (!isTerminalTaskStatus(task.status)) {
       return;
     }
+    this.persistTaskSnapshot(task);
+  }
+
+  private persistTaskSnapshot(task: Task): void {
 
     this.db.prepare(`
       INSERT OR REPLACE INTO background_task_terminal_tasks
@@ -285,12 +290,95 @@ function parsePersistedTask(value: string): Task | null {
   try {
     const parsed: unknown = JSON.parse(value);
     if (isTaskLike(parsed)) {
-      return cloneTask(parsed);
+      return recoverPersistedRunningTask(cloneTask(parsed));
     }
   } catch {
     return null;
   }
   return null;
+}
+
+function recoverPersistedRunningTask(task: Task): Task {
+  if (task.status !== 'running') {
+    return task;
+  }
+
+  const metadata = {
+    ...(task.metadata ?? {}),
+    originalStatus: 'running',
+    recoveredAtMs: Date.now(),
+  };
+
+  if (isNeoManagedTask(task) && hasUsableOutputRef(task) && isLiveProcessReferenced(task)) {
+    return {
+      ...task,
+      metadata: {
+        ...metadata,
+        recoveryStatus: 'running-recovered',
+      },
+    };
+  }
+
+  return {
+    ...task,
+    status: 'orphaned',
+    completedAt: task.completedAt ?? task.updatedAt,
+    failure: task.failure ?? {
+      message: 'Task process was not recovered after restart; log is available only',
+      category: 'dead_log_only',
+    },
+    metadata: {
+      ...metadata,
+      recoveryStatus: 'dead-log-only',
+    },
+  };
+}
+
+function isNeoManagedTask(task: Task): boolean {
+  return task.source === 'shell' ||
+    task.source === 'pty' ||
+    task.metadata?.createdBy === 'neo' ||
+    task.metadata?.managedBy === 'neo';
+}
+
+function hasUsableOutputRef(task: Task): boolean {
+  return task.outputRefs.some((ref) => typeof ref.path === 'string' && existsSync(ref.path));
+}
+
+function isLiveProcessReferenced(task: Task): boolean {
+  const pid = readPositiveNumber(task.metadata?.pid ?? task.metadata?.processId);
+  if (pid !== null && isProcessAlive(pid)) {
+    return true;
+  }
+
+  const processGroupId = readPositiveNumber(task.metadata?.processGroupId ?? task.metadata?.pgid);
+  if (processGroupId !== null && process.platform !== 'win32' && isProcessGroupAlive(processGroupId)) {
+    return true;
+  }
+
+  return false;
+}
+
+function readPositiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isProcessGroupAlive(processGroupId: number): boolean {
+  try {
+    process.kill(-processGroupId, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parsePersistedNotification(value: string): TaskNotification | null {

@@ -5,6 +5,7 @@ import type {
   TaskStatus,
 } from '../../shared/contract/backgroundTask';
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import type { BackgroundTaskStore } from './backgroundTaskStore';
 import {
   getAllBackgroundTasks,
   getAllPtySessions,
@@ -47,6 +48,12 @@ function upsertOutputRef(ledger: BackgroundTaskLedger, ref: TaskOutputRef): void
     createdAt: ref.createdAt,
     metadata: ref.metadata,
   });
+}
+
+function persistRunningSnapshotIfAvailable(ledger: BackgroundTaskLedger, task: Task): void {
+  if (isTerminalTaskStatus(task.status)) return;
+  const store = (ledger as unknown as { store?: BackgroundTaskStore }).store;
+  store?.upsertTask(task);
 }
 
 function shouldQueueTerminalNotification(previous: Task | null, status: TaskStatus): boolean {
@@ -145,8 +152,10 @@ export function syncShellTaskSnapshotToLedger(
     durationMs: task.duration,
     failure: buildFailure(task.status, task.exitCode),
     metadata: {
+      createdBy: 'neo',
       originalTaskId: task.taskId,
       exitCode: task.exitCode,
+      recoveryStatus: status === 'running' ? 'running-live' : status,
     },
   });
 
@@ -174,6 +183,10 @@ export function syncShellTaskSnapshotToLedger(
       originalTaskId: task.taskId,
     },
   });
+  const updatedTask = ledger.getTask(taskId);
+  if (updatedTask) {
+    persistRunningSnapshotIfAvailable(ledger, updatedTask);
+  }
 }
 
 export function syncShellTaskSnapshotsToLedger(
@@ -210,10 +223,12 @@ export function syncPtySessionSnapshotToLedger(
     durationMs: session.duration,
     failure: buildFailure(session.status, session.exitCode),
     metadata: {
+      createdBy: 'neo',
       originalSessionId: session.sessionId,
       exitCode: session.exitCode,
       cols: session.cols,
       rows: session.rows,
+      recoveryStatus: status === 'running' ? 'running-live' : status,
     },
   });
 
@@ -241,6 +256,10 @@ export function syncPtySessionSnapshotToLedger(
       originalSessionId: session.sessionId,
     },
   });
+  const updatedTask = ledger.getTask(taskId);
+  if (updatedTask) {
+    persistRunningSnapshotIfAvailable(ledger, updatedTask);
+  }
 }
 
 export function syncPtySessionSnapshotsToLedger(

@@ -113,6 +113,7 @@ describe('processModule structured result metadata', () => {
         thread: 'tool-call-1',
         targets: ['task-1', 'pty-1'],
         counts: { processes: 2, background: 1, pty: 1, running: 1, completed: 1 },
+        permissionClass: 'observe',
         artifact: expect.objectContaining({
           kind: 'process-output',
           sourceTool: 'Process',
@@ -143,6 +144,7 @@ describe('processModule structured result metadata', () => {
     if (result.ok) {
       expect(result.meta).toMatchObject({
         action: 'output',
+        permissionClass: 'observe',
         taskId: 'task-1',
         status: 'completed',
         exitCode: 0,

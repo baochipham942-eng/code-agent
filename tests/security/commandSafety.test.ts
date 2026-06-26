@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { isKnownSafeCommand, classifyCommand, validateCommand } from '../../src/main/security/commandSafety';
+import {
+  checkCommandPolicy,
+  setCommandPolicyRulesForTest,
+} from '../../src/main/tools/modules/shell/commandPolicy';
+
+afterEach(() => {
+  setCommandPolicyRulesForTest([]);
+});
 
 describe('isKnownSafeCommand', () => {
   // ========================================================================
@@ -489,5 +497,44 @@ describe('validateCommand — rm 删除分级', () => {
         expect(r.riskLevel).toBe('high'); // 仍是危险操作，需一次确认
       });
     }
+  });
+});
+
+describe('commandPolicy DSL', () => {
+  it('applies deny rules before allow rules', () => {
+    setCommandPolicyRulesForTest([
+      'allow:prefix:npm',
+      'deny:exact:npm install lodash',
+    ]);
+
+    const result = checkCommandPolicy('npm install lodash');
+
+    expect(result.allowed).toBe(false);
+    expect(result.source).toBe('user-rule');
+    expect(result.action).toBe('deny');
+  });
+
+  it('supports exact, prefix, and glob allow rules', () => {
+    setCommandPolicyRulesForTest([
+      'allow:exact:npm run typecheck',
+      'allow:prefix:git status',
+      'allow:glob:vitest *permission*',
+    ]);
+
+    expect(checkCommandPolicy('npm run typecheck').action).toBe('allow');
+    expect(checkCommandPolicy('git status --short').action).toBe('allow');
+    expect(checkCommandPolicy('vitest run permissionClassifier.test.ts').action).toBe('allow');
+  });
+
+  it('keeps hard blocks above user allow rules', () => {
+    setCommandPolicyRulesForTest(['allow:glob:*']);
+
+    const forkBomb = checkCommandPolicy(':(){ :|:& };:');
+    const rootDelete = checkCommandPolicy('rm -rf /');
+
+    expect(forkBomb.allowed).toBe(false);
+    expect(forkBomb.source).toBe('hard-block');
+    expect(rootDelete.allowed).toBe(false);
+    expect(rootDelete.source).toBe('hard-block');
   });
 });

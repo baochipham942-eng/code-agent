@@ -487,7 +487,7 @@ describe('SpawnGuard', () => {
       };
     };
 
-    it('restoreState 将 running agent 标为 failed（进程重启中断）', async () => {
+    it('restoreState 将 running agent 标为 dead-log-only（进程重启中断但保留恢复态）', async () => {
       const pending = new Promise<SubagentResult>(() => {});
       guard.register('a1', 'coder', 'long-running', pending, new AbortController());
 
@@ -498,8 +498,8 @@ describe('SpawnGuard', () => {
 
       expect(restored).not.toBeNull();
       const a = restored!.get('a1');
-      expect(a?.status).toBe('failed');
-      expect(a?.error).toMatch(/Interrupted/);
+      expect(a?.status).toBe('dead-log-only');
+      expect(a?.error).toMatch(/log is available only/);
     });
 
     it('restoreState 对不存在的 state 文件返回 null', async () => {

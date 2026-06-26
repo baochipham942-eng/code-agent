@@ -10,10 +10,12 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 import { classifyPermission, getPermissionClassifier } from '../../../src/main/tools/permissionClassifier';
+import { setCommandPolicyRulesForTest } from '../../../src/main/tools/modules/shell/commandPolicy';
 
 describe('PermissionClassifier', () => {
   beforeEach(() => {
     getPermissionClassifier().clearCache();
+    setCommandPolicyRulesForTest([]);
   });
 
   it('asks before reading Claude global memory files', async () => {
@@ -72,6 +74,53 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('approve');
       expect(result.reason).toContain('内部委派工具');
     }
+  });
+
+  it('auto-approves Process observation actions but asks for control actions', async () => {
+    const observation = await classifyPermission(
+      'Process',
+      { action: 'list' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+    );
+    const control = await classifyPermission(
+      'Process',
+      { action: 'kill', session_id: 'task-1' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+    );
+
+    expect(observation.decision).toBe('approve');
+    expect(observation.reason).toContain('观察类');
+    expect(control.decision).toBe('ask');
+    expect(control.reason).toContain('控制类');
+  });
+
+  it('honors command policy DSL deny before allow', async () => {
+    setCommandPolicyRulesForTest([
+      { action: 'allow', kind: 'prefix', pattern: 'npm' },
+      { action: 'deny', kind: 'exact', pattern: 'npm install lodash' },
+    ]);
+
+    const result = await classifyPermission(
+      'bash',
+      { command: 'npm install lodash' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+    );
+
+    expect(result.decision).toBe('deny');
+    expect(result.reason).toContain('User command policy denied');
+  });
+
+  it('does not let a user allow rule override command hard blocks', async () => {
+    setCommandPolicyRulesForTest([{ action: 'allow', kind: 'glob', pattern: '*' }]);
+
+    const result = await classifyPermission(
+      'bash',
+      { command: ':(){ :|:& };:' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+    );
+
+    expect(result.decision).toBe('deny');
+    expect(result.reason).toContain('Fork bomb');
   });
 
   it('does not reuse a safe npm-run cache decision for a different package script', async () => {

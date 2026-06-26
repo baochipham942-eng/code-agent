@@ -15,6 +15,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles/global.css';
+import type { Message } from '@shared/contract';
 import { useAppStore } from './stores/appStore';
 import { useSessionStore } from './stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -37,6 +38,10 @@ declare global {
     __modelStrategyE2E?: {
       injectExternalEngineFailure: (sessionId: string, failure: AgentEngineFailureDiagnostics) => void;
       getSessionEngine: (sessionId: string) => AgentEngineSessionMetadata | null;
+      createSession?: () => Promise<string | null>;
+      getCurrentSessionId?: () => string | null;
+      getMessageCount?: () => number;
+      injectMessages?: (messages: Message[]) => void;
     };
   }
 }
@@ -123,6 +128,19 @@ if (new URLSearchParams(window.location.search).get('e2e') === '1') {
     },
     getSessionEngine(sessionId) {
       return useSessionStore.getState().sessions.find((session) => session.id === sessionId)?.engine ?? null;
+    },
+    async createSession() {
+      const session = await useSessionStore.getState().createSession('新对话', { workingDirectory: null });
+      return session?.id ?? useSessionStore.getState().currentSessionId;
+    },
+    getCurrentSessionId() {
+      return useSessionStore.getState().currentSessionId;
+    },
+    getMessageCount() {
+      return useSessionStore.getState().messages.length;
+    },
+    injectMessages(messages) {
+      useSessionStore.getState().setMessages(messages);
     },
   };
 }

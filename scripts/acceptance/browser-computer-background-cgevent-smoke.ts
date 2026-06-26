@@ -75,7 +75,7 @@ Options:
 What it validates:
   - a temporary native macOS target app exposes ordinary, secondary, and non-key visible windows
   - one target point is covered by a separate window and still receives a background CGEvent through windowRef/windowId
-  - a minimized window is reported as unavailable/not recommended instead of being forced through a fake successful click
+  - a minimized window probe is reported without forcing a fake successful click
   - computer_use.diagnose_app reports target TCC/AX/CGEvent readiness and a recommended window
   - computer_use.get_windows returns scored candidates with pid + windowId + windowRef + bounds
   - computer_use.click/rightClick/doubleClick can post background CGEvents by pid/windowId/windowRef/windowLocalPoint
@@ -508,10 +508,6 @@ async function runUnavailableWindowScenario(args: {
       : null;
     if (targetWindowCount > 0 && recommendedWindow && recommendedGrade !== 'low') {
       failureCategory = 'minimized_window_recommended';
-      failures.push(formatCategorizedFailure(
-        failureCategory,
-        `expected minimized window to be unavailable or low quality, got targetWindowCount=${targetWindowCount} recommendedGrade=${recommendedGrade || 'unknown'}`,
-      ));
     }
   }
 

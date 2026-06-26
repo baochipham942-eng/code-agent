@@ -1,0 +1,41 @@
+{
+  "name": "websearch-p0-before-baseline",
+  "created": "2026-06-26",
+  "sourceFixture": "tests/eval/fixtures/websearch-eval-set.json",
+  "description": "Repair-before baseline for WebSearch/WebFetch PascalCase lifecycle gaps. This records current behavior before P0 alias normalization.",
+  "caseCounts": {
+    "total": 39,
+    "query": 34,
+    "providerFailureScenarios": 3,
+    "promptInjectionScenarios": 2,
+    "categories": {
+      "recent_fact": 5,
+      "official_docs": 5,
+      "chinese_hot": 5,
+      "github_issue": 4,
+      "price_policy": 5,
+      "cold_material": 4,
+      "misleading_seo": 3,
+      "future_date_trap": 3,
+      "provider_failure": 3,
+      "prompt_injection": 2
+    }
+  },
+  "citationExtraction": {
+    "pascalWebSearchCasesWithCitations": 0,
+    "snakeWebSearchCasesWithCitations": 34,
+    "pascalWebFetchUrlCitations": 0,
+    "snakeWebFetchUrlCitations": 1
+  },
+  "toolResultLifecycle": {
+    "pascalWebSearchBlockedPromptInjection": false,
+    "snakeWebSearchBlockedPromptInjection": true,
+    "pascalWebSearchExternalDataCountAfterTwoCalls": 0,
+    "snakeWebSearchExternalDataCountAfterTwoCalls": 2,
+    "pascalWebSearchPersistenceNudgesAfterTwoCalls": 0,
+    "snakeWebSearchPersistenceNudgesAfterTwoCalls": 1,
+    "pascalWebSearchCitationsUpdatedEvents": 0,
+    "snakeWebSearchCitationsUpdatedEvents": 1
+  },
+  "knownGap": "PascalCase WebSearch/WebFetch currently bypass citation extraction, external-data sanitizer, and external-data persistence nudge."
+}

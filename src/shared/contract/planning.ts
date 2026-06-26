@@ -2,6 +2,8 @@
 // Planning Types (for Gen 3+ Persistent Planning)
 // ============================================================================
 
+import type { EvidenceRef } from './evidence';
+
 // Todo Types (for Gen 3+)
 export type TodoStatus = 'pending' | 'in_progress' | 'completed';
 
@@ -38,6 +40,7 @@ export interface SessionTask {
 
   // 元数据
   owner?: string;          // Agent 名称（多 Agent 场景；subagent 创建的任务默认归 subagent）
+  evidenceRefs?: EvidenceRef[];
   metadata: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;

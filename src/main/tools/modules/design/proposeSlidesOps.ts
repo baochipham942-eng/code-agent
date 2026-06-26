@@ -59,6 +59,11 @@ export async function executeProposeSlidesOps(
 
   // 付费配图：解析图模型 + 估成本 + 会话区确认（免费大纲路径不弹确认）。
   let imageModel: string | undefined;
+  // 已确认的配图张数上限（审计 F1）：估价基于确定性大纲 buildSlidesOutline，但实际出图走
+  // brief-grounded AI 大纲（workspaceSlidesExport），两者内容页分布可能不同 → 实际可配图页数
+  // 可能多于估价页数，静默超过已确认成本。把它作为下游 maxImages 硬上限传下去，保证
+  // 实际配图张数 ≤ 已确认张数 → 实际花费 ≤ 已确认花费（宁可少配，绝不超额）。
+  let confirmedImageCount: number | undefined;
   if (illustrate) {
     const requested = typeof args.imageModel === 'string' ? imageModelById(args.imageModel) : undefined;
     imageModel = requested ? requested.id : defaultImageModelId();
@@ -68,6 +73,7 @@ export async function executeProposeSlidesOps(
     // 模型，须保证实际花费不超过此处已确认的信封（否则要二次确认），不得静默超额。
     const { count, costCny } = estimateIllustrateCost(outline, imageModel, maxImages);
     if (count > 0 && costCny > 0) {
+      confirmedImageCount = count;
       const confirmed = await confirmGenerationCost({
         mediaLabel: '演示稿配图',
         estCny: costCny,
@@ -101,7 +107,8 @@ export async function executeProposeSlidesOps(
       theme,
       ...(brief ? { brief } : {}),
       outputName: safeOutputName(topic),
-      ...(imageModel ? { illustrate: true, imageModel, maxImages } : {}),
+      // maxImages 取已确认张数（confirmedImageCount）作硬上限，保证实际配图 ≤ 已确认（审计 F1）。
+      ...(imageModel ? { illustrate: true, imageModel, maxImages: confirmedImageCount } : {}),
     });
   } catch (error) {
     return {

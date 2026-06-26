@@ -142,6 +142,10 @@ export async function executeProposeVideoOps(
         pendingVideo.delete(request.requestId);
         reject(new Error('Canvas video generation timeout'));
       }, TIMEOUT_MS);
+      // 先登记 pending 再挂 abort 监听（审计 F2）：否则 abort 在两者之间触发时，监听器
+      // 取不到 entry → 不 clearTimeout，随后 set 进来的 timer 会空跑到 TIMEOUT_MS（6.5min）
+      // 才清理。与 promptUserInChat 同序：set 在前、addEventListener 在后。
+      pendingVideo.set(request.requestId, { resolve, reject, timeout });
       ctx.abortSignal.addEventListener(
         'abort',
         () => {
@@ -154,7 +158,6 @@ export async function executeProposeVideoOps(
         },
         { once: true },
       );
-      pendingVideo.set(request.requestId, { resolve, reject, timeout });
     });
 
     onProgress?.({ stage: 'completing', percent: 100 });

@@ -107,6 +107,12 @@ describe('ProposeSlidesOps 付费配图路径', () => {
     expect(typeof payload.imageModel).toBe('string');
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.output).toContain('¥0.56');
+    // 审计 F1：下游 maxImages 必须 = 成本确认时的张数（confirmedImageCount），保证实际配图
+    // ≤ 已确认（防 brief-grounded AI 大纲内容页多于估价大纲 → 静默超额）。
+    const confirmDetail: string = confirmMock.mock.calls[0][0].detail;
+    const confirmedCount = Number(confirmDetail.match(/(\d+)\s*张/)?.[1]);
+    expect(confirmedCount).toBeGreaterThan(0);
+    expect(payload.maxImages).toBe(confirmedCount);
   });
 });
 

@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   onPtySessionLifecycleEvent: vi.fn(() => () => {}),
 }));
 
+vi.unmock('better-sqlite3');
+
 vi.mock('../../../src/main/tools/modules/shell/backgroundTaskSources', () => ({
   getAllBackgroundTasks: mocks.getAllBackgroundTasks,
   getAllPtySessions: mocks.getAllPtySessions,
@@ -14,7 +19,9 @@ vi.mock('../../../src/main/tools/modules/shell/backgroundTaskSources', () => ({
   onPtySessionLifecycleEvent: mocks.onPtySessionLifecycleEvent,
 }));
 
+import Database from 'better-sqlite3';
 import { BackgroundTaskLedger } from '../../../src/main/tasks/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../../../src/main/tasks/backgroundTaskStore';
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
@@ -102,6 +109,10 @@ describe('backgroundTaskSnapshotAdapters', () => {
       startedAt: 3_000,
       updatedAt: 10_000,
       durationMs: 7_000,
+      metadata: expect.objectContaining({
+        createdBy: 'neo',
+        recoveryStatus: 'running-live',
+      }),
     });
     expect(ptyTask?.outputRefs).toEqual([
       expect.objectContaining({
@@ -177,5 +188,78 @@ describe('backgroundTaskSnapshotAdapters', () => {
     ]);
 
     detach();
+  });
+
+  it('reloads persisted running shell tasks with explicit recovery status', async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'background-recovery-'));
+    const db = new Database(':memory:');
+    try {
+      const liveLog = path.join(tempDir, 'live.log');
+      const deadLog = path.join(tempDir, 'dead.log');
+      await writeFile(liveLog, 'live output\n', 'utf8');
+      await writeFile(deadLog, 'dead output\n', 'utf8');
+
+      const store = new SqliteBackgroundTaskStore(db);
+      store.upsertTask({
+        id: 'shell:live',
+        kind: 'shell',
+        sessionId: 'session-live',
+        source: 'shell',
+        title: 'npm run dev',
+        command: 'npm run dev',
+        status: 'running',
+        createdAt: 100,
+        updatedAt: 150,
+        startedAt: 100,
+        metadata: {
+          createdBy: 'neo',
+          pid: process.pid,
+        },
+        events: [],
+        outputRefs: [{
+          id: 'shell:live:log',
+          taskId: 'shell:live',
+          type: 'log',
+          path: liveLog,
+          createdAt: 100,
+        }],
+      });
+      store.upsertTask({
+        id: 'shell:dead',
+        kind: 'shell',
+        sessionId: 'session-dead',
+        source: 'shell',
+        title: 'npm run old-dev',
+        command: 'npm run old-dev',
+        status: 'running',
+        createdAt: 200,
+        updatedAt: 250,
+        startedAt: 200,
+        metadata: {
+          createdBy: 'neo',
+        },
+        events: [],
+        outputRefs: [{
+          id: 'shell:dead:log',
+          taskId: 'shell:dead',
+          type: 'log',
+          path: deadLog,
+          createdAt: 200,
+        }],
+      });
+
+      expect(store.loadTerminalTask('shell:live')).toMatchObject({
+        status: 'running',
+        metadata: expect.objectContaining({ recoveryStatus: 'running-recovered' }),
+      });
+      expect(store.loadTerminalTask('shell:dead')).toMatchObject({
+        status: 'orphaned',
+        failure: expect.objectContaining({ category: 'dead_log_only' }),
+        metadata: expect.objectContaining({ recoveryStatus: 'dead-log-only' }),
+      });
+    } finally {
+      db.close();
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

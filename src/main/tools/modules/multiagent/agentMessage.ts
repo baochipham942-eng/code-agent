@@ -68,7 +68,15 @@ export async function executeAgentMessage(
         const agentList = agents
           .map((a) => {
             const statusIcon =
-              ({ idle: '⏸️', running: '🔄', completed: '✅', failed: '❌' } as const)[a.status];
+              ({
+                idle: '⏸️',
+                running: '🔄',
+                'running-recovered': '🔄',
+                'dead-log-only': '📄',
+                completed: '✅',
+                failed: '❌',
+                killed: '🛑',
+              } as const)[a.status];
             return `${statusIcon} [${a.id}] ${a.role} - ${a.status}
    Task: ${a.task?.substring(0, 50)}${(a.task?.length || 0) > 50 ? '...' : ''}`;
           })

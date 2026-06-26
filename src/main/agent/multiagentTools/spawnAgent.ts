@@ -542,7 +542,7 @@ Use wait_agent to block until done, or close_agent to cancel.`,
 export interface SpawnedAgent {
   id: string;
   role: string;
-  status: 'idle' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'running' | 'running-recovered' | 'dead-log-only' | 'completed' | 'failed' | 'killed';
   task?: string;
   result?: string;
   error?: string;
@@ -556,7 +556,7 @@ export function getSpawnedAgent(agentId: string): SpawnedAgent | undefined {
   return {
     id: managed.id,
     role: managed.role,
-    status: managed.status === 'cancelled' ? 'failed' : managed.status,
+    status: managed.status === 'cancelled' ? 'killed' : managed.status,
     task: managed.task,
     result: managed.result?.output,
     error: managed.error,
@@ -569,7 +569,7 @@ export function listSpawnedAgents(): SpawnedAgent[] {
   return guard.list().map(managed => ({
     id: managed.id,
     role: managed.role,
-    status: managed.status === 'cancelled' ? 'failed' as const : managed.status,
+    status: managed.status === 'cancelled' ? 'killed' as const : managed.status,
     task: managed.task,
     result: managed.result?.output,
     error: managed.error,

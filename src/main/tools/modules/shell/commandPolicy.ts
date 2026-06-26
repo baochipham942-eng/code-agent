@@ -16,11 +16,24 @@ import { checkWindowsBlockRules } from '../../../security/shellRules/windowsRule
 export interface PolicyDecision {
   allowed: boolean;
   reason?: string;
+  source?: 'hard-block' | 'user-rule';
+  action?: 'allow' | 'deny';
+  matchedRule?: CommandPolicyRule;
 }
 
 interface BlockRule {
   pattern: RegExp;
   reason: string;
+}
+
+export type CommandPolicyAction = 'allow' | 'deny';
+export type CommandPolicyMatchKind = 'exact' | 'prefix' | 'glob';
+
+export interface CommandPolicyRule {
+  action: CommandPolicyAction;
+  kind: CommandPolicyMatchKind;
+  pattern: string;
+  reason?: string;
 }
 
 const BLOCK_RULES: BlockRule[] = [
@@ -116,6 +129,98 @@ const BLOCK_RULES: BlockRule[] = [
   },
 ];
 
+let userCommandPolicyRules: CommandPolicyRule[] = [];
+
+function normalizeCommandForRule(command: string): string {
+  return command.trim().replace(/\s+/g, ' ');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function globToRegExp(pattern: string): RegExp {
+  const source = pattern
+    .split('')
+    .map((char) => {
+      if (char === '*') return '.*';
+      if (char === '?') return '.';
+      return escapeRegExp(char);
+    })
+    .join('');
+  return new RegExp(`^${source}$`);
+}
+
+function matchesCommandRule(command: string, rule: CommandPolicyRule): boolean {
+  const normalizedCommand = normalizeCommandForRule(command);
+  const normalizedPattern = normalizeCommandForRule(rule.pattern);
+  if (!normalizedPattern) return false;
+
+  switch (rule.kind) {
+    case 'exact':
+      return normalizedCommand === normalizedPattern;
+    case 'prefix':
+      return normalizedCommand === normalizedPattern || normalizedCommand.startsWith(`${normalizedPattern} `);
+    case 'glob':
+      return globToRegExp(normalizedPattern).test(normalizedCommand);
+  }
+}
+
+export function parseCommandPolicyRule(raw: string): CommandPolicyRule | null {
+  const match = raw.match(/^(allow|deny):(exact|prefix|glob):([\s\S]+)$/);
+  if (!match) return null;
+  const pattern = match[3].trim();
+  if (!pattern) return null;
+  return {
+    action: match[1] as CommandPolicyAction,
+    kind: match[2] as CommandPolicyMatchKind,
+    pattern,
+  };
+}
+
+export function setCommandPolicyRules(rules: Array<CommandPolicyRule | string>): void {
+  userCommandPolicyRules = rules.flatMap((rule) => {
+    if (typeof rule === 'string') {
+      const parsed = parseCommandPolicyRule(rule);
+      return parsed ? [parsed] : [];
+    }
+    return [rule];
+  });
+}
+
+export function setCommandPolicyRulesForTest(rules: Array<CommandPolicyRule | string>): void {
+  setCommandPolicyRules(rules);
+}
+
+export function evaluateCommandPolicyRules(
+  command: string,
+  rules: CommandPolicyRule[] = userCommandPolicyRules,
+): PolicyDecision {
+  const matchingDeny = rules.find((rule) => rule.action === 'deny' && matchesCommandRule(command, rule));
+  if (matchingDeny) {
+    return {
+      allowed: false,
+      action: 'deny',
+      source: 'user-rule',
+      reason: matchingDeny.reason ?? `User command policy denied ${matchingDeny.kind}:${matchingDeny.pattern}`,
+      matchedRule: matchingDeny,
+    };
+  }
+
+  const matchingAllow = rules.find((rule) => rule.action === 'allow' && matchesCommandRule(command, rule));
+  if (matchingAllow) {
+    return {
+      allowed: true,
+      action: 'allow',
+      source: 'user-rule',
+      reason: matchingAllow.reason ?? `User command policy allowed ${matchingAllow.kind}:${matchingAllow.pattern}`,
+      matchedRule: matchingAllow,
+    };
+  }
+
+  return { allowed: true };
+}
+
 /**
  * 检查命令是否命中 BLOCK 规则
  *
@@ -128,7 +233,12 @@ export function checkCommandPolicy(command: string): PolicyDecision {
 
   for (const rule of BLOCK_RULES) {
     if (rule.pattern.test(trimmed)) {
-      return { allowed: false, reason: rule.reason };
+      return {
+        allowed: false,
+        action: 'deny',
+        source: 'hard-block',
+        reason: rule.reason,
+      };
     }
   }
 
@@ -137,9 +247,14 @@ export function checkCommandPolicy(command: string): PolicyDecision {
   if (process.platform === 'win32') {
     const winBlock = checkWindowsBlockRules(trimmed);
     if (winBlock.blocked) {
-      return { allowed: false, reason: winBlock.reason };
+      return {
+        allowed: false,
+        action: 'deny',
+        source: 'hard-block',
+        reason: winBlock.reason,
+      };
     }
   }
 
-  return { allowed: true };
+  return evaluateCommandPolicyRules(trimmed);
 }

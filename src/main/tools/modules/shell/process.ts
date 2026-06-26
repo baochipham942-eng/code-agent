@@ -41,6 +41,13 @@ import {
 } from '../../shell/ptyExecutor';
 
 const DEFAULT_POLL_TIMEOUT = 30000;
+export type ProcessActionPermissionClass = 'observe' | 'control';
+
+const PROCESS_OBSERVATION_ACTIONS = new Set(['list', 'poll', 'log', 'output']);
+
+export function getProcessActionPermissionClass(action: string): ProcessActionPermissionClass {
+  return PROCESS_OBSERVATION_ACTIONS.has(action) ? 'observe' : 'control';
+}
 
 function processArtifact(
   ctx: ToolContext,
@@ -573,6 +580,7 @@ class ProcessHandler implements ToolHandler<Record<string, unknown>, string> {
     if (!action) {
       return { ok: false, error: 'action is required', code: 'INVALID_ARGS' };
     }
+    const permissionClass = getProcessActionPermissionClass(action);
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
@@ -623,6 +631,10 @@ class ProcessHandler implements ToolHandler<Record<string, unknown>, string> {
 
     onProgress?.({ stage: 'completing', percent: 100 });
     if (result.ok) {
+      result.meta = {
+        ...(result.meta ?? {}),
+        permissionClass,
+      };
       ctx.logger.info('Process done', { action });
     } else {
       ctx.logger.debug('Process action failed', { action, error: result.error });

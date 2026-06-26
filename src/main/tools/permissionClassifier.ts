@@ -16,6 +16,7 @@ import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
+import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
 
 const logger = createLogger('PermissionClassifier');
@@ -90,6 +91,9 @@ const DELEGATION_TOOLS = new Set([
   'spawn_agent',
   'AgentSpawn',
 ]);
+
+const PROCESS_OBSERVATION_ACTIONS = new Set(['list', 'poll', 'log', 'output']);
+const PROCESS_CONTROL_ACTIONS = new Set(['write', 'submit', 'kill']);
 
 // MCP 工具前缀 — 默认 ask（未知副作用）
 const MCP_TOOL_PREFIXES = ['mcp_', 'mcp:', 'MCPUnified'];
@@ -305,6 +309,11 @@ export class PermissionClassifier {
       };
     }
 
+    const processAction = this.classifyProcessAction(toolName, args, startTime);
+    if (processAction) {
+      return processAction;
+    }
+
     // R5: Bash 命令分类
     if (isBashToolName(toolName) && typeof args.command === 'string') {
       return this.classifyBashCommand(args.command, context, startTime);
@@ -329,6 +338,44 @@ export class PermissionClassifier {
 
     // 规则无法判断
     return null;
+  }
+
+  private classifyProcessAction(
+    toolName: string,
+    args: Record<string, unknown>,
+    startTime: number
+  ): ClassificationResult | null {
+    if (toolName !== 'Process') return null;
+    const action = typeof args.action === 'string' ? args.action : '';
+
+    if (PROCESS_OBSERVATION_ACTIONS.has(action)) {
+      return {
+        decision: 'approve',
+        reason: `Process 观察类动作: ${action}`,
+        confidence: 1.0,
+        cached: false,
+      };
+    }
+
+    if (PROCESS_CONTROL_ACTIONS.has(action)) {
+      const reason = `Process 控制类动作需要确认: ${action}`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 0.95,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'P1: process_control_action', 'ask', reason, startTime),
+      };
+    }
+
+    const reason = 'Process action 缺失或未知，需用户确认';
+    return {
+      decision: 'ask',
+      reason,
+      confidence: 0.7,
+      cached: false,
+      traceStep: createTraceStep('permission_classifier', 'P0: process_unknown_action', 'ask', reason, startTime),
+    };
   }
 
   private classifySensitiveMemoryRead(
@@ -374,6 +421,33 @@ export class PermissionClassifier {
     startTime: number
   ): ClassificationResult | null {
     const trimmed = command.trim();
+
+    const policyDecision = checkCommandPolicy(trimmed);
+    if (!policyDecision.allowed) {
+      const reason = `命令策略拒绝: ${policyDecision.reason ?? 'blocked'}`;
+      return {
+        decision: 'deny',
+        reason,
+        confidence: 1.0,
+        cached: false,
+        traceStep: createTraceStep(
+          'permission_classifier',
+          policyDecision.source === 'hard-block' ? 'B0: command_hard_block' : 'B0: command_user_deny',
+          'deny',
+          reason,
+          startTime,
+        ),
+      };
+    }
+
+    if (policyDecision.action === 'allow') {
+      return {
+        decision: 'approve',
+        reason: policyDecision.reason ?? '命令级权限规则允许',
+        confidence: 1.0,
+        cached: false,
+      };
+    }
 
     // B1: 危险模式检测
     for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {

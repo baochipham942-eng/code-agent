@@ -91,9 +91,12 @@ export async function executeWaitAgent(
 
     const icon = {
       running: '⏳',
+      'running-recovered': '⏳',
+      'dead-log-only': '📄',
       completed: '✅',
       failed: '❌',
       cancelled: '🚫',
+      killed: '🛑',
     }[agent.status];
 
     const duration = agent.completedAt
@@ -102,7 +105,7 @@ export async function executeWaitAgent(
 
     lines.push(`${icon} [${id}] ${agent.role} — ${agent.status} (${duration})`);
 
-    if (agent.status === 'running') {
+    if (agent.status === 'running' || agent.status === 'running-recovered') {
       allDone = false;
       lines.push(`   Still in progress after ${timeoutMs}ms timeout`);
     } else if (agent.result) {

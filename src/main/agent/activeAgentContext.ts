@@ -31,15 +31,18 @@ export function buildActiveAgentContext(): string {
 
     const icon = {
       running: '⏳',
+      'running-recovered': '⏳',
+      'dead-log-only': '📄',
       completed: '✅',
       failed: '❌',
       cancelled: '🚫',
+      killed: '🛑',
     }[agent.status];
 
     lines.push(`- ${icon} ${agent.id}: ${agent.role} (${agent.status}, ${duration}) — "${taskPreview}"`);
   }
 
-  const running = agents.filter(a => a.status === 'running').length;
+  const running = agents.filter(a => a.status === 'running' || a.status === 'running-recovered').length;
   const total = agents.length;
 
   return `\n<active_subagents>

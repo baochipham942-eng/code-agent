@@ -82,9 +82,12 @@ export interface ManagedAgent {
 
 export type ManagedAgentStatus =
   | 'running'
+  | 'running-recovered'
+  | 'dead-log-only'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'killed';
 
 export interface SpawnGuardConfig {
   /** Maximum concurrent agents across the whole spawn tree (default 8) */
@@ -140,6 +143,10 @@ const DEFAULT_QUEUE_TIMEOUT_MS = SPAWN_GUARD.QUEUE_WAIT_TIMEOUT_MS;
 const DEFAULT_TREE_ID = 'default';
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
+
+function isLiveRunningStatus(status: ManagedAgentStatus): boolean {
+  return status === 'running' || status === 'running-recovered';
+}
 
 class SpawnGuard {
   private agents: Map<string, ManagedAgent> = new Map();
@@ -371,7 +378,7 @@ class SpawnGuard {
   getRunningCount(): number {
     let count = 0;
     for (const agent of this.agents.values()) {
-      if (agent.status === 'running') count++;
+      if (isLiveRunningStatus(agent.status)) count++;
     }
     return count;
   }
@@ -381,7 +388,7 @@ class SpawnGuard {
    */
   cancel(id: string): boolean {
     const agent = this.agents.get(id);
-    if (agent?.status !== 'running') return false;
+    if (!agent || !isLiveRunningStatus(agent.status)) return false;
 
     this.cancelAgent(agent, 'cancelled');
     this.cancelDescendants(id, 'parent-cancel');
@@ -394,7 +401,7 @@ class SpawnGuard {
     let cancelled = 0;
     for (const descendantId of descendantIds) {
       const agent = this.agents.get(descendantId);
-      if (agent?.status !== 'running') continue;
+      if (!agent || !isLiveRunningStatus(agent.status)) continue;
       this.cancelAgent(agent, reason);
       cancelled += 1;
     }
@@ -409,7 +416,7 @@ class SpawnGuard {
     let cancelled = 0;
     for (const orphanId of orphanIds) {
       const agent = this.agents.get(orphanId);
-      if (agent?.status !== 'running') continue;
+      if (!agent || !isLiveRunningStatus(agent.status)) continue;
       this.cancelAgent(agent, reason);
       cancelled += 1;
     }
@@ -429,7 +436,7 @@ class SpawnGuard {
   cancelAll(reason: string = 'cancelled'): number {
     let cancelled = 0;
     for (const [id, agent] of this.agents) {
-      if (agent.status === 'running') {
+      if (isLiveRunningStatus(agent.status)) {
         this.cancelAgent(agent, reason);
         cancelled += 1;
       }
@@ -467,7 +474,7 @@ class SpawnGuard {
       const agent = this.agents.get(id);
       if (!agent) continue;
 
-      if (agent.status !== 'running') {
+      if (!isLiveRunningStatus(agent.status)) {
         results.set(id, agent);
         continue;
       }
@@ -530,7 +537,7 @@ class SpawnGuard {
    */
   sendMessage(id: string, message: string | AgentMessage): boolean {
     const agent = this.agents.get(id);
-    if (agent?.status !== 'running') return false;
+    if (!agent || !isLiveRunningStatus(agent.status)) return false;
 
     const structured: AgentMessage = typeof message === 'string'
       ? createTextMessage('parent', message)
@@ -625,7 +632,7 @@ class SpawnGuard {
   isTaskReady(taskId: string, blockedBy: Set<string>): boolean {
     for (const blockerId of blockedBy) {
       const blocker = this.agents.get(blockerId);
-      if (!blocker || blocker.status === 'running') return false;
+      if (!blocker || isLiveRunningStatus(blocker.status)) return false;
     }
     return true;
   }
@@ -637,7 +644,7 @@ class SpawnGuard {
     const now = Date.now();
     let removed = 0;
     for (const [id, agent] of this.agents) {
-      if (agent.status !== 'running' && now - agent.createdAt > maxAgeMs) {
+      if (!isLiveRunningStatus(agent.status) && now - agent.createdAt > maxAgeMs) {
         this.agents.delete(id);
         removed++;
       }
@@ -698,7 +705,9 @@ class SpawnGuard {
 
   /**
    * Restore SpawnGuard state from disk.
-   * Running agents are marked as 'failed' (process restart = execution interrupted).
+   * Running agents are restored as dead-log-only instead of failed: the app can
+   * show the interrupted work without pretending a live child process still
+   * exists.
    * Message queues and pending notifications are restored.
    */
   static async restoreState(sessionDir: string): Promise<SpawnGuard | null> {
@@ -714,10 +723,9 @@ class SpawnGuard {
       const guard = new SpawnGuard();
 
       for (const entry of state.agents) {
-        // Running agents can't be resumed — mark as failed
-        const status: ManagedAgentStatus = entry.status === 'running' ? 'failed' : entry.status;
-
         const wasRunning = entry.status === 'running';
+        const status: ManagedAgentStatus = wasRunning ? 'dead-log-only' : entry.status;
+        const recoveredAt = Date.now();
         const agent: ManagedAgent = {
           id: entry.id,
           role: entry.role,
@@ -725,13 +733,20 @@ class SpawnGuard {
           parentId: entry.parentId,
           status,
           task: entry.task,
-          promise: Promise.resolve(entry.result ?? { success: false, output: '', error: 'Interrupted by restart', iterations: 0, toolsUsed: [], cost: 0 }),
+          promise: Promise.resolve(entry.result ?? {
+            success: false,
+            output: '',
+            error: 'Subagent live execution was not recovered after restart; log is available only',
+            iterations: 0,
+            toolsUsed: [],
+            cost: 0,
+          }),
           abortController: new AbortController(),
           result: entry.result,
-          error: wasRunning ? 'Interrupted by process restart' : entry.error,
+          error: wasRunning ? 'Subagent process was not recovered after restart; log is available only' : entry.error,
           messageQueue: entry.messageQueue || [],
           createdAt: entry.createdAt,
-          completedAt: entry.completedAt ?? Date.now(),
+          completedAt: entry.completedAt ?? (wasRunning ? recoveredAt : undefined),
         };
 
         guard.agents.set(entry.id, agent);

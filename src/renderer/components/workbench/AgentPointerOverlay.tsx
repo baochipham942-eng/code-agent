@@ -8,6 +8,7 @@ import type {
 import { getAgentPointerLabel } from '../../utils/agentPointer';
 import type { AgentPointerTimelineEntry } from '../../stores/agentPointerStore';
 
+// ds-allow:start agent 指针可视化色板（SVG 字面色，按模式区分，非 UI token 场景）
 const TONE_COLORS: Record<AgentPointerTone, {
   spine: string;
   tip: string;
@@ -39,6 +40,7 @@ const TONE_COLORS: Record<AgentPointerTone, {
     ring: 'rgba(252, 165, 165, 0.85)',
   },
 };
+// ds-allow:end
 
 function pointerPosition(point: AgentPointerPoint | null | undefined): React.CSSProperties {
   if (!point) {
@@ -104,6 +106,7 @@ export function AgentPointerGlyph({
         transform: compressed ? 'scale(0.96)' : undefined,
       }}
     >
+      {/* ds-allow:start SVG 指针图标字面色（viz） */}
       <path
         d="M9.4 6.4L46.4 36.9L30.6 40.2L39.6 56.5L30.9 61.3L21.8 44.5L11.1 56.8L9.4 6.4Z"
         fill="#09100F"
@@ -111,6 +114,7 @@ export function AgentPointerGlyph({
         strokeWidth="2.3"
         strokeLinejoin="round"
       />
+      {/* ds-allow:end */}
       <path
         d="M16.1 16.4L36.8 34.0L24.8 36.7"
         stroke={colors.spine}

@@ -9,6 +9,7 @@ interface AgentPointerFramePosition {
   y: number;
 }
 
+// ds-allow:start agent 指针可视化色板（canvas 字面色，按模式区分，非 UI token 场景）
 const TONE_PALETTE: Record<AgentPointerTone, {
   spine: string;
   tip: string;
@@ -40,6 +41,7 @@ const TONE_PALETTE: Record<AgentPointerTone, {
     ring: 'rgba(252,165,165,0.9)',
   },
 };
+// ds-allow:end
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -124,7 +126,7 @@ function drawNeoPointer(
   context.lineTo(13, 38);
   context.lineTo(3, 50);
   context.closePath();
-  context.fillStyle = '#09100F';
+  context.fillStyle = '#09100F'; // ds-allow:viz canvas 指针描边底色
   context.fill();
   context.strokeStyle = 'rgba(240,253,250,0.92)';
   context.lineWidth = 2.3;

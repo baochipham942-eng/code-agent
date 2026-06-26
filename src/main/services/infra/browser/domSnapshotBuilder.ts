@@ -120,6 +120,7 @@ export async function buildBrowserDomSnapshot(args: {
       capturedAtMs,
       ttlMs: targetRefTtlMs,
       confidence: element.refConfidence,
+      rect: element.rect,
     };
     targetRefRecords.push({
       targetRef,

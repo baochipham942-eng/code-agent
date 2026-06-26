@@ -12,6 +12,7 @@ import type { ContextAssembly } from './contextAssembly';
 import { runReviewGate } from '../goalReviewGate';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import {
+  buildVerificationCard,
   buildNotRunVerificationEvidence,
   buildVerificationPlan,
   runVerificationPlan,
@@ -87,6 +88,7 @@ export async function handleGoalCompletionGate(
         evidenceRefs: verificationEvidence.evidenceRefs,
         skippedChecks: verificationEvidence.skippedChecks,
         plannedOptionalCommands: verificationPlan.optional,
+        verificationCard: buildVerificationCard(verificationEvidence),
       },
     });
     if (!pass) {
@@ -106,6 +108,18 @@ export async function handleGoalCompletionGate(
     }
   } else {
     recordVerificationEvidence(verificationEvidence);
+    ctx.onEvent({
+      type: 'goal_gate',
+      data: {
+        gate: 1,
+        pass: true,
+        verificationStatus: verificationEvidence.status,
+        evidenceRefs: verificationEvidence.evidenceRefs,
+        skippedChecks: verificationEvidence.skippedChecks,
+        plannedOptionalCommands: verificationPlan.optional,
+        verificationCard: buildVerificationCard(verificationEvidence),
+      },
+    });
   }
 
   // 闸2（软评审）：闸1 pass/跳过后，若契约带 reviewCondition，派 Reviewer 子代理（强模型）

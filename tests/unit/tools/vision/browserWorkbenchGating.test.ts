@@ -199,6 +199,7 @@ const browserMocks = vi.hoisted(() => {
       path: '/tmp/browser-shot.png',
     })),
     setViewport: vi.fn(async () => undefined),
+    getElementBoundingBox: vi.fn(async () => ({ x: 10, y: 20, width: 100, height: 30 })),
     type: vi.fn(async () => undefined),
     clickTargetRef: vi.fn(async () => targetRef),
     typeTargetRef: vi.fn(async () => targetRef),
@@ -451,6 +452,25 @@ describe('browser workbench gating', () => {
       refId: 'tref_snapshot-1_1',
       selector: '#phase2-button',
       snapshotId: 'snapshot-1',
+    });
+    expect(result.metadata?.agentPointerEvent).toMatchObject({
+      surface: 'browser',
+      phase: 'click',
+      targetSource: 'targetRef',
+      traceId: 'trace-1',
+      success: true,
+    });
+    expect(result.metadata?.workbenchTrace).toMatchObject({
+      agentPointerEvent: expect.objectContaining({
+        surface: 'browser',
+        phase: 'click',
+      }),
+    });
+    expect(result.metadata?.browserComputerProof).toMatchObject({
+      agentPointerEvent: expect.objectContaining({
+        surface: 'browser',
+        phase: 'click',
+      }),
     });
   });
 

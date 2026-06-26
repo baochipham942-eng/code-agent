@@ -1,7 +1,12 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { IconButton, Modal } from '../../primitives';
-import type { ReplayBlock, ReplayTurn, StructuredReplay } from '@shared/contract/evaluation';
+import type {
+  EvidenceControlSummaryProjection,
+  ReplayBlock,
+  ReplayTurn,
+  StructuredReplay,
+} from '@shared/contract/evaluation';
 import {
   evaluateAgentTrajectoryReplay,
   resolveAgentTrajectoryCollectionMetadata,
@@ -111,6 +116,27 @@ function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): strin
     default:
       return 'border-rose-500/25 bg-rose-500/10 text-rose-200';
   }
+}
+
+function getEvidenceControlToneClassName(trustLevel: EvidenceControlSummaryProjection['trustLevel']): string {
+  switch (trustLevel) {
+    case 'strong':
+      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300';
+    case 'partial':
+      return 'border-amber-500/25 bg-amber-500/10 text-amber-300';
+    default:
+      return 'border-rose-500/25 bg-rose-500/10 text-rose-300';
+  }
+}
+
+function formatEvidenceControlTitle(summary: EvidenceControlSummaryProjection): string {
+  const gaps = summary.gaps.length > 0 ? summary.gaps.slice(0, 8).join(' · ') : 'no evidence gaps';
+  return [
+    `Evidence Control ${summary.trustLevel}`,
+    `${summary.totalItems} items · ${summary.totalEvidenceRefs} refs`,
+    `blocked ${summary.blockedItems} · stale ${summary.staleItems} · conflicts ${summary.conflictItems}`,
+    gaps,
+  ].join('\n');
 }
 
 function getTrajectoryDatasetLabel(role: AgentTrajectoryDatasetRole): string {
@@ -395,6 +421,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
   const trajectoryQuality = trajectorySummary?.quality ?? replayTrajectoryQuality;
   const trajectoryCollection =
     trajectorySummary?.collection ?? resolveAgentTrajectoryCollectionMetadata(trajectoryQuality, undefined);
+  const evidenceControl = replay.summary.evidenceControl ?? trajectorySummary?.evidenceControl;
   const incompleteReasons = completeness?.incompleteReasons ?? [];
   const issueCount = replay.summary.deviations?.length ?? 0;
   const visibleTurns = replay.turns.slice(0, 8);
@@ -515,6 +542,25 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
             </div>
           </dd>
         </div>
+        {evidenceControl && (
+          <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
+            <dt className="text-zinc-500">Evidence Control</dt>
+            <dd className="mt-1 flex min-w-0 items-center gap-1">
+              <span
+                title={formatEvidenceControlTitle(evidenceControl)}
+                className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getEvidenceControlToneClassName(evidenceControl.trustLevel)}`}
+              >
+                {evidenceControl.trustLevel}
+              </span>
+              <span className="truncate font-medium text-zinc-200">
+                {evidenceControl.totalItems} items · {evidenceControl.totalEvidenceRefs} refs
+              </span>
+            </dd>
+            <div className="mt-1 truncate text-[10px] text-zinc-500">
+              blocked {evidenceControl.blockedItems} · stale {evidenceControl.staleItems} · conflicts {evidenceControl.conflictItems}
+            </div>
+          </div>
+        )}
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
           <dt className="text-zinc-500">Turns</dt>
           <dd className="mt-1 font-medium text-zinc-200">{replay.summary.totalTurns}</dd>
@@ -548,6 +594,22 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                 className="rounded border border-amber-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-amber-100/80"
               >
                 {failure}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {evidenceControl && evidenceControl.gaps.length > 0 && (
+        <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs">
+          <div className="text-zinc-400">Evidence Gaps</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {evidenceControl.gaps.slice(0, 8).map((gap) => (
+              <span
+                key={gap}
+                className="rounded border border-zinc-700 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] text-zinc-300"
+              >
+                {gap}
               </span>
             ))}
           </div>

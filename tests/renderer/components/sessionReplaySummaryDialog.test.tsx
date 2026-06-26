@@ -300,6 +300,30 @@ describe('SessionReplaySummaryDialog', () => {
               hasSubagentTelemetry: false,
               incompleteReasons: ['missing_event_trace'],
             },
+            evidenceControl: {
+              schemaVersion: 1,
+              trustLevel: 'partial',
+              generatedAt: 123,
+              totalItems: 3,
+              totalEvidenceRefs: 4,
+              exportSafeItems: 3,
+              blockedItems: 0,
+              staleItems: 1,
+              conflictItems: 0,
+              bySource: {
+                verification: 1,
+                browser_computer: 1,
+                trajectory: 0,
+                background_recovery: 1,
+              },
+              byStatus: {
+                passed: 1,
+                observed: 1,
+                recovered: 1,
+              },
+              gaps: ['stale evidence present'],
+              conflicts: [],
+            },
           },
         }}
       />,
@@ -319,6 +343,12 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('aria-label="确认复核 Diagnostic"');
     expect(html).toContain('agent-trajectory-v1');
     expect(html).toContain('quality_gate');
+    expect(html).toContain('Evidence Control');
+    expect(html).toContain('partial');
+    expect(html).toContain('3 items · 4 refs');
+    expect(html).toContain('blocked 0 · stale 1 · conflicts 0');
+    expect(html).toContain('Evidence Gaps');
+    expect(html).toContain('stale evidence present');
     expect(html).toContain('Trajectory Gate');
     expect(html).toContain('missing_tool_result');
     expect(html).toContain('Turns');

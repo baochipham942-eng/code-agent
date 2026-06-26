@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import ipcService from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { invokeNativeCommandAction } from '../services/nativeCommandFacade';
+import type { AgentPointerEvent } from '@shared/contract';
+import { isAgentPointerEvent } from '../stores/agentPointerStore';
+import { composeAgentPointerFrame } from '../utils/agentPointerFrame';
 
 // 从 tool_call_end 的 ToolResult 里取 computer-use 表面截图路径（不依赖工具名，
 // 只认 metadata.computerSurfaceSnapshot.screenshotPath，对 computer-use observe/get_state 等都通用）。
@@ -13,6 +16,21 @@ function extractSurfaceScreenshotPath(data: unknown): string | undefined {
   )?.metadata;
   const path = meta?.computerSurfaceSnapshot?.screenshotPath;
   return typeof path === 'string' && path.length > 0 ? path : undefined;
+}
+
+function extractSurfaceAgentPointerEvent(data: unknown): AgentPointerEvent | undefined {
+  const meta = (
+    data as
+      | { metadata?: { agentPointerEvent?: unknown; browserComputerProof?: { agentPointerEvent?: unknown } } }
+      | undefined
+  )?.metadata;
+  if (isAgentPointerEvent(meta?.agentPointerEvent)) {
+    return meta.agentPointerEvent;
+  }
+  if (isAgentPointerEvent(meta?.browserComputerProof?.agentPointerEvent)) {
+    return meta.browserComputerProof.agentPointerEvent;
+  }
+  return undefined;
 }
 
 const RUN_END_EVENTS = new Set<string>(['agent_complete', 'agent_cancelled', 'stream_end', 'error']);
@@ -40,7 +58,7 @@ export function useComputerUsePip(): void {
       void invokeNativeCommandAction('hidePip').catch(() => {});
     };
 
-    const pushFrame = async (screenshotPath: string) => {
+    const pushFrame = async (screenshotPath: string, pointerEvent?: AgentPointerEvent) => {
       try {
         if (!activeRef.current) {
           activeRef.current = true;
@@ -50,7 +68,10 @@ export function useComputerUsePip(): void {
           path: screenshotPath,
         });
         if (!disposed && dataUrl) {
-          await invokeNativeCommandAction('framePip', { dataUrl });
+          const framedDataUrl = pointerEvent
+            ? await composeAgentPointerFrame(dataUrl, pointerEvent)
+            : dataUrl;
+          await invokeNativeCommandAction('framePip', { dataUrl: framedDataUrl });
         }
       } catch {
         // Tauri 不可用 / 读图失败 → 忽略，不影响主流程
@@ -61,7 +82,7 @@ export function useComputerUsePip(): void {
       if (disposed) return;
       if (event.type === 'tool_call_end') {
         const path = extractSurfaceScreenshotPath(event.data);
-        if (path) void pushFrame(path);
+        if (path) void pushFrame(path, extractSurfaceAgentPointerEvent(event.data));
         return;
       }
       if (RUN_END_EVENTS.has(event.type)) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildSessionTraceIdentity } from '../../../../src/shared/contract/reviewQueue';
 import type { StructuredReplay } from '../../../../src/shared/contract/evaluation';
+import type { AgentPointerEvent } from '../../../../src/shared/contract/desktop';
 import {
   INCOMPLETE_TOOL_RESULT_MARKER,
   buildAgentTrajectoryCollectionMetadata,
@@ -269,6 +270,30 @@ describe('Agent trajectory G0/G1/G2 gate', () => {
           taskKind: 'search',
           collectionSource: 'audit_backfill',
           failures: ['missing_tool_definition'],
+          evidenceControl: {
+            schemaVersion: 1,
+            trustLevel: 'partial',
+            generatedAt: 1000,
+            totalItems: 3,
+            totalEvidenceRefs: 4,
+            exportSafeItems: 3,
+            blockedItems: 0,
+            staleItems: 1,
+            conflictItems: 1,
+            bySource: {
+              verification: 1,
+              browser_computer: 1,
+              trajectory: 0,
+              background_recovery: 1,
+            },
+            byStatus: {
+              passed: 1,
+              observed: 1,
+              recovered: 1,
+            },
+            gaps: ['stale evidence present at /Users/linchen/private.png?token=secret-token cookie=cookie-secret'],
+            conflicts: ['base64,abcdef conflict localStorage=local-secret'],
+          },
         },
       ],
     });
@@ -281,6 +306,14 @@ describe('Agent trajectory G0/G1/G2 gate', () => {
     expect(packet).toContain('session-review-packet');
     expect(packet).toContain('review_diagnostic');
     expect(packet).toContain('missing_tool_definition');
+    expect(packet).toContain('Evidence Control');
+    expect(packet).toContain('partial · 3 items/4 refs');
+    expect(packet).toContain('stale evidence present');
+    expect(packet).not.toContain('/Users/linchen');
+    expect(packet).not.toContain('secret-token');
+    expect(packet).not.toContain('base64,abcdef');
+    expect(packet).not.toContain('cookie-secret');
+    expect(packet).not.toContain('local-secret');
     expect(packet).toContain('Final review.datasetRole');
     expect(packet).toContain('collection.source = manual_review');
   });
@@ -884,6 +917,49 @@ describe('Agent trajectory G0/G1/G2 gate', () => {
     ]);
     expect(trajectory.summary.toolCallCount).toBe(1);
     expect(trajectory.summary.toolResultCount).toBe(1);
+  });
+
+  it('carries Agent Pointer evidence from replay into trajectory tool steps', () => {
+    const source = replay();
+    const pointerEvent: AgentPointerEvent = {
+      id: 'pointer-replay',
+      surface: 'browser',
+      tone: 'browser',
+      phase: 'click',
+      coordSpace: 'browserViewport',
+      point: { x: 120, y: 48, unit: 'px' },
+      targetLabel: 'Run',
+      targetSource: 'selector',
+      traceId: 'trace-replay',
+      success: true,
+    };
+    const toolBlock = source.turns[0]?.blocks.find(block => block.type === 'tool_call');
+    if (!toolBlock?.toolCall) {
+      throw new Error('fixture missing tool call block');
+    }
+    toolBlock.toolCall.agentPointerEvent = pointerEvent;
+    toolBlock.toolCall.agentPointerTimeline = [pointerEvent];
+
+    const collection = resolveAgentTrajectoryCollectionMetadata(
+      evaluateAgentTrajectoryReplay(source),
+      undefined,
+      { datasetVersion: 'agent-trajectory-v2' },
+    );
+    const trajectory = buildAgentTrajectoryFromReplay(source, { collection });
+    const toolCallStep = trajectory.steps.find(step => step.role === 'tool_call');
+    const toolResultStep = trajectory.steps.find(step => step.role === 'tool_result');
+
+    expect(toolCallStep?.toolCall?.agentPointerEvent).toMatchObject({
+      id: 'pointer-replay',
+      targetLabel: 'Run',
+    });
+    expect(toolResultStep?.toolResult?.agentPointerEvent).toMatchObject({
+      id: 'pointer-replay',
+      traceId: 'trace-replay',
+    });
+    expect(toolResultStep?.toolResult?.agentPointerTimeline).toEqual([
+      expect.objectContaining({ id: 'pointer-replay' }),
+    ]);
   });
 
   it('keeps final core_eval export limited to manual review source when required', () => {

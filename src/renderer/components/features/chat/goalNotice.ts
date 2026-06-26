@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { Message } from '../../../../shared/contract/message';
+import type { GoalGateVerificationCard } from '../../../../shared/contract/agent';
 import { generateMessageId } from '../../../../shared/utils/id';
 
 export type GoalNoticeKind = 'start' | 'met' | 'aborted';
@@ -23,6 +24,8 @@ export interface GoalNoticePayload {
   tokensUsed?: number;
   /** 总耗时 ms（met/aborted） */
   durationMs?: number;
+  /** Goal verification card summarized from goal_gate events. */
+  verificationCard?: GoalGateVerificationCard;
 }
 
 interface GoalNoticeEnvelope {

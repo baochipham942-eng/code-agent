@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import type { GoalGateVerificationCard } from '../../shared/contract/agent';
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef } from '../../shared/contract/evidence';
 import { ChangeDetector } from '../testing/ci/changeDetector';
 import { runVerifyGate } from './goalVerifyGate';
@@ -19,7 +20,8 @@ export type VerificationFailureType =
 export type VerificationCommandKind =
   | 'goal_contract'
   | 'targeted_test'
-  | 'package_script';
+  | 'package_script'
+  | 'ci';
 
 export interface VerificationCommandSpec {
   id: string;
@@ -329,6 +331,59 @@ function summarizeVerificationFailure(result: VerificationCommandResult | undefi
   if (!result) return 'Verification failed without a command result.';
   const exit = result.exitCode === null ? 'null' : String(result.exitCode);
   return `${failureType || 'unverifiable'}: ${result.command} exited ${exit}${result.timedOut ? ' after timeout' : ''}.`;
+}
+
+function compactOutputTail(result: VerificationCommandResult): string | undefined {
+  const text = [result.stdoutTail, result.stderrTail, result.output]
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  if (!text) return undefined;
+  return text.length > 1200 ? text.slice(-1200) : text;
+}
+
+export function buildVerificationCard(evidence: VerificationEvidence): GoalGateVerificationCard {
+  const commands = evidence.commandResults.map((result) => ({
+    id: result.id,
+    command: result.command,
+    required: result.required,
+    kind: result.kind,
+    reason: result.reason,
+    pass: result.pass,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs,
+    timedOut: result.timedOut,
+    stdoutTail: result.stdoutTail || undefined,
+    stderrTail: result.stderrTail || undefined,
+    outputTail: compactOutputTail(result),
+    evidenceRefId: result.evidenceRef.id,
+  }));
+  const passed = commands.filter((command) => command.pass).length;
+  const failed = commands.filter((command) => !command.pass).length;
+  const notRun = evidence.status === 'not_run'
+    ? Math.max(1, evidence.skippedChecks.length)
+    : 0;
+  const required = commands.filter((command) => command.required);
+  const requiredStatus = evidence.status === 'not_run'
+    ? 'not_run'
+    : required.some((command) => !command.pass)
+      ? 'failed'
+      : 'passed';
+  return {
+    status: evidence.status,
+    failureType: evidence.failureType,
+    summary: evidence.summary,
+    counts: {
+      passed,
+      failed,
+      notRun,
+      total: passed + failed + notRun,
+    },
+    requiredStatus,
+    commands,
+    evidenceRefIds: evidence.evidenceRefs.map((ref) => ref.id),
+    skippedChecks: evidence.skippedChecks,
+  };
 }
 
 function notRunEvidenceRef(skippedCheck: VerificationSkippedCheck): EvidenceRef {

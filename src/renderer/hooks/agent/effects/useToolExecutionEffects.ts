@@ -14,12 +14,36 @@ import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { applyToolOutputDelta } from '../../../utils/toolOutputStreaming';
 import { useCapabilityGapStore } from '../../../stores/capabilityGapStore';
+import { isAgentPointerEvent, useAgentPointerStore } from '../../../stores/agentPointerStore';
 import type { CapabilityGap } from '../../../../shared/contract/capabilityGap';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
+import { buildAgentPointerEvent } from '../../../utils/agentPointer';
 
 const logger = createLogger('useAgent');
 
 type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; sessionId?: string };
+
+function recordAgentPointerFromToolCall(toolCall: Pick<ToolCall, 'id' | 'name' | 'arguments' | 'result'>): void {
+  const event = buildAgentPointerEvent(toolCall);
+  if (event) {
+    useAgentPointerStore.getState().recordEvent(event);
+  }
+}
+
+function recordAgentPointerFromToolResult(toolResult: ToolResult, matchedToolCall: ToolCall | null): void {
+  if (matchedToolCall) {
+    recordAgentPointerFromToolCall({
+      ...matchedToolCall,
+      result: toolResult,
+    });
+    return;
+  }
+
+  const metadataEvent = toolResult.metadata?.agentPointerEvent;
+  if (isAgentPointerEvent(metadataEvent)) {
+    useAgentPointerStore.getState().recordEvent(metadataEvent);
+  }
+}
 
 export const useToolExecutionEffects = ({
   currentTurnMessageIdRef,
@@ -53,6 +77,9 @@ export const useToolExecutionEffects = ({
         case 'agent_cancelled':
         case 'error':
         case 'stream_end':
+          if (!eventSessionId || isCurrentSessionEvent) {
+            useAgentPointerStore.getState().clearAll();
+          }
           return;
 
         case 'stream_tool_call_start':
@@ -126,6 +153,7 @@ export const useToolExecutionEffects = ({
               name: event.data.name,
               targetMessageId,
             });
+            recordAgentPointerFromToolCall(event.data);
 
             if (targetMessage?.role === 'assistant' && targetMessage.toolCalls) {
               if (toolIndex !== undefined && toolIndex < targetMessage.toolCalls.length) {
@@ -225,6 +253,7 @@ export const useToolExecutionEffects = ({
                 });
               }
             }
+            recordAgentPointerFromToolResult(toolResult, matchedToolCall);
 
             if (import.meta.env.DEV && !matched) {
               logger.warn('No matching toolCall found', { toolCallId: toolResult.toolCallId });

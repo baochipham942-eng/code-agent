@@ -99,6 +99,7 @@ async function buildTrajectoryQualitySummary(
     traceIdentity: replay?.traceIdentity,
     quality,
     collection,
+    evidenceControl: replay?.summary.evidenceControl,
   };
 }
 

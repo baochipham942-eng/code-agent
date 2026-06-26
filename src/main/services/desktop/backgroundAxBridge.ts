@@ -5,7 +5,21 @@ import type { ComputerSurfaceAction, ComputerSurfaceActionResult } from './compu
 
 const execFileAsync = promisify(execFile);
 
-export type BackgroundAxElement = { index: number; role: string; name: string; axPath: string };
+export type BackgroundAxFrame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  coordSpace: 'screen';
+};
+
+export type BackgroundAxElement = {
+  index: number;
+  role: string;
+  name: string;
+  axPath: string;
+  frame?: BackgroundAxFrame | null;
+};
 
 export class BackgroundAxBridge {
   async executeAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
@@ -30,7 +44,8 @@ export class BackgroundAxBridge {
         timeout: Math.max(1_000, Math.min(action.timeout || 8_000, 30_000)),
         maxBuffer: 1024 * 1024,
       }));
-      const output = stdout.trim() || `Background action completed: ${action.action}`;
+      const parsed = parseBackgroundActionOutput(stdout, action.action, action.targetApp || '');
+      const output = parsed.output || `Background action completed: ${action.action}`;
       return {
         success: true,
         output: action.action === 'type'
@@ -42,6 +57,14 @@ export class BackgroundAxBridge {
           targetRole: role || null,
           targetName: elementName || null,
           targetAxPath: axPath || null,
+          targetAxFrame: parsed.frame,
+          pointerTarget: parsed.frame
+            ? {
+                label: elementName || role || axPath || action.targetApp || null,
+                boundingBox: parsed.frame,
+                coordSpace: parsed.frame.coordSpace,
+              }
+            : undefined,
         },
       };
     } catch (error) {
@@ -82,6 +105,7 @@ export class BackgroundAxBridge {
             ...elements.map((element) => [
               `${element.index}. ${element.role}${element.name ? ` "${element.name}"` : ''}`,
               element.axPath ? ` [axPath=${element.axPath}]` : '',
+              element.frame ? ` [frame=${formatAxFrame(element.frame)}]` : '',
             ].join('')),
             formatAxQualityLine(axQuality),
           ].join('\n')
@@ -172,7 +196,15 @@ export class BackgroundAxBridge {
         targetRole: chosen.role,
         targetName: chosen.name || null,
         targetAxPath: chosen.axPath,
+        targetAxFrame: chosen.frame || null,
         axPath: chosen.axPath,
+        pointerTarget: chosen.frame
+          ? {
+              label: chosen.name || chosen.role || chosen.axPath,
+              boundingBox: chosen.frame,
+              coordSpace: chosen.frame.coordSpace,
+            }
+          : undefined,
         matchCount: matches.length,
         matches,
         failureKind: ambiguous ? 'locator_ambiguous' : null,
@@ -207,13 +239,14 @@ const BACKGROUND_AX_ACTION_SCRIPT = [
   'set targetElement to my findElement(rootElement, targetRole, targetName, exactMatch)',
   'end if',
   'if targetElement is missing value then error "Target element not found"',
+  'set targetFrame to my safeFrame(targetElement)',
   'if actionName is "type" then',
   'my setElementValue(targetElement, inputText)',
-  'return "Background type completed: " & targetApp',
+  'return "Background type completed: " & targetApp & linefeed & "AXFRAME" & tab & targetFrame',
   'else',
   'perform action "AXPress" of targetElement',
   'if actionName is "doubleClick" then perform action "AXPress" of targetElement',
-  'return "Background " & actionName & " completed: " & targetApp',
+  'return "Background " & actionName & " completed: " & targetApp & linefeed & "AXFRAME" & tab & targetFrame',
   'end if',
   'end tell',
   'end tell',
@@ -288,6 +321,17 @@ const BACKGROUND_AX_ACTION_SCRIPT = [
   'return labels',
   'end tell',
   'end safeLabel',
+  'on safeFrame(theElement)',
+  'tell application "System Events"',
+  'try',
+  'set elementPosition to position of theElement',
+  'set elementSize to size of theElement',
+  'return (item 1 of elementPosition as text) & "," & (item 2 of elementPosition as text) & "," & (item 1 of elementSize as text) & "," & (item 2 of elementSize as text)',
+  'on error',
+  'return ""',
+  'end try',
+  'end tell',
+  'end safeFrame',
   'on roleMatches(elementRole, targetRole)',
   'if targetRole is "" then return true',
   'if elementRole is targetRole then return true',
@@ -356,7 +400,8 @@ const BACKGROUND_AX_ELEMENTS_SCRIPT = [
   'set elementLabel to my compactLabel(my safeLabel(theElement))',
   'if my isInterestingRole(elementRole) and elementLabel is not "" then',
   'set itemCount to itemCount + 1',
-  'set end of outputLines to (itemCount as text) & tab & elementRole & tab & elementLabel & tab & currentPath',
+  'set elementFrame to my safeFrame(theElement)',
+  'set end of outputLines to (itemCount as text) & tab & elementRole & tab & elementLabel & tab & currentPath & tab & elementFrame',
   'end if',
   'if currentDepth is greater than or equal to maxDepthLimit then return',
   'try',
@@ -419,6 +464,17 @@ const BACKGROUND_AX_ELEMENTS_SCRIPT = [
   'return labels',
   'end tell',
   'end safeLabel',
+  'on safeFrame(theElement)',
+  'tell application "System Events"',
+  'try',
+  'set elementPosition to position of theElement',
+  'set elementSize to size of theElement',
+  'return (item 1 of elementPosition as text) & "," & (item 2 of elementPosition as text) & "," & (item 1 of elementSize as text) & "," & (item 2 of elementSize as text)',
+  'on error',
+  'return ""',
+  'end try',
+  'end tell',
+  'end safeFrame',
   'on compactLabel(rawLabel)',
   'set cleaned to my replaceText(rawLabel, tab, " ")',
   'set cleaned to my replaceText(cleaned, linefeed, " ")',
@@ -446,8 +502,14 @@ function normalizeBackgroundAction(action: string): string {
 
 function normalizeBackgroundRole(role: string | undefined): string {
   if (!role) return '';
-  if (role === 'textfield') return 'textbox';
-  return role;
+  const compactRole = role.trim().replace(/^AX/i, '').toLowerCase();
+  if (compactRole === 'textfield' || compactRole === 'textarea' || compactRole === 'text') return 'textbox';
+  if (compactRole === 'checkbox') return 'checkbox';
+  if (compactRole === 'radiobutton') return 'radio';
+  if (compactRole === 'combobox') return 'combobox';
+  if (compactRole === 'popupbutton' || compactRole === 'menubutton') return 'button';
+  if (compactRole === 'menuitem') return 'menuitem';
+  return compactRole;
 }
 
 function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
@@ -463,16 +525,58 @@ function parseBackgroundElementLines(stdout: string): BackgroundAxElement[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [indexText, role = '', name = '', axPath = ''] = line.split('\t');
+      const [indexText, role = '', name = '', axPath = '', frameText = ''] = line.split('\t');
       const index = Number.parseInt(indexText, 10);
       return {
         index: Number.isFinite(index) ? index : 0,
         role: role.trim(),
         name: name.trim(),
         axPath: axPath.trim(),
+        frame: parseAxFrame(frameText),
       };
     })
     .filter((element) => element.index > 0 && element.role);
+}
+
+function parseBackgroundActionOutput(stdout: string, action: string, targetApp: string): {
+  output: string;
+  frame: BackgroundAxFrame | null;
+} {
+  const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  let frame: BackgroundAxFrame | null = null;
+  const outputLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('AXFRAME\t')) {
+      frame = parseAxFrame(line.slice('AXFRAME\t'.length));
+      continue;
+    }
+    outputLines.push(line);
+  }
+  return {
+    output: outputLines.join('\n') || `Background ${action} completed: ${targetApp}`,
+    frame,
+  };
+}
+
+function parseAxFrame(value: string): BackgroundAxFrame | null {
+  const [x, y, width, height] = value
+    .split(',')
+    .map((part) => Number.parseFloat(part.trim()));
+  if (
+    Number.isFinite(x)
+    && Number.isFinite(y)
+    && Number.isFinite(width)
+    && Number.isFinite(height)
+    && width >= 0
+    && height >= 0
+  ) {
+    return { x, y, width, height, coordSpace: 'screen' };
+  }
+  return null;
+}
+
+function formatAxFrame(frame: BackgroundAxFrame): string {
+  return `${Math.round(frame.x)},${Math.round(frame.y)},${Math.round(frame.width)}x${Math.round(frame.height)}`;
 }
 
 function assessAxTreeQuality(elements: BackgroundAxElement[], reachedLimit: boolean): ComputerSurfaceAxQuality {

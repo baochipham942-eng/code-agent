@@ -55,6 +55,17 @@ function getTrajectoryQualityToneClassName(tier: string): string {
   }
 }
 
+function getEvidenceControlToneClassName(trustLevel: string): string {
+  switch (trustLevel) {
+    case 'strong':
+      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300';
+    case 'partial':
+      return 'border-amber-500/25 bg-amber-500/10 text-amber-300';
+    default:
+      return 'border-rose-500/25 bg-rose-500/10 text-rose-300';
+  }
+}
+
 function formatTrajectoryQualityTitle(summary: SidebarDerivedSessions['trajectoryQualityBySessionId'][string]): string {
   const quality = summary.quality;
   const collection = summary.collection;
@@ -65,6 +76,36 @@ function formatTrajectoryQualityTitle(summary: SidebarDerivedSessions['trajector
     collection.taskKind,
     `${collection.datasetVersion} · ${collection.source}`,
     failures,
+  ].join('\n');
+}
+
+function sanitizeEvidenceControlText(value: string): string {
+  return value
+    .replace(/^data:[^\s]+/gi, '[redacted]')
+    .replace(/base64[,=][^\s]+/gi, 'base64,[redacted]')
+    .replace(
+      /(?:\/Users\/[^\s"'`]+|\/private\/tmp\/[^\s"'`]+|\/tmp\/[^\s"'`]+|\/var\/folders\/[^\s"'`]+|\/Volumes\/[^\s"'`]+)(?:\/[^\s"'`]*)*/g,
+      (match) => `.../${match.split('/').filter(Boolean).at(-1) || 'path'}`,
+    )
+    .replace(/\b(cookie|cookies|localStorage|sessionStorage|storageState)(\s*[:=]\s*)[^\s,;]+/gi, '$1$2[redacted]')
+    .replace(/([?&](?:token|password|secret|credential)=)[^&\s]+/gi, '$1[redacted]');
+}
+
+function formatEvidenceControlTitle(summary: SidebarDerivedSessions['trajectoryQualityBySessionId'][string]): string {
+  const evidence = summary.evidenceControl;
+  if (!evidence) return 'No Evidence Control summary';
+  const gaps = evidence.gaps.length > 0
+    ? evidence.gaps.slice(0, 8).map(sanitizeEvidenceControlText).join(' · ')
+    : 'no evidence gaps';
+  const conflicts = evidence.conflicts.length > 0
+    ? evidence.conflicts.slice(0, 5).map(sanitizeEvidenceControlText).join(' · ')
+    : 'no conflicts';
+  return [
+    `Evidence Control ${evidence.trustLevel}`,
+    `${evidence.totalItems} items · ${evidence.totalEvidenceRefs} refs`,
+    `blocked ${evidence.blockedItems} · stale ${evidence.staleItems} · conflicts ${evidence.conflictItems}`,
+    gaps,
+    conflicts,
   ].join('\n');
 }
 
@@ -194,6 +235,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const trajectoryQualitySummary = trajectoryQualityBySessionId[session.id];
   const trajectoryQuality = trajectoryQualitySummary?.quality;
   const trajectoryCollection = trajectoryQualitySummary?.collection;
+  const evidenceControl = trajectoryQualitySummary?.evidenceControl;
 
   return (
     <div
@@ -287,6 +329,14 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                 className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getTrajectoryQualityToneClassName(trajectoryQuality.tier)}`}
               >
                 {trajectoryQuality.tier} · {getTrajectoryDatasetLabel(trajectoryCollection.datasetRole)}
+              </span>
+            )}
+            {trajectoryQualitySummary && evidenceControl && (
+              <span
+                title={formatEvidenceControlTitle(trajectoryQualitySummary)}
+                className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getEvidenceControlToneClassName(evidenceControl.trustLevel)}`}
+              >
+                EV {evidenceControl.trustLevel}
               </span>
             )}
             {canOpenSessionAssets && (

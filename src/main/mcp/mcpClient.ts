@@ -34,6 +34,7 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
 import { gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
 import { recordCuaFailure } from './cuaFailureStats';
@@ -688,12 +689,36 @@ export class MCPClient extends EventEmitter {
       const blocked = await gateCuaToolCall(toolName, cuaSessionId);
       if (blocked) {
         void recordCuaFailure(toolName, cuaSessionId, blocked);
-        return { toolCallId, success: false, error: blocked };
+        return {
+          toolCallId,
+          success: false,
+          error: blocked,
+          metadata: {
+            agentPointerNativeCursor: buildCuaAgentCursorCapabilityForToolCall({
+              serverName,
+              toolName,
+              success: false,
+              error: 'cua_session_locked',
+            }),
+          },
+        };
       }
       const overBudget = gateCuaBudget(toolName, cuaSessionId);
       if (overBudget) {
         void recordCuaFailure(toolName, cuaSessionId, overBudget);
-        return { toolCallId, success: false, error: overBudget };
+        return {
+          toolCallId,
+          success: false,
+          error: overBudget,
+          metadata: {
+            agentPointerNativeCursor: buildCuaAgentCursorCapabilityForToolCall({
+              serverName,
+              toolName,
+              success: false,
+              error: 'cua_budget_exceeded',
+            }),
+          },
+        };
       }
     }
 
@@ -733,11 +758,25 @@ export class MCPClient extends EventEmitter {
     const startTime = Date.now();
 
     try {
-      const result = await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
+      let result = await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
         timeoutMs,
         abortSignal,
         sessionId,
       });
+      if (serverName === CUA_DRIVER_SERVER_NAME) {
+        result = {
+          ...result,
+          metadata: {
+            ...(result.metadata || {}),
+            agentPointerNativeCursor: buildCuaAgentCursorCapabilityForToolCall({
+              serverName,
+              toolName,
+              success: result.success,
+              error: result.error || null,
+            }),
+          },
+        };
+      }
       // cua-driver：观察 get_window_state/list_apps 等结果，喂本地 AX 树缓存，
       // 供后续 click/type_text 调用反查人话文案（§10）。纯增强，不影响结果。
       if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') {

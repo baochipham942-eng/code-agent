@@ -88,6 +88,8 @@ const CUA_READONLY_TOOLS = new Set<string>([
   'get_config',
   'get_recording_state',
   'get_agent_cursor_state',
+  'start_session',
+  'end_session',
   'screenshot', // 仅 --claude-code-computer-use-compat 模式存在；普通模式截图走 get_window_state
 ]);
 

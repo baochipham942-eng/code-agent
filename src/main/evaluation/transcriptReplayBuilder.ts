@@ -9,6 +9,11 @@ import { getDatabase } from '../services/core/databaseService';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import type { Message, ToolCall, ToolResult } from '../../shared/contract';
 import type { TurnQualitySummary } from '../../shared/contract/turnQuality';
+import {
+  buildAgentPointerTimeline,
+  extractAgentPointerEvent,
+} from '../../shared/utils/agentPointerEvidence';
+import { attachBrowserComputerProofTimeline } from '../../shared/utils/browserComputerProofTimeline';
 import type {
   ReplayBlock,
   ReplayMetricAvailability,
@@ -128,6 +133,8 @@ function buildTranscriptToolCallBlock(
   const result = toolCall.result || resultByCallId.get(toolCall.id);
   const args = toolCall.arguments || {};
   const category = normalizeToolCategory(toolCall.name);
+  const agentPointerTimeline = buildAgentPointerTimeline(result?.metadata);
+  const agentPointerEvent = extractAgentPointerEvent(result?.metadata);
   return {
     type: 'tool_call',
     content: toolCall.name,
@@ -139,6 +146,8 @@ function buildTranscriptToolCallBlock(
       argsSource: 'transcript',
       result: result ? getToolResultContent(result) || undefined : undefined,
       resultMetadata: result?.metadata,
+      agentPointerEvent,
+      agentPointerTimeline: agentPointerTimeline.length > 0 ? agentPointerTimeline : undefined,
       success: result?.success ?? true,
       successKnown: Boolean(result),
       duration: result?.duration ?? 0,
@@ -221,6 +230,8 @@ function toTranscriptReplayBlocks(
   for (const result of message.toolResults || []) {
     const matchingCall = callById.get(result.toolCallId);
     const args = matchingCall?.arguments || {};
+    const agentPointerTimeline = buildAgentPointerTimeline(result.metadata);
+    const agentPointerEvent = extractAgentPointerEvent(result.metadata);
     blocks.push({
       type: 'tool_result',
       content: getToolResultContent(result),
@@ -233,6 +244,8 @@ function toTranscriptReplayBlocks(
         argsSource: matchingCall ? 'transcript' : undefined,
         result: getToolResultContent(result) || undefined,
         resultMetadata: result.metadata,
+        agentPointerEvent,
+        agentPointerTimeline: agentPointerTimeline.length > 0 ? agentPointerTimeline : undefined,
         success: result.success,
         successKnown: true,
         duration: result.duration ?? 0,
@@ -390,5 +403,5 @@ export function buildTranscriptReplay(
       telemetryCompleteness: buildCompleteness(sessionId, turns, transcriptToolCallCount),
     },
   };
-  return attachSessionQualityScoring(replay);
+  return attachSessionQualityScoring(attachBrowserComputerProofTimeline(replay));
 }

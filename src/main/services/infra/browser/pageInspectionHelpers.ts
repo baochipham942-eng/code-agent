@@ -27,6 +27,21 @@ export async function getBrowserPageHtml(tab: BrowserTab): Promise<string> {
   return await tab.page.content();
 }
 
+export async function getBrowserElementBoundingBox(
+  tab: BrowserTab,
+  selector: string,
+): Promise<ElementInfo['rect'] | null> {
+  const box = await tab.page.locator(selector).first().boundingBox().catch(() => null);
+  return box
+    ? {
+      x: Math.round(box.x),
+      y: Math.round(box.y),
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+    }
+    : null;
+}
+
 export async function findBrowserElements(
   tab: BrowserTab,
   selector: string,

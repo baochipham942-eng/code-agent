@@ -18,6 +18,7 @@ import {
   sanitizeBrowserComputerToolResult,
   sanitizeLargeTextToolArguments,
 } from '../../../shared/utils/browserComputerRedaction';
+import { buildAgentPointerTimeline } from '../../../shared/utils/agentPointerEvidence';
 import * as fs from 'fs';
 
 const logger = createLogger('MessageConverter');
@@ -177,7 +178,18 @@ export function sanitizeToolResultForHistoryWithCall(
   if (!toolCall) {
     return sizeSanitized;
   }
-  return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, sizeSanitized);
+  const browserComputerSanitized = sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, sizeSanitized);
+  const pointerTimeline = buildAgentPointerTimeline(browserComputerSanitized.metadata);
+  if (pointerTimeline.length === 0) {
+    return browserComputerSanitized;
+  }
+  return {
+    ...browserComputerSanitized,
+    metadata: {
+      ...(browserComputerSanitized.metadata || {}),
+      agentPointerTimeline: pointerTimeline,
+    },
+  };
 }
 
 /**

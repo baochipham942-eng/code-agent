@@ -161,6 +161,19 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 3);
 
     expect(result).toBe('break');
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_gate',
+        data: expect.objectContaining({
+          gate: 1,
+          verificationStatus: 'not_run',
+          verificationCard: expect.objectContaining({
+            status: 'not_run',
+            requiredStatus: 'not_run',
+          }),
+        }),
+      }),
+    );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<goal-completed>'),
     );

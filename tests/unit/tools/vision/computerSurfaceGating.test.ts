@@ -733,6 +733,24 @@ describe('computer surface gating', () => {
       requiresForeground: false,
       targetApp: 'Finder',
     });
+    expect(result.metadata?.agentPointerEvent).toMatchObject({
+      surface: 'computer',
+      phase: 'click',
+      targetSource: 'axPath',
+      success: true,
+    });
+    expect(result.metadata?.workbenchTrace).toMatchObject({
+      agentPointerEvent: expect.objectContaining({
+        surface: 'computer',
+        phase: 'click',
+      }),
+    });
+    expect(result.metadata?.browserComputerProof).toMatchObject({
+      agentPointerEvent: expect.objectContaining({
+        surface: 'computer',
+        phase: 'click',
+      }),
+    });
   });
 
   it('routes approved background CGEvent clicks through the computer surface executor', async () => {

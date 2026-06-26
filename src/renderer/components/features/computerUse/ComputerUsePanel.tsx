@@ -35,6 +35,8 @@ import {
   type NativePermissionSnapshot,
   type NativePermissionStatus,
 } from '../../../services/nativeDesktop';
+import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
+import type { AgentPointerEvent } from '@shared/contract/desktop';
 import {
   buildComputerUseTargets,
   buildRecentComputerUseAction,
@@ -44,6 +46,7 @@ import {
   type ComputerUseTarget,
 } from '../../../utils/computerUseWorkbench';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
 
 type StatusTone = 'ready' | 'blocked' | 'warning' | 'neutral';
 
@@ -226,6 +229,7 @@ export const ComputerUsePanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [elementsLoading, setElementsLoading] = useState(false);
+  const livePointer = useLiveAgentPointer('computer');
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -410,6 +414,45 @@ export const ComputerUsePanel: React.FC = () => {
     ? elementsResult.metadata.axQuality as { grade?: string; elementCount?: number; reasons?: string[] }
     : surface?.axQuality || null;
   const metadataElementCount = extractMetadataNumber(elementsResult, 'elementCount');
+  const pointerPreview = useMemo<AgentPointerEvent>(() => {
+    if (livePointer.event) {
+      return livePointer.event;
+    }
+    if (actionSummary?.trace.agentPointerEvent) {
+      return actionSummary.trace.agentPointerEvent;
+    }
+    const preview = actionSummary?.preview;
+    const failed = Boolean(actionSummary?.trace.failureKind || surface?.failureKind);
+    const targetLabel = preview?.target
+      || selectedTargetApp
+      || surface?.targetApp
+      || observation?.snapshot?.appName
+      || frontmost?.appName
+      || 'current app';
+    return {
+      id: actionSummary?.trace.id || 'computer-surface-pointer-preview',
+      surface: 'computer',
+      tone: failed ? 'blocked' : 'computer',
+      phase: failed ? 'failed' : preview?.risk === 'read' ? 'read' : preview ? 'click' : 'preview',
+      coordSpace: 'surfacePreview',
+      point: { x: failed ? 52 : preview ? 44 : 38, y: failed ? 44 : 42, unit: 'percent' },
+      targetLabel,
+      targetSource: 'fallback',
+      traceId: actionSummary?.trace.id || null,
+      success: failed ? false : preview ? true : null,
+    };
+  }, [
+    actionSummary?.preview,
+    actionSummary?.trace.failureKind,
+    actionSummary?.trace.agentPointerEvent,
+    actionSummary?.trace.id,
+    frontmost?.appName,
+    livePointer.event,
+    observation?.snapshot?.appName,
+    selectedTargetApp,
+    surface?.failureKind,
+    surface?.targetApp,
+  ]);
 
   return (
     <FullScreenPage testId="computer-use-panel">
@@ -747,6 +790,13 @@ export const ComputerUsePanel: React.FC = () => {
                     </div>
                   )}
                 </section>
+
+                <AgentPointerPreviewCard
+                  event={pointerPreview}
+                  title="Agent pointer"
+                  detail="Desktop actions use the same visible pointer in trace rows, screenshots, and this Surface panel."
+                />
+                <AgentPointerTimelineList entries={livePointer.timeline} />
 
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">

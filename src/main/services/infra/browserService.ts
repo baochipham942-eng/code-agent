@@ -7,9 +7,8 @@
 import type { Browser, BrowserContext, Page, Route } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, type ChildProcess } from 'child_process';
+import { type ChildProcess } from 'child_process';
 import { app, broadcastToRenderer } from '../../platform';
-import { loadPlaywright } from '../../runtime/playwrightRuntime';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import type {
@@ -22,10 +21,7 @@ import type {
 } from '../../../shared/contract/desktop';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import {
-  buildSystemChromeCdpArgs,
-  findAvailablePort,
   resolveBrowserProvider,
-  resolveCdpEndpointUrl,
   type BrowserProviderResolution,
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
@@ -58,10 +54,16 @@ import {
   validateBrowserWorkbenchUrl,
 } from './browser/browserUrlPolicy';
 import { buildBrowserDomSnapshot } from './browser/domSnapshotBuilder';
+import {
+  getPlaywrightProxyOptions,
+  launchPlaywrightBundledBrowser,
+  launchSystemChromeCdpBrowser,
+} from './browser/browserLaunchHelpers';
 import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseController';
 import {
   findBrowserElementByText,
   findBrowserElements,
+  getBrowserElementBoundingBox,
   getBrowserPageContent,
   getBrowserPageHtml,
 } from './browser/pageInspectionHelpers';
@@ -70,7 +72,6 @@ import {
   BROWSER_TARGET_REF_TTL_MS,
   MANAGED_BROWSER_ARTIFACT_DIR,
   MANAGED_BROWSER_ARTIFACT_ROOT_DIR,
-  buildBrowserEnvironment,
   getDefaultUserAgent,
   getManagedBrowserProxyFingerprint,
   parseHostList,
@@ -107,20 +108,6 @@ export {
   resolveManagedBrowserWorkspaceScope,
   shouldCleanupManagedBrowserProfile,
 } from './browser/managedBrowserHelpers';
-
-// Lazy-load playwright to avoid hard dependency at module load time
-// (e.g., when bundled for test runner where playwright is not installed)
-let _playwright: typeof import('playwright') | null = null;
-async function getPlaywright() {
-  if (!_playwright) {
-    const loaded = await loadPlaywright();
-    if (!loaded.ok || !loaded.module) {
-      throw new Error(loaded.error || 'Playwright package is unavailable in this runtime.');
-    }
-    _playwright = loaded.module;
-  }
-  return _playwright;
-}
 
 type ManagedBrowserSessionChangeReason =
   | 'launch'
@@ -525,6 +512,10 @@ export class BrowserService implements Disposable {
     await tab.page.click(selector);
   }
 
+  async getElementBoundingBox(selector: string, tabId?: string): Promise<ElementInfo['rect'] | null> {
+    return getBrowserElementBoundingBox(this.getTab(tabId), selector);
+  }
+
   async clickTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {
     const resolved = await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
     const tab = this.getTab(resolved.targetRef.tabId);
@@ -722,7 +713,7 @@ export class BrowserService implements Disposable {
       viewport,
       acceptDownloads: false,
       ignoreHTTPSErrors: false,
-      proxy: this.getPlaywrightProxyOptions(),
+      proxy: getPlaywrightProxyOptions(this.proxyConfig),
       userAgent: getDefaultUserAgent(),
     });
 
@@ -884,67 +875,49 @@ export class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   private async launchSystemChromeCdp(resolution: BrowserProviderResolution): Promise<void> {
-    const executable = resolution.systemExecutable;
-    if (resolution.missingExecutable || !executable) {
-      throw new Error(resolution.recommendedAction || 'System Chrome executable is missing');
-    }
-
-    const cdpPort = await findAvailablePort();
-    this.updateProviderDiagnostics(resolution, { executable, cdpPort });
-    const chromeArgs = buildSystemChromeCdpArgs({
-      cdpPort,
+    this.updateProviderDiagnostics(resolution, {
+      executable: resolution.systemExecutable,
+      cdpPort: null,
+    });
+    const launched = await launchSystemChromeCdpBrowser({
+      resolution,
       profileDir: this.profileDir,
-      headless: this.mode === 'headless',
+      mode: this.mode,
       viewport: this.viewport,
       proxy: this.proxyConfig,
+      logger: this.logger,
+      onProcessStart: (chromeProcess) => {
+        this.browserProcess = chromeProcess;
+      },
+      onProcessExit: (chromeProcess, code, signal) => {
+        if (this.browserProcess === chromeProcess) {
+          this.logger.log('WARN', `System Chrome exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
+          this.cleanupCrashedBrowserProcess();
+        }
+      },
     });
-
-    const chromeProcess = spawn(executable, chromeArgs, {
-      env: buildBrowserEnvironment(),
-      stdio: ['ignore', 'ignore', 'pipe'],
+    this.browser = launched.browser;
+    this.context = launched.context;
+    this.updateProviderDiagnostics(resolution, {
+      executable: launched.executable,
+      cdpPort: launched.cdpPort,
     });
-    this.browserProcess = chromeProcess;
-    chromeProcess.stderr?.on('data', (chunk) => {
-      const message = String(chunk).trim();
-      if (message) {
-        this.logger.log('DEBUG', `[System Chrome] ${message.slice(0, 500)}`);
-      }
-    });
-    chromeProcess.once('exit', (code, signal) => {
-      if (this.browserProcess === chromeProcess) {
-        this.logger.log('WARN', `System Chrome exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
-        this.cleanupCrashedBrowserProcess();
-      }
-    });
-
-    await Promise.race([
-      this.waitForCdpEndpoint(cdpPort, chromeProcess),
-      new Promise<never>((_, reject) => {
-        chromeProcess.once('error', reject);
-      }),
-    ]);
-
-    const pw = await getPlaywright();
-    this.browser = await pw.chromium.connectOverCDP(await resolveCdpEndpointUrl(cdpPort));
-    this.context = this.browser.contexts()[0] || await this.browser.newContext({
-      viewport: this.viewport,
-      acceptDownloads: true,
-      ignoreHTTPSErrors: false,
-      proxy: this.getPlaywrightProxyOptions(),
-      userAgent: getDefaultUserAgent(),
-    });
-    this.updateProviderDiagnostics(resolution, { executable, cdpPort });
   }
 
   private async launchPlaywrightBundled(
     resolution: BrowserProviderResolution,
     fallbackReason: string | null = null,
   ): Promise<void> {
-    const pw = await getPlaywright();
-    const executable = typeof pw.chromium.executablePath === 'function'
-      ? pw.chromium.executablePath()
-      : null;
-    const playwrightExecutableMissing = !executable || !fs.existsSync(executable);
+    const launched = await launchPlaywrightBundledBrowser({
+      resolution,
+      fallbackReason,
+      profileDir: this.profileDir,
+      downloadDir: this.downloadDir,
+      mode: this.mode,
+      viewport: this.viewport,
+      proxy: this.proxyConfig,
+      logger: this.logger,
+    });
     this.updateProviderDiagnostics(
       {
         ...resolution,
@@ -952,34 +925,14 @@ export class BrowserService implements Disposable {
         providerFallbackReason: fallbackReason,
       },
       {
-        executable,
+        executable: launched.executable,
         cdpPort: null,
-        missingExecutable: resolution.missingExecutable || playwrightExecutableMissing,
-        recommendedAction: playwrightExecutableMissing
-          ? 'Run npx playwright install chromium to enable the bundled fallback, or use CODE_AGENT_BROWSER_PROVIDER=system-chrome-cdp with a valid Chrome executable.'
-          : resolution.recommendedAction,
+        missingExecutable: resolution.missingExecutable || launched.missingExecutable,
+        recommendedAction: launched.recommendedAction,
       },
     );
-    this.context = await pw.chromium.launchPersistentContext(this.profileDir, {
-      headless: this.mode === 'headless',
-      viewport: this.viewport,
-      acceptDownloads: true,
-      downloadsPath: this.downloadDir,
-      ignoreHTTPSErrors: false,
-      proxy: this.getPlaywrightProxyOptions(),
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--no-first-run',
-        '--no-default-browser-check',
-      ],
-      env: buildBrowserEnvironment(),
-      userAgent: getDefaultUserAgent(),
-    });
-    this.browser = this.context.browser();
+    this.context = launched.context;
+    this.browser = launched.browser;
   }
 
   private async installContextGuards(): Promise<void> {
@@ -995,26 +948,6 @@ export class BrowserService implements Disposable {
       }
       await route.continue();
     });
-  }
-
-  private async waitForCdpEndpoint(port: number, chromeProcess: ChildProcess): Promise<void> {
-    const startedAt = Date.now();
-    const endpoint = `http://127.0.0.1:${port}/json/version`;
-    while (Date.now() - startedAt < 10000) {
-      if (chromeProcess.exitCode !== null || chromeProcess.signalCode !== null) {
-        throw new Error(`System Chrome exited before CDP became ready (code=${chromeProcess.exitCode ?? 'null'}, signal=${chromeProcess.signalCode ?? 'null'})`);
-      }
-      try {
-        const response = await fetch(endpoint);
-        if (response.ok) {
-          return;
-        }
-      } catch {
-        // Chrome opens the debugging endpoint a moment after the process starts.
-      }
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
-    throw new Error(`Timed out waiting for Chrome CDP endpoint on port ${port}`);
   }
 
   private async cleanupFailedSystemChromeLaunch(args: { cleanupProfile: boolean }): Promise<void> {
@@ -1138,16 +1071,6 @@ export class BrowserService implements Disposable {
     this.activeTabId = null;
     this.leaseController.markExpired();
     this.emitSessionChanged('crashed');
-  }
-
-  private getPlaywrightProxyOptions(): { server: string; bypass?: string } | undefined {
-    if (!this.proxyConfig.server || this.proxyConfig.mode === 'direct') {
-      return undefined;
-    }
-    return {
-      server: this.proxyConfig.server,
-      bypass: this.proxyConfig.bypass.length > 0 ? this.proxyConfig.bypass.join(',') : undefined,
-    };
   }
 
   private emitSessionChanged(reason: ManagedBrowserSessionChangeReason): void {

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { TelemetryCompleteness } from '../../shared/contract/evaluation';
+import type { AgentPointerEvent } from '../../shared/contract/desktop';
 
 /**
  * Test case types
@@ -555,6 +556,8 @@ export interface TrajectoryStep {
     result?: string;
     success: boolean;
     duration: number;
+    agentPointerEvent?: AgentPointerEvent | null;
+    agentPointerTimeline?: AgentPointerEvent[];
   };
   decision?: { reasoning: string; chosenAction: string };
   error?: { message: string; code?: string; recoverable: boolean };

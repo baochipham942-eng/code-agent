@@ -6,7 +6,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Target, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Target, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { parseGoalNotice, type GoalNoticePayload } from '../goalNotice';
 
 export interface GoalNoticeMessageProps {
@@ -32,6 +32,35 @@ function MetaLine({ notice }: { notice: GoalNoticePayload }) {
   if (notice.tokensUsed != null) parts.push(`${notice.tokensUsed.toLocaleString()} token`);
   if (parts.length === 0) return null;
   return <span className="text-[11px] text-zinc-500">{parts.join(' · ')}</span>;
+}
+
+function VerificationCardLine({ notice }: { notice: GoalNoticePayload }) {
+  const card = notice.verificationCard;
+  if (!card) return null;
+  const parts = [
+    `pass ${card.counts.passed}`,
+    `fail ${card.counts.failed}`,
+    `not_run ${card.counts.notRun}`,
+    `required ${card.requiredStatus}`,
+  ];
+  const tone = card.status === 'passed'
+    ? 'text-emerald-300/90'
+    : card.status === 'failed'
+      ? 'text-rose-300/90'
+      : 'text-zinc-400';
+  const refs = card.evidenceRefIds.length > 0
+    ? `refs ${card.evidenceRefIds.slice(0, 3).join(', ')}${card.evidenceRefIds.length > 3 ? ` +${card.evidenceRefIds.length - 3}` : ''}`
+    : null;
+  return (
+    <div className="mt-1 flex flex-col gap-0.5 pl-6 text-[11px]">
+      <div className="flex items-center gap-1.5">
+        <ShieldCheck className={`h-3.5 w-3.5 ${tone}`} />
+        <span className={tone}>{parts.join(' · ')}</span>
+      </div>
+      <div className="text-zinc-500">{card.summary}</div>
+      {refs && <div className="text-zinc-500">{refs}</div>}
+    </div>
+  );
 }
 
 export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content }) => {
@@ -61,6 +90,7 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
         <div className="pl-6">
           <MetaLine notice={notice} />
         </div>
+        <VerificationCardLine notice={notice} />
       </div>
     );
   }
@@ -78,6 +108,7 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
       <div className="pl-6">
         <MetaLine notice={notice} />
       </div>
+      <VerificationCardLine notice={notice} />
     </div>
   );
 };

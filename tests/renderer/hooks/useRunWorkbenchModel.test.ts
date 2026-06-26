@@ -149,6 +149,40 @@ describe('buildLedgerTaskRecords', () => {
       }),
     ], null)).toEqual([]);
   });
+
+  it('uses durable recovery plan summaries as resume hints', () => {
+    const tasks = buildLedgerTaskRecords([
+      makeLedgerTask({
+        id: 'shell:dev-server',
+        sessionId: 'session-1',
+        title: 'npm run dev',
+        status: 'orphaned',
+        failure: {
+          message: 'Task process was not recovered after restart; log is available only',
+          category: 'dead_log_only',
+        },
+        metadata: {
+          recoveryPlan: {
+            status: 'dead-log-only',
+            summary: '应用重启后没有找到运行进程，保留日志，可打开日志后重跑。',
+            recommendedActions: ['open_log', 'retry'],
+          },
+        },
+        outputRefs: [{
+          id: 'shell:dev-server:log',
+          taskId: 'shell:dev-server',
+          type: 'log',
+          path: '/tmp/dev.log',
+          createdAt: 10,
+        }],
+      }),
+    ], 'session-1');
+
+    expect(tasks[0]).toMatchObject({
+      status: 'blocked',
+      resumeHint: '应用重启后没有找到运行进程，保留日志，可打开日志后重跑。',
+    });
+  });
 });
 
 describe('buildWorkflowTaskRecord', () => {

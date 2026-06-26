@@ -58,6 +58,7 @@ import {
   captureComputerSurfaceAppScreenshot,
   captureComputerSurfaceScreenshot,
 } from './computerSurfaceScreenshots';
+import { buildAgentPointerEventFromToolCall } from '../../../shared/utils/agentPointer';
 
 export interface ComputerSurfacePermissionContext {
   sessionId?: string;
@@ -811,6 +812,7 @@ class DesktopComputerSurface {
       recommendedAction?: string | null;
       evidenceSummary?: string[];
       axQuality?: ComputerSurfaceAxQuality | null;
+      resultMetadata?: Record<string, unknown>;
     },
   ): Promise<WorkbenchActionTrace> {
     const targetApp = typeof trace.params?.targetApp === 'string' ? trace.params.targetApp : undefined;
@@ -844,8 +846,30 @@ class DesktopComputerSurface {
       evidenceSummary,
       axQuality: args.axQuality ?? trace.axQuality ?? null,
     };
-    this.lastAction = completed;
-    return completed;
+    const agentPointerEvent = buildAgentPointerEventFromToolCall({
+      id: completed.id,
+      name: completed.toolName || 'computer_use',
+      arguments: {
+        action: completed.action,
+        ...(completed.params || {}),
+      },
+      result: {
+        success: args.success,
+        error: args.error || undefined,
+        metadata: {
+          ...(args.resultMetadata || {}),
+          traceId: completed.id,
+          workbenchTrace: completed,
+          targetApp: targetApp || completed.before?.appName || after.appName || null,
+        },
+      },
+    });
+    const completedWithPointer: WorkbenchActionTrace = {
+      ...completed,
+      agentPointerEvent,
+    };
+    this.lastAction = completedWithPointer;
+    return completedWithPointer;
   }
 
   getState(overrides: {

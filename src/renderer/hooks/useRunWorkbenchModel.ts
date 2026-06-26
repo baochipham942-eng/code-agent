@@ -244,6 +244,11 @@ function buildTaskOutputRefs(task: Task): TaskRecordOutputRef[] {
   return refs.slice(0, 4);
 }
 
+function recordFromMetadata(metadata: Task['metadata'] | undefined, key: string): Record<string, unknown> | null {
+  const value = metadata?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 function formatOutputRefStep(ref: TaskRecordOutputRef): string {
   const name = lastPathSegment(ref.pathOrUrl) || ref.label;
   const label = ref.label || outputRefTypeLabel(ref.type);
@@ -251,6 +256,10 @@ function formatOutputRefStep(ref: TaskRecordOutputRef): string {
 }
 
 function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[]): string | undefined {
+  const recoveryPlan = recordFromMetadata(task.metadata, 'recoveryPlan');
+  const recoverySummary = typeof recoveryPlan?.summary === 'string' ? recoveryPlan.summary : null;
+  if (recoverySummary) return recoverySummary;
+
   if (task.failure?.message) return task.failure.message;
   if (task.status === 'stalled' && task.progress?.label) return task.progress.label;
 

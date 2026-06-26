@@ -9,15 +9,18 @@ import {
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  AgentPointerEvent,
   ManagedBrowserAccountStateSummary,
   ManagedBrowserExternalBridgeState,
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSession';
+import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
 import { buildBrowserWorkbenchStatusRows } from '../../../utils/workbenchPresentation';
 import ipcService from '../../../services/ipcService';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
 
 interface BrowserSurfacePanelProps {
   onClose: () => void;
@@ -66,6 +69,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const livePointer = useLiveAgentPointer('browser');
 
   const managedRows = useMemo(
     () => buildBrowserWorkbenchStatusRows({ mode: 'managed', browserSession }),
@@ -158,6 +162,23 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   const isBusy = (action: BusyAction) => busyAction === action;
   const bridgeReady = bridge?.status === 'connected';
   const browserReady = browserSession.managedSession.running;
+  const lastTracePointer = browserSession.managedSession.lastTrace?.agentPointerEvent || null;
+  const pointerPreview = useMemo<AgentPointerEvent>(() => ({
+    ...(livePointer.event || lastTracePointer || {
+    id: 'browser-surface-pointer-preview',
+    surface: 'browser',
+    tone: browserReady ? 'browser' : 'idle',
+    phase: browserReady ? 'click' : 'preview',
+    coordSpace: 'surfacePreview',
+    point: { x: browserReady ? 38 : 34, y: browserReady ? 42 : 38, unit: 'percent' },
+    targetLabel: browserReady
+      ? browserSession.managedSession.activeTab?.title || browserSession.managedSession.activeTab?.url || 'active tab'
+      : 'launch browser',
+    targetSource: 'fallback',
+    traceId: browserSession.managedSession.lastTrace?.id || null,
+    success: browserReady,
+    }),
+  }), [browserReady, browserSession.managedSession.activeTab?.title, browserSession.managedSession.activeTab?.url, browserSession.managedSession.lastTrace?.id, lastTracePointer, livePointer.event]);
 
   return (
     <FullScreenPage testId="browser-surface-panel">
@@ -271,6 +292,17 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
                 <BrowserActionButton busy={isBusy('stopRelay')} disabled={Boolean(busyAction) || bridge?.status === 'stopped'} onClick={handleStopRelay}>
                   停止
                 </BrowserActionButton>
+              </div>
+            </section>
+
+            <section className="lg:col-span-2">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <AgentPointerPreviewCard
+                  event={pointerPreview}
+                  title="Agent pointer"
+                  detail="Browser actions use the same visible pointer in trace rows and screenshot previews."
+                />
+                <AgentPointerTimelineList entries={livePointer.timeline} />
               </div>
             </section>
           </div>

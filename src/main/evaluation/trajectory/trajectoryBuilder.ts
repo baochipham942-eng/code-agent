@@ -10,6 +10,10 @@ import type {
   TestResult,
   TestCase,
 } from '../../testing/types';
+import {
+  buildAgentPointerTimeline,
+  extractAgentPointerEvent,
+} from '../../../shared/utils/agentPointerEvidence';
 
 /**
  * Raw event input shape (matches StoredEvent fields relevant to building)
@@ -168,6 +172,8 @@ export class TrajectoryBuilder {
           const toolCallId = data.toolCallId != null ? String(data.toolCallId) : undefined;
           const toolName = String(data.tool ?? data.name ?? 'unknown');
           const resultPayload = data.result ?? data.output;
+          const agentPointerEvent = extractAgentPointerEvent(data);
+          const agentPointerTimeline = buildAgentPointerTimeline(data);
 
           // Prefer id-based pairing when available.
           let pendingStepIndex: number | undefined;
@@ -188,6 +194,12 @@ export class TrajectoryBuilder {
               if (resultPayload != null) {
                 step.toolCall.result = String(resultPayload).slice(0, 2000);
               }
+              if (agentPointerEvent) {
+                step.toolCall.agentPointerEvent = agentPointerEvent;
+              }
+              if (agentPointerTimeline.length > 0) {
+                step.toolCall.agentPointerTimeline = agentPointerTimeline;
+              }
             }
           } else {
             // Orphan result – create a standalone step.
@@ -201,6 +213,8 @@ export class TrajectoryBuilder {
                 success: data.success !== false && !data.error,
                 duration: typeof data.duration === 'number' ? data.duration : 0,
                 result: resultPayload != null ? String(resultPayload).slice(0, 2000) : undefined,
+                agentPointerEvent,
+                agentPointerTimeline: agentPointerTimeline.length > 0 ? agentPointerTimeline : undefined,
               },
             };
             steps.push(step);

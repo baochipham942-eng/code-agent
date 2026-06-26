@@ -1,5 +1,7 @@
 import {
   getReplayCompletenessReasons,
+  type BrowserComputerProofTimelineEntry,
+  type EvidenceControlSummaryProjection,
   type ReplayBlock,
   type ReplayModelDecision,
   RealAgentRunGateFailure,
@@ -8,6 +10,7 @@ import {
   ReplayToolCategory,
   type StructuredReplay,
 } from './evaluation';
+import type { AgentPointerEvent } from './desktop';
 import type { UnifiedTraceIdentity } from './reviewQueue';
 
 export type AgentTrajectorySchemaVersion = 1;
@@ -108,6 +111,7 @@ export interface AgentTrajectorySessionQualitySummary {
   traceIdentity?: UnifiedTraceIdentity;
   quality: AgentTrajectoryQualityGate;
   collection: AgentTrajectoryCollectionMetadata;
+  evidenceControl?: EvidenceControlSummaryProjection;
 }
 
 function unique<T>(values: T[]): T[] {
@@ -553,6 +557,7 @@ export interface AgentTrajectoryStep {
     argsSource?: string;
     hasDefinition: boolean;
     parallel?: boolean;
+    agentPointerEvent?: AgentPointerEvent | null;
   };
   toolResult?: {
     toolCallId: string;
@@ -561,6 +566,8 @@ export interface AgentTrajectoryStep {
     result: string;
     durationMs: number;
     pendingCloseout: boolean;
+    agentPointerEvent?: AgentPointerEvent | null;
+    agentPointerTimeline?: AgentPointerEvent[];
   };
   event?: {
     eventType: string;
@@ -590,6 +597,9 @@ export interface AgentTrajectory {
     toolDistribution: Record<ReplayToolCategory, number>;
     models: Array<{ provider: string; model: string; count: number }>;
     finalAnswer?: string;
+    browserComputerProofCount?: number;
+    browserComputerProofTimeline?: BrowserComputerProofTimelineEntry[];
+    evidenceControl?: EvidenceControlSummaryProjection;
   };
   toolDefinitions: AgentTrajectoryToolDefinition[];
   steps: AgentTrajectoryStep[];

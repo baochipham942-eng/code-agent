@@ -112,6 +112,11 @@ describe('backgroundTaskSnapshotAdapters', () => {
       metadata: expect.objectContaining({
         createdBy: 'neo',
         recoveryStatus: 'running-live',
+        recoveryPlan: expect.objectContaining({
+          status: 'running-live',
+          recoverable: true,
+          controlActions: ['poll', 'open_log', 'kill'],
+        }),
       }),
     });
     expect(ptyTask?.outputRefs).toEqual([
@@ -250,12 +255,26 @@ describe('backgroundTaskSnapshotAdapters', () => {
 
       expect(store.loadTerminalTask('shell:live')).toMatchObject({
         status: 'running',
-        metadata: expect.objectContaining({ recoveryStatus: 'running-recovered' }),
+        metadata: expect.objectContaining({
+          recoveryStatus: 'running-recovered',
+          recoveryPlan: expect.objectContaining({
+            status: 'running-recovered',
+            recoverable: true,
+            controlActions: ['poll', 'open_log', 'kill'],
+          }),
+        }),
       });
       expect(store.loadTerminalTask('shell:dead')).toMatchObject({
         status: 'orphaned',
         failure: expect.objectContaining({ category: 'dead_log_only' }),
-        metadata: expect.objectContaining({ recoveryStatus: 'dead-log-only' }),
+        metadata: expect.objectContaining({
+          recoveryStatus: 'dead-log-only',
+          recoveryPlan: expect.objectContaining({
+            status: 'dead-log-only',
+            recoverable: false,
+            controlActions: ['open_log', 'retry'],
+          }),
+        }),
       });
     } finally {
       db.close();

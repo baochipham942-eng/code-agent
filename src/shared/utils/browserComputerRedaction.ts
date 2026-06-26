@@ -1,4 +1,7 @@
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef, type EvidenceState, type RedactionStatus } from "../contract/evidence";
+import type { AgentPointerEvent } from "../contract/desktop";
+
+export { sanitizeLargeTextToolArguments } from './browserComputerLargeTextRedaction';
 
 const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
 const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
@@ -60,6 +63,7 @@ export interface BrowserComputerProof {
   approval?: Record<string, unknown> | null;
   manualTakeover?: BrowserComputerManualTakeover | null;
   visualObservation?: BrowserComputerVisualObservation;
+  agentPointerEvent?: AgentPointerEvent | null;
 }
 
 export interface BrowserComputerEvidenceCard {
@@ -86,6 +90,7 @@ export interface BuildBrowserComputerProofInput {
   manualTakeoverText?: string | null;
   manualTakeoverResumeRequires?: string[];
   visualObservation?: BrowserComputerVisualObservation;
+  agentPointerEvent?: AgentPointerEvent | null;
   capturedAtMs?: number;
 }
 
@@ -160,6 +165,7 @@ export function buildBrowserComputerProof(input: BuildBrowserComputerProofInput)
     approval: input.approval ?? null,
     manualTakeover: buildManualTakeover(input.manualTakeoverText, input.manualTakeoverResumeRequires),
     visualObservation: input.visualObservation,
+    agentPointerEvent: input.agentPointerEvent ?? null,
   };
 }
 
@@ -316,6 +322,7 @@ export function attachBrowserActionProof<T extends BrowserComputerResultLike>(
       "browser_action.get_account_state",
     ],
     visualObservation: inferBrowserActionVisualObservation(result),
+    agentPointerEvent: metadata.agentPointerEvent as AgentPointerEvent | null | undefined,
   });
   return {
     ...result,
@@ -703,6 +710,12 @@ function sanitizeWorkbenchTrace(
         ? redactBrowserComputerInputPayloadsInValue(toolName, args, value.error)
         : (value.error ?? null),
     screenshotPath: value.screenshotPath ?? null,
+    agentPointerEvent: sanitizeBrowserComputerMetadataValue(
+      toolName,
+      args,
+      value.agentPointerEvent,
+      "agentPointerEvent",
+    ),
     consoleErrors: Array.isArray(value.consoleErrors)
       ? value.consoleErrors.map((item) =>
           sanitizePotentiallySensitiveArgs(toolName, args, item),
@@ -996,81 +1009,4 @@ export function redactBrowserComputerInputPayloadsInValue(
     );
   }
   return value;
-}
-
-const LARGE_TEXT_TOOL_NAMES = new Set([
-  'Edit',
-  'edit_file',
-  'Write',
-  'write_file',
-  'Append',
-]);
-
-function summarizeLargeText(value: string, head = 160, tail = 80): string {
-  if (value.length <= head + tail + 32) {
-    return value;
-  }
-  const omitted = value.length - head - tail;
-  return `${value.slice(0, head)}...[${omitted} chars omitted]...${value.slice(-tail)}`;
-}
-
-
-function summarizeEditEntries(edits: unknown): unknown {
-  if (!Array.isArray(edits)) {
-    return edits;
-  }
-  return edits.map((edit) => {
-    if (!isRecord(edit)) {
-      return edit;
-    }
-    const summarized: Record<string, unknown> = { ...edit };
-    if (typeof edit.old_text === 'string') {
-      summarized.old_text = summarizeLargeText(edit.old_text);
-      summarized.old_text_length = edit.old_text.length;
-    }
-    if (typeof edit.new_text === 'string') {
-      summarized.new_text = summarizeLargeText(edit.new_text);
-      summarized.new_text_length = edit.new_text.length;
-    }
-    return summarized;
-  });
-}
-
-export function sanitizeLargeTextToolArguments(
-  toolName: string,
-  args: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  if (!args || !LARGE_TEXT_TOOL_NAMES.has(toolName)) {
-    return args;
-  }
-
-  const safeArgs: Record<string, unknown> = { ...args };
-
-  if (typeof args.content === 'string') {
-    const summarized = summarizeLargeText(args.content);
-    safeArgs.content = summarized;
-    safeArgs.content_length = args.content.length;
-    // 只有当 content 真被截断成片段时，UI 才无法从 args.content 算出真实行数
-    // （会显示 12 而非几百行）。此时留下权威总行数，供工具卡片 / TurnDiffSummary
-    // 展示。未截断的小文件不设此字段，沿用原有逐行计算，行为不变。
-    if (summarized !== args.content) {
-      safeArgs.content_lines = args.content.split('\n').length;
-    }
-  }
-
-  if (Array.isArray(args.edits)) {
-    safeArgs.edits = summarizeEditEntries(args.edits);
-  }
-
-  if (typeof args.old_text === 'string') {
-    safeArgs.old_text = summarizeLargeText(args.old_text);
-    safeArgs.old_text_length = args.old_text.length;
-  }
-
-  if (typeof args.new_text === 'string') {
-    safeArgs.new_text = summarizeLargeText(args.new_text);
-    safeArgs.new_text_length = args.new_text.length;
-  }
-
-  return safeArgs;
 }

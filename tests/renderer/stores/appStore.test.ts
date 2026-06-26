@@ -19,6 +19,7 @@ describe('appStore', () => {
       showKnowledgeMemoryPanel: false,
       optionalUpdateInfo: null,
       showOptionalUpdateModal: false,
+      goalRuns: {},
     });
   });
 
@@ -52,6 +53,30 @@ describe('appStore', () => {
     s.finishGoalRun('sess-pause-2', 'met');
     s.setGoalPaused('sess-pause-2', true);
     expect(useAppStore.getState().goalRuns['sess-pause-2']?.status).toBe('met');
+  });
+
+  it('keeps goal gate history with verification cards', () => {
+    const s = useAppStore.getState();
+    s.startGoalRun('sess-verification-card', { goal: '验证目标' });
+    s.recordGoalGate('sess-verification-card', {
+      gate: 1,
+      pass: false,
+      verificationCard: {
+        status: 'failed',
+        failureType: 'test',
+        summary: 'test failed',
+        counts: { passed: 1, failed: 1, notRun: 0, total: 2 },
+        requiredStatus: 'failed',
+        commands: [],
+        evidenceRefIds: ['evidence_test'],
+        skippedChecks: [],
+      },
+    });
+
+    const run = useAppStore.getState().goalRuns['sess-verification-card'];
+    expect(run?.lastGate?.verificationCard?.status).toBe('failed');
+    expect(run?.gates).toHaveLength(1);
+    expect(run?.gates[0]?.verificationCard?.evidenceRefIds).toEqual(['evidence_test']);
   });
 
   it('opens memory settings with an optional detail focus', () => {

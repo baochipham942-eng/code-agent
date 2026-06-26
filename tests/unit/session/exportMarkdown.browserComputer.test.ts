@@ -139,4 +139,128 @@ describe('exportSessionToMarkdown Browser/Computer redaction', () => {
     expect(result.markdown).not.toContain('/Users/linchen');
     expect(result.markdown).not.toContain('base64,abcdef');
   });
+
+  it('exports sanitized Browser/Computer pointer timeline lines', () => {
+    const result = exportSessionToMarkdown({
+      sessionId: 'session-1',
+      startedAt: 1,
+      lastActivityAt: 2,
+      totalTokens: 0,
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'Pointer test',
+        timestamp: 1,
+        metadata: {
+          toolExecution: {
+            tool: 'computer_use',
+            input: {
+              action: 'type',
+              targetApp: 'Notes',
+              text: 'secret@example.com',
+            },
+            metadata: {
+              agentPointerTimeline: [{
+                id: 'pointer-export',
+                surface: 'computer',
+                tone: 'computer',
+                phase: 'type',
+                coordSpace: 'windowLocal',
+                point: { x: 40, y: 24, unit: 'px' },
+                targetLabel: 'secret@example.com',
+                targetSource: 'axPath',
+                traceId: 'trace-export',
+                success: true,
+                occurredAtMs: 1,
+              }, {
+                id: 'pointer-export-scroll',
+                surface: 'browser',
+                tone: 'browser',
+                phase: 'scroll',
+                coordSpace: 'browserViewport',
+                point: { x: 30, y: 70, unit: 'px' },
+                targetLabel: 'cookie=session-secret data:image/png;base64,abcdef',
+                targetSource: 'selector',
+                traceId: 'trace-export',
+                success: true,
+                occurredAtMs: 2,
+              }],
+            },
+            output: 'Typed secret@example.com',
+          },
+        },
+      }],
+    }, {
+      includeToolDetails: true,
+      includeMetadata: false,
+      includeTimestamps: false,
+      guardSensitiveData: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).toContain('**Pointer:**');
+    expect(result.markdown).toContain('Computer input');
+    expect(result.markdown).toContain('Browser scroll');
+    expect(result.markdown).toContain('[redacted 18 chars]');
+    expect(result.markdown).not.toContain('secret@example.com');
+    expect(result.markdown).not.toContain('session-secret');
+    expect(result.markdown).not.toContain('base64,abcdef');
+  });
+
+  it('exports Browser/Computer evidence card status without raw proof refs', () => {
+    const result = exportSessionToMarkdown({
+      sessionId: 'session-1',
+      startedAt: 1,
+      lastActivityAt: 2,
+      totalTokens: 0,
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'Evidence card test',
+        timestamp: 1,
+        metadata: {
+          toolExecution: {
+            tool: 'browser_action',
+            input: {
+              action: 'type',
+              selector: '#password',
+              text: 'secret@example.com',
+            },
+            metadata: {
+              browserComputerEvidenceCard: {
+                title: 'Browser/Computer Evidence',
+                status: 'manual_takeover',
+                summary: 'Manual takeover required: login_required',
+                evidenceRefIds: ['evidence_dom', 'evidence_path'],
+              },
+              browserComputerProof: {
+                evidenceRefs: [{
+                  id: 'evidence_path',
+                  kind: 'screenshot',
+                  ref: '/Users/linchen/Desktop/private.png',
+                  source: 'browserAction.screenshot',
+                  freshness: { capturedAtMs: 1, state: 'fresh' },
+                  redactionStatus: 'clean',
+                }],
+              },
+            },
+            output: 'Typed secret@example.com',
+          },
+        },
+      }],
+    }, {
+      includeToolDetails: true,
+      includeMetadata: false,
+      includeTimestamps: false,
+      guardSensitiveData: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).toContain('**Evidence:**');
+    expect(result.markdown).toContain('Browser/Computer Evidence: manual_takeover');
+    expect(result.markdown).toContain('Manual takeover required: login_required');
+    expect(result.markdown).toContain('refs evidence_dom, evidence_path');
+    expect(result.markdown).not.toContain('/Users/linchen');
+    expect(result.markdown).not.toContain('secret@example.com');
+  });
 });

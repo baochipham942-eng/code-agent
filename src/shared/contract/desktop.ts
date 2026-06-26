@@ -171,6 +171,73 @@ export interface WorkbenchActionTrace {
   blockingReasons?: string[];
   evidenceSummary?: string[];
   axQuality?: ComputerSurfaceAxQuality | null;
+  agentPointerEvent?: AgentPointerEvent | null;
+}
+
+export type AgentPointerSurface = 'browser' | 'computer';
+export type AgentPointerTone = 'idle' | 'browser' | 'computer' | 'blocked';
+export type AgentPointerPhase =
+  | 'preview'
+  | 'click'
+  | 'drag'
+  | 'type'
+  | 'scroll'
+  | 'move'
+  | 'read'
+  | 'blocked'
+  | 'failed'
+  | 'success';
+export type AgentPointerCoordSpace =
+  | 'browserViewport'
+  | 'screen'
+  | 'windowLocal'
+  | 'surfacePreview';
+export type AgentPointerPointSource =
+  | 'targetRefBBox'
+  | 'pointerTargetBBox'
+  | 'axFrame'
+  | 'windowLocalPoint'
+  | 'windowLocalCoordinate'
+  | 'screenCoordinate'
+  | 'fallback';
+export type AgentPointerPointFreshness = 'fresh' | 'stale' | 'fallback';
+export type AgentPointerNativeCursorStatus = 'native' | 'fallback' | 'unavailable';
+export type AgentPointerNativeCursorProvider = 'cua-driver' | 'renderer' | 'pip' | 'none';
+
+export interface AgentPointerNativeCursorCapability {
+  enabled: boolean;
+  status: AgentPointerNativeCursorStatus;
+  provider: AgentPointerNativeCursorProvider;
+  supportsSystemOverlay: boolean;
+  reason?: string | null;
+  fallbackSurface?: 'renderer' | 'pip' | null;
+  checkedAtMs?: number | null;
+}
+
+export interface AgentPointerPoint {
+  x: number;
+  y: number;
+  unit: 'px' | 'percent';
+}
+
+export interface AgentPointerEvent {
+  id: string;
+  surface: AgentPointerSurface;
+  tone: AgentPointerTone;
+  phase: AgentPointerPhase;
+  coordSpace: AgentPointerCoordSpace;
+  point?: AgentPointerPoint | null;
+  pointSource?: AgentPointerPointSource | null;
+  pointFreshness?: AgentPointerPointFreshness | null;
+  targetLabel?: string | null;
+  targetSource?: 'targetRef' | 'selector' | 'axPath' | 'windowRef' | 'coordinate' | 'fallback' | null;
+  traceId?: string | null;
+  nativeCursor?: AgentPointerNativeCursorCapability | null;
+  success?: boolean | null;
+  occurredAtMs?: number | null;
+  startedAtMs?: number | null;
+  completedAtMs?: number | null;
+  expiresAtMs?: number | null;
 }
 
 export interface ManagedBrowserSessionState {

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { UnifiedTraceIdentity, UnifiedTraceSource } from './reviewQueue';
+import type { AgentPointerEvent } from './desktop';
 import type {
   AgentQualityScorecard,
   TurnQualityMemorySummary,
@@ -405,6 +406,8 @@ export interface ReplayToolCall {
   permissionTrace?: ReplayPermissionTrace[];
   result?: string;
   resultMetadata?: Record<string, unknown>;
+  agentPointerEvent?: AgentPointerEvent | null;
+  agentPointerTimeline?: AgentPointerEvent[];
   success: boolean;
   successKnown?: boolean;
   duration: number;
@@ -447,6 +450,43 @@ export interface ReplayFailureAttribution {
   durationMs: number;
 }
 
+export interface BrowserComputerProofTimelineEntry {
+  turnNumber: number;
+  toolCallId: string;
+  toolName: string;
+  status: string;
+  summary: string;
+  evidenceRefIds: string[];
+  timestamp: number;
+  traceId?: string | null;
+  visualSource?: string | null;
+  manualTakeoverStatus?: string | null;
+}
+
+export type EvidenceControlProjectionTrustLevel = 'strong' | 'partial' | 'weak';
+
+export type EvidenceControlProjectionSource =
+  | 'verification'
+  | 'browser_computer'
+  | 'trajectory'
+  | 'background_recovery';
+
+export interface EvidenceControlSummaryProjection {
+  schemaVersion: 1;
+  trustLevel: EvidenceControlProjectionTrustLevel;
+  generatedAt: number;
+  totalItems: number;
+  totalEvidenceRefs: number;
+  exportSafeItems: number;
+  blockedItems: number;
+  staleItems: number;
+  conflictItems: number;
+  bySource: Record<EvidenceControlProjectionSource, number>;
+  byStatus: Record<string, number>;
+  gaps: string[];
+  conflicts: string[];
+}
+
 export interface StructuredReplay {
   sessionId: string;
   traceIdentity: UnifiedTraceIdentity;
@@ -463,6 +503,8 @@ export interface StructuredReplay {
     agentScorecards?: AgentQualityScorecard[];
     metricAvailability?: ReplayMetricAvailability;
     telemetryCompleteness?: TelemetryCompleteness;
+    browserComputerProofTimeline?: BrowserComputerProofTimelineEntry[];
+    evidenceControl?: EvidenceControlSummaryProjection;
     deviations?: Array<{
       stepIndex: number;
       type: string;

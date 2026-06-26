@@ -73,6 +73,8 @@ export interface ManagedAgent {
   result?: SubagentResult;
   /** Error message if failed */
   error?: string;
+  /** Recovery semantics after restoring persisted subagent state */
+  recoveryPlan?: ManagedAgentRecoveryPlan;
   /** Structured message queue (consumed by executor each iteration) */
   messageQueue: AgentMessage[];
   createdAt: number;
@@ -88,6 +90,20 @@ export type ManagedAgentStatus =
   | 'failed'
   | 'cancelled'
   | 'killed';
+
+export type ManagedAgentRecoveryStatus =
+  | 'interrupted-by-restart'
+  | 'completed-before-restart'
+  | 'failed-before-restart'
+  | 'cancelled-before-restart'
+  | 'dead-log-only';
+
+export interface ManagedAgentRecoveryPlan {
+  status: ManagedAgentRecoveryStatus;
+  recoverable: boolean;
+  summary: string;
+  recommendedActions: string[];
+}
 
 export interface SpawnGuardConfig {
   /** Maximum concurrent agents across the whole spawn tree (default 8) */
@@ -116,6 +132,7 @@ interface PersistedSpawnGuardState {
     completedAt?: number;
     result?: SubagentResult;
     error?: string;
+    recoveryPlan?: ManagedAgentRecoveryPlan;
   }>;
   pendingNotifications: string[];
   persistedAt: number;
@@ -146,6 +163,53 @@ export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 
 function isLiveRunningStatus(status: ManagedAgentStatus): boolean {
   return status === 'running' || status === 'running-recovered';
+}
+
+function buildManagedAgentRecoveryPlan(
+  status: ManagedAgentStatus,
+  wasRunning: boolean,
+): ManagedAgentRecoveryPlan | undefined {
+  if (wasRunning) {
+    return {
+      status: 'interrupted-by-restart',
+      recoverable: false,
+      summary: 'Subagent live execution was interrupted by app restart; previous messages remain, but the process is not live.',
+      recommendedActions: ['review_messages', 'restart_subagent_if_needed'],
+    };
+  }
+  if (status === 'completed') {
+    return {
+      status: 'completed-before-restart',
+      recoverable: true,
+      summary: 'Subagent completed before restart; stored result can be reviewed.',
+      recommendedActions: ['review_result'],
+    };
+  }
+  if (status === 'failed') {
+    return {
+      status: 'failed-before-restart',
+      recoverable: false,
+      summary: 'Subagent failed before restart; review the stored error before retrying.',
+      recommendedActions: ['review_error', 'retry_if_needed'],
+    };
+  }
+  if (status === 'cancelled' || status === 'killed') {
+    return {
+      status: 'cancelled-before-restart',
+      recoverable: false,
+      summary: 'Subagent stopped before restart; retry only if the task is still needed.',
+      recommendedActions: ['retry_if_needed'],
+    };
+  }
+  if (status === 'dead-log-only') {
+    return {
+      status: 'dead-log-only',
+      recoverable: false,
+      summary: 'Subagent has no live process; only persisted messages or logs can be reviewed.',
+      recommendedActions: ['review_messages', 'restart_subagent_if_needed'],
+    };
+  }
+  return undefined;
 }
 
 class SpawnGuard {
@@ -693,6 +757,7 @@ class SpawnGuard {
         // Only persist results for completed agents (running agents can't be serialized)
         result: agent.status !== 'running' ? agent.result : undefined,
         error: agent.error,
+        recoveryPlan: agent.recoveryPlan,
       })),
       pendingNotifications: [...this.pendingNotifications],
       persistedAt: Date.now(),
@@ -726,6 +791,7 @@ class SpawnGuard {
         const wasRunning = entry.status === 'running';
         const status: ManagedAgentStatus = wasRunning ? 'dead-log-only' : entry.status;
         const recoveredAt = Date.now();
+        const recoveryPlan = entry.recoveryPlan ?? buildManagedAgentRecoveryPlan(entry.status, wasRunning);
         const agent: ManagedAgent = {
           id: entry.id,
           role: entry.role,
@@ -744,6 +810,7 @@ class SpawnGuard {
           abortController: new AbortController(),
           result: entry.result,
           error: wasRunning ? 'Subagent process was not recovered after restart; log is available only' : entry.error,
+          recoveryPlan,
           messageQueue: entry.messageQueue || [],
           createdAt: entry.createdAt,
           completedAt: entry.completedAt ?? (wasRunning ? recoveredAt : undefined),

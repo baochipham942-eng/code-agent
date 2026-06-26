@@ -37,7 +37,7 @@ import { readDesignMdSummary } from '../../design/design-md-loader';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
-import { imageEngineForModel, defaultImageModelId, IMAGE_MODELS, imageModelById, videoModelById, VIDEO_MODELS } from '../../shared/constants/visualModels';
+import { imageEngineForModel, IMAGE_MODELS, imageModelById, videoModelById, VIDEO_MODELS } from '../../shared/constants/visualModels';
 import { getConfigService } from '../services/core/configService';
 import {
   getDashscopeApiKey,
@@ -56,6 +56,11 @@ import {
   setCustomModelApiKey,
   type CustomImageModel,
 } from '../services/media/customImageModelRegistry';
+import {
+  resolveHealthyImageModelId,
+  nextHealthyImageModelId,
+  isImageBalanceError,
+} from '../services/media/imageModelHealth';
 import {
   getCustomVideoModelApiKey,
   listCustomVideoModels,
@@ -131,14 +136,42 @@ export async function handleGenerateDesignImage(
     return generateDesignImageViaCustom(custom, payload);
   }
 
-  // 按 model 路由到对应 engine（注册表守门，未知 id 抛错）；缺省回退默认 wanx。
-  const engine = imageEngineForModel(payload.model || defaultImageModelId());
-  // flux engine 需要具体模型串作 generateImage 的 fluxModel 入参；其余 engine 忽略此参。
-  const fluxModelArg = engine === 'flux' ? DESIGN_FLUX_MODEL : '';
+  // registry 守门：显式传了非自定义、又不在视觉模型注册表里的 model id 视为非法，直接抛错
+  // （防 typo 被健康解析静默替换成别的模型）；已知但未配 key 的模型走下面健康回退，不在此拦。
+  if (payload.model && !imageModelById(payload.model)) {
+    throw new Error(`未知图像模型 ${payload.model}`);
+  }
+
+  // 健康优先选型（2a #3）：只在已配 key 的内置模型里挑——payload.model 未设/未配 key
+  // 退到健康默认；一个都没配则回退静态 default 让"需要 key"原错浮现。
+  const primaryModelId = resolveHealthyImageModelId(payload.model);
   const { generateImage, downloadImageAsBase64, isImageUrl } = await import(
     '../services/media/imageGenerationService'
   );
-  const { imageData, actualModel } = await generateImage(engine, fluxModelArg, payload.prompt, payload.aspectRatio || '1:1');
+
+  // flux engine 需要具体模型串作 generateImage 的 fluxModel 入参；其余 engine 忽略此参。
+  const runOnce = (modelId: string) => {
+    const engine = imageEngineForModel(modelId);
+    const fluxModelArg = engine === 'flux' ? DESIGN_FLUX_MODEL : '';
+    return generateImage(engine, fluxModelArg, payload.prompt, payload.aspectRatio || '1:1');
+  };
+
+  // 单步兜底（2a #3）：chosen 模型遇「余额/欠费」类错误 → 换下一个健康模型重试一次（非循环）。
+  // billing 口径（审计 MED-2，诚实标注）：余额类错误在 submit 阶段被端点拒绝时（没出图=没扣费），
+  // 「A 失败→B 重试」净扣 1 次；wanx 异步任务若在轮询阶段才返回余额失败，则「不双扣」**依赖
+  // DashScope 对失败任务不计费**这一上游语义（本 PR 未独立验证，不宣称已证）。auth/network/timeout
+  // 等非余额错误不换模型，原样抛出，自然不重复付费。触发条件用图像专用窄白名单（非通用 quota 分类）。
+  let imageData: string;
+  let actualModel: string;
+  try {
+    ({ imageData, actualModel } = await runOnce(primaryModelId));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const fallbackModelId = isImageBalanceError(message) ? nextHealthyImageModelId(primaryModelId) : null;
+    if (!fallbackModelId) throw err;
+    ({ imageData, actualModel } = await runOnce(fallbackModelId));
+  }
+
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');

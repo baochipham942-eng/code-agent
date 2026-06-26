@@ -77,6 +77,14 @@ beforeEach(async () => {
   await mkdir(join(designRoot, 'run'), { recursive: true });
   await writeFile(baseImagePath, Buffer.from('basepng'));
   vi.clearAllMocks();
+  // clearAllMocks 不清 mockReturnValue：显式把 key getter 复位到默认（仅 dashscope 配），
+  // 防某个测试 mockReturnValue 配 key 后泄漏到后续「按已配 key 标可用」类断言。
+  const svcReset = await import(SVC);
+  (svcReset.getDashscopeApiKey as any).mockReturnValue('sk-test');
+  (svcReset.getZhipuOfficialApiKey as any).mockReturnValue(undefined);
+  (svcReset.getGptImageConfig as any).mockReturnValue(undefined);
+  const cfgReset = await import('../../../src/main/services/core/configService');
+  (cfgReset.getConfigService as any).mockReturnValue({ getApiKey: () => undefined });
 });
 
 afterEach(async () => {
@@ -153,6 +161,8 @@ describe('handleRemoveWatermarkDesignImage', () => {
 describe('handleGenerateDesignImage 模型路由', () => {
   it('model=cogview-4 路由到 cogview engine', async () => {
     const svc = await import(SVC);
+    // avoid 语义：cogview 已配 key 才直连 cogview（否则退健康默认）。
+    (svc.getZhipuOfficialApiKey as any).mockReturnValue('zhipu-key');
     await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'cogview-4' });
     const call = (svc.generateImage as any).mock.calls[0];
     expect(call[0]).toBe('cogview');
@@ -164,6 +174,9 @@ describe('handleGenerateDesignImage 模型路由', () => {
   });
   it('model=flux-2 路由到 flux engine 且传 DESIGN_FLUX_MODEL 作 fluxModel 入参', async () => {
     const svc = await import(SVC);
+    // avoid 语义：flux 已配 openrouter key 才直连 flux。
+    const cfgSvc = await import('../../../src/main/services/core/configService');
+    (cfgSvc.getConfigService as any).mockReturnValue({ getApiKey: (id: string) => (id === 'openrouter' ? 'or-key' : undefined) });
     await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'flux-2' });
     const call = (svc.generateImage as any).mock.calls[0];
     expect(call[0]).toBe('flux');
@@ -173,6 +186,8 @@ describe('handleGenerateDesignImage 模型路由', () => {
     await expect(handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'nope' })).rejects.toThrow();
   });
   it('返回 costCny 按 actualModel 查表（cogview=0.06）', async () => {
+    const svc = await import(SVC);
+    (svc.getZhipuOfficialApiKey as any).mockReturnValue('zhipu-key');
     const res = await handleGenerateDesignImage({ prompt: 'p', outputPath, model: 'cogview-4' });
     expect(res.costCny).toBe(0.06);
   });

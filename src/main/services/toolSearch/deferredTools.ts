@@ -640,6 +640,43 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   },
 
   // ============================================================================
+  // 设计画布（意图驱动发现）
+  // ============================================================================
+  // 注：这些工具登记为 deferred（让 agent 任何会话都能按意图 ToolSearch 搜到/select），
+  // 但 DEFERRED ≠ 进基础表——普通编码会话不搜就不出现，零污染基础表的硬不变量靠
+  // toolDefinitions.test.ts 守住。设计会话激活（designCanvasActive）后另由 withDesignCanvasTools
+  // 直接提进基础表免 ToolSearch（convenience，inference.ts），与本登记互补。
+  {
+    name: 'ProposeCanvasOps',
+    shortDescription:
+      '在设计画布上提议操作：生成图片/加节点/排布/连线/标注，用户审批后落地（设计/海报/视觉产物走这里，不要用代码画图）',
+    tags: ['planning', 'media'],
+    aliases: ['canvas', 'design', '画布', '设计', '海报', 'poster', '生成图片', 'image', 'visual', '主视觉', '配图'],
+    source: 'builtin',
+  },
+  {
+    name: 'RequestDesignAutonomy',
+    shortDescription: '请求有界自主预算信封，在画布上批量生成多个设计变体供用户挑选',
+    tags: ['planning', 'media'],
+    aliases: ['variants', '变体', '批量生成', 'autonomy', 'design'],
+    source: 'builtin',
+  },
+  {
+    name: 'ProposeVideoOps',
+    shortDescription: '在设计会话里生成视频（文生视频/图生视频），会话内确认成本后落画布视频节点（视频走这里，不要用代码/ffmpeg）',
+    tags: ['planning', 'media'],
+    aliases: ['video', '视频', '生成视频', '文生视频', '图生视频', 't2v', 'i2v', '动画', 'animate'],
+    source: 'builtin',
+  },
+  {
+    name: 'ProposeSlidesOps',
+    shortDescription: '在设计会话里生成演示稿（PPTX，大纲免费/配图付费），生成后在预览 tab 打开（演示稿/幻灯片走这里）',
+    tags: ['planning', 'media'],
+    aliases: ['slides', '演示稿', '幻灯片', 'PPT', 'PPTX', 'deck', 'presentation', '演讲', 'pitch'],
+    source: 'builtin',
+  },
+
+  // ============================================================================
   // Gen 8: 自我进化
   // ============================================================================
   {
@@ -732,6 +769,15 @@ export const TOOL_ALIASES: Record<string, string> = {
   dynamic_workflow: 'workflow',
   WorkflowOrchestrate: 'workflow_orchestrate',
   workflow_orchestrate: 'workflow_orchestrate',
+  // Design canvas: camelCase/lowercase 形态 → 规范 PascalCase（agent 实测搜 proposeCanvasOps 拿 not found）
+  proposeCanvasOps: 'ProposeCanvasOps',
+  propose_canvas_ops: 'ProposeCanvasOps',
+  requestDesignAutonomy: 'RequestDesignAutonomy',
+  request_design_autonomy: 'RequestDesignAutonomy',
+  proposeVideoOps: 'ProposeVideoOps',
+  propose_video_ops: 'ProposeVideoOps',
+  proposeSlidesOps: 'ProposeSlidesOps',
+  propose_slides_ops: 'ProposeSlidesOps',
 };
 
 /**

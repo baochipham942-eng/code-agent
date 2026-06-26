@@ -47,6 +47,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
+import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -224,6 +225,8 @@ export const App: React.FC = () => {
   useTaskSync({ pollInterval: 30_000 });
   useBackgroundTaskSync();
   useInAppValidationBridge();
+  // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
+  useOpenPreviewBridge();
   useRendererBundleAutoReload();
 
   // 全局快捷键（命令面板、设置、会话导航等；compact 只有用户显式绑定后才会触发）

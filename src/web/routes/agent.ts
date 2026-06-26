@@ -50,6 +50,7 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { extractArtifacts } from '../../main/agent/artifactExtractor';
+import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 
@@ -425,6 +426,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const config = agent.getConfig();
 
+      // 每轮执行意图透传（web HTTP 路径）：renderer 的 context.executionIntent 必须进 AgentLoop
+      // config → RuntimeContext.executionIntent，否则设计会话的 designCanvasActive 丢失，画布工具
+      // 不会提进工具表、shell 代码画图守卫也不触发（桌面 Electron 路径经 agentAppService 已透传，
+      // web 这条独立 HTTP 路径此前漏接）。
+      if (body.context?.executionIntent) {
+        config.executionIntent = { ...body.context.executionIntent };
+      }
+
       // 自动模式标志透传：adaptiveRouter 简单任务路由 + vision capability fallback 的总闸门
       if (sessionAdaptive) {
         config.modelConfig.adaptive = true;
@@ -453,6 +462,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (!config.systemPrompt) {
         config.systemPrompt = 'You are running in Web UI mode (browser-based interface), not CLI/terminal mode. Users interact with you through a web chat interface with rich rendering support (markdown, code blocks, images). Respond accordingly.';
       }
+
+      // 设计画布会话冷启动引导：按轮服务端注入 systemPrompt（不进用户 content，免污染历史提示词）。
+      config.systemPrompt = composeDesignCanvasSystemPrompt(
+        config.systemPrompt,
+        config.executionIntent?.designCanvasActive,
+      );
 
       // Fix: CLI config maps 'anthropic' but provider is 'claude'
       // Ensure apiKey is populated from env if missing

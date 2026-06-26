@@ -323,6 +323,46 @@ describe('ToolSearchService loadable results', () => {
     expect(result.tools[0]?.notCallableReason).toMatch(/Skill tool/i);
   });
 
+  // ── 意图驱动设计画布工具发现（agent 任何会话按意图搜到/select） ──────────
+  describe('design canvas tools are discoverable by intent', () => {
+    it('registers ProposeCanvasOps / RequestDesignAutonomy in DEFERRED_TOOLS_META', () => {
+      const names = new Set(DEFERRED_TOOLS_META.map((m) => m.name));
+      expect(names.has('ProposeCanvasOps')).toBe(true);
+      expect(names.has('RequestDesignAutonomy')).toBe(true);
+    });
+
+    it('loads ProposeCanvasOps as a callable builtin via select', () => {
+      const service = new ToolSearchService();
+      const result = service.selectTool('ProposeCanvasOps');
+      expect(result.loadedTools).toEqual(['ProposeCanvasOps']);
+      expect(result.tools[0]?.loadable).toBe(true);
+      expect(service.isToolLoaded('ProposeCanvasOps')).toBe(true);
+    });
+
+    it('loads RequestDesignAutonomy as a callable builtin via select', () => {
+      const service = new ToolSearchService();
+      const result = service.selectTool('RequestDesignAutonomy');
+      expect(result.loadedTools).toEqual(['RequestDesignAutonomy']);
+      expect(result.tools[0]?.loadable).toBe(true);
+      expect(service.isToolLoaded('RequestDesignAutonomy')).toBe(true);
+    });
+
+    it('surfaces ProposeCanvasOps for canvas/design/poster keyword searches', async () => {
+      const service = new ToolSearchService();
+      for (const q of ['canvas', 'design', '海报']) {
+        const result = await service.searchTools(q, { maxResults: 8, includeMCP: false });
+        expect(result.tools.map((t) => t.name)).toContain('ProposeCanvasOps');
+      }
+    });
+
+    it('resolves lowercase alias proposeCanvasOps to canonical tool', () => {
+      const service = new ToolSearchService();
+      const result = service.selectTool('proposeCanvasOps');
+      expect(result.loadedTools).toEqual(['ProposeCanvasOps']);
+      expect(result.tools[0]?.loadable).toBe(true);
+    });
+  });
+
   // 注：legacy toolSearchTool.execute 的输出格式化测试已迁移到
   // tests/unit/tools/modules/search/toolSearch.test.ts（native 形态：ok/output/meta）。
 

@@ -73,6 +73,7 @@ vi.mock('../../../../../src/main/sandbox', async (importOriginal) => ({
 import {
   bashModule,
   rewriteImplicitBackgroundCommand,
+  looksLikeCodeImageGeneration,
 } from '../../../../../src/main/tools/modules/shell/bash';
 import { getPermissionModeManager } from '../../../../../src/main/permissions/modes';
 
@@ -637,6 +638,92 @@ describe('bashModule (native)', () => {
         expect(result.error).toContain('pty unavailable');
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 设计画布会话硬控：用代码画图 → 重定向到 proposeCanvasOps
+// ---------------------------------------------------------------------------
+describe('looksLikeCodeImageGeneration', () => {
+  it('matches python 图形库 / pip 装库 / imagemagick / 图片重定向 / heredoc 含 PIL', () => {
+    const positives = [
+      'python3 -c "from PIL import Image"',
+      'python3 -c "import PIL"',
+      'pip install pillow',
+      'pip3 install reportlab cairosvg',
+      'magick poster.png -resize 50% out.png',
+      'convert in.svg out.png',
+      'mogrify -resize 800x in.jpg',
+      'python gen.py > out.png',
+      'python3 draw.py > /tmp/poster.jpeg',
+      'python3 <<PY\nimport cairosvg\ncairosvg.svg2png(url="a.svg")\nPY',
+    ];
+    for (const cmd of positives) {
+      expect(looksLikeCodeImageGeneration(cmd), `should match: ${cmd}`).toBe(true);
+    }
+  });
+
+  it('does NOT match ordinary non-image commands', () => {
+    const negatives = [
+      'ls -la',
+      'cat foo.txt',
+      'npm run build',
+      'python3 script.py',
+      'echo hi',
+      'git status',
+      'grep convert file.txt', // convert 不带图片扩展名不应误命中
+      'convert this idea into a plan', // 自然语言里出现 convert，但无图片扩展名
+      '',
+    ];
+    for (const cmd of negatives) {
+      expect(looksLikeCodeImageGeneration(cmd), `should NOT match: ${cmd}`).toBe(false);
+    }
+  });
+});
+
+describe('bashModule 设计画布会话硬控（designCanvasActive）', () => {
+  it('blocks code-based image generation with a proposeCanvasOps redirect when designCanvasActive=true', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'python3 -c "from PIL import Image; Image.new(\'RGB\',(8,8)).save(\'x.png\')"' },
+      makeCtx({ executionIntent: { designCanvasActive: true } }),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('DESIGN_CANVAS_REDIRECT');
+      expect(result.error).toContain('proposeCanvasOps');
+      expect(result.error).toContain('设计画布会话');
+    }
+  });
+
+  it('does NOT block ordinary commands even when designCanvasActive=true', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'echo design-active-but-fine' },
+      makeCtx({ executionIntent: { designCanvasActive: true } }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('design-active-but-fine');
+  });
+
+  it('does NOT block code-based image generation when designCanvasActive is false/undefined (普通会话零回归)', async () => {
+    const handler = await bashModule.createHandler();
+    // designCanvasActive undefined
+    const r1 = await handler.execute(
+      { command: 'echo "from PIL import Image"' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(r1.ok).toBe(true);
+    // designCanvasActive=false explicitly
+    const r2 = await handler.execute(
+      { command: 'echo "import matplotlib"' },
+      makeCtx({ executionIntent: { designCanvasActive: false } }),
+      allowAll,
+    );
+    expect(r2.ok).toBe(true);
   });
 });
 

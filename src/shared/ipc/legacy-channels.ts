@@ -97,6 +97,15 @@ export const IPC_CHANNELS = {
   // 二刀（审计 MED-3）：agent abort/超时时通知 renderer 撤掉审批条，防孤儿提议被后点 Apply 触发付费生成
   CANVAS_PROPOSAL_CANCEL: 'canvas-proposal:cancel',
 
+  // 设计画布视频生成通道（2b：agent 经 ProposeVideoOps 在会话内确认成本 → renderer 出视频落画布节点）。
+  // 与图像提议（CANVAS_PROPOSAL）独立：视频成本确认在会话区做、永不进自主信封、出图后落画布视频节点。
+  CANVAS_VIDEO_ASK: 'canvas-video:ask',
+  CANVAS_VIDEO_RESPONSE: 'canvas-video:response',
+
+  // 2b：agent 生成文档型产物（演示稿等）后，main → renderer 请求打开预览 tab（单向，best-effort，
+  // renderer 按当前会话过滤，不抢背景会话焦点）。
+  WORKSPACE_OPEN_PREVIEW: 'workspace:open-preview',
+
   // 设计画布有界自主信封审批通道（ADR-027：agent 请求预算信封 → 用户一次性审批）
   CANVAS_AUTONOMY_ASK: 'canvas-autonomy:ask',
   CANVAS_AUTONOMY_RESPONSE: 'canvas-autonomy:response',

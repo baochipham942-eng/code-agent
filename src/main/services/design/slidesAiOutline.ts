@@ -19,8 +19,13 @@ export interface AiOutlineResult {
   ai: boolean;
 }
 
-/** 让模型产出 parseContentToSlides 可解析的 Markdown 大纲。 */
-export function buildOutlinePrompt(topic: string, count: number): string {
+/**
+ * 让模型产出 parseContentToSlides 可解析的 Markdown 大纲。
+ * brief：agent 已调研的事实/数据/结构。提供则要求模型**据此生成、优先采用、不要编造**，
+ * 让 AI 大纲落地到真实调研而非对着干瘪 topic 瞎编（PPT 质量关键）。
+ */
+export function buildOutlinePrompt(topic: string, count: number, brief?: string): string {
+  const briefT = (brief ?? '').trim();
   return [
     `你是演示稿大纲专家。为主题「${topic}」生成一份 ${count} 页演示稿大纲。`,
     '',
@@ -29,6 +34,13 @@ export function buildOutlinePrompt(topic: string, count: number): string {
     '- 之后每页用 `## 页面标题`，其下用 `- 要点` 列 3~4 条要点',
     `- 总页数约 ${count} 页，逻辑递进（背景→问题→方案→价值→落地→总结之类）`,
     '- 要点具体、信息密度高，避免空话套话',
+    ...(briefT
+      ? [
+          '',
+          '已有调研材料（务必据此生成，优先采用其中的事实与数据，不要编造、不要套空话模板）：',
+          briefT,
+        ]
+      : []),
     '',
     `主题：${topic}`,
   ].join('\n');
@@ -37,7 +49,7 @@ export function buildOutlinePrompt(topic: string, count: number): string {
 /**
  * 生成 AI 大纲。无 key / 调用失败 / 响应空 / 解析为空时降级 outlineToSlideData，ai=false。
  */
-export async function buildAiOutline(topic: string, slidesCount?: number): Promise<AiOutlineResult> {
+export async function buildAiOutline(topic: string, slidesCount?: number, brief?: string): Promise<AiOutlineResult> {
   const topicT = (topic ?? '').trim();
   if (!topicT) throw new Error('生成大纲需要主题（topic 不能为空）');
   const count = slidesCount && slidesCount > 0 ? slidesCount : DEFAULT_SLIDES_COUNT;
@@ -60,7 +72,7 @@ export async function buildAiOutline(topic: string, slidesCount?: number): Promi
       maxTokens: 2048,
     };
     const response = await router.inference(
-      [{ role: 'user', content: buildOutlinePrompt(topicT, count) }],
+      [{ role: 'user', content: buildOutlinePrompt(topicT, count, brief) }],
       [],
       config,
     );

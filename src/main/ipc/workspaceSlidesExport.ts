@@ -45,6 +45,8 @@ export interface GenerateSlidesDeckPayload {
   content?: string;
   /** 已编辑大纲：提供则据此排版，优先于 topic/content。 */
   slides?: SlideData[];
+  /** agent 已调研的事实/数据/结构，喂给 AI 大纲接地气（仅在无 slides/content、走 AI 大纲时用）。 */
+  brief?: string;
   /** AI 配图（付费）：true 则按 imageModel 为内容页生成插画，走图文母版。 */
   illustrate?: boolean;
   imageModel?: string;
@@ -116,17 +118,28 @@ export async function handleGenerateSlidesDeck(
   payload: GenerateSlidesDeckPayload,
 ): Promise<{ filePath: string; slidesCount: number; costCny: number }> {
   const hasSlides = Array.isArray(payload?.slides) && payload.slides.length > 0;
+  const hasContent = typeof payload?.content === 'string' && payload.content.trim().length > 0;
   if ((!payload?.topic?.trim() && !hasSlides) || !payload.outputName) {
     throw new Error('generateSlidesDeck 需要 topic 或 slides，以及 outputName');
   }
 
+  // 内容断流修复：既无已编辑 slides、也无 content 时，默认走 **AI 大纲**（用 agent 调研
+  // brief 接地气）生成真内容，**不再套确定性 SCQA 空模板**（背景概述/面临挑战/…）。
+  // buildAiOutline 内部无 key / 失败时自降级模板，安全。
+  let baseSlides = payload.slides;
+  if (!hasSlides && !hasContent && payload.topic?.trim()) {
+    const ai = await buildAiOutline(payload.topic, payload.slidesCount, payload.brief);
+    baseSlides = ai.slides;
+  }
+  const hasBaseSlides = Array.isArray(baseSlides) && baseSlides.length > 0;
+
   // AI 配图（增强 #4，付费）：先据确定的 slides 出图，再喂进排版走图文母版。
   let images;
   let costCny = 0;
-  let slidesOverride = payload.slides;
+  let slidesOverride = baseSlides;
   if (payload.illustrate && payload.imageModel) {
     const slidesForImg =
-      hasSlides && payload.slides ? payload.slides : buildSlidesOutline(payload.topic ?? '', payload.slidesCount);
+      hasBaseSlides && baseSlides ? baseSlides : buildSlidesOutline(payload.topic ?? '', payload.slidesCount);
     const dir = path.join(getUserConfigDir(), 'design', 'slides-illustrations');
     await fsp.rm(dir, { recursive: true, force: true });
     const r = await illustrateSlides(

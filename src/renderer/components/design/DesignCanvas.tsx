@@ -24,6 +24,7 @@ import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
 import { DiscardedNodesTray } from './DiscardedNodesTray';
 import { useCanvasProposalReview } from './useCanvasProposalReview';
 import { useAutonomyEnvelopeReview } from './useAutonomyEnvelopeReview';
+import { useCanvasVideoRequest } from './useCanvasVideoRequest';
 import { CanvasAutonomyReviewBar } from './CanvasAutonomyReviewBar';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { DiagramToolbar } from './DiagramToolbar';
@@ -216,6 +217,8 @@ export const DesignCanvas: React.FC = () => {
   const canvasProposal = useCanvasProposalReview();
   // ADR-027：订阅 agent 自主信封请求 + Grant/Decline；活跃信封态驱动进度/停止指示。
   const autonomy = useAutonomyEnvelopeReview();
+  // 2b：订阅 agent 经 ProposeVideoOps 发来的出视频请求 → 落画布视频节点。
+  useCanvasVideoRequest();
   const autonomyEnvelope = useDesignAutonomyStore((st) => st.envelope);
   const autonomyClear = useDesignAutonomyStore((st) => st.clear);
   const selectedDiagram = useDesignCanvasStore((s) => s.selectedDiagram);

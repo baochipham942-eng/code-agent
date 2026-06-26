@@ -146,6 +146,7 @@ export function ToolCallDisplay({
     >
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
+        data-testid={`tool-call-row-${toolCall.name}`}
         className="group/row flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors"
         onClick={() => {
           setExpanded(!expanded);

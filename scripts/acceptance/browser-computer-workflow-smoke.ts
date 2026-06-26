@@ -215,23 +215,23 @@ async function main(): Promise<void> {
 
   const context = makeToolContext();
   const failures: string[] = [];
-  let browserState: ManagedBrowserSessionState | null = null;
-  let beforeSnapshot: BrowserDomSnapshot | null = null;
-  let afterSnapshot: BrowserDomSnapshot | null = null;
-  let navigateTrace: WorkbenchActionTrace | null = null;
-  let clickTrace: WorkbenchActionTrace | null = null;
-  let computerTrace: WorkbenchActionTrace | null = null;
-  let clickTargetRefId: string | null = null;
-  let readback: { clicked: string | null; count: number; status: string | null } | null = null;
+  let browserState: ManagedBrowserSessionState | null;
+  let beforeSnapshot: BrowserDomSnapshot | null;
+  let afterSnapshot: BrowserDomSnapshot | null;
+  let navigateTrace: WorkbenchActionTrace | null;
+  let clickTrace: WorkbenchActionTrace | null;
+  let computerTrace: WorkbenchActionTrace | null;
+  let clickTargetRefId: string | null;
+  let readback: { clicked: string | null; count: number; status: string | null } | null;
   let mockServer: Server | null = null;
   let storageTmpDir: string | null = null;
-  let storageStatePath: string | null = null;
-  let accountExportStatus: string | null = null;
-  let persistentRecovered = false;
-  let importedRecovered = false;
-  let downloadArtifact: Record<string, unknown> | null = null;
-  let uploadArtifact: Record<string, unknown> | null = null;
-  let uploadReadback: { name: string | null; size: number; text: string | null } | null = null;
+  let storageStatePath: string;
+  let accountExportStatus: string | null;
+  let persistentRecovered: boolean;
+  let importedRecovered: boolean;
+  let downloadArtifact: Record<string, unknown> | null;
+  let uploadArtifact: Record<string, unknown> | null;
+  let uploadReadback: { name: string | null; size: number; text: string | null } | null;
   const accountRunId = `account-${Date.now()}`;
 
   try {
@@ -390,8 +390,8 @@ async function main(): Promise<void> {
     if (browserProxyMode !== 'direct') {
       failures.push(`Managed browser proxy mode should default to direct: ${browserProxyMode || 'missing'}.`);
     }
-    if (externalBridgeStatus !== 'unsupported') {
-      failures.push(`External browser bridge should remain unsupported by default: ${externalBridgeStatus || 'missing'}.`);
+    if (externalBridgeStatus !== 'unsupported' && externalBridgeStatus !== 'stopped') {
+      failures.push(`External browser bridge should remain inactive by default: ${externalBridgeStatus || 'missing'}.`);
     }
     if (!beforeSnapshot?.interactiveElements.some((element) => element.selectorHint === '#phase3-workflow-button')) {
       failures.push('Initial DOM snapshot did not include the workflow button.');

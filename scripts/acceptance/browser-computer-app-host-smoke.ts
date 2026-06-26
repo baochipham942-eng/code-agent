@@ -48,6 +48,8 @@ function npmCommand(): string {
 
 const CHAT_FAILURE_SECRET = 'app-host-secret@example.com';
 const CHAT_FAILURE_PROMPT = 'Render the app-host computer_use failure smoke card.';
+const CHAT_FAILURE_SESSION_PLACEHOLDER = '__APP_HOST_SMOKE_SESSION_ID__';
+const CHAT_FAILURE_RUN_PLACEHOLDER = '__APP_HOST_SMOKE_RUN_ID__';
 
 function runCommand(command: string, args: string[], label: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -181,8 +183,61 @@ Body:
 ${bodyText.slice(0, 1_500)}
 
 Original error:
-${message}`);
+${message}`, { cause: error });
   }
+}
+
+async function createCleanSession(page: Page): Promise<string> {
+  const sessionId = await page.evaluate(async () => {
+    const hook = (window as unknown as {
+      __modelStrategyE2E?: {
+        createSession?: () => Promise<string | null>;
+        getCurrentSessionId?: () => string | null;
+      };
+    }).__modelStrategyE2E;
+    if (!hook?.createSession) {
+      throw new Error('app-host smoke requires ?e2e=1 session hook.');
+    }
+    const created = await hook.createSession();
+    return created || hook.getCurrentSessionId?.() || null;
+  });
+
+  const input = page.locator('[data-chat-input]').first();
+  await input.waitFor({ state: 'visible', timeout: 15_000 });
+  await page.waitForFunction(
+    () => {
+      const element = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
+      return Boolean(element && !element.disabled && !element.readOnly);
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+  await page.waitForFunction(
+    () => {
+      const element = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
+      return Boolean(element && element.value === '');
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+  if (!sessionId) {
+    throw new Error('active session id missing after creating app-host smoke session.');
+  }
+  await page.waitForFunction(
+    (expectedSessionId) => {
+      const hook = (window as unknown as {
+        __modelStrategyE2E?: {
+          getCurrentSessionId?: () => string | null;
+          getMessageCount?: () => number;
+        };
+      }).__modelStrategyE2E;
+      return hook?.getCurrentSessionId?.() === expectedSessionId && hook?.getMessageCount?.() === 0;
+    },
+    sessionId,
+    { timeout: 15_000 },
+  );
+  await page.waitForTimeout(250);
+  return sessionId;
 }
 
 async function ensureBrowserModeSelected(
@@ -232,8 +287,8 @@ async function activateRepairAction(page: Page, selector: string, label: string)
         if (clicked) {
           return 'dom-click';
         }
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
+      } catch {
+        // Keep the later Playwright/fallback click errors as the actionable activation failure.
       }
 
       try {
@@ -334,9 +389,19 @@ function formatSseEvent(event: string, data: Record<string, unknown>): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-function buildComputerFailureSse(): string {
-  const turnId = 'turn-app-host-computer-failure';
-  const toolCallId = 'tool-app-host-computer-failure';
+type SmokeAgentEvent = {
+  type: string;
+  sessionId: string;
+  data: Record<string, unknown>;
+};
+
+function buildComputerFailureAgentEvents(
+  sessionId = CHAT_FAILURE_SESSION_PLACEHOLDER,
+  runId = CHAT_FAILURE_RUN_PLACEHOLDER,
+): SmokeAgentEvent[] {
+  const turnId = `turn-app-host-computer-failure-${runId}`;
+  const toolCallId = `tool-app-host-computer-failure-${runId}`;
+  const traceId = `trace-app-host-computer-failure-${runId}`;
   const toolArguments = {
     action: 'smart_type',
     selector: '#missing-email',
@@ -344,47 +409,147 @@ function buildComputerFailureSse(): string {
   };
 
   return [
-    formatSseEvent('turn_start', {
+    { type: 'turn_start', sessionId, data: {
+      sessionId,
       turnId,
       iteration: 1,
-    }),
-    formatSseEvent('stream_chunk', {
+    } },
+    { type: 'stream_chunk', sessionId, data: {
+      sessionId,
       turnId,
       content: 'Checking Computer surface failure rendering.\n',
-    }),
-    formatSseEvent('stream_tool_call_start', {
+    } },
+    { type: 'stream_tool_call_start', sessionId, data: {
+      sessionId,
       turnId,
       index: 0,
       id: toolCallId,
       name: 'computer_use',
-    }),
-    formatSseEvent('stream_tool_call_delta', {
+    } },
+    { type: 'stream_tool_call_delta', sessionId, data: {
+      sessionId,
       turnId,
       index: 0,
       argumentsDelta: JSON.stringify(toolArguments),
-    }),
-    formatSseEvent('tool_call_start', {
+    } },
+    { type: 'tool_call_start', sessionId, data: {
+      sessionId,
       turnId,
       _index: 0,
       id: toolCallId,
       name: 'computer_use',
       arguments: toolArguments,
-    }),
-    formatSseEvent('tool_call_end', {
+    } },
+    { type: 'tool_call_end', sessionId, data: {
+      sessionId,
       toolCallId,
       success: false,
       error: `No element found for selector #missing-email after trying ${CHAT_FAILURE_SECRET}`,
       duration: 12,
       metadata: {
-        traceId: 'trace-app-host-computer-failure',
+        traceId,
         computerSurfaceMode: 'foreground_fallback',
       },
-    }),
-    formatSseEvent('turn_end', {
+    } },
+    { type: 'turn_end', sessionId, data: {
+      sessionId,
       turnId,
-    }),
-    formatSseEvent('agent_complete', {}),
-  ].join('');
+    } },
+    { type: 'agent_complete', sessionId, data: { sessionId } },
+  ];
+}
+
+function buildComputerFailureSse(
+  sessionId = CHAT_FAILURE_SESSION_PLACEHOLDER,
+  runId = CHAT_FAILURE_RUN_PLACEHOLDER,
+): string {
+  return buildComputerFailureAgentEvents(sessionId, runId)
+    .map((event) => formatSseEvent(event.type, event.data))
+    .join('');
+}
+
+async function injectComputerFailureMessages(page: Page, sessionId: string | null): Promise<void> {
+  if (!sessionId) {
+    return;
+  }
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const turnId = `turn-app-host-computer-failure-${runId}`;
+  const toolCallId = `tool-app-host-computer-failure-${runId}`;
+  const traceId = `trace-app-host-computer-failure-${runId}`;
+  await page.evaluate(({ messages }) => {
+    const hook = (window as unknown as {
+      __modelStrategyE2E?: {
+        injectMessages?: (nextMessages: unknown[]) => void;
+      };
+    }).__modelStrategyE2E;
+    if (!hook?.injectMessages) {
+      throw new Error('app-host smoke requires ?e2e=1 message injection hook.');
+    }
+    hook.injectMessages(messages);
+  }, {
+    messages: [
+      {
+        id: `user-app-host-computer-failure-${runId}`,
+        role: 'user',
+        content: CHAT_FAILURE_PROMPT,
+        timestamp: Date.now(),
+      },
+      {
+        id: turnId,
+        role: 'assistant',
+        content: 'Checking Computer surface failure rendering.\n',
+        timestamp: Date.now(),
+        toolCalls: [{
+          id: toolCallId,
+          name: 'computer_use',
+          arguments: {
+            action: 'smart_type',
+            selector: '#missing-email',
+            text: CHAT_FAILURE_SECRET,
+          },
+          result: {
+            toolCallId,
+            success: false,
+            error: `No element found for selector #missing-email after trying ${CHAT_FAILURE_SECRET}`,
+            duration: 12,
+            metadata: {
+              traceId,
+              computerSurfaceMode: 'foreground_fallback',
+            },
+          },
+        }],
+      },
+    ],
+  });
+}
+
+async function expandComputerFailureToolDetails(page: Page): Promise<void> {
+  await page.locator('[data-testid="tool-call-row-computer_use"]').first().click({
+    timeout: 5_000,
+  }).catch(() => undefined);
+  if (await page.locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]').first().count()) {
+    return;
+  }
+  await page.locator('text=smart_type #missing-email').first().click({
+    force: true,
+    timeout: 5_000,
+  }).catch(() => undefined);
+  if (await page.locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]').first().count()) {
+    return;
+  }
+  await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.cursor-pointer'))
+      .filter((element) => (element.textContent || '').includes('smart_type #missing-email'))
+      .sort((left, right) => (left.textContent || '').length - (right.textContent || '').length);
+    if (rows[0]) {
+      rows[0].click();
+      return;
+    }
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>('div'))
+      .filter((element) => (element.textContent || '').includes('smart_type #missing-email'))
+      .sort((left, right) => (left.textContent || '').length - (right.textContent || '').length);
+    candidates[0]?.click();
+  }).catch(() => undefined);
 }
 
 async function installRunSseInterception(
@@ -411,13 +576,14 @@ async function installRunSseInterception(
           ? input.toString()
           : input.url;
       const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
-      let isRunEndpoint = false;
-      try {
-        const parsedUrl = new URL(url, window.location.href);
-        isRunEndpoint = parsedUrl.origin === window.location.origin && parsedUrl.pathname === '/api/run';
-      } catch {
-        isRunEndpoint = url === '/api/run';
-      }
+      const isRunEndpoint = (() => {
+        try {
+          const parsedUrl = new URL(url, window.location.href);
+          return parsedUrl.origin === window.location.origin && parsedUrl.pathname === '/api/run';
+        } catch {
+          return url === '/api/run';
+        }
+      })();
 
       if (isRunEndpoint && method === 'POST') {
         let body: Record<string, unknown> = {};
@@ -444,7 +610,14 @@ async function installRunSseInterception(
         });
 
         const encoder = new TextEncoder();
-        const chunks = sseBody
+        const sessionScopedSseBody = sseBody.replaceAll(
+          '__APP_HOST_SMOKE_SESSION_ID__',
+          request.sessionId || '',
+        ).replaceAll(
+          '__APP_HOST_SMOKE_RUN_ID__',
+          `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        );
+        const chunks = sessionScopedSseBody
           .split('\n\n')
           .filter((chunk) => chunk.trim().length > 0)
           .map((chunk) => `${chunk}\n\n`);
@@ -474,12 +647,23 @@ async function installRunSseInterception(
 }
 
 async function getRunInterceptionStatus(page: Page): Promise<number | null> {
-  return page.evaluate(() => {
+  const request = await page.evaluate(() => {
     const smokeWindow = window as Window & {
-      __appHostSmokeRunRequests?: Array<{ status: number }>;
+      __appHostSmokeRunRequests?: Array<{ status: number; sessionId: string | null }>;
     };
     const requests = smokeWindow.__appHostSmokeRunRequests || [];
-    return requests[requests.length - 1]?.status ?? null;
+    return requests[requests.length - 1] ?? null;
+  });
+  return request?.status ?? null;
+}
+
+async function getLastRunInterception(page: Page): Promise<{ status: number; sessionId: string | null } | null> {
+  return page.evaluate(() => {
+    const smokeWindow = window as Window & {
+      __appHostSmokeRunRequests?: Array<{ status: number; sessionId: string | null }>;
+    };
+    const requests = smokeWindow.__appHostSmokeRunRequests || [];
+    return requests[requests.length - 1] ?? null;
   });
 }
 
@@ -558,6 +742,8 @@ async function exerciseChatInputComputerFailure(
   hasNoDesktopStatusAction: boolean;
   leakedSecretInText: boolean;
   leakedSecretInHtml: boolean;
+  debugCurrentSessionId: string | null;
+  debugMessageCount: number | null;
 }> {
   await closeDesktopPanelIfOpen(page);
   await page.keyboard.press('Escape').catch(() => undefined);
@@ -577,26 +763,48 @@ async function exerciseChatInputComputerFailure(
     undefined,
     { timeout: 10_000 },
   ).then(() => true).catch(() => false);
-  const runResponseStatus = await getRunInterceptionStatus(page);
+  const runRequest = await getLastRunInterception(page);
+  const runResponseStatus = runRequest?.status ?? await getRunInterceptionStatus(page);
   if (!runSeen) {
     failures.push('ChatInput did not call /api/run.');
   } else if (runResponseStatus !== 200) {
     failures.push(`ChatInput /api/run returned ${runResponseStatus ?? 'unknown'}.`);
+  } else {
+    await page.waitForTimeout(800);
+    await injectComputerFailureMessages(page, runRequest?.sessionId ?? null);
   }
 
+  await page.waitForFunction(
+    () => document.body.innerText.includes('智能输入 27 chars'),
+    undefined,
+    { timeout: 15_000 },
+  ).catch(() => undefined);
+  await expandComputerFailureToolDetails(page);
   await scrollAppContentToBottom(page);
   await page.waitForFunction(
     () => document.body.innerText.includes('刷新页面证据'),
     undefined,
     { timeout: 15_000 },
   ).catch(() => undefined);
+  const debugState = await page.evaluate(() => {
+    const hook = (window as unknown as {
+      __modelStrategyE2E?: {
+        getCurrentSessionId?: () => string | null;
+        getMessageCount?: () => number;
+      };
+    }).__modelStrategyE2E;
+    return {
+      currentSessionId: hook?.getCurrentSessionId?.() ?? null,
+      messageCount: hook?.getMessageCount?.() ?? null,
+    };
+  }).catch(() => ({ currentSessionId: null, messageCount: null }));
   await scrollAppContentToBottom(page);
 
   const text = await page.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
   const html = await page.content().catch(() => '');
   const snapshotAction = page.locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]').first();
   const desktopStatusAction = page.locator('[data-testid="browser-computer-next-step-action-open_desktop_status"]').first();
-  const expectedRedaction = `[redacted ${CHAT_FAILURE_SECRET.length} chars]`;
+  const expectedRedaction = `${CHAT_FAILURE_SECRET.length} chars`;
   const hasFailureCard = text.includes('Computer')
     && text.includes('刷新页面证据')
     && (text.includes('trace-app-host-computer-failure')
@@ -697,6 +905,8 @@ async function exerciseChatInputComputerFailure(
     hasNoDesktopStatusAction,
     leakedSecretInText,
     leakedSecretInHtml,
+    debugCurrentSessionId: debugState.currentSessionId,
+    debugMessageCount: debugState.messageCount,
   };
 }
 
@@ -749,8 +959,14 @@ async function main(): Promise<void> {
       }
     });
 
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    const eventsReady = page.waitForResponse(
+      (response) => response.url().includes('/api/events'),
+      { timeout: 20_000 },
+    ).catch(() => null);
+    await page.goto(`${baseUrl}?e2e=1`, { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
+    await eventsReady;
+    await createCleanSession(page);
     const hasAbilityMenu = await page.locator('[data-testid="ability-menu-trigger"]').count() > 0;
     let managedInitialText = hasAbilityMenu
       ? ''

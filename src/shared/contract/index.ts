@@ -30,6 +30,7 @@ export * from './question';
 export * from './elicitation';
 export * from './agent';
 export * from './agentFailure';
+export * from './agentTree';
 export * from './agentEngine';
 export * from './skill';
 export * from './agentSkill';

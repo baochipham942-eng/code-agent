@@ -186,6 +186,20 @@ describe('IPC Handlers', () => {
       expect(mockAppService.sendMessage).toHaveBeenCalledWith({ content: 'test message' });
     });
 
+    it('returns the read-only Agent Tree snapshot without requiring the app service', async () => {
+      registerAgentHandlers(ipc.mock, () => null as any);
+
+      const request: IPCRequest = {
+        action: 'getTree',
+        payload: { sessionId: 'session-1' },
+      };
+      const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
+
+      expect(response.success).toBe(true);
+      expect((response.data as { sessionId?: string }).sessionId).toBe('session-1');
+      expect(Array.isArray((response.data as { nodes?: unknown[] }).nodes)).toBe(true);
+    });
+
     it('normalizes rich envelope payload for send', async () => {
       const mockAppService = {
         sendMessage: vi.fn().mockResolvedValue(undefined),

@@ -15,6 +15,8 @@ import {
 import type { PermissionResponse } from '../../shared/contract';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
+import type { AgentTreeRequest } from '../../shared/contract/agentTree';
+import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import {
   MODE_CONFIGS,
   setPermissionMode,
@@ -171,6 +173,11 @@ export function registerAgentHandlers(
           appService.resume((payload as { sessionId?: string })?.sessionId);
           return { success: true, data: null };
         }
+        case 'getTree':
+          return {
+            success: true,
+            data: getAgentTreeSnapshot(payload as AgentTreeRequest | undefined),
+          };
         default:
           return {
             success: false,

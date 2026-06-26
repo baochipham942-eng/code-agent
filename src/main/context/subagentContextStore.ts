@@ -186,6 +186,26 @@ export class SubagentContextStore {
     };
   }
 
+  list(sessionId?: string): SubagentContextRecord[] {
+    const expiredPruned = this.pruneExpired();
+    if (expiredPruned) {
+      this.persistToDisk();
+    }
+
+    const normalizedSessionId = sessionId?.trim();
+    return Array.from(this.store.values())
+      .filter((record) => !normalizedSessionId || record.sessionId === normalizedSessionId)
+      .map((record) => ({
+        ...record,
+        messages: record.messages.map(cloneMessage),
+        annotations: record.annotations ? { ...record.annotations } : undefined,
+        snapshot: cloneSnapshot(record.snapshot),
+        compressionState: record.compressionState
+          ? CompressionState.deserialize(record.compressionState)
+          : undefined,
+      }));
+  }
+
   clearSession(sessionId: string): void {
     const normalizedSessionId = sessionId.trim();
     let changed = false;

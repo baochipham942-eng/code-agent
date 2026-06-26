@@ -93,6 +93,29 @@ export interface ParallelExecutionResult {
   errors: Array<{ taskId: string; error: string }>;
 }
 
+export type ParallelAgentTaskSnapshotStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'blocked';
+
+export interface ParallelAgentTaskSnapshot {
+  taskId: string;
+  role: string;
+  task: string;
+  tools: string[];
+  dependsOn?: string[];
+  status: ParallelAgentTaskSnapshotStatus;
+  result?: AgentTaskResult;
+  error?: string;
+  failureCode?: AgentFailureCode;
+  startedAt?: number;
+  completedAt?: number;
+  duration?: number;
+}
+
 export interface SharedContext {
   findings: Map<string, unknown>;
   files: Map<string, string>;
@@ -781,6 +804,46 @@ export class ParallelAgentCoordinator extends EventEmitter {
   getTaskDefinition(taskId: string): AgentTask | undefined {
     const task = this.taskDefinitions.get(taskId);
     return task ? { ...task } : undefined;
+  }
+
+  getTaskSnapshots(): ParallelAgentTaskSnapshot[] {
+    const taskIds = new Set<string>([
+      ...this.taskDefinitions.keys(),
+      ...this.runningTasks.keys(),
+      ...this.completedTasks.keys(),
+    ]);
+
+    return Array.from(taskIds).map((taskId) => {
+      const definition = this.taskDefinitions.get(taskId);
+      const result = this.completedTasks.get(taskId);
+      const running = this.runningTasks.has(taskId);
+      const status: ParallelAgentTaskSnapshotStatus = running
+        ? 'running'
+        : result
+          ? result.cancelled
+            ? 'cancelled'
+            : result.blocked
+              ? 'blocked'
+              : result.success
+                ? 'completed'
+                : 'failed'
+          : 'pending';
+
+      return {
+        taskId,
+        role: definition?.role ?? result?.role ?? 'agent',
+        task: definition?.task ?? '',
+        tools: definition ? [...definition.tools] : [],
+        ...(definition?.dependsOn ? { dependsOn: [...definition.dependsOn] } : {}),
+        status,
+        ...(result ? { result: { ...result, toolsUsed: [...result.toolsUsed] } } : {}),
+        ...(result?.error ? { error: result.error } : {}),
+        ...(result?.failureCode ? { failureCode: result.failureCode } : {}),
+        ...(result?.startTime ? { startedAt: result.startTime } : {}),
+        ...(result?.endTime ? { completedAt: result.endTime } : {}),
+        ...(typeof result?.duration === 'number' ? { duration: result.duration } : {}),
+      };
+    });
   }
 
   canReceiveMessage(taskId: string): boolean {

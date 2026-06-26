@@ -15,8 +15,12 @@ import {
 import type { PermissionResponse } from '../../shared/contract';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
-import type { AgentTreeRequest } from '../../shared/contract/agentTree';
+import type {
+  AgentTreeRequest,
+  AgentWorktreeReviewRequest,
+} from '../../shared/contract/agentTree';
 import { getAgentTreeSnapshot } from '../agent/agentTreeService';
+import { getAgentWorktreeReview } from '../agent/agentWorktree';
 import {
   MODE_CONFIGS,
   setPermissionMode,
@@ -178,6 +182,19 @@ export function registerAgentHandlers(
             success: true,
             data: getAgentTreeSnapshot(payload as AgentTreeRequest | undefined),
           };
+        case 'getWorktreeReview': {
+          const agentId = (payload as AgentWorktreeReviewRequest | undefined)?.agentId?.trim();
+          if (!agentId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_AGENT_ID', message: 'agentId is required' },
+            };
+          }
+          return {
+            success: true,
+            data: await getAgentWorktreeReview(agentId),
+          };
+        }
         default:
           return {
             success: false,

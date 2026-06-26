@@ -57,6 +57,22 @@ export interface AgentTreeWorktreeState {
   evidenceRefs?: EvidenceRef[];
 }
 
+export interface AgentWorktreeArtifact extends AgentTreeWorktreeState {
+  agentId: string;
+  repoPath?: string;
+  updatedAt: number;
+  error?: string;
+}
+
+export interface AgentWorktreeReviewRequest {
+  agentId: string;
+}
+
+export interface AgentWorktreeReview extends AgentWorktreeArtifact {
+  diff?: string;
+  truncated?: boolean;
+}
+
 export interface AgentTreeNode {
   id: string;
   role: string;

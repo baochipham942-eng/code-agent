@@ -14,12 +14,22 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
 import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
+import {
+  makeEvidenceRef,
+  type EvidenceRef,
+} from '../../shared/contract/evidence';
+import type {
+  AgentTreeChangedFile,
+  AgentWorktreeArtifact,
+  AgentWorktreeReview,
+} from '../../shared/contract/agentTree';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
 
 const WORKTREE_TIMEOUT = 30_000;
 const WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees');
+const MAX_WORKTREE_DIFF_CHARS = 20_000;
 
 export interface WorktreeInfo {
   worktreePath: string;
@@ -31,6 +41,175 @@ export interface WorktreeCleanupResult {
   branchName: string;
   /** If changes exist, the worktree path is preserved */
   worktreePath?: string;
+}
+
+const worktreeArtifacts = new Map<string, AgentWorktreeArtifact>();
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function cloneChangedFiles(files?: AgentTreeChangedFile[]): AgentTreeChangedFile[] | undefined {
+  return files?.map((file) => ({ ...file }));
+}
+
+function cloneEvidenceRefs(refs?: EvidenceRef[]): EvidenceRef[] | undefined {
+  return refs?.map((ref) => ({
+    ...ref,
+    freshness: { ...ref.freshness },
+  }));
+}
+
+function cloneArtifact(artifact: AgentWorktreeArtifact): AgentWorktreeArtifact {
+  return {
+    ...artifact,
+    ...(artifact.changedFiles ? { changedFiles: cloneChangedFiles(artifact.changedFiles) } : {}),
+    ...(artifact.evidenceRefs ? { evidenceRefs: cloneEvidenceRefs(artifact.evidenceRefs) } : {}),
+  };
+}
+
+function makeWorktreeEvidenceRef(agentId: string, worktreePath: string, kind: 'diff' | 'file'): EvidenceRef {
+  return makeEvidenceRef({
+    kind,
+    ref: worktreePath,
+    source: `agentWorktree:${agentId}`,
+    state: 'fresh',
+  });
+}
+
+function recordWorktreeArtifact(
+  agentId: string,
+  next: Omit<AgentWorktreeArtifact, 'agentId' | 'updatedAt'> & { updatedAt?: number },
+): AgentWorktreeArtifact {
+  const existing = worktreeArtifacts.get(agentId);
+  const artifact: AgentWorktreeArtifact = {
+    agentId,
+    updatedAt: next.updatedAt ?? Date.now(),
+    status: next.status,
+    ...(next.path ? { path: next.path } : existing?.path ? { path: existing.path } : {}),
+    ...(next.branch ? { branch: next.branch } : existing?.branch ? { branch: existing.branch } : {}),
+    ...(next.repoPath ? { repoPath: next.repoPath } : existing?.repoPath ? { repoPath: existing.repoPath } : {}),
+    ...(next.changedFiles ? { changedFiles: cloneChangedFiles(next.changedFiles) } : {}),
+    ...(next.diffSummary ? { diffSummary: next.diffSummary } : {}),
+    ...(next.evidenceRefs ? { evidenceRefs: cloneEvidenceRefs(next.evidenceRefs) } : {}),
+    ...(next.error ? { error: next.error } : {}),
+  };
+  worktreeArtifacts.set(agentId, artifact);
+  return cloneArtifact(artifact);
+}
+
+export function listAgentWorktreeArtifacts(): AgentWorktreeArtifact[] {
+  return Array.from(worktreeArtifacts.values()).map(cloneArtifact);
+}
+
+export function getAgentWorktreeArtifact(agentId: string): AgentWorktreeArtifact | undefined {
+  const artifact = worktreeArtifacts.get(agentId);
+  return artifact ? cloneArtifact(artifact) : undefined;
+}
+
+export function resetAgentWorktreeArtifactsForTest(): void {
+  worktreeArtifacts.clear();
+}
+
+export function parseGitStatusPorcelain(output: string): AgentTreeChangedFile[] {
+  return output
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .map((line) => {
+      const code = line.slice(0, 2);
+      const rawPath = line.slice(3).trim();
+      const pathPart = rawPath.includes(' -> ')
+        ? rawPath.split(' -> ').pop() ?? rawPath
+        : rawPath;
+      const normalizedCode = code.replace(/\s/g, '');
+      const status: AgentTreeChangedFile['status'] = normalizedCode.includes('?')
+        ? 'untracked'
+        : normalizedCode.includes('R')
+          ? 'renamed'
+          : normalizedCode.includes('C')
+            ? 'copied'
+            : normalizedCode.includes('A')
+              ? 'added'
+              : normalizedCode.includes('D')
+                ? 'deleted'
+                : normalizedCode.includes('M')
+                  ? 'modified'
+                  : 'unknown';
+      return {
+        path: pathPart.replace(/^"|"$/g, ''),
+        status,
+      };
+    });
+}
+
+async function readChangedFiles(worktreePath: string): Promise<AgentTreeChangedFile[]> {
+  const { stdout } = await execAsync(
+    `git -C ${shellQuote(worktreePath)} status --porcelain`,
+    { timeout: WORKTREE_TIMEOUT }
+  );
+  return parseGitStatusPorcelain(stdout);
+}
+
+async function readDiffSummary(worktreePath: string): Promise<string> {
+  const { stdout } = await execAsync(
+    `git -C ${shellQuote(worktreePath)} diff HEAD --stat 2>/dev/null || true`,
+    { timeout: WORKTREE_TIMEOUT }
+  );
+  return stdout.trim();
+}
+
+async function readDiff(worktreePath: string): Promise<{ diff: string; truncated: boolean }> {
+  const { stdout } = await execAsync(
+    `git -C ${shellQuote(worktreePath)} diff HEAD -- 2>/dev/null || true`,
+    { timeout: WORKTREE_TIMEOUT, maxBuffer: MAX_WORKTREE_DIFF_CHARS * 2 }
+  );
+  const truncated = stdout.length > MAX_WORKTREE_DIFF_CHARS;
+  return {
+    diff: truncated
+      ? `${stdout.slice(0, MAX_WORKTREE_DIFF_CHARS)}\n\n[变更内容较长，已截断。]`
+      : stdout,
+    truncated,
+  };
+}
+
+export async function getAgentWorktreeReview(agentId: string): Promise<AgentWorktreeReview | undefined> {
+  const artifact = worktreeArtifacts.get(agentId);
+  if (!artifact) return undefined;
+  const worktreePath = artifact.path;
+  if (!worktreePath || artifact.status === 'cleaned') {
+    return cloneArtifact(artifact);
+  }
+
+  try {
+    const [changedFiles, diffSummary, diff] = await Promise.all([
+      readChangedFiles(worktreePath),
+      readDiffSummary(worktreePath),
+      readDiff(worktreePath),
+    ]);
+    const evidenceRefs = [makeWorktreeEvidenceRef(agentId, worktreePath, 'diff')];
+    const refreshed = recordWorktreeArtifact(agentId, {
+      ...artifact,
+      changedFiles,
+      diffSummary,
+      evidenceRefs,
+      updatedAt: Date.now(),
+    });
+    return {
+      ...refreshed,
+      diff: diff.diff,
+      truncated: diff.truncated,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const refreshed = recordWorktreeArtifact(agentId, {
+      ...artifact,
+      status: 'error',
+      error: message,
+      updatedAt: Date.now(),
+    });
+    return refreshed;
+  }
 }
 
 /**
@@ -53,9 +232,27 @@ export async function createAgentWorktree(
   const cmd = `git worktree add -b '${branchName}' '${worktreePath}' '${base}'`;
   logger.info(`[${agentId}] Creating worktree: ${cmd}`);
 
-  await execAsync(cmd, { cwd: repoPath, timeout: WORKTREE_TIMEOUT });
+  try {
+    await execAsync(cmd, { cwd: repoPath, timeout: WORKTREE_TIMEOUT });
+  } catch (err) {
+    recordWorktreeArtifact(agentId, {
+      status: 'error',
+      path: worktreePath,
+      branch: branchName,
+      repoPath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
 
   logger.info(`[${agentId}] Worktree created at ${worktreePath} (branch: ${branchName})`);
+  recordWorktreeArtifact(agentId, {
+    status: 'active',
+    path: worktreePath,
+    branch: branchName,
+    repoPath,
+    evidenceRefs: [makeWorktreeEvidenceRef(agentId, worktreePath, 'file')],
+  });
 
   // 共享主仓库的 gitignored 依赖目录（如 node_modules）到 worktree，避免每个并行 agent
   // 重新 npm install。best-effort：任一 symlink 失败只记 warning，不让 worktree 创建失败。
@@ -167,6 +364,13 @@ export async function cleanupAgentWorktree(
       ).catch(() => {
         // Branch delete may fail if already deleted, ignore
       });
+      recordWorktreeArtifact(agentId, {
+        status: 'cleaned',
+        branch: branchName,
+        repoPath,
+        changedFiles: [],
+        diffSummary: '',
+      });
       logger.info(`[${agentId}] Worktree cleaned up (no changes)`);
       return { hasChanges: false, branchName };
     }
@@ -180,6 +384,15 @@ export async function cleanupAgentWorktree(
     } catch (err) {
       logger.warn(`[${agentId}] captureWorkspacePatch failed during cleanup:`, err);
     }
+    recordWorktreeArtifact(agentId, {
+      status: 'preserved',
+      path: worktreePath,
+      branch: branchName,
+      repoPath,
+      changedFiles: parseGitStatusPorcelain(statusOutput),
+      diffSummary: diffOutput.trim(),
+      evidenceRefs: [makeWorktreeEvidenceRef(agentId, worktreePath, 'diff')],
+    });
     logger.info(`[${agentId}] Worktree preserved (has changes) at ${worktreePath}`);
     return { hasChanges: true, branchName, worktreePath };
   } catch (err) {
@@ -197,6 +410,13 @@ export async function cleanupAgentWorktree(
     } catch {
       // Best effort cleanup
     }
+    recordWorktreeArtifact(agentId, {
+      status: 'error',
+      path: worktreePath,
+      branch: branchName,
+      repoPath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { hasChanges: false, branchName };
   }
 }

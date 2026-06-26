@@ -30,6 +30,8 @@ export * from './contract/planning';
 export * from './contract/question';
 export * from './contract/elicitation';
 export * from './contract/agent';
+export * from './contract/agentFailure';
+export * from './contract/agentTree';
 export * from './contract/agentEngine';
 export * from './contract/skill';
 export * from './contract/agentSkill';

@@ -200,6 +200,18 @@ describe('IPC Handlers', () => {
       expect(Array.isArray((response.data as { nodes?: unknown[] }).nodes)).toBe(true);
     });
 
+    it('validates the read-only worktree review request', async () => {
+      registerAgentHandlers(ipc.mock, () => null as any);
+
+      const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+        action: 'getWorktreeReview',
+        payload: {},
+      } satisfies IPCRequest);
+
+      expect(response.success).toBe(false);
+      expect(response.error?.code).toBe('INVALID_AGENT_ID');
+    });
+
     it('normalizes rich envelope payload for send', async () => {
       const mockAppService = {
         sendMessage: vi.fn().mockResolvedValue(undefined),

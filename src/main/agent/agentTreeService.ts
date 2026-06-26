@@ -9,6 +9,7 @@ import type {
   AgentTreeNodeSource,
   AgentTreeNodeStatus,
   AgentTreeSnapshot,
+  AgentWorktreeArtifact,
   AgentTreeWorktreeState,
 } from '../../shared/contract/agentTree';
 import type { EvidenceRef } from '../../shared/contract/evidence';
@@ -29,6 +30,7 @@ import {
   type SubagentContextRecord,
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
+import { listAgentWorktreeArtifacts } from './agentWorktree';
 
 export interface AgentTreeSpawnAgentSource {
   id: string;
@@ -43,11 +45,6 @@ export interface AgentTreeSpawnAgentSource {
   completedAt?: number;
 }
 
-export interface AgentTreeWorktreeSource extends AgentTreeWorktreeState {
-  agentId: string;
-  updatedAt?: number;
-}
-
 export interface AgentTreeSnapshotSources {
   sessionId?: string;
   now?: number;
@@ -55,13 +52,13 @@ export interface AgentTreeSnapshotSources {
   parallelTasks?: ParallelAgentTaskSnapshot[];
   contextRecords?: SubagentContextRecord[];
   backgroundAgents?: BackgroundSubagentHandle[];
-  worktrees?: AgentTreeWorktreeSource[];
+  worktrees?: AgentWorktreeArtifact[];
 }
 
 export interface GetAgentTreeSnapshotOptions {
   sessionId?: string;
   now?: number;
-  worktrees?: AgentTreeWorktreeSource[];
+  worktrees?: AgentWorktreeArtifact[];
 }
 
 const STATUS_PRIORITY: Record<AgentTreeNodeSource, number> = {
@@ -427,7 +424,7 @@ function mergeBackgroundAgent(
 
 function mergeWorktree(
   nodes: Map<string, AgentTreeNode>,
-  worktree: AgentTreeWorktreeSource,
+  worktree: AgentWorktreeArtifact,
 ): void {
   const node = ensureNode(nodes, worktree.agentId);
   addSource(node, 'agentWorktree');
@@ -553,6 +550,6 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     parallelTasks: getParallelAgentCoordinator().getTaskSnapshots(),
     contextRecords: getSubagentContextStore().list(sessionId),
     backgroundAgents: getBackgroundSubagentRegistry().list(),
-    worktrees: options.worktrees,
+    worktrees: options.worktrees ?? listAgentWorktreeArtifacts(),
   });
 }

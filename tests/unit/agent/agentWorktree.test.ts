@@ -119,13 +119,18 @@ import {
   createAgentWorktree,
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
+  getAgentWorktreeReview,
+  listAgentWorktreeArtifacts,
+  parseGitStatusPorcelain,
   parseGitignoreTopLevelDirs,
+  resetAgentWorktreeArtifactsForTest,
 } from '../../../src/main/agent/agentWorktree';
 
 describe('AgentWorktree', () => {
   beforeEach(() => {
     execState.reset();
     fsState.reset();
+    resetAgentWorktreeArtifactsForTest();
   });
 
   // ==========================================================================
@@ -143,6 +148,15 @@ describe('AgentWorktree', () => {
       expect(execState.calls.some((c) => c.includes("git worktree add -b 'agent/agent-1'"))).toBe(
         true
       );
+      expect(listAgentWorktreeArtifacts()).toMatchObject([
+        {
+          agentId: 'agent-1',
+          status: 'active',
+          path: `${WORKTREE_BASE}/agent-1`,
+          branch: 'agent/agent-1',
+          repoPath: '/repo',
+        },
+      ]);
     });
 
     it('无 baseBranch 时以 HEAD 为 base', async () => {
@@ -212,6 +226,15 @@ describe('AgentWorktree', () => {
       expect(result.worktreePath).toBe('/tmp/wt/a1');
       // 不应调用 remove
       expect(execState.calls.some((c) => c.includes('git worktree remove'))).toBe(false);
+      expect(listAgentWorktreeArtifacts()).toMatchObject([
+        {
+          agentId: 'a1',
+          status: 'preserved',
+          path: '/tmp/wt/a1',
+          branch: 'agent/a1',
+          changedFiles: [{ path: 'src/foo.ts', status: 'modified' }],
+        },
+      ]);
     });
 
     it('有 diff 也判为 hasChanges=true', async () => {
@@ -249,6 +272,56 @@ describe('AgentWorktree', () => {
       expect(
         execState.calls.some((c) => c.includes('git worktree remove --force'))
       ).toBe(true);
+    });
+  });
+
+  describe('read-only review metadata', () => {
+    it('解析 git status porcelain 为人能看懂的文件状态', () => {
+      expect(parseGitStatusPorcelain([
+        ' M src/foo.ts',
+        'A  src/new.ts',
+        'D  src/old.ts',
+        '?? notes.txt',
+        'R  src/from.ts -> src/to.ts',
+      ].join('\n'))).toEqual([
+        { path: 'src/foo.ts', status: 'modified' },
+        { path: 'src/new.ts', status: 'added' },
+        { path: 'src/old.ts', status: 'deleted' },
+        { path: 'notes.txt', status: 'untracked' },
+        { path: 'src/to.ts', status: 'renamed' },
+      ]);
+    });
+
+    it('getAgentWorktreeReview 只读取 changed files 和 diff，不执行 merge', async () => {
+      execState.when(/git worktree add/, () => ({ stdout: '' }));
+      execState.when(/status --porcelain/, () => ({
+        stdout: ' M src/foo.ts\n?? notes.txt\n',
+      }));
+      execState.when(/diff HEAD/, (cmd) => ({
+        stdout: cmd.includes('--stat')
+          ? ' src/foo.ts | 2 ++\n 1 file changed, 2 insertions(+)\n'
+          : 'diff --git a/src/foo.ts b/src/foo.ts\n+hello\n',
+      }));
+
+      const info = await createAgentWorktree('reviewer', '/repo');
+      const cleanup = await cleanupAgentWorktree('reviewer', info.worktreePath, '/repo');
+      const review = await getAgentWorktreeReview('reviewer');
+
+      expect(cleanup.hasChanges).toBe(true);
+      expect(review).toMatchObject({
+        agentId: 'reviewer',
+        status: 'preserved',
+        path: info.worktreePath,
+        branch: 'agent/reviewer',
+        changedFiles: [
+          { path: 'src/foo.ts', status: 'modified' },
+          { path: 'notes.txt', status: 'untracked' },
+        ],
+        diffSummary: 'src/foo.ts | 2 ++\n 1 file changed, 2 insertions(+)',
+        diff: 'diff --git a/src/foo.ts b/src/foo.ts\n+hello\n',
+        truncated: false,
+      });
+      expect(execState.calls.some((cmd) => /\bmerge\b/.test(cmd))).toBe(false);
     });
   });
 

@@ -61,6 +61,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.AGENT]: [
     'cancel',
     'getTree',
+    'getWorktreeReview',
     'interrupt',
     'pause',
     'permissionResponse',

@@ -469,13 +469,17 @@ memory_store {
 memory_search { "query": "React 性能优化技巧" }
 ```
 
-### code_index - 代码索引
+### code_index / code_search - 代码索引与候选搜索
 
 ```bash
-code_index { "action": "index", "path": "." }
-code_index { "action": "definition", "symbol": "UserService" }
-code_index { "action": "references", "symbol": "handleSubmit" }
+code_index { "path": ".", "pattern": "**/*.{ts,tsx,js,jsx,py,go,rs}", "maxFiles": 500 }
+code_search { "query": "TaskManager replace patch", "limit": 5 }
+find_symbol { "name": "UserService", "kind": "class" }
+find_references { "name": "handleSubmit", "limit": 50 }
 ```
+
+`code_search` 使用本地 lexical FTS + symbol 索引，不依赖 embedding。返回结果是 `EvidenceRef`
+候选证据（`freshness.state: "candidate"`），需要按 next-read 提示再用 `Read` 绑定精确范围后才能进入结论。
 
 ### auto_learn - 自动学习
 

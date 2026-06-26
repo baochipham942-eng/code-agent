@@ -36,11 +36,20 @@ vi.mock('child_process', () => ({
   exec: (...args: unknown[]) => execMock(...args),
 }));
 
-vi.mock('fs', () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
-  statSync: (...args: unknown[]) => statSyncMock(...args),
-}));
+vi.mock('fs', () => {
+  // vitest 4 对命名空间/default 导入更严：显式给齐代码路径(含 transitive)用到的
+  // fs 方法 + default 自指，覆盖 `import * as fs` 与 `import fs from 'fs'` 两种写法。
+  const fsMock = {
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
+    statSync: (...args: unknown[]) => statSyncMock(...args),
+    createReadStream: vi.fn(),
+    appendFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    readFileSync: vi.fn(),
+  };
+  return { ...fsMock, default: fsMock };
+});
 
 vi.mock('../../../../src/host/services/desktop/visionAnalysisService', () => ({
   analyzeImageWithVisionDetailed: (...args: unknown[]) => analyzeImageWithVisionDetailedMock(...args),

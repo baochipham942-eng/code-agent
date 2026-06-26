@@ -27,6 +27,23 @@ export const globSchema: ToolSchema = {
           'Examples: "/Users/name/project", "~/Documents", "./src". ' +
           'Supports absolute paths, ~ for home, and relative paths.',
       },
+      offset: {
+        type: 'number',
+        description: 'Zero-based result offset for pagination. Default: 0.',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum results to return in this page. Default: 200, max: 1000.',
+      },
+      sort: {
+        type: 'string',
+        enum: ['path', 'name', 'mtime', 'size'],
+        description: 'Sort order for results. Default: path. mtime and size sort descending.',
+      },
+      respect_gitignore: {
+        type: 'boolean',
+        description: 'When true, best-effort respect top-level .gitignore entries in addition to built-in ignores. Default: true.',
+      },
     },
     required: ['pattern'],
   },

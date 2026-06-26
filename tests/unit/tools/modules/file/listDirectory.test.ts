@@ -58,6 +58,9 @@ describe('listDirectoryModule', () => {
         dirPath: tmpDir,
         recursive: true,
         maxDepth: 2,
+        offset: 0,
+        limit: 200,
+        nextOffset: null,
         entryCount: 3,
         fileCount: 2,
         directoryCount: 1,
@@ -75,5 +78,53 @@ describe('listDirectoryModule', () => {
         ]),
       );
     }
+  });
+
+  it('paginates entries and archives the full listing when there is another page', async () => {
+    await fs.writeFile(path.join(tmpDir, 'c.txt'), 'c', 'utf8');
+
+    const handler = await listDirectoryModule.createHandler();
+    const result = await handler.execute(
+      { path: tmpDir, recursive: true, max_depth: 2, sort: 'path', offset: 1, limit: 1 },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('nextOffset: 2');
+      expect(result.output).toContain('[next-read]');
+      expect(result.meta).toMatchObject({
+        offset: 1,
+        limit: 1,
+        nextOffset: 2,
+        entriesTruncated: true,
+        archiveRef: expect.objectContaining({ reason: 'discovery-full-results' }),
+      });
+      expect(result.meta?.entries).toHaveLength(1);
+    }
+  });
+
+  it('respects .gitignore entries by default and can opt out', async () => {
+    await fs.writeFile(path.join(tmpDir, '.gitignore'), 'ignored/\n', 'utf8');
+    await fs.mkdir(path.join(tmpDir, 'ignored'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, 'ignored', 'hidden.txt'), 'hidden', 'utf8');
+
+    const handler = await listDirectoryModule.createHandler();
+    const respected = await handler.execute(
+      { path: tmpDir, recursive: true, max_depth: 2 },
+      makeCtx(),
+      allowAll,
+    );
+    const ignored = await handler.execute(
+      { path: tmpDir, recursive: true, max_depth: 2, respect_gitignore: false },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(respected.ok).toBe(true);
+    if (respected.ok) expect(respected.output).not.toContain('hidden.txt');
+    expect(ignored.ok).toBe(true);
+    if (ignored.ok) expect(ignored.output).toContain('hidden.txt');
   });
 });

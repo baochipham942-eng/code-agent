@@ -72,11 +72,16 @@ export const grepSchema: ToolSchema = {
           'Limit output to first N match groups (default: 0 = unlimited). ' +
           'A match group is a single match or a match with its context lines.',
       },
+      limit: {
+        type: 'number',
+        description:
+          'Alias for head_limit. Use with offset for pagination by match group.',
+      },
       offset: {
         type: 'number',
         description:
-          'Skip first N match groups before applying head_limit (default: 0). ' +
-          'Use with head_limit for pagination.',
+          'Skip first N match groups before applying head_limit/limit (default: 0). ' +
+          'Use the returned nextOffset to fetch the next page.',
       },
     },
     required: ['pattern'],

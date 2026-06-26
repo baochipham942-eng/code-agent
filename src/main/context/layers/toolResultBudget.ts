@@ -25,6 +25,8 @@ export interface ToolResultBudgetConfig {
 const DEFAULT_CONFIG: Pick<ToolResultBudgetConfig, 'maxTokensPerResult'> = {
   maxTokensPerResult: 2000,
 };
+const NEXT_READ_HINT =
+  '\n[next-read] If the archived result names source files, call Read on the exact file before Edit or overwrite Write.';
 
 // G24: 错误信号行的正则。head+tail 截断会丢掉夹在中段的关键报错行
 // （stack trace / 编译错误 / 断言失败），模型看不到失败原因就反复重试 (stagnation)。
@@ -228,7 +230,9 @@ export function applyToolResultBudget(
     const truncatedTokens = estimateTokens(truncated);
 
     // Mutate the message content
-    msg.content = spillResult ? truncated + buildSpillNotice(spillResult.archiveRef) : truncated;
+    msg.content = spillResult
+      ? truncated + buildSpillNotice(spillResult.archiveRef) + NEXT_READ_HINT
+      : truncated;
 
     // Record the commit (once per message — re-truncations reuse the original commit)
     if (wasBudgeted) continue;

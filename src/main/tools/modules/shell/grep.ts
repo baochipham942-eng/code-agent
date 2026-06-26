@@ -37,8 +37,12 @@ import type {
 import { grepSchema as schema } from './grep.schema';
 import { GREP, BASH } from '../../../../shared/constants';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 
 const execFileAsync = promisify(execFile);
+const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
+const NEXT_READ_HINT =
+  '\n[next-read] Before Edit or overwrite Write on any grep result file, call Read on that exact file first.';
 
 /**
  * File type → glob 映射，对齐 ripgrep 内置 type 定义。
@@ -135,6 +139,9 @@ interface GrepMeta extends Record<string, unknown> {
   engine: 'rg' | 'grep';
   totalMatches?: number;
   shown?: number;
+  offset?: number;
+  limit?: number;
+  nextOffset?: number | null;
   truncated?: boolean;
 }
 
@@ -301,6 +308,7 @@ interface PaginateResult {
   output: string;
   totalGroups: number;
   shownCount: number;
+  nextOffset: number | null;
   truncated: boolean;
 }
 
@@ -346,13 +354,17 @@ function paginateOutput(stdout: string, headLimit: number, offset: number): Pagi
 
   const shownCount = sliced.length;
   const output = sliced.map((g) => g.join('\n')).join('\n--\n');
-  const pagination = `(showing ${effectiveOffset + 1}-${effectiveOffset + shownCount} of ${totalGroups} matches)`;
+  const nextOffset = effectiveOffset + shownCount < totalGroups ? effectiveOffset + shownCount : null;
+  const startDisplay = shownCount > 0 ? effectiveOffset + 1 : effectiveOffset;
+  const endDisplay = effectiveOffset + shownCount;
+  const pagination = `(showing ${startDisplay}-${endDisplay} of ${totalGroups} matches)\nnextOffset: ${nextOffset === null ? 'null' : nextOffset}`;
 
   return {
     output: output + '\n\n' + pagination,
     totalGroups,
     shownCount,
-    truncated: effectiveOffset + shownCount < totalGroups,
+    nextOffset,
+    truncated: nextOffset !== null,
   };
 }
 
@@ -360,17 +372,23 @@ function paginateOutput(stdout: string, headLimit: number, offset: number): Pagi
 function applyDefaultLimit(stdout: string): {
   output: string;
   totalMatches: number;
+  nextOffset: number | null;
   truncated: boolean;
 } {
   const lines = stdout.split('\n').filter(Boolean);
   const totalMatches = lines.length;
   if (totalMatches <= GREP.MAX_TOTAL_MATCHES) {
-    return { output: lines.join('\n'), totalMatches, truncated: false };
+    return { output: `${lines.join('\n')}\n\nnextOffset: null`, totalMatches, nextOffset: null, truncated: false };
   }
   const output =
     lines.slice(0, GREP.MAX_TOTAL_MATCHES).join('\n') +
-    `\n\n... (${totalMatches - GREP.MAX_TOTAL_MATCHES} more matches)`;
-  return { output, totalMatches, truncated: true };
+    `\n\n... (${totalMatches - GREP.MAX_TOTAL_MATCHES} more matches)\nnextOffset: ${GREP.MAX_TOTAL_MATCHES}`;
+  return { output, totalMatches, nextOffset: GREP.MAX_TOTAL_MATCHES, truncated: true };
+}
+
+function appendArchiveHint(output: string, archiveRef: ToolResultArchiveRef | undefined): string {
+  if (!archiveRef) return output;
+  return `${output}${buildSpillNotice(archiveRef)}${NEXT_READ_HINT}`;
 }
 
 function parseMatches(output: string, searchPath: string): GrepMatch[] {
@@ -463,7 +481,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     const beforeContext = args.before_context as number | undefined;
     const afterContext = args.after_context as number | undefined;
     const contextLines = args.context as number | undefined;
-    const headLimit = (args.head_limit as number | undefined) ?? 0;
+    const headLimit = (args.head_limit as number | undefined) ?? (args.limit as number | undefined) ?? 0;
     const offset = (args.offset as number | undefined) ?? 0;
 
     // context 覆写 before/after
@@ -535,6 +553,9 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
           engine,
           totalMatches: p.totalGroups,
           shown: p.shownCount,
+          offset,
+          limit: headLimit,
+          nextOffset: p.nextOffset,
           truncated: p.truncated,
         };
       } else {
@@ -544,6 +565,9 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
           engine,
           totalMatches: limited.totalMatches,
           shown: Math.min(limited.totalMatches, GREP.MAX_TOTAL_MATCHES),
+          offset: 0,
+          limit: GREP.MAX_TOTAL_MATCHES,
+          nextOffset: limited.nextOffset,
           truncated: limited.truncated,
         };
       }
@@ -556,10 +580,20 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
       });
       const outputText = output || 'No matches found';
       const matches = parseMatches(outputText, searchPath);
+      const archive = (meta.truncated || stdout.length > DISCOVERY_ARCHIVE_CHAR_LIMIT)
+        ? spillToolResultArchive({
+            content: stdout,
+            toolName: schema.name,
+            sessionId: ctx.sessionId,
+            toolCallId: ctx.currentToolCallId,
+            reason: 'discovery-full-results',
+          })
+        : null;
+      const finalOutput = appendArchiveHint(outputText, archive?.archiveRef);
 
       return {
         ok: true,
-        output: outputText,
+        output: finalOutput,
         meta: {
           ...meta,
           pattern,
@@ -571,21 +605,26 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
           afterContext: ctxAfter,
           matches,
           matchesTruncated: matches.length >= 200,
+          ...(archive ? { archiveRef: archive.archiveRef } : {}),
           artifact: createVirtualArtifact({
             sourceTool: schema.name,
             kind: 'search',
             sessionId: ctx.sessionId,
             name: `Grep: ${pattern.slice(0, 80)}`,
             mimeType: 'text/plain',
-            contentLength: outputText.length,
-            preview: outputText.slice(0, 500),
+            contentLength: finalOutput.length,
+            preview: finalOutput.slice(0, 500),
             metadata: {
               engine,
               pattern,
               searchPath,
               totalMatches: meta.totalMatches,
               shown: meta.shown,
+              offset: meta.offset,
+              limit: meta.limit,
+              nextOffset: meta.nextOffset,
               truncated: meta.truncated,
+              ...(archive ? { archiveRef: archive.archiveRef } : {}),
             },
           }),
         },

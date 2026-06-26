@@ -174,9 +174,10 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.kind).toBe('skill_activity');
     expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.skillActivity?.summary).toBe('Skill 写入偏好 1');
     expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
+    // report.md 是 Write 的 outputPath，已作为 tool_call/file-change 可见；
+    // 9c7cb06bc 起 artifact-ownership 去重不再重复列入（避免与 file-change 双列）。
     expect(enriched.turns[0]?.nodes[7]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
       'Execution Chart',
-      'report.md',
       'preview.png',
     ]);
   });

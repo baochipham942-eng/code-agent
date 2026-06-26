@@ -79,12 +79,17 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
+function fakeSource(name: string, priority = 3) {
+  return { name, priority, isAvailable: vi.fn(), search: vi.fn() };
+}
+
 const fakeSources = [
-  { name: 'exa', priority: 3, isAvailable: vi.fn(), search: vi.fn() },
-  { name: 'tavily', priority: 4, isAvailable: vi.fn(), search: vi.fn() },
+  fakeSource('exa', 3),
+  fakeSource('tavily', 4),
 ];
 
-function makeSearchResult() {
+function makeSearchResult(sources: string[] = ['exa']) {
+  const firstSource = sources[0] ?? 'exa';
   return {
     success: true,
     output: '# Search results\n\n- Result One\n  https://example.com/a\n  first snippet',
@@ -94,10 +99,10 @@ function makeSearchResult() {
           title: 'Result One',
           url: 'https://example.com/a',
           snippet: 'first snippet',
-          source: 'exa',
+          source: firstSource,
         },
       ],
-      sources: ['exa'],
+      sources,
       duration: 42,
     },
   };
@@ -183,6 +188,76 @@ describe('webSearchModule (native)', () => {
     expect(result.ok).toBe(true);
     expect(serialSearchMock).toHaveBeenCalledTimes(1);
     expect(parallelSearchMock).not.toHaveBeenCalled();
+  });
+
+  it('marks recency as hard-enforced only for providers with request parameters', async () => {
+    const recencySources = [
+      fakeSource('firecrawl', 1),
+      fakeSource('exa', 3),
+      fakeSource('brave', 4),
+      fakeSource('tavily', 5),
+    ];
+    getAvailableSourcesMock.mockReturnValue(recencySources);
+    routeSourcesMock.mockReturnValue({ sources: ['firecrawl', 'exa', 'brave', 'tavily'], reason: 'recent' });
+    parallelSearchMock.mockResolvedValue(makeSearchResult(['firecrawl-keyless', 'exa', 'brave', 'tavily']));
+
+    const result = await run({ query: 'latest releases', recency: 'week' });
+
+    expect(result.ok).toBe(true);
+    expect(parallelSearchMock).toHaveBeenCalledWith(
+      'latest releases',
+      5,
+      recencySources,
+      expect.anything(),
+      undefined,
+      'week'
+    );
+    if (result.ok) {
+      expect(result.meta).toMatchObject({
+        recencyRequested: true,
+        recencyEnforcedBy: ['firecrawl-keyless', 'exa', 'brave', 'tavily'],
+        recencyBestEffortBy: [],
+      });
+      expect((result.meta?.artifact as { metadata?: Record<string, unknown> }).metadata).toMatchObject({
+        recencyRequested: true,
+        recencyEnforcedBy: ['firecrawl-keyless', 'exa', 'brave', 'tavily'],
+        recencyBestEffortBy: [],
+      });
+    }
+  });
+
+  it('marks OpenAI recency as best-effort because it is prompt text only', async () => {
+    getAvailableSourcesMock.mockReturnValue([fakeSource('openai', 4)]);
+    routeSourcesMock.mockReturnValue({ sources: ['openai'], reason: 'user-specified' });
+    serialSearchMock.mockResolvedValue(makeSearchResult(['openai']));
+
+    const result = await run({ query: 'latest docs', sources: ['openai'], recency: 'day' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta).toMatchObject({
+        recencyRequested: true,
+        recencyEnforcedBy: [],
+        recencyBestEffortBy: ['openai'],
+      });
+    }
+  });
+
+  it('does not claim recency enforcement for providers that ignore recency', async () => {
+    getAvailableSourcesMock.mockReturnValue([fakeSource('perplexity', 3)]);
+    routeSourcesMock.mockReturnValue({ sources: ['perplexity'], reason: 'user-specified' });
+    serialSearchMock.mockResolvedValue(makeSearchResult(['perplexity']));
+
+    const result = await run({ query: 'latest summary', sources: ['perplexity'], recency: 'month' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta).toMatchObject({
+        recencyRequested: true,
+        recencyEnforcedBy: [],
+        recencyBestEffortBy: [],
+      });
+    }
   });
 
   it('applies table formatting when requested', async () => {

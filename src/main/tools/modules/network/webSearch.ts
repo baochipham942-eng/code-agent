@@ -67,6 +67,39 @@ function getResultData(searchResult: ToolExecutionResult): {
   return { results, sources, duration: resultData?.duration };
 }
 
+const RECENCY_ENFORCED_SOURCES = new Set([
+  'firecrawl',
+  'firecrawl-keyless',
+  'exa',
+  'brave',
+  'tavily',
+]);
+const RECENCY_BEST_EFFORT_SOURCES = new Set(['openai']);
+
+function uniqueSourceNames(sources: string[]): string[] {
+  return Array.from(new Set(sources.filter(Boolean)));
+}
+
+function buildRecencyMeta(recency: string | undefined, sources: string[]): {
+  recencyRequested: boolean;
+  recencyEnforcedBy: string[];
+  recencyBestEffortBy: string[];
+} {
+  if (!recency) {
+    return {
+      recencyRequested: false,
+      recencyEnforcedBy: [],
+      recencyBestEffortBy: [],
+    };
+  }
+  const uniqueSources = uniqueSourceNames(sources);
+  return {
+    recencyRequested: true,
+    recencyEnforcedBy: uniqueSources.filter(source => RECENCY_ENFORCED_SOURCES.has(source)),
+    recencyBestEffortBy: uniqueSources.filter(source => RECENCY_BEST_EFFORT_SOURCES.has(source)),
+  };
+}
+
 async function translateOutputIfNeeded(
   searchResult: ToolExecutionResult,
   query: string,
@@ -266,11 +299,12 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
     onProgress?.({ stage: 'completing', percent: 100 });
 
     if (!searchResult.success) {
+      const recencyMeta = buildRecencyMeta(recency, availableSources.map(s => s.name));
       return {
         ok: false,
         error: `${searchResult.error || 'WebSearch failed'}\n\n${SEARCH_FAILURE_GUIDANCE}`,
         code: 'NETWORK_ERROR',
-        meta: { routing: routingMeta },
+        meta: { routing: routingMeta, ...recencyMeta },
       };
     }
 
@@ -293,6 +327,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const resultData = getResultData(searchResult);
+    const recencyMeta = buildRecencyMeta(recency, resultData.sources);
     ctx.logger.debug('WebSearch done', {
       resultCount: resultData.results.length,
       sources: resultData.sources,
@@ -318,6 +353,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
             resultCount: resultData.results.length,
             sources: resultData.sources,
             routingReason: routing.reason,
+            ...recencyMeta,
           },
         }),
         savedArtifact,
@@ -326,6 +362,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
         autoExtract,
         extractCount,
         recency,
+        ...recencyMeta,
         outputFormat,
         language,
         routing: routingMeta,

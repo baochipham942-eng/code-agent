@@ -80,6 +80,7 @@ export async function trackFileMutationSideEffects({
       ) {
         if (toolResult.success !== false) {
           ctx.artifactRepairGuard.patched = true;
+          ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress = 0;
         }
       }
     }

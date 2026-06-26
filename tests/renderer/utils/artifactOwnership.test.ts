@@ -6,7 +6,7 @@ import {
 } from '../../../src/renderer/utils/artifactOwnership';
 
 describe('buildArtifactOwnershipItems', () => {
-  it('collects assistant artifacts and tool output files with owner labels', () => {
+  it('collects assistant artifacts and non-diff metadata files with owner labels', () => {
     const items = buildArtifactOwnershipItems({
       turnNumber: 1,
       turnId: 'turn-1',
@@ -67,14 +67,6 @@ describe('buildArtifactOwnershipItems', () => {
         ownerKind: 'assistant',
         ownerLabel: 'reviewer',
         sourceNodeId: 'assistant-1',
-      },
-      {
-        kind: 'file',
-        label: 'report.md',
-        ownerKind: 'tool',
-        ownerLabel: 'reviewer · Write',
-        path: '/repo/app/report.md',
-        sourceNodeId: 'tool-1',
       },
       {
         kind: 'file',
@@ -170,6 +162,50 @@ describe('buildArtifactOwnershipItems', () => {
         ownerLabel: 'WebFetch',
         path: undefined,
         url: 'https://example.com/spec',
+        sourceNodeId: 'tool-2',
+      },
+    ]);
+  });
+
+  it('does not duplicate files already represented by the turn diff summary', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 2,
+      turnId: 'turn-2',
+      status: 'completed',
+      startTime: 200,
+      endTime: 260,
+      nodes: [
+        {
+          id: 'tool-2',
+          type: 'tool_call',
+          content: '',
+          timestamp: 230,
+          toolCall: {
+            id: 'tool-2',
+            name: 'Write',
+            args: {
+              path: '/repo/app/report.md',
+              content: '# Report\n\nDone',
+            },
+            result: 'Created file: /repo/app/report.md',
+            success: true,
+            outputPath: '/repo/app/report.md',
+            metadata: {
+              filePath: '/repo/app/report.md',
+              imagePath: '/repo/app/chart.png',
+            },
+          },
+        },
+      ],
+    } satisfies TraceTurn);
+
+    expect(items).toEqual([
+      {
+        kind: 'file',
+        label: 'chart.png',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/app/chart.png',
         sourceNodeId: 'tool-2',
       },
     ]);

@@ -8,6 +8,7 @@ import type {
   TurnArtifactOwnershipItem,
   TurnRoutingEvidence,
 } from '@shared/contract/turnTimeline';
+import { buildTurnFileChanges } from './turnDiffSummary';
 
 function basename(path: string): string {
   return path.split('/').filter(Boolean).pop() || path;
@@ -111,9 +112,13 @@ export function buildArtifactOwnershipItems(
   const items: TurnArtifactOwnershipItem[] = [];
   const seenKeys = new Set<string>();
   const primaryAgent = routingEvidence?.agentNames?.[0];
+  const diffFilePaths = new Set(buildTurnFileChanges(turn).map((change) => change.filePath));
 
   const addItem = (item: TurnArtifactOwnershipItem, dedupeKey: string) => {
     if (seenKeys.has(dedupeKey)) {
+      return;
+    }
+    if (item.kind === 'file' && item.path && diffFilePaths.has(item.path)) {
       return;
     }
     seenKeys.add(dedupeKey);

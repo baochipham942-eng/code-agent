@@ -181,6 +181,7 @@ export async function handleModifiedArtifactValidation({
         phase,
         patched: false,
         repairTurnsWithoutProgress: previousGuard?.repairTurnsWithoutProgress,
+        blockedToolTurnsWithoutProgress: previousGuard?.blockedToolTurnsWithoutProgress,
         lastBlockedTool: previousGuard?.lastBlockedTool,
         lastFailedPatchFingerprint: getArtifactRepairPatchFingerprint(toolCall) ?? previousGuard?.lastFailedPatchFingerprint,
         activeIssueCodes: [

@@ -1,3 +1,5 @@
+import { makeEvidenceRef, type EvidenceKind, type EvidenceRef, type EvidenceState, type RedactionStatus } from "../contract/evidence";
+
 const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
 const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
 const SECRET_REF_PLACEHOLDER = "[secretRef]";
@@ -31,6 +33,301 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "userDataDir",
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
+
+export type BrowserComputerManualTakeoverStatus =
+  | "login_required"
+  | "mfa_required"
+  | "captcha_or_risk_control"
+  | "manual_takeover_required";
+
+export interface BrowserComputerManualTakeover {
+  status: BrowserComputerManualTakeoverStatus;
+  reason: string;
+  recommendedAction: string;
+  resumeRequires: string[];
+}
+
+export interface BrowserComputerVisualObservation {
+  observed: boolean;
+  source: "analysis" | "dom" | "a11y" | "ax" | "trace" | "none";
+  reason?: string;
+  cannotObserveScreen?: boolean;
+}
+
+export interface BrowserComputerProof {
+  evidenceRefs: EvidenceRef[];
+  targetRef?: Record<string, unknown> | null;
+  approval?: Record<string, unknown> | null;
+  manualTakeover?: BrowserComputerManualTakeover | null;
+  visualObservation?: BrowserComputerVisualObservation;
+}
+
+export interface BrowserComputerEvidenceCard {
+  title: string;
+  status: "observed" | "not_observed" | "manual_takeover";
+  evidenceRefIds: string[];
+  summary: string;
+  manualTakeover?: BrowserComputerManualTakeover | null;
+  visualObservation?: BrowserComputerVisualObservation;
+}
+
+export interface BrowserComputerEvidenceInput {
+  kind: EvidenceKind;
+  ref: string;
+  source: string;
+  state?: EvidenceState;
+  redactionStatus?: RedactionStatus;
+}
+
+export interface BuildBrowserComputerProofInput {
+  evidence: BrowserComputerEvidenceInput[];
+  targetRef?: Record<string, unknown> | null;
+  approval?: Record<string, unknown> | null;
+  manualTakeoverText?: string | null;
+  manualTakeoverResumeRequires?: string[];
+  visualObservation?: BrowserComputerVisualObservation;
+  capturedAtMs?: number;
+}
+
+export function classifyBrowserComputerManualTakeover(
+  text: string | null | undefined,
+): BrowserComputerManualTakeoverStatus | null {
+  const normalized = (text || "").toLowerCase();
+  if (!normalized.trim()) return null;
+  if (/captcha|risk control|risk-control|unusual traffic|checking your browser|verify you are human|cloudflare|安全验证|风控|验证码/.test(normalized)) {
+    return "captcha_or_risk_control";
+  }
+  if (/\bmfa\b|two[- ]?factor|2fa|one[- ]time password|\botp\b|verification code|multi[- ]factor|双重验证|二次验证|动态码/.test(normalized)) {
+    return "mfa_required";
+  }
+  if (/login required|sign in required|please sign in|not signed in|unauthorized|authentication required|needs login|登录|请登录/.test(normalized)) {
+    return "login_required";
+  }
+  if (/manual takeover|user takeover|take over manually|requires manual|人工接管|用户接管/.test(normalized)) {
+    return "manual_takeover_required";
+  }
+  return null;
+}
+
+function defaultManualTakeoverAction(status: BrowserComputerManualTakeoverStatus): string {
+  if (status === "login_required") {
+    return "Let the user complete login, then recapture DOM, accessibility, and account state before continuing.";
+  }
+  if (status === "mfa_required") {
+    return "Let the user complete MFA, then recapture DOM, accessibility, and account state before continuing.";
+  }
+  if (status === "captcha_or_risk_control") {
+    return "Stop automation for the challenge, let the user take over, then recapture page evidence before continuing.";
+  }
+  return "Pause automation for manual takeover, then recapture fresh evidence before continuing.";
+}
+
+function buildManualTakeover(
+  text: string | null | undefined,
+  resumeRequires: string[] | undefined,
+): BrowserComputerManualTakeover | null {
+  const status = classifyBrowserComputerManualTakeover(text);
+  if (!status) return null;
+  return {
+    status,
+    reason: status,
+    recommendedAction: defaultManualTakeoverAction(status),
+    resumeRequires: resumeRequires && resumeRequires.length > 0
+      ? resumeRequires
+      : ["recapture_dom", "recapture_a11y", "recapture_account_state"],
+  };
+}
+
+export function createBrowserComputerEvidenceRef(
+  input: BrowserComputerEvidenceInput,
+  capturedAtMs: number = Date.now(),
+): EvidenceRef {
+  return makeEvidenceRef({
+    kind: input.kind,
+    ref: input.ref,
+    source: input.source,
+    state: input.state ?? "fresh",
+    redactionStatus: input.redactionStatus ?? "clean",
+    capturedAtMs,
+  });
+}
+
+export function buildBrowserComputerProof(input: BuildBrowserComputerProofInput): BrowserComputerProof {
+  const capturedAtMs = input.capturedAtMs ?? Date.now();
+  return {
+    evidenceRefs: input.evidence.map((evidence) => createBrowserComputerEvidenceRef(evidence, capturedAtMs)),
+    targetRef: input.targetRef ?? null,
+    approval: input.approval ?? null,
+    manualTakeover: buildManualTakeover(input.manualTakeoverText, input.manualTakeoverResumeRequires),
+    visualObservation: input.visualObservation,
+  };
+}
+
+export function renderBrowserComputerEvidenceCard(proof: BrowserComputerProof): BrowserComputerEvidenceCard {
+  const manualTakeover = proof.manualTakeover ?? null;
+  const visualObservation = proof.visualObservation;
+  const status = manualTakeover
+    ? "manual_takeover"
+    : visualObservation?.observed
+      ? "observed"
+      : "not_observed";
+  const summary = manualTakeover
+    ? `Manual takeover required: ${manualTakeover.status}`
+    : visualObservation?.observed
+      ? `Observed via ${visualObservation.source}`
+      : visualObservation?.reason || "Evidence captured, but UI was not observed.";
+  return {
+    title: "Browser/Computer Evidence",
+    status,
+    evidenceRefIds: proof.evidenceRefs.map((ref) => ref.id),
+    summary,
+    manualTakeover,
+    visualObservation,
+  };
+}
+
+export interface BrowserComputerTraceLike {
+  id?: string | null;
+  screenshotPath?: string | null;
+}
+
+export interface BrowserComputerResultLike {
+  output?: string;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+function compactBrowserComputerJson(value: unknown, maxChars = 3000): string {
+  try {
+    return JSON.stringify(value).slice(0, maxChars);
+  } catch {
+    return "";
+  }
+}
+
+function buildBrowserActionEvidenceInputs(
+  result: BrowserComputerResultLike,
+  trace: BrowserComputerTraceLike,
+): BrowserComputerEvidenceInput[] {
+  const metadata = result.metadata || {};
+  const evidence: BrowserComputerEvidenceInput[] = [];
+  const traceId = typeof trace.id === "string" ? trace.id : null;
+  if (traceId) {
+    evidence.push({
+      kind: "trace",
+      ref: traceId,
+      source: "browserAction.trace",
+      state: "fresh",
+    });
+  }
+  if (metadata.domSnapshot && typeof metadata.domSnapshot === "object") {
+    const snapshot = metadata.domSnapshot as Record<string, unknown>;
+    evidence.push({
+      kind: "browser_dom",
+      ref: `browser_dom:${String(snapshot.url || "unknown")}#${String(snapshot.snapshotId || traceId || "unknown")}`,
+      source: "browserAction.get_dom_snapshot",
+      state: "read",
+    });
+  }
+  if (metadata.accessibilitySnapshot) {
+    evidence.push({
+      kind: "browser_a11y",
+      ref: `browser_a11y:${traceId || "unknown"}`,
+      source: "browserAction.get_a11y_snapshot",
+      state: "read",
+    });
+  }
+  if (typeof metadata.path === "string") {
+    evidence.push({
+      kind: "screenshot",
+      ref: metadata.path,
+      source: "browserAction.screenshot",
+      state: metadata.analyzed === true ? "read" : "fresh",
+    });
+  }
+  if (metadata.targetRef && typeof metadata.targetRef === "object") {
+    const targetRef = metadata.targetRef as Record<string, unknown>;
+    evidence.push({
+      kind: "browser_dom",
+      ref: `targetRef:${String(targetRef.snapshotId || "unknown")}/${String(targetRef.refId || "unknown")}`,
+      source: "browserAction.targetRef",
+      state: "read",
+    });
+  }
+  if (metadata.browserAccountState && typeof metadata.browserAccountState === "object") {
+    const account = metadata.browserAccountState as Record<string, unknown>;
+    evidence.push({
+      kind: "artifact",
+      ref: `browser_account_state:${String(account.status || "unknown")}:${String(account.updatedAtMs || traceId || "unknown")}`,
+      source: "browserAction.get_account_state",
+      state: "read",
+    });
+  }
+  if (trace.screenshotPath) {
+    evidence.push({
+      kind: "screenshot",
+      ref: trace.screenshotPath,
+      source: "browserAction.trace.screenshot",
+      state: "fresh",
+    });
+  }
+  return evidence;
+}
+
+function inferBrowserActionVisualObservation(result: BrowserComputerResultLike): BrowserComputerVisualObservation {
+  const metadata = result.metadata || {};
+  if (metadata.domSnapshot) return { observed: true, source: "dom" };
+  if (metadata.accessibilitySnapshot) return { observed: true, source: "a11y" };
+  if (typeof metadata.path === "string") {
+    if (metadata.analyzed === true) return { observed: true, source: "analysis" };
+    return {
+      observed: false,
+      source: "none",
+      cannotObserveScreen: true,
+      reason: metadata.analysisRequested ? "screenshot_analysis_failed" : "screenshot_path_only",
+    };
+  }
+  return { observed: false, source: "none", reason: "no_dom_a11y_or_analyzed_screenshot" };
+}
+
+export function attachBrowserActionProof<T extends BrowserComputerResultLike>(
+  result: T,
+  trace: BrowserComputerTraceLike,
+): T {
+  const metadata = result.metadata || {};
+  const manualTakeoverText = [
+    result.output,
+    result.error,
+    compactBrowserComputerJson(metadata.domSnapshot),
+    compactBrowserComputerJson(metadata.accessibilitySnapshot),
+  ].filter(Boolean).join("\n");
+  const proof = buildBrowserComputerProof({
+    evidence: buildBrowserActionEvidenceInputs(result, trace),
+    targetRef: metadata.targetRef && typeof metadata.targetRef === "object"
+      ? metadata.targetRef as Record<string, unknown>
+      : null,
+    approval: metadata.workbenchBlocked
+      ? { blocked: true, code: metadata.code || null }
+      : null,
+    manualTakeoverText,
+    manualTakeoverResumeRequires: [
+      "browser_action.get_dom_snapshot",
+      "browser_action.get_a11y_snapshot",
+      "browser_action.get_account_state",
+    ],
+    visualObservation: inferBrowserActionVisualObservation(result),
+  });
+  return {
+    ...result,
+    metadata: {
+      ...metadata,
+      evidenceRefs: proof.evidenceRefs,
+      browserComputerProof: proof,
+      browserComputerEvidenceCard: renderBrowserComputerEvidenceCard(proof),
+      ...(proof.visualObservation?.cannotObserveScreen ? { cannotObserveScreen: true } : {}),
+    },
+  };
+}
 
 export type BrowserComputerSecretScopeSummary =
   | {
@@ -474,12 +771,45 @@ function sanitizeRecoveryEvidence(
   return null;
 }
 
+function isEvidenceRefRecord(value: unknown): value is EvidenceRef {
+  if (!isRecord(value)) return false;
+  return typeof value.id === "string"
+    && typeof value.kind === "string"
+    && typeof value.ref === "string"
+    && typeof value.source === "string"
+    && isRecord(value.freshness)
+    && typeof value.redactionStatus === "string";
+}
+
+function sanitizeEvidenceRefTarget(value: string): string {
+  if (/^data:/i.test(value) || /base64/i.test(value)) {
+    return "[redacted]";
+  }
+  if (/storageState|storage-state|cookie|localStorage|sessionStorage/i.test(value)) {
+    return String(summarizeBrowserComputerLocalPath(value));
+  }
+  if (/^(\/Users\/|\/home\/|\/var\/folders\/|\/tmp\/|[A-Za-z]:[\\/])/.test(value)) {
+    return String(summarizeBrowserComputerLocalPath(value));
+  }
+  return value;
+}
+
+function sanitizeEvidenceRef(value: EvidenceRef): EvidenceRef {
+  return {
+    ...value,
+    ref: sanitizeEvidenceRefTarget(value.ref),
+  };
+}
+
 function sanitizeBrowserComputerMetadataValue(
   toolName: string,
   args: Record<string, unknown>,
   value: unknown,
   key?: string,
 ): unknown {
+  if (isEvidenceRefRecord(value)) {
+    return sanitizeEvidenceRef(value);
+  }
   if (key && RAW_BROWSER_COMPUTER_METADATA_KEYS.has(key)) {
     return OMIT;
   }

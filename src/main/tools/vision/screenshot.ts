@@ -11,6 +11,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { analyzeImageWithVisionDetailed } from '../../services/desktop/visionAnalysisService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
+import {
+  buildBrowserComputerProof,
+  renderBrowserComputerEvidenceCard,
+  type BrowserComputerVisualObservation,
+} from '../../../shared/utils/browserComputerRedaction';
 
 const execAsync = promisify(exec);
 
@@ -31,6 +36,44 @@ function buildAnalysisFailureMessage(args: {
     `- Timestamp: ${args.timestampIso}`,
     `- Vision error: ${args.reason}`,
   ].join('\n');
+}
+
+function withScreenshotProof(
+  result: ToolExecutionResult,
+  args: {
+    outputPath: string;
+    analyzed: boolean;
+    analysisRequested: boolean;
+    cannotObserveScreen?: boolean;
+  },
+): ToolExecutionResult {
+  const visualObservation: BrowserComputerVisualObservation = args.analyzed
+    ? { observed: true, source: 'analysis' }
+    : {
+        observed: false,
+        source: 'none',
+        cannotObserveScreen: true,
+        reason: args.analysisRequested ? 'screenshot_analysis_failed' : 'screenshot_path_only',
+      };
+  const proof = buildBrowserComputerProof({
+    evidence: [{
+      kind: 'screenshot',
+      ref: args.outputPath,
+      source: 'screenshot',
+      state: args.analyzed ? 'read' : 'fresh',
+    }],
+    visualObservation,
+  });
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      evidenceRefs: proof.evidenceRefs,
+      browserComputerProof: proof,
+      browserComputerEvidenceCard: renderBrowserComputerEvidenceCard(proof),
+      ...(visualObservation.cannotObserveScreen ? { cannotObserveScreen: true } : {}),
+    },
+  };
 }
 
 export const screenshotTool: Tool = {
@@ -220,7 +263,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
         });
 
         if (!analysisResult.ok) {
-          return {
+          return withScreenshotProof({
             success: false,
             error: buildAnalysisFailureMessage({
               outputPath,
@@ -246,7 +289,12 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
               analyzedWidth: analysisResult.analyzedWidth,
               analyzedHeight: analysisResult.analyzedHeight,
             },
-          };
+          }, {
+            outputPath,
+            analyzed: false,
+            analysisRequested: true,
+            cannotObserveScreen: true,
+          });
         }
 
         analysis = analysisResult.analysis;
@@ -271,7 +319,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
         }
       }
 
-      return {
+      return withScreenshotProof({
         success: true,
         output,
         outputPath,
@@ -288,7 +336,12 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
           analyzedWidth: visionDims?.analyzedWidth ?? null,
           analyzedHeight: visionDims?.analyzedHeight ?? null,
         },
-      };
+      }, {
+        outputPath,
+        analyzed: !!analysis,
+        analysisRequested: !!analyze,
+        cannotObserveScreen: !analysis,
+      });
     } catch (error) {
       return {
         success: false,

@@ -13,6 +13,7 @@ import { browserService, redactBrowserWorkbenchTraceParams } from '../../service
 import { getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
+import { attachBrowserActionProof } from '../../../shared/utils/browserComputerRedaction';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -466,6 +467,7 @@ Examples:
           }
 
           let output = `Screenshot saved: ${result.path}`;
+          let analysisSucceeded = false;
 
           // 如果启用分析，进行视觉分析
           if (analyze && result.path) {
@@ -476,6 +478,7 @@ Examples:
               source: 'browser_action.screenshot',
             });
             if (analysis) {
+              analysisSucceeded = true;
               output += `\n\n📝 AI 分析结果:\n${analysis}`;
             }
           }
@@ -483,10 +486,7 @@ Examples:
           return {
             success: true,
             output,
-            metadata: {
-              path: result.path,
-              analyzed: !!analyze,
-            },
+            metadata: { path: result.path, analyzed: analysisSucceeded, analysisRequested: !!analyze, ...(!analysisSucceeded ? { cannotObserveScreen: true } : {}) },
           };
         }
 
@@ -893,22 +893,12 @@ function getPathBasenameForUpload(value: string): string {
   return parts.at(-1) || value;
 }
 
-function withWorkbenchTrace(
-  result: ToolExecutionResult,
-  trace: ReturnType<typeof browserService.finishTrace>,
-): ToolExecutionResult {
+function withWorkbenchTrace(result: ToolExecutionResult, trace: ReturnType<typeof browserService.finishTrace>): ToolExecutionResult {
   const safeTrace = {
     ...trace,
     params: redactBrowserWorkbenchTraceParams(trace.toolName || 'browser_action', trace.params || {}),
   };
-  return {
-    ...result,
-    metadata: {
-      ...(result.metadata || {}),
-      traceId: safeTrace.id,
-      workbenchTrace: safeTrace,
-    },
-  };
+  return attachBrowserActionProof({ ...result, metadata: { ...(result.metadata || {}), traceId: safeTrace.id, workbenchTrace: safeTrace } }, safeTrace);
 }
 
 function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserService.getSessionState>): Record<string, unknown> {

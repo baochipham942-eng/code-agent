@@ -313,6 +313,21 @@ describe('computer surface gating', () => {
       targetApp: 'Safari',
       preserveObservation: true,
       observationKind: 'computer_surface_read',
+      cannotObserveScreen: true,
+      browserComputerProof: {
+        evidenceRefs: expect.arrayContaining([
+          expect.objectContaining({ kind: 'screenshot', source: 'computerUse.observe' }),
+        ]),
+        visualObservation: {
+          observed: false,
+          source: 'none',
+          reason: 'screenshot_path_only',
+          cannotObserveScreen: true,
+        },
+      },
+      browserComputerEvidenceCard: {
+        status: 'not_observed',
+      },
     });
     expect(surfaceMocks.surface.observe).toHaveBeenCalledWith({ includeScreenshot: true });
     expect(surfaceMocks.surface.authorizeAction).not.toHaveBeenCalled();
@@ -571,6 +586,68 @@ describe('computer surface gating', () => {
       foregroundFallback: true,
       targetApp: 'Safari',
     });
+  });
+
+  it('classifies MFA blocks as manual takeover instead of an automation bypass', async () => {
+    surfaceMocks.surface.authorizeAction.mockResolvedValueOnce({
+      allowed: false,
+      reason: 'MFA required: enter the verification code in the browser.',
+      state: {
+        ...surfaceMocks.surface.getState(),
+        mode: 'foreground_fallback',
+        background: false,
+        requiresForeground: true,
+        approvalScope: 'blocked',
+        targetApp: 'Safari',
+        blockedReason: 'MFA required',
+      },
+      trace: {
+        id: 'computer-trace-mfa',
+        targetKind: 'computer' as const,
+        toolName: 'computer_use',
+        action: 'type',
+        mode: 'foreground_fallback',
+        startedAtMs: 1,
+        blockingReasons: ['MFA required'],
+        recommendedAction: 'Let the user complete MFA.',
+      },
+      sensitive: true,
+      blockingReasons: ['MFA required'],
+      recommendedAction: 'Let the user complete MFA.',
+    });
+    surfaceMocks.surface.recordAction.mockImplementationOnce(async (inputTrace, result) => ({
+      ...inputTrace,
+      completedAtMs: 2,
+      success: result.success,
+      error: result.error || null,
+      blockingReasons: result.blockingReasons,
+      recommendedAction: result.recommendedAction,
+    }));
+
+    const result = await computerUseTool.execute(
+      {
+        action: 'type',
+        text: '123456',
+        targetApp: 'Safari',
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.metadata?.browserComputerProof).toMatchObject({
+      manualTakeover: {
+        status: 'mfa_required',
+        resumeRequires: expect.arrayContaining([
+          'computer_use.observe',
+          'browser_action.get_dom_snapshot',
+          'browser_action.get_account_state',
+        ]),
+      },
+    });
+    expect(result.metadata?.browserComputerEvidenceCard).toMatchObject({
+      status: 'manual_takeover',
+    });
+    expect(result.error).toContain('MFA required');
   });
 
   it('uses osascript argv for foreground typing instead of shell interpolation', async () => {

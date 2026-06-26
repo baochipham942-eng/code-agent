@@ -194,6 +194,10 @@ const browserMocks = vi.hoisted(() => {
       role: 'WebArea',
       name: 'Example',
     })),
+    screenshot: vi.fn(async () => ({
+      success: true,
+      path: '/tmp/browser-shot.png',
+    })),
     setViewport: vi.fn(async () => undefined),
     type: vi.fn(async () => undefined),
     clickTargetRef: vi.fn(async () => targetRef),
@@ -310,6 +314,7 @@ describe('browser workbench gating', () => {
     browserMocks.service.getPageContent.mockClear();
     browserMocks.service.getDomSnapshot.mockClear();
     browserMocks.service.getAccessibilitySnapshot.mockClear();
+    browserMocks.service.screenshot.mockClear();
     browserMocks.service.setViewport.mockClear();
     browserMocks.service.type.mockClear();
     browserMocks.service.clickTargetRef.mockClear();
@@ -358,6 +363,66 @@ describe('browser workbench gating', () => {
       }],
     });
     expect(result.metadata?.traceId).toBe('trace-1');
+    expect(result.metadata?.evidenceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'browser_dom',
+        source: 'browserAction.get_dom_snapshot',
+        freshness: expect.objectContaining({ state: 'read' }),
+      }),
+    ]));
+    expect(result.metadata?.browserComputerProof).toMatchObject({
+      evidenceRefs: expect.any(Array),
+      visualObservation: {
+        observed: true,
+        source: 'dom',
+      },
+    });
+    expect(result.metadata?.browserComputerEvidenceCard).toMatchObject({
+      status: 'observed',
+    });
+  });
+
+  it('classifies login screens as manual takeover and requires fresh recapture after user takeover', async () => {
+    browserMocks.state.running = true;
+    browserMocks.state.tabs = [{ id: 'tab-1', url: 'https://example.com/login', title: 'Sign in' }];
+    browserMocks.state.activeTabId = 'tab-1';
+    browserMocks.service.getDomSnapshot.mockResolvedValueOnce({
+      snapshotId: 'snapshot-login',
+      tabId: 'tab-1',
+      capturedAtMs: 1,
+      url: 'https://example.com/login',
+      title: 'Please sign in',
+      headings: [{ level: 1, text: 'Sign in required' }],
+      interactiveElements: [],
+    });
+
+    const result = await browserActionTool.execute(
+      {
+        action: 'get_dom_snapshot',
+      },
+      makeContext({
+        executionIntent: {
+          browserSessionMode: 'managed',
+          preferBrowserSession: true,
+          allowBrowserAutomation: true,
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.metadata?.browserComputerProof).toMatchObject({
+      manualTakeover: {
+        status: 'login_required',
+        resumeRequires: [
+          'browser_action.get_dom_snapshot',
+          'browser_action.get_a11y_snapshot',
+          'browser_action.get_account_state',
+        ],
+      },
+    });
+    expect(result.metadata?.browserComputerEvidenceCard).toMatchObject({
+      status: 'manual_takeover',
+    });
   });
 
   it('clicks browser targetRef returned by a DOM snapshot', async () => {
@@ -452,6 +517,49 @@ describe('browser workbench gating', () => {
     expect(result.success).toBe(true);
     expect(browserMocks.service.setViewport).toHaveBeenCalledWith(390, 844);
     expect(result.metadata?.viewport).toEqual({ width: 390, height: 844 });
+  });
+
+  it('marks screenshot path-only results as not visually observed', async () => {
+    browserMocks.state.running = true;
+    browserMocks.state.tabs = [{ id: 'tab-1', url: 'https://example.com', title: 'Example' }];
+    browserMocks.state.activeTabId = 'tab-1';
+
+    const result = await browserActionTool.execute(
+      {
+        action: 'screenshot',
+      },
+      makeContext({
+        executionIntent: {
+          browserSessionMode: 'managed',
+          preferBrowserSession: true,
+          allowBrowserAutomation: true,
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.metadata).toMatchObject({
+      analyzed: false,
+      analysisRequested: false,
+      cannotObserveScreen: true,
+      browserComputerProof: {
+        visualObservation: {
+          observed: false,
+          source: 'none',
+          reason: 'screenshot_path_only',
+          cannotObserveScreen: true,
+        },
+      },
+      browserComputerEvidenceCard: {
+        status: 'not_observed',
+      },
+    });
+    expect(result.metadata?.evidenceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'screenshot',
+        freshness: expect.objectContaining({ state: 'fresh' }),
+      }),
+    ]));
   });
 
   it('blocks browser_action automation when desktop mode disables managed browser automation', async () => {

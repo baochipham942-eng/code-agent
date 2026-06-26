@@ -27,6 +27,7 @@ import {
   formatAge,
   getSearchErrorCircuitBreakerCooldown,
 } from './searchUtils';
+import { OPENAI_WEB_SEARCH_DEFAULT_MODEL } from '../../../../shared/constants';
 import { isFirecrawlDefaultEnabled, isFirecrawlHealthy, searchWithFirecrawl } from '../firecrawlClient';
 
 // ============================================================================
@@ -510,7 +511,7 @@ async function searchViaOpenAI(
   }
 
   const body = {
-    model: process.env.OPENAI_SEARCH_MODEL || 'gpt-5.5',
+    model: process.env.OPENAI_SEARCH_MODEL || OPENAI_WEB_SEARCH_DEFAULT_MODEL,
     input: buildOpenAIWebSearchInput(query, recency),
     tools: [buildOpenAIWebSearchTool(domainFilter)],
     tool_choice: 'auto',

@@ -352,6 +352,14 @@ export const SEARCH_API_ENDPOINTS = {
   openai: 'https://api.openai.com/v1/responses',
 } as const;
 
+/**
+ * Default model for the OpenAI Responses API `web_search` source.
+ *
+ * Keep this out of business logic so the search strategy can be overridden by
+ * `OPENAI_SEARCH_MODEL` without hardcoding provider model IDs inline.
+ */
+export const OPENAI_WEB_SEARCH_DEFAULT_MODEL = 'gpt-5.5';
+
 // ============================================================================
 // 搜索源展示元数据（ADR-026）— main 的 SEARCH_SOURCES 与 renderer 的搜索设置面板
 // 共用同一组 id，避免漂移。此处只放展示/分类元数据，不含 key/endpoint/执行逻辑。

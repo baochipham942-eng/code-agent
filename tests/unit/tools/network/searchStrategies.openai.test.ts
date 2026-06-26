@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAvailableSources, SEARCH_SOURCES } from '../../../../src/main/tools/web/search';
+import { OPENAI_WEB_SEARCH_DEFAULT_MODEL } from '../../../../src/shared/constants';
 
 describe('OpenAI web search source', () => {
   afterEach(() => {
@@ -83,6 +84,47 @@ describe('OpenAI web search source', () => {
         url: 'https://platform.openai.com/docs/guides/tools-web-search',
         source: 'openai',
       }],
+    });
+  });
+
+  it('uses the shared default web search model when env override is absent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: 'OpenAI searched the web.',
+        output: [],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const configService = {
+      getServiceApiKey: vi.fn((service: string) => service === 'openai' ? 'sk-openai' : undefined),
+      getServiceApiBaseUrl: vi.fn(() => undefined),
+    };
+    const source = SEARCH_SOURCES.find((entry) => entry.name === 'openai');
+
+    const result = await source!.search('OpenAI web search docs', 5, configService as never);
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(body.model).toBe(OPENAI_WEB_SEARCH_DEFAULT_MODEL);
+    expect(result.success).toBe(true);
+  });
+
+  it('returns a clear error without calling OpenAI when the service key is missing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const configService = {
+      getServiceApiKey: vi.fn(() => undefined),
+      getServiceApiBaseUrl: vi.fn(() => undefined),
+    };
+    const source = SEARCH_SOURCES.find((entry) => entry.name === 'openai');
+
+    const result = await source!.search('OpenAI web search docs', 5, configService as never);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      source: 'openai',
+      success: false,
+      error: 'API key not configured',
     });
   });
 

@@ -8,6 +8,7 @@ import type { ToolCall, ToolResult } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
+import type { EvidenceRef } from './evidence';
 import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity, ModelToolStrategyDiagnostics } from './modelDecision';
 
 // Adaptive Thinking: 思考深度级别
@@ -247,6 +248,35 @@ export interface HookTriggerEventData {
   matcher?: string;
 }
 
+export type GoalGateVerificationStatus = 'passed' | 'failed' | 'not_run';
+export type GoalGateVerificationFailureType =
+  | 'test'
+  | 'lint'
+  | 'typecheck'
+  | 'build'
+  | 'env_missing'
+  | 'dependency_missing'
+  | 'timeout'
+  | 'unverifiable';
+
+export interface GoalGateSkippedCheck {
+  id: string;
+  kind: string;
+  reason: string;
+  files?: string[];
+}
+
+export interface GoalGatePlannedCommand {
+  id: string;
+  command: string;
+  cwd: string;
+  required: boolean;
+  kind: string;
+  reason: string;
+  source: string;
+  timeoutMs?: number;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
@@ -277,7 +307,7 @@ export type AgentEvent =
   | { type: 'agent_cancelled'; data: null }
   // /goal 自治模式观测事件
   | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number; parentToolUseId?: string } }
-  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string } }
+  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string; verificationStatus?: GoalGateVerificationStatus; failureType?: GoalGateVerificationFailureType; evidenceRefs?: EvidenceRef[]; skippedChecks?: GoalGateSkippedCheck[]; plannedOptionalCommands?: GoalGatePlannedCommand[] } }
   // /goal 终态：三闸全过(met) 或 闸3 兜底中止(aborted)。前端据此展示"已完成/已中止"+停表。
   | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; parentToolUseId?: string } }
   // Auto Agent 思考/规划事件

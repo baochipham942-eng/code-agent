@@ -16,6 +16,11 @@ export interface VerifyGateResult {
   /** 截断后的合并输出（stdout+stderr），验证失败时注回模型 */
   output: string;
   timedOut: boolean;
+  command: string;
+  cwd: string;
+  durationMs: number;
+  stdoutTail: string;
+  stderrTail: string;
 }
 
 /**
@@ -29,17 +34,30 @@ export function runVerifyGate(
 ): Promise<VerifyGateResult> {
   return new Promise((resolve) => {
     logger.debug('[GoalGate] running verify command', { verifyCommand, cwd });
+    const startedAt = Date.now();
     const child = spawn('/bin/sh', ['-c', verifyCommand], { cwd });
     let out = '';
+    let stdoutTail = '';
+    let stderrTail = '';
     let timedOut = false;
+    let settled = false;
 
-    const capture = (chunk: Buffer) => {
+    const appendTail = (current: string, chunk: Buffer) => {
+      const next = current + chunk.toString();
+      return next.slice(-GOAL_MODE.VERIFY_OUTPUT_MAX_CHARS);
+    };
+    const capture = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
       if (out.length < GOAL_MODE.VERIFY_OUTPUT_MAX_CHARS) {
         out += chunk.toString();
       }
+      if (stream === 'stdout') {
+        stdoutTail = appendTail(stdoutTail, chunk);
+      } else {
+        stderrTail = appendTail(stderrTail, chunk);
+      }
     };
-    child.stdout?.on('data', capture);
-    child.stderr?.on('data', capture);
+    child.stdout?.on('data', capture('stdout'));
+    child.stderr?.on('data', capture('stderr'));
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -47,12 +65,26 @@ export function runVerifyGate(
     }, timeoutMs);
 
     child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       logger.warn('[GoalGate] verify command failed to start', { error: err.message });
-      resolve({ pass: false, exitCode: null, output: `验证命令启动失败: ${err.message}`, timedOut });
+      resolve({
+        pass: false,
+        exitCode: null,
+        output: `验证命令启动失败: ${err.message}`,
+        timedOut,
+        command: verifyCommand,
+        cwd,
+        durationMs: Date.now() - startedAt,
+        stdoutTail,
+        stderrTail,
+      });
     });
 
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       const trimmed = out.slice(0, GOAL_MODE.VERIFY_OUTPUT_MAX_CHARS);
       const pass = !timedOut && code === 0;
@@ -62,6 +94,11 @@ export function runVerifyGate(
         exitCode: code,
         output: timedOut ? `${trimmed}\n[验证命令超时 ${timeoutMs}ms，已终止]` : trimmed,
         timedOut,
+        command: verifyCommand,
+        cwd,
+        durationMs: Date.now() - startedAt,
+        stdoutTail,
+        stderrTail,
       });
     });
   });

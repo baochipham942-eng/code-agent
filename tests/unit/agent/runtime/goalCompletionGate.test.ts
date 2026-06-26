@@ -117,4 +117,58 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     expect(result).toBe('break');
     expect(goalMode.markMet).toHaveBeenCalled();
   });
+
+  it('--verify 通过时在 goal_gate 事件里带 VerificationEvidence refs', async () => {
+    mockRunVerifyGate.mockResolvedValue({
+      pass: true,
+      exitCode: 0,
+      output: 'ok',
+      timedOut: false,
+      command: 'npm test',
+      cwd: '/tmp/test',
+      durationMs: 18,
+      stdoutTail: 'ok',
+      stderrTail: '',
+    });
+    const { ctx, goalMode, contextAssembly } = makeCtx({
+      getVerifyCommand: vi.fn().mockReturnValue('npm test'),
+      getReviewCondition: vi.fn().mockReturnValue(undefined),
+    });
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 3);
+
+    expect(result).toBe('break');
+    expect(goalMode.markMet).toHaveBeenCalled();
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_gate',
+        data: expect.objectContaining({
+          gate: 1,
+          pass: true,
+          verificationStatus: 'passed',
+          evidenceRefs: expect.arrayContaining([
+            expect.objectContaining({ source: 'VerificationRunner' }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('没有 verifyCommand 时完成消息标 not_run，不声称 fully verified', async () => {
+    mockRunReviewGate.mockResolvedValue({ pass: true, parsed: true, reason: 'ok' });
+    const { ctx, contextAssembly } = makeCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 3);
+
+    expect(result).toBe('break');
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('<goal-completed>'),
+    );
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('verification status: not_run'),
+    );
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('不标记为 fully verified'),
+    );
+  });
 });

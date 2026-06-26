@@ -2,7 +2,7 @@
 // Change Detector — Detects which file changes should trigger eval re-runs
 // ============================================================================
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import picomatch from 'picomatch';
 
 interface TriggerPattern {
@@ -38,7 +38,7 @@ export class ChangeDetector {
   private skipMatcher: picomatch.Matcher;
   private triggerMatchers: Array<{ matcher: picomatch.Matcher; pattern: TriggerPattern }>;
 
-  constructor() {
+  constructor(private readonly cwd: string = process.cwd()) {
     this.skipMatcher = picomatch(SKIP_PATTERNS);
     this.triggerMatchers = TRIGGER_PATTERNS.map((pattern) => ({
       matcher: picomatch(pattern.glob),
@@ -103,12 +103,17 @@ export class ChangeDetector {
     };
   }
 
+  getChangedFilesForVerification(base?: string): string[] {
+    return this.getChangedFiles(base);
+  }
+
   private getChangedFiles(base?: string): string[] {
     try {
       const ref = base ?? 'HEAD';
-      const output = execSync(`git diff --name-only ${ref}`, {
+      const output = execFileSync('git', ['diff', '--name-only', ref], {
         encoding: 'utf-8',
         timeout: 10_000,
+        cwd: this.cwd,
       });
       return output
         .split('\n')
@@ -117,9 +122,10 @@ export class ChangeDetector {
     } catch {
       // If git diff fails (e.g., no commits yet), try getting staged files
       try {
-        const output = execSync('git diff --name-only --cached', {
+        const output = execFileSync('git', ['diff', '--name-only', '--cached'], {
           encoding: 'utf-8',
           timeout: 10_000,
+          cwd: this.cwd,
         });
         return output
           .split('\n')

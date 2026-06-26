@@ -21,7 +21,8 @@ export type TraceEventType =
   | 'inference'
   | 'loop_decision'
   | 'tool_dispatch'
-  | 'compaction';
+  | 'compaction'
+  | 'verification';
 
 export interface TraceEvent {
   ts: number;

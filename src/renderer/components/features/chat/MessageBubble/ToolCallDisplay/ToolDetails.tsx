@@ -4,6 +4,8 @@
 
 import React, { useState } from 'react';
 import { Play, Copy, Check, RotateCcw } from 'lucide-react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { ToolCall } from '@shared/contract';
 import {
   buildToolResultMediaAssets,
@@ -50,6 +52,33 @@ const ANSI_SEQUENCE_PATTERN = new RegExp(
 function stripAnsiCodes(str: string): string {
   if (typeof str !== 'string') return str;
   return str.replace(ANSI_SEQUENCE_PATTERN, '');
+}
+
+// JSON 语法高亮 - 仅用于结构化 JSON（参数 default 分支 / 对象型 result.output）。
+// 复用 MessageContent 同款 Prism + oneDark。纯文本/日志/带行号输出不走这里，
+// 避免把 Read 的 "  1→code" 行号前缀或 Bash 日志当代码高亮弄乱。
+const JSON_HIGHLIGHT_STYLE: React.CSSProperties = {
+  margin: 0,
+  padding: '0.75rem',
+  fontSize: '0.75rem',
+  lineHeight: 1.5,
+  background: 'rgba(17, 24, 39, 0.5)',
+  borderRadius: '0.5rem',
+};
+
+function JsonHighlight({ code, error }: { code: string; error?: boolean }) {
+  return (
+    <SyntaxHighlighter
+      language="json"
+      style={oneDark}
+      customStyle={JSON_HIGHLIGHT_STYLE}
+      codeTagProps={{ style: { fontSize: '0.75rem', background: 'transparent' } }}
+      wrapLongLines
+      className={`scrollbar-hidden border ${error ? 'border-red-500/20' : 'border-gray-800/50'}`}
+    >
+      {code}
+    </SyntaxHighlighter>
+  );
 }
 
 // 展开后正文行级硬 cap（P0 #1c）：非用户工具默认只露 5 行，shell 命令输出常合理偏长
@@ -191,11 +220,23 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   </button>
                 )}
               </div>
-              <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
-                {isEditFile && editFileArgs
-                  ? `File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`
-                  : formatArgs(name, args)}
-              </pre>
+              {(() => {
+                if (isEditFile && editFileArgs) {
+                  return (
+                    <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
+                      {`File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`}
+                    </pre>
+                  );
+                }
+                const formatted = formatArgs(name, args);
+                return formatted.language === 'json' ? (
+                  <JsonHighlight code={formatted.text} />
+                ) : (
+                  <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
+                    {formatted.text}
+                  </pre>
+                );
+              })()}
             </>
           )}
         </div>
@@ -302,6 +343,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                     </pre>
                   )}
                 </div>
+              ) : (!safeBrowserComputerResult && !result.error && result.output !== null && typeof result.output === 'object') ? (
+                // 对象/数组型 output（非字符串日志）走 JSON 语法高亮
+                <JsonHighlight code={JSON.stringify(result.output, null, 2)} error={!result.success} />
               ) : (
                 <CappedResultBody
                   text={
@@ -732,13 +776,17 @@ function summarizeComputerSurfaceElements(data: unknown, targetApp: string): str
 // Helper Functions
 // ============================================================================
 
+// language='json' 表示返回的是结构化 JSON 转储，可走语法高亮；
+// 'text' 表示是人话标签（File: / Command: 等），保持纯文本展示。
+type FormattedArgs = { text: string; language: 'json' | 'text' };
+
 function formatArgs(
   toolName: string,
   args: Record<string, unknown>
-): string {
+): FormattedArgs {
   const browserComputerArgs = formatBrowserComputerActionArguments(toolName, args);
   if (browserComputerArgs) {
-    return browserComputerArgs;
+    return { text: browserComputerArgs, language: 'text' };
   }
 
   switch (toolName) {
@@ -752,39 +800,39 @@ function formatArgs(
       let result = `File: ${filePath}`;
       if (offset && offset > 1) result += `\nOffset: ${offset}`;
       if (limit && limit !== 2000) result += `\nLimit: ${limit}`;
-      return result;
+      return { text: result, language: 'text' };
     }
 
     case 'Write': {
       const filePath = (args.file_path as string) || '';
       const content = (args.content as string) || '';
-      return `File: ${filePath}\nContent: ${content.length} chars`;
+      return { text: `File: ${filePath}\nContent: ${content.length} chars`, language: 'text' };
     }
 
     case 'Bash': {
       const command = (args.command as string) || '';
-      return `Command:\n${command}`;
+      return { text: `Command:\n${command}`, language: 'text' };
     }
 
     case 'Glob': {
       const pattern = (args.pattern as string) || '';
       const path = (args.path as string) || '.';
-      return `Pattern: ${pattern}\nPath: ${path}`;
+      return { text: `Pattern: ${pattern}\nPath: ${path}`, language: 'text' };
     }
 
     case 'Grep': {
       const pattern = (args.pattern as string) || '';
       const path = (args.path as string) || '.';
-      return `Pattern: ${pattern}\nPath: ${path}`;
+      return { text: `Pattern: ${pattern}\nPath: ${path}`, language: 'text' };
     }
 
     case 'list_directory': {
       const path = (args.path as string) || '.';
-      return `Path: ${path}`;
+      return { text: `Path: ${path}`, language: 'text' };
     }
 
     default:
-      return JSON.stringify(args, null, 2);
+      return { text: JSON.stringify(args, null, 2), language: 'json' };
   }
 }
 

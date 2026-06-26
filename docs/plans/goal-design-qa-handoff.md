@@ -65,7 +65,7 @@
 
 ## 阶段 2 - Artifact QA vision 判断层
 
-状态：待办
+状态：已验
 
 交付物：
 
@@ -82,7 +82,10 @@
 
 验收证据：
 
-- 待补。
+- `npx vitest run tests/unit/agent/runtime/browser/artifactPreviewHealth.test.ts tests/unit/agent/runtime/browser/artifactPreviewVision.test.ts`：2 files / 6 tests passed。
+- `CODE_AGENT_BROWSER_PROVIDER=playwright-bundled npx tsx scripts/acceptance/artifact-preview-vision-dogfood.ts`：确定性层对主观坏页和好页均 `passed=true`；mocked vision 在坏设计上补出 `hierarchy_issue`、`occlusion_issue`，好设计 `findingCount=0`。
+- `npm run typecheck`：通过。
+- 结论：vision 层已复用 `visionAnalysisService` 默认路径；prompt 和 parser 只接受 `typography_issue`、`hierarchy_issue`、`occlusion_issue`、`brand_consistency_issue`，客观二值问题仍留在阶段 1。Dogfood 使用 injected mock analyzer，未消耗真实 provider token。
 
 ## 阶段 3 - Acceptance/Constraint Contract
 

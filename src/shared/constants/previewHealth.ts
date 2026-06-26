@@ -23,3 +23,18 @@ export const ARTIFACT_PREVIEW_HEALTH = {
 
 export type ArtifactPreviewHealthViewportName =
   (typeof ARTIFACT_PREVIEW_HEALTH.VIEWPORTS)[number]['name'];
+
+export const ARTIFACT_PREVIEW_VISION = {
+  TIMEOUT_MS: 30_000,
+  MIN_CONFIDENCE: 0.45,
+  MAX_FINDINGS: 8,
+  SUBJECTIVE_FINDING_CODES: [
+    'typography_issue',
+    'hierarchy_issue',
+    'occlusion_issue',
+    'brand_consistency_issue',
+  ],
+} as const;
+
+export type ArtifactPreviewVisionFindingCode =
+  (typeof ARTIFACT_PREVIEW_VISION.SUBJECTIVE_FINDING_CODES)[number];

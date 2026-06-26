@@ -12,6 +12,7 @@ import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 import { inlineHtmlAssets } from '../utils/inlineHtmlAssets';
+import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { revealNativePath } from '../services/tauriPluginFacade';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
@@ -70,6 +71,34 @@ interface PresentationInspection {
     title?: string;
     text: string[];
   }>;
+}
+
+// 设计模式生成的 PPT 会在同目录写一份 <baseName>.design-artifact.json，
+// 内含 LibreOffice 渲染的逐页截图路径。预览面板优先读它走可视截图预览，
+// 缺失（非设计模式产出 / LibreOffice 不在）才 fallback 到 outline 文本巡检。
+interface DesignPptScreenshotArtifact {
+  kind: 'design_ppt';
+  title?: string;
+  theme?: string;
+  outputPath?: string;
+  screenshots: string[];
+  slidesCount?: number;
+}
+
+export function parseDesignPptArtifactContent(content: string): DesignPptScreenshotArtifact | null {
+  try {
+    const parsed = JSON.parse(content) as Partial<DesignPptScreenshotArtifact>;
+    if (
+      parsed?.kind === 'design_ppt'
+      && Array.isArray(parsed.screenshots)
+      && parsed.screenshots.length > 0
+    ) {
+      return parsed as DesignPptScreenshotArtifact;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 interface ArchiveInspection {
@@ -231,7 +260,51 @@ function parsePresentationInspection(content: string): PresentationInspection | 
   }
 }
 
-function PresentationPreview({ content }: { content: string }) {
+function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtifact }) {
+  const screenshots = artifact.screenshots;
+  const [selected, setSelected] = useState(0);
+  const active = screenshots[Math.min(selected, screenshots.length - 1)];
+  return (
+    <div className="h-full overflow-auto bg-zinc-950 p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+        <span className="inline-flex items-center gap-1 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-zinc-200">
+          <Presentation className="h-3.5 w-3.5" />
+          PPT 预览
+        </span>
+        <span>{artifact.slidesCount || screenshots.length} slides</span>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950">
+        <img src={resolveFileUrl(active)} alt={`Slide ${selected + 1}`} className="w-full bg-zinc-950 object-contain" />
+      </div>
+      {screenshots.length > 1 && (
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+          {screenshots.map((shot, index) => (
+            <button
+              key={shot}
+              type="button"
+              onClick={() => setSelected(index)}
+              title={`Slide ${index + 1}`}
+              className={`overflow-hidden rounded-md border transition-colors ${
+                index === selected
+                  ? 'border-cyan-400 bg-cyan-500/10'
+                  : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
+              }`}
+            >
+              <img src={resolveFileUrl(shot)} alt={`Slide ${index + 1}`} className="aspect-video w-full object-cover" />
+              <div className="px-2 py-1 text-left text-[10px] text-zinc-400">Slide {index + 1}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PresentationPreview({ content }: { content: string }) {
+  const artifact = parseDesignPptArtifactContent(content);
+  if (artifact) {
+    return <DesignPptScreenshots artifact={artifact} />;
+  }
   const inspection = parsePresentationInspection(content);
   if (!inspection) {
     return (
@@ -372,11 +445,27 @@ export const PreviewPanel: React.FC = () => {
         });
         markPreviewTabLoaded(tabId, JSON.stringify(inspection, null, 2));
       } else if (isPresentationTab) {
-        const inspection = await invokeWorkspace<PresentationInspection>('inspectPresentation', {
-          filePath,
-          limit: 80,
-        });
-        markPreviewTabLoaded(tabId, JSON.stringify(inspection, null, 2));
+        // 优先读同目录 design artifact 的逐页截图走可视预览；缺失再 fallback 到 outline 文本巡检。
+        const artifactPath = filePath.replace(/\.pptx$/i, '.design-artifact.json');
+        let loadedFromArtifact = false;
+        if (artifactPath !== filePath) {
+          try {
+            const raw = await invokeWorkspace<string>('readFile', { filePath: artifactPath });
+            if (raw && parseDesignPptArtifactContent(raw)) {
+              markPreviewTabLoaded(tabId, raw);
+              loadedFromArtifact = true;
+            }
+          } catch {
+            // artifact 不存在或不可读：走下面的 outline fallback
+          }
+        }
+        if (!loadedFromArtifact) {
+          const inspection = await invokeWorkspace<PresentationInspection>('inspectPresentation', {
+            filePath,
+            limit: 80,
+          });
+          markPreviewTabLoaded(tabId, JSON.stringify(inspection, null, 2));
+        }
       } else if (isDocxTab) {
         const result = await commandApi()?.extractDocxHtml(filePath);
         if (!result) throw new Error('DOCX preview extractor is unavailable');

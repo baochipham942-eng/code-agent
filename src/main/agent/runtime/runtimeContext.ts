@@ -109,8 +109,9 @@ export interface RuntimeContext {
   userStopHookBlockCount: number;
   /** GAP-013: Generator-Critic 交付前自动验证开关 */
   enableDeliveryCritic: boolean;
-  /** GAP-013: 本 run 是否已跑过交付前 critic（每 run 最多一次，防死循环） */
-  deliveryCriticRan: boolean;
+  /** GAP-013: 本 run 已被交付前 critic 拦下打回的次数；达 DELIVERY_CRITIC.MAX_BLOCKS 后强制放行
+   * （防无限循环）。原 deliveryCriticRan(boolean) 升级而来。 */
+  deliveryCriticBlockCount: number;
   userHooks?: unknown;
 
   // --- Tool execution ---

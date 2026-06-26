@@ -80,6 +80,9 @@ export class NudgeManager {
   private maxFileNudges: number = 2;
   private targetFiles: string[] = [];
   private modifiedFiles: Set<string> = new Set();
+  // #7 deliveryCritic 证据驱动：本 run 内验证命令（test/typecheck/build/lint）运行结果
+  // 'none' = 未运行；'passed' = 最近一次通过；'failed' = 最近一次失败（latest-wins）
+  private verificationOutcome: 'none' | 'passed' | 'failed' = 'none';
 
   // ── P2 Checkpoint: Task progress state tracking ──
   private consecutiveExploringCount: number = 0;
@@ -138,6 +141,7 @@ export class NudgeManager {
   ): void {
     this.targetFiles = targetFiles;
     this.modifiedFiles.clear();
+    this.verificationOutcome = 'none';
     this.fileNudgeCount = 0;
 
     this.readOnlyNudgeCount = 0;
@@ -203,6 +207,20 @@ export class NudgeManager {
   /** Get the set of modified files (read-only snapshot). */
   getModifiedFiles(): Set<string> {
     return this.modifiedFiles;
+  }
+
+  /**
+   * #7：记录本 run 内一次验证命令（test/typecheck/build/lint）的运行结果。
+   * latest-wins —— "改完→验证失败→修复→再验证通过"最终落 'passed'。
+   */
+  recordVerification(passed: boolean): void {
+    this.verificationOutcome = passed ? 'passed' : 'failed';
+    logger.debug(`[NudgeManager] #7 验证证据记录: ${this.verificationOutcome}`);
+  }
+
+  /** #7：本 run 验证证据（供 deliveryCritic 做证据驱动判定）。 */
+  getVerificationOutcome(): 'none' | 'passed' | 'failed' {
+    return this.verificationOutcome;
   }
 
   /** Get target files list. */

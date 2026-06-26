@@ -52,6 +52,12 @@ export interface AntiPatternConfig {
   maxDuplicateCalls: number;
   /** Max times same tool can fail before suggesting alternative */
   maxFailuresBeforeAlternative: number;
+  /**
+   * Max repeated successful writes of the SAME normalized content to the SAME file
+   * before nudging (success-write storm). 内容仅 whitespace/大小写级别"略变"会归一为同签名，
+   * 真实内容变更（新增逻辑等）签名不同、不触发，故不误伤正常迭代写。
+   */
+  maxRepeatedSuccessfulWrites: number;
 }
 
 /**
@@ -87,6 +93,7 @@ export const DEFAULT_ANTI_PATTERN_CONFIG: AntiPatternConfig = {
   maxSameToolFailures: 3,
   maxDuplicateCalls: 3,
   maxFailuresBeforeAlternative: 2,
+  maxRepeatedSuccessfulWrites: 2,
 };
 
 // ----------------------------------------------------------------------------
@@ -106,6 +113,8 @@ export class AntiPatternDetector {
   private state: AntiPatternState;
   private config: AntiPatternConfig;
   private rereadCounter: Map<string, number> = new Map();
+  /** 成功写签名计数：key = filePath::normalizedContent，value = 命中次数 */
+  private successWriteTracker: Map<string, number> = new Map();
 
   constructor(config: Partial<AntiPatternConfig> = {}) {
     this.config = { ...DEFAULT_ANTI_PATTERN_CONFIG, ...config };
@@ -529,6 +538,64 @@ export class AntiPatternDetector {
   }
 
   // --------------------------------------------------------------------------
+  // Success-Write Storm Detection (#5)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 检测"成功写 storm"：模型反复成功写同一文件、内容仅 whitespace/大小写级别"略变"。
+   * 这类隐性空转没有 error 给 trackToolFailure 看，又因 args 逐字不同而绕过
+   * trackDuplicateCall（其签名含完整 args 逐字比较）。这里用 filePath + 归一内容
+   * 作签名：真实内容变更签名不同、不计数，故不误伤"Write 后再 Edit"等正常迭代。
+   *
+   * @returns 命中阈值时的 nudge 文案，否则 null
+   */
+  trackSuccessfulWrite(toolCall: ToolCall): string | null {
+    if (!WRITE_TOOLS.includes(toolCall.name)) return null;
+    const args = isRecord(toolCall.arguments) ? toolCall.arguments : {};
+    const filePath = typeof args.file_path === 'string' ? args.file_path : '';
+    if (!filePath) return null;
+
+    // 取"写入内容"：write/append 用 content，edit 用 new_string
+    const contentRaw =
+      typeof args.content === 'string'
+        ? args.content
+        : typeof args.new_string === 'string'
+          ? args.new_string
+          : '';
+
+    const signature = `${filePath}::${this.normalizeWriteContent(contentRaw)}`;
+    const count = (this.successWriteTracker.get(signature) || 0) + 1;
+    this.successWriteTracker.set(signature, count);
+
+    if (count >= this.config.maxRepeatedSuccessfulWrites) {
+      logger.warn(`[SuccessWriteStorm] "${filePath}" 同一归一内容已成功写 ${count} 次 — 注入 nudge`);
+      logCollector.agent('WARN', `Success-write storm: ${filePath} written ${count} times with same normalized content`);
+      // 清掉该签名，避免持续刷屏（下次同签名重新计数）
+      this.successWriteTracker.delete(signature);
+      return this.generateSuccessWriteStormWarning(filePath, count);
+    }
+
+    return null;
+  }
+
+  /** 归一写入内容：折叠所有空白 + 小写，使"略变"（缩进/换行/大小写）的写归并到同一签名 */
+  private normalizeWriteContent(content: string): string {
+    return content.replace(/\s+/g, '').toLowerCase();
+  }
+
+  private generateSuccessWriteStormWarning(filePath: string, count: number): string {
+    return (
+      `<success-write-storm>\n` +
+      `⚠️ 你已经把基本相同的内容成功写入 "${filePath}" ${count} 次了。\n` +
+      `重复写入相同内容是无进展的空转（每次都"成功"但没改变结果）。请停止再次写入：\n` +
+      `1. 如果目标已达成，直接进入下一步或给出完成回复\n` +
+      `2. 如果想做小改动，用 edit_file 做针对性增量编辑，而不是整文件重写\n` +
+      `3. 写完后用 read_file / bash 验证实际结果，而不是反复重写\n` +
+      `</success-write-storm>`
+    );
+  }
+
+  // --------------------------------------------------------------------------
   // Text Tool Call Detection
   // --------------------------------------------------------------------------
 
@@ -884,6 +951,7 @@ export class AntiPatternDetector {
       duplicateCallTracker: new Map(),
     };
     this.rereadCounter.clear();
+    this.successWriteTracker.clear();
   }
 
   /**

@@ -255,21 +255,23 @@ export class MessageProcessor {
       }
     }
 
-    // GAP-013: Generator-Critic 交付前自动验证
-    // 修改文件数达到阈值的 run，在交付前自动派 code-review 子代理审查；
-    // 发现 Critical 问题 → 阻塞交付 + 注入审查意见让模型修复。每 run 最多跑一次。
+    // GAP-013 / #7: Generator-Critic 交付前自动验证（证据驱动 + 有界打回）
+    // 修改文件数达到阈值的 run，在交付前派 code-review 子代理审查；发现 Critical
+    // 问题 → 阻塞交付 + 注入审查意见让模型修复。证据驱动：把"本次验证命令是否运行/
+    // 通过"喂给 critic，验证失败时即使 critic 出错/解析失败也按客观证据阻塞。
+    // 有界打回：最多打回 DELIVERY_CRITIC.MAX_BLOCKS 次（模型修复后可重审），满则放行防死循环。
     if (
       !isForcedFinalTextPass &&
       !isSimpleTask &&
       this.ctx.enableDeliveryCritic &&
-      !this.ctx.deliveryCriticRan
+      this.ctx.deliveryCriticBlockCount < DELIVERY_CRITIC.MAX_BLOCKS
     ) {
       const modifiedFiles = Array.from(this.ctx.nudgeManager.getModifiedFiles());
       if (modifiedFiles.length >= DELIVERY_CRITIC.FILE_THRESHOLD) {
-        this.ctx.deliveryCriticRan = true;
         try {
           this.runFinalizer.emitTaskProgress('generating', '交付前自动审查中...');
           const userFirstMessage = this.ctx.messages.find((m) => m.role === 'user')?.content;
+          const verificationOutcome = this.ctx.nudgeManager.getVerificationOutcome();
           const criticResult = await runDeliveryCritic(
             modifiedFiles,
             typeof userFirstMessage === 'string' ? userFirstMessage : '',
@@ -281,18 +283,28 @@ export class MessageProcessor {
               // 可用性降级链：powerful tier 没配 key 时，critic 降级用主 run 的模型
               parentModelConfig: this.ctx.modelConfig,
             },
+            verificationOutcome,
           );
           if (!criticResult.pass) {
+            this.ctx.deliveryCriticBlockCount++;
             logger.info('[AgentLoop] Delivery blocked by critic', {
               reason: criticResult.reason.slice(0, 200),
               fileCount: modifiedFiles.length,
+              verification: verificationOutcome,
+              blockCount: this.ctx.deliveryCriticBlockCount,
             });
             logCollector.agent('WARN', 'Delivery critic found critical issues, blocking delivery');
+            const verifyHint = verificationOutcome === 'none'
+              ? '\n建议：修复后运行测试/类型检查（如 npm run typecheck / npm test）验证，再交付。'
+              : verificationOutcome === 'failed'
+                ? '\n注意：本次验证命令运行失败，请先让验证通过再交付。'
+                : '';
             this.contextAssembly.injectSystemMessage(
               [
                 '<delivery-critic>',
-                '交付前自动审查发现 Critical 问题，请先修复再交付：',
+                `交付前自动审查发现 Critical 问题（第 ${this.ctx.deliveryCriticBlockCount}/${DELIVERY_CRITIC.MAX_BLOCKS} 次打回），请先修复再交付：`,
                 criticResult.reason,
+                verifyHint,
                 '</delivery-critic>',
               ].join('\n'),
             );
@@ -306,6 +318,16 @@ export class MessageProcessor {
           logger.error('[AgentLoop] Delivery critic error:', error);
         }
       }
+    } else if (
+      !isForcedFinalTextPass &&
+      !isSimpleTask &&
+      this.ctx.enableDeliveryCritic &&
+      this.ctx.deliveryCriticBlockCount >= DELIVERY_CRITIC.MAX_BLOCKS
+    ) {
+      // 已打回满 MAX_BLOCKS 次仍未过 critic —— 强制放行避免无限循环（有界打回）
+      logger.warn('[AgentLoop] Delivery critic block limit reached, force-passing delivery', {
+        blockCount: this.ctx.deliveryCriticBlockCount,
+      });
     }
 
     // Planning stop hook

@@ -94,13 +94,14 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     antiScrapingHitsInRun: 0,
     userStopHookBlockCount: 0,
     enableDeliveryCritic: true,
-    deliveryCriticRan: false,
+    deliveryCriticBlockCount: 0,
     nudgeManager: {
       runNudgeChecks: vi.fn(() => false),
       runOutputValidation: vi.fn(() => false),
       getModifiedFiles: vi.fn(
         () => new Set(['/tmp/project/a.ts', '/tmp/project/b.ts', '/tmp/project/c.ts']),
       ),
+      getVerificationOutcome: vi.fn(() => 'none'),
     },
     onEvent: vi.fn(),
     telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -162,7 +163,7 @@ describe('MessageProcessor delivery critic (GAP-013)', () => {
     );
 
     expect(action).toBe('continue');
-    expect(ctx.deliveryCriticRan).toBe(true);
+    expect(ctx.deliveryCriticBlockCount).toBe(1);
     expect(criticState.runDeliveryCritic).toHaveBeenCalledWith(
       expect.arrayContaining(['/tmp/project/a.ts', '/tmp/project/b.ts', '/tmp/project/c.ts']),
       '帮我重构这个模块',
@@ -170,6 +171,7 @@ describe('MessageProcessor delivery critic (GAP-013)', () => {
         workingDirectory: '/tmp/project',
         sessionId: 'runtime-session-1',
       }),
+      'none',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<delivery-critic>'),
@@ -199,17 +201,18 @@ describe('MessageProcessor delivery critic (GAP-013)', () => {
     );
 
     expect(action).toBe('break');
-    expect(ctx.deliveryCriticRan).toBe(true);
+    expect(criticState.runDeliveryCritic).toHaveBeenCalled();
+    expect(ctx.deliveryCriticBlockCount).toBe(0); // 通过不增计数
     expect(runFinalizer.emitTaskComplete).toHaveBeenCalled();
   });
 
-  it('runs critic at most once per run (anti-loop)', async () => {
+  it('stops running critic after MAX_BLOCKS blocks (bounded retry, anti-loop)', async () => {
     criticState.runDeliveryCritic.mockResolvedValue({
       pass: false,
       parsed: true,
       reason: 'VERDICT: FAIL',
     });
-    const ctx = buildCtx({ deliveryCriticRan: true });
+    const ctx = buildCtx({ deliveryCriticBlockCount: 3 });
     const contextAssembly = buildContextAssembly(ctx);
     const runFinalizer = buildRunFinalizer();
     const processor = createProcessor(ctx, contextAssembly, runFinalizer);
@@ -247,7 +250,7 @@ describe('MessageProcessor delivery critic (GAP-013)', () => {
 
     expect(action).toBe('break');
     expect(criticState.runDeliveryCritic).not.toHaveBeenCalled();
-    expect(ctx.deliveryCriticRan).toBe(false);
+    expect(ctx.deliveryCriticBlockCount).toBe(0);
   });
 
   it('skips critic when disabled', async () => {

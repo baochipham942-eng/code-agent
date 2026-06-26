@@ -1,5 +1,6 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import type { ToolExecutionResult } from '../../tools/types';
+import { isBashToolName } from '../../tools/toolNames';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getCitationService } from '../../services/citation/citationService';
 import { createLogger } from '../../services/infra/logger';
@@ -15,6 +16,100 @@ import {
 const logger = createLogger('AgentLoop');
 
 const EXTERNAL_DATA_TOOLS = ['web_fetch', 'web_search', 'mcp', 'read_pdf', 'read_xlsx', 'read_docx', 'mcp_read_resource'];
+
+// #7 deliveryCritic 证据驱动：识别"验证类"bash 命令（测试/类型检查/构建/lint）。
+// 命中即把本次运行的成功/失败作为验证证据记给 nudgeManager。
+//
+// 用结构化解析（拆段 + 识别 executable+subcommand）而非裸子串正则：
+// 既避免 `npm install @testing-library` / `echo test` 这类子串误判，
+// 又能覆盖 workspace 选择器（pnpm -F pkg test）、make、npm run ci 等正则漏判
+// （Codex 对抗审计 Round 1 真缺口）。
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const SCRIPT_RUNNERS = new Set(['npx', 'bunx']); // pnpm/yarn dlx 在 PM 分支处理
+const VERIFY_BINARIES = new Set(['tsc', 'vitest', 'jest', 'mocha', 'pytest', 'eslint', 'ava', 'tsd']);
+// 包管理器脚本名（'ci' 单独处理：`npm ci` 是安装、`npm run ci` 才是验证）
+const VERIFY_SCRIPTS = new Set(['test', 'tests', 'typecheck', 'type-check', 'tsc', 'lint', 'build', 'check', 'verify']);
+const MAKE_TARGETS = new Set(['test', 'tests', 'typecheck', 'lint', 'build', 'check', 'ci', 'verify']);
+const WS_SELECTOR_FLAGS = /^(-F|--filter|--workspace|-w|-C|--dir|--prefix|--cwd)$/;
+
+const baseName = (token: string): string => token.split('/').pop() || token;
+const firstNonFlag = (tokens: string[]): string | undefined => tokens.find((t) => !t.startsWith('-'));
+
+function segmentIsVerification(segment: string): boolean {
+  const seg = segment.trim();
+  if (!seg) return false;
+  const tokens = seg.split(/\s+/).filter(Boolean);
+  // 跳过前导 env 赋值（CI=1 npm test）
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
+  if (i >= tokens.length) return false;
+  const exe = baseName(tokens[i]);
+  const rest = tokens.slice(i + 1);
+
+  // 直接的 verifier 二进制：tsc / vitest / jest / pytest / eslint ...
+  if (VERIFY_BINARIES.has(exe)) return true;
+
+  // make <verify-target>
+  if (exe === 'make') return rest.some((t) => !t.startsWith('-') && MAKE_TARGETS.has(t));
+
+  // npx / bunx <verifier>
+  if (SCRIPT_RUNNERS.has(exe)) {
+    const first = firstNonFlag(rest);
+    return first ? VERIFY_BINARIES.has(baseName(first)) : false;
+  }
+
+  // 包管理器：npm/pnpm/yarn/bun [dlx <verifier>] | [run] [flags] <script>
+  if (PACKAGE_MANAGERS.has(exe)) {
+    if (rest[0] === 'dlx') {
+      const first = firstNonFlag(rest.slice(1));
+      return first ? VERIFY_BINARIES.has(baseName(first)) : false;
+    }
+    let sawRun = false;
+    for (let k = 0; k < rest.length; k++) {
+      const t = rest[k];
+      if (t === 'run' || t === 'run-script') { sawRun = true; continue; }
+      if (t === '--') continue;
+      if (t.startsWith('-')) {
+        if (WS_SELECTOR_FLAGS.test(t)) k++; // 跳过选择器的值（-F pkg）
+        continue;
+      }
+      // 第一个非 flag 的位置参数即 script 名
+      const script = baseName(t);
+      if (script === 'ci') return sawRun; // `npm ci` 是安装；`npm run ci` 才是验证
+      return VERIFY_SCRIPTS.has(script);
+    }
+    return false;
+  }
+
+  // cargo <test|check|build|clippy>
+  if (exe === 'cargo') return rest.some((t) => !t.startsWith('-') && ['test', 'check', 'build', 'clippy'].includes(t));
+  // go <test|build|vet>
+  if (exe === 'go') return rest.some((t) => !t.startsWith('-') && ['test', 'build', 'vet'].includes(t));
+  // python -m (pytest|unittest)
+  if (exe === 'python' || exe === 'python3') {
+    const mIdx = rest.indexOf('-m');
+    return mIdx >= 0 && ['pytest', 'unittest'].includes(rest[mIdx + 1]);
+  }
+  return false;
+}
+
+/** bash 命令是否是"验证类"（测试/类型检查/构建/lint）。导出供单测。 */
+export function isVerificationCommand(command: string): boolean {
+  // 拆复合命令（&& || ; |），任一段命中即算验证
+  return command.split(/&&|\|\||[;|]/).some(segmentIsVerification);
+}
+
+/** 命中验证命令则记录证据；非 bash 或非验证命令不记录。 */
+function recordVerificationEvidenceIfApplicable(
+  ctx: RuntimeContext,
+  toolCall: ToolCall,
+  success: boolean,
+): void {
+  if (!isBashToolName(toolCall.name)) return;
+  const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command : '';
+  if (!command || !isVerificationCommand(command)) return;
+  ctx.nudgeManager.recordVerification(success);
+}
 
 type HandleToolResultBookkeepingArgs = {
   ctx: RuntimeContext;
@@ -146,6 +241,9 @@ export function handleToolResultBookkeeping({
     normalizedResult.error,
   );
 
+  // #7：验证命令证据（test/typecheck/build/lint 的运行成败）记给 nudgeManager，供 deliveryCritic 证据驱动
+  recordVerificationEvidenceIfApplicable(ctx, toolCall, normalizedResult.success);
+
   if (!normalizedResult.success && normalizedResult.error) {
     const failureWarning = ctx.antiPatternDetector.trackToolFailure(toolCall, normalizedResult.error);
     if (failureWarning === 'ESCALATE_TO_USER') {
@@ -163,6 +261,12 @@ export function handleToolResultBookkeeping({
     const duplicateWarning = ctx.antiPatternDetector.trackDuplicateCall(toolCall);
     if (duplicateWarning) {
       contextAssembly.injectSystemMessage(duplicateWarning);
+    }
+
+    // #5 成功写 storm：反复成功写同一文件、内容仅"略变"的隐性空转
+    const writeStormWarning = ctx.antiPatternDetector.trackSuccessfulWrite(toolCall);
+    if (writeStormWarning) {
+      contextAssembly.injectSystemMessage(writeStormWarning);
     }
   }
 

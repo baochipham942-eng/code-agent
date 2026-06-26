@@ -185,6 +185,8 @@ export const DELIVERY_CRITIC = {
   FILE_THRESHOLD: 3,
   /** critic 子代理迭代上限 */
   MAX_ITERATIONS: 15,
+  /** 每 run 交付前 critic 最多拦下打回次数，达上限强制放行防无限循环 */
+  MAX_BLOCKS: 3,
   /** critic 意见注回模型时的最大字符数（控 token） */
   OUTPUT_MAX_CHARS: 4_000,
 } as const;

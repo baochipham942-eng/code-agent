@@ -183,4 +183,61 @@ describe('runDeliveryCritic (GAP-013)', () => {
     expect(context.modelConfig.provider).toBe('zhipu');
     expect(context.modelConfig.model).toBe('glm-5');
   });
+
+  // --------------------------------------------------------------------------
+  // #7 证据驱动：验证证据写进 prompt + 验证失败时覆盖 fail-open
+  // --------------------------------------------------------------------------
+  describe('证据驱动 (#7)', () => {
+    it('把验证证据写进 critic prompt（none/passed/failed 各异）', async () => {
+      executorState.execute.mockResolvedValue({ success: true, output: 'VERDICT: PASS', iterations: 1, toolsUsed: [] });
+
+      await runDeliveryCritic(modifiedFiles, 'g', deps, 'failed');
+      expect(executorState.execute.mock.calls[0][0]).toContain('验证命令');
+      expect(executorState.execute.mock.calls[0][0]).toContain('失败');
+
+      executorState.execute.mockClear();
+      await runDeliveryCritic(modifiedFiles, 'g', deps, 'none');
+      expect(executorState.execute.mock.calls[0][0]).toContain('未检测到运行任何验证命令');
+    });
+
+    it('验证失败 + critic 抛错 → 阻塞交付（证据覆盖 fail-open）', async () => {
+      executorState.execute.mockRejectedValue(new Error('model unavailable'));
+      const result = await runDeliveryCritic(modifiedFiles, '', deps, 'failed');
+      expect(result.pass).toBe(false);
+      expect(result.reason).toContain('验证命令运行失败');
+    });
+
+    it('验证未运行/通过 + critic 抛错 → 仍 fail-open 放行（不误伤）', async () => {
+      executorState.execute.mockRejectedValue(new Error('model unavailable'));
+      expect((await runDeliveryCritic(modifiedFiles, '', deps, 'none')).pass).toBe(true);
+      expect((await runDeliveryCritic(modifiedFiles, '', deps, 'passed')).pass).toBe(true);
+    });
+
+    it('验证失败 + critic 子代理未完成 → 阻塞交付', async () => {
+      executorState.execute.mockResolvedValue({ success: false, output: '', error: 'budget exhausted', iterations: 10, toolsUsed: [] });
+      const result = await runDeliveryCritic(modifiedFiles, '', deps, 'failed');
+      expect(result.pass).toBe(false);
+    });
+
+    it('验证失败 + VERDICT 解析不出 → 阻塞（解析失败不再无条件放行）', async () => {
+      executorState.execute.mockResolvedValue({ success: true, output: '看着还行', iterations: 2, toolsUsed: [] });
+      const result = await runDeliveryCritic(modifiedFiles, '', deps, 'failed');
+      expect(result.pass).toBe(false);
+      expect(result.parsed).toBe(false);
+    });
+
+    it('验证未运行 + VERDICT 解析不出 → 仍放行（保留 fail-open 安全网）', async () => {
+      executorState.execute.mockResolvedValue({ success: true, output: '看着还行', iterations: 2, toolsUsed: [] });
+      const result = await runDeliveryCritic(modifiedFiles, '', deps, 'none');
+      expect(result.pass).toBe(true);
+      expect(result.parsed).toBe(false);
+    });
+
+    it('显式 VERDICT 始终优先于验证证据（验证失败但 critic 判 PASS → 放行）', async () => {
+      executorState.execute.mockResolvedValue({ success: true, output: '失败与本次改动无关\nVERDICT: PASS', iterations: 2, toolsUsed: [] });
+      const result = await runDeliveryCritic(modifiedFiles, '', deps, 'failed');
+      expect(result.pass).toBe(true);
+      expect(result.parsed).toBe(true);
+    });
+  });
 });

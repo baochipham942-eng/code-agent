@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
-import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 import type { ServiceApiKey } from '../contract/configService';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
@@ -129,6 +129,9 @@ export interface IpcInvokeHandlers {
 
   // 设计画布提议审批（ADR-026）：renderer → main 回裁决
   [IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE]: (response: CanvasProposalDecision) => Promise<void>;
+
+  // 设计画布视频生成（2b）：renderer → main 回出视频裁决
+  [IPC_CHANNELS.CANVAS_VIDEO_RESPONSE]: (decision: CanvasVideoDecision) => Promise<void>;
 
   // 设计画布有界自主信封审批（ADR-027）：renderer → main 回信封裁决
   [IPC_CHANNELS.CANVAS_AUTONOMY_RESPONSE]: (decision: AutonomyEnvelopeDecision) => Promise<void>;
@@ -536,6 +539,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
   [IPC_CHANNELS.CANVAS_PROPOSAL_ASK]: (request: CanvasOpProposal) => void;
   [IPC_CHANNELS.CANVAS_PROPOSAL_CANCEL]: (payload: { requestId: string }) => void;
+  [IPC_CHANNELS.CANVAS_VIDEO_ASK]: (request: CanvasVideoRequest) => void;
+  [IPC_CHANNELS.WORKSPACE_OPEN_PREVIEW]: (payload: { filePath: string; sessionId?: string }) => void;
   [IPC_CHANNELS.CANVAS_AUTONOMY_ASK]: (request: AutonomyEnvelopeRequest) => void;
   [IPC_CHANNELS.CANVAS_AUTONOMY_CANCEL]: (payload: { requestId: string }) => void;
   [IPC_CHANNELS.MCP_ELICITATION_REQUEST]: (request: MCPElicitationRequest) => void;

@@ -28,6 +28,15 @@ import { isBashToolName } from '../toolNames';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
+/**
+ * 设计画布工具名（ADR-026 / 2b）。这些工具登记在 protocol registry，但**故意不放进**
+ * CORE_TOOLS —— 它们不进基础工具表，而是仅在设计会话激活
+ * （executionIntent.designCanvasActive === true）时由 inference 组装点条件注入工具表。
+ * 普通会话完全看不到这些工具，零污染。（在 DEFERRED_TOOLS_META 另有登记，供任意会话按意图
+ * ToolSearch 搜到/select，与本注入互补。）
+ */
+export const DESIGN_CANVAS_TOOL_NAMES = ['ProposeCanvasOps', 'RequestDesignAutonomy', 'ProposeVideoOps', 'ProposeSlidesOps'] as const;
+
 function mapPermissionLevel(level: PermissionLevel): LegacyPermissionLevel {
   if (level === 'dangerous') return 'execute';
   return level;
@@ -111,6 +120,63 @@ export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
     .filter((definition) => loadedNames.has(definition.name));
 
   return [...protocolDefinitions, ...mcpDefinitions];
+}
+
+/**
+ * 获取设计画布工具定义（ProposeCanvasOps / RequestDesignAutonomy / ProposeVideoOps / ProposeSlidesOps）。
+ *
+ * 这些工具不在 CORE 体系里，只在设计会话激活时由 inference 组装点条件注入。
+ * 从 protocol registry 取完整 schema（name/description/inputSchema 齐全），合并 cloud meta，
+ * 与 getCoreToolDefinitions 同款取法，保证 agent 能直接调用、免 ToolSearch。
+ */
+export function getDesignCanvasToolDefinitions(): ToolDefinition[] {
+  const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+  const wanted = new Set<string>(DESIGN_CANVAS_TOOL_NAMES);
+
+  return getProtocolToolSchemas()
+    .filter((schema) => wanted.has(schema.name))
+    .map((schema) => schemaToDefinition(schema, cloudToolMeta));
+}
+
+/**
+ * 设计会话激活时把画布工具注入工具表（去重）。非激活时原样返回，保证普通会话零污染。
+ *
+ * 抽成纯函数以便 inference 组装点直接调用 + 单测守住"零污染"硬底线，无需启动整套推理引擎。
+ *
+ * @param tools 已组装的基础工具表（core + loaded-deferred，或全集）
+ * @param designCanvasActive 本轮 executionIntent.designCanvasActive
+ */
+export function withDesignCanvasTools(
+  tools: ToolDefinition[],
+  designCanvasActive: boolean | undefined,
+): ToolDefinition[] {
+  if (!designCanvasActive) return tools;
+  const existing = new Set(tools.map((t) => t.name));
+  const canvasTools = getDesignCanvasToolDefinitions().filter((t) => !existing.has(t.name));
+  if (canvasTools.length === 0) return tools;
+  return [...tools, ...canvasTools];
+}
+
+/**
+ * 设计会话激活时应被画布工具**取代**的通用媒介工具：funnel agent 走 ProposeCanvasOps /
+ * ProposeVideoOps（进画布、有会话内成本卡、走设计已配模型），而非通用
+ * image_generate / video_generate / image_annotate（不进画布、无成本卡、且 video_generate
+ * 写死智谱 cogvideox，余额不足直接 429——dogfood 实证 agent 会误抓它）。
+ * 普通会话（designCanvasActive 假）原样返回，零影响。
+ */
+export const DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS = [
+  'image_generate',
+  'video_generate',
+  'image_annotate',
+] as const;
+
+export function withoutGenericMediaToolsInDesign(
+  tools: ToolDefinition[],
+  designCanvasActive: boolean | undefined,
+): ToolDefinition[] {
+  if (!designCanvasActive) return tools;
+  const suppressed = new Set<string>(DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS);
+  return tools.filter((t) => !suppressed.has(t.name));
 }
 
 /**

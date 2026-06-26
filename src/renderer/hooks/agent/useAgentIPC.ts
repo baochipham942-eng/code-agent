@@ -83,6 +83,25 @@ function withCanvasSnapshotContext(
   return { ...(context || {}), canvasSnapshot };
 }
 
+// 2b 跨进程硬控闸：设计模式（workspaceMode==='design'）激活时，在 envelope 的 executionIntent
+// 上打 designCanvasActive=true，main 侧据此：① inference 把画布工具（ProposeCanvasOps/Video/Slides）
+// 提进工具表 + 停用通用媒介工具；② shell 工具硬拦"用代码画图"重定向到 ProposeCanvasOps；
+// ③ 按轮注入设计画布会话引导。口径与 withCanvasSnapshotContext 一致（main 的设计 surface 是全局
+// workspaceMode，无 per-session 画布属主），非激活时显式置 false（普通会话零影响）。
+// **合并语义**：保留 executionIntent 上已有字段（browserSessionMode 等），只补 designCanvasActive。
+export function withDesignCanvasActiveIntent(
+  context: ConversationEnvelopeContext | undefined,
+): ConversationEnvelopeContext | undefined {
+  const active = useWorkspaceModeStore.getState().workspaceMode === 'design';
+  return {
+    ...(context || {}),
+    executionIntent: {
+      ...(context?.executionIntent || {}),
+      designCanvasActive: active,
+    },
+  };
+}
+
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
 type SessionStoreState = ReturnType<typeof useSessionStore.getState>;
 
@@ -374,8 +393,10 @@ export function useAgentIPC({
       const sessionDesignBrief = enrichDesignBrief(effectiveSessionId
         ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
         : undefined);
-      const contextWithDesignBrief = withCanvasSnapshotContext(
-        withDesignBriefContext(context, sessionDesignBrief),
+      const contextWithDesignBrief = withDesignCanvasActiveIntent(
+        withCanvasSnapshotContext(
+          withDesignBriefContext(context, sessionDesignBrief),
+        ),
       );
 
       if (directRouting.kind === 'error') {

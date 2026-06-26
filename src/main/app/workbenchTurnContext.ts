@@ -11,6 +11,7 @@ import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
 import { getConnectorRegistry } from '../connectors';
 import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
 import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasProposal';
+import { formatDesignCanvasSessionReminder } from '../../shared/design/canvasSessionReminder';
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -61,6 +62,11 @@ export function buildWorkbenchTurnSystemContext(
     lines.push('<design_canvas>');
     lines.push(canvasBlock);
     lines.push('</design_canvas>');
+  }
+
+  // R1 冷启动引导：设计画布会话激活即注入（即使画布空）——服务端按轮注入，不进用户消息。
+  if (context.executionIntent?.designCanvasActive) {
+    lines.push(formatDesignCanvasSessionReminder());
   }
 
   if (context.selectedSkillIds?.length) {

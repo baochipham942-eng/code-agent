@@ -11,6 +11,23 @@ describe('buildOutlinePrompt', () => {
     expect(p).toContain('## 页面标题');
     expect(p).toContain('- 要点');
   });
+
+  it('brief 注入：把 agent 调研要点喂进 prompt 接地气（要求据此生成、不编造）', () => {
+    const p = buildOutlinePrompt(
+      'Code Agent 行业趋势',
+      5,
+      'AI代码工具市场93.5亿美元; 五强Cursor/Claude Code/Copilot; 84%开发者采用率',
+    );
+    expect(p).toContain('AI代码工具市场93.5亿美元');
+    expect(p).toContain('84%开发者采用率');
+    // 必须有"据此生成/不要编造"之类的约束，避免 AI 抛开真材料瞎编
+    expect(p).toMatch(/据此|优先采用|不要编造|不得编造|基于(以上|这些)/);
+  });
+
+  it('无 brief 时向后兼容（不含调研段标记）', () => {
+    const p = buildOutlinePrompt('X', 5);
+    expect(p).not.toContain('调研要点');
+  });
 });
 
 describe('buildAiOutline', () => {

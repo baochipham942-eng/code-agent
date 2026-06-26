@@ -25,9 +25,12 @@ import {
   TAVILY_SEARCH_URL,
   buildDomainQuerySuffix,
   formatAge,
-  getSearchErrorCircuitBreakerCooldown,
 } from './searchUtils';
 import { OPENAI_WEB_SEARCH_DEFAULT_MODEL } from '../../../../shared/constants';
+import {
+  getProviderHealth,
+  searchWithProviderKeyRotation,
+} from './providerCapabilityMatrix';
 import { isFirecrawlDefaultEnabled, isFirecrawlHealthy, searchWithFirecrawl } from '../firecrawlClient';
 
 // ============================================================================
@@ -126,25 +129,25 @@ export const SEARCH_SOURCES: SearchSource[] = [
   {
     name: 'perplexity',
     priority: 3,
-    isAvailable: (cs) => !!cs?.getServiceApiKey('perplexity'),
+    isAvailable: (cs) => getProviderHealth('perplexity', cs).available,
     search: searchViaPerplexity,
   },
   {
     name: 'openai',
     priority: 4,
-    isAvailable: (cs) => !!cs?.getServiceApiKey('openai'),
+    isAvailable: (cs) => getProviderHealth('openai', cs).available,
     search: searchViaOpenAI,
   },
   {
     name: 'exa',
     priority: 5,
-    isAvailable: (cs) => !!cs?.getServiceApiKey('exa'),
+    isAvailable: (cs) => getProviderHealth('exa', cs).available,
     search: searchViaExa,
   },
   {
     name: 'tavily',
     priority: 6,
-    isAvailable: (cs) => getTavilyKeys(cs).length > 0,
+    isAvailable: (cs) => getProviderHealth('tavily', cs).available,
     search: searchViaTavily,
   },
   {
@@ -331,54 +334,51 @@ async function searchViaPerplexity(
   domainFilter?: DomainFilter,
   _recency?: string
 ): Promise<SearchSourceResult> {
-  const apiKey = configService?.getServiceApiKey('perplexity');
-  if (!apiKey) {
-    return { source: 'perplexity', success: false, error: 'API key not configured' };
-  }
+  return searchWithProviderKeyRotation('perplexity', configService, async (apiKey) => {
+    // Perplexity: append domain constraints to the user message
+    let messageContent = query;
+    if (domainFilter) {
+      const suffix = buildDomainQuerySuffix(domainFilter);
+      if (suffix) messageContent += suffix;
+    }
 
-  // Perplexity: append domain constraints to the user message
-  let messageContent = query;
-  if (domainFilter) {
-    const suffix = buildDomainQuerySuffix(domainFilter);
-    if (suffix) messageContent += suffix;
-  }
+    const response = await fetch(PERPLEXITY_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar',
+        messages: [{ role: 'user', content: messageContent }],
+        max_tokens: 1024,
+        return_citations: true,
+      }),
+    });
 
-  const response = await fetch(PERPLEXITY_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'sonar',
-      messages: [{ role: 'user', content: messageContent }],
-      max_tokens: 1024,
-      return_citations: true,
-    }),
-  });
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        source: 'perplexity',
+        success: false,
+        error: `HTTP ${response.status}: ${errorText}`,
+      };
+    }
 
-  if (!response.ok) {
-    const errorText = await response.text();
+    const data = await response.json() as PerplexityResponse;
+    const answer = data.choices?.[0]?.message?.content;
+
+    if (!answer) {
+      return { source: 'perplexity', success: false, error: 'Empty response' };
+    }
+
     return {
       source: 'perplexity',
-      success: false,
-      error: `HTTP ${response.status}: ${errorText}`,
+      success: true,
+      answer,
+      citations: data.citations || [],
     };
-  }
-
-  const data = await response.json() as PerplexityResponse;
-  const answer = data.choices?.[0]?.message?.content;
-
-  if (!answer) {
-    return { source: 'perplexity', success: false, error: 'Empty response' };
-  }
-
-  return {
-    source: 'perplexity',
-    success: true,
-    answer,
-    citations: data.citations || [],
-  };
+  });
 }
 
 function buildOpenAIWebSearchInput(
@@ -505,50 +505,47 @@ async function searchViaOpenAI(
   domainFilter?: DomainFilter,
   recency?: string
 ): Promise<SearchSourceResult> {
-  const apiKey = configService?.getServiceApiKey('openai');
-  if (!apiKey) {
-    return { source: 'openai', success: false, error: 'API key not configured' };
-  }
+  return searchWithProviderKeyRotation('openai', configService, async (apiKey) => {
+    const body = {
+      model: process.env.OPENAI_SEARCH_MODEL || OPENAI_WEB_SEARCH_DEFAULT_MODEL,
+      input: buildOpenAIWebSearchInput(query, recency),
+      tools: [buildOpenAIWebSearchTool(domainFilter)],
+      tool_choice: 'auto',
+      include: ['web_search_call.action.sources'],
+    };
 
-  const body = {
-    model: process.env.OPENAI_SEARCH_MODEL || OPENAI_WEB_SEARCH_DEFAULT_MODEL,
-    input: buildOpenAIWebSearchInput(query, recency),
-    tools: [buildOpenAIWebSearchTool(domainFilter)],
-    tool_choice: 'auto',
-    include: ['web_search_call.action.sources'],
-  };
+    const response = await fetch(resolveOpenAIResponsesUrl(configService), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
-  const response = await fetch(resolveOpenAIResponsesUrl(configService), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        source: 'openai',
+        success: false,
+        error: `HTTP ${response.status}: ${errorText}`,
+      };
+    }
 
-  if (!response.ok) {
-    const errorText = await response.text();
+    const data = await response.json() as OpenAIResponsesResponse;
+    const extracted = extractOpenAITextAndCitations(data);
+    if (!extracted.text) {
+      return { source: 'openai', success: false, error: 'Empty response' };
+    }
+
     return {
       source: 'openai',
-      success: false,
-      error: `HTTP ${response.status}: ${errorText}`,
+      success: true,
+      answer: extracted.text,
+      citations: extracted.citations,
+      results: extracted.results,
     };
-  }
-
-  const data = await response.json() as OpenAIResponsesResponse;
-  const extracted = extractOpenAITextAndCitations(data);
-  if (!extracted.text) {
-    return { source: 'openai', success: false, error: 'Empty response' };
-  }
-
-  return {
-    source: 'openai',
-    success: true,
-    answer: extracted.text,
-    citations: extracted.citations,
-    results: extracted.results,
-  };
+  });
 }
 
 /**
@@ -561,76 +558,73 @@ async function searchViaExa(
   domainFilter?: DomainFilter,
   recency?: string
 ): Promise<SearchSourceResult> {
-  const apiKey = configService?.getServiceApiKey('exa');
-  if (!apiKey) {
-    return { source: 'exa', success: false, error: 'API key not configured' };
-  }
+  return searchWithProviderKeyRotation('exa', configService, async (apiKey) => {
+    const body: Record<string, unknown> = {
+      query,
+      numResults: maxResults,
+      type: 'auto',
+      useAutoprompt: true,
+      contents: {
+        text: { maxCharacters: 500 },
+        highlights: true,
+      },
+    };
 
-  const body: Record<string, unknown> = {
-    query,
-    numResults: maxResults,
-    type: 'auto',
-    useAutoprompt: true,
-    contents: {
-      text: { maxCharacters: 500 },
-      highlights: true,
-    },
-  };
-
-  // EXA: startPublishedDate for recency filtering
-  if (recency) {
-    const daysMap: Record<string, number> = { day: 1, week: 7, month: 30 };
-    const days = daysMap[recency];
-    if (days) {
-      const d = new Date();
-      d.setDate(d.getDate() - days);
-      body.startPublishedDate = d.toISOString().slice(0, 10);
+    // EXA: startPublishedDate for recency filtering
+    if (recency) {
+      const daysMap: Record<string, number> = { day: 1, week: 7, month: 30 };
+      const days = daysMap[recency];
+      if (days) {
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        body.startPublishedDate = d.toISOString().slice(0, 10);
+      }
     }
-  }
 
-  // EXA supports native domain filtering
-  if (domainFilter?.allowed && domainFilter.allowed.length > 0) {
-    body.includeDomains = domainFilter.allowed;
-  }
-  if (domainFilter?.blocked && domainFilter.blocked.length > 0) {
-    body.excludeDomains = domainFilter.blocked;
-  }
+    // EXA supports native domain filtering
+    if (domainFilter?.allowed && domainFilter.allowed.length > 0) {
+      body.includeDomains = domainFilter.allowed;
+    }
+    if (domainFilter?.blocked && domainFilter.blocked.length > 0) {
+      body.excludeDomains = domainFilter.blocked;
+    }
 
-  const response = await fetch(EXA_SEARCH_URL, {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+    const response = await fetch(EXA_SEARCH_URL, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        source: 'exa',
+        success: false,
+        error: `HTTP ${response.status}: ${errorText}`,
+      };
+    }
+
+    const data = await response.json() as ExaSearchResponse;
+
+    if (!data.results || data.results.length === 0) {
+      return { source: 'exa', success: true, results: [] };
+    }
+
     return {
       source: 'exa',
-      success: false,
-      error: `HTTP ${response.status}: ${errorText}`,
+      success: true,
+      results: data.results.map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.text || r.highlights?.[0] || '',
+        age: r.publishedDate ? formatAge(r.publishedDate) : undefined,
+        source: 'exa',
+      })),
     };
-  }
-
-  const data = await response.json() as ExaSearchResponse;
-
-  if (!data.results || data.results.length === 0) {
-    return { source: 'exa', success: true, results: [] };
-  }
-
-  return {
-    source: 'exa',
-    success: true,
-    results: data.results.map(r => ({
-      title: r.title,
-      url: r.url,
-      snippet: r.text || r.highlights?.[0] || '',
-      age: r.publishedDate ? formatAge(r.publishedDate) : undefined,
-      source: 'exa',
-    })),
-  };
+  });
 }
 
 /**
@@ -698,44 +692,8 @@ async function searchViaBrave(
 }
 
 // ============================================================================
-// Tavily key pool — rotate across multiple keys, skip exhausted ones
+// Tavily search implementation
 // ============================================================================
-//
-// Tavily dev keys have a small per-key credit budget. A single key runs dry fast,
-// so we support a pool: `TAVILY_API_KEYS` (comma/newline/space separated) plus the
-// legacy single key. When a key returns 401/402/432/quota we mark it exhausted and
-// rotate to the next within the same call. Only when EVERY key is exhausted does the
-// outer circuit breaker trip and skip tavily entirely.
-
-/** exhausted key -> cooldown expiry timestamp (ms) */
-const tavilyKeyCooldown: Record<string, number> = {};
-const TAVILY_KEY_COOLDOWN = 24 * 60 * 60 * 1000; // 24h — dev key budgets reset slowly
-
-export function getTavilyKeys(
-  configService: ReturnType<typeof getConfigService>
-): string[] {
-  const raw: string[] = [];
-  const pool = process.env.TAVILY_API_KEYS;
-  if (pool) raw.push(...pool.split(/[\s,]+/));
-  const single = configService?.getServiceApiKey('tavily') || process.env.TAVILY_API_KEY;
-  if (single) raw.push(single);
-  // Dedup while preserving order; drop empties.
-  return [...new Set(raw.map(k => k.trim()).filter(Boolean))];
-}
-
-function isTavilyKeyExhausted(key: string): boolean {
-  const until = tavilyKeyCooldown[key];
-  if (!until) return false;
-  if (until - Date.now() <= 0) {
-    delete tavilyKeyCooldown[key];
-    return false;
-  }
-  return true;
-}
-
-function maskTavilyKey(key: string): string {
-  return key.length <= 12 ? '***' : `${key.slice(0, 8)}…${key.slice(-4)}`;
-}
 
 async function callTavily(
   apiKey: string,
@@ -794,27 +752,10 @@ async function searchViaTavily(
   domainFilter?: DomainFilter,
   recency?: string
 ): Promise<SearchSourceResult> {
-  const allKeys = getTavilyKeys(configService);
-  if (allKeys.length === 0) {
-    return { source: 'tavily', success: false, error: 'API key not configured' };
-  }
-
-  // Prefer keys not on cooldown; if all are cooling down, still try them (may have reset).
-  const fresh = allKeys.filter(k => !isTavilyKeyExhausted(k));
-  const tryKeys = fresh.length > 0 ? fresh : allKeys;
-
-  let lastError = 'All Tavily keys exhausted';
-  for (const apiKey of tryKeys) {
+  return searchWithProviderKeyRotation('tavily', configService, async (apiKey) => {
     const res = await callTavily(apiKey, query, maxResults, domainFilter, recency);
 
     if (!res.ok) {
-      lastError = res.error;
-      // Quota/auth failure on this key → mark exhausted and rotate to the next.
-      if (getSearchErrorCircuitBreakerCooldown(res.error) !== null) {
-        tavilyKeyCooldown[apiKey] = Date.now() + TAVILY_KEY_COOLDOWN;
-        continue;
-      }
-      // Other (transient/network) error → don't burn the whole pool, surface it.
       return { source: 'tavily', success: false, error: res.error };
     }
 
@@ -829,13 +770,5 @@ async function searchViaTavily(
     return data.answer
       ? { source: 'tavily', success: true, answer: data.answer, results }
       : { source: 'tavily', success: true, results };
-  }
-
-  // Every key we tried is exhausted — return the last quota error so the outer
-  // circuit breaker trips and skips tavily for a while.
-  return {
-    source: 'tavily',
-    success: false,
-    error: `${lastError} (tried ${tryKeys.length} key${tryKeys.length > 1 ? 's' : ''}: ${tryKeys.map(maskTavilyKey).join(', ')})`,
-  };
+  });
 }

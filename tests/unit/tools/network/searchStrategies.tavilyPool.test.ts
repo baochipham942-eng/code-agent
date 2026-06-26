@@ -1,11 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getTavilyKeys, getAvailableSources, SEARCH_SOURCES } from '../../../../src/main/tools/web/search';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getTavilyKeys, getAvailableSources, SEARCH_SOURCES, resetProviderHealthForTests } from '../../../../src/main/tools/web/search';
 
 const tavilySource = () => SEARCH_SOURCES.find((s) => s.name === 'tavily')!;
 const noConfig = { getServiceApiKey: () => undefined } as never;
 
 describe('Tavily key pool', () => {
+  beforeEach(() => {
+    vi.stubEnv('TAVILY_API_KEYS', '');
+    vi.stubEnv('TAVILY_API_KEY', '');
+  });
+
   afterEach(() => {
+    resetProviderHealthForTests();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });

@@ -28,9 +28,28 @@ export {
   routeSources,
   SEARCH_SOURCES,
   getAvailableSources,
-  getTavilyKeys,
   buildUnusedSourcesHint,
 } from './searchStrategies';
+
+export {
+  SEARCH_PROVIDER_CAPABILITIES,
+  getProviderCapabilityMatrix,
+  getProviderHealth,
+  getAvailableProviderKeys,
+  getProviderKeys,
+  getTavilyKeys,
+  markProviderKeyCooldown,
+  resetProviderHealthForTests,
+  searchWithProviderKeyRotation,
+} from './providerCapabilityMatrix';
+
+export type {
+  ProviderCapability,
+  ProviderCapabilityStatus,
+  ProviderHealth,
+  PremiumSearchProviderId,
+  SearchProviderId,
+} from './providerCapabilityMatrix';
 
 export {
   parallelSearch,

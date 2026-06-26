@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAvailableSources, SEARCH_SOURCES } from '../../../../src/main/tools/web/search';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getAvailableSources, SEARCH_SOURCES, resetProviderHealthForTests } from '../../../../src/main/tools/web/search';
 import { OPENAI_WEB_SEARCH_DEFAULT_MODEL } from '../../../../src/shared/constants';
 
 describe('OpenAI web search source', () => {
+  beforeEach(() => {
+    vi.stubEnv('OPENAI_API_KEYS', '');
+    vi.stubEnv('OPENAI_API_KEY', '');
+  });
+
   afterEach(() => {
+    resetProviderHealthForTests();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -110,6 +116,8 @@ describe('OpenAI web search source', () => {
   });
 
   it('returns a clear error without calling OpenAI when the service key is missing', async () => {
+    vi.stubEnv('OPENAI_API_KEY', '');
+    vi.stubEnv('OPENAI_API_KEYS', '');
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const configService = {

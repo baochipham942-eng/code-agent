@@ -20,6 +20,9 @@ describe('normalizeProposalOp', () => {
       nodeId: 'n1',
       x: 10,
       y: 20,
+      intent: 'Move n1 to (10, 20).',
+      source: 'agent_inferred',
+      affectedNodes: ['n1'],
     });
   });
 
@@ -49,14 +52,52 @@ describe('normalizeProposalOp', () => {
   });
 
   it('discardNode（三刀软删）：合法通过 + 缺 nodeId → null', () => {
-    expect(normalizeProposalOp({ kind: 'discardNode', nodeId: 'n1' })).toEqual({ kind: 'discardNode', nodeId: 'n1' });
+    expect(normalizeProposalOp({ kind: 'discardNode', nodeId: 'n1' })).toEqual({
+      kind: 'discardNode',
+      nodeId: 'n1',
+      intent: 'Soft-discard n1.',
+      source: 'agent_inferred',
+      affectedNodes: ['n1'],
+    });
     expect(normalizeProposalOp({ kind: 'discardNode', nodeId: '' })).toBeNull();
   });
 
   it('generateImage（二刀文生图）：合法通过 + 仅留 prompt/model/aspectRatio', () => {
     expect(
       normalizeProposalOp({ kind: 'generateImage', prompt: '一张登录页', model: 'wanx2.1-t2i-turbo', aspectRatio: '9:16' }),
-    ).toEqual({ kind: 'generateImage', prompt: '一张登录页', model: 'wanx2.1-t2i-turbo', aspectRatio: '9:16' });
+    ).toEqual({
+      kind: 'generateImage',
+      prompt: '一张登录页',
+      model: 'wanx2.1-t2i-turbo',
+      aspectRatio: '9:16',
+      intent: 'Generate a new image from the proposed prompt.',
+      source: 'agent_inferred',
+      affectedNodes: [],
+    });
+  });
+
+  it('保留 per-op intent/source/affectedNodes，并清洗非法 source 与重复节点', () => {
+    const op = normalizeProposalOp({
+      kind: 'addConnector',
+      fromNodeId: 'a',
+      toNodeId: 'b',
+      label: '下一步',
+      intent: '连接登录页和结算页，表达主流程',
+      source: 'design_acceptance_contract',
+      affectedNodes: ['a', 'b', 'a', '', 42],
+    });
+    expect(op).toMatchObject({
+      kind: 'addConnector',
+      intent: '连接登录页和结算页，表达主流程',
+      source: 'design_acceptance_contract',
+      affectedNodes: ['a', 'b'],
+    });
+    expect(normalizeProposalOp({
+      kind: 'renameNode',
+      nodeId: 'n1',
+      label: '首页',
+      source: 'freehand',
+    })?.source).toBe('agent_inferred');
   });
 
   it('generateImage：缺/空 prompt → null（无内容不付费）', () => {

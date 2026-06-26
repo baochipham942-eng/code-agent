@@ -49,6 +49,10 @@ describe('schema', () => {
     expect(proposeCanvasOpsModule.schema.category).toBe('planning');
     expect(proposeCanvasOpsModule.schema.permissionLevel).toBe('execute');
     expect(proposeCanvasOpsModule.schema.inputSchema.required).toEqual(['ops']);
+    const opSchema = proposeCanvasOpsModule.schema.inputSchema.properties.ops.items;
+    expect(opSchema.required).toEqual(['kind', 'intent', 'source', 'affectedNodes']);
+    expect(opSchema.properties.source.enum).toContain('design_acceptance_contract');
+    expect(opSchema.properties.affectedNodes.items).toEqual({ type: 'string' });
   });
 });
 
@@ -69,7 +73,17 @@ describe('IPC 协议契约', () => {
     expect(sendMock).toHaveBeenCalledTimes(1);
     const [channel, payload] = sendMock.mock.calls[0];
     expect(channel).toBe(IPC_CHANNELS.CANVAS_PROPOSAL_ASK);
-    expect(payload).toMatchObject({ rationale: '画用户流', ops: [expect.objectContaining({ kind: 'addConnector' })] });
+    expect(payload).toMatchObject({
+      rationale: '画用户流',
+      ops: [
+        expect.objectContaining({
+          kind: 'addConnector',
+          intent: expect.any(String),
+          source: 'agent_inferred',
+          affectedNodes: ['a', 'b'],
+        }),
+      ],
+    });
     expect(payload.requestId).toMatch(/^cp-\d+/);
   });
 });

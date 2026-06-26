@@ -18,6 +18,10 @@ Each op refers to existing nodes by their id (from the injected canvas snapshot)
 - renameNode {nodeId,label}: label a node.
 - discardNode {nodeId}: soft-remove a node — it is hidden but RECOVERABLE by the user, never permanently deleted. Use sparingly, only for clearly-unwanted drafts.
 - generateImage {prompt, model?, aspectRatio?}: propose generating a NEW image and adding it to the canvas. This is a PAID operation — the user sees the estimated cost and must approve before any image is generated; you never trigger payment yourself. Give a clear, self-contained prompt. The image is auto-placed by the canvas; do not specify coordinates. To connect or move the new image, propose those ops in a LATER turn (its id does not exist yet).
+Every op must include:
+- intent: one short sentence explaining what changes and why for this specific op.
+- source: one of user_request | design_acceptance_contract | canvas_snapshot | qa_finding | agent_inferred.
+- affectedNodes: existing canvas node ids affected by this op. Use [] for addShape/generateImage when no existing node is affected.
 Only image generation is supported here (no video / no editing of existing images yet). For non-generate ops, only target nodes that exist in the current canvas snapshot.`,
   inputSchema: {
     type: 'object',
@@ -46,8 +50,19 @@ Only image generation is supported here (no video / no editing of existing image
             prompt: { type: 'string', description: 'Image generation prompt (generateImage). Self-contained.' },
             model: { type: 'string', description: 'Optional configured visual model id (generateImage); falls back to default if unset/unavailable.' },
             aspectRatio: { type: 'string', description: 'Optional aspect ratio like "16:9"/"1:1"/"9:16" (generateImage).' },
+            intent: { type: 'string', description: 'Per-op explanation: what this op changes and why.' },
+            source: {
+              type: 'string',
+              enum: ['user_request', 'design_acceptance_contract', 'canvas_snapshot', 'qa_finding', 'agent_inferred'],
+              description: 'Grounding source for this op.',
+            },
+            affectedNodes: {
+              type: 'array',
+              description: 'Existing canvas node ids affected by this op. Use [] for addShape/generateImage when no existing node is affected.',
+              items: { type: 'string' },
+            },
           },
-          required: ['kind'],
+          required: ['kind', 'intent', 'source', 'affectedNodes'],
         },
       },
       rationale: {

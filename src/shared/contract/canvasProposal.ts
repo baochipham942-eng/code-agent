@@ -17,11 +17,29 @@ export const MAX_OPS_PER_PROPOSAL = 100;
 export const PROPOSAL_COLOR_MAX = 64;
 /** 生成 prompt 上限（二刀文生图；比 PROPOSAL_TEXT_MAX 宽，容纳富描述）。 */
 export const PROPOSAL_PROMPT_MAX = 4000;
+/** 单条 op intent/source 字符串上限，避免审批条和 prompt 被撑爆。 */
+export const PROPOSAL_INTENT_MAX = 500;
+
+export type CanvasProposalOpSource =
+  | 'user_request'
+  | 'design_acceptance_contract'
+  | 'canvas_snapshot'
+  | 'qa_finding'
+  | 'agent_inferred';
+
+export interface CanvasProposalOpMeta {
+  /** Per-op explanation: what this op is meant to achieve and why. */
+  intent?: string;
+  /** What grounded this op: user request, acceptance contract, canvas snapshot, QA finding, or agent inference. */
+  source?: CanvasProposalOpSource;
+  /** Existing canvas node ids this op affects. Empty for new shapes/images whose ids do not exist yet. */
+  affectedNodes?: string[];
+}
 
 // ── 单个提议 op（agent 产出；引用已存在节点用 nodeId，新实体不带 id/createdAt 由 renderer 分配）──
 
 /** 移动一个已存在节点到新坐标（Layer1：updateNode x/y）。 */
-export interface ProposeMoveNodeOp {
+export interface ProposeMoveNodeOp extends CanvasProposalOpMeta {
   kind: 'moveNode';
   nodeId: string;
   x: number;
@@ -29,7 +47,7 @@ export interface ProposeMoveNodeOp {
 }
 
 /** 在两个已存在节点间加一条连线（Layer1：addConnector；renderer 分配 id/createdAt）。 */
-export interface ProposeAddConnectorOp {
+export interface ProposeAddConnectorOp extends CanvasProposalOpMeta {
   kind: 'addConnector';
   fromNodeId: string;
   toNodeId: string;
@@ -45,13 +63,13 @@ export type ProposedShape =
   | { kind: 'line'; points: [number, number, number, number]; color?: string };
 
 /** 加一个 freeform 形状/标注（Layer1：addShape）。 */
-export interface ProposeAddShapeOp {
+export interface ProposeAddShapeOp extends CanvasProposalOpMeta {
   kind: 'addShape';
   shape: ProposedShape;
 }
 
 /** 给一个已存在节点改标签（Layer1：renameNode；标注生成步骤）。 */
-export interface ProposeRenameNodeOp {
+export interface ProposeRenameNodeOp extends CanvasProposalOpMeta {
   kind: 'renameNode';
   nodeId: string;
   label: string;
@@ -61,7 +79,7 @@ export interface ProposeRenameNodeOp {
  * 淘汰（软删）一个已存在节点（三刀）。走 store.discardNode：标记 discarded、节点留盘可恢复，
  * **非破坏性**。不进 Layer1 撤销批（与人类淘汰一致），靠画布「已淘汰·恢复」入口找回。
  */
-export interface ProposeDiscardNodeOp {
+export interface ProposeDiscardNodeOp extends CanvasProposalOpMeta {
   kind: 'discardNode';
   nodeId: string;
 }
@@ -72,7 +90,7 @@ export interface ProposeDiscardNodeOp {
  * 落位由 renderer 定（nextNodePlacement，忽略 agent 坐标，红线③）；model 若给须为已配置可用视觉模型，
  * 否则回退表单默认（红线②，白名单校验在 renderer，本契约只做形状校验）。
  */
-export interface ProposeGenerateImageOp {
+export interface ProposeGenerateImageOp extends CanvasProposalOpMeta {
   kind: 'generateImage';
   prompt: string;
   model?: string;
@@ -192,6 +210,70 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0;
 }
 
+function normalizeOpSource(value: unknown): CanvasProposalOpSource {
+  switch (value) {
+    case 'user_request':
+    case 'design_acceptance_contract':
+    case 'canvas_snapshot':
+    case 'qa_finding':
+    case 'agent_inferred':
+      return value;
+    default:
+      return 'agent_inferred';
+  }
+}
+
+function normalizeAffectedNodes(value: unknown, fallback: string[]): string[] {
+  const raw = Array.isArray(value) ? value : fallback;
+  const nodes = raw
+    .filter(isNonEmptyString)
+    .map((item) => item.slice(0, PROPOSAL_COLOR_MAX));
+  return Array.from(new Set(nodes));
+}
+
+function defaultOpIntent(op: CanvasProposalOp): string {
+  switch (op.kind) {
+    case 'moveNode':
+      return `Move ${op.nodeId} to (${Math.round(op.x)}, ${Math.round(op.y)}).`;
+    case 'addConnector':
+      return `Connect ${op.fromNodeId} to ${op.toNodeId}.`;
+    case 'addShape':
+      return `Add a ${op.shape.kind} annotation.`;
+    case 'renameNode':
+      return `Rename ${op.nodeId} to "${op.label.slice(0, 80)}".`;
+    case 'discardNode':
+      return `Soft-discard ${op.nodeId}.`;
+    case 'generateImage':
+      return `Generate a new image from the proposed prompt.`;
+  }
+}
+
+function defaultAffectedNodes(op: CanvasProposalOp): string[] {
+  switch (op.kind) {
+    case 'moveNode':
+    case 'renameNode':
+    case 'discardNode':
+      return [op.nodeId];
+    case 'addConnector':
+      return [op.fromNodeId, op.toNodeId];
+    case 'addShape':
+    case 'generateImage':
+      return [];
+  }
+}
+
+function withOpMeta<T extends CanvasProposalOp>(op: T, raw: Record<string, unknown>): T {
+  const intent = isNonEmptyString(raw.intent)
+    ? raw.intent.slice(0, PROPOSAL_INTENT_MAX)
+    : defaultOpIntent(op).slice(0, PROPOSAL_INTENT_MAX);
+  return {
+    ...op,
+    intent,
+    source: normalizeOpSource(raw.source),
+    affectedNodes: normalizeAffectedNodes(raw.affectedNodes, defaultAffectedNodes(op)),
+  };
+}
+
 /** 校验单个 op；非法返回 null（由调用方过滤 + 计入 skipped）。 */
 export function normalizeProposalOp(raw: unknown): CanvasProposalOp | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -199,32 +281,32 @@ export function normalizeProposalOp(raw: unknown): CanvasProposalOp | null {
   switch (r.kind) {
     case 'moveNode':
       if (!isNonEmptyString(r.nodeId) || !isFiniteNumber(r.x) || !isFiniteNumber(r.y)) return null;
-      return { kind: 'moveNode', nodeId: r.nodeId, x: r.x, y: r.y };
+      return withOpMeta({ kind: 'moveNode', nodeId: r.nodeId, x: r.x, y: r.y }, r);
     case 'addConnector': {
       if (!isNonEmptyString(r.fromNodeId) || !isNonEmptyString(r.toNodeId)) return null;
       if (r.fromNodeId === r.toNodeId) return null; // 自环无意义
       const op: ProposeAddConnectorOp = { kind: 'addConnector', fromNodeId: r.fromNodeId, toNodeId: r.toNodeId };
       if (isNonEmptyString(r.label)) op.label = r.label.slice(0, PROPOSAL_TEXT_MAX);
-      return op;
+      return withOpMeta(op, r);
     }
     case 'renameNode':
       if (!isNonEmptyString(r.nodeId) || !isNonEmptyString(r.label)) return null;
-      return { kind: 'renameNode', nodeId: r.nodeId, label: r.label.slice(0, PROPOSAL_TEXT_MAX) };
+      return withOpMeta({ kind: 'renameNode', nodeId: r.nodeId, label: r.label.slice(0, PROPOSAL_TEXT_MAX) }, r);
     case 'discardNode':
       if (!isNonEmptyString(r.nodeId)) return null;
-      return { kind: 'discardNode', nodeId: r.nodeId };
+      return withOpMeta({ kind: 'discardNode', nodeId: r.nodeId }, r);
     case 'generateImage': {
       if (!isNonEmptyString(r.prompt)) return null; // 无 prompt 不付费
       const op: ProposeGenerateImageOp = { kind: 'generateImage', prompt: r.prompt.slice(0, PROPOSAL_PROMPT_MAX) };
       // model/aspectRatio 仅接受非空字符串（model 白名单校验在 renderer，红线②）。
       if (isNonEmptyString(r.model)) op.model = r.model.slice(0, PROPOSAL_COLOR_MAX);
       if (isNonEmptyString(r.aspectRatio)) op.aspectRatio = r.aspectRatio.slice(0, 16);
-      return op;
+      return withOpMeta(op, r);
     }
     case 'addShape': {
       const shape = normalizeProposedShape(r.shape);
       if (!shape) return null;
-      return { kind: 'addShape', shape };
+      return withOpMeta({ kind: 'addShape', shape }, r);
     }
     default:
       return null;

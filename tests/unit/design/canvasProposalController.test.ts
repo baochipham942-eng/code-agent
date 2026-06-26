@@ -27,7 +27,17 @@ describe('applyProposal', () => {
     const result: ProposalApplyResult = { next: { nodes: [], connectors: [], shapes: [] }, applied: [{ index: 0, kind: 'addConnector' }], skipped: [], changed: true };
     const d = deps(result);
     await applyProposal(proposal, d);
-    expect(d.applyBatch).toHaveBeenCalledWith(proposal.ops, { genId: d.genId, now: 1000 });
+    expect(d.applyBatch.mock.calls[0][0]).toEqual([
+      expect.objectContaining({
+        kind: 'addConnector',
+        fromNodeId: 'a',
+        toNodeId: 'b',
+        intent: 'Connect a to b.',
+        source: 'agent_inferred',
+        affectedNodes: ['a', 'b'],
+      }),
+    ]);
+    expect(d.applyBatch.mock.calls[0][1]).toEqual({ genId: d.genId, now: 1000 });
     expect(d.save).toHaveBeenCalledTimes(1);
     expect(d.respond).toHaveBeenCalledWith({ requestId: 'cp-1', verdict: 'apply', appliedCount: 1, skippedCount: 0 });
   });

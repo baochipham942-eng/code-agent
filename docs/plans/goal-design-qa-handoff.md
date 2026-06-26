@@ -113,7 +113,7 @@
 
 ## 阶段 4 - Canvas op per-op intent
 
-状态：待办
+状态：已验
 
 交付物：
 
@@ -129,7 +129,11 @@
 
 验收证据：
 
-- 待补。
+- `npx vitest run tests/unit/shared/canvasProposal.test.ts tests/unit/tools/modules/design/proposeCanvasOps.test.ts tests/renderer/design/CanvasProposalReviewBar.test.tsx tests/unit/design/canvasProposalController.test.ts tests/renderer/design/designCanvasStoreProposal.test.ts`：5 files / 70 tests passed。
+- `npx tsx scripts/acceptance/canvas-proposal-reviewbar-smoke.tsx`：通过，headless 截图生成于 `/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/code-agent-stage4/canvas-proposal-reviewbar.png`，3 条 op 均渲染出为什么、影响范围、来源。
+- `npm run typecheck`：通过。
+- `git diff --check`：通过。
+- 结论：`ProposeCanvasOps` schema 已要求每条 op 携带 `intent` / `source` / `affectedNodes`；shared normalize 对旧 op 补默认 metadata；ghost review bar 会逐 op 展示改什么、为什么、影响范围和来源，文案 zh/en 已同步。
 
 ## 阶段 5 - Artifact 自动 repair
 

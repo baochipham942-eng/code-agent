@@ -3,30 +3,108 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Check, X, Trash2, Coins } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import type { CanvasOpProposal, CanvasProposalOp } from '@shared/contract';
+import type { CanvasOpProposal, CanvasProposalOp, CanvasProposalOpSource } from '@shared/contract';
 import { isGenerateOp } from '@shared/contract';
-import { formatCny } from '@shared/media/imageCost';
+import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
+import { imageModelById } from '@shared/constants/visualModels';
 import { useDesignStore } from './designStore';
-import { resolveProposedImageModel, estimateProposedImageCostCny } from './designProposedImageGen';
 
 interface OpLabels {
   move: string; connect: string; shape: string; rename: string; discard: string; generate: string;
 }
 
-/** 估算单个生成 op 的成本（¥）——与实际出图共用 resolveProposedImageModel，预估与落地 model 一致。 */
-function genOpCostCny(op: Extract<CanvasProposalOp, { kind: 'generateImage' }>, formImageModel: string): number {
-  return estimateProposedImageCostCny(resolveProposedImageModel(op.model, formImageModel));
+interface OpRow {
+  text: string;
+  danger: boolean;
+  paid: boolean;
+  intent: string;
+  source: string;
+  impact: string;
 }
 
-function describeOp(op: CanvasProposalOp, L: OpLabels, formImageModel: string, paidBadge: string): { text: string; danger: boolean; paid: boolean } {
-  switch (op.kind) {
-    case 'moveNode': return { text: `${L.move} · ${op.nodeId}`, danger: false, paid: false };
-    case 'addConnector': return { text: `${L.connect} ${op.fromNodeId} → ${op.toNodeId}${op.label ? ` "${op.label}"` : ''}`, danger: false, paid: false };
-    case 'addShape': return { text: `${L.shape} · ${op.shape.kind}`, danger: false, paid: false };
-    case 'renameNode': return { text: `${L.rename} "${op.label}"`, danger: false, paid: false };
-    case 'discardNode': return { text: `${L.discard} · ${op.nodeId}`, danger: true, paid: false };
-    case 'generateImage': return { text: `${L.generate} · "${op.prompt.slice(0, 40)}" · ${paidBadge} ${formatCny(genOpCostCny(op, formImageModel))}`, danger: false, paid: true };
+/** 估算单个生成 op 的成本（¥）——与实际出图共用 resolveProposedImageModel，预估与落地 model 一致。 */
+function genOpCostCny(op: Extract<CanvasProposalOp, { kind: 'generateImage' }>, formImageModel: string): number {
+  if (op.model) {
+    const model = imageModelById(op.model);
+    if (model?.caps.includes('t2i')) return estimateImageCostCny(op.model);
   }
+  return estimateImageCostCny(formImageModel);
+}
+
+function fallbackAffectedNodes(op: CanvasProposalOp): string[] {
+  if (op.affectedNodes?.length) return op.affectedNodes;
+  switch (op.kind) {
+    case 'moveNode':
+    case 'renameNode':
+    case 'discardNode':
+      return [op.nodeId];
+    case 'addConnector':
+      return [op.fromNodeId, op.toNodeId];
+    case 'addShape':
+    case 'generateImage':
+      return [];
+  }
+}
+
+function sourceLabel(source: CanvasProposalOpSource | undefined, s: ReturnType<typeof useI18n>['t']['design']): string {
+  switch (source) {
+    case 'user_request': return s.proposalSourceUserRequest;
+    case 'design_acceptance_contract': return s.proposalSourceAcceptanceContract;
+    case 'canvas_snapshot': return s.proposalSourceCanvasSnapshot;
+    case 'qa_finding': return s.proposalSourceQaFinding;
+    case 'agent_inferred':
+    default:
+      return s.proposalSourceAgentInferred;
+  }
+}
+
+function defaultIntent(op: CanvasProposalOp, text: string): string {
+  return op.intent?.trim() || text;
+}
+
+function describeOp(
+  op: CanvasProposalOp,
+  L: OpLabels,
+  formImageModel: string,
+  paidBadge: string,
+  s: ReturnType<typeof useI18n>['t']['design'],
+): OpRow {
+  let text: string;
+  let danger = false;
+  let paid = false;
+  switch (op.kind) {
+    case 'moveNode':
+      text = `${L.move} · ${op.nodeId}`;
+      break;
+    case 'addConnector':
+      text = `${L.connect} ${op.fromNodeId} → ${op.toNodeId}${op.label ? ` "${op.label}"` : ''}`;
+      break;
+    case 'addShape':
+      text = `${L.shape} · ${op.shape.kind}`;
+      break;
+    case 'renameNode':
+      text = `${L.rename} "${op.label}"`;
+      break;
+    case 'discardNode':
+      text = `${L.discard} · ${op.nodeId}`;
+      danger = true;
+      break;
+    case 'generateImage':
+      text = `${L.generate} · "${op.prompt.slice(0, 40)}" · ${paidBadge} ${formatCny(genOpCostCny(op, formImageModel))}`;
+      paid = true;
+      break;
+  }
+  const affected = fallbackAffectedNodes(op);
+  return {
+    text,
+    danger,
+    paid,
+    intent: s.proposalWhy.replace('{intent}', defaultIntent(op, text)),
+    source: s.proposalSource.replace('{source}', sourceLabel(op.source, s)),
+    impact: affected.length > 0
+      ? s.proposalImpactNodes.replace('{nodes}', affected.join(', '))
+      : s.proposalImpactCanvas,
+  };
 }
 
 export const CanvasProposalReviewBar: React.FC<{
@@ -51,7 +129,7 @@ export const CanvasProposalReviewBar: React.FC<{
     move: s.proposalOpMove, connect: s.proposalOpConnect, shape: s.proposalOpShape,
     rename: s.proposalOpRename, discard: s.proposalOpDiscard, generate: s.proposalOpGenerate,
   }), [s.proposalOpMove, s.proposalOpConnect, s.proposalOpShape, s.proposalOpRename, s.proposalOpDiscard, s.proposalOpGenerate]);
-  const rows = useMemo(() => proposal.ops.map((op) => describeOp(op, L, formImageModel, s.proposalPaidBadge)), [proposal.ops, L, formImageModel, s.proposalPaidBadge]);
+  const rows = useMemo(() => proposal.ops.map((op) => describeOp(op, L, formImageModel, s.proposalPaidBadge, s)), [proposal.ops, L, formImageModel, s]);
   const selectedOps = useMemo(() => proposal.ops.filter((_, i) => selected.has(i)), [proposal.ops, selected]);
   // 付费闸：仅统计「当前勾选」的生成 op 预估合计 ¥ + 张数（取消勾选实时减少，红线①付费前置审批的可见账）。
   const genCost = useMemo(() => {
@@ -110,6 +188,11 @@ export const CanvasProposalReviewBar: React.FC<{
                   {row.paid ? <Coins className="h-3 w-3 shrink-0 text-amber-400" /> : null}
                   <span className={`truncate ${row.danger ? 'text-red-300' : row.paid ? 'text-amber-200' : 'text-zinc-300'}`}>{row.text}</span>
                 </label>
+                <div data-testid={`proposal-op-explain-${i}`} className="ml-6 px-1.5 pb-1 text-[11px] leading-snug text-zinc-500">
+                  <div>{row.intent}</div>
+                  <div>{row.impact}</div>
+                  <div>{row.source}</div>
+                </div>
               </li>
             ))}
           </ul>

@@ -48,9 +48,9 @@ function shouldSkipDir(dirPath) {
   if (!relative || relative === '.') return false;
   const parts = relative.split('/');
   if (parts.some((part) => ignoredDirSegments.has(part))) return true;
-  return relative.startsWith('eval/swe-bench/sandbox/')
-    || relative.startsWith('eval/swe-bench/runs/')
-    || relative.startsWith('eval/swe-bench/_docker-tmp/');
+  return relative.startsWith('benchmarks/swe-bench/sandbox/')
+    || relative.startsWith('benchmarks/swe-bench/runs/')
+    || relative.startsWith('benchmarks/swe-bench/_docker-tmp/');
 }
 
 function isSourceFile(filePath) {

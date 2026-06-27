@@ -6,7 +6,7 @@
 # Covers: formula, conditional formatting, VBA macro, text parsing,
 #         multi-sheet ops, INDEX/MATCH, transposition
 #
-# Data location: eval/excel-benchmark/selected_10/{case_id}/
+# Data location: benchmarks/excel-benchmark/selected_10/{case_id}/
 
 name: "Excel AI Benchmark (SpreadsheetBench Hard 10)"
 description: "10 challenging real-world Excel tasks from SpreadsheetBench"
@@ -26,7 +26,7 @@ cases:
     difficulty: medium
     description: "公式：返回行中最大值所在列的标题"
     setup:
-      - cp eval/excel-benchmark/selected_10/59196/1_59196_input.xlsx test-59196.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/59196/1_59196_input.xlsx test-59196.xlsx
     prompt: |
       打开 test-59196.xlsx。
       我需要一个公式，在 H 列(H3:H5)中，找出每一行中数值最大的列，并返回该列的标题。
@@ -63,7 +63,7 @@ cases:
     difficulty: hard
     description: "条件格式：同日期内仅标记第二次及后续重复名字"
     setup:
-      - cp eval/excel-benchmark/selected_10/CF_28766/1_CF_28766_input.xlsx test-CF28766.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/CF_28766/1_CF_28766_input.xlsx test-CF28766.xlsx
     prompt: |
       打开 test-CF28766.xlsx。
       Sheet1 的 C:G 列包含日期和人名数据。
@@ -101,7 +101,7 @@ cases:
     difficulty: hard
     description: "宏：跨多个 Sheet 对 B2:B26 求和到 Totals 表"
     setup:
-      - cp eval/excel-benchmark/selected_10/382-29/1_382-29_input.xlsx test-382-29.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/382-29/1_382-29_input.xlsx test-382-29.xlsx
     prompt: |
       打开 test-382-29.xlsx。
       该文件有 4 个 Sheet：3 个数据表 + 1 个 Totals 表。
@@ -137,7 +137,7 @@ cases:
     difficulty: hard
     description: "从产品描述中提取尺寸并计算面积(m2)"
     setup:
-      - cp eval/excel-benchmark/selected_10/66-1/1_66-1_input.xlsx test-66-1.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/66-1/1_66-1_input.xlsx test-66-1.xlsx
     prompt: |
       打开 test-66-1.xlsx。
       Sheet1 中，产品描述末尾包含宽度和高度尺寸（如 "300x800"）。
@@ -170,7 +170,7 @@ cases:
     difficulty: hard
     description: "宏：动态插入上月列并复制公式"
     setup:
-      - cp eval/excel-benchmark/selected_10/353-50/1_353-50_input.xlsx test-353-50.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/353-50/1_353-50_input.xlsx test-353-50.xlsx
     prompt: |
       打开 test-353-50.xlsx。
       需求：在 Sheet1 中插入一个新列，对应当前日期的上一个月。
@@ -203,7 +203,7 @@ cases:
     difficulty: hard
     description: "转置多个 Sheet 并生成汇总报告"
     setup:
-      - cp eval/excel-benchmark/selected_10/91-3/1_91-3_input.xlsx test-91-3.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/91-3/1_91-3_input.xlsx test-91-3.xlsx
     prompt: |
       打开 test-91-3.xlsx。
       该文件有多个 Sheet，每个 Sheet 的 B 列包含多个词条，C/D 列有金额。
@@ -239,7 +239,7 @@ cases:
     difficulty: easy
     description: "SUMIF 公式：按 Product ID 求和 QTY"
     setup:
-      - cp eval/excel-benchmark/selected_10/46167/1_46167_input.xlsx test-46167.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/46167/1_46167_input.xlsx test-46167.xlsx
     prompt: |
       打开 test-46167.xlsx。
       A 列是 PRODUCT ID，B 列是 QTY（数量）。
@@ -279,7 +279,7 @@ cases:
     difficulty: medium
     description: "从 SKU 格式中提取 Size 并转换为加仑"
     setup:
-      - cp eval/excel-benchmark/selected_10/58994/1_58994_input.xlsx test-58994.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/58994/1_58994_input.xlsx test-58994.xlsx
     prompt: |
       打开 test-58994.xlsx。
       数据格式为 'What:Who-Size-SKU'，例如 'FG:BJ-155-00310'。
@@ -313,7 +313,7 @@ cases:
     difficulty: hard
     description: "INDEX/MATCH 跨表查找学校数据"
     setup:
-      - cp eval/excel-benchmark/selected_10/55427/1_55427_input.xlsx test-55427.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/55427/1_55427_input.xlsx test-55427.xlsx
     prompt: |
       打开 test-55427.xlsx。
       该文件有多个 Sheet，包含学校数据。
@@ -353,7 +353,7 @@ cases:
     difficulty: hard
     description: "公式：返回行中 >0 最小值所在列的标题（多值用逗号分隔）"
     setup:
-      - cp eval/excel-benchmark/selected_10/44389/1_44389_input.xlsx test-44389.xlsx
+      - cp benchmarks/excel-benchmark/selected_10/44389/1_44389_input.xlsx test-44389.xlsx
     prompt: |
       打开 test-44389.xlsx。
       数据区域有多列数值，P 列(P2:P7)需要显示每行中大于零的最小值所在的列标题。

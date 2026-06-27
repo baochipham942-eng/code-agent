@@ -54,17 +54,17 @@ cargo tauri build           # 打包 macOS（~33MB DMG）
 
 ## 目录结构
 
-顶层：
+顶层（大致按阅读优先级排列）：
 
 ```
 code-agent/
-├── src/            # 应用源码（见下方 src/ 说明）
+├── src/            # ★应用源码（核心；见下方「src/ 一级分层」与「src/host」）
 ├── docs/           # 架构 / 产品 / 指南文档（入口：docs/ARCHITECTURE.md）
 ├── tests/          # 测试
 ├── scripts/        # 构建 / 运维 / 验收脚本
 ├── packages/       # 子包（如本地桥接 bridge）
-├── skills/         # 内置技能
-├── eval/           # 评测 harness 与数据
+├── skills/         # 产物类型知识包（artifact-kind 领域知识，如 game subtype；≠ Agent 能力技能）
+├── benchmarks/     # 外部基准跑分套件（SWE-bench / Excel benchmark，各自带 runner + 数据；区别于 src/host/evaluation 评测引擎）
 ├── src-tauri/      # Tauri (Rust) 外壳
 ├── extension/      # 浏览器扩展
 ├── admin-console/  # 管理后台
@@ -72,11 +72,13 @@ code-agent/
 └── vercel-api/     # 更新 API（Vercel）
 ```
 
-`src/` 一级分层：
+> 另有隐藏配置目录：`.agents/skills/`（**Agent 能力技能**，`SKILL.md` 格式，如 docx/excel/ppt/pr/frontend-slides——Agent 任务中调用的能力，与上面的 `skills/` 是两套体系）、`.claude/`（本仓库的 Claude Code 配置）、`.github/workflows/`（CI/CD）、`.husky/`（Git hooks）。
+
+### `src/` 一级分层
 
 | 目录 | 职责 |
 |------|------|
-| `src/host/` | 后端/主进程：Agent 运行时、工具、上下文、记忆、安全、服务等（详见 [源码地图](docs/architecture/source-map.md)） |
+| `src/host/` | **后端/主进程（核心）**：Agent 运行时、工具、上下文、记忆、安全、服务等（详见下方「src/host」小节） |
 | `src/renderer/` | 前端：React 组件、Zustand store、hooks、i18n、样式 |
 | `src/shared/` | 前后端共享：类型、契约（contract）、常量 |
 | `src/web/` | webServer（renderer 与 host 间的本地 HTTP/SSE 桥） |
@@ -84,7 +86,20 @@ code-agent/
 | `src/design/` | 设计工作区相关共享逻辑 |
 | `src/artifacts/` | 产物（artifact）相关类型与处理 |
 
-> `src/host/` 子域较多，按「逻辑分组 + 一句话职责」的导览见 **[docs/architecture/source-map.md](docs/architecture/source-map.md)**。
+### `src/host` —— 后端/主进程（最核心）
+
+整个项目最核心的目录，40+ 子域。按逻辑分组概览如下，完整的「在哪改」导航见 **[docs/architecture/source-map.md](docs/architecture/source-map.md)**：
+
+| 分组 | 主要子目录 |
+|------|-----------|
+| **Agent 运行核心** | `agent/`（Agent Loop 与运行时）· `loop/` · `routing/`（意图分类/路由）· `model/`（模型路由/provider 适配）· `protocol/` · `planning/`（自动规划） |
+| **任务 / 编排 / 会话** | `task/`（并发闸 + 后台任务账本）· `scheduler/`（DAG 调度）· `cron/`（定时/心跳）· `handoff/`（任务交接/长任务恢复）· `session/` · `cowork/`（人机协作契约） |
+| **工具 / 能力 / 外部集成** | `tools/`（工具注册与执行）· `skills/` · `mcp/` · `connectors/` · `plugins/` · `lsp/` · `desktop/`（Computer Use）· `sandbox/` · `research/` · `channels/`（飞书等外部通道） |
+| **上下文 / 记忆 / 提示词** | `context/`（上下文工程/压缩）· `memory/` · `lightMemory/`（轻记忆/失败日志）· `prompts/` |
+| **质量 / 评测 / 观测** | `evaluation/`（**评测引擎**：实验适配/会话质量评分/回放/遥测查询）· `quality/`（产物质量检测）· `observability/` · `telemetry/` · `diagnostics/` · `testing/` · `hooks/` |
+| **平台 / 基础设施** | `app/`（应用宿主/bootstrap）· `platform/` · `runtime/`（运行时资产）· `ipc/`（renderer↔host）· `services/`（core/infra/design/agentEngine 等）· `config/` · `security/` · `permissions/` · `errors/` · `extension/` · `utils/` |
+
+> 注意区分两个「评测」：`src/host/evaluation/` 是产品自身的评测引擎（评分/回放/遥测），仓库根的 `eval/` 是跑外部 benchmark（SWE-bench / Excel）的独立套件。
 
 ## 文档
 

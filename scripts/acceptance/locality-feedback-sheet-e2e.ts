@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   // 1. 拷 xlsx fixture 到临时目录
   const dir = mkdtempSync(join(tmpdir(), 'lfb-sheet-e2e-'));
   const xlsx = join(dir, 'data.xlsx');
-  copyFileSync(join(process.cwd(), 'eval/excel-benchmark/selected_10/382-29/1_382-29_input.xlsx'), xlsx);
+  copyFileSync(join(process.cwd(), 'benchmarks/excel-benchmark/selected_10/382-29/1_382-29_input.xlsx'), xlsx);
   const TARGET_CELL = 'B2';
   const NEW_VALUE = 99999;
   const before = await readCell(xlsx, TARGET_CELL);

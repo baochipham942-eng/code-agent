@@ -9,7 +9,7 @@ import {
   buildDjangoTestLabels,
   decideRunOutcome,
   diffShapePassed,
-} from '../../eval/swe-bench/validation';
+} from '../../benchmarks/swe-bench/validation';
 
 const STANDARD_15987 = `diff --git a/django/core/management/commands/loaddata.py b/django/core/management/commands/loaddata.py
 --- a/django/core/management/commands/loaddata.py

@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { loadSweBenchRun, persistSweBenchRun, toCanonicalSweBenchRun } from '../../eval/swe-bench/persistence';
+import { loadSweBenchRun, persistSweBenchRun, toCanonicalSweBenchRun } from '../../benchmarks/swe-bench/persistence';
 
 describe('SWE-bench Eval Center persistence bridge', () => {
   let tempDir: string | null = null;

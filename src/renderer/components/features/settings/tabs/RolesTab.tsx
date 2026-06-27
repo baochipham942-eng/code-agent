@@ -97,7 +97,7 @@ interface RoleCardProps {
 }
 
 const RoleCard: React.FC<RoleCardProps> = ({ entry, onClick }) => (
-  <button
+  <button /* ds-allow:button: 角色卡片，全宽左对齐多行内容卡，primitive 居中变体不兼容 */
     type="button"
     onClick={onClick}
     className="w-full rounded-lg border border-zinc-700/70 bg-zinc-900/50 p-4 text-left transition-colors hover:border-zinc-500 hover:bg-zinc-800/60"
@@ -197,7 +197,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
         <div className="flex shrink-0 items-center gap-1">
           {!editing && !confirmingDelete ? (
             <>
-              <button
+              <button /* ds-allow:button: 记忆编辑图标按钮 p-1.5，primitive 变体会改变尺寸与外观 */
                 type="button"
                 title="编辑"
                 onClick={() => setEditing(true)}
@@ -205,7 +205,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
-              <button
+              <button /* ds-allow:button: 记忆删除图标按钮 p-1.5（hover 红），primitive 变体会改变尺寸 */
                 type="button"
                 title="删除"
                 onClick={() => setConfirmingDelete(true)}
@@ -218,7 +218,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
           {confirmingDelete ? (
             <>
               <span className="text-xs text-red-400">确认删除？</span>
-              <button
+              <button /* ds-allow:button: 删除确认按钮，自定义小尺寸弱化红（bg-red-900/50），与 danger 变体实心红不同 */
                 type="button"
                 disabled={busy}
                 onClick={handleDelete}
@@ -226,7 +226,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
               >
                 删除
               </button>
-              <button
+              <button /* ds-allow:button: 删除取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
                 className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-700/60"
@@ -247,7 +247,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             className="w-full rounded border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-300 focus:border-zinc-400 focus:outline-none"
           />
           <div className="flex items-center gap-2">
-            <button
+            <button /* ds-allow:button: 记忆保存按钮，自定义小尺寸（px-2.5 py-1 text-xs），primitive 最小 sm 仍更大 */
               type="button"
               disabled={busy}
               onClick={handleSaveEdit}
@@ -255,7 +255,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             >
               <Check className="h-3 w-3" /> 保存
             </button>
-            <button
+            <button /* ds-allow:button: 记忆编辑取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */
               type="button"
               onClick={() => {
                 setEditing(false);
@@ -318,7 +318,7 @@ const ProactivitySelector: React.FC<ProactivitySelectorProps> = ({ roleId, curre
       {PROACTIVITY_OPTIONS.map((option) => {
         const selected = option.value === current;
         return (
-          <button
+          <button /* ds-allow:button: 主动性等级单选卡，全宽左对齐含单选圈+多行，primitive 居中变体不兼容 */
             key={option.value}
             type="button"
             disabled={busy}
@@ -383,7 +383,7 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
 
   return (
     <div className="space-y-5">
-      <button
+      <button /* ds-allow:button: 返回链接式按钮，纯文本+图标无背景，primitive 变体会强加 bg/padding */
         type="button"
         onClick={onBack}
         className="flex items-center gap-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
@@ -400,7 +400,7 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
           <p className="text-xs text-zinc-500">持久化角色 — 记忆与履历归你所有</p>
         </div>
         {/* 对话式修改：起会话改这个角色的定义/工具/提示词（只换定义，不动记忆履历） */}
-        <button
+        <button /* ds-allow:button: 对话式修改入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
           type="button"
           onClick={() => void startEditRoleChat(roleId)}
           title="用对话修改这个角色（改描述 / 工具 / 系统提示词）"
@@ -540,7 +540,7 @@ export const RolesTab: React.FC = () => {
         title={`持久化角色（${entries.length}）`}
         actions={
           <div className="flex items-center gap-2">
-            <button
+            <button /* ds-allow:button: 新建角色入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
               type="button"
               onClick={() => void startCreateRoleChat()}
               className="flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"
@@ -548,7 +548,7 @@ export const RolesTab: React.FC = () => {
               <UserPlus className="h-3.5 w-3.5" />
               新建角色
             </button>
-            <button
+            <button /* ds-allow:button: 刷新图标按钮 p-1.5，primitive 变体会改变尺寸与外观 */
               type="button"
               onClick={() => void loadList()}
               title="刷新"

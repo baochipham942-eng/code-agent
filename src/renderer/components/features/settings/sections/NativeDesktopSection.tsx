@@ -81,7 +81,7 @@ const ScreenshotImage: React.FC<{ path: string; className?: string; onClick?: ()
 
 const ScreenshotLightbox: React.FC<{ path: string; onClose: () => void }> = ({ path, onClose }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
-    <button className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/80 text-zinc-300 hover:text-white" onClick={onClose}>
+    <button /* ds-allow:button: 灯箱关闭按钮，绝对定位圆形图标按钮，无文字，primitive 变体会强加 bg/padding 改变外观 */ className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/80 text-zinc-300 hover:text-white" onClick={onClose}>
       <X className="w-5 h-5" />
     </button>
     <img
@@ -116,7 +116,7 @@ const HourSlot: React.FC<{
   }, [block]);
 
   return (
-    <button
+    <button /* ds-allow:button: 全宽时间轴行，左对齐+选中态右边框+应用点阵，primitive 居中变体不兼容 */
       onClick={onClick}
       disabled={!hasActivity}
       className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
@@ -193,7 +193,7 @@ const MeetingDetailPanel: React.FC<{
     <div className="absolute inset-0 z-20 bg-zinc-900 flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-zinc-700/50 shrink-0">
-        <button onClick={onClose} className="p-1 rounded hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200">
+        <button /* ds-allow:button: 会议详情返回按钮，纯图标 p-1，primitive 变体会改变尺寸与外观 */ onClick={onClose} className="p-1 rounded hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200">
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-medium ${appColor(appName)}`}>
@@ -233,7 +233,7 @@ const MeetingDetailPanel: React.FC<{
           {/* Topic list */}
           <div className="px-2 space-y-0.5">
             {topics.map((topic, idx) => (
-              <button
+              <button /* ds-allow:button: 话题列表项，全宽左对齐多行内容+选中态边框，primitive 居中变体不兼容 */
                 key={idx}
                 onClick={() => scrollToTopic(idx)}
                 className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${
@@ -350,7 +350,7 @@ const AppGroupCard: React.FC<{
   return (
     <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/20 overflow-hidden">
       {/* Header — clickable to expand/collapse */}
-      <button
+      <button /* ds-allow:button: 应用分组卡片头，全宽可展开行，自定义布局，primitive 变体不兼容 */
         onClick={onToggle}
         className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-zinc-700/20 transition-colors"
       >
@@ -450,7 +450,7 @@ const AppGroupCard: React.FC<{
                   )}
                 </div>
                 {/* Detail entry button */}
-                <button
+                <button /* ds-allow:button: 查看会议详情入口，amber 语义色描边胶囊，primitive 无对应变体 */
                   onClick={onOpenMeeting}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[12px] hover:bg-amber-500/20 transition-colors"
                 >
@@ -540,7 +540,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
         {/* Clickable app chips — scroll to group */}
         <div className="flex flex-wrap gap-1.5 mt-3">
           {appClusters.map((cluster) => (
-            <button
+            <button /* ds-allow:button: 应用 chip 胶囊（rounded-full+应用色点），primitive 无对应变体 */
               key={cluster.appName}
               onClick={() => scrollToApp(cluster.appName)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-800/60 border border-zinc-700/40 hover:bg-zinc-700/60 hover:border-zinc-600/60 transition-colors"
@@ -807,18 +807,18 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1">
-            <button onClick={() => navigateDate(-1)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50">
+            <button /* ds-allow:button: 日期前翻图标按钮 p-0.5，primitive 变体会改变尺寸 */ onClick={() => navigateDate(-1)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50">
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <span className="text-[11px] text-zinc-400 w-[110px] text-center">{formatDate(currentDate)}</span>
-            <button onClick={() => navigateDate(1)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50">
+            <button /* ds-allow:button: 日期后翻图标按钮 p-0.5，primitive 变体会改变尺寸 */ onClick={() => navigateDate(1)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50">
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* 采集模式切换（非录音状态时可切换） */}
           {!audioStatus?.capturing && (
-            <button
+            <button /* ds-allow:button: 采集模式切换，自定义小尺寸 chip+图标随状态切换，primitive 无对应变体 */
               onClick={() => setAudioCaptureMode(m => m === 'microphone' ? 'system-audio' : 'microphone')}
               title={audioCaptureMode === 'system-audio' ? '系统音频（戴耳机也能录）' : '麦克风'}
               className="px-2 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 border border-zinc-700/50 transition-colors"
@@ -831,7 +831,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             </button>
           )}
 
-          <button
+          <button /* ds-allow:button: 录音开关，状态色（录音中 rose+pulse / 默认 zinc）小尺寸 chip，primitive 无对应变体 */
             onClick={handleToggleAudio}
             disabled={audioBusy}
             title={audioStatus?.capturing
@@ -852,7 +852,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             )}
           </button>
 
-          <button
+          <button /* ds-allow:button: 采集开关，状态色（采集中 zinc / 默认 cyan）小尺寸 chip，primitive 无对应变体 */
             onClick={handleToggleCollector}
             disabled={collectorBusy}
             className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
@@ -869,7 +869,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           </button>
 
           {onClose ? (
-            <button
+            <button /* ds-allow:button: 面板关闭按钮，方形图标按钮（h-8 w-8），primitive 变体会改变外观 */
               type="button"
               onClick={onClose}
               aria-label="关闭 桌面采集"

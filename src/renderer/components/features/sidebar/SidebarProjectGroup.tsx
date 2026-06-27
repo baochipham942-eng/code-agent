@@ -1,4 +1,4 @@
-import React, { type Dispatch, type SetStateAction } from 'react';
+import React, { useState, type Dispatch, type SetStateAction } from 'react';
 import {
   ChevronRight,
   Folder,
@@ -21,6 +21,9 @@ import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './Sideba
 import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './SidebarSessionItem';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
+
+/** 单个分组默认最多平铺多少条会话，超出折叠成「展开全部」。同工作空间历史过多时避免长列表淹没侧栏。 */
+const SESSION_ROW_CAP = 5;
 
 export interface SidebarProjectGroupProps {
   group: SidebarDerivedSessions['workspaceGroupedSessions'][number];
@@ -89,6 +92,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     currentSessionId,
   } = sessionItemProps;
 
+  const [showAllRows, setShowAllRows] = useState(false);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
   const summary = buildSidebarProjectSummary({
@@ -159,17 +163,11 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                   {summary.unfinishedCount} 未完成
                 </span>
               )}
-              {expansionView.protectionLabel && (
-                <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
-                  {expansionView.protectionLabel}
-                </span>
-              )}
-            </span>
-            <span className="mt-0.5 block truncate text-[10px] text-zinc-600">
-              {summaryLine}
             </span>
           </span>
         </button>
+        {/* 项目操作簇：控制台 / 详情 / 产物 / 新建 — 默认隐藏，hover 或聚焦时浮现 */}
+        <div className="flex items-center opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
         {!group.isUncategorized && (
           <button
             type="button"
@@ -227,6 +225,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             )}
           </button>
         )}
+        </div>
       </div>
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail
@@ -281,31 +280,51 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             : undefined}
         />
       )}
-      {expanded && (
-        <div
-          className={expansionView.rowsClassName}
-          data-sidebar-group-rows={group.key}
-        >
-          {group.sessions.length === 0 ? (
-            <div className="px-3 py-1 text-xs text-zinc-600">No chats</div>
-          ) : (
-            group.sessions.map((session, index) => (
-              <div
-                key={session.id}
-                className="sidebar-project-row"
-                style={{
-                  '--sidebar-row-delay': `${Math.min(index * 24, 160)}ms`,
-                } as React.CSSProperties}
-              >
-                <SidebarSessionItem
-                  session={session as SessionWithMeta}
-                  {...sessionItemProps}
-                />
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {expanded && (() => {
+        // 折叠长列表：默认只平铺前 SESSION_ROW_CAP 条；搜索态或当前会话落在尾部时自动全展开，避免「点了却看不到」。
+        const currentIndexInGroup = group.sessions.findIndex((session) => session.id === currentSessionId);
+        const containsCurrentBeyondCap = currentIndexInGroup >= SESSION_ROW_CAP;
+        const effectiveShowAll = showAllRows || hasSearchFilters || containsCurrentBeyondCap;
+        const visibleSessions = effectiveShowAll ? group.sessions : group.sessions.slice(0, SESSION_ROW_CAP);
+        const hiddenCount = group.sessions.length - visibleSessions.length;
+        const canToggle = group.sessions.length > SESSION_ROW_CAP && !hasSearchFilters && !containsCurrentBeyondCap;
+        return (
+          <div
+            className={expansionView.rowsClassName}
+            data-sidebar-group-rows={group.key}
+          >
+            {group.sessions.length === 0 ? (
+              <div className="px-3 py-1 text-xs text-zinc-600">暂无对话</div>
+            ) : (
+              <>
+                {visibleSessions.map((session, index) => (
+                  <div
+                    key={session.id}
+                    className="sidebar-project-row"
+                    style={{
+                      '--sidebar-row-delay': `${Math.min(index * 24, 160)}ms`,
+                    } as React.CSSProperties}
+                  >
+                    <SidebarSessionItem
+                      session={session as SessionWithMeta}
+                      {...sessionItemProps}
+                    />
+                  </div>
+                ))}
+                {canToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllRows((value) => !value)}
+                    className="w-full px-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus:outline-hidden"
+                  >
+                    {showAllRows ? '收起' : `展开全部 ${group.sessions.length} 条`}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };

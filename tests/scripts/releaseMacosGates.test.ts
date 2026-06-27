@@ -128,6 +128,23 @@ describe('macOS release fail-closed gates', () => {
     expect(verifyScript).toContain('control-plane public keys file has no keys');
   });
 
+  it('verifies the updater pubkey is injected into the built binary (no placeholder ships)', () => {
+    // v0.20.0 曾把源码占位符当公钥发布 → 已安装端下载更新到 100% 后验签必败、无法自动更新。
+    // 这三处守卫保证「占位符泄漏进最终二进制」的版本会在发版时直接失败，而不是悄悄发出去。
+    const PLACEHOLDER = 'DISABLED_LOCAL_BUILD_USE_TAURI_RELEASE_BUNDLE';
+
+    const verifier = readRepoFile('scripts/verify-updater-pubkey.mjs');
+    expect(verifier).toContain(PLACEHOLDER);
+    expect(verifier).toContain('process.env.TAURI_UPDATER_PUBKEY');
+
+    const bundleScript = readRepoFile('scripts/tauri-release-bundle.sh');
+    expect(bundleScript).toContain('scripts/verify-updater-pubkey.mjs');
+
+    const winVerify = readRepoFile('scripts/verify-windows-release.mjs');
+    expect(winVerify).toContain(PLACEHOLDER);
+    expect(winVerify).toContain('code-agent-tauri.exe');
+  });
+
   it('keeps release workflow publishing updater archives and signatures', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 

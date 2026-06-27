@@ -111,6 +111,18 @@ node "${ROOT_DIR}/scripts/prepare-bundled-node.mjs"
   cargo tauri build --config "${CONFIG_FILE}" --ci "$@"
 )
 
+# 产物守卫：构建后立即校验更新器公钥已真正注入二进制，杜绝再发出 v0.20.0 式
+# “占位符当公钥”的版本（会导致已安装客户端下载更新到 100% 后验签失败、永远无法自动更新）。
+for app_path in "${ROOT_DIR}"/src-tauri/target/release/bundle/macos/*.app; do
+  [[ -d "${app_path}" ]] || continue
+  app_binary="$(find "${app_path}/Contents/MacOS" -maxdepth 1 -type f -perm -u+x | head -1)"
+  if [[ -z "${app_binary}" ]]; then
+    echo "[tauri-release-bundle] 找不到 ${app_path} 的主可执行文件，无法校验更新器公钥" >&2
+    exit 1
+  fi
+  TAURI_UPDATER_PUBKEY="${UPDATER_PUBKEY}" node "${ROOT_DIR}/scripts/verify-updater-pubkey.mjs" "${app_binary}"
+done
+
 # Post-build: sign nested macOS Mach-O binaries that Tauri did not touch, then
 # re-sign the .app shell and rebuild + sign the .dmg so hashes stay consistent.
 if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then

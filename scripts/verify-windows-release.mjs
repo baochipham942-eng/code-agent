@@ -80,6 +80,25 @@ function verifyPost() {
         'createUpdaterArtifacts=true 且提供了签名 key，应产 .sig');
     }
   }
+
+  // 更新器公钥守卫：打包前的原始 code-agent-tauri.exe 必须含真实公钥、不含占位符。
+  // （NSIS setup.exe 内的二进制是压缩的扫不到，所以查 target/release 下的原始 exe；
+  //  防 v0.20.0 式“占位符当公钥”导致已安装端下载更新到 100% 后验签失败。）
+  const PUBKEY_PLACEHOLDER = 'DISABLED_LOCAL_BUILD_USE_TAURI_RELEASE_BUNDLE';
+  const rawExe = path.join(root, 'src-tauri', 'target', 'release', 'code-agent-tauri.exe');
+  if (!fs.existsSync(rawExe)) {
+    check('原始 exe 存在（供更新器公钥校验）', false, `缺 ${path.relative(root, rawExe)}`);
+  } else {
+    const bin = fs.readFileSync(rawExe);
+    check('更新器公钥非占位符', !bin.includes(Buffer.from(PUBKEY_PLACEHOLDER, 'utf8')),
+      'TAURI_UPDATER_PUBKEY 未注入此构建，自动更新会验签失败（v0.20.0 同类故障）');
+    const expectedPubkey = (process.env.TAURI_UPDATER_PUBKEY || '').trim();
+    if (expectedPubkey && expectedPubkey !== PUBKEY_PLACEHOLDER) {
+      check('更新器公钥已注入（精确匹配 TAURI_UPDATER_PUBKEY）',
+        bin.includes(Buffer.from(expectedPubkey, 'utf8')),
+        '二进制未包含期望的 TAURI_UPDATER_PUBKEY');
+    }
+  }
 }
 
 if (stage === 'pre') {

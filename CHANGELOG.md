@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-27
+
+### Added
+
+- **Design canvas — agent-operated edits**: the design agent can now propose canvas operations (ghost preview + approval UI, ADR-026), with per-op accept/discard, soft-delete + restore of nodes, and design-agent medium tool gating (ProposeVideoOps/ProposeSlidesOps + `designCanvasActive`).
+- **Design canvas — bounded autonomy** (ADR-027): set a budget envelope (max variants + max spend), the agent generates N divergent variants within it, you pick the winner; budget gate hard-stops on overrun, with envelope approval UI, progress, lifecycle, and i18n.
+- **Design — custom image-gen models + health-aware selection**: register custom image models in Settings; the canvas avoids unconfigured models and falls back on balance/credential failure.
+- **Design — video cover + auto-fit + design→code handoff**: video gets an auto cover and viewport auto-fit; large (>2MB) videos play inline via Blob URL; design output can carry code-handoff context with an acceptance/constraint contract.
+- **Preview/QA — artifact verification pipeline**: deterministic artifact health check + subjective vision QA layer + automatic repair loop; artifact QA routed through the in-app browser by default; PPT pixel-level per-page screenshot preview.
+- **Web search — query planning & evidence ranking**: plan queries before searching, rank primary evidence, mark recency-constraint strength, provider capability health matrix, and configurable search sources (multi-source enable/disable + priority).
+- **Agent — collaboration tree**: read-only agent tree snapshot + worktree review surface; unified agent failure codes; success write-storm detection + delivery-review evidence.
+- **Telemetry — cost calendar**: daily/weekly/monthly cost aggregation.
+- **Unified evidence contract** across file/shell/discovery/browser-computer tools, with hardened read gates and discovery pagination.
+
+### Fixed
+
+- Sidebar session-list flicker on refresh (signature memoization) and startup white-screen flash (`#18181b` window background).
+- Security hardening: closed `rm` long-option / arbitrary-order flag bypasses across the dangerous-command defenses.
+- Numerous design-mode adversarial-audit fixes (illustration cost ceiling, abort-timer leak, SSRF-via-redirect, filename traversal, region-lock strict defaults).
+
+### Changed
+
+- Internal source tree renamed `src/main` → `src/host` and de-Electron-ized API shims; god-file splits across DesignCanvas, Sidebar, host, telemetry, and workspace IPC. No user-facing behavior change.
+
 ## [0.20.0] - 2026-06-22
 
 ### Added

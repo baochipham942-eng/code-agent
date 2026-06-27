@@ -281,13 +281,15 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         />
       )}
       {expanded && (() => {
-        // 折叠长列表：默认只平铺前 SESSION_ROW_CAP 条；搜索态或当前会话落在尾部时自动全展开，避免「点了却看不到」。
+        // 折叠长列表：默认只平铺前 SESSION_ROW_CAP 条。搜索态或手动展开时全显；
+        // 当前会话若排在 cap 之后，只把窗口扩到「刚好露出它」，其余仍折叠（不会因此把整列摊开）。
         const currentIndexInGroup = group.sessions.findIndex((session) => session.id === currentSessionId);
-        const containsCurrentBeyondCap = currentIndexInGroup >= SESSION_ROW_CAP;
-        const effectiveShowAll = showAllRows || hasSearchFilters || containsCurrentBeyondCap;
-        const visibleSessions = effectiveShowAll ? group.sessions : group.sessions.slice(0, SESSION_ROW_CAP);
+        const effectiveCap = hasSearchFilters || showAllRows
+          ? group.sessions.length
+          : Math.max(SESSION_ROW_CAP, currentIndexInGroup + 1);
+        const visibleSessions = group.sessions.slice(0, effectiveCap);
         const hiddenCount = group.sessions.length - visibleSessions.length;
-        const canToggle = group.sessions.length > SESSION_ROW_CAP && !hasSearchFilters && !containsCurrentBeyondCap;
+        const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
             className={expansionView.rowsClassName}

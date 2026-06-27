@@ -4,7 +4,40 @@
 >
 > 2026-05-17 状态：本文大部分 cloud task / cloud agent / orchestrator 内容是历史设计归档。近两周已删除旧 `src/host/cloud/*`、cloud agent module、POC cloud tools 和相关 legacy provider path。2026-05-15 之后，服务器侧 `cloud-proxy` provider 也已退场，模型请求默认依赖用户本机配置的 Provider API Key。当前仍保留的 cloud 相关代码主要在 `src/host/services/cloud/`，用于 cloud config、prompt/update、feature flag、orchestrator config 和 Tauri update/同步边界；不要把本文里的云端任务调度当作当前 active path。
 
-## 架构总览
+## 当前架构：云端控制平面（三件套）
+
+> 这是**当前生效**的云端形态。下方「架构总览」起的大图是 Gen 5-8 的历史设计归档（云端任务调度 / cloud agent 已删除），勿当现状。
+
+桌面 app 的云端能力由三个**分开部署、互不直接调用**的部分构成，它们共享 Supabase 的 `control_plane_*` / `telemetry_*` 表作为**单一真源**，靠 DB 解耦：
+
+```
+admin-console (管理员 UI · Next.js)
+      │ 写配置 / 看数据（直连 Supabase，不调 vercel-api）
+      ▼
+  Supabase (真源 DB)
+   ├ control_plane_entitlements         权限发放
+   ├ control_plane_shared_providers     共享模型中转配置
+   └ telemetry_sessions / turns / feedback   遥测 · 反馈
+      ▲
+      │ 读配置 / 能力
+vercel-api (控制平面 API · Vercel + 阿里云 FC3 双托管)
+      │ 下发（update / capabilities / config / prompts / entitlements …）
+      ▼
+  桌面 app  (src/host/services/cloud/*)
+```
+
+| 部分 | 仓库目录 | 职责 | 部署在 |
+|------|---------|------|--------|
+| 管理后台 | `admin-console/` | 管理员改权限 / 共享中转配置，看会话 / 报错 / 反馈。**直连 Supabase**（30 处引用），不调 `vercel-api` | 独立 Next.js 网站 |
+| 真源 DB | `supabase/` | `control_plane_*` / `telemetry_*` 等表 + 迁移 / 函数 | Supabase |
+| 控制平面 API | `vercel-api/` | 读 Supabase 配置 → 下发 app；含 `api/update`、`api/v1/{capabilities,config,agent-engine-models,control-plane}`、`api/prompts` 等路由 + `lib/controlPlane*` | Vercel + 阿里云 FC3（`agentneo.llmxy.xyz`） |
+| 消费方 | `src/host/services/cloud/` | app 端读取下发：`updateService.ts` 查更新、`builtinConfig.ts` 收 cloud config | 桌面 app 内 |
+
+**关键性质**：配置存在 Supabase，管理员在 `admin-console` 改完，`vercel-api` 立即读到并下发——**改配置零部署**（无需重新部署 `vercel-api`）。三者互不直接握手，全靠共享 DB 解耦。
+
+> 命名注记：`vercel-api/` 名义是"部署在 Vercel 的 API"，实际承载的是**整套控制平面**（update 只是其中一条路由），不止"更新服务"。
+
+## 架构总览（⚠️ 历史设计归档，非当前现状）
 
 云端与本地协同实现：
 - **本地**：负责"手脚"（文件操作、终端执行、UI 交互）

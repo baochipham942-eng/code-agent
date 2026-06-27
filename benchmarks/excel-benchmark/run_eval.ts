@@ -11,6 +11,7 @@ import { ExcelAutomateTool } from '../../src/host/tools/excel/excelAutomate';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
+import type { CellFormulaValue, CellRichTextValue } from 'exceljs';
 
 const SELECTED_DIR = path.join(__dirname, 'selected_10');
 const RESULTS_DIR = path.join(__dirname, 'results');
@@ -98,9 +99,9 @@ async function readExpectedValues(
         rowValues.push('');
       } else if (typeof val === 'object' && 'result' in val) {
         // Formula cell - use the result
-        rowValues.push(String((val as any).result ?? ''));
+        rowValues.push(String((val as CellFormulaValue).result ?? ''));
       } else if (typeof val === 'object' && 'richText' in val) {
-        rowValues.push((val as any).richText.map((r: any) => r.text).join(''));
+        rowValues.push((val as CellRichTextValue).richText.map((r) => r.text).join(''));
       } else {
         rowValues.push(String(val));
       }
@@ -117,7 +118,7 @@ async function readInputSummary(filePath: string): Promise<string> {
     workingDirectory: path.dirname(filePath),
     sessionId: 'eval',
     onEvent: () => {},
-  } as any;
+  } as unknown as Parameters<typeof ExcelAutomateTool.execute>[1];
 
   const result = await ExcelAutomateTool.execute(
     { action: 'read', file_path: filePath, format: 'table', max_rows: 50 },
@@ -187,10 +188,11 @@ async function runEval() {
       result.status = 'pass'; // We'll mark as evaluated
       result.details = `Input read successfully. Expected ${flatExpected.length} values at ${benchCase.answer_position}.`;
 
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       result.status = 'error';
-      result.errorMessage = err.message;
-      console.log(`   ❌ Error: ${err.message}`);
+      result.errorMessage = message;
+      console.log(`   ❌ Error: ${message}`);
     }
 
     results.push(result);
@@ -207,7 +209,7 @@ async function runEval() {
   const failed = results.filter(r => r.status === 'fail').length;
   const errors = results.filter(r => r.status === 'error').length;
   console.log(`\n═══ Summary ═══`);
-  console.log(`Evaluated: ${passed}/${results.length}  |  Errors: ${errors}`);
+  console.log(`Evaluated: ${passed}/${results.length}  |  Failed: ${failed}  |  Errors: ${errors}`);
 
   return results;
 }

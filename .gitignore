@@ -118,7 +118,6 @@ docs/knowledge/
 memory/daily/
 
 # Local runtime consolidation drafts
-docs/architecture/runtime-consolidation-2026-05-31.md
 docs/specs/2026-05-31-runtime-consolidation-and-workflow.md
 
 # Tauri release build 临时配置（由 scripts/tauri-release-bundle.sh 生成）

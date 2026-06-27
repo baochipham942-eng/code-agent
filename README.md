@@ -90,9 +90,11 @@ code-agent/
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 架构索引入口（系统概览、Agent 核心、工具系统、前端、数据存储、多 Agent、设计工作区、ADR 等）
 - **[docs/architecture/source-map.md](docs/architecture/source-map.md)** — `src/host` 源码地图（按逻辑分组）
-- `docs/decisions/` — 架构决策记录（ADR）
-- `docs/guides/` — 工具参考、模型配置、部署、Git 工作流、排错
+- **[docs/architecture/](docs/architecture/)** — 各子系统深入文档（agent-core / tool-system / multiagent-system / data-storage / hot-update / windows-support 等）
+- **[docs/api-reference/](docs/api-reference/)** · **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — API 参考与部署
 - `CLAUDE.md` — 工程规范、发版流程、常用命令
+
+> 架构决策（ADR）记录见 `docs/ARCHITECTURE.md` 的决策表；PRD / 产品策略类文档不进公开仓库。
 
 ## 状态
 

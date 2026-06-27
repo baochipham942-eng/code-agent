@@ -471,7 +471,7 @@ prompt builder 要求 _meta
 - `src/host/services/infra/browserRelayService.ts` — Browser Surface relay readiness
 - `src/host/services/inAppValidationService.ts` — main → renderer 的 HTML 验证请求桥
 - `src/host/services/agentEngine/*` — Codex / Claude / Native engine 检测、guard、adapter、history import
-- `src/host/tasks/backgroundTaskLedger.ts` — shell/PTy/external engine 统一 task ledger
+- `src/host/task/backgroundTaskLedger.ts` — shell/PTy/external engine 统一 task ledger
 - `src/host/services/activity/activityContextProvider.ts` / `activityPromptFormatter.ts` — activity context 构造与 prompt 注入
 
 ### 5.3 Renderer

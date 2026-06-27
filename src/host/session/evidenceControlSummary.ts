@@ -14,7 +14,7 @@ import type {
 } from '../../shared/contract/evaluation';
 import type { CompletionSummaryRecord } from '../../shared/contract/completionSummary';
 import type { Task } from '../../shared/contract/backgroundTask';
-import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
 import {
   readCompletionSummaryRecordsBySession,
 } from './completionSummaryService';

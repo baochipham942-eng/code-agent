@@ -89,7 +89,7 @@ vi.mock('../../../src/host/services/agentEngine', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/tasks/backgroundTaskLedger', () => ({
+vi.mock('../../../src/host/task/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ({
     upsertTask: agentEngineMocks.ledgerUpsertTask,
     appendEvent: agentEngineMocks.ledgerAppendEvent,

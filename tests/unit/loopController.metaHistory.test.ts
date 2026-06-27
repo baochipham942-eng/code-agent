@@ -33,7 +33,7 @@ vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
-vi.mock('../../src/host/tasks/backgroundTaskLedger', () => ({
+vi.mock('../../src/host/task/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ledgerState,
 }));
 

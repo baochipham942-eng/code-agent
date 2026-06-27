@@ -1,5 +1,5 @@
 import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
-import { getBackgroundTaskLedger } from '../../host/tasks/backgroundTaskLedger';
+import { getBackgroundTaskLedger } from '../../host/task/backgroundTaskLedger';
 
 export type { ExternalAgentEngineKind };
 

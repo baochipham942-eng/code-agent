@@ -4,12 +4,12 @@ import { BackgroundTaskSchemas } from '../../shared/ipc/schemas';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { defineHandler } from '../platform/ipcRegistry';
-import { type BackgroundTaskLedger, getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
-import { SqliteBackgroundTaskStore } from '../tasks/backgroundTaskStore';
+import { type BackgroundTaskLedger, getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../task/backgroundTaskStore';
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
-} from '../tasks/backgroundTaskSnapshotAdapters';
+} from '../task/backgroundTaskSnapshotAdapters';
 
 const logger = createLogger('BackgroundTaskLedgerIPC');
 let attachedStoreDb: unknown = null;

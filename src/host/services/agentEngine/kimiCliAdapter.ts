@@ -32,7 +32,7 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getShellPath } from '../infra/shellEnvironment';
-import { getBackgroundTaskLedger } from '../../tasks/backgroundTaskLedger';
+import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';

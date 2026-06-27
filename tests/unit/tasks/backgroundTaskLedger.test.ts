@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BackgroundTaskLedger } from '../../../src/host/tasks/backgroundTaskLedger';
+import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
 
 function createClock(start = 1_000): [() => number, (value: number) => void] {
   let current = start;

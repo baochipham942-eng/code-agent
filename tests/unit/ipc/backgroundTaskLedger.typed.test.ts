@@ -19,8 +19,8 @@ import { registerBackgroundTaskLedgerHandlers } from '../../../src/host/ipc/back
 import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
-} from '../../../src/host/tasks/backgroundTaskLedger';
-import { resetBackgroundTaskEventAdaptersForTest } from '../../../src/host/tasks/backgroundTaskSnapshotAdapters';
+} from '../../../src/host/task/backgroundTaskLedger';
+import { resetBackgroundTaskEventAdaptersForTest } from '../../../src/host/task/backgroundTaskSnapshotAdapters';
 
 type DomainHandler = (_: unknown, request: unknown) => Promise<IPCResponse>;
 

@@ -45,7 +45,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/tasks/backgroundTaskLedger', () => ({
+vi.mock('../../../src/host/task/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ({
     upsertTask: mocks.upsertTask,
     appendEvent: mocks.appendEvent,

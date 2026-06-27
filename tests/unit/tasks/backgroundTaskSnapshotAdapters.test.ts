@@ -20,12 +20,12 @@ vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', () => ({
 }));
 
 import Database from 'better-sqlite3';
-import { BackgroundTaskLedger } from '../../../src/host/tasks/backgroundTaskLedger';
-import { SqliteBackgroundTaskStore } from '../../../src/host/tasks/backgroundTaskStore';
+import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../../../src/host/task/backgroundTaskStore';
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
-} from '../../../src/host/tasks/backgroundTaskSnapshotAdapters';
+} from '../../../src/host/task/backgroundTaskSnapshotAdapters';
 
 describe('backgroundTaskSnapshotAdapters', () => {
   beforeEach(() => {

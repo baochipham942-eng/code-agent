@@ -28,7 +28,7 @@ import type { TaskStatus } from '../../shared/contract/backgroundTask';
 import { buildTurnPrompt, detectDoneMarker, parseWaitMs } from './loopPrompt';
 import { getTaskManager } from '../task';
 import { getSessionManager } from '../services/infra/sessionManager';
-import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
 import { notificationService } from '../services/infra/notificationService';
 import { createLogger } from '../services/infra/logger';
 import { getSessionAutomationService } from '../services/sessionAutomation';

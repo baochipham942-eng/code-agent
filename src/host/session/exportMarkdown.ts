@@ -24,7 +24,7 @@ import {
   extractAgentPointerEvent,
 } from '../../shared/utils/agentPointerEvidence';
 import { guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
-import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
 import {
   readBrowserComputerProofRecordsBySession,
 } from './browserComputerProofStore';

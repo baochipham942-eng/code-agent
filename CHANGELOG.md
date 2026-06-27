@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-06-27
+
+### Added
+
+- **Sidebar — Codex-style conversation list redesign** (#287): each row reduced to title + relative time; running sessions show a spinner, attention states (error/approval/paused/incomplete) a quiet semantic dot. Eval diagnostics (trajectory quality `G0·Diag`, evidence level `EV`), type/automation badges, the summary line and replay-evidence buttons moved out of the default row (still reachable via project console / replay panel). Replay/assets/archive actions are hover-only. Project group header collapses its console/details/assets/new toolbar to hover; long lists fold to the first 5 sessions with an "expand all" toggle (auto-expands under search or when the current session is past the cap).
+
+### Fixed
+
+- **Keybinding — unbind resend by default** (#290): `Cmd/Ctrl+Shift+R` clashed with the browser/desktop hard-reload shortcut; an accidental press re-sent the last message, which for paid image/video generation meant silently paying again. The `session.retry` action now ships unbound by default (users can rebind it in settings).
+- **Design canvas — proposal design-mode gate** (#291): `useCanvasProposalReview` was missing the design-mode gate that `useCanvasVideoRequest` already enforces, so canvas writes could land outside a design context. Mirrors the sibling fail-closed gate (reject + immediate respond so the blocking host tool resolves) without reintroducing per-session ownership complexity.
+
+### Changed
+
+- **Design-system bare-button ratchet** (#289): baseline lowered 772→736 with token-based buttons across NativeDesktopSection / RolesTab / SidebarProjectDrawer.
+- Internal refactors: `src/main` → `src/host` directory rename; god-file splits (decision-trace recording, prompt-budget helpers, cron row/schedule normalizers, godfile-host #288); repo cleanup of mistakenly-tracked runtime artifacts; release gate now verifies the updater public key is injected into build artifacts.
+
 ## [0.21.0] - 2026-06-27
 
 ### Added

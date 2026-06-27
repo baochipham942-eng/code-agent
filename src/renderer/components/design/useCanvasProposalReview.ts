@@ -20,6 +20,7 @@ import { isExhausted } from '@shared/contract/designAutonomy';
 import { estimateImageCostCny } from '@shared/media/imageCost';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
+import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -76,6 +77,17 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
+      // 设计模式闸（fail-closed，与 useCanvasVideoRequest 一致）：main 是全局单画布架构、无 per-session
+      // 画布隔离，属主闸退化为「设计模式闸」——非设计模式下拒绝画布写提议（绝不在非设计上下文落地/烧钱出图）。
+      // 必须立即 respond 让阻塞工具解析，不能静默丢弃（否则 host 端 proposeCanvasOps 会一直挂到超时）。
+      if (useWorkspaceModeStore.getState().workspaceMode !== 'design') {
+        void ipcService.invoke(IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE, {
+          requestId: request.requestId,
+          verdict: 'reject',
+          feedback: '当前不在设计画布会话，画布提议已隔离拒绝。',
+        });
+        return;
+      }
       // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
       const env = useDesignAutonomyStore.getState().envelope;
       if (decideProposalHandling(request, env) === 'auto') {

@@ -45,7 +45,7 @@ Supabase 写入以登录用户身份走 RLS（`auth.uid() = user_id` 的 INSERT 
 
 - **缺口 1 — fail-silent 清用户（核心）**：`authService.validateSessionInBackground()` 在 `getSession()` 返回 null（session 死/过期）时**默默清掉缓存用户**（authService.ts:203-209），既不提示也不留信号 → `getCurrentUser()` 变 null → uploader 的 auth 门静默挂掉。**修法**：检测到「有缓存身份但 session 不可恢复」时，发非阻塞提示「登录已过期，点一下重连」，**禁止**默默清零。
 - **缺口 2 — auth-skip 不可观测**：`upload()` 在 `if(!user) return 0` 处静默返回。**修法**：该 skip 落一条带原因的日志/指标，让"为什么没上传"可见（不再靠人肉 SQL 反推）。
-- **缺口 3 — Keychain 持久化是死代码（潜在 bug）**：未设 `storageKey`，supabase-js 默认用 `sb-<ref>-auth-token`，而 storage adapter 的 Keychain 特例只认 `'supabase.session'` → `saveSessionToKeychain`/`getSessionFromKeychain` 整段从不触发，session 只在 electron-store，**重装/重置数据目录即丢登录**。**修法**：设 `storageKey: 'supabase.session'` 让 Keychain 存活路径真正生效。
+- **缺口 3 — Keychain 持久化是死代码（潜在 bug）**：未设 `storageKey`，supabase-js 默认用 `sb-<ref>-auth-token`，而 storage adapter 的 Keychain 特例只认 `'supabase.session'` → `saveSessionToKeychain`/`getSessionFromKeychain` 整段从不触发，session 只在 electron-store，**重装/重置数据目录即丢登录**。**修法**：不改 `storageKey`（会让现有用户 session 换键 → 全员强制重登一次），而是把 adapter 那三处 `key === 'supabase.session'` 判断改成 `isSupabaseSessionKey(key)`（匹配真实默认键 `sb-*-auth-token`）→ Keychain 存活路径真正生效，且**零强制登出、自愈**。
 - **硬约束（绕不过）**：RLS 写遥测需有效 JWT；refresh token 真过 TTL 时，除重新登录无他路——所以缺口 1 的「重连提示」是兜底终点，不是可选项。
 - **不做**：不投机重写已存在的刷新逻辑（auth 高风险区，且深层「为何 refresh 失败」需同事机器才能定，本轮不赌）。
 - **数据形态不变**：维持现有 metadata-only 结构化设计（模型 / 延迟 / token / 报错码 / 工具名；payload 不含 prompt/completion/入参）。

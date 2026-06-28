@@ -43,6 +43,7 @@ export class TelemetryUploaderService implements Disposable {
   private timer: ReturnType<typeof setInterval> | null = null;
   private uploading = false;
   private enabled = true; // 运行时开关（telemetry.cloudUpload.enabled）
+  private authSkipLogged = false; // 2a(ADR-030): auth-gated skip 只记一次，避免每 5min 刷日志
 
   constructor() {
     this.deviceId = getSecureStorage().getDeviceId();
@@ -73,7 +74,16 @@ export class TelemetryUploaderService implements Disposable {
     if (!this.enabled || !isSupabaseInitialized() || this.uploading) return 0;
 
     const user = getAuthService().getCurrentUser();
-    if (!user) return 0; // auth-gated：未登录不传
+    if (!user) {
+      // auth-gated：未登录不传。落一条可观测日志（缺口2/ADR-030）：让"为什么没上传"可见，
+      // 不再靠人肉 SQL 反推。只在状态翻转时记一次，避免 5min 周期刷屏。
+      if (!this.authSkipLogged) {
+        logger.warn('Telemetry upload skipped: 无活跃登录会话（auth-gated）。本地遥测将积压，登录后自动补传。');
+        this.authSkipLogged = true;
+      }
+      return 0;
+    }
+    this.authSkipLogged = false;
 
     this.uploading = true;
     try {

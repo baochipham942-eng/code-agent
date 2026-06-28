@@ -439,6 +439,7 @@ async function initializeServices(): Promise<void> {
           sessionTrustState: status.sessionTrustState,
           authBackendAvailable: status.authBackendAvailable,
           hasCachedAdminClaim: status.hasCachedAdminClaim,
+          sessionExpired: status.sessionExpired,
         });
       });
       await authService.initialize();

@@ -797,6 +797,15 @@ function createProxyFetch(): typeof globalThis.fetch | undefined {
   }
 }
 
+/**
+ * 是否是 supabase-js 存放 auth session 的 storageKey。
+ * 默认形如 'sb-<projectRef>-auth-token'（未显式设 storageKey 时）。storage adapter 的
+ * Keychain 存活特例须据此匹配，否则永不触发（2b/ADR-030）。
+ */
+export function isSupabaseSessionKey(key: string): boolean {
+  return key.startsWith('sb-') && key.endsWith('-auth-token');
+}
+
 export function initSupabase(url: string, anonKey: string): SupabaseClient<Database> {
   if (supabaseInstance) {
     return supabaseInstance;
@@ -819,12 +828,14 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
     auth: {
       storage: {
         getItem: async (key) => {
-          // For session, try Keychain first (survives app reinstall)
-          if (key === 'supabase.session') {
+          // 2b(ADR-030): Keychain 特例须匹配 supabase-js 实际用的 storageKey（默认
+          // 'sb-<ref>-auth-token'），而非写死的 'supabase.session'——否则整段 Keychain
+          // 存活逻辑是死代码。改用 isSupabaseSessionKey 匹配真实键，session 跨重装存活。
+          if (isSupabaseSessionKey(key)) {
             const keychainSession = await secureStorage.getSessionFromKeychain();
             if (keychainSession) {
-              // Sync to electron-store for faster subsequent reads
-              secureStorage.set('supabase.session', keychainSession);
+              // Sync to electron-store for faster subsequent reads（用真实 key）
+              secureStorage.setItem(key, keychainSession);
               return keychainSession;
             }
           }
@@ -833,14 +844,14 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
         setItem: async (key, value) => {
           secureStorage.setItem(key, value);
           // Also save session to Keychain for persistence across reinstalls
-          if (key === 'supabase.session') {
+          if (isSupabaseSessionKey(key)) {
             await secureStorage.saveSessionToKeychain(value);
           }
         },
         removeItem: async (key) => {
           secureStorage.removeItem(key);
           // Also clear from Keychain
-          if (key === 'supabase.session') {
+          if (isSupabaseSessionKey(key)) {
             await secureStorage.clearSessionFromKeychain();
           }
         },

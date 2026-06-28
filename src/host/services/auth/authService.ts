@@ -72,6 +72,7 @@ class AuthService {
   private sessionTrustState: SessionTrustState = 'none';
   private onAuthChangeCallbacks: AuthChangeCallback[] = [];
   private initialized: boolean = false;
+  private sessionExpired: boolean = false; // 2c(ADR-030): 曾登录但 session 不可恢复
 
   constructor() {}
 
@@ -86,6 +87,8 @@ class AuthService {
   }
 
   private notifyAuthChange(user: AuthUser | null): void {
+    // 任何带真实用户的通知都意味着不在"过期待重连"态，清旗
+    if (user) this.sessionExpired = false;
     const publicUser = this.getPublicUserForCurrentTrust(user);
     const status = this.buildStatus();
     this.onAuthChangeCallbacks.forEach((callback) => {
@@ -201,11 +204,14 @@ class AuthService {
         this.cacheUser(freshUser);
         this.notifyAuthChange(freshUser);
       } else if (this.currentUser) {
-        // Session 无效但有缓存用户，清除
-        logger.info(' Session invalid, clearing cached user');
+        // Session 无效但有缓存用户：曾登录但 session 不可恢复（过期/失效）。
+        // 2c(ADR-030): 仍清除无效会话（避免下游拿 null-JWT 去写 RLS 表失败），但置 sessionExpired，
+        // 让前端弹「登录已过期，点一下重连」非阻塞提示——取代过去的"默默清零"。
+        logger.info(' Session expired with cached identity → 提示重连（非默默清零）');
         this.currentUser = null;
         this.sessionTrustState = 'none';
         this.clearCachedUser();
+        this.sessionExpired = true;
         this.notifyAuthChange(null);
       }
     } catch (error) {
@@ -269,6 +275,7 @@ class AuthService {
       sessionTrustState: this.sessionTrustState,
       authBackendAvailable,
       hasCachedAdminClaim,
+      sessionExpired: this.sessionExpired,
     };
   }
 
@@ -505,6 +512,7 @@ class AuthService {
       storage.clearAuthData();
       this.currentUser = null;
       this.sessionTrustState = 'none';
+      this.sessionExpired = false; // 主动登出不是"过期"，不弹重连提示
       this.notifyAuthChange(null);
     }
   }

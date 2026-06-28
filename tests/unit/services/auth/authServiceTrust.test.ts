@@ -262,4 +262,44 @@ describe('authService session trust', () => {
       sessionExpired: false,
     });
   });
+
+  // 回归（dogfood 实测发现）：真实 supabase 启动时以 INITIAL_SESSION + 空 session 触发
+  // onAuthStateChange，这才是"默默清零"的主路径。旧 mock 从不触发回调，漏掉了它。
+  it('onAuthStateChange: INITIAL_SESSION 空 session + 缓存身份 → sessionExpired（2c 主路径）', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {})); // 挂起后台验证，隔离回调路径
+    let cb: ((event: string, session: unknown) => Promise<void>) | undefined;
+    mocks.supabase.auth.onAuthStateChange.mockImplementation((fn: typeof cb) => {
+      cb = fn;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    expect(cb).toBeDefined();
+    await cb!('INITIAL_SESSION', null);
+
+    expect(authService.getCurrentUser()).toBeNull();
+    await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
+  });
+
+  it('onAuthStateChange: SIGNED_OUT（主动登出）→ 不标记 sessionExpired', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+    let cb: ((event: string, session: unknown) => Promise<void>) | undefined;
+    mocks.supabase.auth.onAuthStateChange.mockImplementation((fn: typeof cb) => {
+      cb = fn;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await cb!('SIGNED_OUT', null);
+
+    await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: false });
+  });
 });

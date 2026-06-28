@@ -165,9 +165,17 @@ class AuthService {
         logger.info(' Profile fetched in callback');
         this.notifyAuthChange(this.currentUser);
       } else {
+        // 2c(ADR-030): 真实 supabase 在启动时会以 INITIAL_SESSION + 空 session 触发本分支，
+        // 这是"默默清零"的主路径（validateSessionInBackground 往往慢一步、那时 user 已被清）。
+        // 曾有登录身份却收到空 session（过期/失效，非主动 SIGNED_OUT）→ 标记过期以弹重连。
+        const wasAuthenticated = this.currentUser !== null;
         this.currentUser = null;
         this.sessionTrustState = 'none';
         this.clearCachedUser();
+        if (wasAuthenticated && event !== 'SIGNED_OUT') {
+          this.sessionExpired = true;
+          logger.info(` Session expired (empty session on ${event}, had cached identity) → 提示重连（非默默清零）`);
+        }
         this.notifyAuthChange(null);
       }
     });

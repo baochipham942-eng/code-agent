@@ -4,6 +4,23 @@
 
 > 一级分层（`src/host` / `renderer` / `shared` / `web` / `cli` / `design` / `artifacts`）见仓库根 [README](../../README.md)。
 
+## 常见修改入口
+
+| 想改什么 | 先看哪里 |
+|----------|----------|
+| Agent 怎么思考、怎么组织上下文、怎么发起一轮对话 | `agent/`、`context/`、`prompts/` |
+| 新增或修改一个工具调用 | `tools/`，涉及权限时同时看 `permissions/` 和 `security/` |
+| 接一个外部 MCP server | `mcp/` |
+| 接本机应用或系统服务，比如日历、邮件、提醒事项 | `connectors/`、`services/connectors/` |
+| 做插件安装、插件加载、内置插件工具 | `plugins/` |
+| 做技能发现、安装、执行、推荐 | `services/skills/`、`skills/marketplace/` |
+| 调模型、provider、执行引擎 | `model/`、`services/agentEngine/` |
+| 改后台任务、长任务恢复、多 Agent 编排 | `task/`、`scheduler/`、`handoff/` |
+| 改定时任务、循环任务、心跳 | `cron/`、`loop/` |
+| 改回放、轨迹、遥测查询、实验适配 | `evaluation/`、`telemetry/` |
+| 改桌面能力、Computer Use、音频采集 | `src/host/desktop/`，Rust 侧再看 `src-tauri/src/` |
+| 改 renderer 和 host 的通信 | `src/host/ipc/`，共享类型通常在 `src/shared/contract/` |
+
 ## Agent 运行核心
 | 目录 | 职责 |
 |------|------|
@@ -28,7 +45,7 @@
 | 目录 | 职责 |
 |------|------|
 | `tools/` | 工具注册与执行（`toolExecutor`）、media（PPT 等）工具 |
-| `skills/` | 技能加载与执行 |
+| `skills/` | 技能 marketplace 边界。技能发现、安装、执行的主体在 `services/skills/` |
 | `mcp/` | MCP（Model Context Protocol）集成 |
 | `connectors/` | 连接器（外部服务 / 原生 app） |
 | `plugins/` | 插件系统 |
@@ -49,7 +66,7 @@
 ## 质量 / 评测 / 观测
 | 目录 | 职责 |
 |------|------|
-| `evaluation/` | 评测 harness |
+| `evaluation/` | 产品内回放、轨迹、遥测查询、实验适配。外部 benchmark 见 `benchmarks/` 和 `packages/eval-harness/` |
 | `quality/` | 产物质量检测（`designQualityHook`、`detect`、`rules`） |
 | `observability/` | 可观测性 |
 | `telemetry/` | 遥测与诊断存储 |

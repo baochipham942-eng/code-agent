@@ -52,27 +52,47 @@ cargo tauri build           # 打包 macOS（~33MB DMG）
 
 > 正式发版不在本地打包：推 `v<version>` tag 触发 GitHub Actions 完成多平台签名/公证/发布。详见 `CLAUDE.md` 的「发版」一节。
 
-## 目录结构
+## 怎么读这个仓库
 
-顶层（大致按阅读优先级排列）：
+Agent Neo 是主产品。这个仓库里还放了桌面壳、官网和更新服务、管理后台、评测套件、浏览器扩展等配套工程。第一次打开仓库，可以先按这个顺序看：
+
+| 想看什么 | 去哪里 |
+|----------|--------|
+| 产品和架构概览 | `README.md`、`docs/ARCHITECTURE.md` |
+| 应用主体代码 | `src/` |
+| 桌面 App 外壳 | `src-tauri/` |
+| 官网、下载页、更新 API | `vercel-api/`、`public/code-agent/` |
+| 管理后台 | `admin-console/` |
+| 外部评测和跑分 | `benchmarks/`、`packages/eval-harness/` |
+| 更细的目录导航 | `docs/architecture/repo-map.md`、`docs/architecture/source-map.md` |
+
+顶层目录大致是这样：
 
 ```
 code-agent/
-├── src/            # ★应用源码（核心；见下方「src/ 一级分层」与「src/host」）
-├── docs/           # 架构 / 产品 / 指南文档（入口：docs/ARCHITECTURE.md）
-├── tests/          # 测试
-├── scripts/        # 构建 / 运维 / 验收脚本
-├── packages/       # 子包（如本地桥接 bridge）
-├── skills/         # 产物类型知识包（artifact-kind 领域知识，如 game subtype；≠ Agent 能力技能）
-├── benchmarks/     # 外部基准跑分套件（SWE-bench / Excel benchmark，各自带 runner + 数据；区别于 src/host/evaluation 评测引擎）
-├── src-tauri/      # Tauri (Rust) 外壳
-├── extension/      # 浏览器扩展
-├── admin-console/  # 管理后台
-├── supabase/       # 数据库迁移 / 函数
-└── vercel-api/     # 更新 API（Vercel）
+├── src/                  # 应用主体：后端主进程、前端、共享类型、本地 web 桥、CLI
+├── src-tauri/            # Tauri 桌面外壳和 Rust 原生能力
+├── docs/                 # 架构、部署、API、发布记录
+├── tests/                # 单测、组件测试、E2E、smoke
+├── scripts/              # 构建、发布、诊断、验收脚本
+├── packages/             # 可独立复用的子包，如本地 bridge、eval harness
+├── artifact-knowledge/   # 产物知识包，给游戏、演示稿等产物生成和校验使用
+├── benchmarks/           # 外部 benchmark 数据和 runner，如 SWE-bench、Excel benchmark
+├── extension/            # 浏览器扩展
+├── admin-console/        # 管理后台，用于排查外部分发后的 telemetry 和反馈
+├── supabase/             # 数据库迁移和云函数
+└── vercel-api/           # 官网、下载入口、更新 API、控制面 API
 ```
 
-> 另有隐藏配置目录：`.agents/skills/`（**Agent 能力技能**，`SKILL.md` 格式，如 docx/excel/ppt/pr/frontend-slides——Agent 任务中调用的能力，与上面的 `skills/` 是两套体系）、`.claude/`（本仓库的 Claude Code 配置）、`.github/workflows/`（CI/CD）、`.husky/`（Git hooks）。
+有几个名字容易混在一起，先按这一层理解：
+
+| 名字 | 位置 | 用途 |
+|------|------|------|
+| Agent 能力技能 | `.agents/skills/` | 随仓库内置的任务能力，比如 docx、excel、ppt、pr。Agent 做这些任务时会读取。 |
+| Claude Code 开发配置 | `.claude/skills/`、`.claude/rules/` | 开发本仓库时给 Claude Code 用的规则和技能。它不属于产品运行时。 |
+| 用户安装技能 | `~/.code-agent/skills/` | 用户机器上的运行时技能，来自安装或 marketplace。 |
+| 技能系统代码 | `src/host/services/skills/`、`src/host/skills/marketplace/` | 产品里负责发现、安装、解析、执行技能的代码。 |
+| 产物知识包 | `artifact-knowledge/` | 给特定产物类型提供生成和验收知识，例如 platformer game。它和用户安装技能分属两层。 |
 
 ### `src/` 一级分层
 
@@ -99,11 +119,12 @@ code-agent/
 | **质量 / 评测 / 观测** | `evaluation/`（**评测引擎**：实验适配/会话质量评分/回放/遥测查询）· `quality/`（产物质量检测）· `observability/` · `telemetry/` · `diagnostics/` · `testing/` · `hooks/` |
 | **平台 / 基础设施** | `app/`（应用宿主/bootstrap）· `platform/` · `runtime/`（运行时资产）· `ipc/`（renderer↔host）· `services/`（core/infra/design/agentEngine 等）· `config/` · `security/` · `permissions/` · `errors/` · `extension/` · `utils/` |
 
-> 注意区分两个「评测」：`src/host/evaluation/` 是产品自身的评测引擎（评分/回放/遥测），仓库根的 `eval/` 是跑外部 benchmark（SWE-bench / Excel）的独立套件。
+评测相关目录有四类：`src/host/evaluation/` 是产品里的回放、轨迹、遥测和实验适配；`packages/eval-harness/` 是可复用的外部评测框架；`benchmarks/` 放外部 benchmark 的 runner 和样本；`tests/eval/` 放评测相关测试。
 
 ## 文档
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 架构索引入口（系统概览、Agent 核心、工具系统、前端、数据存储、多 Agent、设计工作区、ADR 等）
+- **[docs/architecture/repo-map.md](docs/architecture/repo-map.md)** — 面向第一次浏览仓库的人：根目录、运行面、能力体系、评测目录怎么分
 - **[docs/architecture/source-map.md](docs/architecture/source-map.md)** — `src/host` 源码地图（按逻辑分组）
 - **[docs/architecture/](docs/architecture/)** — 各子系统深入文档（agent-core / tool-system / multiagent-system / data-storage / hot-update / windows-support 等）
 - **[docs/api-reference/](docs/api-reference/)** · **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — API 参考与部署

@@ -1,21 +1,21 @@
-# Code Agent
+# Agent Neo / Code Agent
 
-AI 编程助手桌面应用，复刻 Claude Code 架构来研究 AI Agent 能力演进。
+Agent Neo 是产品名，`code-agent` 是仓库历史名。这个文件主要给本仓库里的开发协作工具读取，面向浏览者的入口见 `README.md` 和 `docs/architecture/repo-map.md`。
 
-## LLM Wiki
+## 本地 LLM Wiki
 
-项目知识库（Karpathy 模式）。操作规范见 `~/.claude/specs/wiki-schema.md`，使用 `/wiki` skill 操作。
+项目知识库采用 Karpathy 模式。它用于本地研究和协作，不要求出现在公开 GitHub 仓库里。操作规范见 `~/.claude/specs/wiki-schema.md`，使用 `/wiki` skill 操作。
 
 | 目录 | 用途 |
 |------|------|
-| `wiki/` | LLM 维护的编译知识（概念、实体、对比、摘要） |
-| `raw/` | 不可变源文档（文章、论文、竞品截图） |
+| `wiki/` | 本地 LLM 维护的编译知识，例如概念、实体、对比、摘要 |
+| `raw/` | 本地不可变源文档，例如文章、论文、竞品截图 |
 
-Wiki 不同于 `docs/`（人类项目文档）。两者可有内容重叠但职责分离。
+公开仓库里的长期文档放在 `docs/`。如果 GitHub 上看不到 `wiki/` 或 `raw/`，按本地知识库处理即可。
 
 ## 项目上下文
 
-当我提到 'code agent'、'ai-code-agent' 或 'coda agent' 时，指的是本地项目（ai-code-agent）— 不是 Claude Code 或其他外部产品。
+当我提到 'code agent'、'ai-code-agent' 或 'coda agent' 时，指的是本地项目 `code-agent`，产品名是 Agent Neo。
 
 本项目主要使用 TypeScript（辅以 HTML 报告和少量 JavaScript）。新文件默认 TypeScript。
 

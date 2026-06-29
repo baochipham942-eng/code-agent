@@ -37,6 +37,24 @@ describe('applyReleasePolicyToUpdateInfo sha/url coupling', () => {
     expect(result.sha256).toBe('b'.repeat(64));
   });
 
+  it('fails closed when policy advertises a version beyond the source download (no policy URL) (R3)', () => {
+    // 来源是 0.16.75 的 asset（url+sha），policy minVersion 抬到 0.16.77 但无 policy downloadUrl：
+    // 不能把 0.16.75 的包配到广告版本 0.16.77 上。
+    const result = applyReleasePolicyToUpdateInfo({
+      hasUpdate: true,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.75',
+      downloadUrl: 'https://oss.example/v0.16.75/app.dmg',
+      sha256: 'a'.repeat(64),
+    }, {
+      channel: 'stable',
+      minVersion: '0.16.77',
+    });
+    expect(result.latestVersion).toBe('0.16.77');
+    expect(result.downloadUrl).toBeUndefined();
+    expect(result.sha256).toBeUndefined();
+  });
+
   it('clears source sha when policy downloadUrl is applied without a policy sha (fail-closed, no cross-pair)', () => {
     const result = applyReleasePolicyToUpdateInfo(source, {
       channel: 'stable',

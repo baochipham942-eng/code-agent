@@ -98,6 +98,33 @@ describe('vercel update metadata', () => {
     });
   });
 
+  it('fails closed when policy advertises a version beyond the manifest without a matching download URL (R3)', () => {
+    // manifest 还在 0.16.75，policy minVersion 抬到 0.16.77 但没给 UPDATE_DOWNLOAD_URL：
+    // 不能把 0.16.75 的 asset URL+sha 配到「广告版本 0.16.77」上。
+    const response = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.75',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.75',
+      assets: [
+        {
+          name: 'Agent-Neo-0.16.75-arm64.dmg',
+          browser_download_url: 'https://oss.example.com/v0.16.75/app.dmg',
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+      minVersion: '0.16.77',
+    });
+
+    expect(response.latestVersion).toBe('0.16.77');
+    expect(response.hasUpdate).toBe(true);
+    // 绝不下发旧 asset 直链；sha 必须为空（fail-closed）
+    expect(response.downloadUrl).not.toBe('https://oss.example.com/v0.16.75/app.dmg');
+    expect((response as { sha256?: string }).sha256).toBeUndefined();
+  });
+
   it('does not pair an env downloadUrl override with a release asset sha256 (MED1)', () => {
     // env override 提供了 URL 但没提供 sha256，资产又恰好带 sha256：
     // sha256 绝不能贴到 env 的 URL 上（否则客户端按资产 hash 校验 env 包必失败）。

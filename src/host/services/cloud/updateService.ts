@@ -329,17 +329,29 @@ export function applyReleasePolicyToUpdateInfo(
   const policySha256 = normalizeUpdateSha256(releasePolicy.sha256);
   // policy 的 sha256 只能描述 policy 的 downloadUrl：仅当应用 policy downloadUrl 时才换 sha
   // （此时把 sha 一并换成 policySha256，可能为 undefined → fail-closed，绝不让 policy sha 配源 URL，
-  //  也不让源 sha 配 policy URL）。不应用 policy downloadUrl 时，保留来源 updateInfo 的 url+sha。
+  //  也不让源 sha 配 policy URL）。
   const applyPolicyDownload = Boolean(releasePolicy.downloadUrl && policyRequiresUpdate);
+  // policy 把版本号抬到超过来源下载所代表的版本、又没给 policy downloadUrl 时：
+  // 来源 url+sha 是旧版本的，与广告的 latestVersion 不同源 → fail closed，清掉下载信息。
+  const advertisedBeyondSource = Boolean(
+    !applyPolicyDownload
+      && latestVersion
+      && (!updateInfo.latestVersion || compareUpdateVersions(latestVersion, updateInfo.latestVersion) > 0),
+  );
+
+  let downloadOverride: Partial<Pick<UpdateInfo, 'downloadUrl' | 'sha256'>> = {};
+  if (applyPolicyDownload) {
+    downloadOverride = { downloadUrl: releasePolicy.downloadUrl, sha256: policySha256 };
+  } else if (advertisedBeyondSource) {
+    downloadOverride = { downloadUrl: undefined, sha256: undefined };
+  }
 
   return {
     ...updateInfo,
     hasUpdate,
     forceUpdate,
     ...(latestVersion ? { latestVersion } : {}),
-    ...(applyPolicyDownload
-      ? { downloadUrl: releasePolicy.downloadUrl, sha256: policySha256 }
-      : {}),
+    ...downloadOverride,
   };
 }
 

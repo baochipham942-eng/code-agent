@@ -289,15 +289,22 @@ export function buildUpdateResponseFromRelease(
   //  - env override：URL 与 sha 都来自 env（UPDATE_DOWNLOAD_URL / UPDATE_SHA256 成对）
   //  - 选中资产：URL 与 sha 都来自该资产（游离的 env sha 不属于 OSS 资产，不借用）
   //  - 网页兜底：无可校验产物，不配任何 sha
+  // 选中资产来自 manifest（releaseVersion）；仅当它正是广告的 latestVersion 时才代表可下载产物。
+  // policy（minVersion/latestVersion）把版本号抬到超过 manifest 时，asset 是旧版，与广告版本不同源 → 不发它。
+  const assetMatchesAdvertisedVersion = Boolean(
+    releaseVersion && latestVersion && compareVersions(releaseVersion, latestVersion) === 0,
+  );
   let downloadUrl: string | undefined;
   let sha256: string | undefined;
   if (options.downloadUrl) {
     downloadUrl = options.downloadUrl;
     sha256 = normalizeSha256(options.sha256);
-  } else if (asset?.browser_download_url) {
+  } else if (asset?.browser_download_url && assetMatchesAdvertisedVersion) {
     downloadUrl = asset.browser_download_url;
     sha256 = normalizeSha256(asset.sha256);
   } else {
+    // 无 env override 的可下载产物，或 policy 抬升的版本号超过 manifest（asset 与广告版本不同源）
+    // → fail closed：只给 release 网页兜底、不发 sha（客户端缺 sha 会拒绝直接下载）。
     downloadUrl = fallbackDownloadUrl;
     sha256 = undefined;
   }

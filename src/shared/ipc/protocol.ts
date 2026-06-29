@@ -56,6 +56,7 @@ export type WorkspaceAction =
   | 'createFile'
   | 'createFolder'
   | 'openPath'
+  | 'openExternal'
   | 'showItemInFolder'
   | 'downloadFile'
   | 'exportBundle'

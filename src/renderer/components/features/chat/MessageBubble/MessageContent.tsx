@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useMemo, useCallback, memo, useEffect } from 'react';
-import { Send, PenLine, Terminal, Eye, ExternalLink } from 'lucide-react';
+import { Send, PenLine, Terminal, Eye, ExternalLink, Play } from 'lucide-react';
 import remend from 'remend';
 import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
@@ -27,6 +27,18 @@ import {
   MarkdownRenderer,
   filterSystemTags,
 } from './messageContentParts';
+
+/**
+ * 把"本地 HTML 文件"的 href 解析成可预览的路径；非本地 HTML 返回 null。
+ * - http/https 网页（即便以 .html 结尾）不拦，按真·外链处理。
+ * - file:// 本地文件、绝对/家目录/相对路径，且以 .html/.htm 结尾 → 返回去掉 file:// 的路径。
+ */
+export function localHtmlHrefToPath(href: string | undefined): string | null {
+  if (!href) return null;
+  if (/^https?:\/\//i.test(href)) return null;
+  const path = href.replace(/^file:\/\//, '');
+  return /\.html?(?:[?#].*)?$/i.test(path) ? path : null;
+}
 
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
@@ -348,9 +360,22 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           return <IACTNavCard href={href}>{children}</IACTNavCard>;
         }
 
-        // Raw URL（textNode === href）渲染为带 favicon 的预览 chip
-        if (href && isRawUrlLink(href, children)) {
-          return <LinkPreviewCard href={href} />;
+        // 本地 HTML 文件链接 → 走 in-app 产物预览（产物为主轴），而非外部打开。
+        // 模型常把生成的 HTML 写成 [snake.html](file:///.../snake.html)；点这种链接应在
+        // app 内以可玩产物展示，不是丢给系统浏览器。真·网页外链（http/https）不拦。
+        const htmlPreviewPath = localHtmlHrefToPath(href);
+        if (htmlPreviewPath) {
+          return (
+            <a
+              href={href}
+              onClick={(e) => { e.preventDefault(); handlePreviewHtml(htmlPreviewPath); }}
+              className="inline-flex items-center gap-1 text-primary-300 hover:text-primary-200 underline underline-offset-2 cursor-pointer"
+              title="点击预览"
+            >
+              {children}
+              <Play className="w-3 h-3 opacity-60 text-blue-400" />
+            </a>
+          );
         }
 
         // Regular links（带描述文字的内联链接）

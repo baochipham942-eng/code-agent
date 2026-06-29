@@ -45,11 +45,25 @@ export function getDesktopShellLabel(): string {
  * 返回 true 表示已接管，调用方应 e.preventDefault()。
  */
 export function openExternalLink(href: string | undefined): boolean {
-  if (!href || !isTauriMode()) return false;
+  if (!href || isWebMode()) return false; // web 模式让浏览器原生 <a target="_blank"> 接管
   const isHttp = /^https?:\/\//i.test(href);
-  void (isHttp ? openNativeUrl(href) : openNativePath(href.replace(/^file:\/\//, '')))
-    .catch(() => {});
-  return true;
+  const filePath = href.replace(/^file:\/\//, '');
+  // 优先走 webServer IPC 桥（由 host 进程打开）——不依赖 webview 里的 __TAURI_INTERNALS__。
+  // bug A 根因：http origin 的 webview 里 Tauri 插件直连不可用，导致外链点击无反应。
+  const api = window.domainAPI;
+  if (api?.invoke) {
+    void (isHttp
+      ? api.invoke('workspace', 'openExternal', { url: href })
+      : api.invoke('workspace', 'openPath', { filePath })
+    ).catch(() => {});
+    return true;
+  }
+  // 回退：Tauri 插件直连（仅当 webview 注入了 __TAURI_INTERNALS__）
+  if (isTauriMode()) {
+    void (isHttp ? openNativeUrl(href) : openNativePath(filePath)).catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 /** Copy text to clipboard with fallback */

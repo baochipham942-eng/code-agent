@@ -72,6 +72,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     });
 
     expect(groups.map((group) => group.label)).toEqual([
+      '模型与能力',
       '基础偏好',
       '能力与连接',
       '工作区与自动化',
@@ -80,31 +81,33 @@ describe('SettingsModal screen memory tab visibility', () => {
       '系统',
     ]);
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
-      'general',
-      'conversation',
       'search',
       'voiceInput',
-      'keybindings',
       'model',
       'visualModels',
       'imageVideo',
       'agentEngine',
-      'budget',
+    ]);
+    expect(groups[0].tabs[0].label).toBe('搜索源');
+    expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
+      'general',
+      'conversation',
+      'keybindings',
       'appearance',
       'soul',
     ]);
-    expect(groups[0].tabs[0].label).toBe('权限与安全');
-    expect(groups[3].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[1].tabs[0].label).toBe('权限与安全');
+    expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'users',
       'invites',
       'controlPlane',
     ]);
-    expect(groups[3].tabs.map((tab) => tab.label)).toEqual([
+    expect(groups[4].tabs.map((tab) => tab.label)).toEqual([
       '用户管理',
       '邀请码管理',
       '控制平面',
     ]);
-    expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[2].tabs.map((tab) => tab.id)).toEqual([
       'capabilities',
       'plugins',
       'mcp',
@@ -113,12 +116,12 @@ describe('SettingsModal screen memory tab visibility', () => {
       'channels',
       'hooks',
     ]);
-    expect(groups[5].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[6].tabs.map((tab) => tab.id)).toEqual([
       'cache',
       'update',
       'about',
     ]);
-    expect(groups[5].tabs[0].label).toBe('数据与存储');
+    expect(groups[6].tabs[0].label).toBe('数据与存储');
   });
 
   it('hides user management tabs for non-admin users', () => {

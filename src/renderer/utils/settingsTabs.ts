@@ -19,7 +19,6 @@ export const SETTINGS_TAB_IDS = [
   'visualModels',
   'imageVideo',
   'agentEngine',
-  'budget',
   'appearance',
   'soul',
   'workspace',
@@ -48,6 +47,7 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'general';
 
 export type SettingsTabGroupId =
+  | 'models'
   | 'basics'
   | 'connections'
   | 'workspace'
@@ -56,6 +56,7 @@ export type SettingsTabGroupId =
   | 'system';
 
 export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
+  models: '模型与能力',
   basics: '基础偏好',
   connections: '能力与连接',
   workspace: '工作区与自动化',
@@ -65,6 +66,7 @@ export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
 };
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
+  'models',
   'basics',
   'connections',
   'workspace',
@@ -76,14 +78,13 @@ export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
 export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> = {
   general: 'basics',
   conversation: 'basics',
-  search: 'basics',
-  voiceInput: 'basics',
+  search: 'models',
+  voiceInput: 'models',
   keybindings: 'basics',
-  model: 'basics',
-  visualModels: 'basics',
-  imageVideo: 'basics',
-  agentEngine: 'basics',
-  budget: 'basics',
+  model: 'models',
+  visualModels: 'models',
+  imageVideo: 'models',
+  agentEngine: 'models',
   appearance: 'basics',
   soul: 'basics',
   mcp: 'connections',

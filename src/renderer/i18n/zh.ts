@@ -18,6 +18,7 @@ export const zh = {
     success: '成功',
     active: '当前',
     coming: '即将推出',
+    sessionExpiredReconnect: '登录已过期，请重新登录以恢复云端同步',
   },
 
   // Design Workspace（Kun 借鉴：设计 tab）

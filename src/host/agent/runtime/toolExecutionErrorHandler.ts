@@ -7,6 +7,7 @@ import {
   sanitizeToolArgumentsForObservation,
   sanitizeToolResultForObservation,
 } from './toolObservationSanitizers';
+import { reportToolError } from '../../observability/toolErrorReporter';
 
 const logger = createLogger('AgentLoop');
 
@@ -141,6 +142,15 @@ export async function handleToolExecutionError({
       // Never let logging break tool execution
     }
   }
+
+  // 错误通道（ADR-030）：把可执行的基础设施级失败上报 Sentry。不依赖登录会话，
+  // 覆盖只用缓存共享 key 的同事。allowlist + 去重在 reporter 内部，永不抛错。
+  reportToolError({
+    toolName: toolCall.name,
+    error: toolResult.error ?? 'Unknown error',
+    sessionId: ctx.sessionId,
+    durationMs: toolResult.duration,
+  });
 
   return toolResult;
 }

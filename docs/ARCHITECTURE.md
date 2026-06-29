@@ -86,6 +86,7 @@
 | 020 | 经验沉淀重做（废弃 telemetry n-gram，统一 LLM 反思路） | accepted |
 | 021 | Computer Use 底座 argus → cua-driver | accepted |
 | 029 | 统一 Evidence / Provenance 契约 | accepted |
+| 030 | Fleet 遥测双通道（Sentry 错误通道 + Supabase 分析通道） | proposed |
 
 ---
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from '../../../../src/shared/constants';
-import { resolveSupabaseInitConfig } from '../../../../src/host/services/infra/supabaseService';
+import { resolveSupabaseInitConfig, isSupabaseSessionKey } from '../../../../src/host/services/infra/supabaseService';
 
 describe('resolveSupabaseInitConfig', () => {
   it('uses the built-in production Supabase config when no override exists', () => {
@@ -60,5 +60,19 @@ describe('resolveSupabaseInitConfig', () => {
       urlSource: 'default',
       ignored: ['SUPABASE_URL', 'settings.supabase.url'],
     });
+  });
+});
+
+describe('isSupabaseSessionKey (2b/ADR-030)', () => {
+  it('匹配 supabase-js 默认 session storageKey', () => {
+    expect(isSupabaseSessionKey('sb-xepbunahzbmexsmmiqyq-auth-token')).toBe(true);
+    expect(isSupabaseSessionKey('sb-anyref-auth-token')).toBe(true);
+  });
+
+  it('不匹配其它键（避免误触发 Keychain 写）', () => {
+    expect(isSupabaseSessionKey('supabase.session')).toBe(false); // 旧写死键（已不是真实键）
+    expect(isSupabaseSessionKey('auth.user')).toBe(false);
+    expect(isSupabaseSessionKey('sb-ref-auth-token.0')).toBe(false); // 分片键不整体匹配
+    expect(isSupabaseSessionKey('')).toBe(false);
   });
 });

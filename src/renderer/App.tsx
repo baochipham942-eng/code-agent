@@ -41,6 +41,7 @@ import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { MemoryLearningProvider } from './components/features/memory';
 import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
+import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -719,6 +720,7 @@ export const App: React.FC = () => {
       <ToastContainer />
       <ProviderStatusNotice />
       <BudgetAlertNotice />
+      <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">

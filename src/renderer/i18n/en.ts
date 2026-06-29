@@ -20,6 +20,7 @@ export const en: Translations = {
     success: 'Success',
     active: 'Active',
     coming: 'Coming',
+    sessionExpiredReconnect: 'Your session has expired. Please sign in again to resume cloud sync.',
   },
 
   // Design Workspace (borrowed from Kun: design tab)

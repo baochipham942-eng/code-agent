@@ -453,6 +453,8 @@ export interface AuthEvent {
   sessionTrustState?: AuthSessionTrustState;
   authBackendAvailable?: boolean;
   hasCachedAdminClaim?: boolean;
+  /** 2c(ADR-030): 曾登录但 session 过期/失效（区别于主动登出），前端据此弹「重连」提示 */
+  sessionExpired?: boolean;
 }
 
 export interface SessionUpdatedEvent {

@@ -227,4 +227,79 @@ describe('authService session trust', () => {
     });
     expect(authService.getSessionTrustState()).toBe('verified');
   });
+
+  it('曾登录但 session 失效 → 标记 sessionExpired 并清用户（2c/ADR-030，非默默清零）', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    // beforeEach 已设缓存 admin 用户；getSession 返回 null = session 失效/过期
+    mocks.supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // 等后台验证跑完
+
+    expect(authService.getCurrentUser()).toBeNull();
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: false,
+      sessionExpired: true,
+    });
+  });
+
+  it('从未登录（无缓存用户）+ session 失效 → 不标记 sessionExpired（不打扰）', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.storage.get.mockReturnValue(undefined); // 无缓存用户
+    mocks.supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: false,
+      sessionExpired: false,
+    });
+  });
+
+  // 回归（dogfood 实测发现）：真实 supabase 启动时以 INITIAL_SESSION + 空 session 触发
+  // onAuthStateChange，这才是"默默清零"的主路径。旧 mock 从不触发回调，漏掉了它。
+  it('onAuthStateChange: INITIAL_SESSION 空 session + 缓存身份 → sessionExpired（2c 主路径）', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {})); // 挂起后台验证，隔离回调路径
+    let cb: ((event: string, session: unknown) => Promise<void>) | undefined;
+    mocks.supabase.auth.onAuthStateChange.mockImplementation((fn: typeof cb) => {
+      cb = fn;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    expect(cb).toBeDefined();
+    await cb!('INITIAL_SESSION', null);
+
+    expect(authService.getCurrentUser()).toBeNull();
+    await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
+  });
+
+  it('onAuthStateChange: SIGNED_OUT（主动登出）→ 不标记 sessionExpired', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+    let cb: ((event: string, session: unknown) => Promise<void>) | undefined;
+    mocks.supabase.auth.onAuthStateChange.mockImplementation((fn: typeof cb) => {
+      cb = fn;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await cb!('SIGNED_OUT', null);
+
+    await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: false });
+  });
 });

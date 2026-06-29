@@ -80,6 +80,9 @@ const WorkflowPanel = React.lazy(() => import('./components/features/workflow/Wo
 const DesignWorkspace = React.lazy(() => import('./components/design/DesignWorkspace').then((module) => ({
   default: module.DesignWorkspace,
 })));
+const DesignCanvasTab = React.lazy(() => import('./components/design/DesignCanvasTab').then((module) => ({
+  default: module.DesignCanvasTab,
+})));
 const LabPage = React.lazy(() => import('./components/features/lab/LabPage').then((module) => ({
   default: module.LabPage,
 })));
@@ -700,6 +703,11 @@ export const App: React.FC = () => {
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
         {activeWorkbenchTab === 'context' && <ContextPanel />}
         {activeWorkbenchTab === 'audit' && <ReplayAuditPanel />}
+        {activeWorkbenchTab === 'design-canvas' && (
+          <React.Suspense fallback={null}>
+            <DesignCanvasTab />
+          </React.Suspense>
+        )}
         {isPreviewActive && <PreviewPanel />}
       </div>
     </div>
@@ -775,8 +783,9 @@ export const App: React.FC = () => {
       {/* V2-A: DevServerLauncher 自管 visibility，挂全局 */}
       <DevServerLauncher />
 
-      {/* Design Workspace（Kun 借鉴：设计 tab）——全屏覆盖，Code 布局不变 */}
-      {useWorkspaceModeStore((s) => s.workspaceMode) === 'design' && (
+      {/* 旧全屏设计表单（网页/演示稿/视频/图片直出）——会话化收口后改为按需打开：
+          切到设计模式不再自动弹，只在 designFormOpen 旗标为 true 时显示。 */}
+      {useWorkspaceModeStore((s) => s.designFormOpen) && (
         <React.Suspense fallback={null}>
           <DesignWorkspace />
         </React.Suspense>

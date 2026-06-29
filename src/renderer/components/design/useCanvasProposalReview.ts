@@ -20,7 +20,8 @@ import { isExhausted } from '@shared/contract/designAutonomy';
 import { estimateImageCostCny } from '@shared/media/imageCost';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
-import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
+import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -77,17 +78,24 @@ export function useCanvasProposalReview(): CanvasProposalReview {
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
-      // 设计模式闸（fail-closed，与 useCanvasVideoRequest 一致）：main 是全局单画布架构、无 per-session
-      // 画布隔离，属主闸退化为「设计模式闸」——非设计模式下拒绝画布写提议（绝不在非设计上下文落地/烧钱出图）。
-      // 必须立即 respond 让阻塞工具解析，不能静默丢弃（否则 host 端 proposeCanvasOps 会一直挂到超时）。
-      if (useWorkspaceModeStore.getState().workspaceMode !== 'design') {
-        void ipcService.invoke(IPC_CHANNELS.CANVAS_PROPOSAL_RESPONSE, {
-          requestId: request.requestId,
-          verdict: 'reject',
-          feedback: '当前不在设计画布会话，画布提议已隔离拒绝。',
-        });
-        return;
+      // H2-R2.c 写路径属主闸（fail-closed）+ 意图驱动自动认领。须在设 pending/自动应用之前。
+      // request.sessionId 为空（向后兼容）时不拦——读路径已堵，此处只挡明确跨会话写。
+      const cs = useDesignCanvasStore.getState();
+      if (request.sessionId) {
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (cs.ownerSessionId === null && request.sessionId === currentSessionId) {
+          // 意图驱动自动激活：画布无主 + 提议来自当前会话 → 该会话认领（无需手动点画布）。
+          useDesignCanvasStore.getState().markSessionDesignActive(request.sessionId);
+          useDesignCanvasStore.getState().claimCanvasForSession(request.sessionId);
+        } else if (useDesignCanvasStore.getState().ownerSessionId !== request.sessionId) {
+          // 画布属另一会话（或无主但非当前会话）→ 拒绝并解阻 agent（H2-R2 跨会话隔离）。
+          // 防会话 B 的 agent 改/烧钱出图到会话 A 的画布，或背景会话抢当前画布。
+          void controllerDeps().respond({ requestId: request.requestId, verdict: 'reject', feedback: '画布当前不属于该会话，提议被隔离拒绝' });
+          return;
+        }
       }
+      // UX：agent 操作画布即自动展开+聚焦设计画布 tab，用户无需手动切 tab 才看到提议/产物。
+      useAppStore.getState().openWorkbenchTab('design-canvas', { source: 'auto' });
       // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
       const env = useDesignAutonomyStore.getState().envelope;
       if (decideProposalHandling(request, env) === 'auto') {

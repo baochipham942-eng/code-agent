@@ -106,7 +106,7 @@ const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
 // 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
-export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'audit' | `preview:${string}`;
+export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'audit' | 'design-canvas' | `preview:${string}`;
 export type WorkbenchOpenSource = 'user' | 'auto';
 
 export interface OpenWorkbenchTabOptions {

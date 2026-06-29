@@ -118,6 +118,12 @@ export interface CanvasOpProposal {
   ops: CanvasProposalOp[];
   /** 一句话给用户看的「为什么这么改」。 */
   rationale?: string;
+  /**
+   * 发起提议的 agent run 的 sessionId——renderer 属主隔离闸用（H2-R2）：
+   * 单例 renderer 收到提议时校验画布属主==该 sessionId，跨会话则拒绝并解阻 agent，
+   * 防会话 B 的 agent 改/烧钱出图到会话 A 的画布。缺省（向后兼容）时不拦。
+   */
+  sessionId?: string;
 }
 
 /** 用户对一次提议的裁决（renderer → 阻塞工具）。 */

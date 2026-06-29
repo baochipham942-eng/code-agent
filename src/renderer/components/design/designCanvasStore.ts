@@ -41,6 +41,14 @@ export type SelectedDiagram = { type: 'shape' | 'connector'; id: string } | null
 interface DesignCanvasState {
   /** 当前画布所属 run 目录（决定存档落点）；null=尚无生成的临时画布。 */
   runDir: string | null;
+  /**
+   * 画布属主会话 id（跨会话隔离闸的真理源）；null=无属主（fail-closed）。
+   * 全局单例 store 不随 switchSession 重载，故注入闸严格校验属主==当前会话，
+   * 防止把会话 A 的画布误注入会话 B 的 agent 上下文。运行态，不持久化（刷新后回 null）。
+   */
+  ownerSessionId: string | null;
+  /** 标记为设计会话的 session（画布快照注入上下文的闸门真源，仅运行时内存态，不进 DB）。 */
+  designActiveSessions: Set<string>;
   nodes: CanvasNode[];
   /** 图解层连线（节点↔节点，渲染时实时算锚点）。 */
   connectors: CanvasConnector[];
@@ -58,6 +66,21 @@ interface DesignCanvasState {
 
   /** 载入一份存档（切换 run / 刷新恢复）。 */
   loadDoc: (runDir: string | null, doc: DesignCanvasDoc) => void;
+  /**
+   * 入口认领画布属主：属主已是该会话则 no-op（保留现有画布）；否则重置画布为空并改属主
+   * （避免认领后旧内容残留导致下一轮注入泄漏）。
+   */
+  claimCanvasForSession: (sessionId: string) => void;
+  /** 释放画布属主（会话删除/归档时调用）：属主匹配则重置画布为空且属主置 null，否则不动。 */
+  clearCanvasOwner: (sessionId: string) => void;
+  /** 标记某会话为设计激活（幂等 add）。 */
+  markSessionDesignActive: (sessionId: string) => void;
+  /** 清除某会话的设计激活标记（幂等 delete）。 */
+  clearSessionDesignActive: (sessionId: string) => void;
+  /** 查询某会话是否设计激活（null 安全）。 */
+  isSessionDesignActive: (sessionId: string | null | undefined) => boolean;
+  /** 会话删除/归档时一次性释放其设计态（design-active 标记 + 画布属主），避免悬空。 */
+  releaseSessionDesignState: (sessionId: string) => void;
   /** 清空到空画布（保留 runDir）。 */
   resetCanvas: () => void;
   addNode: (node: CanvasNode) => void;
@@ -108,10 +131,21 @@ function snapshotOf(s: { nodes: CanvasNode[]; connectors: CanvasConnector[]; sha
   return { nodes: s.nodes, connectors: s.connectors, shapes: s.shapes };
 }
 
+/**
+ * persist partialize（M1-R2.a）：只持久化 runDir + ownerSessionId；节点/相机从磁盘 canvas.json 恢复。
+ * 持久化属主使刷新后属主随 runDir 一起恢复，同会话回来 claim 命中 no-op 保画布，
+ * 避免 owner=null 走重置分支把刚从盘恢复的画布清空孤儿化。抽成具名纯函数便于单测。
+ */
+export function persistDesignCanvas(s: DesignCanvasState) {
+  return { runDir: s.runDir, ownerSessionId: s.ownerSessionId };
+}
+
 export const useDesignCanvasStore = create<DesignCanvasState>()(
   persist(
     (set, get) => ({
   runDir: null,
+  ownerSessionId: null,
+  designActiveSessions: new Set<string>(),
   nodes: [],
   connectors: [],
   shapes: [],
@@ -123,6 +157,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   editHistory: emptyEditHistory(),
 
   loadDoc: (runDir, doc) =>
+    // 注意：不写 ownerSessionId（保持现值）——loadDoc 是同属主会话内的存档恢复，不该改属主。
     set({
       runDir,
       nodes: doc.nodes,
@@ -133,6 +168,66 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       selectedDiagram: null,
       editHistory: clearHistory(),
     }),
+  claimCanvasForSession: (sessionId) => {
+    const owner = get().ownerSessionId;
+    if (owner === sessionId) return; // ① 已属本会话：保留现有画布（no-op）
+    if (owner === null) {
+      // ② 无主画布（含刷新后从磁盘恢复但 owner 未持久化的边界）→ **认领**现有画布，
+      // 保留 nodes/runDir/connectors/shapes，不重置（M1-R2.b：无主画布归当前点击者，不丢数据）。
+      set({ ownerSessionId: sessionId });
+      return;
+    }
+    // ③ 真·跨会话（owner 是另一个非空会话）：重置画布为空再换属主（复用 loadDoc 的清空字段集）。
+    // 跨会话前的落盘由调用方在 claim 前完成（避免在同步 action 里塞磁盘 I/O，沿用本仓「编辑后落盘」分工）。
+    set({
+      nodes: [],
+      connectors: [],
+      shapes: [],
+      runDir: null,
+      ownerSessionId: sessionId,
+      selectedIds: [],
+      selectedDiagram: null,
+      // L2-R2：清运行态，避免新画布继承上个会话的出图遮罩/错误。
+      generating: false,
+      error: null,
+      editHistory: clearHistory(),
+    });
+  },
+  clearCanvasOwner: (sessionId) => {
+    if (get().ownerSessionId !== sessionId) return; // 非属主：不动
+    set({
+      nodes: [],
+      connectors: [],
+      shapes: [],
+      runDir: null,
+      ownerSessionId: null,
+      selectedIds: [],
+      selectedDiagram: null,
+      editHistory: clearHistory(),
+    });
+  },
+  markSessionDesignActive: (sessionId) => {
+    set((state) => {
+      if (state.designActiveSessions.has(sessionId)) return state;
+      return { designActiveSessions: new Set(state.designActiveSessions).add(sessionId) };
+    });
+  },
+  clearSessionDesignActive: (sessionId) => {
+    set((state) => {
+      if (!state.designActiveSessions.has(sessionId)) return state;
+      const next = new Set(state.designActiveSessions);
+      next.delete(sessionId);
+      return { designActiveSessions: next };
+    });
+  },
+  isSessionDesignActive: (sessionId) => {
+    if (!sessionId) return false;
+    return get().designActiveSessions.has(sessionId);
+  },
+  releaseSessionDesignState: (sessionId) => {
+    get().clearSessionDesignActive(sessionId);
+    get().clearCanvasOwner(sessionId);
+  },
   resetCanvas: () => {
     const empty = emptyCanvasDoc();
     set({
@@ -196,7 +291,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   restoreNode: (id) =>
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
-      if (!target || !target.discarded) return {}; // 不存在或本就没淘汰：no-op
+      if (!target?.discarded) return {}; // 不存在或本就没淘汰：no-op
       // 清 discarded。若同槽已无主版（如整槽淘汰后逐个恢复），把本节点升为主版补回
       // 「槽内恒有一个 chosen」不变量（M1，对称于 discardNode 的自动升主版）；否则留 false。
       const key = groupKey(target);
@@ -361,8 +456,8 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     {
       name: 'code-agent-design-canvas',
       version: 1,
-      // 只持久化 runDir（画布所属 run）；节点/相机从磁盘 canvas.json 恢复，运行态不持久。
-      partialize: (s) => ({ runDir: s.runDir }),
+      // 持久化 runDir（画布所属 run）+ ownerSessionId（属主，M1-R2.a）；节点/相机从磁盘 canvas.json 恢复。
+      partialize: persistDesignCanvas,
     },
   ),
 );

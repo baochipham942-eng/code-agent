@@ -29,13 +29,14 @@ import { Button, IconButton } from '../primitives';
 import { BrandManager } from './BrandManager';
 import { FullScreenPage } from '../features/shared/FullScreenPage';
 import { WorkspaceModeSwitch } from './WorkspaceModeSwitch';
+import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignGeneration } from './useDesignGeneration';
 import { useDesignCanvasGeneration } from './useDesignCanvasGeneration';
 import { DesignImportButtons } from './DesignImportButtons';
 import { useDesignCanvasStore } from './designCanvasStore';
-import { loadCanvasDoc } from './designCanvasPersistence';
+import { useRestoreCanvasFromDisk } from './useRestoreCanvasFromDisk';
 import { DesignCanvas } from './DesignCanvas';
 import { DesignSlidesPanel } from './DesignSlidesPanel';
 import { SlideOutlineEditor } from './SlideOutlineEditor';
@@ -1012,18 +1013,8 @@ export const DesignWorkspace: React.FC = () => {
     }
   }, []);
 
-  // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载。
-  useEffect(() => {
-    const cs = useDesignCanvasStore.getState();
-    if (!cs.runDir || cs.nodes.length > 0) return;
-    const runDir = cs.runDir;
-    void loadCanvasDoc(runDir).then((doc) => {
-      const cur = useDesignCanvasStore.getState();
-      if (cur.runDir === runDir && cur.nodes.length === 0) {
-        cur.loadDoc(runDir, doc);
-      }
-    });
-  }, []);
+  // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载（共享 hook，与 DesignCanvasTab 同源）。
+  useRestoreCanvasFromDisk();
 
   return (
     <FullScreenPage testId="design-workspace">
@@ -1042,6 +1033,14 @@ export const DesignWorkspace: React.FC = () => {
             {t.design.brand.open}
           </Button>
           <WorkspaceModeSwitch />
+          <IconButton
+            variant="ghost"
+            size="sm"
+            icon={<X className="h-4 w-4" />}
+            aria-label={t.design.closeForm}
+            title={t.design.closeForm}
+            onClick={() => useWorkspaceModeStore.getState().setDesignFormOpen(false)}
+          />
         </div>
       </div>
       <div className="flex min-h-0 flex-1">

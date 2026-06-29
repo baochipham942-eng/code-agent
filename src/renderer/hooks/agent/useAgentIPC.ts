@@ -26,11 +26,11 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
-import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
 import { buildCanvasSnapshot } from '../../components/design/buildCanvasSnapshot';
 import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/design/designCanvasTypes';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
@@ -74,6 +74,23 @@ function formatDesignAcceptanceContractReminder(contract: DesignAcceptanceContra
   ].join('\n');
 }
 
+/**
+ * R1（设计 Surface 会话化）冷启动引导：设计会话激活时（即使画布空），给 agent prepend 一段
+ * <system-reminder>，明确告诉它用 ProposeCanvasOps / RequestDesignAutonomy 操作画布，
+ * 别用 shell / python / 写文件等方式绕开画布。修补 dogfood 暴露的缺口——空画布不注入
+ * canvasSnapshot，系统提示零引导，agent 不知道该走画布工具。
+ */
+export function formatDesignCanvasSessionReminder(canvasEmpty: boolean): string {
+  const canvasState = canvasEmpty ? '为空' : '已有元素';
+  return [
+    '<system-reminder kind="design-canvas-session">',
+    `你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的产物面（画布当前${canvasState}）。`,
+    '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 ProposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
+    '严禁用 shell / python / 写文件等方式生成图片或绕开画布——画布是本会话唯一的视觉产物面。',
+    '</system-reminder>',
+  ].join('\n');
+}
+
 function applyDesignAcceptanceContractToContent(
   content: string,
   contract: DesignAcceptanceContract | undefined,
@@ -104,6 +121,20 @@ function applyDesignCodeHandoffToContent(
   return reminder ? `${reminder}\n\n${content}` : content;
 }
 
+/**
+ * 设计会话冷启动引导的判定 + 应用。与 withCanvasSnapshotContext 同口径双闸
+ * （isSessionDesignActive + 画布属主==当前会话），但**不要求画布非空**——空画布才是真缺口。
+ * 命中则把引导 prepend 到 content 前；否则原样返回。
+ */
+export function applyDesignCanvasSessionToContent(content: string, sessionId: string | null | undefined): string {
+  if (!sessionId) return content;
+  if (!useDesignCanvasStore.getState().isSessionDesignActive(sessionId)) return content;
+  const cs = useDesignCanvasStore.getState();
+  if (cs.ownerSessionId !== sessionId) return content; // 画布属主非当前会话 → 不注入（防跨会话泄漏）
+  const reminder = formatDesignCanvasSessionReminder(cs.nodes.length === 0);
+  return `${reminder}\n\n${content}`;
+}
+
 function enrichDesignBrief(brief: DesignBrief | undefined): DesignBrief | undefined {
   if (!brief) return undefined;
   return normalizeDesignBrief({
@@ -124,28 +155,38 @@ function withDesignBriefContext(
 }
 
 // ADR-026 D1-B：design 模式发轮时附带画布快照，供 agent ProposeCanvasOps 引用真实节点 id。
-// 仅 design 模式且画布非空时附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
-function withCanvasSnapshotContext(
+// R1（设计 Surface 会话化）：双闸守护，避免跨会话泄漏画布——
+//   ① per-session 设计激活闸：当前 session 必须 isSessionDesignActive（不污染普通编码会话）；
+//   ② 画布属主闸：全局单例画布 store 不随 switchSession 重载，故还须校验画布属主==当前会话，
+//      否则会把上一个设计会话的画布误注入当前会话的 agent 上下文（fail-closed）。
+// 两闸都过且画布非空时才附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
+export function withCanvasSnapshotContext(
   context: ConversationEnvelopeContext | undefined,
 ): ConversationEnvelopeContext | undefined {
-  if (useWorkspaceModeStore.getState().workspaceMode !== 'design') return context;
+  const sessionId = useSessionStore.getState().currentSessionId;
+  if (!useDesignCanvasStore.getState().isSessionDesignActive(sessionId)) return context;
   const cs = useDesignCanvasStore.getState();
+  if (cs.ownerSessionId !== sessionId) return context; // 画布属主非当前会话 → 不注入（防跨会话泄漏）
   if (cs.nodes.length === 0) return context;
   const canvasSnapshot = buildCanvasSnapshot({ nodes: cs.nodes, connectors: cs.connectors, shapes: cs.shapes });
   if (canvasSnapshot.nodes.length === 0) return context;
   return { ...(context || {}), canvasSnapshot };
 }
 
-// 2b 跨进程硬控闸：设计模式（workspaceMode==='design'）激活时，在 envelope 的 executionIntent
-// 上打 designCanvasActive=true，main 侧据此：① inference 把画布工具（ProposeCanvasOps/Video/Slides）
-// 提进工具表 + 停用通用媒介工具；② shell 工具硬拦"用代码画图"重定向到 ProposeCanvasOps；
-// ③ 按轮注入设计画布会话引导。口径与 withCanvasSnapshotContext 一致（main 的设计 surface 是全局
-// workspaceMode，无 per-session 画布属主），非激活时显式置 false（普通会话零影响）。
-// **合并语义**：保留 executionIntent 上已有字段（browserSessionMode 等），只补 designCanvasActive。
+/**
+ * R1（设计 Surface 会话化）跨进程硬控闸：设计会话激活时，在 envelope 的
+ * executionIntent 上打 designCanvasActive=true，main 侧据此：① inference 把画布工具
+ * （ProposeCanvasOps/Video/Slides）提进工具表 + 停用通用媒介工具；② shell 工具硬拦
+ * "用代码画图"（Python/Pillow/imagemagick 等）并重定向到 ProposeCanvasOps；③ 按轮注入
+ * 设计画布会话引导。闸口径与画布注入/affordance 完全一致（isSessionDesignActive + 画布属主==
+ * 当前会话），严守"只在设计会话生效，绝不伤普通会话"——非激活时显式置 false。
+ * **合并语义**：保留 executionIntent 上已有字段（browserSessionMode 等），只补 designCanvasActive。
+ */
 export function withDesignCanvasActiveIntent(
   context: ConversationEnvelopeContext | undefined,
+  sessionId: string | null | undefined,
 ): ConversationEnvelopeContext | undefined {
-  const active = useWorkspaceModeStore.getState().workspaceMode === 'design';
+  const active = isDesignCanvasActiveForSession(sessionId);
   return {
     ...(context || {}),
     executionIntent: {
@@ -239,6 +280,12 @@ export function withHandoffContext(
     ...(context || {}),
     designCodeHandoff,
   };
+}
+
+function isDesignCanvasActiveForSession(sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false;
+  if (!useDesignCanvasStore.getState().isSessionDesignActive(sessionId)) return false;
+  return useDesignCanvasStore.getState().ownerSessionId === sessionId;
 }
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
@@ -544,6 +591,7 @@ export function useAgentIPC({
             withDesignBriefContext(context, sessionDesignBrief),
           ),
         ),
+        effectiveSessionId,
       );
 
       if (directRouting.kind === 'error') {
@@ -579,12 +627,15 @@ export function useAgentIPC({
         };
 
         try {
-          const directMessage = applyDesignCodeHandoffToContent(
-            applyDesignAcceptanceContractToContent(
-              applyDesignBriefToContent(content.trim(), sessionDesignBrief),
-              contextWithDesignContext?.designAcceptanceContract,
+          const directMessage = applyDesignCanvasSessionToContent(
+            applyDesignCodeHandoffToContent(
+              applyDesignAcceptanceContractToContent(
+                applyDesignBriefToContent(content.trim(), sessionDesignBrief),
+                contextWithDesignContext?.designAcceptanceContract,
+              ),
+              contextWithDesignContext?.designCodeHandoff,
             ),
-            contextWithDesignContext?.designCodeHandoff,
+            effectiveSessionId,
           );
           const results = await Promise.all(
             directRouting.targets.map((target) =>
@@ -687,6 +738,8 @@ export function useAgentIPC({
           sessionId: effectiveSessionId!,
           envelope: {
             ...envelope,
+            // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
+            // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
             content: envelope.content,
             attachments,
             context: queuedContext,
@@ -734,6 +787,9 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
+          // 设计会话冷启动引导：普通/auto 路径的 content 直接发给 agent（design brief 走 context，
+          // 但 canvas-session 引导是 renderer 运行时 prepend，须进真正发出的 content）。
+          content: applyDesignCanvasSessionToContent(envelope.content, effectiveSessionId),
           clientMessageId: userMessage.id,
           context: contextWithDesignContext,
           sessionId: effectiveSessionId,

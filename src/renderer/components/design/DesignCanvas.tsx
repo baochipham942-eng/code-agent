@@ -148,18 +148,6 @@ export const DesignCanvas: React.FC = () => {
   // 淘汰(软删除)的节点落盘保留但不在画布上呈现/参与对比。
   const visibleNodes = useMemo(() => nodes.filter((n) => !n.discarded), [nodes]);
 
-  // fit-to-view：可见节点数增加（空→非空 / 出图回灌）时自动把内容居中缩放到适配视口，留 padding。
-  // 仅在「节点数增加」时 fit 一次——不在每次 setCamera 跑，避免打断用户手动平移/缩放。
-  const prevNodeCountRef = useRef(0);
-  useEffect(() => {
-    const count = visibleNodes.length;
-    const grew = count > prevNodeCountRef.current;
-    prevNodeCountRef.current = count;
-    if (!grew || size.w <= 0 || size.h <= 0) return;
-    const fit = computeFitCamera(visibleNodes, size.w, size.h);
-    if (fit) setCamera(fit);
-  }, [visibleNodes, size.w, size.h, setCamera]);
-
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
     selectedIds.length === 1 ? visibleNodes.find((n) => n.id === selectedIds[0]) ?? null : null;
@@ -231,6 +219,19 @@ export const DesignCanvas: React.FC = () => {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // fit-to-view：节点新增（含空→非空、出图回灌）时自动把内容居中并缩放到适配视口，留 padding。
+  // 仅在「可见节点数增加」时 fit 一次——不在每次 setCamera 时跑，避免打断用户手动平移/缩放。
+  const prevNodeCountRef = useRef(0);
+  useEffect(() => {
+    const count = visibleNodes.length;
+    const grew = count > prevNodeCountRef.current;
+    prevNodeCountRef.current = count;
+    if (!grew || size.w <= 0 || size.h <= 0) return;
+    const fit = computeFitCamera(visibleNodes, size.w, size.h);
+    if (fit) setCamera(fit);
+    // 只想在节点集 / 视口变化时评估，setCamera 稳定
+  }, [visibleNodes, size.w, size.h]);
 
   // 选中变化时复位标注（换图重圈）。
   useEffect(() => {
@@ -361,7 +362,6 @@ export const DesignCanvas: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // onDeleteSelectedDiagram 是稳定闭包（无依赖捕获），diagramText 变化时重挂以读最新态。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diagramText]);
 
   const onDrop = (e: React.DragEvent): void => {

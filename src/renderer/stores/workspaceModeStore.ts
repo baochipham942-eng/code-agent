@@ -15,6 +15,12 @@ export type WorkspaceMode = 'code' | 'design';
 interface WorkspaceModeState {
   workspaceMode: WorkspaceMode;
   setWorkspaceMode: (mode: WorkspaceMode) => void;
+  /**
+   * 旧全屏设计表单（网页/演示稿/视频/图片直出）是否打开。设计模式会话化收口后，
+   * 切到设计模式不再自动弹表单——表单只在此旗标为 true 时按需显示（保留四类媒介入口）。
+   */
+  designFormOpen: boolean;
+  setDesignFormOpen: (open: boolean) => void;
 }
 
 export const useWorkspaceModeStore = create<WorkspaceModeState>()(
@@ -22,8 +28,15 @@ export const useWorkspaceModeStore = create<WorkspaceModeState>()(
     (set) => ({
       workspaceMode: 'code',
       setWorkspaceMode: (workspaceMode) => set({ workspaceMode }),
+      designFormOpen: false,
+      setDesignFormOpen: (designFormOpen) => set({ designFormOpen }),
     }),
-    { name: 'code-agent-workspace-mode', version: 1 },
+    {
+      name: 'code-agent-workspace-mode',
+      version: 1,
+      // designFormOpen 是瞬时 UI 态，不持久化（刷新后不该残留覆盖层）。
+      partialize: (s) => ({ workspaceMode: s.workspaceMode }),
+    },
   ),
 );
 

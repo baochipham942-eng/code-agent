@@ -275,6 +275,9 @@ export function nextNodePlacement(
 /**
  * 计算把全部节点 bbox 居中并缩放到适配视口的相机（留 padding）。
  * 用于「节点新增时自动 fit-to-view」，避免出图回灌后内容跑出视口看不见。
+ * 屏幕变换约定：screen = world * scale + camera.{x,y}（与 Stage x/y/scale 一致）。
+ * - scale = min(viewW/bboxW, viewH/bboxH) * padding（留边，默认 0.9）
+ * - 把 bbox 中心映射到视口中心：camera.{x,y} = view/2 - bboxCenter * scale
  * 退化 bbox（单点/零尺寸）只居中不缩放；空集 / 无效视口返回 null。
  */
 export function computeFitCamera(
@@ -296,6 +299,7 @@ export function computeFitCamera(
   }
   const bboxW = maxX - minX;
   const bboxH = maxY - minY;
+  // 退化 bbox（单点/零尺寸）：不缩放，仅居中。
   const scale = bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1;
   const cx = minX + bboxW / 2;
   const cy = minY + bboxH / 2;

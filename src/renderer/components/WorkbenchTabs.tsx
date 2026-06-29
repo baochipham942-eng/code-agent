@@ -5,12 +5,16 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck, Palette, LayoutTemplate } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
+import { useWorkspaceModeStore } from '../stores/workspaceModeStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
+import { useDesignCanvasStore } from './design/designCanvasStore';
+import { saveCanvasDoc } from './design/designCanvasPersistence';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -34,6 +38,7 @@ export const WorkbenchTabs: React.FC = () => {
   const setActiveWorkbenchTab = useAppStore((s) => s.setActiveWorkbenchTab);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { isStandard } = useDisclosure();
   const workspacePreviewItems = useWorkspacePreviewModel();
   const savedPresetCount = useWorkbenchPresetStore((s) => s.presets.length);
@@ -96,6 +101,9 @@ export const WorkbenchTabs: React.FC = () => {
     if (id === 'audit') {
       return { id, label: 'Audit', title: 'Replay / 会话质量审计', isDirty: false };
     }
+    if (id === 'design-canvas') {
+      return { id, label: t.design.canvasTabLabel, title: t.design.canvasTabLabel, isDirty: false };
+    }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
     const isDirty = previewTab ? previewTab.content !== previewTab.savedContent : false;
@@ -147,6 +155,49 @@ export const WorkbenchTabs: React.FC = () => {
       })}
 
       </div>{/* end scroll inner */}
+
+      {/* 「设计画布」入口 — 标记当前会话为设计会话 + 打开 design-canvas tab，让用户边对话边看画布 */}
+      <button
+        type="button"
+        data-testid="open-design-canvas"
+        disabled={!currentSessionId}
+        onClick={() => {
+          if (!currentSessionId) return;
+          useDesignCanvasStore.getState().markSessionDesignActive(currentSessionId);
+          // M1-R2.c：真·跨会话认领前先把当前画布兜底落盘（claim 会清空旧画布 + 置 runDir=null，
+          // 不落盘则未保存的手动编辑静默丢失）。仅真·跨会话（owner 非空且非当前）才需，沿用本仓
+          // 「编辑后落盘」的 fire-and-forget 写法；no-op / 无主认领分支不重置不丢数据，无需落盘。
+          const cs = useDesignCanvasStore.getState();
+          if (cs.ownerSessionId && cs.ownerSessionId !== currentSessionId && cs.runDir) {
+            void saveCanvasDoc(cs.runDir, cs.toDoc());
+          }
+          // 认领画布属主：当前会话非属主则重置画布（防上个设计会话内容残留泄漏）。
+          useDesignCanvasStore.getState().claimCanvasForSession(currentSessionId);
+          openWorkbenchTab('design-canvas');
+        }}
+        className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
+        title={t.design.openCanvasHint}
+        aria-label={t.design.openCanvas}
+      >
+        <Palette className="w-3 h-3 text-fuchsia-400/80" />
+      </button>
+
+      {/* 「网页/演示稿/视频」入口 — 按需打开旧全屏表单（这四类媒介的唯一生成入口，
+          会话化收口后从「切到设计自动弹」降级为这里按需开）。仅有当前会话时可点。 */}
+      <button
+        type="button"
+        data-testid="open-design-legacy-form"
+        disabled={!currentSessionId}
+        onClick={() => {
+          if (!currentSessionId) return;
+          useWorkspaceModeStore.getState().setDesignFormOpen(true);
+        }}
+        className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
+        title={t.design.openLegacyFormHint}
+        aria-label={t.design.openLegacyForm}
+      >
+        <LayoutTemplate className="w-3 h-3 text-sky-400/80" />
+      </button>
 
       {/* "+" 按钮 — 关掉的 tab 从这里重新开。在 scroll 容器外，popover 才不被 overflow 切 */}
       {canAddAny && (

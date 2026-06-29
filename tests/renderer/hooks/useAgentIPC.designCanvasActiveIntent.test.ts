@@ -1,48 +1,79 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { withDesignCanvasActiveIntent } from '../../../src/renderer/hooks/agent/useAgentIPC';
-import { useWorkspaceModeStore } from '../../../src/renderer/stores/workspaceModeStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import type { ConversationEnvelopeContext } from '../../../src/shared/contract/conversationEnvelope';
 
-// 2b 跨进程硬控：设计模式（workspaceMode==='design'）激活时，在 envelope.executionIntent 上打
-// designCanvasActive=true，main 侧据此把画布工具提进工具表 + shell 硬拦代码画图 + 注入会话引导。
-// 适配 main：main 的设计 surface 是全局 workspaceMode（无 per-session 画布属主），口径与
-// withCanvasSnapshotContext 一致。
+// R1（设计 Surface 会话化）跨进程硬控：设计会话激活 + 画布属主==当前会话时，
+// 在 envelope.executionIntent 上打 designCanvasActive=true，main 侧 shell 据此硬拦代码画图。
+// 闸口径与 withCanvasSnapshotContext 完全一致（per-session 设计激活 + 画布属主）。
 
-describe('withDesignCanvasActiveIntent（设计模式 → designCanvasActive）', () => {
+function setDesignActive(sessionId: string, active: boolean): void {
+  useSessionStore.setState({ currentSessionId: sessionId });
+  useDesignCanvasStore.setState({
+    designActiveSessions: active ? new Set([sessionId]) : new Set<string>(),
+  });
+}
+
+describe('withDesignCanvasActiveIntent', () => {
   beforeEach(() => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
-  });
-  afterEach(() => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
+    useDesignCanvasStore.setState({ nodes: [], connectors: [], shapes: [], ownerSessionId: null, designActiveSessions: new Set<string>() });
+    useSessionStore.setState({ currentSessionId: null });
   });
 
-  it('workspaceMode==="design" → designCanvasActive=true，且保留原有 context 字段', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'design' });
-    const result = withDesignCanvasActiveIntent({ workingDirectory: '/tmp' });
+  afterEach(() => {
+    useDesignCanvasStore.setState({ nodes: [], connectors: [], shapes: [], ownerSessionId: null, designActiveSessions: new Set<string>() });
+    useSessionStore.setState({ currentSessionId: null });
+  });
+
+  it('sets designCanvasActive=true when session is design-active and owns the canvas', () => {
+    setDesignActive('s1', true);
+    useDesignCanvasStore.setState({ ownerSessionId: 's1' });
+
+    const result = withDesignCanvasActiveIntent({ workingDirectory: '/tmp' }, 's1');
+
     expect(result?.executionIntent?.designCanvasActive).toBe(true);
+    // 原有 context 字段保留
     expect(result?.workingDirectory).toBe('/tmp');
   });
 
-  it('workspaceMode==="code"（普通会话）→ designCanvasActive=false', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
-    const result = withDesignCanvasActiveIntent({});
+  it('sets designCanvasActive=false when the session is not design-active', () => {
+    setDesignActive('s1', false);
+    useDesignCanvasStore.setState({ ownerSessionId: 's1' });
+
+    const result = withDesignCanvasActiveIntent({}, 's1');
+
     expect(result?.executionIntent?.designCanvasActive).toBe(false);
   });
 
-  it('合并进已有 executionIntent，不覆盖其它字段（browserSessionMode 等）', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'design' });
+  it('sets designCanvasActive=false when canvas owner is another session (cross-session leak guard)', () => {
+    useSessionStore.setState({ currentSessionId: 's_B' });
+    useDesignCanvasStore.setState({ ownerSessionId: 's_A', designActiveSessions: new Set(['s_A', 's_B']) });
+
+    const result = withDesignCanvasActiveIntent({}, 's_B');
+
+    expect(result?.executionIntent?.designCanvasActive).toBe(false);
+  });
+
+  it('sets designCanvasActive=false when sessionId is null/undefined', () => {
+    setDesignActive('s1', true);
+    useDesignCanvasStore.setState({ ownerSessionId: 's1' });
+
+    expect(withDesignCanvasActiveIntent({}, null)?.executionIntent?.designCanvasActive).toBe(false);
+    expect(withDesignCanvasActiveIntent({}, undefined)?.executionIntent?.designCanvasActive).toBe(false);
+  });
+
+  it('merges into existing executionIntent without clobbering other fields', () => {
+    setDesignActive('s1', true);
+    useDesignCanvasStore.setState({ ownerSessionId: 's1' });
+
     const context: ConversationEnvelopeContext = {
       executionIntent: { browserSessionMode: 'managed', preferBrowserSession: true },
     };
-    const result = withDesignCanvasActiveIntent(context);
+    const result = withDesignCanvasActiveIntent(context, 's1');
+
     expect(result?.executionIntent?.designCanvasActive).toBe(true);
     expect(result?.executionIntent?.browserSessionMode).toBe('managed');
     expect(result?.executionIntent?.preferBrowserSession).toBe(true);
-  });
-
-  it('context 为 undefined → 返回仅含 executionIntent 的对象', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'design' });
-    const result = withDesignCanvasActiveIntent(undefined);
-    expect(result?.executionIntent?.designCanvasActive).toBe(true);
   });
 });

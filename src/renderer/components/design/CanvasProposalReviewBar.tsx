@@ -1,7 +1,7 @@
 // ADR-026 D2-A/三刀：画布提议审批条（DOM 浮层）。展示 agent 提议 + rationale，逐 op 勾选取舍，
 // 应用 / 拒绝（可带意见）。ghost 虚影（蓝=改/红=淘汰）由 CanvasProposalGhostLayer 画在画布上。
 import React, { useEffect, useMemo, useState } from 'react';
-import { Sparkles, Check, X, Trash2, Coins } from 'lucide-react';
+import { Sparkles, Check, X, Trash2, Coins, Loader2 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import type { CanvasOpProposal, CanvasProposalOp, CanvasProposalOpSource } from '@shared/contract';
 import { isGenerateOp } from '@shared/contract';
@@ -234,8 +234,8 @@ export const CanvasProposalReviewBar: React.FC<{
           title={selected.size === 0 ? s.proposalNothingSelected : undefined}
           className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
         >
-          <Check className="h-3.5 w-3.5" />
-          {s.proposalApply}
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          {busy ? s.proposalApplying : s.proposalApply}
         </button>
       </div>
     </div>

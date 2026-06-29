@@ -11,25 +11,17 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, CheckCircle2, FileCheck2, GitBranch, Info, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, FileCheck2, Info, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { ConversationRoutingMode } from '@shared/contract/conversationEnvelope';
 import type {
   ContextCompressionChannelState,
   ContextCompressionConfigPatch,
 } from '@shared/contract/contextHealth';
 import { PROVIDER_MODELS } from '@shared/constants/models';
 import { useAppStore } from '../../../../stores/appStore';
-import { useComposerStore } from '../../../../stores/composerStore';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
-
-const ROUTING_OPTIONS: Array<{ value: ConversationRoutingMode; label: string; hint: string }> = [
-  { value: 'auto', label: '自动', hint: '路由器按任务复杂度自动选模型（默认）' },
-  { value: 'direct', label: '直连', hint: '直接用当前选中的模型，不走路由' },
-  { value: 'parallel', label: '并行', hint: '并行调多个模型，交叉验证产物' },
-];
 
 const DEFAULT_COMPRESSION_STATE: ContextCompressionChannelState = {
   config: {
@@ -76,8 +68,6 @@ function featureLabel(value: 'enabled' | 'disabled' | 'available'): string {
 }
 
 export const ConversationSettings: React.FC = () => {
-  const routingMode = useComposerStore((s) => s.routingMode);
-  const setRoutingMode = useComposerStore((s) => s.setRoutingMode);
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const [compressionState, setCompressionState] = useState<ContextCompressionChannelState>(DEFAULT_COMPRESSION_STATE);
   const [compressionLoading, setCompressionLoading] = useState(true);
@@ -136,36 +126,9 @@ export const ConversationSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="对话"
-      description="配置会话默认的模型路由和长对话整理方式；摘要模型在「模型」tab 真正配置。"
+      title="上下文压缩"
+      description="配置长对话接近上限时的自动整理方式；摘要模型在「通用模型」tab 真正配置。模型路由（自动/直连/并行）已移到对话输入框的能力菜单，按需即时切换。"
     >
-      <SettingsSection title="Routing" description="模型路由策略，决定每条消息怎么被分发给后端模型。">
-        <div className="flex items-center gap-2 mb-3">
-          <GitBranch className="w-4 h-4 text-zinc-400" />
-          <span className="text-xs text-zinc-500">配一次后默认沿用</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {ROUTING_OPTIONS.map((opt) => {
-            const selected = routingMode === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setRoutingMode(opt.value)}
-                className={`flex flex-col items-start gap-1 px-3 py-2 rounded-lg border transition-colors text-left ${
-                  selected
-                    ? 'border-zinc-500 bg-zinc-800/70 text-zinc-100'
-                    : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.16] hover:bg-white/[0.04]'
-                }`}
-              >
-                <span className="text-sm font-medium">{opt.label}</span>
-                <span className="text-[11px] text-zinc-500 leading-relaxed">{opt.hint}</span>
-              </button>
-            );
-          })}
-        </div>
-      </SettingsSection>
-
       <SettingsSection title="上下文整理" description="长对话接近上限时，自动把旧内容整理成可追溯摘要，保留最近对话继续工作。">
         {compressionLoading ? (
           <div className="text-xs text-zinc-500">加载中...</div>
@@ -207,7 +170,7 @@ export const ConversationSettings: React.FC = () => {
                     {selectedModelLabel}
                   </div>
                   <div className="mt-1 text-[11px] text-zinc-500">
-                    实际可用模型与 API Key 配置在「模型」tab，本页只显示当前生效值。
+                    实际可用模型与 API Key 配置在「通用模型」tab，本页只显示当前生效值。
                   </div>
                 </div>
                 <button
@@ -215,7 +178,7 @@ export const ConversationSettings: React.FC = () => {
                   onClick={() => openSettingsTab('model')}
                   className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1 text-[11px] text-zinc-300 hover:border-white/[0.16] hover:text-zinc-100"
                 >
-                  在模型设置中管理
+                  在通用模型设置中管理
                   <ArrowUpRight className="h-3 w-3" />
                 </button>
               </div>
@@ -326,8 +289,8 @@ export const ConversationSettings: React.FC = () => {
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/40 border border-white/[0.06]">
         <Info className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 mt-0.5" />
         <p className="text-[11px] text-zinc-500 leading-relaxed">
-          路由策略和上下文整理是会话级配置，多数人配一次后无需再调。Browser 模式已迁移到「工作区」tab，
-          摘要模型的真正配置在「模型」tab。
+          上下文整理是会话级配置，多数人配一次后无需再调。摘要模型的真正配置在「通用模型」tab，
+          模型路由在对话输入框的能力菜单里随时切换。
         </p>
       </div>
     </SettingsPage>

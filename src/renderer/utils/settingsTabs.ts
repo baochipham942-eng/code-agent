@@ -17,7 +17,6 @@ export const SETTINGS_TAB_IDS = [
   'keybindings',
   'model',
   'visualModels',
-  'imageVideo',
   'agentEngine',
   'appearance',
   'soul',
@@ -70,8 +69,8 @@ export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
   'basics',
   'connections',
   'workspace',
-  'management',
   'memory',
+  'management',
   'system',
 ];
 
@@ -83,7 +82,6 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   keybindings: 'basics',
   model: 'models',
   visualModels: 'models',
-  imageVideo: 'models',
   agentEngine: 'models',
   appearance: 'basics',
   soul: 'basics',

@@ -116,10 +116,11 @@ describe('AbilityMenu browser readiness', () => {
     expect(html).toContain('text-amber-300');
   });
 
-  it('keeps ConversationSettings pointed at the Workspace browser settings', () => {
+  it('keeps ConversationSettings as the context-compression page without browser or routing config', () => {
     const html = renderToStaticMarkup(React.createElement(ConversationSettings));
 
-    expect(html).toContain('Browser 模式已迁移到「工作区」tab');
+    expect(html).toContain('上下文压缩');
+    expect(html).toContain('能力菜单');
     expect(html).not.toContain('独立 Playwright Chromium');
     expect(html).not.toContain('接管系统 Chrome');
   });

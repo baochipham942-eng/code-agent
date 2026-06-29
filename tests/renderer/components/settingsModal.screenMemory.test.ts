@@ -22,7 +22,8 @@ const t = {
   settings: {
     tabs: {
       general: '通用',
-      model: '模型',
+      model: '通用模型',
+      visualModels: '多模态模型',
       appearance: '外观',
       data: '数据',
       update: '更新',
@@ -76,33 +77,32 @@ describe('SettingsModal screen memory tab visibility', () => {
       '基础偏好',
       '能力与连接',
       '工作区与自动化',
-      '用户管理',
       '记忆与隐私',
+      '用户管理',
       '系统',
     ]);
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
-      'search',
-      'voiceInput',
       'model',
       'visualModels',
-      'imageVideo',
+      'voiceInput',
+      'search',
       'agentEngine',
     ]);
-    expect(groups[0].tabs[0].label).toBe('搜索源');
+    expect(groups[0].tabs[0].label).toBe('通用模型');
     expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
+      'soul',
+      'appearance',
       'general',
       'conversation',
       'keybindings',
-      'appearance',
-      'soul',
     ]);
-    expect(groups[1].tabs[0].label).toBe('权限与安全');
-    expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[1].tabs[0].label).toBe('人格');
+    expect(groups[5].tabs.map((tab) => tab.id)).toEqual([
       'users',
       'invites',
       'controlPlane',
     ]);
-    expect(groups[4].tabs.map((tab) => tab.label)).toEqual([
+    expect(groups[5].tabs.map((tab) => tab.label)).toEqual([
       '用户管理',
       '邀请码管理',
       '控制平面',

@@ -10,8 +10,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Check } from 'lucide-react';
+import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { REGION_LOCK } from '@shared/constants';
+import { invokeDomain } from '../../../../services/ipcService';
+import { toast } from '../../../../hooks/useToast';
 import { SettingsPage } from '../SettingsLayout';
 import {
   CustomImageModelManagerView,
@@ -49,34 +52,61 @@ async function invokeList(action: 'listVisualImageModels' | 'listVisualVideoMode
   }
 }
 
-// 内置模型只读列表：名称 + 已配置/未配置徽标（key 状态来自 listVisual*Models 的 available）。
+// 内置模型列表 = 默认模型选择器：单选选默认 + 名称 + 已配置/未配置徽标
+// （key 状态来自 listVisual*Models 的 available；默认值存 AppSettings.design）。
 const BuiltinModelList: React.FC<{
   title: string;
+  hint: string;
   rows: BuiltinRow[];
   availableBadge: string;
   unconfiguredBadge: string;
-}> = ({ title, rows, availableBadge, unconfiguredBadge }) => (
+  defaultBadge: string;
+  selectedId: string;
+  groupName: string;
+  onSelect: (id: string) => void;
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, selectedId, groupName, onSelect }) => (
   <div className="flex flex-col gap-2">
-    <span className="text-xs font-medium text-zinc-300">{title}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-medium text-zinc-300">{title}</span>
+      <span className="text-[11px] text-zinc-500">{hint}</span>
+    </div>
     <ul className="flex flex-col gap-1.5">
-      {rows.map((m) => (
-        <li
-          key={m.id}
-          className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2"
-        >
-          <span className="truncate text-sm text-zinc-200">{m.label}</span>
-          {m.available ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-              <Check className="h-3 w-3" />
-              {availableBadge}
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-              {unconfiguredBadge}
-            </span>
-          )}
-        </li>
-      ))}
+      {rows.map((m) => {
+        const isSelected = selectedId === m.id;
+        return (
+          <li key={m.id}>
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
+                isSelected ? 'border-sky-500/40 bg-sky-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'
+              }`}
+            >
+              <input
+                type="radio"
+                name={groupName}
+                checked={isSelected}
+                onChange={() => onSelect(m.id)}
+                className="accent-sky-500"
+              />
+              <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{m.label}</span>
+              {isSelected && (
+                <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                  {defaultBadge}
+                </span>
+              )}
+              {m.available ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                  <Check className="h-3 w-3" />
+                  {availableBadge}
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                  {unconfiguredBadge}
+                </span>
+              )}
+            </label>
+          </li>
+        );
+      })}
     </ul>
   </div>
 );
@@ -225,6 +255,8 @@ export const VisualModelsSettings: React.FC = () => {
 
   const [builtinImage, setBuiltinImage] = useState<BuiltinRow[]>([]);
   const [builtinVideo, setBuiltinVideo] = useState<BuiltinRow[]>([]);
+  const [defaultImageModelId, setDefaultImageModelId] = useState<string>('');
+  const [defaultVideoModelId, setDefaultVideoModelId] = useState<string>('');
 
   const refreshBuiltins = useCallback(async () => {
     // 生图内置 = listVisualImageModels 里 provider !== 'custom' 的（自定义的归下方管理器）。
@@ -234,6 +266,40 @@ export const VisualModelsSettings: React.FC = () => {
   }, []);
   useEffect(() => { void refreshBuiltins(); }, [refreshBuiltins]);
 
+  // 默认生成模型（合并自原「生成默认值」tab）：存 AppSettings.design，选中即保存。
+  useEffect(() => {
+    let cancelled = false;
+    invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
+      .then((settings) => {
+        if (cancelled) return;
+        setDefaultImageModelId(settings?.design?.defaultImageModelId ?? '');
+        setDefaultVideoModelId(settings?.design?.defaultVideoModelId ?? '');
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('加载生成默认值失败');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const saveDefaults = useCallback(async (nextImage: string, nextVideo: string) => {
+    const prevImage = defaultImageModelId;
+    const prevVideo = defaultVideoModelId;
+    setDefaultImageModelId(nextImage); // 乐观更新
+    setDefaultVideoModelId(nextVideo);
+    try {
+      const design: NonNullable<AppSettings['design']> = {
+        defaultImageModelId: nextImage || undefined,
+        defaultVideoModelId: nextVideo || undefined,
+      };
+      await invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { settings: { design } });
+      toast.success(s.defaultSaved);
+    } catch (error) {
+      setDefaultImageModelId(prevImage);
+      setDefaultVideoModelId(prevVideo);
+      toast.error(`${cm.saveFailed}: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }, [defaultImageModelId, defaultVideoModelId, s.defaultSaved, cm.saveFailed]);
+
   return (
     <SettingsPage title={s.title} description={s.subtitle}>
       {/* ── 生图模型 ── */}
@@ -241,9 +307,14 @@ export const VisualModelsSettings: React.FC = () => {
         <h4 className="text-sm font-semibold text-zinc-100">{s.imageSection}</h4>
         <BuiltinModelList
           title={s.builtinTitle}
+          hint={s.defaultHint}
           rows={builtinImage}
           availableBadge={cm.availableBadge}
           unconfiguredBadge={cm.unconfiguredBadge}
+          defaultBadge={s.defaultBadge}
+          selectedId={defaultImageModelId}
+          groupName="design-image-model"
+          onSelect={(id) => saveDefaults(id, defaultVideoModelId)}
         />
         <CustomEndpointManager
           strings={cm}
@@ -267,9 +338,14 @@ export const VisualModelsSettings: React.FC = () => {
         <h4 className="text-sm font-semibold text-zinc-100">{s.videoSection}</h4>
         <BuiltinModelList
           title={s.builtinTitle}
+          hint={s.defaultHint}
           rows={builtinVideo}
           availableBadge={cm.availableBadge}
           unconfiguredBadge={cm.unconfiguredBadge}
+          defaultBadge={s.defaultBadge}
+          selectedId={defaultVideoModelId}
+          groupName="design-video-model"
+          onSelect={(id) => saveDefaults(defaultImageModelId, id)}
         />
         <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300/90">
           {s.videoPendingNote}

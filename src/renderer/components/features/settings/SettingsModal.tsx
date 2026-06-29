@@ -7,9 +7,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronLeft,
   X,
-  Cpu,
   Image as ImageIcon,
-  ImagePlay,
   Palette,
   Fingerprint,
   Info,
@@ -17,9 +15,10 @@ import {
   Download,
   Plug,
   Brain,
+  BrainCircuit,
   Sparkles,
   Eye,
-  GitBranch,
+  FoldVertical,
   Shield,
   MessageSquare,
   Webhook,
@@ -94,7 +93,6 @@ import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { VisualModelsSettings } from './tabs/VisualModelsSettings';
-import { ImageVideoSettings } from './tabs/ImageVideoSettings';
 import { SearchSettings } from './tabs/SearchSettings';
 import { AgentEngineSettings } from './tabs/AgentEngineSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
@@ -155,24 +153,19 @@ export function buildSettingsTabGroups({
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
   const accessSubject = createAccessSubject(access);
   const tabs: SettingsTabConfig[] = [
-    { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
-    { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
-    { id: 'search', label: '搜索源', icon: <Search className="w-4 h-4" /> },
-    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
-    { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
-    { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    // 模型与能力
+    { id: 'model', label: t.settings.tabs.model, icon: <Brain className="w-4 h-4" /> },
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
-    { id: 'imageVideo', label: t.settings.tabs.imageVideo, icon: <ImagePlay className="w-4 h-4" /> },
+    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
+    { id: 'search', label: '搜索源', icon: <Search className="w-4 h-4" /> },
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
-    { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
+    // 基础偏好
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
-    { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
-    { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
-    { id: 'appshots', label: '应用截图', icon: <Camera className="w-4 h-4" /> },
-    { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
-    { id: 'invites', label: '邀请码管理', icon: <Ticket className="w-4 h-4" /> },
-    { id: 'controlPlane', label: '控制平面', icon: <Cloud className="w-4 h-4" /> },
-    { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
+    { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
+    { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
+    { id: 'conversation', label: '上下文压缩', icon: <FoldVertical className="w-4 h-4" /> },
+    { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
+    // 能力与连接
     { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
     { id: 'plugins', label: '插件管理', icon: <PackagePlus className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
@@ -180,9 +173,20 @@ export function buildSettingsTabGroups({
     { id: 'roles', label: '角色', icon: <UserCircle className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
     { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
-    { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
+    // 工作区与自动化
+    { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
+    { id: 'appshots', label: '应用截图', icon: <Camera className="w-4 h-4" /> },
+    // 记忆与隐私
+    { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <BrainCircuit className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
     { id: 'privacy', label: '隐私防线', icon: <ShieldCheck className="w-4 h-4" /> },
+    // 用户管理
+    { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
+    { id: 'invites', label: '邀请码管理', icon: <Ticket className="w-4 h-4" /> },
+    { id: 'controlPlane', label: '控制平面', icon: <Cloud className="w-4 h-4" /> },
+    // 系统
+    { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
     ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -420,7 +424,6 @@ export const SettingsModal: React.FC = () => {
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
             {activeTab === 'visualModels' && <VisualModelsSettings />}
-            {activeTab === 'imageVideo' && <ImageVideoSettings />}
             {activeTab === 'agentEngine' && <AgentEngineSettings />}
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'soul' && <SoulSettings />}

@@ -882,6 +882,8 @@ const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }>
 );
 
 const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId?: string }> = ({ timeline, sessionId }) => {
+  // Sources（溯源来源）默认折叠：保留可信/溯源能力但不扰民（产品决策，林晨 2026-06-29）。
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const items = (timeline.artifactOwnership || [])
     .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
   if (items.length === 0) return null;
@@ -922,11 +924,17 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
 
   const sourcesBlock = hasLinks ? (
     <div className={`rounded-lg border px-3 py-2 border-white/[0.06] bg-white/[0.02] ${outputsCard ? 'mt-1.5' : ''}`}>
-      <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
+      <button
+        type="button"
+        onClick={() => setSourcesOpen((v) => !v)}
+        className="flex w-full items-center gap-2 text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
+      >
+        {sourcesOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <Link className="h-3.5 w-3.5 text-zinc-400" />
         <span>Sources</span>
-      </div>
-      <ArtifactItemPills items={linkItems} />
+        <span className="text-zinc-500">({linkItems.length})</span>
+      </button>
+      {sourcesOpen && <ArtifactItemPills items={linkItems} className="mt-1.5" />}
     </div>
   ) : null;
 

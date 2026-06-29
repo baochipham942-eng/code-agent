@@ -544,6 +544,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   }, [activeOptionIndex, open, selectableOptionCount]);
 
   const handleMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    // 输入法合成期（中文/日文等选候选词）的回车/方向键交给输入法，不当弹窗快捷键，
+    // 否则按回车选词会被误当"选中模型+关弹窗"。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (selectableOptionCount <= 0) return;
       event.preventDefault();

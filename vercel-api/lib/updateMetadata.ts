@@ -467,6 +467,19 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
   }));
 }
 
+// download 端与 check 端同源守卫：policy（min/latestVersion）把版本号抬到超过 manifest 实际版本时，
+// manifest 里的 asset 是旧版，不能作为「广告版本」的下载产物（与 check 端 assetMatchesAdvertisedVersion 对称）。
+export function policyAdvertisesBeyondManifest(
+  releaseVersion: string | undefined,
+  policy: { minVersion?: string; latestVersion?: string },
+): boolean {
+  const ceiling = latestVersionOf(
+    normalizeVersion(policy.latestVersion),
+    normalizeVersion(policy.minVersion),
+  );
+  return Boolean(ceiling && releaseVersion && compareVersions(ceiling, releaseVersion) > 0);
+}
+
 async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
   const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
@@ -480,6 +493,19 @@ async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneRes
   }
 
   const release = await fetchLatestRelease(repo);
+
+  // policy 抬版超过 manifest 且无 env URL → 旧 asset 与广告版本不同源，fail closed（与 check 端对称）
+  if (policyAdvertisesBeyondManifest(normalizeVersion(release.tag_name), policy)) {
+    sendJson(res, 404, {
+      success: false,
+      error: 'download_asset_not_found',
+      message: `Release policy advertises a version beyond the latest manifest (${normalizeVersion(release.tag_name) ?? 'unknown'}); no matching ${platform} (${arch}) installer is published yet.`,
+      releaseUrl: releasePageUrl(repo, release.tag_name ?? 'latest', release.html_url),
+      source: 'github_releases',
+    });
+    return;
+  }
+
   const asset = selectAsset(release.assets, platform, arch);
 
   if (!asset?.browser_download_url) {

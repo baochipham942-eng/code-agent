@@ -551,6 +551,36 @@ describe('vercel update metadata', () => {
     );
   });
 
+  it('download endpoint fails closed (404) when policy advertises a version beyond the manifest (R4 symmetry)', async () => {
+    // check 端已 fail-closed；download 端必须对称——不能 302 到旧 manifest 包。
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.16.75',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.75',
+        assets: [
+          {
+            name: 'Agent-Neo-0.16.75-arm64.dmg',
+            browser_download_url: 'https://oss.example.com/v0.16.75/Agent-Neo-0.16.75-arm64.dmg',
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    process.env.UPDATE_MIN_VERSION = '0.16.77'; // 抬版超过 manifest，但无 UPDATE_DOWNLOAD_URL
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'download', platform: 'darwin', arch: 'arm64' },
+    }, response);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.headers.Location).toBeUndefined();
+    expect(response.body).toMatchObject({ success: false, error: 'download_asset_not_found' });
+  });
+
   it('uses channel-specific download URL overrides for download redirects', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     process.env.UPDATE_DOWNLOAD_URL_BETA = 'https://cdn.example.com/agent-neo-beta.dmg';

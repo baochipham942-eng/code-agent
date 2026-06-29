@@ -417,6 +417,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, 
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={e => {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend();

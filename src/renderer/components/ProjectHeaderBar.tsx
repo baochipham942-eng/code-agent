@@ -228,6 +228,7 @@ export const ProjectHeaderBar: React.FC = () => {
             onChange={(e) => setNameDraft(e.target.value)}
             onBlur={handleRename}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === 'Enter') void handleRename();
               if (e.key === 'Escape') setEditingName(false);
             }}
@@ -296,6 +297,7 @@ export const ProjectHeaderBar: React.FC = () => {
                 onChange={(e) => setGoalDraft(e.target.value)}
                 onBlur={handleAddGoal}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === 'Enter') void handleAddGoal();
                   if (e.key === 'Escape') setAddingGoal(false);
                 }}

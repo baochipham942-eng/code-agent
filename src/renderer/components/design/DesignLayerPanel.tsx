@@ -116,6 +116,7 @@ export const DesignLayerPanel: React.FC<{
               onChange={(e) => setDraftLabel(e.target.value)}
               onBlur={commit}
               onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   (e.currentTarget as HTMLInputElement).blur();

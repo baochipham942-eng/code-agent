@@ -249,6 +249,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
                 value={searchQuery}
                 onChange={(event) => onSearchQueryChange(event.target.value)}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === 'Enter' && !isSearching) {
                     onSearch();
                   }

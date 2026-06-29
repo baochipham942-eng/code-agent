@@ -139,6 +139,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   }, [matches.length, onActiveMatchChange]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Escape') {
       onClose();
     } else if (e.key === 'Enter' && tab === 'current') {

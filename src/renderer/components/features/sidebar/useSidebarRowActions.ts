@@ -215,6 +215,7 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
 
   // 重命名按键
   const handleRenameKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') {
       handleRenameSubmit();
     } else if (e.key === 'Escape') {

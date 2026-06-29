@@ -103,6 +103,8 @@ jobs:
       - name: Verify NSIS artifact (post)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # 与 release.yml 对齐：精确公钥匹配，而非仅占位符检查
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: node scripts/verify-windows-release.mjs --stage post
 
       - name: Rename installer with TEST marker

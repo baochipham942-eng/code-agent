@@ -463,6 +463,9 @@ jobs:
       - name: Verify NSIS artifact (post)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # 传入 updater pubkey，让 verify-windows-release 做「精确公钥匹配」而非仅占位符检查，
+          # 与 mac 侧 tauri-release-bundle.sh → verify-updater-pubkey 的精确匹配对齐。
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: node scripts/verify-windows-release.mjs --stage post
 
       # 重命名为最终 OSS key 名后再生成 manifest（mac 侧同款做法）：

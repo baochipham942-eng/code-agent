@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-06-29
+
+### Fixed
+- **in-app 软件更新整包下载间歇性失败**：更新检查（Vercel `/api/update?action=check`）返回的 `downloadUrl` 此前指向 GitHub release **网页** 而非安装包直链，客户端 in-app updater 的 `downloadFile()` 抓到 HTML 而非 dmg/exe，导致更新装不上。改为返回 OSS 安装包直链（与原生 Tauri 更新器同源），并由发布管线（`build-stable-release-json.mjs --compute-asset-sha256`）为每个安装包计算 sha256 写入 `release.json`，客户端校验从「缺 sha256 时 override 放行」升级为真校验。
+- 经 4 轮独立对抗审计硬化 `(downloadUrl, sha256, version)` 同源不变量：env policy override、cloud release policy、OSS 直连 fallback、`check` 与 `action=download` 两端，全部做到三者同源或 fail-closed；并修复发布脚本对非安装包响应（HTML 错误页/占位）误算 sha256、`normalizeSha256` 对非字符串输入崩溃、auto-download 未捕获 rejection 等健全性问题。
+
 ## [0.22.1] - 2026-06-29
 
 ### Fixed

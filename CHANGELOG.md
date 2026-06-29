@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-29
+
+### Added
+
+- **Design mode is conversational again** (recovered): switching to Design activates a session-bound canvas + opens the canvas tab instead of popping a fullscreen brief form (form demoted to an on-demand entry for web/slides/video). Recovered from `feat/design-conversational-surface` (never merged; production renderer had regressed to the form after the 2026-06-27 hot-update was published from form-only main). Brings per-session design-active flag, canvas injection gate, intent-driven canvas tools, cross-session owner isolation.
+- **Generation model defaults** (ADR-027): a "Generation defaults" settings tab to pick default image/video models; design pulls them on launch.
+- **Settings IA regroup**: model-related tabs (model / generation / execution engine / search / voice) consolidated into a top "Models & capabilities" group; budget-alert tab entry removed (underlying budget logic kept).
+- **Tool-error observability (Sentry) + telemetry session-restore** (ADR-030): handled tool failures of actionable categories report to Sentry (auth-free, allowlist + dedup + scrubbed); session-expired-with-cached-identity surfaces a non-blocking reconnect nudge instead of silently clearing; Keychain session-persistence dead-code fixed.
+
+### Fixed
+
+- **Chat — local HTML links open in-app preview**: model-generated games/pages written as `[file.html](file://...)` open Neo's in-app artifact preview (playable) instead of the system browser.
+- **Chat — external/file link clicks work in packaged app**: `openExternalLink` routes through the webServer IPC bridge instead of the Tauri opener plugin, which silently no-op'd in the http-origin webview.
+- **Chat — Sources card collapsed by default**: web-fetch provenance card folds by default (expand on click).
+
 ## [0.21.1] - 2026-06-27
 
 ### Added

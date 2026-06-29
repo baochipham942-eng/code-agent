@@ -13,6 +13,7 @@ import type { ModelProviderProtocol, ProxyMode } from '@shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
 import { isWebMode } from '../../../../utils/platform';
 import { Button, Input, Select, Toggle } from '../../../primitives';
+import { SettingsDetails } from '../SettingsLayout';
 import { describeProviderIconValidationError, getProtocolLabel } from './ModelSettings.helpers';
 import {
   PROVIDER_ICON_IMAGE_MAX_BYTES,
@@ -166,136 +167,6 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
   return (
     <ProviderDetailCard step="1" title="连接">
       <div className="space-y-4">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)]">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-200">显示名称</label>
-            <Input
-              value={providerDisplayName}
-              onChange={(event) => onDisplayNameChange(event.target.value)}
-              placeholder={providerNamePlaceholder}
-              disabled={providerIdentityManaged}
-            />
-            {providerIdentityManaged && (
-              <p className="mt-2 text-xs text-zinc-500">
-                团队托管 Provider 的名称由控制面下发，本机只保留收藏偏好。
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-200">图标标识</label>
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 text-xs font-semibold text-zinc-200">
-                {providerIconIsImage ? (
-                  providerIconImageSource ? (
-                    <img src={providerIconImageSource} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    fallbackIconText
-                  )
-                ) : (
-                  providerIcon || fallbackIconText
-                )}
-              </span>
-              <Input
-                value={providerIconIsImage ? '' : providerIcon}
-                onChange={(event) => onProviderIconChange(event.target.value)}
-                placeholder={fallbackIconText}
-                maxLength={4}
-                disabled={providerIconIsImage || providerIdentityManaged}
-              />
-            </div>
-            {providerIconPresets.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="内置 Provider 图标">
-                {providerIconPresets.map((preset) => (
-                  <button
-                    key={`${preset.icon}-${preset.label}`}
-                    type="button"
-                    className={`flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-[11px] font-semibold transition-colors ${
-                      providerIdentityManaged
-                        ? 'cursor-not-allowed border-zinc-800 bg-zinc-950 text-zinc-600'
-                        : providerIcon === preset.icon
-                        ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-100'
-                        : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
-                    }`}
-                    disabled={providerIdentityManaged}
-                    title={preset.label}
-                    aria-label={`使用 ${preset.label} 图标`}
-                    onClick={() => onProviderIconChange(preset.icon)}
-                  >
-                    {preset.icon}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <input
-                ref={iconFileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                className="hidden"
-                onChange={handleProviderIconFileChange}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                leftIcon={<ImagePlus className="h-3.5 w-3.5" />}
-                onClick={() => iconFileInputRef.current?.click()}
-                disabled={providerIdentityManaged}
-              >
-                上传图片
-              </Button>
-              {providerIconIsImage && !providerIdentityManaged && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  leftIcon={<X className="h-3.5 w-3.5" />}
-                  onClick={() => onProviderIconChange('')}
-                >
-                  清除
-                </Button>
-              )}
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">
-              {providerIdentityManaged
-                ? '团队托管 Provider 的图标由控制面下发，避免本机标识掩盖共享链路身份。'
-                : providerIconIsAsset
-                ? '图片图标保存在本机 assets/provider-icons，settings 只保存引用。Provider 身份仍以显示名称、来源和接口地址为准。'
-                : providerIconIsImage
-                ? `图片图标以内联 data URL 保存在本机 settings 中${providerIconImageBytes !== undefined ? `，约 ${(providerIconImageBytes / 1024).toFixed(1)} KB` : ''}。Provider 身份仍以显示名称、来源和接口地址为准。`
-                : '短标识只影响列表和模型菜单识别；Provider 身份仍以显示名称、来源和接口地址为准。'}
-            </p>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
-            {isCustomProviderProtocolEditable ? (
-              <Select
-                value={effectiveProtocol}
-                onChange={(event) => onProviderProtocolChange(event.target.value as ModelProviderProtocol)}
-              >
-                <option value="openai">OpenAI 兼容</option>
-                <option value="claude">Claude 协议</option>
-              </Select>
-            ) : (
-              <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300">
-                {getProtocolLabel(effectiveProtocol)}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
-          <span className="min-w-0">
-            <span className="block text-sm font-medium text-zinc-200">收藏 Provider</span>
-            <span className="block truncate text-xs text-zinc-500">收藏后在 Provider 列表和模型菜单里前置显示。</span>
-          </span>
-          <Toggle
-            checked={providerFavorite}
-            onChange={onProviderFavoriteChange}
-            aria-label="收藏 Provider"
-          />
-        </label>
-
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <label className="block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
@@ -356,6 +227,143 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
               : t.model.apiKeyHint
             : '使用本机 OpenAI-compatible 服务。'}
         </p>
+
+        <SettingsDetails
+          title="显示名称 / 图标 / 协议 / 收藏"
+          description="一般不用改：默认按官方名称和接口地址识别。需要自定义标识、切换协议或收藏置顶时再展开。"
+        >
+          <div className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)]">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-zinc-200">显示名称</label>
+                <Input
+                  value={providerDisplayName}
+                  onChange={(event) => onDisplayNameChange(event.target.value)}
+                  placeholder={providerNamePlaceholder}
+                  disabled={providerIdentityManaged}
+                />
+                {providerIdentityManaged && (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    团队托管 Provider 的名称由控制面下发，本机只保留收藏偏好。
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-zinc-200">图标标识</label>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 text-xs font-semibold text-zinc-200">
+                    {providerIconIsImage ? (
+                      providerIconImageSource ? (
+                        <img src={providerIconImageSource} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        fallbackIconText
+                      )
+                    ) : (
+                      providerIcon || fallbackIconText
+                    )}
+                  </span>
+                  <Input
+                    value={providerIconIsImage ? '' : providerIcon}
+                    onChange={(event) => onProviderIconChange(event.target.value)}
+                    placeholder={fallbackIconText}
+                    maxLength={4}
+                    disabled={providerIconIsImage || providerIdentityManaged}
+                  />
+                </div>
+                {providerIconPresets.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" aria-label="内置 Provider 图标">
+                    {providerIconPresets.map((preset) => (
+                      <button
+                        key={`${preset.icon}-${preset.label}`}
+                        type="button"
+                        className={`flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+                          providerIdentityManaged
+                            ? 'cursor-not-allowed border-zinc-800 bg-zinc-950 text-zinc-600'
+                            : providerIcon === preset.icon
+                            ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-100'
+                            : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
+                        }`}
+                        disabled={providerIdentityManaged}
+                        title={preset.label}
+                        aria-label={`使用 ${preset.label} 图标`}
+                        onClick={() => onProviderIconChange(preset.icon)}
+                      >
+                        {preset.icon}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <input
+                    ref={iconFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                    className="hidden"
+                    onChange={handleProviderIconFileChange}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    leftIcon={<ImagePlus className="h-3.5 w-3.5" />}
+                    onClick={() => iconFileInputRef.current?.click()}
+                    disabled={providerIdentityManaged}
+                  >
+                    上传图片
+                  </Button>
+                  {providerIconIsImage && !providerIdentityManaged && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      leftIcon={<X className="h-3.5 w-3.5" />}
+                      onClick={() => onProviderIconChange('')}
+                    >
+                      清除
+                    </Button>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-zinc-500">
+                  {providerIdentityManaged
+                    ? '团队托管 Provider 的图标由控制面下发，避免本机标识掩盖共享链路身份。'
+                    : providerIconIsAsset
+                    ? '图片图标保存在本机 assets/provider-icons，settings 只保存引用。Provider 身份仍以显示名称、来源和接口地址为准。'
+                    : providerIconIsImage
+                    ? `图片图标以内联 data URL 保存在本机 settings 中${providerIconImageBytes !== undefined ? `，约 ${(providerIconImageBytes / 1024).toFixed(1)} KB` : ''}。Provider 身份仍以显示名称、来源和接口地址为准。`
+                    : '短标识只影响列表和模型菜单识别；Provider 身份仍以显示名称、来源和接口地址为准。'}
+                </p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
+                {isCustomProviderProtocolEditable ? (
+                  <Select
+                    value={effectiveProtocol}
+                    onChange={(event) => onProviderProtocolChange(event.target.value as ModelProviderProtocol)}
+                  >
+                    <option value="openai">OpenAI 兼容</option>
+                    <option value="claude">Claude 协议</option>
+                  </Select>
+                ) : (
+                  <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300">
+                    {getProtocolLabel(effectiveProtocol)}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-zinc-200">收藏 Provider</span>
+                <span className="block truncate text-xs text-zinc-500">收藏后在 Provider 列表和模型菜单里前置显示。</span>
+              </span>
+              <Toggle
+                checked={providerFavorite}
+                onChange={onProviderFavoriteChange}
+                aria-label="收藏 Provider"
+              />
+            </label>
+          </div>
+        </SettingsDetails>
       </div>
     </ProviderDetailCard>
   );

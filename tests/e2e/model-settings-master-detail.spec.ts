@@ -33,7 +33,7 @@ async function openModelSettings(page: Page) {
   const settingsDialog = page.getByRole('dialog', { name: '设置' });
   await expect(settingsDialog).toBeVisible({ timeout: 10_000 });
 
-  await settingsDialog.getByRole('button', { name: '模型', exact: true }).click();
+  await settingsDialog.getByRole('button', { name: '通用模型', exact: true }).click();
   return settingsDialog;
 }
 

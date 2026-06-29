@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-06-29
+
+### Fixed
+
+- **IME composition guard on popup/search/rename inputs**: pressing Enter to confirm a Chinese (or other IME) candidate was treated as select/submit/close — it closed the model-switcher popup, submitted partial searches (chat search, skill discover), and committed half-composed renames (project / design layer / session title / new file). Added `isComposing` / `keyCode === 229` guards to ModelSwitcher + 7 text inputs (URL/path inputs and non-text `role=button` keydowns left untouched).
+
 ## [0.22.0] - 2026-06-29
 
 ### Added

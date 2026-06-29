@@ -18,10 +18,42 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadReleaseNotes } from './lib/release-notes.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// 安装包资产（dmg/exe）才需要 sha256；runtime manifest 的 json/sha sidecar 不算。
+export function isInstallerAsset(name) {
+  return typeof name === 'string' && /\.(dmg|exe)$/i.test(name);
+}
+
+// 从资产 URL 下载并算 sha256（哈希的正是用户将下载的字节，源头即 OSS 上传后的安装包）。
+export async function computeAssetSha256(url, fetchImpl = fetch) {
+  const res = await fetchImpl(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  return createHash('sha256').update(buf).digest('hex');
+}
+
+// 给每个安装包资产补 sha256。sha256 是附加加固：算不出就省略该资产的 sha256，
+// 退回客户端「override 放行」行为，绝不抛错阻断发版。enabled=false 时整体跳过（不触网）。
+export async function attachInstallerShas(assets, { enabled = false, fetchImpl = fetch, log = console } = {}) {
+  if (!enabled) return assets;
+  for (const asset of assets) {
+    if (!asset?.name || !asset.browser_download_url || !isInstallerAsset(asset.name)) continue;
+    try {
+      asset.sha256 = await computeAssetSha256(asset.browser_download_url, fetchImpl);
+      log.log?.(`sha256 ${asset.name}: ${asset.sha256}`);
+    } catch (err) {
+      log.warn?.(`[WARN] sha256 计算失败，省略 ${asset.name}: ${err?.message ?? err}`);
+    }
+  }
+  return assets;
+}
 
 function arg(name, fallback) {
   const idx = process.argv.indexOf(`--${name}`);
@@ -37,90 +69,101 @@ function assetNameFromUrl(value, fallback) {
   }
 }
 
-const version = arg('version');
-const dmgUrl = arg('dmg-url');
-const tag = arg('tag', version ? `v${version}` : undefined);
-const htmlUrl = arg('html-url', '');
-const output = arg('output', 'stable-release.json');
-const runtimeAssetsManifestUrl = arg('runtime-assets-manifest-url');
-const runtimeAssetsManifestShaUrl = arg('runtime-assets-manifest-sha-url');
-// x64（Intel）侧资产：可选。提供后单个 release.json 同时含 arm64 + x64，
-// Vercel /api/update 按 ?arch= 选对应 dmg / runtime manifest（见 updateMetadata.ts selectAsset）。
-const dmgUrlX64 = arg('dmg-url-x64');
-const runtimeAssetsManifestUrlX64 = arg('runtime-assets-manifest-url-x64');
-const runtimeAssetsManifestShaUrlX64 = arg('runtime-assets-manifest-sha-url-x64');
-// Windows（NSIS setup.exe）侧资产：可选。updateMetadata 按 platform=win32 选 .exe 资产。
-const exeUrl = arg('exe-url');
+async function main() {
+  const version = arg('version');
+  const dmgUrl = arg('dmg-url');
+  const tag = arg('tag', version ? `v${version}` : undefined);
+  const htmlUrl = arg('html-url', '');
+  const output = arg('output', 'stable-release.json');
+  const runtimeAssetsManifestUrl = arg('runtime-assets-manifest-url');
+  const runtimeAssetsManifestShaUrl = arg('runtime-assets-manifest-sha-url');
+  // x64（Intel）侧资产：可选。提供后单个 release.json 同时含 arm64 + x64，
+  // Vercel /api/update 按 ?arch= 选对应 dmg / runtime manifest（见 updateMetadata.ts selectAsset）。
+  const dmgUrlX64 = arg('dmg-url-x64');
+  const runtimeAssetsManifestUrlX64 = arg('runtime-assets-manifest-url-x64');
+  const runtimeAssetsManifestShaUrlX64 = arg('runtime-assets-manifest-sha-url-x64');
+  // Windows（NSIS setup.exe）侧资产：可选。updateMetadata 按 platform=win32 选 .exe 资产。
+  const exeUrl = arg('exe-url');
+  // 给安装包资产补 sha256（从 OSS URL 下载回算）。仅 CI 加此 flag——本地/单测不触网。
+  const computeAssetSha = process.argv.includes('--compute-asset-sha256');
 
-if (!version || !dmgUrl) {
-  console.error('错误：--version 和 --dmg-url 必填。');
-  process.exit(1);
-}
+  if (!version || !dmgUrl) {
+    console.error('错误：--version 和 --dmg-url 必填。');
+    process.exit(1);
+  }
 
-if (Boolean(runtimeAssetsManifestUrl) !== Boolean(runtimeAssetsManifestShaUrl)) {
-  console.error('错误：--runtime-assets-manifest-url 和 --runtime-assets-manifest-sha-url 必须同时提供。');
-  process.exit(1);
-}
+  if (Boolean(runtimeAssetsManifestUrl) !== Boolean(runtimeAssetsManifestShaUrl)) {
+    console.error('错误：--runtime-assets-manifest-url 和 --runtime-assets-manifest-sha-url 必须同时提供。');
+    process.exit(1);
+  }
 
-if (Boolean(runtimeAssetsManifestUrlX64) !== Boolean(runtimeAssetsManifestShaUrlX64)) {
-  console.error('错误：--runtime-assets-manifest-url-x64 和 --runtime-assets-manifest-sha-url-x64 必须同时提供。');
-  process.exit(1);
-}
+  if (Boolean(runtimeAssetsManifestUrlX64) !== Boolean(runtimeAssetsManifestShaUrlX64)) {
+    console.error('错误：--runtime-assets-manifest-url-x64 和 --runtime-assets-manifest-sha-url-x64 必须同时提供。');
+    process.exit(1);
+  }
 
-const assets = [
-  {
-    name: `Agent-Neo-${version}-arm64.dmg`,
-    browser_download_url: dmgUrl,
-  },
-];
-
-if (runtimeAssetsManifestUrl && runtimeAssetsManifestShaUrl) {
-  assets.push(
+  const assets = [
     {
-      name: assetNameFromUrl(runtimeAssetsManifestUrl, 'runtime-assets-manifest-darwin-arm64.json'),
-      browser_download_url: runtimeAssetsManifestUrl,
+      name: `Agent-Neo-${version}-arm64.dmg`,
+      browser_download_url: dmgUrl,
     },
-    {
-      name: assetNameFromUrl(runtimeAssetsManifestShaUrl, 'runtime-assets-manifest-darwin-arm64.sha256'),
-      browser_download_url: runtimeAssetsManifestShaUrl,
-    },
-  );
+  ];
+
+  if (runtimeAssetsManifestUrl && runtimeAssetsManifestShaUrl) {
+    assets.push(
+      {
+        name: assetNameFromUrl(runtimeAssetsManifestUrl, 'runtime-assets-manifest-darwin-arm64.json'),
+        browser_download_url: runtimeAssetsManifestUrl,
+      },
+      {
+        name: assetNameFromUrl(runtimeAssetsManifestShaUrl, 'runtime-assets-manifest-darwin-arm64.sha256'),
+        browser_download_url: runtimeAssetsManifestShaUrl,
+      },
+    );
+  }
+
+  if (dmgUrlX64) {
+    assets.push({
+      name: `Agent-Neo-${version}-x64.dmg`,
+      browser_download_url: dmgUrlX64,
+    });
+  }
+
+  if (exeUrl) {
+    assets.push({
+      name: assetNameFromUrl(exeUrl, `Agent-Neo-${version}-win-x64-setup.exe`),
+      browser_download_url: exeUrl,
+    });
+  }
+
+  if (runtimeAssetsManifestUrlX64 && runtimeAssetsManifestShaUrlX64) {
+    assets.push(
+      {
+        name: assetNameFromUrl(runtimeAssetsManifestUrlX64, 'runtime-assets-manifest-darwin-x64.json'),
+        browser_download_url: runtimeAssetsManifestUrlX64,
+      },
+      {
+        name: assetNameFromUrl(runtimeAssetsManifestShaUrlX64, 'runtime-assets-manifest-darwin-x64.sha256'),
+        browser_download_url: runtimeAssetsManifestShaUrlX64,
+      },
+    );
+  }
+
+  await attachInstallerShas(assets, { enabled: computeAssetSha });
+
+  const release = {
+    tag_name: tag,
+    html_url: htmlUrl,
+    published_at: new Date().toISOString(),
+    body: await loadReleaseNotes(rootDir, version, arg('notes')),
+    assets,
+  };
+
+  fs.writeFileSync(output, `${JSON.stringify(release, null, 2)}\n`);
+  console.log(`Wrote ${output}: ${tag} -> ${dmgUrl}`);
 }
 
-if (dmgUrlX64) {
-  assets.push({
-    name: `Agent-Neo-${version}-x64.dmg`,
-    browser_download_url: dmgUrlX64,
-  });
+// 仅作为 CLI 直接运行时执行 main；被测试 import 时只暴露纯函数，不触发 argv 解析/写文件。
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  await main();
 }
-
-if (exeUrl) {
-  assets.push({
-    name: assetNameFromUrl(exeUrl, `Agent-Neo-${version}-win-x64-setup.exe`),
-    browser_download_url: exeUrl,
-  });
-}
-
-if (runtimeAssetsManifestUrlX64 && runtimeAssetsManifestShaUrlX64) {
-  assets.push(
-    {
-      name: assetNameFromUrl(runtimeAssetsManifestUrlX64, 'runtime-assets-manifest-darwin-x64.json'),
-      browser_download_url: runtimeAssetsManifestUrlX64,
-    },
-    {
-      name: assetNameFromUrl(runtimeAssetsManifestShaUrlX64, 'runtime-assets-manifest-darwin-x64.sha256'),
-      browser_download_url: runtimeAssetsManifestShaUrlX64,
-    },
-  );
-}
-
-const release = {
-  tag_name: tag,
-  html_url: htmlUrl,
-  published_at: new Date().toISOString(),
-  body: await loadReleaseNotes(rootDir, version, arg('notes')),
-  assets,
-};
-
-fs.writeFileSync(output, `${JSON.stringify(release, null, 2)}\n`);
-console.log(`Wrote ${output}: ${tag} -> ${dmgUrl}`);

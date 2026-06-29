@@ -656,6 +656,8 @@ jobs:
           else
             echo "[WARN] windows setup.exe missing — stable/release.json 不含 windows 资产"
           fi
+          # --compute-asset-sha256：从已上传的 OSS dmg/exe 下载回算 sha256 写进 release.json，
+          # 让 in-app updater 的校验从「override 放行」升级为真校验（算不出则省略，不阻断发版）。
           node scripts/build-stable-release-json.mjs \
             --version "${VERSION}" \
             --tag "${GITHUB_REF_NAME}" \
@@ -664,6 +666,7 @@ jobs:
             --html-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
             "${RUNTIME_ARGS[@]}" \
             "${EXE_ARGS[@]}" \
+            --compute-asset-sha256 \
             --output "${RUNNER_TEMP}/stable-release.json"
           ossutil cp -f "${RUNNER_TEMP}/stable-release.json" \
             "oss://${ALIYUN_OSS_BUCKET}/stable/release.json"

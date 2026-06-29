@@ -31,6 +31,8 @@ interface GitHubReleaseAsset {
   name?: string;
   size?: number;
   browser_download_url?: string;
+  /** SHA-256 hex digest of the asset bytes (由发布脚本写入 OSS release.json). */
+  sha256?: string;
 }
 
 interface GitHubReleaseResponse {
@@ -267,7 +269,6 @@ export function buildUpdateResponseFromRelease(
   const hasUpdate = releaseHasUpdate || minVersionRequired || policyHasNewerLatest;
   const forceUpdate = Boolean(hasUpdate && (options.forceUpdate === true || minVersionRequired));
   const asset = selectAsset(release.assets, options.platform, options.arch ?? 'arm64');
-  const sha256 = normalizeSha256(options.sha256);
   const fallbackDownloadUrl = latestVersion
     ? releasePageUrl(
       options.repo,
@@ -275,6 +276,13 @@ export function buildUpdateResponseFromRelease(
       releaseVersion === latestVersion ? release.html_url : undefined,
     )
     : undefined;
+  // downloadUrl 优先级：env policy 覆盖 → 选中资产的直链（OSS dmg/exe）→ release 网页兜底。
+  // 历史 bug：曾直接用 fallbackDownloadUrl（release 网页），客户端 in-app updater 的
+  // downloadFile() 抓到的是 HTML 而非安装包，sha256 缺失时还会 warn 放行装不上。
+  // 与 handleDownload(action=download) 的 302 跳转选包逻辑保持同源一致。
+  const downloadUrl = options.downloadUrl || asset?.browser_download_url || fallbackDownloadUrl;
+  // sha256 优先级：env policy 覆盖 → 选中资产自带的 sha256（发布脚本写入 OSS release.json）。
+  const sha256 = normalizeSha256(options.sha256) ?? normalizeSha256(asset?.sha256);
 
   return {
     success: true,
@@ -283,9 +291,7 @@ export function buildUpdateResponseFromRelease(
     currentVersion: options.currentVersion,
     ...(latestVersion ? { latestVersion } : {}),
     ...(policyMinVersion ? { minVersion: policyMinVersion } : {}),
-    ...(hasUpdate && (options.downloadUrl || fallbackDownloadUrl)
-      ? { downloadUrl: options.downloadUrl || fallbackDownloadUrl }
-      : {}),
+    ...(hasUpdate && downloadUrl ? { downloadUrl } : {}),
     ...(sha256 ? { sha256 } : {}),
     ...(release.body ? { releaseNotes: release.body } : {}),
     ...(asset?.size ? { fileSize: asset.size } : {}),

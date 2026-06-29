@@ -61,14 +61,19 @@ describe('vercel update metadata', () => {
     expect(compareVersions('0.16.9', '0.16.10')).toBe(-1);
   });
 
-  it('builds update responses from GitHub Releases metadata', () => {
+  it('points downloadUrl at the matching asset direct link and passes its sha256 through', () => {
     const response = buildUpdateResponseFromRelease({
       tag_name: 'v0.16.76',
       html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
       body: 'notes',
       published_at: '2026-05-17T00:00:00Z',
       assets: [
-        { name: 'Agent Neo_0.16.76_aarch64.dmg', size: 123, browser_download_url: 'https://example.com/app.dmg' },
+        {
+          name: 'Agent Neo_0.16.76_aarch64.dmg',
+          size: 123,
+          browser_download_url: 'https://oss.example.com/v0.16.76/app.dmg',
+          sha256: 'A'.repeat(64),
+        },
       ],
     }, {
       repo: 'acme/code-agent',
@@ -76,18 +81,39 @@ describe('vercel update metadata', () => {
       platform: 'darwin',
     });
 
+    // 历史 bug：downloadUrl 曾返回 release 网页 URL（客户端 downloadFile 抓到 HTML 装不上）。
+    // 现在必须返回资产直链，并带上发布脚本写入的 sha256。
     expect(response).toMatchObject({
       success: true,
       hasUpdate: true,
       forceUpdate: false,
       currentVersion: '0.16.75',
       latestVersion: '0.16.76',
-      downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      downloadUrl: 'https://oss.example.com/v0.16.76/app.dmg',
+      sha256: 'a'.repeat(64),
       releaseNotes: 'notes',
       fileSize: 123,
       publishedAt: '2026-05-17T00:00:00Z',
       source: 'github_releases',
     });
+  });
+
+  it('falls back to the release page only when no matching asset is present', () => {
+    const response = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+    });
+
+    expect(response).toMatchObject({
+      hasUpdate: true,
+      downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+    });
+    expect((response as { sha256?: string }).sha256).toBeUndefined();
   });
 
   it('applies release policy fields to GitHub-derived metadata', () => {
@@ -319,7 +345,43 @@ describe('vercel update metadata', () => {
       success: true,
       hasUpdate: true,
       latestVersion: '0.16.76',
+      // assets 为空 → 回退 release 网页
       downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+    });
+  });
+
+  it('check returns the OSS asset direct link + sha256 from the release manifest', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.22.2',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.22.2',
+        assets: [
+          {
+            name: 'Agent-Neo-0.22.2-arm64.dmg',
+            size: 34_000_000,
+            browser_download_url: 'https://oss.example.com/v0.22.2/Agent-Neo-0.22.2-arm64.dmg',
+            sha256: 'a'.repeat(64),
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'check', version: '0.22.1', platform: 'darwin', arch: 'arm64' },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      hasUpdate: true,
+      latestVersion: '0.22.2',
+      downloadUrl: 'https://oss.example.com/v0.22.2/Agent-Neo-0.22.2-arm64.dmg',
+      sha256: 'a'.repeat(64),
     });
   });
 

@@ -285,18 +285,21 @@ export function buildUpdateResponseFromRelease(
   // 否则会把 sha 贴到不匹配的包上（客户端按 hash 校验必失败）。
   // 历史 bug：曾直接用 fallbackDownloadUrl（release 网页），客户端 downloadFile() 抓到 HTML 装不上。
   // 与 handleDownload(action=download) 的 302 选包逻辑保持同源一致。
-  const envSha256 = normalizeSha256(options.sha256);
+  // 每个分支的 sha256 严格只描述本分支返回的那个 URL（同源），杜绝跨源错配：
+  //  - env override：URL 与 sha 都来自 env（UPDATE_DOWNLOAD_URL / UPDATE_SHA256 成对）
+  //  - 选中资产：URL 与 sha 都来自该资产（游离的 env sha 不属于 OSS 资产，不借用）
+  //  - 网页兜底：无可校验产物，不配任何 sha
   let downloadUrl: string | undefined;
   let sha256: string | undefined;
   if (options.downloadUrl) {
-    downloadUrl = options.downloadUrl;             // env policy 覆盖：仅配 env sha，不借用资产 sha
-    sha256 = envSha256;
+    downloadUrl = options.downloadUrl;
+    sha256 = normalizeSha256(options.sha256);
   } else if (asset?.browser_download_url) {
-    downloadUrl = asset.browser_download_url;       // 选中资产直链：env sha 优先，否则资产自带 sha
-    sha256 = envSha256 ?? normalizeSha256(asset.sha256);
+    downloadUrl = asset.browser_download_url;
+    sha256 = normalizeSha256(asset.sha256);
   } else {
-    downloadUrl = fallbackDownloadUrl;              // 无可下载资产：仅 release 网页兜底（无产物可校验）
-    sha256 = envSha256;
+    downloadUrl = fallbackDownloadUrl;
+    sha256 = undefined;
   }
 
   return {

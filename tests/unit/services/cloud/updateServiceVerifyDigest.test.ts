@@ -126,24 +126,49 @@ describe('signed release policy application', () => {
     });
   });
 
-  it('keeps a server update while applying policy forceUpdate and normalized sha256', () => {
+  it('keeps a server update while applying policy forceUpdate, with normalized sha256 paired to the policy downloadUrl', () => {
+    // 修正后契约：policy sha 必须与 policy downloadUrl 成对应用（不再无条件盖到来源 URL 上）。
     const updateInfo = applyReleasePolicyToUpdateInfo({
       hasUpdate: true,
       forceUpdate: false,
       currentVersion: '0.16.75',
       latestVersion: '0.16.76',
-      downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      downloadUrl: 'https://oss.example/v0.16.76/app.dmg',
+      sha256: 'a'.repeat(64),
     }, {
       channel: 'beta',
       forceUpdate: true,
+      latestVersion: '0.16.77', // 触发 policyRequiresUpdate → 应用 policy downloadUrl+sha
+      downloadUrl: 'https://cdn.example/beta-hotfix.dmg',
       sha256: 'B'.repeat(64),
     });
 
     expect(updateInfo).toMatchObject({
       hasUpdate: true,
       forceUpdate: true,
-      latestVersion: '0.16.76',
+      latestVersion: '0.16.77',
+      downloadUrl: 'https://cdn.example/beta-hotfix.dmg',
       sha256: 'b'.repeat(64),
     });
+  });
+
+  it('does not pair a standalone policy sha256 (no policy downloadUrl) with the source URL', () => {
+    const updateInfo = applyReleasePolicyToUpdateInfo({
+      hasUpdate: true,
+      forceUpdate: false,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+      downloadUrl: 'https://oss.example/v0.16.76/app.dmg',
+      sha256: 'a'.repeat(64),
+    }, {
+      channel: 'beta',
+      forceUpdate: true,
+      sha256: 'B'.repeat(64), // 无 policy downloadUrl
+    });
+
+    // 保留来源 url+sha；游离的 policy sha 不应用
+    expect(updateInfo.downloadUrl).toBe('https://oss.example/v0.16.76/app.dmg');
+    expect(updateInfo.sha256).toBe('a'.repeat(64));
+    expect(updateInfo.forceUpdate).toBe(true);
   });
 });

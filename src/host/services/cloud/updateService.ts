@@ -327,14 +327,19 @@ export function applyReleasePolicyToUpdateInfo(
     return compareUpdateVersions(candidate, winner) > 0 ? candidate : winner;
   }, undefined);
   const policySha256 = normalizeUpdateSha256(releasePolicy.sha256);
+  // policy 的 sha256 只能描述 policy 的 downloadUrl：仅当应用 policy downloadUrl 时才换 sha
+  // （此时把 sha 一并换成 policySha256，可能为 undefined → fail-closed，绝不让 policy sha 配源 URL，
+  //  也不让源 sha 配 policy URL）。不应用 policy downloadUrl 时，保留来源 updateInfo 的 url+sha。
+  const applyPolicyDownload = Boolean(releasePolicy.downloadUrl && policyRequiresUpdate);
 
   return {
     ...updateInfo,
     hasUpdate,
     forceUpdate,
     ...(latestVersion ? { latestVersion } : {}),
-    ...(releasePolicy.downloadUrl && policyRequiresUpdate ? { downloadUrl: releasePolicy.downloadUrl } : {}),
-    ...(policySha256 ? { sha256: policySha256 } : {}),
+    ...(applyPolicyDownload
+      ? { downloadUrl: releasePolicy.downloadUrl, sha256: policySha256 }
+      : {}),
   };
 }
 
@@ -524,9 +529,9 @@ export class UpdateService implements Disposable {
             ? `New version ${updateInfo.latestVersion} available (forceUpdate: ${updateInfo.forceUpdate})`
             : 'Already up to date');
 
-          // Auto-download if enabled
+          // Auto-download if enabled（fire-and-forget：sha 缺失等会 reject，必须本地 catch 避免 unhandled rejection）
           if (updateInfo.hasUpdate && this.config.autoDownload && updateInfo.downloadUrl) {
-            this.downloadUpdate(updateInfo.downloadUrl);
+            this.downloadUpdate(updateInfo.downloadUrl).catch((err) => logger.warn('Auto-download failed:', err));
           }
 
           return updateInfo;
@@ -579,9 +584,9 @@ export class UpdateService implements Disposable {
 
         logger.info(` GitHub API result:`, updateInfo.hasUpdate ? `New version ${updateInfo.latestVersion} available` : 'Already up to date');
 
-        // Auto-download if enabled
+        // Auto-download if enabled（fire-and-forget：sha 缺失等会 reject，必须本地 catch 避免 unhandled rejection）
         if (updateInfo.hasUpdate && this.config.autoDownload && updateInfo.downloadUrl) {
-          this.downloadUpdate(updateInfo.downloadUrl);
+          this.downloadUpdate(updateInfo.downloadUrl).catch((err) => logger.warn('Auto-download failed:', err));
         }
 
         return updateInfo;

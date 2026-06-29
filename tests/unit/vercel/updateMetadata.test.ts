@@ -122,6 +122,43 @@ describe('vercel update metadata', () => {
     expect((response as { sha256?: string }).sha256).toBeUndefined();
   });
 
+  it('does not let a standalone UPDATE_SHA256 (no UPDATE_DOWNLOAD_URL) bind to an asset/page URL (R2)', () => {
+    // env sha 只能描述 env 的 downloadUrl override；未配 override 时不得贴到 asset 或网页 URL 上。
+    const withAsset = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [
+        {
+          name: 'Agent-Neo-0.16.76-arm64.dmg',
+          browser_download_url: 'https://oss.example.com/v0.16.76/app.dmg',
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+      sha256: 'b'.repeat(64), // env UPDATE_SHA256，但无 downloadUrl override
+    });
+    // 资产分支：用资产自带 sha，绝不用游离的 env sha
+    expect(withAsset.downloadUrl).toBe('https://oss.example.com/v0.16.76/app.dmg');
+    expect((withAsset as { sha256?: string }).sha256).toBe('a'.repeat(64));
+
+    const noAsset = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+      sha256: 'b'.repeat(64),
+    });
+    // 网页兜底分支：无可校验产物，不配任何 sha
+    expect(noAsset.downloadUrl).toBe('https://github.com/acme/code-agent/releases/tag/v0.16.76');
+    expect((noAsset as { sha256?: string }).sha256).toBeUndefined();
+  });
+
   it('skips a url-less asset that would shadow a valid one, keeping downloadUrl+sha256 in sync (MED4)', () => {
     const response = buildUpdateResponseFromRelease({
       tag_name: 'v0.16.76',
@@ -553,6 +590,8 @@ describe('vercel update metadata', () => {
     process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
     process.env.UPDATE_MIN_VERSION_BETA = '0.16.77';
     process.env.UPDATE_FORCE_UPDATE_BETA = 'true';
+    // env sha 必须与 env downloadUrl 成对（override 同一产物）；二者一起才会被采用
+    process.env.UPDATE_DOWNLOAD_URL_BETA = 'https://cdn.example.com/agent-neo-beta.dmg';
     process.env.UPDATE_SHA256_BETA = 'B'.repeat(64);
     process.env.RUNTIME_ASSETS_MANIFEST_URL_BETA = 'https://cdn.example.com/runtime-assets/manifest.json';
     process.env.RUNTIME_ASSETS_MANIFEST_SHA256_BETA = 'C'.repeat(64);
@@ -575,6 +614,7 @@ describe('vercel update metadata', () => {
       forceUpdate: true,
       latestVersion: '0.16.77',
       minVersion: '0.16.77',
+      downloadUrl: 'https://cdn.example.com/agent-neo-beta.dmg',
       sha256: 'b'.repeat(64),
       channel: 'beta',
       runtimeAssets: {

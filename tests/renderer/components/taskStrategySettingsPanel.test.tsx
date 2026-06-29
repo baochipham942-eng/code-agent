@@ -57,7 +57,7 @@ describe('TaskStrategySettingsPanel', () => {
       />,
     );
 
-    expect(html).toContain('任务策略');
+    expect(html).toContain('策略模式');
     expect(html).toContain('任务主模型');
     expect(html).toContain('深度任务模型');
     expect(html).toContain('保存策略');

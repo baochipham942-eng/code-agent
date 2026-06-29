@@ -7,7 +7,7 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Star } from 'lucide-react';
+import { Star, Brain } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -38,7 +38,7 @@ const logger = createLogger('ModelSettings');
 import type { ModelConfig, ProxyMode } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
-import { SettingsPage } from '../SettingsLayout';
+import { SettingsPage, SettingsDetails } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 import {
@@ -824,23 +824,34 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const providerIconPresets = getProviderIconPresets(config.provider);
   const providerIdentityManaged = isProviderIdentityManaged(currentProviderConfig);
 
+  // 主模型锚点：Neo 实际默认用哪个模型（消灭「任务策略默认档位」与「Provider 设默认」两套默认打架）。
+  const defaultProviderConfig = providerConfigs[defaultSelection.provider];
+  const defaultProviderLabel = defaultProviderConfig?.displayName
+    || providers.find((provider) => provider.id === defaultSelection.provider)?.name
+    || defaultSelection.provider;
+  const defaultModelLabel = defaultProviderConfig?.models?.[defaultSelection.model]?.label
+    || defaultSelection.model;
+
   return (
     <SettingsPage
       title={t.model.title}
-      description="先配置任务策略，再维护 Provider、模型和连接。"
+      description="先接入 Provider 并选定默认模型，按需再设自动按任务切换的策略。"
     >
       <WebModeBanner />
 
-      <TaskStrategySettingsPanel
-        settings={appSettings}
-        providerConfigs={providerConfigs}
-        config={config}
-        strategy={taskStrategy}
-        disabled={isWebMode()}
-        saving={isSavingTaskStrategy}
-        onChange={setTaskStrategy}
-        onSave={handleSaveTaskStrategy}
-      />
+      {/* ── 主模型锚点 ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <Brain className="h-4 w-4 shrink-0 text-zinc-400" />
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">Neo 默认模型</div>
+            <div className="truncate text-sm font-medium text-zinc-100">
+              {defaultSelection.model ? `${defaultProviderLabel} / ${defaultModelLabel}` : '未设置'}
+            </div>
+          </div>
+        </div>
+        <span className="text-[11px] text-zinc-500">在下方选择 Provider 后，点模型旁的「设为默认」更改</span>
+      </div>
 
       {/* ── Master-Detail：左 Provider 列表 + 右详情 ── */}
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
@@ -989,6 +1000,23 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           )}
         </div>
       </div>
+
+      {/* ── 任务策略（进阶，默认折叠）── */}
+      <SettingsDetails
+        title="自动按任务切换模型（进阶）"
+        description="开启后 Neo 会按任务类型（快速 / 主 / 深度 / 视觉）自动选不同模型；不展开就一直用上面的默认模型。"
+      >
+        <TaskStrategySettingsPanel
+          settings={appSettings}
+          providerConfigs={providerConfigs}
+          config={config}
+          strategy={taskStrategy}
+          disabled={isWebMode()}
+          saving={isSavingTaskStrategy}
+          onChange={setTaskStrategy}
+          onSave={handleSaveTaskStrategy}
+        />
+      </SettingsDetails>
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

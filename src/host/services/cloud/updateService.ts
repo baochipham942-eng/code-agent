@@ -177,6 +177,8 @@ interface GitHubReleaseAsset {
   name: string;
   browserDownloadUrl?: string;
   size?: number;
+  /** SHA-256 hex digest of the asset bytes（发布脚本写入 OSS release.json）。 */
+  sha256?: string;
 }
 
 interface GitHubReleaseResponse {
@@ -207,7 +209,8 @@ export function selectReleaseAssetForPlatform(
   };
   const platformAssets = assets.filter((asset) => {
     const name = asset.name.toLowerCase();
-    return !isSidecar(name) && matchesPlatform(name);
+    // 必须有 browserDownloadUrl：与服务端 selectAsset 对称，避免 url-less 资产遮蔽有效同名资产。
+    return Boolean(asset.browserDownloadUrl) && !isSidecar(name) && matchesPlatform(name);
   });
 
   const archTokens = arch === 'x64'
@@ -245,6 +248,7 @@ function parseGitHubReleaseResponse(value: unknown): GitHubReleaseResponse {
           name,
           browserDownloadUrl: getStringField(asset, 'browser_download_url'),
           size: getNumberField(asset, 'size'),
+          sha256: normalizeUpdateSha256(asset.sha256),
         };
       })
       .filter((asset): asset is GitHubReleaseAsset => asset !== null)
@@ -556,12 +560,15 @@ export class UpdateService implements Disposable {
         const matchedAsset = selectReleaseAssetForPlatform(data.assets, platform, arch);
         const downloadUrl = matchedAsset?.browserDownloadUrl;
         const fileSize = matchedAsset?.size;
+        // 透传选中资产的 sha256，否则 Vercel 挂掉走 OSS 直连 fallback 时下载会因缺 sha256 被拒。
+        const sha256 = normalizeUpdateSha256(matchedAsset?.sha256);
 
         const updateInfo = this.applyReleasePolicy({
           hasUpdate,
           currentVersion,
           latestVersion: latestVersion || undefined,
           downloadUrl,
+          sha256,
           releaseNotes: data.body,
           fileSize,
           publishedAt: data.publishedAt,

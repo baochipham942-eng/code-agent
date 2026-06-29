@@ -29,27 +29,49 @@ export function isInstallerAsset(name) {
   return typeof name === 'string' && /\.(dmg|exe)$/i.test(name);
 }
 
+// 真安装包至少 ~1MB；更小或 text/html、application/json 多半是 OSS 错误页/占位，
+// 不能把它的 hash 当成安装包的 sha256（否则客户端会把错误页字节当成「校验通过」）。
+const MIN_INSTALLER_BYTES = 1_000_000;
+const SHA_FETCH_ATTEMPTS = 3;
+
 // 从资产 URL 下载并算 sha256（哈希的正是用户将下载的字节，源头即 OSS 上传后的安装包）。
+// 拒绝明显不是安装包的响应（错误页/占位），避免给坏内容盖上「有效 sha256」。
 export async function computeAssetSha256(url, fetchImpl = fetch) {
   const res = await fetchImpl(url);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }
+  const contentType = res.headers?.get?.('content-type') ?? '';
+  if (/text\/html|application\/json/i.test(contentType)) {
+    throw new Error(`unexpected content-type "${contentType}" — not an installer`);
+  }
   const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < MIN_INSTALLER_BYTES) {
+    throw new Error(`asset too small (${buf.length} bytes) — likely an error page, not an installer`);
+  }
   return createHash('sha256').update(buf).digest('hex');
 }
 
-// 给每个安装包资产补 sha256。sha256 是附加加固：算不出就省略该资产的 sha256，
-// 退回客户端「override 放行」行为，绝不抛错阻断发版。enabled=false 时整体跳过（不触网）。
+// 给每个安装包资产补 sha256。sha256 是附加加固：瞬时失败先重试，重试用尽仍失败就
+// 省略该资产的 sha256（退回客户端「override 放行」行为），绝不抛错阻断发版。
+// enabled=false 时整体跳过（不触网）。
 export async function attachInstallerShas(assets, { enabled = false, fetchImpl = fetch, log = console } = {}) {
   if (!enabled) return assets;
   for (const asset of assets) {
     if (!asset?.name || !asset.browser_download_url || !isInstallerAsset(asset.name)) continue;
-    try {
-      asset.sha256 = await computeAssetSha256(asset.browser_download_url, fetchImpl);
-      log.log?.(`sha256 ${asset.name}: ${asset.sha256}`);
-    } catch (err) {
-      log.warn?.(`[WARN] sha256 计算失败，省略 ${asset.name}: ${err?.message ?? err}`);
+    let lastErr;
+    for (let attempt = 1; attempt <= SHA_FETCH_ATTEMPTS; attempt += 1) {
+      try {
+        asset.sha256 = await computeAssetSha256(asset.browser_download_url, fetchImpl);
+        log.log?.(`sha256 ${asset.name}: ${asset.sha256}`);
+        lastErr = undefined;
+        break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (lastErr) {
+      log.warn?.(`[WARN] sha256 计算失败（${SHA_FETCH_ATTEMPTS} 次重试后），省略 ${asset.name}: ${lastErr?.message ?? lastErr}`);
     }
   }
   return assets;

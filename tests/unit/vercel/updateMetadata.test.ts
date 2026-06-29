@@ -98,6 +98,72 @@ describe('vercel update metadata', () => {
     });
   });
 
+  it('does not pair an env downloadUrl override with a release asset sha256 (MED1)', () => {
+    // env override 提供了 URL 但没提供 sha256，资产又恰好带 sha256：
+    // sha256 绝不能贴到 env 的 URL 上（否则客户端按资产 hash 校验 env 包必失败）。
+    const response = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [
+        {
+          name: 'Agent-Neo-0.16.76-arm64.dmg',
+          browser_download_url: 'https://oss.example.com/v0.16.76/app.dmg',
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+      downloadUrl: 'https://cdn.example.com/hotfix.dmg',
+    });
+
+    expect(response.downloadUrl).toBe('https://cdn.example.com/hotfix.dmg');
+    expect((response as { sha256?: string }).sha256).toBeUndefined();
+  });
+
+  it('skips a url-less asset that would shadow a valid one, keeping downloadUrl+sha256 in sync (MED4)', () => {
+    const response = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [
+        // 同名但无 url 的资产排在前面，不应被选中遮蔽有效资产
+        { name: 'Agent-Neo-0.16.76-arm64.dmg', sha256: 'b'.repeat(64) },
+        {
+          name: 'Agent-Neo-0.16.76-arm64.dmg',
+          browser_download_url: 'https://oss.example.com/v0.16.76/app.dmg',
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+    });
+
+    expect(response.downloadUrl).toBe('https://oss.example.com/v0.16.76/app.dmg');
+    expect((response as { sha256?: string }).sha256).toBe('a'.repeat(64));
+  });
+
+  it('does not 502 when an asset sha256 is a non-string (LOW1)', () => {
+    expect(() => buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [
+        {
+          name: 'Agent-Neo-0.16.76-arm64.dmg',
+          browser_download_url: 'https://oss.example.com/v0.16.76/app.dmg',
+          // 畸形 manifest：sha256 是数字
+          sha256: 123 as unknown as string,
+        },
+      ],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+    })).not.toThrow();
+  });
+
   it('falls back to the release page only when no matching asset is present', () => {
     const response = buildUpdateResponseFromRelease({
       tag_name: 'v0.16.76',

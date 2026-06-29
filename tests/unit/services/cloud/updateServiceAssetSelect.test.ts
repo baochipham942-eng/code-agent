@@ -40,4 +40,15 @@ describe('selectReleaseAssetForPlatform', () => {
     const macOnly = ASSETS.filter((asset) => !asset.name.endsWith('.exe'));
     expect(selectReleaseAssetForPlatform(macOnly, 'win32', 'x64')).toBeNull();
   });
+
+  it('skips a url-less asset that would shadow a valid same-arch asset (MED4 client symmetry)', () => {
+    const shadowed = [
+      // 同 arch 但无 url 的资产排在前面，不能被选中遮蔽有效资产
+      { name: 'Agent-Neo-0.17.0-arm64.dmg', sha256: 'b'.repeat(64) },
+      { name: 'Agent-Neo-0.17.0-arm64.dmg', browserDownloadUrl: 'https://oss.example/arm64.dmg', sha256: 'a'.repeat(64) },
+    ];
+    const asset = selectReleaseAssetForPlatform(shadowed, 'darwin', 'arm64');
+    expect(asset?.browserDownloadUrl).toBe('https://oss.example/arm64.dmg');
+    expect(asset?.sha256).toBe('a'.repeat(64));
+  });
 });

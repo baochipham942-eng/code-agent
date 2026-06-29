@@ -74,9 +74,12 @@ function normalizeVersion(value: string | undefined): string | undefined {
   return normalized || undefined;
 }
 
-function normalizeSha256(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLowerCase();
-  return normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : undefined;
+function normalizeSha256(value: unknown): string | undefined {
+  // value 可能来自未校验的 release.json JSON（asset.sha256 可能是数字等非字符串），
+  // 必须先做 typeof 守卫，否则 .trim() 会抛错把 update check 变成 502（与客户端 normalizeUpdateSha256 对齐）。
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(normalized) ? normalized : undefined;
 }
 
 function latestVersionOf(...versions: Array<string | undefined>): string | undefined {
@@ -150,7 +153,9 @@ function selectAsset(
   const normalized = platform.toLowerCase();
   const platformAssets = (assets ?? []).filter((asset) => {
     const name = asset.name?.toLowerCase() ?? '';
-    return !isSidecarAsset(name) && assetMatchesPlatform(name, normalized);
+    // 必须有 browser_download_url：否则一个 url-less 资产会遮蔽后面有效的同名资产，
+    // 导致 check 回退到 release 网页却仍配上该资产的 sha256（download 侧本就要求 url）。
+    return Boolean(asset.browser_download_url) && !isSidecarAsset(name) && assetMatchesPlatform(name, normalized);
   });
 
   // 优先匹配架构标记（x64 / arm64）。manifest 同时含两架构时按 arch 精确命中。
@@ -276,13 +281,23 @@ export function buildUpdateResponseFromRelease(
       releaseVersion === latestVersion ? release.html_url : undefined,
     )
     : undefined;
-  // downloadUrl 优先级：env policy 覆盖 → 选中资产的直链（OSS dmg/exe）→ release 网页兜底。
-  // 历史 bug：曾直接用 fallbackDownloadUrl（release 网页），客户端 in-app updater 的
-  // downloadFile() 抓到的是 HTML 而非安装包，sha256 缺失时还会 warn 放行装不上。
-  // 与 handleDownload(action=download) 的 302 跳转选包逻辑保持同源一致。
-  const downloadUrl = options.downloadUrl || asset?.browser_download_url || fallbackDownloadUrl;
-  // sha256 优先级：env policy 覆盖 → 选中资产自带的 sha256（发布脚本写入 OSS release.json）。
-  const sha256 = normalizeSha256(options.sha256) ?? normalizeSha256(asset?.sha256);
+  // downloadUrl 与 sha256 必须「同源」——sha256 只能描述实际返回的那个 URL 的字节，
+  // 否则会把 sha 贴到不匹配的包上（客户端按 hash 校验必失败）。
+  // 历史 bug：曾直接用 fallbackDownloadUrl（release 网页），客户端 downloadFile() 抓到 HTML 装不上。
+  // 与 handleDownload(action=download) 的 302 选包逻辑保持同源一致。
+  const envSha256 = normalizeSha256(options.sha256);
+  let downloadUrl: string | undefined;
+  let sha256: string | undefined;
+  if (options.downloadUrl) {
+    downloadUrl = options.downloadUrl;             // env policy 覆盖：仅配 env sha，不借用资产 sha
+    sha256 = envSha256;
+  } else if (asset?.browser_download_url) {
+    downloadUrl = asset.browser_download_url;       // 选中资产直链：env sha 优先，否则资产自带 sha
+    sha256 = envSha256 ?? normalizeSha256(asset.sha256);
+  } else {
+    downloadUrl = fallbackDownloadUrl;              // 无可下载资产：仅 release 网页兜底（无产物可校验）
+    sha256 = envSha256;
+  }
 
   return {
     success: true,

@@ -321,6 +321,18 @@ async function handleOpenPath(
   return shell.openPath(resolvedPath);
 }
 
+// 打开 http(s) 外链到系统默认浏览器。走 IPC 桥（host 进程），不依赖 webview 里的
+// __TAURI_INTERNALS__ —— 修 bug A：webServer 提供的 http origin webview 里 Tauri 插件
+// 直连不可用，导致聊天里的外链点击无反应。
+async function handleOpenExternal(payload: { url: string }): Promise<string> {
+  const { shell } = await import('../platform');
+  if (!/^https?:\/\//i.test(payload.url)) {
+    throw new Error('openExternal only accepts http(s) URLs');
+  }
+  await shell.openExternal(payload.url);
+  return '';
+}
+
 async function handleShowItemInFolder(
   payload: { filePath: string },
   getAppService: () => AgentApplicationService | null
@@ -1012,6 +1024,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'openPath':
           data = await handleOpenPath(payload as { filePath: string }, getAppService);
+          break;
+        case 'openExternal':
+          data = await handleOpenExternal(payload as { url: string });
           break;
         case 'showItemInFolder':
           data = await handleShowItemInFolder(payload as { filePath: string }, getAppService);

@@ -376,6 +376,7 @@ export const en: Translations = {
       general: 'General',
       model: 'Model',
       visualModels: 'Visual models',
+      imageVideo: 'Generation defaults',
       disclosure: 'Disclosure',
       appearance: 'Appearance',
       language: 'Language',

@@ -9,6 +9,7 @@ import {
   X,
   Cpu,
   Image as ImageIcon,
+  ImagePlay,
   Palette,
   Fingerprint,
   Info,
@@ -94,6 +95,7 @@ import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { VisualModelsSettings } from './tabs/VisualModelsSettings';
+import { ImageVideoSettings } from './tabs/ImageVideoSettings';
 import { SearchSettings } from './tabs/SearchSettings';
 import { AgentEngineSettings } from './tabs/AgentEngineSettings';
 import { BudgetSettings } from './tabs/BudgetSettings';
@@ -162,6 +164,7 @@ export function buildSettingsTabGroups({
     { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
+    { id: 'imageVideo', label: t.settings.tabs.imageVideo, icon: <ImagePlay className="w-4 h-4" /> },
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
     { id: 'budget', label: '预算告警', icon: <DollarSign className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
@@ -420,6 +423,7 @@ export const SettingsModal: React.FC = () => {
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
             {activeTab === 'visualModels' && <VisualModelsSettings />}
+            {activeTab === 'imageVideo' && <ImageVideoSettings />}
             {activeTab === 'agentEngine' && <AgentEngineSettings />}
             {activeTab === 'budget' && <BudgetSettings />}
             {activeTab === 'appearance' && <AppearanceSettings />}

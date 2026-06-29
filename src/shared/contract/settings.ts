@@ -118,6 +118,14 @@ export interface AppSettings {
     /** 源优先级覆盖（id 顺序，越靠前越优先；未列出的按内置 priority 排在后） */
     sourceOrder?: string[];
   };
+  // 生成模型默认值（ADR-027）。全部可选，未配置 = 设计画布仍用 registry 首项。
+  // 模型 id 须为 visualModels.ts 的 IMAGE_MODELS / VIDEO_MODELS 中的 id。
+  design?: {
+    /** 默认图像生成模型 id */
+    defaultImageModelId?: string;
+    /** 默认视频生成模型 id */
+    defaultVideoModelId?: string;
+  };
   // API 超时配置
   timeouts?: {
     /** 任务复杂度（用户设置） */

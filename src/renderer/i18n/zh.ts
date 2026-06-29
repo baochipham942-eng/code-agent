@@ -374,6 +374,7 @@ export const zh = {
       general: '通用',
       model: '模型',
       visualModels: '生成模型',
+      imageVideo: '生成默认值',
       disclosure: '界面',
       appearance: '外观',
       language: '语言',

@@ -64,6 +64,9 @@ import {
 } from './designPreviewInject';
 import { applyTextEdit } from './inlineTextEdit';
 import { DESIGN_DEVICE_PRESETS, DESIGN_IMAGE_MODELS, type DesignDeviceId } from '@shared/constants';
+import { IPC_DOMAINS } from '@shared/ipc';
+import type { AppSettings } from '@shared/contract';
+import { invokeDomain } from '../../services/ipcService';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { estimateVideoCostCny } from '@shared/media/videoCost';
 import { videoModelById, clampVideoDuration } from '@shared/constants/visualModels';
@@ -1011,6 +1014,23 @@ export const DesignWorkspace: React.FC = () => {
     if (st.selectedRunDir && !st.previewHtml && st.status === 'idle') {
       void loadRun(st.selectedRunDir);
     }
+  }, []);
+
+  // 套用设置页「生成模型」默认值（ADR-027）：仅当用户未在画布显式选过对应类型时生效。
+  useEffect(() => {
+    let cancelled = false;
+    void invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
+      .then((settings) => {
+        if (cancelled) return;
+        const design = settings?.design;
+        if (!design) return;
+        useDesignStore.getState().applyDefaultModels({
+          image: design.defaultImageModelId,
+          video: design.defaultVideoModelId,
+        });
+      })
+      .catch(() => { /* 设置不可达时静默，画布仍用 registry 默认 */ });
+    return () => { cancelled = true; };
   }, []);
 
   // 画布恢复：runDir 已持久化但节点为空（刷新后）→ 从磁盘 canvas.json 重载（共享 hook，与 DesignCanvasTab 同源）。

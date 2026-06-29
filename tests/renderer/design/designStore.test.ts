@@ -10,6 +10,48 @@ describe('designStore imageModel', () => {
   });
 });
 
+describe('designStore applyDefaultModels（设置页默认 · ADR-027）', () => {
+  it('未显式选过时套用设置默认；显式选过后默认不再覆盖', () => {
+    // 复位到初始（未选状态）
+    useDesignStore.setState({
+      imageModel: 'wanx-t2i',
+      videoModel: 'wan2.7-t2v',
+      imageModelUserPicked: false,
+      videoModelUserPicked: false,
+    });
+
+    // 未选 → 套用设置默认
+    useDesignStore.getState().applyDefaultModels({ image: 'cogview-4', video: 'wanx2.1-i2v-turbo' });
+    expect(useDesignStore.getState().imageModel).toBe('cogview-4');
+    expect(useDesignStore.getState().videoModel).toBe('wanx2.1-i2v-turbo');
+    // applyDefaultModels 不应把 userPicked 置真（它不是用户显式选）
+    expect(useDesignStore.getState().imageModelUserPicked).toBe(false);
+
+    // 用户在画布显式选 → 置 userPicked
+    useDesignStore.getState().setImageModel('flux-2');
+    expect(useDesignStore.getState().imageModelUserPicked).toBe(true);
+
+    // 再套用设置默认 → 图像被显式选过，不覆盖；视频未显式选，仍可被覆盖
+    useDesignStore.getState().applyDefaultModels({ image: 'wanx-t2i', video: 'wan2.7-t2v' });
+    expect(useDesignStore.getState().imageModel).toBe('flux-2'); // 保持用户选择
+    expect(useDesignStore.getState().videoModel).toBe('wan2.7-t2v'); // 视频未锁，被覆盖
+
+    // 复位避免污染其它测试
+    useDesignStore.setState({
+      imageModel: 'wanx-t2i',
+      videoModel: 'wan2.7-t2v',
+      imageModelUserPicked: false,
+      videoModelUserPicked: false,
+    });
+  });
+
+  it('undefined 默认值为 no-op（设置页未配置时零行为变更）', () => {
+    useDesignStore.setState({ imageModel: 'wanx-t2i', imageModelUserPicked: false });
+    useDesignStore.getState().applyDefaultModels({});
+    expect(useDesignStore.getState().imageModel).toBe('wanx-t2i');
+  });
+});
+
 describe('designStore proto 版本对比（P2 统一历史）', () => {
   it('toggleCompareId 选版上限 2、FIFO 顶替、再点取消', () => {
     const s = useDesignStore.getState();

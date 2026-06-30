@@ -337,6 +337,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'exportPrototypePdf',
     'extractBrandFromImage',
     'generateDesignImage',
+    'generateDesignMusic',
     'generateDesignVideo',
     'generateSlidesDeck',
     'generateSlidesOutline',

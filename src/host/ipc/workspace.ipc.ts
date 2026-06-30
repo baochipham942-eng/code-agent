@@ -76,6 +76,7 @@ import {
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
   handleGenerateDesignVideo,
+  handleGenerateDesignMusic,
 } from './workspaceDesignMedia.ipc';
 // 这些 handler 历史上是 workspace.ipc 的公开导出（测试与 index.ts 依赖），保持向后兼容。
 export {
@@ -84,6 +85,7 @@ export {
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
   handleGenerateDesignVideo,
+  handleGenerateDesignMusic,
 } from './workspaceDesignMedia.ipc';
 // 列出视频模型 + 可用性（D6/D7：复用 providerKeyConfigured；P2 全 dashscope）。
 export async function handleListVisualVideoModels(
@@ -1165,6 +1167,12 @@ export function registerWorkspaceHandlers(
         case 'generateDesignVideo':
           data = await handleGenerateDesignVideo(
             payload as { mode: 't2v' | 'i2v'; prompt?: string; baseImagePath?: string; outputPath: string; model: string; durationSec?: number },
+            () => getConfigService()?.getSettings() ?? null,
+          );
+          break;
+        case 'generateDesignMusic':
+          data = await handleGenerateDesignMusic(
+            payload as { prompt?: string; lyrics?: string; outputPath: string; model: string },
             () => getConfigService()?.getSettings() ?? null,
           );
           break;

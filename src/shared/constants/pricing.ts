@@ -90,3 +90,13 @@ export const DESIGN_VIDEO_MODELS = {
   t2v: 'wan2.7-t2v',
   i2v: 'wanx2.1-i2v-turbo',
 } as const;
+
+/**
+ * 音乐生成定价（每首，人民币元）。单一真源——禁在业务代码散落音乐价格字面量。
+ * key 为音乐模型 id（与 generateMusic 返回的 actualModel 对齐）。
+ * MiniMax 音乐单价未公开，先取保守默认 ¥0.2/首，待真实账单校正。
+ */
+export const MUSIC_PRICING_CNY: Record<string, number> = {
+  'music-2.6': 0.2, // MiniMax 音乐，价表待补（保守默认）
+  default: 0.2,
+};

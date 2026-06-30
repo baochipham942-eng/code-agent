@@ -12,7 +12,8 @@ import { promises as fsp } from 'fs';
 import { assertWithinDesignDir } from './workspaceDesignPaths';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
-import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
+import { estimateMusicCostCny } from '../../shared/media/musicCost';
+import { DESIGN_IMAGE_MODELS, MODEL_API_ENDPOINTS } from '../../shared/constants';
 import { imageEngineForModel, imageModelById, videoModelById } from '../../shared/constants/visualModels';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
@@ -508,4 +509,52 @@ export async function handleGenerateDesignVideo(
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, buf);
   return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
+}
+
+// 设计画布音乐生成（P4）：内置 MiniMax 音乐直连 / `provider:model` 桥接走源聊天 provider 端点。
+// 与图像/视频不同——generateMusic 同步返回 audioBuffer（Buffer，非 url），直接写盘，无下载步。
+// 守门顺序（全在付费 service 调用之前，杜绝 paid no-op 与越界写盘）：
+// outputPath 必填 → prompt/lyrics 至少一项非空 → 路径守卫。成本按真实模型查价表（待价表补全）。
+export async function handleGenerateDesignMusic(
+  payload: { prompt?: string; lyrics?: string; outputPath: string; model: string },
+  // 多模态桥接（Spec 1）：注入源聊天 provider 的 settings，供桥接音乐模型解析端点。
+  // 带默认值（() => null）保证既有调用点零破坏；IPC 注册处传真 settings。
+  getSettings: () => AppSettings | null = () => null,
+): Promise<{ path: string; actualModel: string; costCny: number }> {
+  if (!payload?.outputPath) throw new Error('generateDesignMusic 需要 outputPath');
+  // prompt 与 lyrics 至少一项非空白：双空是 paid no-op，主进程兜底拦住付费空调用（与 service 守卫同口径）。
+  if (!payload.prompt?.trim() && !payload.lyrics?.trim()) {
+    throw new Error('音乐生成需要 prompt 或 lyrics');
+  }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+
+  const { generateMusic } = await import('../services/media/musicGenerationService');
+
+  // 桥接音乐模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ 端点取自源聊天
+  // provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置 minimax-music-2.6 不含冒号不误伤。
+  let baseUrl: string;
+  let apiKey: string;
+  let modelName: string;
+  const bridged = payload.model.includes(':') ? parseBridgedId(payload.model) : null;
+  if (bridged) {
+    // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
+    ({ baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings()));
+    modelName = bridged.modelName;
+  } else {
+    // 内置 MiniMax 音乐（id: minimax-music-2.6 → 真实 model 名 music-2.6）。
+    const { getMinimaxApiKey } = await import('../services/media/imageGenerationService');
+    const key = getMinimaxApiKey();
+    if (!key) throw new Error('音乐生成需要 MiniMax API Key。');
+    baseUrl = MODEL_API_ENDPOINTS.minimax;
+    apiKey = key;
+    modelName = payload.model === 'minimax-music-2.6' ? 'music-2.6' : payload.model;
+  }
+
+  const { audioBuffer, actualModel } = await generateMusic({
+    baseUrl, apiKey, modelName, prompt: payload.prompt, lyrics: payload.lyrics,
+  });
+  // 直接落 audioBuffer：MiniMax 音乐同步返回二进制，无 OSS url 下载步（与图像/视频不同）。
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.writeFile(payload.outputPath, audioBuffer);
+  return { path: payload.outputPath, actualModel, costCny: estimateMusicCostCny(actualModel) };
 }

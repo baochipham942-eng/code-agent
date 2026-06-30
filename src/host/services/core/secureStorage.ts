@@ -45,7 +45,6 @@ function parseJsonRecord(value: string): Record<string, unknown> | null {
 const KEYCHAIN_SERVICE = 'code-agent';
 const KEYCHAIN_ACCOUNT_SESSION = 'supabase-session';
 const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
-const KEYCHAIN_ACCOUNT_APIKEYS = 'api-keys'; // New: API keys in Keychain
 
 // Storage keys use dot notation by design (e.g., 'supabase.session')
  
@@ -395,12 +394,7 @@ class SecureStorageService {
     // Update cache immediately
     this.apiKeyCache.set(provider, apiKey);
 
-    // Store in Keychain asynchronously (persistent storage)
-    this.saveApiKeysToKeychain().catch(e => {
-      logger.error(' Failed to save API key to Keychain:', e);
-    });
-
-    // Also store in electron-store as backup (encrypted)
+    // Persist to the per-data-dir encrypted store (single source of truth on restart).
     const key = `apikey.${provider}` as keyof SecureStorageData;
     this.store.set(key, apiKey);
   }
@@ -433,11 +427,6 @@ class SecureStorageService {
 
     const key = `apikey.${provider}` as keyof SecureStorageData;
     this.store.delete(key);
-
-    // Update Keychain
-    this.saveApiKeysToKeychain().catch(e => {
-      logger.error(' Failed to update Keychain after delete:', e);
-    });
   }
 
   /**
@@ -467,70 +456,10 @@ class SecureStorageService {
     return providers;
   }
 
-  /**
-   * Save all API keys to Keychain
-   * Keys are encrypted with safeStorage before storing
-   */
-  private async saveApiKeysToKeychain(): Promise<void> {
-    if (!keytar) return;
-    try {
-      const apiKeys: Record<string, string> = {};
-      for (const [provider, key] of this.apiKeyCache) {
-        apiKeys[provider] = key;
-      }
-
-      if (Object.keys(apiKeys).length > 0) {
-        const json = JSON.stringify(apiKeys);
-        // Encrypt with safeStorage if available (not in CLI mode)
-        if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-          const encrypted = safeStorage.encryptString(json);
-          await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS, encrypted.toString('base64'));
-        } else {
-          // Fallback: store directly (still protected by Keychain)
-          await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS, json);
-        }
-      }
-    } catch (e) {
-      logger.error(' Failed to save API keys to Keychain:', e);
-    }
-  }
-
-  /**
-   * Load API keys from Keychain on startup
-   */
-  async loadApiKeysFromKeychain(): Promise<void> {
-    if (!keytar) return;
-    try {
-      const stored = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS);
-      if (!stored) return;
-
-      let json: string;
-      // Try to decrypt with safeStorage (not available in CLI mode)
-      if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-        try {
-          const buffer = Buffer.from(stored, 'base64');
-          json = safeStorage.decryptString(buffer);
-        } catch {
-          // Might be unencrypted (legacy), try direct parse
-          json = stored;
-        }
-      } else {
-        json = stored;
-      }
-
-      const apiKeys = JSON.parse(json) as Record<string, string>;
-      for (const [provider, key] of Object.entries(apiKeys)) {
-        this.apiKeyCache.set(provider, key);
-        // Also sync to electron-store as backup
-        const storeKey = `apikey.${provider}` as keyof SecureStorageData;
-        this.store.set(storeKey, key);
-      }
-
-      logger.info(' Loaded API keys from Keychain:', Object.keys(apiKeys).join(', '));
-    } catch (e) {
-      logger.error(' Failed to load API keys from Keychain:', e);
-    }
-  }
+  // API keys 不再镜像到全局 Keychain：真持久化是按数据目录隔离的加密库（this.store）。
+  // 全局 Keychain 会破坏 dev/prod 数据目录隔离，且整包覆盖写入存在 last-writer 串档问题，
+  // 而读取（旧 loadApiKeysFromKeychain）从未接入——故整条 API key Keychain 路径已移除。
+  // 注意：session / 用户设置仍走 Keychain（见下方 saveSessionToKeychain / getSettingsFromKeychain）。
 
   // Get or generate device ID
   getDeviceId(): string {

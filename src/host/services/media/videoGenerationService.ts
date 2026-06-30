@@ -20,6 +20,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/** i2v 底图校验（付费前置守卫，防御纵深）：必须是非空图片 data URL，或 https 公网图片地址。
+ *  拒空 data URL / http / 私网 / file，避免空图或危险 URL 进入计费提交。 */
+function assertValidI2vImage(imageDataUrl: string | undefined): void {
+  const img = imageDataUrl ?? '';
+  if (!/^data:image\/[a-z0-9.+-]+;base64,.+/i.test(img) && !isSafeImageUrl(img)) {
+    throw new Error('图生视频底图无效（需非空图片 data URL 或 https 公网图片地址）。');
+  }
+}
+
 /** 解析视频任务返回：成功时 url 在 output.video_url（与图像 results[0].url 不同）。 */
 export function parseWanxVideoTask(value: unknown): { taskId?: string; status?: string; url?: string; message?: string } {
   if (!isRecord(value)) return {};
@@ -194,12 +203,8 @@ export async function submitAndPollArkVideo(
   opts?: { pollIntervalMs?: number },
 ): Promise<{ url: string }> {
   // 付费前置守卫（防御纵深）：i2v 底图必须是非空图片 data URL，或 https 公网图片地址。
-  // 拒空 data URL / http / 私网 / file，避免空图/危险 URL 进入计费 POST。
-  if (args.mode === 'i2v') {
-    const img = args.imageDataUrl ?? '';
-    const validImg = /^data:image\/[a-z0-9.+-]+;base64,.+/i.test(img) || isSafeImageUrl(img);
-    if (!validImg) throw new Error('Seedance 图生视频底图无效（需非空图片 data URL 或 https 公网图片地址）。');
-  }
+  // 保留对导出原语直接调用者的保护（generateVideo 已统一在 provider 路由前校验过）。
+  if (args.mode === 'i2v') assertValidI2vImage(args.imageDataUrl);
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: args.prompt ?? '' }];
   if (args.mode === 'i2v' && args.imageDataUrl) {
     content.push({ type: 'image_url', image_url: { url: args.imageDataUrl } });
@@ -285,6 +290,7 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
   if (!model.caps.includes(args.mode)) throw new Error(`模型 ${args.model} 不支持 ${args.mode}`);
   if (args.mode === 't2v' && !args.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
   if (args.mode === 'i2v' && !args.imageDataUrl) throw new Error('图生视频需要底图');
+  if (args.mode === 'i2v') assertValidI2vImage(args.imageDataUrl);
 
   const durationSec = clampVideoDuration(model, args.durationSec);
   const signal = args.outerSignal ?? new AbortController().signal;

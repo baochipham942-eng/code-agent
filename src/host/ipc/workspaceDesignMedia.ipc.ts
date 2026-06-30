@@ -22,6 +22,10 @@ import {
   type CustomImageModel,
 } from '../services/media/customImageModelRegistry';
 import {
+  getCustomVideoModel,
+  getCustomVideoModelApiKey,
+} from '../services/media/customVideoModelRegistry';
+import {
   resolveHealthyImageModelId,
   nextHealthyImageModelId,
   isImageBalanceError,
@@ -403,19 +407,77 @@ export async function handleRemoveWatermarkDesignImage(
 // 守门顺序（全在付费 service 调用之前，杜绝 paid no-op 与越界）：
 // 必填校验（t2v 需 prompt / i2v 需 baseImagePath）→ 路径守卫 → 模型存在 → cap 命中 mode。
 // 成本权威源在 main：按真实回传时长 × 模型单价查表（T2 成本可见）。
-export async function handleGenerateDesignVideo(payload: {
-  mode: 't2v' | 'i2v';
-  prompt?: string;
-  baseImagePath?: string;
-  outputPath: string;
-  model: string;
-  durationSec?: number;
-}): Promise<{ path: string; actualModel: string; costCny: number; durationSec: number }> {
+export async function handleGenerateDesignVideo(
+  payload: {
+    mode: 't2v' | 'i2v';
+    prompt?: string;
+    baseImagePath?: string;
+    outputPath: string;
+    model: string;
+    durationSec?: number;
+  },
+  // 多模态桥接（Spec 1）：注入源聊天 provider 的 settings，供桥接视频模型解析端点。
+  // 带默认值（() => null）保证既有调用点零破坏；IPC 注册处传真 settings。
+  getSettings: () => AppSettings | null = () => null,
+): Promise<{ path: string; actualModel: string; costCny: number; durationSec: number }> {
   if (!payload?.outputPath) throw new Error('generateDesignVideo 需要 outputPath');
   if (payload.mode === 't2v' && !payload.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
   if (payload.mode === 'i2v' && !payload.baseImagePath) throw new Error('图生视频需要 baseImagePath');
   assertWithinDesignDir(payload.outputPath, 'outputPath');
   if (payload.baseImagePath) assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
+
+  // i2v 底图读成 dataURL（桥接/custom 共用）：路径已过 assertWithinDesignDir，缺底图已在上方拦。
+  const readBaseImageDataUrl = async (): Promise<string | undefined> => {
+    if (payload.mode === 'i2v' && payload.baseImagePath) {
+      const baseBuf = await fsp.readFile(payload.baseImagePath);
+      return `data:image/png;base64,${baseBuf.toString('base64')}`;
+    }
+    return undefined;
+  };
+  const durationSecOut = payload.durationSec ?? 5;
+
+  // 桥接视频模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ openai-compat 视频引擎，
+  // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置 videoModelById id
+  // （wan2.7-t2v 等）与 custom id 均不含冒号，故此判定不误伤；必须在内置/custom 解析之前拦下。
+  if (payload.model && payload.model.includes(':')) {
+    const bridged = parseBridgedId(payload.model);
+    if (bridged) {
+      // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
+      const { baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings());
+      const { generateVideoOpenAICompat, downloadVideoAsBuffer } = await import(
+        '../services/media/videoGenerationService'
+      );
+      const imageDataUrl = await readBaseImageDataUrl();
+      const { url, actualModel } = await generateVideoOpenAICompat({
+        baseUrl, apiKey, modelName: bridged.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
+      });
+      const buf = await downloadVideoAsBuffer(url);
+      await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+      await fsp.writeFile(payload.outputPath, buf);
+      return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSecOut), durationSec: durationSecOut };
+    }
+  }
+
+  // 自定义视频模型（补完断链）：注册表命中 → 同走 openai-compat。key 缺失/baseUrl 不安全先拦，不付费。
+  const customVideo = payload.model ? await getCustomVideoModel(payload.model) : null;
+  if (customVideo) {
+    const apiKey = getCustomVideoModelApiKey(customVideo.id);
+    if (!apiKey) throw new Error(`自定义视频模型 ${customVideo.label} 未配置 API Key，请在设置中补填。`);
+    // 出片前再守一道 SSRF：注册表存的是已校验 baseUrl，磁盘文件可能被外部篡改，发请求前必须再判。
+    const baseUrl = assertSafeCustomBaseUrl(customVideo.baseUrl);
+    const { generateVideoOpenAICompat, downloadVideoAsBuffer } = await import(
+      '../services/media/videoGenerationService'
+    );
+    const imageDataUrl = await readBaseImageDataUrl();
+    const { url, actualModel } = await generateVideoOpenAICompat({
+      baseUrl, apiKey, modelName: customVideo.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
+    });
+    const buf = await downloadVideoAsBuffer(url);
+    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+    await fsp.writeFile(payload.outputPath, buf);
+    const costCny = customVideo.costCnyPerVideo ?? estimateVideoCostCny(actualModel, durationSecOut);
+    return { path: payload.outputPath, actualModel, costCny, durationSec: durationSecOut };
+  }
 
   const model = videoModelById(payload.model);
   if (!model) throw new Error(`未知视频模型 id: ${payload.model}`);

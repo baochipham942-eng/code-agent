@@ -1165,6 +1165,7 @@ export function registerWorkspaceHandlers(
         case 'generateDesignVideo':
           data = await handleGenerateDesignVideo(
             payload as { mode: 't2v' | 'i2v'; prompt?: string; baseImagePath?: string; outputPath: string; model: string; durationSec?: number },
+            () => getConfigService()?.getSettings() ?? null,
           );
           break;
         case 'listVisualVideoModels':

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Brain } from 'lucide-react';
 import type {
   AppSettings,
@@ -92,6 +92,24 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     }
     return Array.from(groups.values());
   }, [modelOptions]);
+
+  // 自愈：开启自动切换时，若某档位指向不可用模型，回退到当前默认模型（消除「不可用」）。
+  useEffect(() => {
+    if (strategy?.mode !== 'auto') return;
+    const available = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
+    const fallback = optionValue(config.provider, config.model);
+    if (!available.has(fallback)) return;
+    let changed = false;
+    const profiles = { ...strategy.profiles };
+    for (const profile of AUTO_PROFILES) {
+      const slot = strategy.profiles[profile];
+      if (!available.has(optionValue(slot.provider, slot.model))) {
+        profiles[profile] = { ...slot, provider: config.provider, model: config.model };
+        changed = true;
+      }
+    }
+    if (changed) onChange({ ...strategy, profiles });
+  }, [strategy, modelOptions, config.provider, config.model, onChange]);
 
   if (!strategy) {
     return <div className="text-sm text-zinc-500">任务策略配置还没有加载完成。</div>;

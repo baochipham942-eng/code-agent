@@ -45,7 +45,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
       profiles: {
         fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick, reasoningEffort: 'low', maxTokens: 4096 },
         main: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat, reasoningEffort: 'medium', maxTokens: 16384 },
-        deep: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.reasoning, reasoningEffort: 'high', maxTokens: 32768 },
+        // 深度档用 DeepSeek 的推理模型——provider 必须配对 deepseek，避免出现 xiaomi/deepseek-v4-pro 这种错配。
+        deep: { provider: 'deepseek', model: DEFAULT_MODELS.reasoning, reasoningEffort: 'high', maxTokens: 32768 },
         vision: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.vision, reasoningEffort: 'medium', maxTokens: 4096 },
       },
       fallback: {

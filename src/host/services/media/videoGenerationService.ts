@@ -2,7 +2,7 @@
 // 复用 wanx「提交异步任务 → 轮询 /tasks 直到 SUCCEEDED/FAILED」骨架，但解析 output.video_url
 // （与图像的 output.results[0].url 不同）。t2v / i2v 共用同一提交端点，仅 input/参数不同。
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
-import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
+import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, getArkApiKey, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
 import { videoModelById, clampVideoDuration, type VideoCap } from '../../../shared/constants/visualModels';
 
 const VIDEO_SYNTHESIS_PATH = '/services/aigc/video-generation/video-synthesis';
@@ -285,6 +285,18 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
         ? { model: model.id, prompt: args.prompt }
         : { model: model.id, first_frame_image: args.imageDataUrl, ...(args.prompt?.trim() ? { prompt: args.prompt } : {}) };
     const { url } = await submitAndPollMinimaxVideo(apiKey, body, signal);
+    return { url, actualModel: model.id, durationSec };
+  }
+
+  // Spec 2：Seedance 原生（火山方舟 Ark）。守门已在上方统一做（cap / prompt / 底图）。
+  if (model.provider === 'ark') {
+    const apiKey = getArkApiKey();
+    if (!apiKey) throw new Error('Seedance 视频需要火山方舟 Ark API Key（在 火山引擎/豆包 provider 配置）。');
+    const { url } = await submitAndPollArkVideo(
+      apiKey,
+      { model: model.id, mode: args.mode, prompt: args.prompt, imageDataUrl: args.imageDataUrl, durationSec },
+      signal,
+    );
     return { url, actualModel: model.id, durationSec };
   }
 

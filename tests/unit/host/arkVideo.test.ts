@@ -88,3 +88,26 @@ describe('submitAndPollArkVideo', () => {
     await expect(submitAndPollArkVideo('bad', { model: 'm', mode: 't2v', prompt: 'x', durationSec: 5 }, sig, { pollIntervalMs: 1 })).rejects.toThrow();
   });
 });
+
+import { generateVideo } from '../../../src/host/services/media/videoGenerationService';
+
+describe('generateVideo → ark 路由', () => {
+  const orig = process.env.ARK_API_KEY;
+  beforeEach(() => { process.env.ARK_API_KEY = 'ark-key'; });
+  afterEach(() => { vi.unstubAllGlobals(); if (orig === undefined) delete process.env.ARK_API_KEY; else process.env.ARK_API_KEY = orig; });
+
+  it('provider=ark 走 Ark 引擎并回 url + actualModel', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ id: 'x', status: 'succeeded', content: { video_url: 'https://v/a.mp4' } }) })));
+    const r = await generateVideo({ model: 'doubao-seedance-2-0-260128', mode: 't2v', prompt: 'a cat', durationSec: 5 });
+    expect(r.url).toBe('https://v/a.mp4');
+    expect(r.actualModel).toBe('doubao-seedance-2-0-260128');
+  });
+
+  it('缺 key 抛错且不发请求', async () => {
+    delete process.env.ARK_API_KEY;
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(generateVideo({ model: 'doubao-seedance-2-0-260128', mode: 't2v', prompt: 'a cat', durationSec: 5 })).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

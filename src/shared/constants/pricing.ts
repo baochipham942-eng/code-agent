@@ -82,6 +82,10 @@ export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
   // 「不方便精确看」故为粗值；比通义万相贵约 18x（海螺高端档）。需精确单价后再细调。
   'MiniMax-Hailuo-02': 0.42, // 海螺文生视频，控制台粗估折算
   'I2V-01': 0.42,            // 海螺图生视频，控制台粗估折算
+  // Veo 3.1 原生（Spec 3，Gemini API）：fast $0.10/s、标准 $0.40/s（含音频，USD→CNY≈7.2）。
+  // 固定 8s 出片：fast≈¥5.76、标准≈¥23.04。Veo 3/2 于 2026-06-30 停用，只列 3.1。
+  'veo-3.1-fast-generate-preview': 0.72,
+  'veo-3.1-generate-preview': 2.88,
   default: 0.03,
 };
 

@@ -302,10 +302,11 @@ describe('handleListVisualImageModels（按已配 key 标可用）', () => {
     const byId = Object.fromEntries(res.models.map((m) => [m.id, m]));
     expect(byId['gpt-image-2'].available).toBe(true);
   });
-  it('不泄漏任何 key 值（出参只含 id/label/provider/available）', async () => {
+  it('不泄漏任何 key 值（出参只含 id/label/provider/available/source[/sourceLabel]）', async () => {
     const res = await handleListVisualImageModels();
+    // 不传 settings → 无桥接项，全部为内置，键集应恰为安全字段（source 是枚举徽标非密钥）。
     for (const m of res.models) {
-      expect(Object.keys(m).sort()).toEqual(['available', 'id', 'label', 'provider']);
+      expect(Object.keys(m).sort()).toEqual(['available', 'id', 'label', 'provider', 'source']);
     }
   });
 });

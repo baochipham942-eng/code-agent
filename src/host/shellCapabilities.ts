@@ -354,6 +354,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'listFiles',
     'listRecent',
     'listVisualImageModels',
+    'listVisualMusicModels',
     'listVisualVideoModels',
     'openPath',
     'readBinary',

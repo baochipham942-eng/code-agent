@@ -30,7 +30,9 @@ import { extractBrandFromImage as registryExtractBrand } from '../services/desig
 import { handleGetConfigScope } from './workspaceConfigScope';
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
-import type { FileInfo } from '../../shared/contract';
+import type { FileInfo, AppSettings } from '../../shared/contract';
+import { deriveBridgedVisualModels } from '../../shared/visualModelBridge';
+import { getSecureStorage } from '../services/core/secureStorage';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
@@ -84,21 +86,80 @@ export {
   handleGenerateDesignVideo,
 } from './workspaceDesignMedia.ipc';
 // 列出视频模型 + 可用性（D6/D7：复用 providerKeyConfigured；P2 全 dashscope）。
-export async function handleListVisualVideoModels(): Promise<{
-  models: Array<{ id: string; label: string; provider: string; available: boolean; caps: string[]; minDurationSec: number; maxDurationSec: number; defaultDurationSec: number }>;
+export async function handleListVisualVideoModels(
+  getSettings: () => AppSettings | null = () => null,
+  isProviderKeyConfigured: (provider: string) => boolean = () => false,
+): Promise<{
+  models: Array<{ id: string; label: string; provider: string; available: boolean; caps: string[]; minDurationSec: number; maxDurationSec: number; defaultDurationSec: number; source: 'builtin' | 'custom' | 'bridged'; sourceLabel?: string }>;
 }> {
-  return {
-    models: VIDEO_MODELS.map((m) => ({
+  const builtin = VIDEO_MODELS.map((m) => ({
+    id: m.id,
+    label: m.label,
+    provider: m.provider,
+    available: providerKeyConfigured(m.provider),
+    caps: [...m.caps],
+    minDurationSec: m.minDurationSec,
+    maxDurationSec: m.maxDurationSec,
+    defaultDurationSec: m.defaultDurationSec,
+    source: 'builtin' as const,
+  }));
+  // 自定义视频模型：available = 该模型是否已配 key（每模型独立 key）。形状对齐内置，
+  // custom 无能力/时长元数据，给安全默认（t2v/i2v + 2~15s，默认 5s）。
+  const customs = await listCustomVideoModels();
+  const customList = customs.map((c) => ({
+    id: c.id,
+    label: c.label,
+    provider: 'custom',
+    available: !!getCustomVideoModelApiKey(c.id),
+    caps: ['t2v', 'i2v'],
+    minDurationSec: 2,
+    maxDurationSec: 15,
+    defaultDurationSec: 5,
+    source: 'custom' as const,
+  }));
+  // 桥接模型：从已配置聊天 provider 派生带视频生成能力的模型（P1 多模态桥接）。
+  const bridged = deriveBridgedVisualModels(getSettings())
+    .filter((m) => m.mediaType === 'video')
+    .map((m) => ({
       id: m.id,
       label: m.label,
-      provider: m.provider,
-      available: providerKeyConfigured(m.provider),
-      caps: [...m.caps],
-      minDurationSec: m.minDurationSec,
-      maxDurationSec: m.maxDurationSec,
-      defaultDurationSec: m.defaultDurationSec,
-    })),
-  };
+      provider: m.sourceProvider,
+      available: isProviderKeyConfigured(m.sourceProvider),
+      caps: ['t2v', 'i2v'],
+      minDurationSec: 2,
+      maxDurationSec: 15,
+      defaultDurationSec: 5,
+      source: 'bridged' as const,
+      sourceLabel: m.sourceLabel,
+    }));
+  return { models: [...builtin, ...customList, ...bridged] };
+}
+
+// 列出音乐生成模型（内置 MiniMax + 桥接派生）。与 image/video 对称，绝不回 key 值。
+export async function handleListVisualMusicModels(
+  getSettings: () => AppSettings | null = () => null,
+  isProviderKeyConfigured: (provider: string) => boolean = () => false,
+): Promise<{
+  models: Array<{ id: string; label: string; provider: string; available: boolean; source: 'bridged' | 'builtin'; sourceLabel?: string }>;
+}> {
+  const builtin = [{
+    id: 'minimax-music-2.6',
+    label: 'MiniMax 音乐',
+    provider: 'minimax',
+    available: !!getMinimaxApiKey(),
+    source: 'builtin' as const,
+  }];
+  const bridged = deriveBridgedVisualModels(getSettings())
+    .filter((m) => m.mediaType === 'music')
+    .map((m) => ({
+      id: m.id,
+      label: m.label,
+      provider: m.sourceProvider,
+      available: isProviderKeyConfigured(m.sourceProvider),
+      source: 'bridged' as const,
+      sourceLabel: m.sourceLabel,
+    }));
+  return { models: [...builtin, ...bridged] };
 }
 
 // ----------------------------------------------------------------------------
@@ -694,14 +755,18 @@ function providerKeyConfigured(provider: string): boolean {
 
 // 列出注册表全部生图模型（内置 + 自定义），并按用户是否已配对应 key 标 available。
 // 出参只含 id/label/provider/available——绝不回传 key 值/baseUrl（信任边界）。
-export async function handleListVisualImageModels(): Promise<{
-  models: Array<{ id: string; label: string; provider: string; available: boolean }>;
+export async function handleListVisualImageModels(
+  getSettings: () => AppSettings | null = () => null,
+  isProviderKeyConfigured: (provider: string) => boolean = () => false,
+): Promise<{
+  models: Array<{ id: string; label: string; provider: string; available: boolean; source: 'builtin' | 'custom' | 'bridged'; sourceLabel?: string }>;
 }> {
   const builtin = IMAGE_MODELS.map((m) => ({
     id: m.id,
     label: m.label,
     provider: m.provider as string,
     available: providerKeyConfigured(m.provider),
+    source: 'builtin' as const,
   }));
   // 自定义模型（借鉴项①）：available = 该模型是否已配 key（每模型独立 key）。
   const customs = await listCustomImageModels();
@@ -710,8 +775,21 @@ export async function handleListVisualImageModels(): Promise<{
     label: c.label,
     provider: 'custom',
     available: !!getCustomModelApiKey(c.id),
+    source: 'custom' as const,
   }));
-  return { models: [...builtin, ...customList] };
+  // 桥接模型：从已配置聊天 provider 派生带生图能力的模型（P1 多模态桥接）。
+  // available = 源 provider 的 key 是否已配（沿用主进程信任边界，不回 key 值）。
+  const bridged = deriveBridgedVisualModels(getSettings())
+    .filter((m) => m.mediaType === 'image')
+    .map((m) => ({
+      id: m.id,
+      label: m.label,
+      provider: m.sourceProvider,
+      available: isProviderKeyConfigured(m.sourceProvider),
+      source: 'bridged' as const,
+      sourceLabel: m.sourceLabel,
+    }));
+  return { models: [...builtin, ...customList, ...bridged] };
 }
 
 // ----------------------------------------------------------------------------
@@ -943,7 +1021,10 @@ export function registerWorkspaceHandlers(
           data = await handleListRecent(getConfigService);
           break;
         case 'listVisualImageModels':
-          data = await handleListVisualImageModels();
+          data = await handleListVisualImageModels(
+            () => getConfigService()?.getSettings() ?? null,
+            (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
+          );
           break;
         case 'listCustomImageModels':
           data = await handleListCustomImageModels();
@@ -1086,7 +1167,16 @@ export function registerWorkspaceHandlers(
           );
           break;
         case 'listVisualVideoModels':
-          data = await handleListVisualVideoModels();
+          data = await handleListVisualVideoModels(
+            () => getConfigService()?.getSettings() ?? null,
+            (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
+          );
+          break;
+        case 'listVisualMusicModels':
+          data = await handleListVisualMusicModels(
+            () => getConfigService()?.getSettings() ?? null,
+            (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
+          );
           break;
         case 'listBrands':
           data = await handleListBrands();

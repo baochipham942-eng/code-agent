@@ -12,11 +12,17 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-vi.mock('../../../src/host/services/media/musicGenerationService', () => ({
-  generateMusic: vi.fn((a: { modelName: string; prompt?: string; lyrics?: string }) =>
-    Promise.resolve({ audioBuffer: Buffer.from('mp3'), actualModel: a.modelName }),
-  ),
-}));
+// 只 mock generateMusic（付费出片步），保留真实 resolveMusicModelEndpoint —— handler 重构后端点
+// 解析消重到该共享 resolver，真跑它才能验证内置/桥接/能力闸/未知 id 的端点解析语义。
+vi.mock('../../../src/host/services/media/musicGenerationService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/services/media/musicGenerationService')>();
+  return {
+    ...actual,
+    generateMusic: vi.fn((a: { modelName: string; prompt?: string; lyrics?: string }) =>
+      Promise.resolve({ audioBuffer: Buffer.from('mp3'), actualModel: a.modelName }),
+    ),
+  };
+});
 
 vi.mock('../../../src/host/services/media/imageGenerationService', () => ({
   getMinimaxApiKey: vi.fn(() => 'sk'),

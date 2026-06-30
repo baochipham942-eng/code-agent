@@ -13,7 +13,7 @@ import { assertWithinDesignDir } from './workspaceDesignPaths';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
 import { estimateMusicCostCny } from '../../shared/media/musicCost';
-import { DESIGN_IMAGE_MODELS, MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
 import { imageEngineForModel, imageModelById, videoModelById } from '../../shared/constants/visualModels';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
@@ -534,33 +534,11 @@ export async function handleGenerateDesignMusic(
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
 
-  const { generateMusic } = await import('../services/media/musicGenerationService');
+  const { generateMusic, resolveMusicModelEndpoint } = await import('../services/media/musicGenerationService');
 
-  // 桥接音乐模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ 端点取自源聊天
-  // provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置 minimax-music-2.6 不含冒号不误伤。
-  let baseUrl: string;
-  let apiKey: string;
-  let modelName: string;
-  if (payload.model && payload.model.includes(':')) {
-    // host 侧能力闸（终审 M1）：deriveBridgedVisualModels 只派生 gen-capable 模型，天然挡住
-    // 聊天桥接 id。含冒号但不在派生音乐表 → 显式抛错，不 fall through，杜绝拿 key 打错端点付费。
-    const settings = getSettings();
-    const entry = deriveBridgedVisualModels(settings).find((m) => m.id === payload.model && m.mediaType === 'music');
-    if (!entry) throw new Error(`未知或不支持的桥接音乐模型 ${payload.model}`);
-    // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
-    ({ baseUrl, apiKey } = resolveBridgedEndpoint(entry.sourceProvider, settings));
-    modelName = entry.modelName;
-  } else {
-    // 内置 MiniMax 音乐（id: minimax-music-2.6 → 真实 model 名 music-2.6）。
-    // 终审 M2：内置分支拒绝未知 id，不再把任意 id 透传给端点（防 paid no-op / 打错模型）。
-    if (payload.model !== 'minimax-music-2.6') throw new Error(`未知音乐模型 ${payload.model}`);
-    const { getMinimaxApiKey } = await import('../services/media/imageGenerationService');
-    const key = getMinimaxApiKey();
-    if (!key) throw new Error('音乐生成需要 MiniMax API Key。');
-    baseUrl = MODEL_API_ENDPOINTS.minimax;
-    apiKey = key;
-    modelName = 'music-2.6';
-  }
+  // 端点解析消重到共享 resolver（Spec 1 M1 能力闸对称）：内置 minimax-music-2.6 / 桥接 `provider:model`
+  // / 未知 id 与缺 key 全在付费 service 调用前抛错，杜绝 paid no-op 与打错端点付费。
+  const { baseUrl, apiKey, modelName } = resolveMusicModelEndpoint(payload.model, getSettings());
 
   const { audioBuffer, actualModel } = await generateMusic({
     baseUrl, apiKey, modelName, prompt: payload.prompt, lyrics: payload.lyrics,

@@ -118,6 +118,22 @@ describe('handleGenerateDesignVideo', () => {
     expect(res.actualModel).toBe('wanx2.1-i2v-turbo');
     await fsp.rm(path.dirname(path.dirname(base)), { recursive: true, force: true });
   });
+
+  it('i2v + ark 模型 + 仅 ARK key：不被 DashScope 门挡，到达 generateVideo', async () => {
+    const origArk = process.env.ARK_API_KEY;
+    process.env.ARK_API_KEY = 'ark-key';
+    getDashscopeKeyMock.mockReturnValue(undefined); // 无 dashscope key
+    const base = path.join(DESIGN_DIR, 'run-ark/base.png');
+    await fsp.mkdir(path.dirname(base), { recursive: true });
+    await fsp.writeFile(base, Buffer.from('PNG'));
+    const out = path.join(DESIGN_DIR, 'run-ark/assets/v.mp4');
+    generateVideoMock.mockResolvedValue({ url: 'https://oss/x.mp4', actualModel: 'doubao-seedance-2-0-260128', durationSec: 5 });
+    const res = await handleGenerateDesignVideo({ mode: 'i2v', model: 'doubao-seedance-2-0-260128', baseImagePath: base, outputPath: out, durationSec: 5 });
+    expect(generateVideoMock).toHaveBeenCalled();
+    expect(res.actualModel).toBe('doubao-seedance-2-0-260128');
+    await fsp.rm(path.dirname(path.dirname(out)), { recursive: true, force: true });
+    if (origArk === undefined) delete process.env.ARK_API_KEY; else process.env.ARK_API_KEY = origArk;
+  });
 });
 
 describe('handleListVisualVideoModels', () => {

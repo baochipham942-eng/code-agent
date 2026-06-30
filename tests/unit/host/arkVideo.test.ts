@@ -87,6 +87,29 @@ describe('submitAndPollArkVideo', () => {
     stubFetch([{ ok: false, status: 401, text: async () => 'unauthorized' }], []);
     await expect(submitAndPollArkVideo('bad', { model: 'm', mode: 't2v', prompt: 'x', durationSec: 5 }, sig, { pollIntervalMs: 1 })).rejects.toThrow();
   });
+
+  it('i2v 空 data URL → 抛错且不发请求（付费前置守卫）', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(submitAndPollArkVideo('k', { model: 'm', mode: 'i2v', imageDataUrl: 'data:image/png;base64,', durationSec: 5 }, sig, { pollIntervalMs: 1 })).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+  it('i2v 非 https 危险 URL（169.254 元数据）→ 抛错且不发请求', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(submitAndPollArkVideo('k', { model: 'm', mode: 'i2v', imageDataUrl: 'http://169.254.169.254/latest/meta-data', durationSec: 5 }, sig, { pollIntervalMs: 1 })).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('poll 返回持久 4xx（401）→ 快失败，不拖到超时', async () => {
+    stubFetch([
+      { ok: true, json: async () => ({ id: 't' }) },
+      { ok: false, status: 401, text: async () => 'invalid api key' },
+    ], []);
+    await expect(submitAndPollArkVideo('k', { model: 'm', mode: 't2v', prompt: 'x', durationSec: 5 }, sig, { pollIntervalMs: 1 })).rejects.toThrow(/401|轮询/);
+  });
 });
 
 import { generateVideo } from '../../../src/host/services/media/videoGenerationService';

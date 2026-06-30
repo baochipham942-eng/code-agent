@@ -193,6 +193,13 @@ export async function submitAndPollArkVideo(
   outerSignal: AbortSignal,
   opts?: { pollIntervalMs?: number },
 ): Promise<{ url: string }> {
+  // 付费前置守卫（防御纵深）：i2v 底图必须是非空图片 data URL，或 https 公网图片地址。
+  // 拒空 data URL / http / 私网 / file，避免空图/危险 URL 进入计费 POST。
+  if (args.mode === 'i2v') {
+    const img = args.imageDataUrl ?? '';
+    const validImg = /^data:image\/[a-z0-9.+-]+;base64,.+/i.test(img) || isSafeImageUrl(img);
+    if (!validImg) throw new Error('Seedance 图生视频底图无效（需非空图片 data URL 或 https 公网图片地址）。');
+  }
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: args.prompt ?? '' }];
   if (args.mode === 'i2v' && args.imageDataUrl) {
     content.push({ type: 'image_url', image_url: { url: args.imageDataUrl } });
@@ -232,7 +239,14 @@ export async function submitAndPollArkVideo(
       VIDEO_TIMEOUT_MS.POLL,
       outerSignal,
     );
-    if (!pollRes.ok) continue; // 瞬时失败继续轮询
+    if (!pollRes.ok) {
+      // 瞬时失败（5xx/408/429/网络抖动）继续轮询；持久 4xx（401/403/400 等）是真错误，
+      // 快失败不拖到 10min 超时（create 已校验过 key，poll 4xx 属异常）。
+      if (pollRes.status >= 400 && pollRes.status < 500 && pollRes.status !== 408 && pollRes.status !== 429) {
+        throw new Error(`Seedance 视频轮询失败: ${pollRes.status}`);
+      }
+      continue; // 瞬时失败继续轮询
+    }
     const task = parseArkVideoTask(await pollRes.json());
     if (task.status === 'succeeded') {
       if (!task.url) throw new Error('Seedance 视频: 任务成功但无 content.video_url');

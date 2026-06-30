@@ -390,11 +390,13 @@ export async function handleGenerateDesignVideo(payload: {
 
   let imageDataUrl: string | undefined;
   if (payload.mode === 'i2v' && payload.baseImagePath) {
-    // key 守卫前置于磁盘读取（与 handleEditDesignImage / handleExpandDesignImage 兄弟
-    // handler 一致）：缺 key 时立刻报错，不读文件、不走付费路径。
-    const { getDashscopeApiKey } = await import('../services/media/imageGenerationService');
-    const apiKey = getDashscopeApiKey();
-    if (!apiKey) throw new Error('图生视频需要百炼（DashScope）API Key。');
+    // key 守卫前置于磁盘读取：按 provider 选对应 key（dashscope/minimax/ark），缺 key 立刻报错，不读文件、不走付费路径。
+    const svc = await import('../services/media/imageGenerationService');
+    const keyOk =
+      model.provider === 'minimax' ? !!svc.getMinimaxApiKey()
+      : model.provider === 'ark' ? !!svc.getArkApiKey()
+      : !!svc.getDashscopeApiKey();
+    if (!keyOk) throw new Error(`图生视频需要对应 provider（${model.provider}）的 API Key。`);
     const baseBuf = await fsp.readFile(payload.baseImagePath);
     imageDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
   }

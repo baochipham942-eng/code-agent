@@ -7,7 +7,7 @@ export type StaticImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
 // 'openai-compat'：用户自填的 OpenAI 兼容生图端点（借鉴项①）。仅 t2i，不进任何静态 helper
 // （imageEngineForModel 只认内置表且对 openai-compat 显式抛错，custom id 走 IPC 独立分支）。
 export type ImageEngineId = StaticImageEngineId | 'openai-compat';
-export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'custom';
+export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'custom' | 'ark';
 
 export interface VisualImageModel {
   /** 切换器/持久化用的稳定选择键。 */
@@ -105,6 +105,26 @@ export const VIDEO_MODELS: readonly VisualVideoModel[] = [
     minDurationSec: 6,
     maxDurationSec: 6,
     defaultDurationSec: 6,
+  },
+  // Spec 2：Seedance 原生（火山方舟 Ark）。统一模型，t2v+i2v 同 id；duration 2~12s（dogfood 校准合法档）。
+  // ⚠️ model id 带日期戳会轮换，以控制台实际可用 id 为准，轮换时改此常量。
+  {
+    id: 'doubao-seedance-2-0-260128',
+    label: 'Seedance 2.0',
+    provider: 'ark',
+    caps: ['t2v', 'i2v'],
+    minDurationSec: 3,
+    maxDurationSec: 12,
+    defaultDurationSec: 5,
+  },
+  {
+    id: 'doubao-seedance-2-0-fast-260128',
+    label: 'Seedance 2.0 Fast',
+    provider: 'ark',
+    caps: ['t2v', 'i2v'],
+    minDurationSec: 3,
+    maxDurationSec: 12,
+    defaultDurationSec: 5,
   },
 ];
 

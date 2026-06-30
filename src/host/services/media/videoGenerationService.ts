@@ -153,6 +153,99 @@ async function submitAndPollMinimaxVideo(
   return { url };
 }
 
+// ── Spec 2 Seedance 原生（火山方舟 Ark · 异步任务 contents/generations/tasks） ──
+const ARK_BASE = 'https://ark.cn-beijing.volces.com/api/v3';
+const ARK_TASKS_PATH = '/contents/generations/tasks';
+const ARK_CREATE_TIMEOUT_MS = 120000; // 异步建任务可能慢，仿 compat 放宽（不动共享 SUBMIT 30s）
+const ARK_DEFAULT_RESOLUTION = '720p';
+const ARK_DEFAULT_RATIO = '16:9';
+
+export interface ArkVideoArgs {
+  model: string;
+  mode: 't2v' | 'i2v';
+  prompt?: string;
+  imageDataUrl?: string;
+  durationSec: number;
+  resolution?: string;
+  ratio?: string;
+}
+
+/** 解析 Ark 任务返回：建任务态有 id；轮询态有 status + content.video_url。 */
+export function parseArkVideoTask(value: unknown): { id?: string; status?: string; url?: string; message?: string } {
+  if (!isRecord(value)) return {};
+  const id = typeof value.id === 'string' ? value.id : undefined;
+  const status = typeof value.status === 'string' ? value.status : undefined;
+  const content = isRecord(value.content) ? value.content : {};
+  const url = typeof content.video_url === 'string' ? content.video_url : undefined;
+  const err = isRecord(value.error) && typeof value.error.message === 'string' ? value.error.message : undefined;
+  const message = err ?? (typeof value.message === 'string' ? value.message : undefined);
+  return { id, status, url, message };
+}
+
+/**
+ * Seedance 原生出片：POST 建任务 → 轮询 status=succeeded → 取 content.video_url。
+ * 守门（t2v 需 prompt / i2v 需底图）由上游 generateVideo 统一做；此处只编排请求。
+ * 火山返回 URL 24h 过期，调用方须立刻 downloadVideoAsBuffer 落 artifact。
+ */
+export async function submitAndPollArkVideo(
+  apiKey: string,
+  args: ArkVideoArgs,
+  outerSignal: AbortSignal,
+  opts?: { pollIntervalMs?: number },
+): Promise<{ url: string }> {
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: args.prompt ?? '' }];
+  if (args.mode === 'i2v' && args.imageDataUrl) {
+    content.push({ type: 'image_url', image_url: { url: args.imageDataUrl } });
+  }
+  const body = {
+    model: args.model,
+    content,
+    resolution: args.resolution ?? ARK_DEFAULT_RESOLUTION,
+    ratio: args.ratio ?? ARK_DEFAULT_RATIO,
+    duration: args.durationSec,
+    watermark: false,
+  };
+
+  const createRes = await fetchWithAbort(
+    `${ARK_BASE}${ARK_TASKS_PATH}`,
+    {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    ARK_CREATE_TIMEOUT_MS,
+    outerSignal,
+  );
+  if (!createRes.ok) throw new Error(`Seedance 视频建任务失败: ${createRes.status} - ${await createRes.text()}`);
+  const created = parseArkVideoTask(await createRes.json());
+  if (!created.id) throw new Error('Seedance 视频: 未返回 task id');
+
+  const interval = opts?.pollIntervalMs ?? VIDEO_TIMEOUT_MS.POLL_INTERVAL;
+  const deadline = Date.now() + VIDEO_TIMEOUT_MS.TOTAL;
+  while (Date.now() < deadline) {
+    if (outerSignal.aborted) throw new Error('aborted');
+    await new Promise((r) => setTimeout(r, interval));
+    const pollRes = await fetchWithAbort(
+      `${ARK_BASE}${ARK_TASKS_PATH}/${encodeURIComponent(created.id)}`,
+      { redirect: 'manual', headers: { Authorization: `Bearer ${apiKey}` } },
+      VIDEO_TIMEOUT_MS.POLL,
+      outerSignal,
+    );
+    if (!pollRes.ok) continue; // 瞬时失败继续轮询
+    const task = parseArkVideoTask(await pollRes.json());
+    if (task.status === 'succeeded') {
+      if (!task.url) throw new Error('Seedance 视频: 任务成功但无 content.video_url');
+      return { url: task.url };
+    }
+    if (task.status === 'failed' || task.status === 'expired' || task.status === 'cancelled') {
+      throw new Error(`Seedance 视频任务失败: ${task.status}${task.message ? ` - ${task.message}` : ''}`);
+    }
+    // queued / running → 继续轮询
+  }
+  throw new Error('Seedance 视频任务超时');
+}
+
 export interface GenerateVideoArgs {
   model: string;
   mode: VideoCap;

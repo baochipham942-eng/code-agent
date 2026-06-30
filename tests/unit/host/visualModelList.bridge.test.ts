@@ -21,6 +21,11 @@ describe('list handler 合并桥接生成模型', () => {
     const res = await handleListVisualImageModels(() => settings, () => true);
     const bridged = res.models.find((m: any) => m.id === 'custom-agnes:agnes-image-2.1-flash');
     expect(bridged).toMatchObject({ source: 'bridged', sourceLabel: 'Agnes', available: true });
+    // 安全护栏：桥接条目出参键集恰为安全字段，绝不夹带 apiKey/baseUrl/modelName 等敏感凭据。
+    expect(Object.keys(bridged).sort()).toEqual(
+      ['available', 'id', 'label', 'provider', 'source', 'sourceLabel'].sort(),
+    );
+    expect(JSON.stringify(bridged)).not.toContain('apihub.agnes-ai.com');
   });
 
   it('桥接视频模型出现在 listVisualVideoModels', async () => {

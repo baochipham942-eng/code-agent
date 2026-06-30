@@ -1,5 +1,6 @@
-import type { AppSettings, ModelCapability } from './contract';
+import type { AppSettings } from './contract';
 import {
+  GEN_CAPABILITIES,
   buildProviderInfoFromSettings, getProviderRuntimeModels,
   isRuntimeProviderConfigured, mediaTypeForGenCapability,
 } from './modelRuntime';
@@ -18,8 +19,6 @@ export interface BridgedVisualModel {
   sourceLabel: string;
 }
 
-const GEN_CAPS: ModelCapability[] = ['imageGen', 'videoGen', 'musicGen'];
-
 /** 纯函数：从已配置聊天 provider 派生带生成能力的视觉模型条目（不读 key，不发 IPC）。 */
 export function deriveBridgedVisualModels(settings: AppSettings | null | undefined): BridgedVisualModel[] {
   const providers = settings?.models?.providers ?? {};
@@ -35,7 +34,7 @@ export function deriveBridgedVisualModels(settings: AppSettings | null | undefin
     const sourceLabel = providerConfig.displayName || providerId;
 
     for (const model of runtimeModels) {
-      const genCap = model.capabilities.find((c) => GEN_CAPS.includes(c));
+      const genCap = model.capabilities.find((c) => GEN_CAPABILITIES.includes(c));
       if (!genCap) continue;
       const mediaType = mediaTypeForGenCapability(genCap);
       if (!mediaType) continue;

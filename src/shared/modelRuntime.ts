@@ -496,8 +496,8 @@ function uniqueCapabilities(values: Array<ModelCapability | undefined>): ModelCa
   return Array.from(new Set(values.filter(Boolean) as ModelCapability[]));
 }
 
-const GEN_CAPABILITIES: ModelCapability[] = ['imageGen', 'videoGen', 'musicGen'];
-const CHAT_CAPABILITIES: ModelCapability[] = ['general', 'code', 'reasoning', 'fast', 'gui', 'search', 'vision'];
+export const GEN_CAPABILITIES: ModelCapability[] = ['imageGen', 'videoGen', 'musicGen'];
+const CHAT_CAPABILITIES: ModelCapability[] = ['general', 'code', 'reasoning', 'gui', 'search', 'vision'];
 
 export function isPureGenerationModel(capabilities: ModelCapability[]): boolean {
   const hasGen = capabilities.some((c) => GEN_CAPABILITIES.includes(c));
@@ -514,23 +514,33 @@ export function mediaTypeForGenCapability(cap: ModelCapability): 'image' | 'vide
 
 export function inferModelCapabilities(modelId: string): ModelCapability[] {
   const id = modelId.toLowerCase();
-  const capabilities: ModelCapability[] = ['general'];
 
-  // 生成能力（输出）——必须先判，且与 vision（输入）互斥消歧
-  const isImageGen = /(^|[/\s-])(image|t2i|text2image|draw|paint|imagen|flux|cogview|wanx|gpt-image)([\s./-]|$)/.test(id) && !/\b(4o|vl|omni|vision)\b/.test(id);
-  const isVideoGen = /(video|t2v|i2v|sora|veo|seedance|wan2|hailuo|happyhorse|kling|pika|runway)/.test(id);
-  const isMusicGen = /(music|song|suno|audiogen|audio-gen|musicgen)/.test(id);
+  // 生成能力（输出）——先判，且与 vision（输入）互斥消歧。视频/音乐与图像同样边界锚定（对称）。
+  const isImageGen = /(^|[/\s-])(image|t2i|text2image|draw|paint|imagen|wanx|gpt-image|cogview|flux)([\w.]*)?([\s./-]|$)/.test(id) && !/\b(4o|vl|omni|vision)\b/.test(id);
+  const isVideoGen = /(^|[/\s-])(video|t2v|i2v|sora|veo|seedance|hailuo|happyhorse|kling|pika|runway)([\s./-]|$)|wan2(\.\d+)?-(t2v|i2v)/.test(id);
+  const isMusicGen = /(^|[/\s-])(music|song|suno|audiogen|audio-gen|musicgen)([\s./-]|$)/.test(id);
+  const isGen = isImageGen || isVideoGen || isMusicGen;
+
+  // chat 域能力（决定是否"纯生成"）。fast/longContext 是修饰档，不算 chat 域。
+  const hasCode = /code|coder|codex|dev/.test(id);
+  const hasVision = /vision|vl|omni|4o|multimodal|mm/.test(id) && !isImageGen;
+  const hasReasoning = /reason|thinking|think|r1|o1|o3|o4|k2\.6|glm-5/.test(id);
+  const hasSearch = /sonar|search|perplexity/.test(id);
+  const hasChatToken = hasCode || hasVision || hasReasoning || hasSearch;
+
+  const capabilities: ModelCapability[] = [];
+  // general：默认聊天能力。纯生成模型（匹配生成 token 且无任何 chat token）不种 general，
+  // 否则 isPureGenerationModel 在推断路径永远为 false（U5 聊天过滤失效）。
+  if (!isGen || hasChatToken) capabilities.push('general');
   if (isImageGen) capabilities.push('imageGen');
   if (isVideoGen) capabilities.push('videoGen');
   if (isMusicGen) capabilities.push('musicGen');
-
-  if (/code|coder|codex|dev/.test(id)) capabilities.push('code');
-  // vision = 图像输入：生成类已被上面捕获，这里排除纯生成名，避免 agnes-image 误标 vision
-  if (/vision|vl|omni|4o|multimodal|mm/.test(id) && !isImageGen) capabilities.push('vision');
-  if (/reason|thinking|think|r1|o1|o3|o4|k2\.6|glm-5/.test(id)) capabilities.push('reasoning');
+  if (hasCode) capabilities.push('code');
+  if (hasVision) capabilities.push('vision');
+  if (hasReasoning) capabilities.push('reasoning');
   if (/flash|fast|mini|nano|lite|turbo/.test(id)) capabilities.push('fast');
   if (/1m|128k|200k|256k|long/.test(id)) capabilities.push('longContext');
-  if (/sonar|search|perplexity/.test(id)) capabilities.push('search');
+  if (hasSearch) capabilities.push('search');
 
   return uniqueCapabilities(capabilities);
 }

@@ -54,14 +54,32 @@ afterEach(async () => {
   await fsp.rm(cfg.root, { recursive: true, force: true });
 });
 
+// 完整 provider 配置：deriveBridgedVisualModels 需 apiKeyConfigured + models[*].capabilities
+// 才会派生出条目（终审 M1 能力闸的前置）。chat-model 仅 general，用于验证能力闸挡聊天桥接 id。
+const fullSettings = {
+  models: {
+    providers: {
+      'custom-agnes': {
+        displayName: 'Agnes',
+        baseUrl: 'https://apihub.agnes-ai.com/v1',
+        apiKeyConfigured: true,
+        enabled: true,
+        models: {
+          'agnes-image-2.1-flash': { capabilities: ['imageGen'], enabled: true },
+          'chat-model': { capabilities: ['general'], enabled: true },
+        },
+      },
+    },
+  },
+} as any;
+
 describe('桥接模型出图', () => {
   it('provider:model id 走 openai-compat，用桥接 modelName + 真落盘', async () => {
     const { handleGenerateDesignImage } = await import('../../../src/host/ipc/workspaceDesignMedia.ipc');
     const outputPath = path.join(designRoot, 'out.png');
-    const settings = { models: { providers: { 'custom-agnes': { baseUrl: 'https://apihub.agnes-ai.com/v1' } } } } as any;
     const res = await handleGenerateDesignImage(
       { prompt: 'a cat', outputPath, model: 'custom-agnes:agnes-image-2.1-flash' },
-      () => settings,
+      () => fullSettings,
     );
     expect(calls[0]).toMatchObject({
       baseUrl: 'https://apihub.agnes-ai.com/v1',
@@ -82,7 +100,18 @@ describe('桥接模型出图', () => {
         model: 'custom-agnes:agnes-image-2.1-flash',
         referenceImageDataUrl: 'data:image/png;base64,AAAA',
       },
-      () => ({ models: { providers: { 'custom-agnes': { baseUrl: 'https://apihub.agnes-ai.com/v1' } } } } as any),
+      () => fullSettings,
     )).rejects.toThrow();
+  });
+
+  // 终审 M1：含冒号但非生成能力的桥接 id（chat-model 仅 general）→ 被能力闸挡下，不付费出图。
+  it('含冒号但非生成能力的桥接 id 抛错且零付费调用', async () => {
+    const { handleGenerateDesignImage } = await import('../../../src/host/ipc/workspaceDesignMedia.ipc');
+    const outputPath = path.join(designRoot, 'blocked.png');
+    await expect(handleGenerateDesignImage(
+      { prompt: 'a cat', outputPath, model: 'custom-agnes:chat-model' },
+      () => fullSettings,
+    )).rejects.toThrow(/未知或不支持的桥接图像模型/);
+    expect(calls.length).toBe(0); // generateImageOpenAICompat 零调用，不付费
   });
 });

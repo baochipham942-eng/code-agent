@@ -42,7 +42,7 @@ import {
 import { loadSharp } from '../runtime/sharpRuntime';
 import { readDesignSettings } from '../services/design/designSettings';
 import type { RegionLockReport } from '../../shared/contract/imageConsistency';
-import { parseBridgedId } from '../../shared/visualModelBridge';
+import { deriveBridgedVisualModels } from '../../shared/visualModelBridge';
 import { resolveBridgedEndpoint } from '../services/media/bridgedEndpoint';
 import type { AppSettings } from '../../shared/contract';
 
@@ -82,29 +82,32 @@ export async function handleGenerateDesignImage(
   // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置/custom id 不含
   // 冒号，故此判定不误伤它们；必须在 custom/内置注册表查询之前拦下（二者都查不到桥接 id）。
   if (payload.model && payload.model.includes(':')) {
-    const bridged = parseBridgedId(payload.model);
-    if (bridged) {
-      // 参考图垫图是 wanx description_edit 专属能力；桥接走纯文生图，撞进来显式拒绝（与 custom 一致）。
-      if (payload.referenceImageDataUrl) {
-        throw new Error('桥接图像模型暂不支持参考图垫图（仅文生图）');
-      }
-      const { baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings());
-      const { generateImageOpenAICompat, downloadImageAsBase64, isImageUrl } = await import(
-        '../services/media/imageGenerationService'
-      );
-      const { imageData, actualModel } = await generateImageOpenAICompat({
-        baseUrl,
-        apiKey,
-        modelName: bridged.modelName,
-        prompt: payload.prompt,
-        aspectRatio: payload.aspectRatio || '1:1',
-      });
-      const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
-      const buf = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-      await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-      await fsp.writeFile(payload.outputPath, buf);
-      return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+    // host 侧能力闸（终审 M1）：deriveBridgedVisualModels 只派生 gen-capable 模型，天然挡住
+    // 聊天桥接 id（chat-model 不在派生表）。含冒号但不在派生表/媒介不符 → 显式抛错，不 fall
+    // through 到 custom/内置（冒号 id 不可能是它们），杜绝拿 key 打错端点的付费调用。
+    const settings = getSettings();
+    const entry = deriveBridgedVisualModels(settings).find((m) => m.id === payload.model && m.mediaType === 'image');
+    if (!entry) throw new Error(`未知或不支持的桥接图像模型 ${payload.model}`);
+    // 参考图垫图是 wanx description_edit 专属能力；桥接走纯文生图，撞进来显式拒绝（与 custom 一致）。
+    if (payload.referenceImageDataUrl) {
+      throw new Error('桥接图像模型暂不支持参考图垫图（仅文生图）');
     }
+    const { baseUrl, apiKey } = resolveBridgedEndpoint(entry.sourceProvider, settings);
+    const { generateImageOpenAICompat, downloadImageAsBase64, isImageUrl } = await import(
+      '../services/media/imageGenerationService'
+    );
+    const { imageData, actualModel } = await generateImageOpenAICompat({
+      baseUrl,
+      apiKey,
+      modelName: entry.modelName,
+      prompt: payload.prompt,
+      aspectRatio: payload.aspectRatio || '1:1',
+    });
+    const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
+    const buf = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+    await fsp.writeFile(payload.outputPath, buf);
+    return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
   }
 
   // 自定义模型（借鉴项①）：查注册表命中则走 openai-compat 独立分支（绝不进 imageEngineForModel）。
@@ -441,22 +444,25 @@ export async function handleGenerateDesignVideo(
   // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置 videoModelById id
   // （wan2.7-t2v 等）与 custom id 均不含冒号，故此判定不误伤；必须在内置/custom 解析之前拦下。
   if (payload.model && payload.model.includes(':')) {
-    const bridged = parseBridgedId(payload.model);
-    if (bridged) {
-      // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
-      const { baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings());
-      const { generateVideoOpenAICompat, downloadVideoAsBuffer } = await import(
-        '../services/media/videoGenerationService'
-      );
-      const imageDataUrl = await readBaseImageDataUrl();
-      const { url, actualModel } = await generateVideoOpenAICompat({
-        baseUrl, apiKey, modelName: bridged.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
-      });
-      const buf = await downloadVideoAsBuffer(url);
-      await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-      await fsp.writeFile(payload.outputPath, buf);
-      return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSecOut), durationSec: durationSecOut };
-    }
+    // host 侧能力闸（终审 M1）：deriveBridgedVisualModels 只派生 gen-capable 模型，天然挡住
+    // 聊天桥接 id。含冒号但不在派生视频表 → 显式抛错，不 fall through 到 custom/内置，杜绝
+    // 拿 key 打错端点的付费调用。
+    const settings = getSettings();
+    const entry = deriveBridgedVisualModels(settings).find((m) => m.id === payload.model && m.mediaType === 'video');
+    if (!entry) throw new Error(`未知或不支持的桥接视频模型 ${payload.model}`);
+    // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
+    const { baseUrl, apiKey } = resolveBridgedEndpoint(entry.sourceProvider, settings);
+    const { generateVideoOpenAICompat, downloadVideoAsBuffer } = await import(
+      '../services/media/videoGenerationService'
+    );
+    const imageDataUrl = await readBaseImageDataUrl();
+    const { url, actualModel } = await generateVideoOpenAICompat({
+      baseUrl, apiKey, modelName: entry.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
+    });
+    const buf = await downloadVideoAsBuffer(url);
+    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+    await fsp.writeFile(payload.outputPath, buf);
+    return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSecOut), durationSec: durationSecOut };
   }
 
   // 自定义视频模型（补完断链）：注册表命中 → 同走 openai-compat。key 缺失/baseUrl 不安全先拦，不付费。
@@ -535,19 +541,25 @@ export async function handleGenerateDesignMusic(
   let baseUrl: string;
   let apiKey: string;
   let modelName: string;
-  const bridged = payload.model && payload.model.includes(':') ? parseBridgedId(payload.model) : null;
-  if (bridged) {
+  if (payload.model && payload.model.includes(':')) {
+    // host 侧能力闸（终审 M1）：deriveBridgedVisualModels 只派生 gen-capable 模型，天然挡住
+    // 聊天桥接 id。含冒号但不在派生音乐表 → 显式抛错，不 fall through，杜绝拿 key 打错端点付费。
+    const settings = getSettings();
+    const entry = deriveBridgedVisualModels(settings).find((m) => m.id === payload.model && m.mediaType === 'music');
+    if (!entry) throw new Error(`未知或不支持的桥接音乐模型 ${payload.model}`);
     // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
-    ({ baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings()));
-    modelName = bridged.modelName;
+    ({ baseUrl, apiKey } = resolveBridgedEndpoint(entry.sourceProvider, settings));
+    modelName = entry.modelName;
   } else {
     // 内置 MiniMax 音乐（id: minimax-music-2.6 → 真实 model 名 music-2.6）。
+    // 终审 M2：内置分支拒绝未知 id，不再把任意 id 透传给端点（防 paid no-op / 打错模型）。
+    if (payload.model !== 'minimax-music-2.6') throw new Error(`未知音乐模型 ${payload.model}`);
     const { getMinimaxApiKey } = await import('../services/media/imageGenerationService');
     const key = getMinimaxApiKey();
     if (!key) throw new Error('音乐生成需要 MiniMax API Key。');
     baseUrl = MODEL_API_ENDPOINTS.minimax;
     apiKey = key;
-    modelName = payload.model === 'minimax-music-2.6' ? 'music-2.6' : payload.model;
+    modelName = 'music-2.6';
   }
 
   const { audioBuffer, actualModel } = await generateMusic({

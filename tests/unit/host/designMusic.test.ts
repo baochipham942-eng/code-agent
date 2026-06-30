@@ -40,7 +40,22 @@ const BRIDGE = '../../../src/host/services/media/bridgedEndpoint';
 let workDir: string;
 let designRoot: string;
 let outputPath: string;
-const settings = { providers: {} } as never; // resolveBridgedEndpoint 已被 mock，settings 内容不参与
+// 完整 provider 配置：deriveBridgedVisualModels 需 apiKeyConfigured + models[*].capabilities
+// 才会派生条目（终审 M1 能力闸前置）。resolveBridgedEndpoint 已被 mock，但能力闸读真 settings。
+// chat-model 仅 general，用于验证能力闸挡聊天桥接 id。
+const settings = {
+  models: {
+    providers: {
+      'custom-x': {
+        displayName: 'X', baseUrl: 'https://bridge.example.com/v1', apiKeyConfigured: true, enabled: true,
+        models: {
+          'some-music': { capabilities: ['musicGen'], enabled: true },
+          'chat-model': { capabilities: ['general'], enabled: true },
+        },
+      },
+    },
+  },
+} as never;
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'design-music-ipc-'));
@@ -114,6 +129,26 @@ describe('handleGenerateDesignMusic', () => {
     await expect(
       handleGenerateDesignMusic({ prompt: '  ', lyrics: '', outputPath, model: 'minimax-music-2.6' }, () => null),
     ).rejects.toThrow();
+    expect((svc.generateMusic as any).mock.calls.length).toBe(0);
+  });
+
+  // 终审 M1：含冒号但非音乐生成能力的桥接 id（chat-model 仅 general）→ 被能力闸挡下，不付费出片。
+  it('含冒号但非音乐生成能力的桥接 id 抛错且零付费调用', async () => {
+    const svc = await import(MUSIC_SVC);
+    const { handleGenerateDesignMusic } = await import('../../../src/host/ipc/workspaceDesignMedia.ipc');
+    await expect(
+      handleGenerateDesignMusic({ prompt: 'jazz', outputPath, model: 'custom-x:chat-model' }, () => settings),
+    ).rejects.toThrow(/未知或不支持的桥接音乐模型/);
+    expect((svc.generateMusic as any).mock.calls.length).toBe(0);
+  });
+
+  // 终审 M2：内置分支拒绝未知 id（无冒号、非 minimax-music-2.6）→ 不再透传给端点，不付费。
+  it('未知内置音乐 id 抛错且零付费调用', async () => {
+    const svc = await import(MUSIC_SVC);
+    const { handleGenerateDesignMusic } = await import('../../../src/host/ipc/workspaceDesignMedia.ipc');
+    await expect(
+      handleGenerateDesignMusic({ prompt: 'pop', outputPath, model: 'random-id' }, () => null),
+    ).rejects.toThrow(/未知音乐模型/);
     expect((svc.generateMusic as any).mock.calls.length).toBe(0);
   });
 });

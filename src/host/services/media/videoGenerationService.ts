@@ -294,7 +294,11 @@ export async function generateVideoOpenAICompat(args: GenerateVideoCompatArgs): 
 /** 下载视频到 Buffer（SSRF 守卫复用 image service 的 isSafeImageUrl：仅 https 公网）。 */
 export async function downloadVideoAsBuffer(url: string, outerSignal: AbortSignal = new AbortController().signal): Promise<Buffer> {
   if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的视频 URL（仅允许 https 公网地址）');
-  const resp = await fetchWithAbort(url, {}, VIDEO_TIMEOUT_MS.DOWNLOAD, outerSignal);
+  // SSRF-via-redirect 防护：isSafeImageUrl 只校验初始 url；若让 fetch 透明跟 3xx 跳转，
+  // 端点可把视频 url 跳到 169.254.169.254 等私网绕过守卫。用 redirect:manual 截停并拒绝跳转
+  // （与姊妹函数 downloadImageAsBase64 对齐，合法视频直出 200，不靠跳转）。
+  const resp = await fetchWithAbort(url, { redirect: 'manual' }, VIDEO_TIMEOUT_MS.DOWNLOAD, outerSignal);
+  if (resp.status >= 300 && resp.status < 400) throw new Error(`拒绝跟随视频下载重定向（${resp.status}）`);
   if (!resp.ok) throw new Error(`视频下载失败: ${resp.status}`);
   return Buffer.from(await resp.arrayBuffer());
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateVideoOpenAICompat } from '../../../src/host/services/media/videoGenerationService';
+import { generateVideoOpenAICompat, downloadVideoAsBuffer } from '../../../src/host/services/media/videoGenerationService';
 
 describe('generateVideoOpenAICompat', () => {
   beforeEach(() => {
@@ -29,5 +29,13 @@ describe('generateVideoOpenAICompat', () => {
     await expect(generateVideoOpenAICompat({
       baseUrl: 'https://x.com/v1', apiKey: 'sk', modelName: 'm', mode: 'i2v', pollIntervalMs: 1, maxPolls: 1,
     })).rejects.toThrow();
+  });
+});
+
+describe('downloadVideoAsBuffer SSRF-via-redirect 防护（终审 H1）', () => {
+  it('下载遇 3xx 重定向时抛错，不返回 buffer（防跳私网/元数据）', async () => {
+    // redirect:'manual' 下 fetch 不跟随 3xx，resp.status=302/ok=false → handler 须拒绝。
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ status: 302, ok: false, arrayBuffer: async () => new ArrayBuffer(0) })));
+    await expect(downloadVideoAsBuffer('https://cdn.example.com/clip.mp4')).rejects.toThrow(/重定向/);
   });
 });

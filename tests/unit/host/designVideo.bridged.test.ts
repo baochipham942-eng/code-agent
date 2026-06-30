@@ -43,7 +43,26 @@ let workDir: string;
 let designRoot: string;
 let outputPath: string;
 let baseImagePath: string;
-const settings = { providers: {} } as never; // resolveBridgedEndpoint 已被 mock，settings 内容不参与
+// 完整 provider 配置：deriveBridgedVisualModels 需 apiKeyConfigured + models[*].capabilities
+// 才会派生条目（终审 M1 能力闸前置）。resolveBridgedEndpoint 已被 mock，但能力闸读真 settings。
+// chat-model 仅 general，用于验证能力闸挡聊天桥接 id。
+const settings = {
+  models: {
+    providers: {
+      'custom-agnes-ai-free': {
+        displayName: 'Agnes', baseUrl: 'https://apihub.agnes-ai.com/v1', apiKeyConfigured: true, enabled: true,
+        models: {
+          'agnes-video-v2.0': { capabilities: ['videoGen'], enabled: true },
+          'chat-model': { capabilities: ['general'], enabled: true },
+        },
+      },
+      sourceprov: {
+        displayName: 'SourceProv', baseUrl: 'https://sp.example.com/v1', apiKeyConfigured: true, enabled: true,
+        models: { 'vid-model': { capabilities: ['videoGen'], enabled: true } },
+      },
+    },
+  },
+} as never;
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'design-video-ipc-'));
@@ -120,6 +139,19 @@ describe('桥接视频生成（provider:model → openai-compat）', () => {
         () => settings,
       ),
     ).rejects.toThrow(/越界/);
+    expect((svc.generateVideoOpenAICompat as any).mock.calls.length).toBe(0);
+  });
+
+  // 终审 M1：含冒号但非视频生成能力的桥接 id（chat-model 仅 general）→ 被能力闸挡下，不付费出片。
+  it('含冒号但非视频生成能力的桥接 id 抛错且零付费调用', async () => {
+    const svc = await import(VIDEO_SVC);
+    const { handleGenerateDesignVideo } = await import('../../../src/host/ipc/workspaceDesignMedia.ipc');
+    await expect(
+      handleGenerateDesignVideo(
+        { mode: 't2v', prompt: 'a cat', outputPath, model: 'custom-agnes-ai-free:chat-model' },
+        () => settings,
+      ),
+    ).rejects.toThrow(/未知或不支持的桥接视频模型/);
     expect((svc.generateVideoOpenAICompat as any).mock.calls.length).toBe(0);
   });
 });

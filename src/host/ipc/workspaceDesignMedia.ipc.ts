@@ -535,7 +535,7 @@ export async function handleGenerateDesignMusic(
   let baseUrl: string;
   let apiKey: string;
   let modelName: string;
-  const bridged = payload.model.includes(':') ? parseBridgedId(payload.model) : null;
+  const bridged = payload.model && payload.model.includes(':') ? parseBridgedId(payload.model) : null;
   if (bridged) {
     // 端点（含 key）由 resolveBridgedEndpoint 校验，缺则抛——不进付费路径。
     ({ baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings()));

@@ -209,7 +209,7 @@ export class ModelRouter {
    * 能力补充配置 - 当主模型缺少某能力时，使用哪个备用模型
    * 优先使用包年/包月模型，节省按量付费成本
    */
-  private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
+  private fallbackModels: Partial<Record<ModelCapability, { provider: string; model: string }>> = {
     // 视觉 - 智谱 GLM-4.6V (旗舰视觉)
     vision: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
     // 推理 - 智谱 GLM-4.6V (带推理能力)

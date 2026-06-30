@@ -36,7 +36,8 @@ export type ModelProviderAlias = BuiltInModelProvider | 'anthropic';
 // - quick: 简单操作、格式化、快速判断（最便宜的模型）
 // - longContext: 超长上下文支持（128K+）
 // - unlimited: 包月/无限制使用（不计入预算）
-export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search' | 'compact' | 'quick' | 'longContext' | 'unlimited';
+// - imageGen/videoGen/musicGen: 生成输出能力（区别于 vision=图像输入）
+export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search' | 'compact' | 'quick' | 'longContext' | 'unlimited' | 'imageGen' | 'videoGen' | 'musicGen';
 
 /**
  * Response format configuration for structured output

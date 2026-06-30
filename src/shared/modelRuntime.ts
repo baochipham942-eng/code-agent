@@ -496,12 +496,37 @@ function uniqueCapabilities(values: Array<ModelCapability | undefined>): ModelCa
   return Array.from(new Set(values.filter(Boolean) as ModelCapability[]));
 }
 
+const GEN_CAPABILITIES: ModelCapability[] = ['imageGen', 'videoGen', 'musicGen'];
+const CHAT_CAPABILITIES: ModelCapability[] = ['general', 'code', 'reasoning', 'fast', 'gui', 'search', 'vision'];
+
+export function isPureGenerationModel(capabilities: ModelCapability[]): boolean {
+  const hasGen = capabilities.some((c) => GEN_CAPABILITIES.includes(c));
+  const hasChat = capabilities.some((c) => CHAT_CAPABILITIES.includes(c));
+  return hasGen && !hasChat;
+}
+
+export function mediaTypeForGenCapability(cap: ModelCapability): 'image' | 'video' | 'music' | null {
+  if (cap === 'imageGen') return 'image';
+  if (cap === 'videoGen') return 'video';
+  if (cap === 'musicGen') return 'music';
+  return null;
+}
+
 export function inferModelCapabilities(modelId: string): ModelCapability[] {
   const id = modelId.toLowerCase();
   const capabilities: ModelCapability[] = ['general'];
 
+  // 生成能力（输出）——必须先判，且与 vision（输入）互斥消歧
+  const isImageGen = /(^|[/\s-])(image|t2i|text2image|draw|paint|imagen|flux|cogview|wanx|gpt-image)([\s./-]|$)/.test(id) && !/\b(4o|vl|omni|vision)\b/.test(id);
+  const isVideoGen = /(video|t2v|i2v|sora|veo|seedance|wan2|hailuo|happyhorse|kling|pika|runway)/.test(id);
+  const isMusicGen = /(music|song|suno|audiogen|audio-gen|musicgen)/.test(id);
+  if (isImageGen) capabilities.push('imageGen');
+  if (isVideoGen) capabilities.push('videoGen');
+  if (isMusicGen) capabilities.push('musicGen');
+
   if (/code|coder|codex|dev/.test(id)) capabilities.push('code');
-  if (/vision|vl|omni|4o|image|multimodal|mm/.test(id)) capabilities.push('vision');
+  // vision = 图像输入：生成类已被上面捕获，这里排除纯生成名，避免 agnes-image 误标 vision
+  if (/vision|vl|omni|4o|multimodal|mm/.test(id) && !isImageGen) capabilities.push('vision');
   if (/reason|thinking|think|r1|o1|o3|o4|k2\.6|glm-5/.test(id)) capabilities.push('reasoning');
   if (/flash|fast|mini|nano|lite|turbo/.test(id)) capabilities.push('fast');
   if (/1m|128k|200k|256k|long/.test(id)) capabilities.push('longContext');

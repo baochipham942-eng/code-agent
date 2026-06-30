@@ -5,6 +5,7 @@ import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
 import { videoModelById, clampVideoDuration, type VideoCap } from '../../../shared/constants/visualModels';
 import { pickVideoFlavor, buildPollUrl, extractVideoUrl, isVideoTerminal } from './videoPollFlavors';
+import { veoRequest, isGoogleApiUrl } from './veoFetch';
 
 const VIDEO_SYNTHESIS_PATH = '/services/aigc/video-generation/video-synthesis';
 const DEFAULT_RESOLUTION = '720P';
@@ -306,4 +307,127 @@ export async function downloadVideoAsBuffer(url: string, outerSignal: AbortSigna
   if (resp.status >= 300 && resp.status < 400) throw new Error(`拒绝跟随视频下载重定向（${resp.status}）`);
   if (!resp.ok) throw new Error(`视频下载失败: ${resp.status}`);
   return Buffer.from(await resp.arrayBuffer());
+}
+
+// ── Veo 原生（Spec 3，Google Gemini API 轻路径） ──────────────────────────────
+// 契约：POST {gemini}/models/{model}:predictLongRunning → 轮询 GET {gemini}/{operation.name}
+// 直到 done:true → 取 generateVideoResponse 里视频 uri → 鉴权下载。全程经代理（veoFetch）。
+const VEO_TIMEOUT_MS = {
+  CREATE: 120000,
+  POLL: 30000,
+  POLL_INTERVAL: 10000,
+  TOTAL: 360000,
+  DOWNLOAD: 120000,
+};
+
+/** 从完成响应抽取视频 URI。优先 generatedSamples（Veo 2 路径），兜底 generatedVideos（3.1 可能改名）。
+ *  ⚠️ 字段路径为文档最佳已知值，首次付费 dogfood 前须对照真响应/SDK 确证。 */
+export function extractVeoVideoUri(response: unknown): string | undefined {
+  if (!isRecord(response)) return undefined;
+  const gvr = isRecord(response.generateVideoResponse) ? response.generateVideoResponse : undefined;
+  if (!gvr) return undefined;
+  const samples = Array.isArray(gvr.generatedSamples)
+    ? gvr.generatedSamples
+    : Array.isArray(gvr.generatedVideos)
+      ? gvr.generatedVideos
+      : undefined;
+  const first = samples && samples.length > 0 ? samples[0] : undefined;
+  const video = isRecord(first) && isRecord(first.video) ? first.video : undefined;
+  return video && typeof video.uri === 'string' ? video.uri : undefined;
+}
+
+/** 解析 data URL → { base64, mimeType }。非法 data URL 抛错。 */
+function parseImageDataUrl(dataUrl: string): { base64: string; mimeType: string } {
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl);
+  if (!m) throw new Error('底图不是合法 data URL');
+  return { mimeType: m[1], base64: m[2] };
+}
+
+async function submitAndPollVeoOperation(
+  model: string,
+  apiKey: string,
+  instances: Record<string, unknown>[],
+  parameters: Record<string, unknown>,
+  signal: AbortSignal,
+  pollIntervalMs: number,
+): Promise<{ uri: string }> {
+  const base = MODEL_API_ENDPOINTS.gemini;
+  const createResp = await veoRequest(`${base}/models/${model}:predictLongRunning`, {
+    method: 'POST', apiKey, body: { instances, parameters }, timeoutMs: VEO_TIMEOUT_MS.CREATE, signal,
+  });
+  if (!createResp.ok) throw new Error(`Veo 建任务失败 HTTP ${createResp.status}`);
+  const opName = isRecord(createResp.data) && typeof createResp.data.name === 'string' ? createResp.data.name : '';
+  if (!opName) throw new Error('Veo 建任务未返回 operation name');
+
+  const deadline = Date.now() + VEO_TIMEOUT_MS.TOTAL;
+  while (Date.now() < deadline) {
+    if (signal.aborted) throw new Error('aborted');
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+    const pollResp = await veoRequest(`${base}/${opName}`, { method: 'GET', apiKey, timeoutMs: VEO_TIMEOUT_MS.POLL, signal });
+    if (!pollResp.ok) continue;
+    const data = pollResp.data;
+    if (isRecord(data) && data.done === true) {
+      if (isRecord(data.error)) {
+        const msg = typeof data.error.message === 'string' ? data.error.message : JSON.stringify(data.error);
+        throw new Error(`Veo 任务失败: ${msg}`);
+      }
+      const uri = extractVeoVideoUri(data.response);
+      if (!uri) throw new Error('Veo 任务完成但未取到视频 URI');
+      return { uri };
+    }
+  }
+  throw new Error('Veo 任务超时');
+}
+
+/** 鉴权 + 代理下载 Veo 视频文件（Google host 白名单自守 + 拒 3xx 跳转）。 */
+export async function downloadVeoFile(uri: string, apiKey: string, signal: AbortSignal = new AbortController().signal): Promise<Buffer> {
+  if (!isGoogleApiUrl(uri)) throw new Error('拒绝下载非 Google 域的 Veo 视频 URI');
+  const resp = await veoRequest(uri, { method: 'GET', apiKey, responseType: 'arraybuffer', timeoutMs: VEO_TIMEOUT_MS.DOWNLOAD, signal });
+  if (resp.status >= 300 && resp.status < 400) throw new Error(`拒绝跟随 Veo 下载重定向（${resp.status}）`);
+  if (!resp.ok || !resp.buffer) throw new Error(`Veo 视频下载失败: ${resp.status}`);
+  return resp.buffer;
+}
+
+export interface GenerateVeoVideoArgs {
+  model: string;
+  mode: 't2v' | 'i2v';
+  prompt?: string;
+  imageDataUrl?: string;
+  durationSec?: number;
+  outerSignal?: AbortSignal;
+  /** 测试用：缩短轮询间隔。生产不传，用 VEO_TIMEOUT_MS.POLL_INTERVAL。 */
+  pollIntervalMsOverride?: number;
+}
+
+/**
+ * Veo 原生视频生成：注册表校验 → 守门（cap/prompt/底图/key 全在付费前）→ 提交+轮询+鉴权下载。
+ * 返回已下载的 Buffer（与 dashscope/minimax 的 url 返回不同——Veo 下载需鉴权+代理，不走公共 downloadVideoAsBuffer）。
+ */
+export async function generateVeoVideo(args: GenerateVeoVideoArgs): Promise<{ buffer: Buffer; actualModel: string; durationSec: number }> {
+  const model = videoModelById(args.model);
+  if (!model) throw new Error(`未知视频模型 id: ${args.model}`);
+  if (model.provider !== 'google') throw new Error(`模型 ${args.model} 不是 Veo（google）模型`);
+  if (!model.caps.includes(args.mode)) throw new Error(`模型 ${args.model} 不支持 ${args.mode}`);
+  if (args.mode === 't2v' && !args.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
+  if (args.mode === 'i2v' && !args.imageDataUrl) throw new Error('图生视频需要底图');
+
+  const { getGeminiApiKey } = await import('./imageGenerationService');
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error('Veo 视频需要 Gemini（付费档）API Key。');
+
+  const durationSec = clampVideoDuration(model, args.durationSec);
+  const signal = args.outerSignal ?? new AbortController().signal;
+
+  const instances: Record<string, unknown>[] = [{ prompt: args.prompt }];
+  if (args.mode === 'i2v' && args.imageDataUrl) {
+    const { base64, mimeType } = parseImageDataUrl(args.imageDataUrl);
+    instances[0].image = { bytesBase64Encoded: base64, mimeType };
+  }
+  const parameters: Record<string, unknown> = { aspectRatio: '16:9' };
+
+  const { uri } = await submitAndPollVeoOperation(
+    model.id, apiKey, instances, parameters, signal, args.pollIntervalMsOverride ?? VEO_TIMEOUT_MS.POLL_INTERVAL,
+  );
+  const buffer = await downloadVeoFile(uri, apiKey, signal);
+  return { buffer, actualModel: model.id, durationSec };
 }

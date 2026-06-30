@@ -82,6 +82,9 @@ export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
   // 「不方便精确看」故为粗值；比通义万相贵约 18x（海螺高端档）。需精确单价后再细调。
   'MiniMax-Hailuo-02': 0.42, // 海螺文生视频，控制台粗估折算
   'I2V-01': 0.42,            // 海螺图生视频，控制台粗估折算
+  // Spec 2 Seedance（火山 Ark）：占位单价，dogfood 后按火山定价文档校准。fast 档更便宜。
+  'doubao-seedance-2-0-260128': 0.15,
+  'doubao-seedance-2-0-fast-260128': 0.08,
   default: 0.03,
 };
 

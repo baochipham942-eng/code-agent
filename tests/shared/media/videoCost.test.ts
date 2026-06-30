@@ -26,3 +26,13 @@ describe('estimateVideoCostCny — 视频按秒计费估算', () => {
     }
   });
 });
+
+describe('Seedance 成本估算', () => {
+  it('按秒查表 × 时长', () => {
+    expect(estimateVideoCostCny('doubao-seedance-2-0-260128', 5)).toBeGreaterThan(0);
+  });
+  it('fast 档单价 < 标准档', () => {
+    expect(estimateVideoCostCny('doubao-seedance-2-0-fast-260128', 5))
+      .toBeLessThan(estimateVideoCostCny('doubao-seedance-2-0-260128', 5));
+  });
+});

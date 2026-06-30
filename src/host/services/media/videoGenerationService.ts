@@ -4,6 +4,7 @@
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
 import { videoModelById, clampVideoDuration, type VideoCap } from '../../../shared/constants/visualModels';
+import { pickVideoFlavor, buildPollUrl, extractVideoUrl, isVideoTerminal } from './videoPollFlavors';
 
 const VIDEO_SYNTHESIS_PATH = '/services/aigc/video-generation/video-synthesis';
 const DEFAULT_RESOLUTION = '720P';
@@ -208,6 +209,86 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
     signal,
   );
   return { url, actualModel: model.id, durationSec };
+}
+
+// ── P3 通用 OpenAI 兼容视频引擎（POST 建任务 + flavor 注册表轮询） ──
+export interface GenerateVideoCompatArgs {
+  baseUrl: string;
+  apiKey: string;
+  modelName: string;
+  mode: 't2v' | 'i2v';
+  prompt?: string;
+  imageDataUrl?: string;
+  width?: number;
+  height?: number;
+  numFrames?: number;
+  frameRate?: number;
+  pollIntervalMs?: number;
+  maxPolls?: number;
+  outerSignal?: AbortSignal;
+}
+
+const COMPAT_VIDEO_DEFAULTS = { pollIntervalMs: 8000, maxPolls: 60, width: 1152, height: 768, numFrames: 121, frameRate: 24 };
+
+/**
+ * 通用 OpenAI 兼容视频：POST {base}/videos 建任务 → flavor 注册表轮询 → 取 url。
+ * 守门顺序全在付费请求之前：t2v 需非空 prompt / i2v 需底图 → 建任务失败不进轮询。
+ * 沿用本文件 fetchWithAbort（超时 + outerSignal）与 redirect:'manual'（防 SSRF-via-redirect）。
+ */
+export async function generateVideoOpenAICompat(args: GenerateVideoCompatArgs): Promise<{ url: string; actualModel: string }> {
+  if (args.mode === 't2v' && !args.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
+  if (args.mode === 'i2v' && !args.imageDataUrl) throw new Error('图生视频需要底图');
+  const base = args.baseUrl.replace(/\/+$/, '');
+  const flavor = pickVideoFlavor(args.baseUrl);
+  const signal = args.outerSignal ?? new AbortController().signal;
+
+  const body: Record<string, unknown> = {
+    model: args.modelName,
+    prompt: args.prompt,
+    width: args.width ?? COMPAT_VIDEO_DEFAULTS.width,
+    height: args.height ?? COMPAT_VIDEO_DEFAULTS.height,
+    num_frames: args.numFrames ?? COMPAT_VIDEO_DEFAULTS.numFrames,
+    frame_rate: args.frameRate ?? COMPAT_VIDEO_DEFAULTS.frameRate,
+    ...(args.mode === 'i2v' && args.imageDataUrl ? { image: args.imageDataUrl } : {}),
+  };
+  const createRes = await fetchWithAbort(
+    `${base}/videos`,
+    {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    VIDEO_TIMEOUT_MS.SUBMIT,
+    signal,
+  );
+  if (!createRes.ok) throw new Error(`视频建任务失败 HTTP ${createRes.status}`);
+  const created = (await createRes.json()) as Record<string, unknown>;
+  const id = (created.video_id || created.id || created.task_id) as string | undefined;
+  if (!id) throw new Error('视频建任务未返回 id');
+
+  const interval = args.pollIntervalMs ?? COMPAT_VIDEO_DEFAULTS.pollIntervalMs;
+  const maxPolls = args.maxPolls ?? COMPAT_VIDEO_DEFAULTS.maxPolls;
+  for (let i = 0; i < maxPolls; i++) {
+    if (signal.aborted) throw new Error('aborted');
+    await new Promise((r) => setTimeout(r, interval));
+    const pollRes = await fetchWithAbort(
+      buildPollUrl(flavor, args.baseUrl, id),
+      { method: 'GET', redirect: 'manual', headers: { Authorization: `Bearer ${args.apiKey}` } },
+      VIDEO_TIMEOUT_MS.POLL,
+      signal,
+    );
+    if (!pollRes.ok) continue; // 瞬时失败继续轮询
+    const polled = (await pollRes.json()) as Record<string, unknown>;
+    const { done, failed } = isVideoTerminal(typeof polled.status === 'string' ? polled.status : undefined);
+    if (failed) throw new Error(`视频生成失败：${polled.error || polled.status}`);
+    if (done) {
+      const url = extractVideoUrl(flavor, polled);
+      if (url) return { url, actualModel: args.modelName };
+      throw new Error('视频完成但未取到 URL');
+    }
+  }
+  throw new Error('视频生成轮询超时');
 }
 
 /** 下载视频到 Buffer（SSRF 守卫复用 image service 的 isSafeImageUrl：仅 https 公网）。 */

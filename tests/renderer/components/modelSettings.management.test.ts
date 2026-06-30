@@ -111,34 +111,27 @@ describe('ModelSettings management helpers', () => {
     expect(row.selectedModelLabel).toBe('GPT-5.4 Mini');
   });
 
-  it('keeps the selected provider at the top of the management list', () => {
+  it('pins the default provider to the top of the management list', () => {
     const rows = buildProviderManagementRows({
       providers: [moonshotProvider, openaiProvider],
       config,
       providerConfigs: {},
     });
 
-    expect(orderProviderManagementRows(rows).map((row) => row.id)).toEqual(['openai', 'moonshot']);
+    expect(orderProviderManagementRows(rows, 'openai').map((row) => row.id)).toEqual(['openai', 'moonshot']);
   });
 
-  it('keeps favorite providers ahead of regular rows without displacing the selected provider', () => {
+  it('keeps a stable order regardless of selection (no reorder on click)', () => {
     const rows = buildProviderManagementRows({
       providers: [moonshotProvider, openaiProvider],
       config,
-      providerConfigs: {
-        moonshot: {
-          enabled: true,
-          favorite: true,
-          icon: 'KM',
-        },
-      },
+      providerConfigs: {},
     });
 
-    expect(rows.find((row) => row.id === 'moonshot')).toMatchObject({
-      favorite: true,
-      icon: 'KM',
-    });
-    expect(orderProviderManagementRows(rows).map((row) => row.id)).toEqual(['openai', 'moonshot']);
+    // 不传默认 → 保持输入顺序；选中项不再被提到最前。
+    expect(orderProviderManagementRows(rows).map((row) => row.id)).toEqual(['moonshot', 'openai']);
+    // 传默认 moonshot → 仅默认置顶，其余稳定。
+    expect(orderProviderManagementRows(rows, 'moonshot').map((row) => row.id)).toEqual(['moonshot', 'openai']);
   });
 
   it('falls back to raw model id when a label is unavailable', () => {

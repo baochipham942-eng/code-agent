@@ -37,7 +37,7 @@ const logger = createLogger('ModelSettings');
 import type { ModelConfig, ProxyMode } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
-import { SettingsPage } from '../SettingsLayout';
+import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 import {
@@ -200,7 +200,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     () => buildProviderManagementRows({ providers, config, providerConfigs }),
     [providers, config, providerConfigs],
   );
-  const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows), [providerRows]);
+  const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows, defaultSelection.provider), [providerRows, defaultSelection.provider]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
   const needsApiKey = providerRequiresApiKey(config.provider);
   const hasInputApiKey = Boolean(config.apiKey?.trim());
@@ -790,12 +790,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
   return (
     <SettingsPage
-      title={t.model.title}
-      description="先接入 Provider 并选定默认模型，按需再设自动按任务切换的策略。"
+      title="模型配置"
+      description="先（可选）开启「按任务自动切换」，再到下方接入 Provider、配置模型。"
     >
       <WebModeBanner />
 
-      {/* ── 按任务自动切换（顶部，默认关闭；改动即存）── */}
+      {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
       <TaskStrategySettingsPanel
         settings={appSettings}
         providerConfigs={providerConfigs}
@@ -805,7 +805,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         onChange={persistTaskStrategy}
       />
 
-      {/* ── Master-Detail：左 Provider 列表 + 右详情 ── */}
+      {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
+      <SettingsSection title="模型提供商" description="接入 Provider、选默认模型；勾选哪些模型进对话的模型选择。">
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}
@@ -949,7 +950,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   variant={saveStatus === 'error' ? 'danger' : 'primary'}
                   className={`w-full ${saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}`}
                 >
-                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : `保存 ${providerTitle} 配置`}
+                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : '保存配置'}
                 </Button>
                 <span className="text-xs text-zinc-500">
                   保存 {providerTitle} 的连接、模型和高级配置。
@@ -959,6 +960,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           )}
         </div>
       </div>
+      </SettingsSection>
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

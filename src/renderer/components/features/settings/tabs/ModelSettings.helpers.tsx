@@ -388,11 +388,16 @@ export function hasCustomEndpointOverride(
   return normalizeEndpoint(configuredBaseUrl ?? '') !== normalizeEndpoint(officialEndpoint);
 }
 
-export function orderProviderManagementRows(rows: ProviderManagementRow[]): ProviderManagementRow[] {
-  const selected = rows.filter((row) => row.selected);
-  const favorites = rows.filter((row) => !row.selected && row.favorite);
-  const rest = rows.filter((row) => !row.selected && !row.favorite);
-  return [...selected, ...favorites, ...rest];
+// 默认 provider 置顶，其余保持稳定顺序（不再按「选中」排序，避免点击就跳到最前）。
+export function orderProviderManagementRows(
+  rows: ProviderManagementRow[],
+  defaultProviderId?: string,
+): ProviderManagementRow[] {
+  if (!defaultProviderId) return rows;
+  const def = rows.filter((row) => row.id === defaultProviderId);
+  if (def.length === 0) return rows;
+  const rest = rows.filter((row) => row.id !== defaultProviderId);
+  return [...def, ...rest];
 }
 
 export function buildManualModelSettings(

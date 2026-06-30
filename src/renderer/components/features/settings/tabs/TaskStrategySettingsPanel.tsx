@@ -131,24 +131,21 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
       </label>
 
       {strategy.mode === 'auto' && (
-        <div className="grid gap-2">
+        <div className="grid gap-2 sm:grid-cols-3">
           {AUTO_PROFILES.map((profile) => {
             const slot = strategy.profiles[profile];
             const value = optionValue(slot.provider, slot.model);
             const unavailable = !selectedOptionSet.has(value);
             return (
-              <div key={profile} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-                    <Brain className="h-4 w-4 text-zinc-500" />
-                    {PROFILE_META[profile].label}
-                    {unavailable ? (
-                      <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
-                        不可用
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-0.5 text-xs text-zinc-500">{PROFILE_META[profile].description}</div>
+              <div key={profile} className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-200">
+                  <Brain className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                  <span className="truncate">{PROFILE_META[profile].label}</span>
+                  {unavailable ? (
+                    <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] text-amber-200">
+                      不可用
+                    </span>
+                  ) : null}
                 </div>
                 <Select
                   value={value}
@@ -157,7 +154,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                     if (parsed) patchProfile(profile, parsed);
                   }}
                   disabled={disabled}
-                  className="w-full sm:w-72"
+                  className="w-full"
                 >
                   {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}（不可用）</option> : null}
                   {groupedOptions.map((group) => (

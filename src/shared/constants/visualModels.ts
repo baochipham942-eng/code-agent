@@ -7,7 +7,7 @@ export type StaticImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
 // 'openai-compat'：用户自填的 OpenAI 兼容生图端点（借鉴项①）。仅 t2i，不进任何静态 helper
 // （imageEngineForModel 只认内置表且对 openai-compat 显式抛错，custom id 走 IPC 独立分支）。
 export type ImageEngineId = StaticImageEngineId | 'openai-compat';
-export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'custom';
+export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'google' | 'custom';
 
 export interface VisualImageModel {
   /** 切换器/持久化用的稳定选择键。 */
@@ -105,6 +105,25 @@ export const VIDEO_MODELS: readonly VisualVideoModel[] = [
     minDurationSec: 6,
     maxDurationSec: 6,
     defaultDurationSec: 6,
+  },
+  // Veo 3.1 原生（Spec 3，Google Gemini API 轻路径）。固定 8s。Veo 3/2 于 2026-06-30 停用，只列 3.1。
+  {
+    id: 'veo-3.1-fast-generate-preview',
+    label: 'Veo 3.1 视频（快速）',
+    provider: 'google',
+    caps: ['t2v', 'i2v'],
+    minDurationSec: 8,
+    maxDurationSec: 8,
+    defaultDurationSec: 8,
+  },
+  {
+    id: 'veo-3.1-generate-preview',
+    label: 'Veo 3.1 视频',
+    provider: 'google',
+    caps: ['t2v', 'i2v'],
+    minDurationSec: 8,
+    maxDurationSec: 8,
+    defaultDurationSec: 8,
   },
 ];
 

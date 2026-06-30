@@ -68,6 +68,19 @@ describe('generateVeoVideo', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, data: { done: true, error: { message: 'boom' } } });
     await expect(generateVeoVideo({ model: 'veo-3.1-fast-generate-preview', mode: 't2v', prompt: 'x', pollIntervalMsOverride: 1 })).rejects.toThrow(/boom|失败/);
   });
+
+  it('create !ok：抛错带状态码，不进轮询', async () => {
+    veoRequest.mockResolvedValueOnce({ ok: false, status: 400, data: {} });
+    await expect(generateVeoVideo({ model: 'veo-3.1-fast-generate-preview', mode: 't2v', prompt: 'x', pollIntervalMsOverride: 1 })).rejects.toThrow(/400|建任务失败/);
+    expect(veoRequest).toHaveBeenCalledTimes(1); // 只 create，没 poll
+  });
+
+  it('poll 403：快速失败不空转', async () => {
+    veoRequest
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { name: 'op/1' } })
+      .mockResolvedValueOnce({ ok: false, status: 403, data: {} });
+    await expect(generateVeoVideo({ model: 'veo-3.1-fast-generate-preview', mode: 't2v', prompt: 'x', pollIntervalMsOverride: 1 })).rejects.toThrow(/403|轮询失败/);
+  });
 });
 
 describe('downloadVeoFile SSRF', () => {

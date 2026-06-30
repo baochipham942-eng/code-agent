@@ -316,7 +316,7 @@ const VEO_TIMEOUT_MS = {
   CREATE: 120000,
   POLL: 30000,
   POLL_INTERVAL: 10000,
-  TOTAL: 360000,
+  TOTAL: 540000, // 9min：Veo 3.1 上尾延迟约 5-6min，给足余量防在边界丢掉已付费的渲染
   DOWNLOAD: 120000,
 };
 
@@ -364,7 +364,14 @@ async function submitAndPollVeoOperation(
     if (signal.aborted) throw new Error('aborted');
     await new Promise((r) => setTimeout(r, pollIntervalMs));
     const pollResp = await veoRequest(`${base}/${opName}`, { method: 'GET', apiKey, timeoutMs: VEO_TIMEOUT_MS.POLL, signal });
-    if (!pollResp.ok) continue;
+    if (!pollResp.ok) {
+      // 4xx 客户端错误（鉴权失效/任务不存在等）= 终态，立即失败并带状态码，不空转到总超时。
+      // 5xx/网络瞬时错误继续轮询。
+      if (pollResp.status >= 400 && pollResp.status < 500) {
+        throw new Error(`Veo 轮询失败 HTTP ${pollResp.status}`);
+      }
+      continue;
+    }
     const data = pollResp.data;
     if (isRecord(data) && data.done === true) {
       if (isRecord(data.error)) {

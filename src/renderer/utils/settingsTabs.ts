@@ -43,7 +43,7 @@ export const SETTINGS_TAB_IDS = [
 
 export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 
-export const DEFAULT_SETTINGS_TAB: SettingsTab = 'general';
+export const DEFAULT_SETTINGS_TAB: SettingsTab = 'model';
 
 export type SettingsTabGroupId =
   | 'models'

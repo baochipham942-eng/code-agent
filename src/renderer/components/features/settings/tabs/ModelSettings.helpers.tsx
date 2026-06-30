@@ -56,6 +56,7 @@ export interface DiscoverModelsResult {
     label: string;
     capabilities: ModelCapability[];
     maxTokens?: number;
+    contextWindow?: number;
     supportsTool: boolean;
     supportsVision: boolean;
     supportsStreaming: boolean;

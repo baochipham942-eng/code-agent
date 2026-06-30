@@ -19,6 +19,8 @@ export interface RuntimeProviderModel extends ProviderModelEntry {
   supportsVision: boolean;
   supportsStreaming: boolean;
   maxTokens?: number;
+  /** 输入上下文上限（context window），与 maxTokens（最大输出）区分 */
+  contextWindow?: number;
   source: 'catalog' | 'discovered';
 }
 
@@ -591,6 +593,7 @@ export function getProviderRuntimeModels(
       enabled: override?.enabled ?? (provider.id === 'custom' ? false : true),
       capabilities,
       maxTokens: override?.maxTokens,
+      contextWindow: override?.contextWindow,
       supportsTool,
       supportsVision,
       supportsStreaming: override?.supportsStreaming ?? true,
@@ -607,6 +610,7 @@ export function getProviderRuntimeModels(
       enabled: override.enabled ?? false,
       capabilities,
       maxTokens: override.maxTokens,
+      contextWindow: override.contextWindow,
       supportsTool: override.supportsTool ?? inferSupportsTool(modelId, capabilities),
       supportsVision: override.supportsVision ?? capabilities.includes('vision'),
       supportsStreaming: override.supportsStreaming ?? true,

@@ -2,7 +2,7 @@ import React from 'react';
 import { Brain, Code2, Eye, Gauge, RefreshCw, Search, Wrench } from 'lucide-react';
 import { Button, Input, Toggle } from '../../../primitives';
 import type { ModelProvider } from '@shared/contract';
-import { CONTEXT_WINDOWS } from '@shared/constants';
+import { CONTEXT_WINDOWS, MODEL_MAX_OUTPUT_TOKENS, normalizeModelId } from '@shared/constants';
 import {
   featuresFromModelMetadata,
   type RuntimeProviderModel,
@@ -47,7 +47,10 @@ function ModelRow({
     supportsVision: model.supportsVision,
   });
   const isDefault = defaultSelection.provider === provider && defaultSelection.model === model.id;
-  const contextWindow = CONTEXT_WINDOWS[model.id];
+  // 优先用发现/配置捕获的真值，回退到内置模型表（按规范化 id 查）。
+  const normId = normalizeModelId(model.id);
+  const contextWindow = model.contextWindow ?? CONTEXT_WINDOWS[normId];
+  const maxOutput = model.maxTokens ?? MODEL_MAX_OUTPUT_TOKENS[normId];
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3">
       {/* 左：①名称 + 默认 + 内置 / ②类型标签 */}
@@ -84,7 +87,7 @@ function ModelRow({
         </div>
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wide text-zinc-500">Max Output</div>
-          <div className="text-xs text-zinc-300">{formatTokens(model.maxTokens)}</div>
+          <div className="text-xs text-zinc-300">{formatTokens(maxOutput)}</div>
         </div>
         <div className="flex justify-end">
           {!isDefault && model.enabled ? (

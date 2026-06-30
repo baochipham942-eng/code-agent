@@ -18,7 +18,10 @@ describe('provider model discovery parsing', () => {
     expect(models[0]).toMatchObject({
       id: 'mimo-v2.5-pro',
       label: 'mimo-v2.5-pro',
-      maxTokens: 1_000_000,
+      // max_context_length 归为上下文上限，而非最大输出。
+      contextWindow: 1_000_000,
+      // 最大输出无显式字段时回退到内置表（mimo-v2.5-pro = 131072）。
+      maxTokens: 131_072,
       supportsTool: true,
     });
     expect(models[0].capabilities).toEqual(expect.arrayContaining(['general']));

@@ -41,7 +41,10 @@ export interface DiscoveredProviderModel {
   id: string;
   label: string;
   capabilities: ModelCapability[];
+  /** 最大输出 token（max output） */
   maxTokens?: number;
+  /** 输入上下文上限（context window） */
+  contextWindow?: number;
   supportsTool: boolean;
   supportsVision: boolean;
   supportsStreaming: boolean;
@@ -134,7 +137,13 @@ export function parseDiscoveredModelsResponse(payload: unknown): DiscoveredProvi
 
     const label = getStringField(item, 'displayName') || getStringField(item, 'display_name') || getStringField(item, 'label') || id;
     const capabilities = inferModelCapabilities(id);
-    const maxTokens = getNumberField(item, ['max_context_length', 'context_length', 'contextWindow', 'maxTokens'])
+    // 上下文上限（输入）与最大输出（max output）分开捕获，避免把 context_length 当成输出上限。
+    const contextWindow = getNumberField(item, ['context_length', 'max_context_length', 'contextWindow', 'max_input_tokens']);
+    const topProvider = (item && typeof item === 'object' && !Array.isArray(item))
+      ? (item as Record<string, unknown>).top_provider
+      : undefined;
+    const maxTokens = getNumberField(item, ['max_completion_tokens', 'max_output_tokens', 'max_tokens', 'maxTokens'])
+      ?? getNumberField(topProvider, ['max_completion_tokens', 'max_tokens'])
       ?? getModelMaxOutputTokens(id);
 
     models.push({
@@ -142,6 +151,7 @@ export function parseDiscoveredModelsResponse(payload: unknown): DiscoveredProvi
       label,
       capabilities,
       maxTokens,
+      contextWindow,
       supportsTool: inferSupportsTool(id, capabilities),
       supportsVision: capabilities.includes('vision'),
       supportsStreaming: true,

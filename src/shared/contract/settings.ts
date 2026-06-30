@@ -16,6 +16,8 @@ export interface ModelEntrySettings {
   label?: string;
   capabilities?: ModelCapability[];
   maxTokens?: number;
+  /** 输入上下文上限（发现时从 provider /models 的 context_length 捕获） */
+  contextWindow?: number;
   supportsTool?: boolean;
   supportsVision?: boolean;
   supportsStreaming?: boolean;

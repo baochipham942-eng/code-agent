@@ -601,6 +601,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             enabled: shouldEnable,
             capabilities: existing?.capabilities || model.capabilities,
             maxTokens: existing?.maxTokens ?? model.maxTokens,
+            contextWindow: existing?.contextWindow ?? model.contextWindow,
             supportsTool: existing?.supportsTool ?? model.supportsTool,
             supportsVision: existing?.supportsVision ?? model.supportsVision,
             supportsStreaming: existing?.supportsStreaming ?? model.supportsStreaming,

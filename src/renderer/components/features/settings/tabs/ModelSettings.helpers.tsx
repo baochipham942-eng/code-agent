@@ -17,6 +17,7 @@ import {
   inferModelCapabilities,
   inferSupportsTool,
   isDynamicCustomProviderId,
+  isPureGenerationModel,
   isRuntimeProviderConfigured,
   normalizeProviderIcon,
   type ProviderIconValidationResult,
@@ -415,6 +416,48 @@ export function buildManualModelSettings(
     supportsTool: inferSupportsTool(trimmedId, capabilities),
     supportsVision: capabilities.includes('vision'),
     supportsStreaming: true,
+    discoveredAt,
+  };
+}
+
+/**
+ * 重发现时合并单个模型条目。
+ * 纯生成模型（新推断判定）用新推断 caps 覆盖已存（修正旧 vision 误标 + 补 gen 标签 + 移出聊天）；
+ * 聊天/混合模型保留已存 caps（不丢 API 来源的 vision 等）。其余结构字段保留用户已存偏好。
+ */
+export function mergeDiscoveredModelEntry(
+  existing: ModelEntrySettings | undefined,
+  discovered: {
+    id: string;
+    label: string;
+    capabilities: ModelCapability[];
+    maxTokens?: number;
+    contextWindow?: number;
+    supportsTool?: boolean;
+    supportsVision?: boolean;
+    supportsStreaming?: boolean;
+  },
+  shouldEnable: boolean,
+  discoveredAt: number,
+): ModelEntrySettings {
+  const overwriteGenCaps = isPureGenerationModel(discovered.capabilities);
+  const capabilities = overwriteGenCaps
+    ? discovered.capabilities
+    : (existing?.capabilities || discovered.capabilities);
+  return {
+    ...existing,
+    label: existing?.label || discovered.label,
+    enabled: shouldEnable,
+    capabilities,
+    maxTokens: existing?.maxTokens ?? discovered.maxTokens,
+    contextWindow: existing?.contextWindow ?? discovered.contextWindow,
+    supportsTool: overwriteGenCaps
+      ? (discovered.supportsTool ?? false)
+      : (existing?.supportsTool ?? discovered.supportsTool),
+    supportsVision: overwriteGenCaps
+      ? capabilities.includes('vision')
+      : (existing?.supportsVision ?? discovered.supportsVision),
+    supportsStreaming: existing?.supportsStreaming ?? discovered.supportsStreaming,
     discoveredAt,
   };
 }

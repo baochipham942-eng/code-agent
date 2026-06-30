@@ -52,6 +52,7 @@ import {
   getProtocolLabel,
   hasCustomEndpointOverride,
   isProviderIdentityManaged,
+  mergeDiscoveredModelEntry,
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
@@ -595,18 +596,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         result.models.forEach((model, index) => {
           const existing = nextModelMap[model.id];
           const shouldEnable = existing?.enabled ?? (!hasEnabledModel && index === 0);
-          nextModelMap[model.id] = {
-            ...existing,
-            label: existing?.label || model.label,
-            enabled: shouldEnable,
-            capabilities: existing?.capabilities || model.capabilities,
-            maxTokens: existing?.maxTokens ?? model.maxTokens,
-            contextWindow: existing?.contextWindow ?? model.contextWindow,
-            supportsTool: existing?.supportsTool ?? model.supportsTool,
-            supportsVision: existing?.supportsVision ?? model.supportsVision,
-            supportsStreaming: existing?.supportsStreaming ?? model.supportsStreaming,
-            discoveredAt,
-          };
+          nextModelMap[model.id] = mergeDiscoveredModelEntry(existing, model, shouldEnable, discoveredAt);
         });
         return {
           ...prev,

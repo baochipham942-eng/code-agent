@@ -318,7 +318,9 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
 /** 下载视频到 Buffer（SSRF 守卫复用 image service 的 isSafeImageUrl：仅 https 公网）。 */
 export async function downloadVideoAsBuffer(url: string, outerSignal: AbortSignal = new AbortController().signal): Promise<Buffer> {
   if (!isSafeImageUrl(url)) throw new Error('拒绝下载不安全的视频 URL（仅允许 https 公网地址）');
-  const resp = await fetchWithAbort(url, {}, VIDEO_TIMEOUT_MS.DOWNLOAD, outerSignal);
+  // SSRF-via-redirect 防护：isSafeImageUrl 只校验初始 url；redirect:'manual' 截停 3xx，防跳私网/元数据。
+  const resp = await fetchWithAbort(url, { redirect: 'manual' }, VIDEO_TIMEOUT_MS.DOWNLOAD, outerSignal);
+  if (resp.status >= 300 && resp.status < 400) throw new Error(`拒绝跟随视频下载重定向（${resp.status}）`);
   if (!resp.ok) throw new Error(`视频下载失败: ${resp.status}`);
   return Buffer.from(await resp.arrayBuffer());
 }

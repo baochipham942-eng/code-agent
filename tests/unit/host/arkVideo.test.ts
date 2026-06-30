@@ -111,3 +111,13 @@ describe('generateVideo → ark 路由', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+import { downloadVideoAsBuffer } from '../../../src/host/services/media/videoGenerationService';
+
+describe('downloadVideoAsBuffer SSRF-via-redirect', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('遇 3xx 重定向抛错，不返回 buffer', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ status: 302, ok: false, arrayBuffer: async () => new ArrayBuffer(0) })));
+    await expect(downloadVideoAsBuffer('https://cdn.example.com/clip.mp4')).rejects.toThrow(/重定向/);
+  });
+});

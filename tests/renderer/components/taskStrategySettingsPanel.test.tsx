@@ -57,10 +57,13 @@ describe('TaskStrategySettingsPanel', () => {
       />,
     );
 
-    expect(html).toContain('策略模式');
-    expect(html).toContain('任务主模型');
+    expect(html).toContain('开启自动切换');
+    expect(html).toContain('快速任务模型');
     expect(html).toContain('深度任务模型');
+    expect(html).toContain('视觉任务模型');
     expect(html).toContain('保存策略');
-    expect(html).toContain('研究 / 规划 / 重构');
+    // 自动模式下不再展示主任务档（主=默认模型，在模型列表设默认），也不展示 fallback/规则。
+    expect(html).not.toContain('任务主模型');
+    expect(html).not.toContain('研究 / 规划 / 重构');
   });
 });

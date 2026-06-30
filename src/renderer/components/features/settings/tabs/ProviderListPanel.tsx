@@ -7,7 +7,7 @@
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Plus, Search, Star, Stethoscope } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Plus, Search, Stethoscope } from 'lucide-react';
 import type { ModelProvider } from '@shared/contract';
 import { isProviderImageIcon } from '@shared/modelRuntime';
 import { Button, Input } from '../../../primitives';
@@ -21,6 +21,8 @@ interface ProviderListPanelProps {
   /** keyless provider（local/Ollama）端点探测结果：undefined=探测中 */
   keylessReachability?: Partial<Record<string, boolean>>;
   selectedProviderId: string;
+  /** 默认模型所属 provider：在列表里标 ★ 默认 */
+  defaultProviderId?: string;
   isAddingProvider: boolean;
   onSelect: (providerId: ModelProvider) => void;
   onStartAddProvider: () => void;
@@ -47,9 +49,6 @@ const ProviderMark: React.FC<{ row: ProviderManagementRow; size: 'sm' | 'md' }> 
         <img src={imageSource} alt="" className="h-full w-full object-cover" />
       ) : (
         label
-      )}
-      {row.favorite && (
-        <Star className="absolute -right-1 -top-1 h-3 w-3 fill-amber-300 text-amber-300" />
       )}
     </span>
   );
@@ -85,9 +84,10 @@ const ConfiguredRowStatus: React.FC<{
 const ConfiguredRow: React.FC<{
   row: ProviderManagementRow;
   selected: boolean;
+  isDefault?: boolean;
   reachable?: boolean;
   onSelect: () => void;
-}> = ({ row, selected, reachable, onSelect }) => (
+}> = ({ row, selected, isDefault, reachable, onSelect }) => (
   <button
     type="button"
     onClick={onSelect}
@@ -99,7 +99,12 @@ const ConfiguredRow: React.FC<{
   >
     <ProviderMark row={row} size="md" />
     <span className="min-w-0 flex-1">
-      <span className="block truncate text-[13px] text-zinc-100">{row.name}</span>
+      <span className="flex items-center gap-1.5">
+        <span className="truncate text-[13px] text-zinc-100">{row.name}</span>
+        {isDefault && (
+          <span className="shrink-0 rounded border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] text-amber-200">★ 默认</span>
+        )}
+      </span>
       <span className="block truncate text-[11px] text-zinc-500">
         <ConfiguredRowStatus row={row} reachable={reachable} />
       </span>
@@ -140,6 +145,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   unconfiguredRows,
   keylessReachability,
   selectedProviderId,
+  defaultProviderId,
   isAddingProvider,
   onSelect,
   onStartAddProvider,
@@ -181,7 +187,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
             leftIcon={<Plus className="h-3 w-3" />}
             className="flex-1"
           >
-            新增 / 中转站
+            新增
           </Button>
           <Button
             size="sm"
@@ -204,6 +210,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
             key={row.id}
             row={row}
             selected={!isAddingProvider && row.id === selectedProviderId}
+            isDefault={row.id === defaultProviderId}
             reachable={row.keyless ? keylessReachability?.[row.id] : undefined}
             onSelect={() => onSelect(row.id)}
           />

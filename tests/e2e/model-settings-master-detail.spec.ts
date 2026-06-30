@@ -42,7 +42,7 @@ test('模型设置页渲染 Master-Detail 布局', async ({ page }) => {
 
   // 左侧 Provider 列表
   await expect(dialog.getByPlaceholder('搜索 Provider 或模型...')).toBeVisible({ timeout: 10_000 });
-  await expect(dialog.getByRole('button', { name: /新增 \/ 中转站/ })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '新增', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '诊断' })).toBeVisible();
   await expect(dialog.getByText(/已可用 · \d+/)).toBeVisible();
 
@@ -67,13 +67,13 @@ test('Agent 引擎拆为独立 tab，模型页不再包含引擎目录', async (
   await page.screenshot({ path: 'screenshots/agent-engine-settings-tab.png', fullPage: false });
 });
 
-test('「新增 / 中转站」切换到新增表单', async ({ page }) => {
+test('「新增」切换到新增表单', async ({ page }) => {
   const dialog = await openModelSettings(page);
 
-  await dialog.getByRole('button', { name: /新增 \/ 中转站/ }).click();
+  await dialog.getByRole('button', { name: '新增', exact: true }).click();
 
   // 新增表单出现
-  await expect(dialog.getByText('新增 Provider / 中转站')).toBeVisible();
+  await expect(dialog.getByText('新增', { exact: true })).toBeVisible();
   await expect(dialog.getByPlaceholder('https://example.com/v1')).toBeVisible();
   await expect(dialog.getByRole('button', { name: '添加 Provider' })).toBeVisible();
   // 协议选择存在

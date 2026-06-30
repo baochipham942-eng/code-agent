@@ -7,11 +7,10 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Star, Brain } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
-import { Button } from '../../../primitives';
+import { Button, Toggle } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
+import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
 import { MODEL, UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
 import {
   buildProviderInfoFromSettings,
@@ -65,7 +64,6 @@ import { ProviderListPanel } from './ProviderListPanel';
 import {
   ProviderAdvancedSection,
   ProviderConnectionSection,
-  ProviderDetailCard,
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ProviderModelsSection } from './ProviderModelsSection';
@@ -455,26 +453,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     });
   }, [config, currentEnabledModels.length, currentModels, onChange, patchCurrentModelSettings]);
 
-  const handleToggleModelCapability = useCallback((model: RuntimeProviderModel, capability: ModelCapability) => {
-    const hasCapability = model.capabilities.includes(capability);
-    const nextCapabilities = hasCapability
-      ? model.capabilities.filter((item) => item !== capability)
-      : [...model.capabilities, capability];
-    const patch: Partial<ModelEntrySettings> = {
-      capabilities: nextCapabilities,
-    };
-    if (capability === 'vision') {
-      patch.supportsVision = !hasCapability;
-    }
-    patchCurrentModelSettings(model, patch);
+  const handleUpdateModelMaxTokens = useCallback((model: RuntimeProviderModel, maxTokens: number | undefined) => {
+    patchCurrentModelSettings(model, { maxTokens });
     if (config.model === model.id) {
-      onChange({ ...config, capabilities: nextCapabilities });
+      onChange({ ...config, maxTokens: maxTokens ?? config.maxTokens });
     }
   }, [config, onChange, patchCurrentModelSettings]);
-
-  const handleToggleModelTool = useCallback((model: RuntimeProviderModel) => {
-    patchCurrentModelSettings(model, { supportsTool: !model.supportsTool });
-  }, [patchCurrentModelSettings]);
 
   // Save config to backend
   const handleSave = async () => {
@@ -824,34 +808,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const providerIconPresets = getProviderIconPresets(config.provider);
   const providerIdentityManaged = isProviderIdentityManaged(currentProviderConfig);
 
-  // 主模型锚点：Neo 实际默认用哪个模型（消灭「任务策略默认档位」与「Provider 设默认」两套默认打架）。
-  const defaultProviderConfig = providerConfigs[defaultSelection.provider];
-  const defaultProviderLabel = defaultProviderConfig?.displayName
-    || providers.find((provider) => provider.id === defaultSelection.provider)?.name
-    || defaultSelection.provider;
-  const defaultModelLabel = defaultProviderConfig?.models?.[defaultSelection.model]?.label
-    || defaultSelection.model;
-
   return (
     <SettingsPage
       title={t.model.title}
       description="先接入 Provider 并选定默认模型，按需再设自动按任务切换的策略。"
     >
       <WebModeBanner />
-
-      {/* ── 主模型锚点 ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <Brain className="h-4 w-4 shrink-0 text-zinc-400" />
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">Neo 默认模型</div>
-            <div className="truncate text-sm font-medium text-zinc-100">
-              {defaultSelection.model ? `${defaultProviderLabel} / ${defaultModelLabel}` : '未设置'}
-            </div>
-          </div>
-        </div>
-        <span className="text-[11px] text-zinc-500">在下方选择 Provider 后，点模型旁的「设为默认」更改</span>
-      </div>
 
       {/* ── Master-Detail：左 Provider 列表 + 右详情 ── */}
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
@@ -860,6 +822,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           unconfiguredRows={unconfiguredRows}
           keylessReachability={keylessReachability}
           selectedProviderId={config.provider}
+          defaultProviderId={defaultSelection.provider}
           isAddingProvider={isAddingProvider}
           onSelect={handleSelectProvider}
           onStartAddProvider={() => setIsAddingProvider(true)}
@@ -894,9 +857,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                     ) : (
                       providerIcon
                     )}
-                    {currentProviderConfig?.favorite && (
-                      <Star className="absolute -right-1 -top-1 h-3.5 w-3.5 fill-amber-300 text-amber-300" />
-                    )}
                   </span>
                   <div>
                     <h4 className="text-base font-semibold text-zinc-100">{providerTitle}</h4>
@@ -905,9 +865,19 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                     </p>
                   </div>
                 </div>
-                <span className={`text-xs ${hasApiKey ? 'text-emerald-300' : 'text-amber-300'}`}>
-                  {!needsApiKey ? '无需 API Key' : hasApiKey ? 'API Key 已保存' : '等待 API Key'}
-                </span>
+                <div className="flex items-center gap-4">
+                  <span className={`text-xs ${hasApiKey ? 'text-emerald-300' : 'text-amber-300'}`}>
+                    {!needsApiKey ? '无需 API Key' : hasApiKey ? 'API Key 已保存' : '等待 API Key'}
+                  </span>
+                  <label className="flex items-center gap-2 text-xs text-zinc-400" title="关闭后该 Provider 的模型不出现在对话的模型选择里">
+                    <span>进模型选择页</span>
+                    <Toggle
+                      checked={currentProviderConfig?.enabled !== false}
+                      onChange={(checked) => patchCurrentProviderConfig({ enabled: checked })}
+                      aria-label="该 Provider 是否进入模型选择页"
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* ── ① 连接 ── */}
@@ -961,8 +931,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 settingDefaultModelId={settingDefaultModelId}
                 onSetDefaultModel={handleSetDefaultModel}
                 onToggleModelEnabled={handleToggleModelEnabled}
-                onToggleModelTool={handleToggleModelTool}
-                onToggleModelCapability={handleToggleModelCapability}
+                onUpdateModelMaxTokens={handleUpdateModelMaxTokens}
               />
 
               {/* ── ③ 高级（折叠） ── */}

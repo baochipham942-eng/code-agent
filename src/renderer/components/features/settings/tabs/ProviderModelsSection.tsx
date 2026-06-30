@@ -1,18 +1,22 @@
 import React from 'react';
-import { Brain, Code2, Eye, Gauge, Plus, RefreshCw, Search, Wrench } from 'lucide-react';
-import { Button, Input } from '../../../primitives';
-import type { ModelCapability, ModelProvider } from '@shared/contract';
+import { Brain, Code2, Eye, Gauge, RefreshCw, Search, Wrench } from 'lucide-react';
+import { Button, Input, Toggle } from '../../../primitives';
+import type { ModelProvider } from '@shared/contract';
+import { CONTEXT_WINDOWS } from '@shared/constants';
 import {
-  MODEL_CAPABILITY_OPTIONS,
   featuresFromModelMetadata,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 import { isWebMode } from '../../../../utils/platform';
-import { isModelMetadataLocked } from './ModelSettings.helpers';
 import { ProviderDetailCard } from './ProviderDetailSections';
 
 const CAPABILITY_ICONS: Record<string, React.ReactNode> = { tool: <Wrench className="h-3 w-3" />, vision: <Eye className="h-3 w-3" />, reasoning: <Brain className="h-3 w-3" />, code: <Code2 className="h-3 w-3" />, fast: <Gauge className="h-3 w-3" /> };
-const MODEL_CAPABILITY_PICKER = MODEL_CAPABILITY_OPTIONS.filter((capability) => ['code', 'vision', 'reasoning', 'fast', 'longContext', 'search'].includes(capability.id));
+
+function formatTokens(value?: number): string {
+  if (!value) return '—';
+  if (value >= 1000) return `${Math.round(value / 1000)}K`;
+  return `${value}`;
+}
 
 interface DefaultModelSelection {
   provider: ModelProvider;
@@ -26,8 +30,7 @@ interface ModelRowProps {
   settingDefaultModelId: string | null;
   onSetDefaultModel: (modelId: string) => void;
   onToggleModelEnabled: (model: RuntimeProviderModel, enabled: boolean) => void;
-  onToggleModelTool: (model: RuntimeProviderModel) => void;
-  onToggleModelCapability: (model: RuntimeProviderModel, capabilityId: ModelCapability) => void;
+  onUpdateModelMaxTokens: (model: RuntimeProviderModel, maxTokens: number | undefined) => void;
 }
 
 function ModelRow({
@@ -37,8 +40,7 @@ function ModelRow({
   settingDefaultModelId,
   onSetDefaultModel,
   onToggleModelEnabled,
-  onToggleModelTool,
-  onToggleModelCapability,
+  onUpdateModelMaxTokens,
 }: ModelRowProps) {
   const features = featuresFromModelMetadata({
     modelId: model.id,
@@ -46,93 +48,76 @@ function ModelRow({
     supportsTool: model.supportsTool,
     supportsVision: model.supportsVision,
   });
-  const metadataLocked = isModelMetadataLocked(provider, model);
+  const isDefault = defaultSelection.provider === provider && defaultSelection.model === model.id;
+  const contextWindow = CONTEXT_WINDOWS[model.id];
   return (
-    <div className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3">
+      {/* 左：模型信息（名称 + 类型） */}
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-100">
-            <input
-              type="checkbox"
-              checked={model.enabled}
-              onChange={(event) => onToggleModelEnabled(model, event.target.checked)}
-              className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-            />
-            <span>{model.label}</span>
-          </label>
-          <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
+          <span className="text-sm font-medium text-zinc-100">{model.label}</span>
+          {isDefault && (
+            <span className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200">★ 默认</span>
+          )}
+          <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
             {model.source === 'discovered' ? '发现' : '内置'}
           </span>
           {features.map((feature) => (
             <span
               key={feature}
-              className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300"
             >
               {CAPABILITY_ICONS[feature]}
               {feature}
             </span>
           ))}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-zinc-500">
-          <span>{model.id}</span>
-          {model.maxTokens ? <span>{model.maxTokens.toLocaleString()} tokens</span> : null}
-        </div>
+        <div className="mt-1 font-mono text-[11px] text-zinc-500">{model.id}</div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
-        {/* 设为主任务 */}
-        {defaultSelection.provider === provider && defaultSelection.model === model.id ? (
+      {/* 右：设置 + 开关 */}
+      <div className="flex shrink-0 items-center gap-4">
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">上下文</div>
+          <div className="text-xs text-zinc-300">{formatTokens(contextWindow)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">Max Output</div>
+          <Input
+            type="number"
+            min={1024}
+            step={1024}
+            value={model.maxTokens ?? ''}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              onUpdateModelMaxTokens(model, Number.isFinite(value) && value > 0 ? value : undefined);
+            }}
+            inputSize="sm"
+            className="w-24"
+          />
+        </div>
+        {isDefault ? (
           <span className="inline-flex h-7 items-center gap-1 rounded border border-blue-400/50 bg-blue-500/15 px-2 text-[11px] text-blue-200">
-            ★ 主任务
+            ★ 默认
           </span>
         ) : model.enabled ? (
           <button
             type="button"
             onClick={() => void onSetDefaultModel(model.id)}
             disabled={settingDefaultModelId !== null}
-            className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-500 transition hover:text-zinc-300"
+            className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-400 transition hover:text-zinc-200"
           >
-            {settingDefaultModelId === model.id ? '保存中...' : '设为主任务'}
+            {settingDefaultModelId === model.id ? '保存中...' : '设为默认'}
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={() => onToggleModelTool(model)}
-          disabled={metadataLocked}
-          className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
-            model.supportsTool
-              ? 'border-blue-400/50 bg-blue-500/15 text-blue-200'
-              : metadataLocked
-                ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
-                : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-          }`}
-          title={metadataLocked ? '内置模型标签由模型目录决定' : '工具调用'}
-        >
-          <Wrench className="h-3 w-3" />
-          工具
-        </button>
-        {MODEL_CAPABILITY_PICKER.map((capability) => {
-          const active = model.capabilities.includes(capability.id);
-          return (
-            <button
-              key={capability.id}
-              type="button"
-              onClick={() => onToggleModelCapability(model, capability.id)}
-              disabled={metadataLocked}
-              className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
-                active
-                  ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200'
-                  : metadataLocked
-                    ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
-                    : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-              }`}
-              title={metadataLocked ? '内置模型标签由模型目录决定' : capability.label}
-            >
-              {CAPABILITY_ICONS[capability.id] ?? <span className="text-[10px]">{capability.label.slice(0, 1)}</span>}
-              {capability.label}
-            </button>
-          );
-        })}
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] text-zinc-500">进选择页</span>
+          <Toggle
+            checked={model.enabled}
+            onChange={(checked) => onToggleModelEnabled(model, checked)}
+            aria-label="该模型是否进入模型选择页"
+          />
+        </div>
       </div>
     </div>
   );
@@ -158,8 +143,7 @@ export interface ProviderModelsSectionProps {
   settingDefaultModelId: string | null;
   onSetDefaultModel: (modelId: string) => void;
   onToggleModelEnabled: (model: RuntimeProviderModel, enabled: boolean) => void;
-  onToggleModelTool: (model: RuntimeProviderModel) => void;
-  onToggleModelCapability: (model: RuntimeProviderModel, capabilityId: ModelCapability) => void;
+  onUpdateModelMaxTokens: (model: RuntimeProviderModel, maxTokens: number | undefined) => void;
 }
 
 export function ProviderModelsSection({
@@ -173,17 +157,11 @@ export function ProviderModelsSection({
   onDiscoverModels,
   modelSearch,
   onModelSearchChange,
-  manualModelId,
-  onManualModelIdChange,
-  manualModelLabel,
-  onManualModelLabelChange,
-  onAddManualModel,
   defaultSelection,
   settingDefaultModelId,
   onSetDefaultModel,
   onToggleModelEnabled,
-  onToggleModelTool,
-  onToggleModelCapability,
+  onUpdateModelMaxTokens,
 }: ProviderModelsSectionProps) {
   if (!hasApiKey) {
     return (
@@ -211,49 +189,18 @@ export function ProviderModelsSection({
         </Button>
       )}
     >
-      {/* 搜索 + 手动添加 */}
-      <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(160px,1fr)_minmax(140px,1fr)_minmax(120px,0.8fr)_auto] lg:items-end">
-        <div>
-          <label className="mb-2 block text-xs font-medium text-zinc-400">搜索模型</label>
-          <Input
-            value={modelSearch}
-            onChange={(event) => onModelSearchChange(event.target.value)}
-            placeholder="搜索模型..."
-            inputSize="sm"
-            leftIcon={<Search className="h-3.5 w-3.5" />}
-          />
-        </div>
-        <div>
-          <label className="mb-2 block text-xs font-medium text-zinc-400">手动添加：模型 ID</label>
-          <Input
-            value={manualModelId}
-            onChange={(event) => onManualModelIdChange(event.target.value)}
-            placeholder="deepseek-v3-2-251201"
-            inputSize="sm"
-          />
-        </div>
-        <div>
-          <label className="mb-2 block text-xs font-medium text-zinc-400">显示名称</label>
-          <Input
-            value={manualModelLabel}
-            onChange={(event) => onManualModelLabelChange(event.target.value)}
-            placeholder={manualModelId || '可选'}
-            inputSize="sm"
-          />
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onAddManualModel}
-          disabled={isWebMode() || !manualModelId.trim()}
-          leftIcon={<Plus className="h-3 w-3" />}
-          className="lg:mb-px"
-        >
-          添加
-        </Button>
+      {/* 搜索 */}
+      <div className="mb-3">
+        <Input
+          value={modelSearch}
+          onChange={(event) => onModelSearchChange(event.target.value)}
+          placeholder="搜索模型..."
+          inputSize="sm"
+          leftIcon={<Search className="h-3.5 w-3.5" />}
+        />
       </div>
-      <p className="mb-3 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs leading-relaxed text-zinc-400">
-        主任务模型会影响每一轮交付质量：复杂任务和长上下文适合能力更强的模型，日常小任务避免长期锁定慢模型或按量昂贵模型；自动模式会按任务、成本、速度和能力尝试切换。
+      <p className="mb-3 text-xs leading-relaxed text-zinc-500">
+        勾上「进选择页」的模型会出现在对话的模型选择里；「设为默认」决定 Neo 默认用哪个。
       </p>
 
       {/* 模型列表 */}
@@ -273,8 +220,7 @@ export function ProviderModelsSection({
                 settingDefaultModelId={settingDefaultModelId}
                 onSetDefaultModel={onSetDefaultModel}
                 onToggleModelEnabled={onToggleModelEnabled}
-                onToggleModelTool={onToggleModelTool}
-                onToggleModelCapability={onToggleModelCapability}
+                onUpdateModelMaxTokens={onUpdateModelMaxTokens}
               />
             ))}
           </div>

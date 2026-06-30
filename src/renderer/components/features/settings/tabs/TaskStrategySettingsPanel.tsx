@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Brain, GitBranch, RotateCcw } from 'lucide-react';
+import { Brain, GitBranch } from 'lucide-react';
 import type {
   AppSettings,
   ModelConfig,
@@ -10,8 +10,7 @@ import type {
 } from '@shared/contract';
 import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions } from '@shared/modelRuntime';
-import { Button, Input, Select } from '../../../primitives';
-import { SettingsDetails } from '../SettingsLayout';
+import { Button, Select, Toggle } from '../../../primitives';
 
 const PROFILE_META: Record<TaskStrategyProfileId, { label: string; description: string }> = {
   fast: { label: '快速任务模型', description: '短问答、改写、格式整理' },
@@ -19,6 +18,9 @@ const PROFILE_META: Record<TaskStrategyProfileId, { label: string; description: 
   deep: { label: '深度任务模型', description: '研究、规划、重构' },
   vision: { label: '视觉任务模型', description: '图片、截图、视觉输入' },
 };
+
+// 自动模式下只让用户挑这三类；主任务用「默认模型」（在上方模型列表设默认），不在这里重复配置。
+const AUTO_PROFILES: TaskStrategyProfileId[] = ['fast', 'deep', 'vision'];
 
 function optionValue(provider: string, model: string): string {
   return `${provider}:::${model}`;
@@ -87,8 +89,9 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     const groups = new Map<string, { label: string; options: typeof modelOptions }>();
     for (const option of modelOptions) {
       const key = option.providerLabel || option.provider;
-      if (!groups.has(key)) groups.set(key, { label: key, options: [] });
-      groups.get(key)!.options.push(option);
+      const group = groups.get(key) ?? { label: key, options: [] as typeof modelOptions };
+      group.options.push(option);
+      groups.set(key, group);
     }
     return Array.from(groups.values());
   }, [modelOptions]);
@@ -115,191 +118,66 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   };
 
   const selectedOptionSet = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
-  // 手动模式只用「默认档位」一个模型，无需展示四档；自动模式才需要逐档配置。
-  const visibleProfiles: TaskStrategyProfileId[] = strategy.mode === 'manual'
-    ? [strategy.defaultProfile]
-    : (Object.keys(PROFILE_META) as TaskStrategyProfileId[]);
-
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="block">
-          <span className="mb-2 block text-xs font-medium text-zinc-400">策略模式</span>
-          <Select
-            value={strategy.mode}
-            onChange={(event) => patchStrategy({ mode: event.target.value as TaskModelStrategySettings['mode'] })}
-            disabled={disabled}
-          >
-            <option value="auto">自动按任务选择</option>
-            <option value="manual">固定默认档位</option>
-          </Select>
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-medium text-zinc-400">默认档位</span>
-          <Select
-            value={strategy.defaultProfile}
-            onChange={(event) => patchStrategy({ defaultProfile: event.target.value as TaskStrategyProfileId })}
-            disabled={disabled}
-          >
-            {Object.entries(PROFILE_META).map(([profile, meta]) => (
-              <option key={profile} value={profile}>{meta.label}</option>
-            ))}
-          </Select>
-        </label>
-      </div>
+      <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-zinc-200">开启自动切换</span>
+          <span className="block text-xs text-zinc-500">开启后快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。</span>
+        </span>
+        <Toggle
+          checked={strategy.mode === 'auto'}
+          onChange={(checked) => patchStrategy({ mode: checked ? 'auto' : 'manual' })}
+          disabled={disabled}
+          aria-label="开启自动按任务切换模型"
+        />
+      </label>
 
-      {strategy.mode === 'manual' && (
-        <p className="text-[11px] leading-relaxed text-zinc-500">
-          固定使用上面所选「默认档位」对应的模型。切到「自动按任务选择」可分别为快速 / 主 / 深度 / 视觉任务指定模型。
-        </p>
-      )}
-
-      <div className="grid gap-2">
-        {visibleProfiles.map((profile) => {
-          const slot = strategy.profiles[profile];
-          const value = optionValue(slot.provider, slot.model);
-          const unavailable = !selectedOptionSet.has(value);
-          return (
-            <div key={profile} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                <div>
+      {strategy.mode === 'auto' && (
+        <div className="grid gap-2">
+          {AUTO_PROFILES.map((profile) => {
+            const slot = strategy.profiles[profile];
+            const value = optionValue(slot.provider, slot.model);
+            const unavailable = !selectedOptionSet.has(value);
+            return (
+              <div key={profile} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
                     <Brain className="h-4 w-4 text-zinc-500" />
                     {PROFILE_META[profile].label}
+                    {unavailable ? (
+                      <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+                        不可用
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-0.5 text-xs text-zinc-500">{PROFILE_META[profile].description}</div>
                 </div>
-                {unavailable ? (
-                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    当前模型不可用
-                  </span>
-                ) : null}
+                <Select
+                  value={value}
+                  onChange={(event) => {
+                    const parsed = parseOptionValue(event.target.value);
+                    if (parsed) patchProfile(profile, parsed);
+                  }}
+                  disabled={disabled}
+                  className="w-full sm:w-72"
+                >
+                  {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}（不可用）</option> : null}
+                  {groupedOptions.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.options.map((option) => (
+                        <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </Select>
               </div>
-              <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_120px_120px]">
-                <label className="block">
-                  <span className="mb-1.5 block text-[11px] text-zinc-500">模型</span>
-                  <Select
-                    value={value}
-                    onChange={(event) => {
-                      const parsed = parseOptionValue(event.target.value);
-                      if (parsed) patchProfile(profile, parsed);
-                    }}
-                    disabled={disabled}
-                  >
-                    {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}（不可用）</option> : null}
-                    {groupedOptions.map((group) => (
-                      <optgroup key={group.label} label={group.label}>
-                        {group.options.map((option) => (
-                          <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </Select>
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[11px] text-zinc-500">Effort</span>
-                  <Select
-                    value={slot.reasoningEffort || 'medium'}
-                    onChange={(event) => patchProfile(profile, { reasoningEffort: event.target.value as ModelConfig['reasoningEffort'] })}
-                    disabled={disabled}
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </Select>
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[11px] text-zinc-500">Max tokens</span>
-                  <Input
-                    type="number"
-                    min={1024}
-                    step={1024}
-                    value={slot.maxTokens ?? ''}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      patchProfile(profile, { maxTokens: Number.isFinite(value) && value > 0 ? value : undefined });
-                    }}
-                    disabled={disabled}
-                    inputSize="sm"
-                  />
-                </label>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <SettingsDetails
-        title="降级与规则"
-        description="模型不可用时怎么降级，以及按场景覆盖默认档位。多数人不用动。"
-      >
-        <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="text-sm font-medium text-zinc-100">Fallback</div>
-          <label className="flex items-start gap-2 text-xs text-zinc-400">
-            <input
-              type="checkbox"
-              checked={strategy.fallback.enabled}
-              onChange={(event) => patchStrategy({ fallback: { ...strategy.fallback, enabled: event.target.checked } })}
-              disabled={disabled}
-              className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-            />
-            模型不可用时允许降级
-          </label>
-          <label className="flex items-start gap-2 text-xs text-zinc-400">
-            <input
-              type="checkbox"
-              checked={strategy.fallback.preferSameProvider}
-              onChange={(event) => patchStrategy({ fallback: { ...strategy.fallback, preferSameProvider: event.target.checked } })}
-              disabled={disabled || !strategy.fallback.enabled}
-              className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-            />
-            优先同 Provider
-          </label>
-          <label className="flex items-start gap-2 text-xs text-zinc-400">
-            <input
-              type="checkbox"
-              checked={strategy.fallback.allowCrossProvider}
-              onChange={(event) => patchStrategy({ fallback: { ...strategy.fallback, allowCrossProvider: event.target.checked } })}
-              disabled={disabled || !strategy.fallback.enabled}
-              className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-            />
-            允许跨 Provider
-          </label>
-
-          <div className="border-t border-zinc-800 pt-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-100">
-              <RotateCcw className="h-4 w-4 text-zinc-500" />
-              规则
-            </div>
-            <div className="space-y-2">
-              {strategy.rules.map((rule) => (
-                <label key={rule.id} className="flex items-start gap-2 text-xs text-zinc-400">
-                  <input
-                    type="checkbox"
-                    checked={rule.enabled}
-                    onChange={(event) => {
-                      onChange({
-                        ...strategy,
-                        rules: strategy.rules.map((item) =>
-                          item.id === rule.id ? { ...item, enabled: event.target.checked } : item
-                        ),
-                      });
-                    }}
-                    disabled={disabled || strategy.mode === 'manual'}
-                    className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-                  />
-                  <span>
-                    <span className="block text-zinc-300">{rule.label}</span>
-                    <span className="block text-zinc-600">{PROFILE_META[rule.profile]?.label || rule.profile}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
+            );
+          })}
         </div>
-      </SettingsDetails>
+      )}
 
       <div className="flex items-center gap-3 pt-1">
         <Button
@@ -313,7 +191,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           保存策略
         </Button>
         <span className="text-xs text-zinc-500">
-          {strategy.mode === 'auto' ? '自动路由：按任务复杂度选模型' : '手动默认：固定用默认档位模型'}
+          {strategy.mode === 'auto' ? '已开启：按任务用不同模型' : '已关闭：全部用默认模型'}
         </span>
       </div>
     </div>

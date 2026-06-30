@@ -28,7 +28,7 @@ export function AddProviderCard({
   onAddProvider,
 }: AddProviderCardProps) {
   return (
-    <ProviderDetailCard step="+" title="新增 Provider / 中转站">
+    <ProviderDetailCard step="+" title="新增">
       <div className="space-y-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <div>

@@ -15,6 +15,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { REGION_LOCK } from '@shared/constants';
 import { invokeDomain } from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
+import { useAppStore } from '../../../../stores/appStore';
 import { SettingsPage } from '../SettingsLayout';
 import {
   CustomImageModelManagerView,
@@ -64,7 +65,8 @@ const BuiltinModelList: React.FC<{
   selectedId: string;
   groupName: string;
   onSelect: (id: string) => void;
-}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, selectedId, groupName, onSelect }) => (
+  onConfigure: (provider: string) => void;
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, selectedId, groupName, onSelect, onConfigure }) => (
   <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-zinc-300">{title}</span>
@@ -99,8 +101,17 @@ const BuiltinModelList: React.FC<{
                   {availableBadge}
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                  {unconfiguredBadge}
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                    {unconfiguredBadge}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); onConfigure(m.provider); }}
+                    className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300 transition hover:text-zinc-100"
+                  >
+                    去配置
+                  </button>
                 </span>
               )}
             </label>
@@ -240,6 +251,10 @@ export const VisualModelsSettings: React.FC = () => {
   const { t } = useI18n();
   const s = t.settings.visualModels;
   const cm = t.design.customModel;
+  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  // 多模态内置模型的 key 绑在底层 provider 上（通义万相→阿里 / GPT-image→OpenAI 等），
+  // 在「通用模型」页配置；这里只给「去配置」跳转入口。
+  const handleConfigure = useCallback(() => openSettingsTab('model'), [openSettingsTab]);
   // 视频自定义端点复用 image 表单文案，仅覆盖标题/副文案/成本单位/空态/提示。
   const videoStrings: typeof cm = {
     ...cm,
@@ -315,6 +330,7 @@ export const VisualModelsSettings: React.FC = () => {
           selectedId={defaultImageModelId}
           groupName="design-image-model"
           onSelect={(id) => saveDefaults(id, defaultVideoModelId)}
+          onConfigure={handleConfigure}
         />
         <CustomEndpointManager
           strings={cm}
@@ -346,6 +362,7 @@ export const VisualModelsSettings: React.FC = () => {
           selectedId={defaultVideoModelId}
           groupName="design-video-model"
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
+          onConfigure={handleConfigure}
         />
         <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300/90">
           {s.videoPendingNote}

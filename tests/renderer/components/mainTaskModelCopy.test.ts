@@ -26,12 +26,11 @@ describe('main task model copy', () => {
     expect(source).not.toContain('正在保存默认模型');
   });
 
-  it('explains main task model selection as a task strategy in settings', () => {
-    // 设置页 Master-Detail 重构后，主任务模型策略文案迁到 ProviderModelsSection（ModelSettings 仅留布局壳）。
+  it('explains model selection-page gating and default in settings', () => {
+    // 设置页模型区精简后：模型行用「进选择页」开关 + 「设为默认」表达 gating 与默认。
     const source = readSource('src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx');
 
-    expect(source).toContain('主任务模型会影响每一轮交付质量');
-    expect(source).toContain('日常小任务避免长期锁定慢模型或按量昂贵模型');
-    expect(source).toContain('自动模式会按任务、成本、速度和能力尝试切换');
+    expect(source).toContain('进选择页');
+    expect(source).toContain('「设为默认」决定 Neo 默认用哪个');
   });
 });

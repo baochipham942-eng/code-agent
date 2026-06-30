@@ -360,7 +360,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               await get().switchSession(reusableSession.id);
             }
             useAppStore.getState().setWorkingDirectory(reusableSession.workingDirectory ?? null);
-            set({ isLoading: false, error: null });
+            // 复用空白草稿时刷新时间戳，避免侧边栏显示旧草稿的"3 天前"。
+            set((state) => ({ isLoading: false, error: null, sessions: state.sessions.map((s) => (s.id === reusableSession.id ? normalizeSession({ ...s, updatedAt: Date.now() }) : s)) }));
             return reusableSession;
           }
         }

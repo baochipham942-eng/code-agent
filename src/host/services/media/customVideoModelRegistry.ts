@@ -7,9 +7,9 @@
 //   <getUserConfigDir>/design/custom-video-models.json   { models: CustomVideoModel[] }
 //   SecureStorage  apikey.custom-video:<id>              用户填的 key
 //
-// ⚠️ 配置层 only：当前仅做「填表/落盘/管理」，不接出片生成——视频生成无 OpenAI 兼容统一标准
-// （DashScope/海螺各家协议不同），出片协议待接入真实目标后再补。故无 generate 路由、不并入
-// VideoModelPicker。与 image 不同：image 出片走事实标准 /images/generations 已通。
+// 出片已接通（Spec 1）：custom 视频经 handleGenerateDesignVideo 的 custom 分支走通用
+// generateVideoOpenAICompat（POST /videos + flavor 轮询），与 image 的 openai-compat 路径对称。
+// 本文件仍只负责「填表/落盘/管理」(list/save/delete + key)，执行编排在 ipc handler 侧。
 // ============================================================================
 
 import { promises as fsp } from 'fs';

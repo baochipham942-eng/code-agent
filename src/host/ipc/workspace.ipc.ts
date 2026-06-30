@@ -843,9 +843,9 @@ export async function handleDeleteCustomImageModel(payload: { id: string }): Pro
 }
 
 // ----------------------------------------------------------------------------
-// 自定义生视频模型管理（视觉模型设置 tab · 配置层 only）：与 image 对称的薄 handler。
-// ⚠️ 不接出片生成——视频无 OpenAI 兼容统一标准，出片协议待接入；故无 generateDesignVideo 路由
-// 分支、不并入 VideoModelPicker。这里只做 list/save/delete 配置。绝不回 key 值。
+// 自定义生视频模型管理（视觉模型设置 tab）：与 image 对称的薄 handler。
+// 出片已接通（Spec 1）：generateDesignVideo 的 custom 分支走通用 generateVideoOpenAICompat
+// （flavor 轮询）。这里只做 list/save/delete 配置。绝不回 key 值。
 // ----------------------------------------------------------------------------
 
 export async function handleListCustomVideoModels(): Promise<{

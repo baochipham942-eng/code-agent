@@ -225,10 +225,13 @@ export interface GenerateVideoCompatArgs {
   frameRate?: number;
   pollIntervalMs?: number;
   maxPolls?: number;
+  /** 建任务请求超时（ms）。第三方网关的异步 create 可能很慢（实测 Agnes 免费档 create 排队 ~90s），
+   *  故 compat 路径不用内置 wanx/minimax 共享的 30s SUBMIT，默认放宽到 120s。 */
+  createTimeoutMs?: number;
   outerSignal?: AbortSignal;
 }
 
-const COMPAT_VIDEO_DEFAULTS = { pollIntervalMs: 8000, maxPolls: 60, width: 1152, height: 768, numFrames: 121, frameRate: 24 };
+const COMPAT_VIDEO_DEFAULTS = { pollIntervalMs: 8000, maxPolls: 60, createTimeoutMs: 120000, width: 1152, height: 768, numFrames: 121, frameRate: 24 };
 
 /**
  * 通用 OpenAI 兼容视频：POST {base}/videos 建任务 → flavor 注册表轮询 → 取 url。
@@ -259,7 +262,9 @@ export async function generateVideoOpenAICompat(args: GenerateVideoCompatArgs): 
       headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    VIDEO_TIMEOUT_MS.SUBMIT,
+    // 第三方网关异步 create 可能 ~90s（dogfood：Agnes 免费档 create 排队 89s 才返 queued）；
+    // 用 compat 专属放宽超时，避免慢但正常的 create 被 30s 误杀。
+    args.createTimeoutMs ?? COMPAT_VIDEO_DEFAULTS.createTimeoutMs,
     signal,
   );
   if (!createRes.ok) throw new Error(`视频建任务失败 HTTP ${createRes.status}`);

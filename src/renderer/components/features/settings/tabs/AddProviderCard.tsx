@@ -59,27 +59,26 @@ export function AddProviderCard({
           />
           <p className="mt-2 text-xs text-zinc-500">填到 /v1 为止，不要带 /chat/completions。</p>
         </div>
-        <div className="flex items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <label className="mb-2 block text-sm font-medium text-zinc-200">API Key</label>
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(event) => onApiKeyChange(event.target.value)}
-              placeholder="sk-..."
-              leftIcon={<Key className="h-4 w-4" />}
-            />
-          </div>
-          <Button
-            onClick={onAddProvider}
-            disabled={isWebMode() || !name.trim() || !baseUrl.trim()}
-            leftIcon={<Plus className="h-4 w-4" />}
-            className="shrink-0"
-          >
-            添加 Provider
-          </Button>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-zinc-200">API Key</label>
+          <Input
+            type="password"
+            value={apiKey}
+            onChange={(event) => onApiKeyChange(event.target.value)}
+            placeholder="sk-..."
+            leftIcon={<Key className="h-4 w-4" />}
+          />
         </div>
         <p className="text-xs text-zinc-500">添加后点击「发现模型」拉取该 Provider 的可用模型列表。</p>
+        <Button
+          onClick={onAddProvider}
+          disabled={isWebMode() || !name.trim() || !baseUrl.trim()}
+          leftIcon={<Plus className="h-4 w-4" />}
+          size="lg"
+          className="w-full"
+        >
+          添加 Provider
+        </Button>
       </div>
     </ProviderDetailCard>
   );

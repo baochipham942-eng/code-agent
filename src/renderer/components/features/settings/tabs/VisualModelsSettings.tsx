@@ -101,19 +101,17 @@ const BuiltinModelList: React.FC<{
                   {availableBadge}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-2">
-                  <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                    {unconfiguredBadge}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); onConfigure(m.provider); }}
-                    className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300 transition hover:text-zinc-100"
-                  >
-                    去配置
-                  </button>
+                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                  {unconfiguredBadge}
                 </span>
               )}
+              <button
+                type="button"
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); onConfigure(m.provider); }}
+                className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300 transition hover:text-zinc-100"
+              >
+                {m.available ? '管理' : '去配置'}
+              </button>
             </label>
           </li>
         );

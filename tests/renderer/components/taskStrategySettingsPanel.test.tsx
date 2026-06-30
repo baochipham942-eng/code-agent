@@ -45,7 +45,7 @@ const settings = {
 } as AppSettings;
 
 describe('TaskStrategySettingsPanel', () => {
-  it('renders task strategy profiles and save action', () => {
+  it('renders auto-switch toggle and the three task profiles (auto mode)', () => {
     const html = renderToStaticMarkup(
       <TaskStrategySettingsPanel
         settings={settings}
@@ -53,7 +53,6 @@ describe('TaskStrategySettingsPanel', () => {
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
-        onSave={vi.fn()}
       />,
     );
 
@@ -61,8 +60,8 @@ describe('TaskStrategySettingsPanel', () => {
     expect(html).toContain('快速任务模型');
     expect(html).toContain('深度任务模型');
     expect(html).toContain('视觉任务模型');
-    expect(html).toContain('保存策略');
-    // 自动模式下不再展示主任务档（主=默认模型，在模型列表设默认），也不展示 fallback/规则。
+    // 改动即存：无保存按钮；不展示主任务档（主=默认模型）、fallback/规则。
+    expect(html).not.toContain('保存策略');
     expect(html).not.toContain('任务主模型');
     expect(html).not.toContain('研究 / 规划 / 重构');
   });

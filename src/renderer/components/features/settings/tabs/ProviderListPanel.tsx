@@ -7,7 +7,7 @@
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Plus, Search, Stethoscope } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Search, Stethoscope } from 'lucide-react';
 import type { ModelProvider } from '@shared/contract';
 import { isProviderImageIcon } from '@shared/modelRuntime';
 import { Button, Input } from '../../../primitives';
@@ -109,12 +109,6 @@ const ConfiguredRow: React.FC<{
         <ConfiguredRowStatus row={row} reachable={reachable} />
       </span>
     </span>
-    {selected && (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
-        <CheckCircle className="h-3 w-3" />
-        当前
-      </span>
-    )}
   </button>
 );
 

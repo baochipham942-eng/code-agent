@@ -30,7 +30,6 @@ interface ModelRowProps {
   settingDefaultModelId: string | null;
   onSetDefaultModel: (modelId: string) => void;
   onToggleModelEnabled: (model: RuntimeProviderModel, enabled: boolean) => void;
-  onUpdateModelMaxTokens: (model: RuntimeProviderModel, maxTokens: number | undefined) => void;
 }
 
 function ModelRow({
@@ -40,7 +39,6 @@ function ModelRow({
   settingDefaultModelId,
   onSetDefaultModel,
   onToggleModelEnabled,
-  onUpdateModelMaxTokens,
 }: ModelRowProps) {
   const features = featuresFromModelMetadata({
     modelId: model.id,
@@ -52,7 +50,7 @@ function ModelRow({
   const contextWindow = CONTEXT_WINDOWS[model.id];
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3">
-      {/* 左：模型信息（名称 + 类型） */}
+      {/* 左：①名称 + 默认 + 内置 / ②类型标签 */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-zinc-100">{model.label}</span>
@@ -62,45 +60,33 @@ function ModelRow({
           <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
             {model.source === 'discovered' ? '发现' : '内置'}
           </span>
-          {features.map((feature) => (
-            <span
-              key={feature}
-              className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300"
-            >
-              {CAPABILITY_ICONS[feature]}
-              {feature}
-            </span>
-          ))}
         </div>
-        <div className="mt-1 font-mono text-[11px] text-zinc-500">{model.id}</div>
+        {features.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {features.map((feature) => (
+              <span
+                key={feature}
+                className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300"
+              >
+                {CAPABILITY_ICONS[feature]}
+                {feature}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* 右：设置 + 开关 */}
+      {/* 右：上下文 / Max Output（只读）+ 设为默认 + 进选择页 */}
       <div className="flex shrink-0 items-center gap-4">
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wide text-zinc-500">上下文</div>
           <div className="text-xs text-zinc-300">{formatTokens(contextWindow)}</div>
         </div>
-        <div>
+        <div className="text-right">
           <div className="text-[10px] uppercase tracking-wide text-zinc-500">Max Output</div>
-          <Input
-            type="number"
-            min={1024}
-            step={1024}
-            value={model.maxTokens ?? ''}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              onUpdateModelMaxTokens(model, Number.isFinite(value) && value > 0 ? value : undefined);
-            }}
-            inputSize="sm"
-            className="w-24"
-          />
+          <div className="text-xs text-zinc-300">{formatTokens(model.maxTokens)}</div>
         </div>
-        {isDefault ? (
-          <span className="inline-flex h-7 items-center gap-1 rounded border border-blue-400/50 bg-blue-500/15 px-2 text-[11px] text-blue-200">
-            ★ 默认
-          </span>
-        ) : model.enabled ? (
+        {!isDefault && model.enabled ? (
           <button
             type="button"
             onClick={() => void onSetDefaultModel(model.id)}
@@ -143,7 +129,6 @@ export interface ProviderModelsSectionProps {
   settingDefaultModelId: string | null;
   onSetDefaultModel: (modelId: string) => void;
   onToggleModelEnabled: (model: RuntimeProviderModel, enabled: boolean) => void;
-  onUpdateModelMaxTokens: (model: RuntimeProviderModel, maxTokens: number | undefined) => void;
 }
 
 export function ProviderModelsSection({
@@ -161,7 +146,6 @@ export function ProviderModelsSection({
   settingDefaultModelId,
   onSetDefaultModel,
   onToggleModelEnabled,
-  onUpdateModelMaxTokens,
 }: ProviderModelsSectionProps) {
   if (!hasApiKey) {
     return (
@@ -220,7 +204,6 @@ export function ProviderModelsSection({
                 settingDefaultModelId={settingDefaultModelId}
                 onSetDefaultModel={onSetDefaultModel}
                 onToggleModelEnabled={onToggleModelEnabled}
-                onUpdateModelMaxTokens={onUpdateModelMaxTokens}
               />
             ))}
           </div>

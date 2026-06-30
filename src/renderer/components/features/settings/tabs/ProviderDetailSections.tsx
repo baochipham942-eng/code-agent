@@ -147,7 +147,7 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
               placeholder={
                 needsApiKey
                   ? hasStoredApiKey
-                    ? '已保存，输入新密钥可替换'
+                    ? '••••••••••••  已保存，输入新密钥可替换'
                     : t.model.apiKeyPlaceholder
                   : '本地模型无需 API Key'
               }

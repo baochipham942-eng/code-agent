@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Brain, GitBranch } from 'lucide-react';
+import { Brain } from 'lucide-react';
 import type {
   AppSettings,
   ModelConfig,
@@ -10,7 +10,7 @@ import type {
 } from '@shared/contract';
 import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions } from '@shared/modelRuntime';
-import { Button, Select, Toggle } from '../../../primitives';
+import { Select, Toggle } from '../../../primitives';
 
 const PROFILE_META: Record<TaskStrategyProfileId, { label: string; description: string }> = {
   fast: { label: '快速任务模型', description: '短问答、改写、格式整理' },
@@ -43,9 +43,8 @@ export interface TaskStrategySettingsPanelProps {
   config: ModelConfig;
   strategy: TaskModelStrategySettings | null;
   disabled?: boolean;
-  saving?: boolean;
+  /** 改动即存：开关 / 三类模型修改后立即调用持久化 */
   onChange: (strategy: TaskModelStrategySettings) => void;
-  onSave: () => void;
 }
 
 export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps> = ({
@@ -54,9 +53,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   config,
   strategy,
   disabled,
-  saving,
   onChange,
-  onSave,
 }) => {
   const effectiveSettings = useMemo<AppSettings | null>(() => {
     if (!settings) return null;
@@ -178,22 +175,6 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           })}
         </div>
       )}
-
-      <div className="flex items-center gap-3 pt-1">
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={onSave}
-          loading={saving}
-          disabled={disabled}
-          leftIcon={<GitBranch className="h-3.5 w-3.5" />}
-        >
-          保存策略
-        </Button>
-        <span className="text-xs text-zinc-500">
-          {strategy.mode === 'auto' ? '已开启：按任务用不同模型' : '已关闭：全部用默认模型'}
-        </span>
-      </div>
     </div>
   );
 };

@@ -37,7 +37,7 @@ const logger = createLogger('ModelSettings');
 import type { ModelConfig, ProxyMode } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
-import { SettingsPage, SettingsDetails } from '../SettingsLayout';
+import { SettingsPage } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 import {
@@ -87,7 +87,6 @@ interface DefaultModelSelection {
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
   const { t } = useI18n();
   const [isSaving, setIsSaving] = useState(false);
-  const [isSavingTaskStrategy, setIsSavingTaskStrategy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isTesting, setIsTesting] = useState(false);
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
@@ -453,13 +452,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     });
   }, [config, currentEnabledModels.length, currentModels, onChange, patchCurrentModelSettings]);
 
-  const handleUpdateModelMaxTokens = useCallback((model: RuntimeProviderModel, maxTokens: number | undefined) => {
-    patchCurrentModelSettings(model, { maxTokens });
-    if (config.model === model.id) {
-      onChange({ ...config, maxTokens: maxTokens ?? config.maxTokens });
-    }
-  }, [config, onChange, patchCurrentModelSettings]);
-
   // Save config to backend
   const handleSave = async () => {
     setIsSaving(true);
@@ -513,35 +505,23 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     }
   };
 
-  const handleSaveTaskStrategy = useCallback(async () => {
-    if (!taskStrategy) return;
-    setIsSavingTaskStrategy(true);
-    const nextStrategy: TaskModelStrategySettings = {
-      ...taskStrategy,
-      updatedAt: Date.now(),
-    };
+  // 自动切换改为「改动即存」（静默，无保存按钮）：开关 / 三类模型的修改立即落盘。
+  const persistTaskStrategy = useCallback(async (next: TaskModelStrategySettings) => {
+    setTaskStrategy(next);
+    const nextStrategy: TaskModelStrategySettings = { ...next, updatedAt: Date.now() };
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        models: {
-          taskStrategy: nextStrategy,
-        },
+        models: { taskStrategy: nextStrategy },
       });
-      setTaskStrategy(nextStrategy);
       setAppSettings((prev) => prev ? {
         ...prev,
-        models: {
-          ...prev.models,
-          taskStrategy: nextStrategy,
-        },
+        models: { ...prev.models, taskStrategy: nextStrategy },
       } : prev);
-      toast.success('任务策略已保存');
     } catch (error) {
       logger.error('Failed to save task strategy', error);
-      toast.error('任务策略保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
-    } finally {
-      setIsSavingTaskStrategy(false);
+      toast.error('自动切换保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
     }
-  }, [taskStrategy]);
+  }, []);
 
   const handleTestConnection = async () => {
     if (needsApiKey && !config.apiKey && !hasStoredApiKey) {
@@ -815,6 +795,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     >
       <WebModeBanner />
 
+      {/* ── 按任务自动切换（顶部，默认关闭；改动即存）── */}
+      <TaskStrategySettingsPanel
+        settings={appSettings}
+        providerConfigs={providerConfigs}
+        config={config}
+        strategy={taskStrategy}
+        disabled={isWebMode()}
+        onChange={persistTaskStrategy}
+      />
+
       {/* ── Master-Detail：左 Provider 列表 + 右详情 ── */}
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
@@ -931,7 +921,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 settingDefaultModelId={settingDefaultModelId}
                 onSetDefaultModel={handleSetDefaultModel}
                 onToggleModelEnabled={handleToggleModelEnabled}
-                onUpdateModelMaxTokens={handleUpdateModelMaxTokens}
               />
 
               {/* ── ③ 高级（折叠） ── */}
@@ -951,15 +940,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               )}
 
               {/* ── 保存 ── */}
-              <div className="flex items-center gap-3 border-t border-zinc-800 pt-4">
+              <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
                 <Button
                   disabled={isWebMode()}
                   onClick={handleSave}
                   loading={isSaving}
+                  size="lg"
                   variant={saveStatus === 'error' ? 'danger' : 'primary'}
-                  className={saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}
+                  className={`w-full ${saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}`}
                 >
-                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
+                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : `保存 ${providerTitle} 配置`}
                 </Button>
                 <span className="text-xs text-zinc-500">
                   保存 {providerTitle} 的连接、模型和高级配置。
@@ -969,23 +959,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           )}
         </div>
       </div>
-
-      {/* ── 任务策略（进阶，默认折叠）── */}
-      <SettingsDetails
-        title="自动按任务切换模型（进阶）"
-        description="开启后 Neo 会按任务类型（快速 / 主 / 深度 / 视觉）自动选不同模型；不展开就一直用上面的默认模型。"
-      >
-        <TaskStrategySettingsPanel
-          settings={appSettings}
-          providerConfigs={providerConfigs}
-          config={config}
-          strategy={taskStrategy}
-          disabled={isWebMode()}
-          saving={isSavingTaskStrategy}
-          onChange={setTaskStrategy}
-          onSave={handleSaveTaskStrategy}
-        />
-      </SettingsDetails>
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

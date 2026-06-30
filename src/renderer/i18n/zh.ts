@@ -402,6 +402,8 @@ export const zh = {
       subtitle: '选择图像 / 视频生成的默认模型，并管理你自己的端点。模型在这里配置，设计页只负责选择已配置的模型。',
       imageSection: '生图模型',
       videoSection: '生视频模型',
+      musicSection: '生音乐模型',
+      bridgedFromBadge: '来自 {name}',
       builtinTitle: '内置模型',
       defaultBadge: '默认',
       defaultHint: '点选一个作为默认；设计画布出图时使用，画布里手动切换过的不受影响。',

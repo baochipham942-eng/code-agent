@@ -177,6 +177,9 @@ export const MODEL_CAPABILITY_OPTIONS: Array<{ id: ModelCapability; label: strin
   { id: 'fast', label: '快速' },
   { id: 'longContext', label: '长上下文' },
   { id: 'search', label: '搜索' },
+  { id: 'imageGen', label: '生图' },
+  { id: 'videoGen', label: '生视频' },
+  { id: 'musicGen', label: '生音乐' },
 ];
 
 export function isRuntimeProviderConfigured(

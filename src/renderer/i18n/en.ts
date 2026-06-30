@@ -404,6 +404,8 @@ export const en: Translations = {
       subtitle: 'Pick the default image / video generation model and manage your own endpoints. Configure models here; the design canvas only selects from configured ones.',
       imageSection: 'Image generation',
       videoSection: 'Video generation',
+      musicSection: 'Music Models',
+      bridgedFromBadge: 'from {name}',
       builtinTitle: 'Built-in models',
       defaultBadge: 'Default',
       defaultHint: 'Click one to set as default; used when the design canvas generates, unless you switch manually in the canvas.',

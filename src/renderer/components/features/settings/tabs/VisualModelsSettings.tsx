@@ -34,18 +34,29 @@ import {
   type CustomImageModelMeta,
 } from '../../../design/designFiles';
 
-interface BuiltinRow {
+export interface BuiltinRow {
   id: string;
   label: string;
   provider: string;
   available: boolean;
+  source?: 'builtin' | 'custom' | 'bridged';
+  sourceLabel?: string;
 }
 
-async function invokeList(action: 'listVisualImageModels' | 'listVisualVideoModels'): Promise<BuiltinRow[]> {
+async function invokeList(
+  action: 'listVisualImageModels' | 'listVisualVideoModels' | 'listVisualMusicModels',
+): Promise<BuiltinRow[]> {
   try {
     const res = await window.domainAPI?.invoke<{ models: BuiltinRow[] }>(IPC_DOMAINS.WORKSPACE, action, {});
     if (res?.success && Array.isArray(res.data?.models)) {
-      return res.data.models.map((m) => ({ id: m.id, label: m.label, provider: m.provider, available: m.available }));
+      return res.data.models.map((m) => ({
+        id: m.id,
+        label: m.label,
+        provider: m.provider,
+        available: m.available,
+        source: m.source,
+        sourceLabel: m.sourceLabel,
+      }));
     }
     return [];
   } catch {
@@ -55,18 +66,21 @@ async function invokeList(action: 'listVisualImageModels' | 'listVisualVideoMode
 
 // 内置模型列表 = 默认模型选择器：单选选默认 + 名称 + 已配置/未配置徽标
 // （key 状态来自 listVisual*Models 的 available；默认值存 AppSettings.design）。
-const BuiltinModelList: React.FC<{
+export const BuiltinModelList: React.FC<{
   title: string;
   hint: string;
   rows: BuiltinRow[];
   availableBadge: string;
   unconfiguredBadge: string;
   defaultBadge: string;
-  selectedId: string;
-  groupName: string;
-  onSelect: (id: string) => void;
+  bridgedFromBadge: string;
+  selectedId?: string;
+  groupName?: string;
+  onSelect?: (id: string) => void;
   onConfigure: (provider: string) => void;
-}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, selectedId, groupName, onSelect, onConfigure }) => (
+  // 只读模式（如生音乐段）：仅展示，不渲染默认选择 radio。
+  readOnly?: boolean;
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => (
   <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-zinc-300">{title}</span>
@@ -74,22 +88,29 @@ const BuiltinModelList: React.FC<{
     </div>
     <ul className="flex flex-col gap-1.5">
       {rows.map((m) => {
-        const isSelected = selectedId === m.id;
+        const isSelected = !readOnly && selectedId === m.id;
         return (
           <li key={m.id}>
             <label
-              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
+              className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${readOnly ? '' : 'cursor-pointer'} ${
                 isSelected ? 'border-sky-500/40 bg-sky-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'
               }`}
             >
-              <input
-                type="radio"
-                name={groupName}
-                checked={isSelected}
-                onChange={() => onSelect(m.id)}
-                className="accent-sky-500"
-              />
+              {!readOnly && (
+                <input
+                  type="radio"
+                  name={groupName}
+                  checked={isSelected}
+                  onChange={() => onSelect?.(m.id)}
+                  className="accent-sky-500"
+                />
+              )}
               <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{m.label}</span>
+              {m.source === 'bridged' && m.sourceLabel && (
+                <span className="inline-flex shrink-0 items-center rounded-full bg-zinc-700/40 px-2 py-0.5 text-[11px] font-medium text-zinc-400">
+                  {bridgedFromBadge.replace('{name}', m.sourceLabel)}
+                </span>
+              )}
               {isSelected && (
                 <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-sky-300">
                   {defaultBadge}
@@ -268,6 +289,7 @@ export const VisualModelsSettings: React.FC = () => {
 
   const [builtinImage, setBuiltinImage] = useState<BuiltinRow[]>([]);
   const [builtinVideo, setBuiltinVideo] = useState<BuiltinRow[]>([]);
+  const [builtinMusic, setBuiltinMusic] = useState<BuiltinRow[]>([]);
   const [defaultImageModelId, setDefaultImageModelId] = useState<string>('');
   const [defaultVideoModelId, setDefaultVideoModelId] = useState<string>('');
 
@@ -276,6 +298,7 @@ export const VisualModelsSettings: React.FC = () => {
     const img = await invokeList('listVisualImageModels');
     setBuiltinImage(img.filter((m) => m.provider !== 'custom'));
     setBuiltinVideo(await invokeList('listVisualVideoModels'));
+    setBuiltinMusic(await invokeList('listVisualMusicModels'));
   }, []);
   useEffect(() => { void refreshBuiltins(); }, [refreshBuiltins]);
 
@@ -325,6 +348,7 @@ export const VisualModelsSettings: React.FC = () => {
           availableBadge={cm.availableBadge}
           unconfiguredBadge={cm.unconfiguredBadge}
           defaultBadge={s.defaultBadge}
+          bridgedFromBadge={s.bridgedFromBadge}
           selectedId={defaultImageModelId}
           groupName="design-image-model"
           onSelect={(id) => saveDefaults(id, defaultVideoModelId)}
@@ -357,6 +381,7 @@ export const VisualModelsSettings: React.FC = () => {
           availableBadge={cm.availableBadge}
           unconfiguredBadge={cm.unconfiguredBadge}
           defaultBadge={s.defaultBadge}
+          bridgedFromBadge={s.bridgedFromBadge}
           selectedId={defaultVideoModelId}
           groupName="design-video-model"
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
@@ -378,6 +403,22 @@ export const VisualModelsSettings: React.FC = () => {
             })
           }
           remove={deleteCustomVideoModel}
+        />
+      </section>
+
+      {/* ── 生音乐模型 ── */}
+      <section className="flex flex-col gap-3 border-t border-zinc-800 pt-6">
+        <h4 className="text-sm font-semibold text-zinc-100">{s.musicSection}</h4>
+        <BuiltinModelList
+          title={s.builtinTitle}
+          hint={s.defaultHint}
+          rows={builtinMusic}
+          availableBadge={cm.availableBadge}
+          unconfiguredBadge={cm.unconfiguredBadge}
+          defaultBadge={s.defaultBadge}
+          bridgedFromBadge={s.bridgedFromBadge}
+          onConfigure={handleConfigure}
+          readOnly
         />
       </section>
 

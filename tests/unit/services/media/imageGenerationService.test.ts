@@ -19,6 +19,7 @@ import {
   removeWatermark,
   expandScalesForDirection,
   isSafeImageUrl,
+  getArkApiKey,
 } from '../../../../src/host/services/media/imageGenerationService';
 
 function jsonResponse(obj: unknown): Response {
@@ -330,5 +331,14 @@ describe('isSafeImageUrl SSRF 守卫 (D9)', () => {
     const { downloadImageAsBase64 } = await import('../../../../src/host/services/media/imageGenerationService');
     await expect(downloadImageAsBase64('https://cdn.public.example.com/img.png')).rejects.toThrow(/跳转|redirect|下载失败/);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('getArkApiKey', () => {
+  const orig = process.env.ARK_API_KEY;
+  afterEach(() => { if (orig === undefined) delete process.env.ARK_API_KEY; else process.env.ARK_API_KEY = orig; });
+  it('env ARK_API_KEY 优先', () => {
+    process.env.ARK_API_KEY = 'env-ark-key';
+    expect(getArkApiKey()).toBe('env-ark-key');
   });
 });

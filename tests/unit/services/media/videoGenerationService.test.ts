@@ -74,6 +74,14 @@ describe('generateVideo — i2v', () => {
     await expect(generateVideo({ model: 'wanx2.1-i2v-turbo', mode: 'i2v' })).rejects.toThrow();
     expect(calls.length).toBe(0);
   });
+
+  it('i2v 空 data URL（wanx provider）→ 抛错，不发请求（共享付费前置守卫）', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(generateVideo({ model: 'wanx2.1-i2v-turbo', mode: 'i2v', imageDataUrl: 'data:image/png;base64,' })).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('generateVideo — 守门与失败', () => {

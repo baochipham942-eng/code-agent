@@ -44,6 +44,7 @@ import {
   getGptImageConfig,
   getMinimaxApiKey,
   getGeminiApiKey,
+  getArkApiKey,
 } from '../services/media/imageGenerationService';
 import type { ExpandDirection } from '../services/media/imageGenerationService';
 import {
@@ -754,6 +755,7 @@ function providerKeyConfigured(provider: string): boolean {
   if (provider === 'gptimage') return !!getGptImageConfig();
   if (provider === 'minimax') return !!getMinimaxApiKey();
   if (provider === 'google') return !!getGeminiApiKey();
+  if (provider === 'ark') return !!getArkApiKey();
   return false;
 }
 

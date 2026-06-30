@@ -86,6 +86,9 @@ export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
   // 固定 8s 出片：fast≈¥5.76、标准≈¥23.04。Veo 3/2 于 2026-06-30 停用，只列 3.1。
   'veo-3.1-fast-generate-preview': 0.72,
   'veo-3.1-generate-preview': 2.88,
+  // Spec 2 Seedance（火山 Ark）：占位单价，dogfood 后按火山定价文档校准。fast 档更便宜。
+  'doubao-seedance-2-0-260128': 0.15,
+  'doubao-seedance-2-0-fast-260128': 0.08,
   default: 0.03,
 };
 

@@ -2,7 +2,7 @@
 // 复用 wanx「提交异步任务 → 轮询 /tasks 直到 SUCCEEDED/FAILED」骨架，但解析 output.video_url
 // （与图像的 output.results[0].url 不同）。t2v / i2v 共用同一提交端点，仅 input/参数不同。
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
-import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
+import { getDashscopeApiKey, getMinimaxApiKey, getMinimaxGroupId, getArkApiKey, isSafeImageUrl, fetchWithAbort, WANX_TASKS_PATH } from './imageGenerationService';
 import { videoModelById, clampVideoDuration, type VideoCap } from '../../../shared/constants/visualModels';
 import { pickVideoFlavor, buildPollUrl, extractVideoUrl, isVideoTerminal } from './videoPollFlavors';
 import { veoRequest, isGoogleApiUrl } from './veoFetch';
@@ -20,6 +20,15 @@ const VIDEO_TIMEOUT_MS = {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** i2v 底图校验（付费前置守卫，防御纵深）：必须是非空图片 data URL，或 https 公网图片地址。
+ *  拒空 data URL / http / 私网 / file，避免空图或危险 URL 进入计费提交。 */
+function assertValidI2vImage(imageDataUrl: string | undefined): void {
+  const img = imageDataUrl ?? '';
+  if (!/^data:image\/[a-z0-9.+-]+;base64,.+/i.test(img) && !isSafeImageUrl(img)) {
+    throw new Error('图生视频底图无效（需非空图片 data URL 或 https 公网图片地址）。');
+  }
 }
 
 /** 解析视频任务返回：成功时 url 在 output.video_url（与图像 results[0].url 不同）。 */
@@ -155,6 +164,109 @@ async function submitAndPollMinimaxVideo(
   return { url };
 }
 
+// ── Spec 2 Seedance 原生（火山方舟 Ark · 异步任务 contents/generations/tasks） ──
+const ARK_BASE = 'https://ark.cn-beijing.volces.com/api/v3';
+const ARK_TASKS_PATH = '/contents/generations/tasks';
+const ARK_CREATE_TIMEOUT_MS = 120000; // 异步建任务可能慢，仿 compat 放宽（不动共享 SUBMIT 30s）
+const ARK_DEFAULT_RESOLUTION = '720p';
+const ARK_DEFAULT_RATIO = '16:9';
+
+export interface ArkVideoArgs {
+  model: string;
+  mode: 't2v' | 'i2v';
+  prompt?: string;
+  imageDataUrl?: string;
+  durationSec: number;
+  resolution?: string;
+  ratio?: string;
+}
+
+/** 解析 Ark 任务返回：建任务态有 id；轮询态有 status + content.video_url。 */
+export function parseArkVideoTask(value: unknown): { id?: string; status?: string; url?: string; message?: string } {
+  if (!isRecord(value)) return {};
+  const id = typeof value.id === 'string' ? value.id : undefined;
+  const status = typeof value.status === 'string' ? value.status : undefined;
+  const content = isRecord(value.content) ? value.content : {};
+  const url = typeof content.video_url === 'string' ? content.video_url : undefined;
+  const err = isRecord(value.error) && typeof value.error.message === 'string' ? value.error.message : undefined;
+  const message = err ?? (typeof value.message === 'string' ? value.message : undefined);
+  return { id, status, url, message };
+}
+
+/**
+ * Seedance 原生出片：POST 建任务 → 轮询 status=succeeded → 取 content.video_url。
+ * 守门（t2v 需 prompt / i2v 需底图）由上游 generateVideo 统一做；此处只编排请求。
+ * 火山返回 URL 24h 过期，调用方须立刻 downloadVideoAsBuffer 落 artifact。
+ */
+export async function submitAndPollArkVideo(
+  apiKey: string,
+  args: ArkVideoArgs,
+  outerSignal: AbortSignal,
+  opts?: { pollIntervalMs?: number },
+): Promise<{ url: string }> {
+  // 付费前置守卫（防御纵深）：i2v 底图必须是非空图片 data URL，或 https 公网图片地址。
+  // 保留对导出原语直接调用者的保护（generateVideo 已统一在 provider 路由前校验过）。
+  if (args.mode === 'i2v') assertValidI2vImage(args.imageDataUrl);
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: args.prompt ?? '' }];
+  if (args.mode === 'i2v' && args.imageDataUrl) {
+    content.push({ type: 'image_url', image_url: { url: args.imageDataUrl } });
+  }
+  const body = {
+    model: args.model,
+    content,
+    resolution: args.resolution ?? ARK_DEFAULT_RESOLUTION,
+    ratio: args.ratio ?? ARK_DEFAULT_RATIO,
+    duration: args.durationSec,
+    watermark: false,
+  };
+
+  const createRes = await fetchWithAbort(
+    `${ARK_BASE}${ARK_TASKS_PATH}`,
+    {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    ARK_CREATE_TIMEOUT_MS,
+    outerSignal,
+  );
+  if (!createRes.ok) throw new Error(`Seedance 视频建任务失败: ${createRes.status} - ${await createRes.text()}`);
+  const created = parseArkVideoTask(await createRes.json());
+  if (!created.id) throw new Error('Seedance 视频: 未返回 task id');
+
+  const interval = opts?.pollIntervalMs ?? VIDEO_TIMEOUT_MS.POLL_INTERVAL;
+  const deadline = Date.now() + VIDEO_TIMEOUT_MS.TOTAL;
+  while (Date.now() < deadline) {
+    if (outerSignal.aborted) throw new Error('aborted');
+    await new Promise((r) => setTimeout(r, interval));
+    const pollRes = await fetchWithAbort(
+      `${ARK_BASE}${ARK_TASKS_PATH}/${encodeURIComponent(created.id)}`,
+      { redirect: 'manual', headers: { Authorization: `Bearer ${apiKey}` } },
+      VIDEO_TIMEOUT_MS.POLL,
+      outerSignal,
+    );
+    if (!pollRes.ok) {
+      // 瞬时失败（5xx/408/429/网络抖动）继续轮询；持久 4xx（401/403/400 等）是真错误，
+      // 快失败不拖到 10min 超时（create 已校验过 key，poll 4xx 属异常）。
+      if (pollRes.status >= 400 && pollRes.status < 500 && pollRes.status !== 408 && pollRes.status !== 429) {
+        throw new Error(`Seedance 视频轮询失败: ${pollRes.status}`);
+      }
+      continue; // 瞬时失败继续轮询
+    }
+    const task = parseArkVideoTask(await pollRes.json());
+    if (task.status === 'succeeded') {
+      if (!task.url) throw new Error('Seedance 视频: 任务成功但无 content.video_url');
+      return { url: task.url };
+    }
+    if (task.status === 'failed' || task.status === 'expired' || task.status === 'cancelled') {
+      throw new Error(`Seedance 视频任务失败: ${task.status}${task.message ? ` - ${task.message}` : ''}`);
+    }
+    // queued / running → 继续轮询
+  }
+  throw new Error('Seedance 视频任务超时');
+}
+
 export interface GenerateVideoArgs {
   model: string;
   mode: VideoCap;
@@ -180,6 +292,7 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
   if (!model.caps.includes(args.mode)) throw new Error(`模型 ${args.model} 不支持 ${args.mode}`);
   if (args.mode === 't2v' && !args.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
   if (args.mode === 'i2v' && !args.imageDataUrl) throw new Error('图生视频需要底图');
+  if (args.mode === 'i2v') assertValidI2vImage(args.imageDataUrl);
 
   const durationSec = clampVideoDuration(model, args.durationSec);
   const signal = args.outerSignal ?? new AbortController().signal;
@@ -194,6 +307,18 @@ export async function generateVideo(args: GenerateVideoArgs): Promise<GenerateVi
         ? { model: model.id, prompt: args.prompt }
         : { model: model.id, first_frame_image: args.imageDataUrl, ...(args.prompt?.trim() ? { prompt: args.prompt } : {}) };
     const { url } = await submitAndPollMinimaxVideo(apiKey, body, signal);
+    return { url, actualModel: model.id, durationSec };
+  }
+
+  // Spec 2：Seedance 原生（火山方舟 Ark）。守门已在上方统一做（cap / prompt / 底图）。
+  if (model.provider === 'ark') {
+    const apiKey = getArkApiKey();
+    if (!apiKey) throw new Error('Seedance 视频需要火山方舟 Ark API Key（在 火山引擎/豆包 provider 配置）。');
+    const { url } = await submitAndPollArkVideo(
+      apiKey,
+      { model: model.id, mode: args.mode, prompt: args.prompt, imageDataUrl: args.imageDataUrl, durationSec },
+      signal,
+    );
     return { url, actualModel: model.id, durationSec };
   }
 

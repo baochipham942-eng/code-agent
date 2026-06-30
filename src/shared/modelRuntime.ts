@@ -756,6 +756,7 @@ export function buildRuntimeModelOptions(
     if (latestSourceByGroup.get(source.providerGroup) !== source) continue;
 
     for (const model of source.models) {
+      if (isPureGenerationModel(model.capabilities)) continue; // U5：纯生成模型不进对话选择器
       options.push({
         provider: source.providerId,
         model: model.id,

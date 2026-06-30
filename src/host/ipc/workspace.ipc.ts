@@ -1136,6 +1136,7 @@ export function registerWorkspaceHandlers(
         case 'generateDesignImage':
           data = await handleGenerateDesignImage(
             payload as { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
+            () => getConfigService()?.getSettings() ?? null,
           );
           break;
         case 'editDesignImage':

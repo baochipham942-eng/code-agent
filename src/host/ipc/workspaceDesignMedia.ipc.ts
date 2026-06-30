@@ -37,6 +37,9 @@ import {
 import { loadSharp } from '../runtime/sharpRuntime';
 import { readDesignSettings } from '../services/design/designSettings';
 import type { RegionLockReport } from '../../shared/contract/imageConsistency';
+import { parseBridgedId } from '../../shared/visualModelBridge';
+import { resolveBridgedEndpoint } from '../services/media/bridgedEndpoint';
+import type { AppSettings } from '../../shared/contract';
 
 // 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
 // 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
@@ -59,6 +62,9 @@ export async function handleGenerateDesignImage(
     /** 参考图（base64 dataURL）：存在时走 wanx description_edit 垫图，而非纯文生图。 */
     referenceImageDataUrl?: string;
   },
+  // 多模态桥接（Spec 1）：注入源聊天 provider 的 settings，供桥接图像模型解析端点。
+  // 带默认值（() => null）保证既有调用点零破坏；IPC 注册处传真 settings。
+  getSettings: () => AppSettings | null = () => null,
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   // prompt 须为非空白（trim 后非空）：空白 prompt 是 paid no-op（尤其 wanx/gptimage 用 raw prompt），
   // 直连 IPC/未来调用方可能绕过 renderer 的 trim 守卫，在主进程兜底拦住付费空调用。
@@ -66,6 +72,35 @@ export async function handleGenerateDesignImage(
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
+
+  // 桥接模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ 复用 openai-compat，
+  // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置/custom id 不含
+  // 冒号，故此判定不误伤它们；必须在 custom/内置注册表查询之前拦下（二者都查不到桥接 id）。
+  if (payload.model && payload.model.includes(':')) {
+    const bridged = parseBridgedId(payload.model);
+    if (bridged) {
+      // 参考图垫图是 wanx description_edit 专属能力；桥接走纯文生图，撞进来显式拒绝（与 custom 一致）。
+      if (payload.referenceImageDataUrl) {
+        throw new Error('桥接图像模型暂不支持参考图垫图（仅文生图）');
+      }
+      const { baseUrl, apiKey } = resolveBridgedEndpoint(bridged.sourceProvider, getSettings());
+      const { generateImageOpenAICompat, downloadImageAsBase64, isImageUrl } = await import(
+        '../services/media/imageGenerationService'
+      );
+      const { imageData, actualModel } = await generateImageOpenAICompat({
+        baseUrl,
+        apiKey,
+        modelName: bridged.modelName,
+        prompt: payload.prompt,
+        aspectRatio: payload.aspectRatio || '1:1',
+      });
+      const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
+      const buf = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+      await fsp.writeFile(payload.outputPath, buf);
+      return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+    }
+  }
 
   // 自定义模型（借鉴项①）：查注册表命中则走 openai-compat 独立分支（绝不进 imageEngineForModel）。
   const custom = payload.model ? await getCustomImageModel(payload.model) : null;

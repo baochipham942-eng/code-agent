@@ -10,7 +10,7 @@ import {
 describe('VIDEO_MODELS 注册表', () => {
   it('provider 仅限已接入集合，且 P3 起多 provider（dashscope + minimax 均在册）', () => {
     expect(VIDEO_MODELS.length).toBeGreaterThan(0);
-    const allowed = new Set(['dashscope', 'minimax']);
+    const allowed = new Set(['dashscope', 'minimax', 'google']);
     expect(VIDEO_MODELS.every((m) => allowed.has(m.provider))).toBe(true);
     const providers = new Set(VIDEO_MODELS.map((m) => m.provider));
     expect(providers.has('dashscope')).toBe(true);

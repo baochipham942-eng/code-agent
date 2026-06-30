@@ -40,6 +40,10 @@ import {
   default as builtinImageCreationEntry,
 } from './builtin/imageCreation';
 import {
+  manifest as builtinMusicGenerationManifest,
+  default as builtinMusicGenerationEntry,
+} from './builtin/musicGeneration';
+import {
   manifest as builtinBrowserControlManifest,
   default as builtinBrowserControlEntry,
 } from './builtin/browserControl';
@@ -254,6 +258,10 @@ export class PluginRegistry {
       {
         manifest: builtinImageCreationManifest,
         entry: builtinImageCreationEntry,
+      },
+      {
+        manifest: builtinMusicGenerationManifest,
+        entry: builtinMusicGenerationEntry,
       },
       {
         manifest: builtinBrowserControlManifest,

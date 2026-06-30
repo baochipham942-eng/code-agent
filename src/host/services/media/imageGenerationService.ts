@@ -152,6 +152,15 @@ export function getMinimaxApiKey(): string | undefined {
   return getConfigService().getApiKey('minimax') || undefined;
 }
 
+/**
+ * 火山方舟 Ark API Key（Seedance 视频用）。Ark Key 账号级、聊天+视频共用，
+ * 复用现有 volcengine(豆包) provider 的 key 槽，无需二次配置。env 优先回落。
+ * 注意：这是 Ark API Key（Bearer），不是 AK/SK 签名凭据。
+ */
+export function getArkApiKey(): string | undefined {
+  return process.env.ARK_API_KEY || getConfigService().getApiKey('volcengine') || undefined;
+}
+
 /** MiniMax 团队 ID（GroupId，海螺 files/retrieve 取下载地址需要）。env 优先，否则取 minimax-group 槽位。 */
 export function getMinimaxGroupId(): string | undefined {
   const envGid = process.env.MINIMAX_GROUP_ID;

@@ -159,6 +159,14 @@ export function getMinimaxGroupId(): string | undefined {
   return getConfigService().getApiKey('minimax-group') || undefined;
 }
 
+/** Gemini key（Veo 视频用，付费档）。env GEMINI_API_KEY 优先（验证/探针场景），否则取 gemini 槽位。
+ *  与聊天 gemini provider 同 key 通路（D：Veo 走轻路径 Gemini API，非 Vertex）。 */
+export function getGeminiApiKey(): string | undefined {
+  const envKey = process.env.GEMINI_API_KEY;
+  if (envKey) return envKey;
+  return getConfigService().getApiKey('gemini') || undefined;
+}
+
 /**
  * gpt-image-2 自定义端点配置：env（GPTIMAGE_PROXY_BASE/KEY）优先，再回落 config 槽位。
  * 同 getDashscopeApiKey 范式；base 或 key 任一缺失则返回 undefined。绝不写进代码。

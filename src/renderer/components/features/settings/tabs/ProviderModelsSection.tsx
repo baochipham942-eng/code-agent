@@ -76,8 +76,8 @@ function ModelRow({
         )}
       </div>
 
-      {/* 右：上下文 / Max Output（只读）+ 设为默认 + 进选择页 */}
-      <div className="flex shrink-0 items-center gap-4">
+      {/* 右：固定列宽对齐——上下文 / MAX OUTPUT / 设为默认（占位保留）/ 进选择页 */}
+      <div className="grid shrink-0 grid-cols-[4rem_5rem_5.5rem_3.5rem] items-center gap-3">
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wide text-zinc-500">上下文</div>
           <div className="text-xs text-zinc-300">{formatTokens(contextWindow)}</div>
@@ -86,16 +86,18 @@ function ModelRow({
           <div className="text-[10px] uppercase tracking-wide text-zinc-500">Max Output</div>
           <div className="text-xs text-zinc-300">{formatTokens(model.maxTokens)}</div>
         </div>
-        {!isDefault && model.enabled ? (
-          <button
-            type="button"
-            onClick={() => void onSetDefaultModel(model.id)}
-            disabled={settingDefaultModelId !== null}
-            className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-400 transition hover:text-zinc-200"
-          >
-            {settingDefaultModelId === model.id ? '保存中...' : '设为默认'}
-          </button>
-        ) : null}
+        <div className="flex justify-end">
+          {!isDefault && model.enabled ? (
+            <button
+              type="button"
+              onClick={() => void onSetDefaultModel(model.id)}
+              disabled={settingDefaultModelId !== null}
+              className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-400 transition hover:text-zinc-200"
+            >
+              {settingDefaultModelId === model.id ? '保存中...' : '设为默认'}
+            </button>
+          ) : null}
+        </div>
         <div className="flex flex-col items-center gap-1">
           <span className="text-[10px] text-zinc-500">进选择页</span>
           <Toggle

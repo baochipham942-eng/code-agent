@@ -490,6 +490,20 @@ export async function handleGenerateDesignVideo(
   if (!model) throw new Error(`未知视频模型 id: ${payload.model}`);
   if (!model.caps.includes(payload.mode)) throw new Error(`模型 ${payload.model} 不支持 ${payload.mode}`);
 
+  // Veo 原生（Spec 3）：google provider 走专用 generateVeoVideo（代理 + x-goog-api-key 鉴权下载，
+  // 直接返回 Buffer）。不复用 generateVideo/downloadVideoAsBuffer（那是 url 返回 + 无鉴权下载，
+  // 不适配 Veo 的 Files API 鉴权 URI）。守门（cap/prompt/底图/key）已全在 generateVeoVideo 内付费前完成。
+  if (model.provider === 'google') {
+    const { generateVeoVideo } = await import('../services/media/videoGenerationService');
+    const imageDataUrl = await readBaseImageDataUrl();
+    const { buffer, actualModel, durationSec } = await generateVeoVideo({
+      model: payload.model, mode: payload.mode, prompt: payload.prompt, imageDataUrl, durationSec: payload.durationSec,
+    });
+    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+    await fsp.writeFile(payload.outputPath, buffer);
+    return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
+  }
+
   const { generateVideo, downloadVideoAsBuffer } = await import('../services/media/videoGenerationService');
 
   let imageDataUrl: string | undefined;

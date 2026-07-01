@@ -135,7 +135,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     return [...source].sort((a, b) => b.workCard.updatedAt - a.workCard.updatedAt);
   }, [details, storeDetails]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => topics[0]?.workCard.id ?? null);
   const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>('all');
   const [mineOnly, setMineOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

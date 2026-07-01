@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-01
+
 ### Added
 
 - **Multimodal bridge — chat providers auto-bridge to the media page** (Spec 1): a chat provider whose model advertises generation capability (`imageGen` / `videoGen` / `musicGen`) is now derived into a usable image/video/music model on the multimodal page, reusing the source provider's `baseUrl` + key (key never leaves the host). Pure-generation models are hidden from the conversation selector. Adds the derivation layer `deriveBridgedVisualModels`, three merged list handlers, an exhaustive key-set guard against `apiKey`/`baseUrl` leaking into bridge entries, and a compat video flavor-poll registry (standard/agnes/openrouter). Bridged image goes through the openai-compat engine; video through a generic openai-compat video engine with flavor polling; music through the MiniMax `music_generation` engine (hex audio decode).

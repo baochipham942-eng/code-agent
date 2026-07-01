@@ -34,11 +34,13 @@ export function buildNeoWorkCardDraftRequest(
   }
 
   const workspacePath = params.workspacePath ?? params.envelope.context?.workingDirectory ?? null;
+  // @neo 直接开干：不再要求先绑项目。projectId 回退到会话工作目录，再兜底到 current-project，
+  // 去掉「必须先绑项目」这道和「直接开干」矛盾的配置门。
   const projectScope = params.projectId || workspacePath || 'current-project';
   const attachmentIds = params.envelope.attachments?.map((attachment) => attachment.id) ?? [];
 
   return {
-    projectId: params.projectId ?? null,
+    projectId: projectScope,
     workspacePath,
     sourceConversationId: params.sourceConversationId,
     requesterUserId: params.requesterUserId,

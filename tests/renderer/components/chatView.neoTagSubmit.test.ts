@@ -77,6 +77,34 @@ describe('Neo tag ChatView submit boundary', () => {
     expect(request?.revision.readScope?.projectId).toBe('/repo/code-agent');
   });
 
+  it('falls back to the session working dir as projectId when none is bound (无需先绑项目)', () => {
+    const withWorkspace = buildNeoWorkCardDraftRequest({
+      envelope: { content: '@neo 写段产品方案' },
+      sourceConversationId: 'session-1',
+      workspacePath: '/repo/code-agent',
+      projectId: null,
+      requesterUserId: 'user-1',
+    });
+    expect(withWorkspace?.projectId).toBe('/repo/code-agent');
+
+    const noWorkspace = buildNeoWorkCardDraftRequest({
+      envelope: { content: '@neo 写段产品方案' },
+      sourceConversationId: 'session-1',
+      projectId: null,
+      requesterUserId: 'user-1',
+    });
+    expect(noWorkspace?.projectId).toBe('current-project');
+
+    const explicit = buildNeoWorkCardDraftRequest({
+      envelope: { content: '@neo 写段产品方案' },
+      sourceConversationId: 'session-1',
+      workspacePath: '/repo/code-agent',
+      projectId: 'proj-real',
+      requesterUserId: 'user-1',
+    });
+    expect(explicit?.projectId).toBe('proj-real');
+  });
+
   it('does not call tag IPC for ordinary chat envelopes', async () => {
     const runNeoTag = vi.fn();
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Multimodal bridge — chat providers auto-bridge to the media page** (Spec 1): a chat provider whose model advertises generation capability (`imageGen` / `videoGen` / `musicGen`) is now derived into a usable image/video/music model on the multimodal page, reusing the source provider's `baseUrl` + key (key never leaves the host). Pure-generation models are hidden from the conversation selector. Adds the derivation layer `deriveBridgedVisualModels`, three merged list handlers, an exhaustive key-set guard against `apiKey`/`baseUrl` leaking into bridge entries, and a compat video flavor-poll registry (standard/agnes/openrouter). Bridged image goes through the openai-compat engine; video through a generic openai-compat video engine with flavor polling; music through the MiniMax `music_generation` engine (hex audio decode).
+- **Native Veo video provider** (Spec 3): new built-in `google` video provider hitting the Gemini-API light path (`predict` + long-running-operation poll, `x-goog-api-key`, not Vertex), reusing the existing `gemini` key slot. Defaults to `veo-3.1-fast`. Proxy is wired through a dedicated `veoFetch` helper (axios + gemini proxy agent + `maxRedirects: 0` + Google-API allowlist to block SSRF); all guards run before any paid call, with buffer-direct output and a self-guarded download allowlist.
+- **Native Seedance video provider** (Spec 2): new built-in `ark` video provider on Volcengine Ark (`submitAndPollArkVideo` → poll to `succeeded` → `content.video_url`), authenticated with a plain Bearer Ark API key that reuses the existing `volcengine` slot (zero new config surface). Seedance is registered into `VIDEO_MODELS` with placeholder pricing pending dogfood calibration.
+- **Music generation** (MiniMax): music-generation IPC handler + on-disk output + bridged/built-in `minimax` branch, a shared `resolveMusicModelEndpoint` endpoint resolver, and a `music_generate` built-in agent tool.
+- **@Neo tag — work-card collaboration workflow**: mentioning `@neo` drafts a work card and drives a draft → approve → run → result-review loop, with an inline work-card card in chat, a project-collaboration page exposed from the sidebar, and a Neo work-card repository + schema/indexes.
+
+### Fixed
+
+- **Neo runtime safety guard (fail-closed)**: approved Neo Tag runtime runs (scoped by the `neoTag` runtime context) can no longer mutate state through non-file tools. Blocked during Neo runs: direct git/shell mutation (`git_commit` add/commit/push, `git_worktree` add/remove/prune, `kill_shell`), multi-agent/workflow/teammate writes, planning/findings/task/plan-mode mutations, `MemoryWrite` write/delete, `SkillCreate`/`propose_role`, calendar/reminders/mail connector writes, MCP `add_server` and non-read-only tool invocations, and process submit/write/kill. Read-only observation (status/log/diff/list/get) stays allowed. Ordinary non-Neo tool calls keep their existing permission path.
+- **Multimodal i2v base-image guard hoisted to a provider-shared gate** (Codex audit round 2–3): the image-to-video base-image validation was previously hardcoded to a single provider's key gate, leaving Seedance `ark` i2v dead-on-arrival on the real IPC path (unit tests passed but the canvas produced nothing). Guard hoisted above provider routing so it covers wanx/minimax/ark uniformly, and Seedance i2v now selects the provider-appropriate key.
+- **Control-plane public-key source merge** (release infra): env policy / cloud release policy / OSS direct-connect fallback now resolve public keys from a single merged source.
+- **Compat video `create` timeout widened to 120s**: a free-tier compat provider (Agnes) queued the create call ~89s; the engine's 30s submit budget mis-killed it. A compat-specific `createTimeoutMs` avoids the false timeout (the earlier proxy suspicion was actually slow create).
+
 ## [0.22.2] - 2026-06-29
 
 ### Fixed

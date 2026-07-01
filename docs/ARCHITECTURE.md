@@ -87,6 +87,7 @@
 | 021 | Computer Use 底座 argus → cua-driver | accepted |
 | 029 | 统一 Evidence / Provenance 契约 | accepted |
 | 030 | Fleet 遥测双通道（Sentry 错误通道 + Supabase 分析通道） | proposed |
+| 031 | @Neo 运行时安全护栏（approved Neo run 的 fail-closed 工具边界） | accepted |
 
 ---
 

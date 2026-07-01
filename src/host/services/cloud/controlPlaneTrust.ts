@@ -265,26 +265,31 @@ export function verifyControlPlaneEnvelope<TPayload>(
 }
 
 export function getControlPlanePublicKeysFromEnv(): ControlPlanePublicKeys {
+  const publicKeys: ControlPlanePublicKeys = {};
   const rawJson = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
   if (rawJson) {
     try {
       const parsed = JSON.parse(rawJson) as Record<string, unknown>;
-      return Object.fromEntries(
-        Object.entries(parsed)
+      Object.assign(
+        publicKeys,
+        Object.fromEntries(Object.entries(parsed)
           .filter((entry): entry is [string, string] => isString(entry[0]) && isString(entry[1]))
-          .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)]),
+          .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)])),
       );
     } catch {
-      return {};
+      // Fall through to the other key sources instead of hiding a valid file fallback.
     }
   }
 
   const keyId = process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
   const publicKey = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
   if (keyId && publicKey) {
-    return { [keyId]: normalizePemLiteral(publicKey) };
+    publicKeys[keyId] = normalizePemLiteral(publicKey);
   }
-  return getControlPlanePublicKeysFromFile();
+  return {
+    ...getControlPlanePublicKeysFromFile(),
+    ...publicKeys,
+  };
 }
 
 function parsePublicKeysFile(content: string): ControlPlanePublicKeys {

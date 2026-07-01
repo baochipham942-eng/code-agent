@@ -246,4 +246,57 @@ describe('controlPlaneTrust', () => {
       fs.rmSync(file, { force: true });
     }
   });
+
+  it('merges public keys from env JSON, env pair, and bundled file', () => {
+    const previousFile = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE;
+    const previousJson = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+    const previousKeyId = process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+    const previousPublicKey = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+    const file = `${process.cwd()}/.test-data/control-plane-public-keys-merged.json`;
+
+    try {
+      fs.mkdirSync(`${process.cwd()}/.test-data`, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({
+        schemaVersion: 1,
+        keys: {
+          file_key: '-----BEGIN PUBLIC KEY-----\\nfile\\n-----END PUBLIC KEY-----',
+          shared_key: '-----BEGIN PUBLIC KEY-----\\nfile-shared\\n-----END PUBLIC KEY-----',
+        },
+      }));
+      process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE = file;
+      process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS = JSON.stringify({
+        json_key: '-----BEGIN PUBLIC KEY-----\\njson\\n-----END PUBLIC KEY-----',
+      });
+      process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID = 'shared_key';
+      process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY = '-----BEGIN PUBLIC KEY-----\\nenv-shared\\n-----END PUBLIC KEY-----';
+
+      expect(getControlPlanePublicKeysFromEnv()).toEqual({
+        file_key: '-----BEGIN PUBLIC KEY-----\nfile\n-----END PUBLIC KEY-----',
+        json_key: '-----BEGIN PUBLIC KEY-----\njson\n-----END PUBLIC KEY-----',
+        shared_key: '-----BEGIN PUBLIC KEY-----\nenv-shared\n-----END PUBLIC KEY-----',
+      });
+    } finally {
+      if (previousFile === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE = previousFile;
+      }
+      if (previousJson === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS = previousJson;
+      }
+      if (previousKeyId === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID = previousKeyId;
+      }
+      if (previousPublicKey === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY = previousPublicKey;
+      }
+      fs.rmSync(file, { force: true });
+    }
+  });
 });

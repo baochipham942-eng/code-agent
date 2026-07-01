@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import type { NeoWorkCardDetail, NeoWorkCardStatus } from '@shared/contract/tag';
-import { Archive, ArrowUp, Brain, Check, CheckCircle2, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
+import { Archive, Brain, Check, CheckCircle2, RotateCcw, Sparkles, X } from 'lucide-react';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
@@ -176,13 +176,7 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
               <div className="text-[11px] font-medium uppercase tracking-wide text-emerald-200/80">Neo work card</div>
               <h3 className="mt-1 text-base font-semibold leading-6 text-zinc-100">{detail.workCard.title}</h3>
             </div>
-            <span
-              className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${STATUS_STYLES[detail.workCard.status] ?? STATUS_STYLES.draft}`}
-              data-work-card-active={detail.workCard.status === 'working' || detail.workCard.status === 'queued' ? 'true' : undefined}
-            >
-              {(detail.workCard.status === 'working' || detail.workCard.status === 'queued') && (
-                <Loader2 className="h-3 w-3 animate-spin" data-testid="neo-work-card-running-spinner" />
-              )}
+            <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium ${STATUS_STYLES[detail.workCard.status] ?? STATUS_STYLES.draft}`}>
               {STATUS_LABELS[detail.workCard.status] ?? detail.workCard.status}
             </span>
           </div>
@@ -214,31 +208,13 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
               风险：{revision.risks.slice(0, 2).join('；')}
             </div>
           ) : null}
-          {(detail.workCard.status === 'working' || detail.workCard.status === 'queued') && (
-            <div
-              className="mt-3 flex items-center gap-2 rounded-md border border-emerald-400/15 bg-emerald-400/[0.04] px-3 py-2 text-xs text-emerald-100/90"
-              data-testid="neo-work-card-running-indicator"
-            >
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>{detail.workCard.status === 'queued' ? '已排队，即将开始执行…' : 'Neo 正在执行，结果会实时更新到本卡与上方对话…'}</span>
-            </div>
-          )}
-          {detail.workCard.status === 'in_result_review' && (
-            <div
-              className="mt-3 flex items-center gap-2 rounded-md border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs text-cyan-100/90"
-              data-testid="neo-work-card-result-anchor"
-            >
-              <ArrowUp className="h-3.5 w-3.5" />
-              <span>本卡的完整运行结果已生成在上方对话中，可上滑查看后再确认结果。</span>
-            </div>
-          )}
           {latestDelta && (
             <div
               className="mt-4 rounded-md border border-emerald-400/15 bg-emerald-400/[0.04] px-3 py-3 text-sm leading-6 text-zinc-300"
               data-testid="neo-work-card-delta"
             >
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-medium text-emerald-100">运行结果摘要</div>
+                <div className="text-xs font-medium text-emerald-100">运行结果</div>
                 {contextAudit && <div className="hidden text-[11px] text-zinc-500 sm:block">Context pack ready</div>}
               </div>
               <div className="grid gap-1.5">

@@ -214,6 +214,12 @@ export async function discoverAgentFiles(
         break;
       }
 
+      // 打包态工作目录会 fallback 到家目录(cwd 在 .app 内)。家目录不是项目根,
+      // 不该为找 AGENTS.md 递归扫遍它——下钻会触碰 ~/Desktop、~/Documents、
+      // ~/Downloads、~/Music、~/Pictures、~/Library 等,逐个触发 macOS TCC 授权弹窗。
+      // 故:扫到家目录本身时只读它这一层(收本层 AGENTS.md/CLAUDE.md),不下钻任何子目录。
+      const scanningHome = path.resolve(dir) === os.homedir();
+
       // Then recursively search subdirectories
       for (const entry of entries) {
         if (files.length >= maxFiles || visitedDirectories >= maxDirectories) {
@@ -221,9 +227,9 @@ export async function discoverAgentFiles(
           break;
         }
         if (entry.isDirectory() && !SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
+          if (scanningHome) continue;
           const childDir = path.join(dir, entry.name);
-          // 不下钻 TCC 受保护用户目录(~/Desktop 等):打包态工作目录会 fallback 到家目录,
-          // 递归扫这些目录会触发系统授权弹窗,且它们不是项目根。
+          // 兜底:即便不是从家目录起扫,也不下钻 TCC 受保护用户目录。
           if (isProtectedUserFolder(childDir)) continue;
           await searchDirectory(childDir, depth + 1);
         }

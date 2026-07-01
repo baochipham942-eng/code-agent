@@ -7,6 +7,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('AgentsDiscovery');
@@ -92,6 +93,20 @@ const SKIP_DIRS = new Set([
   '.idea',
   '.vscode',
 ]);
+
+/**
+ * macOS TCC 保护的用户目录名。递归发现 AGENTS.md/CLAUDE.md 时若从家目录起扫,
+ * 下钻进这些目录会触发系统授权弹窗(Desktop/Documents/Downloads),且这些目录
+ * 不是项目根,不应为找 agent 文件而扫。按"家目录下的确切子目录"匹配,不误伤
+ * 名字碰巧相同的项目内子目录,也不影响工作目录本身就在这些目录下的项目扫描。
+ */
+const PROTECTED_USER_FOLDER_NAMES = ['Desktop', 'Documents', 'Downloads'];
+
+/** dir 是否为家目录下的 TCC 受保护用户目录(~/Desktop、~/Documents、~/Downloads)。 */
+export function isProtectedUserFolder(dir: string, homeDir: string = os.homedir()): boolean {
+  const resolved = path.resolve(dir);
+  return PROTECTED_USER_FOLDER_NAMES.some((name) => resolved === path.join(homeDir, name));
+}
 
 /**
  * Maximum depth to search
@@ -206,7 +221,11 @@ export async function discoverAgentFiles(
           break;
         }
         if (entry.isDirectory() && !SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
-          await searchDirectory(path.join(dir, entry.name), depth + 1);
+          const childDir = path.join(dir, entry.name);
+          // 不下钻 TCC 受保护用户目录(~/Desktop 等):打包态工作目录会 fallback 到家目录,
+          // 递归扫这些目录会触发系统授权弹窗,且它们不是项目根。
+          if (isProtectedUserFolder(childDir)) continue;
+          await searchDirectory(childDir, depth + 1);
         }
       }
     } catch (error) {

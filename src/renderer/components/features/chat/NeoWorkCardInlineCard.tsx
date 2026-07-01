@@ -4,15 +4,19 @@ import { AlertTriangle, Archive, Brain, Check, HelpCircle, Loader2, Sparkles, X 
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
+import {
+  isInternalCompletedMarker,
+  NEO_WORK_CARD_PHASE_CHIP_STYLE as PHASE_CHIP_STYLE,
+  NEO_WORK_CARD_PHASE_LABEL as PHASE_LABEL,
+  statusPhase,
+} from './neoWorkCardPhase';
 
 // ============================================================================
 // 轻量内联清单（Neo Tag 轻量化重设计）
 // @neo 像同事一样被 tag 进对话、直接开干；进度 = thread 内联勾选清单 ✓/⏳，
 // 不再是带审批/读写范围/模型表单的独立重卡。审批语义已砍，权限走项目级 ambient。
+// 四相运行态映射见 ./neoWorkCardPhase（卡片与 topic 目录共用真源）。
 // ============================================================================
-
-/** 四相运行态（收敛掉审批态）：运行中 / 待你确认 / 已完成 / 失败 / 已结束。 */
-export type NeoWorkCardPhase = 'running' | 'needs_input' | 'done' | 'failed' | 'closed';
 
 type NeoWorkCardInlineActionKind = 'cancel' | 'archive';
 
@@ -20,50 +24,6 @@ interface NeoWorkCardStatusAction {
   action: NeoWorkCardInlineActionKind;
   label: string;
   icon: React.ElementType;
-}
-
-const PHASE_BY_STATUS: Record<NeoWorkCardStatus, NeoWorkCardPhase> = {
-  draft: 'running',
-  needs_review: 'running',
-  approved: 'running',
-  queued: 'running',
-  working: 'running',
-  waiting_for_user: 'needs_input',
-  in_result_review: 'done',
-  completed: 'done',
-  failed: 'failed',
-  cancelled: 'closed',
-  archived: 'closed',
-};
-
-const PHASE_LABEL: Record<NeoWorkCardPhase, string> = {
-  running: '运行中',
-  needs_input: '待你确认',
-  done: '已完成',
-  failed: '失败',
-  closed: '已结束',
-};
-
-const PHASE_CHIP_STYLE: Record<NeoWorkCardPhase, string> = {
-  running: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
-  needs_input: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
-  done: 'border-zinc-700 bg-zinc-900 text-zinc-300',
-  failed: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
-  closed: 'border-zinc-800 bg-zinc-950 text-zinc-500',
-};
-
-// 运行时生命周期内部标记，不是用户视角的工作项，从清单里滤掉。
-const INTERNAL_COMPLETED_MARKERS = [
-  /^Queued approved revision/i,
-  /^Local Neo runtime run finished/i,
-];
-
-export function statusPhase(status: NeoWorkCardStatus): NeoWorkCardPhase {
-  return PHASE_BY_STATUS[status] ?? 'running';
-}
-
-function isInternalCompletedMarker(item: string): boolean {
-  return INTERNAL_COMPLETED_MARKERS.some((pattern) => pattern.test(item.trim()));
 }
 
 export function getNeoWorkCardStatusActions(status: NeoWorkCardStatus): NeoWorkCardStatusAction[] {

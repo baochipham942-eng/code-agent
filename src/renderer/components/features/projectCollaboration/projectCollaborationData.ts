@@ -6,6 +6,24 @@ import type {
   NeoWorkCardRevision,
   NeoWorkCardStatus,
 } from '@shared/contract/tag';
+import { statusPhase } from '../chat/neoWorkCardPhase';
+
+/**
+ * 把发起人 userId 显示成人话：当前用户显示成「我（名字）」，其他人显示原 id。
+ * 本地单用户场景下大多是自己，没有单独的成员目录，先做最诚实的映射。
+ */
+export function formatRequesterLabel(
+  requesterUserId: string,
+  currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null,
+): string {
+  const id = requesterUserId?.trim() || '未知';
+  const currentId = currentUser?.id?.trim();
+  if (currentId && currentId === id) {
+    const name = currentUser?.name?.trim() || currentUser?.email?.trim();
+    return name ? `我 · ${name}` : '我';
+  }
+  return id;
+}
 
 export interface ProjectCollaborationWorkCardRecord {
   card: NeoWorkCard;
@@ -73,11 +91,12 @@ export interface ProjectCollaborationGroups {
 }
 
 export interface ProjectCollaborationBadge {
-  openCount: number;
-  reviewCount: number;
+  /** topic 总数 */
+  topicCount: number;
+  /** 活动中（运行中 + 待你确认） */
+  activeCount: number;
   runningCount: number;
-  resultReviewCount: number;
-  queueCount: number;
+  needsInputCount: number;
 }
 
 const REVIEW_STATUSES = new Set<NeoWorkCardStatus>(['draft', 'needs_review']);
@@ -540,12 +559,17 @@ export function buildProjectCollaborationGroups(
 export function getProjectCollaborationBadge(
   records: ProjectCollaborationWorkCardRecord[] = NEO_PROJECT_COLLABORATION_FIXTURE,
 ): ProjectCollaborationBadge {
-  const groups = buildProjectCollaborationGroups(records);
+  let runningCount = 0;
+  let needsInputCount = 0;
+  for (const record of records) {
+    const phase = statusPhase(record.card.status);
+    if (phase === 'running') runningCount += 1;
+    else if (phase === 'needs_input') needsInputCount += 1;
+  }
   return {
-    openCount: groups.overview.review + groups.overview.running + groups.overview.resultReview + groups.overview.queue,
-    reviewCount: groups.overview.review,
-    runningCount: groups.overview.running,
-    resultReviewCount: groups.overview.resultReview,
-    queueCount: groups.overview.queue,
+    topicCount: records.length,
+    activeCount: runningCount + needsInputCount,
+    runningCount,
+    needsInputCount,
   };
 }

@@ -42,10 +42,11 @@ const PROD_WEB_PORT: u16 = 8180;
 const DEV_WEB_PORT: u16 = 8181;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
-/// 首帧就绪信号(renderer-ready)的兜底超时：renderer 正常会在导航后 <1s 完成首次
-/// commit 并发信号,壳侧收到才显示窗口(消除启动闪烁)。万一 renderer 异常没发信号,
-/// 超时后无论如何显示,避免窗口永久隐藏。
-const RENDERER_READY_TIMEOUT: Duration = Duration::from_secs(10);
+/// 首帧就绪信号(renderer-ready)的兜底超时：renderer 正常会在导航后 ~2.5s 完成首次
+/// commit 并发信号,壳侧收到才显示窗口(消除启动闪烁)。万一信号丢失,超时后无论如何
+/// 显示,避免窗口永久隐藏。实测 renderer 首帧 ~2.5s,故兜底设 5s(既覆盖慢机、又远小于
+/// 原 10s,信号丢失时最坏也就 ~6s 出窗口而非 11s)。
+const RENDERER_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const LOG_DIR_ENV: &str = "CODE_AGENT_LOG_DIR";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
@@ -2587,7 +2588,9 @@ fn main() {
             {
                 let window_for_show = window.clone();
                 let shown = shown.clone();
-                window.once("renderer-ready", move |_event| {
+                // 用 app 级 once(而非 window.once):JS emit('renderer-ready') 是全局事件,
+                // app 级监听更可靠地收到(实测 window.once 收不到、窗口一直走超时兜底)。
+                app.handle().once("renderer-ready", move |_event| {
                     if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
                         let _ = window_for_show.show();
                         let _ = window_for_show.set_focus();

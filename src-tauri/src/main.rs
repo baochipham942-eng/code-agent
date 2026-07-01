@@ -8,13 +8,13 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::Mutex,
+    sync::{atomic::AtomicBool, Arc, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    include_image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager, RunEvent,
-    State, WindowEvent,
+    include_image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Listener, Manager,
+    RunEvent, State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -42,6 +42,10 @@ const PROD_WEB_PORT: u16 = 8180;
 const DEV_WEB_PORT: u16 = 8181;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
+/// 首帧就绪信号(renderer-ready)的兜底超时：renderer 正常会在导航后 <1s 完成首次
+/// commit 并发信号,壳侧收到才显示窗口(消除启动闪烁)。万一 renderer 异常没发信号,
+/// 超时后无论如何显示,避免窗口永久隐藏。
+const RENDERER_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const LOG_DIR_ENV: &str = "CODE_AGENT_LOG_DIR";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
@@ -2574,8 +2578,33 @@ fn main() {
                 show_startup_failure(&error, boot_diagnostics.diagnostic_file.as_deref());
                 std::process::exit(1);
             }
-            let _ = window.show();
-            let _ = window.set_focus();
+            // 窗口在 tauri.conf.json 里是 visible:false。此前是 navigate() 一返回就
+            // show()——但 navigate 只表示"导航开始",首帧还没画出,于是出现
+            // 深色底→空白→内容的启动闪烁(实测闪 2 下)。改为等 renderer 完成首次
+            // 渲染 commit 后发来的 renderer-ready 事件再 show;并加超时兜底,信号丢失
+            // 也不会让窗口永久隐藏。show 用 AtomicBool 去重,两条路径谁先到谁生效。
+            let shown = Arc::new(AtomicBool::new(false));
+            {
+                let window_for_show = window.clone();
+                let shown = shown.clone();
+                window.once("renderer-ready", move |_event| {
+                    if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        let _ = window_for_show.show();
+                        let _ = window_for_show.set_focus();
+                    }
+                });
+            }
+            {
+                let window = window.clone();
+                let shown = shown.clone();
+                thread::spawn(move || {
+                    thread::sleep(RENDERER_READY_TIMEOUT);
+                    if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                });
+            }
             record_boot_stage(
                 &app.handle(),
                 &mut boot_diagnostics,

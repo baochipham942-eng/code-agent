@@ -68,6 +68,7 @@ import { useWorkflowStore } from './stores/workflowStore';
 import { useBackgroundTaskStore } from './stores/backgroundTaskStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
+import { signalRendererReady } from './utils/rendererReady';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -279,6 +280,8 @@ export const App: React.FC = () => {
     if (ipcService.isAvailable()) {
       logger.debug('bridge API available');
     }
+    // 首次渲染 commit 完成:通知桌面壳可以显示窗口了(消除启动闪烁)。
+    void signalRendererReady();
   }, []);
 
   // Initialize auth store on mount

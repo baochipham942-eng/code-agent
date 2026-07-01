@@ -206,9 +206,11 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           </button>
         )}
         {/* 项目操作簇：控制台 / 详情 / 产物 / 新建 — 默认隐藏，hover 或聚焦时浮现。
-            用 hidden(display:none)而非 opacity-0:opacity-0 仍占布局宽度(~4×28px),
-            在窄侧边栏会把"未完成"徽标和"Neo"徽标挤到重叠(叠字)。hidden 隐藏时不占宽度。 */}
-        <div className="hidden items-center group-hover:flex group-focus-within:flex">
+            绝对定位覆盖在右侧(sticky header 提供定位上下文),而非占流内宽度:
+            occupy 流内宽度(opacity-0 或 group-hover:flex)会在窄侧边栏把"未完成"和
+            "Neo"徽标挤到重叠(叠字)。绝对定位 + 不透明底,hover 时浮在右侧盖住 Neo
+            徽标区,流内徽标永不被挤。 */}
+        <div className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-900 pl-1 group-hover:flex group-focus-within:flex">
         {!group.isUncategorized && (
           <button
             type="button"

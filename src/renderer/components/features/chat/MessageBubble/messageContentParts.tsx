@@ -12,7 +12,7 @@ import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Eye, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
-import mermaid from 'mermaid';
+import { loadMermaid } from './mermaidLoader';
 import { UI } from '@shared/constants';
 import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
@@ -86,30 +86,6 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
 };
 
-// Initialize mermaid once
-let mermaidInitialized = false;
-function ensureMermaidInit() {
-  if (!mermaidInitialized) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      themeVariables: {
-        // ds-allow:start Mermaid 主题，第三方库只吃字面色、不读 app CSS 变量
-        darkMode: true,
-        background: '#18181b',
-        primaryColor: '#3b82f6',
-        primaryTextColor: '#e4e4e7',
-        primaryBorderColor: '#3f3f46',
-        lineColor: '#71717a',
-        secondaryColor: '#27272a',
-        tertiaryColor: '#1f1f23',
-        // ds-allow:end
-      },
-    });
-    mermaidInitialized = true;
-  }
-}
-
 // Unique ID counter for mermaid diagrams
 let mermaidIdCounter = 0;
 
@@ -122,25 +98,26 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
 
   useEffect(() => {
     let cancelled = false;
-    ensureMermaidInit();
-
     const id = `mermaid-${++mermaidIdCounter}`;
-    mermaid.render(id, code).then(({ svg }) => {
-      if (!cancelled && containerRef.current) {
-        containerRef.current.innerHTML = svg;
-        // Make SVG responsive
-        const svgEl = containerRef.current.querySelector('svg');
-        if (svgEl) {
-          svgEl.style.maxWidth = '100%';
-          svgEl.style.height = 'auto';
+    // 按需动态加载 mermaid(~2.7MB 移出首屏),用到含 mermaid 的消息时才下载 chunk。
+    loadMermaid()
+      .then((mermaid) => mermaid.render(id, code))
+      .then(({ svg }) => {
+        if (!cancelled && containerRef.current) {
+          containerRef.current.innerHTML = svg;
+          // Make SVG responsive
+          const svgEl = containerRef.current.querySelector('svg');
+          if (svgEl) {
+            svgEl.style.maxWidth = '100%';
+            svgEl.style.height = 'auto';
+          }
+          setError(null);
         }
-        setError(null);
-      }
-    }).catch((err: unknown) => {
-      if (!cancelled) {
-        setError(err instanceof Error ? err.message : 'Failed to render diagram');
-      }
-    });
+      }).catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to render diagram');
+        }
+      });
 
     return () => { cancelled = true; };
   }, [code]);

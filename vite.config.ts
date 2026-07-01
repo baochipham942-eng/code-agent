@@ -114,7 +114,9 @@ export default defineConfig({
           if (/[\\/]node_modules[\\/]lucide-react[\\/]/.test(id)) return 'vendor-lucide';
           if (/[\\/]node_modules[\\/](react-markdown|remark-gfm)[\\/]/.test(id)) return 'vendor-markdown';
           if (/[\\/]node_modules[\\/]@xyflow[\\/]react[\\/]/.test(id)) return 'vendor-reactflow';
-          if (/[\\/]node_modules[\\/]mermaid[\\/]/.test(id)) return 'vendor-mermaid';
+          // mermaid(~2.7MB)刻意不在此固定 vendor chunk:它已改为 messageContentParts
+          // 里按需动态 import,交给 Vite 自动产出 async chunk,避免被 modulepreload
+          // 进首屏(固定成 vendor-* 会被预载,等于没懒加载)。
           return undefined;
         },
       },

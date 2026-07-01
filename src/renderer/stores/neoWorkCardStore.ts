@@ -27,6 +27,7 @@ interface NeoWorkCardState {
   loadForConversation: (sourceConversationId: string) => Promise<void>;
   loadForProject: (projectId: string, options?: { includeArchived?: boolean }) => Promise<void>;
   createDraft: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
+  createAndRun: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
   updateDraftRevision: (input: UpdateNeoWorkCardDraftRevisionRequest) => Promise<NeoWorkCardDetail>;
   approve: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
   reject: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
@@ -194,6 +195,14 @@ export const useNeoWorkCardStore = create<NeoWorkCardState>()((set) => {
 
     createDraft: async (input) => {
       const result = await tagClient.createDraft(input);
+      set((state) => ({
+        detailsById: upsert(state.detailsById, result.detail),
+      }));
+      return result;
+    },
+
+    createAndRun: async (input) => {
+      const result = await tagClient.createAndRun(input);
       set((state) => ({
         detailsById: upsert(state.detailsById, result.detail),
       }));

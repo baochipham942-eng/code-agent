@@ -19,7 +19,10 @@ import {
   getNeoWorkCardService,
   NeoWorkCardServiceError,
 } from '../services/project/neoWorkCardService';
-import { launchApprovedNeoWorkCard } from '../services/project/neoTagRuntimeService';
+import {
+  createAndRunNeoWorkCard,
+  launchApprovedNeoWorkCard,
+} from '../services/project/neoTagRuntimeService';
 import { getTaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
 
@@ -125,6 +128,22 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
           const created = service.createDraft(input);
           emitWorkCardUpdated(service, created.workCard.id, 'draft_created');
           return { success: true, data: created };
+        }
+
+        case 'createAndRun': {
+          // @neo 直接开干（轻量化重设计）：建卡 → 自动批准 → 落地运行，无审批门。
+          const input = payload as CreateNeoWorkCardDraftInput | undefined;
+          if (!input) return invalid('payload is required');
+          const started = createAndRunNeoWorkCard({
+            draft: input,
+            taskManager: getTaskManager(),
+            service,
+            onWorkCardUpdated: (workCardId, reason) => emitWorkCardUpdated(service, workCardId, reason),
+          });
+          started.run.catch((error) => {
+            logger.error('Failed to run direct @neo work card', error);
+          });
+          return { success: true, data: { workCard: started.workCard, revision: started.revision } };
         }
 
         case 'get':

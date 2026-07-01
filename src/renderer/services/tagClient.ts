@@ -104,6 +104,16 @@ export const tagClient = {
     };
   },
 
+  // @neo 直接开干：建卡即运行（无审批门），后台落地运行，立即返回已建卡。
+  async createAndRun(input: CreateNeoWorkCardDraftRequest): Promise<CreateNeoWorkCardDraftResult> {
+    const backendInput = toCreateDraftInput(input);
+    const created = await invokeTag<NeoWorkCardWithCurrentRevision>('createAndRun', backendInput);
+    return {
+      detail: toDetail(created),
+      sourceTurnId: created.workCard.sourceTurnId,
+    };
+  },
+
   listBySourceConversation(input: ListNeoWorkCardsBySourceInput): Promise<NeoWorkCardDetail[]> {
     return invokeTag<NeoWorkCardDetail[]>('listBySourceConversation', input);
   },

@@ -13,8 +13,12 @@ import type {
 import { resolveNeoTagModelIntent } from '../../../src/host/services/project/neoTagModelIntentResolver';
 import { buildNeoTagContextPack } from '../../../src/host/services/project/neoTagContextSelector';
 import { buildNeoTagPromptLayer } from '../../../src/host/services/project/neoTagPromptLayer';
-import { launchApprovedNeoWorkCard } from '../../../src/host/services/project/neoTagRuntimeService';
+import {
+  createAndRunNeoWorkCard,
+  launchApprovedNeoWorkCard,
+} from '../../../src/host/services/project/neoTagRuntimeService';
 import type { NeoWorkCardService } from '../../../src/host/services/project/neoWorkCardService';
+import type { CreateNeoWorkCardDraftInput } from '../../../src/shared/contract/tag';
 
 const sessionMessages: Message[] = [];
 let sessionWorkingDirectory = '/repo/project';
@@ -311,6 +315,91 @@ describe('Neo Tag runtime helpers', () => {
     expect(deltas[0].decisions.join('\n')).toContain('Context audit: pack=');
     expect(deltas.at(-1)?.changedFiles).toEqual(['src/host/services/project/neoTagRuntimeService.ts']);
     expect(deltas.at(-1)?.decisions.join('\n')).toContain('sources=messages+artifacts+files+memory');
+  });
+
+  it('creates, auto-approves, and launches a work card in one direct-run step (@neo 直接开干)', async () => {
+    sessionMessages.splice(0, sessionMessages.length,
+      { id: 'msg_source', role: 'user', content: '@neo 直接开干', timestamp: 1 },
+    );
+    const card = workCard({ status: 'draft', approvedRevisionId: null });
+    const rev = revision();
+    const deltas: NeoWorkCardDelta[] = [];
+    const statuses: string[] = [];
+    const reasons: string[] = [];
+    const approveCalls: Array<{ workCardId: string; revisionId?: string; reviewerUserId: string }> = [];
+    const service = {
+      createDraft: vi.fn(() => ({ workCard: card, revision: rev })),
+      approveRevision: vi.fn((input: { workCardId: string; revisionId?: string; reviewerUserId: string }) => {
+        approveCalls.push(input);
+        card.status = 'approved';
+        card.approvedRevisionId = rev.id;
+        return { id: 'appr_1' };
+      }),
+      get: vi.fn((): NeoWorkCardDetail => ({
+        workCard: card,
+        currentRevision: rev,
+        approvedRevision: rev,
+        revisions: [rev],
+        approvals: [],
+        deltas,
+        resultReviews: [],
+        memoryCandidates: [],
+      })),
+      setStatus: vi.fn((_workCardId: string, status: NeoWorkCard['status']) => {
+        statuses.push(status);
+        card.status = status;
+        return card;
+      }),
+      appendDelta: vi.fn((input: Partial<NeoWorkCardDelta>) => {
+        const delta = {
+          id: `delta_${deltas.length + 1}`,
+          workCardId: card.id,
+          runId: input.runId || 'run_1',
+          completed: input.completed || [],
+          changedFiles: input.changedFiles || [],
+          decisions: input.decisions || [],
+          openQuestions: input.openQuestions || [],
+          risks: input.risks || [],
+          memoryCandidates: input.memoryCandidates || [],
+          nextStep: input.nextStep,
+          createdAt: deltas.length + 1,
+        };
+        deltas.push(delta);
+        return delta;
+      }),
+    } as unknown as NeoWorkCardService;
+
+    const draft: CreateNeoWorkCardDraftInput = {
+      projectId: 'proj_1',
+      sourceConversationId: 'conv_1',
+      sourceTurnId: 'msg_source',
+      requesterUserId: 'user_1',
+      title: '直接开干',
+      revision: { intent: 'implement', taskSummary: '直接开干' },
+    };
+
+    const started = createAndRunNeoWorkCard({
+      draft,
+      service,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+      now: () => 100,
+      onWorkCardUpdated: (_workCardId, reason) => reasons.push(reason),
+    });
+
+    // 建卡 + 批准同步完成，卡立即可返回（IPC 无需等待后台运行）
+    expect(service.createDraft).toHaveBeenCalledTimes(1);
+    expect(approveCalls[0]).toMatchObject({ workCardId: card.id, reviewerUserId: 'user_1' });
+    expect(started.workCard.id).toBe(card.id);
+    expect(reasons).toContain('draft_created');
+    expect(reasons).toContain('revision_approved');
+
+    // 无审批门：后台运行落地
+    const launched = await started.run;
+    expect(statuses).toEqual(['queued', 'working', 'in_result_review']);
+    expect(launched.runId).toBeTruthy();
   });
 
   it('moves provider launch failures into failed work card delta instead of leaving working', async () => {

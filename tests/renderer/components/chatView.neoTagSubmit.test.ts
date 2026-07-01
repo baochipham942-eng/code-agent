@@ -78,17 +78,17 @@ describe('Neo tag ChatView submit boundary', () => {
   });
 
   it('does not call tag IPC for ordinary chat envelopes', async () => {
-    const createDraft = vi.fn();
+    const runNeoTag = vi.fn();
 
     const result = await submitNeoTagDraft({
       envelope: { content: '普通消息' },
       sourceConversationId: 'session-1',
       requesterUserId: 'user-1',
-      createDraft,
+      runNeoTag,
     });
 
     expect(result).toBeNull();
-    expect(createDraft).not.toHaveBeenCalled();
+    expect(runNeoTag).not.toHaveBeenCalled();
   });
 
   it('rejects an empty @neo draft before calling the tag boundary', () => {
@@ -99,26 +99,26 @@ describe('Neo tag ChatView submit boundary', () => {
     })).toThrow('写一下 Neo 要做什么。');
   });
 
-  it('submits leading @neo through the renderer tag service boundary', async () => {
-    const createDraft = vi.fn(async (input: CreateNeoWorkCardDraftRequest) => ({
+  it('submits leading @neo through the renderer tag service boundary (直接开干)', async () => {
+    const runNeoTag = vi.fn(async (input: CreateNeoWorkCardDraftRequest) => ({
       detail: makeDetail(input),
       sourceTurnId: 'turn-1',
     }));
 
     const result = await submitNeoTagDraft({
-      envelope: { content: '@neo 做一个 draft card' },
+      envelope: { content: '@neo 做一件事' },
       sourceConversationId: 'session-1',
       projectId: 'project-1',
       requesterUserId: 'user-1',
-      createDraft,
+      runNeoTag,
     });
 
-    expect(createDraft).toHaveBeenCalledTimes(1);
-    expect(createDraft.mock.calls[0]?.[0]).toMatchObject({
+    expect(runNeoTag).toHaveBeenCalledTimes(1);
+    expect(runNeoTag.mock.calls[0]?.[0]).toMatchObject({
       projectId: 'project-1',
-      userText: '做一个 draft card',
+      userText: '做一件事',
       revision: {
-        taskSummary: '做一个 draft card',
+        taskSummary: '做一件事',
       },
     });
     expect(result?.detail.workCard.id).toBe('card-1');

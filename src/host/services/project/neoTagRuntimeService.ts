@@ -2,7 +2,9 @@ import { randomUUID } from 'crypto';
 import type { AgentRunOptions } from '../../research/types';
 import type { Message, MessageMetadata } from '../../../shared/contract';
 import type {
+  CreateNeoWorkCardDraftInput,
   NeoTagRunContext,
+  NeoWorkCard,
   NeoWorkCardDetail,
   NeoWorkCardRevision,
   NeoWorkCardUpdateReason,
@@ -156,15 +158,70 @@ function appendFailureDelta(args: {
 }
 
 function notifyWorkCardUpdated(
-  input: LaunchApprovedNeoWorkCardInput,
+  onWorkCardUpdated: ((workCardId: string, reason: NeoWorkCardUpdateReason) => void) | undefined,
   workCardId: string,
   reason: NeoWorkCardUpdateReason,
 ): void {
   try {
-    input.onWorkCardUpdated?.(workCardId, reason);
+    onWorkCardUpdated?.(workCardId, reason);
   } catch (error) {
     logger.warn('Neo Tag work card update notification failed', error);
   }
+}
+
+export interface CreateAndRunNeoWorkCardInput {
+  draft: CreateNeoWorkCardDraftInput;
+  taskManager: NeoTagTaskManager;
+  service?: NeoWorkCardService;
+  now?: () => number;
+  onWorkCardUpdated?: (workCardId: string, reason: NeoWorkCardUpdateReason) => void;
+}
+
+export interface CreateAndRunNeoWorkCardResult {
+  workCard: NeoWorkCard;
+  revision: NeoWorkCardRevision;
+  /** 后台运行的 Promise。调用方（如 IPC）可 fire-and-forget，立即拿到已建的卡返回。 */
+  run: Promise<LaunchApprovedNeoWorkCardResult>;
+}
+
+/**
+ * @neo 直接开干（轻量化重设计）：一步「建卡 → 自动批准 → 落地运行」，无审批门。
+ *
+ * 权限是项目级 ambient（全局 permission mode + ADR-031 运行时护栏），不再逐任务审批。
+ * 自动批准的 reviewer 就是发起人本人——审批语义在这里退化为无操作记录，
+ * 用户看不到审批按钮，卡直接进入运行态。审批记录本体在 Phase 3 契约减重时移除。
+ *
+ * 建卡 + 批准是同步的；运行以 `run` Promise 返回，调用方可后台跑并立即返回已建卡。
+ */
+export function createAndRunNeoWorkCard(
+  input: CreateAndRunNeoWorkCardInput,
+): CreateAndRunNeoWorkCardResult {
+  const service = input.service ?? getNeoWorkCardService();
+  const now = input.now ?? Date.now;
+
+  const created = service.createDraft(input.draft, now());
+  notifyWorkCardUpdated(input.onWorkCardUpdated, created.workCard.id, 'draft_created');
+
+  service.approveRevision({
+    workCardId: created.workCard.id,
+    revisionId: created.revision.id,
+    reviewerUserId: input.draft.requesterUserId,
+  }, now());
+  notifyWorkCardUpdated(input.onWorkCardUpdated, created.workCard.id, 'revision_approved');
+
+  const run = launchApprovedNeoWorkCard({
+    workCardId: created.workCard.id,
+    taskManager: input.taskManager,
+    service,
+    now,
+    onWorkCardUpdated: input.onWorkCardUpdated,
+  });
+
+  return {
+    workCard: created.workCard,
+    revision: created.revision,
+    run,
+  };
 }
 
 export async function launchApprovedNeoWorkCard(
@@ -213,7 +270,7 @@ export async function launchApprovedNeoWorkCard(
     nextStep: 'Start local runtime execution.',
     markResultReview: false,
   }, now());
-  notifyWorkCardUpdated(input, workCard.id, 'runtime_queued');
+  notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_queued');
 
   try {
     if (source.workingDirectory) {
@@ -223,7 +280,7 @@ export async function launchApprovedNeoWorkCard(
     }
 
     service.setStatus(workCard.id, 'working', now());
-    notifyWorkCardUpdated(input, workCard.id, 'runtime_working');
+    notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_working');
     const artifactSnapshot = await safelyCreateArtifactSnapshot(source.workingDirectory, approvedRevision);
     const options: AgentRunOptions = {
       mode: 'normal',
@@ -262,7 +319,7 @@ export async function launchApprovedNeoWorkCard(
         now,
         contextAudit: summarizeContextAudit(contextPack),
       });
-      notifyWorkCardUpdated(input, workCard.id, 'runtime_failed');
+      notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_failed');
       return { runId: run, context };
     }
 
@@ -276,7 +333,7 @@ export async function launchApprovedNeoWorkCard(
         nextStep: 'Answer the pending runtime request before continuing this work card.',
         markResultReview: false,
       }, now());
-      notifyWorkCardUpdated(input, workCard.id, 'runtime_waiting_for_user');
+      notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_waiting_for_user');
       return { runId: run, context };
     }
 
@@ -295,7 +352,7 @@ export async function launchApprovedNeoWorkCard(
       memoryCandidates: approvedRevision.memoryPlan.entries.map((entry) => entry.text),
       nextStep: 'Review the result and accept, revise, or archive the work card.',
     }, now());
-    notifyWorkCardUpdated(input, workCard.id, 'runtime_result_review');
+    notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_result_review');
   } catch (error) {
     logger.error('Neo Tag runtime launch failed', error);
     const message = runtimeErrorMessage(error);
@@ -308,7 +365,7 @@ export async function launchApprovedNeoWorkCard(
       now,
       contextAudit: summarizeContextAudit(contextPack),
     });
-    notifyWorkCardUpdated(input, workCard.id, 'runtime_failed');
+    notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_failed');
   }
 
   return { runId: run, context };

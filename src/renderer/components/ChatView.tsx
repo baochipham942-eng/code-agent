@@ -121,7 +121,7 @@ export const ChatView: React.FC = () => {
   const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
     selectNeoWorkCardDetailsForConversation(state, currentSessionId),
   ));
-  const createNeoWorkCardDraft = useNeoWorkCardStore((state) => state.createDraft);
+  const runNeoTag = useNeoWorkCardStore((state) => state.createAndRun);
   const loadNeoWorkCardsForConversation = useNeoWorkCardStore((state) => state.loadForConversation);
   const {
     messages,
@@ -494,7 +494,7 @@ export const ChatView: React.FC = () => {
           projectId: currentSession?.projectId ?? null,
           workspacePath: currentSessionWorkingDirectory,
           requesterUserId: authUser?.id ?? 'local-user',
-          createDraft: createNeoWorkCardDraft,
+          runNeoTag,
         });
         if (!result) return null;
         if (result.sourceMessage) {
@@ -514,7 +514,7 @@ export const ChatView: React.FC = () => {
             useSessionStore.getState().addMessage(sourceMessage);
           }
         }
-        toast.success('Neo work card 已生成');
+        toast.success('Neo 开始处理了');
         return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error));
@@ -534,7 +534,7 @@ export const ChatView: React.FC = () => {
     return didSend === true;
   }, [
     authUser?.id,
-    createNeoWorkCardDraft,
+    runNeoTag,
     currentSession?.projectId,
     currentSessionId,
     currentSessionWorkingDirectory,

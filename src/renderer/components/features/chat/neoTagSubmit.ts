@@ -14,7 +14,8 @@ export interface BuildNeoWorkCardDraftRequestParams {
 }
 
 export interface SubmitNeoTagDraftParams extends BuildNeoWorkCardDraftRequestParams {
-  createDraft: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
+  /** @neo 直接开干：建卡即运行（无审批门），底层走 tag `createAndRun`。 */
+  runNeoTag: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
 }
 
 function compactTitle(text: string): string {
@@ -89,5 +90,5 @@ export async function submitNeoTagDraft(
 ): Promise<CreateNeoWorkCardDraftResult | null> {
   const request = buildNeoWorkCardDraftRequest(params);
   if (!request) return null;
-  return params.createDraft(request);
+  return params.runNeoTag(request);
 }

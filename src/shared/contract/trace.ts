@@ -7,6 +7,7 @@ export type TraceNodeType =
   | 'assistant_text'
   | 'tool_call'
   | 'system'
+  | 'neo_work_card'
   | 'swarm_launch_request'
   | 'turn_timeline';
 
@@ -46,6 +47,7 @@ export interface TraceNode {
   modelDecision?: import('./modelDecision').ModelDecisionEventData;
   metadata?: import('./message').MessageMetadata;
   feedbackEligible?: boolean;
+  neoWorkCard?: import('./tag').NeoWorkCardDetail;
   launchRequest?: import('./swarm').SwarmLaunchRequest;
   turnTimeline?: import('./turnTimeline').TurnTimelineNode;
 }

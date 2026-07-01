@@ -27,6 +27,7 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
+import { NeoWorkCardInlineCard } from './NeoWorkCardInlineCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
@@ -86,6 +87,14 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       break;
     case 'system':
       content = <SystemNode node={node} />;
+      break;
+    case 'neo_work_card':
+      if (!node.neoWorkCard) return null;
+      content = (
+        <div className="flex w-full justify-start py-2">
+          <NeoWorkCardInlineCard detail={node.neoWorkCard} />
+        </div>
+      );
       break;
     case 'swarm_launch_request':
       content = <LaunchRequestNode node={node} />;

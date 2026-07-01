@@ -129,6 +129,8 @@ export interface ToolContext {
   toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */
   executionIntent?: ConversationExecutionIntent;
+  /** Approved Neo Tag work card runtime context. */
+  neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
 }
 
 export interface PermissionRequestData {

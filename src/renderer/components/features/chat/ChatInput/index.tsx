@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
+import { Image, FileText, Clock3, CornerDownRight, X, UserPlus, Sparkles } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
   ComposerAgentSelection,
@@ -63,6 +63,7 @@ import {
   getPreferredAgentMentionToken,
   isLeadingAgentMentionInput,
 } from './agentMentionRouting';
+import { isLeadingNeoTagInput, parseLeadingNeoTagInvocation } from './neoMentionRouting';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
@@ -228,6 +229,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     return undefined;
   }, [routingMode, selectedDirectAgents, swarmAgents]);
+  const neoTagInvocation = useMemo(() => parseLeadingNeoTagInvocation(value), [value]);
 
   const buildEnvelope = useChatInputEnvelope({
     swarmAgents,
@@ -381,6 +383,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       return;
     }
     setShowSlashPopover(false);
+    if (isLeadingNeoTagInput(newValue)) {
+      dismissAutocomplete();
+      return;
+    }
     if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
       dismissAutocomplete();
       return;
@@ -712,6 +718,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                   {f.name}
                 </button>
               ))}
+            </div>
+          )}
+          {neoTagInvocation && (
+            <div className="px-3 pt-2">
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-200">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="font-medium">Neo</span>
+                <span className="text-emerald-200/65">work card</span>
+              </div>
             </div>
           )}
           <InputArea

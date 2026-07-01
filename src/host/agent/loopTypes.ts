@@ -76,6 +76,8 @@ export interface AgentLoopConfig {
   executionIntent?: ConversationExecutionIntent;
   /** /goal 自治模式契约；存在则激活 goal 模式（设 ctx.goalMode + maxIterations=maxTurns） */
   goalContract?: GoalContract;
+  /** Approved Neo Tag work card context for this run. */
+  neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
   /** GAP-013: 启用 Generator-Critic 交付前自动验证（默认读 CODE_AGENT_DELIVERY_CRITIC 环境变量） */
   enableDeliveryCritic?: boolean;
   /** Max Mode（best-of-N，roadmap 3.3）显式开关，默认关（缺省读 CODE_AGENT_MAX_MODE=1 环境变量）。

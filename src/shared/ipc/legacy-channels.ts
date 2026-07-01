@@ -298,6 +298,9 @@ export const IPC_CHANNELS = {
   // TaskManager runtime channels
   TASK_EVENT: 'task:event',
 
+  // Neo Tag work card live updates
+  TAG_EVENT: 'tag:event',
+
   // PII setup (B3 一键启用本地 PII 防线流式日志)
   PII_SETUP_EVENT: 'pii:setup:event',
 

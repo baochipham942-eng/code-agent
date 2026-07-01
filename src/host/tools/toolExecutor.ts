@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 // ============================================================================
 // Tool Executor - Executes tools with permission handling
 // ============================================================================
@@ -29,6 +30,7 @@ import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddlew
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
+import type { NeoTagRunContext } from '../../shared/contract/tag';
 import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
 import {
   getWriteIsolationManager,
@@ -54,6 +56,204 @@ function commandMatchesScopedPrefix(command: string, prefix: string): boolean {
   return trimmedCommand === prefix
     || trimmedCommand.startsWith(`${prefix} `)
     || trimmedCommand.startsWith(`${prefix}\t`);
+}
+
+type NeoTagToolGuardDecision =
+  | { allowed: true }
+  | { allowed: false; reason: string };
+
+function stringParam(params: Record<string, unknown>, key: string): string {
+  const value = params[key];
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function startsWithAny(value: string, prefixes: string[]): boolean {
+  return prefixes.some((prefix) => value.startsWith(prefix));
+}
+
+function includesAny(value: string, needles: string[]): boolean {
+  return needles.some((needle) => value.includes(needle));
+}
+
+function isReadOnlyAction(action: string): boolean {
+  return [
+    'collect',
+    'diff',
+    'fetch',
+    'find',
+    'get',
+    'history',
+    'inbox',
+    'list',
+    'list_resources',
+    'list_tools',
+    'log',
+    'poll',
+    'query',
+    'read',
+    'read_resource',
+    'result',
+    'search',
+    'show',
+    'status',
+    'wait',
+  ].includes(action);
+}
+
+function isMutationAction(action: string): boolean {
+  return [
+    'add',
+    'add_server',
+    'archive',
+    'cancel',
+    'commit',
+    'create',
+    'delete',
+    'enter',
+    'exit',
+    'forget',
+    'invoke',
+    'kill',
+    'patch',
+    'post',
+    'prune',
+    'push',
+    'put',
+    'recover',
+    'remove',
+    'replace',
+    'run',
+    'send',
+    'spawn',
+    'start',
+    'submit',
+    'update',
+    'write',
+  ].includes(action);
+}
+
+function blockNeoTagMutation(toolName: string, reason: string): NeoTagToolGuardDecision {
+  return {
+    allowed: false,
+    reason: `Neo Tag safety guard blocked ${toolName}: ${reason}`,
+  };
+}
+
+function checkNeoTagToolGuard(
+  toolName: string,
+  params: Record<string, unknown>,
+): NeoTagToolGuardDecision {
+  const lowerTool = toolName.toLowerCase();
+  const action = stringParam(params, 'action');
+  const operation = stringParam(params, 'operation');
+  const verb = action || operation;
+
+  if (lowerTool === 'git_commit') {
+    if (['status', 'log', 'diff'].includes(verb)) return { allowed: true };
+    if (['add', 'commit', 'push'].includes(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `git_commit ${verb || 'unknown'} mutates git state outside the approved work-card file scope`);
+    }
+  }
+
+  if (lowerTool === 'git_worktree') {
+    if (['list', 'status'].includes(verb)) return { allowed: true };
+    if (['add', 'remove', 'prune'].includes(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `git_worktree ${verb || 'unknown'} mutates local worktree state outside the approved work card`);
+    }
+  }
+
+  if (lowerTool === 'kill_shell') {
+    return blockNeoTagMutation(toolName, 'terminating background shells is an external process-state mutation');
+  }
+
+  if (['process_submit', 'process_write', 'process_kill'].includes(lowerTool)) {
+    return blockNeoTagMutation(toolName, 'interactive process submit/write/kill can mutate process state outside result review');
+  }
+
+  if (lowerTool === 'process') {
+    if (['list', 'status', 'poll', 'log', 'read'].includes(verb)) return { allowed: true };
+    if (['submit', 'write', 'kill'].includes(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `Process ${verb || 'unknown'} can mutate interactive process state`);
+    }
+  }
+
+  if (['memorywrite', 'memory_write'].includes(lowerTool)) {
+    return blockNeoTagMutation(toolName, 'Neo Tag memory writes must stay as explicit memory candidates until user review');
+  }
+
+  if (['memoryread', 'memory_read'].includes(lowerTool)) {
+    return { allowed: true };
+  }
+
+  if (['skillcreate', 'skill_create', 'create_skill', 'propose_role', 'tool_create'].includes(lowerTool)) {
+    return blockNeoTagMutation(toolName, 'creating reusable skills or roles is outside the approved work-card write scope');
+  }
+
+  if (['plan_update', 'findings_write', 'taskcreate', 'task_create', 'taskupdate', 'task_update', 'plan_recover_recent_work'].includes(lowerTool)) {
+    return blockNeoTagMutation(toolName, 'planning, findings, and task mutations must not be driven by an approved Neo runtime run');
+  }
+
+  if (['plan_read', 'taskget', 'task_get', 'tasklist', 'task_list'].includes(lowerTool)) {
+    return { allowed: true };
+  }
+
+  if (['planmode', 'enter_plan_mode', 'exit_plan_mode'].includes(lowerTool)) {
+    return blockNeoTagMutation(toolName, 'plan mode changes mutate the surrounding session state');
+  }
+
+  if (lowerTool === 'plan') {
+    if (isReadOnlyAction(verb)) return { allowed: true };
+    if (isMutationAction(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `Plan ${verb || 'unknown'} mutates planning state`);
+    }
+  }
+
+  if (lowerTool === 'taskmanager') {
+    if (isReadOnlyAction(verb)) return { allowed: true };
+    if (isMutationAction(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `TaskManager ${verb || 'unknown'} mutates task state`);
+    }
+  }
+
+  if (['agentspawn', 'agent_spawn', 'workflow', 'dynamicworkflow', 'dynamic_workflow', 'workflow_orchestrate', 'workfloworchestrate', 'teammate', 'agentmessage', 'agent_message'].includes(lowerTool)) {
+    if (isReadOnlyAction(verb)) return { allowed: true };
+    if (isMutationAction(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `${verb || 'unknown'} can spawn, drive, or mutate other agents/workflows`);
+    }
+  }
+
+  if (lowerTool === 'mcpunified' || lowerTool === 'mcp') {
+    if (['status', 'list_tools', 'list_resources', 'read_resource'].includes(verb)) return { allowed: true };
+    if (['add_server', 'invoke'].includes(verb) || !verb) {
+      return blockNeoTagMutation(toolName, `MCP ${verb || 'unknown'} is fail-closed until server tool capabilities are classified`);
+    }
+  }
+
+  if (['mcp_add_server'].includes(lowerTool)) {
+    return blockNeoTagMutation(toolName, 'adding MCP servers mutates local connector configuration');
+  }
+
+  if (['mcp_read_resource', 'mcp_list_resources', 'mcp_list_tools', 'mcp_get_status'].includes(lowerTool)) {
+    return { allowed: true };
+  }
+
+  if (startsWithAny(lowerTool, ['mcp__'])) {
+    const lastSegment = lowerTool.split('__').at(-1) ?? lowerTool;
+    if (/^(read|get|list|search|query|fetch|find|show|describe)/.test(lastSegment)) return { allowed: true };
+    return blockNeoTagMutation(toolName, 'direct MCP tool invocation is fail-closed for approved Neo runtime runs');
+  }
+
+  if (includesAny(lowerTool, ['calendar', 'reminder', 'mail'])) {
+    if (isReadOnlyAction(verb)) return { allowed: true };
+    if (
+      isMutationAction(verb)
+      || includesAny(lowerTool, ['create', 'update', 'delete', 'send', 'post', 'patch', 'write'])
+    ) {
+      return blockNeoTagMutation(toolName, 'calendar/reminder/mail connector writes affect external state');
+    }
+  }
+
+  return { allowed: true };
 }
 
 // ----------------------------------------------------------------------------
@@ -128,6 +328,8 @@ export interface ExecuteOptions {
   toolScope?: WorkbenchToolScope;
   // 当前 turn 的结构化执行意图
   executionIntent?: ConversationExecutionIntent;
+  // Approved Neo Tag work card runtime context.
+  neoTag?: NeoTagRunContext;
   // Run-level cancellation signal propagated from the agent loop.
   abortSignal?: AbortSignal;
   // Subagent 执行策略 — 存在即表示这是 subagent 调用。
@@ -277,6 +479,8 @@ export class ToolExecutor {
       };
     }
 
+    const permStartTime = Date.now();
+
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       workingDirectory: this.workingDirectory,
@@ -314,10 +518,27 @@ export class ToolExecutor {
       hookManager: options.hookManager,
       toolScope: options.toolScope,
       executionIntent: options.executionIntent,
+      neoTag: options.neoTag,
     };
 
+    if (options.neoTag) {
+      const neoTagGuard = checkNeoTagToolGuard(executionToolName, params);
+      if (!neoTagGuard.allowed) {
+        logger.warn('Blocked by Neo Tag safety guard', {
+          toolName: executionToolName,
+          reason: neoTagGuard.reason,
+          workCardId: options.neoTag.workCardId,
+          runId: options.neoTag.runId,
+        });
+        recordDecision(executionToolName, params, 'policy-deny', neoTagGuard.reason, permStartTime);
+        return {
+          success: false,
+          error: neoTagGuard.reason,
+        };
+      }
+    }
+
     // Security: Pre-execution validation for bash commands
-    const permStartTime = Date.now();
     let commandValidation: ValidationResult | undefined;
     if (isBashToolName(policyToolName) && params.command) {
       commandValidation = validateCommand(params.command as string);

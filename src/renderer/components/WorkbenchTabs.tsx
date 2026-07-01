@@ -104,6 +104,9 @@ export const WorkbenchTabs: React.FC = () => {
     if (id === 'design-canvas') {
       return { id, label: t.design.canvasTabLabel, title: t.design.canvasTabLabel, isDirty: false };
     }
+    if (id === 'project-collab') {
+      return { id, label: 'Neo', title: '项目合作', isDirty: false };
+    }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
     const isDirty = previewTab ? previewTab.content !== previewTab.savedContent : false;

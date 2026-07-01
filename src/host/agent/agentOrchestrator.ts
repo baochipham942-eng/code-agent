@@ -56,6 +56,7 @@ import { resolveModelConfig, getDefaultModelByProvider, getPermissionLevel } fro
 import { runDeepResearch, checkAndRunSemanticResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
+import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -238,6 +239,17 @@ export class AgentOrchestrator {
         telemetryCollector.handleEvent(sessionId, event);
       }
     };
+
+    const neoTagModel = options?.neoTag
+      ? resolveNeoTagModelIntent({
+          baseConfig: modelConfig,
+          modelIntent: options.neoTag.modelIntent,
+          configService: this.configService,
+        })
+      : null;
+    if (neoTagModel) {
+      modelConfig = neoTagModel.modelConfig;
+    }
 
     // Route to appropriate mode
     const mode = options?.mode ?? 'normal';
@@ -797,6 +809,7 @@ export class AgentOrchestrator {
       ? this.resolveExplicitAgentRouting(options.agentOverrideId) ?? await this.resolveAgentRouting(content, sessionId)
       : await this.resolveAgentRouting(content, sessionId);
     let effectiveModelConfig = modelConfig;
+    const neoTagFixedModel = options?.neoTag?.modelIntent.mode === 'fixed_model';
 
     if (routingResolution) {
       logger.info('Agent routing resolved', {
@@ -806,7 +819,7 @@ export class AgentOrchestrator {
         reason: routingResolution.reason,
       });
 
-      if (routingResolution.agent.modelOverride) {
+      if (routingResolution.agent.modelOverride && !neoTagFixedModel) {
         const override = routingResolution.agent.modelOverride;
         effectiveModelConfig = {
           ...modelConfig,
@@ -815,6 +828,12 @@ export class AgentOrchestrator {
           temperature: override.temperature ?? modelConfig.temperature,
         };
         logger.debug('Model config overridden by agent', {
+          provider: effectiveModelConfig.provider,
+          model: effectiveModelConfig.model,
+        });
+      } else if (routingResolution.agent.modelOverride && neoTagFixedModel) {
+        logger.info('Neo Tag fixed_model is active; agent routing model override skipped', {
+          workCardId: options?.neoTag?.workCardId,
           provider: effectiveModelConfig.provider,
           model: effectiveModelConfig.model,
         });
@@ -923,11 +942,16 @@ export class AgentOrchestrator {
         ]))
       : options?.deniedToolNames;
 
+    const baseSystemPrompt = routingResolution?.agent?.systemPrompt
+      || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);
+    const systemPrompt = options?.neoTag?.promptLayer
+      ? `${baseSystemPrompt}\n\n${options.neoTag.promptLayer}`
+      : baseSystemPrompt;
+
     this.agentLoop = new AgentLoop({
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
-      systemPrompt: routingResolution?.agent?.systemPrompt
-        || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model),
+      systemPrompt,
       modelConfig: effectiveModelConfig,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
@@ -942,6 +966,7 @@ export class AgentOrchestrator {
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       toolScope,
       executionIntent,
+      neoTag: options?.neoTag,
       goalContract,
       // 迭代数硬上限（角色主动性醒来等预算受限场景，内部文档 §6）
       maxIterations: options?.maxIterations,

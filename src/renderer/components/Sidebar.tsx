@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */
+ 
 // ============================================================================
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
@@ -36,6 +36,7 @@ import {
   Activity,
   Brain,
   Users,
+  UsersRound,
   Ticket,
   Download,
 } from 'lucide-react';
@@ -73,6 +74,7 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 
 export { resolveRuntimeLogsDir };
 
@@ -107,6 +109,8 @@ export const Sidebar: React.FC = () => {
     setShowKnowledgeMemoryPanel,
     showComputerUsePanel,
     setShowComputerUsePanel,
+    showProjectCollaborationPage,
+    openProjectCollaborationPage,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
@@ -192,6 +196,10 @@ export const Sidebar: React.FC = () => {
   const isCreatingSession = creatingSessionMode !== null;
   const hasActiveAdvancedTool = Boolean(showLab || showTimeCapabilityCenter || showDesktopPanel);
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
+  const currentSessionProjectId = useMemo(() => {
+    const session = sessions.find((item) => item.id === currentSessionId);
+    return session?.projectId && session.projectId !== UNSORTED_PROJECT_ID ? session.projectId : null;
+  }, [currentSessionId, sessions]);
 
   useEffect(() => {
     if (!showUserMenu) return undefined;
@@ -855,6 +863,18 @@ export const Sidebar: React.FC = () => {
                     />
                   }
                   label="桌面操作"
+                />
+                <AccountMenuItem
+                  onClick={() => {
+                    openProjectCollaborationPage(currentSessionProjectId);
+                    setShowUserMenu(false);
+                  }}
+                  icon={
+                    <UsersRound
+                      className={`w-4 h-4 ${showProjectCollaborationPage ? 'text-violet-400' : 'text-violet-400/80'}`}
+                    />
+                  }
+                  label="Neo 协同"
                 />
                 <AccountMenuItem
                   onClick={() => {

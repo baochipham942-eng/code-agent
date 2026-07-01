@@ -106,7 +106,7 @@ const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
 // 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
-export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'audit' | 'design-canvas' | `preview:${string}`;
+export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'audit' | 'design-canvas' | 'project-collab' | `preview:${string}`;
 export type WorkbenchOpenSource = 'user' | 'auto';
 
 export interface OpenWorkbenchTabOptions {
@@ -195,6 +195,8 @@ interface AppState {
   showComputerUsePanel: boolean;
   showInAppValidationPanel: boolean;
   pendingInAppValidationRequest: import('@shared/contract/browserInteraction').InAppValidationRequest | null;
+  showProjectCollaborationPage: boolean;
+  projectCollaborationPageProjectId: string | null;
   showActivityPanel: boolean;
   showCronCenter: boolean;
   showTimeCapabilityCenter: boolean;
@@ -299,6 +301,8 @@ interface AppState {
   setShowDesktopPanel: (show: boolean) => void;
   setShowComputerUsePanel: (show: boolean) => void;
   setShowInAppValidationPanel: (show: boolean) => void;
+  openProjectCollaborationPage: (projectId?: string | null) => void;
+  closeProjectCollaborationPage: () => void;
   setPendingInAppValidationRequest: (
     request: import('@shared/contract/browserInteraction').InAppValidationRequest | null,
   ) => void;
@@ -419,6 +423,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showComputerUsePanel: false,
   showInAppValidationPanel: false,
   pendingInAppValidationRequest: null,
+  showProjectCollaborationPage: false,
+  projectCollaborationPageProjectId: null,
   showActivityPanel: false,
   showCronCenter: false,
   showTimeCapabilityCenter: false,
@@ -540,11 +546,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showInAppValidationPanel: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
   }),
   setShowInAppValidationPanel: (show) => set({
     showInAppValidationPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
+  }),
+  openProjectCollaborationPage: (projectId) => set({
+    showProjectCollaborationPage: true,
+    projectCollaborationPageProjectId: projectId?.trim() || null,
+    showKnowledgeMemoryPanel: false,
+    showComputerUsePanel: false,
+    showInAppValidationPanel: false,
+  }),
+  closeProjectCollaborationPage: () => set({
+    showProjectCollaborationPage: false,
+    projectCollaborationPageProjectId: null,
   }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
@@ -599,7 +616,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowKnowledgeMemoryPanel: (show) => set({
     showKnowledgeMemoryPanel: show,
-    ...(show ? { showComputerUsePanel: false } : {}),
+    ...(show ? { showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
   }),
 
   openPreview: (filePath) => {

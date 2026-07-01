@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -10,6 +11,14 @@ import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSwarmStore } from '../stores/swarmStore';
+import { useAuthStore } from '../stores/authStore';
+import {
+  ensureNeoWorkCardLiveUpdates,
+  isNeoWorkCardAwaitingRuntimeTerminal,
+  NEO_WORK_CARD_LIVE_REFRESH_MS,
+  selectNeoWorkCardDetailsForConversation,
+  useNeoWorkCardStore,
+} from '../stores/neoWorkCardStore';
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
@@ -54,6 +63,7 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
+import { submitNeoTagDraft } from './features/chat/neoTagSubmit';
 import {
   ArrowRight,
   BarChart3,
@@ -107,6 +117,12 @@ export const ChatView: React.FC = () => {
   const channelSessionSource = formatChannelSessionSource(currentSession);
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.entries);
+  const authUser = useAuthStore((state) => state.user);
+  const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
+    selectNeoWorkCardDetailsForConversation(state, currentSessionId),
+  ));
+  const createNeoWorkCardDraft = useNeoWorkCardStore((state) => state.createDraft);
+  const loadNeoWorkCardsForConversation = useNeoWorkCardStore((state) => state.loadForConversation);
   const {
     messages,
     sendMessage,
@@ -125,8 +141,33 @@ export const ChatView: React.FC = () => {
     : appWorkingDirectory ?? null;
 
   useEffect(() => {
+    ensureNeoWorkCardLiveUpdates();
+  }, []);
+
+  useEffect(() => {
     hydrateComposer(currentSessionId, appWorkingDirectory);
   }, [appWorkingDirectory, currentSessionId, hydrateComposer]);
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+    void loadNeoWorkCardsForConversation(currentSessionId).catch((error) => {
+      console.warn('Failed to load Neo work cards:', error);
+    });
+  }, [currentSessionId, loadNeoWorkCardsForConversation]);
+
+  const hasNeoWorkCardAwaitingRuntimeTerminal = neoWorkCards.some((detail) =>
+    isNeoWorkCardAwaitingRuntimeTerminal(detail.workCard.status)
+  );
+
+  useEffect(() => {
+    if (!currentSessionId || !hasNeoWorkCardAwaitingRuntimeTerminal) return;
+    const interval = window.setInterval(() => {
+      void loadNeoWorkCardsForConversation(currentSessionId).catch((error) => {
+        console.warn('Failed to refresh Neo work cards:', error);
+      });
+    }, NEO_WORK_CARD_LIVE_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [currentSessionId, hasNeoWorkCardAwaitingRuntimeTerminal, loadNeoWorkCardsForConversation]);
 
   const buildEnvelope = useCallback((content: string, attachments?: MessageAttachment[]): ConversationEnvelope => ({
     content,
@@ -330,7 +371,7 @@ export const ChatView: React.FC = () => {
   const { requireAuthAsync } = useRequireAuth();
 
   // Turn-based trace projection
-  const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests);
+  const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
   const clarityProjection = useTurnExecutionClarity(baseProjection);
   const projection = React.useMemo(
     () => applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
@@ -444,6 +485,46 @@ export const ChatView: React.FC = () => {
 
   // 发送消息需要登录
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
+    const neoResult = await requireAuthAsync(async () => {
+      if (!currentSessionId) return null;
+      try {
+        const result = await submitNeoTagDraft({
+          envelope,
+          sourceConversationId: currentSessionId,
+          projectId: currentSession?.projectId ?? null,
+          workspacePath: currentSessionWorkingDirectory,
+          requesterUserId: authUser?.id ?? 'local-user',
+          createDraft: createNeoWorkCardDraft,
+        });
+        if (!result) return null;
+        if (result.sourceMessage) {
+          const sourceMessage = {
+            ...result.sourceMessage,
+            metadata: {
+              ...(result.sourceMessage.metadata ?? {}),
+              neoTag: {
+                ...(result.sourceMessage.metadata?.neoTag ?? {}),
+                workCardId: result.detail.workCard.id,
+                sourceConversationId: currentSessionId,
+                sourceTurnId: result.sourceTurnId,
+              },
+            },
+          };
+          if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
+            useSessionStore.getState().addMessage(sourceMessage);
+          }
+        }
+        toast.success('Neo work card 已生成');
+        return true;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+    });
+    if (neoResult !== null && neoResult !== undefined) {
+      return neoResult === true;
+    }
+
     const didSend = await requireAuthAsync(async () => {
       const modelReady = await ensureModelConfigured();
       if (!modelReady) return false;
@@ -451,7 +532,16 @@ export const ChatView: React.FC = () => {
       return true;
     });
     return didSend === true;
-  }, [ensureModelConfigured, requireAuthAsync, sendMessage]);
+  }, [
+    authUser?.id,
+    createNeoWorkCardDraft,
+    currentSession?.projectId,
+    currentSessionId,
+    currentSessionWorkingDirectory,
+    ensureModelConfigured,
+    requireAuthAsync,
+    sendMessage,
+  ]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));

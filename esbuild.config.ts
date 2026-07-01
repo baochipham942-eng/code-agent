@@ -16,6 +16,8 @@
 import * as esbuild from 'esbuild';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { mkdirSync } from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 
 // ---------------------------------------------------------------------------
 // Shared externals — native modules and large platform-specific deps
@@ -47,49 +49,101 @@ function normalizePemLiteral(value: string): string {
   return value.trim().replace(/\\n/g, '\n');
 }
 
+const CONTROL_PLANE_PUBLIC_KEY_ENV_NAMES = new Set([
+  'CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS',
+  'CODE_AGENT_CONTROL_PLANE_KEY_ID',
+  'CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY',
+  'CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE',
+]);
+
+function cleanEnvValue(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+    || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function readPublicKeyEnvFiles(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    path.join(homedir(), '.code-agent', '.env'),
+  ];
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    const lines = readFileSync(candidate, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+      const normalized = line.trim().replace(/^export\s+/, '');
+      if (!normalized || normalized.startsWith('#')) continue;
+      const eq = normalized.indexOf('=');
+      if (eq <= 0) continue;
+      const name = normalized.slice(0, eq).trim();
+      if (!CONTROL_PLANE_PUBLIC_KEY_ENV_NAMES.has(name)) continue;
+      env[name] = cleanEnvValue(normalized.slice(eq + 1));
+    }
+  }
+  return env;
+}
+
+function getPublicKeyEnv(name: string, envFileValues: Record<string, string>): string | undefined {
+  return process.env[name] ?? envFileValues[name];
+}
+
+function readPublicKeysFile(filePath: string): Record<string, string> {
+  const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+  const keysSource = parsed.keys && typeof parsed.keys === 'object' && !Array.isArray(parsed.keys)
+    ? parsed.keys as Record<string, unknown>
+    : parsed;
+  return Object.fromEntries(
+    Object.entries(keysSource)
+      .filter((entry): entry is [string, string] => (
+        typeof entry[0] === 'string'
+        && typeof entry[1] === 'string'
+        && entry[1].trim().length > 0
+      ))
+      .map(([fileKeyId, filePublicKey]) => [fileKeyId, normalizePemLiteral(filePublicKey)]),
+  );
+}
+
 function readControlPlanePublicKeysFromEnv(): Record<string, string> {
-  const rawJson = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+  const envFileValues = readPublicKeyEnvFiles();
+  const publicKeys: Record<string, string> = {};
+
+  const filePath = getPublicKeyEnv('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE', envFileValues);
+  if (filePath) {
+    Object.assign(publicKeys, readPublicKeysFile(filePath));
+  }
+
+  const rawJson = getPublicKeyEnv('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS', envFileValues);
   if (rawJson) {
     try {
       const parsed = JSON.parse(rawJson) as Record<string, unknown>;
-      return Object.fromEntries(
-        Object.entries(parsed)
+      Object.assign(
+        publicKeys,
+        Object.fromEntries(Object.entries(parsed)
           .filter((entry): entry is [string, string] => (
             typeof entry[0] === 'string'
             && typeof entry[1] === 'string'
             && entry[1].trim().length > 0
           ))
-          .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)]),
+          .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)])),
       );
     } catch {
       throw new Error('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS must be valid JSON when set');
     }
   }
 
-  const keyId = process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
-  const publicKey = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+  const keyId = getPublicKeyEnv('CODE_AGENT_CONTROL_PLANE_KEY_ID', envFileValues);
+  const publicKey = getPublicKeyEnv('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY', envFileValues);
   if (keyId && publicKey) {
-    return { [keyId]: normalizePemLiteral(publicKey) };
+    publicKeys[keyId] = normalizePemLiteral(publicKey);
   }
 
-  const filePath = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE;
-  if (filePath) {
-    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
-    const keysSource = parsed.keys && typeof parsed.keys === 'object' && !Array.isArray(parsed.keys)
-      ? parsed.keys as Record<string, unknown>
-      : parsed;
-    return Object.fromEntries(
-      Object.entries(keysSource)
-        .filter((entry): entry is [string, string] => (
-          typeof entry[0] === 'string'
-          && typeof entry[1] === 'string'
-          && entry[1].trim().length > 0
-        ))
-        .map(([fileKeyId, filePublicKey]) => [fileKeyId, normalizePemLiteral(filePublicKey)]),
-    );
-  }
-
-  return {};
+  return publicKeys;
 }
 
 function writeControlPlanePublicKeysFile(): void {

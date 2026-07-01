@@ -12,6 +12,11 @@ describe('appStore workbench tabs', () => {
       taskWorkbenchOpenSource: null,
       taskWorkbenchActivityActive: false,
       taskPanelTab: 'monitor',
+      showProjectCollaborationPage: false,
+      projectCollaborationPageProjectId: null,
+      showKnowledgeMemoryPanel: false,
+      showComputerUsePanel: false,
+      showInAppValidationPanel: false,
     });
   });
 
@@ -35,6 +40,46 @@ describe('appStore workbench tabs', () => {
     const state = useAppStore.getState();
     expect(state.workbenchTabs).toEqual(['audit']);
     expect(state.activeWorkbenchTab).toBe('audit');
+  });
+
+  it('openWorkbenchTab supports the project collaboration tab', () => {
+    const { openWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
+
+    openWorkbenchTab('project-collab');
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['project-collab'],
+      activeWorkbenchTab: 'project-collab',
+    });
+
+    closeWorkbenchTab('project-collab');
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+    });
+  });
+
+  it('opens the project collaboration page with a project binding and closes sibling main panels', () => {
+    useAppStore.setState({
+      showKnowledgeMemoryPanel: true,
+      showComputerUsePanel: true,
+      showInAppValidationPanel: true,
+    });
+
+    useAppStore.getState().openProjectCollaborationPage(' project-1 ');
+
+    expect(useAppStore.getState()).toMatchObject({
+      showProjectCollaborationPage: true,
+      projectCollaborationPageProjectId: 'project-1',
+      showKnowledgeMemoryPanel: false,
+      showComputerUsePanel: false,
+      showInAppValidationPanel: false,
+    });
+
+    useAppStore.getState().closeProjectCollaborationPage();
+    expect(useAppStore.getState()).toMatchObject({
+      showProjectCollaborationPage: false,
+      projectCollaborationPageProjectId: null,
+    });
   });
 
   it('openWorkbenchTab on an already-open tab only re-activates (no duplicate)', () => {

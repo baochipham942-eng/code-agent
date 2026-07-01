@@ -11,6 +11,7 @@ export type PromptStackLayerId =
   | 'remote-fragments'
   | 'role-assets'
   | 'project-profile'
+  | 'neo-tag'
   | 'skills'
   | 'unknown';
 

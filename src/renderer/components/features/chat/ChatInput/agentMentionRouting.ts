@@ -13,6 +13,10 @@ export interface AgentMentionAutocompleteResult {
   matches: MentionRoutingAgent[];
 }
 
+function isReservedNeoMention(value: string): boolean {
+  return normalizeMentionToken(value) === 'neo';
+}
+
 export function normalizeMentionToken(value: string): string {
   return value
     .trim()
@@ -153,6 +157,9 @@ export function getLeadingAgentMentionAutocomplete(
   if (query === null) {
     return null;
   }
+  if (isReservedNeoMention(query) && /@neo(?:\s|$)/i.test(value.replace(/^\s+/, ''))) {
+    return null;
+  }
 
   const normalizedQuery = normalizeMentionToken(query);
   const matches = agents.filter((agent) => {
@@ -203,6 +210,7 @@ export function parseLeadingAgentMentions(
   while (cursor < trimmedStart.length) {
     const mentionMatch = trimmedStart.slice(cursor).match(/^@([A-Za-z0-9._-]+)(?=\s|$)/);
     if (!mentionMatch) break;
+    if (isReservedNeoMention(mentionMatch[1])) break;
 
     const agent = resolveAgentByToken(mentionMatch[1], agents);
     if (!agent) {

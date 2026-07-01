@@ -9,6 +9,13 @@ export { CaptureRepository } from './CaptureRepository';
 export { ExperimentRepository } from './ExperimentRepository';
 export { ProjectRepository } from './ProjectRepository';
 export {
+  NeoWorkCardRepository,
+  type AppendNeoWorkCardRevisionOptions,
+  type SetNeoWorkCardStatusInput,
+  type UpdateNeoWorkCardDraftRowInput,
+  getNeoWorkCardRepository,
+} from './NeoWorkCardRepository';
+export {
   SwarmTraceRepository,
   type StartRunInput,
   type CloseRunInput,

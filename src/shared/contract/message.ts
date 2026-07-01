@@ -211,10 +211,21 @@ export interface ChannelMessageMetadata {
   messageId?: string;
 }
 
+export interface NeoTagMessageMetadata {
+  workCardId?: string;
+  approvedRevisionId?: string;
+  runId?: string;
+  contextPackId?: string;
+  sourceConversationId?: string;
+  sourceTurnId?: string;
+  status?: 'queued' | 'working' | 'in_result_review' | 'failed';
+}
+
 export interface MessageMetadata {
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;
+  neoTag?: NeoTagMessageMetadata;
   automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
 }

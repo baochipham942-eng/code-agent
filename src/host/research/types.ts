@@ -180,6 +180,8 @@ export interface AgentRunOptions {
   goal?: import('../../shared/contract/appService').GoalRunInput;
   /** 本轮迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
   maxIterations?: number;
+  /** Neo Tag approved work card runtime context. */
+  neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
 }
 
 // ============================================================================

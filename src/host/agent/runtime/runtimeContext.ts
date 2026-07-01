@@ -61,6 +61,7 @@ export interface RuntimeContext {
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
+  neoTag?: import('../../../shared/contract/tag').NeoTagRunContext;
 
   // --- Services / modules ---
   circuitBreaker: CircuitBreaker;

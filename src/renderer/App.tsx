@@ -27,6 +27,7 @@ import { PreviewPanel } from './components/PreviewPanel';
 import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
 import { ContextPanel } from './components/ContextPanel';
 import { ReplayAuditPanel } from './components/features/audit/ReplayAuditPanel';
+import { ProjectCollaborationPage, ProjectCollaborationPanel } from './components/features/projectCollaboration';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
@@ -59,6 +60,7 @@ import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type Notifica
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo, Message } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
@@ -147,6 +149,9 @@ export const App: React.FC = () => {
     showLab,
     showComputerUsePanel,
     showInAppValidationPanel,
+    showProjectCollaborationPage,
+    projectCollaborationPageProjectId,
+    closeProjectCollaborationPage,
     showKnowledgeMemoryPanel,
     showActivityPanel,
     setShowActivityPanel,
@@ -175,7 +180,7 @@ export const App: React.FC = () => {
   const showNarrowWorkbench =
     !showWorkbench &&
     workbenchTabs.length > 0 &&
-    (isPreviewActive || activeWorkbenchTab === 'workspace-preview' || activeWorkbenchTab === 'audit');
+    (isPreviewActive || activeWorkbenchTab === 'workspace-preview' || activeWorkbenchTab === 'audit' || activeWorkbenchTab === 'project-collab');
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
@@ -199,6 +204,11 @@ export const App: React.FC = () => {
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
   const sentryUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const currentProjectId = useSessionStore((state) => {
+    const session = state.sessions.find((item) => item.id === state.currentSessionId);
+    return session?.projectId && session.projectId !== UNSORTED_PROJECT_ID ? session.projectId : null;
+  });
+  const visibleProjectCollaborationProjectId = projectCollaborationPageProjectId ?? currentProjectId;
   const sessionTasks = useSessionStore((state) => state.sessionTasks);
   const todos = useSessionStore((state) => state.todos);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
@@ -704,6 +714,7 @@ export const App: React.FC = () => {
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
         {activeWorkbenchTab === 'context' && <ContextPanel />}
         {activeWorkbenchTab === 'audit' && <ReplayAuditPanel />}
+        {activeWorkbenchTab === 'project-collab' && <ProjectCollaborationPanel projectId={currentProjectId} />}
         {activeWorkbenchTab === 'design-canvas' && (
           <React.Suspense fallback={null}>
             <DesignCanvasTab />
@@ -931,6 +942,13 @@ export const App: React.FC = () => {
         <React.Suspense fallback={null}>
           <ActivityPanel onClose={() => setShowActivityPanel(false)} />
         </React.Suspense>
+      )}
+
+      {showProjectCollaborationPage && (
+        <ProjectCollaborationPage
+          projectId={visibleProjectCollaborationProjectId}
+          onClose={closeProjectCollaborationPage}
+        />
       )}
 
       {showBrowserSurfacePanel && (

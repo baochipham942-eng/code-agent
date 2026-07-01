@@ -100,4 +100,16 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   // Pending approvals indexes（ADR-010 #2）
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_status ON pending_approvals(status)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_kind_status ON pending_approvals(kind, status)`);
+
+  // Neo Tag work card indexes (P0)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_cards_project_updated ON neo_work_cards(project_id, updated_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_cards_project_status_updated ON neo_work_cards(project_id, status, updated_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_cards_conversation ON neo_work_cards(source_conversation_id, updated_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_card_revisions_card_number ON neo_work_card_revisions(work_card_id, revision_number DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_card_approvals_card_created ON neo_work_card_approvals(work_card_id, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_card_approvals_revision ON neo_work_card_approvals(revision_id, decision)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_card_deltas_card_created ON neo_work_card_deltas(work_card_id, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_card_result_reviews_card_created ON neo_work_card_result_reviews(work_card_id, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_memory_candidates_card_status ON neo_memory_candidates(work_card_id, status, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_memory_candidates_project_status ON neo_memory_candidates(project_id, status, created_at DESC)`);
 }

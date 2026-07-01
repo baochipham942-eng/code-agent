@@ -167,6 +167,7 @@ export class AgentLoop {
       onToolExecutionLog: config.onToolExecutionLog,
       toolScope: config.toolScope,
       executionIntent: config.executionIntent,
+      neoTag: config.neoTag,
 
       // Services
       circuitBreaker: new CircuitBreaker(),

@@ -9,11 +9,13 @@ import {
   parseLeadingAgentMentions,
   syncLeadingAgentMentions,
 } from '../../../src/renderer/components/features/chat/ChatInput/agentMentionRouting';
+import { parseLeadingNeoTagInvocation } from '../../../src/renderer/components/features/chat/ChatInput/neoMentionRouting';
 
 const agents = [
   { id: 'agent-builder', name: 'builder' },
   { id: 'agent-reviewer', name: 'reviewer' },
   { id: 'qa_lead', name: 'QA Lead' },
+  { id: 'neo-agent', name: 'neo' },
 ];
 
 describe('agent mention routing', () => {
@@ -23,6 +25,15 @@ describe('agent mention routing', () => {
     ).toEqual({
       content: '先看一下这轮改动',
       targetAgentIds: ['agent-builder', 'agent-reviewer'],
+    });
+  });
+
+  it('keeps @neo out of direct agent routing', () => {
+    expect(parseLeadingAgentMentions('@neo 实现入口', agents)).toBeNull();
+    expect(getLeadingAgentMentionAutocomplete('@neo', agents)).toBeNull();
+    expect(parseLeadingNeoTagInvocation('  @neo 实现入口')).toEqual({
+      originalContent: '@neo 实现入口',
+      userText: '实现入口',
     });
   });
 

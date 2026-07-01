@@ -38,6 +38,7 @@ import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundTaskInf
 import type { SwarmEvent } from '../contract/swarm';
 import type { SwarmRunListItem, SwarmRunDetail } from '../contract/swarmTrace';
 import type { CompletedAgentRun } from '../contract/agentHistory';
+import type { NeoTagEvent } from '../contract/tag';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
@@ -569,6 +570,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // TaskManager runtime events
   [IPC_CHANNELS.TASK_EVENT]: (event: TaskRuntimeEvent) => void;
+  // Neo Tag work card events
+  [IPC_CHANNELS.TAG_EVENT]: (event: NeoTagEvent) => void;
   // PII setup流式事件 (B3 一键启用本地 PII 防线)
   [IPC_CHANNELS.PII_SETUP_EVENT]: (event:
     | { type: 'log'; stream: 'stdout' | 'stderr'; line: string }

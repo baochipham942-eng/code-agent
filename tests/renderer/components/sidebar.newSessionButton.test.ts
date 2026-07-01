@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -56,6 +58,8 @@ const appState = {
   setShowSettings: vi.fn(),
   openSettingsTab: vi.fn(),
   setShowEvalCenter: vi.fn(),
+  showProjectCollaborationPage: false,
+  openProjectCollaborationPage: vi.fn(),
   optionalUpdateInfo: null as any,
   setShowOptionalUpdateModal: vi.fn(),
 };
@@ -106,6 +110,10 @@ describe('Sidebar new session button', () => {
   beforeEach(() => {
     appState.optionalUpdateInfo = null;
     appState.setShowOptionalUpdateModal.mockReset();
+    appState.showProjectCollaborationPage = false;
+    appState.openProjectCollaborationPage.mockReset();
+    authState.user = null;
+    authState.isAuthenticated = false;
   });
 
   it('does not switch into the loading spinner just because the session list is loading', () => {
@@ -134,5 +142,12 @@ describe('Sidebar new session button', () => {
     expect(html).toContain('更新可用');
     expect(html).toContain('v0.16.89');
     expect(html).toContain('查看 Agent Neo v0.16.89 更新内容');
+  });
+
+  it('wires the lower account menu to the project collaboration page', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
+
+    expect(source).toContain('openProjectCollaborationPage(currentSessionProjectId)');
+    expect(source).toContain('label="Neo 协同"');
   });
 });

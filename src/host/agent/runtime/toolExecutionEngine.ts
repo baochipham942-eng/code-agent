@@ -750,6 +750,7 @@ export class ToolExecutionEngine {
           hookManager: this.ctx.hookManager,
           toolScope: this.ctx.toolScope,
           executionIntent: this.ctx.executionIntent,
+          neoTag: this.ctx.neoTag,
           abortSignal: this.ctx.runAbortController?.signal,
         }
       );

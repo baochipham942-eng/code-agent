@@ -26,6 +26,7 @@ export * from './canvasProposal';
 export * from './canvasVideo';
 export * from './designAutonomy';
 export * from './planning';
+export * from './tag';
 export * from './question';
 export * from './elicitation';
 export * from './agent';

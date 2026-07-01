@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -1110,6 +1111,126 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       joined_at INTEGER NOT NULL,
       PRIMARY KEY (project_id, role_id),
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Neo Tag Work Cards (P0) - project-scoped shared work contracts.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neo_work_cards (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      source_conversation_id TEXT NOT NULL,
+      source_turn_id TEXT NOT NULL,
+      requester_user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL,
+      current_revision_id TEXT NOT NULL,
+      approved_revision_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      archived_at INTEGER,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neo_work_card_revisions (
+      id TEXT PRIMARY KEY,
+      work_card_id TEXT NOT NULL,
+      revision_number INTEGER NOT NULL,
+      intent TEXT NOT NULL,
+      task_summary TEXT NOT NULL,
+      read_scope_json TEXT NOT NULL,
+      write_scope_json TEXT NOT NULL,
+      model_intent_json TEXT NOT NULL,
+      memory_plan_json TEXT NOT NULL,
+      expected_outputs_json TEXT NOT NULL DEFAULT '[]',
+      risks_json TEXT NOT NULL DEFAULT '[]',
+      assumptions_json TEXT NOT NULL DEFAULT '[]',
+      created_by_user_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(work_card_id, revision_number),
+      FOREIGN KEY (work_card_id) REFERENCES neo_work_cards(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neo_work_card_approvals (
+      id TEXT PRIMARY KEY,
+      work_card_id TEXT NOT NULL,
+      revision_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      requester_user_id TEXT NOT NULL,
+      approved_by_user_id TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      approved_read_scope_json TEXT NOT NULL,
+      approved_write_scope_json TEXT NOT NULL,
+      approved_model_intent_json TEXT NOT NULL,
+      approved_memory_plan_json TEXT NOT NULL,
+      feedback TEXT,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      revoked_at INTEGER,
+      superseded_by_revision_id TEXT,
+      FOREIGN KEY (work_card_id) REFERENCES neo_work_cards(id) ON DELETE CASCADE,
+      FOREIGN KEY (revision_id) REFERENCES neo_work_card_revisions(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neo_work_card_deltas (
+      id TEXT PRIMARY KEY,
+      work_card_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      completed_json TEXT NOT NULL DEFAULT '[]',
+      changed_files_json TEXT NOT NULL DEFAULT '[]',
+      decisions_json TEXT NOT NULL DEFAULT '[]',
+      open_questions_json TEXT NOT NULL DEFAULT '[]',
+      risks_json TEXT NOT NULL DEFAULT '[]',
+      memory_candidates_json TEXT NOT NULL DEFAULT '[]',
+      next_step TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (work_card_id) REFERENCES neo_work_cards(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neo_work_card_result_reviews (
+      id TEXT PRIMARY KEY,
+      work_card_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      feedback TEXT,
+      open_questions_json TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (work_card_id) REFERENCES neo_work_cards(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neo_memory_candidates (
+      id TEXT PRIMARY KEY,
+      work_card_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      revision_id TEXT,
+      delta_id TEXT,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      decided_by_user_id TEXT,
+      decided_at INTEGER,
+      rejection_reason TEXT,
+      written_at INTEGER,
+      written_memory_key TEXT,
+      FOREIGN KEY (work_card_id) REFERENCES neo_work_cards(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (revision_id) REFERENCES neo_work_card_revisions(id) ON DELETE SET NULL,
+      FOREIGN KEY (delta_id) REFERENCES neo_work_card_deltas(id) ON DELETE SET NULL
     )
   `);
 }

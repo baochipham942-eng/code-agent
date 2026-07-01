@@ -5,6 +5,7 @@
 
 import { useMemo } from 'react';
 import type { Message } from '@shared/contract';
+import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
@@ -106,6 +107,7 @@ export function projectTurns(
   sessionId: string | null,
   isProcessing: boolean,
   launchRequests: SwarmLaunchRequest[] = [],
+  neoWorkCards: NeoWorkCardDetail[] = [],
 ): TraceProjection {
   return measureStreamingPerformanceTiming('stream.projection.base_ms', () => {
   if (!sessionId) {
@@ -288,9 +290,10 @@ export function projectTurns(
       }
 
       turnCounter++;
+      const neoSourceTurnId = msg.metadata?.neoTag?.sourceTurnId;
       currentTurn = {
         turnNumber: turnCounter,
-        turnId: `turn-${turnCounter}`,
+        turnId: neoSourceTurnId || `turn-${turnCounter}`,
         nodes: [],
         status: 'completed',
         startTime: msg.timestamp,
@@ -477,6 +480,8 @@ export function projectTurns(
     }
   }
 
+  appendNeoWorkCardNodes(turns, neoWorkCards);
+
   // Direct-routed sidecar messages should not steal the active marker from
   // the in-flight task. Normal user turns can still be active while waiting
   // for the first assistant response.
@@ -523,6 +528,51 @@ export function projectTurns(
     activeTurnIndex,
   };
   });
+}
+
+function appendNeoWorkCardNodes(turns: TraceTurn[], neoWorkCards: NeoWorkCardDetail[]): void {
+  if (neoWorkCards.length === 0) return;
+
+  const turnBySourceId = new Map<string, TraceTurn>();
+  for (const turn of turns) {
+    turnBySourceId.set(turn.turnId, turn);
+    const userNode = turn.nodes.find((node) => node.type === 'user');
+    if (userNode) {
+      turnBySourceId.set(userNode.id, turn);
+      if (userNode.metadata?.neoTag?.sourceTurnId) {
+        turnBySourceId.set(userNode.metadata.neoTag.sourceTurnId, turn);
+      }
+    }
+  }
+
+  for (const detail of neoWorkCards) {
+    const nodeId = `neo-work-card-${detail.workCard.id}`;
+    const existingTurn = turnBySourceId.get(detail.workCard.sourceTurnId);
+    const targetTurn = existingTurn ?? {
+      turnNumber: turns.length + 1,
+      turnId: detail.workCard.sourceTurnId,
+      nodes: [],
+      status: 'completed' as const,
+      startTime: detail.workCard.createdAt,
+      endTime: detail.workCard.updatedAt,
+    };
+
+    if (!targetTurn.nodes.some((node) => node.id === nodeId)) {
+      targetTurn.nodes.push({
+        id: nodeId,
+        type: 'neo_work_card',
+        content: detail.currentRevision?.taskSummary || detail.workCard.title,
+        timestamp: detail.workCard.updatedAt,
+        neoWorkCard: detail,
+      });
+      targetTurn.endTime = Math.max(targetTurn.endTime ?? targetTurn.startTime, detail.workCard.updatedAt);
+    }
+
+    if (!existingTurn) {
+      turns.push(targetTurn);
+      turnBySourceId.set(targetTurn.turnId, targetTurn);
+    }
+  }
 }
 
 function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
@@ -588,9 +638,10 @@ export function useTurnProjection(
   sessionId: string | null,
   isProcessing: boolean,
   launchRequests: SwarmLaunchRequest[] = [],
+  neoWorkCards: NeoWorkCardDetail[] = [],
 ): TraceProjection {
   return useMemo(
-    () => projectTurns(messages, sessionId, isProcessing, launchRequests),
-    [messages, sessionId, isProcessing, launchRequests],
+    () => projectTurns(messages, sessionId, isProcessing, launchRequests, neoWorkCards),
+    [messages, sessionId, isProcessing, launchRequests, neoWorkCards],
   );
 }

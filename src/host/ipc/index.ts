@@ -69,6 +69,7 @@ import { registerDiagnosticsHandlers } from './diagnostics.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
 import { registerRolesHandlers } from './roles.ipc';
 import { registerProjectHandlers } from './project.ipc';
+import { registerTagHandlers } from './tag.ipc';
 import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
@@ -285,6 +286,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Project handlers (P0-2 项目空间容器：项目/目标/角色入驻/产物聚合)
   registerProjectHandlers(ipcMain);
+
+  // Tag handlers (@neo work card contract)
+  registerTagHandlers(ipcMain);
 
   // Agent Engine handlers (Native / Codex CLI / Claude Code detection)
   registerAgentEngineHandlers(ipcMain);

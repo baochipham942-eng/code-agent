@@ -5,6 +5,7 @@ import {
   applyAgentMentionSuggestion,
   getLeadingAgentMentionAutocomplete,
 } from './agentMentionRouting';
+import { NEO_TAG_MENTION_AGENT } from './neoMentionRouting';
 import {
   applyAgentCommandOption,
   getAgentCommandOptions,
@@ -76,7 +77,9 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   }, [agentSlashCommandQuery, agentCommandOptions.length]);
 
   const handleAgentMentionSelect = useCallback((agentId: string) => {
-    const agent = swarmAgents.find((item) => item.id === agentId);
+    const agent = agentId === NEO_TAG_MENTION_AGENT.id
+      ? NEO_TAG_MENTION_AGENT
+      : swarmAgents.find((item) => item.id === agentId);
     if (!agent) return;
     setValue((prev) => applyAgentMentionSuggestion(prev, agent));
     setDismissedAgentAutocompleteValue(null);

@@ -706,7 +706,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               })}
             </div>
           )}
-          {(!isAgentMentionAutocompleteOpen && isAutocompleteOpen && fileMatches.length > 0) && (
+          {(!isAgentMentionAutocompleteOpen && !neoTagInvocation && isAutocompleteOpen && fileMatches.length > 0) && (
             <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">
               {fileMatches.map((f, i) => (
                 <button

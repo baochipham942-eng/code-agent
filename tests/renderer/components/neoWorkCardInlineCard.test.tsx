@@ -161,4 +161,23 @@ describe('NeoWorkCardInlineCard', () => {
     expect(html).toContain('归档');
     expect(html).not.toContain('取消');
   });
+
+  it('shows a running indicator so execution is visible (#4b)', () => {
+    const html = renderToStaticMarkup(<NeoWorkCardInlineCard detail={makeDetail('working')} />);
+
+    expect(html).toContain('data-testid="neo-work-card-running-spinner"');
+    expect(html).toContain('data-testid="neo-work-card-running-indicator"');
+    expect(html).toContain('Neo 正在执行');
+    expect(html).toContain('data-work-card-active="true"');
+  });
+
+  it('anchors the result back to the conversation above when in result review (#5)', () => {
+    const html = renderToStaticMarkup(<NeoWorkCardInlineCard detail={makeDetail('in_result_review')} />);
+
+    expect(html).toContain('data-testid="neo-work-card-result-anchor"');
+    expect(html).toContain('完整运行结果已生成在上方对话');
+    expect(html).toContain('运行结果摘要');
+    // 结果待看时不应再显示误导性的运行中 spinner
+    expect(html).not.toContain('data-testid="neo-work-card-running-spinner"');
+  });
 });

@@ -1,3 +1,5 @@
+import { NEO_TAG_MENTION_AGENT, shouldSuggestNeoMention } from './neoMentionRouting';
+
 export interface MentionRoutingAgent {
   id: string;
   name: string;
@@ -157,12 +159,13 @@ export function getLeadingAgentMentionAutocomplete(
   if (query === null) {
     return null;
   }
-  if (isReservedNeoMention(query) && /@neo(?:\s|$)/i.test(value.replace(/^\s+/, ''))) {
-    return null;
-  }
 
   const normalizedQuery = normalizeMentionToken(query);
   const matches = agents.filter((agent) => {
+    // @neo 是保留 mention（路由到工作卡），swarm agent 命名为 neo 也不在直连候选里出现。
+    if (isReservedNeoMention(agent.id) || isReservedNeoMention(agent.name)) {
+      return false;
+    }
     const aliases = buildAgentAliasSet(agent);
     if (!normalizedQuery) {
       return aliases.size > 0;
@@ -170,13 +173,18 @@ export function getLeadingAgentMentionAutocomplete(
     return Array.from(aliases).some((alias) => alias.startsWith(normalizedQuery));
   });
 
-  if (matches.length === 0) {
+  // 输入 @n / @ne / @neo 时把 Neo 工作卡作为可点候选置顶（发现性 + 顺带压掉文件 popup）。
+  const withNeo = shouldSuggestNeoMention(query)
+    ? [NEO_TAG_MENTION_AGENT, ...matches]
+    : matches;
+
+  if (withNeo.length === 0) {
     return null;
   }
 
   return {
     query,
-    matches,
+    matches: withNeo,
   };
 }
 

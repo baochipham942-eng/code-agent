@@ -9,7 +9,10 @@ import {
   parseLeadingAgentMentions,
   syncLeadingAgentMentions,
 } from '../../../src/renderer/components/features/chat/ChatInput/agentMentionRouting';
-import { parseLeadingNeoTagInvocation } from '../../../src/renderer/components/features/chat/ChatInput/neoMentionRouting';
+import {
+  NEO_TAG_MENTION_AGENT,
+  parseLeadingNeoTagInvocation,
+} from '../../../src/renderer/components/features/chat/ChatInput/neoMentionRouting';
 
 const agents = [
   { id: 'agent-builder', name: 'builder' },
@@ -28,13 +31,35 @@ describe('agent mention routing', () => {
     });
   });
 
-  it('keeps @neo out of direct agent routing', () => {
+  it('keeps @neo out of direct agent routing but offers it as a work-card mention', () => {
     expect(parseLeadingAgentMentions('@neo 实现入口', agents)).toBeNull();
-    expect(getLeadingAgentMentionAutocomplete('@neo', agents)).toBeNull();
+    // @neo 不再被藏：作为可点的 Neo 工作卡候选置顶，swarm 里名为 neo 的 agent 不出现
+    expect(getLeadingAgentMentionAutocomplete('@neo', agents)).toEqual({
+      query: 'neo',
+      matches: [NEO_TAG_MENTION_AGENT],
+    });
     expect(parseLeadingNeoTagInvocation('  @neo 实现入口')).toEqual({
       originalContent: '@neo 实现入口',
       userText: '实现入口',
     });
+  });
+
+  it('surfaces the Neo work-card candidate for prefixes of neo', () => {
+    // @n / @ne 前缀都置顶 Neo；@n 还会带上名字含 n 前缀的普通 agent
+    expect(getLeadingAgentMentionAutocomplete('@ne', agents)?.matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
+    const nMatches = getLeadingAgentMentionAutocomplete('@n', agents)?.matches ?? [];
+    expect(nMatches[0]).toEqual(NEO_TAG_MENTION_AGENT);
+  });
+
+  it('does not inject Neo for a bare @ so file mention still works', () => {
+    const matches = getLeadingAgentMentionAutocomplete('@', agents)?.matches ?? [];
+    expect(matches).not.toContainEqual(NEO_TAG_MENTION_AGENT);
+    // 保留 neo 的 swarm agent 也不在裸 @ 候选里
+    expect(matches.some((m) => m.id === 'neo-agent')).toBe(false);
+  });
+
+  it('applies the Neo work-card mention as @neo ', () => {
+    expect(applyAgentMentionSuggestion('@ne', NEO_TAG_MENTION_AGENT)).toBe('@neo ');
   });
 
   it('supports agent name aliases with spaces', () => {

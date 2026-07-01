@@ -116,6 +116,14 @@ export async function initializeBackgroundServices(): Promise<void> {
     .then(({ runLogRetention }) => runLogRetention())
     .catch((error) => logger.warn('Log retention failed', error as Error));
 
+  // 启动期数据库保留清理（best-effort，非阻塞）：删除过期 telemetry 明细行
+  // （events/model_calls/tool_calls/diagnostic_bundles/prompt_cache 原本无 TTL、无限堆积），
+  // 并节流执行全库 VACUUM 回收空间。VACUUM 会阻塞，故放在这里 fire-and-forget，
+  // 不进启动关键路径。
+  void import('../services/infra/dbRetention')
+    .then(({ runDbRetention }) => runDbRetention())
+    .catch((error) => logger.warn('DB retention failed', error as Error));
+
   // Phase 2: Background infrastructure (cloud, MCP, cron, updates, etc.)
   await initializeBackgroundInfra(configService);
 

@@ -74,3 +74,18 @@ export const TELEMETRY_RAW = {
   /** raw 表总体积上限(字节),超出从最旧 turn 开始淘汰 */
   RETENTION_MAX_BYTES: 500 * 1024 * 1024,
 } as const;
+
+/**
+ * 聚合 telemetry 重量表(events / model_calls / tool_calls / diagnostic_bundles /
+ * system_prompt_cache)的保留期。这些表原本无任何 TTL,随会话无限堆积(实测生产库
+ * telemetry_events 62 万行占 163MB)。启动期按时间列删除过期行,止住无限膨胀。
+ * 只删 granular 明细行,保留 telemetry_sessions / telemetry_turns 轻量分析主干
+ * (预聚合的 token/cost 统计),历史用量分析不受影响。
+ * 与 TELEMETRY_RAW.RETENTION_MAX_AGE_MS 对齐 14 天,给 dogfood / eval 留足回溯窗口。
+ */
+export const TELEMETRY_RETENTION = {
+  /** 明细行最长保留期(毫秒),超出即删 */
+  MAX_AGE_MS: 14 * 24 * 60 * 60 * 1000,
+  /** VACUUM 节流间隔(毫秒):两次全库 VACUUM 至少间隔这么久,避免每次启动都阻塞回收 */
+  VACUUM_MIN_INTERVAL_MS: 7 * 24 * 60 * 60 * 1000,
+} as const;

@@ -7,6 +7,7 @@ import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
+import { deleteAgedTelemetryRows } from './telemetryRetentionSql';
 import type Database from 'better-sqlite3';
 import type { RendererBundleStatus } from '../../shared/contract/update';
 import {
@@ -635,6 +636,19 @@ export class TelemetryStorage {
       }
     } catch (error) {
       logger.error('Failed to prune raw payloads:', error);
+    }
+  }
+
+  /**
+   * 聚合 telemetry 重量表的保留期清理(明细见 deleteAgedTelemetryRows)。
+   * now 可注入(测试用),默认 Date.now()。
+   */
+  pruneAgedTelemetry(now: number = Date.now()): void {
+    if (!this.isDbAvailable()) return;
+    try {
+      deleteAgedTelemetryRows(this.getDb(), now);
+    } catch (error) {
+      logger.error('Failed to prune aged telemetry:', error);
     }
   }
 

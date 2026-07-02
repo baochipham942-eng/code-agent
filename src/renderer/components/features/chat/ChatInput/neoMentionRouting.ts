@@ -16,10 +16,15 @@ export const NEO_TAG_MENTION_AGENT: MentionRoutingAgent & { role: string } = {
   role: '工作卡',
 };
 
-/** 当 @ 后的尾随 token 是 'neo' 的非空前缀（n / ne / neo）时，建议展示 Neo 候选。 */
+/**
+ * 建议展示 Neo 候选的时机：
+ * - 裸 @（空 query）：像 @teammate 一样置顶召唤 Neo,并借此压掉文件 popup 噪音（林晨 2026-07-02）。
+ * - @ 后接 'neo' 的前缀（n / ne / neo）：继续置顶 Neo。
+ * - @ 后接其它前缀（如文件名 src/...）：不召唤 Neo,文件 mention 照常。
+ */
 export function shouldSuggestNeoMention(query: string): boolean {
   const normalized = query.trim().toLowerCase();
-  if (!normalized) return false;
+  if (!normalized) return true;
   return 'neo'.startsWith(normalized);
 }
 

@@ -6,6 +6,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   X,
   Image as ImageIcon,
   Palette,
@@ -54,6 +56,7 @@ import {
   SETTINGS_TAB_GROUP_BY_TAB,
   SETTINGS_TAB_GROUP_LABELS,
   SETTINGS_TAB_GROUP_ORDER,
+  COLLAPSED_SETTINGS_TAB_GROUPS,
   canAccessSettingsTab,
   type SettingsTab,
   type SettingsTabGroupId,
@@ -152,43 +155,44 @@ export function buildSettingsTabGroups({
   access,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
   const accessSubject = createAccessSubject(access);
+  // 顺序即侧栏顺序（Settings IA v2 拍板 2026-07-03：默认 5 组 + 高级折叠组 + admin 管理组）
   const tabs: SettingsTabConfig[] = [
     // 模型与能力
     { id: 'model', label: t.settings.tabs.model, icon: <Brain className="w-4 h-4" /> },
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
-    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
     { id: 'search', label: '搜索源', icon: <Search className="w-4 h-4" /> },
-    { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
-    // 基础偏好
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
+    { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
+    // 基础偏好
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
     { id: 'conversation', label: '上下文压缩', icon: <FoldVertical className="w-4 h-4" /> },
     { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
-    // 能力与连接
-    { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
-    { id: 'plugins', label: '插件管理', icon: <PackagePlus className="w-4 h-4" /> },
-    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
-    { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
-    { id: 'roles', label: '角色', icon: <UserCircle className="w-4 h-4" /> },
-    { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
-    { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
-    // 工作区与自动化
+    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
+    // 工作与协作
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
-    { id: 'appshots', label: '应用截图', icon: <Camera className="w-4 h-4" /> },
+    { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
+    { id: 'roles', label: '角色', icon: <UserCircle className="w-4 h-4" /> },
     // 记忆与隐私
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <BrainCircuit className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
     { id: 'privacy', label: '隐私防线', icon: <ShieldCheck className="w-4 h-4" /> },
-    // 用户管理
+    // 系统
+    ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
+    { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
+    // 高级（默认折叠，普通用户可自行配置）
+    { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
+    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
+    { id: 'plugins', label: '插件管理', icon: <PackagePlus className="w-4 h-4" /> },
+    { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
+    { id: 'appshots', label: '应用截图', icon: <Camera className="w-4 h-4" /> },
+    { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
+    // 管理（仅 admin）
     { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
     { id: 'invites', label: '邀请码管理', icon: <Ticket className="w-4 h-4" /> },
     { id: 'controlPlane', label: '控制平面', icon: <Cloud className="w-4 h-4" /> },
-    // 系统
-    { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
-    ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
-    { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
+    { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
   ];
 
   const groups = new Map<SettingsTabGroupId, SettingsTabConfig[]>();
@@ -255,6 +259,34 @@ export const SettingsModal: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
   );
+  // 「高级」等默认折叠组的展开状态（无权限语义，纯侧栏收纳）
+  const [expandedCollapsedGroups, setExpandedCollapsedGroups] = useState<Set<SettingsTabGroupId>>(
+    () => new Set()
+  );
+
+  // active tab 落在折叠组内（如搜索直达 MCP）时自动展开该组
+  useEffect(() => {
+    const group = SETTINGS_TAB_GROUP_BY_TAB[activeTab];
+    if (!COLLAPSED_SETTINGS_TAB_GROUPS.has(group)) return;
+    setExpandedCollapsedGroups((prev) => {
+      if (prev.has(group)) return prev;
+      const next = new Set(prev);
+      next.add(group);
+      return next;
+    });
+  }, [activeTab]);
+
+  const toggleCollapsedGroup = useCallback((groupId: SettingsTabGroupId) => {
+    setExpandedCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
 
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     setActiveTab(tab);
@@ -354,12 +386,28 @@ export const SettingsModal: React.FC = () => {
 
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
             {tabGroups.map((group) => {
+              const isCollapsible = COLLAPSED_SETTINGS_TAB_GROUPS.has(group.id);
+              const isCollapsed = isCollapsible && !expandedCollapsedGroups.has(group.id);
               return (
                 <div key={group.id} className="space-y-1">
-                  <div className="px-3 pb-1 pt-2 text-[11px] font-medium tracking-wide text-zinc-500">
-                    {group.label}
-                  </div>
-                  {group.tabs.map((tab) => (
+                  {isCollapsible ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapsedGroup(group.id)}
+                      aria-expanded={!isCollapsed}
+                      className="flex w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-medium tracking-wide text-zinc-500 transition-colors hover:text-zinc-300"
+                    >
+                      {isCollapsed
+                        ? <ChevronRight className="h-3 w-3 shrink-0" />
+                        : <ChevronDown className="h-3 w-3 shrink-0" />}
+                      <span>{group.label}</span>
+                    </button>
+                  ) : (
+                    <div className="px-3 pb-1 pt-2 text-[11px] font-medium tracking-wide text-zinc-500">
+                      {group.label}
+                    </div>
+                  )}
+                  {!isCollapsed && group.tabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"

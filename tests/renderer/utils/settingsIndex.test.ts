@@ -40,8 +40,11 @@ describe('settings search index', () => {
     expect(searchSettings('邀请码').map((entry) => entry.tab)).not.toContain('invites');
     expect(searchSettings('control plane').map((entry) => entry.tab)).not.toContain('controlPlane');
     expect(searchSettings('capability').map((entry) => entry.tab)).not.toContain('capabilities');
-    expect(searchSettings('插件市场').map((entry) => entry.tab)).not.toContain('plugins');
-    expect(searchSettings('Hook').map((entry) => entry.tab)).not.toContain('hooks');
+  });
+
+  it('keeps plugins/hooks searchable for non-admin users (Settings IA v2, 2026-07-03 拍板)', () => {
+    expect(searchSettings('插件市场').map((entry) => entry.tab)).toContain('plugins');
+    expect(searchSettings('Hook').map((entry) => entry.tab)).toContain('hooks');
   });
 
   it('keeps personal settings searchable for non-admin users', () => {

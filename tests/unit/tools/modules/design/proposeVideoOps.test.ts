@@ -110,6 +110,10 @@ describe('ProposeVideoOps 出图请求', () => {
     expect(req.mode).toBe('t2v');
     expect(req.sessionId).toBe('sess-1');
     expect(typeof req.requestId).toBe('string');
+    // WP3-1 幂等：确认成本后铸造 commandId（付费命令身份），与 requestId（UI 往返关联）分离。
+    expect(typeof req.commandId).toBe('string');
+    expect(req.commandId).toMatch(/^gencmd-/);
+    expect(req.commandId).not.toBe(req.requestId);
 
     expect(responseHandlerRef.fn).toBeDefined();
     await responseHandlerRef.fn?.({}, { requestId: req.requestId, status: 'applied', costCny: 0.7, durationSec: 15 });

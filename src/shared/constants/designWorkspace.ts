@@ -43,6 +43,16 @@ export const DESIGN_SPINE_FILE = 'spine.json';
  * wanx2.1-imageedit 等扩散 inpaint 会系统性地轻微改写 mask 外区域（全局重压缩/色偏），
  * 故 diff-gate 度量未选区漂移，越界即触发 region-lock 把原图未选区贴回保证逐像素一致。
  */
+/**
+ * 付费生成 commandId 幂等注册表参数（WP3-1 成本安全）：
+ * 同 commandId 的自动重试/重放命中缓存产物不再计费。容量与 TTL 只需覆盖
+ * 进程内自动重放窗口（超时重提/事件重放都在小时级内发生）。
+ */
+export const GENERATION_IDEMPOTENCY = {
+  MAX_ENTRIES: 200,
+  TTL_MS: 24 * 60 * 60 * 1000,
+} as const;
+
 export const REGION_LOCK = {
   // 未选区域单像素通道差容差（0-255）。≤ 该值视为"未变"。语义=逐像素逐通道绝对差上界
   // （非 CIEDE2000 感知色差）；8/255≈3%，足以滤掉 inpaint 重压缩噪声又能抓住肉眼可见漂移。

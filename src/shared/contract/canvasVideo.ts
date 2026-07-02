@@ -9,6 +9,12 @@
 /** main → renderer：出视频请求（成本已在会话区确认）。 */
 export interface CanvasVideoRequest {
   requestId: string;
+  /**
+   * 付费命令幂等键（WP3-1）：成本确认后铸造，随 IPC 透传到 host 生成收口——
+   * 自动重试/重放同 commandId 返回缓存产物不再计费。与 requestId（纯 UI 往返关联，
+   * 每次调用现造）语义不同，不可混用。
+   */
+  commandId: string;
   /** 发起会话；renderer 属主闸用（跨会话隔离，fail-closed）。 */
   sessionId?: string;
   mode: 't2v' | 'i2v';

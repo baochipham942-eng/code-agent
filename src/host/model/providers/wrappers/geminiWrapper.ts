@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
 import { logger } from '../providerRuntime';
+import { normalizeGeminiUsage } from './usageNormalization';
 
 // ── parts ─────────────────────────────────────────────────────────────────
 const FunctionCallPartSchema = z
@@ -61,6 +62,8 @@ const GeminiUsageMetadataSchema = z
     promptTokenCount: z.number().optional(),
     candidatesTokenCount: z.number().optional(),
     totalTokenCount: z.number().optional(),
+    // implicit caching 命中量（promptTokenCount 含此部分，归一化时扣除）
+    cachedContentTokenCount: z.number().optional(),
   })
   .passthrough();
 
@@ -110,10 +113,16 @@ export function parseGeminiResponse(raw: unknown): ModelResponse {
     });
   }
 
+  // usage 带回（含 cachedContentTokenCount，归一化后进预算层）
+  const usage = parsed.data.usageMetadata
+    ? normalizeGeminiUsage(parsed.data.usageMetadata)
+    : undefined;
+
   return {
     type: toolCalls.length > 0 ? 'tool_use' : 'text',
     content,
     toolCalls,
+    ...(usage ? { usage } : {}),
   };
 }
 

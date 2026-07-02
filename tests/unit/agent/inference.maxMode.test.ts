@@ -249,7 +249,7 @@ describe('inference Max Mode wiring', () => {
 
     // overhead：落选候选(100+10, 100+30) + judge(200+8) 逐条进 budgetService
     // （Codex R1-M2：按实际路由模型分账；mock 响应无 actualModel → 回落请求模型）；
-    // 赢家自己的估算照常走 ctx.recordTokenUsage（mock 估算恒 12）
+    // 赢家走 ctx.recordTokenUsage——WP2-1 起优先 provider 回传的真实 usage（mock 赢家 100/20）
     const overheadRecorded = mockRecordUsage.mock.calls.map((c) => c[0]);
     expect(overheadRecorded).toHaveLength(3);
     expect(overheadRecorded.reduce((s, u) => s + u.inputTokens, 0)).toBe(400);
@@ -258,7 +258,10 @@ describe('inference Max Mode wiring', () => {
       expect(entry.model).toBe('test-model');
       expect(entry.provider).toBe('mock');
     }
-    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(12, 12);
+    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(100, 20, {
+      cacheReadTokens: undefined,
+      cacheCreationTokens: undefined,
+    });
     expect(ctx.recordTokenUsage).toHaveBeenCalledTimes(1);
 
     // Codex R1-M1：候选/judge 的静默调用不发 model_decision 事件
@@ -286,9 +289,12 @@ describe('inference Max Mode wiring', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(3);
     expect(response.content).toBe('degraded');
     expect(response.runtimeDiagnostics?.maxMode).toMatchObject({ degraded: true, survivors: 0 });
-    // 降级调用是正常主链路，无 overhead 记账（只有赢家估算那一笔）
+    // 降级调用是正常主链路，无 overhead 记账（只有降级响应真实 usage 那一笔，WP2-1）
     expect(ctx.recordTokenUsage).toHaveBeenCalledTimes(1);
-    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(12, 12);
+    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(50, 5, {
+      cacheReadTokens: undefined,
+      cacheCreationTokens: undefined,
+    });
     expect(mockRecordUsage).not.toHaveBeenCalled();
   });
 

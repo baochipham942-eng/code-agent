@@ -9,6 +9,7 @@ import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
 import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator, safeJsonStringify } from './shared';
 import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';
+import { normalizeOpenAIUsage } from './wrappers/usageNormalization';
 import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -227,7 +228,9 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
     let charCount = 0;
     let lastEstimateTime = 0;
-    let usageData: { inputTokens: number; outputTokens: number } | undefined;
+    let usageData:
+      | { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+      | undefined;
     // 追踪 content 和 tool_call 的交错顺序
     const contentParts: ResponseContentPart[] = [];
     let lastPartType: 'text' | 'tool_call' | null = null;
@@ -433,6 +436,8 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                 type: 'usage',
                 inputTokens: usageData.inputTokens,
                 outputTokens: usageData.outputTokens,
+                cacheReadTokens: usageData.cacheReadTokens,
+                cacheCreationTokens: usageData.cacheCreationTokens,
               });
             }
 
@@ -465,12 +470,9 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           const choice = chunk.choices?.[0];
           const delta = choice?.delta;
 
-          // 捕获 usage
+          // 捕获 usage（归一化：inputTokens 扣除缓存命中部分，cache 字段独立带回）
           if (chunk.usage) {
-            usageData = {
-              inputTokens: chunk.usage.prompt_tokens ?? 0,
-              outputTokens: chunk.usage.completion_tokens ?? 0,
-            };
+            usageData = normalizeOpenAIUsage(chunk.usage);
           }
 
           // 捕获 finish_reason

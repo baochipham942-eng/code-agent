@@ -19,6 +19,7 @@ import {
   normalizeClaudeBaseUrl,
 } from './shared';
 import { parseClaudeSSEEvent } from './wrappers/anthropicWrapper';
+import { normalizeClaudeUsage } from './wrappers/usageNormalization';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -50,7 +51,9 @@ function claudeSSEStream(options: {
     let blockIndex = 0;
     let charCount = 0;
     let lastEstimateTime = 0;
-    let usageData: { inputTokens: number; outputTokens: number } | undefined;
+    let usageData:
+      | { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+      | undefined;
     const contentParts: ResponseContentPart[] = [];
     let currentBlockType: 'text' | 'tool_use' | 'thinking' | null = null;
     let currentTextBuffer = '';
@@ -134,10 +137,8 @@ function claudeSSEStream(options: {
             switch (event.type) {
               case 'message_start': {
                 if (event.message.usage) {
-                  usageData = {
-                    inputTokens: event.message.usage.input_tokens ?? 0,
-                    outputTokens: event.message.usage.output_tokens ?? 0,
-                  };
+                  // cache_read/cache_creation 在 message_start 报告，归一化后带回预算层
+                  usageData = normalizeClaudeUsage(event.message.usage);
                 }
                 break;
               }
@@ -232,6 +233,7 @@ function claudeSSEStream(options: {
                 }
                 if (event.usage) {
                   usageData = {
+                    ...usageData,
                     inputTokens: usageData?.inputTokens ?? 0,
                     outputTokens: event.usage.output_tokens ?? usageData?.outputTokens ?? 0,
                   };
@@ -266,6 +268,8 @@ function claudeSSEStream(options: {
                     type: 'usage',
                     inputTokens: usageData.inputTokens,
                     outputTokens: usageData.outputTokens,
+                    cacheReadTokens: usageData.cacheReadTokens,
+                    cacheCreationTokens: usageData.cacheCreationTokens,
                   });
                 }
                 if (onStream) {

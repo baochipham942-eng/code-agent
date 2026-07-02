@@ -756,12 +756,14 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           },
         });
       } else if (chunk.type === 'usage') {
-        // SSE 实时 usage 数据（API 返回的真实 token 用量）
+        // SSE 实时 usage 数据（API 返回的真实 token 用量，含缓存读/写）
         ctx.runtime.onEvent({
           type: 'stream_usage',
           data: {
             inputTokens: chunk.inputTokens || 0,
             outputTokens: chunk.outputTokens || 0,
+            cacheReadTokens: chunk.cacheReadTokens,
+            cacheCreationTokens: chunk.cacheCreationTokens,
             turnId: ctx.runtime.currentTurnId,
           },
         });
@@ -858,19 +860,28 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     ctx.runtime.abortController = null;
     logger.debug('[AgentLoop] Model response received:', response.type);
 
-    // Record token usage with precise estimation
-    const estimatedInputTokens = estimateModelMessageTokens(
-      modelMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      }))
-    );
-    const outputContent = (response.content || '') +
-      (response.toolCalls?.map((tc: ToolCall) => JSON.stringify(tc.arguments || {})).join('') || '');
-    const estimatedOutputTokens = estimateModelMessageTokens([
-      { role: 'assistant', content: outputContent },
-    ]);
-    ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
+    // Record token usage：优先 provider 回传的真实 usage（含 cache 读/写，cache-aware 记账，WP2-1）；
+    // provider 未回传（inputTokens=0 视为未回传，如 SSE 断流兜底）才退回本地估算
+    const providerUsage = response.usage;
+    if (providerUsage && providerUsage.inputTokens > 0) {
+      ctx.recordTokenUsage(providerUsage.inputTokens, providerUsage.outputTokens, {
+        cacheReadTokens: providerUsage.cacheReadTokens,
+        cacheCreationTokens: providerUsage.cacheCreationTokens,
+      });
+    } else {
+      const estimatedInputTokens = estimateModelMessageTokens(
+        modelMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        }))
+      );
+      const outputContent = (response.content || '') +
+        (response.toolCalls?.map((tc: ToolCall) => JSON.stringify(tc.arguments || {})).join('') || '');
+      const estimatedOutputTokens = estimateModelMessageTokens([
+        { role: 'assistant', content: outputContent },
+      ]);
+      ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
+    }
 
     langfuse.endGeneration(llmCallId, {
       type: response.type,

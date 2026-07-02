@@ -133,7 +133,7 @@ export interface ModelResponse {
   // Adaptive Thinking: 思考过程
   thinking?: string;
   // Token usage from API response
-  usage?: { inputTokens: number; outputTokens: number; providerReportedSavedTokens?: number };
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number };
   // 内容块顺序（text 和 tool_call 的交错顺序）
   contentParts?: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }>;
   runtimeDiagnostics?: {

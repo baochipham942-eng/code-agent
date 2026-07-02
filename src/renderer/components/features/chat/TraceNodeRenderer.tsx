@@ -27,7 +27,6 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
-import { NeoWorkCardInlineCard } from './NeoWorkCardInlineCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
@@ -89,13 +88,9 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = <SystemNode node={node} />;
       break;
     case 'neo_work_card':
-      if (!node.neoWorkCard) return null;
-      content = (
-        <div className="flex w-full justify-start py-2">
-          <NeoWorkCardInlineCard detail={node.neoWorkCard} />
-        </div>
-      );
-      break;
+      // 轻量化重设计：@neo = 正常 agent 聊天,会话里不再渲染独立工作卡(2026-07-02 林晨拍板)。
+      // 历史/产物在账号菜单「Neo 协同」topic 目录看。
+      return null;
     case 'swarm_launch_request':
       content = <LaunchRequestNode node={node} />;
       break;

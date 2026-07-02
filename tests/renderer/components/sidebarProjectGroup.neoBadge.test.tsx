@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, render } from '@testing-library/react';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -120,24 +120,24 @@ function sharedSessionProps(): SidebarSessionItemSharedProps {
 }
 
 describe('SidebarProjectGroup Neo badge', () => {
-  it('shows project scoped Neo counts and opens the project collaboration page from the project header badge', () => {
+  // 2026-07-02 林晨拍板：侧栏工作区分组不展示 Neo 徽标（协作面板入口走账号菜单"Neo 协同"）。
+  // 即使项目有待审/待看的工作卡，分组头也不渲染徽标。
+  it('does not render the Neo collab badge in the project header even when work cards exist', () => {
     const openProjectCollaborationPage = vi.fn();
     useAppStore.setState({ openProjectCollaborationPage });
     const review = makeDetail('review-card', 'needs_review');
     const result = makeDetail('result-card', 'in_result_review');
-    const otherProject = makeDetail('other-card', 'needs_review', 'p2');
     useNeoWorkCardStore.setState({
       detailsById: {
         [review.workCard.id]: review,
         [result.workCard.id]: result,
-        [otherProject.workCard.id]: otherProject,
       },
     });
     (window as any).domainAPI = {
       invoke: vi.fn(async () => ({ success: true, data: [] })),
     };
 
-    const { getByTestId } = render(
+    const { queryByTestId, queryByText } = render(
       <SidebarProjectGroup
         group={{
           key: 'project:p1',
@@ -175,13 +175,7 @@ describe('SidebarProjectGroup Neo badge', () => {
       />,
     );
 
-    const badge = getByTestId('sidebar-neo-collab-entry');
-    expect(badge.textContent).toContain('Neo');
-    expect(badge.textContent).toContain('Neo 2');
-    expect(badge.textContent).toContain('审1 结1');
-
-    fireEvent.click(badge);
-
-    expect(openProjectCollaborationPage).toHaveBeenCalledWith('p1');
+    expect(queryByTestId('sidebar-neo-collab-entry')).toBeNull();
+    expect(queryByText(/Neo \d/)).toBeNull();
   });
 });

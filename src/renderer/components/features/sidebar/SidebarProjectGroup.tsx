@@ -1,5 +1,4 @@
-import React, { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import { useShallow } from 'zustand/shallow';
+import React, { useState, type Dispatch, type SetStateAction } from 'react';
 import {
   ChevronRight,
   Folder,
@@ -8,10 +7,8 @@ import {
   MessageSquareText,
   PanelRightOpen,
   Plus,
-  Sparkles,
   ScrollText,
 } from 'lucide-react';
-import { useAppStore } from '../../../stores/appStore';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import {
   buildSidebarProjectSummary,
@@ -24,11 +21,6 @@ import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './Sideba
 import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './SidebarSessionItem';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
-import {
-  ensureNeoWorkCardLiveUpdates,
-  selectNeoWorkCardBadgeForProject,
-  useNeoWorkCardStore,
-} from '../../../stores/neoWorkCardStore';
 
 /** 单个分组默认最多平铺多少条会话，超出折叠成「展开全部」。同工作空间历史过多时避免长列表淹没侧栏。 */
 const SESSION_ROW_CAP = 5;
@@ -101,9 +93,6 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   } = sessionItemProps;
 
   const [showAllRows, setShowAllRows] = useState(false);
-  const openProjectCollaborationPage = useAppStore((state) => state.openProjectCollaborationPage);
-  const neoBadge = useNeoWorkCardStore(useShallow((state) => selectNeoWorkCardBadgeForProject(state, group.projectId ?? null)));
-  const loadNeoWorkCardsForProject = useNeoWorkCardStore((state) => state.loadForProject);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
   const summary = buildSidebarProjectSummary({
@@ -143,13 +132,6 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
   const drawerOpen = projectDrawerKey === group.key;
   const drawerSessions = drawerOpen ? buildProjectDrawerSessions(group.sessions as SessionWithMeta[]) : [];
-  useEffect(() => {
-    ensureNeoWorkCardLiveUpdates();
-  }, []);
-  useEffect(() => {
-    if (!group.projectId || group.isUncategorized) return;
-    void loadNeoWorkCardsForProject(group.projectId).catch(() => {});
-  }, [group.isUncategorized, group.projectId, loadNeoWorkCardsForProject]);
   return (
     <div
       className="mb-2"
@@ -184,27 +166,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             </span>
           </span>
         </button>
-        {!group.isUncategorized && (
-          <button
-            type="button"
-            data-testid="sidebar-neo-collab-entry"
-            aria-label={`打开 ${summary.displayName} Neo 项目合作面板，待审 ${neoBadge.reviewCount}，结果待看 ${neoBadge.resultReviewCount}`}
-            title={`打开 ${summary.displayName} Neo 项目合作面板 · 待审 ${neoBadge.reviewCount} · 结果待看 ${neoBadge.resultReviewCount}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              openProjectCollaborationPage(group.projectId ?? null);
-            }}
-            className="ml-1 inline-flex h-5 shrink-0 items-center gap-1 rounded border border-violet-500/20 bg-violet-500/10 px-1.5 text-[10px] font-medium text-violet-200 transition-colors hover:bg-violet-500/20 hover:text-violet-100 focus:outline-hidden"
-          >
-            <Sparkles className="h-3 w-3" />
-            Neo {neoBadge.openCount}
-            {(neoBadge.reviewCount > 0 || neoBadge.resultReviewCount > 0) && (
-              <span className="text-violet-100/80">
-                审{neoBadge.reviewCount} 结{neoBadge.resultReviewCount}
-              </span>
-            )}
-          </button>
-        )}
+        {/* Neo 协作徽标已按拍板移除(2026-07-02)：入口走账号菜单"Neo 协同" */}
         {/* 项目操作簇：控制台 / 详情 / 产物 / 新建 — 默认隐藏，hover 或聚焦时浮现。
             绝对定位覆盖在右侧(sticky header 提供定位上下文),而非占流内宽度:
             occupy 流内宽度(opacity-0 或 group-hover:flex)会在窄侧边栏把"未完成"和

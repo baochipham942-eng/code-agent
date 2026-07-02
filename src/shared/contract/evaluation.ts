@@ -206,6 +206,15 @@ export type EvalRunAggregation =
 
 export type EvalCaseStatus = 'passed' | 'failed' | 'partial' | 'skipped' | 'error';
 
+/**
+ * 评分权威三桶 — 分数由什么背书。judge/自报分不再冒充硬 pass：
+ * - deterministic_assertion: 确定性断言（文件/输出/退出码等可重放证据）
+ * - llm_judge: LLM 评审打分（需 judgeCalibration 校准后才可信）
+ * - self_check: 无外部验证（零断言自动 pass / agent 自报成功）
+ * L3 实验提案只准引用前两桶；self_check 分数不作能力证据。
+ */
+export type ScoreAuthority = 'deterministic_assertion' | 'llm_judge' | 'self_check';
+
 export interface CanonicalEvalTrial {
   trialIndex: number;
   status: EvalCaseStatus;
@@ -223,6 +232,8 @@ export interface CanonicalEvalCase {
   telemetryCompleteness?: TelemetryCompleteness;
   status: EvalCaseStatus;
   score: number; // normalized 0-100
+  /** 分数权威桶；缺省 = 历史遗留（来源不明，不得冒充 deterministic） */
+  scoreAuthority?: ScoreAuthority;
   durationMs: number;
   failureReason?: string;
   failureStage?: string;

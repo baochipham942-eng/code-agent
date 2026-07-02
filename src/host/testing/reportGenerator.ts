@@ -41,6 +41,12 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   lines.push(generateProgressBar(summary));
   lines.push('');
 
+  // Score authority buckets（WP1-1）：分数由什么背书，judge/自报分不冒充硬 pass
+  lines.push('## 评分权威分桶');
+  lines.push('');
+  lines.push(generateScoreAuthoritySection(summary.results));
+  lines.push('');
+
   // Environment
   lines.push('## 环境信息');
   lines.push('');
@@ -374,6 +380,39 @@ function formatDate(timestamp: number): string {
   });
 }
 
+
+/**
+ * 评分权威分桶表（WP1-1）：deterministic_assertion / llm_judge / self_check，
+ * 无标注的历史结果归 unknown 行，不冒充 deterministic。
+ * L3 实验提案只准引用前两桶；self_check/unknown 分数不作能力证据。
+ */
+function generateScoreAuthoritySection(results: TestResult[]): string {
+  const buckets: Array<{ key: string; label: string }> = [
+    { key: 'deterministic_assertion', label: '确定性断言' },
+    { key: 'llm_judge', label: 'LLM 评审' },
+    { key: 'self_check', label: '无外部验证' },
+    { key: 'unknown', label: '未标注（历史遗留）' },
+  ];
+
+  const lines: string[] = [];
+  lines.push('| 权威桶 | 用例数 | 通过 | 平均分数 |');
+  lines.push('|--------|--------|------|----------|');
+  for (const bucket of buckets) {
+    const inBucket = results.filter(
+      (r) => (r.scoreAuthority ?? 'unknown') === bucket.key && r.status !== 'skipped',
+    );
+    if (inBucket.length === 0) continue;
+    const passed = inBucket.filter((r) => r.status === 'passed').length;
+    const avgScore = inBucket.reduce((sum, r) => sum + r.score, 0) / inBucket.length;
+    lines.push(
+      `| ${bucket.key}（${bucket.label}） | ${inBucket.length} | ${passed} | ${(avgScore * 100).toFixed(1)}% |`,
+    );
+  }
+  lines.push('');
+  lines.push('> self_check / 未标注分数不作能力证据；L3 实验提案只准引用 deterministic_assertion 与（校准后的）llm_judge 两桶。');
+
+  return lines.join('\n');
+}
 
 function getPassRate(summary: TestRunSummary): string {
   if (summary.total === 0) return '0';

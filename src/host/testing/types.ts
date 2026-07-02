@@ -2,8 +2,10 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
-import type { TelemetryCompleteness } from '../../shared/contract/evaluation';
+import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
+
+export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
 /**
  * Test case types
@@ -224,6 +226,8 @@ export interface TestResult {
   turnCount: number;
   /** Assertion score (0.0 - 1.0) */
   score: number;
+  /** 评分权威桶：分数由确定性断言 / LLM judge / 无外部验证背书 */
+  scoreAuthority?: ScoreAuthority;
   /** Pipeline failure stage (from failure funnel analysis) */
   failureStage?: string;
   /** Reference solution if provided */

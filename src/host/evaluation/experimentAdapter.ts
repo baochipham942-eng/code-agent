@@ -153,6 +153,7 @@ export class ExperimentAdapter {
       aggregation: run.aggregation,
       source: run.source,
       score100: c.score,
+      ...(c.scoreAuthority ? { scoreAuthority: c.scoreAuthority } : {}),
       ...(c.trials ? { trials: c.trials } : {}),
     });
   }
@@ -325,6 +326,7 @@ export class ExperimentAdapter {
         telemetryCompleteness,
         status: this.normalizeTestStatus(r.status),
         score: this.normalizeScore(r.score ?? (r.status === 'passed' ? 1 : 0), 'zero_one'),
+        scoreAuthority: r.scoreAuthority,
         durationMs: r.duration || 0,
         failureReason: r.failureReason,
         failureStage: r.failureStage,

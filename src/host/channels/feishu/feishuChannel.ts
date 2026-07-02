@@ -31,6 +31,9 @@ import {
   materializeFeishuMedia,
   type FeishuMediaMessageType,
 } from './feishuMedia';
+import { BoundedDedupeSet } from '../inboundDedupe';
+import { checkOutboundTarget } from '../outboundAllowlist';
+import { CHANNEL_INGRESS } from '../../../shared/constants';
 
 const logger = createLogger('FeishuChannel');
 type FeishuPlatform = 'feishu' | 'lark';
@@ -256,6 +259,8 @@ export class FeishuChannel extends BaseChannelPlugin {
 
   // 消息 ID 映射 (用于编辑消息)
   private messageIdMap: Map<string, string> = new Map();
+  // 入站幂等（WP3-2）：event_id（webhook 重推）与 message_id（三条入站路径收口）双键去重，有界防内存涨。
+  private readonly inboundDedupe = new BoundedDedupeSet(CHANNEL_INGRESS.DEDUPE_MAX_ENTRIES);
 
   // WebSocket 重连
   private reconnectAttempts = 0;
@@ -369,6 +374,13 @@ export class FeishuChannel extends BaseChannelPlugin {
     if (!this.client) {
       logger.error('Channel not connected');
       return { success: false, error: 'Channel not connected' };
+    }
+
+    // 出站白名单（WP3-3，fail-closed）：不在名单一律拒发，绝不触达平台 API。
+    const gate = checkOutboundTarget(this.feishuConfig?.outboundAllowlist, options.chatId);
+    if (!gate.allowed) {
+      logger.warn(`${this.meta.name} outbound blocked by allowlist`, { chatId: options.chatId, reason: gate.reason });
+      return { success: false, error: gate.reason };
     }
 
     try {
@@ -574,6 +586,13 @@ export class FeishuChannel extends BaseChannelPlugin {
       return { success: false, error: 'Channel not connected' };
     }
 
+    // 出站白名单（WP3-3，fail-closed）：与 sendMessage 对称，卡片同样不得发往名单外目标。
+    const gate = checkOutboundTarget(this.feishuConfig?.outboundAllowlist, chatId);
+    if (!gate.allowed) {
+      logger.warn(`${this.meta.name} outbound card blocked by allowlist`, { chatId, reason: gate.reason });
+      return { success: false, error: gate.reason };
+    }
+
     try {
       const receiveIdType = this.getReceiveIdType(chatId);
       const card = this.buildCardContent(text, buttons);
@@ -714,9 +733,18 @@ export class FeishuChannel extends BaseChannelPlugin {
 
         // 处理事件 (schema 2.0 格式)
         if (eventType === 'im.message.receive_v1' && eventPayload) {
+          // 入站幂等（WP3-2）：飞书 3s 未回 200 会重推同一 event_id。本 handler 是
+          // 先 await 处理完才回 200，长处理必然触发重推——用 event_id 在解析/媒体下载
+          // 之前挡掉重推，但仍回 200 ack（否则平台会继续重推）。
+          const eventId = header ? readStringField(header, 'event_id') : undefined;
+          if (eventId && !this.inboundDedupe.markSeen(`evt:${eventId}`)) {
+            logger.info(`Ignoring duplicate ${this.meta.name} webhook event`, { eventId });
+            res.json({ code: 0, msg: 'success' });
+            return;
+          }
           const event = normalizeFeishuMessageEvent(eventPayload);
           logger.info(`Received ${this.meta.name} message event`, {
-            eventId: header ? readStringField(header, 'event_id') : undefined,
+            eventId,
             messageId: event?.message.message_id,
             contentLength: event?.message.content.length ?? 0,
           });
@@ -850,6 +878,14 @@ export class FeishuChannel extends BaseChannelPlugin {
     try {
       const msg = event.message;
       const sender = event.sender;
+
+      // 入站幂等（WP3-2）：message_id 是 im.message.receive_v1 的平台原生幂等键，
+      // webhook/EventDispatcher/WebSocket 三条入站路径都在此收口，重放不重复处理。
+      // fail-open：没有 message_id 时当新消息处理（不吞消息）。
+      if (msg?.message_id && !this.inboundDedupe.markSeen(`msg:${msg.message_id}`)) {
+        logger.info('Ignoring duplicate inbound message', { messageId: msg.message_id });
+        return;
+      }
 
       // 忽略机器人自己发送的消息，避免无限循环
       if (sender.sender_type === 'bot') {

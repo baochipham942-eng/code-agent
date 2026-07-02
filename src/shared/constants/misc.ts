@@ -1,3 +1,11 @@
+/** IM 通道入站幂等（WP3-2）：去重状态容量上界，防内存无界增长 */
+export const CHANNEL_INGRESS = {
+  /** channel 层入站去重集容量（feishu event_id/message_id、telegram update_id） */
+  DEDUPE_MAX_ENTRIES: 2048,
+  /** bridge processedMessages 容量上界（此前仅 24h TTL 无上界） */
+  PROCESSED_MESSAGES_MAX: 5000,
+} as const;
+
 /** 同步配置 */
 export const SYNC = {
   /** 同步间隔 (ms) */

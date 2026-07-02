@@ -24,13 +24,14 @@ export const ACCESS_CONTROL_REGISTRY = {
     label: '能力治理',
     adminOnly: true,
   },
+  // Settings IA v2 拍板（2026-07-03）：插件/Hook 下放普通用户自行配置
   'settings.plugins': {
     label: '插件管理',
-    adminOnly: true,
+    adminOnly: false,
   },
   'settings.hooks': {
     label: 'Hook 原始配置',
-    adminOnly: true,
+    adminOnly: false,
   },
   'prompt.manager': {
     label: '提示词',

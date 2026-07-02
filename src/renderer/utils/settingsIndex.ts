@@ -100,6 +100,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'plugins', tabLabel: '插件管理', label: '插件权限', keywords: ['plugin permission', '插件权限', '插件风险', 'external service', '外部服务', 'hook 权限'] },
   { tab: 'plugins', tabLabel: '插件管理', label: 'Marketplace 源', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', '源', '刷新'] },
 
+  // Hooks（Settings IA v2 下放普通用户后补索引——此前 admin-only 从未被索引）
+  { tab: 'hooks', tabLabel: 'Hook', label: 'Hook 配置', keywords: ['hook', 'hooks', '钩子', 'pre', 'post', '拦截', '自动执行', '事件'] },
+
   // MCP
   { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 服务器', keywords: ['mcp', 'server', '服务器', 'protocol', '工具', '资源'] },
   { tab: 'mcp', tabLabel: 'MCP', label: 'MCP OAuth', keywords: ['mcp oauth', 'oauth', '重新授权', 'reauthorize', 'revoke', 'token', '授权'] },

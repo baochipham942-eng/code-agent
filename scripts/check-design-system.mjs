@@ -84,6 +84,11 @@ function loadZAllowlist() {
 }
 
 export function scan() {
+  if (!existsSync(SCAN_ROOT)) {
+    throw new Error(`[check-design-system] 自检失败：扫描根不存在 ${SCAN_ROOT}。若目录结构调整过，请同步更新本脚本。`);
+  }
+  let tsxFileCount = 0;
+  let cssFileCount = 0;
   const violations = {
     'hardcoded-hex': [],
     'bare-button': [],
@@ -96,6 +101,7 @@ export function scan() {
   // 裸 z-index 用法先收集（file+value），扫完后与 allowlist 双向核对
   const zUsages = [];
   for (const file of walk(SCAN_ROOT)) {
+    tsxFileCount++;
     const rel = relative(SCAN_ROOT, file);
     const inPrimitives = rel.startsWith('components/primitives/');
     const isModalPrimitive = rel === 'components/primitives/Modal.tsx';
@@ -145,6 +151,7 @@ export function scan() {
 
   // CSS 文件只跑三条新规则（hex/button/modal 语义不适用；主题定义文件的 hex 是合法 token 定义）
   for (const file of walk(SCAN_ROOT, /\.css$/)) {
+    cssFileCount++;
     const rel = relative(SCAN_ROOT, file);
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, i) => {
@@ -160,6 +167,11 @@ export function scan() {
         violations['important-unjustified'].push(loc);
       }
     });
+  }
+
+  // 自检：扫到 0 个文件 = 门在空转（目录拆分/改名后静默恒绿），必须 fail loud
+  if (tsxFileCount === 0 || cssFileCount === 0) {
+    throw new Error(`[check-design-system] 自检失败：tsx/ts 文件 ${tsxFileCount} 个、css 文件 ${cssFileCount} 个，存在匹配数为 0 的扫描目标。若目录结构调整过，请同步更新本脚本。`);
   }
 
   // 双向 allowlist 核对：用法不在表内 → bare-z-index；表项在代码中找不到 → stale-zindex-allowlist

@@ -67,6 +67,12 @@ for (const root of scanRoots) {
   else if (stat.isFile() && path.extname(root) === '.tsx' && !isExcluded(root)) files.push(root);
 }
 
+// 自检：目标不存在或扫到 0 个文件 = 门在空转（源码目录拆分/改名后静默恒绿），必须 fail loud
+if (scanRoots.length === 0 || files.length === 0) {
+  console.error(`[a11y-scan] ✗ 自检失败：扫描目标不存在或匹配 0 个 .tsx 文件（roots=${JSON.stringify(scanRoots)}）。若目录结构调整过，请同步更新本脚本。`);
+  process.exit(1);
+}
+
 // 把字符索引换算成 1-based 行号
 function lineAt(content, index) {
   let line = 1;

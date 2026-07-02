@@ -87,7 +87,10 @@ function readHistoricalGodFileWhitelist() {
   const content = fs.readFileSync(configPath, 'utf8');
   const marker = 'God File 历史白名单';
   const markerIndex = content.indexOf(marker);
-  if (markerIndex === -1) return [];
+  // 自检：marker 找不到说明 eslint.config.js 结构变了，静默返回空表会让豁免核对空转——fail loud
+  if (markerIndex === -1) {
+    throw new Error(`[architecture-debt-report] 自检失败：eslint.config.js 里找不到「${marker}」标记。若该白名单块已有意移除，请同步更新本脚本。`);
+  }
 
   const filesIndex = content.indexOf('files: [', markerIndex);
   if (filesIndex === -1) return [];
@@ -194,6 +197,11 @@ function scanSources() {
       increment(asAnyByBucket, bucket, asAnyMatches.length);
     }
   });
+
+  // 自检：src 下扫到 0 个源文件 = 报告在空转（目录拆分/改名后静默恒绿），必须 fail loud
+  if (files.length === 0) {
+    throw new Error('[architecture-debt-report] 自检失败：src/ 下匹配 0 个源文件。若目录结构调整过，请同步更新本脚本。');
+  }
 
   const largeFiles = files
     .filter((file) => file.physicalLines > maxLineThreshold || file.effectiveLines > maxLineThreshold)

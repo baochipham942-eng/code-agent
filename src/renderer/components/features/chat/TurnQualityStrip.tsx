@@ -6,6 +6,7 @@ import ipcService from '../../../services/ipcService';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
+import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
@@ -265,12 +266,12 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
                   <div key={item.entryId} className="rounded-md bg-white/[0.025] px-2 py-1.5">
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-zinc-200">{item.title}</div>
+                        <div className="truncate text-zinc-200">{unescapeHtmlEntities(item.title)}</div>
                         {item.preview && (
-                          <div className="mt-0.5 line-clamp-2 text-zinc-500">{item.preview}</div>
+                          <div className="mt-0.5 line-clamp-2 text-zinc-500">{unescapeHtmlEntities(item.preview)}</div>
                         )}
                         {item.scoreReasons?.length ? (
-                          <div className="mt-1 text-[10px] text-zinc-600">{item.scoreReasons.join(' / ')}</div>
+                          <div className="mt-1 text-[10px] text-zinc-600">{unescapeHtmlEntities(item.scoreReasons.join(' / '))}</div>
                         ) : null}
                       </div>
                       <button
@@ -302,7 +303,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
           {summary.warnings?.length ? (
             <div className="mt-2 space-y-1 text-amber-300/80">
               {summary.warnings.map((warning) => (
-                <div key={warning}>{warning}</div>
+                <div key={warning}>{unescapeHtmlEntities(warning)}</div>
               ))}
             </div>
           ) : null}

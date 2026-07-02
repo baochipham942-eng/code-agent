@@ -75,6 +75,34 @@ describe('TurnQualityStrip', () => {
     expect(container.querySelector('[aria-expanded]')).toBeNull();
   });
 
+  it('unescapes html entities in memory preview text when expanded in developer mode', () => {
+    useAppStore.setState({ developerMode: true });
+    const escaped: TurnQualitySummary = {
+      ...summary,
+      memory: {
+        ...summary.memory,
+        blocks: [
+          {
+            ...summary.memory.blocks[0],
+            blockType: 'failure_journal',
+            items: [
+              {
+                ...(summary.memory.blocks[0].items?.[0] as object),
+                entryId: 'fj-1',
+                preview: '&gt; 工具调用失败 &amp; 已重试',
+              },
+            ],
+          },
+        ],
+      },
+    } as TurnQualitySummary;
+    const { container } = render(<TurnQualityStrip summary={escaped} />);
+    fireEvent.click(container.querySelector('[aria-expanded]')!);
+    const text = container.textContent || '';
+    expect(text).toContain('> 工具调用失败 & 已重试');
+    expect(text).not.toContain('&gt;');
+  });
+
   it('renders the score chip with expandable details in developer mode', () => {
     useAppStore.setState({ developerMode: true });
     const { container } = render(<TurnQualityStrip summary={summary} />);

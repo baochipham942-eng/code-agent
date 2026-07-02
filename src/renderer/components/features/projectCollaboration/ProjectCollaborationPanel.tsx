@@ -14,12 +14,14 @@ import {
   useNeoWorkCardStore,
 } from '../../../stores/neoWorkCardStore';
 import {
-  isInternalCompletedMarker,
+  isInternalRuntimeText,
   NEO_WORK_CARD_PHASE_CHIP_STYLE,
   NEO_WORK_CARD_PHASE_LABEL,
   statusPhase,
   type NeoWorkCardPhase,
 } from '../chat/neoWorkCardPhase';
+import type { Message } from '@shared/contract/message';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { formatRequesterLabel } from './projectCollaborationData';
 import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane';
 
@@ -33,6 +35,10 @@ export interface ProjectCollaborationPanelProps {
   projectId?: string | null;
   /** 注入的 topic 明细（测试/fixture 用）。传入时绕开 store 加载。 */
   details?: NeoWorkCardDetail[];
+  /** 注入的源会话消息（测试/fixture 用），key=sourceConversationId。传入时详情绕开 IPC 拉取。 */
+  sourceMessagesByConversation?: Record<string, Message[]>;
+  /** 跳回源会话；不传默认 switchSession（Page 入口会再叠加关闭全屏页）。 */
+  onOpenConversation?: (sessionId: string) => void;
   onCancel?: (workCardId: string) => void | Promise<void>;
   onArchive?: (workCardId: string) => void | Promise<void>;
   onApproveMemory?: (candidateId: string) => void | Promise<void>;
@@ -62,9 +68,15 @@ function topicSearchText(detail: NeoWorkCardDetail): string {
 function topicActivitySnippet(detail: NeoWorkCardDetail): string | null {
   const latest = detail.deltas.at(-1);
   if (!latest) return null;
-  const done = latest.completed.filter((item) => !isInternalCompletedMarker(item));
+  // 运行时记账文案（英文生命周期字符串）不是执行结果，不给用户看
+  const done = latest.completed.filter((item) => !isInternalRuntimeText(item));
   if (done.length > 0) return done[done.length - 1];
-  return latest.nextStep?.trim() || null;
+  if (statusPhase(detail.workCard.status) === 'failed') {
+    const lastRisk = latest.risks.at(-1)?.trim();
+    if (lastRisk) return lastRisk;
+  }
+  const nextStep = latest.nextStep?.trim();
+  return nextStep && !isInternalRuntimeText(nextStep) ? nextStep : null;
 }
 
 function TopicRow({
@@ -118,6 +130,8 @@ function TopicRow({
 export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps> = ({
   projectId = null,
   details,
+  sourceMessagesByConversation,
+  onOpenConversation,
   onCancel,
   onArchive,
   onApproveMemory,
@@ -218,6 +232,15 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       toast.error(error instanceof Error ? error.message : '写入记忆失败');
     }
   }, [actorUserId, approveMemoryCandidate, onApproveMemory]);
+  const handleOpenConversation = useCallback((sessionId: string) => {
+    if (onOpenConversation) {
+      onOpenConversation(sessionId);
+      return;
+    }
+    void useSessionStore.getState().switchSession(sessionId).catch((error) => {
+      toast.error(error instanceof Error ? error.message : '打开会话失败');
+    });
+  }, [onOpenConversation]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-900" data-testid="neo-topic-directory">
@@ -312,6 +335,10 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
         <ProjectCollaborationDetailPane
           detail={selectedDetail}
           currentUser={currentUser}
+          sourceMessages={selectedDetail
+            ? sourceMessagesByConversation?.[selectedDetail.workCard.sourceConversationId]
+            : undefined}
+          onOpenConversation={handleOpenConversation}
           onCancel={handleCancel}
           onArchive={handleArchive}
           onApproveMemory={handleApproveMemory}

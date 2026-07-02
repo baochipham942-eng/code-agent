@@ -6,7 +6,56 @@ import type {
   NeoWorkCardRevision,
   NeoWorkCardStatus,
 } from '@shared/contract/tag';
+import type { Message } from '@shared/contract/message';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { statusPhase } from '../chat/neoWorkCardPhase';
+
+// ============================================================================
+// Topic 详情的多轮执行结果：真源是源会话消息本身（用户消息带 metadata.neoTag），
+// 不是 delta 记账——老 topic 也能回溯出每轮的请求原话和 Neo 最终回复。
+// ============================================================================
+
+export interface NeoTopicRound {
+  /** 用户那轮的原话（含 @neo 前缀，如果有）。 */
+  request: string;
+  /** 该轮 Neo 的最终回复正文；还在跑/失败无回复时为 null。 */
+  reply: string | null;
+  /** 该轮发起时间。 */
+  at: number;
+}
+
+export function extractNeoTopicRounds(messages: Message[], workCardId: string): NeoTopicRound[] {
+  const rounds: NeoTopicRound[] = [];
+  let current: NeoTopicRound | null = null;
+  for (const message of messages) {
+    if (message.role === 'user') {
+      if (message.metadata?.neoTag?.workCardId === workCardId) {
+        current = { request: message.content, reply: null, at: message.timestamp };
+        rounds.push(current);
+      } else {
+        // 任何别的用户消息（普通聊天/别的卡）都终结当前轮
+        current = null;
+      }
+      continue;
+    }
+    if (current && message.role === 'assistant' && message.content?.trim()) {
+      // 最终结论 = 该轮最后一条非空 assistant 正文
+      current.reply = message.content;
+    }
+  }
+  return rounds;
+}
+
+/** 只读拉取某个会话的消息（供 topic 详情回溯多轮结果；失败静默返回空）。 */
+export async function fetchConversationMessages(sessionId: string): Promise<Message[]> {
+  try {
+    const response = await window.domainAPI?.invoke<Message[]>(IPC_DOMAINS.SESSION, 'getMessages', { sessionId });
+    if (!response?.success) return [];
+    return response.data ?? [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * 把发起人 userId 显示成人话：当前用户显示成「我（名字）」，其他人显示原 id。

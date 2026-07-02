@@ -174,6 +174,47 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     expect(html).toContain('data-testid="neo-topic-empty"');
   });
 
+  it('does not surface internal runtime bookkeeping as the topic row snippet', () => {
+    const details = [
+      makeDetail({
+        id: 'noisy',
+        title: '只有内部记账的 topic',
+        deltas: [makeDelta({
+          completed: ['Queued approved revision nwcr_1', 'Local Neo runtime run finished.'],
+          nextStep: 'Review the result and accept, revise, or archive the work card.',
+        })],
+      }),
+    ];
+    const html = renderToStaticMarkup(<ProjectCollaborationPanel projectId="project-1" details={details} />);
+    expect(html).not.toContain('Review the result and accept');
+    expect(html).not.toContain('Local Neo runtime run finished');
+  });
+
+  it('opens the topic detail with multi-round results and a jump-to-conversation entry', () => {
+    const details = [makeDetail({ id: 'a', title: '做落地页', status: 'in_result_review' })];
+    const sourceMessages = [
+      { id: 'u1', role: 'user' as const, content: '@neo 做落地页', timestamp: 1, metadata: { neoTag: { workCardId: 'a' } } },
+      { id: 'a1', role: 'assistant' as const, content: '落地页做好了，入口在首页。', timestamp: 2 },
+    ];
+    const calls: string[] = [];
+    render(
+      <ProjectCollaborationPanel
+        projectId="project-1"
+        details={details}
+        sourceMessagesByConversation={{ 'session-1': sourceMessages }}
+        onOpenConversation={(sessionId) => { calls.push(sessionId); }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+
+    const rounds = screen.getByTestId('neo-topic-detail-rounds');
+    expect(rounds.textContent).toContain('@neo 做落地页');
+    expect(rounds.textContent).toContain('落地页做好了，入口在首页。');
+
+    fireEvent.click(screen.getByTestId('neo-topic-detail-open-conversation'));
+    expect(calls).toEqual(['session-1']);
+  });
+
   it('lists every topic from the store when no project is bound (projectId=null → 全局目录, BUG2)', () => {
     // @neo 兜底建的卡挂在各自 projectId（如 proj_unsorted）下；无绑定项目入口必须仍能列出它们
     const a = makeDetail({ id: 'a', title: '无项目 topic A', updatedAt: 300 });

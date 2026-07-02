@@ -56,3 +56,22 @@ const INTERNAL_COMPLETED_MARKERS = [
 export function isInternalCompletedMarker(item: string): boolean {
   return INTERNAL_COMPLETED_MARKERS.some((pattern) => pattern.test(item.trim()));
 }
+
+// 运行时记账文案全集（neoTagRuntimeService 写进 delta 的英文生命周期字符串）。
+// 它们是引擎自言自语，不是执行结果——列表摘要/详情一律不展示给用户。
+const INTERNAL_RUNTIME_TEXT_MARKERS = [
+  ...INTERNAL_COMPLETED_MARKERS,
+  /^Review the result and accept/i,
+  /^Start local runtime execution/i,
+  /^Approved work card entered/i,
+  /^Runtime result is ready/i,
+  /^Fix the runtime\/provider error/i,
+  /^Answer the pending runtime request/i,
+  /^Check provider credentials/i,
+  /^Runtime paused for user input/i,
+  /^Context audit:/i,
+];
+
+export function isInternalRuntimeText(text: string): boolean {
+  return INTERNAL_RUNTIME_TEXT_MARKERS.some((pattern) => pattern.test(text.trim()));
+}

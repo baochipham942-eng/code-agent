@@ -30,6 +30,9 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   lines.push(`| 部分通过 | ${summary.partial} 🟡 |`);
   lines.push(`| 失败 | ${summary.failed} ❌ |`);
   lines.push(`| 跳过 | ${summary.skipped} ⏭️ |`);
+  if ((summary.infraExcluded ?? 0) > 0) {
+    lines.push(`| 基础设施排除 | ${summary.infraExcluded} 🔌 |`);
+  }
   lines.push(`| 通过率 | ${getPassRate(summary)}% |`);
   lines.push(`| 平均分数 | ${(summary.averageScore * 100).toFixed(1)}% |`);
   lines.push(`| 总耗时 | ${formatDuration(summary.duration)} |`);
@@ -158,6 +161,20 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
       lines.push(
         `| ✅ ${result.testId} | ${result.description} | ${formatDuration(result.duration)} | ${result.toolExecutions.length} |`
       );
+    }
+    lines.push('');
+  }
+
+  // 基础设施排除用例（WP1-2）：单列，不进能力分母；这些是环境噪声，
+  // 数量高说明该修限流/超时配置而不是 agent。
+  const infraTests = summary.results.filter((r) => r.status === 'infra_excluded');
+  if (infraTests.length > 0) {
+    lines.push('## 基础设施排除用例');
+    lines.push('');
+    lines.push('> 429/超时/5xx/网络故障，不计入能力通过率分母。');
+    lines.push('');
+    for (const result of infraTests) {
+      lines.push(`- 🔌 **${result.testId}**: ${result.failureReason || result.description}`);
     }
     lines.push('');
   }
@@ -306,7 +323,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   for (const result of summary.results) {
     const icon = result.status === 'passed' ? '✅' :
                  result.status === 'partial' ? '🟡' :
-                 result.status === 'failed' ? '❌' : '⏭️';
+                 result.status === 'failed' ? '❌' :
+                 result.status === 'infra_excluded' ? '🔌' : '⏭️';
     const duration = formatDuration(result.duration);
     const scoreStr = result.status === 'partial' ? ` (${(result.score * 100).toFixed(0)}%)` : '';
     lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}${scoreStr}`);
@@ -318,7 +336,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
 
   lines.push('');
   lines.push('───────────────────────────────────────────────────────');
-  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}`);
+  const infraSegment = (summary.infraExcluded ?? 0) > 0 ? `  |  🔌 ${summary.infraExcluded}` : '';
+  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${infraSegment}`);
   lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');
@@ -399,7 +418,10 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
   lines.push('|--------|--------|------|----------|');
   for (const bucket of buckets) {
     const inBucket = results.filter(
-      (r) => (r.scoreAuthority ?? 'unknown') === bucket.key && r.status !== 'skipped',
+      (r) =>
+        (r.scoreAuthority ?? 'unknown') === bucket.key &&
+        r.status !== 'skipped' &&
+        r.status !== 'infra_excluded',
     );
     if (inBucket.length === 0) continue;
     const passed = inBucket.filter((r) => r.status === 'passed').length;
@@ -416,7 +438,8 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
 
 function getPassRate(summary: TestRunSummary): string {
   if (summary.total === 0) return '0';
-  const runTests = summary.total - summary.skipped;
+  // 能力分母排除 skipped 与 infra_excluded（WP1-2）
+  const runTests = summary.total - summary.skipped - (summary.infraExcluded ?? 0);
   if (runTests === 0) return '0';
   return ((summary.passed / runTests) * 100).toFixed(1);
 }

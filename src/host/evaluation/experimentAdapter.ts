@@ -90,6 +90,11 @@ export class ExperimentAdapter {
     if (status === 'passed' || status === 'failed' || status === 'partial' || status === 'skipped') {
       return status;
     }
+    // WP1-2：infra_excluded（429/超时/5xx/网络）在 canonical 层归 skipped
+    // （不进能力分母），metadata.infraExcluded 保留可追溯性。
+    if (status === 'infra_excluded') {
+      return 'skipped';
+    }
     return 'error';
   }
 
@@ -345,6 +350,7 @@ export class ExperimentAdapter {
           expectationResults: r.expectationResults,
           telemetryGate: r.telemetryGate,
           realAgentRun,
+          ...(r.status === 'infra_excluded' ? { infraExcluded: true } : {}),
           ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
         },
       };

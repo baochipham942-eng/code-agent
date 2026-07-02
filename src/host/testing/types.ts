@@ -20,7 +20,11 @@ export type TestCaseType =
 /**
  * Test case status
  */
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial';
+/**
+ * infra_excluded（WP1-2）：429/超时/5xx/网络等基础设施故障，非 agent 能力信号，
+ * 不进能力通过率分母、不进 baseline 对账，报告单列。
+ */
+export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial' | 'infra_excluded';
 
 /**
  * Expected tool call
@@ -287,6 +291,8 @@ export interface TestRunSummary {
   skipped: number;
   /** Partial pass count */
   partial: number;
+  /** 基础设施故障排除数（429/超时/5xx/网络），不进能力分母 */
+  infraExcluded?: number;
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */
@@ -773,6 +779,8 @@ export interface TrendDataPoint {
   newPasses: number;
   /** 运行来源。缺省视为历史遗留条目（mock/real 不明），在 real-only 视图中被排除 */
   mode?: EvalRunMode;
+  /** WP1-2：本 run 被基础设施故障排除的 case 数（passRate 分母已排除它们） */
+  infraExcluded?: number;
   /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
   providerVariantArm?: 'variant-on' | 'variant-off';
 }

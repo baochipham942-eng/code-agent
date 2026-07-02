@@ -467,6 +467,8 @@ async function runEvals(
               ? '\u2705'
               : event.result.status === 'failed'
               ? '\u274C'
+              : event.result.status === 'infra_excluded'
+              ? '\u{1F50C}'
               : '\u23ED\uFE0F';
           console.log(
             `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
@@ -659,7 +661,9 @@ async function main() {
 
   // Track trend
   const commitSha = getCommitSha();
-  const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+  // WP1-2：能力通过率分母排除 infra_excluded（429/超时/5xx/网络）
+  const capabilityTotal = summary.total - (summary.infraExcluded ?? 0);
+  const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
   const trendPoint: TrendDataPoint = {
     timestamp: Date.now(),
     commitSha,
@@ -672,6 +676,7 @@ async function main() {
     newPasses: delta.newPasses.length,
     mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
+    ...(summary.infraExcluded ? { infraExcluded: summary.infraExcluded } : {}),
   };
   await tracker.append(trendPoint);
   console.log(chalk.dim(`  Trend data recorded (commit: ${commitSha.slice(0, 7)})`));

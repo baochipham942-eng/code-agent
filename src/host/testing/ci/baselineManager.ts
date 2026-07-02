@@ -50,7 +50,10 @@ export class BaselineManager {
       };
     }
 
-    const currentPassRate = current.total > 0 ? current.passed / current.total : 0;
+    // WP1-2：infra_excluded（429/超时/5xx/网络）不进能力分母——环境噪声不是能力回归
+    const currentInfraExcluded = current.results.filter((r) => r.status === 'infra_excluded').length;
+    const currentCapabilityTotal = current.total - currentInfraExcluded;
+    const currentPassRate = currentCapabilityTotal > 0 ? current.passed / currentCapabilityTotal : 0;
     const passRateDelta = currentPassRate - baseline.globalMetrics.passRate;
     const scoreDelta = current.averageScore - baseline.globalMetrics.averageScore;
 
@@ -127,10 +130,18 @@ export class BaselineManager {
       );
     }
 
-    const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+    // WP1-2：infra_excluded 是「无数据」不是结果，不落 baseline——
+    // 否则一次限流会把幻影状态写进基线，下次对账全是噪声。
+    // 分母用 summary.total - infra 计数（不用 results.length：调用方的
+    // total 允许与 results 数组不完全一致，见 ci.mode.test 的构造）。
+    const capabilityResults = summary.results.filter((r) => r.status !== 'infra_excluded');
+    const infraExcluded = summary.infraExcluded
+      ?? (summary.results.length - capabilityResults.length);
+    const capabilityTotal = summary.total - infraExcluded;
+    const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
 
     const caseResults: EvalBaseline['caseResults'] = {};
-    for (const result of summary.results) {
+    for (const result of capabilityResults) {
       caseResults[result.testId] = {
         status: result.status,
         score: result.score,
@@ -146,7 +157,7 @@ export class BaselineManager {
       globalMetrics: {
         passRate,
         averageScore: summary.averageScore,
-        totalCases: summary.total,
+        totalCases: capabilityTotal,
       },
       caseResults,
       thresholds: DEFAULT_THRESHOLDS,

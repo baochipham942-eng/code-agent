@@ -97,6 +97,7 @@ function parseArgs(argv: string[]) {
   let judge: 'rules' | 'llm' = 'rules';
   let predictedFixes: string[] | undefined;
   let riskTasks: string[] | undefined;
+  let caseDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -132,6 +133,8 @@ function parseArgs(argv: string[]) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--compare' && i + 1 < args.length) {
       compare = args[++i];
+    } else if (arg === '--case-dir' && i + 1 < args.length) {
+      caseDir = args[++i];
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
       predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--risk-tasks' && i + 1 < args.length) {
@@ -164,7 +167,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks };
+  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir };
 }
 
 function printUsage() {
@@ -187,6 +190,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
   npx tsx scripts/eval-ci.ts --predicted-fixes <a,b>  Register case ids this change should fix (delta report reconciles)
   npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
+  npx tsx scripts/eval-ci.ts --case-dir <dir>   External test-case dir (e.g. GAIA)；跳过 baseline 对账与 trend
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
   npx tsx scripts/eval-ci.ts --trend            Show trend chart
@@ -460,6 +464,7 @@ async function runEvals(
     tags?: string[];
     ids?: string[];
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
+    caseDir?: string;
   }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
@@ -479,6 +484,8 @@ async function runEvals(
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
       ...(opts.prediction ? { prediction: opts.prediction } : {}),
+      // 外部基准（如 GAIA）用独立 case 目录
+      ...(opts.caseDir ? { testCaseDir: opts.caseDir } : {}),
     });
 
     const agent = createAgent({
@@ -785,7 +792,7 @@ async function main() {
   // --real mode safety guards
   if (effectiveReal) {
     // Load suites to count total cases
-    const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
+    const testCaseDir_ = caseDir ?? createDefaultConfig(workingDir).testCaseDir;
     const suites = await loadAllTestSuites(testCaseDir_);
     const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
@@ -812,7 +819,7 @@ async function main() {
   // Run evals
   console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
   console.log('');
-  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids, prediction });
+  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids, prediction, caseDir });
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
   // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据
@@ -825,6 +832,18 @@ async function main() {
       `  Actual usage: ${totalIn.toLocaleString()} in / ${totalOut.toLocaleString()} out tokens, ` +
       `cost $${getBudgetService().getCurrentCost().toFixed(4)} (maxMode=${process.env.CODE_AGENT_MAX_MODE === '1' ? 'on' : 'off'})`
     ));
+  }
+
+  // 外部基准（--case-dir）不与自建集 baseline 对账、不进 trend——
+  // 语义不同（外部锚点 vs 内部回归），混进来会把 45 子集基线搅成噪声。
+  if (caseDir) {
+    const capabilityTotal = summary.total - (summary.infraExcluded ?? 0) - summary.skipped;
+    const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
+    console.log(chalk.bold(`  External benchmark run (${caseDir})`));
+    console.log(`  Accuracy: ${chalk.cyan((passRate * 100).toFixed(1) + '%')} (${summary.passed}/${capabilityTotal}${summary.infraExcluded ? `, 🔌 ${summary.infraExcluded} infra-excluded` : ''})`);
+    console.log(chalk.dim('  跳过 baseline 对账与 trend（外部锚点不进内部回归基线）'));
+    console.log('');
+    return;
   }
 
   // Compare to baseline

@@ -547,6 +547,8 @@ export interface CaseComparison {
   reasoning: string;
   durationA: number;
   durationB: number;
+  /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */
+  excludedReason?: string;
 }
 
 export interface ComparisonResult {
@@ -565,6 +567,8 @@ export interface ComparisonResult {
     winner: 'baseline' | 'candidate' | 'tie';
     confidence: number;
     verdict: string;
+    /** WP1-3b：因一侧没跑成而排除的 pair 数（不在 totalCases 内） */
+    excludedPairs?: number;
   };
   duration: number;
 }

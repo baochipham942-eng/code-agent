@@ -41,9 +41,23 @@ export function generateComparisonMarkdown(result: ComparisonResult): string {
   lines.push(`| Baseline Avg Score | ${summary.baselineAvgScore.toFixed(2)} |`);
   lines.push(`| Candidate Avg Score | ${summary.candidateAvgScore.toFixed(2)} |`);
   lines.push(`| Confidence | ${(summary.confidence * 100).toFixed(0)}% |`);
+  if (summary.excludedPairs) {
+    lines.push(`| 排除 Pair（一侧没跑成） | ${summary.excludedPairs} 🔌 |`);
+  }
   lines.push('');
   lines.push(`> ${summary.verdict}`);
   lines.push('');
+
+  // 排除的 pair（WP1-3b）：没跑成 ≠ 势均力敌，单列不进胜负
+  const excluded = cases.filter((c) => c.excludedReason);
+  if (excluded.length > 0) {
+    lines.push(`## 排除的 Pair（未计入胜负）`);
+    lines.push('');
+    for (const c of excluded) {
+      lines.push(`- 🔌 **${c.testId}**: ${c.excludedReason}`);
+    }
+    lines.push('');
+  }
 
   // Per-case results
   lines.push(`## Per-Case Results`);
@@ -51,7 +65,7 @@ export function generateComparisonMarkdown(result: ComparisonResult): string {
   lines.push(`| Test | A (role) | B (role) | Score A | Score B | Winner | Real Winner | Duration A | Duration B |`);
   lines.push(`|---|---|---|---|---|---|---|---|---|`);
 
-  for (const c of cases) {
+  for (const c of cases.filter((x) => !x.excludedReason)) {
     lines.push(
       `| ${c.testId} | ${c.assignment.A} | ${c.assignment.B} | ${c.scoreA.combined.toFixed(2)} | ${c.scoreB.combined.toFixed(2)} | ${c.winner} | ${c.realWinner} | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
     );
@@ -104,11 +118,21 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   lines.push(chalk.dim(`  ${summary.verdict}`));
   lines.push('');
 
+  // 排除的 pair（WP1-3b）
+  const excluded = cases.filter((c) => c.excludedReason);
+  if (excluded.length > 0) {
+    lines.push(chalk.yellow.bold(`排除的 Pair（一侧没跑成，未计入胜负）: ${excluded.length}`));
+    for (const c of excluded) {
+      lines.push(chalk.yellow(`  🔌 ${c.testId}: ${c.excludedReason}`));
+    }
+    lines.push('');
+  }
+
   // Per-case table
   lines.push(chalk.bold('Per-Case Results'));
   lines.push('');
 
-  for (const c of cases) {
+  for (const c of cases.filter((x) => !x.excludedReason)) {
     const icon = getWinnerIcon(c);
     const winnerLabel = c.realWinner === 'baseline' ? chalk.cyan(c.realWinner) : c.realWinner === 'candidate' ? chalk.magenta(c.realWinner) : chalk.yellow(c.realWinner);
 

@@ -7,8 +7,35 @@ import type {
   CompareConfiguration,
   CaseComparison,
   ComparisonResult,
+  DualRubricScore,
 } from '../types';
 import { ABGrader } from './abGrader';
+
+/**
+ * WP1-3b：判定一侧是否「没跑成」——infra_excluded（429/超时/5xx/网络）
+ * 或零产出带错误（如 key 失效 401）。这类 run 没有能力数据，评它的分
+ * 会把「无数据」冒充成「势均力敌」（MiMo 401 冒烟实锤：双侧空输出被
+ * heuristic 评成 2.0:2.0 平局）。能力性失败（有产出但做错）不算。
+ */
+function invalidRunReason(result: TestResult): string | null {
+  if (result.status === 'infra_excluded') {
+    return `infra_excluded（${result.failureReason ?? 'infra error'}）`;
+  }
+  if (
+    result.responses.length === 0 &&
+    result.toolExecutions.length === 0 &&
+    result.errors.length > 0
+  ) {
+    return `零产出（${result.errors[0]}）`;
+  }
+  return null;
+}
+
+const ZERO_RUBRIC: DualRubricScore = {
+  content: { correctness: 0, completeness: 0, accuracy: 0, total: 0 },
+  structure: { organization: 0, formatting: 0, usability: 0, total: 0 },
+  combined: 0,
+};
 
 /**
  * Runs A/B comparisons between a baseline and candidate configuration.
@@ -89,6 +116,29 @@ export class ABComparator {
     const resultB = await runSingleTest(testCase, configB);
     const durationB = Date.now() - startB;
 
+    // Step 2.5（WP1-3b）：任一侧没跑成 → 本 pair 不进胜负统计，只标注
+    const invalidA = invalidRunReason(resultA);
+    const invalidB = invalidRunReason(resultB);
+    if (invalidA || invalidB) {
+      const reasons = [
+        invalidA ? `${assignment.A}: ${invalidA}` : null,
+        invalidB ? `${assignment.B}: ${invalidB}` : null,
+      ].filter(Boolean).join('; ');
+      return {
+        testId: testCase.id,
+        description: testCase.description,
+        assignment,
+        scoreA: ZERO_RUBRIC,
+        scoreB: ZERO_RUBRIC,
+        winner: 'tie',
+        realWinner: 'tie',
+        reasoning: `pair 排除（未计入胜负）：${reasons}`,
+        durationA,
+        durationB,
+        excludedReason: reasons,
+      };
+    }
+
     // Step 3: Grade blind
     const gradeResult = await this.grader.grade(
       testCase,
@@ -127,7 +177,10 @@ export class ABComparator {
     };
   }
 
-  private computeSummary(cases: CaseComparison[]): ComparisonResult['summary'] {
+  private computeSummary(allCases: CaseComparison[]): ComparisonResult['summary'] {
+    // WP1-3b：排除的 pair 不进胜负/均分统计
+    const excludedPairs = allCases.filter((c) => c.excludedReason).length;
+    const cases = allCases.filter((c) => !c.excludedReason);
     const totalCases = cases.length;
     const baselineWins = cases.filter((c) => c.realWinner === 'baseline').length;
     const candidateWins = cases.filter((c) => c.realWinner === 'candidate').length;
@@ -166,16 +219,17 @@ export class ABComparator {
         : 0;
 
     // Build verdict
+    const excludedNote = excludedPairs > 0 ? ` （另有 ${excludedPairs} 个 pair 因一侧没跑成被排除）` : '';
     let verdict: string;
     if (winner === 'tie') {
-      verdict = `Tie: baseline and candidate each won ${baselineWins} cases with ${ties} ties.`;
+      verdict = `Tie: baseline and candidate each won ${baselineWins} cases with ${ties} ties.${excludedNote}`;
     } else {
       const winnerWins = winner === 'baseline' ? baselineWins : candidateWins;
       const loserWins = winner === 'baseline' ? candidateWins : baselineWins;
       verdict =
         `${winner} wins ${winnerWins}-${loserWins} (${ties} ties). ` +
         `Avg scores: baseline=${baselineAvgScore.toFixed(2)}, candidate=${candidateAvgScore.toFixed(2)}. ` +
-        `Confidence: ${(confidence * 100).toFixed(0)}%.`;
+        `Confidence: ${(confidence * 100).toFixed(0)}%.` + excludedNote;
     }
 
     return {
@@ -188,6 +242,7 @@ export class ABComparator {
       winner,
       confidence,
       verdict,
+      ...(excludedPairs > 0 ? { excludedPairs } : {}),
     };
   }
 }

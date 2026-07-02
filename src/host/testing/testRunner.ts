@@ -19,10 +19,10 @@ import type {
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { withTimeout } from '../services/infra/timeoutController';
-import { runAssertions, runExpectations } from './assertionEngine';
+import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
-import { isNonRetryableError } from '../model/providers/retryStrategy';
+import { isNonRetryableError, isTransientError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import type { StructuredReplay } from '../../shared/contract/evaluation';
@@ -37,6 +37,17 @@ const logger = createLogger('TestRunner');
 
 /** Cases with stdDev above this threshold are marked unstable */
 const UNSTABLE_STDDEV_THRESHOLD = 0.2;
+
+/**
+ * WP1-2：判定错误是否属基础设施故障（429/超时/5xx/网络）。
+ * 这类失败是环境噪声不是 agent 能力信号，分流进 infra_excluded 桶，
+ * 不进能力通过率分母。复用 retryStrategy 的瞬态错误词表（已排除
+ * 余额/认证等致命错误——那些走 circuit breaker abort），另补 test
+ * harness 自身的超时消息（withTimeout 的 "timeout after Nms"）。
+ */
+export function isInfraExclusionError(msg: string): boolean {
+  return isTransientError(msg) || /timeout after \d+ms/i.test(msg);
+}
 
 /**
  * Interface for agent interaction
@@ -305,7 +316,8 @@ export class TestRunner {
     const endTime = Date.now();
     const genInfo = this.agent.getAgentInfo();
 
-    const nonSkipped = results.filter((r) => r.status !== 'skipped');
+    // skipped 与 infra_excluded 都不进能力分母（后者是环境噪声，WP1-2）
+    const nonSkipped = results.filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded');
     const avgScore = nonSkipped.length > 0
       ? nonSkipped.reduce((sum, r) => sum + r.score, 0) / nonSkipped.length
       : 0;
@@ -327,6 +339,7 @@ export class TestRunner {
       failed: results.filter((r) => r.status === 'failed').length,
       skipped: results.filter((r) => r.status === 'skipped').length,
       partial: results.filter((r) => r.status === 'partial').length,
+      infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
       averageScore: avgScore,
       results,
       environment: {
@@ -342,6 +355,8 @@ export class TestRunner {
       ...(this.aborted && this.abortReason ? { aborted: true, abortReason: this.abortReason } : {}),
       // GAP-017: harness 配置随 summary 落 DB（对照实验维度）
       ...(this.config.harness ? { harness: this.config.harness } : {}),
+      // WP1-4: prompt 改动预测随 summary 落盘/DB，deltaReporter 对账
+      ...(this.config.prediction ? { prediction: this.config.prediction } : {}),
     };
 
     this.emit({ type: 'suite_end', summary });
@@ -472,6 +487,12 @@ export class TestRunner {
 
       result.score = assertionResult.score;
       result.reference_solution = testCase.reference_solution;
+      // 评分权威：有声明断言（含 P1 expectations）= 确定性背书；
+      // 零断言的自动 pass 只是 agent 没崩，标 self_check 不作能力证据。
+      const hasDeterministicEvidence =
+        countDeclaredAssertions(testCase.expect) > 0 ||
+        (testCase.expectations?.length ?? 0) > 0;
+      result.scoreAuthority = hasDeterministicEvidence ? 'deterministic_assertion' : 'self_check';
 
       if (assertionResult.score === 1.0) {
         result.status = 'passed';
@@ -527,6 +548,20 @@ export class TestRunner {
         }
       }
 
+      // WP1-2：agentAdapter 把 inference error 塞 errors 数组不 throw（同上
+      // circuit breaker 注释）。零产出 + 全零分 + errors 里是瞬态基础设施错
+      // → 这 case 没有能力数据，分流进 infra 桶而非记 failed。
+      if (
+        result.status === 'failed' &&
+        result.score === 0 &&
+        result.toolExecutions.length === 0 &&
+        result.errors.length > 0 &&
+        result.errors.some(isInfraExclusionError)
+      ) {
+        result.status = 'infra_excluded';
+        result.failureStage = 'infra';
+      }
+
       await this.attachTelemetryReplay(testCase, result);
 
       // P3: Trajectory analysis (when enabled)
@@ -542,7 +577,13 @@ export class TestRunner {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      result.status = 'failed';
+      // WP1-2：429/超时/5xx/网络 → infra 桶，不算 agent 能力失败
+      if (isInfraExclusionError(message)) {
+        result.status = 'infra_excluded';
+        result.failureStage = 'infra';
+      } else {
+        result.status = 'failed';
+      }
       result.failureReason = message || 'Unknown error';
       result.errors.push(message || String(error));
       this.emit({ type: 'error', testId: testCase.id, error: message });
@@ -620,7 +661,9 @@ export class TestRunner {
   private calculatePerformanceStats(
     results: TestResult[]
   ): TestRunSummary['performance'] {
-    const durations = results.filter((r) => r.status !== 'skipped').map((r) => r.duration);
+    const durations = results
+      .filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded')
+      .map((r) => r.duration);
 
     return {
       avgResponseTime: durations.length > 0

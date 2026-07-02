@@ -2,8 +2,10 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
-import type { TelemetryCompleteness } from '../../shared/contract/evaluation';
+import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
+
+export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
 /**
  * Test case types
@@ -18,7 +20,11 @@ export type TestCaseType =
 /**
  * Test case status
  */
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial';
+/**
+ * infra_excluded（WP1-2）：429/超时/5xx/网络等基础设施故障，非 agent 能力信号，
+ * 不进能力通过率分母、不进 baseline 对账，报告单列。
+ */
+export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial' | 'infra_excluded';
 
 /**
  * Expected tool call
@@ -224,6 +230,8 @@ export interface TestResult {
   turnCount: number;
   /** Assertion score (0.0 - 1.0) */
   score: number;
+  /** 评分权威桶：分数由确定性断言 / LLM judge / 无外部验证背书 */
+  scoreAuthority?: ScoreAuthority;
   /** Pipeline failure stage (from failure funnel analysis) */
   failureStage?: string;
   /** Reference solution if provided */
@@ -283,6 +291,8 @@ export interface TestRunSummary {
   skipped: number;
   /** Partial pass count */
   partial: number;
+  /** 基础设施故障排除数（429/超时/5xx/网络），不进能力分母 */
+  infraExcluded?: number;
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */
@@ -319,6 +329,8 @@ export interface TestRunSummary {
   averageStdDev?: number;
   /** GAP-017: 本次 run 使用的 harness 配置（对照实验维度，落 DB config_json） */
   harness?: HarnessVariantConfig;
+  /** WP1-4: 本次 run 登记的 prompt 改动预测（deltaReporter 对账用） */
+  prediction?: EvalPrediction;
 }
 
 // ============================================================================
@@ -338,6 +350,17 @@ export interface HarnessVariantConfig {
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
   toolMode?: 'all' | 'deferred';
+}
+
+/**
+ * WP1-4：prompt 改动的预测登记 — 跑 eval 前声明预计修好/预计有风险的
+ * case id 列表，deltaReporter 对账预测命中/落空/预测外翻转。
+ */
+export interface EvalPrediction {
+  /** 预计由本次改动修好的 case id */
+  predictedFixes: string[];
+  /** 预计可能被本次改动打坏的 case id */
+  riskTasks: string[];
 }
 
 /**
@@ -380,6 +403,8 @@ export interface TestRunnerConfig {
   trialsPerCase?: number;
   /** GAP-017: harness 配置变体（对照实验维度，随 summary 落 DB） */
   harness?: HarnessVariantConfig;
+  /** WP1-4: prompt 改动预测登记（随 summary 落盘/DB，deltaReporter 对账） */
+  prediction?: EvalPrediction;
 }
 
 /**
@@ -522,6 +547,8 @@ export interface CaseComparison {
   reasoning: string;
   durationA: number;
   durationB: number;
+  /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */
+  excludedReason?: string;
 }
 
 export interface ComparisonResult {
@@ -540,6 +567,10 @@ export interface ComparisonResult {
     winner: 'baseline' | 'candidate' | 'tie';
     confidence: number;
     verdict: string;
+    /** WP1-3b：因一侧没跑成而排除的 pair 数（不在 totalCases 内） */
+    excludedPairs?: number;
+    /** 配对 sign test 双尾 p 值（只算 decisive pair；tie/excluded 不进 n） */
+    pValue?: number;
   };
   duration: number;
 }
@@ -769,6 +800,8 @@ export interface TrendDataPoint {
   newPasses: number;
   /** 运行来源。缺省视为历史遗留条目（mock/real 不明），在 real-only 视图中被排除 */
   mode?: EvalRunMode;
+  /** WP1-2：本 run 被基础设施故障排除的 case 数（passRate 分母已排除它们） */
+  infraExcluded?: number;
   /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
   providerVariantArm?: 'variant-on' | 'variant-off';
 }

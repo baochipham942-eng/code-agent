@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type {
+  ContinueNeoWorkCardRequest,
+  ContinueNeoWorkCardResult,
   CreateNeoWorkCardDraftRequest,
   CreateNeoWorkCardDraftResult,
   NeoMemoryCandidate,
@@ -30,6 +32,11 @@ interface NeoWorkCardState {
   loadAll: (options?: { includeArchived?: boolean }) => Promise<void>;
   createDraft: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
   createAndRun: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
+  /** @neo 跨会话续接：既有 topic 追加一轮（ADR-033）。 */
+  continueAndRun: (input: ContinueNeoWorkCardRequest) => Promise<ContinueNeoWorkCardResult>;
+  /** @neo 续接 chip：从 mention 下拉选中既有 topic 后挂在 composer 上（ADR-033 D1）。 */
+  continuationTarget: { workCardId: string; title: string } | null;
+  setContinuationTarget: (target: { workCardId: string; title: string } | null) => void;
   updateDraftRevision: (input: UpdateNeoWorkCardDraftRevisionRequest) => Promise<NeoWorkCardDetail>;
   approve: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
   reject: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
@@ -238,6 +245,17 @@ export const useNeoWorkCardStore = create<NeoWorkCardState>()((set) => {
       }));
       return result;
     },
+
+    continueAndRun: async (input) => {
+      const result = await tagClient.continueAndRun(input);
+      set((state) => ({
+        detailsById: upsert(state.detailsById, result.detail),
+      }));
+      return result;
+    },
+
+    continuationTarget: null,
+    setContinuationTarget: (target) => set({ continuationTarget: target }),
 
     updateDraftRevision: async (input) => withPending(input.workCardId, () => tagClient.updateDraftRevision(input)),
 

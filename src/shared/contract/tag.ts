@@ -396,6 +396,24 @@ export interface CreateNeoWorkCardDraftResult {
   sourceTurnId: string;
 }
 
+/** @neo 跨会话续接（ADR-033）：在任意会话把一轮追加到既有 topic。 */
+export interface ContinueNeoWorkCardRequest {
+  workCardId: string;
+  /** 续接发生的会话 = 本轮执行落点。 */
+  conversationId: string;
+  userText: string;
+  requesterUserId: string;
+  selectedArtifactIds?: string[];
+  /** renderer 本地补显的用户消息 ID；host 落库同 ID 去重（同 createAndRun 的 clientSourceMessageId 机制）。 */
+  clientSourceMessageId?: string;
+}
+
+export interface ContinueNeoWorkCardResult {
+  detail: NeoWorkCardDetail;
+  /** 本轮用户消息锚点 ID。 */
+  roundTurnId: string;
+}
+
 export interface ListNeoWorkCardsBySourceInput {
   sourceConversationId: string;
 }

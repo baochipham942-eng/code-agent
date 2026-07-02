@@ -1,4 +1,6 @@
 import type {
+  ContinueNeoWorkCardRequest,
+  ContinueNeoWorkCardResult,
   CreateNeoWorkCardDraftInput,
   CreateNeoWorkCardDraftRequest,
   CreateNeoWorkCardDraftResult,
@@ -112,6 +114,19 @@ export const tagClient = {
     return {
       detail: toDetail(created),
       sourceTurnId: created.workCard.sourceTurnId,
+    };
+  },
+
+  // @neo 跨会话续接：既有 topic 追加一轮，落点 = 当前会话（ADR-033）。
+  async continueAndRun(input: ContinueNeoWorkCardRequest): Promise<ContinueNeoWorkCardResult> {
+    const result = await invokeTag<{
+      workCard: NeoWorkCardWithCurrentRevision['workCard'];
+      revision: NeoWorkCardWithCurrentRevision['revision'];
+      roundTurnId: string;
+    }>('continueAndRun', input);
+    return {
+      detail: toDetail({ workCard: result.workCard, revision: result.revision }),
+      roundTurnId: result.roundTurnId,
     };
   },
 

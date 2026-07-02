@@ -1,8 +1,10 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { randomUUID } from 'crypto';
 import type {
   AppendNeoWorkCardDeltaInput,
   CloseNeoWorkCardInput,
+  ContinueNeoWorkCardRequest,
   CreateNeoWorkCardDraftInput,
   ListNeoWorkCardsBySourceInput,
   NeoMemoryCandidateDecisionInput,
@@ -20,6 +22,7 @@ import {
   NeoWorkCardServiceError,
 } from '../services/project/neoWorkCardService';
 import {
+  continueAndRunNeoWorkCard,
   createAndRunNeoWorkCard,
   launchApprovedNeoWorkCard,
 } from '../services/project/neoTagRuntimeService';
@@ -144,6 +147,34 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
             logger.error('Failed to run direct @neo work card', error);
           });
           return { success: true, data: { workCard: started.workCard, revision: started.revision } };
+        }
+
+        case 'continueAndRun': {
+          // @neo 跨会话续接（ADR-033）：既有 topic 追加一轮，落点 = 发起续接的会话。
+          const input = payload as ContinueNeoWorkCardRequest | undefined;
+          if (!input?.workCardId || !input.conversationId || !input.requesterUserId) {
+            return invalid('workCardId, conversationId and requesterUserId are required');
+          }
+          const roundTurnId = input.clientSourceMessageId?.trim()
+            || `neo-source-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+          const started = continueAndRunNeoWorkCard({
+            workCardId: input.workCardId,
+            conversationId: input.conversationId,
+            turnId: roundTurnId,
+            userText: input.userText ?? '',
+            requesterUserId: input.requesterUserId,
+            selectedArtifactIds: input.selectedArtifactIds,
+            taskManager: getTaskManager(),
+            service,
+            onWorkCardUpdated: (workCardId, reason) => emitWorkCardUpdated(service, workCardId, reason),
+          });
+          started.run.catch((error) => {
+            logger.error('Failed to run @neo follow-up round', error);
+          });
+          return {
+            success: true,
+            data: { workCard: started.workCard, revision: started.revision, roundTurnId },
+          };
         }
 
         case 'get':

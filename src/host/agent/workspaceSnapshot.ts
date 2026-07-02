@@ -9,7 +9,8 @@
 // ============================================================================
 
 import { readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { homedir } from 'os';
+import { join, resolve } from 'path';
 
 /** 跳过的重目录/生成目录：变更噪声大且不属于"用户可感知的工作区污染" */
 const SKIP_DIRS = new Set([
@@ -35,6 +36,12 @@ export function captureWorkspaceSnapshot(
   cwd: string,
   options: CaptureOptions = {},
 ): WorkspaceSnapshot {
+  // 家目录护栏（同 agentsDiscovery 的 TCC 教训）：工作目录=home 时绝不递归
+  // 下钻——扫 ~/Desktop、~/Documents、~/Downloads 会逐个触发 macOS TCC 授权
+  // 弹窗。标 truncated 让调用方跳过 diff，宁可不查也不弹窗。
+  if (resolve(cwd) === homedir()) {
+    return { entries: new Map(), truncated: true };
+  }
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const entries = new Map<string, string>();
   let truncated = false;

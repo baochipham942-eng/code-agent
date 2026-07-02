@@ -75,4 +75,11 @@ describe('captureWorkspaceSnapshot / diffWorkspaceSnapshots', () => {
     expect(snap.entries.size).toBe(0);
     expect(snap.truncated).toBe(false);
   });
+
+  it('工作目录=家目录 → 拒绝下钻（TCC 护栏），标 truncated 跳过 diff', async () => {
+    const { homedir } = await import('os');
+    const snap = captureWorkspaceSnapshot(homedir());
+    expect(snap.entries.size).toBe(0);
+    expect(snap.truncated).toBe(true);
+  });
 });

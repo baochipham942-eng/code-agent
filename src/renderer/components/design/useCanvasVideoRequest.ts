@@ -49,6 +49,7 @@ export function useCanvasVideoRequest(): void {
           durationSec: request.durationSec,
           prompt: request.prompt,
           baseNode,
+          commandId: request.commandId,
         });
 
         if (result.ok) {

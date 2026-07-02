@@ -108,7 +108,10 @@ export async function executeProposeSlidesOps(
       ...(brief ? { brief } : {}),
       outputName: safeOutputName(topic),
       // maxImages 取已确认张数（confirmedImageCount）作硬上限，保证实际配图 ≤ 已确认（审计 F1）。
-      ...(imageModel ? { illustrate: true, imageModel, maxImages: confirmedImageCount } : {}),
+      // commandId 幂等键（WP3-1）：一次成本确认 = 一个 commandId，付费配图路径专属；免费大纲不带。
+      ...(imageModel
+        ? { illustrate: true, imageModel, maxImages: confirmedImageCount, commandId: `gencmd-${crypto.randomUUID()}` }
+        : {}),
     });
   } catch (error) {
     return {

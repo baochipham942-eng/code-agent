@@ -52,6 +52,8 @@ export interface GenerateSlidesDeckPayload {
   imageModel?: string;
   maxImages?: number;
   outputName?: string;
+  /** 付费命令幂等键（WP3-1）：同 commandId 的自动重放返回缓存产物不再计费；缺省保持既有行为。 */
+  commandId?: string;
 }
 
 export interface GenerateSlidesOutlinePayload {
@@ -115,6 +117,18 @@ export async function handleGenerateSlidesPreview(payload: GenerateSlidesPreview
 }
 
 export async function handleGenerateSlidesDeck(
+  payload: GenerateSlidesDeckPayload,
+): Promise<{ filePath: string; slidesCount: number; costCny: number }> {
+  // 幂等收口（WP3-1）：付费配图（illustrateSlides）在内，同 commandId 重放直接返回已生成的 deck。
+  const { designGenerationIdempotency } = await import('../services/media/generationIdempotency');
+  return designGenerationIdempotency.run(
+    payload?.commandId,
+    () => generateSlidesDeckOnce(payload),
+    (cached) => fsp.access(cached.filePath).then(() => true, () => false),
+  );
+}
+
+async function generateSlidesDeckOnce(
   payload: GenerateSlidesDeckPayload,
 ): Promise<{ filePath: string; slidesCount: number; costCny: number }> {
   const hasSlides = Array.isArray(payload?.slides) && payload.slides.length > 0;

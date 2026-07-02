@@ -115,6 +115,8 @@ export async function executeProposeVideoOps(
   registerResponseHandler();
   const request: CanvasVideoRequest = {
     requestId: `cv-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
+    // 幂等键（WP3-1）：一次成本确认 = 一个 commandId。requestId 是 UI 往返关联 ID，不可复用作幂等键。
+    commandId: `gencmd-${crypto.randomUUID()}`,
     mode,
     model: resolved.id,
     durationSec,

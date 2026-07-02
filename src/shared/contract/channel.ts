@@ -241,6 +241,8 @@ export interface FeishuChannelConfig extends ChannelPrivacyConfig {
   webhookHost?: string;
   /** 外部 Webhook URL (用于显示配置提示) */
   webhookUrl?: string;
+  /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒） */
+  outboundAllowlist?: string[];
 }
 
 /**
@@ -264,6 +266,8 @@ export interface LarkChannelConfig extends ChannelPrivacyConfig {
   webhookHost?: string;
   /** 外部 Webhook URL (用于显示配置提示) */
   webhookUrl?: string;
+  /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒） */
+  outboundAllowlist?: string[];
 }
 
 /**
@@ -285,6 +289,8 @@ export interface TelegramChannelConfig extends ChannelPrivacyConfig {
   streamEditIntervalMs?: number;
   /** 消息解析模式 */
   parseMode?: 'MarkdownV2' | 'HTML' | 'Markdown';
+  /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒）。与入站 allowedChatIds（空数组=允许所有）语义不同 */
+  outboundAllowlist?: string[];
 }
 
 /**

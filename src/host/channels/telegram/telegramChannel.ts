@@ -23,6 +23,9 @@ import type {
   ChannelCapabilities,
 } from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
+import { BoundedDedupeSet } from '../inboundDedupe';
+import { checkOutboundTarget } from '../outboundAllowlist';
+import { CHANNEL_INGRESS } from '../../../shared/constants';
 
 const logger = createLogger('TelegramChannel');
 
@@ -98,6 +101,8 @@ export class TelegramChannel extends BaseChannelPlugin {
   private lastEditTime: Map<string, number> = new Map();
   // typing 状态定时器（每 4 秒续期，Telegram typing 状态 5 秒过期）
   private typingTimers: Map<string, NodeJS.Timeout> = new Map();
+  // 入站幂等（WP3-2，与 feishu 对称）：update_id 是平台幂等键（long-polling 重连重放场景），有界防内存涨。
+  private readonly inboundDedupe = new BoundedDedupeSet(CHANNEL_INGRESS.DEDUPE_MAX_ENTRIES);
 
   constructor(accountId: string) {
     super(accountId);
@@ -242,6 +247,14 @@ export class TelegramChannel extends BaseChannelPlugin {
   async sendMessage(options: SendMessageOptions): Promise<SendMessageResult> {
     if (!this.bot) {
       return { success: false, error: 'Channel not connected' };
+    }
+
+    // 出站白名单（WP3-3，fail-closed，与 feishu 对称）：不在名单一律拒发，绝不触达平台 API。
+    // sendSplitMessage 走本函数，天然被覆盖。
+    const gate = checkOutboundTarget(this.telegramConfig?.outboundAllowlist, options.chatId);
+    if (!gate.allowed) {
+      logger.warn('Telegram outbound blocked by allowlist', { chatId: options.chatId, reason: gate.reason });
+      return { success: false, error: gate.reason };
     }
 
     try {
@@ -413,8 +426,27 @@ export class TelegramChannel extends BaseChannelPlugin {
   /**
    * 处理文本消息
    */
+  /**
+   * 入站幂等（WP3-2）：首见返回 true 并登记。优先 update_id（平台幂等键），
+   * 无则退 chatId:message_id；两者都取不到时 fail-open 当新消息（不吞消息）。
+   */
+  private markInboundSeen(ctx: Context): boolean {
+    const updateId = ctx.update?.update_id;
+    const key =
+      typeof updateId === 'number'
+        ? `upd:${updateId}`
+        : ctx.message?.message_id !== undefined
+          ? `msg:${ctx.chat?.id}:${ctx.message.message_id}`
+          : undefined;
+    if (!key) return true;
+    if (this.inboundDedupe.markSeen(key)) return true;
+    logger.info('Ignoring duplicate inbound update', { key });
+    return false;
+  }
+
   private async handleTextMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.text || !ctx.from || ctx.from.is_bot) return;
+    if (!this.markInboundSeen(ctx)) return;
 
     // 白名单检查
     if (!this.isAllowed(ctx.from.id, ctx.chat?.id)) {
@@ -434,6 +466,7 @@ export class TelegramChannel extends BaseChannelPlugin {
    */
   private async handlePhotoMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.photo || !ctx.from || ctx.from.is_bot) return;
+    if (!this.markInboundSeen(ctx)) return;
     if (!this.isAllowed(ctx.from.id, ctx.chat?.id)) return;
 
     const caption = ctx.message.caption || '[图片]';
@@ -451,6 +484,7 @@ export class TelegramChannel extends BaseChannelPlugin {
    */
   private async handleDocumentMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.document || !ctx.from || ctx.from.is_bot) return;
+    if (!this.markInboundSeen(ctx)) return;
     if (!this.isAllowed(ctx.from.id, ctx.chat?.id)) return;
 
     const caption = ctx.message.caption || `[文件: ${ctx.message.document.file_name}]`;

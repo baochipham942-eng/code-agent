@@ -302,7 +302,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-primary-600"
+            className="mt-0.5 h-4 w-4 accent-primary-700"
             checked={telemetryEnabled}
             disabled={telemetrySaving}
             onChange={(e) => handleTelemetryToggle(e.target.checked)}

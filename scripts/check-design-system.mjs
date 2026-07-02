@@ -14,9 +14,9 @@
 //                             找不到也红（防 allowlist 积压）；`ds-allow:z` 豁免
 //   6. important-unjustified: 禁无注册的 !important；`ds-allow:important <理由>` 登记后豁免
 //
-// 对比度断言（--contrast）：四套主题 --brand-primary 在按钮白字 / checked 控件白勾两场景
-// 的 WCAG 对比度测量。当前存量不达标（见 --contrast 输出），未锁进棘轮门；
-// 色板调整需产品负责人拍板后再锁断言。
+// 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题 --brand-primary 按各自
+// 真实用法场景核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深
+// 至 teal-700 系（白字场景）；hc-dark 的 brand 是前景/描边用法，按"压 --bg-void"核对。
 //
 // 用法：
 //   node scripts/check-design-system.mjs            # 校验，超基线则 exit 1
@@ -211,15 +211,35 @@ function contrastRatio(hexA, hexB) {
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
+const CONTRAST_MIN = 4.5;
+// 每套主题 brand 色的真实用法场景（2026-07-02 方案 A 拍板口径）：
+// - dark / light / hc-light：brand 作按钮底色（白字）与 checked 控件底色（白勾/白 thumb）→ 对白色前景核对
+// - hc-dark：brand（cyan）是前景/描边用法（focus outline 压黑底），实际 UI 无"白字压 cyan"→ 对 --bg-void 核对
+const CONTRAST_SCENARIOS = {
+  'dark': { against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
+  'light': { against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
+  'high-contrast-light': { against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
+  'high-contrast-dark': { against: 'bg-void', label: '前景用法压 --bg-void（focus outline/描边）' },
+};
+
 export function measureBrandContrast() {
   const themesDir = join(SCAN_ROOT, 'styles/themes');
   if (!existsSync(themesDir)) throw new Error(`[check-design-system] 主题目录不存在：${themesDir}`);
   const results = [];
   for (const f of readdirSync(themesDir).filter((n) => n.endsWith('.css')).sort()) {
+    const theme = f.replace('.css', '');
     const css = readFileSync(join(themesDir, f), 'utf8');
     const m = css.match(/--brand-primary:\s*(#[0-9a-fA-F]{6})/);
     if (!m) throw new Error(`[check-design-system] ${f} 里找不到 --brand-primary 的 hex 定义，测量失败`);
-    results.push({ theme: f.replace('.css', ''), brand: m[1], vsWhite: contrastRatio(m[1], '#FFFFFF') });
+    const scenario = CONTRAST_SCENARIOS[theme];
+    if (!scenario) throw new Error(`[check-design-system] 主题 ${theme} 没有登记对比度场景，请在 CONTRAST_SCENARIOS 补一行`);
+    let against = scenario.against;
+    if (against === 'bg-void') {
+      const bg = css.match(/--bg-void:\s*(#[0-9a-fA-F]{6})/);
+      if (!bg) throw new Error(`[check-design-system] ${f} 里找不到 --bg-void 的 hex 定义，测量失败`);
+      against = bg[1];
+    }
+    results.push({ theme, brand: m[1], against, label: scenario.label, ratio: contrastRatio(m[1], against) });
   }
   if (results.length === 0) throw new Error('[check-design-system] 未找到任何主题文件，测量失败');
   return results;
@@ -241,18 +261,10 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     process.exit(0);
   }
   if (mode === '--contrast') {
-    // 两场景：按钮白字（Button primary text-white）/ checked 控件白勾（原生 checkbox accent + 白勾、Toggle 白 thumb）
-    // 当前两场景前景均为 #FFFFFF，故对比度同值，一并报告。
-    console.log('四套主题 --brand-primary 对白色前景（按钮白字 / checked 白勾）的 WCAG 对比度（阈值 4.5:1）：');
-    let allPass = true;
+    console.log(`四套主题 --brand-primary 按各自用法场景的 WCAG 对比度（阈值 ${CONTRAST_MIN}:1）：`);
     for (const r of measureBrandContrast()) {
-      const pass = r.vsWhite >= 4.5;
-      if (!pass) allPass = false;
-      console.log(`  ${pass ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.brand}  vs #FFFFFF = ${r.vsWhite.toFixed(2)}:1`);
+      console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.brand} vs ${r.against} = ${r.ratio.toFixed(2)}:1  （${r.label}）`);
     }
-    console.log(allPass
-      ? '\n✓ 全部达标，可以把 ≥4.5:1 断言锁进棘轮门'
-      : '\n✗ 存在不达标主题：按治理批约定不直接改色，出色板对比方案等产品负责人拍板后再锁断言');
     process.exit(0);
   }
   if (mode === '--update') {
@@ -280,6 +292,16 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
       console.log(`= [${rule}] 守住基线：${count}`);
     }
   }
+  // 对比度硬断言（非棘轮：方案 A 落地后全绿，任何回退直接红）
+  for (const r of measureBrandContrast()) {
+    if (r.ratio < CONTRAST_MIN) {
+      failed = true;
+      console.error(`✗ [brand-contrast] ${r.theme} ${r.brand} vs ${r.against} = ${r.ratio.toFixed(2)}:1 < ${CONTRAST_MIN}:1（${r.label}）`);
+    } else {
+      console.log(`= [brand-contrast] ${r.theme} ${r.ratio.toFixed(2)}:1 达标`);
+    }
+  }
+
   if (failed) {
     console.error('\n设计系统门失败：禁止引入超出基线的新违规。走 token/primitive，或加 `// ds-allow:<kind> 理由`。');
     process.exit(1);

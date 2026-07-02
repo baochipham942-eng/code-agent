@@ -215,6 +215,9 @@ interface AppState {
   // 渐进披露 - Progressive Disclosure
   disclosureLevel: DisclosureLevel;
 
+  // 开发者模式：对话流中显示回合质量评分等调试信息
+  developerMode: boolean;
+
 
   // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: boolean;
@@ -317,6 +320,7 @@ interface AppState {
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
+  setDeveloperMode: (enabled: boolean) => void;
   setIsProcessing: (processing: boolean) => void;
   // 按会话设置处理状态
   setSessionProcessing: (sessionId: string, processing: boolean) => void;
@@ -442,6 +446,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // 渐进披露默认级别
   disclosureLevel: 'standard',
+
+  // 开发者模式默认关闭
+  developerMode: false,
 
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
@@ -580,6 +587,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
+  setDeveloperMode: (enabled) => set({ developerMode: enabled }),
 
 
   setIsProcessing: (processing) => set({ isProcessing: processing }),

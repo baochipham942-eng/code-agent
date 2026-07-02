@@ -636,6 +636,8 @@ export const en: Translations = {
       medium: 'Medium',
       large: 'Large',
     },
+    developerMode: 'Developer Mode',
+    developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
   },
 
   // Language Settings

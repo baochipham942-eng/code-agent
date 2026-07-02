@@ -9,6 +9,7 @@ import type {
 } from '../../shared/contract';
 import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 import { estimateTokens } from './tokenEstimator';
+import { COMPACTION_ECONOMICS } from '../../shared/constants';
 import {
   compactModelSummarizeWithMetadata,
   type CompactModelSummaryMetadata,
@@ -89,6 +90,8 @@ export interface CompactionServiceResult {
   validation?: CompactionSummaryValidation;
   summaryModel?: CompactModelSummaryMetadata;
   warnings: string[];
+  /** WP2-3 经济学闸账目：净节省 = (originalTokens − summaryTokens) − 调用成本×权重 */
+  netSavings?: { netSavedTokens: number; callCostTokens: number };
 }
 
 function messageId(message: Message, index: number): string {
@@ -433,22 +436,24 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
   validation: CompactionSummaryValidation;
   summaryModel: CompactModelSummaryMetadata;
   warnings: string[];
+  /** 摘要调用消耗（prompt 输入 + 摘要输出，含 repair 重试），供经济学闸算净节省 */
+  callCostTokens: number;
 }> {
   const prompt = buildSummaryPrompt(plan);
   let summaryResult = await compactModelSummarizeWithMetadata(prompt, SUMMARY_MAX_TOKENS);
   let summary = summaryResult.summary;
   let summaryModel = summaryResult.metadata;
+  let callCostTokens = estimateTokens(prompt) + estimateTokens(summary);
   let validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest));
   const warnings = [...validation.warnings];
 
   if (!validation.ok) {
     const repairInstruction = buildSummaryRepairInstruction(validation);
-    summaryResult = await compactModelSummarizeWithMetadata(
-      buildSummaryPrompt(plan, summary, repairInstruction),
-      SUMMARY_MAX_TOKENS,
-    );
+    const repairPrompt = buildSummaryPrompt(plan, summary, repairInstruction);
+    summaryResult = await compactModelSummarizeWithMetadata(repairPrompt, SUMMARY_MAX_TOKENS);
     summary = summaryResult.summary;
     summaryModel = summaryResult.metadata;
+    callCostTokens += estimateTokens(repairPrompt) + estimateTokens(summary);
     validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest));
     warnings.push(...validation.warnings);
   }
@@ -463,7 +468,7 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
     ].join('\n');
   }
 
-  return { summary, validation, summaryModel, warnings };
+  return { summary, validation, summaryModel, warnings, callCostTokens };
 }
 
 export async function compactMessagesWithSummary(
@@ -503,6 +508,34 @@ export async function compactMessagesWithSummary(
   }
 
   const beforeTokens = countMessageTokens(options.messages);
+
+  // WP2-3 净节省预闸（仅自动触发源）：最好情况净节省 = originalTokens −
+  // prompt 输入成本×权重（摘要输出趋 0 的理想化上界）。连上界都不过阈值，
+  // 直接跳过付费摘要调用——省调用费，也不打掉 prompt cache 前缀。
+  const economicsGated = plan.source === 'auto_threshold';
+  if (economicsGated) {
+    const promptCostTokens = estimateTokens(buildSummaryPrompt(plan));
+    const bestCaseNetSavings = plan.originalTokens
+      - promptCostTokens * COMPACTION_ECONOMICS.CALL_COST_WEIGHT;
+    if (bestCaseNetSavings < COMPACTION_ECONOMICS.MIN_NET_SAVINGS_TOKENS) {
+      logger.info(
+        `[CompactionService] Net-savings pre-gate rejected compaction: best-case ${Math.round(bestCaseNetSavings)} < ${COMPACTION_ECONOMICS.MIN_NET_SAVINGS_TOKENS} tokens (original=${plan.originalTokens})`,
+      );
+      const result: CompactionServiceResult = {
+        success: false,
+        reason: 'net_savings_below_threshold',
+        plan,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        savedTokens: 0,
+        netSavings: { netSavedTokens: Math.round(bestCaseNetSavings), callCostTokens: 0 },
+        warnings: [],
+      };
+      recordAudit(result, options);
+      return result;
+    }
+  }
+
   const hookResult = await runPreCompactHooks({
     hookManager: options.hookManager,
     sessionId: options.sessionId,
@@ -525,6 +558,11 @@ export async function compactMessagesWithSummary(
   const summaryContent = `[Context Handoff] Another language model worked on this task and produced the following summary. Use this to build on the work already done.\n\n${summary}`;
   const summaryTokens = estimateTokens(summaryContent);
   const savedTokens = Math.max(0, planWithHooks.originalTokens - summaryTokens);
+  const netSavedTokens = Math.round(
+    (planWithHooks.originalTokens - summaryTokens)
+    - summaryResult.callCostTokens * COMPACTION_ECONOMICS.CALL_COST_WEIGHT,
+  );
+  const netSavings = { netSavedTokens, callCostTokens: summaryResult.callCostTokens };
 
   if (summaryTokens >= planWithHooks.originalTokens) {
     const result: CompactionServiceResult = {
@@ -537,6 +575,30 @@ export async function compactMessagesWithSummary(
       savedTokens: 0,
       validation,
       summaryModel,
+      netSavings,
+      warnings,
+    };
+    recordAudit(result, options);
+    return result;
+  }
+
+  // WP2-3 净节省后闸（仅自动触发源）：真实摘要出来后按实际数字复核，
+  // 省的抵不过调用成本×权重 + 阈值 → 不提交（调用费已沉没，但不再打掉 prefix cache）。
+  if (economicsGated && netSavedTokens < COMPACTION_ECONOMICS.MIN_NET_SAVINGS_TOKENS) {
+    logger.info(
+      `[CompactionService] Net-savings gate rejected compaction: ${netSavedTokens} < ${COMPACTION_ECONOMICS.MIN_NET_SAVINGS_TOKENS} tokens (saved=${savedTokens}, callCost=${summaryResult.callCostTokens})`,
+    );
+    const result: CompactionServiceResult = {
+      success: false,
+      reason: 'net_savings_below_threshold',
+      plan: planWithHooks,
+      summary,
+      beforeTokens,
+      afterTokens: beforeTokens,
+      savedTokens: 0,
+      validation,
+      summaryModel,
+      netSavings,
       warnings,
     };
     recordAudit(result, options);
@@ -593,6 +655,7 @@ export async function compactMessagesWithSummary(
     savedTokens: beforeTokens - afterTokens,
     validation,
     summaryModel,
+    netSavings,
     warnings,
   };
   recordAudit(result, options);

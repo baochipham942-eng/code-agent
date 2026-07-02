@@ -247,6 +247,10 @@ export interface RuntimeContext {
   MAX_CONSECUTIVE_COMPACTS: number;
   /** ≥MAX_CONSECUTIVE_COMPACTS 后置位：窗口太小，暂停自动压缩、停止烧 token 摘要。 */
   _autoCompactPaused: boolean;
+  /** WP2-3：连续摘要失败次数（校验不过/调用异常），成功清零。 */
+  _summaryFailureStreak: number;
+  /** WP2-3：摘要失败冷却截止时间戳；冷却期内跳过付费 AI 摘要。 */
+  _summaryCooldownUntil: number;
 
   // --- Content verification ---
   contentVerificationRetries: Map<string, number>;

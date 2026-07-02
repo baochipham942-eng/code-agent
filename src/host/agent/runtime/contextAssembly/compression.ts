@@ -1,6 +1,6 @@
 // ContextAssembly - Context health tracking and hard-threshold compression.
 import type { AgentEvent, Message } from '../../../../shared/contract';
-import { CHECKPOINT_WRITER, DEFAULT_MODELS } from '../../../../shared/constants';
+import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
@@ -323,6 +323,23 @@ export function nextCompactionGuardState(
   return { consecutive, shouldPause: consecutive >= maxConsecutive };
 }
 
+/**
+ * WP2-3 摘要失败冷却的纯状态转移：连续 N 次摘要失败（校验不过/调用异常）进入
+ * 冷却期，冷却期内跳过付费 AI 摘要；成功即清零。与 nextCompactionGuardState 同范式。
+ */
+export function nextSummaryFailureState(input: {
+  streak: number;
+  failed: boolean;
+  now: number;
+}): { streak: number; cooldownUntil: number } {
+  if (!input.failed) return { streak: 0, cooldownUntil: 0 };
+  const streak = input.streak + 1;
+  const cooldownUntil = streak >= COMPACTION_ECONOMICS.FAILURE_COOLDOWN_THRESHOLD
+    ? input.now + COMPACTION_ECONOMICS.FAILURE_COOLDOWN_MS
+    : 0;
+  return { streak, cooldownUntil };
+}
+
 export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<void> {
   try {
     // Item2 卡死护栏：已判定窗口太小而暂停，则不再尝试压缩（避免每轮烧 token 摘要）。
@@ -445,6 +462,15 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       }
     }
 
+    // WP2-3 摘要失败冷却：冷却期内跳过付费 AI 摘要（确定性压缩层不受影响，
+    // 溢出恢复有独立路径兜底），避免连续失败反复烧 token。
+    if (Date.now() < ctx.runtime._summaryCooldownUntil) {
+      logger.warn(
+        `[AgentLoop] Summary compaction in failure cooldown until ${new Date(ctx.runtime._summaryCooldownUntil).toISOString()} — skipping paid summary`,
+      );
+      return;
+    }
+
     const preserveCount = compressorConfig.preserveRecentCount;
     const compactionResult = await compactMessagesWithSummary({
       sessionId: ctx.runtime.sessionId,
@@ -457,6 +483,21 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       usagePercent: health?.usagePercent,
       archivedToolResults: getArchivedToolResults(ctx.runtime.compressionState),
     });
+
+    // WP2-3 失败冷却记账：校验不过算失败（质量问题），净节省闸拒绝不算（经济学决策）。
+    const summaryFailed = compactionResult.validation?.ok === false;
+    const failureState = nextSummaryFailureState({
+      streak: ctx.runtime._summaryFailureStreak,
+      failed: summaryFailed,
+      now: Date.now(),
+    });
+    ctx.runtime._summaryFailureStreak = failureState.streak;
+    ctx.runtime._summaryCooldownUntil = failureState.cooldownUntil;
+    if (failureState.cooldownUntil > 0) {
+      logger.warn(
+        `[AgentLoop] ${failureState.streak} consecutive summary validation failures — entering cooldown for ${COMPACTION_ECONOMICS.FAILURE_COOLDOWN_MS / 60000} min`,
+      );
+    }
 
     if (compactionResult.success && compactionResult.block) {
       const { block } = compactionResult;
@@ -513,5 +554,13 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     }
   } catch (error) {
     logger.error('[AgentLoop] Auto compression failed:', error);
+    // WP2-3：摘要调用异常同样计入失败冷却
+    const failureState = nextSummaryFailureState({
+      streak: ctx.runtime._summaryFailureStreak,
+      failed: true,
+      now: Date.now(),
+    });
+    ctx.runtime._summaryFailureStreak = failureState.streak;
+    ctx.runtime._summaryCooldownUntil = failureState.cooldownUntil;
   }
 }

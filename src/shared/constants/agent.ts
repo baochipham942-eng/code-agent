@@ -104,6 +104,21 @@ export const OBSERVATION_MASKING = {
   PLACEHOLDER_FILE_READ: '[File content omitted from history to save context. You have already received this file content earlier in this conversation. Do NOT re-read this file unless you have specific reason to believe it changed externally — rely on your prior understanding to proceed.]',
 } as const;
 
+/**
+ * 上下文压缩经济学闸（WP2-3）：省下 tokens − 压缩调用成本×权重 ≥ 阈值才提交。
+ * 只闸自动触发源（auto_threshold）；手动压缩与溢出恢复不受限。
+ */
+export const COMPACTION_ECONOMICS = {
+  /** 压缩调用成本折权：调用走轻量 compact model 且节省按后续多轮摊销，故折算而非全价 */
+  CALL_COST_WEIGHT: 0.2,
+  /** 净节省阈值（tokens）：低于此不值得打掉 provider prompt cache 前缀 */
+  MIN_NET_SAVINGS_TOKENS: 500,
+  /** 连续 N 次摘要失败（校验不过/调用异常）进入冷却 */
+  FAILURE_COOLDOWN_THRESHOLD: 3,
+  /** 冷却时长（冷却期内跳过付费 AI 摘要，确定性压缩层不受影响） */
+  FAILURE_COOLDOWN_MS: 10 * 60 * 1000,
+} as const;
+
 /** 子 Agent 上下文压缩配置 */
 export const SUBAGENT_COMPACTION = {
   /** 触发压缩的上下文窗口占用比例 */

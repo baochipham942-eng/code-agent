@@ -42,6 +42,8 @@ export interface LaunchApprovedNeoWorkCardInput {
   service?: NeoWorkCardService;
   now?: () => number;
   onWorkCardUpdated?: (workCardId: string, reason: NeoWorkCardUpdateReason) => void;
+  /** 本轮落点：缺省回源会话（向后兼容）。跨会话续接时 = 当前会话 + 该轮 turnId（ADR-033）。 */
+  target?: { conversationId: string; turnId: string };
 }
 
 export interface LaunchApprovedNeoWorkCardResult {
@@ -141,6 +143,7 @@ function appendFailureDelta(args: {
   service: NeoWorkCardService;
   workCardId: string;
   runId: string;
+  conversationId: string;
   error: string;
   now: () => number;
   contextAudit: string;
@@ -148,6 +151,7 @@ function appendFailureDelta(args: {
   args.service.appendDelta({
     workCardId: args.workCardId,
     runId: args.runId,
+    conversationId: args.conversationId,
     decisions: [args.contextAudit],
     openQuestions: ['Check provider credentials/model availability, then revise or retry this work card.'],
     risks: [args.error],
@@ -231,7 +235,11 @@ export async function launchApprovedNeoWorkCard(
   const detail = requireApprovedDetail(service.get(input.workCardId));
   const { workCard, approvedRevision } = detail;
   const latestDelta = detail.deltas.at(-1);
-  const source = await readSourceMessages(workCard.sourceConversationId);
+  // ADR-033：本轮落点缺省回源会话；跨会话续接时落发起续接的会话（过程在用户眼前流式可见）
+  const roundConversationId = input.target?.conversationId ?? workCard.sourceConversationId;
+  const roundTurnId = input.target?.turnId ?? workCard.sourceTurnId;
+  const isCrossConversation = roundConversationId !== workCard.sourceConversationId;
+  const source = await readSourceMessages(roundConversationId);
   const run = runId();
   const contextPack = buildNeoTagContextPack({
     workCard,
@@ -244,7 +252,8 @@ export async function launchApprovedNeoWorkCard(
     workCardId: workCard.id,
     projectId: workCard.projectId,
     sourceConversationId: workCard.sourceConversationId,
-    sourceTurnId: workCard.sourceTurnId,
+    sourceTurnId: roundTurnId,
+    targetConversationId: roundConversationId,
     approvedRevisionId: approvedRevision.id,
     runId: run,
     contextPackId: contextPack.id,
@@ -261,6 +270,7 @@ export async function launchApprovedNeoWorkCard(
   service.appendDelta({
     workCardId: workCard.id,
     runId: run,
+    conversationId: roundConversationId,
     completed: [`Queued approved revision ${approvedRevision.id}`],
     decisions: [
       'Approved work card entered the local Neo runtime queue.',
@@ -272,10 +282,12 @@ export async function launchApprovedNeoWorkCard(
   notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_queued');
 
   try {
-    if (source.workingDirectory) {
-      const orchestrator = input.taskManager.getOrCreateCurrentOrchestrator?.(workCard.sourceConversationId);
+    // D2 护栏：只有回源会话跑才同步工作目录；跨会话续接用目标会话自己的目录，
+    // 禁止持久改写目标会话的工作目录（污染其后续普通聊天）。
+    if (source.workingDirectory && !isCrossConversation) {
+      const orchestrator = input.taskManager.getOrCreateCurrentOrchestrator?.(roundConversationId);
       orchestrator?.setWorkingDirectory?.(source.workingDirectory);
-      input.taskManager.setWorkingDirectory?.(workCard.sourceConversationId, source.workingDirectory);
+      input.taskManager.setWorkingDirectory?.(roundConversationId, source.workingDirectory);
     }
 
     service.setStatus(workCard.id, 'working', now());
@@ -292,23 +304,23 @@ export async function launchApprovedNeoWorkCard(
         runId: run,
         contextPackId: contextPack.id,
         sourceConversationId: workCard.sourceConversationId,
-        sourceTurnId: workCard.sourceTurnId,
+        sourceTurnId: roundTurnId,
         status: 'working',
       },
     };
-    // clientMessageId = sourceTurnId：renderer 在 @neo 提交时本地补的用户消息用同一个 ID，
+    // clientMessageId = 本轮 turnId：renderer 在 @neo 提交时本地补的用户消息用同一个 ID，
     // 落库幂等（addMessageToSession 重复 ID 走 update），live 与 reload 不会出现双份用户消息。
     await input.taskManager.startTask(
-      workCard.sourceConversationId,
+      roundConversationId,
       approvedRevision.taskSummary,
       undefined,
       options,
       metadata,
-      workCard.sourceTurnId,
+      roundTurnId,
     );
     const changedFiles = await safelyCollectChangedFiles(artifactSnapshot);
 
-    const state = await waitForRuntimeState(input.taskManager, workCard.sourceConversationId);
+    const state = await waitForRuntimeState(input.taskManager, roundConversationId);
     if (state?.status === 'error') {
       const error = state.error || 'Runtime task ended with an error state.';
       service.setStatus(workCard.id, 'failed', now());
@@ -316,6 +328,7 @@ export async function launchApprovedNeoWorkCard(
         service,
         workCardId: workCard.id,
         runId: run,
+        conversationId: roundConversationId,
         error,
         now,
         contextAudit: summarizeContextAudit(contextPack),
@@ -329,6 +342,7 @@ export async function launchApprovedNeoWorkCard(
       service.appendDelta({
         workCardId: workCard.id,
         runId: run,
+        conversationId: roundConversationId,
         decisions: [summarizeContextAudit(contextPack)],
         openQuestions: ['Runtime paused for user input or approval.'],
         nextStep: 'Answer the pending runtime request before continuing this work card.',
@@ -342,6 +356,7 @@ export async function launchApprovedNeoWorkCard(
     service.appendDelta({
       workCardId: workCard.id,
       runId: run,
+      conversationId: roundConversationId,
       completed: ['Local Neo runtime run finished.'],
       changedFiles,
       decisions: [
@@ -362,6 +377,7 @@ export async function launchApprovedNeoWorkCard(
       service,
       workCardId: workCard.id,
       runId: run,
+      conversationId: roundConversationId,
       error: message,
       now,
       contextAudit: summarizeContextAudit(contextPack),

@@ -256,6 +256,8 @@ export interface NeoTagRunContext {
   projectId: string;
   sourceConversationId: string;
   sourceTurnId: string;
+  /** 本轮实际执行的会话；缺省 = sourceConversationId（跨会话续接时不同）。 */
+  targetConversationId?: string;
   approvedRevisionId: string;
   runId: string;
   contextPackId: string;

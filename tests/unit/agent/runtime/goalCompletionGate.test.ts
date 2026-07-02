@@ -25,6 +25,12 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     getSwarmTokensUsed: vi.fn().mockReturnValue(500),
     markMet: vi.fn(),
     markAborted: vi.fn(),
+    // 三分支裁决（有界修复 + 到限放行）新增接口
+    recordGateFailure: vi.fn().mockReturnValue(1),
+    getGateFailureCount: vi.fn().mockReturnValue(0),
+    isGateRepairExhausted: vi.fn().mockReturnValue(false),
+    markMetDegraded: vi.fn(),
+    isVerificationDegraded: vi.fn().mockReturnValue(false),
     ...goalModeOverrides,
   };
   const ctx = {

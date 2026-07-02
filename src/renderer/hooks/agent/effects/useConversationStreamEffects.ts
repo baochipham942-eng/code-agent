@@ -412,7 +412,7 @@ export const useConversationStreamEffects = ({
         case 'goal_complete': {
           logHandledEvent();
           if (eventSessionId) {
-            const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number };
+            const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string };
             const appStore = useAppStore.getState();
             const run = appStore.goalRuns[eventSessionId];
             appStore.finishGoalRun(eventSessionId, d.status, d.reason);
@@ -424,6 +424,8 @@ export const useConversationStreamEffects = ({
                 turns: d.turns,
                 tokensUsed: d.tokensUsed,
                 durationMs: run ? Date.now() - run.startedAt : undefined,
+                degraded: d.degraded,
+                degradedReason: d.degradedReason,
                 verificationCard: [...(run?.gates ?? [])].reverse().find((gate) => gate.verificationCard)?.verificationCard,
               }));
             }

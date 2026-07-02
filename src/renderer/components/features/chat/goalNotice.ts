@@ -24,6 +24,10 @@ export interface GoalNoticePayload {
   tokensUsed?: number;
   /** 总耗时 ms（met/aborted） */
   durationMs?: number;
+  /** 到限放行（kind=met 且修复预算耗尽）：完成但验证未全过，显示安静降级标识 */
+  degraded?: boolean;
+  /** 到限放行的最后一次验证/评审失败原因 */
+  degradedReason?: string;
   /** Goal verification card summarized from goal_gate events. */
   verificationCard?: GoalGateVerificationCard;
 }

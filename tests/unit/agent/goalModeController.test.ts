@@ -48,6 +48,38 @@ describe('① 墙钟预算 — evaluateFallback', () => {
   });
 });
 
+describe('③ 闸修复预算 — 有界修复与到限放行（三分支裁决）', () => {
+  it('初始修复预算未耗尽，计数为 0', () => {
+    const c = ctrl();
+    expect(c.getGateFailureCount()).toBe(0);
+    expect(c.isGateRepairExhausted()).toBe(false);
+  });
+
+  it('recordGateFailure 递增并返回累计次数，达 GATE_REPAIR_MAX_ATTEMPTS 即耗尽', () => {
+    const c = ctrl();
+    for (let i = 1; i <= GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS; i++) {
+      expect(c.recordGateFailure()).toBe(i);
+    }
+    expect(c.isGateRepairExhausted()).toBe(true);
+  });
+
+  it('markMetDegraded → status met + 降级标记 + 保留原因（到限放行，绝不无限阻塞）', () => {
+    const c = ctrl();
+    c.markMetDegraded('验证命令 2 次修复后仍未通过');
+    expect(c.getStatus()).toBe('met');
+    expect(c.isPending()).toBe(false);
+    expect(c.isVerificationDegraded()).toBe(true);
+    expect(c.getDegradedReason()).toMatch(/未通过/);
+  });
+
+  it('正常 markMet → 无降级标记', () => {
+    const c = ctrl();
+    c.markMet();
+    expect(c.getStatus()).toBe('met');
+    expect(c.isVerificationDegraded()).toBe(false);
+  });
+});
+
 describe('② audit 自适应 — shouldInjectAudit', () => {
   it('复杂 goal（有 verifyCommand）→ 维持基础间隔，第 N 轮注入', () => {
     const c = ctrl({ verifyCommand: 'npm test' });

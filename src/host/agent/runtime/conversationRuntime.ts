@@ -587,6 +587,10 @@ export class ConversationRuntime {
             status: 'met',
             turns: iterations,
             tokensUsed: goalTokensUsedWithSwarm(this.ctx),
+            // 到限放行（修复预算耗尽）：完成但验证未全过，UI 显示安静降级标识
+            ...(this.ctx.goalMode.isVerificationDegraded()
+              ? { degraded: true, degradedReason: this.ctx.goalMode.getDegradedReason() }
+              : {}),
           },
         });
         terminal = { status: 'goal_met' };

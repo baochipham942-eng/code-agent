@@ -133,6 +133,12 @@ export const GOAL_MODE = {
    * 比基础间隔长——轻任务不需要每 3 轮就跑一次重型完成前自检，省 token 又不脱敏。
    */
   SIMPLE_CHECKPOINT_INTERVAL: 6,
+  /**
+   * 闸1/闸2 失败后的有界修复机会（三分支裁决：allow_finalize / repair_prompt /
+   * exhausted_release）。到限不再注回失败输出，放行收尾但带降级标记——
+   * 长任务绝不无限阻塞在验证修复循环里（此前只有 maxIterations 兜底）。
+   */
+  GATE_REPAIR_MAX_ATTEMPTS: 2,
   /** 闸1 验证命令超时（ms）；测试/构建可能较久，超时即判失败 */
   VERIFY_TIMEOUT_MS: 600_000,
   /** 闸1 验证输出注回模型时的最大字符数（控 token） */

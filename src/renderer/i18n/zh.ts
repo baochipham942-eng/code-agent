@@ -847,6 +847,12 @@ export const zh = {
     continueMessage: '已锁定 design brief，请按它直接生成成品。',
     skipMessage: '跳过设计澄清，请按你的最佳判断直接生成成品，不要再 emit question-form。',
   },
+
+  // /goal 生命周期通知卡片（到限放行的安静降级标识）
+  goalNotice: {
+    degradedBadge: '已完成 · 验证未全过',
+    degradedReasonPrefix: '最后一次验证：',
+  },
 };
 
 export type Translations = typeof zh;

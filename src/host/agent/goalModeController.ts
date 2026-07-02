@@ -95,6 +95,11 @@ export class GoalModeController {
   private pendingSummary?: string;
   /** swarm（workflow 子 agent）累计消耗的 token —— 计入闸3 预算（内部文档 §4） */
   private swarmTokensUsed = 0;
+  /** 闸1/闸2 累计失败次数（共享修复预算，三分支裁决用） */
+  private gateFailureCount = 0;
+  /** 到限放行标记：met 但验证未全过（完成但降级） */
+  private verificationDegraded = false;
+  private degradedReason?: string;
 
   constructor(contract: GoalContract) {
     this.contract = contract;
@@ -154,6 +159,40 @@ export class GoalModeController {
   markMet(): void {
     this.status = 'met';
     logger.debug('[GoalMode] goal marked met');
+  }
+
+  /** 闸1/闸2 失败一次 → 修复预算计数，返回累计次数 */
+  recordGateFailure(): number {
+    this.gateFailureCount += 1;
+    return this.gateFailureCount;
+  }
+
+  getGateFailureCount(): number {
+    return this.gateFailureCount;
+  }
+
+  /** 修复预算是否已耗尽（达 GATE_REPAIR_MAX_ATTEMPTS） */
+  isGateRepairExhausted(): boolean {
+    return this.gateFailureCount >= GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS;
+  }
+
+  /**
+   * 到限放行：修复预算耗尽后不再阻塞收尾，标 met 但带降级标记。
+   * 官方判定（验证命令结果）保持原样呈现，UI 侧以安静降级标识区分于全过的 met。
+   */
+  markMetDegraded(reason: string): void {
+    this.status = 'met';
+    this.verificationDegraded = true;
+    this.degradedReason = reason;
+    logger.warn('[GoalMode] goal released after repair budget exhausted (met, degraded)', { reason });
+  }
+
+  isVerificationDegraded(): boolean {
+    return this.verificationDegraded;
+  }
+
+  getDegradedReason(): string | undefined {
+    return this.degradedReason;
   }
 
   /** 闸3 兜底触发 → 标中止 */

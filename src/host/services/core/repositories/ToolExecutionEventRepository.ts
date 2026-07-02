@@ -34,6 +34,8 @@ export interface ToolExecutionCompleteInput {
   status: string;
   /** 出错时的错误信息（可选） */
   error?: string;
+  /** 可读摘要（可选；如 goal 闸裁决语义），进 session 一本账 execution lane 展示 */
+  summary?: string;
   sessionId?: string;
   recordedAt: number;
 }
@@ -110,11 +112,12 @@ export class ToolExecutionEventRepository {
     this.db.prepare(`
       INSERT INTO tool_execution_events
         (execution_id, session_id, tool_name, summary, params_json, phase, status, error, recorded_at)
-      VALUES (?, ?, ?, NULL, NULL, 'complete', ?, ?, ?)
+      VALUES (?, ?, ?, ?, NULL, 'complete', ?, ?, ?)
     `).run(
       input.executionId,
       input.sessionId ?? null,
       input.toolName,
+      input.summary ?? null,
       input.status,
       input.error ?? null,
       input.recordedAt,

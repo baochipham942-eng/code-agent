@@ -860,4 +860,10 @@ export const en: Translations = {
     continueMessage: 'Design brief locked—generate the deliverable directly from it.',
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
   },
+
+  // /goal 生命周期通知卡片（到限放行的安静降级标识）
+  goalNotice: {
+    degradedBadge: 'Completed · verification incomplete',
+    degradedReasonPrefix: 'Last verification: ',
+  },
 };

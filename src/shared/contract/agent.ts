@@ -293,6 +293,9 @@ export interface GoalGateVerificationCommand {
   evidenceRefId?: string;
 }
 
+/** goal 闸三分支裁决（有界修复 + 到限放行，绝不无限阻塞收尾） */
+export type GoalGateVerdict = 'allow_finalize' | 'repair_prompt' | 'exhausted_release';
+
 export interface GoalGateVerificationCard {
   status: GoalGateVerificationStatus;
   failureType?: GoalGateVerificationFailureType;
@@ -339,9 +342,10 @@ export type AgentEvent =
   | { type: 'agent_cancelled'; data: null }
   // /goal 自治模式观测事件
   | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number; parentToolUseId?: string } }
-  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string; verificationStatus?: GoalGateVerificationStatus; failureType?: GoalGateVerificationFailureType; evidenceRefs?: EvidenceRef[]; skippedChecks?: GoalGateSkippedCheck[]; plannedOptionalCommands?: GoalGatePlannedCommand[]; verificationCard?: GoalGateVerificationCard } }
+  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string; verdict?: GoalGateVerdict; attempt?: number; verificationStatus?: GoalGateVerificationStatus; failureType?: GoalGateVerificationFailureType; evidenceRefs?: EvidenceRef[]; skippedChecks?: GoalGateSkippedCheck[]; plannedOptionalCommands?: GoalGatePlannedCommand[]; verificationCard?: GoalGateVerificationCard } }
   // /goal 终态：三闸全过(met) 或 闸3 兜底中止(aborted)。前端据此展示"已完成/已中止"+停表。
-  | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; parentToolUseId?: string } }
+  // degraded：到限放行（修复预算耗尽仍未过验证）——met 但带安静降级标识。
+  | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string; parentToolUseId?: string } }
   // Auto Agent 思考/规划事件
   | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)

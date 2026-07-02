@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { Target, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
 import { parseGoalNotice, type GoalNoticePayload } from '../goalNotice';
 
 export interface GoalNoticeMessageProps {
@@ -63,6 +64,24 @@ function VerificationCardLine({ notice }: { notice: GoalNoticePayload }) {
   );
 }
 
+/** 到限放行的安静降级标识：小字徽标，不抢完成卡的主视觉 */
+function DegradedBadge({ notice }: { notice: GoalNoticePayload }) {
+  const { t } = useI18n();
+  if (!notice.degraded) return null;
+  return (
+    <div className="pl-6 flex flex-col gap-0.5">
+      <span className="inline-flex w-fit items-center rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300/80">
+        {t.goalNotice.degradedBadge}
+      </span>
+      {notice.degradedReason && (
+        <span className="text-[11px] text-zinc-500">
+          {t.goalNotice.degradedReasonPrefix}{notice.degradedReason}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content }) => {
   const notice = parseGoalNotice(content);
   if (!notice) return null;
@@ -90,6 +109,7 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
         <div className="pl-6">
           <MetaLine notice={notice} />
         </div>
+        <DegradedBadge notice={notice} />
         <VerificationCardLine notice={notice} />
       </div>
     );

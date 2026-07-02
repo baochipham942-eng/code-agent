@@ -37,6 +37,8 @@ on:
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
       - 'knip.json'
+      - 'scripts/architecture-debt-report.mjs'
+      - 'eslint.config.js'
       - 'scripts/build-renderer-bundle.mjs'
       - 'scripts/control-plane-*.mjs'
       - 'scripts/generate-control-plane-env.mjs'
@@ -114,6 +116,12 @@ jobs:
           node scripts/stale-dist-scan.mjs
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
+
+      - name: Script gates (vitest tests/scripts)
+        # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
+        # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
+        # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
+        run: npx vitest run tests/scripts --retry=1
 
       - name: Knip dead-export ratchet
         # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。

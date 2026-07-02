@@ -721,7 +721,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             </div>
           )}
           {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
-              (林晨 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
+              (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
           <InputArea
             ref={inputAreaRef}
             value={value}

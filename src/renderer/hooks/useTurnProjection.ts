@@ -480,7 +480,7 @@ export function projectTurns(
     }
   }
 
-  // Neo Tag 轻量化重设计（林晨拍板 2026-07-02）：@neo = 正常 agent 聊天体验，
+  // Neo Tag 轻量化重设计（产品负责人拍板 2026-07-02）：@neo = 正常 agent 聊天体验，
   // 会话里不再投影独立的 neo_work_card 卡片。@neo 的运行本就是同会话的正常 agent turn，
   // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
 

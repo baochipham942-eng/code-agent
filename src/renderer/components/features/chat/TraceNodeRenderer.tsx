@@ -88,7 +88,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = <SystemNode node={node} />;
       break;
     case 'neo_work_card':
-      // 轻量化重设计：@neo = 正常 agent 聊天,会话里不再渲染独立工作卡(2026-07-02 林晨拍板)。
+      // 轻量化重设计：@neo = 正常 agent 聊天,会话里不再渲染独立工作卡(2026-07-02 产品负责人拍板)。
       // 历史/产物在账号菜单「Neo 协同」topic 目录看。
       return null;
     case 'swarm_launch_request':

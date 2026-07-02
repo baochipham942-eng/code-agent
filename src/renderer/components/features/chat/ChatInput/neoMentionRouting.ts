@@ -18,7 +18,7 @@ export const NEO_TAG_MENTION_AGENT: MentionRoutingAgent & { role: string } = {
 
 /**
  * 建议展示 Neo 候选的时机：
- * - 裸 @（空 query）：像 @teammate 一样置顶召唤 Neo,并借此压掉文件 popup 噪音（林晨 2026-07-02）。
+ * - 裸 @（空 query）：像 @teammate 一样置顶召唤 Neo,并借此压掉文件 popup 噪音（产品负责人 2026-07-02）。
  * - @ 后接 'neo' 的前缀（n / ne / neo）：继续置顶 Neo。
  * - @ 后接其它前缀（如文件名 src/...）：不召唤 Neo,文件 mention 照常。
  */

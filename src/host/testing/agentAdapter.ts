@@ -274,6 +274,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private sessionRecordEnsured = false;
   /** GAP-017: harness 配置变体（对照实验维度） */
   private harness?: HarnessVariantConfig;
+  /** WP1-3: A/B 对比的 candidate prompt（缺省用产线 SYSTEM_PROMPT） */
+  private systemPromptOverride?: string;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -291,12 +293,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
     toolMode?: 'all' | 'deferred';
     /** GAP-017: harness 配置变体 */
     harness?: HarnessVariantConfig;
+    /** WP1-3: A/B 对比的 candidate prompt（缺省用产线 SYSTEM_PROMPT） */
+    systemPromptOverride?: string;
   }) {
     this.workingDirectory = config.workingDirectory;
     this.modelConfig = config.modelConfig;
     this.inferenceOptions = config.inferenceOptions;
     this.maxIterations = config.maxIterations;
     this.harness = config.harness;
+    this.systemPromptOverride = config.systemPromptOverride;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
     // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
@@ -397,7 +402,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const loop = new AgentLoop({
         sessionId: this.currentSessionId,
         workingDirectory: this.workingDirectory,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: this.systemPromptOverride ?? SYSTEM_PROMPT,
         modelConfig: {
           ...this.modelConfig,
           provider: this.modelConfig.provider as ModelProvider,

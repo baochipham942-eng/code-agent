@@ -10,6 +10,7 @@ import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import { sessionsSignature } from '../utils/sessionListSignature';
+import { hydrateToolCallResults } from '../utils/messageHydration';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
@@ -39,43 +40,6 @@ let _switchCounter = 0;
 
 function invalidatePendingSessionSwitches(): void {
   _switchCounter += 1;
-}
-
-function hydrateToolCallResults(messages: Message[]): Message[] {
-  const resultsByToolCallId = new Map<string, NonNullable<Message['toolResults']>[number]>();
-
-  for (const message of messages) {
-    for (const result of message.toolResults ?? []) {
-      if (result.toolCallId) {
-        resultsByToolCallId.set(result.toolCallId, result);
-      }
-    }
-  }
-
-  if (resultsByToolCallId.size === 0) {
-    return messages;
-  }
-
-  return messages.map((message) => {
-    if (!message.toolCalls?.length) {
-      return message;
-    }
-
-    let changed = false;
-    const toolCalls = message.toolCalls.map((toolCall) => {
-      if (toolCall.result) {
-        return toolCall;
-      }
-      const result = resultsByToolCallId.get(toolCall.id);
-      if (!result) {
-        return toolCall;
-      }
-      changed = true;
-      return { ...toolCall, result };
-    });
-
-    return changed ? { ...message, toolCalls } : message;
-  });
 }
 
 function isVisibleHistoryMessage(message: Message): boolean {
@@ -1051,7 +1015,12 @@ function clearSessionStateForAuthChange(): void {
   });
 }
 
-export async function reloadSessionsForAuthChange(): Promise<void> {
+export async function reloadSessionsForAuthChange(options?: { principalChanged?: boolean }): Promise<void> {
+  // 同主体状态确认（启动时 host 对同一用户重复推 signed_in）只静默刷新：
+  // 清空已渲染的会话态会让已可见的窗口闪空重建（"启动闪 1-2 下"的根因）。
+  if (options?.principalChanged === false) {
+    return useSessionStore.getState().loadSessions({ silent: true });
+  }
   clearSessionStateForAuthChange();
   if (!_initialized) {
     return;

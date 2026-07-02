@@ -47,11 +47,22 @@ function getResultErrorMessage(result: AuthActionResult | null | undefined, fall
 
 let sessionReloadForAuthPromise: Promise<void> | null = null;
 
-async function reloadSessionsForAuthenticatedUser(): Promise<void> {
+async function reloadSessionsForAuthenticatedUser(options?: { principalChanged?: boolean }): Promise<void> {
+  const principalChanged = options?.principalChanged ?? true;
+  if (!principalChanged) {
+    // 同主体状态确认（如启动时缓存用户→验证完成的重复 signed_in）：静默刷新，
+    // 不清会话态、不参与全量重载的去重锁（本身幂等且签名去重）。
+    try {
+      await reloadSessionsForAuthChange({ principalChanged: false });
+    } catch (error) {
+      logger.warn('Failed to refresh sessions after auth confirmation', { error: getErrorMessage(error) });
+    }
+    return;
+  }
   if (!sessionReloadForAuthPromise) {
     sessionReloadForAuthPromise = (async () => {
       try {
-        await reloadSessionsForAuthChange();
+        await reloadSessionsForAuthChange({ principalChanged: true });
       } catch (error) {
         logger.warn('Failed to reload sessions after auth change', { error: getErrorMessage(error) });
       } finally {
@@ -378,10 +389,11 @@ export async function initializeAuthStore(): Promise<void> {
   try {
     const status = await invokeDomain<AuthStatus>(IPC_DOMAINS.AUTH, 'getStatus');
     if (status) {
+      const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(status.user);
       store.setAuthStatusMeta(status);
       if (status.user) {
-        void reloadSessionsForAuthenticatedUser();
+        void reloadSessionsForAuthenticatedUser({ principalChanged: prevUserId !== status.user.id });
       }
     }
   } catch (error) {
@@ -403,6 +415,9 @@ export async function initializeAuthStore(): Promise<void> {
   // Listen for auth events
   ipcService.on(IPC_CHANNELS.AUTH_EVENT, (event) => {
     if (event.type === 'signed_in' && event.user) {
+      // 启动时 host 会对同一用户重复推 signed_in（缓存用户 → profile 验证完成）。
+      // 只有登录主体真的变了才允许破坏性的会话清空重载，否则窗口可见后会闪。
+      const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(event.user);
       store.setLoading(false);
       store.setShowAuthModal(false);
@@ -411,15 +426,16 @@ export async function initializeAuthStore(): Promise<void> {
         authBackendAvailable: event.authBackendAvailable ?? true,
         hasCachedAdminClaim: event.hasCachedAdminClaim ?? false,
       });
-      void reloadSessionsForAuthenticatedUser();
+      void reloadSessionsForAuthenticatedUser({ principalChanged: prevUserId !== event.user.id });
     } else if (event.type === 'signed_out') {
+      const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(null);
       store.setAuthStatusMeta({
         sessionTrustState: 'none',
         authBackendAvailable: event.authBackendAvailable,
         hasCachedAdminClaim: false,
       });
-      void reloadSessionsForAuthenticatedUser();
+      void reloadSessionsForAuthenticatedUser({ principalChanged: prevUserId !== null });
     } else if (event.type === 'user_updated' && event.user) {
       store.setUser(event.user);
     }

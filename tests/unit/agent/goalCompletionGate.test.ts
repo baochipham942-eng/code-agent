@@ -150,6 +150,10 @@ describe('分支3 exhausted_release — 到限放行，绝不无限阻塞', () =
     expect(verdicts.some((v) => String(v.summary).includes('exhausted_release'))).toBe(true);
     const gateEvents = h.events.filter((e) => e.type === 'goal_gate');
     expect(gateEvents.some((e) => e.data.verdict === 'exhausted_release')).toBe(true);
+    // 终态事件在闸内立即发出（codex audit M1）：final 推理失败也不留"永远 running"
+    const completeEvents = h.events.filter((e) => e.type === 'goal_complete');
+    expect(completeEvents).toHaveLength(1);
+    expect(completeEvents[0].data).toMatchObject({ status: 'met', degraded: true });
   });
 
   it('放行后 goal 不再 pending，不会继续拦截下一轮 attempt_completion', async () => {

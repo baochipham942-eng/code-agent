@@ -8,7 +8,7 @@
 // 应跳过 diff 防误报。纯同步实现（验证本身是命令级操作，快照成本相对可忽略）。
 // ============================================================================
 
-import { readdirSync, statSync } from 'fs';
+import { lstatSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 
@@ -61,10 +61,13 @@ export function captureWorkspaceSnapshot(
       const relPath = rel ? `${rel}/${name}` : name;
       let st;
       try {
-        st = statSync(abs);
+        // lstat 不跟随 symlink：目录软链会把递归带出 cwd（外部变更误记为
+        // 工作区副作用，且可能扫进 TCC 保护目录），symlink 一律跳过。
+        st = lstatSync(abs);
       } catch {
         continue;
       }
+      if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) {
         walk(abs, relPath, depth + 1);
       } else if (st.isFile()) {

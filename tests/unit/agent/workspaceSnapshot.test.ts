@@ -3,7 +3,7 @@
 // 验证命令跑前后对工作区做有界快照 diff，非空则在证据里标 workspaceSideEffects。
 // ============================================================================
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -74,6 +74,17 @@ describe('captureWorkspaceSnapshot / diffWorkspaceSnapshots', () => {
     const snap = captureWorkspaceSnapshot('/nonexistent/path/xyz');
     expect(snap.entries.size).toBe(0);
     expect(snap.truncated).toBe(false);
+  });
+
+  it('目录 symlink 不跟随：外部目录变更不会被记成工作区副作用（codex audit M4）', () => {
+    const ws = makeWorkspace();
+    const outside = makeWorkspace();
+    writeFileSync(join(outside, 'ext.txt'), 'v1');
+    symlinkSync(outside, join(ws, 'link-out'));
+    const before = captureWorkspaceSnapshot(ws);
+    writeFileSync(join(outside, 'ext.txt'), 'v2-changed');
+    const after = captureWorkspaceSnapshot(ws);
+    expect(diffWorkspaceSnapshots(before, after)).toEqual([]);
   });
 
   it('工作目录=家目录 → 拒绝下钻（TCC 护栏），标 truncated 跳过 diff', async () => {

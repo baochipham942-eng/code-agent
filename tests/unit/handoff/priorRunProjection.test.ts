@@ -58,6 +58,25 @@ describe('buildPriorRunProjection', () => {
     expect((text as string).endsWith('…')).toBe(true);
   });
 
+  it('cancelled 落账为 abandoned 也算终态，不进未完成清单（codex audit M2）', () => {
+    expect(buildPriorRunProjection(ledger([
+      { at: 1, lane: 'task', kind: 'created', summary: 't1: 被取消的任务', refId: 't1' },
+      { at: 2, lane: 'task', kind: 'abandoned', summary: 't1: 被取消的任务', refId: 't1' },
+    ]))).toBeNull();
+  });
+
+  it('slice(-N) 取"最近有动静"的任务：老任务有新事件应刷新到尾部（codex audit M3）', () => {
+    const entries: LedgerEntry[] = [];
+    for (let i = 0; i < 12; i++) {
+      entries.push({ at: i, lane: 'task', kind: 'created', summary: `t${i}: 任务${i}`, refId: `t${i}` });
+    }
+    // t0 在最后又有动静 → 应挤进"最近 10 个"，t1 作为最旧的被挤出
+    entries.push({ at: 100, lane: 'task', kind: 'started', summary: 't0: 任务0', refId: 't0' });
+    const text = buildPriorRunProjection(ledger(entries));
+    expect(text).toContain('t0: 任务0');
+    expect(text).not.toContain('t1: 任务1');
+  });
+
   it('只有成功事件、无未完成任务 → null（没有值得续跑的现场）', () => {
     expect(buildPriorRunProjection(ledger([
       { at: 1, lane: 'execution', kind: 'complete:success', summary: 'ok', refId: 'e1' },

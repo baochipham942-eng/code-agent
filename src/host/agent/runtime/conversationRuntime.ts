@@ -581,18 +581,18 @@ export class ConversationRuntime {
         // 闸1 验证通过 → markMet → loop 退出，收尾标 goal_met。
         // （闸3 兜底中止已在 loop 内直接 terminal = 'aborted'。）
         // 终态事件：目标达成（UI 展示"目标已完成"+停表）
-        this.ctx.onEvent({
-          type: 'goal_complete',
-          data: {
-            status: 'met',
-            turns: iterations,
-            tokensUsed: goalTokensUsedWithSwarm(this.ctx),
-            // 到限放行（修复预算耗尽）：完成但验证未全过，UI 显示安静降级标识
-            ...(this.ctx.goalMode.isVerificationDegraded()
-              ? { degraded: true, degradedReason: this.ctx.goalMode.getDegradedReason() }
-              : {}),
-          },
-        });
+        // 到限放行（degraded）的 goal_complete 已在闸内发出（对齐 IMPOSSIBLE 分支，
+        // 防 final 推理失败/取消时 UI 拿不到终态），此处不重发。
+        if (!this.ctx.goalMode.isVerificationDegraded()) {
+          this.ctx.onEvent({
+            type: 'goal_complete',
+            data: {
+              status: 'met',
+              turns: iterations,
+              tokensUsed: goalTokensUsedWithSwarm(this.ctx),
+            },
+          });
+        }
         terminal = { status: 'goal_met' };
       } else if (this.ctx.goalMode?.getStatus() === 'aborted' && terminal.status === 'completed') {
         // 闸内主动止损（如 IMPOSSIBLE）后 loop 自然退出：映射 aborted，

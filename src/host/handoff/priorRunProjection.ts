@@ -9,8 +9,8 @@
 
 import type { LedgerEntry, SessionLedger } from '../../shared/contract/sessionLedger';
 
-/** 任务末态属于这些 kind 即视为已终结，不进"未完成"清单 */
-const TERMINAL_TASK_KINDS = new Set(['done', 'deleted', 'cancelled']);
+/** 任务末态属于这些 kind 即视为已终结，不进"未完成"清单（taskStore：cancelled 落账为 abandoned） */
+const TERMINAL_TASK_KINDS = new Set(['done', 'deleted', 'cancelled', 'abandoned']);
 
 /** 最近失败错误取尾部条数（有界：控 prompt token） */
 const MAX_FAILURE_ENTRIES = 5;
@@ -26,6 +26,8 @@ function unfinishedTasks(entries: LedgerEntry[]): string[] {
   const lastByTask = new Map<string, LedgerEntry>();
   for (const e of entries) {
     if (e.lane !== 'task' || !e.refId) continue;
+    // delete+set 刷新插入序：slice(-N) 取的是"最近有动静的任务"而非首次出现序
+    lastByTask.delete(e.refId);
     lastByTask.set(e.refId, e);
   }
   const open = [...lastByTask.values()].filter((e) => !TERMINAL_TASK_KINDS.has(e.kind));

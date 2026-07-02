@@ -154,6 +154,18 @@ export async function handleGoalCompletionGate(
         type: 'goal_gate',
         data: { gate: 1, pass: false, verdict: 'exhausted_release', attempt, reason: releaseReason },
       });
+      // 终态事件在闸内立即发出（对齐 IMPOSSIBLE 分支）：final 推理若失败/取消，
+      // UI 仍能拿到终态；conversationRuntime met 路径见 degraded 不重发。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
       if (!ctx.forceFinalResponseReason) {
         ctx.forceFinalResponseReason = 'goal-verify-exhausted';
         ctx.forceFinalResponsePrompt = [
@@ -262,6 +274,17 @@ export async function handleGoalCompletionGate(
       ctx.onEvent({
         type: 'goal_gate',
         data: { gate: 2, pass: false, verdict: 'exhausted_release', attempt, reason: releaseReason },
+      });
+      // 同闸1：终态事件在闸内立即发出，final 推理失败也不留"永远 running"的 UI。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
       });
       if (!ctx.forceFinalResponseReason) {
         ctx.forceFinalResponseReason = 'goal-verify-exhausted';

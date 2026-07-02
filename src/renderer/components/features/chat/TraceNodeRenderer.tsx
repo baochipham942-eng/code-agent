@@ -10,6 +10,7 @@ import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnve
 import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { MessageContent } from './MessageBubble/MessageContent';
+import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { AttachmentDisplay } from './MessageBubble/AttachmentPreview';
 import { FileArtifactCard } from './MessageBubble/FileArtifactCard';
@@ -66,6 +67,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           metadata={node.metadata?.workbench}
+          isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           onRewind={onRewindUserPrompt}
           rewindDisabled={rewindDisabled}
         />
@@ -219,11 +221,16 @@ const UserNode: React.FC<{
   content: string;
   attachments?: import('@shared/contract').MessageAttachment[];
   metadata?: WorkbenchMessageMetadata;
+  isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, metadata, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, metadata, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
-  const displayContent = stripAppshotBlocks(content || '');
+  // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
+  const displayContent = restoreNeoTagTokenForDisplay(
+    stripAppshotBlocks(content || ''),
+    Boolean(isNeoTagMessage),
+  );
 
   return (
     <div>

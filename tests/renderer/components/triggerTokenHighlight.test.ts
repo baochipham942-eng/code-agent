@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseLeadingTriggerToken } from '../../../src/renderer/components/features/chat/MessageBubble/triggerTokenHighlight';
+import {
+  parseLeadingTriggerToken,
+  restoreNeoTagTokenForDisplay,
+} from '../../../src/renderer/components/features/chat/MessageBubble/triggerTokenHighlight';
 
 describe('parseLeadingTriggerToken（核心功能触发词着色）', () => {
   it('recognizes leading @neo (case-insensitive) and keeps the rest verbatim', () => {
@@ -40,5 +43,18 @@ describe('parseLeadingTriggerToken（核心功能触发词着色）', () => {
   it('matches a bare token with no trailing text', () => {
     expect(parseLeadingTriggerToken('/workflow')?.kind).toBe('workflow');
     expect(parseLeadingTriggerToken('@neo')?.kind).toBe('neo');
+  });
+});
+
+describe('restoreNeoTagTokenForDisplay（落库正文被剥了 @neo，渲染时补回）', () => {
+  it('prepends @neo for a neo-tagged message whose persisted content lost the prefix', () => {
+    expect(restoreNeoTagTokenForDisplay('帮我查上海FDE最新薪资', true)).toBe('@neo 帮我查上海FDE最新薪资');
+  });
+
+  it('leaves content untouched when the prefix is still there (live 消息) or not a neo turn', () => {
+    expect(restoreNeoTagTokenForDisplay('@neo 帮我查', true)).toBe('@neo 帮我查');
+    expect(restoreNeoTagTokenForDisplay('  @Neo 帮我查', true)).toBe('  @Neo 帮我查');
+    expect(restoreNeoTagTokenForDisplay('普通消息', false)).toBe('普通消息');
+    expect(restoreNeoTagTokenForDisplay('', true)).toBe('');
   });
 });

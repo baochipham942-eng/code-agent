@@ -37,6 +37,16 @@ const TRIGGER_TOKEN_RULES: Array<{ kind: TriggerTokenKind; pattern: RegExp; clas
   },
 ];
 
+/**
+ * @neo 消息落库的正文是剥掉前缀的任务文本（它同时是模型 prompt），
+ * 渲染时把用户原本输入的 `@neo ` 补回来展示——live 与重启后视觉一致，着色也有得可染。
+ */
+export function restoreNeoTagTokenForDisplay(content: string, isNeoTagMessage: boolean): string {
+  if (!isNeoTagMessage || !content) return content;
+  if (/^\s*@neo(?:\s|$)/i.test(content)) return content;
+  return `@neo ${content}`;
+}
+
 export function parseLeadingTriggerToken(content: string): ParsedTriggerToken | null {
   const prefixMatch = content.match(/^\s*/);
   const prefix = prefixMatch?.[0] ?? '';

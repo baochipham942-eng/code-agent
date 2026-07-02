@@ -2,6 +2,7 @@
 import chalk from 'chalk';
 import type { ComparisonResult, CaseComparison } from '../types';
 import { formatDuration } from '../../../shared/utils/format';
+import { describeSignTest, SIGN_TEST_ALPHA } from './signTest';
 
 /**
  * Generate a Markdown report from a ComparisonResult.
@@ -41,6 +42,9 @@ export function generateComparisonMarkdown(result: ComparisonResult): string {
   lines.push(`| Baseline Avg Score | ${summary.baselineAvgScore.toFixed(2)} |`);
   lines.push(`| Candidate Avg Score | ${summary.candidateAvgScore.toFixed(2)} |`);
   lines.push(`| Confidence | ${(summary.confidence * 100).toFixed(0)}% |`);
+  if (summary.pValue !== undefined) {
+    lines.push(`| Sign test p 值 | ${describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue)} |`);
+  }
   if (summary.excludedPairs) {
     lines.push(`| 排除 Pair（一侧没跑成） | ${summary.excludedPairs} 🔌 |`);
   }
@@ -114,6 +118,11 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   lines.push(`  Score:  ${chalk.cyan(summary.baselineAvgScore.toFixed(2))} vs ${chalk.magenta(summary.candidateAvgScore.toFixed(2))}`);
   lines.push(`  Wins:   ${chalk.cyan(String(summary.baselineWins))} - ${chalk.magenta(String(summary.candidateWins))} - ${chalk.yellow(String(summary.ties))} ties`);
   lines.push(`  Confidence: ${(summary.confidence * 100).toFixed(0)}%`);
+  if (summary.pValue !== undefined) {
+    const sig = summary.pValue <= SIGN_TEST_ALPHA;
+    const text = describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue);
+    lines.push(`  Sign test:  ${sig ? chalk.green(text) : chalk.yellow(text)}`);
+  }
   lines.push('');
   lines.push(chalk.dim(`  ${summary.verdict}`));
   lines.push('');

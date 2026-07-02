@@ -569,6 +569,8 @@ export interface ComparisonResult {
     verdict: string;
     /** WP1-3b：因一侧没跑成而排除的 pair 数（不在 totalCases 内） */
     excludedPairs?: number;
+    /** 配对 sign test 双尾 p 值（只算 decisive pair；tie/excluded 不进 n） */
+    pValue?: number;
   };
   duration: number;
 }

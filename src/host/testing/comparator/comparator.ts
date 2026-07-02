@@ -10,6 +10,7 @@ import type {
   DualRubricScore,
 } from '../types';
 import { ABGrader } from './abGrader';
+import { signTestPValue } from './signTest';
 
 /**
  * WP1-3b：判定一侧是否「没跑成」——infra_excluded（429/超时/5xx/网络）
@@ -218,6 +219,9 @@ export class ABComparator {
         ? Math.max(baselineWins, candidateWins) / decisiveCases
         : 0;
 
+    // 配对 sign test：confidence 只是多数比例，2:0 和 25:15 看不出可信度差异
+    const pValue = signTestPValue(baselineWins, candidateWins);
+
     // Build verdict
     const excludedNote = excludedPairs > 0 ? ` （另有 ${excludedPairs} 个 pair 因一侧没跑成被排除）` : '';
     let verdict: string;
@@ -243,6 +247,7 @@ export class ABComparator {
       confidence,
       verdict,
       ...(excludedPairs > 0 ? { excludedPairs } : {}),
+      pValue,
     };
   }
 }

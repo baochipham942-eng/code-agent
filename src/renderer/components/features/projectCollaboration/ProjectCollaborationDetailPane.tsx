@@ -190,7 +190,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const isActive = phase === 'running' || phase === 'needs_input';
 
   return (
-    <div className="min-h-0 overflow-y-auto border-l border-zinc-800 px-4 py-4" data-testid="neo-topic-detail">
+    <div className="px-4 py-4" data-testid="neo-topic-detail">
       {/* 头 */}
       <div className="flex items-start gap-2">
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />

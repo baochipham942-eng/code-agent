@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
-import { Loader2, Search, Sparkles } from 'lucide-react';
+import { Loader2, Search, Sparkles, X } from 'lucide-react';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
@@ -156,7 +156,8 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     return [...source].sort((a, b) => b.workCard.updatedAt - a.workCard.updatedAt);
   }, [details, storeDetails]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(() => topics[0]?.workCard.id ?? null);
+  // 抽屉模型：默认不选中（列表先"扫"），点行才开详情抽屉
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>('all');
   const [mineOnly, setMineOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -198,15 +199,22 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     }, NEO_WORK_CARD_LIVE_REFRESH_MS);
     return () => window.clearInterval(interval);
   }, [details, hasActiveTopic, loadAll, loadForProject, projectId]);
+  // 选中的 topic 被过滤/删除后关抽屉；不自动替它选下一个（抽屉只因用户点击而开）
   useEffect(() => {
-    if (filteredTopics.length === 0) {
-      if (selectedId !== null) setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !filteredTopics.some((detail) => detail.workCard.id === selectedId)) {
-      setSelectedId(filteredTopics[0].workCard.id);
+    if (selectedId && !filteredTopics.some((detail) => detail.workCard.id === selectedId)) {
+      setSelectedId(null);
     }
   }, [filteredTopics, selectedId]);
+
+  // Esc 关抽屉
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedId]);
 
   const handleCancel = useCallback(async (workCardId: string) => {
     try {
@@ -243,7 +251,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   }, [onOpenConversation]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-zinc-900" data-testid="neo-topic-directory">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
       <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10">
@@ -271,8 +279,8 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
-        <div className="min-h-0 overflow-y-auto px-4 py-3">
+      <div className="min-h-0 flex-1">
+        <div className="h-full min-h-0 overflow-y-auto px-4 py-3">
           <div className="mb-3 space-y-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
@@ -332,16 +340,40 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
           )}
         </div>
 
-        <ProjectCollaborationDetailPane
-          detail={selectedDetail}
-          currentUser={currentUser}
-          messagesByConversation={sourceMessagesByConversation}
-          onOpenConversation={handleOpenConversation}
-          onCancel={handleCancel}
-          onArchive={handleArchive}
-          onApproveMemory={handleApproveMemory}
-        />
       </div>
+
+      {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc 关闭 */}
+      {selectedDetail && (
+        <div
+          className="absolute inset-y-0 right-0 z-40 flex w-[min(560px,100%)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
+          data-testid="neo-topic-drawer"
+          role="complementary"
+          aria-label="topic 详情"
+        >
+          <div className="flex shrink-0 items-center justify-end border-b border-zinc-800/70 px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              aria-label="关闭详情"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-200"
+              data-testid="neo-topic-drawer-close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ProjectCollaborationDetailPane
+              detail={selectedDetail}
+              currentUser={currentUser}
+              messagesByConversation={sourceMessagesByConversation}
+              onOpenConversation={handleOpenConversation}
+              onCancel={handleCancel}
+              onArchive={handleArchive}
+              onApproveMemory={handleApproveMemory}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

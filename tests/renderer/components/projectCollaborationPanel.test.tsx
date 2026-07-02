@@ -315,3 +315,44 @@ describe('topic 详情跨会话聚合（ADR-033）', () => {
     });
   });
 });
+
+describe('topic 详情右侧抽屉（目录-详情分离，非模态）', () => {
+  it('opens the detail in a right-side drawer on row click (no drawer before selection)', () => {
+    const details = [makeDetail({ id: 'a', title: '抽屉topic' })];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} sourceMessagesByConversation={{}} />);
+
+    expect(screen.queryByTestId('neo-topic-drawer')).toBeNull();
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+
+    expect(screen.getByTestId('neo-topic-drawer')).toBeTruthy();
+    expect(screen.getByTestId('neo-topic-detail')).toBeTruthy();
+  });
+
+  it('closes the drawer via close button and Escape', () => {
+    const details = [makeDetail({ id: 'a', title: '抽屉topic' })];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} sourceMessagesByConversation={{}} />);
+
+    // 关闭按钮关
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    fireEvent.click(screen.getByTestId('neo-topic-drawer-close'));
+    expect(screen.queryByTestId('neo-topic-drawer')).toBeNull();
+
+    // Esc 关
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('neo-topic-drawer')).toBeNull();
+  });
+
+  it('switches drawer content when another row is clicked (list stays interactive, 非模态)', () => {
+    const details = [
+      makeDetail({ id: 'a', title: '第一个topic' }),
+      makeDetail({ id: 'b', title: '第二个topic' }),
+    ];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} sourceMessagesByConversation={{}} />);
+
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    expect(screen.getByTestId('neo-topic-detail').textContent).toContain('第一个topic');
+    fireEvent.click(screen.getByTestId('neo-topic-row-b'));
+    expect(screen.getByTestId('neo-topic-detail').textContent).toContain('第二个topic');
+  });
+});

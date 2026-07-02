@@ -141,31 +141,36 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
         title={title}
       >
+        {/* 分组头对齐约定(2026-07-02 拍板)：图标+名称左对齐、整行垂直居中；
+            展开收起 chevron 不常驻，hover/聚焦时才出现在名称右侧(参考 Codex)；
+            未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。 */}
         <button
           type="button"
           title={expansionView.toggleTitle}
           aria-label={expansionView.toggleAriaLabel}
           aria-disabled={expansionView.forceExpanded ? 'true' : undefined}
           onClick={() => handleToggleWorkspaceGroup(group.key, expansionView)}
-          className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
+          <IconComponent className="w-3 h-3 shrink-0 text-zinc-500" />
+          <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
           <ChevronRight
-            className={`mt-0.5 w-3 h-3 text-zinc-500 transition-transform ${
+            className={`w-3 h-3 shrink-0 text-zinc-500 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${
               expanded ? 'rotate-90' : ''
-            } ${expansionView.phase === 'collapsing' ? 'opacity-70' : ''}`}
+            }`}
           />
-          <IconComponent className="mt-0.5 w-3 h-3 text-zinc-500" />
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
-              {summary.unfinishedCount > 0 && (
-                <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                  {summary.unfinishedCount} 未完成
-                </span>
-              )}
-            </span>
-          </span>
         </button>
+        {summary.unfinishedCount > 0 && (
+          <span
+            data-testid="sidebar-group-unfinished"
+            className="flex shrink-0 items-center gap-1"
+            title={`${summary.unfinishedCount} 个未完成`}
+            aria-label={`${summary.unfinishedCount} 个未完成`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true" />
+            <span className="text-[11px] tabular-nums text-zinc-500">{summary.unfinishedCount}</span>
+          </span>
+        )}
         {/* Neo 协作徽标已按拍板移除(2026-07-02)：入口走账号菜单"Neo 协同" */}
         {/* 项目操作簇：控制台 / 详情 / 产物 / 新建 — 默认隐藏，hover 或聚焦时浮现。
             绝对定位覆盖在右侧(sticky header 提供定位上下文),而非占流内宽度:

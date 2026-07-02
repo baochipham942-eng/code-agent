@@ -219,7 +219,9 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('aria-label="展开 code-agent 项目详情"');
     expect(html).toContain('aria-label="打开 code-agent 产物与资产"');
     expect(html).toContain('aria-label="打开 Session Native Workspace 的产物与资产"');
-    expect(html).toContain('1 未完成');
+    // 2026-07-02 分组头未完成态改为右对齐"色球+数字"(title/aria 带全文)，不再渲染"N 未完成"文字胶囊
+    expect(html).toContain('1 个未完成');
+    expect(html).not.toContain('1 未完成');
     expect(html).toContain('1 执行中');
     expect(html).toContain('1 会话');
     expect(html).toContain('repo/code-agent');

@@ -116,8 +116,6 @@ const UsageSchema = z
   })
   .passthrough();
 
-export type OpenAIUsage = z.infer<typeof UsageSchema>;
-
 export const OpenAIChatCompletionSchema = z
   .object({
     id: z.string().optional(),

@@ -7,7 +7,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 
 export type BudgetAlertTone = 'none' | 'silent' | 'warning' | 'blocked';
 
-export interface CacheSavingsView {
+interface CacheSavingsView {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   netSavedUsd: number;

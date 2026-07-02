@@ -49,7 +49,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
   activeStatusFilterLabel,
 }) => {
   return (
-    <div className="relative shrink-0 window-no-drag" ref={statusFilterRef}>
+    <div className="relative shrink-0" ref={statusFilterRef}>
       <button
         type="button"
         onClick={() => setStatusFilterOpen((v) => !v)}

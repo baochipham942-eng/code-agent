@@ -23,8 +23,6 @@ export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEl
   icon: React.ReactNode;
   /** Accessible label (required for icon-only buttons) */
   'aria-label': string;
-  /** Disable window drag (for Electron title bar) */
-  windowNoDrag?: boolean;
 }
 
 // ============================================================================
@@ -83,7 +81,6 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       size = 'md',
       loading = false,
       icon,
-      windowNoDrag = false,
       disabled,
       className = '',
       ...props
@@ -110,7 +107,6 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
           baseStyles,
           variantStyles[variant],
           sizeStyles[size],
-          windowNoDrag ? 'window-no-drag' : '',
           className,
         ]
           .filter(Boolean)

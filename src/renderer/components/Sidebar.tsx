@@ -605,13 +605,13 @@ export const Sidebar: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: h-12 to align with TitleBar on the right */}
-      <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0 window-drag">
+      <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0">
         {/* New Chat — 纯对话，不继承项目上下文（项目会话走各项目组 + 按钮） */}
         <button
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
           title="新建会话（纯对话，不继承项目上下文）"
-          className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
+          className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
             {creatingSessionMode === 'current' ? (

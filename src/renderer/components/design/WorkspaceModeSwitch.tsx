@@ -39,7 +39,7 @@ export const WorkspaceModeSwitch: React.FC = () => {
   ];
 
   return (
-    <div className="window-no-drag inline-flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
       {items.map(({ mode, label, icon }) => {
         const active = workspaceMode === mode;
         return (

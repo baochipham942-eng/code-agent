@@ -2,7 +2,7 @@
 // useStatusRailModel 主 hook（纯 store 投影；纯函数 derive* 已由
 // useStatusRailModel.todos.test.ts 覆盖）。mock 3 个 store 的 selector，
 // messages=[] 让 contextBuckets/artifacts 工具确定性产空，覆盖 context/
-// compact/cache/swarm 各分支（有无 contextHealth、hitRate total>0 / =0）。
+// compact/swarm 各分支（有无 contextHealth）。cache 死件已删（WP2-2a）。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
@@ -65,22 +65,10 @@ describe('compact 模型', () => {
   });
 });
 
-describe('cache 模型', () => {
-  it('无 cacheStats → 全 0', () => {
+describe('cache 模型（已删除，WP2-2a）', () => {
+  it('rail model 不再暴露 cache 键（死件删除：无生产者亦无渲染方）', () => {
     const { result } = renderHook(() => useStatusRailModel());
-    expect(result.current.cache).toEqual({ promptCacheHits: 0, promptCacheMisses: 0, totalCachedTokens: 0, hitRate: 0 });
-  });
-
-  it('有命中 → hitRate = hits/(hits+misses)', () => {
-    state.app = { cacheStats: { promptCacheHits: 3, promptCacheMisses: 1, totalCachedTokens: 800 } };
-    const { result } = renderHook(() => useStatusRailModel());
-    expect(result.current.cache.hitRate).toBe(0.75);
-  });
-
-  it('hits+misses=0 → hitRate 0（避免除零）', () => {
-    state.app = { cacheStats: { promptCacheHits: 0, promptCacheMisses: 0, totalCachedTokens: 0 } };
-    const { result } = renderHook(() => useStatusRailModel());
-    expect(result.current.cache.hitRate).toBe(0);
+    expect('cache' in result.current).toBe(false);
   });
 });
 

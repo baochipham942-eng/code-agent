@@ -3,6 +3,7 @@ import {
   normalizeClaudeUsage,
   normalizeOpenAIUsage,
   normalizeGeminiUsage,
+  normalizeAiSdkUsage,
 } from '../../src/host/model/providers/wrappers/usageNormalization';
 
 // 归一化口径：inputTokens = 非缓存输入（不含 cacheRead / cacheCreation）
@@ -83,6 +84,36 @@ describe('normalizeOpenAIUsage', () => {
     });
     expect(usage.inputTokens).toBe(0);
     expect(usage.cacheReadTokens).toBe(150);
+  });
+});
+
+describe('normalizeAiSdkUsage', () => {
+  it('uses inputTokenDetails when present (AI SDK v6 total includes cache)', () => {
+    const usage = normalizeAiSdkUsage({
+      inputTokens: 10_000,
+      outputTokens: 100,
+      inputTokenDetails: { noCacheTokens: 1_000, cacheReadTokens: 8_500, cacheWriteTokens: 500 },
+    });
+    expect(usage).toEqual({
+      inputTokens: 1_000,
+      outputTokens: 100,
+      cacheReadTokens: 8_500,
+      cacheCreationTokens: 500,
+    });
+  });
+
+  it('derives noCache input by subtraction when details lack noCacheTokens', () => {
+    const usage = normalizeAiSdkUsage({
+      inputTokens: 10_000,
+      outputTokens: 100,
+      inputTokenDetails: { cacheReadTokens: 9_000 },
+    });
+    expect(usage).toEqual({ inputTokens: 1_000, outputTokens: 100, cacheReadTokens: 9_000 });
+  });
+
+  it('no details → plain mapping', () => {
+    const usage = normalizeAiSdkUsage({ inputTokens: 10, outputTokens: 5 });
+    expect(usage).toEqual({ inputTokens: 10, outputTokens: 5 });
   });
 });
 

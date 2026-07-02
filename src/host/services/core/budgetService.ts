@@ -281,6 +281,32 @@ export class BudgetService {
     return [...this.usageHistory];
   }
 
+  /**
+   * 当前周期缓存节省汇总（WP2-2a 成本显示用）。
+   * netSavedUsd = Σ[读省 cacheRead×(input−cacheRead价) − 写贴 cacheCreation×(cacheWrite价−input)]，
+   * 即相对"无缓存全价输入"的反事实净节省，可能为负（写多读少）。
+   */
+  getCacheSavingsSummary(): { cacheReadTokens: number; cacheCreationTokens: number; netSavedUsd: number } {
+    this.checkPeriodReset();
+    let cacheReadTokens = 0;
+    let cacheCreationTokens = 0;
+    let netSavedUsd = 0;
+    for (const usage of this.usageHistory) {
+      const read = usage.cacheReadTokens ?? 0;
+      const write = usage.cacheCreationTokens ?? 0;
+      if (read === 0 && write === 0) continue;
+      const pricing = this.getModelPricing(usage.model);
+      const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
+      const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
+      cacheReadTokens += read;
+      cacheCreationTokens += write;
+      netSavedUsd +=
+        (read / 1_000_000) * (pricing.input - cacheReadPrice)
+        - (write / 1_000_000) * (cacheWritePrice - pricing.input);
+    }
+    return { cacheReadTokens, cacheCreationTokens, netSavedUsd };
+  }
+
   // --------------------------------------------------------------------------
   // Budget Checks
   // --------------------------------------------------------------------------

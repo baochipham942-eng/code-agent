@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
+import { normalizeAiSdkUsage } from '../providers/wrappers/usageNormalization';
 import type {
   LanguageModel,
   ModelMessage as AiModelMessage,
@@ -753,10 +754,7 @@ async function generateViaAiSdk(params: {
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     contentParts: contentParts.length > 0 ? contentParts : undefined,
     thinking: result.reasoningText || undefined,
-    usage: {
-      inputTokens: result.usage?.inputTokens ?? 0,
-      outputTokens: result.usage?.outputTokens ?? 0,
-    },
+    usage: normalizeAiSdkUsage(result.usage ?? {}),
     finishReason: result.finishReason,
   };
 }
@@ -766,7 +764,9 @@ interface StreamAccumulator {
   content: string;
   reasoning: string;
   finishReason: string | undefined;
-  usage: { inputTokens: number; outputTokens: number } | undefined;
+  usage:
+    | { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+    | undefined;
   // 按 toolCallId 索引；index 保留模型发出的先后顺序，对齐 SSE delta.tool_calls[].index 语义。
   toolCalls: Map<string, { id: string; name: string; argsText: string; input?: Record<string, unknown>; index: number }>;
   contentParts: ResponseContentPart[];
@@ -979,10 +979,7 @@ async function streamViaAiSdk(params: {
           }
           case 'finish': {
             acc.finishReason = part.finishReason;
-            acc.usage = {
-              inputTokens: part.totalUsage?.inputTokens ?? 0,
-              outputTokens: part.totalUsage?.outputTokens ?? 0,
-            };
+            acc.usage = normalizeAiSdkUsage(part.totalUsage ?? {});
             break;
           }
           case 'error': {
@@ -1005,7 +1002,13 @@ async function streamViaAiSdk(params: {
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
       healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
       if (acc.usage) {
-        onStream({ type: 'usage', inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens });
+        onStream({
+          type: 'usage',
+          inputTokens: acc.usage.inputTokens,
+          outputTokens: acc.usage.outputTokens,
+          cacheReadTokens: acc.usage.cacheReadTokens,
+          cacheCreationTokens: acc.usage.cacheCreationTokens,
+        });
       }
       onStream({ type: 'complete', finishReason: acc.finishReason || 'stop' });
       emitSnapshot(true);

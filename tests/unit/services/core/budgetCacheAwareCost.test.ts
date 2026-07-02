@@ -109,3 +109,46 @@ describe('BudgetService cache-aware cost accounting (WP2-1)', () => {
     expect(cost).toBeCloseTo(18, 6);
   });
 });
+
+describe('BudgetService.getCacheSavingsSummary (WP2-2a)', () => {
+  it('empty history → zero summary', () => {
+    const svc = makeService();
+    expect(svc.getCacheSavingsSummary()).toEqual({
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      netSavedUsd: 0,
+    });
+  });
+
+  it('net saved = read savings minus write surcharge, vs no-cache counterfactual', () => {
+    const svc = makeService();
+    svc.recordUsage({
+      inputTokens: 100_000,
+      outputTokens: 10_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 200_000,
+      model: 'claude-sonnet-4-20250514',
+      provider: 'claude',
+      timestamp: 1,
+    });
+    const p = MODEL_PRICING_PER_1M['claude-sonnet-4-20250514'];
+    // 读省：1M × (3 − 0.3) = 2.7；写贴：0.2M × (3.75 − 3) = 0.15 → 净省 2.55
+    const expected = 1.0 * (p.input - p.cacheRead!) - 0.2 * (p.cacheWrite! - p.input);
+    const summary = svc.getCacheSavingsSummary();
+    expect(summary.cacheReadTokens).toBe(1_000_000);
+    expect(summary.cacheCreationTokens).toBe(200_000);
+    expect(summary.netSavedUsd).toBeCloseTo(expected, 6);
+  });
+
+  it('records without cache fields contribute nothing', () => {
+    const svc = makeService();
+    svc.recordUsage({
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      model: 'claude-sonnet-4-20250514',
+      provider: 'claude',
+      timestamp: 1,
+    });
+    expect(svc.getCacheSavingsSummary().netSavedUsd).toBe(0);
+  });
+});

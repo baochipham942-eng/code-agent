@@ -278,13 +278,6 @@ interface AppState {
   contextHealth: ContextHealthState | null;
   contextHealthCollapsed: boolean;
 
-  // Cache Stats (缓存统计)
-  cacheStats: {
-    promptCacheHits: number;
-    promptCacheMisses: number;
-    totalCachedTokens: number;
-  } | null;
-
   // Actions
   setShowSettings: (show: boolean) => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
@@ -384,7 +377,6 @@ interface AppState {
   setWorkingDirectory: (dir: string | null) => void;
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
-  setCacheStats: (stats: { promptCacheHits: number; promptCacheMisses: number; totalCachedTokens: number } | null) => void;
 }
 
 // localStorage key for activeAgentId 持久化
@@ -500,9 +492,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Initial Context Health State
   contextHealth: null,
   contextHealthCollapsed: true, // 默认收起
-
-  // Initial Cache Stats
-  cacheStats: null,
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
@@ -1126,7 +1115,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setContextHealth: (health) => set({ contextHealth: health }),
   setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
-  setCacheStats: (stats) => set({ cacheStats: stats }),
 }));
 
 // E2E/dev 调试钩子：真机测试用 openSettingsTab 打开设置并跳到指定 tab（同 window.__neo* 例）。

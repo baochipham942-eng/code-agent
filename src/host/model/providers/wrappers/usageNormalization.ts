@@ -70,6 +70,31 @@ export function normalizeOpenAIUsage(usage: OpenAIUsageShape): NormalizedTokenUs
   return normalized;
 }
 
+interface AiSdkUsageShape {
+  /** AI SDK v6：总输入（含缓存读/写） */
+  inputTokens?: number;
+  outputTokens?: number;
+  inputTokenDetails?: {
+    noCacheTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  };
+}
+
+export function normalizeAiSdkUsage(usage: AiSdkUsageShape): NormalizedTokenUsage {
+  const details = usage.inputTokenDetails;
+  const cacheRead = details?.cacheReadTokens ?? 0;
+  const cacheWrite = details?.cacheWriteTokens ?? 0;
+  const totalInput = usage.inputTokens ?? 0;
+  const normalized: NormalizedTokenUsage = {
+    inputTokens: details?.noCacheTokens ?? Math.max(0, totalInput - cacheRead - cacheWrite),
+    outputTokens: usage.outputTokens ?? 0,
+  };
+  if (cacheRead > 0) normalized.cacheReadTokens = cacheRead;
+  if (cacheWrite > 0) normalized.cacheCreationTokens = cacheWrite;
+  return normalized;
+}
+
 interface GeminiUsageShape {
   promptTokenCount?: number;
   candidatesTokenCount?: number;

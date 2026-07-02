@@ -43,8 +43,8 @@ export function StatusBar() {
     isStreaming,
   } = useStatusStore();
 
-  // 预算状态：随累计成本前进重新拉取，驱动 CostDisplay 染色
-  const budgetStatus = useBudgetStatus(sessionCost);
+  // 预算状态：随累计成本前进/流式结束重新拉取，驱动 CostDisplay 数字（host cache-aware 口径）与染色
+  const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
 
   // 渐进披露：simple 模式不显示状态栏
   if (disclosureLevel === 'simple') {

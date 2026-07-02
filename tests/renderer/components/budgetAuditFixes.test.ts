@@ -39,6 +39,27 @@ describe('normalizeBudgetStatus — defensive clamping (audit F4)', () => {
   it('returns null for null input', () => {
     expect(normalizeBudgetStatus(null)).toBeNull();
   });
+
+  it('passes through cacheSavings and drops non-finite values (WP2-2a)', () => {
+    const v = normalizeBudgetStatus({
+      currentCost: 1,
+      maxBudget: 10,
+      usagePercentage: 0.1,
+      alertLevel: 'none',
+      config: { enabled: true },
+      cacheSavings: { cacheReadTokens: 5000, cacheCreationTokens: 200, netSavedUsd: 0.42 },
+    })!;
+    expect(v.cacheSavings).toEqual({ cacheReadTokens: 5000, cacheCreationTokens: 200, netSavedUsd: 0.42 });
+
+    const bad = normalizeBudgetStatus({
+      currentCost: 1,
+      maxBudget: 10,
+      usagePercentage: 0.1,
+      alertLevel: 'none',
+      cacheSavings: { cacheReadTokens: Number.NaN, cacheCreationTokens: -1, netSavedUsd: Number.POSITIVE_INFINITY },
+    })!;
+    expect(bad.cacheSavings).toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 });
+  });
 });
 
 describe('sanitizeBudgetForm — guard against useless/inverted config (audit F5)', () => {

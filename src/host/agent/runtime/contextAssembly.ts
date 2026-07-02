@@ -104,11 +104,17 @@ export class ContextAssembly {
     this.ctx.onEvent(event);
   }
 
-  recordTokenUsage(inputTokens: number, outputTokens: number): void {
+  recordTokenUsage(
+    inputTokens: number,
+    outputTokens: number,
+    cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
+  ): void {
     const budgetService = getBudgetService();
     budgetService.recordUsage({
       inputTokens,
       outputTokens,
+      ...(cache?.cacheReadTokens ? { cacheReadTokens: cache.cacheReadTokens } : {}),
+      ...(cache?.cacheCreationTokens ? { cacheCreationTokens: cache.cacheCreationTokens } : {}),
       model: this.ctx.modelConfig.model,
       provider: this.ctx.modelConfig.provider,
       timestamp: Date.now(),

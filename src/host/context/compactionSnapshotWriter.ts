@@ -4,6 +4,7 @@
 
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { computeRequestPrefixShapeHash } from './requestShapeHash';
 
 const logger = createLogger('CompactionSnapshotWriter');
 
@@ -20,6 +21,8 @@ interface CompactionSink {
     preMessagesSummary?: unknown;
     postMessagesSummary?: unknown;
     createdAt?: number;
+    shapeHashBefore?: string | null;
+    shapeHashAfter?: string | null;
   }) => { id: string; createdAt: number; byteSize: number };
 }
 
@@ -69,6 +72,8 @@ export interface CompactionSnapshotInput {
   postTokens: number;
   savedTokens: number;
   usagePercent?: number;
+  /** WP2-2b：参与请求前缀 shape hash（缺省仅按消息 shape 计算） */
+  systemPrompt?: string;
 }
 
 /**
@@ -89,6 +94,8 @@ export function writeCompactionSnapshot(input: CompactionSnapshotInput): void {
       usagePercent: input.usagePercent ?? null,
       preMessagesSummary: summarize(input.preMessages),
       postMessagesSummary: summarize(input.postMessages),
+      shapeHashBefore: computeRequestPrefixShapeHash({ systemPrompt: input.systemPrompt, messages: input.preMessages }),
+      shapeHashAfter: computeRequestPrefixShapeHash({ systemPrompt: input.systemPrompt, messages: input.postMessages }),
     });
   } catch (err) {
     logger.warn('[CompactionSnapshotWriter] failed to write snapshot', err);

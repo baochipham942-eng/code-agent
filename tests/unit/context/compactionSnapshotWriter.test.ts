@@ -59,4 +59,30 @@ describe('compactionSnapshotWriter', () => {
       }),
     );
   });
+
+  it('records prefix shape hashes before/after compaction (WP2-2b)', () => {
+    writeCompactionSnapshot({
+      sessionId: 'session-1',
+      strategy: 'ai_summary',
+      preMessages: [
+        { role: 'user', content: 'before-1' },
+        { role: 'assistant', content: 'before-2' },
+      ],
+      postMessages: [{ role: 'system', content: 'after' }],
+      preTokens: 100,
+      postTokens: 40,
+      savedTokens: 60,
+      usagePercent: 80,
+      systemPrompt: 'sys',
+    });
+
+    const call = snapshotWriterMocks.db.insertCompactionSnapshot.mock.calls[0][0] as {
+      shapeHashBefore?: string;
+      shapeHashAfter?: string;
+    };
+    expect(call.shapeHashBefore).toMatch(/^[0-9a-f]{16}$/);
+    expect(call.shapeHashAfter).toMatch(/^[0-9a-f]{16}$/);
+    // 压缩改变了请求前缀 shape → 前后 hash 必不同
+    expect(call.shapeHashBefore).not.toBe(call.shapeHashAfter);
+  });
 });

@@ -7,6 +7,12 @@ import { IPC_DOMAINS } from '@shared/ipc';
 
 export type BudgetAlertTone = 'none' | 'silent' | 'warning' | 'blocked';
 
+interface CacheSavingsView {
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  netSavedUsd: number;
+}
+
 export interface BudgetStatusView {
   enabled: boolean;
   currentCost: number;
@@ -14,6 +20,8 @@ export interface BudgetStatusView {
   /** 0-1 的用量比例 */
   usagePercentage: number;
   alertLevel: BudgetAlertTone;
+  /** 缓存节省汇总（cache-aware 记账，WP2-2a） */
+  cacheSavings?: CacheSavingsView;
 }
 
 interface RawBudgetStatus {
@@ -22,6 +30,7 @@ interface RawBudgetStatus {
   usagePercentage?: number;
   alertLevel?: string;
   config?: { enabled?: boolean };
+  cacheSavings?: { cacheReadTokens?: number; cacheCreationTokens?: number; netSavedUsd?: number };
 }
 
 /** 只接受有限非负数，挡住后端异常值（NaN/Infinity/负数）流到 UI（Codex audit F4）。 */
@@ -41,14 +50,24 @@ export function normalizeBudgetStatus(raw: RawBudgetStatus | null): BudgetStatus
     // 用量比例钳到 [0, 10]（>1000% 无意义，挡住 Infinity 渲染垃圾）
     usagePercentage: Math.min(finiteNonNeg(raw.usagePercentage), 10),
     alertLevel,
+    ...(raw.cacheSavings
+      ? {
+          cacheSavings: {
+            cacheReadTokens: finiteNonNeg(raw.cacheSavings.cacheReadTokens),
+            cacheCreationTokens: finiteNonNeg(raw.cacheSavings.cacheCreationTokens),
+            netSavedUsd: finiteNonNeg(raw.cacheSavings.netSavedUsd),
+          },
+        }
+      : {}),
   };
 }
 
 /**
- * 拉取预算状态。cost 变化（会话累计成本前进）时重新拉，保证染色随用量更新。
+ * 拉取预算状态。cost 变化（会话累计成本前进）或流式结束（refreshSignal 翻转）时重新拉，
+ * 保证染色与成本数字随真实记账（host 侧 cache-aware 口径）更新。
  * IPC 不可用 / 出错时返回 null（StatusBar 退回不染色）。
  */
-export function useBudgetStatus(cost: number): BudgetStatusView | null {
+export function useBudgetStatus(cost: number, refreshSignal?: boolean): BudgetStatusView | null {
   const [status, setStatus] = useState<BudgetStatusView | null>(null);
 
   useEffect(() => {
@@ -63,7 +82,7 @@ export function useBudgetStatus(cost: number): BudgetStatusView | null {
     return () => {
       cancelled = true;
     };
-  }, [cost]);
+  }, [cost, refreshSignal]);
 
   return status;
 }

@@ -14,6 +14,7 @@ import { z } from 'zod';
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse, ResponseContentPart } from '../../types';
 import { logger } from '../providerRuntime';
+import { normalizeClaudeUsage } from './usageNormalization';
 
 // ── content blocks (text | tool_use | thinking | server_tool_use) ────────
 const TextBlockSchema = z
@@ -224,6 +225,9 @@ export function parseClaudeResponse(raw: unknown): ModelResponse {
     throw new Error('No response from model');
   }
 
+  // usage 带回（含 cache_read/cache_creation，归一化后进预算层）——旧实现就地丢弃
+  const usage = parsed.data.usage ? normalizeClaudeUsage(parsed.data.usage) : undefined;
+
   const toolUseBlocks = content.filter(
     (b): b is z.infer<typeof ToolUseBlockSchema> => b.type === 'tool_use',
   );
@@ -233,7 +237,7 @@ export function parseClaudeResponse(raw: unknown): ModelResponse {
       name: b.name,
       arguments: b.input ?? {},
     }));
-    const response: ModelResponse = { type: 'tool_use', toolCalls };
+    const response: ModelResponse = { type: 'tool_use', toolCalls, ...(usage ? { usage } : {}) };
     // content blocks 已是真实顺序：按序合成 contentParts，保留 text/tool 交错，并带回前导文本。
     // 旧实现只抽 tool_use、丢了文本与顺序，导致落库 content_parts NULL、前端 fallback 倒序。
     const contentParts: ResponseContentPart[] = [];
@@ -260,7 +264,7 @@ export function parseClaudeResponse(raw: unknown): ModelResponse {
   );
   const text = textBlocks.map((b) => b.text).join('\n');
 
-  return { type: 'text', content: text };
+  return { type: 'text', content: text, ...(usage ? { usage } : {}) };
 }
 
 // ── parse: SSE event ──────────────────────────────────────────────────────

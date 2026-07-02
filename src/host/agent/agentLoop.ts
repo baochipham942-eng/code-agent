@@ -305,6 +305,8 @@ export class AgentLoop {
       _consecutiveCompacts: 0,
       MAX_CONSECUTIVE_COMPACTS: 2,
       _autoCompactPaused: false,
+      _summaryFailureStreak: 0,
+      _summaryCooldownUntil: 0,
 
       // Content verification
       contentVerificationRetries: new Map(),

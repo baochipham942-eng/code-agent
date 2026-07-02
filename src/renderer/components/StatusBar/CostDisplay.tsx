@@ -1,11 +1,13 @@
 // ============================================================================
-// CostDisplay - 显示累计费用 + 预算用量染色
+// CostDisplay - 显示累计费用 + 预算用量染色（cache-aware 口径，WP2-2a）
 // ============================================================================
 
 import React from 'react';
 import { DollarSign } from 'lucide-react';
 import type { CostDisplayProps } from './types';
-import type { BudgetAlertTone } from '../../hooks/useBudgetStatus';
+import type { BudgetAlertTone, BudgetStatusView } from '../../hooks/useBudgetStatus';
+import { useI18n } from '../../hooks/useI18n';
+import type { Translations } from '../../i18n';
 
 /**
  * 格式化费用显示
@@ -40,13 +42,38 @@ export function budgetCostColorClass(alertLevel?: BudgetAlertTone): string {
   }
 }
 
-export function CostDisplay({ cost, isStreaming, budget }: CostDisplayProps) {
-  const colorClass = budgetCostColorClass(budget?.enabled ? budget.alertLevel : undefined);
+/**
+ * 展示成本取 host 侧真实记账（cache-aware）与 renderer 累计的较大者。
+ * 纯函数便于单测。
+ */
+export function resolveDisplayCost(cost: number, budget?: BudgetStatusView | null): number {
+  return Math.max(cost, budget?.currentCost ?? 0);
+}
 
-  // 启用预算时，tooltip 显示 用量/上限 (百分比)；否则只显累计成本
-  const title = budget?.enabled
-    ? `预算用量: $${cost.toFixed(2)} / $${budget.maxBudget.toFixed(2)} (${Math.round(budget.usagePercentage * 100)}%)`
-    : `Session cost: $${cost.toFixed(4)}`;
+/** 构建 tooltip 文案（含缓存节省行，净省 <$0.005 不显示）。纯函数便于单测。 */
+export function buildCostTitle(
+  t: Translations['statusBar'],
+  cost: number,
+  budget?: BudgetStatusView | null,
+): string {
+  const base = budget?.enabled
+    ? t.budgetUsageTitle
+        .replace('{cost}', `$${cost.toFixed(2)}`)
+        .replace('{max}', `$${budget.maxBudget.toFixed(2)}`)
+        .replace('{percent}', String(Math.round(budget.usagePercentage * 100)))
+    : t.sessionCostTitle.replace('{cost}', `$${cost.toFixed(4)}`);
+  const saved = budget?.cacheSavings?.netSavedUsd ?? 0;
+  if (saved >= 0.005) {
+    return `${base}\n${t.cacheSavedLine.replace('{saved}', `$${saved.toFixed(2)}`)}`;
+  }
+  return base;
+}
+
+export function CostDisplay({ cost, isStreaming, budget }: CostDisplayProps) {
+  const { t } = useI18n();
+  const colorClass = budgetCostColorClass(budget?.enabled ? budget.alertLevel : undefined);
+  const displayCost = resolveDisplayCost(cost, budget);
+  const title = buildCostTitle(t.statusBar, displayCost, budget);
 
   return (
     <span
@@ -54,7 +81,7 @@ export function CostDisplay({ cost, isStreaming, budget }: CostDisplayProps) {
       title={title}
     >
       <DollarSign size={12} />
-      <span>{formatCost(cost)}</span>
+      <span>{formatCost(displayCost)}</span>
       {budget?.enabled && budget.maxBudget > 0 && (
         <span className="opacity-70">/ ${budget.maxBudget.toFixed(0)}</span>
       )}

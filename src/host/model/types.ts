@@ -68,8 +68,14 @@ export interface ModelResponse {
   fallback?: ModelFallbackInfo;
   // Adaptive Thinking: 思考过程
   thinking?: string;
-  // Token usage from API response
-  usage?: { inputTokens: number; outputTokens: number; providerReportedSavedTokens?: number };
+  // Token usage from API response（inputTokens = 非缓存输入，见 wrappers/usageNormalization.ts）
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    providerReportedSavedTokens?: number;
+  };
   // 内容块顺序（text 和 tool_call 的交错顺序，用于前端渲染）
   contentParts?: ResponseContentPart[];
   runtimeDiagnostics?: {
@@ -114,9 +120,11 @@ export interface StreamChunk {
     name?: string;
     argumentsDelta?: string;
   };
-  // Real-time token estimation (type: 'token_estimate')
+  // Real-time token estimation (type: 'token_estimate') / real usage (type: 'usage')
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
   providerReportedSavedTokens?: number;
   // complete event
   finishReason?: string;

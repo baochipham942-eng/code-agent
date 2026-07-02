@@ -4,7 +4,12 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
-import { MODEL_PRICING_PER_1M } from '../../../shared/constants';
+import {
+  MODEL_PRICING_PER_1M,
+  DEFAULT_CACHE_READ_PRICE_RATIO,
+  DEFAULT_CACHE_WRITE_PRICE_RATIO,
+  type ModelPricingEntry,
+} from '../../../shared/constants';
 
 const logger = createLogger('BudgetService');
 
@@ -56,8 +61,13 @@ export interface BudgetStatus {
  * Token usage record for cost calculation
  */
 export interface TokenUsage {
+  /** 非缓存输入 tokens（归一化口径，见 usageNormalization.ts） */
   inputTokens: number;
   outputTokens: number;
+  /** 缓存命中读取 tokens，按 cacheRead 价计费 */
+  cacheReadTokens?: number;
+  /** 缓存写入 tokens，按 cacheWrite 价计费 */
+  cacheCreationTokens?: number;
   model: string;
   provider: string;
   timestamp: number;
@@ -222,19 +232,23 @@ export class BudgetService {
   }
 
   /**
-   * Calculate cost for a single usage record
+   * Calculate cost for a single usage record（cache-aware：缓存读/写按各自价档归一化计费）
    */
   private calculateCost(usage: TokenUsage): number {
     const pricing = this.getModelPricing(usage.model);
+    const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
+    const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
     const inputCost = (usage.inputTokens / 1_000_000) * pricing.input;
     const outputCost = (usage.outputTokens / 1_000_000) * pricing.output;
-    return inputCost + outputCost;
+    const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * cacheReadPrice;
+    const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * cacheWritePrice;
+    return inputCost + outputCost + cacheReadCost + cacheWriteCost;
   }
 
   /**
    * Get pricing for a model
    */
-  private getModelPricing(model: string): { input: number; output: number } {
+  private getModelPricing(model: string): ModelPricingEntry {
     // Try exact match
     if (MODEL_PRICING_PER_1M[model]) {
       return MODEL_PRICING_PER_1M[model];
@@ -265,6 +279,32 @@ export class BudgetService {
   getUsageHistory(): TokenUsage[] {
     this.checkPeriodReset();
     return [...this.usageHistory];
+  }
+
+  /**
+   * 当前周期缓存节省汇总（WP2-2a 成本显示用）。
+   * netSavedUsd = Σ[读省 cacheRead×(input−cacheRead价) − 写贴 cacheCreation×(cacheWrite价−input)]，
+   * 即相对"无缓存全价输入"的反事实净节省，可能为负（写多读少）。
+   */
+  getCacheSavingsSummary(): { cacheReadTokens: number; cacheCreationTokens: number; netSavedUsd: number } {
+    this.checkPeriodReset();
+    let cacheReadTokens = 0;
+    let cacheCreationTokens = 0;
+    let netSavedUsd = 0;
+    for (const usage of this.usageHistory) {
+      const read = usage.cacheReadTokens ?? 0;
+      const write = usage.cacheCreationTokens ?? 0;
+      if (read === 0 && write === 0) continue;
+      const pricing = this.getModelPricing(usage.model);
+      const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
+      const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
+      cacheReadTokens += read;
+      cacheCreationTokens += write;
+      netSavedUsd +=
+        (read / 1_000_000) * (pricing.input - cacheReadPrice)
+        - (write / 1_000_000) * (cacheWritePrice - pricing.input);
+    }
+    return { cacheReadTokens, cacheCreationTokens, netSavedUsd };
   }
 
   // --------------------------------------------------------------------------

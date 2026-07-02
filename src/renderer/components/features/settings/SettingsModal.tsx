@@ -391,7 +391,7 @@ export const SettingsModal: React.FC = () => {
               return (
                 <div key={group.id} className="space-y-1">
                   {isCollapsible ? (
-                    <button
+                    <button /* ds-allow:button: 设置分组折叠头，11px 微字号纯文本行头样式，primitive 无对应变体（同款豁免见 SidebarProjectDrawer） */
                       type="button"
                       onClick={() => toggleCollapsedGroup(group.id)}
                       aria-expanded={!isCollapsed}

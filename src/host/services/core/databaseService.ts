@@ -576,7 +576,7 @@ export class DatabaseService {
   }
 
   // -- Compaction Snapshots --
-  insertCompactionSnapshot(input: { sessionId: string; strategy?: string | null; preMessageCount: number; postMessageCount: number; preTokens: number; postTokens: number; savedTokens: number; usagePercent?: number | null; preMessagesSummary?: unknown; postMessagesSummary?: unknown; createdAt?: number }): { id: string; createdAt: number; byteSize: number } {
+  insertCompactionSnapshot(input: { sessionId: string; strategy?: string | null; preMessageCount: number; postMessageCount: number; preTokens: number; postTokens: number; savedTokens: number; usagePercent?: number | null; preMessagesSummary?: unknown; postMessagesSummary?: unknown; createdAt?: number; shapeHashBefore?: string | null; shapeHashAfter?: string | null }): { id: string; createdAt: number; byteSize: number } {
     this.ensureDb();
     const id = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const createdAt = input.createdAt ?? Date.now();
@@ -584,9 +584,9 @@ export class DatabaseService {
     const postJson = input.postMessagesSummary ? JSON.stringify(input.postMessagesSummary) : null;
     const byteSize = (preJson ? Buffer.byteLength(preJson, 'utf8') : 0) + (postJson ? Buffer.byteLength(postJson, 'utf8') : 0);
     this.db!.prepare(
-      `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, input.sessionId, input.strategy ?? null, input.preMessageCount, input.postMessageCount, input.preTokens, input.postTokens, input.savedTokens, input.usagePercent ?? null, preJson, postJson, byteSize, createdAt);
+      `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at, shape_hash_before, shape_hash_after)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.sessionId, input.strategy ?? null, input.preMessageCount, input.postMessageCount, input.preTokens, input.postTokens, input.savedTokens, input.usagePercent ?? null, preJson, postJson, byteSize, createdAt, input.shapeHashBefore ?? null, input.shapeHashAfter ?? null);
     return { id, createdAt, byteSize };
   }
 

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
 import { logger, safeJsonParse } from '../providerRuntime';
+import { normalizeOpenAIUsage } from './usageNormalization';
 
 // ── helpers ───────────────────────────────────────────────────────────────
 /**
@@ -100,6 +101,18 @@ const UsageSchema = z
     prompt_tokens: z.number().optional(),
     completion_tokens: z.number().optional(),
     total_tokens: z.number().optional(),
+    // 缓存命中字段（各家报法不同，归一化见 usageNormalization.ts）
+    // DeepSeek
+    prompt_cache_hit_tokens: z.number().optional(),
+    prompt_cache_miss_tokens: z.number().optional(),
+    // Moonshot (Kimi)
+    cached_tokens: z.number().optional(),
+    // OpenAI / Zhipu
+    prompt_tokens_details: z
+      .object({ cached_tokens: z.number().optional() })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 
@@ -208,6 +221,8 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
   }
 
   const message = choice.message;
+  // usage 带回（含缓存命中字段，归一化后进预算层）
+  const usage = parsed.data.usage ? normalizeOpenAIUsage(parsed.data.usage) : undefined;
 
   if (message.tool_calls && message.tool_calls.length > 0) {
     const toolCalls: ToolCall[] = [];
@@ -240,7 +255,7 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
       // 文本下面（倒序）。这里保留 content，并在有前导文本时按"文本在前、工具在后"的真实
       // 顺序合成 contentParts，与流式路径(sseStream)行为对齐。
       const preamble = message.content || '';
-      const response: ModelResponse = { type: 'tool_use', toolCalls };
+      const response: ModelResponse = { type: 'tool_use', toolCalls, ...(usage ? { usage } : {}) };
       if (preamble) {
         response.content = preamble;
         response.contentParts = [
@@ -286,12 +301,13 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
             arguments: args,
           },
         ],
+        ...(usage ? { usage } : {}),
       };
     }
     logger.warn(' Failed to parse text-based tool call args:', argsStr.substring(0, 100));
   }
 
-  return { type: 'text', content };
+  return { type: 'text', content, ...(usage ? { usage } : {}) };
 }
 
 // ── parse: stream chunk ───────────────────────────────────────────────────

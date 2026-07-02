@@ -23,6 +23,13 @@ export const en: Translations = {
     sessionExpiredReconnect: 'Your session has expired. Please sign in again to resume cloud sync.',
   },
 
+  // Status bar
+  statusBar: {
+    sessionCostTitle: 'Session cost: {cost}',
+    budgetUsageTitle: 'Budget usage: {cost} / {max} ({percent}%)',
+    cacheSavedLine: 'Cache saved {saved}',
+  },
+
   // Design Workspace (borrowed from Kun: design tab)
   design: {
     tabCode: 'General',

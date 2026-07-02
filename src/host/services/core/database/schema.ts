@@ -782,9 +782,14 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       post_messages_summary TEXT,
       byte_size INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
+      shape_hash_before TEXT,
+      shape_hash_after TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+  // WP2-2b prefixHash 归因：请求前缀 shape hash（仅 telemetry 诊断）
+  safeAlter(db, 'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_before TEXT', logger);
+  safeAlter(db, 'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_after TEXT', logger);
 
   // ========================================================================
   // dynamic-workflow resumable journal（P4-B）

@@ -202,9 +202,22 @@ export function createCliTables(db: CliDb): void {
       post_messages_summary TEXT,
       byte_size INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
+      shape_hash_before TEXT,
+      shape_hash_after TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+  // WP2-2b：共库迁移（Electron 侧 safeAlter 同款，双侧幂等）
+  for (const sql of [
+    'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_before TEXT',
+    'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_after TEXT',
+  ]) {
+    try {
+      db.exec(sql);
+    } catch {
+      // 列已存在，忽略
+    }
+  }
 
   // Episodic FTS5 index — 与 Electron DatabaseService 的 schema 保持一致，
   // 使 CLI 与桌面应用共享同一张 FTS 虚拟表（两者都指向 ~/.code-agent/code-agent.db）

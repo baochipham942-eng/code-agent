@@ -1,5 +1,6 @@
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { computeRequestPrefixShapeHash } from './requestShapeHash';
 import type { CompactionSource, CompactionSurvivorManifest, Message } from '../../shared/contract';
 import type { CompactionSummaryValidation } from './compactionSummaryValidator';
 
@@ -18,12 +19,15 @@ interface CompactionAuditSink {
     preMessagesSummary?: unknown;
     postMessagesSummary?: unknown;
     createdAt?: number;
+    shapeHashBefore?: string | null;
+    shapeHashAfter?: string | null;
   }) => { id: string; createdAt: number; byteSize: number };
 }
 
 interface CompactionAuditPlanLike {
   sessionId: string;
   source: CompactionSource;
+  systemPrompt?: string;
   anchorMessageId?: string;
   preserveRecentCount: number;
   messages: Message[];
@@ -276,6 +280,14 @@ export function recordCompactionAuditSnapshot(input: CompactionAuditRecorderInpu
       preMessagesSummary: buildPreAuditSummary(result.plan),
       postMessagesSummary: buildCompactionAuditSummary(result),
       createdAt: input.createdAt,
+      shapeHashBefore: computeRequestPrefixShapeHash({
+        systemPrompt: result.plan.systemPrompt,
+        messages: result.plan.messages,
+      }),
+      shapeHashAfter: computeRequestPrefixShapeHash({
+        systemPrompt: result.plan.systemPrompt,
+        messages: result.newMessages ?? result.plan.preservedMessages,
+      }),
     });
   } catch (err) {
     logger.warn('[CompactionAuditRecorder] failed to write compaction audit snapshot', err);

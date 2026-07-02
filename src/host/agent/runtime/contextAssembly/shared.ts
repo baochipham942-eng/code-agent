@@ -103,7 +103,11 @@ export type CurrentAttachment = {
 export interface ContextAssemblyCtx {
   runtime: RuntimeContext;
   taskProgress: TaskProgressPort;
-  recordTokenUsage(inputTokens: number, outputTokens: number): void;
+  recordTokenUsage(
+    inputTokens: number,
+    outputTokens: number,
+    cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
+  ): void;
   inference(): Promise<ModelResponse>;
   buildModelMessages(): Promise<ModelMessage[]>;
   buildContextTranscriptEntries(messages: Message[]): ContextTranscriptEntry[];

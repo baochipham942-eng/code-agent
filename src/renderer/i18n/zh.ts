@@ -21,6 +21,13 @@ export const zh = {
     sessionExpiredReconnect: '登录已过期，请重新登录以恢复云端同步',
   },
 
+  // 状态栏
+  statusBar: {
+    sessionCostTitle: '会话成本: {cost}',
+    budgetUsageTitle: '预算用量: {cost} / {max} ({percent}%)',
+    cacheSavedLine: '缓存已省 {saved}',
+  },
+
   // Design Workspace（Kun 借鉴：设计 tab）
   design: {
     tabCode: '通用',

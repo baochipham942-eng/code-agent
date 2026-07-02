@@ -63,7 +63,12 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
-import { buildNeoTagSourceMessage, submitNeoTagDraft } from './features/chat/neoTagSubmit';
+import {
+  buildNeoTagContinuationMessage,
+  buildNeoTagSourceMessage,
+  submitNeoTagContinuation,
+  submitNeoTagDraft,
+} from './features/chat/neoTagSubmit';
 import {
   ArrowRight,
   BarChart3,
@@ -488,6 +493,29 @@ export const ChatView: React.FC = () => {
     const neoResult = await requireAuthAsync(async () => {
       if (!currentSessionId) return null;
       try {
+        // @neo 跨会话续接（ADR-033）：chip 即意图 —— 有续接目标就走同卡追加轮，
+        // 执行落当前会话（过程流式可见），本地补显同 ID 去重。
+        const continuationTarget = useNeoWorkCardStore.getState().continuationTarget;
+        if (continuationTarget) {
+          const continuation = await submitNeoTagContinuation({
+            envelope,
+            conversationId: currentSessionId,
+            continuationTarget,
+            requesterUserId: authUser?.id ?? 'local-user',
+            runContinuation: useNeoWorkCardStore.getState().continueAndRun,
+          });
+          const roundMessage = buildNeoTagContinuationMessage({
+            envelope,
+            conversationId: currentSessionId,
+            workCardId: continuationTarget.workCardId,
+            roundTurnId: continuation.roundTurnId,
+          });
+          if (!messagesRef.current.some((message) => message.id === roundMessage.id)) {
+            useSessionStore.getState().addMessage(roundMessage);
+          }
+          useNeoWorkCardStore.getState().setContinuationTarget(null);
+          return true;
+        }
         const result = await submitNeoTagDraft({
           envelope,
           sourceConversationId: currentSessionId,

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CreateNeoWorkCardDraftRequest, NeoWorkCardDetail } from '../../../src/shared/contract/tag';
 import {
+  buildNeoTagContinuationMessage,
   buildNeoTagSourceMessage,
   buildNeoWorkCardDraftRequest,
+  submitNeoTagContinuation,
   submitNeoTagDraft,
 } from '../../../src/renderer/components/features/chat/neoTagSubmit';
 
@@ -183,5 +185,78 @@ describe('Neo tag ChatView submit boundary', () => {
       },
     });
     expect(message.attachments).toEqual(attachments);
+  });
+});
+
+describe('Neo tag continuation submit (ADR-033)', () => {
+  const target = { workCardId: 'nwc_1', title: '整理竞品报告' };
+  const fakeResult = () => ({
+    detail: makeDetail({
+      projectId: 'proj_1',
+      sourceConversationId: 'conv_A',
+      requesterUserId: 'user_1',
+      userText: 'x',
+      title: '整理竞品报告',
+      revision: {
+        intent: 'plan',
+        taskSummary: 'x',
+        readScope: { mode: 'selected_context' },
+        writeScope: { mode: 'none' },
+        memoryPlan: { mode: 'none', entries: [], notes: [] },
+      },
+    } as never),
+    roundTurnId: 'turn_round2',
+  });
+
+  it('strips optional @neo prefix and calls runContinuation with the round payload', async () => {
+    const runContinuation = vi.fn(async () => fakeResult());
+    const result = await submitNeoTagContinuation({
+      envelope: { content: '@neo 补上定价维度' },
+      conversationId: 'conv_B',
+      continuationTarget: target,
+      requesterUserId: 'user_1',
+      runContinuation,
+    });
+    expect(runContinuation).toHaveBeenCalledWith(expect.objectContaining({
+      workCardId: 'nwc_1',
+      conversationId: 'conv_B',
+      userText: '补上定价维度',
+    }));
+    expect(result.roundTurnId).toBe('turn_round2');
+  });
+
+  it('works without @neo prefix — the chip itself is the intent', async () => {
+    const runContinuation = vi.fn(async () => fakeResult());
+    await submitNeoTagContinuation({
+      envelope: { content: '补上定价维度' },
+      conversationId: 'conv_B',
+      continuationTarget: target,
+      requesterUserId: 'user_1',
+      runContinuation,
+    });
+    expect(runContinuation.mock.calls[0][0].userText).toBe('补上定价维度');
+  });
+
+  it('rejects empty text with a friendly error', async () => {
+    await expect(submitNeoTagContinuation({
+      envelope: { content: '@neo   ' },
+      conversationId: 'conv_B',
+      continuationTarget: target,
+      requesterUserId: 'user_1',
+      runContinuation: vi.fn(),
+    })).rejects.toThrow();
+  });
+
+  it('buildNeoTagContinuationMessage anchors the local user message to roundTurnId + workCardId', () => {
+    const message = buildNeoTagContinuationMessage({
+      envelope: { content: '@neo 补上定价维度' },
+      conversationId: 'conv_B',
+      workCardId: 'nwc_1',
+      roundTurnId: 'turn_round2',
+    });
+    expect(message.id).toBe('turn_round2');
+    expect(message.role).toBe('user');
+    expect(message.metadata?.neoTag?.workCardId).toBe('nwc_1');
+    expect(message.metadata?.neoTag?.sourceConversationId).toBe('conv_B');
   });
 });

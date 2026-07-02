@@ -256,6 +256,136 @@ describe('createAgentRouter', () => {
     });
   });
 
+  describe('/api/run SSE per-token 并发上限（WP3-4）', () => {
+    // 外层 beforeEach 的 releaseRun 是单值会被并发 run 覆盖（只能释放最后一个），
+    // 本组测试开 N 条并发流，改用 per-loop 释放器（cancel 只放行自己的 run）；
+    // 每个测试收尾必须排空（放行全部悬挂 run + 等 activeAgentLoops 清零），
+    // 否则悬挂 handler 泄漏进下一个测试。
+    const pendingReleases: Array<() => void> = [];
+    beforeEach(() => {
+      pendingReleases.length = 0;
+      mockCreateAgentLoop.mockImplementation(() => {
+        // 注意不能复用 mockRun.mockImplementation（后创建的 loop 会覆盖前者的闭包），
+        // 每个 loop 拿独立函数；mockCancel 仅作调用计数 spy。
+        let release: (() => void) | null = null;
+        return {
+          run: () => new Promise<void>((resolve) => {
+            release = resolve;
+            pendingReleases.push(resolve);
+          }),
+          cancel: (...args: unknown[]) => {
+            mockCancel(...args);
+            release?.();
+          },
+          steer: mockSteer,
+        };
+      });
+    });
+
+    const drainRuns = async (opened: Array<{ controller: AbortController }>) => {
+      for (const o of opened) o.controller.abort();
+      // 反复排空：run promise 可能在 abort 之后才被 handler 创建（异步 setup 竞态），
+      // 单次 splice 会漏掉迟到的 release。
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline && activeAgentLoops.size > 0) {
+        pendingReleases.splice(0).forEach((release) => release());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      pendingReleases.splice(0).forEach((release) => release());
+      expect(activeAgentLoops.size).toBe(0);
+    };
+
+    const openRun = (sessionId: string, token: string) => {
+      const controller = new AbortController();
+      const responsePromise = fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ prompt: '长任务', sessionId }),
+        signal: controller.signal,
+      });
+      return { controller, responsePromise };
+    };
+
+    it('同 token 超并发上限 → 第 N+1 条返回 429 JSON（writeHead 之前拒绝），不起 agent loop', async () => {
+      const { WEB_SSE } = await import('../../../src/shared/constants');
+      const max = WEB_SSE.MAX_CONCURRENT_PER_TOKEN;
+      const opened: Array<{ controller: AbortController; responsePromise: Promise<Response> }> = [];
+      try {
+        for (let i = 0; i < max; i++) {
+          opened.push(openRun(`session-cap-${i}`, 'tok-cap'));
+        }
+        const responses = await Promise.all(opened.map((o) => o.responsePromise));
+        for (const r of responses) expect(r.status).toBe(200);
+        await waitForAssertion(() => {
+          expect(mockCreateAgentLoop).toHaveBeenCalledTimes(max);
+        });
+
+        const overflow = openRun(`session-cap-overflow`, 'tok-cap');
+        const overflowRes = await overflow.responsePromise;
+        expect(overflowRes.status).toBe(429);
+        expect(overflowRes.headers.get('content-type')).toContain('application/json');
+        const body = await overflowRes.json();
+        expect(typeof body.error).toBe('string');
+        expect(mockCreateAgentLoop).toHaveBeenCalledTimes(max); // 超限请求没起 loop
+      } finally {
+        await drainRuns(opened);
+      }
+    });
+
+    it('断线释放槽位 → 新连接可进（断线清理）', async () => {
+      const { WEB_SSE } = await import('../../../src/shared/constants');
+      const max = WEB_SSE.MAX_CONCURRENT_PER_TOKEN;
+      const opened: Array<{ controller: AbortController; responsePromise: Promise<Response> }> = [];
+      try {
+        for (let i = 0; i < max; i++) {
+          opened.push(openRun(`session-rel-${i}`, 'tok-rel'));
+        }
+        await Promise.all(opened.map((o) => o.responsePromise));
+
+        opened[0].controller.abort(); // 断线其中一条
+        await waitForAssertion(() => {
+          expect(mockCancel).toHaveBeenCalled();
+        });
+
+        // 槽位释放后，新连接应被接受（重试等待释放传播）
+        let accepted = false;
+        const deadline = Date.now() + 3000;
+        while (!accepted && Date.now() < deadline) {
+          const retry = openRun(`session-rel-new-${Date.now()}`, 'tok-rel');
+          const res = await retry.responsePromise;
+          retry.controller.abort();
+          if (res.status === 200) {
+            accepted = true;
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
+        expect(accepted).toBe(true);
+      } finally {
+        await drainRuns(opened);
+      }
+    });
+
+    it('不同 token 各自计数：token A 打满不影响 token B', async () => {
+      const { WEB_SSE } = await import('../../../src/shared/constants');
+      const max = WEB_SSE.MAX_CONCURRENT_PER_TOKEN;
+      const opened: Array<{ controller: AbortController; responsePromise: Promise<Response> }> = [];
+      try {
+        for (let i = 0; i < max; i++) {
+          opened.push(openRun(`session-multi-${i}`, 'tok-full'));
+        }
+        await Promise.all(opened.map((o) => o.responsePromise));
+
+        const other = openRun('session-other-token', 'tok-free');
+        opened.push(other);
+        const res = await other.responsePromise;
+        expect(res.status).toBe(200);
+      } finally {
+        await drainRuns(opened);
+      }
+    });
+  });
+
   it('rejects invalid /api/run bodies before starting an agent loop', async () => {
     const response = await fetch(`${baseUrl}/api/run`, {
       method: 'POST',

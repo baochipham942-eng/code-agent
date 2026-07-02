@@ -14,6 +14,7 @@ import type { ExecuteOptions } from '../../host/tools/toolExecutor';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE } from '../helpers/sse';
+import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
@@ -290,6 +291,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       res.status(400).json({ error: 'Missing prompt' });
       return;
     }
+
+    // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒——
+    // text/event-stream 头一旦写出就无法再回 429。释放走 res 'close' + finally 双保险（release 幂等）。
+    const releaseSseSlot = agentRunSseLimiter.tryAcquire(extractRequestToken(req));
+    if (!releaseSseSlot) {
+      res.status(429).json({ error: 'Too many concurrent runs for this token', code: 'TOO_MANY_CONNECTIONS' });
+      return;
+    }
+    res.once('close', releaseSseSlot);
 
     // SSE response
     res.writeHead(200, {
@@ -876,6 +886,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         collector.endSession(sessionId);
       } catch { /* telemetry cleanup failure is non-fatal */ }
       runController.endResponseIfOpen();
+      releaseSseSlot(); // 并发槽位释放兜底（与 res 'close' 双保险，release 幂等）
     }
   });
 

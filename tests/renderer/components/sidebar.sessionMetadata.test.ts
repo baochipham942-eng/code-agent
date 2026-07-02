@@ -204,16 +204,15 @@ describe('Sidebar session metadata', () => {
     backgroundTaskState.tasks = [];
   });
 
-  it('renders session-native status, turn count, and workbench snapshot', () => {
+  it('renders session-native status and keeps the session row minimal', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('Session Native Workspace');
     expect(html).toContain('执行中');
     expect(html).not.toContain('已完成');
-    // commit bce470a2 把 turnCount 显示从 Sidebar 二级信息行移除，改用
-    // workbenchSnapshot.summary 占据该位置（"工作区 · Browser"）。turnCount 仍保留
-    // 在 store 用于排序/统计，但不再直接渲染。下面对 snapshot summary 的断言已覆盖。
-    expect(html).toContain('工作区 · Browser');
+    // PR#287 极简重构：会话行只保留标题+时间，workbenchSnapshot.summary
+    // （"工作区 · Browser"）等摘要行不再常驻渲染。
+    expect(html).not.toContain('工作区 · Browser');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
     expect(html).toContain('aria-label="打开 code-agent 项目控制台"');
     expect(html).toContain('aria-label="展开 code-agent 项目详情"');
@@ -222,11 +221,11 @@ describe('Sidebar session metadata', () => {
     // 2026-07-02 分组头未完成态改为右对齐"色球+数字"(title/aria 带全文)，不再渲染"N 未完成"文字胶囊
     expect(html).toContain('1 个未完成');
     expect(html).not.toContain('1 未完成');
-    expect(html).toContain('1 执行中');
-    expect(html).toContain('1 会话');
-    expect(html).toContain('repo/code-agent');
-    expect(html).toContain('sidebar-recovery');
-    expect(html).toContain('PR #17');
+    // PR#287 极简重构：分组头去掉常驻 summary 摘要行（"N 执行中 · N 会话"、
+    // 交付线索 PR 提示等），只留名字+未完成计数。
+    expect(html).not.toContain('1 执行中');
+    expect(html).not.toContain('1 会话');
+    expect(html).not.toContain('PR #17');
     expect(html).toContain('产物');
   });
 
@@ -334,7 +333,8 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('当前项目');
     expect(html).toContain('全部');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
-    expect(html).toContain('1 命中');
+    // PR#287 后搜索命中不再渲染"N 命中"计数 chip（命中以片段行展示）
+    expect(html).not.toContain('命中');
     expect(html).not.toContain('Finished Session');
   });
 
@@ -374,7 +374,8 @@ describe('Sidebar session metadata', () => {
       expect(html).not.toContain('data-sidebar-group-rows="/repo/code-agent-worktree"');
       expect(html).toContain('Main Project Task');
       expect(html).toContain('Worktree Follow Up');
-      expect(html).toContain('repo/code-agent-worktree +1 工作区');
+      // PR#287 极简重构：分组头不再渲染 "path +N 工作区" 摘要，只留项目名
+      expect(html).not.toContain('+1 工作区');
       expect(html.match(/data-sidebar-group-rows=/g) ?? []).toHaveLength(1);
     } finally {
       sessionState.sessions = originalSessions;
@@ -453,7 +454,9 @@ describe('Sidebar session metadata', () => {
     expect(html).not.toContain('<appshot');
   });
 
-  it('surfaces workflow replay signals in the delivery recovery filter', () => {
+  // PR#287 极简重构：Replay/证据明细移出会话行（经 Replay 面板查看），
+  // 交付线索筛选仍程序化生效，但行内保持安静。
+  it('keeps workflow replay sessions in the delivery recovery filter without row evidence', () => {
     sessionUiState.sessionStatusFilter = 'artifact';
     workflowState.runs = {
       'workflow-run-1': {
@@ -475,15 +478,14 @@ describe('Sidebar session metadata', () => {
 
     expect(html).toContain('Finished Session');
     expect(html).not.toContain('交付线索'); // D-10: 非管理员隐藏筛选 tab，筛选仍程序化生效
-    expect(html).toContain('Replay');
-    expect(html).toContain('Workflow replay');
-    expect(html).toContain('Recover project delivery');
-    expect(html).toContain('结构化 Replay 仅管理员可打开');
+    expect(html).not.toContain('Workflow replay');
+    expect(html).not.toContain('Recover project delivery');
+    expect(html).not.toContain('结构化 Replay 仅管理员可打开');
     expect(html).not.toContain('Session Native Workspace');
     expect(html).not.toContain('&lt;appshot');
   });
 
-  it('renders concrete background trace and replay evidence in the session row', () => {
+  it('keeps background trace and replay evidence off the session row', () => {
     sessionUiState.sessionStatusFilter = 'artifact';
     backgroundTaskState.tasks = [{
       id: 'task-1',
@@ -518,9 +520,9 @@ describe('Sidebar session metadata', () => {
 
     expect(html).toContain('Finished Session');
     expect(html).not.toContain('交付线索'); // D-10: 非管理员隐藏筛选 tab，筛选仍程序化生效
-    expect(html).toContain('background replay');
-    expect(html).toContain('trace.json');
-    expect(html).toContain('/tmp/trace.json');
+    expect(html).not.toContain('background replay');
+    expect(html).not.toContain('trace.json');
+    expect(html).not.toContain('/tmp/trace.json');
     expect(html).not.toContain('Session Native Workspace');
   });
 });

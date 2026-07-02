@@ -106,6 +106,8 @@ export interface TestExpectations extends
   test_pass?: string;
   /** Any of these tools being called counts as pass (supports regex) */
   tools_any_of?: string[];
+  /** GAIA 式判分：提取 "FINAL ANSWER: X" 与真值做 quasi-exact match */
+  final_answer?: string;
 }
 
 /**

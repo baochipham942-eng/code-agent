@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
+import { extractFinalAnswer, gaiaQuestionScorer } from './gaiaScorer';
 import type {
   TestExpectations,
   ToolExecutionRecord,
@@ -533,6 +534,41 @@ function assertTestPass(
 }
 
 /**
+ * Assert final_answer — GAIA 式判分：提取 "FINAL ANSWER: X" 做 quasi-exact match
+ */
+function assertFinalAnswer(
+  expect: TestExpectations,
+  responses: string[]
+): AssertionFailure[] {
+  const failures: AssertionFailure[] = [];
+  if (expect.final_answer === undefined) return failures;
+
+  const fullText = responses.join('\n');
+  const extracted = extractFinalAnswer(fullText);
+
+  if (extracted === null) {
+    failures.push({
+      assertion: 'final_answer',
+      expected: `响应以 "FINAL ANSWER: ${expect.final_answer}" 结尾`,
+      actual: '未找到 FINAL ANSWER 标记（格式失败）',
+      message: '响应缺少 "FINAL ANSWER:" 标记，无法判分',
+    });
+    return failures;
+  }
+
+  if (!gaiaQuestionScorer(extracted, expect.final_answer)) {
+    failures.push({
+      assertion: 'final_answer',
+      expected: expect.final_answer,
+      actual: extracted,
+      message: `FINAL ANSWER 不匹配：得到 "${extracted}"，期望 "${expect.final_answer}"`,
+    });
+  }
+
+  return failures;
+}
+
+/**
  * Count declared assertions in an expectations object.
  * 返回真实声明数（可为 0）—— scoreAuthority 用它区分「确定性断言背书」
  * 与「零断言自动 pass（self_check）」；scoring 端另有 min-1 兜底防除零。
@@ -582,6 +618,9 @@ export function countDeclaredAssertions(expect: TestExpectations): number {
   // Test pass
   if (expect.test_pass) count++;
 
+  // GAIA final answer
+  if (expect.final_answer !== undefined) count++;
+
   return count;
 }
 
@@ -621,6 +660,9 @@ export async function runAssertions(
 
   // Test pass assertion
   failures.push(...assertTestPass(expect, context.workingDirectory));
+
+  // GAIA final answer assertion
+  failures.push(...assertFinalAnswer(expect, context.responses));
 
   // Scoring
   const totalAssertions = countAssertions(expect);

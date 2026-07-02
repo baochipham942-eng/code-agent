@@ -514,7 +514,7 @@ export const ChatView: React.FC = () => {
             useSessionStore.getState().addMessage(sourceMessage);
           }
         }
-        toast.success('Neo 开始处理了');
+        // 轻量化重设计:@neo = 正常 agent 聊天,不弹 toast(回复直接流式出现在对话里)。
         return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error));

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Clock3, CornerDownRight, X, UserPlus, Sparkles } from 'lucide-react';
+import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
   ComposerAgentSelection,
@@ -720,15 +720,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               ))}
             </div>
           )}
-          {neoTagInvocation && (
-            <div className="px-3 pt-2">
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-200">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span className="font-medium">Neo</span>
-                <span className="text-emerald-200/65">work card</span>
-              </div>
-            </div>
-          )}
+          {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
+              (林晨 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
           <InputArea
             ref={inputAreaRef}
             value={value}

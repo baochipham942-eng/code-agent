@@ -11,40 +11,12 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { statusPhase } from '../chat/neoWorkCardPhase';
 
 // ============================================================================
-// Topic 详情的多轮执行结果：真源是源会话消息本身（用户消息带 metadata.neoTag），
-// 不是 delta 记账——老 topic 也能回溯出每轮的请求原话和 Neo 最终回复。
+// Topic 详情的多轮执行结果：实现已搬 shared（host prompt 层与 renderer 共用，ADR-033），
+// 这里 re-export 保持既有 import 路径不变。
 // ============================================================================
 
-export interface NeoTopicRound {
-  /** 用户那轮的原话（含 @neo 前缀，如果有）。 */
-  request: string;
-  /** 该轮 Neo 的最终回复正文；还在跑/失败无回复时为 null。 */
-  reply: string | null;
-  /** 该轮发起时间。 */
-  at: number;
-}
-
-export function extractNeoTopicRounds(messages: Message[], workCardId: string): NeoTopicRound[] {
-  const rounds: NeoTopicRound[] = [];
-  let current: NeoTopicRound | null = null;
-  for (const message of messages) {
-    if (message.role === 'user') {
-      if (message.metadata?.neoTag?.workCardId === workCardId) {
-        current = { request: message.content, reply: null, at: message.timestamp };
-        rounds.push(current);
-      } else {
-        // 任何别的用户消息（普通聊天/别的卡）都终结当前轮
-        current = null;
-      }
-      continue;
-    }
-    if (current && message.role === 'assistant' && message.content?.trim()) {
-      // 最终结论 = 该轮最后一条非空 assistant 正文
-      current.reply = message.content;
-    }
-  }
-  return rounds;
-}
+export type { NeoTopicRound } from '@shared/neoTag/topicRounds';
+export { extractNeoTopicRounds, mergeTopicRounds, topicConversationIds } from '@shared/neoTag/topicRounds';
 
 /** 只读拉取某个会话的消息（供 topic 详情回溯多轮结果；失败静默返回空）。 */
 export async function fetchConversationMessages(sessionId: string): Promise<Message[]> {

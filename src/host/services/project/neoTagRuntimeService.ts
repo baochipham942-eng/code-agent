@@ -13,9 +13,14 @@ import { getSessionManager } from '../infra/sessionManager';
 import {
   extractNeoTopicRounds,
   mergeTopicRounds,
+  topicConversationIds,
   type NeoTopicRound,
 } from '../../../shared/neoTag/topicRounds';
-import { getNeoWorkCardService, type NeoWorkCardService } from './neoWorkCardService';
+import {
+  getNeoWorkCardService,
+  NeoWorkCardServiceError,
+  type NeoWorkCardService,
+} from './neoWorkCardService';
 import { buildNeoTagContextPack } from './neoTagContextSelector';
 import { buildNeoTagPromptLayer } from './neoTagPromptLayer';
 import {
@@ -411,4 +416,90 @@ export async function launchApprovedNeoWorkCard(
   }
 
   return { runId: run, context };
+}
+
+const CONTINUATION_BLOCKED_STATUSES = new Set<NeoWorkCard['status']>([
+  'approved', 'queued', 'working', 'waiting_for_user',
+]);
+
+export interface ContinueAndRunNeoWorkCardInput {
+  workCardId: string;
+  /** 续接发生的会话 = 本轮执行落点（ADR-033 D2）。 */
+  conversationId: string;
+  /** 本轮用户消息 ID（renderer 本地补显与 host 落库同 ID 去重，机制同 sourceTurnId）。 */
+  turnId: string;
+  userText: string;
+  requesterUserId: string;
+  selectedArtifactIds?: string[];
+  taskManager: NeoTagTaskManager;
+  service?: NeoWorkCardService;
+  now?: () => number;
+  onWorkCardUpdated?: (workCardId: string, reason: NeoWorkCardUpdateReason) => void;
+}
+
+/**
+ * @neo 跨会话续接（ADR-033）：既有 topic 追加一轮 —— 新 revision → 自动批准 → 在当前会话运行。
+ * completed/failed 卡可续接重开；运行中拒绝（同卡双会话并发 fail-closed）。
+ * readScope.conversationIds 自动推导 = 当前会话 ∪ 源会话 ∪ 历史轮会话，不做手动多选。
+ */
+export function continueAndRunNeoWorkCard(
+  input: ContinueAndRunNeoWorkCardInput,
+): CreateAndRunNeoWorkCardResult {
+  const service = input.service ?? getNeoWorkCardService();
+  const now = input.now ?? Date.now;
+  const detail = service.get(input.workCardId);
+  if (!detail) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found');
+  if (CONTINUATION_BLOCKED_STATUSES.has(detail.workCard.status)) {
+    throw new NeoWorkCardServiceError('CONFLICT', '这个 topic 还在跑，等这轮结束再续。');
+  }
+  const userText = input.userText.trim();
+  if (!userText) throw new NeoWorkCardServiceError('INVALID_ARGS', '写一下要 Neo 接着做什么。');
+
+  const base = detail.approvedRevision ?? detail.currentRevision;
+  if (!base) throw new NeoWorkCardServiceError('INVALID_STATE', 'work card has no revision');
+  const conversationIds = Array.from(new Set([
+    input.conversationId,
+    ...topicConversationIds(detail),
+  ]));
+
+  const updated = service.updateDraftRevision({
+    workCardId: detail.workCard.id,
+    updatedByUserId: input.requesterUserId,
+    revision: {
+      intent: base.intent,
+      taskSummary: userText,
+      readScope: {
+        ...base.readScope,
+        mode: 'selected_context',
+        conversationIds,
+        messageIds: [],
+        artifactIds: input.selectedArtifactIds ?? [],
+        notes: ['Follow-up round appended from another conversation (ADR-033).'],
+      },
+      writeScope: base.writeScope,
+      modelIntent: base.modelIntent,
+      memoryPlan: { mode: 'none', entries: [], notes: [] },
+      expectedOutputs: base.expectedOutputs,
+      risks: [],
+      assumptions: [],
+    },
+  }, now());
+  notifyWorkCardUpdated(input.onWorkCardUpdated, updated.workCard.id, 'draft_updated');
+
+  service.approveRevision({
+    workCardId: updated.workCard.id,
+    revisionId: updated.revision.id,
+    reviewerUserId: input.requesterUserId,
+  }, now());
+  notifyWorkCardUpdated(input.onWorkCardUpdated, updated.workCard.id, 'revision_approved');
+
+  const run = launchApprovedNeoWorkCard({
+    workCardId: updated.workCard.id,
+    taskManager: input.taskManager,
+    service,
+    now,
+    onWorkCardUpdated: input.onWorkCardUpdated,
+    target: { conversationId: input.conversationId, turnId: input.turnId },
+  });
+  return { workCard: updated.workCard, revision: updated.revision, run };
 }

@@ -87,6 +87,7 @@ export async function handleGoalCompletionGate(
       failureType: evidence.failureType || null,
       evidenceRefs: evidence.evidenceRefs,
       skippedChecks: evidence.skippedChecks,
+      workspaceSideEffects: evidence.workspaceSideEffects ?? null,
       commands: evidence.commandResults.map((result) => ({
         id: result.id,
         command: result.command,

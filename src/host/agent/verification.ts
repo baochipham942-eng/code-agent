@@ -4,6 +4,10 @@ import type { GoalGateVerificationCard } from '../../shared/contract/agent';
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef } from '../../shared/contract/evidence';
 import { ChangeDetector } from '../testing/ci/changeDetector';
 import { runVerifyGate } from './goalVerifyGate';
+import { captureWorkspaceSnapshot, diffWorkspaceSnapshots } from './workspaceSnapshot';
+
+/** 副作用清单上限（控证据体积） */
+const WORKSPACE_SIDE_EFFECTS_MAX = 20;
 
 export type VerificationStatus = 'passed' | 'failed' | 'not_run';
 
@@ -87,6 +91,12 @@ export interface VerificationEvidence {
   commandResults: VerificationCommandResult[];
   skippedChecks: VerificationSkippedCheck[];
   evidenceRefs: EvidenceRef[];
+  /**
+   * 工作区卫生契约：验证命令跑前后工作区快照 diff 非空时如实记录
+   * （added/modified/removed 清单，有界）。不阻断验证，只入证据——
+   * QA/验证在用户工作区留下临时产物是信任问题，必须可见。
+   */
+  workspaceSideEffects?: string[];
 }
 
 export interface RunVerificationPlanOptions {
@@ -422,6 +432,10 @@ export async function runVerificationPlan(
     return buildNotRunVerificationEvidence(plan);
   }
 
+  // 工作区卫生契约：跑前拍快照，跑完 diff（fail-safe：快照失败按空处理，
+  // truncated 时 diff 返回空防误报）。
+  const snapshotBefore = captureWorkspaceSnapshot(plan.cwd);
+
   const commandResults: VerificationCommandResult[] = [];
   const evidenceRefs: EvidenceRef[] = [];
 
@@ -459,6 +473,10 @@ export async function runVerificationPlan(
     ? classifyVerificationFailure(failed.command, `${failed.output}\n${failed.stdoutTail}\n${failed.stderrTail}`, failed.timedOut)
     : undefined;
 
+  const snapshotAfter = captureWorkspaceSnapshot(plan.cwd);
+  const sideEffects = diffWorkspaceSnapshots(snapshotBefore, snapshotAfter)
+    .slice(0, WORKSPACE_SIDE_EFFECTS_MAX);
+
   return {
     status: failed ? 'failed' : 'passed',
     failureType,
@@ -469,5 +487,6 @@ export async function runVerificationPlan(
     commandResults,
     skippedChecks: plan.skippedChecks,
     evidenceRefs,
+    ...(sideEffects.length > 0 ? { workspaceSideEffects: sideEffects } : {}),
   };
 }

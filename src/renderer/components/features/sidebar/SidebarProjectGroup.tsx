@@ -163,12 +163,11 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {summary.unfinishedCount > 0 && (
           <span
             data-testid="sidebar-group-unfinished"
-            className="flex shrink-0 items-center gap-1"
+            className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-amber-400/90 px-1 text-[10px] font-medium tabular-nums text-zinc-900"
             title={`${summary.unfinishedCount} 个未完成`}
             aria-label={`${summary.unfinishedCount} 个未完成`}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true" />
-            <span className="text-[11px] tabular-nums text-zinc-500">{summary.unfinishedCount}</span>
+            {summary.unfinishedCount}
           </span>
         )}
         {/* Neo 协作徽标已按拍板移除(2026-07-02)：入口走账号菜单"Neo 协同" */}

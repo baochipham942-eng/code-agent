@@ -533,9 +533,11 @@ function assertTestPass(
 }
 
 /**
- * Count total assertions in an expectations object
+ * Count declared assertions in an expectations object.
+ * 返回真实声明数（可为 0）—— scoreAuthority 用它区分「确定性断言背书」
+ * 与「零断言自动 pass（self_check）」；scoring 端另有 min-1 兜底防除零。
  */
-function countAssertions(expect: TestExpectations): number {
+export function countDeclaredAssertions(expect: TestExpectations): number {
   let count = 0;
 
   // Tool assertions
@@ -580,7 +582,11 @@ function countAssertions(expect: TestExpectations): number {
   // Test pass
   if (expect.test_pass) count++;
 
-  return Math.max(count, 1); // At least 1 to avoid division by zero
+  return count;
+}
+
+function countAssertions(expect: TestExpectations): number {
+  return Math.max(countDeclaredAssertions(expect), 1); // At least 1 to avoid division by zero
 }
 
 /**

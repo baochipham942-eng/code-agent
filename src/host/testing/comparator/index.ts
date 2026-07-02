@@ -4,3 +4,5 @@ export { ABGrader } from './abGrader';
 export type { GradeOutput, GradeResult } from './abGrader';
 export { generateComparisonMarkdown, generateComparisonConsole } from './comparisonReport';
 export { loadCompareConfig } from './configLoader';
+export { runCompare } from './runCompare';
+export type { RunCompareOptions } from './runCompare';

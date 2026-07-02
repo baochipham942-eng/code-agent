@@ -93,6 +93,10 @@ function parseArgs(argv: string[]) {
   let force = false;
   let tags: string[] | undefined;
   let ids: string[] | undefined;
+  let compare: string | undefined;
+  let judge: 'rules' | 'llm' = 'rules';
+  let predictedFixes: string[] | undefined;
+  let riskTasks: string[] | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -126,6 +130,20 @@ function parseArgs(argv: string[]) {
       tags = args[++i].split(',').map((tag) => tag.trim()).filter(Boolean);
     } else if (arg === '--ids' && i + 1 < args.length) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
+    } else if (arg === '--compare' && i + 1 < args.length) {
+      compare = args[++i];
+    } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
+      predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
+    } else if (arg === '--risk-tasks' && i + 1 < args.length) {
+      riskTasks = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
+    } else if (arg === '--judge' && i + 1 < args.length) {
+      const val = args[++i];
+      if (val === 'rules' || val === 'llm') {
+        judge = val;
+      } else {
+        console.error(chalk.red(`Invalid judge: ${val}. Use 'rules' or 'llm'.`));
+        process.exit(1);
+      }
     } else if (arg === '--force') {
       force = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -146,7 +164,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids };
+  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks };
 }
 
 function printUsage() {
@@ -165,6 +183,10 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
+  npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config (requires --real)
+  npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
+  npx tsx scripts/eval-ci.ts --predicted-fixes <a,b>  Register case ids this change should fix (delta report reconciles)
+  npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
   npx tsx scripts/eval-ci.ts --trend            Show trend chart
@@ -430,7 +452,15 @@ async function prepareRealEvalRuntime(): Promise<void> {
 async function runEvals(
   workingDir: string,
   _scope: 'smoke' | 'full',
-  opts: { real: boolean; model?: string; provider?: string; concurrency?: number; tags?: string[]; ids?: string[] }
+  opts: {
+    real: boolean;
+    model?: string;
+    provider?: string;
+    concurrency?: number;
+    tags?: string[];
+    ids?: string[];
+    prediction?: { predictedFixes: string[]; riskTasks: string[] };
+  }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
@@ -447,6 +477,8 @@ async function runEvals(
       filterTags: opts.tags,
       filterIds: opts.ids,
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
+      // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
+      ...(opts.prediction ? { prediction: opts.prediction } : {}),
     });
 
     const agent = createAgent({
@@ -467,6 +499,8 @@ async function runEvals(
               ? '\u2705'
               : event.result.status === 'failed'
               ? '\u274C'
+              : event.result.status === 'infra_excluded'
+              ? '\u{1F50C}'
               : '\u23ED\uFE0F';
           console.log(
             `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
@@ -494,12 +528,141 @@ async function runEvals(
   }
 }
 
+/**
+ * WP1-3：--compare 成对盲测。baseline = 当前默认配置，candidate 来自 YAML
+ * （可覆盖 model/provider/systemPrompt）。每 case 两配置各真跑一次，
+ * ABComparator 盲分配 A/B + 评分 + unblind。paired 对比的统计功效远高于
+ * 两轮整体总分对比。
+ */
+async function runCompareCommand(
+  workingDir: string,
+  candidatePath: string,
+  opts: {
+    model?: string;
+    provider?: string;
+    tags?: string[];
+    ids?: string[];
+    maxCases: number;
+    force: boolean;
+    judge: 'rules' | 'llm';
+  },
+): Promise<void> {
+  const { loadCompareConfig, runCompare, generateComparisonConsole, generateComparisonMarkdown } =
+    await import('../src/host/testing/comparator');
+
+  const candidate = await loadCompareConfig(candidatePath);
+  const resolvedProvider = opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
+  const resolvedModel = opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
+  const baseline = {
+    name: 'baseline',
+    model: resolvedModel,
+    provider: resolvedProvider,
+  };
+
+  // Load & filter cases
+  const defaultConfig = createDefaultConfig(workingDir);
+  const suites = await loadAllTestSuites(defaultConfig.testCaseDir);
+  const testCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
+  const totalCases = testCases.length;
+
+  // Cost guard：每 case 跑两次（baseline + candidate）
+  const costPerCase = estimateCostPerCase(resolvedModel);
+  const casesToRun = Math.min(totalCases, opts.maxCases);
+  const estimatedCost = (casesToRun * costPerCase * 2).toFixed(2);
+  console.log(chalk.yellow(
+    `  ⚠️  Compare mode: up to ${casesToRun} cases × 2 configs with ${resolvedModel} via ${resolvedProvider}. ` +
+    `Estimated cost: ~$${estimatedCost}. Use --max-cases to limit.`
+  ));
+  console.log('');
+  if (totalCases > opts.maxCases && !opts.force) {
+    console.error(chalk.red(
+      `  Error: ${totalCases} test cases exceed --max-cases limit (${opts.maxCases}). ` +
+      `Use --force to override or --max-cases <n> to raise the limit.`
+    ));
+    process.exit(1);
+  }
+
+  const repoStatusBefore = getRepoStatusSnapshot(workingDir);
+  const sandbox = createEvalSandbox(workingDir);
+  const agentWorkingDir = sandbox?.dir ?? workingDir;
+  try {
+    await prepareRealEvalRuntime();
+
+    const runnerConfig = createDefaultConfig(workingDir, {
+      verbose: false,
+      workingDirectory: agentWorkingDir,
+    });
+
+    const makeAgent = (config: { name: string; model?: string; provider?: string; systemPrompt?: string }) => {
+      const provider = config.provider || resolvedProvider;
+      const model = config.model || resolvedModel;
+      const apiKey = process.env.AUTO_TEST_API_KEY || loadApiKey(provider, workingDir);
+      if (!apiKey) {
+        const candidates = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
+        throw new Error(`No API key found for ${provider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
+      }
+      return new StandaloneAgentAdapter({
+        workingDirectory: agentWorkingDir,
+        modelConfig: { provider, model, apiKey },
+        ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
+      });
+    };
+
+    // LLM 评审可选（有额外 API 成本）；默认 heuristic 规则免费。
+    // 评审来源即 scoreAuthority 语义：llm → llm_judge，rules → self_check 级弱证据。
+    let llmCall: ((prompt: string) => Promise<string>) | undefined;
+    if (opts.judge === 'llm') {
+      const { quickTask } = await import('../src/host/model/quickModel');
+      llmCall = async (prompt: string) => {
+        const res = await quickTask(prompt, 2048);
+        if (!res.success || !res.content) {
+          throw new Error(`LLM judge failed: ${res.error ?? 'empty response'}`);
+        }
+        return res.content;
+      };
+    }
+
+    console.log(chalk.cyan(`  Baseline:  ${baseline.name} (${baseline.model} via ${baseline.provider})`));
+    console.log(chalk.cyan(`  Candidate: ${candidate.name} (${candidate.model ?? baseline.model} via ${candidate.provider ?? baseline.provider}${candidate.systemPrompt ? ', custom systemPrompt' : ''})`));
+    console.log(chalk.cyan(`  Judge:     ${opts.judge}`));
+    console.log('');
+
+    const result = await runCompare({
+      testCases: testCases.slice(0, casesToRun),
+      baseline,
+      candidate,
+      makeAgent,
+      runnerConfig,
+      llmCall,
+    });
+
+    console.log(generateComparisonConsole(result));
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const reportPath = path.join(defaultConfig.resultsDir, `compare-${timestamp}.md`);
+    await fs.promises.mkdir(defaultConfig.resultsDir, { recursive: true });
+    await fs.promises.writeFile(reportPath, generateComparisonMarkdown(result));
+    console.log(chalk.dim(`  Comparison report saved to: ${reportPath}`));
+    console.log('');
+
+    if (sandbox) {
+      assertRepoUnchanged(workingDir, repoStatusBefore);
+    }
+  } finally {
+    sandbox?.cleanup();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids } = parseArgs(process.argv);
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks } = parseArgs(process.argv);
+  // WP1-4：任一预测 flag 出现即登记（另一侧默认空列表）
+  const prediction = (predictedFixes || riskTasks)
+    ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }
+    : undefined;
 
   // --model implies --real
   const effectiveReal = real || !!model;
@@ -507,6 +670,17 @@ async function main() {
   const workingDir = process.cwd();
   const manager = new BaselineManager(workingDir);
   const tracker = new TrendTracker(workingDir);
+
+  // --compare: A/B paired blind test (WP1-3)
+  if (compare) {
+    // mock adapter 两侧输出恒等，对比无意义；成对盲测必须真模型
+    if (!effectiveReal) {
+      console.error(chalk.red('  Error: --compare 需要 --real（或 --model <name>）。mock 两侧输出恒等，对比无意义。'));
+      process.exit(1);
+    }
+    await runCompareCommand(workingDir, compare, { model, provider, tags, ids, maxCases, force, judge });
+    return;
+  }
 
   // --baseline-info
   if (baselineInfo) {
@@ -638,7 +812,7 @@ async function main() {
   // Run evals
   console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
   console.log('');
-  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids });
+  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids, prediction });
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
   // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据
@@ -659,7 +833,9 @@ async function main() {
 
   // Track trend
   const commitSha = getCommitSha();
-  const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+  // WP1-2：能力通过率分母排除 infra_excluded（429/超时/5xx/网络）
+  const capabilityTotal = summary.total - (summary.infraExcluded ?? 0);
+  const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
   const trendPoint: TrendDataPoint = {
     timestamp: Date.now(),
     commitSha,
@@ -672,6 +848,7 @@ async function main() {
     newPasses: delta.newPasses.length,
     mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
+    ...(summary.infraExcluded ? { infraExcluded: summary.infraExcluded } : {}),
   };
   await tracker.append(trendPoint);
   console.log(chalk.dim(`  Trend data recorded (commit: ${commitSha.slice(0, 7)})`));

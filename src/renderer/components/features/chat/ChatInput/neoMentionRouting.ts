@@ -28,6 +28,33 @@ export function shouldSuggestNeoMention(query: string): boolean {
   return 'neo'.startsWith(normalized);
 }
 
+export const NEO_TOPIC_MENTION_PREFIX = '__neo_topic__:';
+
+const CLOSED_TOPIC_STATUSES = new Set(['cancelled', 'archived']);
+const MAX_TOPIC_CANDIDATES = 5;
+
+export interface NeoTopicMentionSource {
+  workCardId: string;
+  title: string;
+  status: string;
+  updatedAt: number;
+}
+
+/** @neo 下拉的「续接既有 topic」候选：最近活跃前 5，已结束的不进（ADR-033 D1）。 */
+export function buildNeoTopicMentionCandidates(
+  topics: NeoTopicMentionSource[],
+): Array<MentionRoutingAgent & { role: string }> {
+  return topics
+    .filter((topic) => !CLOSED_TOPIC_STATUSES.has(topic.status))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_TOPIC_CANDIDATES)
+    .map((topic) => ({
+      id: `${NEO_TOPIC_MENTION_PREFIX}${topic.workCardId}`,
+      name: 'Neo',
+      role: `续接 · ${topic.title.length > 24 ? `${topic.title.slice(0, 23)}…` : topic.title}`,
+    }));
+}
+
 export function isLeadingNeoTagInput(value: string): boolean {
   const trimmedStart = value.replace(/^\s+/, '');
   return /^@neo(?:\s|$)/i.test(trimmedStart);

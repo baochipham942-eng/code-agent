@@ -19,6 +19,7 @@ import { UI } from '@shared/constants';
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
 import { AttachmentBar } from './AttachmentBar';
+import { NeoContinuationChip } from './NeoContinuationChip';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -587,6 +588,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <AppshotChip capture={pendingAppshot} onRemove={clearAppshot} />
           </div>
         )}
+
+        {/* @neo 续接 chip（ADR-033）：标记这条消息续接哪个 topic */}
+        <div className="empty:hidden mb-2 px-2">
+          <NeoContinuationChip />
+        </div>
 
         {/* 附件预览区 */}
         {attachments.length > 0 && (

@@ -5,12 +5,17 @@ import {
   applyAgentMentionSuggestion,
   getLeadingAgentMentionAutocomplete,
 } from './agentMentionRouting';
-import { NEO_TAG_MENTION_AGENT } from './neoMentionRouting';
+import {
+  buildNeoTopicMentionCandidates,
+  NEO_TAG_MENTION_AGENT,
+  NEO_TOPIC_MENTION_PREFIX,
+} from './neoMentionRouting';
 import {
   applyAgentCommandOption,
   getAgentCommandOptions,
   getAgentSlashCommandQuery,
 } from './agentCommand';
+import { useNeoWorkCardStore } from '../../../../stores/neoWorkCardStore';
 
 export interface UseChatInputAgentCommandParams {
   /** 当前输入框文本（组件持有，单向喂入）。 */
@@ -49,10 +54,32 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
 
-  const agentMentionAutocomplete = useMemo(
-    () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
-    [swarmAgents, value],
+  // @neo 下拉的「续接既有 topic」候选（ADR-033 D1）：数据源 = store 全局目录，
+  // 下拉首次可见时懒加载一次（listAll，与「Neo 协同」目录同源）。
+  const detailsById = useNeoWorkCardStore((state) => state.detailsById);
+  const loadAllTopics = useNeoWorkCardStore((state) => state.loadAll);
+  const [topicsLoaded, setTopicsLoaded] = useState(false);
+  const neoTopicCandidates = useMemo(
+    () => buildNeoTopicMentionCandidates(Object.values(detailsById).map((detail) => ({
+      workCardId: detail.workCard.id,
+      title: detail.workCard.title,
+      status: detail.workCard.status,
+      updatedAt: detail.workCard.updatedAt,
+    }))),
+    [detailsById],
   );
+
+  const agentMentionAutocomplete = useMemo(
+    () => getLeadingAgentMentionAutocomplete(value, swarmAgents, neoTopicCandidates),
+    [neoTopicCandidates, swarmAgents, value],
+  );
+
+  useEffect(() => {
+    if (agentMentionAutocomplete && !topicsLoaded) {
+      setTopicsLoaded(true);
+      void loadAllTopics().catch(() => {});
+    }
+  }, [agentMentionAutocomplete, loadAllTopics, topicsLoaded]);
   const isAgentMentionAutocompleteOpen = Boolean(
     agentMentionAutocomplete
     && agentMentionAutocomplete.matches.length > 0
@@ -77,6 +104,21 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   }, [agentSlashCommandQuery, agentCommandOptions.length]);
 
   const handleAgentMentionSelect = useCallback((agentId: string) => {
+    // 续接既有 topic（ADR-033）：挂 composer chip（可移除），正文照常插 `@neo `——不做文本编码。
+    if (agentId.startsWith(NEO_TOPIC_MENTION_PREFIX)) {
+      const workCardId = agentId.slice(NEO_TOPIC_MENTION_PREFIX.length);
+      const detail = useNeoWorkCardStore.getState().detailsById[workCardId];
+      if (detail) {
+        useNeoWorkCardStore.getState().setContinuationTarget({
+          workCardId,
+          title: detail.workCard.title,
+        });
+      }
+      setValue((prev) => applyAgentMentionSuggestion(prev, NEO_TAG_MENTION_AGENT));
+      setDismissedAgentAutocompleteValue(null);
+      inputAreaRef.current?.focus();
+      return;
+    }
     const agent = agentId === NEO_TAG_MENTION_AGENT.id
       ? NEO_TAG_MENTION_AGENT
       : swarmAgents.find((item) => item.id === agentId);

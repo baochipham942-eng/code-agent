@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CreateNeoWorkCardDraftRequest, NeoWorkCardDetail } from '../../../src/shared/contract/tag';
 import {
+  buildNeoTagSourceMessage,
   buildNeoWorkCardDraftRequest,
   submitNeoTagDraft,
 } from '../../../src/renderer/components/features/chat/neoTagSubmit';
@@ -150,5 +151,37 @@ describe('Neo tag ChatView submit boundary', () => {
       },
     });
     expect(result?.detail.workCard.id).toBe('card-1');
+  });
+
+  it('builds the local user message so the @neo turn shows what the user typed (BUG1)', () => {
+    const request: CreateNeoWorkCardDraftRequest = buildNeoWorkCardDraftRequest({
+      envelope: { content: '@neo 做一件事' },
+      sourceConversationId: 'session-1',
+      projectId: 'project-1',
+      requesterUserId: 'user-1',
+    })!;
+    const attachments = [{ id: 'att-1', name: 'a.png', category: 'image' } as never];
+
+    const message = buildNeoTagSourceMessage({
+      envelope: { content: '@neo 做一件事', attachments },
+      sourceConversationId: 'session-1',
+      result: { detail: makeDetail(request), sourceTurnId: 'turn-1' },
+      timestamp: 1234,
+    });
+
+    expect(message).toMatchObject({
+      id: 'turn-1',
+      role: 'user',
+      content: '@neo 做一件事',
+      timestamp: 1234,
+      metadata: {
+        neoTag: {
+          workCardId: 'card-1',
+          sourceConversationId: 'session-1',
+          sourceTurnId: 'turn-1',
+        },
+      },
+    });
+    expect(message.attachments).toEqual(attachments);
   });
 });

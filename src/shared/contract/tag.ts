@@ -389,7 +389,6 @@ export interface CreateNeoWorkCardDraftRequest {
 export interface CreateNeoWorkCardDraftResult {
   detail: NeoWorkCardDetail;
   sourceTurnId: string;
-  sourceMessage?: import('./message').Message;
 }
 
 export interface ListNeoWorkCardsBySourceInput {

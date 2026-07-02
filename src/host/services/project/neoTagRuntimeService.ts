@@ -9,7 +9,6 @@ import type {
   NeoWorkCardRevision,
   NeoWorkCardUpdateReason,
 } from '../../../shared/contract/tag';
-import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
 import { getNeoWorkCardService, type NeoWorkCardService } from './neoWorkCardService';
 import { buildNeoTagContextPack } from './neoTagContextSelector';
@@ -297,13 +296,15 @@ export async function launchApprovedNeoWorkCard(
         status: 'working',
       },
     };
+    // clientMessageId = sourceTurnId：renderer 在 @neo 提交时本地补的用户消息用同一个 ID，
+    // 落库幂等（addMessageToSession 重复 ID 走 update），live 与 reload 不会出现双份用户消息。
     await input.taskManager.startTask(
       workCard.sourceConversationId,
       approvedRevision.taskSummary,
       undefined,
       options,
       metadata,
-      generateMessageId(),
+      workCard.sourceTurnId,
     );
     const changedFiles = await safelyCollectChangedFiles(artifactSnapshot);
 

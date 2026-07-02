@@ -1,4 +1,5 @@
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
+import type { Message } from '@shared/contract/message';
 import type {
   CreateNeoWorkCardDraftRequest,
   CreateNeoWorkCardDraftResult,
@@ -83,6 +84,34 @@ export function buildNeoWorkCardDraftRequest(
       ],
       risks: [],
       assumptions: [],
+    },
+  };
+}
+
+export interface BuildNeoTagSourceMessageParams {
+  envelope: ConversationEnvelope;
+  sourceConversationId: string;
+  result: CreateNeoWorkCardDraftResult;
+  timestamp?: number;
+}
+
+/**
+ * @neo 提交成功后，renderer 本地补上用户那句原话（BUG1：会话里要能看到自己说了什么）。
+ * ID 用 sourceTurnId —— host 落库的用户消息用同一个 ID，reload/合并按 ID 天然去重。
+ */
+export function buildNeoTagSourceMessage(params: BuildNeoTagSourceMessageParams): Message {
+  return {
+    id: params.result.sourceTurnId,
+    role: 'user',
+    content: params.envelope.content,
+    timestamp: params.timestamp ?? Date.now(),
+    attachments: params.envelope.attachments,
+    metadata: {
+      neoTag: {
+        workCardId: params.result.detail.workCard.id,
+        sourceConversationId: params.sourceConversationId,
+        sourceTurnId: params.result.sourceTurnId,
+      },
     },
   };
 }

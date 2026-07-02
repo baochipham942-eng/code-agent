@@ -63,7 +63,7 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
-import { submitNeoTagDraft } from './features/chat/neoTagSubmit';
+import { buildNeoTagSourceMessage, submitNeoTagDraft } from './features/chat/neoTagSubmit';
 import {
   ArrowRight,
   BarChart3,
@@ -497,22 +497,15 @@ export const ChatView: React.FC = () => {
           runNeoTag,
         });
         if (!result) return null;
-        if (result.sourceMessage) {
-          const sourceMessage = {
-            ...result.sourceMessage,
-            metadata: {
-              ...(result.sourceMessage.metadata ?? {}),
-              neoTag: {
-                ...(result.sourceMessage.metadata?.neoTag ?? {}),
-                workCardId: result.detail.workCard.id,
-                sourceConversationId: currentSessionId,
-                sourceTurnId: result.sourceTurnId,
-              },
-            },
-          };
-          if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
-            useSessionStore.getState().addMessage(sourceMessage);
-          }
+        // @neo = 正常 agent 聊天：用户那句原话按普通用户消息进会话（BUG1）。
+        // host 落库的用户消息与这里同 ID（sourceTurnId），reload 不会出现双份。
+        const sourceMessage = buildNeoTagSourceMessage({
+          envelope,
+          sourceConversationId: currentSessionId,
+          result,
+        });
+        if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
+          useSessionStore.getState().addMessage(sourceMessage);
         }
         // 轻量化重设计:@neo = 正常 agent 聊天,不弹 toast(回复直接流式出现在对话里)。
         return true;

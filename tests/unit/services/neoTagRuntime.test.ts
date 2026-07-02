@@ -309,7 +309,9 @@ describe('Neo Tag runtime helpers', () => {
           status: 'working',
         }),
       }),
-      expect.any(String),
+      // clientMessageId 必须用 sourceTurnId：renderer 本地补的用户消息与 host 落库消息同 ID，
+      // 任何 reload/合并路径都能按 ID 去重（BUG1：@neo 用户消息不显示）。
+      card.sourceTurnId,
     );
     expect(deltas[0].completed[0]).toContain('Queued approved revision');
     expect(deltas[0].decisions.join('\n')).toContain('Context audit: pack=');

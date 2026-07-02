@@ -3,6 +3,7 @@ import type { TurnQualitySummary, TurnQualityMemoryItem } from '@shared/contract
 import { IPC_DOMAINS } from '@shared/ipc';
 import { Archive, Bot, Brain, ChevronDown, ChevronRight, Cpu, EyeOff, Gauge, Wrench } from 'lucide-react';
 import ipcService from '../../../services/ipcService';
+import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 
@@ -85,6 +86,7 @@ function blockLabel(blockType: string): string {
 }
 
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
+  const developerMode = useAppStore((state) => state.developerMode);
   const [expanded, setExpanded] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
   const [archivedEntryIds, setArchivedEntryIds] = useState<Set<string>>(() => new Set());
@@ -134,6 +136,20 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
       setBusyEntryId(null);
     }
   }, [currentSessionId, suppressMemoryEntryForSession]);
+
+  // 默认（非开发者模式）：评分/记忆/failure-journal 是引擎自检信息，普通协作者
+  // 不需要也看不懂，只留一颗安静的模型名徽标标注"这轮是谁在干活"。
+  if (!developerMode) {
+    const modelName = summary.strategy.model || summary.strategy.requestedModel;
+    if (!modelName) return null;
+    return (
+      <div className="mb-2">
+        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
+          {modelName}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="mb-2">

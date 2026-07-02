@@ -355,6 +355,8 @@ export class TestRunner {
       ...(this.aborted && this.abortReason ? { aborted: true, abortReason: this.abortReason } : {}),
       // GAP-017: harness 配置随 summary 落 DB（对照实验维度）
       ...(this.config.harness ? { harness: this.config.harness } : {}),
+      // WP1-4: prompt 改动预测随 summary 落盘/DB，deltaReporter 对账
+      ...(this.config.prediction ? { prediction: this.config.prediction } : {}),
     };
 
     this.emit({ type: 'suite_end', summary });

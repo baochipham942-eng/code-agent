@@ -392,6 +392,8 @@ export class ExperimentAdapter {
           unstableCaseCount: summary.unstableCaseCount,
           averageStdDev: summary.averageStdDev,
         } : {}),
+        // WP1-4: prompt 改动预测登记（对账证据链落 DB）
+        ...(summary.prediction ? { prediction: summary.prediction } : {}),
       },
     };
   }

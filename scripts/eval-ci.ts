@@ -95,6 +95,8 @@ function parseArgs(argv: string[]) {
   let ids: string[] | undefined;
   let compare: string | undefined;
   let judge: 'rules' | 'llm' = 'rules';
+  let predictedFixes: string[] | undefined;
+  let riskTasks: string[] | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -130,6 +132,10 @@ function parseArgs(argv: string[]) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--compare' && i + 1 < args.length) {
       compare = args[++i];
+    } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
+      predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
+    } else if (arg === '--risk-tasks' && i + 1 < args.length) {
+      riskTasks = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--judge' && i + 1 < args.length) {
       const val = args[++i];
       if (val === 'rules' || val === 'llm') {
@@ -158,7 +164,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge };
+  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks };
 }
 
 function printUsage() {
@@ -179,6 +185,8 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config (requires --real)
   npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
+  npx tsx scripts/eval-ci.ts --predicted-fixes <a,b>  Register case ids this change should fix (delta report reconciles)
+  npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
   npx tsx scripts/eval-ci.ts --trend            Show trend chart
@@ -444,7 +452,15 @@ async function prepareRealEvalRuntime(): Promise<void> {
 async function runEvals(
   workingDir: string,
   _scope: 'smoke' | 'full',
-  opts: { real: boolean; model?: string; provider?: string; concurrency?: number; tags?: string[]; ids?: string[] }
+  opts: {
+    real: boolean;
+    model?: string;
+    provider?: string;
+    concurrency?: number;
+    tags?: string[];
+    ids?: string[];
+    prediction?: { predictedFixes: string[]; riskTasks: string[] };
+  }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
@@ -461,6 +477,8 @@ async function runEvals(
       filterTags: opts.tags,
       filterIds: opts.ids,
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
+      // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
+      ...(opts.prediction ? { prediction: opts.prediction } : {}),
     });
 
     const agent = createAgent({
@@ -640,7 +658,11 @@ async function runCompareCommand(
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge } = parseArgs(process.argv);
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks } = parseArgs(process.argv);
+  // WP1-4：任一预测 flag 出现即登记（另一侧默认空列表）
+  const prediction = (predictedFixes || riskTasks)
+    ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }
+    : undefined;
 
   // --model implies --real
   const effectiveReal = real || !!model;
@@ -790,7 +812,7 @@ async function main() {
   // Run evals
   console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
   console.log('');
-  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids });
+  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids, prediction });
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
   // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据

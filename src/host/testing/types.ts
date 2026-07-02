@@ -329,6 +329,8 @@ export interface TestRunSummary {
   averageStdDev?: number;
   /** GAP-017: 本次 run 使用的 harness 配置（对照实验维度，落 DB config_json） */
   harness?: HarnessVariantConfig;
+  /** WP1-4: 本次 run 登记的 prompt 改动预测（deltaReporter 对账用） */
+  prediction?: EvalPrediction;
 }
 
 // ============================================================================
@@ -348,6 +350,17 @@ export interface HarnessVariantConfig {
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
   toolMode?: 'all' | 'deferred';
+}
+
+/**
+ * WP1-4：prompt 改动的预测登记 — 跑 eval 前声明预计修好/预计有风险的
+ * case id 列表，deltaReporter 对账预测命中/落空/预测外翻转。
+ */
+export interface EvalPrediction {
+  /** 预计由本次改动修好的 case id */
+  predictedFixes: string[];
+  /** 预计可能被本次改动打坏的 case id */
+  riskTasks: string[];
 }
 
 /**
@@ -390,6 +403,8 @@ export interface TestRunnerConfig {
   trialsPerCase?: number;
   /** GAP-017: harness 配置变体（对照实验维度，随 summary 落 DB） */
   harness?: HarnessVariantConfig;
+  /** WP1-4: prompt 改动预测登记（随 summary 落盘/DB，deltaReporter 对账） */
+  prediction?: EvalPrediction;
 }
 
 /**

@@ -68,7 +68,8 @@ import { useWorkflowStore } from './stores/workflowStore';
 import { useBackgroundTaskStore } from './stores/backgroundTaskStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
-import { signalRendererReady } from './utils/rendererReady';
+import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rendererReady';
+import { whenInitialSessionStateSettled } from './stores/sessionStore';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -280,8 +281,12 @@ export const App: React.FC = () => {
     if (ipcService.isAvailable()) {
       logger.debug('bridge API available');
     }
-    // 首次渲染 commit 完成:通知桌面壳可以显示窗口了(消除启动闪烁)。
-    void signalRendererReady();
+    // 首次渲染 commit 后,等初始会话数据落定(带上限)再通知桌面壳显示窗口:
+    // 首帧就显示会把"空聊天→内容弹入"的水合过程暴露给用户(启动闪烁的另一形态)。
+    const settleCap = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, RENDERER_READY_SETTLE_CAP_MS);
+    });
+    void Promise.race([whenInitialSessionStateSettled(), settleCap]).then(() => signalRendererReady());
   }, []);
 
   // Initialize auth store on mount

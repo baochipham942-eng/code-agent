@@ -2365,6 +2365,21 @@ fn unregister_configurable_global_hotkeys(app_handle: &AppHandle, state: &Keybin
     }
 }
 
+/// renderer 首帧+初始数据就绪信号的 invoke 直连通道。
+/// emit 事件通道在打包态投递不到壳侧(window.once/app.once 均收不到,根因未明),
+/// invoke command 不走事件路由,可靠;事件监听与超时兜底仍保留,共用 AtomicBool 去重。
+struct RendererReadyShown(Arc<AtomicBool>);
+
+#[tauri::command]
+fn renderer_ready(app: AppHandle, state: State<'_, RendererReadyShown>) {
+    if !state.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
 #[tauri::command]
 fn keybindings_set_global_hotkeys(
     app: AppHandle,
@@ -2508,7 +2523,8 @@ fn main() {
             pip_show,
             pip_frame,
             pip_hide,
-            keybindings_set_global_hotkeys
+            keybindings_set_global_hotkeys,
+            renderer_ready
         ])
         .setup(|app| {
             // 必须在 spawn webServer 之前：决定本进程（含 node 子进程）的数据目录通道。
@@ -2585,6 +2601,8 @@ fn main() {
             // 渲染 commit 后发来的 renderer-ready 事件再 show;并加超时兜底,信号丢失
             // 也不会让窗口永久隐藏。show 用 AtomicBool 去重,两条路径谁先到谁生效。
             let shown = Arc::new(AtomicBool::new(false));
+            // renderer_ready invoke command 与下面的事件监听/超时兜底共用同一去重标志
+            app.manage(RendererReadyShown(shown.clone()));
             {
                 let window_for_show = window.clone();
                 let shown = shown.clone();

@@ -4,7 +4,7 @@
   "description": "Default capabilities for Agent Neo",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://localhost:8180/*"]
+    "urls": ["http://localhost:8180/*", "http://localhost:8181/*"]
   },
   "permissions": [
     "core:default",

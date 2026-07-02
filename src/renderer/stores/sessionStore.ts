@@ -991,6 +991,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   }));
 
 let _initialized = false;
+let _settleInitialSessionState: (() => void) | null = null;
+const _initialSessionStateSettled = new Promise<void>((resolve) => {
+  _settleInitialSessionState = resolve;
+});
+
+/** renderer-ready 就绪门：初始会话数据落定(含失败)后 resolve，桌面壳等它再显示窗口。 */
+export function whenInitialSessionStateSettled(): Promise<void> {
+  return _initialSessionStateSettled;
+}
 
 function clearSessionStateForAuthChange(): void {
   invalidatePendingSessionSwitches();
@@ -1045,17 +1054,22 @@ export async function initializeSessionStore(): Promise<void> {
 
   const store = useSessionStore.getState();
 
-  await store.loadSessions();
+  try {
+    await store.loadSessions();
 
-  const { sessions, currentSessionId } = useSessionStore.getState();
+    const { sessions, currentSessionId } = useSessionStore.getState();
 
-  if (currentSessionId) {
-    // A user action may create/select a session while the initial list request is
-    // still in flight. Keep that newer session and only finish wiring listeners.
-  } else if (sessions.length > 0) {
-    await store.switchSession(sessions[0].id);
-  } else {
-    await store.createSession('新对话', { workingDirectory: null });
+    if (currentSessionId) {
+      // A user action may create/select a session while the initial list request is
+      // still in flight. Keep that newer session and only finish wiring listeners.
+    } else if (sessions.length > 0) {
+      await store.switchSession(sessions[0].id);
+    } else {
+      await store.createSession('新对话', { workingDirectory: null });
+    }
+  } finally {
+    // 失败也要 settle：renderer-ready 就绪门不许挂死窗口显示
+    _settleInitialSessionState?.();
   }
 
   ipcService.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {

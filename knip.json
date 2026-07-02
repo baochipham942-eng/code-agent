@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/cli/index.ts",
+    "src/web/webServer.ts",
+    "src/host/mcp/mcp-server-entry.ts",
+    "src/renderer/index.tsx",
+    "packages/bridge/src/index.ts",
+    "packages/eval-harness/src/index.ts",
+    "scripts/**/*.{ts,mjs}",
+    "tests/**/*.{ts,tsx}",
+    "esbuild.config.ts",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "tests/e2e/playwright.e2e.config.ts"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreDependencies": [".*"],
+  "ignoreBinaries": [".*"]
+}

@@ -36,7 +36,12 @@ function unfinishedTasks(entries: LedgerEntry[]): string[] {
 
 function recentFailures(entries: LedgerEntry[]): string[] {
   const failures = entries.filter(
-    (e) => e.lane === 'execution' && e.kind.endsWith(':error'),
+    (e) => e.lane === 'execution'
+      && e.kind.endsWith(':error')
+      // goal 闸中间态裁决（repair_prompt）不算失败现场——它是修复循环的过程
+      // 记录，混入会重复挤占真实错误（skeptic 审计 M3）；exhausted_release
+      // 是最终失败现场，保留。
+      && !(e.summary.startsWith('goal_gate_verdict') && e.summary.includes('repair_prompt')),
   );
   return failures.slice(-MAX_FAILURE_ENTRIES).map((e) => {
     const err = typeof e.detail?.error === 'string' ? `（${e.detail.error}）` : '';

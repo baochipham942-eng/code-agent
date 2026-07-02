@@ -127,9 +127,9 @@ export async function handleGoalCompletionGate(
     if (!pass) {
       // 三分支裁决：失败 → 有界修复（repair_prompt），预算耗尽 → 到限放行
       // （exhausted_release），绝不无限阻塞在验证修复循环里。
-      const attempt = ctx.goalMode.recordGateFailure();
+      const attempt = ctx.goalMode.recordGateFailure(1);
       const failDetail = `验证命令 \`${verifyCommand}\` exit ${gate?.exitCode ?? 'null'}${gate?.timedOut ? '（超时）' : ''}：${verificationEvidence.summary}`;
-      if (!ctx.goalMode.isGateRepairExhausted()) {
+      if (!ctx.goalMode.isGateRepairExhausted(1)) {
         recordGateVerdict(ctx, { gate: 1, verdict: 'repair_prompt', attempt, detail: failDetail });
         ctx.goalMode.clearCompletionRequest();
         contextAssembly.injectSystemMessage(
@@ -185,7 +185,7 @@ export async function handleGoalCompletionGate(
     recordGateVerdict(ctx, {
       gate: 1,
       verdict: 'allow_finalize',
-      attempt: ctx.goalMode.getGateFailureCount(),
+      attempt: ctx.goalMode.getGateFailureCount(1),
       detail: verificationEvidence.summary,
     });
   } else {
@@ -250,9 +250,9 @@ export async function handleGoalCompletionGate(
 
     if (!review.pass) {
       // 与闸1 共享同一修复预算：软评审反复不过同样不允许无限阻塞收尾。
-      const attempt = ctx.goalMode.recordGateFailure();
+      const attempt = ctx.goalMode.recordGateFailure(2);
       const failDetail = `软评审条件未通过：${reviewCondition}。${review.reason}`;
-      if (!ctx.goalMode.isGateRepairExhausted()) {
+      if (!ctx.goalMode.isGateRepairExhausted(2)) {
         recordGateVerdict(ctx, { gate: 2, verdict: 'repair_prompt', attempt, detail: failDetail });
         ctx.goalMode.clearCompletionRequest();
         contextAssembly.injectSystemMessage(
@@ -305,7 +305,7 @@ export async function handleGoalCompletionGate(
     recordGateVerdict(ctx, {
       gate: 2,
       verdict: 'allow_finalize',
-      attempt: ctx.goalMode.getGateFailureCount(),
+      attempt: ctx.goalMode.getGateFailureCount(2),
       detail: `软评审通过：${reviewCondition}`,
     });
   }

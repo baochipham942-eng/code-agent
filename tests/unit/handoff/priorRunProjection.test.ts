@@ -33,15 +33,22 @@ describe('buildPriorRunProjection', () => {
     expect(text).not.toContain('写迁移脚本');
   });
 
-  it('最近失败：execution lane 的 error 事件取尾部若干条（含 goal 闸裁决）', () => {
+  it('最近失败：execution lane 的 error 事件取尾部若干条', () => {
     const text = buildPriorRunProjection(ledger([
       { at: 1, lane: 'execution', kind: 'complete:error', summary: 'bash npm test 失败', refId: 'e1', detail: { error: '2 tests failed' } },
       { at: 2, lane: 'execution', kind: 'complete:success', summary: 'read_file ok', refId: 'e2' },
-      { at: 3, lane: 'execution', kind: 'complete:error', summary: 'goal_gate_verdict gate1 repair_prompt (attempt 1/2)', refId: 'e3', detail: { error: 'exit 1' } },
     ]));
     expect(text).toContain('npm test 失败');
-    expect(text).toContain('goal_gate_verdict');
     expect(text).not.toContain('read_file ok');
+  });
+
+  it('goal 闸中间态裁决（repair_prompt）不进失败现场，exhausted_release 保留（codex audit M3）', () => {
+    const text = buildPriorRunProjection(ledger([
+      { at: 1, lane: 'execution', kind: 'complete:error', summary: 'goal_gate_verdict gate1 repair_prompt (attempt 1/2)', refId: 'e1', detail: { error: 'exit 1' } },
+      { at: 2, lane: 'execution', kind: 'complete:error', summary: 'goal_gate_verdict gate1 exhausted_release (attempt 2/2)', refId: 'e2', detail: { error: '最终失败' } },
+    ]));
+    expect(text).not.toContain('repair_prompt');
+    expect(text).toContain('exhausted_release');
   });
 
   it('有界：超出 maxChars 截断且以完整行收尾', () => {

@@ -126,7 +126,7 @@ describe('分支2 repair_prompt — 失败且修复预算未耗尽', () => {
     const h = harness();
     expect(await h.run()).toBe('continue');
     expect(h.ctx.goalMode.isPending()).toBe(true);
-    expect(h.ctx.goalMode.getGateFailureCount()).toBe(1);
+    expect(h.ctx.goalMode.getGateFailureCount(1)).toBe(1);
     const injected = h.contextAssembly.injectSystemMessage.mock.calls[0][0] as string;
     expect(injected).toContain('goal-verify-failed');
     expect(injected).toContain(`1/${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS}`);
@@ -164,7 +164,7 @@ describe('分支3 exhausted_release — 到限放行，绝不无限阻塞', () =
   });
 });
 
-describe('闸2 软评审共享同一修复预算', () => {
+describe('闸2 软评审有独立修复预算', () => {
   it('闸1 过、闸2 连败至上限 → 同样到限放行', async () => {
     runVerificationPlanMock.mockResolvedValue(passedEvidence());
     runReviewGateMock.mockResolvedValue({ pass: false, reason: '文案不达标', impossible: false });
@@ -174,6 +174,20 @@ describe('闸2 软评审共享同一修复预算', () => {
     }
     expect(h.ctx.goalMode.getStatus()).toBe('met');
     expect(h.ctx.goalMode.isVerificationDegraded()).toBe(true);
+  });
+
+  it('每闸独立预算：闸1 失败 1 次修好后闸2 首败不放行，闸2 仍有完整修复机会（skeptic M2）', async () => {
+    const h = harness({ reviewCondition: '文案要亲切' });
+    // 第 1 轮：闸1 失败（消耗闸1 预算 1 次）
+    runVerificationPlanMock.mockResolvedValue(failedEvidence());
+    expect(await h.run()).toBe('continue');
+    // 第 2 轮：闸1 修好通过，闸2 首败——不应放行（闸2 自己的预算才用 1 次）
+    runVerificationPlanMock.mockResolvedValue(passedEvidence());
+    runReviewGateMock.mockResolvedValue({ pass: false, reason: '文案不达标', impossible: false });
+    expect(await h.run()).toBe('continue');
+    expect(h.ctx.goalMode.isPending()).toBe(true);
+    expect(h.ctx.goalMode.isVerificationDegraded()).toBe(false);
+    expect(h.ctx.goalMode.getGateFailureCount(2)).toBe(1);
   });
 
   it('闸2 IMPOSSIBLE 分支不受修复预算影响，仍走主动止损 aborted', async () => {

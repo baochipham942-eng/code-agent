@@ -95,8 +95,12 @@ export class GoalModeController {
   private pendingSummary?: string;
   /** swarm（workflow 子 agent）累计消耗的 token —— 计入闸3 预算（内部文档 §4） */
   private swarmTokensUsed = 0;
-  /** 闸1/闸2 累计失败次数（共享修复预算，三分支裁决用） */
-  private gateFailureCount = 0;
+  /**
+   * 闸1/闸2 各自的失败计数（每闸独立修复预算，三分支裁决用）。
+   * 独立而非共享：共享预算会让"闸1 失败 1 次修好 + 闸2 首败"直接放行，
+   * 闸2 拿 0 次修复机会（skeptic 审计 M2）。
+   */
+  private gateFailureCounts: Record<1 | 2, number> = { 1: 0, 2: 0 };
   /** 到限放行标记：met 但验证未全过（完成但降级） */
   private verificationDegraded = false;
   private degradedReason?: string;
@@ -161,19 +165,19 @@ export class GoalModeController {
     logger.debug('[GoalMode] goal marked met');
   }
 
-  /** 闸1/闸2 失败一次 → 修复预算计数，返回累计次数 */
-  recordGateFailure(): number {
-    this.gateFailureCount += 1;
-    return this.gateFailureCount;
+  /** 指定闸失败一次 → 该闸修复预算计数，返回该闸累计次数 */
+  recordGateFailure(gate: 1 | 2): number {
+    this.gateFailureCounts[gate] += 1;
+    return this.gateFailureCounts[gate];
   }
 
-  getGateFailureCount(): number {
-    return this.gateFailureCount;
+  getGateFailureCount(gate: 1 | 2): number {
+    return this.gateFailureCounts[gate];
   }
 
-  /** 修复预算是否已耗尽（达 GATE_REPAIR_MAX_ATTEMPTS） */
-  isGateRepairExhausted(): boolean {
-    return this.gateFailureCount >= GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS;
+  /** 指定闸的修复预算是否已耗尽（达 GATE_REPAIR_MAX_ATTEMPTS） */
+  isGateRepairExhausted(gate: 1 | 2): boolean {
+    return this.gateFailureCounts[gate] >= GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS;
   }
 
   /**

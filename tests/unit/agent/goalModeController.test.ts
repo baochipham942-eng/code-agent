@@ -49,18 +49,28 @@ describe('① 墙钟预算 — evaluateFallback', () => {
 });
 
 describe('③ 闸修复预算 — 有界修复与到限放行（三分支裁决）', () => {
-  it('初始修复预算未耗尽，计数为 0', () => {
+  it('初始修复预算未耗尽，两闸计数各为 0', () => {
     const c = ctrl();
-    expect(c.getGateFailureCount()).toBe(0);
-    expect(c.isGateRepairExhausted()).toBe(false);
+    expect(c.getGateFailureCount(1)).toBe(0);
+    expect(c.getGateFailureCount(2)).toBe(0);
+    expect(c.isGateRepairExhausted(1)).toBe(false);
+    expect(c.isGateRepairExhausted(2)).toBe(false);
   });
 
-  it('recordGateFailure 递增并返回累计次数，达 GATE_REPAIR_MAX_ATTEMPTS 即耗尽', () => {
+  it('recordGateFailure 按闸递增，达 GATE_REPAIR_MAX_ATTEMPTS 即该闸耗尽', () => {
     const c = ctrl();
     for (let i = 1; i <= GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS; i++) {
-      expect(c.recordGateFailure()).toBe(i);
+      expect(c.recordGateFailure(1)).toBe(i);
     }
-    expect(c.isGateRepairExhausted()).toBe(true);
+    expect(c.isGateRepairExhausted(1)).toBe(true);
+  });
+
+  it('每闸独立预算：闸1 失败不消耗闸2 的修复机会（skeptic 审计 M2）', () => {
+    const c = ctrl();
+    for (let i = 0; i < GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS; i++) c.recordGateFailure(1);
+    expect(c.isGateRepairExhausted(1)).toBe(true);
+    expect(c.getGateFailureCount(2)).toBe(0);
+    expect(c.isGateRepairExhausted(2)).toBe(false);
   });
 
   it('markMetDegraded → status met + 降级标记 + 保留原因（到限放行，绝不无限阻塞）', () => {

@@ -158,6 +158,8 @@ export interface GoalRunState {
   wallClockBudgetMs?: number;
   /** 中止原因（status=aborted 时） */
   abortReason?: string;
+  /** 到限放行：met 但验证未全过（修复预算耗尽，安静降级标识） */
+  degraded?: boolean;
   /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
   finishedAt?: number;
   /** 最近一次闸判定（UI 可显示"验证中/评审中"反馈） */
@@ -372,7 +374,7 @@ interface AppState {
   startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string; verificationCard?: GoalGateVerificationCard }) => void;
-  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string) => void;
+  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string, degraded?: boolean) => void;
   /** ③ session 内暂停/恢复：仅切换 running↔paused，不动 met/aborted（UI 态，配合后端 isPaused 循环挂起） */
   setGoalPaused: (sessionId: string, paused: boolean) => void;
   clearGoalRun: (sessionId: string) => void;
@@ -1082,14 +1084,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     }),
 
-  finishGoalRun: (sessionId, status, abortReason) =>
+  finishGoalRun: (sessionId, status, abortReason, degraded) =>
     set((state) => {
       const prev = state.goalRuns[sessionId];
       if (!prev) return {};
       return {
         goalRuns: {
           ...state.goalRuns,
-          [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now() },
+          [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now(), ...(degraded ? { degraded } : {}) },
         },
       };
     }),

@@ -415,7 +415,7 @@ export const useConversationStreamEffects = ({
             const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string };
             const appStore = useAppStore.getState();
             const run = appStore.goalRuns[eventSessionId];
-            appStore.finishGoalRun(eventSessionId, d.status, d.reason);
+            appStore.finishGoalRun(eventSessionId, d.status, d.reason, d.degraded);
             if (isCurrentSessionEvent) {
               addMessage(buildGoalNoticeMessage({
                 kind: d.status === 'met' ? 'met' : 'aborted',

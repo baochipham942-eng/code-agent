@@ -176,7 +176,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
       data-diff-render-complete={isDiffRenderComplete ? 'true' : 'false'}
     >
       {/* 统计栏 */}
-      <div className="diff-stats flex items-center gap-3 px-3 py-2 bg-[var(--color-elevated)] border-b border-[var(--color-border)]">
+      <div className="diff-stats flex items-center gap-3 px-3 py-2 bg-[var(--bg-elevated)] border-b border-[var(--border-default)]">
         {fileName && (
           <span className="text-gray-400 text-xs font-mono truncate flex-1">
             {fileName}
@@ -193,7 +193,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
       </div>
 
       {/* Diff 内容 */}
-      <div className="diff-content overflow-x-auto scrollbar-hidden bg-[var(--color-surface)]">
+      <div className="diff-content overflow-x-auto scrollbar-hidden bg-[var(--bg-surface)]">
         <table className="w-full text-xs font-mono">
           <tbody>
             {visibleDiffLines.map((line, index) => (
@@ -217,7 +217,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
       case 'removed':
         return 'bg-rose-500/10';
       case 'header':
-        return 'bg-[var(--color-elevated)]';
+        return 'bg-[var(--bg-elevated)]';
       default:
         return '';
     }
@@ -230,9 +230,9 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
       case 'removed':
         return 'text-rose-500 bg-rose-500/20';
       case 'header':
-        return 'text-gray-500 bg-[var(--color-elevated)]';
+        return 'text-gray-500 bg-[var(--bg-elevated)]';
       default:
-        return 'text-gray-600 bg-[var(--color-deep)]';
+        return 'text-gray-600 bg-[var(--bg-deep)]';
     }
   };
 
@@ -326,7 +326,7 @@ export const DiffPreview: React.FC<{
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 text-xs hover:bg-[var(--color-elevated)] px-2 py-1 rounded transition-colors"
+      className="inline-flex items-center gap-1.5 text-xs hover:bg-[var(--bg-elevated)] px-2 py-1 rounded transition-colors"
     >
       {stats.added > 0 && (
         <span className="text-emerald-400">+{stats.added}</span>

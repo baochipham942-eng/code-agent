@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Monitor, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
+import { useAppStore } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
@@ -49,6 +50,8 @@ export const AppearanceSettings: React.FC = () => {
   const { t, language, setLanguage, availableLanguages } = useI18n();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const developerMode = useAppStore((state) => state.developerMode);
+  const setDeveloperMode = useAppStore((state) => state.setDeveloperMode);
 
   // 加载已保存的字体大小
   useEffect(() => {
@@ -127,6 +130,19 @@ export const AppearanceSettings: React.FC = () => {
       logger.info('Language saved', { lang });
     } catch (error) {
       logger.error('Failed to save language', error);
+    }
+  };
+
+  // 处理开发者模式开关
+  const handleDeveloperModeChange = async (enabled: boolean) => {
+    setDeveloperMode(enabled);
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        ui: { developerMode: enabled },
+      } as Partial<AppSettings>);
+      logger.info('Developer mode saved', { enabled });
+    } catch (error) {
+      logger.error('Failed to save developer mode', error);
     }
   };
 
@@ -285,6 +301,32 @@ export const AppearanceSettings: React.FC = () => {
               </div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Developer Mode */}
+      <div className="pt-4 border-t border-zinc-700">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-medium text-zinc-200 mb-1">{t.appearance.developerMode}</h3>
+            <p className="text-xs text-zinc-500">{t.appearance.developerModeDesc}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={developerMode ? 'true' : 'false'}
+            aria-label={t.appearance.developerMode}
+            onClick={() => handleDeveloperModeChange(!developerMode)}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+              developerMode ? 'bg-primary-500' : 'bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                developerMode ? 'translate-x-[18px]' : 'translate-x-[3px]'
+              }`}
+            />
+          </button>
         </div>
       </div>
     </div>

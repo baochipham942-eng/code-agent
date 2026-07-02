@@ -623,6 +623,8 @@ export const zh = {
       medium: '中',
       large: '大',
     },
+    developerMode: '开发者模式',
+    developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
   },
 
   // Language Settings

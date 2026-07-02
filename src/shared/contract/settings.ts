@@ -192,6 +192,8 @@ export interface AppSettings {
     showToolCalls: boolean;
     language: 'zh' | 'en';
     disclosureLevel?: 'simple' | 'standard' | 'advanced' | 'expert';
+    /** 开发者模式：在对话流中显示回合质量评分、路由详情等调试信息 */
+    developerMode?: boolean;
   };
   // 云端 Agent 配置
   cloud: {

@@ -10,6 +10,11 @@ import type {
   NeoWorkCardUpdateReason,
 } from '../../../shared/contract/tag';
 import { getSessionManager } from '../infra/sessionManager';
+import {
+  extractNeoTopicRounds,
+  mergeTopicRounds,
+  type NeoTopicRound,
+} from '../../../shared/neoTag/topicRounds';
 import { getNeoWorkCardService, type NeoWorkCardService } from './neoWorkCardService';
 import { buildNeoTagContextPack } from './neoTagContextSelector';
 import { buildNeoTagPromptLayer } from './neoTagPromptLayer';
@@ -98,7 +103,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function summarizeContextAudit(contextPack: NeoTagRunContext['contextPack']): string {
+function summarizeContextAudit(contextPack: NeoTagRunContext['contextPack'], topicRoundCount = 0): string {
   const sourceTypes = [
     contextPack.selectedMessages.length > 0 ? 'messages' : null,
     contextPack.selectedArtifacts.length > 0 ? 'artifacts' : null,
@@ -116,6 +121,7 @@ function summarizeContextAudit(contextPack: NeoTagRunContext['contextPack']): st
     `excluded=${contextPack.excluded.length}`,
     `tokens=${contextPack.budget.estimatedTokens}/${contextPack.budget.maxTokens}`,
     `sources=${sourceSummary}`,
+    `topicRounds=${topicRoundCount}`,
   ].join(' ');
 }
 
@@ -248,6 +254,23 @@ export async function launchApprovedNeoWorkCard(
     previousDeltas: detail.deltas,
     now: now(),
   });
+  // Topic 历史（ADR-033 D3）：从本轮之外的参与会话物化历史轮正文。
+  // Neo 懂当前会话靠 run 在场（session 历史天然加载）；其他会话的轮必须以正文注入 prompt。
+  const historyConversationIds = Array.from(new Set([
+    workCard.sourceConversationId,
+    ...approvedRevision.readScope.conversationIds,
+  ])).filter((id) => id && id !== roundConversationId);
+  const topicRoundLists: NeoTopicRound[][] = [];
+  let topicWorkspace: string | undefined;
+  for (const conversationId of historyConversationIds) {
+    const session = await getSessionManager().getSession(conversationId, 80);
+    if (conversationId === workCard.sourceConversationId) {
+      topicWorkspace = session?.workingDirectory;
+    }
+    topicRoundLists.push(extractNeoTopicRounds(session?.messages ?? [], workCard.id, conversationId));
+  }
+  const topicRounds = mergeTopicRounds(topicRoundLists);
+
   const context: NeoTagRunContext = {
     workCardId: workCard.id,
     projectId: workCard.projectId,
@@ -264,6 +287,8 @@ export async function launchApprovedNeoWorkCard(
     runContext: context,
     revision: approvedRevision,
     previousDelta: latestDelta,
+    topicRounds,
+    topicWorkspace,
   });
 
   service.setStatus(workCard.id, 'queued', now());
@@ -274,7 +299,7 @@ export async function launchApprovedNeoWorkCard(
     completed: [`Queued approved revision ${approvedRevision.id}`],
     decisions: [
       'Approved work card entered the local Neo runtime queue.',
-      summarizeContextAudit(contextPack),
+      summarizeContextAudit(contextPack, topicRounds.length),
     ],
     nextStep: 'Start local runtime execution.',
     markResultReview: false,
@@ -331,7 +356,7 @@ export async function launchApprovedNeoWorkCard(
         conversationId: roundConversationId,
         error,
         now,
-        contextAudit: summarizeContextAudit(contextPack),
+        contextAudit: summarizeContextAudit(contextPack, topicRounds.length),
       });
       notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_failed');
       return { runId: run, context };
@@ -343,7 +368,7 @@ export async function launchApprovedNeoWorkCard(
         workCardId: workCard.id,
         runId: run,
         conversationId: roundConversationId,
-        decisions: [summarizeContextAudit(contextPack)],
+        decisions: [summarizeContextAudit(contextPack, topicRounds.length)],
         openQuestions: ['Runtime paused for user input or approval.'],
         nextStep: 'Answer the pending runtime request before continuing this work card.',
         markResultReview: false,
@@ -361,7 +386,7 @@ export async function launchApprovedNeoWorkCard(
       changedFiles,
       decisions: [
         'Runtime result is ready for work card review.',
-        summarizeContextAudit(contextPack),
+        summarizeContextAudit(contextPack, topicRounds.length),
       ],
       openQuestions: [],
       risks: approvedRevision.risks,
@@ -380,7 +405,7 @@ export async function launchApprovedNeoWorkCard(
       conversationId: roundConversationId,
       error: message,
       now,
-      contextAudit: summarizeContextAudit(contextPack),
+      contextAudit: summarizeContextAudit(contextPack, topicRounds.length),
     });
     notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_failed');
   }

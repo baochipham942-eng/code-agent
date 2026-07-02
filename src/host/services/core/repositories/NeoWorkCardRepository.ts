@@ -107,6 +107,7 @@ function rowToDelta(row: SQLiteRow): NeoWorkCardDelta {
     id: String(row.id),
     workCardId: String(row.work_card_id),
     runId: String(row.run_id),
+    conversationId: row.conversation_id == null ? undefined : String(row.conversation_id),
     completed: deserialize<string[]>(row.completed_json, []),
     changedFiles: deserialize<string[]>(row.changed_files_json, []),
     decisions: deserialize<string[]>(row.decisions_json, []),
@@ -430,13 +431,14 @@ export class NeoWorkCardRepository {
     const tx = this.db.transaction(() => {
       this.db.prepare(`
         INSERT INTO neo_work_card_deltas (
-          id, work_card_id, run_id, completed_json, changed_files_json, decisions_json,
+          id, work_card_id, run_id, conversation_id, completed_json, changed_files_json, decisions_json,
           open_questions_json, risks_json, memory_candidates_json, next_step, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         delta.id,
         delta.workCardId,
         delta.runId,
+        delta.conversationId ?? null,
         serialize(delta.completed),
         serialize(delta.changedFiles),
         serialize(delta.decisions),

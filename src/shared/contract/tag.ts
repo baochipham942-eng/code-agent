@@ -210,6 +210,8 @@ export interface NeoWorkCardDelta {
   id: string;
   workCardId: string;
   runId: string;
+  /** 本轮实际发生的会话（跨会话续接后 ≠ sourceConversationId；老数据无此值时回退 sourceConversationId）。 */
+  conversationId?: string;
   completed: string[];
   changedFiles: string[];
   decisions: string[];
@@ -334,6 +336,7 @@ export interface CloseNeoWorkCardInput {
 export interface AppendNeoWorkCardDeltaInput {
   workCardId: string;
   runId: string;
+  conversationId?: string;
   completed?: string[];
   changedFiles?: string[];
   decisions?: string[];

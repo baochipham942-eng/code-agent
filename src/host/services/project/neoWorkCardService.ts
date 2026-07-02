@@ -452,6 +452,7 @@ export class NeoWorkCardService {
       id: shortId('nwcd'),
       workCardId: workCard.id,
       runId,
+      conversationId: cleanString(input.conversationId) || undefined,
       completed: cleanStringArray(input.completed),
       changedFiles: cleanStringArray(input.changedFiles),
       decisions: cleanStringArray(input.decisions),

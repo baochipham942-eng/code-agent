@@ -665,7 +665,7 @@ async function runCompareCommand(
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks } = parseArgs(process.argv);
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir } = parseArgs(process.argv);
   // WP1-4：任一预测 flag 出现即登记（另一侧默认空列表）
   const prediction = (predictedFixes || riskTasks)
     ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }

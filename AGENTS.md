@@ -13,3 +13,13 @@ This workspace inherits the always-on collaboration rules from `/Users/linchen/A
 - If memory is still insufficient, say `我记不清，让我去翻一下。` and then inspect the relevant Codex memory files before answering
 - Keep Codex memory separate from `~/.claude/projects/-Users-linchen/memory/...` unless the user explicitly asks for a Claude-side comparison
 - Load project-specific repo context only after the Codex memory bootstrap
+
+## 多 Agent 协作纪律（四步，硬规则）
+
+多个 CLI Agent / 会话并行动同一仓库时（本仓已发生 3+ 次同款事故：过期本地 main、旧 bundle 假验证、验收对象不是最终合入产物），任何 agent 认领任务必须走：
+
+1. **认领前 fetch + ff-only**：开工先 `git fetch origin`，工作分支基于 `origin/main` 新建；更新本地 main 只允许 `git merge --ff-only origin/main`，拒绝 ff 说明本地 main 已脏，以 `origin/main` 为准另起分支，不要 forward-fix 本地指针。
+2. **活跃中 30min re-fetch**：任务超过 30 分钟或跨会话续做时重新 `git fetch origin` 并核对基点是否落后；落后先 rebase/重开分支再继续，不允许在已知过期的基点上继续堆提交。
+3. **push 后播报 HEAD sha**：任何 push（分支或 main）完成后，在交接/汇报里写明 `git rev-parse HEAD` 的 sha，接力方以 sha 对齐，不以分支名对齐（分支名会被移动）。
+4. **验收一律 origin/main 新鲜构建**：验收/dogfood 的对象必须是 `origin/main`（或目标分支）拉下来的新鲜构建，逐层确认构建产物指纹（bundle 文件名 / 版本号）与源码一致；禁止拿本地残留构建、renderer 热更新缓存、旧安装包做验证结论。
+

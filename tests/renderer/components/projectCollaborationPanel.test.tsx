@@ -19,6 +19,7 @@ function makeDelta(over: Partial<NeoWorkCardDelta> = {}): NeoWorkCardDelta {
     id: over.id ?? 'delta-1',
     workCardId: over.workCardId ?? 'card-1',
     runId: over.runId ?? 'run-1',
+    conversationId: over.conversationId,
     completed: over.completed ?? [],
     changedFiles: over.changedFiles ?? [],
     decisions: over.decisions ?? [],
@@ -233,5 +234,84 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
   it('page wrapper keeps its testid so the workbench boundary stays intact', () => {
     const html = renderToStaticMarkup(<ProjectCollaborationPage projectId="project-1" onClose={() => {}} />);
     expect(html).toContain('data-testid="project-collaboration-page"');
+  });
+});
+
+describe('topic 详情跨会话聚合（ADR-033）', () => {
+  it('aggregates rounds from every topic conversation with per-round 打开会话', () => {
+    const details = [makeDetail({
+      id: 'a',
+      title: '整理竞品报告',
+      status: 'completed',
+      deltas: [
+        makeDelta({ id: 'd1', workCardId: 'a', runId: 'r1', conversationId: 'session-1' }),
+        makeDelta({ id: 'd2', workCardId: 'a', runId: 'r2', conversationId: 'session-2' }),
+      ],
+    })];
+    const calls: string[] = [];
+    render(
+      <ProjectCollaborationPanel
+        projectId="project-1"
+        details={details}
+        sourceMessagesByConversation={{
+          'session-1': [
+            { id: 'u1', role: 'user' as const, content: '@neo 整理竞品', timestamp: 1, metadata: { neoTag: { workCardId: 'a' } } },
+            { id: 'a1', role: 'assistant' as const, content: '第一轮结论', timestamp: 2 },
+          ],
+          'session-2': [
+            { id: 'u2', role: 'user' as const, content: '补上定价维度', timestamp: 3, metadata: { neoTag: { workCardId: 'a' } } },
+            { id: 'a2', role: 'assistant' as const, content: '第二轮结论', timestamp: 4 },
+          ],
+        }}
+        onOpenConversation={(sessionId) => { calls.push(sessionId); }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+
+    const rounds = screen.getByTestId('neo-topic-detail-rounds');
+    expect(rounds.textContent).toContain('第一轮结论');
+    expect(rounds.textContent).toContain('第二轮结论');
+
+    // 轮级打开会话：分别跳该轮真正发生的会话
+    fireEvent.click(screen.getByTestId('neo-topic-round-open-0'));
+    fireEvent.click(screen.getByTestId('neo-topic-round-open-1'));
+    expect(calls).toEqual(['session-1', 'session-2']);
+  });
+
+  it('detail follow-up input sends continueAndRun targeting the latest round conversation', async () => {
+    const continueAndRun = vi.fn(async () => ({
+      detail: makeDetail({ id: 'a' }),
+      roundTurnId: 'turn_x',
+    }));
+    useNeoWorkCardStore.setState({ continueAndRun });
+
+    const details = [makeDetail({
+      id: 'a',
+      status: 'completed',
+      deltas: [makeDelta({ id: 'd2', workCardId: 'a', runId: 'r2', conversationId: 'session-2' })],
+    })];
+    render(
+      <ProjectCollaborationPanel
+        projectId="project-1"
+        details={details}
+        sourceMessagesByConversation={{
+          'session-2': [
+            { id: 'u2', role: 'user' as const, content: '第二轮', timestamp: 3, metadata: { neoTag: { workCardId: 'a' } } },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+
+    fireEvent.change(screen.getByTestId('neo-topic-detail-followup-input'), { target: { value: '再补渠道对比' } });
+    fireEvent.click(screen.getByTestId('neo-topic-detail-followup-send'));
+
+    await vi.waitFor(() => {
+      expect(continueAndRun).toHaveBeenCalledWith(expect.objectContaining({
+        workCardId: 'a',
+        userText: '再补渠道对比',
+        conversationId: 'session-2',
+      }));
+    });
   });
 });

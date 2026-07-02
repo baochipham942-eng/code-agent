@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Archive, Brain, Check, ChevronDown, ChevronRight, HelpCircle, Loader2, MessageSquare, Sparkles, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Archive, Brain, Check, ChevronDown, ChevronRight, HelpCircle, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import type { Message } from '@shared/contract/message';
 import {
@@ -12,8 +12,11 @@ import {
   extractNeoTopicRounds,
   fetchConversationMessages,
   formatRequesterLabel,
+  mergeTopicRounds,
+  topicConversationIds,
   type NeoTopicRound,
 } from './projectCollaborationData';
+import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
 
 // ============================================================================
 // Topic 详情（Neo Tag 轻量化重设计）
@@ -24,8 +27,8 @@ import {
 export interface ProjectCollaborationDetailPaneProps {
   detail: NeoWorkCardDetail | null;
   currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null;
-  /** 注入的源会话消息（测试/fixture 用）。传入时绕开 IPC 拉取。 */
-  sourceMessages?: Message[];
+  /** 注入的各会话消息（测试/fixture 用）。传入时绕开 IPC 拉取（ADR-033：topic 可跨多会话）。 */
+  messagesByConversation?: Record<string, Message[]>;
   onOpenConversation?: (sessionId: string) => void;
   onCancel?: (workCardId: string) => void | Promise<void>;
   onArchive?: (workCardId: string) => void | Promise<void>;
@@ -42,7 +45,11 @@ function uniqueNonEmpty(items: string[]): string[] {
 
 const REPLY_CLAMP_CHARS = 600;
 
-const RoundItem: React.FC<{ round: NeoTopicRound; index: number }> = ({ round, index }) => {
+const RoundItem: React.FC<{
+  round: NeoTopicRound;
+  index: number;
+  onOpenConversation?: (sessionId: string) => void;
+}> = ({ round, index, onOpenConversation }) => {
   const [expanded, setExpanded] = useState(false);
   const reply = round.reply ?? '';
   const needsClamp = reply.length > REPLY_CLAMP_CHARS;
@@ -54,7 +61,20 @@ const RoundItem: React.FC<{ round: NeoTopicRound; index: number }> = ({ round, i
           <span className="mr-1.5 rounded border border-zinc-800 bg-zinc-900 px-1 text-[10px] text-zinc-500">你</span>
           <span className="whitespace-pre-wrap break-words">{round.request}</span>
         </div>
-        <span className="shrink-0 text-[10px] text-zinc-600">{formatTime(round.at)}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className="text-[10px] text-zinc-600">{formatTime(round.at)}</span>
+          {/* 轮级跳转（ADR-033）：跳到该轮真正发生的会话 */}
+          {onOpenConversation && round.conversationId && (
+            <button
+              type="button"
+              onClick={() => onOpenConversation(round.conversationId!)}
+              className="inline-flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-500 hover:border-emerald-500/30 hover:text-emerald-200"
+              data-testid={`neo-topic-round-open-${index}`}
+            >
+              <MessageSquare className="h-2.5 w-2.5" />打开会话
+            </button>
+          )}
+        </span>
       </div>
       <div className="mt-2 flex items-start gap-1.5">
         <span className="mt-0.5 flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
@@ -86,25 +106,39 @@ const RoundItem: React.FC<{ round: NeoTopicRound; index: number }> = ({ round, i
 export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetailPaneProps> = ({
   detail,
   currentUser,
-  sourceMessages,
+  messagesByConversation,
   onOpenConversation,
   onCancel,
   onArchive,
   onApproveMemory,
 }) => {
-  const sourceConversationId = detail?.workCard.sourceConversationId ?? null;
   const detailUpdatedAt = detail?.workCard.updatedAt ?? 0;
-  const [loadedMessages, setLoadedMessages] = useState<Message[]>([]);
+  const [loadedByConversation, setLoadedByConversation] = useState<Record<string, Message[]>>({});
+  const [followUpText, setFollowUpText] = useState('');
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [followUpSending, setFollowUpSending] = useState(false);
 
-  // 注入了 sourceMessages（测试/fixture）就不走 IPC；否则按会话拉取，topic 有更新时重拉
+  // topic 参与过的会话集合（ADR-033）：源会话 + 各轮 delta 归属；老卡自然退化为单会话
+  const conversationIds = useMemo(
+    () => (detail ? topicConversationIds(detail) : []),
+    [detail, detailUpdatedAt],
+  );
+  const conversationIdsKey = conversationIds.join('|');
+
+  // 注入了 messagesByConversation（测试/fixture）就不走 IPC；否则逐会话拉取（fail-safe：单会话失败返回空）
   useEffect(() => {
-    if (sourceMessages !== undefined || !sourceConversationId) return;
+    if (messagesByConversation !== undefined || conversationIds.length === 0) return;
     let cancelled = false;
-    void fetchConversationMessages(sourceConversationId).then((messages) => {
-      if (!cancelled) setLoadedMessages(messages);
+    void Promise.all(conversationIds.map(async (conversationId) => ({
+      conversationId,
+      messages: await fetchConversationMessages(conversationId),
+    }))).then((buckets) => {
+      if (cancelled) return;
+      setLoadedByConversation(Object.fromEntries(buckets.map((bucket) => [bucket.conversationId, bucket.messages])));
     });
     return () => { cancelled = true; };
-  }, [sourceMessages, sourceConversationId, detailUpdatedAt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messagesByConversation, conversationIdsKey, detailUpdatedAt]);
 
   if (!detail) {
     return (
@@ -120,7 +154,32 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const { workCard, deltas } = detail;
   const phase = statusPhase(workCard.status);
   const latestDelta = deltas.at(-1);
-  const rounds = extractNeoTopicRounds(sourceMessages ?? loadedMessages, workCard.id);
+  const messageSource = messagesByConversation ?? loadedByConversation;
+  const rounds = mergeTopicRounds(conversationIds.map((conversationId) =>
+    extractNeoTopicRounds(messageSource[conversationId] ?? [], workCard.id, conversationId)));
+
+  // 详情页追问（ADR-033）：落最近一轮的会话（详情页没有"当前会话"语境，最近轮 = topic 最新上下文所在）
+  const followUpConversationId = rounds.at(-1)?.conversationId ?? workCard.sourceConversationId;
+  const canFollowUp = phase !== 'running' && phase !== 'needs_input' && workCard.status !== 'archived' && workCard.status !== 'cancelled';
+  const sendFollowUp = async () => {
+    const text = followUpText.trim();
+    if (!text || followUpSending) return;
+    setFollowUpSending(true);
+    setFollowUpError(null);
+    try {
+      await useNeoWorkCardStore.getState().continueAndRun({
+        workCardId: workCard.id,
+        conversationId: followUpConversationId,
+        userText: text,
+        requesterUserId: currentUser?.id ?? 'local-user',
+      });
+      setFollowUpText('');
+    } catch (error) {
+      setFollowUpError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFollowUpSending(false);
+    }
+  };
   const checklist = uniqueNonEmpty(deltas.flatMap((delta) => delta.completed)).filter(
     (item) => !isInternalRuntimeText(item),
   );
@@ -191,7 +250,12 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
           </div>
           <div className="grid gap-2">
             {rounds.map((round, index) => (
-              <RoundItem key={`${round.at}-${index}`} round={round} index={index} />
+              <RoundItem
+                key={`${round.at}-${index}`}
+                round={round}
+                index={index}
+                onOpenConversation={onOpenConversation}
+              />
             ))}
           </div>
         </div>
@@ -242,6 +306,35 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 追问（ADR-033）：同 topic 追加一轮，落最近一轮的会话 */}
+      {canFollowUp && (
+        <div className="mt-4" data-testid="neo-topic-detail-followup">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={followUpText}
+              onChange={(event) => setFollowUpText(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') void sendFollowUp(); }}
+              placeholder="接着交代 Neo…"
+              className="h-8 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+              data-testid="neo-topic-detail-followup-input"
+            />
+            <button
+              type="button"
+              onClick={() => void sendFollowUp()}
+              disabled={followUpSending || !followUpText.trim()}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 text-xs text-emerald-200 hover:bg-emerald-500/15 disabled:opacity-40"
+              data-testid="neo-topic-detail-followup-send"
+            >
+              {followUpSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}续一轮
+            </button>
+          </div>
+          {followUpError && (
+            <div className="mt-1.5 text-[11px] text-rose-300/90" data-testid="neo-topic-detail-followup-error">{followUpError}</div>
+          )}
         </div>
       )}
 

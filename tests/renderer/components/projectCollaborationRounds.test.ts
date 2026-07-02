@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract/message';
-import { extractNeoTopicRounds } from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
+import {
+  extractNeoTopicRounds,
+  mergeTopicRounds,
+  topicConversationIds,
+} from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
 import { isInternalRuntimeText } from '../../../src/renderer/components/features/chat/neoWorkCardPhase';
 
 function msg(over: Partial<Message> & Pick<Message, 'id' | 'role' | 'content'>): Message {
@@ -64,5 +68,32 @@ describe('isInternalRuntimeText（运行时记账文案不进用户视野）', (
   it('keeps real agent-written progress untouched', () => {
     expect(isInternalRuntimeText('接好清单入口')).toBe(false);
     expect(isInternalRuntimeText('查完了上海FDE薪资，结果在会话里')).toBe(false);
+  });
+});
+
+describe('多会话轮聚合（ADR-033）', () => {
+  it('aggregates rounds across the topic conversation set, ordered by time, each tagged with its conversation', () => {
+    const messagesInConvA: Message[] = [
+      msg({ id: 'u1', role: 'user', content: '@neo 整理竞品', timestamp: 10, metadata: { neoTag: { workCardId: 'nwc_1' } } }),
+      msg({ id: 'a1', role: 'assistant', content: '第一轮结论', timestamp: 11 }),
+    ];
+    const messagesInConvB: Message[] = [
+      msg({ id: 'u2', role: 'user', content: '补上定价维度', timestamp: 20, metadata: { neoTag: { workCardId: 'nwc_1' } } }),
+      msg({ id: 'a2', role: 'assistant', content: '第二轮结论', timestamp: 21 }),
+    ];
+    const merged = mergeTopicRounds([
+      extractNeoTopicRounds(messagesInConvA, 'nwc_1', 'conv_A'),
+      extractNeoTopicRounds(messagesInConvB, 'nwc_1', 'conv_B'),
+    ]);
+    expect(merged.map((r) => r.conversationId)).toEqual(['conv_A', 'conv_B']);
+    expect(merged.map((r) => r.reply)).toEqual(['第一轮结论', '第二轮结论']);
+  });
+
+  it('topicConversationIds derives the conversation set from source + delta ownership', () => {
+    const ids = topicConversationIds({
+      workCard: { sourceConversationId: 'conv_A' },
+      deltas: [{ conversationId: 'conv_B' }, { conversationId: undefined }],
+    } as never);
+    expect(ids).toEqual(['conv_A', 'conv_B']);
   });
 });

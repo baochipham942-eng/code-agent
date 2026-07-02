@@ -335,9 +335,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
         <ProjectCollaborationDetailPane
           detail={selectedDetail}
           currentUser={currentUser}
-          sourceMessages={selectedDetail
-            ? sourceMessagesByConversation?.[selectedDetail.workCard.sourceConversationId]
-            : undefined}
+          messagesByConversation={sourceMessagesByConversation}
           onOpenConversation={handleOpenConversation}
           onCancel={handleCancel}
           onArchive={handleArchive}

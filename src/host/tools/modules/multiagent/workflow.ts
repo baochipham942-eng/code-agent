@@ -39,6 +39,7 @@ import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { getEventBus } from '../../../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
 import {
+  buildRecoveryPriorProjection,
   buildWorkflowFailureRecoveryProposal,
   recordLongTaskRecoveryProposal,
 } from '../../../handoff/longTaskRecoveryProposal';
@@ -247,6 +248,7 @@ async function runWorkflow(
           resumeFromRunId: runId,
           cacheHits: state.cacheHits,
           phaseCount: state.phases.length,
+          priorProjection: buildRecoveryPriorProjection(ctx.sessionId),
         }));
       }
       return {

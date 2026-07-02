@@ -54,4 +54,36 @@ describe('long-task recovery proposal builders', () => {
     expect(proposal?.prompt).toContain('Failed tasks: 1');
     expect(proposal?.prompt).toContain('agent_reviewer_1 (reviewer) task=审查权限闭环 error=timeout');
   });
+
+  it('workflow 提案带 priorProjection → prompt 注入结构化现场段并要求续跑而非考古', () => {
+    const proposal = buildWorkflowFailureRecoveryProposal({
+      sessionId: 'session-1',
+      runId: 'wf-run-1',
+      status: 'failed',
+      priorProjection: '未完成任务（末态）：\n- [created] t2: 补单测',
+    });
+    expect(proposal?.prompt).toContain('上一 run 现场（有界投影，来自 session 一本账）');
+    expect(proposal?.prompt).toContain('t2: 补单测');
+    expect(proposal?.prompt).toContain('基于上述现场续跑');
+  });
+
+  it('agent-team 提案同样支持 priorProjection 注入（对称应用）', () => {
+    const proposal = buildAgentTeamFailureRecoveryProposal({
+      sessionId: 'session-1',
+      totalTasks: 2,
+      failedTasks: [{ taskId: 'a1', role: 'coder', error: 'timeout' }],
+      priorProjection: '最近失败的验证/工具执行：\n- bash npm test 失败（2 tests failed）',
+    });
+    expect(proposal?.prompt).toContain('上一 run 现场（有界投影，来自 session 一本账）');
+    expect(proposal?.prompt).toContain('npm test 失败');
+  });
+
+  it('无 priorProjection 时 prompt 不含现场段（旧行为不变）', () => {
+    const proposal = buildWorkflowFailureRecoveryProposal({
+      sessionId: 'session-1',
+      runId: 'wf-run-1',
+      status: 'failed',
+    });
+    expect(proposal?.prompt).not.toContain('上一 run 现场');
+  });
 });

@@ -53,6 +53,7 @@ import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../fork
 import { validateNoCycles, detectCycles } from '../taskDag.js';
 import {
   buildAgentTeamFailureRecoveryProposal,
+  buildRecoveryPriorProjection,
   recordLongTaskRecoveryProposal,
 } from '../../handoff/longTaskRecoveryProposal';
 import {
@@ -1027,6 +1028,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
         totalTasks: tasks.length,
         failedTasks,
         summary: aggregation.summary,
+        priorProjection: buildRecoveryPriorProjection(context.sessionId),
       }));
       return {
         success: false,

@@ -1,8 +1,42 @@
 import type { CreateHandoffProposalInput, HandoffProposal } from '../../shared/contract/handoff';
 import { createLogger } from '../services/infra/logger';
+import { getDatabase } from '../services/core/databaseService';
 import { getHandoffProposalService } from './handoffProposalService';
+import { buildPriorRunProjection } from './priorRunProjection';
 
 const logger = createLogger('LongTaskRecoveryProposal');
+
+/**
+ * retry = projection continuation：把有界现场投影拼进恢复提案 prompt，
+ * 新 attempt 直接基于现场续跑，不从 transcript 从头考古。
+ */
+function priorProjectionSection(projection: string | undefined): string[] {
+  if (!projection?.trim()) return [];
+  return [
+    '--- 上一 run 现场（有界投影，来自 session 一本账）---',
+    projection.trim(),
+    '--- 现场结束 ---',
+    '新 attempt 请直接基于上述现场续跑：优先处理未完成任务与最后失败点，不要从头重读全部历史。',
+  ];
+}
+
+/**
+ * 从 session 一本账派生现场投影（impure 组装口，fail-safe：任何失败返回 undefined，
+ * 提案回退为纯文本，绝不因投影失败丢掉恢复提案本体）。
+ */
+export function buildRecoveryPriorProjection(sessionId: string | undefined): string | undefined {
+  if (!sessionId?.trim()) return undefined;
+  try {
+    const ledger = getDatabase().getSessionLedger(sessionId);
+    return buildPriorRunProjection(ledger) ?? undefined;
+  } catch (error) {
+    logger.warn('buildRecoveryPriorProjection failed (ignored)', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
 
 function compact(value: string | undefined, fallback: string): string {
   const normalized = value?.trim().replace(/\s+/g, ' ');
@@ -22,6 +56,8 @@ export interface WorkflowFailureRecoveryInput {
   resumeFromRunId?: string;
   cacheHits?: number;
   phaseCount?: number;
+  /** 上一 run 有界现场投影（buildRecoveryPriorProjection 产物），可选 */
+  priorProjection?: string;
 }
 
 export interface AgentTeamFailureRecoveryInput {
@@ -35,6 +71,8 @@ export interface AgentTeamFailureRecoveryInput {
     error?: string;
   }>;
   summary?: string;
+  /** 上一 run 有界现场投影（buildRecoveryPriorProjection 产物），可选 */
+  priorProjection?: string;
 }
 
 export function buildWorkflowFailureRecoveryProposal(
@@ -52,6 +90,7 @@ export function buildWorkflowFailureRecoveryProposal(
     `Goal: ${compact(input.goal, '(未填写)')}`,
     `Failure: ${input.status}: ${error}`,
     `Evidence: phases=${input.phaseCount ?? 0}, cacheHits=${input.cacheHits ?? 0}`,
+    ...priorProjectionSection(input.priorProjection),
     '先读取已有 run journal 与成功子调用缓存，再给出 retry plan；能自动重试的步骤直接重试，不能重试的步骤说明需要人工介入的边界。',
   ].join('\n');
 
@@ -85,6 +124,7 @@ export function buildAgentTeamFailureRecoveryProposal(
     input.summary ? `Summary: ${compact(input.summary, '')}` : undefined,
     'Failed task evidence:',
     ...failedLines,
+    ...priorProjectionSection(input.priorProjection),
     '先复用 Agent Team checkpoint、已完成子任务结果和 replay 证据，只重试失败或被阻塞的 task；重试前给出每个 task 的原因、依赖和预期产物。',
   ].filter(Boolean).join('\n');
 

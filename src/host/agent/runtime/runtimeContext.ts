@@ -145,6 +145,8 @@ export interface RuntimeContext {
   currentTurnId: string;
   messageDeltaSeq: number;
   currentSystemPromptHash?: string;
+  /** WP2-2b：完整请求前缀 shape hash（system+消息结构），仅 telemetry 诊断 */
+  currentRequestShapeHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   turnTrace: TurnTraceRecorder;
   turnQualityMemory?: TurnQualityMemorySummary;

@@ -233,6 +233,8 @@ export class CLIDatabaseService {
     preMessagesSummary?: unknown;
     postMessagesSummary?: unknown;
     createdAt?: number;
+    shapeHashBefore?: string | null;
+    shapeHashAfter?: string | null;
   }): { id: string; createdAt: number; byteSize: number } {
     if (!this.db) throw new Error('Database not initialized');
     const id = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -245,8 +247,8 @@ export class CLIDatabaseService {
 
     this.db
       .prepare(
-        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at, shape_hash_before, shape_hash_after)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -262,6 +264,8 @@ export class CLIDatabaseService {
         postJson,
         byteSize,
         createdAt,
+        input.shapeHashBefore ?? null,
+        input.shapeHashAfter ?? null,
       );
     return { id, createdAt, byteSize };
   }

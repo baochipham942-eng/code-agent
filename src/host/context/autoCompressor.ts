@@ -242,6 +242,7 @@ export class AutoContextCompressor {
           postTokens,
           savedTokens: result.savedTokens,
           usagePercent: health.usagePercent,
+          systemPrompt,
         });
       } catch {
         // 写快照失败不阻塞压缩

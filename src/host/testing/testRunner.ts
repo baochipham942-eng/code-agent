@@ -4,6 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
@@ -421,6 +422,9 @@ export class TestRunner {
     logger.info('Running test', { testId: testCase.id });
     this.emit({ type: 'case_start', testId: testCase.id, description: testCase.description });
 
+    // 附件注入产物路径（finally 里清理，避免污染同沙箱后续 case）
+    const injectedFiles: string[] = [];
+
     try {
       // 批 6 fail-loud：user_simulation 配置错误在花任何 agent 调用之前显式失败，
       // 绝不静默降级成单轮跑（那会把"模拟没生效"伪装成能力数据）。
@@ -454,6 +458,11 @@ export class TestRunner {
       // Run setup commands
       if (testCase.setup && testCase.setup.length > 0) {
         await this.runCommands(testCase.setup, 'setup');
+      }
+
+      // GAIA 等外部基准的附件：跑前拷进工作目录（缺失/越界都 fail loud）
+      if (testCase.files && testCase.files.length > 0) {
+        injectedFiles.push(...await this.injectCaseFiles(testCase.files));
       }
 
       // Reset agent state
@@ -725,6 +734,15 @@ export class TestRunner {
         result.goalRun = this.agent.getGoalRunRecord?.();
       }
 
+      // 清理注入的附件（best-effort）
+      for (const injected of injectedFiles) {
+        try {
+          await fs.rm(injected, { force: true });
+        } catch (error) {
+          logger.warn('Failed to remove injected case file', { testId: testCase.id, file: injected, error });
+        }
+      }
+
       // Run cleanup commands
       if (testCase.cleanup && testCase.cleanup.length > 0) {
         try {
@@ -747,6 +765,36 @@ export class TestRunner {
     }
 
     return result;
+  }
+
+  /**
+   * 附件注入：把 case 声明的本地文件拷进工作目录，返回落盘的绝对路径列表。
+   * dest 必须落在工作目录内（防路径逃逸）；source 缺失直接抛错（不静默跳过，
+   * 否则附件题会退化成"没有附件也硬答"的假阴性）。
+   */
+  private async injectCaseFiles(files: NonNullable<TestCase['files']>): Promise<string[]> {
+    const workDir = path.resolve(this.config.workingDirectory);
+    const injected: string[] = [];
+    for (const file of files) {
+      const source = file.source.startsWith('~')
+        ? path.join(os.homedir(), file.source.slice(1))
+        : file.source;
+      const dest = file.dest ?? path.basename(source);
+      const destAbs = path.resolve(workDir, dest);
+      const rel = path.relative(workDir, destAbs);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        throw new Error(`附件 dest 越界工作目录（dest escapes working directory）: ${dest}`);
+      }
+      try {
+        await fs.access(source);
+      } catch {
+        throw new Error(`附件 source 不存在: ${source}`);
+      }
+      await fs.mkdir(path.dirname(destAbs), { recursive: true });
+      await fs.copyFile(source, destAbs);
+      injected.push(destAbs);
+    }
+    return injected;
   }
 
   /**

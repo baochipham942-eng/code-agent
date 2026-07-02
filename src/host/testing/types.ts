@@ -258,6 +258,16 @@ export interface TestCase {
    * 同时给出视为配置错误，fail-loud。
    */
   goal_contract?: EvalGoalContract;
+  /** 附件注入（GAIA 等外部基准）：跑前从 source 拷进工作目录 dest（相对路径，默认 source 的 basename），跑后清理 */
+  files?: CaseFileInjection[];
+}
+
+/** 单个附件注入声明 */
+export interface CaseFileInjection {
+  /** 本地源文件绝对路径（支持 ~ 前缀） */
+  source: string;
+  /** 工作目录内相对目标路径；缺省用 source 的 basename */
+  dest?: string;
 }
 
 /**

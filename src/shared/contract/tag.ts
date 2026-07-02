@@ -399,6 +399,9 @@ export interface ListNeoWorkCardsByProjectInput extends NeoWorkCardListOptions {
   projectId: string;
 }
 
+/** 全局 topic 目录（账号菜单「Neo 协同」）：跨项目列全部工作卡。 */
+export type ListAllNeoWorkCardsInput = NeoWorkCardListOptions;
+
 export type UpdateNeoWorkCardDraftRevisionRequest = UpdateNeoWorkCardDraftRevisionInput;
 
 export interface NeoWorkCardReviewActionInput {

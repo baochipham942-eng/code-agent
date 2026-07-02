@@ -52,7 +52,7 @@ describe('agent mention routing', () => {
   });
 
   it('summons Neo on a bare @ (置顶 Neo,压掉文件 popup 噪音)', () => {
-    // 林晨 2026-07-02：裸 @ 应像 @teammate 一样召唤 Neo,而不是弹一堆文件名噪音。
+    // 产品负责人 2026-07-02：裸 @ 应像 @teammate 一样召唤 Neo,而不是弹一堆文件名噪音。
     const matches = getLeadingAgentMentionAutocomplete('@', agents)?.matches ?? [];
     expect(matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
   });

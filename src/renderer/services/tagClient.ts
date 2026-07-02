@@ -2,6 +2,7 @@ import type {
   CreateNeoWorkCardDraftInput,
   CreateNeoWorkCardDraftRequest,
   CreateNeoWorkCardDraftResult,
+  ListAllNeoWorkCardsInput,
   ListNeoWorkCardsByProjectInput,
   ListNeoWorkCardsBySourceInput,
   NeoMemoryCandidate,
@@ -120,6 +121,13 @@ export const tagClient = {
 
   async listByProject(input: ListNeoWorkCardsByProjectInput): Promise<NeoWorkCardDetail[]> {
     const cards = await invokeTag<NeoWorkCardWithCurrentRevision['workCard'][]>('listByProject', input);
+    const details = await Promise.all(cards.map((card) => readDetail(card.id)));
+    return details;
+  },
+
+  // 全局 topic 目录：跨项目列全部工作卡（无绑定项目的入口也能看历史）
+  async listAll(input: ListAllNeoWorkCardsInput = {}): Promise<NeoWorkCardDetail[]> {
+    const cards = await invokeTag<NeoWorkCardWithCurrentRevision['workCard'][]>('listAll', input);
     const details = await Promise.all(cards.map((card) => readDetail(card.id)));
     return details;
   },

@@ -217,6 +217,29 @@ export class NeoWorkCardRepository {
     return rows.map(rowToWorkCard);
   }
 
+  // 全局 topic 目录（账号菜单「Neo 协同」）：跨项目列全部工作卡，不按 projectId 过滤
+  listAll(options: NeoWorkCardListOptions = {}): NeoWorkCard[] {
+    const clauses = ['1 = 1'];
+    const args: unknown[] = [];
+    if (!options.includeArchived) {
+      clauses.push("status != 'archived'");
+    }
+    if (options.statuses && options.statuses.length > 0) {
+      clauses.push(`status IN (${options.statuses.map(() => '?').join(', ')})`);
+      args.push(...options.statuses);
+    }
+    const boundedLimit = Math.max(1, Math.min(options.limit ?? 100, 500));
+    const rows = this.db
+      .prepare(`
+        SELECT * FROM neo_work_cards
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY updated_at DESC
+        LIMIT ?
+      `)
+      .all(...args, boundedLimit) as SQLiteRow[];
+    return rows.map(rowToWorkCard);
+  }
+
   listBySourceConversation(sourceConversationId: string, options: NeoWorkCardListOptions = {}): NeoWorkCard[] {
     const clauses = ['source_conversation_id = ?'];
     const args: unknown[] = [sourceConversationId];

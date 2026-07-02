@@ -26,6 +26,8 @@ interface NeoWorkCardState {
   lastErrorByProjectId: Record<string, string | null>;
   loadForConversation: (sourceConversationId: string) => Promise<void>;
   loadForProject: (projectId: string, options?: { includeArchived?: boolean }) => Promise<void>;
+  /** 全局 topic 目录：跨项目加载全部工作卡。loading/error 状态挂在 NEO_WORK_CARD_ALL_SCOPE 键下。 */
+  loadAll: (options?: { includeArchived?: boolean }) => Promise<void>;
   createDraft: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
   createAndRun: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
   updateDraftRevision: (input: UpdateNeoWorkCardDraftRevisionRequest) => Promise<NeoWorkCardDetail>;
@@ -41,6 +43,9 @@ interface NeoWorkCardState {
 }
 
 export const NEO_WORK_CARD_LIVE_REFRESH_MS = 1500;
+
+/** 全局目录 scope 键：loadAll 的 loading/error 状态挂在这个键下（与真实 projectId 不冲突）。 */
+export const NEO_WORK_CARD_ALL_SCOPE = '*';
 
 const RUNTIME_AWAITING_TERMINAL_STATUSES = new Set<NeoWorkCardStatus>([
   'approved',
@@ -193,6 +198,31 @@ export const useNeoWorkCardStore = create<NeoWorkCardState>()((set) => {
       }
     },
 
+    loadAll: async (options = {}) => {
+      const scope = NEO_WORK_CARD_ALL_SCOPE;
+      set((state) => ({
+        loadingProjectIds: { ...state.loadingProjectIds, [scope]: true },
+        lastErrorByProjectId: { ...state.lastErrorByProjectId, [scope]: null },
+      }));
+      try {
+        const details = await tagClient.listAll({ includeArchived: options.includeArchived });
+        set((state) => ({
+          detailsById: details.reduce(upsert, state.detailsById),
+          loadingProjectIds: { ...state.loadingProjectIds, [scope]: false },
+          lastErrorByProjectId: { ...state.lastErrorByProjectId, [scope]: null },
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '加载 Neo work cards 失败';
+        set((state) => ({
+          loadingProjectIds: { ...state.loadingProjectIds, [scope]: false },
+          lastErrorByProjectId: { ...state.lastErrorByProjectId, [scope]: message },
+        }));
+        if (!isNeoTagIpcUnavailableError(error)) {
+          throw error;
+        }
+      }
+    },
+
     createDraft: async (input) => {
       const result = await tagClient.createDraft(input);
       set((state) => ({
@@ -270,6 +300,14 @@ export function selectNeoWorkCardDetailsForConversation(
   return Object.values(state.detailsById)
     .filter((detail) => detail.workCard.sourceConversationId === sourceConversationId)
     .sort((a, b) => a.workCard.createdAt - b.workCard.createdAt);
+}
+
+/** 全局 topic 目录：全部工作卡，最近活动在前。 */
+export function selectAllNeoWorkCardDetails(
+  state: Pick<NeoWorkCardState, 'detailsById'>,
+): NeoWorkCardDetail[] {
+  return Object.values(state.detailsById)
+    .sort((a, b) => b.workCard.updatedAt - a.workCard.updatedAt);
 }
 
 export function selectNeoWorkCardDetailsForProject(

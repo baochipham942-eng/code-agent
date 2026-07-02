@@ -161,6 +161,12 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
           return { success: true, data: service.listByProject(projectId, { includeArchived, statuses, limit }) };
         }
 
+        // 全局 topic 目录：跨项目列全部工作卡（账号菜单「Neo 协同」在无绑定项目时用）
+        case 'listAll': {
+          const { includeArchived, statuses, limit } = (payload ?? {}) as NeoWorkCardListOptions;
+          return { success: true, data: service.listAll({ includeArchived, statuses, limit }) };
+        }
+
         case 'listBySourceConversation': {
           const { sourceConversationId, includeArchived, statuses, limit } = (payload ?? {}) as ListBySourcePayload;
           if (!sourceConversationId) return invalid('sourceConversationId is required');

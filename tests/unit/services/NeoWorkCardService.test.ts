@@ -124,6 +124,22 @@ describe('NeoWorkCardService', () => {
     expect(service.listByProject('proj_alpha', { statuses: ['draft'] })).toEqual([]);
   });
 
+  it('lists all work cards across projects for the global topic directory (listAll, BUG2)', () => {
+    const alpha = service.createDraft(draft('proj_alpha'), NOW);
+    const beta = service.createDraft(draft('proj_beta'), NOW + 1);
+
+    // 全局目录：不按 projectId 过滤，最近活动在前
+    expect(service.listAll().map((card) => card.id)).toEqual([beta.workCard.id, alpha.workCard.id]);
+
+    // 归档默认排除，includeArchived 才带上
+    service.archive(beta.workCard.id, NOW + 2);
+    expect(service.listAll().map((card) => card.id)).toEqual([alpha.workCard.id]);
+    expect(service.listAll({ includeArchived: true }).map((card) => card.id)).toEqual([
+      beta.workCard.id,
+      alpha.workCard.id,
+    ]);
+  });
+
   it('lists work card details by source conversation', () => {
     const first = service.createDraft(draft('proj_alpha'), NOW);
     const second = service.createDraft({

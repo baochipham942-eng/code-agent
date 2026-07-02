@@ -7,7 +7,9 @@ import { useAuthStore } from '../../../stores/authStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
+  NEO_WORK_CARD_ALL_SCOPE,
   NEO_WORK_CARD_LIVE_REFRESH_MS,
+  selectAllNeoWorkCardDetails,
   selectNeoWorkCardDetailsForProject,
   useNeoWorkCardStore,
 } from '../../../stores/neoWorkCardStore';
@@ -122,10 +124,15 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 }) => {
   const currentUser = useAuthStore((state) => state.user ?? null);
   const actorUserId = currentUser?.id ?? 'local-user';
-  const storeDetails = useNeoWorkCardStore(useShallow((state) => selectNeoWorkCardDetailsForProject(state, projectId)));
-  const loading = useNeoWorkCardStore((state) => projectId ? Boolean(state.loadingProjectIds[projectId]) : false);
-  const loadError = useNeoWorkCardStore((state) => projectId ? state.lastErrorByProjectId[projectId] ?? null : null);
+  // 无绑定项目（projectId=null）= 全局目录：跨项目列全部 @neo topic（兜底建的卡挂在 proj_unsorted 等桶下）
+  const scopeKey = projectId ?? NEO_WORK_CARD_ALL_SCOPE;
+  const storeDetails = useNeoWorkCardStore(useShallow((state) => (
+    projectId ? selectNeoWorkCardDetailsForProject(state, projectId) : selectAllNeoWorkCardDetails(state)
+  )));
+  const loading = useNeoWorkCardStore((state) => Boolean(state.loadingProjectIds[scopeKey]));
+  const loadError = useNeoWorkCardStore((state) => state.lastErrorByProjectId[scopeKey] ?? null);
   const loadForProject = useNeoWorkCardStore((state) => state.loadForProject);
+  const loadAll = useNeoWorkCardStore((state) => state.loadAll);
   const cancel = useNeoWorkCardStore((state) => state.cancel);
   const archive = useNeoWorkCardStore((state) => state.archive);
   const approveMemoryCandidate = useNeoWorkCardStore((state) => state.approveMemoryCandidate);
@@ -156,21 +163,27 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     ensureNeoWorkCardLiveUpdates();
   }, []);
   useEffect(() => {
-    if (details !== undefined || !projectId) return;
-    void loadForProject(projectId, { includeArchived: true }).catch((error) => {
+    if (details !== undefined) return;
+    const load = projectId
+      ? () => loadForProject(projectId, { includeArchived: true })
+      : () => loadAll({ includeArchived: true });
+    void load().catch((error) => {
       toast.error(error instanceof Error ? error.message : '加载 Neo topic 失败');
     });
-  }, [details, loadForProject, projectId]);
+  }, [details, loadAll, loadForProject, projectId]);
   const hasActiveTopic = storeDetails.some((detail) => isNeoWorkCardAwaitingRuntimeTerminal(detail.workCard.status));
   useEffect(() => {
-    if (details !== undefined || !projectId || !hasActiveTopic) return;
+    if (details !== undefined || !hasActiveTopic) return;
+    const load = projectId
+      ? () => loadForProject(projectId, { includeArchived: true })
+      : () => loadAll({ includeArchived: true });
     const interval = window.setInterval(() => {
-      void loadForProject(projectId, { includeArchived: true }).catch((error) => {
+      void load().catch((error) => {
         toast.error(error instanceof Error ? error.message : '刷新 Neo topic 失败');
       });
     }, NEO_WORK_CARD_LIVE_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [details, hasActiveTopic, loadForProject, projectId]);
+  }, [details, hasActiveTopic, loadAll, loadForProject, projectId]);
   useEffect(() => {
     if (filteredTopics.length === 0) {
       if (selectedId !== null) setSelectedId(null);
@@ -231,11 +244,6 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
         {loadError && (
           <div className="mt-3 rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
             {loadError}
-          </div>
-        )}
-        {!projectId && details === undefined && (
-          <div className="mt-3 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] leading-5 text-zinc-500">
-            当前会话还没有绑定项目。先在已绑定项目的会话里 @neo，再回这里看它的 topic。
           </div>
         )}
       </div>

@@ -16,7 +16,7 @@ export const ProjectCollaborationPage: React.FC<ProjectCollaborationPageProps> =
     <FullScreenPageHeader
       icon={<UsersRound className="h-4 w-4 text-violet-300" />}
       title="Neo 协同"
-      description={projectId ? `Project work cards · ${projectId}` : '当前没有绑定项目'}
+      description={projectId ? `Project work cards · ${projectId}` : '所有 @neo topic'}
       onClose={onClose}
       closeLabel="关闭 Neo 协同"
     />

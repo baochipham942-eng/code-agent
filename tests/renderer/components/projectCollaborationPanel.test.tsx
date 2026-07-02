@@ -7,8 +7,12 @@ import type { NeoWorkCardDelta, NeoWorkCardDetail, NeoWorkCardStatus } from '../
 import { ProjectCollaborationPanel } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel';
 import { ProjectCollaborationPage } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPage';
 import { formatRequesterLabel } from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
+import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  useNeoWorkCardStore.setState({ detailsById: {}, loadingProjectIds: {}, lastErrorByProjectId: {} });
+});
 
 function makeDelta(over: Partial<NeoWorkCardDelta> = {}): NeoWorkCardDelta {
   return {
@@ -85,9 +89,9 @@ function makeDetail(input: {
 
 describe('formatRequesterLabel', () => {
   it('shows the current user as 我, others as their id', () => {
-    expect(formatRequesterLabel('user-1', { id: 'user-1', name: '林晨' })).toBe('我 · 林晨');
+    expect(formatRequesterLabel('user-1', { id: 'user-1', name: '产品负责人' })).toBe('我 · 产品负责人');
     expect(formatRequesterLabel('user-1', { id: 'user-1' })).toBe('我');
-    expect(formatRequesterLabel('user-2', { id: 'user-1', name: '林晨' })).toBe('user-2');
+    expect(formatRequesterLabel('user-2', { id: 'user-1', name: '产品负责人' })).toBe('user-2');
     expect(formatRequesterLabel('user-2', null)).toBe('user-2');
   });
 });
@@ -168,6 +172,21 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
   it('shows an empty state when there are no topics', () => {
     const html = renderToStaticMarkup(<ProjectCollaborationPanel projectId="project-1" details={[]} />);
     expect(html).toContain('data-testid="neo-topic-empty"');
+  });
+
+  it('lists every topic from the store when no project is bound (projectId=null → 全局目录, BUG2)', () => {
+    // @neo 兜底建的卡挂在各自 projectId（如 proj_unsorted）下；无绑定项目入口必须仍能列出它们
+    const a = makeDetail({ id: 'a', title: '无项目 topic A', updatedAt: 300 });
+    const b = { ...makeDetail({ id: 'b', title: '另一项目 topic B', updatedAt: 200 }) };
+    b.workCard = { ...b.workCard, projectId: 'proj_unsorted' };
+    useNeoWorkCardStore.setState({ detailsById: { a, b } });
+
+    render(<ProjectCollaborationPanel projectId={null} />);
+
+    expect(screen.queryByTestId('neo-topic-row-a')).toBeTruthy();
+    expect(screen.queryByTestId('neo-topic-row-b')).toBeTruthy();
+    // 不再出现"还没有绑定项目"的挡路文案
+    expect(screen.queryByText(/还没有绑定项目/)).toBeNull();
   });
 
   it('page wrapper keeps its testid so the workbench boundary stays intact', () => {

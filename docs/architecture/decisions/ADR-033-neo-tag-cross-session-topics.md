@@ -1,6 +1,6 @@
 # ADR-033 — Neo Tag 跨会话 Topic（@neo 续接不被发起会话困住）
 
-- 状态: proposed（待产品负责人拍板）
+- 状态: accepted（已实现并通过 Dev 包跨会话 dogfood）
 - 日期: 2026-07-02
 - 相关: ADR-032（轻量化重设计，本 ADR 的地基）、ADR-031（运行时安全护栏，不受影响）、`src/shared/contract/tag.ts`、`neoTagRuntimeService`、`neoTagContextSelector`、`projectCollaborationData.ts`
 - 触发: 轻量化重设计收尾后，topic 仍绑死发起会话——用户在别的会话无法续接一个已交代给 Neo 的 topic，Neo 也拿不到跨会话上下文。

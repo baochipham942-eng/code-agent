@@ -41,6 +41,7 @@ const NATIVE_TAURI_COMMANDS = [
   'pip_frame',
   'pip_hide',
   'pip_show',
+  'renderer_ready',
 ] as const;
 
 const CAPABILITY_DOMAIN_ACTIONS = {

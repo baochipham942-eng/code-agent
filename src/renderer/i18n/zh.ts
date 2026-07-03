@@ -880,10 +880,32 @@ export const zh = {
     defaultPauseConditions: '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。',
   },
 
-  // /goal 生命周期通知卡片（到限放行的安静降级标识）
+  // /goal 生命周期通知卡片
   goalNotice: {
+    startPrefix: '开启目标：',
+    metPrefix: '目标已完成：',
+    abortedPrefix: '目标已中止：',
+    durationPrefix: '耗时 ',
+    turnsSuffix: ' 轮',
     degradedBadge: '已完成 · 验证未全过',
     degradedReasonPrefix: '最后一次验证：',
+  },
+
+  // /goal 运行进度状态条
+  goalStatusBar: {
+    runningPrefix: '目标进行中：',
+    pausedPrefix: '目标已暂停：',
+    verifying: '验证中…',
+    reviewing: '评审中…',
+    remainingPrefix: '剩 ',
+    turnPrefix: '第 ',
+    turnSuffix: ' 轮',
+    elapsedTitle: '已运行时长',
+    remainingTitle: '墙钟剩余时间',
+    turnTitle: '轮次',
+    tokenTitle: 'token 用量',
+    pause: '暂停',
+    resume: '继续',
   },
 };
 

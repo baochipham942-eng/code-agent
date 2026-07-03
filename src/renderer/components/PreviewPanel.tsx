@@ -838,7 +838,9 @@ export const PreviewPanel: React.FC = () => {
             srcDoc={previewHtml ?? content}
             className="w-full h-full border-0"
             title="HTML Preview"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"
+            allow="fullscreen; gamepad; autoplay"
+            allowFullScreen
           />
         )}
       </div>

@@ -1218,14 +1218,15 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('continue');
+    // admission 复验与 lifecycle 同口径：无 goalMode 走 light + 可玩性冒烟
     expect(gameValidatorState.validateGameArtifact).toHaveBeenCalledWith('/tmp/game.html', expect.objectContaining({
-      runRuntimeSmoke: true,
-      runtimeSmokeTimeoutMs: 7000,
-      requireRuntimeSmoke: true,
-      runBrowserVisualSmoke: true,
-      browserVisualSmokeTimeoutMs: 10000,
-      requireBrowserVisualSmoke: true,
+      contractLevel: 'light',
+      runRuntimeSmoke: false,
+      requireRuntimeSmoke: false,
+      runBrowserVisualSmoke: false,
+      requireBrowserVisualSmoke: false,
       allowBrowserVisualComputerFallback: false,
+      runLightPlayabilitySmoke: true,
     }));
     expect(ctx.artifactRepairGuard).toBeUndefined();
     expect(ctx.forceFinalResponseReason).toBeUndefined();

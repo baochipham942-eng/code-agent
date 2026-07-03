@@ -1,17 +1,5 @@
-import { spawn, type ChildProcess } from 'child_process';
-import { mkdtemp, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import path from 'path';
 import { pathToFileURL } from 'url';
-import {
-  buildSystemChromeCdpArgs,
-  findAvailablePort,
-  resolveBrowserProvider,
-  resolveCdpEndpointUrl,
-} from '../../services/infra/browserProvider';
-import { acquireLaunchSlot, type LaunchSlot } from '../../services/infra/playwrightLaunchSemaphore';
-import { waitForCdpEndpoint, stopChromeProcess } from './browser/chromeProcess';
-import { loadPlaywrightChromium } from './browser/playwrightRuntime';
+import { openArtifactPage, type ArtifactPageSession } from './browser/artifactPage';
 import { gameSubtypeRegistry } from './gameArtifactSubtypeRegistry';
 
 export const DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS = 7000;
@@ -81,94 +69,21 @@ function normalizeRuntimeSmokeResult(value: unknown): RuntimeSmokeSummary {
 }
 
 export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<RuntimeSmokeSummary> {
-  let browser: import('playwright').Browser | null = null;
-  let chromeProcess: ChildProcess | null = null;
-  let profileDir: string | null = null;
-  let launchSlot: LaunchSlot | null = null;
+  let session: ArtifactPageSession | null = null;
 
   try {
-    const playwright = await loadPlaywrightChromium();
-    if (!playwright.ok || !playwright.chromium) {
+    const opened = await openArtifactPage(timeoutMs);
+    if (!opened.ok) {
       return {
         attempted: false,
         skipped: true,
         passed: true,
         failures: [],
-        checks: [`runtime smoke skipped: ${playwright.error || 'Playwright package unavailable.'}`],
+        checks: [`runtime smoke skipped: ${opened.skippedReason}`],
       };
     }
-    launchSlot = await acquireLaunchSlot();
-    const { chromium } = playwright;
-    const resolution = resolveBrowserProvider();
-    let page: import('playwright').Page | null = null;
-    const launchChecks: string[] = [];
-
-    const cleanupSystemChromeAttempt = async () => {
-      await browser?.close().catch(() => undefined);
-      browser = null;
-      await stopChromeProcess(chromeProcess).catch(() => undefined);
-      chromeProcess = null;
-      if (profileDir) {
-        await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
-        profileDir = null;
-      }
-    };
-
-    const launchSystemChromePage = async (launchResolution: typeof resolution) => {
-      if (launchResolution.missingExecutable || !launchResolution.systemExecutable) {
-        throw new Error(launchResolution.recommendedAction || 'System Chrome executable is missing.');
-      }
-      const port = await findAvailablePort();
-      profileDir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-runtime-'));
-      chromeProcess = spawn(
-        launchResolution.systemExecutable,
-        [
-          ...buildSystemChromeCdpArgs({
-            cdpPort: port,
-            profileDir,
-            headless: true,
-            viewport: { width: 900, height: 700 },
-          }),
-          'about:blank',
-        ],
-        { stdio: ['ignore', 'ignore', 'ignore'] },
-      );
-      await waitForCdpEndpoint(port, chromeProcess, Math.min(timeoutMs, 8000));
-      browser = await chromium.connectOverCDP(await resolveCdpEndpointUrl(port));
-      const context = browser.contexts()[0] || await browser.newContext({
-        viewport: { width: 900, height: 700 },
-      });
-      page = context.pages()[0] || await context.newPage();
-      await page.setViewportSize({ width: 900, height: 700 });
-    };
-
-    if (resolution.provider === 'system-chrome-cdp' && !resolution.missingExecutable && resolution.systemExecutable) {
-      try {
-        await launchSystemChromePage(resolution);
-      } catch {
-        await cleanupSystemChromeAttempt();
-      }
-    }
-
-    if (!page) {
-      try {
-        browser = await chromium.launch({ headless: true });
-        page = await browser.newPage({ viewport: { width: 900, height: 700 } });
-      } catch (error) {
-        await browser?.close().catch(() => undefined);
-        browser = null;
-        if (resolution.provider === 'playwright-bundled') {
-          const fallbackResolution = resolveBrowserProvider({ requestedProvider: 'system-chrome-cdp' });
-          try {
-            await launchSystemChromePage(fallbackResolution);
-            launchChecks.push('runtime smoke fell back to system Chrome CDP because Playwright bundled Chromium is unavailable');
-          } catch {
-            await cleanupSystemChromeAttempt();
-          }
-        }
-        if (!page) throw error;
-      }
-    }
+    session = opened.session;
+    const { page, launchChecks } = session;
 
     await page.goto(pathToFileURL(filePath).href, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
@@ -254,6 +169,8 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
         const qualityPlan = meta.qualityPlan || (!Array.isArray(meta.acceptance) && meta.acceptance && typeof meta.acceptance === 'object' ? meta.acceptance : {});
         const subtypeForDispatch = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
         const breakoutSubtype = /^(breakout|arkanoid)$/.test(subtypeForDispatch);
+        // runner 是自动奔跑玩法：空输入代表"松手让角色自己跑"，是合法的 reachability 步骤。
+        const runnerSubtype = /^(runner|endless[-_ ]?runner|auto[-_ ]?runner)$/.test(subtypeForDispatch);
         const hasReset = typeof contract.reset === 'function';
         const hasStep = typeof contract.step === 'function';
         const numericCountFrom = (value) => {
@@ -603,10 +520,13 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
                 : 'increase';
               const holdFrames = actionFrameCount(step);
 
-              if (keysToPress.length === 0) {
+              if (keysToPress.length === 0 && !runnerSubtype) {
                 failures.push('reachability step ' + (index + 1) + ' 缺少可执行输入。请使用 controls 里真实可派发的键值，例如 ArrowRight、Space 或 ["ArrowRight","Space"]。');
                 unitPassed = false;
                 continue;
+              }
+              if (keysToPress.length === 0 && runnerSubtype) {
+                checks.push('runner auto-run reachability step ' + (index + 1) + ' advances frames with empty input');
               }
 
               const beforeStep = await Promise.resolve(contract.snapshot());
@@ -938,11 +858,6 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
       checks: [],
     };
   } finally {
-    await browser?.close().catch(() => undefined);
-    await stopChromeProcess(chromeProcess).catch(() => undefined);
-    if (profileDir) {
-      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
-    }
-    launchSlot?.release();
+    await session?.close().catch(() => undefined);
   }
 }

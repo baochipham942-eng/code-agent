@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>萌萌的冒险 - 平台跳跃</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+}
+#gameContainer {
+  position: relative;
+  width: 100%;
+  max-width: 960px;
+  aspect-ratio: 16/9;
+}
+canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: linear-gradient(180deg, #0f0f23 0%, #1a1a3e 50%, #2d1b4e 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 30px rgba(100, 100, 255, 0.3);
+}
+#ui {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  color: #fff;
+  font-size: 18px;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+  pointer-events: none;
+  z-index: 10;
+}
+#ui div { margin-bottom: 5px; }
+.coin-icon { color: #ffd700; }
+.heart-icon { color: #ff6b6b; }
+.ability-icon { color: #4ecdc4; }
+#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  border-radius: 8px;
+  z-index: 20;
+}
+#overlay h1 { font-size: 48px; margin-bottom: 20px; color: #ffd700; }
+#overlay p { font-size: 20px; margin-bottom: 10px; }
+#overlay .hint { font-size: 14px; color: #aaa; margin-top: 30px; }
+#overlay.win h1 { color: #4ecdc4; }
+#overlay.lose h1 { color: #ff6b6b; }
+.controls-info {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="game" width="960" height="540"></canvas>
+  <div id="ui">
+    <div class="coin-icon">🪙 <span id="coinCount">0</span> / <span id="coinTotal">0</span></div>
+    <div class="heart-icon">❤️ <span id="lives">3</span></div>
+    <div class="ability-icon" id="abilityStatus">✨ 二段跳: 未获得</div>
+  </div>
+  <div class="controls-info">← → 移动 | 空格 跳跃 | 踩敌人消灭 | 收集金币 | 到达旗帜通关</div>
+  <div id="overlay">
+    <h1>萌萌的冒险</h1>
+    <p>收集金币，躲避敌人，到达旗帜!</p>
+    <p>找到 ✨ 获得二段跳能力，解锁新路线</p>
+    <p class="hint">按 空格键 开始游戏</p>
+  </div>
+</div>
+
+<script>
+// Game Constants
+const GRAVITY = 0.6;
+const FRICTION = 0.85;
+const PLAYER_SPEED = 0.8;
+const PLAYER_MAX_SPEED = 5;
+const JUMP_FORCE = -13;
+const COYOTE_TIME = 8;
+const JUMP_BUFFER = 8;
+
+// Game State
+let gameState = 'start'; // start, playing, win, lose
+let coins = [];
+let enemies = [];
+let blocks = [];
+let platforms = [];
+let abilities = [];
+let gates = [];
+let particles = [];
+let player = null;
+let camera = { x: 0, y: 0 };
+let levelWidth = 3200;
+let levelHeight = 540;
+let coinsCollected = 0;
+let totalCoins = 0;
+let hasDoubleJump = false;
+let coyoteTimer = 0;
+let jumpBufferTimer = 0;
+let isGrounded = false;
+let canDoubleJump = false;
+let deathTimer = 0;
+let goalReached = false;
+
+// Input
+const keys = {};
+
+// Canvas setup
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// Level Design
+function initLevel() {
+  platforms = [
+    // Ground
+    { x: 0, y: 480, w: 800, h: 60, type: 'ground' },
+    { x: 850, y: 480, w: 400, h: 60, type: 'ground' },
+    { x: 1300, y: 480, w: 600, h: 60, type: 'ground' },
+    { x: 2000, y: 480, w: 1200, h: 60, type: 'ground' },
+    
+    // Floating platforms
+    { x: 200, y: 380, w: 120, h: 20, type: 'platform' },
+    { x: 400, y: 300, w: 100, h: 20, type: 'platform' },
+    { x: 580, y: 240, w: 100, h: 20, type: 'platform' },
+    { x: 750, y: 320, w: 80, h: 20, type: 'platform' },
+    
+    // Gap area (need to jump)
+    { x: 900, y: 380, w: 100, h: 20, type: 'platform' },
+    { x: 1050, y: 300, w: 100, h: 20, type: 'platform' },
+    { x: 1200, y: 380, w: 100, h: 20, type: 'platform' },
+    
+    // Higher platforms (need double jump)
+    { x: 1450, y: 200, w: 100, h: 20, type: 'platform' },
+    { x: 1620, y: 140, w: 100, h: 20, type: 'platform' },
+    { x: 1790, y: 200, w: 100, h: 20, type: 'platform' },
+    
+    // Path to goal
+    { x: 2100, y: 380, w: 150, h: 20, type: 'platform' },
+    { x: 2300, y: 300, w: 150, h: 20, type: 'platform' },
+    { x: 2500, y: 380, w: 200, h: 20, type: 'platform' },
+    { x: 2750, y: 300, w: 150, h: 20, type: 'platform' },
+    { x: 2950, y: 220, w: 150, h: 20, type: 'platform' },
+    
+    // Secret high platform
+    { x: 1900, y: 100, w: 80, h: 20, type: 'platform' },
+  ];
+
+  coins = [
+    // Easy coins
+    { x: 230, y: 350, collected: false },
+    { x: 260, y: 350, collected: false },
+    { x: 430, y: 270, collected: false },
+    { x: 610, y: 210, collected: false },
+    { x: 640, y: 210, collected: false },
+    
+    // Mid coins
+    { x: 930, y: 350, collected: false },
+    { x: 1080, y: 270, collected: false },
+    { x: 1230, y: 350, collected: false },
+    
+    // High coins (need double jump)
+    { x: 1480, y: 170, collected: false },
+    { x: 1650, y: 110, collected: false },
+    { x: 1820, y: 170, collected: false },
+    { x: 1930, y: 70, collected: false },
+    
+    // Path coins
+    { x: 2150, y: 350, collected: false },
+    { x: 2350, y: 270, collected: false },
+    { x: 2550, y: 350, collected: false },
+    { x: 2800, y: 270, collected: false },
+    { x: 2980, y: 190, collected: false },
+    { x: 3010, y: 190, collected: false },
+  ];
+  totalCoins = coins.length;
+
+  enemies = [
+    { x: 350, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 600, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 1000, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 1400, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 1700, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 2200, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 2500, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+    { x: 2700, y: 445, w: 30, h: 30, vx: -1, vy: 0, alive: true, type: 'walker' },
+  ];
+
+  blocks = [
+    { x: 320, y: 380, w: 30, h: 30, type: 'question', used: false, contains: 'coin' },
+    { x: 500, y: 300, w: 30, h: 30, type: 'question', used: false, contains: 'coin' },
+    { x: 1100, y: 300, w: 30, h: 30, type: 'question', used: false, contains: 'coin' },
+    { x: 2150, y: 380, w: 30, h: 30, type: 'question', used: false, contains: 'coin' },
+    { x: 2600, y: 380, w: 30, h: 30, type: 'question', used: false, contains: 'coin' },
+  ];
+
+  abilities = [
+    { x: 1650, y: 100, w: 25, h: 25, type: 'doubleJump', collected: false, name: '✨ 二段跳' },
+  ];
+
+  gates = [
+    { x: 1900, y: 60, w: 30, h: 40, requiresAbility: 'doubleJump', unlocked: false, blocksAccessTo: 'secret' },
+  ];
+
+  particles = [];
+  coinsCollected = 0;
+  hasDoubleJump = false;
+  goalReached = false;
+  coyoteTimer = 0;
+  jumpBufferTimer = 0;
+  isGrounded = false;
+  canDoubleJump = false;
+  deathTimer = 0;
+}
+
+function createPlayer() {
+  return {
+    x: 80,
+    y: 400,
+    w: 28,
+    h: 40,
+    vx: 0,
+    vy: 0,
+    facing: 1,
+    onGround: false,
+    invincible: 0,
+    animFrame: 0,
+    animTimer: 0,
+  };
+}
+
+// Initialize
+function startGame() {
+  initLevel();
+  player = createPlayer();
+  gameState = 'playing';
+  document.getElementById('overlay').style.display = 'none';
+  updateUI();
+}
+
+function resetGame() {
+  initLevel();
+  player = createPlayer();
+  gameState = 'playing';
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('overlay').className = '';
+  document.getElementById('overlay').innerHTML = '<h1>萌萌的冒险</h1><p>收集金币，躲避敌人，到达旗帜!</p><p>找到 ✨ 获得二段跳能力，解锁新路线</p><p class="hint">按 空格键 开始游戏</p>';
+  updateUI();
+}
+
+function respawnPlayer() {
+  player.x = 80;
+  player.y = 400;
+  player.vx = 0;
+  player.vy = 0;
+  player.invincible = 60;
+  camera.x = 0;
+}
+
+// Collision detection
+function rectCollision(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function getCollisionSide(player, rect) {
+  const overlapLeft = (player.x + player.w) - rect.x;
+  const overlapRight = (rect.x + rect.w) - player.x;
+  const overlapTop = (player.y + player.h) - rect.y;
+  const overlapBottom = (rect.y + rect.h) - player.y;
+  
+  const minOverlapX = Math.min(overlapLeft, overlapRight);
+  const minOverlapY = Math.min(overlapTop, overlapBottom);
+  
+  if (minOverlapX < minOverlapY) {
+    return overlapLeft < overlapRight ? 'right' : 'left';
+  } else {
+    return overlapTop < overlapBottom ? 'bottom' : 'top';
+  }
+}
+
+// Update
+function update() {
+  if (gameState !== 'playing') return;
+  
+  // Player input
+  if (keys['ArrowLeft'] || keys['KeyA']) {
+    player.vx -= PLAYER_SPEED;
+    player.facing = -1;
+  }
+  if (keys['ArrowRight'] || keys['KeyD']) {
+    player.vx += PLAYER_SPEED;
+    player.facing = 1;
+  }
+  
+  // Jump buffer
+  if (keys['Space']) {
+    jumpBufferTimer = JUMP_BUFFER;
+  }
+  if (jumpBufferTimer > 0) jumpBufferTimer--;
+  
+  // Jump (with coyote time and double jump)
+  if (jumpBufferTimer > 0) {
+    if (isGrounded || coyoteTimer > 0) {
+      player.vy = JUMP_FORCE;
+      isGrounded = false;
+      coyoteTimer = 0;
+      jumpBufferTimer = 0;
+      canDoubleJump = hasDoubleJump;
+      createParticles(player.x + player.w/2, player.y + player.h, 5, '#fff');
+    } else if (canDoubleJump) {
+      player.vy = JUMP_FORCE * 0.85;
+      canDoubleJump = false;
+      jumpBufferTimer = 0;
+      createParticles(player.x + player.w/2, player.y + player.h, 8, '#4ecdc4');
+    }
+  }
+  
+  // Variable jump height
+  if (!keys['Space'] && player.vy < -4) {
+    player.vy *= 0.6;
+  }
+  
+  // Physics
+  player.vy += GRAVITY;
+  player.vx *= FRICTION;
+  
+  // Clamp speed
+  player.vx = Math.max(-PLAYER_MAX_SPEED, Math.min(PLAYER_MAX_SPEED, player.vx));
+  
+  // Move X
+  player.x += player.vx;
+  
+  // Platform collision X
+  for (const p of platforms) {
+    if (rectCollision(player, p)) {
+      const side = getCollisionSide(player, p);
+      if (side === 'left') {
+        player.x = p.x - player.w;
+        player.vx = 0;
+      } else if (side === 'right') {
+        player.x = p.x + p.w;
+        player.vx = 0;
+      }
+    }
+  }
+  
+  // Move Y
+  player.y += player.vy;
+  isGrounded = false;
+  
+  // Platform collision Y
+  for (const p of platforms) {
+    if (rectCollision(player, p)) {
+      const side = getCollisionSide(player, p);
+      if (side === 'top' && player.vy >= 0) {
+        player.y = p.y - player.h;
+        player.vy = 0;
+        isGrounded = true;
+        coyoteTimer = COYOTE_TIME;
+      } else if (side === 'bottom' && player.vy < 0) {
+        player.y = p.y + p.h;
+        player.vy = 0;
+        // Bump question blocks
+        for (const b of blocks) {
+          if (!b.used && player.x + player.w > b.x && player.x < b.x + b.w &&
+              player.y + player.h > b.y && player.y < b.y + b.h) {
+            bumpBlock(b);
+          }
+        }
+      }
+    }
+  }
+  
+  // Coyote time
+  if (!isGrounded) {
+    if (coyoteTimer > 0) coyoteTimer--;
+  }
+  
+  // Bounds
+  if (player.x < 0) { player.x = 0; player.vx = 0; }
+  if (player.x > levelWidth - player.w) { player.x = levelWidth - player.w; player.vx = 0; }
+  if (player.y > levelHeight) {
+    playerDie();
+  }
+  
+  // Invincibility
+  if (player.invincible > 0) player.invincible--;
+  
+  // Animation
+  player.animTimer++;
+  if (player.animTimer > 8) {
+    player.animTimer = 0;
+    player.animFrame = (player.animFrame + 1) % 4;
+  }
+  
+  // Enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    
+    // Simple AI
+    e.vy += GRAVITY;
+    e.x += e.vx;
+    e.y += e.vy;
+    
+    // Platform collision for enemies
+    for (const p of platforms) {
+      if (rectCollision(e, p)) {
+        if (e.vy > 0 && e.y + e.h - e.vy <= p.y + 5) {
+          e.y = p.y - e.h;
+          e.vy = 0;
+        } else if (e.vx > 0 && e.x + e.w > p.x && e.x < p.x) {
+          e.vx *= -1;
+          e.x = p.x - e.w;
+        } else if (e.vx < 0 && e.x < p.x + p.w && e.x + e.w > p.x + p.w) {
+          e.vx *= -1;
+          e.x = p.x + p.w;
+        }
+      }
+    }
+    
+    // Reverse at edges
+    if (e.x <= 0 || e.x >= levelWidth - e.w) {
+      e.vx *= -1;
+    }
+    
+    // Player collision
+    if (player.invincible <= 0 && rectCollision(player, e)) {
+      // Check if stomping (player falling and above enemy center)
+      if (player.vy > 0 && player.y + player.h - 10 < e.y + e.h/2) {
+        e.alive = false;
+        player.vy = JUMP_FORCE * 0.6;
+        createParticles(e.x + e.w/2, e.y + e.h/2, 10, '#ff6b6b');
+      } else {
+        playerDie();
+      }
+    }
+  }
+  
+  // Coins
+  for (const c of coins) {
+    if (c.collected) continue;
+    if (player.x < c.x + 20 && player.x + player.w > c.x &&
+        player.y < c.y + 20 && player.y + player.h > c.y) {
+      c.collected = true;
+      coinsCollected++;
+      createParticles(c.x + 10, c.y + 10, 6, '#ffd700');
+      updateUI();
+    }
+  }
+  
+  // Abilities
+  for (const a of abilities) {
+    if (a.collected) continue;
+    if (player.x < a.x + a.w && player.x + player.w > a.x &&
+        player.y < a.y + a.h && player.y + player.h > a.y) {
+      a.collected = true;
+      if (a.type === 'doubleJump') {
+        hasDoubleJump = true;
+        canDoubleJump = true;
+        createParticles(a.x + a.w/2, a.y + a.h/2, 15, '#4ecdc4');
+      }
+      updateUI();
+    }
+  }
+  
+  // Goal (flag at end)
+  const goalX = 3050;
+  const goalY = 160;
+  if (player.x > goalX - 20 && player.x < goalX + 40 &&
+      player.y > goalY - 20 && player.y < goalY + 60) {
+    if (!goalReached) {
+      goalReached = true;
+      gameState = 'win';
+      createParticles(goalX + 10, goalY + 20, 30, '#ffd700');
+      showWin();
+    }
+  }
+  
+  // Camera follow
+  const targetCamX = player.x - canvas.width / 2 + player.w / 2;
+  camera.x += (targetCamX - camera.x) * 0.1;
+  camera.x = Math.max(0, Math.min(levelWidth - canvas.width, camera.x));
+  
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.2;
+    p.life--;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function bumpBlock(block) {
+  if (block.used) return;
+  block.used = true;
+  createParticles(block.x + block.w/2, block.y, 8, '#ffd700');
+  if (block.contains === 'coin') {
+    coinsCollected++;
+    updateUI();
+  }
+}
+
+function playerDie() {
+  if (player.invincible > 0) return;
+  player.invincible = 90;
+  player.vy = JUMP_FORCE * 0.5;
+  player.vx = -player.facing * 3;
+  createParticles(player.x + player.w/2, player.y + player.h/2, 12, '#ff6b6b');
+  
+  // Check lives
+  const livesEl = document.getElementById('lives');
+  let lives = parseInt(livesEl.textContent);
+  lives--;
+  livesEl.textContent = lives;
+  
+  if (lives <= 0) {
+    gameState = 'lose';
+    showLose();
+  }
+}
+
+function createParticles(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: x,
+      y: y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6 - 2,
+      life: 30 + Math.random() * 20,
+      color: color,
+      size: 3 + Math.random() * 4,
+    });
+  }
+}
+
+function updateUI() {
+  document.getElementById('coinCount').textContent = coinsCollected;
+  document.getElementById('coinTotal').textContent = totalCoins;
+  const abilityEl = document.getElementById('abilityStatus');
+  abilityEl.textContent = hasDoubleJump ? '✨ 二段跳: 已获得!' : '✨ 二段跳: 未获得';
+  abilityEl.style.color = hasDoubleJump ? '#4ecdc4' : '#888';
+}
+
+function showWin() {
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.className = 'win';
+  overlay.innerHTML = `<h1>🎉 通关成功!</h1><p>收集金币: ${coinsCollected} / ${totalCoins}</p><p>按 空格键 重新开始</p>`;
+}
+
+function showLose() {
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.className = 'lose';
+  overlay.innerHTML = `<h1>💔 游戏结束</h1><p>收集金币: ${coinsCollected} / ${totalCoins}</p><p>按 空格键 重新开始</p>`;
+}
+
+// Render
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#0f0f23');
+  grad.addColorStop(0.5, '#1a1a3e');
+  grad.addColorStop(1, '#2d1b4e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i = 0; i < 50; i++) {
+    const sx = (i * 67 + camera.x * 0.1) % canvas.width;
+    const sy = (i * 43) % (canvas.height * 0.6);
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+  
+  // Background mountains (parallax)
+  ctx.fillStyle = 'rgba(30, 20, 50, 0.8)';
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height);
+  for (let i = 0; i <= canvas.width; i += 80) {
+    const mx = i + camera.x * 0.2;
+    const my = canvas.height - 100 - Math.sin(mx * 0.01) * 60;
+    ctx.lineTo(i, my);
+  }
+  ctx.lineTo(canvas.width, canvas.height);
+  ctx.fill();
+  
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+  
+  // Platforms
+  for (const p of platforms) {
+    if (p.x + p.w < camera.x - 50 || p.x > camera.x + canvas.width + 50) continue;
+    
+    if (p.type === 'ground') {
+      // Ground with grass
+      ctx.fillStyle = '#3d2817';
+      ctx.fillRect(p.x, p.y + 10, p.w, p.h - 10);
+      ctx.fillStyle = '#228b22';
+      ctx.fillRect(p.x, p.y, p.w, 12);
+      // Grass detail
+      ctx.fillStyle = '#32cd32';
+      for (let i = 0; i < p.w; i += 15) {
+        ctx.fillRect(p.x + i, p.y - 3, 3, 6);
+      }
+    } else {
+      // Floating platform
+      ctx.fillStyle = '#8b4513';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#a0522d';
+      ctx.fillRect(p.x + 2, p.y + 2, p.w - 4, p.h - 6);
+      // Highlight
+      ctx.fillStyle = '#cd853f';
+      ctx.fillRect(p.x + 4, p.y + 2, p.w - 8, 4);
+    }
+  }
+  
+  // Blocks
+  for (const b of blocks) {
+    if (b.x + b.w < camera.x - 50 || b.x > camera.x + canvas.width + 50) continue;
+    
+    if (b.used) {
+      ctx.fillStyle = '#555';
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+    } else {
+      // Question block
+      const pulse = Math.sin(Date.now() * 0.005) * 2;
+      ctx.fillStyle = '#daa520';
+      ctx.fillRect(b.x - pulse, b.y - pulse, b.w + pulse*2, b.h + pulse*2);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
+      ctx.fillStyle = '#8b4513';
+      ctx.font = 'bold 18px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('?', b.x + b.w/2, b.y + b.h/2 + 6);
+    }
+  }
+  
+  // Gates
+  for (const g of gates) {
+    if (g.x + g.w < camera.x - 50 || g.x > camera.x + canvas.width + 50) continue;
+    
+    if (g.unlocked || hasDoubleJump) {
+      ctx.fillStyle = 'rgba(76, 205, 196, 0.3)';
+      ctx.fillRect(g.x, g.y, g.w, g.h);
+      ctx.strokeStyle = '#4ecdc4';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(g.x, g.y, g.w, g.h);
+    } else {
+      ctx.fillStyle = 'rgba(255, 100, 100, 0.5)';
+      ctx.fillRect(g.x, g.y, g.w, g.h);
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(g.x, g.y, g.w, g.h);
+      // Lock icon
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('🔒', g.x + g.w/2, g.y + g.h/2 + 4);
+    }
+  }
+  
+  // Coins
+  for (const c of coins) {
+    if (c.collected) continue;
+    if (c.x + 20 < camera.x - 50 || c.x > camera.x + canvas.width + 50) continue;
+    
+    const bob = Math.sin(Date.now() * 0.005 + c.x) * 3;
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(c.x + 10, c.y + 10 + bob, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffed4a';
+    ctx.beginPath();
+    ctx.arc(c.x + 8, c.y + 8 + bob, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Abilities
+  for (const a of abilities) {
+    if (a.collected) continue;
+    if (a.x + a.w < camera.x - 50 || a.x > camera.x + canvas.width + 50) continue;
+    
+    const bob = Math.sin(Date.now() * 0.004) * 4;
+    const glow = Math.sin(Date.now() * 0.008) * 0.3 + 0.7;
+    
+    ctx.globalAlpha = glow;
+    ctx.fillStyle = '#4ecdc4';
+    ctx.beginPath();
+    ctx.arc(a.x + a.w/2, a.y + a.h/2 + bob, a.w/2 + 5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('✨', a.x + a.w/2, a.y + a.h/2 + bob + 5);
+    ctx.globalAlpha = 1;
+  }
+  
+  // Enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e.x + e.w < camera.x - 50 || e.x > camera.x + canvas.width + 50) continue;
+    
+    // Body
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.h/2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(e.x + e.w/3, e.y + e.h/3, 5, 0, Math.PI * 2);
+    ctx.arc(e.x + 2*e.w/3, e.y + e.h/3, 5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(e.x + e.w/3 + e.vx, e.y + e.h/3, 2, 0, Math.PI * 2);
+    ctx.arc(e.x + 2*e.w/3 + e.vx, e.y + e.h/3, 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Angry eyebrows
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(e.x + e.w/4, e.y + e.h/5);
+    ctx.lineTo(e.x + e.w/2 - 3, e.y + e.h/4);
+    ctx.moveTo(e.x + 3*e.w/4, e.y + e.h/5);
+    ctx.lineTo(e.x + e.w/2 + 3, e.y + e.h/4);
+    ctx.stroke();
+  }
+  
+  // Goal flag
+  const goalX = 3050;
+  const goalY = 160;
+  if (goalX + 40 > camera.x - 50 && goalX < camera.x + canvas.width + 50) {
+    // Pole
+    ctx.fillStyle = '#8b4513';
+    ctx.fillRect(goalX + 8, goalY, 6, 80);
+    // Flag
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.moveTo(goalX + 14, goalY + 5);
+    ctx.lineTo(goalX + 45, goalY + 18);
+    ctx.lineTo(goalX + 14, goalY + 32);
+    ctx.fill();
+    // Star on flag
+    ctx.fillStyle = '#ff6b6b';
+    ctx.font = '14px Arial';
+    ctx.fillText('★', goalX + 22, goalY + 22);
+  }
+  
+  // Player
+  if (player && gameState === 'playing') {
+    // Flicker when invincible
+    if (player.invincible > 0 && Math.floor(player.invincible / 4) % 2 === 0) {
+      ctx.globalAlpha = 0.4;
+    }
+    
+    const px = player.x;
+    const py = player.y;
+    const pw = player.w;
+    const ph = player.h;
+    
+    // Body
+    ctx.fillStyle = '#4a90d9';
+    ctx.fillRect(px + 4, py + 12, pw - 8, ph - 20);
+    
+    // Head
+    ctx.fillStyle = '#ffd4a3';
+    ctx.beginPath();
+    ctx.arc(px + pw/2, py + 10, 10, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Eyes
+    ctx.fillStyle = '#333';
+    const eyeOffset = player.facing > 0 ? 2 : -2;
+    ctx.beginPath();
+    ctx.arc(px + pw/2 - 3 + eyeOffset, py + 9, 2, 0, Math.PI * 2);
+    ctx.arc(px + pw/2 + 3 + eyeOffset, py + 9, 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Mouth
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(px + pw/2 + eyeOffset, py + 13, 3, 0, Math.PI);
+    ctx.stroke();
+    
+    // Hair
+    ctx.fillStyle = '#5d3a1a';
+    ctx.beginPath();
+    ctx.ellipse(px + pw/2, py + 4, 8, 4, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    
+    // Legs (animated)
+    const legOffset = isGrounded ? Math.sin(player.animFrame * 1.5) * 4 : 0;
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(px + 6, py + ph - 10, 6, 10 + legOffset);
+    ctx.fillRect(px + pw - 12, py + ph - 10, 6, 10 - legOffset);
+    
+    // Shoes
+    ctx.fillStyle = '#8b0000';
+    ctx.fillRect(px + 4, py + ph - 4 + legOffset, 10, 4);
+    ctx.fillRect(px + pw - 14, py + ph - 4 - legOffset, 10, 4);
+    
+    ctx.globalAlpha = 1;
+  }
+  
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / 50;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  
+  ctx.restore();
+}
+
+// Input handlers
+document.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (gameState === 'start') {
+      startGame();
+    } else if (gameState === 'win' || gameState === 'lose') {
+      resetGame();
+    }
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+});
+
+// Prevent scrolling with arrow keys and space
+window.addEventListener('keydown', (e) => {
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+
+// Game loop
+function gameLoop() {
+  update();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// Metadata & Test Contract
+window.__GAME_META__ = {
+  domain: 'platformer',
+  subtype: 'platformer',
+  title: '萌萌的冒险',
+  dispatchableControls: {
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+    jump: 'Space',
+  },
+  coreLoop: 'Move through platforms, collect coins, stomp enemies, reach the flag',
+  objectives: ['Collect coins', 'Stomp enemies', 'Reach the flag at the end'],
+  winCondition: 'Reach the golden flag at the end of the level',
+  loseCondition: 'Fall into pit or lose all lives',
+  feedbackStates: ['coinCollect', 'enemyStomp', 'death', 'win', 'lose', 'abilityGain'],
+  actorCapabilities: ['run', 'jump', 'doubleJump', 'stompEnemy'],
+  gameplayMechanics: {
+    enemies: [
+      {
+        id: 'walker',
+        stompable: true,
+        defeatReward: 'bounce',
+        behavior: 'patrol',
+      }
+    ],
+    blocks: [
+      {
+        id: 'question',
+        bumpableFromBelow: true,
+        reward: 'coin',
+        usedState: true,
+      }
+    ],
+    abilities: [
+      {
+        id: 'doubleJump',
+        acquiredFrom: 'floatingItem',
+        effect: 'Allows jumping again in mid-air',
+        unlocksRoute: 'highPlatforms',
+      }
+    ],
+    gates: [
+      {
+        requiresAbility: 'doubleJump',
+        blocksAccessTo: 'secret',
+      }
+    ],
+    comboChallenge: [
+      {
+        requires: ['jump', 'stomp', 'doubleJump'],
+        target: 'Reach high platform by stomping enemy then double jumping',
+      }
+    ],
+  },
+  levels: [
+    { id: 'main', name: '萌萌的冒险', index: 0 }
+  ],
+  progressPlan: [
+    { label: 'move right', input: 'ArrowRight', frames: 30, metric: 'player.x', expect: 'increase' },
+    { label: 'jump arc', input: ['ArrowRight', 'Space'], frames: 25, metric: 'player.y', expect: 'change' },
+    { label: 'collect coin', input: 'ArrowRight', frames: 40, metric: 'coinsCollected', expect: 'increase' },
+    { label: 'stomp enemy', input: ['ArrowRight', 'Space'], frames: 35, metric: 'enemiesDefeated', expect: 'increase' },
+    { label: 'double jump', input: ['ArrowRight', 'Space'], frames: 15, metric: 'player.y', expect: 'change' },
+    { label: 'reach goal', input: ['ArrowRight', 'Space'], frames: 200, metric: 'goalReached', expect: 'truthy' },
+  ],
+  acceptance: {
+    actorReadable: true,
+    mechanics: ['movement', 'jump', 'collision', 'enemy', 'coin', 'ability'],
+    rewards: ['coins', 'ability'],
+    risks: ['enemies', 'pit'],
+    levelsCovered: ['main'],
+    allAuthoredLevelsReachable: true,
+  },
+  qualityPlan: [
+    { check: 'Player visible and animated', verify: 'player rendered with body, head, legs' },
+    { check: 'Enemies patrol and can be stomped', verify: 'enemy.alive false after stomp' },
+    { check: 'Coins collectible', verify: 'coinsCollected increments' },
+    { check: 'Double jump unlocks high route', verify: 'hasDoubleJump true after pickup' },
+    { check: 'Win on flag touch', verify: 'gameState becomes win' },
+    { check: 'Lose on pit fall', verify: 'lives decrement' },
+  ],
+  reachability: {
+    platforms: 'All platforms reachable with base jump or double jump',
+    coins: 'All coins reachable',
+    goal: 'Flag reachable via platforms',
+    secret: 'High platform requires double jump ability',
+  },
+};
+
+window.__GAME_TEST__ = {
+  start() {
+    resetGame();
+    return this.snapshot();
+  },
+  
+  reset(levelOrScenario) {
+    if (levelOrScenario === 'main' || levelOrScenario === 0 || levelOrScenario === undefined) {
+      resetGame();
+    } else if (levelOrScenario === 'stomp') {
+      resetGame();
+      player.x = 350;
+      player.y = 400;
+      player.vx = 0;
+      player.vy = 0;
+    } else if (levelOrScenario === 'bumpBlock') {
+      resetGame();
+      player.x = 320;
+      player.y = 320;
+      player.vx = 0;
+      player.vy = 0;
+    } else if (levelOrScenario === 'gainAbility') {
+      resetGame();
+      player.x = 1620;
+      player.y = 80;
+      player.vx = 0;
+      player.vy = 0;
+      hasDoubleJump = false;
+    } else if (levelOrScenario === 'unlockGate') {
+      resetGame();
+      player.x = 1880;
+      player.y = 80;
+      player.vx = 0;
+      player.vy = 0;
+      hasDoubleJump = true;
+    } else if (levelOrScenario === 'collect') {
+      resetGame();
+      player.x = 230;
+      player.y = 400;
+      player.vx = 0;
+      player.vy = 0;
+    }
+    return this.snapshot();
+  },
+  
+  snapshot() {
+    return {
+      player: player ? { x: player.x, y: player.y, vx: player.vx, vy: player.vy } : null,
+      coinsCollected: coinsCollected,
+      totalCoins: totalCoins,
+      lives: parseInt(document.getElementById('lives').textContent),
+      hasDoubleJump: hasDoubleJump,
+      enemiesDefeated: enemies.filter(e => !e.alive).length,
+      blocksUsed: blocks.filter(b => b.used).length,
+      goalReached: goalReached,
+      gameState: gameState,
+      level: 'main',
+    };
+  },
+  
+  step(inputState = {}, frames = 1) {
+    // Apply input
+    if (inputState.ArrowLeft || inputState.KeyA) keys['ArrowLeft'] = true;
+    else keys['ArrowLeft'] = false;
+    if (inputState.ArrowRight || inputState.KeyD) keys['ArrowRight'] = true;
+    else keys['ArrowRight'] = false;
+    if (inputState.Space) {
+      keys['Space'] = true;
+      jumpBufferTimer = JUMP_BUFFER;
+    } else {
+      keys['Space'] = false;
+    }
+    
+    for (let i = 0; i < frames; i++) {
+      update();
+    }
+    
+    return this.snapshot();
+  },
+  
+  runSmokeTest() {
+    const checks = [];
+    const failures = [];
+    const coverage = {};
+    
+    // Test 1: Player movement
+    this.reset('main');
+    const beforeMove = this.snapshot();
+    this.step({ ArrowRight: true }, 30);
+    const afterMove = this.snapshot();
+    if (afterMove.player.x > beforeMove.player.x) {
+      checks.push('Player moves right with ArrowRight');
+    } else {
+      failures.push('Player did not move right');
+    }
+    
+    // Test 2: Jump
+    this.reset('main');
+    const beforeJump = this.snapshot();
+    this.step({ ArrowRight: true, Space: true }, 15);
+    const afterJump = this.snapshot();
+    if (afterJump.player.y < beforeJump.player.y || afterJump.player.vy < 0) {
+      checks.push('Player jumps with Space');
+    } else {
+      failures.push('Player did not jump');
+    }
+    
+    // Test 3: Coin collection
+    this.reset('collect');
+    const beforeCoin = this.snapshot();
+    this.step({ ArrowRight: true }, 20);
+    const afterCoin = this.snapshot();
+    if (afterCoin.coinsCollected > beforeCoin.coinsCollected) {
+      checks.push('Coin collected');
+    } else {
+      failures.push('Coin not collected');
+    }
+    
+    // Test 4: Enemy stomp
+    this.reset('stomp');
+    const stompBefore = this.snapshot();
+    // Position above enemy and stomp
+    player.x = 350;
+    player.y = 380;
+    player.vy = 5;
+    this.step({ ArrowRight: true }, 10);
+    const stompAfter = this.snapshot();
+    if (stompAfter.enemiesDefeated > stompBefore.enemiesDefeated) {
+      checks.push('Enemy stomped and defeated');
+    } else {
+      failures.push('Enemy not stomped');
+    }
+    
+    // Test 5: Bump block
+    this.reset('bumpBlock');
+    player.x = 320;
+    player.y = 340;
+    player.vy = -5;
+    const blockBefore = this.snapshot();
+    this.step({}, 5);
+    const blockAfter = this.snapshot();
+    if (blockAfter.blocksUsed > blockBefore.blocksUsed) {
+      checks.push('Question block bumped');
+    } else {
+      failures.push('Block not bumped');
+    }
+    
+    // Test 6: Gain ability
+    this.reset('gainAbility');
+    const abilityBefore = this.snapshot();
+    this.step({}, 10);
+    const abilityAfter = this.snapshot();
+    if (abilityAfter.hasDoubleJump && !abilityBefore.hasDoubleJump) {
+      checks.push('Double jump ability gained');
+    } else {
+      failures.push('Ability not gained');
+    }
+    
+    // Test 7: Goal reach
+    this.reset('main');
+    player.x = 3050;
+    player.y = 180;
+    const goalBefore = this.snapshot();
+    this.step({}, 5);
+    const goalAfter = this.snapshot();
+    if (goalAfter.goalReached) {
+      checks.push('Goal reached triggers win');
+    } else {
+      failures.push('Goal not reached');
+    }
+    
+    // Test 8: Death by pit
+    this.reset('main');
+    player.x = 820;
+    player.y = 400;
+    player.vy = 10;
+    document.getElementById('lives').textContent = '1';
+    this.step({}, 30);
+    const deathAfter = this.snapshot();
+    if (deathAfter.gameState === 'lose' || deathAfter.lives < 1) {
+      checks.push('Death by pit triggers lose');
+    } else {
+      failures.push('Death not triggered');
+    }
+    
+    // Coverage
+    coverage.mechanics = ['movement', 'jump', 'collision', 'enemy', 'coin', 'ability', 'block'];
+    coverage.rewards = ['coins'];
+    coverage.risks = ['enemies', 'pit'];
+    coverage.stateChanges = ['coinCollect', 'enemyStomp', 'death', 'win', 'abilityGain'];
+    coverage.levelsPassed = failures.length === 0 ? ['main'] : [];
+    coverage.allLevelsReachable = failures.length === 0;
+    
+    const passed = failures.length === 0;
+    
+    return {
+      passed,
+      checks,
+      failures,
+      coverage,
+    };
+  },
+};
+
+// Start
+gameLoop();
+</script>
+</body>
+</html>

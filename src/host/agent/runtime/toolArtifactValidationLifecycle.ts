@@ -131,7 +131,13 @@ export async function handleModifiedArtifactValidation({
       : null;
 
     if (validation.shouldValidate && !validation.passed) {
-      runFinalizer.emitTaskProgress('tool_running', 'artifact 验收失败，正在准备修复指令...');
+      const failureMap = getArtifactValidationFailureMap(ctx);
+      const previousFailure = failureMap.get(absolutePath);
+      const attempts = (previousFailure?.attempts || 0) + 1;
+      runFinalizer.emitTaskProgress(
+        'tool_running',
+        `artifact 验收失败，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} 次修复...`,
+      );
       ctx.artifactValidationPassedTargetFile = undefined;
       const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
         ? readFileSync(absolutePath, 'utf-8')
@@ -168,12 +174,9 @@ export async function handleModifiedArtifactValidation({
         await fileReadTracker.recordReadWithStats(absolutePath);
       }
       const repairSpecBlock = formatArtifactRepairSpecForPrompt(repairSpec);
-      const failureMap = getArtifactValidationFailureMap(ctx);
-      const previousFailure = failureMap.get(absolutePath);
       const previousGuard = ctx.artifactRepairGuard?.targetFile === absolutePath
         ? ctx.artifactRepairGuard
         : undefined;
-      const attempts = (previousFailure?.attempts || 0) + 1;
       const phase: ArtifactRepairPhase = attempts >= 3
         ? 'read_then_patch'
         : attempts >= 2

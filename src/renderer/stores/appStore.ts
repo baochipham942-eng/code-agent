@@ -693,7 +693,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
           ...state,
           activePreviewTabId: existing.id,
           previewTabs: state.previewTabs.map((t) =>
-            t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
+            t.id === existing.id
+              ? {
+                  ...t,
+                  lastActivatedAt: nextPreviewTabTick(),
+                  // 产物可能在上次打开后被修复/重写过；重新打开时若没有未保存的
+                  // 编辑（content===savedContent），重置 isLoaded 让加载 effect
+                  // 重读磁盘，避免 iframe 一直渲染修复前的旧版本。
+                  isLoaded: t.content !== t.savedContent ? t.isLoaded : false,
+                }
+              : t,
           ),
           workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
             ? state.workbenchTabs

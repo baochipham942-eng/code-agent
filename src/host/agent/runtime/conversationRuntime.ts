@@ -56,6 +56,7 @@ import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
 import { goalTokensUsedWithSwarm, maybeInjectSwarmGuidance } from './swarmGoalIntegration';
+import { getGoalArtifactRepairAbortReason } from './toolArtifactRepairPolicy';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
@@ -361,7 +362,12 @@ export class ConversationRuntime {
               wallClockBudgetMs: this.ctx.goalMode.getWallClockBudgetMs(),
             },
           });
-          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
+          // 盲修循环止损（闸3 扩展）：artifact 修复 attempts 达 2×上限仍未过验收
+          // → 与轮次/预算/无进展同款硬中止（admission stop 只停当轮，兜不住 goal 重进 repair）。
+          const repairAbortReason = getGoalArtifactRepairAbortReason(this.ctx);
+          const fallback = repairAbortReason
+            ? { stop: true, reason: repairAbortReason }
+            : this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
             this.ctx.goalMode.markAborted(reason);

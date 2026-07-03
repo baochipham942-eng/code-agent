@@ -13,6 +13,7 @@ import type { ContextAssembly } from './contextAssembly';
 import { GOAL_MODE } from '../../../shared/constants';
 import { getDatabase } from '../../services/core/databaseService';
 import { runReviewGate } from '../goalReviewGate';
+import { runGoalEvidenceGate } from './goalEvidenceGate';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import {
   buildVerificationCard,
@@ -72,6 +73,29 @@ export async function handleGoalCompletionGate(
   const rawSummary = completionCall.arguments?.summary;
   const summary = typeof rawSummary === 'string' ? rawSummary : '';
   ctx.goalMode.requestCompletion(summary);
+
+  // 闸0（公开证据自证核验，maka self-check gate 借鉴）：零 LLM 成本的程序化前置闸。
+  // 产物文件存在性 + 命令真实执行过；不足则有界打回，预算用尽放行进闸1/闸2。
+  const evidenceVerdict = runGoalEvidenceGate(ctx, completionCall);
+  ctx.turnTrace?.record('goal_evidence_gate', {
+    verdict: evidenceVerdict.verdict,
+    reason: evidenceVerdict.reason,
+    evidenceRefs: evidenceVerdict.evidenceRefs,
+  });
+  ctx.onEvent({
+    type: 'goal_gate',
+    data: {
+      gate: 0,
+      pass: evidenceVerdict.verdict !== 'bounce',
+      reason: evidenceVerdict.reason,
+      evidenceRefs: evidenceVerdict.evidenceRefs,
+    },
+  });
+  if (evidenceVerdict.verdict === 'bounce') {
+    ctx.goalMode.clearCompletionRequest();
+    contextAssembly.injectSystemMessage(evidenceVerdict.feedback ?? evidenceVerdict.reason);
+    return 'continue';
+  }
 
   const reviewCondition = ctx.goalMode.getReviewCondition();
   const verificationPlan = buildVerificationPlan({

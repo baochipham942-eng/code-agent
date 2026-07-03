@@ -88,6 +88,8 @@ function harness(opts?: { reviewCondition?: string }): TestHarness {
   const ctx: TestHarness['ctx'] = {
     goalMode,
     workingDirectory: '/tmp/w',
+    // 闸0（证据自证）打回预算标记为已耗尽 → 直通闸1/闸2，本文件只测三分支裁决
+    goalEvidenceGateBounces: 99,
     sessionId: 'sess-1',
     onEvent: (e: { type: string; data: Record<string, unknown> }) => events.push(e),
     turnTrace: { record: vi.fn() },

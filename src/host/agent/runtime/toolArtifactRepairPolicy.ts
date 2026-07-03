@@ -1,4 +1,6 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { GOAL_MODE } from '../../../shared/constants/agent';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 import { createHash } from 'crypto';
@@ -739,6 +741,25 @@ export function getArtifactValidationFailureMap(ctx: RuntimeContext): Map<string
     runtimeCtx.artifactValidationFailures = new Map();
   }
   return runtimeCtx.artifactValidationFailures;
+}
+
+/**
+ * goal 模式盲修循环止损判据（供 conversationRuntime 闸3 消费）：
+ * admission stop 只 force 当轮 final response，goal 未达成会重进 repair、
+ * attempts 无限涨（dogfood 实测烧到 6/4 仍在修）；修复轮有文件变更，
+ * 闸3 的无进展兜底抓不住。任一目标文件 attempts 达到
+ * ARTIFACT_REPAIR_MAX_ATTEMPTS × ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER
+ * → 返回中止理由，走闸3 同款 markAborted 收尾。
+ */
+export function getGoalArtifactRepairAbortReason(ctx: RuntimeContext): string | null {
+  const failureMap = getArtifactValidationFailureMap(ctx);
+  const abortThreshold = ARTIFACT_REPAIR_MAX_ATTEMPTS * GOAL_MODE.ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER;
+  for (const [targetFile, failure] of failureMap) {
+    if (failure.attempts >= abortThreshold) {
+      return `artifact 修复 ${failure.attempts} 次（${GOAL_MODE.ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER}×上限）仍未通过验收，中止 goal 避免盲修循环；目标文件 ${targetFile}`;
+    }
+  }
+  return null;
 }
 
 export function buildArtifactRepairInstruction(

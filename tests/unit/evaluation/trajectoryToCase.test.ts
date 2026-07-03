@@ -152,12 +152,12 @@ describe('draftFileName（幂等=稳定判别符，不是位置序号）', () =>
   it('同 source+session+判别符 → 同文件名；不同 source 不冲突', () => {
     expect(draftFileName('feedback', 's1', 'fb-1')).toBe(draftFileName('feedback', 's1', 'fb-1'));
     expect(draftFileName('feedback', 's1', 'fb-1')).not.toBe(draftFileName('quality', 's1', 'fb-1'));
-    expect(draftFileName('feedback', 'web-session-123', 'fb-9')).toMatch(/^draft-feedback-web-session-123-fb-9\.yaml$/);
+    expect(draftFileName('feedback', 'web-session-123', 'fb-9')).toMatch(/^draft-feedback-web-session-123-fb-9-[0-9a-f]{6}\.yaml$/);
   });
 
   it('判别符与 session id 中的特殊字符被清洗（防路径穿越）', () => {
     const name = draftFileName('feedback', '../evil', 'a/b');
-    expect(name).toBe('draft-feedback--evil-a-b.yaml');
+    expect(name).toMatch(/^draft-feedback--evil-a-b-[0-9a-f]{6}\.yaml$/);
     expect(name).not.toContain('/');
     expect(name).not.toContain('..');
   });
@@ -203,5 +203,41 @@ describe('resolveTurnPrompt（telemetry_turns 优先级）', () => {
   it('turns 表无该会话数据 → null（让调用方退 messages 回溯）', async () => {
     const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
     expect(resolveTurnPrompt(makeTurnsDb(), 's-none', { turnId: null, anchorTimestamp: null })).toBeNull();
+  });
+});
+
+describe('Gemini 审计 R1 修复', () => {
+  it('HIGH1: anchorTimestamp 早于全部 turns → null（不得回落最新 prompt）', async () => {
+    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE telemetry_turns (id TEXT PRIMARY KEY, session_id TEXT, turn_number INTEGER, start_time INTEGER, user_prompt TEXT);`);
+    db.prepare('INSERT INTO telemetry_turns VALUES (?,?,?,?,?)').run('t1', 's1', 1, 100, '晚于反馈的原话');
+    expect(resolveTurnPrompt(db, 's1', { turnId: null, anchorTimestamp: 50 })).toBeNull();
+  });
+
+  it('MED1: 文件名连接符歧义不再产生碰撞', async () => {
+    const { draftFileName } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const a = draftFileName('feedback', 's1-a', '1');
+    const b = draftFileName('feedback', 's1', 'a-1');
+    expect(a).not.toBe(b);
+  });
+
+  it('HIGH2: writeDraftFiles 单文件写失败不炸整批，失败记入 failed', async () => {
+    const { writeDraftFiles } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { mkdtemp, chmod } = await import('fs/promises');
+    const os = await import('os');
+    const path = await import('path');
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'tocase-write-'));
+    await chmod(dir, 0o500); // 只读目录
+    const result = await writeDraftFiles(
+      [
+        { id: 'x', source: 'feedback', discriminator: 'f1', prompt: 'p', sourceSessionId: 's1' },
+        { id: 'y', source: 'feedback', discriminator: 'f2', prompt: 'p', sourceSessionId: 's1' },
+      ],
+      dir,
+    );
+    await chmod(dir, 0o700);
+    expect(result.failed).toHaveLength(2);
+    expect(result.written).toHaveLength(0);
   });
 });

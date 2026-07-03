@@ -10,22 +10,19 @@
 // 只读：数据库以 readonly 打开，绝不写 live 数据。
 // ============================================================================
 
-import { createHash } from 'crypto';
-import { mkdir, writeFile, access } from 'fs/promises';
+
 import { homedir } from 'os';
 import path from 'path';
 import process from 'process';
 import Database from 'better-sqlite3';
 import {
-  buildDraftYaml,
-  draftFileName,
   journalPatternToDraftSeed,
   queryNegativeFeedback,
   resolveFeedbackPrompt,
   resolveTurnPrompt,
   selectRiskTurnMessages,
+  writeDraftFiles,
   type DraftSeed,
-  type DraftSource,
 } from '../src/host/evaluation/trajectoryToCase';
 import type { Message } from '../src/shared/contract';
 
@@ -84,6 +81,7 @@ function rowToMessage(row: RawMessageRow): Message {
     try {
       metadata = JSON.parse(row.metadata) as Record<string, unknown>;
     } catch {
+      console.warn(`metadata JSON 解析失败，忽略该列（message ${row.id}）`);
       metadata = undefined;
     }
   }
@@ -160,6 +158,7 @@ async function main(): Promise<void> {
         .prepare(
           `SELECT id, session_id, role, content, timestamp, metadata FROM messages
            WHERE role = 'assistant' AND metadata LIKE '%turnQuality%'
+             AND metadata LIKE '%"grade":"risk"%'
            ORDER BY timestamp DESC LIMIT 500`,
         )
         .all() as RawMessageRow[];
@@ -207,31 +206,14 @@ async function main(): Promise<void> {
     if (patterns.length === 0) skipped.push('journal：无已沉淀失败模式');
   }
 
-  await mkdir(outDir, { recursive: true });
-  const written: string[] = [];
-  const existed: string[] = [];
-
-  for (const seed of seeds) {
-    const fileName = draftFileName(seed.source as DraftSource, seed.sourceSessionId, seed.discriminator);
-    const filePath = path.join(outDir, fileName);
-    try {
-      await access(filePath);
-      existed.push(fileName);
-      continue; // 幂等：已存在的草稿不覆盖（可能已被人工编辑）
-    } catch {
-      // 不存在 → 写入
-    }
-    // case id 与文件名对齐（文件名是幂等真源，seed.id 的临时序号作废）
-    const alignedSeed = { ...seed, id: fileName.replace(/\.yaml$/, '') };
-    await writeFile(filePath, buildDraftYaml(alignedSeed), 'utf-8');
-    written.push(fileName);
-  }
+  const { written, existed, failed } = await writeDraftFiles(seeds, outDir);
 
   const summary = {
     dataDir,
     outDir,
     generated: written,
     skippedExisting: existed,
+    writeFailed: failed,
     skippedNoPrompt: skipped,
   };
   if (hasFlag('--json')) {
@@ -240,6 +222,7 @@ async function main(): Promise<void> {
     console.log(`草稿输出目录: ${outDir}`);
     console.log(`新生成 ${written.length} 个：${written.join(', ') || '无'}`);
     if (existed.length) console.log(`已存在跳过 ${existed.length} 个：${existed.join(', ')}`);
+    if (failed.length) console.log(`写入失败 ${failed.length} 个：${failed.map((f) => `${f.file}（${f.error}）`).join('; ')}`);
     if (skipped.length) console.log(`无法生成 ${skipped.length} 个：${skipped.join('; ')}`);
     if (written.length) console.log('\n下一步：按草稿顶部 checklist 人工补 deterministic 断言后移出 drafts/。');
   }

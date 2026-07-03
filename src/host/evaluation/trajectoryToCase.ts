@@ -6,6 +6,9 @@
 // （自动生成断言违反 manual_review 纪律），未补断言前天然落 self_check 弱证据桶。
 // ============================================================================
 
+import { createHash } from 'crypto';
+import { promises as fsp } from 'fs';
+import path from 'path';
 import { dump as dumpYaml } from 'js-yaml';
 import type { Database as SQLiteDatabase } from 'better-sqlite3';
 import type { Message } from '../../shared/contract';
@@ -108,8 +111,10 @@ export function resolveTurnPrompt(
     .all(sessionId) as Array<{ user_prompt: string; start_time: number }>;
   if (rows.length === 0) return null;
   if (anchor.anchorTimestamp !== null) {
+    // 锚点早于全部 turns → null 让调用方走 messages 回溯；
+    // 回落"会话最新 prompt"会拿到晚于反馈的原话（Gemini 审计 R1 HIGH）。
     const before = rows.find((r) => r.start_time <= anchor.anchorTimestamp!);
-    if (before) return before.user_prompt;
+    return before ? before.user_prompt : null;
   }
   return rows[0].user_prompt;
 }
@@ -179,5 +184,45 @@ export function buildDraftYaml(seed: DraftSeed): string {
  */
 export function draftFileName(source: DraftSource, sessionId: string, discriminator: string | number): string {
   const clean = (v: string) => v.replace(/[^a-zA-Z0-9_-]+/g, '-');
-  return `draft-${source}-${clean(sessionId)}-${clean(String(discriminator))}.yaml`;
+  // 清洗把特殊字符折叠成 '-'，纯拼接会产生歧义碰撞（s1-a + 1 == s1 + a-1，
+  // Gemini 审计 R1 MED）——追加原始三元组的短哈希做唯一性兜底。
+  const uniq = createHash('sha1')
+    .update(`${source}|${sessionId}|${String(discriminator)}`)
+    .digest('hex')
+    .slice(0, 6);
+  return `draft-${source}-${clean(sessionId)}-${clean(String(discriminator))}-${uniq}.yaml`;
+}
+
+export interface WriteDraftsResult {
+  written: string[];
+  existed: string[];
+  failed: Array<{ file: string; error: string }>;
+}
+
+/**
+ * 批量写草稿：已存在跳过（幂等，防覆盖人工编辑）；单文件写失败只记入
+ * failed 不炸整批（Gemini 审计 R1 HIGH——此前 writeFile 异常会丢掉剩余种子）。
+ */
+export async function writeDraftFiles(seeds: DraftSeed[], outDir: string): Promise<WriteDraftsResult> {
+  await fsp.mkdir(outDir, { recursive: true });
+  const result: WriteDraftsResult = { written: [], existed: [], failed: [] };
+  for (const seed of seeds) {
+    const fileName = draftFileName(seed.source, seed.sourceSessionId, seed.discriminator);
+    const filePath = path.join(outDir, fileName);
+    try {
+      await fsp.access(filePath);
+      result.existed.push(fileName);
+      continue;
+    } catch {
+      // 不存在（或不可读——写失败会在下面如实上报）→ 尝试写入
+    }
+    try {
+      const alignedSeed = { ...seed, id: fileName.replace(/\.yaml$/, '') };
+      await fsp.writeFile(filePath, buildDraftYaml(alignedSeed), 'utf-8');
+      result.written.push(fileName);
+    } catch (error) {
+      result.failed.push({ file: fileName, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return result;
 }

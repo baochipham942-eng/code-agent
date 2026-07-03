@@ -25,6 +25,8 @@ export interface NegativeFeedbackRow {
 export interface DraftSeed {
   id: string;
   source: DraftSource;
+  /** 幂等判别符：feedback 行 id / message id / journal key 短哈希（非位置序号） */
+  discriminator: string;
   prompt: string;
   sourceSessionId: string;
   note?: string;
@@ -124,7 +126,7 @@ export function selectRiskTurnMessages(messages: Message[]): Message[] {
  * journal 只有跨会话沉淀的模式（无单次用户原话），prompt 用模式描述占位，
  * 人工 review 时应替换为能复现该失败的真实任务描述。
  */
-export function journalPatternToDraftSeed(pattern: FailurePattern): Omit<DraftSeed, 'id' | 'source'> {
+export function journalPatternToDraftSeed(pattern: FailurePattern): Omit<DraftSeed, 'id' | 'source' | 'discriminator'> {
   const sessionId = pattern.sessions[pattern.sessions.length - 1] ?? 'unknown-session';
   return {
     prompt: `【journal 模式占位，review 时替换为可复现任务】${pattern.pattern}`,
@@ -169,8 +171,13 @@ export function buildDraftYaml(seed: DraftSeed): string {
   return `${CHECKLIST_HEADER}${body}`;
 }
 
-/** 幂等文件名：同 source+session+序号 → 同名（重复跑不重复堆文件）。 */
-export function draftFileName(source: DraftSource, sessionId: string, index: number): string {
-  const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]+/g, '-');
-  return `draft-${source}-${safeSession}-${index}.yaml`;
+/**
+ * 幂等文件名：同 source+session+稳定判别符 → 同名。
+ * 判别符必须来自信号本体（feedback 行 id / message id / journal key），
+ * 不能用列表位置序号——新信号到来会让序号漂移，旧文件被误判存在、
+ * 新信号被跳过（自查抓到的缺陷）。所有片段清洗防路径穿越。
+ */
+export function draftFileName(source: DraftSource, sessionId: string, discriminator: string | number): string {
+  const clean = (v: string) => v.replace(/[^a-zA-Z0-9_-]+/g, '-');
+  return `draft-${source}-${clean(sessionId)}-${clean(String(discriminator))}.yaml`;
 }

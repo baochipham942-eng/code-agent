@@ -115,6 +115,7 @@ describe('buildDraftYaml', () => {
     const yamlText = buildDraftYaml({
       id: 'draft-feedback-s1-1',
       source: 'feedback',
+      discriminator: 'fb-1',
       prompt: '帮我做个游戏',
       sourceSessionId: 's1',
       note: '用户点踩：bad answer',
@@ -138,6 +139,7 @@ describe('buildDraftYaml', () => {
     const yamlText = buildDraftYaml({
       id: 'draft-x',
       source: 'quality',
+      discriminator: 'm-1',
       prompt: 'a: b\n- "quoted" #hash',
       sourceSessionId: 's1',
     });
@@ -146,11 +148,26 @@ describe('buildDraftYaml', () => {
   });
 });
 
-describe('draftFileName（幂等）', () => {
-  it('同 source+session+序号 → 同文件名；不同 source 不冲突', () => {
-    expect(draftFileName('feedback', 's1', 0)).toBe(draftFileName('feedback', 's1', 0));
-    expect(draftFileName('feedback', 's1', 0)).not.toBe(draftFileName('quality', 's1', 0));
-    expect(draftFileName('feedback', 'web-session-123', 1)).toMatch(/^draft-feedback-web-session-123-1\.yaml$/);
+describe('draftFileName（幂等=稳定判别符，不是位置序号）', () => {
+  it('同 source+session+判别符 → 同文件名；不同 source 不冲突', () => {
+    expect(draftFileName('feedback', 's1', 'fb-1')).toBe(draftFileName('feedback', 's1', 'fb-1'));
+    expect(draftFileName('feedback', 's1', 'fb-1')).not.toBe(draftFileName('quality', 's1', 'fb-1'));
+    expect(draftFileName('feedback', 'web-session-123', 'fb-9')).toMatch(/^draft-feedback-web-session-123-fb-9\.yaml$/);
+  });
+
+  it('判别符与 session id 中的特殊字符被清洗（防路径穿越）', () => {
+    const name = draftFileName('feedback', '../evil', 'a/b');
+    expect(name).toBe('draft-feedback--evil-a-b.yaml');
+    expect(name).not.toContain('/');
+    expect(name).not.toContain('..');
+  });
+
+  it('新信号加入不改变旧信号的文件名（序号漂移回归）', () => {
+    // 位置序号命名下，倒序列表头部插入新反馈会让旧反馈文件名整体 +1 漂移；
+    // 稳定判别符命名下与列表顺序无关。
+    const before = draftFileName('feedback', 's1', 'fb-old');
+    const after = draftFileName('feedback', 's1', 'fb-old');
+    expect(after).toBe(before);
   });
 });
 

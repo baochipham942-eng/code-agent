@@ -10,6 +10,7 @@
 // 只读：数据库以 readonly 打开，绝不写 live 数据。
 // ============================================================================
 
+import { createHash } from 'crypto';
 import { mkdir, writeFile, access } from 'fs/promises';
 import { homedir } from 'os';
 import path from 'path';
@@ -144,8 +145,9 @@ async function main(): Promise<void> {
           return;
         }
         seeds.push({
-          id: `draft-feedback-${row.sessionId}-${index}`,
+          id: `draft-feedback-${row.sessionId}-${row.id}`,
           source: 'feedback',
+          discriminator: row.id,
           prompt,
           sourceSessionId: row.sessionId,
           note: `用户点踩${row.comment ? `：${row.comment}` : ''}`,
@@ -172,8 +174,9 @@ async function main(): Promise<void> {
           return;
         }
         seeds.push({
-          id: `draft-quality-${sessionId}-${index}`,
+          id: `draft-quality-${sessionId}-${message.id}`,
           source: 'quality',
+          discriminator: message.id,
           prompt,
           sourceSessionId: sessionId,
           note: 'turnQuality 总评 risk 回合',
@@ -190,11 +193,14 @@ async function main(): Promise<void> {
     process.env.CODE_AGENT_DATA_DIR = dataDir;
     const { loadFailureJournalEntries } = await import('../src/host/lightMemory/failureJournal');
     const patterns = await loadFailureJournalEntries();
-    patterns.slice(0, limit).forEach((pattern, index) => {
+    patterns.slice(0, limit).forEach((pattern) => {
       const seedBase = journalPatternToDraftSeed(pattern);
+      // journal 判别符 = 模式 key 的短哈希（key 含工具名+错误类别+归一化消息，稳定）
+      const discriminator = createHash('sha1').update(pattern.key).digest('hex').slice(0, 8);
       seeds.push({
-        id: `draft-journal-${seedBase.sourceSessionId}-${index}`,
+        id: `draft-journal-${seedBase.sourceSessionId}-${discriminator}`,
         source: 'journal',
+        discriminator,
         ...seedBase,
       });
     });
@@ -204,13 +210,9 @@ async function main(): Promise<void> {
   await mkdir(outDir, { recursive: true });
   const written: string[] = [];
   const existed: string[] = [];
-  const perSourceCounter = new Map<string, number>();
 
   for (const seed of seeds) {
-    const counterKey = `${seed.source}:${seed.sourceSessionId}`;
-    const index = perSourceCounter.get(counterKey) ?? 0;
-    perSourceCounter.set(counterKey, index + 1);
-    const fileName = draftFileName(seed.source as DraftSource, seed.sourceSessionId, index);
+    const fileName = draftFileName(seed.source as DraftSource, seed.sourceSessionId, seed.discriminator);
     const filePath = path.join(outDir, fileName);
     try {
       await access(filePath);

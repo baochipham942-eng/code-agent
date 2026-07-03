@@ -777,6 +777,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           thinking: runEventCollector.assistantThinking || undefined,
           contentParts: runEventCollector.hasInterleaving() ? runEventCollector.contentParts : undefined,
           artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+          metadata: runEventCollector.assistantMetadata,
         });
       }
       sessionMessages.set(sessionId, cached);
@@ -847,6 +848,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
                 thinking: runEventCollector.assistantThinking || undefined,
                 artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+                metadata: runEventCollector.assistantMetadata,
               } as import('../../shared/contract').Message);
             }
           } else {
@@ -871,6 +873,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
                 thinking: runEventCollector.assistantThinking || undefined,
                 artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+                metadata: runEventCollector.assistantMetadata,
               } as import('../../shared/contract').Message);
             }
           }

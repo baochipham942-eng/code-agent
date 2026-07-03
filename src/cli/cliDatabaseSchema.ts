@@ -20,11 +20,7 @@ export function migrateCliSessionsTable(db: CliDb): void {
   ];
 
   for (const migration of migrations) {
-    try {
-      db.exec(migration.sql);
-    } catch {
-      // 列已存在，忽略
-    }
+    addColumnIfMissing(db, migration.sql);
   }
 
   // 2026-04-15: 彻底移除废弃的 sessions.generation_id 列（见 databaseService.ts 同名迁移）
@@ -32,6 +28,21 @@ export function migrateCliSessionsTable(db: CliDb): void {
     db.exec('ALTER TABLE sessions DROP COLUMN generation_id');
   } catch {
     // 列不存在（新装或已迁移），忽略
+  }
+}
+
+/**
+ * 幂等加列：只吞「列已存在」错误，其余（锁/损坏/表缺失）上抛——
+ * 否则迁移静默失败后首次 INSERT 会因缺列硬崩（Codex audit R1-MED1）。
+ */
+export function addColumnIfMissing(db: CliDb, ddl: string): void {
+  if (!db) return;
+  try {
+    db.exec(ddl);
+  } catch (error) {
+    if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
+      throw error;
+    }
   }
 }
 
@@ -69,40 +80,24 @@ export function createCliTables(db: CliDb): void {
     )
   `);
 
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
-  } catch {
-    // 列已存在
-  }
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN attachments TEXT`);
 
   // content_parts 列：保留 text/tool_call 的交错顺序。缺失时 renderer 落 fallback
   // （正文恒在工具组之上），会把"先搜索后总结"的时序倒过来。
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN content_parts TEXT`);
-  } catch {
-    // 列已存在
-  }
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN content_parts TEXT`);
 
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0`);
-  } catch {
-    // 列已存在
-  }
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0`);
 
   // thinking 列：持久化模型推理/思考过程。缺失时 webServer/CLI 落库会丢 thinking，
   // 刷新后实时态显示过的 ▶思考 凭空消失（与持久态不一致）。
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN thinking TEXT`);
-  } catch {
-    // 列已存在
-  }
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN thinking TEXT`);
+
+  // metadata 列：持久化消息级 metadata（turnQuality 安静徽标等）。缺失时 web 生产
+  // 路径（AgentLoop → CLISessionManager 落库）会丢 metadata，reload 后徽标消失。
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN metadata TEXT`);
 
   // 添加 pr_link 列（如果不存在）
-  try {
-    db.exec(`ALTER TABLE sessions ADD COLUMN pr_link TEXT`);
-  } catch {
-    // 列已存在
-  }
+  addColumnIfMissing(db, `ALTER TABLE sessions ADD COLUMN pr_link TEXT`);
 
   // Tool Executions 表 (缓存)
   db.exec(`
@@ -212,11 +207,7 @@ export function createCliTables(db: CliDb): void {
     'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_before TEXT',
     'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_after TEXT',
   ]) {
-    try {
-      db.exec(sql);
-    } catch {
-      // 列已存在，忽略
-    }
+    addColumnIfMissing(db, sql);
   }
 
   // Episodic FTS5 index — 与 Electron DatabaseService 的 schema 保持一致，

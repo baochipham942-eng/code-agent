@@ -31,6 +31,7 @@ export interface CachedMessage {
   contentParts?: CachedContentPart[];
   artifacts?: Artifact[];
   attachments?: MessageAttachment[];
+  metadata?: Message['metadata'];
 }
 
 export interface InMemorySession {
@@ -124,6 +125,7 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
         contentParts: message.contentParts as CachedContentPart[] | undefined,
         artifacts: message.artifacts,
         attachments: sanitizeAttachmentsForPersistence(message.attachments),
+        metadata: message.metadata,
       };
     })
     .filter((message): message is CachedMessage => Boolean(message));

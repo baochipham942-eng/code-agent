@@ -13,6 +13,8 @@ interface AgentRunEventCollectorDeps {
 export class AgentRunEventCollector {
   assistantText = '';
   assistantThinking = '';
+  /** message 事件上最后一次出现的 assistant metadata（turnQuality 徽标数据），落库时对称带上 */
+  assistantMetadata: Message['metadata'] | undefined;
   readonly assistantToolCalls: CachedToolCall[] = [];
   readonly loopEmittedAssistantMessageIds = new Set<string>();
   readonly contentParts: AgentRunContentPart[] = [];
@@ -85,8 +87,12 @@ export class AgentRunEventCollector {
   }
 
   private recordLoopMessage(message: Message): void {
-    if (message.id && message.role === 'assistant') {
+    if (message.role !== 'assistant') return;
+    if (message.id) {
       this.loopEmittedAssistantMessageIds.add(message.id);
+    }
+    if (message.metadata) {
+      this.assistantMetadata = message.metadata;
     }
   }
 

@@ -1,6 +1,13 @@
 // ============================================================================
 // L0: Active Tool Result Prune Tests
 // ============================================================================
+// NOTE on fixtures: L0 only prunes tool results the model has already moved
+// past — i.e. results at or before the LAST assistant message in the array.
+// A tool result with no later assistant message is the current step's
+// freshly-returned result (model hasn't seen it yet) and is exempt, falling
+// through to L1's lossy head+tail truncation instead. Fixtures below append
+// a trailing assistant message wherever pruning is expected to happen.
+// ============================================================================
 
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
@@ -33,6 +40,10 @@ function makeToolMsg(id: string, content: string, toolName?: string): TestMessag
   return { id, role: 'tool', content, toolName };
 }
 
+function makeAssistantMsg(id: string, content: string): TestMessage {
+  return { id, role: 'assistant', content };
+}
+
 /** Generate text of approximately `targetTokens` tokens. */
 function makeText(targetTokens: number): string {
   return 'word '.repeat(targetTokens);
@@ -56,7 +67,7 @@ describe('applyActiveToolResultPrune', () => {
     it('does nothing when disabled', () => {
       const bigContent = makeText(5000);
       const msg = makeToolMsg('t1', bigContent);
-      const pruned = applyActiveToolResultPrune([msg], state, {
+      const pruned = applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: false,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-disabled',
@@ -69,7 +80,7 @@ describe('applyActiveToolResultPrune', () => {
     it('leaves content under the threshold untouched', () => {
       const content = 'short result';
       const msg = makeToolMsg('t1', content);
-      const pruned = applyActiveToolResultPrune([msg], state, {
+      const pruned = applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-under',
@@ -81,6 +92,66 @@ describe('applyActiveToolResultPrune', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Current-step exemption (回修 #1·MED)
+  // --------------------------------------------------------------------------
+  describe('current-step exemption', () => {
+    it('does not prune a tool result with no assistant message after it (current step, model has not seen it yet)', () => {
+      const bigContent = makeText(5000);
+      const msg = makeToolMsg('t1', bigContent);
+      // assistant 在前（请求了工具调用），结果紧随其后 —— 模型还没看过这条结果
+      const pruned = applyActiveToolResultPrune([makeAssistantMsg('a0', 'calling tool'), msg], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-current-step',
+      });
+      expect(pruned).toBe(0);
+      expect(msg.content).toBe(bigContent);
+      expect(state.getCommitLog()).toHaveLength(0);
+    });
+
+    it('exempts everything when the transcript has no assistant message at all (conservative default)', () => {
+      const bigContent = makeText(5000);
+      const msg = makeToolMsg('t1', bigContent);
+      const pruned = applyActiveToolResultPrune([msg], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-no-assistant',
+      });
+      expect(pruned).toBe(0);
+      expect(msg.content).toBe(bigContent);
+    });
+
+    it('prunes a tool result that a later assistant message has already responded to (past step, consumed)', () => {
+      const bigContent = makeText(5000);
+      const msg = makeToolMsg('t1', bigContent);
+      const pruned = applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-past-step',
+      });
+      expect(pruned).toBe(1);
+      expect(msg.content).toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
+    });
+
+    it('only exempts results after the LAST assistant message — earlier results in the same array still get pruned', () => {
+      const oldBig = makeText(5000);
+      const newBig = makeText(5000);
+      const oldMsg = makeToolMsg('t-old', oldBig);
+      const newMsg = makeToolMsg('t-new', newBig);
+
+      const pruned = applyActiveToolResultPrune(
+        [oldMsg, makeAssistantMsg('a-mid', 'first reply'), newMsg],
+        state,
+        { enabled: true, maxTokensPerResult: 4096, spillSessionId: 'sess-mixed-steps' },
+      );
+
+      expect(pruned).toBe(1);
+      expect(oldMsg.content).toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
+      expect(newMsg.content).toBe(newBig);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Placeholder replacement
   // --------------------------------------------------------------------------
   describe('placeholder replacement', () => {
@@ -88,7 +159,7 @@ describe('applyActiveToolResultPrune', () => {
       const bigContent = makeText(5000);
       const msg = makeToolMsg('t1', bigContent, 'Bash');
 
-      const pruned = applyActiveToolResultPrune([msg], state, {
+      const pruned = applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-1',
@@ -109,17 +180,35 @@ describe('applyActiveToolResultPrune', () => {
       expect(fs.readFileSync(archivePath, 'utf-8')).toBe(bigContent);
     });
 
-    it('includes a 200-char preview of the original content', () => {
+    it('includes a 200-code-point preview of the original content', () => {
       const bigContent = 'X'.repeat(50) + makeText(5000);
       const msg = makeToolMsg('t1', bigContent);
 
-      applyActiveToolResultPrune([msg], state, {
+      applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-preview',
       });
 
       expect(msg.content).toContain(bigContent.slice(0, 200));
+    });
+
+    it('does not split a surrogate pair (emoji) sitting at the 200-code-point boundary (回修 #3·LOW)', () => {
+      const emoji = '😀'; // U+1F600 — 2 UTF-16 code units, 1 code point
+      const padding = 'a'.repeat(199);
+      const content = padding + emoji + makeText(5000);
+      const msg = makeToolMsg('t1', content);
+
+      applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-surrogate',
+      });
+
+      // 200 个码点 = 199 个 'a' + 完整的一个 emoji（不是被切开的半个代理对）
+      expect(msg.content).toContain(padding + emoji);
+      // 不应出现孤立代理项（naive string.slice 从代理对中间切开的乱码信号）
+      expect(msg.content).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     });
   });
 
@@ -131,7 +220,7 @@ describe('applyActiveToolResultPrune', () => {
       const bigContent = makeText(5000);
       const msg = makeToolMsg('t1', bigContent);
 
-      const pruned = applyActiveToolResultPrune([msg], state, {
+      const pruned = applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         protectedMessageIds: new Set(['t1']),
@@ -149,14 +238,11 @@ describe('applyActiveToolResultPrune', () => {
   // --------------------------------------------------------------------------
   describe('spill failure fallback', () => {
     it('leaves content unchanged when spill fails', () => {
-      const bigContent = makeText(5000);
-      const msg = makeToolMsg('t1', bigContent);
-
       // MAX_SPILL_BYTES 之上的内容会让 spillToolResultArchive 返回 null
       const hugeContent = 'a'.repeat(11 * 1024 * 1024);
       const hugeMsg = makeToolMsg('t2', hugeContent);
 
-      const pruned = applyActiveToolResultPrune([hugeMsg], state, {
+      const pruned = applyActiveToolResultPrune([hugeMsg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-fail',
@@ -165,9 +251,6 @@ describe('applyActiveToolResultPrune', () => {
       expect(pruned).toBe(0);
       expect(hugeMsg.content).toBe(hugeContent);
       expect(state.getCommitLog()).toHaveLength(0);
-      // sanity: 用例本身确实构造了一个超预算内容（避免误判成"本来就没超"）
-      expect(estimateTokens(bigContent)).toBeGreaterThan(4096);
-      expect(msg.content).toBe(bigContent); // msg 未被此用例处理，保持原样
     });
   });
 
@@ -179,7 +262,7 @@ describe('applyActiveToolResultPrune', () => {
       const alreadySpilled = makeText(5000) + `\n${SPILL_NOTICE_MARKER} /earlier/path.txt — use Read/Grep on this file to inspect the full output.]`;
       const msg = makeToolMsg('t1', alreadySpilled);
 
-      const pruned = applyActiveToolResultPrune([msg], state, {
+      const pruned = applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-skip-spilled',
@@ -192,8 +275,9 @@ describe('applyActiveToolResultPrune', () => {
     it('does not re-process its own placeholder', () => {
       const bigContent = makeText(5000);
       const msg = makeToolMsg('t1', bigContent);
+      const assistant = makeAssistantMsg('a1', 'done');
 
-      applyActiveToolResultPrune([msg], state, {
+      applyActiveToolResultPrune([msg, assistant], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-self',
@@ -202,7 +286,7 @@ describe('applyActiveToolResultPrune', () => {
 
       // Re-run directly on the already-placeholder'd message (defensive: pipeline
       // never actually does this within one round, but must not double-process).
-      const pruned = applyActiveToolResultPrune([msg], state, {
+      const pruned = applyActiveToolResultPrune([msg, assistant], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-self',
@@ -220,19 +304,19 @@ describe('applyActiveToolResultPrune', () => {
     it('produces byte-identical placeholders for the same content across two fresh-copy rounds', () => {
       const bigContent = makeText(5000);
 
-      // Round 1: fresh message object with full content (simulates pipeline
+      // Round 1: fresh message objects with full content (simulates pipeline
       // rebuilding transcript from the original store each round)
       const round1Msg = makeToolMsg('t1', bigContent, 'Bash');
-      applyActiveToolResultPrune([round1Msg], state, {
+      applyActiveToolResultPrune([round1Msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-determinism',
       });
       const placeholderRound1 = round1Msg.content;
 
-      // Round 2: brand-new message object, same id + same full content, same state
+      // Round 2: brand-new message objects, same ids + same full content, same state
       const round2Msg = makeToolMsg('t1', bigContent, 'Bash');
-      applyActiveToolResultPrune([round2Msg], state, {
+      applyActiveToolResultPrune([round2Msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-determinism',
@@ -245,12 +329,12 @@ describe('applyActiveToolResultPrune', () => {
     it('only writes one commit across repeated rounds for the same message id', () => {
       const bigContent = makeText(5000);
 
-      applyActiveToolResultPrune([makeToolMsg('t1', bigContent)], state, {
+      applyActiveToolResultPrune([makeToolMsg('t1', bigContent), makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-commit-once',
       });
-      applyActiveToolResultPrune([makeToolMsg('t1', bigContent)], state, {
+      applyActiveToolResultPrune([makeToolMsg('t1', bigContent), makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-commit-once',
@@ -262,12 +346,51 @@ describe('applyActiveToolResultPrune', () => {
   });
 
   // --------------------------------------------------------------------------
+  // No redundant spill across rounds (回修 #2·MED)
+  // --------------------------------------------------------------------------
+  describe('no redundant spill across rounds', () => {
+    // vi.spyOn(fs, 'writeFileSync') 在 ESM 下不可用（"Module namespace is not
+    // configurable"），改用 mtime 黑盒断言：第二轮如果真的没有重新写盘，
+    // 归档文件的 mtime 不会变化。
+    it('does not write to disk again on a second round for the same message id, and reuses the existing archiveRef', () => {
+      const bigContent = makeText(5000);
+
+      const round1Msg = makeToolMsg('t1', bigContent, 'Bash');
+      applyActiveToolResultPrune([round1Msg, makeAssistantMsg('a1', 'done')], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-no-respill',
+      });
+      const archiveMatch = round1Msg.content.match(/archive: (.+)/);
+      expect(archiveMatch).not.toBeNull();
+      const archivePath = archiveMatch![1].trim();
+
+      // 把 mtime 人为拨早 5 秒，避免文件系统时间戳精度掩盖「是否被重写」的判定
+      const backdated = new Date(fs.statSync(archivePath).mtimeMs - 5000);
+      fs.utimesSync(archivePath, backdated, backdated);
+      const mtimeBeforeRound2 = fs.statSync(archivePath).mtimeMs;
+
+      // Round 2: fresh message object, same id + same full content, same state
+      const round2Msg = makeToolMsg('t1', bigContent, 'Bash');
+      applyActiveToolResultPrune([round2Msg, makeAssistantMsg('a1', 'done')], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-no-respill',
+      });
+
+      const mtimeAfterRound2 = fs.statSync(archivePath).mtimeMs;
+      expect(mtimeAfterRound2).toBe(mtimeBeforeRound2); // 第二轮没有重新写盘
+      expect(round2Msg.content).toBe(round1Msg.content);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Commit bookkeeping
   // --------------------------------------------------------------------------
   describe('commit bookkeeping', () => {
     it('writes a commit with layer active-prune and operation truncate', () => {
       const msg = makeToolMsg('t1', makeText(5000));
-      applyActiveToolResultPrune([msg], state, {
+      applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-commit-shape',
@@ -285,7 +408,7 @@ describe('applyActiveToolResultPrune', () => {
 
     it('records the pruned message in the shared budgetedResults snapshot', () => {
       const msg = makeToolMsg('t1', makeText(5000));
-      applyActiveToolResultPrune([msg], state, {
+      applyActiveToolResultPrune([msg, makeAssistantMsg('a1', 'done')], state, {
         enabled: true,
         maxTokensPerResult: 4096,
         spillSessionId: 'sess-snapshot',
@@ -330,18 +453,25 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
 
   it('does not run L0 when activeToolResultPrune is not configured', async () => {
     const bigContent = makeText(5000);
-    const transcript: ProjectableMessage[] = [makeMsg('t1', 'tool', bigContent)];
+    const transcript: ProjectableMessage[] = [
+      makeMsg('a0', 'assistant', 'calling tool'),
+      makeMsg('t1', 'tool', bigContent),
+      makeMsg('a1', 'assistant', 'done'),
+    ];
 
     const result = await pipeline.evaluate(transcript, state, BASE_CONFIG);
 
     expect(result.layersTriggered).not.toContain('active-prune');
     // 没配置 L0，落到 L1 有损截断（不是本层的确定性占位符）
-    expect(transcript[0].content).not.toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
+    expect(transcript[1].content).not.toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
   });
 
   it('does not run L0 when enabled=false', async () => {
     const bigContent = makeText(5000);
-    const transcript: ProjectableMessage[] = [makeMsg('t1', 'tool', bigContent)];
+    const transcript: ProjectableMessage[] = [
+      makeMsg('t1', 'tool', bigContent),
+      makeMsg('a1', 'assistant', 'done'),
+    ];
 
     const result = await pipeline.evaluate(transcript, state, {
       ...BASE_CONFIG,
@@ -356,10 +486,14 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
     expect(transcript[0].content).not.toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
   });
 
-  it('replaces results over the L0 threshold with a placeholder before L1 truncation runs, when enabled', async () => {
-    // > 4096 tokens: L0 threshold, would also exceed the L1 2000-token budget
+  it('replaces past-step results over the L0 threshold with a placeholder before L1 truncation runs, when enabled', async () => {
+    // > 4096 tokens: L0 threshold, would also exceed the L1 2000-token budget.
+    // A later assistant message marks it as consumed (past step).
     const bigContent = makeText(5000);
-    const transcript: ProjectableMessage[] = [makeMsg('t1', 'tool', bigContent)];
+    const transcript: ProjectableMessage[] = [
+      makeMsg('t1', 'tool', bigContent),
+      makeMsg('a1', 'assistant', 'done'),
+    ];
 
     const result = await pipeline.evaluate(transcript, state, {
       ...BASE_CONFIG,
@@ -377,10 +511,35 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
     expect(transcript[0].content).not.toContain('...[truncated]...');
   });
 
+  it("exempts the current step's freshly-returned tool result (no assistant after it yet), even when configured and enabled (回修 #1·MED)", async () => {
+    const bigContent = makeText(5000);
+    const transcript: ProjectableMessage[] = [
+      makeMsg('a0', 'assistant', 'calling tool'),
+      makeMsg('t1', 'tool', bigContent), // most recent — model has not seen this yet
+    ];
+
+    const result = await pipeline.evaluate(transcript, state, {
+      ...BASE_CONFIG,
+      activeToolResultPrune: {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-pipeline-current-step',
+      },
+    });
+
+    expect(result.layersTriggered).not.toContain('active-prune');
+    expect(transcript[1].content).not.toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
+    // 仍然落到 L1 有损截断兜底（不是完全不处理，只是这一步先给 head+tail 摘要）
+    expect(transcript[1].content).toContain('...[truncated]...');
+  });
+
   it('leaves results between the L1 and L0 thresholds to L1 lossy truncation', async () => {
     // ~2500 tokens: over L1's 2000-token budget but under L0's 4096 threshold
     const midContent = makeText(2500);
-    const transcript: ProjectableMessage[] = [makeMsg('t1', 'tool', midContent)];
+    const transcript: ProjectableMessage[] = [
+      makeMsg('t1', 'tool', midContent),
+      makeMsg('a1', 'assistant', 'done'),
+    ];
 
     const result = await pipeline.evaluate(transcript, state, {
       ...BASE_CONFIG,
@@ -398,7 +557,10 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
 
   it('respects protected message ids collected from interventions', async () => {
     const bigContent = makeText(5000);
-    const transcript: ProjectableMessage[] = [makeMsg('t1', 'tool', bigContent)];
+    const transcript: ProjectableMessage[] = [
+      makeMsg('t1', 'tool', bigContent),
+      makeMsg('a1', 'assistant', 'done'),
+    ];
 
     const result = await pipeline.evaluate(transcript, state, {
       ...BASE_CONFIG,

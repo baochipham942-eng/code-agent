@@ -13,7 +13,7 @@
 
 import { CompressionState } from '../compressionState';
 import { estimateTokens } from '../tokenEstimator';
-import { spillToolResultArchive, SPILL_NOTICE_MARKER } from '../../utils/toolResultSpill';
+import { spillToolResultArchive, SPILL_NOTICE_MARKER, type ToolResultArchiveRef } from '../../utils/toolResultSpill';
 
 export interface ActiveToolResultPruneConfig {
   enabled: boolean;
@@ -67,9 +67,20 @@ export function applyActiveToolResultPrune(
   const alreadyPruned = state.getSnapshot().budgetedResults;
   let prunedCount = 0;
 
-  for (const msg of messages) {
+  // 当前步豁免：最后一条 assistant 消息之后的 tool result 是模型刚请求、还没看过
+  // 的结果——本轮先让它走 L1 的 2000-token head+tail 摘要，下一步出现新 assistant
+  // 后才收归 L0（单轮编辑流不会被逼多一次 Read 回读）。整个数组没有 assistant
+  // （还没进入过对话轮次）时保守豁免全部。
+  const lastAssistantIndex = messages.reduce(
+    (acc, msg, i) => (msg.role === 'assistant' ? i : acc),
+    -1,
+  );
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
     const isToolResult = msg.role === 'tool' || msg.toolCallId !== undefined;
     if (!isToolResult) continue;
+    if (lastAssistantIndex === -1 || i > lastAssistantIndex) continue;
     if (config.protectedMessageIds?.has(msg.id)) continue;
     // 已带落盘提示（其他截断点已归档过）或已是本层占位符，跳过防二次处理
     if (msg.content.includes(SPILL_NOTICE_MARKER)) continue;
@@ -79,33 +90,48 @@ export function applyActiveToolResultPrune(
     if (originalTokens <= config.maxTokensPerResult) continue;
 
     const toolName = typeof msg.toolName === 'string' ? msg.toolName : 'tool-result';
-    const spillResult = spillToolResultArchive({
-      content: msg.content,
-      toolName,
-      sessionId: config.spillSessionId,
-      // toolCallId 缺省回退 msg.id：保证同消息每轮落盘路径稳定，绝不落到 Date.now() 兜底分支
-      toolCallId: msg.toolCallId || msg.id,
-      sourceMessageId: msg.id,
-      reason: 'active-prune',
-    });
 
-    // 无损原则：落盘失败就保留原文不动，交给下游 L1 做有损截断兜底
-    if (!spillResult) continue;
+    // 跨轮复用已有归档：避免长会话每轮同步重写同一批大文件（可达 10MB 级，
+    // 阻塞事件循环）。内容不变则归档路径由内容哈希决定不变，复用已记录的
+    // archiveRef 重建占位符与首次落盘字节完全相同。
+    const existingArchiveRef = alreadyPruned.get(msg.id)?.archiveRef;
+    let archiveRef: ToolResultArchiveRef;
+    let filePath: string;
 
-    const wasPruned = alreadyPruned.has(msg.id);
+    if (existingArchiveRef) {
+      archiveRef = existingArchiveRef;
+      filePath = existingArchiveRef.filePath;
+    } else {
+      const spillResult = spillToolResultArchive({
+        content: msg.content,
+        toolName,
+        sessionId: config.spillSessionId,
+        // toolCallId 缺省回退 msg.id：保证同消息每轮落盘路径稳定，绝不落到 Date.now() 兜底分支
+        toolCallId: msg.toolCallId || msg.id,
+        sourceMessageId: msg.id,
+        reason: 'active-prune',
+      });
+      // 无损原则：落盘失败就保留原文不动，交给下游 L1 做有损截断兜底
+      if (!spillResult) continue;
+      archiveRef = spillResult.archiveRef;
+      filePath = spillResult.filePath;
+    }
+
+    // Array.from 按码点切片，避免 slice(0,200) 把代理对（emoji/生僻字）从中间切开
+    const preview = Array.from(msg.content).slice(0, 200).join('');
     const placeholder = buildPlaceholder({
       toolName,
       originalTokens,
-      bytes: spillResult.archiveRef.bytes,
-      sha256: spillResult.archiveRef.sha256,
-      filePath: spillResult.filePath,
-      preview: msg.content.slice(0, 200),
+      bytes: archiveRef.bytes,
+      sha256: archiveRef.sha256,
+      filePath,
+      preview,
     });
 
     msg.content = placeholder;
     prunedCount++;
 
-    if (wasPruned) continue;
+    if (existingArchiveRef) continue;
     state.applyCommit({
       layer: 'active-prune',
       operation: 'truncate',
@@ -114,7 +140,7 @@ export function applyActiveToolResultPrune(
       metadata: {
         originalTokens,
         placeholderTokens: estimateTokens(placeholder),
-        archiveRef: spillResult.archiveRef,
+        archiveRef,
       },
     });
   }

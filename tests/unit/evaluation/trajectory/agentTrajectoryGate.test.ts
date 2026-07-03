@@ -917,6 +917,41 @@ describe('Agent trajectory G0/G1/G2 gate', () => {
     ]);
     expect(trajectory.summary.toolCallCount).toBe(1);
     expect(trajectory.summary.toolResultCount).toBe(1);
+    expect(trajectory.efficiency).toEqual({
+      totalSteps: 1,
+      effectiveSteps: 1,
+      redundantSteps: 0,
+      backtrackCount: 0,
+      totalTokens: { input: 0, output: 0 },
+      totalDuration: 12,
+      tokensPerEffectiveStep: 0,
+      efficiency: 1,
+    });
+  });
+
+  it('exports failed tool results as efficiency triage without changing gate tier', () => {
+    const source = replay();
+    const toolBlock = source.turns[0]?.blocks.find(block => block.type === 'tool_call');
+    if (!toolBlock?.toolCall) {
+      throw new Error('fixture missing tool call block');
+    }
+    toolBlock.toolCall.success = false;
+    toolBlock.toolCall.result = 'ENOENT: missing package.json';
+    toolBlock.toolCall.duration = 25;
+
+    const trajectory = buildAgentTrajectoryFromReplay(source);
+
+    expect(trajectory.quality.tier).toBe('G2');
+    expect(trajectory.efficiency).toEqual({
+      totalSteps: 1,
+      effectiveSteps: 0,
+      redundantSteps: 1,
+      backtrackCount: 0,
+      totalTokens: { input: 0, output: 0 },
+      totalDuration: 25,
+      tokensPerEffectiveStep: 0,
+      efficiency: 0,
+    });
   });
 
   it('carries Agent Pointer evidence from replay into trajectory tool steps', () => {

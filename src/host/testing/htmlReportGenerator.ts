@@ -221,7 +221,7 @@ details {
 summary {
   cursor: pointer;
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) 100px 100px;
+  grid-template-columns: 120px minmax(0, 1fr) 100px 100px minmax(150px, 0.55fr);
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -244,6 +244,16 @@ summary {
 .badge.failed { background: var(--fail-bg); color: var(--fail); }
 .badge.skipped,
 .badge.infra_excluded { background: var(--infra-bg); color: var(--infra); }
+.efficiency-triage {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.efficiency-triage strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
 .case-body {
   border-top: 1px solid var(--line);
   padding: 14px;
@@ -379,6 +389,7 @@ function renderCaseDetail(result: TestResult): string {
     `<span class="case-title">${escapeHtml(title)}</span>`,
     `<span>${escapeHtml(formatDuration(result.duration))}</span>`,
     `<span>${escapeHtml((result.score * 100).toFixed(0))}%</span>`,
+    renderEfficiencyTriage(result),
     '</summary>',
     '<div class="case-body">',
     '<div class="subgrid">',
@@ -392,6 +403,21 @@ function renderCaseDetail(result: TestResult): string {
     '</div>',
     '</details>',
   ].join('\n');
+}
+
+function renderEfficiencyTriage(result: TestResult): string {
+  const efficiency = result.trajectory?.efficiency;
+  if (!efficiency) {
+    return '<span class="efficiency-triage" data-testid="efficiency-triage"><strong>Efficiency triage</strong>非能力证据，不进统计 · 无</span>';
+  }
+  return [
+    '<span class="efficiency-triage" data-testid="efficiency-triage">',
+    `<strong>${escapeHtml((efficiency.efficiency * 100).toFixed(1))}%</strong>`,
+    'Efficiency triage · 非能力证据，不进统计',
+    '<br>',
+    `${escapeHtml(efficiency.redundantSteps)} redundant / ${escapeHtml(efficiency.backtrackCount)} backtrack`,
+    '</span>',
+  ].join('');
 }
 
 function renderTextBlock(title: string, value: string): string {

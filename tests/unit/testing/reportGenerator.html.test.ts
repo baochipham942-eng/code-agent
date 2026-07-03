@@ -6,7 +6,7 @@ import {
   generateHtmlReport,
   saveReport,
 } from '../../../src/host/testing/reportGenerator';
-import type { BaselineDelta, TestResult, TestRunSummary } from '../../../src/host/testing/types';
+import type { BaselineDelta, TestResult, TestRunSummary, Trajectory } from '../../../src/host/testing/types';
 
 function makeResult(overrides: Partial<TestResult>): TestResult {
   return {
@@ -54,6 +54,57 @@ function makeDelta(overrides: Partial<BaselineDelta> = {}): BaselineDelta {
     newPasses: [{ testId: 'case-pass' }],
     isRegression: true,
     regressionDetails: ['1 new failure'],
+    ...overrides,
+  };
+}
+
+function makeTrajectory(overrides: Partial<Trajectory> = {}): Trajectory {
+  return {
+    id: 'traj-case',
+    sessionId: 'session-case',
+    startTime: 0,
+    endTime: 100,
+    steps: [
+      {
+        index: 0,
+        timestamp: 0,
+        type: 'tool_call',
+        toolCall: {
+          name: 'Read',
+          args: { file_path: 'package.json' },
+          success: true,
+          duration: 20,
+        },
+      },
+      {
+        index: 1,
+        timestamp: 30,
+        type: 'tool_call',
+        toolCall: {
+          name: 'Read',
+          args: { file_path: 'package.json' },
+          success: false,
+          duration: 30,
+        },
+      },
+    ],
+    deviations: [],
+    recoveryPatterns: [],
+    efficiency: {
+      totalSteps: 2,
+      effectiveSteps: 0,
+      redundantSteps: 2,
+      backtrackCount: 1,
+      totalTokens: { input: 0, output: 0 },
+      totalDuration: 50,
+      tokensPerEffectiveStep: 0,
+      efficiency: 0,
+    },
+    summary: {
+      intent: 'Read package.json',
+      outcome: 'partial',
+      criticalPath: [0],
+    },
     ...overrides,
   };
 }
@@ -167,6 +218,38 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('class="failure-diff"');
     expect(html).toContain('expected answer');
     expect(html).toContain('actual answer');
+  });
+
+  it('renders trajectory efficiency triage as non-capability evidence without changing stats', () => {
+    const html = generateHtmlReport(makeSummary([
+      makeResult({
+        testId: 'case-efficiency',
+        status: 'passed',
+        score: 1,
+        trajectory: makeTrajectory(),
+      }),
+      makeResult({
+        testId: 'case-fail',
+        status: 'failed',
+        score: 0,
+      }),
+      makeResult({
+        testId: 'case-infra',
+        status: 'infra_excluded',
+        score: 0,
+        failureReason: '429',
+      }),
+    ]));
+
+    expect(html).toContain('data-testid="capability-denominator">2</span>');
+    expect(html).toContain('data-testid="pass-rate">50.0%</span>');
+    expect(html).toContain('data-testid="efficiency-triage"');
+    expect(html).toContain('Efficiency triage');
+    expect(html).toContain('非能力证据，不进统计');
+    expect(html).toContain('case-efficiency');
+    expect(html).toContain('0.0%');
+    expect(html).toContain('2 redundant / 1 backtrack');
+    expect(html).toContain('1');
   });
 
   it('renders the baseline section only when a baseline delta is provided', () => {

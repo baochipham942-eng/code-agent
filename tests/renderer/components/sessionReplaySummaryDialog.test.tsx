@@ -242,6 +242,15 @@ describe('SessionReplaySummaryDialog', () => {
                     category: 'Read',
                   },
                 },
+                {
+                  type: 'event',
+                  content: '17 tool schemas available',
+                  timestamp: 4,
+                  event: {
+                    eventType: 'tool_schema_snapshot',
+                    summary: '17 tool schemas available',
+                  },
+                },
               ],
               inputTokens: 120,
               outputTokens: 80,
@@ -334,41 +343,44 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('Replay');
     expect(html).toContain('Alma Project / Session Organization');
-    expect(html).toContain('Trajectory');
+    expect(html).toContain('轨迹');
     expect(html).toContain('G1');
-    expect(html).toContain('Coding');
-    expect(html).toContain('Diagnostic');
-    expect(html).toContain('Core eval');
-    expect(html).toContain('Excluded');
-    expect(html).toContain('aria-label="确认复核 Diagnostic"');
+    expect(html).toContain('编码');
+    expect(html).toContain('诊断集');
+    expect(html).toContain('核心评测');
+    expect(html).toContain('已排除');
+    expect(html).toContain('aria-label="确认复核 诊断集"');
     expect(html).toContain('agent-trajectory-v1');
     expect(html).toContain('quality_gate');
-    expect(html).toContain('Evidence Control');
+    expect(html).toContain('证据控制');
     expect(html).toContain('partial');
     expect(html).toContain('3 items · 4 refs');
     expect(html).toContain('blocked 0 · stale 1 · conflicts 0');
-    expect(html).toContain('Evidence Gaps');
+    expect(html).toContain('证据缺口');
     expect(html).toContain('stale evidence present');
-    expect(html).toContain('Trajectory Gate');
+    expect(html).toContain('轨迹门禁');
     expect(html).toContain('missing_tool_result');
-    expect(html).toContain('Turns');
+    expect(html).toContain('轮次');
     expect(html).toContain('3');
+    expect(html).toContain('title="偏差指 Replay 质量评估发现的异常、缺口或不一致项数量。"');
     expect(html).toContain('Read 2');
     expect(html).toContain('Edit 1');
     expect(html).toContain('1 分 5 秒');
     expect(html).toContain('Replay 数据不完整');
     expect(html).toContain('missing_event_trace');
-    expect(html).toContain('Timeline');
+    expect(html).toContain('时间线');
     expect(html).toContain('第 1 轮');
-    expect(html).toContain('3 blocks');
+    expect(html).toContain('4 blocks');
     expect(html).toContain('模型 gpt-5');
     expect(html).toContain('200 tokens');
     expect(html).toContain('工具 Read');
     expect(html).toContain('成功 · 250 ms');
+    expect(html).toContain('事件');
+    expect(html.match(/17 tool schemas available/g)).toHaveLength(1);
     expect(html).toContain('第 2 轮');
     expect(html).toContain('工具失败 Bash');
     expect(html).toContain('失败 · 500 ms');
-    expect(html).toContain('Workflow / Background');
+    expect(html).toContain('工作流 / 后台任务');
     expect(html).toContain('4 workflow · 4 task · 5 evidence');
     expect(html.indexOf('Workflow: Recent follow-up')).toBeLessThan(html.indexOf('Workflow: Recover project delivery'));
     expect(html).toContain('run workflow-run-new');
@@ -445,6 +457,128 @@ describe('SessionReplaySummaryDialog', () => {
       />,
     );
 
-    expect(html).toContain('Replay 暂无 turn 明细');
+    expect(html).toContain('Replay 暂无轮次明细');
+  });
+
+  it('event block 带 durationMs 时仍渲染 summary（去重修复不得吞掉事件摘要）', () => {
+    const html = renderToStaticMarkup(
+      <SessionReplaySummaryDialog
+        sessionTitle="Event Replay"
+        onClose={vi.fn()}
+        replay={{
+          sessionId: 'session-event',
+          traceSource: 'session_replay',
+          traceIdentity: {
+            traceId: 'session:session-event',
+            traceSource: 'session_replay',
+            source: 'session_replay',
+            sessionId: 'session-event',
+            replayKey: 'session-event',
+          },
+          dataSource: 'telemetry',
+          turns: [
+            {
+              turnNumber: 1,
+              turnType: 'iteration',
+              blocks: [
+                {
+                  type: 'event',
+                  content: 'permission denied once',
+                  timestamp: 1,
+                  event: {
+                    eventType: 'task_progress',
+                    summary: 'permission denied once',
+                    durationMs: 42,
+                  },
+                },
+              ],
+              inputTokens: 0,
+              outputTokens: 0,
+              durationMs: 42,
+              startTime: 1,
+            },
+          ],
+          summary: {
+            totalTurns: 1,
+            toolDistribution: {
+              Read: 0,
+              Edit: 0,
+              Write: 0,
+              Bash: 0,
+              Search: 0,
+              Web: 0,
+              Agent: 0,
+              Skill: 0,
+              Other: 0,
+            },
+            thinkingRatio: 0,
+            selfRepairChains: 0,
+            totalDurationMs: 42,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('permission denied once');
+    expect(html).toContain('42');
+  });
+
+  it('非 event block 的超长 content 在 timeline 里截断（不整段灌进弹层）', () => {
+    const huge = `head-marker ${'w'.repeat(20_000)}`;
+    const html = renderToStaticMarkup(
+      <SessionReplaySummaryDialog
+        sessionTitle="Long Replay"
+        onClose={vi.fn()}
+        replay={{
+          sessionId: 'session-long',
+          traceSource: 'session_replay',
+          traceIdentity: {
+            traceId: 'session:session-long',
+            traceSource: 'session_replay',
+            source: 'session_replay',
+            sessionId: 'session-long',
+            replayKey: 'session-long',
+          },
+          dataSource: 'telemetry',
+          turns: [
+            {
+              turnNumber: 1,
+              turnType: 'iteration',
+              blocks: [
+                {
+                  type: 'tool_result',
+                  content: huge,
+                  timestamp: 1,
+                },
+              ],
+              inputTokens: 0,
+              outputTokens: 0,
+              durationMs: 1,
+              startTime: 1,
+            },
+          ],
+          summary: {
+            totalTurns: 1,
+            toolDistribution: {
+              Read: 0,
+              Edit: 0,
+              Write: 0,
+              Bash: 0,
+              Search: 0,
+              Web: 0,
+              Agent: 0,
+              Skill: 0,
+              Other: 0,
+            },
+            thinkingRatio: 0,
+            selfRepairChains: 0,
+            totalDurationMs: 1,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('head-marker');
+    expect(html).not.toContain('w'.repeat(10_000));
   });
 });

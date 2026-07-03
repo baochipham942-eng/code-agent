@@ -189,8 +189,37 @@ function dependencySummaryLabel(
   return parts.length > 0 ? parts.join(t.taskPanel.taskDependencySummarySeparator) : null;
 }
 
+// run 处于这些状态说明有活跃回合在跑——即便 agent 还没产出计划/待办，
+// 面板也不该显示「暂无任务」（UI 审计 #8：运行中会话零反馈）。
+const LIVE_RUN_STATUSES: ReadonlySet<RunUiStatus> = new Set([
+  'planning',
+  'running',
+  'using_tools',
+  'verifying',
+  'waiting_approval',
+]);
+
 export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?: RunUiState | null }) => {
-  if (tasks.length === 0) return <EmptyState text="暂无任务" />;
+  if (tasks.length === 0) {
+    if (run && LIVE_RUN_STATUSES.has(run.status)) {
+      return (
+        <div
+          data-testid="active-run-placeholder"
+          className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2"
+        >
+          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-sky-300" />
+          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
+            {run.status}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{run.phase}</span>
+          {run.activeToolName && (
+            <span className="truncate text-[11px] text-zinc-500">{run.activeToolName}</span>
+          )}
+        </div>
+      );
+    }
+    return <EmptyState text="暂无任务" />;
+  }
 
   const sessionTask = tasks.find((task) => task.scope === 'session') || null;
   const backgroundTasks = tasks.filter((task) => task.scope !== 'session');

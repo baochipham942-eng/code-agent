@@ -4,6 +4,7 @@
 
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
+import { sessionReplayEn } from './sessionReplay';
 
 export const en: Translations = {
   // Common
@@ -504,11 +505,6 @@ export const en: Translations = {
         ],
       },
     },
-    devMode: {
-      title: 'Developer Options',
-      autoApprove: 'Auto-approve all permissions',
-      autoApproveDescription: 'Skip all permission dialogs in dev mode for faster testing. Recommended to disable in production.',
-    },
   },
 
   // Language Settings
@@ -801,6 +797,21 @@ export const en: Translations = {
     tokenTitle: 'Token usage',
     pause: 'Pause',
     resume: 'Resume',
+  },
+
+  sessionReplay: sessionReplayEn,
+
+  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  workbenchTabs: {
+    openPanel: 'Open panel',
+    filesLabel: 'Files',
+    filesTitle: 'File browser',
+    contextLabel: 'Context',
+    contextTitle: 'Context usage and sources',
+    skillsTitle: 'Session Skills',
+    assetsTitle: 'Workspace Assets',
+    auditTitle: 'Replay / session quality audit',
+    projectCollabTitle: 'Project collaboration',
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）

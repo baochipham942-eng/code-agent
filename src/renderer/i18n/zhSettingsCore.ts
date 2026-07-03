@@ -164,12 +164,6 @@ export const zhSettingsCore = {
       developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
     },
     general: {
-      modeTitle: '应用模式',
-      modeDescription: '选择适合你工作方式的模式',
-      developerMode: '开发者模式',
-      developerModeDesc: '显示完整的工具调用详情和参数',
-      coworkMode: 'Cowork 模式',
-      coworkModeDesc: '简化展示，适合与其他 AI 协作',
       permissions: {
         pageTitle: '权限与安全',
         pageDescription: '管理 Agent 执行敏感操作时的权限检查，以及子 Agent 的权限继承策略。',

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { zhSettings } from './zhSettings';
+import { sessionReplayZh } from './sessionReplay';
 
 export const zh = {
   // Common
@@ -492,11 +493,6 @@ export const zh = {
         features: ['原始 API 响应', 'Token 使用指标', '调试控制台', 'MCP 服务器配置'],
       },
     },
-    devMode: {
-      title: '开发者选项',
-      autoApprove: '自动授权所有权限',
-      autoApproveDescription: '开发模式下跳过所有权限确认弹窗，方便快速测试。生产环境建议关闭。',
-    },
   },
 
   // Language Settings
@@ -789,6 +785,21 @@ export const zh = {
     tokenTitle: 'token 用量',
     pause: '暂停',
     resume: '继续',
+  },
+
+  sessionReplay: sessionReplayZh,
+
+  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  workbenchTabs: {
+    openPanel: '打开面板',
+    filesLabel: '文件',
+    filesTitle: '文件浏览器',
+    contextLabel: '上下文',
+    contextTitle: '上下文占用与来源拆分',
+    skillsTitle: '会话 Skills',
+    assetsTitle: '工作区 Assets',
+    auditTitle: 'Replay / 会话质量审计',
+    projectCollabTitle: '项目合作',
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）

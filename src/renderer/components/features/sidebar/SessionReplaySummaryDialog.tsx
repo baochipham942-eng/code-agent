@@ -19,9 +19,12 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import type { Task, TaskEvent, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 
 type FocusedReplayOwner = { kind: 'workflow'; id: string } | { kind: 'background'; id: string };
+type SessionReplayLabels = Translations['sessionReplay'];
 
 export interface SessionReplaySummaryDialogProps {
   sessionTitle: string;
@@ -95,13 +98,13 @@ function getFocusedReplayOwnerKey(owner: FocusedReplayOwner | null): string | nu
   return owner ? `${owner.kind}:${owner.id}` : null;
 }
 
-function formatToolDistribution(replay: StructuredReplay): string {
+function formatToolDistribution(replay: StructuredReplay, labels: SessionReplayLabels): string {
   const entries = Object.entries(replay.summary.toolDistribution)
     .filter(([, count]) => count > 0)
     .sort(([, a], [, b]) => b - a);
 
   if (entries.length === 0) {
-    return '无工具调用';
+    return labels.noToolCalls;
   }
 
   return entries.map(([category, count]) => `${category} ${count}`).join(' · ');
@@ -139,31 +142,31 @@ function formatEvidenceControlTitle(summary: EvidenceControlSummaryProjection): 
   ].join('\n');
 }
 
-function getTrajectoryDatasetLabel(role: AgentTrajectoryDatasetRole): string {
+function getTrajectoryDatasetLabel(role: AgentTrajectoryDatasetRole, labels: SessionReplayLabels): string {
   switch (role) {
     case 'core_eval':
-      return 'Core eval';
+      return labels.datasetRoles.coreEval;
     case 'excluded':
-      return 'Excluded';
+      return labels.datasetRoles.excluded;
     default:
-      return 'Diagnostic';
+      return labels.datasetRoles.diagnostic;
   }
 }
 
-function getTrajectoryTaskKindLabel(kind: AgentTrajectoryTaskKind): string {
+function getTrajectoryTaskKindLabel(kind: AgentTrajectoryTaskKind, labels: SessionReplayLabels): string {
   switch (kind) {
     case 'coding':
-      return 'Coding';
+      return labels.taskKinds.coding;
     case 'search':
-      return 'Search';
+      return labels.taskKinds.search;
     case 'data_analysis':
-      return 'Data';
+      return labels.taskKinds.data;
     case 'agent_task':
-      return 'Agent task';
+      return labels.taskKinds.agentTask;
     case 'ordinary_chat':
-      return 'Chat';
+      return labels.taskKinds.chat;
     default:
-      return 'Other';
+      return labels.taskKinds.other;
   }
 }
 
@@ -180,6 +183,16 @@ function truncateContent(content: string, maxLength = 120): string {
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function normalizeBlockText(content: string): string {
+  return content.replace(/\s+/g, ' ').trim();
+}
+
+function shouldRenderBlockDetail(label: string, detail: string): boolean {
+  const normalizedLabel = normalizeBlockText(label);
+  const normalizedDetail = normalizeBlockText(detail);
+  return normalizedDetail.length > 0 && normalizedLabel !== normalizedDetail;
 }
 
 function formatWorkflowStatus(snapshot: ScriptRunSnapshot): string {
@@ -317,7 +330,7 @@ function formatBlockLabel(block: ReplayBlock): string {
   }
   if (block.type === 'tool_result') return '工具结果';
   if (block.type === 'context_event') return '上下文';
-  if (block.type === 'event') return block.event?.summary || '事件';
+  if (block.type === 'event') return '事件';
   if (block.type === 'thinking') return '思考';
   if (block.type === 'user') return '用户';
   if (block.type === 'error') return '错误';
@@ -335,10 +348,16 @@ function formatBlockDetail(block: ReplayBlock): string {
     const latency = formatDuration(block.modelDecision.latencyMs);
     return `${tokens} tokens · ${latency}`;
   }
-  if (block.type === 'event' && block.event?.durationMs) {
-    return formatDuration(block.event.durationMs);
+  if (block.type === 'event') {
+    // 去重修复（label 收敛为「事件」）后 summary 必须落在 detail 里，
+    // 不能被 durationMs 短路吞掉（Codex 审计 R1）。
+    const summary = normalizeBlockText(block.event?.summary || block.content);
+    const duration = block.event?.durationMs ? formatDuration(block.event.durationMs) : '';
+    if (summary && duration) return `${summary} · ${duration}`;
+    return summary || duration;
   }
-  return truncateContent(block.content, 90);
+  // 完整正文留给下钻视图；timeline 行内截断，防超大 tool_result 拖垮弹层。
+  return truncateContent(normalizeBlockText(block.content), 160);
 }
 
 function getBlockToneClassName(block: ReplayBlock): string {
@@ -414,6 +433,8 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
   onOpenEvidence,
   onClose,
 }) => {
+  const { t } = useI18n();
+  const labels = t.sessionReplay;
   const [focusedReplayOwner, setFocusedReplayOwner] = React.useState<FocusedReplayOwner | null>(null);
   const [updatingDatasetRole, setUpdatingDatasetRole] = React.useState<AgentTrajectoryDatasetRole | null>(null);
   const completeness = replay.summary.telemetryCompleteness;
@@ -474,7 +495,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       onClose={onClose}
       title={sessionTitle}
       size="md"
-      className="!max-w-3xl"
+      className="!w-[80vw] !max-w-[1100px]"
       zIndex={10000}
       header={
         <>
@@ -495,7 +516,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
     >
       <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-          <dt className="text-zinc-500">Trajectory</dt>
+          <dt className="text-zinc-500">{labels.trajectory}</dt>
           <dd className="mt-1 flex items-center gap-1">
             <span
               className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getTrajectoryTierToneClassName(trajectoryQuality.tier)}`}
@@ -503,23 +524,24 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               {trajectoryQuality.tier}
             </span>
             <span className="truncate font-medium text-zinc-200">
-              {getTrajectoryTaskKindLabel(trajectoryQuality.classification.taskKind)}
+              {getTrajectoryTaskKindLabel(trajectoryQuality.classification.taskKind, labels)}
             </span>
           </dd>
         </div>
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-          <dt className="text-zinc-500">数据集</dt>
+          <dt className="text-zinc-500">{labels.dataset}</dt>
           <dd className="mt-1">
             <div className="flex flex-wrap gap-1">
               {TRAJECTORY_DATASET_ROLE_OPTIONS.map((role) => {
                 const active = trajectoryCollection.datasetRole === role;
+                const roleLabel = getTrajectoryDatasetLabel(role, labels);
                 return (
                   <button
                     key={role}
                     type="button"
                     disabled={!onUpdateTrajectoryDatasetRole || updatingDatasetRole !== null}
                     aria-pressed={active ? 'true' : 'false'}
-                    aria-label={`${active ? '确认复核' : '标记为'} ${getTrajectoryDatasetLabel(role)}`}
+                    aria-label={`${active ? labels.confirmReview : labels.markAs} ${roleLabel}`}
                     onClick={async (event) => {
                       event.preventDefault();
                       if (!onUpdateTrajectoryDatasetRole) return;
@@ -532,7 +554,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     }}
                     className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${active ? 'border-sky-400/40 bg-sky-500/15 text-sky-100' : 'border-zinc-700 bg-zinc-950/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50'}`}
                   >
-                    {updatingDatasetRole === role ? '...' : getTrajectoryDatasetLabel(role)}
+                    {updatingDatasetRole === role ? '...' : roleLabel}
                   </button>
                 );
               })}
@@ -544,7 +566,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
         </div>
         {evidenceControl && (
           <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-            <dt className="text-zinc-500">Evidence Control</dt>
+            <dt className="text-zinc-500">{labels.evidenceControl}</dt>
             <dd className="mt-1 flex min-w-0 items-center gap-1">
               <span
                 title={formatEvidenceControlTitle(evidenceControl)}
@@ -562,31 +584,35 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
           </div>
         )}
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-          <dt className="text-zinc-500">Turns</dt>
+          <dt className="text-zinc-500">{labels.turns}</dt>
           <dd className="mt-1 font-medium text-zinc-200">{replay.summary.totalTurns}</dd>
         </div>
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-          <dt className="text-zinc-500">来源</dt>
+          <dt className="text-zinc-500">{labels.source}</dt>
           <dd className="mt-1 font-medium text-zinc-200">{replay.dataSource}</dd>
         </div>
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-          <dt className="text-zinc-500">耗时</dt>
+          <dt className="text-zinc-500">{labels.duration}</dt>
           <dd className="mt-1 font-medium text-zinc-200">{formatDuration(replay.summary.totalDurationMs)}</dd>
         </div>
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
-          <dt className="text-zinc-500">偏差</dt>
-          <dd className="mt-1 font-medium text-zinc-200">{issueCount}</dd>
+          <dt className="text-zinc-500">
+            <span title={labels.deviationTooltip}>{labels.deviation}</span>
+          </dt>
+          <dd className="mt-1 font-medium text-zinc-200" title={labels.deviationTooltip}>
+            {issueCount}
+          </dd>
         </div>
       </dl>
 
       <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
-        <div className="text-zinc-500">工具分布</div>
-        <div className="mt-1 text-zinc-300">{formatToolDistribution(replay)}</div>
+        <div className="text-zinc-500">{labels.toolDistribution}</div>
+        <div className="mt-1 text-zinc-300">{formatToolDistribution(replay, labels)}</div>
       </div>
 
       {trajectoryQuality.failures.length > 0 && (
         <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs">
-          <div className="text-amber-200">Trajectory Gate</div>
+          <div className="text-amber-200">{labels.trajectoryGate}</div>
           <div className="mt-1 flex flex-wrap gap-1">
             {trajectoryQuality.failures.slice(0, 12).map((failure) => (
               <span
@@ -602,7 +628,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
 
       {evidenceControl && evidenceControl.gaps.length > 0 && (
         <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs">
-          <div className="text-zinc-400">Evidence Gaps</div>
+          <div className="text-zinc-400">{labels.evidenceGaps}</div>
           <div className="mt-1 flex flex-wrap gap-1">
             {evidenceControl.gaps.slice(0, 8).map((gap) => (
               <span
@@ -619,7 +645,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       {hasWorkflowEvidence && (
         <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="font-medium text-zinc-300">Workflow / Background</div>
+            <div className="font-medium text-zinc-300">{labels.workflowBackground}</div>
             <div className="text-[10px] text-zinc-600">
               {workflowRuns.length} workflow · {backgroundTasks.length} task · {evidence.length} evidence
             </div>
@@ -959,12 +985,12 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
 
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950/60 p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="text-xs font-medium text-zinc-300">Timeline</div>
+          <div className="text-xs font-medium text-zinc-300">{labels.timeline}</div>
           {hiddenTurnCount > 0 && <div className="text-[10px] text-zinc-600">另有 {hiddenTurnCount} 轮未展示</div>}
         </div>
         {visibleTurns.length === 0 ? (
           <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-500">
-            Replay 暂无 turn 明细
+            {labels.emptyTimeline}
           </div>
         ) : (
           <div className="grid gap-2">
@@ -982,18 +1008,24 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                 </div>
                 {turn.blocks.length > 0 && (
                   <div className="mt-2 grid gap-1">
-                    {turn.blocks.slice(0, 6).map((block, index) => (
-                      <div
-                        key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}
-                        className={`rounded border px-2 py-1 text-[11px] ${getBlockToneClassName(block)}`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="min-w-0 truncate font-medium">{formatBlockLabel(block)}</span>
-                          <span className="shrink-0 text-[10px] opacity-70">{block.type}</span>
+                    {turn.blocks.slice(0, 6).map((block, index) => {
+                      const label = formatBlockLabel(block);
+                      const detail = formatBlockDetail(block);
+                      return (
+                        <div
+                          key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}
+                          className={`rounded border px-2 py-1 text-[11px] ${getBlockToneClassName(block)}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="min-w-0 whitespace-normal break-words font-medium leading-4">{label}</span>
+                            <span className="shrink-0 text-[10px] opacity-70">{block.type}</span>
+                          </div>
+                          {shouldRenderBlockDetail(label, detail) && (
+                            <div className="mt-1 whitespace-pre-wrap break-words opacity-80">{detail}</div>
+                          )}
                         </div>
-                        <div className="mt-0.5 truncate opacity-80">{formatBlockDetail(block)}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {turn.blocks.length > 6 && (
                       <div className="px-2 text-[10px] text-zinc-600">另有 {turn.blocks.length - 6} 个 block</div>
                     )}
@@ -1007,7 +1039,8 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
 
       {incompleteReasons.length > 0 && (
         <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
-          Replay 数据不完整：{incompleteReasons.join(' · ')}
+          {labels.incompletePrefix}
+          {incompleteReasons.join(' · ')}
         </div>
       )}
     </Modal>

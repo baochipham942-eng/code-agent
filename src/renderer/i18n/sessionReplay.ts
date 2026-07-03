@@ -1,0 +1,71 @@
+// ============================================================================
+// Session Replay 弹层词典（zh/en）— 从 zh.ts/en.ts 分域抽出，过 god-file 债务门
+// ============================================================================
+
+export const sessionReplayZh = {
+  trajectory: '轨迹',
+  dataset: '数据集',
+  evidenceControl: '证据控制',
+  turns: '轮次',
+  source: '来源',
+  duration: '耗时',
+  deviation: '偏差',
+  deviationTooltip: '偏差指 Replay 质量评估发现的异常、缺口或不一致项数量。',
+  toolDistribution: '工具分布',
+  noToolCalls: '无工具调用',
+  trajectoryGate: '轨迹门禁',
+  evidenceGaps: '证据缺口',
+  workflowBackground: '工作流 / 后台任务',
+  timeline: '时间线',
+  emptyTimeline: 'Replay 暂无轮次明细',
+  incompletePrefix: 'Replay 数据不完整：',
+  confirmReview: '确认复核',
+  markAs: '标记为',
+  datasetRoles: {
+    coreEval: '核心评测',
+    diagnostic: '诊断集',
+    excluded: '已排除',
+  },
+  taskKinds: {
+    coding: '编码',
+    search: '搜索',
+    data: '数据',
+    agentTask: 'Agent 任务',
+    chat: '聊天',
+    other: '其他',
+  },
+};
+
+export const sessionReplayEn: typeof sessionReplayZh = {
+  trajectory: 'Trajectory',
+  dataset: 'Dataset',
+  evidenceControl: 'Evidence Control',
+  turns: 'Turns',
+  source: 'Source',
+  duration: 'Duration',
+  deviation: 'Deviation',
+  deviationTooltip: 'Deviations are anomalies, gaps, or inconsistencies found by Replay quality checks.',
+  toolDistribution: 'Tool distribution',
+  noToolCalls: 'No tool calls',
+  trajectoryGate: 'Trajectory Gate',
+  evidenceGaps: 'Evidence Gaps',
+  workflowBackground: 'Workflow / Background',
+  timeline: 'Timeline',
+  emptyTimeline: 'Replay has no turn details yet',
+  incompletePrefix: 'Replay data is incomplete: ',
+  confirmReview: 'Confirm review',
+  markAs: 'Mark as',
+  datasetRoles: {
+    coreEval: 'Core eval',
+    diagnostic: 'Diagnostic',
+    excluded: 'Excluded',
+  },
+  taskKinds: {
+    coding: 'Coding',
+    search: 'Search',
+    data: 'Data',
+    agentTask: 'Agent task',
+    chat: 'Chat',
+    other: 'Other',
+  },
+};

@@ -41,8 +41,6 @@ interface ModeState {
   setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
   setIsPaused: (paused: boolean) => void;
 
-  // Derived helpers
-  isDeveloperMode: () => boolean;
   isCoworkMode: () => boolean;
 }
 
@@ -108,7 +106,6 @@ export const useModeStore = create<ModeState>()(
       },
 
       // Helpers
-      isDeveloperMode: () => false,
       isCoworkMode: () => true,
     }),
     {
@@ -134,14 +131,6 @@ export const useModeStore = create<ModeState>()(
 // -----------------------------------------------------------------------------
 // Convenience Hooks
 // -----------------------------------------------------------------------------
-
-/**
- * Hook to check if currently in developer mode
- * @deprecated Always returns false, only cowork mode is supported now
- */
-export function useIsDeveloperMode(): boolean {
-  return false;
-}
 
 /**
  * Hook to check if currently in cowork mode

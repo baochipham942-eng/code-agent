@@ -18,6 +18,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 
 import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../src/shared/contract/openchronicle';
 
 describe('httpTransport domain API', () => {
@@ -132,6 +133,37 @@ describe('httpTransport domain API', () => {
     expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual(payload);
     expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8180/api/resume');
     expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual(payload);
+  });
+
+  it('routes telemetry health through the web raw IPC fallback path', async () => {
+    const health = {
+      enabled: true,
+      sessionCount: 3,
+      storageBytes: 4096,
+      lastEventAt: 1234,
+    };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => health,
+      text: async () => '',
+    });
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    const result = await api.invoke(TELEMETRY_CHANNELS.HEALTH);
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8180/api/telemetry/health');
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer test-token',
+      },
+    });
+    expect(result).toEqual(health);
   });
 
   it('forwards clientMessageId for SSE-backed chat sends', async () => {

@@ -31,7 +31,6 @@ import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
-import { useIsDeveloperMode } from '../../../../stores/modeStore';
 import {
   getRendererBundleActivationText,
   getRendererBundleReloadBlockedReason,
@@ -482,7 +481,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
   const runningInTauri = isTauriMode();
   // 本机功能 / 前端热更诊断属于开发者信息，普通用户不展示，避免压低更新提示并暴露 manifest/链路细节
-  const isDeveloperMode = useIsDeveloperMode();
+  const isDeveloperMode = useAppStore((state) => state.developerMode);
   const loadedRendererBundle = React.useMemo(() => readLoadedRendererBundleStatus(), []);
   const runningSessionCount = useSessionStore((state) => state.runningSessionIds.size);
   const processingSessionCount = useAppStore((state) => state.processingSessionIds.size);

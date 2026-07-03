@@ -3,15 +3,17 @@ import type {
   DataStats,
   SnapshotStats,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
-import { zh } from '../../../src/renderer/i18n/zh';
-
-const dataText = zh.settings.data;
 import {
+  buildTelemetryHealthSummary,
   buildDataManagementRows,
   buildDataManagementSummary,
   formatDataSize,
   getRetentionLabel,
+  TELEMETRY_HEALTH_UNAVAILABLE,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
+import { en, zh } from '../../../src/renderer/i18n';
+
+const dataText = zh.settings.data;
 
 const dataStats = {
   sessionCount: 12,
@@ -86,5 +88,47 @@ describe('DataSettings management helpers', () => {
       statusLabel: dataText.dataRows.cache.statusClean,
       statusTone: 'stable',
     });
+  });
+});
+
+describe('DataSettings telemetry health copy', () => {
+  it('中文遥测健康文案指向会话 Replay，不再引用已删除的「内部评测」面板', () => {
+    const copy = zh.settings.data.telemetry;
+
+    expect(copy.title).toBe('Telemetry 健康');
+    expect(copy.description).toBe('Agent 内部遥测的采集状态摘要。详细分析可从会话 Replay 查看。');
+    expect(copy.description).not.toContain('内部评测');
+  });
+
+  it('keeps the English telemetry health copy in sync', () => {
+    const copy = en.settings.data.telemetry;
+
+    expect(copy.title).toBe('Telemetry health');
+    expect(copy.description).toBe('Summary of internal agent telemetry collection. Use session Replay for detailed analysis.');
+    expect(copy.description.toLowerCase()).not.toContain('internal eval');
+  });
+});
+
+describe('DataSettings telemetry health summary', () => {
+  it('normalizes a telemetry:health payload', () => {
+    expect(buildTelemetryHealthSummary({
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+    })).toEqual({
+      loading: false,
+      available: true,
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+    });
+  });
+
+  it('treats empty web IPC responses as disconnected (sentinel error, UI falls back to notConnected copy)', () => {
+    expect(() => buildTelemetryHealthSummary(undefined)).toThrow(TELEMETRY_HEALTH_UNAVAILABLE);
+    expect(zh.settings.data.telemetry.notConnected).toBeTruthy();
+    expect(en.settings.data.telemetry.notConnected).toBeTruthy();
   });
 });

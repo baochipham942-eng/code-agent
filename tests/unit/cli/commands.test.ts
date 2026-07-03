@@ -357,7 +357,12 @@ describe('CLI command entrypoints', () => {
     }));
     const getMessages = vi.fn(() => [
       { id: 'm1', role: 'user', content: 'hello', timestamp: 101 },
-      { role: 'assistant', content: 'hi', timestamp: 102 },
+      {
+        role: 'assistant',
+        content: 'hi',
+        timestamp: 102,
+        metadata: { turnQuality: { capabilities: { agentId: 'explore' } } },
+      },
     ]);
     mocks.getDatabaseService.mockReturnValue({ listSessions, getSession, getMessages });
     mocks.exportTranscript.mockResolvedValue({
@@ -372,8 +377,14 @@ describe('CLI command entrypoints', () => {
     expect(mocks.cacheSetSession).toHaveBeenCalledWith({
       sessionId: 'recent-session',
       messages: [
-        { id: 'm1', role: 'user', content: 'hello', timestamp: 101 },
-        { id: 'msg-1', role: 'assistant', content: 'hi', timestamp: 102 },
+        { id: 'm1', role: 'user', content: 'hello', timestamp: 101, metadata: undefined },
+        {
+          id: 'msg-1',
+          role: 'assistant',
+          content: 'hi',
+          timestamp: 102,
+          metadata: { turnQuality: { capabilities: { agentId: 'explore' } } },
+        },
       ],
       startedAt: 100,
       lastActivityAt: 200,

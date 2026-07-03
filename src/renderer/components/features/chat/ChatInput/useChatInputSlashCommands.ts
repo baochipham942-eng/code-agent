@@ -36,8 +36,6 @@ export interface UseChatInputSlashCommandsParams {
   setSlashFilter: React.Dispatch<React.SetStateAction<string>>;
   setPendingPromptCommand: React.Dispatch<React.SetStateAction<ComposerPromptCommandSelection | null>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
-  setScheduleComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setGoalComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setActiveAgentId: (id: string | null) => void;
 }
 
@@ -62,8 +60,6 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     setSlashFilter,
     setPendingPromptCommand,
     setPendingAgentSelection,
-    setScheduleComposerOpen,
-    setGoalComposerOpen,
     setActiveAgentId,
   } = params;
 
@@ -227,14 +223,6 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
       return;
     }
 
-    if (cmd.id === 'goal') {
-      setValue('');
-      setScheduleComposerOpen(false);
-      setGoalComposerOpen(true);
-      focusComposer();
-      return;
-    }
-
     if (cmd.actionKind === 'prefill-leading-command' && cmd.commandId) {
       setValue(buildLeadingSlashCommandValue(value, cmd.commandId));
       focusComposer();
@@ -275,10 +263,8 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     selectSkillForCurrentTurn,
     selectWorkbenchCapabilityForCurrentTurn,
     setActiveAgentId,
-    setGoalComposerOpen,
     setPendingAgentSelection,
     setPendingPromptCommand,
-    setScheduleComposerOpen,
     setShowSlashPopover,
     setSlashFilter,
     setValue,

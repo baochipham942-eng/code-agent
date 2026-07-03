@@ -855,6 +855,31 @@ export const zh = {
     skipMessage: '跳过设计澄清，请按你的最佳判断直接生成成品，不要再 emit question-form。',
   },
 
+  // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  goalConfirm: {
+    title: '目标确认',
+    goalLabel: '目标',
+    goalPlaceholder: '用一句话说明要交付什么结果',
+    verifyLabel: '验证命令',
+    verifyEmpty: '留空（按软验收评审）',
+    verifyCustomLabel: '自定义验证命令',
+    verifyCustomPlaceholder: '自己填写要执行的验证命令',
+    acceptanceLabel: '软验收',
+    acceptancePlaceholder: '结果需要满足哪些条件',
+    boundariesLabel: '边界',
+    pauseLabel: '暂停条件',
+    maxTurnsLabel: '轮次上限',
+    budgetLabel: 'Token 预算',
+    maxTimeLabel: '时间上限(分)',
+    defaultPlaceholder: '默认',
+    noLimitPlaceholder: '不限',
+    advancedToggle: '高级编辑',
+    start: '启动目标',
+    cancel: '取消',
+    defaultBoundaries: '只修改与目标直接相关的文件和配置，避免无关重构、无关功能和破坏性操作。',
+    defaultPauseConditions: '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。',
+  },
+
   // /goal 生命周期通知卡片（到限放行的安静降级标识）
   goalNotice: {
     degradedBadge: '已完成 · 验证未全过',

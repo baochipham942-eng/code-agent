@@ -57,7 +57,9 @@ import {
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
-import { GoalComposerCard } from './GoalComposerCard';
+import { GoalConfirmCard } from './GoalConfirmCard';
+import { buildVerifyCandidates } from './goalConfirm';
+import { readWorkspaceFile } from '../../../design/designFiles';
 import {
   buildDirectRoutingPlaceholder,
   getPreferredAgentMentionToken,
@@ -160,8 +162,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // /schedule 不带参数时的对话式创建卡片
   const [scheduleComposerOpen, setScheduleComposerOpen] = useState(false);
   const [creatingSchedule, setCreatingSchedule] = useState(false);
-  // /goal 不带参数时的目标合同创建卡片
-  const [goalComposerOpen, setGoalComposerOpen] = useState(false);
+  // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
+  const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
   const [submittingGoal, setSubmittingGoal] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -174,6 +177,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       window.removeEventListener('app:openCommandPalette', handleOpenCommandPalette);
     };
   }, []);
+
+  // /goal 确认卡打开时探测项目 package.json scripts 作为验证命令候选
+  // （fail-closed：候选只来自项目真实脚本，读不到就空）
+  useEffect(() => {
+    if (!goalConfirm) return;
+    const workingDirectory = useAppStore.getState().workingDirectory;
+    if (!workingDirectory) {
+      setGoalVerifyCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    void readWorkspaceFile(`${workingDirectory}/package.json`).then((raw) => {
+      if (!cancelled) setGoalVerifyCandidates(buildVerifyCandidates(raw));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [goalConfirm]);
 
   useEffect(() => {
     const handleOpenSlashMenu = () => {
@@ -448,8 +469,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSlashFilter,
     setPendingPromptCommand,
     setPendingAgentSelection,
-    setScheduleComposerOpen,
-    setGoalComposerOpen,
     setActiveAgentId,
   });
 
@@ -492,7 +511,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setPendingPromptCommand,
     setPendingAgentSelection,
     setScheduleComposerOpen,
-    setGoalComposerOpen,
+    openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
+    closeGoalConfirm: () => setGoalConfirm(null),
     setActiveAgentId,
   });
 
@@ -545,17 +565,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onDismiss={() => setScheduleComposerOpen(false)}
           />
         )}
-        {goalComposerOpen && (
-          <GoalComposerCard
+        {goalConfirm && (
+          <GoalConfirmCard
+            initialGoal={goalConfirm.initialGoal}
+            verifyCandidates={goalVerifyCandidates}
             submitting={submittingGoal}
             onSubmit={async (draft) => {
               setSubmittingGoal(true);
               const parsed = goalComposerDraftToParsed(draft);
               const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
               setSubmittingGoal(false);
-              if (!ok) setGoalComposerOpen(true);
+              if (!ok) setGoalConfirm({ initialGoal: parsed.goal });
             }}
-            onDismiss={() => setGoalComposerOpen(false)}
+            onDismiss={() => setGoalConfirm(null)}
           />
         )}
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}

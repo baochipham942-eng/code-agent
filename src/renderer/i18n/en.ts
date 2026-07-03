@@ -868,6 +868,31 @@ export const en: Translations = {
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
   },
 
+  // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  goalConfirm: {
+    title: 'Confirm goal',
+    goalLabel: 'Goal',
+    goalPlaceholder: 'Describe the outcome to deliver in one sentence',
+    verifyLabel: 'Verify command',
+    verifyEmpty: 'Leave empty (soft review only)',
+    verifyCustomLabel: 'Custom verify command',
+    verifyCustomPlaceholder: 'Type the verification command to run',
+    acceptanceLabel: 'Soft acceptance',
+    acceptancePlaceholder: 'What conditions should the result meet',
+    boundariesLabel: 'Boundaries',
+    pauseLabel: 'Pause conditions',
+    maxTurnsLabel: 'Max turns',
+    budgetLabel: 'Token budget',
+    maxTimeLabel: 'Time limit (min)',
+    defaultPlaceholder: 'Default',
+    noLimitPlaceholder: 'No limit',
+    advancedToggle: 'Advanced',
+    start: 'Start goal',
+    cancel: 'Cancel',
+    defaultBoundaries: 'Only touch files and config directly related to the goal; avoid unrelated refactors, extra features, and destructive operations.',
+    defaultPauseConditions: 'Pause when credentials, payment, production data, destructive actions, or scope expansion are needed, or after 2 consecutive failed verifications without new evidence.',
+  },
+
   // /goal 生命周期通知卡片（到限放行的安静降级标识）
   goalNotice: {
     degradedBadge: 'Completed · verification incomplete',

@@ -163,6 +163,24 @@ describe('contextAssembly inference artifact retry', () => {
     else process.env.CODE_AGENT_MODEL_ENGINE = prevEngine;
   });
 
+  it('forceFinalResponsePrompt 以 transient 尾巴形式追加（不打前缀缓存、legacy claude 不丢失）', async () => {
+    const ctx = buildCtx();
+    ctx.runtime.forceFinalResponsePrompt = '<force-final-response>wrap up now</force-final-response>';
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'final',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    const [sentMessages] = ctx.runtime.modelRouter.inference.mock.calls[0];
+    const last = sentMessages[sentMessages.length - 1];
+    expect(last.role).toBe('system');
+    expect(last.content).toContain('wrap up now');
+    expect(last.transient).toBe(true);
+  });
+
   it('emits user-visible progress while waiting for artifact model output', async () => {
     const ctx = buildCtx();
     ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({

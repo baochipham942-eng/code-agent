@@ -52,7 +52,7 @@ import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/prov
 import { withTransientRetry, isTransientError, abortableSleep } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
-import { convertToolsToOpenAI, getHttpsAgent } from '../providers/shared';
+import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -444,7 +444,7 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
       // 动态尾巴（transient）：不能进 system 参数——buildAiSdkPrompt 会把全部 system
       // 消息提升到最前，尾巴每请求变化会把整个历史的 prompt cache 前缀打掉。
       // 转成位于原位（历史末尾）的 user 消息 + <system-reminder> 包裹（Claude Code 模式）。
-      out.push({ role: 'user', content: `<system-reminder>\n${textOf(m.content)}\n</system-reminder>` });
+      out.push({ role: 'user', content: wrapTransientSystemReminder(textOf(m.content)) });
     } else if (m.role === 'system') {
       out.push({ role: 'system', content: textOf(m.content) });
     } else if (m.role === 'tool') {

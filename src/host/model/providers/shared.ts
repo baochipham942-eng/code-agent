@@ -330,6 +330,17 @@ function createToolCallIdNormalizer(messages: ModelMessage[]): (id: string) => s
 // ----------------------------------------------------------------------------
 
 /**
+ * transient 动态尾巴的统一包装：先中和内容里的 <system-reminder> 哨兵
+ * （git commit message / 子代理输出等攻击面可注入 </system-reminder>
+ * 伪造边界逃逸，审计 A1），再包一对边界。所有 provider 转换路径共用，
+ * 防止三处实现漂移。
+ */
+export function wrapTransientSystemReminder(content: string): string {
+  const neutralized = content.replace(/<\/?system-reminder>/gi, '');
+  return `<system-reminder>\n${neutralized}\n</system-reminder>`;
+}
+
+/**
  * Convert messages to OpenAI format (supports structured tool_calls)
  * 包含 sanitizeToolCallOrder 后处理，确保 assistant+tool_calls 后紧跟 tool 响应
  */
@@ -391,7 +402,7 @@ export function convertToOpenAIMessages(
     // <system-reminder> 包裹，与 aiSdk 路径对齐（部分 provider 对结尾 system 消息
     // 处理不一致；user 角色语义等价且位置稳定，不打前缀缓存）。
     if (m.role === 'system' && m.transient && typeof m.content === 'string') {
-      return [{ role: 'user' as const, content: `<system-reminder>\n${m.content}\n</system-reminder>` }];
+      return [{ role: 'user' as const, content: wrapTransientSystemReminder(m.content) }];
     }
     // 其他消息（system, user, 无 toolCalls 的 assistant）
     if (typeof m.content === 'string') {
@@ -623,6 +634,20 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
       });
       continue;
     }
+    // 相邻 user 合并（审计 A4）：transient 尾巴在 claudeProvider 已转成 user 文本，
+    // 跟在 tool_result（同为 user 角色）或真实 user 输入之后会形成连续 user 消息；
+    // 合并进前一条，避免依赖 provider 侧对连续同角色消息的宽容度。
+    if (m.role === 'user' && typeof m.content === 'string') {
+      const lastUser = result[result.length - 1];
+      if (lastUser?.role === 'user') {
+        if (Array.isArray(lastUser.content)) {
+          lastUser.content.push({ type: 'text', text: m.content });
+        } else {
+          lastUser.content = `${lastUser.content}\n\n${m.content}`;
+        }
+        continue;
+      }
+    }
     // 其他消息保持不变
     if (typeof m.content === 'string') {
       result.push({ role: m.role as ClaudeMessage['role'], content: m.content });
@@ -695,7 +720,11 @@ function sanitizeClaudeToolPairing(messages: ClaudeMessage[]): ClaudeMessage[] {
  * 回退到纯文本：toolCalls → toolCallText, tool → user
  */
 export function convertToTextOnlyMessages(messages: ModelMessage[]): OpenAIMessage[] {
-  return messages.map((m) => {
+  return messages.map((m): OpenAIMessage => {
+    // 动态尾巴（transient system）→ 末尾 user + <system-reminder>，与其余路径对齐（审计 A5）
+    if (m.role === 'system' && m.transient && typeof m.content === 'string') {
+      return { role: 'user', content: wrapTransientSystemReminder(m.content) };
+    }
     // assistant + toolCallText → 纯文本回退
     if (m.role === 'assistant' && m.toolCallText) {
       return { role: 'assistant', content: m.toolCallText };
@@ -732,7 +761,14 @@ export function convertToGeminiMessages(messages: ModelMessage[]): GeminiContent
   const contents: GeminiContent[] = [];
 
   for (const m of messages) {
-    if (m.role === 'system') {
+    // 动态尾巴（transient system）：单条 user + <system-reminder>，不追加假 model
+    // 确认——否则 payload 以 model 收尾，Gemini 要求以 user 结束会直接 400（审计 A3）
+    if (m.role === 'system' && m.transient) {
+      contents.push({
+        role: 'user',
+        parts: [{ text: wrapTransientSystemReminder(typeof m.content === 'string' ? m.content : '') }],
+      });
+    } else if (m.role === 'system') {
       contents.push({
         role: 'user',
         parts: [{ text: typeof m.content === 'string' ? m.content : '' }],

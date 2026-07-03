@@ -439,6 +439,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       {
         role: 'system',
         content: ctx.runtime.forceFinalResponsePrompt,
+        // transient：走各 provider 边界的末尾 user + <system-reminder> 转换——
+        // 非 transient 的尾部 system 在 legacy claude 路径会被静默丢弃、
+        // 在 aiSdk 路径会被提升进 system 参数打掉前缀缓存（审计 A2）
+        transient: true,
       },
     ];
   }

@@ -342,7 +342,9 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   try {
     const activePlugins = getPluginRegistry()
       .getPlugins()
-      .filter((p) => p.state === 'active' && p.manifest.description);
+      .filter((p) => p.state === 'active' && p.manifest.description)
+      // 按 id 字节序稳定排序：注册表 Map 插入序跨进程不确定，会弱化跨会话前缀复用
+      .sort((a, b) => (a.manifest.id < b.manifest.id ? -1 : a.manifest.id > b.manifest.id ? 1 : 0));
     if (activePlugins.length > 0) {
       const lines = activePlugins.map((p) => {
         const desc = (p.manifest.description ?? '').slice(0, 60);
@@ -826,9 +828,9 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   const dynamicTailContent = tailWorking.slice(stableSystemPrompt.length).trim();
 
   // Check prompt length and warn if too long（合并视图口径，与改造前一致）
-  const systemPrompt = trimPreambleBeforeRequiredArtifactBlock(stableSystemPrompt, ctx);
-  const combinedPromptTokens = estimateTokens(systemPrompt)
-    + (dynamicTailContent ? estimateTokens(dynamicTailContent) : 0);
+  const dynamicTailTokens = dynamicTailContent ? estimateTokens(dynamicTailContent) : 0;
+  const systemPrompt = trimPreambleBeforeRequiredArtifactBlock(stableSystemPrompt, ctx, dynamicTailTokens);
+  const combinedPromptTokens = estimateTokens(systemPrompt) + dynamicTailTokens;
   if (combinedPromptTokens > promptBudget(ctx)) {
     logger.warn(`[AgentLoop] System prompt too long: ${combinedPromptTokens} tokens (limit: ${promptBudget(ctx)})`);
     logCollector.agent('WARN', 'System prompt exceeds recommended limit', {

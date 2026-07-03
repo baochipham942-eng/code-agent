@@ -14,6 +14,7 @@ import {
   safeJsonParse,
   convertToolsToClaude,
   convertToClaudeMessages,
+  wrapTransientSystemReminder,
   parseClaudeResponse,
   electronFetch,
   normalizeClaudeBaseUrl,
@@ -383,7 +384,7 @@ export class ClaudeProvider implements Provider {
     // 且尾巴每请求变化，进 system 参数会打掉 prompt cache 前缀。
     const normalizedMessages = messages.map((m) =>
       m.role === 'system' && m.transient && typeof m.content === 'string'
-        ? { ...m, role: 'user', content: `<system-reminder>\n${m.content}\n</system-reminder>`, transient: undefined }
+        ? { ...m, role: 'user', content: wrapTransientSystemReminder(m.content), transient: undefined }
         : m,
     );
     // System message 单独提取（Claude API 要求 system 不在 messages 数组中）

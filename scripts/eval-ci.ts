@@ -21,6 +21,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ChangeDetector } from '../src/host/testing/ci/changeDetector';
 import { BaselineManager } from '../src/host/testing/ci/baselineManager';
+import { loadEvalSplits, applySplitFilter, type SplitBucket } from '../src/host/testing/ci/sampleSplits';
 import { TrendTracker } from '../src/host/testing/ci/trendTracker';
 import { generateDeltaConsole } from '../src/host/testing/ci/deltaReporter';
 import {
@@ -101,6 +102,7 @@ function parseArgs(argv: string[]) {
   let predictedFixes: string[] | undefined;
   let riskTasks: string[] | undefined;
   let caseDir: string | undefined;
+  let split: SplitBucket | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -134,6 +136,14 @@ function parseArgs(argv: string[]) {
       tags = args[++i].split(',').map((tag) => tag.trim()).filter(Boolean);
     } else if (arg === '--ids' && i + 1 < args.length) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
+    } else if (arg === '--split' && i + 1 < args.length) {
+      const val = args[++i];
+      if (val === 'held-in' || val === 'held-out' || val === 'control') {
+        split = val;
+      } else {
+        console.error(chalk.red(`Invalid split: ${val}. Use 'held-in', 'held-out' or 'control'.`));
+        process.exit(1);
+      }
     } else if (arg === '--compare' && i + 1 < args.length) {
       compare = args[++i];
     } else if (arg === '--case-dir' && i + 1 < args.length) {
@@ -170,7 +180,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir };
+  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split };
 }
 
 function printUsage() {
@@ -188,6 +198,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
+  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to sample split: 'held-in' (daily) / 'held-out' (milestone only) / 'control' (judge calibration)
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config (requires --real)
   npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
@@ -670,7 +681,26 @@ async function runCompareCommand(
 // ---------------------------------------------------------------------------
 
 export async function main(argv = process.argv, cwd = process.cwd()) {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir } = parseArgs(argv);
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split } = parseArgs(argv);
+  // WP1b：--split 把 ids 过滤到切分桶（held-in 日常迭代 / held-out 里程碑 / control judge 校准）
+  let ids = rawIds;
+  if (split) {
+    const splitFile = await loadEvalSplits(cwd);
+    if (!splitFile) {
+      console.error(chalk.red('  Error: 没有切分文件（.code-agent/eval-splits.json）。先跑 scripts/eval-split.ts 生成。'));
+      process.exit(1);
+    }
+    ids = applySplitFilter(rawIds, splitFile, split);
+    if (ids.length === 0) {
+      console.error(chalk.red(`  Error: --split ${split} 过滤后没有可跑的 case（检查 --ids 是否与桶相交）。`));
+      process.exit(1);
+    }
+    console.log(chalk.cyan(`  Split: ${split}（seed=${splitFile.seed}，${ids.length} cases）`));
+    if (split === 'held-out') {
+      console.log(chalk.yellow('  ⚠ held-out 是过拟合探测器，只在里程碑检查时跑；日常迭代请用 --split held-in。'));
+    }
+  }
+
   // WP1-4：任一预测 flag 出现即登记（另一侧默认空列表）
   const prediction = (predictedFixes || riskTasks)
     ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }

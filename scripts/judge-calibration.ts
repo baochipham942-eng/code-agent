@@ -14,6 +14,7 @@ import path from 'path';
 import os from 'os';
 import { computeCalibration, type CalibrationPair, type CalibrationLabel } from '../src/host/testing/calibration/judgeCalibration';
 import { saveCalibrationRecord, isTrustedCalibration, CALIBRATION_TRUST_THRESHOLDS } from '../src/host/testing/calibration/calibrationRegistry';
+import { loadEvalSplits, applySplitFilter } from '../src/host/testing/ci/sampleSplits';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 
 // ---- zhipu(0ki 代理) 单次 chat 调用 ---------------------------------------
@@ -110,8 +111,10 @@ async function main() {
   const args = process.argv.slice(2);
   const reportPath = args.find((a) => !a.startsWith('--'));
   const model = (args.find((a) => a.startsWith('--model='))?.split('=')[1]) ?? 'glm-4.7';
+  const useControl = args.includes('--control');
   if (!reportPath) {
-    console.error('用法: npx tsx scripts/judge-calibration.ts <report.json> [--model=glm-4.7]');
+    console.error('用法: npx tsx scripts/judge-calibration.ts <report.json> [--model=glm-4.7] [--control]');
+    console.error('  --control  只用切分文件的 control 集（held-in 内带确定性断言的 case）做校准——制度化口径');
     process.exit(1);
   }
   if (!ZHIPU_KEY) {
@@ -120,7 +123,20 @@ async function main() {
   }
 
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8'));
-  const cases: ReportCase[] = (report.results ?? report.cases ?? []) as ReportCase[];
+  let cases: ReportCase[] = (report.results ?? report.cases ?? []) as ReportCase[];
+
+  // --control：制度化校准口径——只用切分文件的 control 集（金标断言可用）
+  if (useControl) {
+    const splits = await loadEvalSplits(process.cwd());
+    if (!splits) {
+      console.error('缺切分文件（.code-agent/eval-splits.json），先跑 scripts/eval-split.ts');
+      process.exit(1);
+    }
+    const controlIds = new Set(applySplitFilter(undefined, splits, 'control'));
+    const before = cases.length;
+    cases = cases.filter((c) => controlIds.has(c.testId));
+    console.log(`control 集过滤：${before} → ${cases.length} 个 case（seed=${splits.seed}）`);
+  }
   console.log(`读取 ${cases.length} 个 case（judge=zhipu/${model}），开始评判...\n`);
 
   const pairs: CalibrationPair[] = [];

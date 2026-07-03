@@ -1564,10 +1564,12 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       attempts: 2,
       phase: 'targeted_repair',
     });
+    // 同样的失败连续 3 轮：patience 停滞检测（连续 2 轮未刷新最佳）触发
+    // 策略切换——第 3 轮不再走 read_then_patch 补丁阶梯，改干净重写。
     expect(third.metadata?.artifactValidation).toMatchObject({
       failed: true,
       attempts: 3,
-      phase: 'read_then_patch',
+      phase: 'fresh_rewrite',
     });
     expect((third.metadata?.artifactValidation as any)?.repairSpec).toMatchObject({
       kind: 'game_artifact_repair',

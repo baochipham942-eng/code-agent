@@ -8,7 +8,7 @@ import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { formatDate, generateHtmlReport } from './htmlReportGenerator';
 
-export { escapeHtml, escapeHtmlAttribute, generateHtmlReport } from './htmlReportGenerator';
+export { generateHtmlReport } from './htmlReportGenerator';
 
 type ReportFormat = 'markdown' | 'json' | 'console' | 'html';
 

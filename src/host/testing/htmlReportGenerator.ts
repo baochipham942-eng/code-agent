@@ -71,7 +71,7 @@ export function formatDate(timestamp: number): string {
   });
 }
 
-export function escapeHtml(value: unknown): string {
+function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -81,7 +81,7 @@ export function escapeHtml(value: unknown): string {
     .replace(/=/g, '&#61;');
 }
 
-export function escapeHtmlAttribute(value: unknown): string {
+function escapeHtmlAttribute(value: unknown): string {
   return escapeHtml(value).replace(/`/g, '&#96;');
 }
 

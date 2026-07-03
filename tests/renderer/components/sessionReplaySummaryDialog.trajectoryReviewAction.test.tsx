@@ -93,7 +93,7 @@ describe('SessionReplaySummaryDialog trajectory review action', () => {
       />,
     );
 
-    const button = screen.getByRole('button', { name: '确认复核 Core eval' }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: '确认复核 核心评测' }) as HTMLButtonElement;
 
     expect(button.disabled).toBe(false);
     expect(button.getAttribute('aria-pressed')).toBe('true');

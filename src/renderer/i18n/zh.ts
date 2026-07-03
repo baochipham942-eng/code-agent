@@ -786,6 +786,40 @@ export const zh = {
     resume: '继续',
   },
 
+  sessionReplay: {
+    trajectory: '轨迹',
+    dataset: '数据集',
+    evidenceControl: '证据控制',
+    turns: '轮次',
+    source: '来源',
+    duration: '耗时',
+    deviation: '偏差',
+    deviationTooltip: '偏差指 Replay 质量评估发现的异常、缺口或不一致项数量。',
+    toolDistribution: '工具分布',
+    noToolCalls: '无工具调用',
+    trajectoryGate: '轨迹门禁',
+    evidenceGaps: '证据缺口',
+    workflowBackground: '工作流 / 后台任务',
+    timeline: '时间线',
+    emptyTimeline: 'Replay 暂无轮次明细',
+    incompletePrefix: 'Replay 数据不完整：',
+    confirmReview: '确认复核',
+    markAs: '标记为',
+    datasetRoles: {
+      coreEval: '核心评测',
+      diagnostic: '诊断集',
+      excluded: '已排除',
+    },
+    taskKinds: {
+      coding: '编码',
+      search: '搜索',
+      data: '数据',
+      agentTask: 'Agent 任务',
+      chat: '聊天',
+      other: '其他',
+    },
+  },
+
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）

@@ -379,6 +379,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
           invalidatePendingSessionSwitches();
           useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
+          // 新会话继承 draft 期（无会话时）的 agent 选择，其余情况从 per-session map 读取
+          useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
           set((state) => ({
             sessions: [newSessionWithMeta, ...state.sessions],
             currentSessionId: session.id,
@@ -431,6 +433,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       useAppStore.getState().setContextHealth(null);
       useAppStore.getState().setWorkingDirectory(previewSession?.workingDirectory ?? null);
+      // per-session agent 选择随会话切换同步（S3：消灭全局 activeAgentId 跨会话残留）
+      useAppStore.getState().syncActiveAgentForSession(sessionId);
       set({
         currentSessionId: sessionId,
         messages: [],
@@ -536,6 +540,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
+        // 清理该会话的 per-session agent 选择（S3）
+        useAppStore.getState().clearActiveAgentForSession(sessionId);
 
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
@@ -545,6 +551,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             set({ sessions: newSessions });
             await get().switchSession(newSessions[0].id);
           } else {
+            useAppStore.getState().syncActiveAgentForSession(null);
             set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
           }
         } else {
@@ -574,6 +581,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               set({ sessions: newSessions });
               await get().switchSession(newSessions[0].id);
             } else {
+              useAppStore.getState().syncActiveAgentForSession(null);
               set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
             }
           } else {
@@ -1006,6 +1014,7 @@ function clearSessionStateForAuthChange(): void {
   useAppshotsStore.getState().clear();
   useAppStore.getState().setWorkingDirectory(null);
   useAppStore.getState().setContextHealth(null);
+  useAppStore.getState().syncActiveAgentForSession(null);
   useSessionStore.setState({
     sessions: [],
     currentSessionId: null,

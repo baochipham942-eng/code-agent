@@ -9,8 +9,6 @@ describe('statusStore', () => {
   beforeEach(() => {
     // Reset store to initial state before each test
     useStatusStore.setState({
-      inputTokens: 0,
-      outputTokens: 0,
       sessionCost: 0,
       contextUsagePercent: 0,
       sessionStartTime: Date.now(),
@@ -28,8 +26,6 @@ describe('statusStore', () => {
 
   it('should have correct initial state', () => {
     const state = useStatusStore.getState();
-    expect(state.inputTokens).toBe(0);
-    expect(state.outputTokens).toBe(0);
     expect(state.sessionCost).toBe(0);
     expect(state.contextUsagePercent).toBe(0);
     expect(state.networkStatus).toBe('online');
@@ -37,34 +33,6 @@ describe('statusStore', () => {
     expect(state.workingDirectory).toBeNull();
     expect(state.gitChanges).toBeNull();
     expect(state.isStreaming).toBe(false);
-  });
-
-  // ============================================================================
-  // updateTokens
-  // ============================================================================
-
-  describe('updateTokens', () => {
-    it('should accumulate input and output tokens', () => {
-      const { updateTokens } = useStatusStore.getState();
-      updateTokens(100, 50);
-      expect(useStatusStore.getState().inputTokens).toBe(100);
-      expect(useStatusStore.getState().outputTokens).toBe(50);
-    });
-
-    it('should accumulate across multiple calls', () => {
-      const { updateTokens } = useStatusStore.getState();
-      updateTokens(100, 50);
-      updateTokens(200, 100);
-      expect(useStatusStore.getState().inputTokens).toBe(300);
-      expect(useStatusStore.getState().outputTokens).toBe(150);
-    });
-
-    it('should handle zero values', () => {
-      const { updateTokens } = useStatusStore.getState();
-      updateTokens(0, 0);
-      expect(useStatusStore.getState().inputTokens).toBe(0);
-      expect(useStatusStore.getState().outputTokens).toBe(0);
-    });
   });
 
   // ============================================================================
@@ -85,17 +53,14 @@ describe('statusStore', () => {
   // ============================================================================
 
   describe('resetSession', () => {
-    it('should reset tokens, cost, and context usage', () => {
+    it('should reset cost and context usage', () => {
       const state = useStatusStore.getState();
-      state.updateTokens(500, 300);
       state.addCost(0.01);
       state.setContextUsage(75);
 
       state.resetSession();
 
       const newState = useStatusStore.getState();
-      expect(newState.inputTokens).toBe(0);
-      expect(newState.outputTokens).toBe(0);
       expect(newState.sessionCost).toBe(0);
       expect(newState.contextUsagePercent).toBe(0);
     });

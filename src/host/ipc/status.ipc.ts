@@ -15,7 +15,6 @@ const execAsync = promisify(exec);
 export const STATUS_CHANNELS = {
   GET_GIT_INFO: 'status:git-info',
   CHECK_NETWORK: 'status:network',
-  TOKEN_UPDATE: 'status:token-update',
   COST_UPDATE: 'status:cost-update',
   CONTEXT_UPDATE: 'status:context-update',
   GIT_CHANGES_UPDATE: 'status:git-changes-update',
@@ -72,21 +71,8 @@ export function registerStatusHandlers(): void {
   logger.info('Status handlers registered');
 }
 
-/**
- * 发送 Token 使用更新到渲染进程
- */
-export function sendTokenUpdate(
-  window: AppWindow | null,
-  inputTokens: number,
-  outputTokens: number
-): void {
-  if (window && !window.isDestroyed()) {
-    window.webContents.send(STATUS_CHANNELS.TOKEN_UPDATE, {
-      inputTokens,
-      outputTokens,
-    });
-  }
-}
+// NOTE: 原 sendTokenUpdate（status:token-update 推送）已删除——零调用死通道，
+// token 显示改由 renderer 经 settings domain getBudgetStatus 拉活值（WP-2）。
 
 /**
  * 发送费用更新到渲染进程

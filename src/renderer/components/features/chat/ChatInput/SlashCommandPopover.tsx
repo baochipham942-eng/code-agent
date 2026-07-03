@@ -18,7 +18,6 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import { useModeStore } from '../../../../stores/modeStore';
 import { usePermissionStore } from '../../../../stores/permissionStore';
 import { useStatusStore } from '../../../../stores/statusStore';
-import { MODEL_PRICING_PER_1M } from '@shared/constants';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
@@ -63,6 +62,19 @@ function fmtTokens(n: number): string {
 }
 function fmtCost(n: number): string {
   return `$${n.toFixed(3)}`;
+}
+// /status //cost 的数据源：host 真实记账（settings domain getBudgetStatus）
+interface BudgetStatusRaw {
+  currentCost?: number;
+  maxBudget?: number;
+  usagePercentage?: number;
+  config?: { enabled?: boolean };
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  };
 }
 // 把诊断命令的文本输出写进聊天流（assistant 消息）。运行时取 store，不增加 useMemo 依赖。
 // 用代码块包裹：诊断输出是等宽对齐文本，且含 $ 金额（会被 markdown 当 LaTeX 渲染）、
@@ -620,21 +632,29 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '状态',
       description: '查看当前会话状态',
       icon: <BarChart2 className="w-4 h-4" />,
-      action: () => {
+      action: async () => {
         const app = useAppStore.getState();
-        const status = useStatusStore.getState();
         const sessionId = useSessionStore.getState().currentSessionId ?? 'N/A';
-        const total = status.inputTokens + status.outputTokens;
         const health = app.contextHealth;
         const contextLine = health && health.currentTokens > 0
           ? `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`
           : '';
-        const costLine = status.sessionCost > 0 ? ` (${fmtCost(status.sessionCost)})` : '';
+        // token/成本走 host 真实记账（WP-2：statusStore 推送通道已死，经 BudgetStatus 拉活值）
+        let tokenLine = 'N/A';
+        let costLine = '';
+        try {
+          const b = await invokeDomain<BudgetStatusRaw>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus');
+          const usage = b?.tokenUsage;
+          const total = (usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0)
+            + (usage?.cacheCreationTokens ?? 0) + (usage?.outputTokens ?? 0);
+          if (total > 0) tokenLine = fmtTokens(total);
+          if ((b?.currentCost ?? 0) > 0) costLine = ` (${fmtCost(b.currentCost!)})`;
+        } catch { /* budget surface 不可用时维持 N/A */ }
         writeAssistant(
           `Status\n` +
           `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}\n` +
           `  Session:  ${sessionId}\n` +
-          `  Tokens:   ${total > 0 ? fmtTokens(total) : 'N/A'}${costLine}${contextLine}`
+          `  Tokens:   ${tokenLine}${costLine}${contextLine}`
         );
       },
     },
@@ -645,23 +665,28 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
         const app = useAppStore.getState();
-        const status = useStatusStore.getState();
-        const pricing = MODEL_PRICING_PER_1M[app.modelConfig.model] || MODEL_PRICING_PER_1M['default'];
-        const inputCost = (status.inputTokens * pricing.input) / 1_000_000;
-        const outputCost = (status.outputTokens * pricing.output) / 1_000_000;
         const lines = [
           'Cost (session)',
           `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}`,
-          `  Input:    ${fmtTokens(status.inputTokens)} tokens (${fmtCost(inputCost)})`,
-          `  Output:   ${fmtTokens(status.outputTokens)} tokens (${fmtCost(outputCost)})`,
-          `  Total:    ${fmtCost(inputCost + outputCost)}`,
         ];
         try {
-          const b = await invokeDomain<{ currentCost: number; maxBudget: number; usagePercentage: number }>(IPC_DOMAINS.DIAGNOSTICS, 'budget');
-          if (b.maxBudget > 0) {
-            lines.push(`  Budget:   ${fmtCost(b.currentCost)} / ${fmtCost(b.maxBudget)} (${b.usagePercentage.toFixed(1)}%)`);
+          const b = await invokeDomain<BudgetStatusRaw>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus');
+          const usage = b?.tokenUsage;
+          const input = (usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0) + (usage?.cacheCreationTokens ?? 0);
+          const output = usage?.outputTokens ?? 0;
+          lines.push(`  Input:    ${fmtTokens(input)} tokens`);
+          lines.push(`  Output:   ${fmtTokens(output)} tokens`);
+          if ((usage?.cacheReadTokens ?? 0) > 0) {
+            lines.push(`  Cached:   ${fmtTokens(usage!.cacheReadTokens!)} tokens (read)`);
           }
-        } catch { /* budget optional */ }
+          // Total 用 host cache-aware 真实记账，不再用单价×token 的本地估算
+          lines.push(`  Total:    ${fmtCost(b?.currentCost ?? 0)}`);
+          if (b?.config?.enabled && (b?.maxBudget ?? 0) > 0) {
+            lines.push(`  Budget:   ${fmtCost(b.currentCost ?? 0)} / ${fmtCost(b.maxBudget!)} (${((b.usagePercentage ?? 0) * 100).toFixed(1)}%)`);
+          }
+        } catch {
+          lines.push('  (cost data unavailable)');
+        }
         writeAssistant(lines.join('\n'));
       },
     },

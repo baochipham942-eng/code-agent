@@ -562,7 +562,6 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CONNECTOR_EVENT]: (event: ConnectorEvent) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
-  [IPC_CHANNELS.STATUS_TOKEN_UPDATE]: (event: { inputTokens: number; outputTokens: number }) => void;
   [IPC_CHANNELS.STATUS_CONTEXT_UPDATE]: (event: { percent: number }) => void;
   [IPC_CHANNELS.STATUS_GIT_UPDATE]: (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => void;
   [IPC_CHANNELS.MANAGED_BROWSER_SESSION_CHANGED]: (event: ManagedBrowserSessionChangedEvent) => void;

@@ -1103,9 +1103,6 @@ export async function initializeSessionStore(): Promise<void> {
     useSessionStore.getState().updateBackgroundTask(event);
   });
 
-  ipcService.on(IPC_CHANNELS.STATUS_TOKEN_UPDATE, (event: { inputTokens: number; outputTokens: number }) => {
-    useStatusStore.getState().updateTokens(event.inputTokens, event.outputTokens);
-  });
   ipcService.on(IPC_CHANNELS.STATUS_CONTEXT_UPDATE, (event: { percent: number }) => {
     useStatusStore.getState().setContextUsage(event.percent);
   });

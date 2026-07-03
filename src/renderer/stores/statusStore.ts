@@ -8,10 +8,6 @@ import { create } from 'zustand';
 export type NetworkStatus = 'online' | 'offline' | 'slow';
 
 interface StatusState {
-  // Token 使用
-  inputTokens: number;
-  outputTokens: number;
-
   // 费用
   sessionCost: number;
 
@@ -33,7 +29,6 @@ interface StatusState {
   isStreaming: boolean;
 
   // Actions
-  updateTokens: (input: number, output: number) => void;
   addCost: (cost: number) => void;
   resetSession: () => void;
   setContextUsage: (percent: number) => void;
@@ -44,8 +39,6 @@ interface StatusState {
 }
 
 export const useStatusStore = create<StatusState>((set) => ({
-  inputTokens: 0,
-  outputTokens: 0,
   sessionCost: 0,
   contextUsagePercent: 0,
   sessionStartTime: Date.now(),
@@ -55,12 +48,6 @@ export const useStatusStore = create<StatusState>((set) => ({
   gitChanges: null,
   isStreaming: false,
 
-  updateTokens: (input, output) =>
-    set((state) => ({
-      inputTokens: state.inputTokens + input,
-      outputTokens: state.outputTokens + output,
-    })),
-
   addCost: (cost) =>
     set((state) => ({
       sessionCost: state.sessionCost + cost,
@@ -68,8 +55,6 @@ export const useStatusStore = create<StatusState>((set) => ({
 
   resetSession: () =>
     set({
-      inputTokens: 0,
-      outputTokens: 0,
       sessionCost: 0,
       sessionStartTime: Date.now(),
       contextUsagePercent: 0,

@@ -49,9 +49,8 @@ Subtype identifier (`subtype: platformer`) goes in `__GAME_META__` and triggers 
 
 ## Generation Hints
 
-> TODO: task D will integrate this section into prompt assembly. Today these bullets
-> mirror the platformer-specific lines from `GAME_ARTIFACT_CONTRACT_PROMPT` so the
-> SKILL.md stays a single-source-of-truth reference.
+> This section is build-time inlined into game prompt assembly so the SKILL.md
+> stays a single-source-of-truth reference for platformer generation guidance.
 
 - Translate genre/reference into mechanics, not only visual skin.
 - Platformers must include acceleration/friction, gravity, jump buffering or coyote

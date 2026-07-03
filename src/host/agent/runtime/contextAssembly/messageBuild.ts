@@ -33,6 +33,11 @@ import {
   GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT,
   needsGameArtifactContract,
 } from '../../../prompts/artifactGeneration';
+import {
+  GAME_SKILL_GENERATION_CONTRACT,
+  GAME_SKILL_REPAIR_HINTS,
+} from '../game/generatedSkillContent';
+import { detectGameSubtypeFromMessage } from '../game/subtypeDetection';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
 import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
@@ -85,6 +90,7 @@ const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
 const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
 const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
 const REPO_MAP_INTENT_PATTERN = /代码|仓库|文件|实现|测试|修复|报错|构建|重构|性能|源码|模块|函数|类|bug|repo|code|file|test|fix|implement|refactor|build|performance|source|module/i;
+const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'recent conversations', 'deferred tools'];
 type RuntimeAssemblyCache = {
   dynamicPrompt?: {
     key: string;
@@ -242,7 +248,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       artifactPromptLabel,
       appendedBlocks,
       ctx,
-      { kind: 'required', trimCandidates: ['repo map', 'skills', 'recent conversations', 'deferred tools'] },
+      { kind: 'required', trimCandidates: REQUIRED_GAME_PROMPT_TRIM_CANDIDATES },
     );
     systemPrompt = result.prompt;
     if (result.appended) {
@@ -252,6 +258,34 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       );
       if (result.trimmed?.length) {
         logger.warn(`[ContextAssembly] Trimmed prompt blocks to preserve ${artifactPromptLabel}: ${result.trimmed.join(', ')}`);
+      }
+    }
+  }
+
+  if (shouldInjectArtifactBrief && shouldInjectGameContract) {
+    const subtype = detectGameSubtypeFromMessage(userQuery);
+    const skillPromptBlock = subtype
+      ? artifactRepairMode
+        ? GAME_SKILL_REPAIR_HINTS[subtype]
+        : GAME_SKILL_GENERATION_CONTRACT[subtype]
+      : undefined;
+    if (subtype && skillPromptBlock) {
+      const skillPromptLabel = `game skill knowledge (${subtype})`;
+      const result = appendPromptBlockWithinBudgetWithStatus(
+        systemPrompt,
+        skillPromptBlock,
+        skillPromptLabel,
+        appendedBlocks,
+        ctx,
+        { kind: 'required', trimCandidates: REQUIRED_GAME_PROMPT_TRIM_CANDIDATES },
+      );
+      systemPrompt = result.prompt;
+      if (result.appended) {
+        appendedBlocks.set(skillPromptLabel, skillPromptBlock);
+        logger.debug(`[ContextAssembly] ${skillPromptLabel} prompt injected`);
+        if (result.trimmed?.length) {
+          logger.warn(`[ContextAssembly] Trimmed prompt blocks to preserve ${skillPromptLabel}: ${result.trimmed.join(', ')}`);
+        }
       }
     }
   }

@@ -11,6 +11,7 @@ import {
   filterSkillGroups,
   findLibraryForSkill,
 } from '../../../src/renderer/components/features/settings/tabs/SkillsSettings';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 // ----------------------------------------------------------------------------
 // Fixtures
@@ -121,7 +122,11 @@ describe('buildInstalledSkillGroups', () => {
   it('collects library skills with no matching library into a fallback group', () => {
     const groups = buildInstalledSkillGroups([orphanLibrarySkill], []);
     expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ key: 'library:unknown', kind: 'library' });
+    expect(groups[0]).toMatchObject({
+      key: 'library:unknown',
+      kind: 'library',
+      label: zh.settings.skills.installed.groupLabels.unknownLibrary,
+    });
     expect(groups[0].skills.map((skill) => skill.name)).toEqual(['lost-skill']);
   });
 

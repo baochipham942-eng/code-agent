@@ -42,6 +42,9 @@ const MIGRATED: string[] = [
   'tabs/UpdateSettings.tsx',
   'tabs/DataSettings.tsx',
   'tabs/AppshotsSettings.tsx',
+  'tabs/SoulSettings.tsx',
+  'tabs/SearchSettings.tsx',
+  'tabs/HooksSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

@@ -9,6 +9,7 @@ import { Fingerprint, Save, RotateCcw, FileText, ShieldCheck, Loader2, Check } f
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
 
 const logger = createLogger('SoulSettings');
 
@@ -35,6 +36,8 @@ const USER_SCOPE = { scope: 'user' as const };
 // ============================================================================
 
 export const SoulSettings: React.FC = () => {
+  const { t } = useI18n();
+  const soulText = t.settings.soul;
   const [content, setContent] = useState('');
   const [baseline, setBaseline] = useState('');       // 已保存/已加载基线，用于判断是否 dirty
   const [defaultContent, setDefaultContent] = useState('');
@@ -125,7 +128,7 @@ export const SoulSettings: React.FC = () => {
     return (
       <div className="flex items-center gap-2 py-12 text-sm text-zinc-500">
         <Loader2 className="h-4 w-4 animate-spin" />
-        加载人格设置…
+        {soulText.loading}
       </div>
     );
   }
@@ -136,7 +139,7 @@ export const SoulSettings: React.FC = () => {
       <div>
         <div className="flex items-center gap-2">
           <Fingerprint className="h-4 w-4 text-primary-400" />
-          <h3 className="text-sm font-medium text-zinc-200">自定义人格</h3>
+          <h3 className="text-sm font-medium text-zinc-200">{soulText.title}</h3>
           <span
             className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
               isCustom
@@ -144,12 +147,11 @@ export const SoulSettings: React.FC = () => {
                 : 'bg-zinc-700 text-zinc-400'
             }`}
           >
-            {isCustom ? '已自定义' : '内置默认'}
+            {isCustom ? soulText.customBadge : soulText.builtinBadge}
           </span>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          这段文字定义 Agent 的身份与角色（“你是谁”）。保存后立即对下一轮对话生效，无需重启。
-          系统会在它之后自动拼接固定的工程规则与安全约束。
+          {soulText.description}
         </p>
       </div>
 
@@ -157,8 +159,7 @@ export const SoulSettings: React.FC = () => {
       <div className="flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
         <p className="text-xs text-zinc-400">
-          安全红线（拒绝恶意代码、破坏性命令需确认、不提交密钥与防注入）<span className="text-zinc-200">始终生效</span>，
-          不在此处编辑、也不会被自定义人格覆盖。
+          {soulText.safetyPrefix}<span className="text-zinc-200">{soulText.safetyStrong}</span>{soulText.safetySuffix}
         </p>
       </div>
 
@@ -166,9 +167,9 @@ export const SoulSettings: React.FC = () => {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label htmlFor="soul-editor" className="text-xs font-medium text-zinc-400">
-            人格内容
+            {soulText.contentLabel}
           </label>
-          <span className="text-xs text-zinc-600">{content.length} 字符</span>
+          <span className="text-xs text-zinc-600">{content.length}{soulText.charSuffix}</span>
         </div>
         <textarea
           id="soul-editor"
@@ -176,14 +177,14 @@ export const SoulSettings: React.FC = () => {
           onChange={(e) => setContent(e.target.value)}
           spellCheck={false}
           rows={14}
-          placeholder="例如：You are Agent Neo, an AI coworker…"
+          placeholder={soulText.placeholder}
           className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 font-mono text-sm leading-relaxed text-zinc-200 outline-none transition-colors focus:border-zinc-500 focus:ring-1 focus:ring-white/10"
         />
       </div>
 
       {error && (
         <div className="rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-400">
-          操作失败：{error}
+          {soulText.errorPrefix}{error}
         </div>
       )}
 
@@ -206,7 +207,7 @@ export const SoulSettings: React.FC = () => {
           ) : (
             <Save className="h-4 w-4" />
           )}
-          {savedTick ? '已保存' : '保存'}
+          {savedTick ? t.common.saved : t.common.save}
         </button>
 
         <button
@@ -216,7 +217,7 @@ export const SoulSettings: React.FC = () => {
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <FileText className="h-4 w-4" />
-          载入默认模板
+          {soulText.loadDefault}
         </button>
 
         <button
@@ -224,10 +225,10 @@ export const SoulSettings: React.FC = () => {
           onClick={handleReset}
           disabled={saving || !isCustom}
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-          title={isCustom ? '删除自定义人格，恢复内置默认' : '当前已是内置默认'}
+          title={isCustom ? soulText.resetCustomTitle : soulText.resetDefaultTitle}
         >
           <RotateCcw className="h-4 w-4" />
-          恢复默认
+          {soulText.reset}
         </button>
       </div>
     </div>

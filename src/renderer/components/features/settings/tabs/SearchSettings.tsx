@@ -12,6 +12,7 @@ import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { invokeDomain } from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 
 type ServiceKeyMap = Partial<Record<string, string>>;
 
@@ -29,6 +30,8 @@ function orderCatalog(order?: string[]): SearchSourceCatalogEntry[] {
 }
 
 export function SearchSettings() {
+  const { t } = useI18n();
+  const searchText = t.settings.search;
   const [orderedIds, setOrderedIds] = useState<string[]>(() => orderCatalog().map((s) => s.id));
   const [disabled, setDisabled] = useState<Set<string>>(new Set());
   const [serviceKeys, setServiceKeys] = useState<ServiceKeyMap>({});
@@ -49,7 +52,7 @@ export function SearchSettings() {
         setServiceKeys(keys ?? {});
       })
       .catch(() => {
-        if (!cancelled) toast.error('加载搜索源配置失败');
+        if (!cancelled) toast.error(searchText.loadFailed);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -92,34 +95,35 @@ export function SearchSettings() {
         sourceOrder: orderedIds,
       };
       await invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { settings: { search } });
-      toast.success('搜索源配置已保存');
+      toast.success(searchText.saveSuccess);
     } catch (error) {
-      toast.error(`保存失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      toast.error(`${searchText.saveFailedPrefix}${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) {
-    return <div className="text-xs text-zinc-500">加载中…</div>;
+    return <div className="text-xs text-zinc-500">{searchText.loading}</div>;
   }
 
   const keyStatus = (entry: SearchSourceCatalogEntry): { label: string; tone: string } => {
-    if (!entry.requiresKey) return { label: '内置免费', tone: 'text-emerald-300' };
+    if (!entry.requiresKey) return { label: searchText.keyStatus.builtinFree, tone: 'text-emerald-300' };
     const hasKey = entry.serviceKey ? Boolean(serviceKeys[entry.serviceKey]) : false;
     return hasKey
-      ? { label: '已配 Key', tone: 'text-emerald-300' }
-      : { label: '需配 Key', tone: 'text-amber-300' };
+      ? { label: searchText.keyStatus.configured, tone: 'text-emerald-300' }
+      : { label: searchText.keyStatus.required, tone: 'text-amber-300' };
   };
+  const sourceTexts = searchText.sources as Record<string, { label: string; description: string } | undefined>;
 
   return (
     <SettingsPage
-      title="搜索"
-      description="管理联网搜索使用哪些源、以及它们的优先级。禁用的源不会被调用；越靠上越优先。未做任何更改时按内置智能路由工作。"
+      title={searchText.title}
+      description={searchText.description}
     >
       <SettingsSection
-        title="搜索源"
-        description="付费源需在「权限与安全 / Service API Keys」配置对应 API Key 后才会真正生效（标注「需配 Key」的当前无 key，启用也会被自动跳过）。"
+        title={searchText.sourcesSectionTitle}
+        description={searchText.sourcesSectionDescription}
       >
         <div className="flex flex-col gap-2">
           {orderedIds.map((id, index) => {
@@ -127,6 +131,7 @@ export function SearchSettings() {
             if (!entry) return null;
             const status = keyStatus(entry);
             const isEnabled = !disabled.has(id);
+            const sourceText = sourceTexts[id];
             return (
               <div
                 key={id}
@@ -137,7 +142,7 @@ export function SearchSettings() {
                 <div className="flex flex-col">
                   <button
                     type="button"
-                    aria-label="上移"
+                    aria-label={searchText.moveUp}
                     onClick={() => move(index, -1)}
                     disabled={index === 0}
                     className="text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-30"
@@ -146,7 +151,7 @@ export function SearchSettings() {
                   </button>
                   <button
                     type="button"
-                    aria-label="下移"
+                    aria-label={searchText.moveDown}
                     onClick={() => move(index, 1)}
                     disabled={index === orderedIds.length - 1}
                     className="text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-30"
@@ -159,20 +164,20 @@ export function SearchSettings() {
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-zinc-100">{entry.label}</span>
+                    <span className="text-sm font-medium text-zinc-100">{sourceText?.label ?? entry.label}</span>
                     {entry.kind === 'premium' && (
-                      <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400">付费</span>
+                      <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400">{searchText.premiumBadge}</span>
                     )}
                     <span className={`text-[11px] ${status.tone}`}>{status.label}</span>
                   </div>
-                  <div className="mt-0.5 truncate text-xs text-zinc-500" title={entry.description}>
-                    {entry.description}
+                  <div className="mt-0.5 truncate text-xs text-zinc-500" title={sourceText?.description ?? entry.description}>
+                    {sourceText?.description ?? entry.description}
                   </div>
                 </div>
 
                 <label className="flex shrink-0 items-center gap-2 text-xs text-zinc-300">
                   <input type="checkbox" checked={isEnabled} onChange={() => toggle(id)} />
-                  启用
+                  {searchText.enabledLabel}
                 </label>
               </div>
             );
@@ -188,9 +193,9 @@ export function SearchSettings() {
           className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/20 disabled:opacity-50"
         >
           <Search className="h-3.5 w-3.5" />
-          {saving ? '保存中…' : '保存'}
+          {saving ? searchText.saving : t.common.save}
         </button>
-        <span className="text-xs text-zinc-500">保存后立即对后续联网搜索生效。</span>
+        <span className="text-xs text-zinc-500">{searchText.applyHint}</span>
       </div>
     </SettingsPage>
   );

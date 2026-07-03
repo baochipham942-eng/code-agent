@@ -28,6 +28,7 @@ import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
+import { handleDeclareDeliverablesGate } from './declareDeliverablesGate';
 import { handleGoalCompletionGate } from './goalCompletionGate';
 import {
   fingerprintToolCall,
@@ -629,6 +630,10 @@ export class MessageProcessor {
       }
       return 'continue';
     }
+
+    // Artifact contract：拦截 declare_deliverables → 写入本轮最终产物路径声明。
+    const declareDeliverablesResult = handleDeclareDeliverablesGate(this.ctx, this.contextAssembly, toolCalls);
+    if (declareDeliverablesResult) return declareDeliverablesResult;
 
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。

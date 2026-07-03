@@ -152,6 +152,7 @@ import { proposeSlidesOpsSchema } from './design/proposeSlidesOps.schema';
 import { requestDesignAutonomySchema } from './design/requestDesignAutonomy.schema';
 import { exploreSchema } from './planning/explore.schema';
 import { recommendCapabilitySchema } from './planning/recommendCapability.schema';
+import { declareDeliverablesSchema } from './planning/declareDeliverables.schema';
 import { attemptCompletionSchema } from './planning/attemptCompletion.schema';
 
 export function registerMigratedTools(
@@ -464,6 +465,10 @@ export function registerMigratedTools(
   registry.register(
     recommendCapabilitySchema,
     async () => (await import('./planning/recommendCapability')).recommendCapabilityModule,
+  );
+  registry.register(
+    declareDeliverablesSchema,
+    async () => (await import('./planning/declareDeliverables')).declareDeliverablesModule,
   );
   registry.register(
     attemptCompletionSchema,

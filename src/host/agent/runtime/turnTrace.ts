@@ -24,7 +24,8 @@ export type TraceEventType =
   | 'compaction'
   | 'verification'
   | 'goal_verdict'
-  | 'goal_evidence_gate';
+  | 'goal_evidence_gate'
+  | 'deliverables_declaration';
 
 export interface TraceEvent {
   ts: number;

@@ -97,7 +97,7 @@ export const enSettingsSystem = {
       },
       telemetry: {
         title: 'Telemetry health',
-        description: 'Summary of Agent internal telemetry collection. Open the internal eval panel for detailed analysis.',
+        description: 'Summary of internal agent telemetry collection. Use session Replay for detailed analysis.',
         running: 'Collection running',
         paused: 'Collection paused',
         sessionPrefix: 'session: ',

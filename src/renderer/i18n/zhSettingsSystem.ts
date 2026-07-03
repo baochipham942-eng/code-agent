@@ -97,7 +97,7 @@ export const zhSettingsSystem = {
       },
       telemetry: {
         title: 'Telemetry 健康',
-        description: 'Agent 内部遥测的采集状态摘要。详细分析请进入「内部评测」面板。',
+        description: 'Agent 内部遥测的采集状态摘要。详细分析可从会话 Replay 查看。',
         running: '采集运行中',
         paused: '采集已暂停',
         sessionPrefix: 'session：',

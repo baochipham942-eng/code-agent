@@ -3,15 +3,15 @@ import type {
   DataStats,
   SnapshotStats,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
-import { zh } from '../../../src/renderer/i18n/zh';
-
-const dataText = zh.settings.data;
 import {
   buildDataManagementRows,
   buildDataManagementSummary,
   formatDataSize,
   getRetentionLabel,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
+import { en, zh } from '../../../src/renderer/i18n';
+
+const dataText = zh.settings.data;
 
 const dataStats = {
   sessionCount: 12,
@@ -86,5 +86,23 @@ describe('DataSettings management helpers', () => {
       statusLabel: dataText.dataRows.cache.statusClean,
       statusTone: 'stable',
     });
+  });
+});
+
+describe('DataSettings telemetry health copy', () => {
+  it('中文遥测健康文案指向会话 Replay，不再引用已删除的「内部评测」面板', () => {
+    const copy = zh.settings.data.telemetry;
+
+    expect(copy.title).toBe('Telemetry 健康');
+    expect(copy.description).toBe('Agent 内部遥测的采集状态摘要。详细分析可从会话 Replay 查看。');
+    expect(copy.description).not.toContain('内部评测');
+  });
+
+  it('keeps the English telemetry health copy in sync', () => {
+    const copy = en.settings.data.telemetry;
+
+    expect(copy.title).toBe('Telemetry health');
+    expect(copy.description).toBe('Summary of internal agent telemetry collection. Use session Replay for detailed analysis.');
+    expect(copy.description.toLowerCase()).not.toContain('internal eval');
   });
 });

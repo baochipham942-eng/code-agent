@@ -435,6 +435,36 @@ export const zh = {
       coworkMode: 'Cowork 模式',
       coworkModeDesc: '简化展示，适合与其他 AI 协作',
     },
+    appearance: {
+      theme: '主题',
+      themeDescription: '选择你偏好的界面主题',
+      themes: {
+        dark: '深色',
+        light: '浅色',
+        auto: '自动',
+      },
+      themeDescriptions: {
+        dark: '深色背景，适合夜间使用',
+        light: '浅色背景，适合日间使用',
+        system: '跟随系统设置自动切换',
+      },
+      currentSystemThemePrefix: '当前系统主题：',
+      fontSize: '字体大小',
+      fontSizeDescription: '调整界面文字大小',
+      fontSizes: {
+        small: '小',
+        medium: '中',
+        large: '大',
+      },
+      languageTitle: '界面语言',
+      languageDescription: '选择应用界面显示的语言',
+      languageBadges: {
+        zh: '中',
+        en: 'En',
+      },
+      developerMode: '开发者模式',
+      developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
+    },
     cloud: {
       title: '云端配置',
       description: 'System Prompt、Skills 等配置从云端实时获取，支持热更新。',
@@ -649,24 +679,6 @@ export const zh = {
       autoApprove: '自动授权所有权限',
       autoApproveDescription: '开发模式下跳过所有权限确认弹窗，方便快速测试。生产环境建议关闭。',
     },
-  },
-
-  // Appearance Settings
-  appearance: {
-    theme: '主题',
-    themes: {
-      dark: '深色',
-      light: '浅色',
-      auto: '自动',
-    },
-    fontSize: '字体大小',
-    fontSizes: {
-      small: '小',
-      medium: '中',
-      large: '大',
-    },
-    developerMode: '开发者模式',
-    developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
   },
 
   // Language Settings

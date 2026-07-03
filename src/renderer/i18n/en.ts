@@ -437,6 +437,36 @@ export const en: Translations = {
       coworkMode: 'Cowork Mode',
       coworkModeDesc: 'Simplified display for AI collaboration',
     },
+    appearance: {
+      theme: 'Theme',
+      themeDescription: 'Choose your preferred interface theme',
+      themes: {
+        dark: 'Dark',
+        light: 'Light',
+        auto: 'Auto',
+      },
+      themeDescriptions: {
+        dark: 'Dark background for working at night',
+        light: 'Light background for daytime use',
+        system: 'Switch automatically with your system setting',
+      },
+      currentSystemThemePrefix: 'Current system theme: ',
+      fontSize: 'Font size',
+      fontSizeDescription: 'Adjust the interface text size',
+      fontSizes: {
+        small: 'Small',
+        medium: 'Medium',
+        large: 'Large',
+      },
+      languageTitle: 'Interface language',
+      languageDescription: 'Choose the language used in the app interface',
+      languageBadges: {
+        zh: '中',
+        en: 'En',
+      },
+      developerMode: 'Developer mode',
+      developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
+    },
     cloud: {
       title: 'Cloud Config',
       description: 'System Prompt, Skills and other configurations are fetched from cloud in real-time.',
@@ -662,24 +692,6 @@ export const en: Translations = {
       autoApprove: 'Auto-approve all permissions',
       autoApproveDescription: 'Skip all permission dialogs in dev mode for faster testing. Recommended to disable in production.',
     },
-  },
-
-  // Appearance Settings
-  appearance: {
-    theme: 'Theme',
-    themes: {
-      dark: 'Dark',
-      light: 'Light',
-      auto: 'Auto',
-    },
-    fontSize: 'Font Size',
-    fontSizes: {
-      small: 'Small',
-      medium: 'Medium',
-      large: 'Large',
-    },
-    developerMode: 'Developer Mode',
-    developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
   },
 
   // Language Settings

@@ -6,6 +6,13 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
 import { extractFinalAnswer, gaiaQuestionScorer } from './gaiaScorer';
+import {
+  checkGameSmoke,
+  checkHtmlRenders,
+  checkPptxOpens,
+  type ArtifactRunnableCheckResult,
+  type ArtifactRunnableVerdict,
+} from './artifactRunnableAdapter';
 import type {
   TestExpectations,
   ToolExecutionRecord,
@@ -925,6 +932,43 @@ async function evaluateExpectation(
         passed = texts.every(t => outputs.includes(t));
         actual = passed ? 'found in tool output' : outputs.substring(0, 200);
         expected = `tool output contains ${JSON.stringify(texts)}`;
+        break;
+      }
+
+      case 'html_renders':
+      case 'game_smoke':
+      case 'pptx_opens': {
+        const artifactPath = path.isAbsolute(params.path as string)
+          ? (params.path as string)
+          : path.join(context.workingDirectory, params.path as string);
+        const expectedVerdict: ArtifactRunnableVerdict =
+          params.expected_verdict === 'not_runnable' ? 'not_runnable' : 'runnable';
+        const timeoutMs = typeof params.timeout_ms === 'number' ? params.timeout_ms : undefined;
+
+        let check: ArtifactRunnableCheckResult;
+        if (expectation.type === 'game_smoke') {
+          check = await checkGameSmoke(artifactPath, {
+            timeoutMs,
+            contract: params.contract === 'full' ? 'full' : 'light',
+          });
+        } else if (expectation.type === 'html_renders') {
+          check = await checkHtmlRenders(artifactPath, { timeoutMs });
+        } else {
+          check = await checkPptxOpens(artifactPath);
+        }
+
+        if (check.verdict === 'skipped') {
+          // 环境缺浏览器 ≠ 产物可跑，也 ≠ 探测有效：显式 fail，绝不假绿。
+          passed = false;
+          actual = `skipped: ${check.checks.join('; ') || 'check environment unavailable'}`;
+        } else {
+          passed = check.verdict === expectedVerdict;
+          actual = check.failures.length > 0
+            ? `${check.verdict}: ${check.failures.join(' | ').substring(0, 400)}`
+            : check.verdict;
+        }
+        expected = `artifact verdict is "${expectedVerdict}"`;
+        details = `environment: ${check.environment}${check.checks.length > 0 ? `; checks: ${check.checks.join(' | ').substring(0, 300)}` : ''}`;
         break;
       }
 

@@ -13,6 +13,14 @@ interface CacheSavingsView {
   netSavedUsd: number;
 }
 
+interface TokenUsageView {
+  /** 非缓存输入 tokens（归一化口径） */
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
 export interface BudgetStatusView {
   enabled: boolean;
   currentCost: number;
@@ -22,6 +30,8 @@ export interface BudgetStatusView {
   alertLevel: BudgetAlertTone;
   /** 缓存节省汇总（cache-aware 记账，WP2-2a） */
   cacheSavings?: CacheSavingsView;
+  /** token 用量汇总（WP-2 token 状态栏活值） */
+  tokenUsage?: TokenUsageView;
 }
 
 interface RawBudgetStatus {
@@ -31,6 +41,12 @@ interface RawBudgetStatus {
   alertLevel?: string;
   config?: { enabled?: boolean };
   cacheSavings?: { cacheReadTokens?: number; cacheCreationTokens?: number; netSavedUsd?: number };
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  };
 }
 
 /** 只接受有限非负数，挡住后端异常值（NaN/Infinity/负数）流到 UI（Codex audit F4）。 */
@@ -56,6 +72,16 @@ export function normalizeBudgetStatus(raw: RawBudgetStatus | null): BudgetStatus
             cacheReadTokens: finiteNonNeg(raw.cacheSavings.cacheReadTokens),
             cacheCreationTokens: finiteNonNeg(raw.cacheSavings.cacheCreationTokens),
             netSavedUsd: finiteNonNeg(raw.cacheSavings.netSavedUsd),
+          },
+        }
+      : {}),
+    ...(raw.tokenUsage
+      ? {
+          tokenUsage: {
+            inputTokens: finiteNonNeg(raw.tokenUsage.inputTokens),
+            outputTokens: finiteNonNeg(raw.tokenUsage.outputTokens),
+            cacheReadTokens: finiteNonNeg(raw.tokenUsage.cacheReadTokens),
+            cacheCreationTokens: finiteNonNeg(raw.tokenUsage.cacheCreationTokens),
           },
         }
       : {}),

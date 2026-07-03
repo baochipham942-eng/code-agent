@@ -13,7 +13,7 @@ import { ModelSwitcher } from './ModelSwitcher';
 import { AgentSwitcher } from './AgentSwitcher';
 import { InteractionModeIndicator } from './InteractionModeIndicator';
 import { MessageCounter } from './MessageCounter';
-import { TokenUsage } from './TokenUsage';
+import { TokenUsage, resolveDisplayTokens } from './TokenUsage';
 import { CostDisplay } from './CostDisplay';
 import { ContextUsage } from './ContextUsage';
 import { SessionDuration } from './SessionDuration';
@@ -34,8 +34,6 @@ export function StatusBar() {
   const { modelConfig, disclosureLevel } = useAppStore();
   const messages = useSessionStore((state) => state.messages);
   const {
-    inputTokens,
-    outputTokens,
     sessionCost,
     contextUsagePercent,
     sessionStartTime,
@@ -43,8 +41,9 @@ export function StatusBar() {
     isStreaming,
   } = useStatusStore();
 
-  // 预算状态：随累计成本前进/流式结束重新拉取，驱动 CostDisplay 数字（host cache-aware 口径）与染色
+  // 预算状态：随累计成本前进/流式结束重新拉取，驱动 CostDisplay/TokenUsage 数字（host 真实记账口径）与染色
   const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
+  const displayTokens = resolveDisplayTokens(budgetStatus);
 
   // 渐进披露：simple 模式不显示状态栏
   if (disclosureLevel === 'simple') {
@@ -74,7 +73,7 @@ export function StatusBar() {
         <Separator />
         <MessageCounter count={messages.length} />
         <Separator />
-        <TokenUsage input={inputTokens} output={outputTokens} isStreaming={isStreaming} />
+        <TokenUsage input={displayTokens.input} output={displayTokens.output} isStreaming={isStreaming} />
       </div>
 
       {/* 中间区域：费用、上下文使用 */}

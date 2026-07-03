@@ -11,6 +11,7 @@ import type {
   AppServiceRunOptions,
   SwitchModelParams,
   ModelOverride,
+  ModelOverridePersistResult,
   SessionMarkdownExport,
   SessionLogExport,
   PromptRewindResult,
@@ -28,6 +29,7 @@ import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
+import { getAuthService } from '../services/auth/authService';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
@@ -35,6 +37,11 @@ import type { AgentRunOptions } from '../research/types';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
+import {
+  clearPersistedModelOverride,
+  persistModelOverride,
+  rehydrateModelOverrideFromSession,
+} from '../session/modelOverridePersistence';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import type {
   ConversationEnvelope,
@@ -556,6 +563,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
     // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
 
+    // 会话级模型切换跨重启恢复：按持久化标记回灌内存 Map（未切换的会话无标记，不受影响）
+    rehydrateModelOverrideFromSession(session);
+
     const streamSnapshot = loadStreamSnapshot(session.workingDirectory);
     if (streamSnapshot?.sessionId === session.id) {
       return { ...session, streamSnapshot };
@@ -757,25 +767,45 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   // === Model Override ===
 
-  switchModel(params: SwitchModelParams): void {
+  async switchModel(params: SwitchModelParams): Promise<ModelOverridePersistResult> {
     const modelState = getModelSessionState();
-    modelState.setOverride(params.sessionId, {
+    const override = {
       provider: params.provider as ModelProvider,
       model: params.model,
       temperature: params.temperature,
       maxTokens: params.maxTokens,
       adaptive: params.adaptive,
-    });
+    };
+    modelState.setOverride(params.sessionId, override);
+    // 落库让切换跨重启存活；失败不抛（内存 override 本轮仍生效），
+    // persisted 标志透出到响应（audit R1-HIGH2：失败不完全静默）
+    const persisted = await persistModelOverride(params.sessionId, override);
+    return { persisted };
   }
 
   getModelOverride(sessionId: string): ModelOverride | undefined {
     const modelState = getModelSessionState();
-    return modelState.getOverride(sessionId) as ModelOverride | undefined;
+    const existing = modelState.getOverride(sessionId) as ModelOverride | undefined;
+    if (existing) return existing;
+    // 对称回灌（audit R2）：web domain 路径已在重启后按持久化标记回灌，
+    // IPC 路径首次查询同样要看得到标记（否则 ModelSwitcher 在 loadSession
+    // 完成前拉到 null 且不再重拉）。getDatabase().getSession 是同步调用；
+    // 带 owner filter（audit R3-LOW），与 sessionManager 的可访问性口径一致。
+    try {
+      const session = getDatabase().getSession(sessionId, {
+        userId: getAuthService().getCurrentUser()?.id ?? null,
+      });
+      return (rehydrateModelOverrideFromSession(session ?? null) ?? undefined) as ModelOverride | undefined;
+    } catch {
+      return undefined;
+    }
   }
 
-  clearModelOverride(sessionId: string): void {
+  async clearModelOverride(sessionId: string): Promise<ModelOverridePersistResult> {
     const modelState = getModelSessionState();
     modelState.clearOverride(sessionId);
+    const persisted = await clearPersistedModelOverride(sessionId);
+    return { persisted };
   }
 
   // === Delegate Mode ===

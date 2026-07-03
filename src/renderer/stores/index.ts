@@ -155,8 +155,6 @@ export function useLanguage() {
 export function useStatusBarInfo() {
   return useStatusStore(
     useShallow((state) => ({
-      inputTokens: state.inputTokens,
-      outputTokens: state.outputTokens,
       sessionCost: state.sessionCost,
       contextUsagePercent: state.contextUsagePercent,
       networkStatus: state.networkStatus,

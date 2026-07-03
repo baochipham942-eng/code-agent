@@ -102,8 +102,8 @@ export function registerSessionHandlers(
           break;
         case 'switchModel': {
           const p = payload as SwitchModelParams;
-          requireAppService().switchModel(p);
-          data = { provider: p.provider, model: p.model };
+          const result = await requireAppService().switchModel(p);
+          data = { provider: p.provider, model: p.model, persisted: result.persisted };
           break;
         }
         case 'getModelOverride': {
@@ -113,8 +113,8 @@ export function registerSessionHandlers(
         }
         case 'clearModelOverride': {
           const { sessionId } = payload as { sessionId: string };
-          requireAppService().clearModelOverride(sessionId);
-          data = null;
+          const result = await requireAppService().clearModelOverride(sessionId);
+          data = { persisted: result.persisted };
           break;
         }
         case 'search': {

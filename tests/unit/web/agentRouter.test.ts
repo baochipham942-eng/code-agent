@@ -60,6 +60,11 @@ vi.mock('../../../src/host/session/modelSessionState', () => ({
   }),
 }));
 
+const mockRehydrateOverride = vi.hoisted(() => vi.fn<(session: unknown) => unknown>(() => null));
+vi.mock('../../../src/host/session/modelOverridePersistence', () => ({
+  rehydrateModelOverrideFromSession: mockRehydrateOverride,
+}));
+
 vi.mock('../../../src/host/services/agentEngine', () => ({
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return {
@@ -1660,5 +1665,97 @@ describe('createAgentRouter', () => {
     const cached = sessionMessages.get('session-duplicate-delta') || [];
     const assistant = cached.find((message) => message.role === 'assistant');
     expect(assistant?.content).toBe('hello world');
+  });
+
+  describe('/api/run 会话模型切换跨重启恢复（WP-1 回灌接线）', () => {
+    const persistedSession = {
+      id: 'session-model-restore',
+      title: 'Restored',
+      workingDirectory: '/tmp/model-restore-work',
+      metadata: { modelOverride: { provider: 'zhipu', model: 'glm-5', setAt: 1 } },
+    };
+
+    async function restartWithSession(session: unknown) {
+      await closeServer();
+      await startAgentApi({
+        tryGetSessionManager: async () => ({
+          getSession: vi.fn(async () => session),
+          getMessages: vi.fn(async () => []),
+          updateSession: vi.fn(async () => undefined),
+        }),
+      });
+    }
+
+    async function postRun(body: Record<string, unknown>) {
+      mockRun.mockResolvedValueOnce(undefined);
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '继续', sessionId: 'session-model-restore', ...body }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+
+    it('内存 Map 为空时按 persistedSession 回灌并路由到切换值', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({});
+
+      expect(mockRehydrateOverride).toHaveBeenCalledWith(persistedSession);
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'zhipu', model: 'glm-5' }),
+      );
+    });
+
+    it('显式 body.model/provider 仍最优先，不触发回灌', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({ model: 'deepseek-chat', provider: 'deepseek' });
+
+      expect(mockRehydrateOverride).not.toHaveBeenCalled();
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'deepseek', model: 'deepseek-chat' }),
+      );
+    });
+
+    it('半显式 body（只传 model）不拿 override 的 provider 拼杂交配置（audit R1-MED2）', async () => {
+      mockGetOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({ model: 'deepseek-chat' });
+
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: undefined, model: 'deepseek-chat' }),
+      );
+    });
+
+    it('未切换过的会话（回灌返回 null）不受影响，走默认解析', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue(null);
+      await restartWithSession({ ...persistedSession, metadata: undefined });
+
+      await postRun({});
+
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: undefined, model: undefined }),
+      );
+    });
+
+    it('回灌得到 adaptive 覆盖时透传自动路由标志', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', adaptive: true, setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({});
+
+      const config = mockCreateAgentLoop.mock.calls[0]?.[0] as { modelConfig: { adaptive?: boolean } };
+      expect(config.modelConfig.adaptive).toBe(true);
+    });
   });
 });

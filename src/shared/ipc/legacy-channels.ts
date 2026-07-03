@@ -231,7 +231,6 @@ export const IPC_CHANNELS = {
   CONTEXT_COMPRESSION_CONFIG_SET: 'context:compression-config:set',
 
   // Status bar update channels
-  STATUS_TOKEN_UPDATE: 'status:token-update',
   STATUS_CONTEXT_UPDATE: 'status:context-update',
   STATUS_GIT_UPDATE: 'status:git-update',
   MANAGED_BROWSER_SESSION_CHANGED: 'desktop:managed-browser-session-changed',

@@ -709,6 +709,14 @@ export class DatabaseService {
     this.ensureDb();
     this.sessionRepo.updateSession(sessionId, updates, options);
   }
+  patchSessionMetadata(
+    sessionId: string,
+    patch: Record<string, unknown>,
+    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+  ): boolean {
+    this.ensureDb();
+    return this.sessionRepo.patchSessionMetadata(sessionId, patch, options);
+  }
   deleteSession(sessionId: string, options?: { syncOrigin?: 'local' | 'remote'; deletedAt?: number }): void {
     this.ensureDb();
     this.sessionRepo.deleteSession(sessionId, options);

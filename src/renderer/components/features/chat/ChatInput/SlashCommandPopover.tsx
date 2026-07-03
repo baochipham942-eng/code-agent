@@ -11,6 +11,7 @@ import {
   MessageCircleQuestion, ZapOff, Flame,
   Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus, Clock3, Repeat,
 } from 'lucide-react';
+import { buildCostText, buildStatusText, fmtTokens } from './chatDiagnostics';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSkillStore } from '../../../../stores/skillStore';
@@ -18,7 +19,6 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import { useModeStore } from '../../../../stores/modeStore';
 import { usePermissionStore } from '../../../../stores/permissionStore';
 import { useStatusStore } from '../../../../stores/statusStore';
-import { MODEL_PRICING_PER_1M } from '@shared/constants';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
@@ -57,15 +57,6 @@ function ensureExtensionMutation(result: ExtensionMutationResult | undefined): v
   }
 }
 
-// 诊断命令格式化 helper（与 newCommands.ts 的 CLI 版对齐）
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-function fmtCost(n: number): string {
-  return `$${n.toFixed(3)}`;
-}
 // 把诊断命令的文本输出写进聊天流（assistant 消息）。运行时取 store，不增加 useMemo 依赖。
 // 用代码块包裹：诊断输出是等宽对齐文本，且含 $ 金额（会被 markdown 当 LaTeX 渲染）、
 // 路径等特殊字符——代码块既保证等宽对齐，又屏蔽 markdown/KaTeX 干扰。
@@ -519,22 +510,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sc.status.label,
       description: sc.status.description,
       icon: <BarChart2 className="w-4 h-4" />,
-      action: () => {
-        const app = useAppStore.getState();
-        const status = useStatusStore.getState();
-        const sessionId = useSessionStore.getState().currentSessionId ?? 'N/A';
-        const total = status.inputTokens + status.outputTokens;
-        const health = app.contextHealth;
-        const contextLine = health && health.currentTokens > 0
-          ? `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`
-          : '';
-        const costLine = status.sessionCost > 0 ? ` (${fmtCost(status.sessionCost)})` : '';
-        writeAssistant(
-          `Status\n` +
-          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}\n` +
-          `  Session:  ${sessionId}\n` +
-          `  Tokens:   ${total > 0 ? fmtTokens(total) : 'N/A'}${costLine}${contextLine}`
-        );
+      action: async () => {
+        writeAssistant(await buildStatusText());
       },
     },
     {
@@ -543,25 +520,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.cost.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
-        const app = useAppStore.getState();
-        const status = useStatusStore.getState();
-        const pricing = MODEL_PRICING_PER_1M[app.modelConfig.model] || MODEL_PRICING_PER_1M['default'];
-        const inputCost = (status.inputTokens * pricing.input) / 1_000_000;
-        const outputCost = (status.outputTokens * pricing.output) / 1_000_000;
-        const lines = [
-          'Cost (session)',
-          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}`,
-          `  Input:    ${fmtTokens(status.inputTokens)} tokens (${fmtCost(inputCost)})`,
-          `  Output:   ${fmtTokens(status.outputTokens)} tokens (${fmtCost(outputCost)})`,
-          `  Total:    ${fmtCost(inputCost + outputCost)}`,
-        ];
-        try {
-          const b = await invokeDomain<{ currentCost: number; maxBudget: number; usagePercentage: number }>(IPC_DOMAINS.DIAGNOSTICS, 'budget');
-          if (b.maxBudget > 0) {
-            lines.push(`  Budget:   ${fmtCost(b.currentCost)} / ${fmtCost(b.maxBudget)} (${b.usagePercentage.toFixed(1)}%)`);
-          }
-        } catch { /* budget optional */ }
-        writeAssistant(lines.join('\n'));
+        writeAssistant(await buildCostText());
       },
     },
     {

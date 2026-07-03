@@ -307,6 +307,30 @@ export class BudgetService {
     return { cacheReadTokens, cacheCreationTokens, netSavedUsd };
   }
 
+  /**
+   * 当前周期 token 用量汇总（WP-2 token 状态栏活值）。
+   * inputTokens 为非缓存输入（归一化口径），缓存读/写独立返回，显示层自行求和。
+   */
+  getTokenUsageSummary(): {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  } {
+    this.checkPeriodReset();
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheCreationTokens = 0;
+    for (const usage of this.usageHistory) {
+      inputTokens += usage.inputTokens;
+      outputTokens += usage.outputTokens;
+      cacheReadTokens += usage.cacheReadTokens ?? 0;
+      cacheCreationTokens += usage.cacheCreationTokens ?? 0;
+    }
+    return { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens };
+  }
+
   // --------------------------------------------------------------------------
   // Budget Checks
   // --------------------------------------------------------------------------

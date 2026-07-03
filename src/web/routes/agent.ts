@@ -335,26 +335,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 但必须把 adaptive 标志透传进 agent loop 的 modelConfig，
       // 否则 adaptiveRouter 简单任务路由 / vision capability fallback 全部失效
       //（实测 0.16.89：UI 选"自动"后日志仍报"显式模型 ... 不启用 vision fallback"）。
-      let sessionAdaptive = false;
-      if (!effectiveModel || !effectiveProvider) {
-        const { getModelSessionState } = await import('../../host/session/modelSessionState');
-        const override = getModelSessionState().getOverride(sessionId);
-        if (override?.adaptive === true) {
-          sessionAdaptive = true;
-        } else if (override) {
-          effectiveProvider = effectiveProvider ?? override.provider;
-          effectiveModel = effectiveModel ?? override.model;
-        }
-      }
-
-      const { createCLIAgent } = await import('../../cli/adapter');
-      const { createAgentLoop } = await import('../../cli/bootstrap');
-
-      // workingDirectory 解析顺序：
-      // 1. body.project / body.sessionDir 显式传值
-      // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
-      // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
-      // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
+      // persistedSession 先取：模型 override 回灌与 workingDirectory 解析都依赖它
       let persistedSession: Session | null = null;
       let sessionManagerForRun: AgentSessionManagerLike | null = null;
       try {
@@ -366,6 +347,34 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       } catch (err) {
         logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
       }
+
+      let sessionAdaptive = false;
+      // 只有 model 和 provider 都未显式给出才读 session override（audit R1-MED2：
+      // 半显式 body（只传 model）不能拿 override 的 provider 拼成杂交配置，
+      // 例如显式 deepseek-chat + 持久化 zhipu override → zhipu/deepseek-chat）。
+      if (!effectiveModel && !effectiveProvider) {
+        const { getModelSessionState } = await import('../../host/session/modelSessionState');
+        const { rehydrateModelOverrideFromSession } = await import('../../host/session/modelOverridePersistence');
+        // 重启后内存 Map 为空：按 session 持久化标记回灌（模板=engine 的"DB 列每轮现读"）。
+        // 未切换过的会话没有标记，不回灌，仍跟随全局默认。
+        const override = getModelSessionState().getOverride(sessionId)
+          ?? rehydrateModelOverrideFromSession(persistedSession);
+        if (override?.adaptive === true) {
+          sessionAdaptive = true;
+        } else if (override) {
+          effectiveProvider = override.provider;
+          effectiveModel = override.model;
+        }
+      }
+
+      const { createCLIAgent } = await import('../../cli/adapter');
+      const { createAgentLoop } = await import('../../cli/bootstrap');
+
+      // workingDirectory 解析顺序：
+      // 1. body.project / body.sessionDir 显式传值
+      // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
+      // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
+      // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
 
       let resolvedProject: string | undefined =
         typeof project === 'string' && project.trim().length > 0

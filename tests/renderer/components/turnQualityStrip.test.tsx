@@ -99,6 +99,30 @@ describe('TurnQualityStrip', () => {
     expect((c2.textContent || '')).toContain('glm-5');
   });
 
+  it('显式选择降级（requestedAgentId ≠ agentId）→ 安静警示徽标透出「未生效」', () => {
+    const degraded: TurnQualitySummary = {
+      ...summary,
+      capabilities: { agentId: 'default', agentName: 'default', requestedAgentId: 'ghost-agent', toolsUsed: [] },
+    } as TurnQualitySummary;
+    const { container } = render(<TurnQualityStrip summary={degraded} />);
+    const text = container.textContent || '';
+    expect(text).toContain('ghost-agent');
+    expect(text).toContain('未生效');
+    // 仍然安静：无按钮、无展开
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  it('显式选择命中（requestedAgentId === agentId）→ 不出现「未生效」警示', () => {
+    const hit: TurnQualitySummary = {
+      ...summary,
+      capabilities: { agentId: 'coder', agentName: 'coder', requestedAgentId: 'coder', toolsUsed: [] },
+    } as TurnQualitySummary;
+    const { container } = render(<TurnQualityStrip summary={hit} />);
+    const text = container.textContent || '';
+    expect(text).toContain('coder');
+    expect(text).not.toContain('未生效');
+  });
+
   it('unescapes html entities in memory preview text when expanded in developer mode', () => {
     useAppStore.setState({ developerMode: true });
     const escaped: TurnQualitySummary = {

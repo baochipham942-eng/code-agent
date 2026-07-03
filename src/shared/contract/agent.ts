@@ -312,6 +312,20 @@ export interface GoalGateVerificationCard {
   skippedChecks: GoalGateSkippedCheck[];
 }
 
+// routing_resolved 事件载荷：路由真相的权威数据源（IPC 与 web HTTP 两条 run 路径都发射）。
+// mode='explicit' 表示本轮 agent 来自用户显式 /agent 选择；requestedAgentId 携带用户
+// 请求的 agent id，与 agentId 不一致即为静默兜底被显式化的降级信号。
+export interface RoutingResolvedEventData {
+  mode: 'auto' | 'explicit';
+  agentId: string;
+  agentName: string;
+  reason: string;
+  score: number;
+  fallbackToDefault?: boolean;
+  requestedAgentId?: string;
+  timestamp?: number;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
@@ -329,15 +343,7 @@ export type AgentEvent =
   | { type: 'todo_update'; data: TodoItem[] }
   | { type: 'task_update'; data: TaskUpdateEventData }
   | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
-  | { type: 'routing_resolved'; data: {
-      mode: 'auto';
-      agentId: string;
-      agentName: string;
-      reason: string;
-      score: number;
-      fallbackToDefault?: boolean;
-      timestamp?: number;
-    } }
+  | { type: 'routing_resolved'; data: RoutingResolvedEventData }
   | { type: 'agent_complete'; data: null }
   | { type: 'agent_cancelled'; data: null }
   // /goal 自治模式观测事件

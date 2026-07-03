@@ -54,6 +54,8 @@ export interface RuntimeContext {
   sessionId: string;
   agentId?: string;
   agentName?: string;
+  /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
+  requestedAgentId?: string;
   userId?: string;
   memoryMode?: SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];

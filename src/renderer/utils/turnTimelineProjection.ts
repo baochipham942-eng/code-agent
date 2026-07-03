@@ -387,23 +387,38 @@ function buildAutoRoutingEvidence(
   }
 
   const fallbackToDefault = Boolean(event.fallbackToDefault);
+  // 显式选择降级：用户点名的 agent 没生效（解析失败回落 default，或被自动路由兜到其他 agent）
+  const degradedFromExplicit = Boolean(event.requestedAgentId && event.requestedAgentId !== event.agentId);
+  const explicitHit = event.mode === 'explicit' && !degradedFromExplicit;
+
+  const summary = degradedFromExplicit
+    ? (event.agentId === 'default'
+      ? `指定的 ${event.requestedAgentId} 不可用，已回落默认执行`
+      : `指定的 ${event.requestedAgentId} 不可用，已自动路由到 ${event.agentName}`)
+    : explicitHit
+      ? `已指定 ${event.agentName} 执行`
+      : fallbackToDefault
+        ? 'Auto 未命中特定 agent，已回落默认执行'
+        : `Auto 已路由到 ${event.agentName}`;
 
   return {
     mode: 'auto',
-    summary: fallbackToDefault
-      ? 'Auto 未命中特定 agent，已回落默认执行'
-      : `Auto 已路由到 ${event.agentName}`,
+    summary,
     agentIds: [event.agentId],
     agentNames: [event.agentName],
     reason: event.reason,
     score: event.score,
     steps: [{
-      status: fallbackToDefault ? 'fallback' : 'resolved',
-      label: fallbackToDefault
-        ? `保持 ${event.agentName} 执行`
-        : `路由到 ${event.agentName}`,
+      status: degradedFromExplicit || fallbackToDefault ? 'fallback' : 'resolved',
+      label: degradedFromExplicit
+        ? `指定的 ${event.requestedAgentId} 未生效`
+        : explicitHit
+          ? `已指定 ${event.agentName} 执行`
+          : fallbackToDefault
+            ? `保持 ${event.agentName} 执行`
+            : `路由到 ${event.agentName}`,
       detail: event.reason,
-      tone: fallbackToDefault ? 'warning' : 'info',
+      tone: degradedFromExplicit || fallbackToDefault ? 'warning' : 'info',
       timestamp: event.timestamp,
     }],
   };

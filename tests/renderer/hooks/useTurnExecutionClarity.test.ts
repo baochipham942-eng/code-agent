@@ -501,6 +501,104 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(routingNode?.turnTimeline?.routingEvidence?.reason).toBe('该 agent 更适合做风险判断');
   });
 
+  it('projects explicit routing evidence（显式选择命中 → mode explicit）', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-explicit',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 300,
+            endTime: 360,
+            nodes: [
+              {
+                id: 'user-explicit',
+                type: 'user',
+                content: '看看仓库结构',
+                timestamp: 300,
+                metadata: { workbench: { routingMode: 'auto' } },
+              },
+              { id: 'assistant-explicit', type: 'assistant_text', content: '好。', timestamp: 340 },
+            ],
+          },
+        ],
+      },
+      capabilities: { skills: [], connectors: [], mcpServers: [] },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [
+        {
+          kind: 'auto',
+          mode: 'explicit',
+          timestamp: 320,
+          agentId: 'explore',
+          agentName: 'Explorer',
+          reason: 'Explicit agent selected: explore',
+          score: 1000,
+          fallbackToDefault: false,
+          requestedAgentId: 'explore',
+        },
+      ],
+    });
+
+    const routingNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'routing_evidence');
+    expect(routingNode?.turnTimeline?.routingEvidence?.summary).toBe('已指定 Explorer 执行');
+    expect(routingNode?.turnTimeline?.routingEvidence?.steps.map((step) => step.status)).toEqual(['resolved']);
+  });
+
+  it('projects degraded routing evidence（显式选择失败降级 → warning fallback 步骤，不再静默）', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-degraded',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 300,
+            endTime: 360,
+            nodes: [
+              {
+                id: 'user-degraded',
+                type: 'user',
+                content: 'hello',
+                timestamp: 300,
+                metadata: { workbench: { routingMode: 'auto' } },
+              },
+              { id: 'assistant-degraded', type: 'assistant_text', content: '好。', timestamp: 340 },
+            ],
+          },
+        ],
+      },
+      capabilities: { skills: [], connectors: [], mcpServers: [] },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [
+        {
+          kind: 'auto',
+          mode: 'explicit',
+          timestamp: 320,
+          agentId: 'default',
+          agentName: 'default',
+          reason: 'Requested agent "__ghost__" is unavailable; continuing with the default conversation loop.',
+          score: 0,
+          fallbackToDefault: true,
+          requestedAgentId: '__ghost__',
+        },
+      ],
+    });
+
+    const routingNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'routing_evidence');
+    expect(routingNode?.turnTimeline?.routingEvidence?.summary).toBe('指定的 __ghost__ 不可用，已回落默认执行');
+    const step = routingNode?.turnTimeline?.routingEvidence?.steps[0];
+    expect(step?.status).toBe('fallback');
+    expect(step?.tone).toBe('warning');
+  });
+
   it('reconstructs direct routing evidence from persisted metadata when runtime events are gone', () => {
     const enriched = buildTurnExecutionClarityProjection({
       projection: {

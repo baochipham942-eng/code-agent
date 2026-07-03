@@ -9,7 +9,7 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
-import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../host/tools/toolExecutor';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
@@ -413,6 +413,30 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
       if (isExternalAgentEngine(selectedEngine.kind)) {
+        // 外部引擎分支在 preferredAgentId 路由真相块之前 return——显式 agent 选择
+        // 在引擎会话不适用，此前完全静默（chip 继续谎报）。发降级事件让 renderer
+        // 清选择 + toast（对称于 native 路径的解析失败降级）。
+        const enginePreferredAgentId = typeof body.context?.preferredAgentId === 'string'
+          ? body.context.preferredAgentId.trim() || undefined
+          : undefined;
+        if (enginePreferredAgentId) {
+          const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
+          const engineLabel = AGENT_ENGINE_LABELS[selectedEngine.kind] ?? selectedEngine.kind;
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(null, {
+              requestedAgentId: enginePreferredAgentId,
+              timestamp: Date.now(),
+              fallbackAgentName: engineLabel,
+              fallbackReason: `External engine session (${engineLabel}) does not support agent selection; the engine runs the turn directly.`,
+            }),
+          });
+          logger.info('[AgentRouter] Explicit agent selection ignored on external engine session', {
+            preferredAgentId: enginePreferredAgentId,
+            engine: selectedEngine.kind,
+            sessionId,
+          });
+        }
         externalEngineFailureContext = {
           kind: selectedEngine.kind,
           stage: 'launch_policy',
@@ -482,20 +506,41 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // /agent 显式选择透传（P0：此前 web 独立 HTTP 路径完全丢弃 preferredAgentId，
       // /agent 切换在生产 web 路径是 no-op——与 executionIntent 当年同款漏接）。
+      // trim 规整：未规整 id 会在 requestedAgentId !== agentId 比较上产生假降级警示
       const preferredAgentId = typeof body.context?.preferredAgentId === 'string'
-        ? body.context.preferredAgentId
+        ? body.context.preferredAgentId.trim() || undefined
         : undefined;
       if (preferredAgentId) {
         const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');
+        const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
         const agentOverride = resolveExplicitAgentOverride(preferredAgentId);
+        // 路由真相事件：命中/失败都发射 routing_resolved（此前失败只打 warn 日志，
+        // renderer 零信号=静默兜底；徽标/路由证据在生产 web 路径恒空）。
+        // requestedAgentId 同时进 config → AgentLoop ctx → turnQuality 徽标降级判定。
+        config.requestedAgentId = preferredAgentId;
         if (agentOverride) {
           config.agentOverride = agentOverride;
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(
+              {
+                agent: { id: agentOverride.id, name: agentOverride.name },
+                score: 1000,
+                reason: `Explicit agent selected: ${agentOverride.id}`,
+              },
+              { requestedAgentId: preferredAgentId, timestamp: Date.now() },
+            ),
+          });
           logger.info('[AgentRouter] Explicit agent override applied', {
             agentId: agentOverride.id,
             deniedTools: agentOverride.deniedToolNames.length,
             sessionId,
           });
         } else {
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(null, { requestedAgentId: preferredAgentId, timestamp: Date.now() }),
+          });
           logger.warn('[AgentRouter] Unknown preferredAgentId, falling back to default routing', { preferredAgentId, sessionId });
         }
       }

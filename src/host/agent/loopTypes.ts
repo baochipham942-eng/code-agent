@@ -44,6 +44,8 @@ export interface AgentLoopConfig {
   sessionId?: string;
   agentId?: string;
   agentName?: string;
+  /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
+  requestedAgentId?: string;
   userId?: string;
   memoryMode?: import('../../shared/contract/session').SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];

@@ -189,8 +189,10 @@ interface AppState {
   taskPanelTab: TaskPanelTab;
   showAgentTeamPanel: boolean;
   selectedSwarmAgentId: string | null;
-  /** 用户在 StatusBar 选中的默认 agent id（来自 agentRegistryStore），持久化到 localStorage。 */
+  /** 当前会话的显式 agent 选择（per-session 作用域，随会话切换同步；持久化到 per-session map）。 */
   activeAgentId: string | null;
+  /** activeAgentId 当前绑定的会话 id；null = draft（尚无会话）。 */
+  activeAgentSessionKey: string | null;
   showCapturePanel: boolean;
   showBrowserSurfacePanel: boolean;
   showDesktopPanel: boolean;
@@ -294,6 +296,10 @@ interface AppState {
   setSelectedSwarmAgentId: (agentId: string | null) => void;
   /** 设置默认 agent；传 null 表示回到 builtin 'coder'（spawn 端处理）。 */
   setActiveAgentId: (agentId: string | null) => void;
+  /** 会话切换/创建/清空时同步当前会话的 agent 选择；inheritCurrent=会话创建时继承 draft 期选择。 */
+  syncActiveAgentForSession: (sessionId: string | null, opts?: { inheritCurrent?: boolean }) => void;
+  /** 清理某会话持久化的 agent 选择；onlyIfAgentId = 仅当存量选择等于该值才清（防误清用户新选择）。 */
+  clearActiveAgentForSession: (sessionId: string, opts?: { onlyIfAgentId?: string }) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowBrowserSurfacePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
@@ -379,15 +385,43 @@ interface AppState {
   setContextHealthCollapsed: (collapsed: boolean) => void;
 }
 
-// localStorage key for activeAgentId 持久化
-const ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
+// activeAgentId per-session 持久化（S3 收敛）：legacy 全局单值 key 是跨会话残留
+// 路由的根源，读到即丢弃（旧值无法归属到会话）；新 key 存 sessionId → agentId map。
+const LEGACY_ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
+const ACTIVE_AGENT_SESSION_MAP_KEY = 'app:activeAgentIdBySession';
 
-function loadInitialActiveAgentId(): string | null {
+function readActiveAgentSessionMap(): Record<string, string> {
   try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage.getItem(ACTIVE_AGENT_STORAGE_KEY);
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(ACTIVE_AGENT_SESSION_MAP_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string',
+      ),
+    );
   } catch {
-    return null;
+    return {};
+  }
+}
+
+function writeActiveAgentSessionMap(map: Record<string, string>): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(ACTIVE_AGENT_SESSION_MAP_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage 在隐私模式下可能不可用——降级为纯内存状态
+  }
+}
+
+function dropLegacyActiveAgentKey(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(LEGACY_ACTIVE_AGENT_STORAGE_KEY);
+  } catch {
+    // ignore
   }
 }
 
@@ -414,7 +448,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   taskPanelTab: 'monitor',
   showAgentTeamPanel: false,
   selectedSwarmAgentId: null,
-  activeAgentId: loadInitialActiveAgentId(),
+  activeAgentId: null,
+  activeAgentSessionKey: null,
   showCapturePanel: false, // Capture panel hidden by default
   showBrowserSurfacePanel: false,
   showDesktopPanel: false,
@@ -530,13 +565,38 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSelectedSwarmAgentId: (agentId) => set({ selectedSwarmAgentId: agentId }),
   setActiveAgentId: (agentId) => {
     set({ activeAgentId: agentId });
-    try {
-      if (typeof localStorage !== 'undefined') {
-        if (agentId) localStorage.setItem(ACTIVE_AGENT_STORAGE_KEY, agentId);
-        else localStorage.removeItem(ACTIVE_AGENT_STORAGE_KEY);
+    const sessionKey = get().activeAgentSessionKey;
+    if (!sessionKey) return; // draft：仅内存，会话创建时经 inheritCurrent 落盘
+    const map = readActiveAgentSessionMap();
+    if (agentId) map[sessionKey] = agentId;
+    else delete map[sessionKey];
+    writeActiveAgentSessionMap(map);
+  },
+  syncActiveAgentForSession: (sessionId, opts) => {
+    dropLegacyActiveAgentKey();
+    if (!sessionId) {
+      set({ activeAgentSessionKey: null, activeAgentId: null });
+      return;
+    }
+    const map = readActiveAgentSessionMap();
+    if (opts?.inheritCurrent) {
+      const draftSelection = get().activeAgentId;
+      if (draftSelection && !map[sessionId]) {
+        map[sessionId] = draftSelection;
+        writeActiveAgentSessionMap(map);
       }
-    } catch {
-      // localStorage 在隐私模式下可能不可用——降级为纯内存状态
+    }
+    set({ activeAgentSessionKey: sessionId, activeAgentId: map[sessionId] ?? null });
+  },
+  clearActiveAgentForSession: (sessionId, opts) => {
+    const map = readActiveAgentSessionMap();
+    if (sessionId in map) {
+      if (opts?.onlyIfAgentId && map[sessionId] !== opts.onlyIfAgentId) return;
+      delete map[sessionId];
+      writeActiveAgentSessionMap(map);
+    }
+    if (get().activeAgentSessionKey === sessionId) {
+      set({ activeAgentId: null });
     }
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),

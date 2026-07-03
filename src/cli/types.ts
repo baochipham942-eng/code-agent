@@ -53,6 +53,8 @@ export interface CLIConfig {
   executionIntent?: ConversationExecutionIntent;
   /** /agent 显式选择（preferredAgentId）；web/CLI 独立 run 路径据此换 prompt + 收窄工具。 */
   agentOverride?: ExplicitAgentOverride;
+  /** 用户显式请求的 agent id（含解析失败场景）；进 AgentLoop ctx 供 turnQuality 徽标降级判定。 */
+  requestedAgentId?: string;
 }
 
 /**

@@ -6,6 +6,7 @@ import ipcService from '../../../services/ipcService';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
+import { useI18n } from '../../../hooks/useI18n';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 
 interface TurnQualityStripProps {
@@ -88,6 +89,7 @@ function blockLabel(blockType: string): string {
 
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
   const developerMode = useAppStore((state) => state.developerMode);
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
   const [archivedEntryIds, setArchivedEntryIds] = useState<Set<string>>(() => new Set());
@@ -146,7 +148,13 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     // 恢复自动路由后 agentName 回到 default 徽标自然消失。
     const agentName = summary.capabilities?.agentName;
     const showAgent = Boolean(agentName && agentName !== 'default');
-    if (!modelName && !showAgent) return null;
+    // 显式选择降级：用户点名的 agent 没生效（requestedAgentId ≠ 实际 agentId）。
+    // 徽标显示 host 实际路由值，降级不再静默——透出安静警示。
+    const requestedAgentId = summary.capabilities?.requestedAgentId;
+    const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
+      ? requestedAgentId
+      : null;
+    if (!modelName && !showAgent && !degradedAgentId) return null;
     return (
       <div className="mb-2 flex items-center gap-1">
         {modelName && (
@@ -158,6 +166,16 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
           <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500">
             <Bot className="h-3 w-3" />
             {agentName}
+          </span>
+        )}
+        {degradedAgentId && (
+          <span
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-500/80"
+            title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${summary.capabilities?.agentName || 'default'}`}
+          >
+            <Bot className="h-3 w-3" />
+            {degradedAgentId}
+            {t.agentCommand.badgeNotAppliedSuffix}
           </span>
         )}
       </div>

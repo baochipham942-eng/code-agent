@@ -290,6 +290,7 @@ export function buildTurnQualitySummary(
     capabilities: {
       agentId: ctx.agentId,
       agentName: ctx.agentName,
+      requestedAgentId: ctx.requestedAgentId,
       activeSkillName: ctx.activeSkillInvocation?.skillName,
       toolsUsed,
     },

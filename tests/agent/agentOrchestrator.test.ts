@@ -168,6 +168,10 @@ import type { Message } from '../../src/shared/contract';
 interface OrchestratorInternals {
   applyHistoryVisibility(message: Message, options?: { historyVisibility?: 'meta' | 'normal' }): Message;
   resolveExplicitAgentRouting(agentId: string): { agent: unknown; score: number; reason: string } | null;
+  resolveTurnRouting(content: string, sessionId?: string, agentOverrideId?: string): Promise<{
+    resolution: { agent: { id: string; name: string }; score: number; reason: string } | null;
+    requestedAgentId?: string;
+  }>;
   pendingPermissions: Map<string, { resolve: (r: string) => void }>;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
@@ -397,6 +401,41 @@ describe('AgentOrchestrator', () => {
     it('未知 agentId 不抛错，返回 null（回落到自动路由）', () => {
       const result = internals(orchestrator).resolveExplicitAgentRouting('__nonexistent_agent_xyz__');
       expect(result).toBeNull();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // resolveTurnRouting（private）—— 显式选择的 requestedAgentId 必须保留，
+  // 静默兜底（`?? resolveAgentRouting`）改为可判定的降级信号来源
+  // --------------------------------------------------------------------------
+  describe('resolveTurnRouting', () => {
+    it('显式命中 → resolution 来自显式选择且 requestedAgentId 保留', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('随便看看代码', undefined, 'explore');
+      expect(out.requestedAgentId).toBe('explore');
+      expect(out.resolution?.agent.id).toBe('explore');
+    });
+
+    it('显式解析失败 → requestedAgentId 保留（降级不再静默）', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('hello', undefined, '__nonexistent_agent_xyz__');
+      expect(out.requestedAgentId).toBe('__nonexistent_agent_xyz__');
+      // 自动路由兜底：命中与否都不允许丢失 requestedAgentId
+      expect(out.resolution?.agent.id).not.toBe('__nonexistent_agent_xyz__');
+    });
+
+    it('无显式选择 → requestedAgentId 不出现', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('hello', undefined, undefined);
+      expect(out.requestedAgentId).toBeUndefined();
+    });
+
+    it('agentOverrideId 带空白 → 规整后不产生假降级（requestedAgentId === 实际 agent id）', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('看代码', undefined, '  explore  ');
+      expect(out.requestedAgentId).toBe('explore');
+      expect(out.resolution?.agent.id).toBe('explore');
+    });
+
+    it('agentOverrideId 全空白 → 视同无显式选择', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('hello', undefined, '   ');
+      expect(out.requestedAgentId).toBeUndefined();
     });
   });
 });

@@ -868,9 +868,68 @@ export const en: Translations = {
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
   },
 
-  // /goal 生命周期通知卡片（到限放行的安静降级标识）
+  // /agent 命令与面板
+  agentCommand: {
+    defaultDescription: 'Resume auto routing',
+    roleGroupLabel: 'Roles',
+    switchedToPrefix: 'Switched to ',
+    restoredAuto: 'Auto agent routing restored',
+    notFoundPrefix: 'Agent not found: ',
+    chipTitlePrefix: 'Current agent: ',
+    chipTitleSuffix: '. Type /agent to switch.',
+    chipAriaLabel: 'Current agent',
+  },
+
+  // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  goalConfirm: {
+    title: 'Confirm goal',
+    goalLabel: 'Goal',
+    goalPlaceholder: 'Describe the outcome to deliver in one sentence',
+    verifyLabel: 'Verify command',
+    verifyEmpty: 'Leave empty (soft review only)',
+    verifyCustomLabel: 'Custom verify command',
+    verifyCustomPlaceholder: 'Type the verification command to run',
+    acceptanceLabel: 'Soft acceptance',
+    acceptancePlaceholder: 'What conditions should the result meet',
+    boundariesLabel: 'Boundaries',
+    pauseLabel: 'Pause conditions',
+    maxTurnsLabel: 'Max turns',
+    budgetLabel: 'Token budget',
+    maxTimeLabel: 'Time limit (min)',
+    defaultPlaceholder: 'Default',
+    noLimitPlaceholder: 'No limit',
+    advancedToggle: 'Advanced',
+    start: 'Start goal',
+    cancel: 'Cancel',
+    defaultBoundaries: 'Only touch files and config directly related to the goal; avoid unrelated refactors, extra features, and destructive operations.',
+    defaultPauseConditions: 'Pause when credentials, payment, production data, destructive actions, or scope expansion are needed, or after 2 consecutive failed verifications without new evidence.',
+  },
+
+  // /goal 生命周期通知卡片
   goalNotice: {
+    startPrefix: 'Goal started: ',
+    metPrefix: 'Goal completed: ',
+    abortedPrefix: 'Goal aborted: ',
+    durationPrefix: 'took ',
+    turnsSuffix: ' turns',
     degradedBadge: 'Completed · verification incomplete',
     degradedReasonPrefix: 'Last verification: ',
+  },
+
+  // /goal 运行进度状态条
+  goalStatusBar: {
+    runningPrefix: 'Goal in progress: ',
+    pausedPrefix: 'Goal paused: ',
+    verifying: 'Verifying…',
+    reviewing: 'Reviewing…',
+    remainingPrefix: 'remaining ',
+    turnPrefix: 'Turn ',
+    turnSuffix: '',
+    elapsedTitle: 'Elapsed time',
+    remainingTitle: 'Wall-clock time remaining',
+    turnTitle: 'Turns',
+    tokenTitle: 'Token usage',
+    pause: 'Pause',
+    resume: 'Resume',
   },
 };

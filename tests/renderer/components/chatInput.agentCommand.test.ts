@@ -54,4 +54,40 @@ describe('/agent command helpers', () => {
     expect(options).toHaveLength(1);
     expect(applyAgentCommandOption(options[0]!)).toBe('/agent reviewer ');
   });
+
+  it('面板收敛：系统型内置（awaiter/dream/distill）不进 /agent 面板', () => {
+    const withSystem: AgentListEntry[] = [
+      ...agents,
+      { id: 'awaiter', name: 'Awaiter', description: 'Monitors', source: 'builtin', modelTier: 'fast', readonly: false, tools: [] },
+      { id: 'dream', name: 'Dream', description: 'Review', source: 'builtin', modelTier: 'balanced', readonly: false, tools: [] },
+      { id: 'distill', name: 'Distill', description: 'Distill', source: 'builtin', modelTier: 'balanced', readonly: false, tools: [] },
+    ];
+    const options = getAgentCommandOptions(withSystem);
+    const ids = options.map((o) => o.id);
+    expect(ids).not.toContain('awaiter');
+    expect(ids).not.toContain('dream');
+    expect(ids).not.toContain('distill');
+    expect(ids).toContain('coder');
+  });
+
+  it('roles 与 agent 分组：isRole 条目归入 role 组且排在 agent 组之后', () => {
+    const withRole: AgentListEntry[] = [
+      { id: '数据处理看板周报专家', name: '数据处理看板周报专家', description: '角色', source: 'user', modelTier: 'balanced', readonly: false, tools: [], isRole: true },
+      ...agents,
+    ];
+    const options = getAgentCommandOptions(withRole);
+    expect(options[0]!.id).toBeNull();
+    expect(options[0]!.group).toBe('agent');
+    const groups = options.map((o) => o.group);
+    expect(groups.lastIndexOf('agent')).toBeLessThan(groups.indexOf('role'));
+    expect(options.find((o) => o.id === '数据处理看板周报专家')?.group).toBe('role');
+  });
+
+  it('Default 项文案可由调用方注入（i18n）', () => {
+    const options = getAgentCommandOptions(agents, '', {
+      defaultName: 'Default',
+      defaultDescription: 'Resume auto routing',
+    });
+    expect(options[0]!.description).toBe('Resume auto routing');
+  });
 });

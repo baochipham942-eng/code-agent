@@ -26,10 +26,11 @@ function formatDuration(ms?: number): string | null {
 
 /** 完成/中止时的元信息行（耗时 · 轮次 · token） */
 function MetaLine({ notice }: { notice: GoalNoticePayload }) {
+  const { t } = useI18n();
   const parts: string[] = [];
   const dur = formatDuration(notice.durationMs);
-  if (dur) parts.push(`耗时 ${dur}`);
-  if (notice.turns != null) parts.push(`${notice.turns} 轮`);
+  if (dur) parts.push(`${t.goalNotice.durationPrefix}${dur}`);
+  if (notice.turns != null) parts.push(`${notice.turns}${t.goalNotice.turnsSuffix}`);
   if (notice.tokensUsed != null) parts.push(`${notice.tokensUsed.toLocaleString()} token`);
   if (parts.length === 0) return null;
   return <span className="text-[11px] text-zinc-500">{parts.join(' · ')}</span>;
@@ -83,6 +84,7 @@ function DegradedBadge({ notice }: { notice: GoalNoticePayload }) {
 }
 
 export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content }) => {
+  const { t } = useI18n();
   const notice = parseGoalNotice(content);
   if (!notice) return null;
 
@@ -91,7 +93,7 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
       <div className="goal-notice my-1 flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm">
         <Target className="h-4 w-4 flex-shrink-0 text-sky-400" />
         <span className="text-zinc-300">
-          开启目标：<span className="font-medium text-zinc-100">{notice.goal}</span>
+          {t.goalNotice.startPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
         </span>
       </div>
     );
@@ -103,7 +105,7 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-400" />
           <span className="text-zinc-300">
-            目标已完成：<span className="font-medium text-zinc-100">{notice.goal}</span>
+            {t.goalNotice.metPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
           </span>
         </div>
         <div className="pl-6">
@@ -121,7 +123,7 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400" />
         <span className="text-zinc-300">
-          目标已中止：<span className="font-medium text-zinc-100">{notice.goal}</span>
+          {t.goalNotice.abortedPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
         </span>
       </div>
       {notice.reason && <div className="pl-6 text-[11px] text-amber-300/80">{notice.reason}</div>}

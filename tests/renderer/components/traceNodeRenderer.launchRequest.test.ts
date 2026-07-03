@@ -151,13 +151,14 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    // 降级后：默认（非开发者模式）只显示模型名安静徽标；评分/记忆/agent 详情
-    // 全部收进开发者模式，不再出现在对话流。
+    // 降级后：默认（非开发者模式）只显示模型名安静徽标；评分/记忆详情
+    // 收进开发者模式。命令交互降噪批起：手动指定的 agent（非 default）以
+    // 安静徽标透出"本轮由谁执行"，与模型名徽标同级同风格。
     expect(html).toContain('gpt-4.1');
     expect(html).not.toContain('88');
     expect(html).not.toContain('记忆 1');
     expect(html).not.toContain('openai/gpt-4.1');
-    expect(html).not.toContain('coder');
+    expect(html).toContain('coder');
   });
 
   it('renders pending launch request as an inline approval card', () => {

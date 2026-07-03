@@ -471,6 +471,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         config.modelConfig.adaptive = true;
       }
 
+      // /agent 显式选择透传（P0：此前 web 独立 HTTP 路径完全丢弃 preferredAgentId，
+      // /agent 切换在生产 web 路径是 no-op——与 executionIntent 当年同款漏接）。
+      const preferredAgentId = typeof body.context?.preferredAgentId === 'string'
+        ? body.context.preferredAgentId
+        : undefined;
+      if (preferredAgentId) {
+        const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');
+        const agentOverride = resolveExplicitAgentOverride(preferredAgentId);
+        if (agentOverride) {
+          config.agentOverride = agentOverride;
+          logger.info('[AgentRouter] Explicit agent override applied', {
+            agentId: agentOverride.id,
+            deniedTools: agentOverride.deniedToolNames.length,
+            sessionId,
+          });
+        } else {
+          logger.warn('[AgentRouter] Unknown preferredAgentId, falling back to default routing', { preferredAgentId, sessionId });
+        }
+      }
+
       // /goal 自治模式：body.goal 存在则激活（schema 保证 verify/review 至少有一个）。
       // 设 config.goalContract → agentLoop 据此建 ctx.goalMode + maxIterations=maxTurns + 预加载 attempt_completion。
       if (body.goal) {

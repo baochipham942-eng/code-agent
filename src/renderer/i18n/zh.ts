@@ -855,10 +855,69 @@ export const zh = {
     skipMessage: '跳过设计澄清，请按你的最佳判断直接生成成品，不要再 emit question-form。',
   },
 
-  // /goal 生命周期通知卡片（到限放行的安静降级标识）
+  // /agent 命令与面板
+  agentCommand: {
+    defaultDescription: '恢复自动路由',
+    roleGroupLabel: '角色',
+    switchedToPrefix: '已切到 ',
+    restoredAuto: '已恢复自动 agent',
+    notFoundPrefix: '没找到 agent: ',
+    chipTitlePrefix: '当前 agent: ',
+    chipTitleSuffix: '。输入 /agent 切换。',
+    chipAriaLabel: '当前 agent',
+  },
+
+  // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  goalConfirm: {
+    title: '目标确认',
+    goalLabel: '目标',
+    goalPlaceholder: '用一句话说明要交付什么结果',
+    verifyLabel: '验证命令',
+    verifyEmpty: '留空（按软验收评审）',
+    verifyCustomLabel: '自定义验证命令',
+    verifyCustomPlaceholder: '自己填写要执行的验证命令',
+    acceptanceLabel: '软验收',
+    acceptancePlaceholder: '结果需要满足哪些条件',
+    boundariesLabel: '边界',
+    pauseLabel: '暂停条件',
+    maxTurnsLabel: '轮次上限',
+    budgetLabel: 'Token 预算',
+    maxTimeLabel: '时间上限(分)',
+    defaultPlaceholder: '默认',
+    noLimitPlaceholder: '不限',
+    advancedToggle: '高级编辑',
+    start: '启动目标',
+    cancel: '取消',
+    defaultBoundaries: '只修改与目标直接相关的文件和配置，避免无关重构、无关功能和破坏性操作。',
+    defaultPauseConditions: '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。',
+  },
+
+  // /goal 生命周期通知卡片
   goalNotice: {
+    startPrefix: '开启目标：',
+    metPrefix: '目标已完成：',
+    abortedPrefix: '目标已中止：',
+    durationPrefix: '耗时 ',
+    turnsSuffix: ' 轮',
     degradedBadge: '已完成 · 验证未全过',
     degradedReasonPrefix: '最后一次验证：',
+  },
+
+  // /goal 运行进度状态条
+  goalStatusBar: {
+    runningPrefix: '目标进行中：',
+    pausedPrefix: '目标已暂停：',
+    verifying: '验证中…',
+    reviewing: '评审中…',
+    remainingPrefix: '剩 ',
+    turnPrefix: '第 ',
+    turnSuffix: ' 轮',
+    elapsedTitle: '已运行时长',
+    remainingTitle: '墙钟剩余时间',
+    turnTitle: '轮次',
+    tokenTitle: 'token 用量',
+    pause: '暂停',
+    resume: '继续',
   },
 };
 

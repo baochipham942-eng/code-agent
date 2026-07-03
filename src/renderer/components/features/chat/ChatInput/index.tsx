@@ -15,6 +15,7 @@ import type {
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
+import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
@@ -43,6 +44,7 @@ import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
+import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
@@ -57,7 +59,9 @@ import {
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
-import { GoalComposerCard } from './GoalComposerCard';
+import { GoalConfirmCard } from './GoalConfirmCard';
+import { buildVerifyCandidates } from './goalConfirm';
+import { readWorkspaceFile } from '../../../design/designFiles';
 import {
   buildDirectRoutingPlaceholder,
   getPreferredAgentMentionToken,
@@ -128,6 +132,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   hasPlan,
   onPlanClick,
 }, ref) => {
+  const { t } = useI18n();
   const [value, setValue] = useState('');
   const [voiceInputContext, setVoiceInputContext] = useState<{
     anchor: string;
@@ -160,8 +165,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // /schedule 不带参数时的对话式创建卡片
   const [scheduleComposerOpen, setScheduleComposerOpen] = useState(false);
   const [creatingSchedule, setCreatingSchedule] = useState(false);
-  // /goal 不带参数时的目标合同创建卡片
-  const [goalComposerOpen, setGoalComposerOpen] = useState(false);
+  // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
+  const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
   const [submittingGoal, setSubmittingGoal] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -174,6 +180,38 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       window.removeEventListener('app:openCommandPalette', handleOpenCommandPalette);
     };
   }, []);
+
+  // /goal 确认卡打开时探测项目 package.json scripts 作为验证命令候选
+  // （fail-closed：候选只来自项目真实脚本，读不到就空）。
+  // 会话尚未落 workingDirectory（首轮前为 null）时兜底问主进程当前工作目录。
+  useEffect(() => {
+    if (!goalConfirm) return;
+    let cancelled = false;
+    void (async () => {
+      let workingDirectory = useAppStore.getState().workingDirectory;
+      if (!workingDirectory && currentSessionId) {
+        workingDirectory = useSessionStore.getState().sessions
+          .find((session) => session.id === currentSessionId)?.workingDirectory ?? null;
+      }
+      if (!workingDirectory) {
+        try {
+          const res = await window.domainAPI?.invoke<string | null>(IPC_DOMAINS.WORKSPACE, 'getCurrent');
+          workingDirectory = (res?.success ? res.data : null) ?? null;
+        } catch {
+          workingDirectory = null;
+        }
+      }
+      if (!workingDirectory) {
+        if (!cancelled) setGoalVerifyCandidates([]);
+        return;
+      }
+      const raw = await readWorkspaceFile(`${workingDirectory}/package.json`);
+      if (!cancelled) setGoalVerifyCandidates(buildVerifyCandidates(raw));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [goalConfirm, currentSessionId]);
 
   useEffect(() => {
     const handleOpenSlashMenu = () => {
@@ -448,8 +486,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSlashFilter,
     setPendingPromptCommand,
     setPendingAgentSelection,
-    setScheduleComposerOpen,
-    setGoalComposerOpen,
     setActiveAgentId,
   });
 
@@ -492,7 +528,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setPendingPromptCommand,
     setPendingAgentSelection,
     setScheduleComposerOpen,
-    setGoalComposerOpen,
+    openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
+    closeGoalConfirm: () => setGoalConfirm(null),
     setActiveAgentId,
   });
 
@@ -545,17 +582,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onDismiss={() => setScheduleComposerOpen(false)}
           />
         )}
-        {goalComposerOpen && (
-          <GoalComposerCard
+        {goalConfirm && (
+          <GoalConfirmCard
+            initialGoal={goalConfirm.initialGoal}
+            verifyCandidates={goalVerifyCandidates}
             submitting={submittingGoal}
             onSubmit={async (draft) => {
               setSubmittingGoal(true);
               const parsed = goalComposerDraftToParsed(draft);
               const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
               setSubmittingGoal(false);
-              if (!ok) setGoalComposerOpen(true);
+              if (!ok) setGoalConfirm({ initialGoal: parsed.goal });
             }}
-            onDismiss={() => setGoalComposerOpen(false)}
+            onDismiss={() => setGoalConfirm(null)}
           />
         )}
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
@@ -646,8 +685,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 /agent
               </div>
               {agentCommandOptions.map((option, index) => (
+                <React.Fragment key={option.id ?? 'default'}>
+                  {option.group === 'role' && agentCommandOptions[index - 1]?.group !== 'role' && (
+                    <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                      {t.agentCommand.roleGroupLabel}
+                    </div>
+                  )}
                 <button
-                  key={option.id ?? 'default'}
                   type="button"
                   onClick={() => handleAgentCommandOptionSelect(index)}
                   className={`w-full px-3 py-2 text-left transition-colors ${
@@ -666,6 +710,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                     {option.description}
                   </div>
                 </button>
+                </React.Fragment>
               ))}
               {/* 角色名单底部"招新"：对话式建角色入口（role-creation-flow §7） */}
               <button

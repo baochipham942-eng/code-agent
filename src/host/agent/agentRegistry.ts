@@ -27,6 +27,7 @@ import { CORE_AGENTS, CORE_AGENT_IDS, isCoreAgent } from './hybrid/coreAgents';
 import type { CoreAgentConfig, CoreAgentId } from './hybrid/types';
 import { createLogger } from '../services/infra/logger';
 import type { AgentSource, AgentListEntry } from '../../shared/contract/agentRegistry';
+import { listPersistentRoles } from '../services/roleAssets/roleAssetService';
 
 const logger = createLogger('AgentRegistry');
 
@@ -206,6 +207,20 @@ export function listAllAgents(): AgentListEntry[] {
   }
 
   return entries;
+}
+
+/**
+ * listAllAgents + 角色标记：agents/<id>.md 同名存在 roles/<id>/ 资产目录的条目
+ * 视为角色（isRole），供面板与 agent 分组显示。角色目录读取失败时静默降级为不标记。
+ */
+export async function listAllAgentsWithRoleFlag(): Promise<AgentListEntry[]> {
+  const entries = listAllAgents();
+  try {
+    const roleIds = new Set(await listPersistentRoles());
+    return entries.map((entry) => (roleIds.has(entry.id) ? { ...entry, isRole: true } : entry));
+  } catch {
+    return entries;
+  }
 }
 
 /**

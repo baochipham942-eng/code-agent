@@ -9,9 +9,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { Target, Loader2, Pause, Play } from 'lucide-react';
-import { useAppStore } from '../../../stores/appStore';
+import { useAppStore, type GoalRunState } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { invokeDomain } from '../../../services/ipcService';
+import { useI18n } from '../../../hooks/useI18n';
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -21,21 +22,21 @@ function formatElapsed(ms: number): string {
   return `${m}m ${s}s`;
 }
 
-export const GoalStatusBar: React.FC = () => {
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const run = useAppStore((s) => (currentSessionId ? s.goalRuns[currentSessionId] : undefined));
-  const setGoalPaused = useAppStore((s) => s.setGoalPaused);
+/** 纯展示层（store-free，测试直接喂 run） */
+export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () => void }> = ({
+  run,
+  onTogglePause,
+}) => {
+  const { t } = useI18n();
 
   // 实时计时器：仅运行中每秒刷新一次（暂停时冻结时长）
   const [now, setNow] = useState(() => Date.now());
-  const running = run?.status === 'running';
+  const running = run.status === 'running';
   useEffect(() => {
     if (!running) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [running]);
-
-  if (run?.status !== 'running' && run?.status !== 'paused') return null;
 
   const paused = run.status === 'paused';
   const elapsed = formatElapsed(now - run.startedAt);
@@ -43,15 +44,8 @@ export const GoalStatusBar: React.FC = () => {
   const remainingMs =
     run.wallClockBudgetMs !== undefined ? run.wallClockBudgetMs - (now - run.startedAt) : undefined;
   const gateHint =
-    run.lastGate?.gate === 1 ? '验证中…' : run.lastGate?.gate === 2 ? '评审中…' : null;
-
-  const togglePause = () => {
-    if (!currentSessionId) return;
-    const next = !paused;
-    // 后端复用通用 pause/resume：循环在 turn 边界（waitWhilePaused）挂起/释放
-    invokeDomain('domain:agent', next ? 'pause' : 'resume', { sessionId: currentSessionId }).catch(() => {});
-    setGoalPaused(currentSessionId, next);
-  };
+    run.lastGate?.gate === 1 ? t.goalStatusBar.verifying : run.lastGate?.gate === 2 ? t.goalStatusBar.reviewing : null;
+  const togglePause = onTogglePause;
 
   const accent = paused
     ? 'border-slate-500/30 bg-slate-500/[0.07]'
@@ -61,27 +55,27 @@ export const GoalStatusBar: React.FC = () => {
     <div className={`goal-status-bar mx-auto mb-1 flex w-full max-w-3xl items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${accent}`}>
       <Target className={`h-3.5 w-3.5 flex-shrink-0 ${paused ? 'text-slate-400' : 'text-sky-400'}`} />
       <span className="truncate text-zinc-300" title={run.goal}>
-        {paused ? '目标已暂停：' : '目标进行中：'}
+        {paused ? t.goalStatusBar.pausedPrefix : t.goalStatusBar.runningPrefix}
         <span className="text-zinc-100">{run.goal}</span>
       </span>
       <span className="ml-auto flex flex-shrink-0 items-center gap-2 text-zinc-400">
         {!paused && <Loader2 className="h-3 w-3 animate-spin text-sky-400" />}
-        <span title="已运行时长">⏱ {elapsed}</span>
+        <span title={t.goalStatusBar.elapsedTitle}>⏱ {elapsed}</span>
         {remainingMs !== undefined && (
           <span
-            title="墙钟剩余时间"
+            title={t.goalStatusBar.remainingTitle}
             className={remainingMs <= 60_000 ? 'text-amber-300' : undefined}
           >
-            剩 {formatElapsed(Math.max(0, remainingMs))}
+            {t.goalStatusBar.remainingPrefix}{formatElapsed(Math.max(0, remainingMs))}
           </span>
         )}
         {run.turn > 0 && (
-          <span title="轮次">
-            第 {run.turn}{run.maxTurns > 0 ? `/${run.maxTurns}` : ''} 轮
+          <span title={t.goalStatusBar.turnTitle}>
+            {t.goalStatusBar.turnPrefix}{run.turn}{run.maxTurns > 0 ? `/${run.maxTurns}` : ''}{t.goalStatusBar.turnSuffix}
           </span>
         )}
         {run.tokenBudget > 0 && (
-          <span title="token 用量">
+          <span title={t.goalStatusBar.tokenTitle}>
             {run.tokensUsed.toLocaleString()}/{run.tokenBudget.toLocaleString()} tok
           </span>
         )}
@@ -90,7 +84,7 @@ export const GoalStatusBar: React.FC = () => {
           type="button"
           data-goal-toggle-pause
           onClick={togglePause}
-          title={paused ? '继续' : '暂停'}
+          title={paused ? t.goalStatusBar.resume : t.goalStatusBar.pause}
           className="flex-shrink-0 rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-100"
         >
           {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
@@ -98,4 +92,22 @@ export const GoalStatusBar: React.FC = () => {
       </span>
     </div>
   );
+};
+
+export const GoalStatusBar: React.FC = () => {
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const run = useAppStore((s) => (currentSessionId ? s.goalRuns[currentSessionId] : undefined));
+  const setGoalPaused = useAppStore((s) => s.setGoalPaused);
+
+  if (run?.status !== 'running' && run?.status !== 'paused') return null;
+
+  const togglePause = () => {
+    if (!currentSessionId) return;
+    const next = run.status !== 'paused';
+    // 后端复用通用 pause/resume：循环在 turn 边界（waitWhilePaused）挂起/释放
+    invokeDomain('domain:agent', next ? 'pause' : 'resume', { sessionId: currentSessionId }).catch(() => {});
+    setGoalPaused(currentSessionId, next);
+  };
+
+  return <GoalStatusBarView run={run} onTogglePause={togglePause} />;
 };

@@ -47,6 +47,18 @@ function parseJsonRecord(value: string): Record<string, unknown> {
   return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
 }
 
+// metadata 是装饰性字段（turnQuality 徽标等）：单行损坏不应让整个会话读回崩溃，
+// 解析失败回 undefined（Codex audit R1-MED2，对齐主库 parseStoredJson 语义）。
+function parseMessageMetadata(value: unknown): Message['metadata'] {
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    return typeof parsed === 'object' && parsed !== null ? parsed as Message['metadata'] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ----------------------------------------------------------------------------
 // CLI Database Service
 // ----------------------------------------------------------------------------
@@ -574,7 +586,7 @@ export class CLIDatabaseService {
       attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
       thinking: (row.thinking as string) || undefined,
-      metadata: row.metadata ? parseJson<NonNullable<Message['metadata']>>(String(row.metadata)) : undefined,
+      metadata: parseMessageMetadata(row.metadata),
       ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
@@ -600,7 +612,7 @@ export class CLIDatabaseService {
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
       thinking: (row.thinking as string) || undefined,
-      metadata: row.metadata ? parseJson<NonNullable<Message['metadata']>>(String(row.metadata)) : undefined,
+      metadata: parseMessageMetadata(row.metadata),
       ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
@@ -926,7 +938,7 @@ export class CLIDatabaseService {
       toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       thinking: (row.thinking as string) || undefined,
-      metadata: row.metadata ? parseJson<NonNullable<Message['metadata']>>(String(row.metadata)) : undefined,
+      metadata: parseMessageMetadata(row.metadata),
       ...(row.is_meta ? { isMeta: true } : {}),
     });
 

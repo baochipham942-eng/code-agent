@@ -93,6 +93,26 @@ describe('CLIDatabaseService metadata 持久化', () => {
     });
   });
 
+  it('metadata 列损坏（非法 JSON）时 getMessages 不崩溃，metadata 回读为 undefined', () => {
+    db.addMessage('sess-1', {
+      id: 'm-meta-corrupt',
+      role: 'assistant',
+      content: '内容仍可读',
+      timestamp: Date.now(),
+      metadata: turnQualityMetadata,
+    } as Message);
+    db.getDb()!.prepare("UPDATE messages SET metadata = '{bad json' WHERE id = 'm-meta-corrupt'").run();
+
+    const messages = db.getMessages('sess-1');
+    const got = messages.find((m) => m.id === 'm-meta-corrupt');
+    expect(got).toBeDefined();
+    expect(got!.content).toBe('内容仍可读');
+    expect(got!.metadata).toBeUndefined();
+
+    const recent = db.getRecentMessages('sess-1', 10);
+    expect(recent.find((m) => m.id === 'm-meta-corrupt')?.metadata).toBeUndefined();
+  });
+
   it('无 metadata 的消息回读为 undefined（不落 "{}" 噪声）', () => {
     db.addMessage('sess-1', {
       id: 'm-meta-3',

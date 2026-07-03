@@ -12,6 +12,7 @@ import { isAbsolute, resolve } from 'path';
 import type { ToolCall } from '../../../shared/contract';
 import { GOAL_MODE } from '../../../shared/constants/agent';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
+import { evaluateWorkspaceHygiene } from './workspaceHygiene';
 import type { RuntimeContext } from './runtimeContext';
 
 export interface GoalEvidenceGateResult {
@@ -44,6 +45,19 @@ function parseClaimedEvidence(completionCall: ToolCall): ClaimedEvidence {
 
 function normalizeCommand(command: string): string {
   return command.replace(/\s+/g, ' ').trim();
+}
+
+/** 收集本会话内实际写过的文件路径（Write/Edit/Append 的 file_path 参数） */
+function collectWrittenFiles(ctx: RuntimeContext): string[] {
+  const written: string[] = [];
+  for (const message of ctx.messages || []) {
+    for (const toolCall of message.toolCalls || []) {
+      if (!/^(write|edit|append)$/i.test(toolCall.name || '')) continue;
+      const filePath = toolCall.arguments?.file_path;
+      if (typeof filePath === 'string' && filePath.trim()) written.push(filePath.trim());
+    }
+  }
+  return written;
 }
 
 /** 收集本会话内实际执行过的 shell 命令（Bash 族工具调用的 command 参数） */
@@ -138,9 +152,22 @@ export function runGoalEvidenceGate(
   }
 
   if (problems.length === 0) {
+    // 工作区卫生（final artifact contract 附带查验）：声明外的散落写入只记录
+    // 不打回——首版警告级，避免误伤合法的辅助文件；污染趋势看 trace 决定是否升级。
+    let hygieneNote = '';
+    if (ctx.declaredDeliverables) {
+      const hygiene = evaluateWorkspaceHygiene({
+        declared: ctx.declaredDeliverables,
+        writtenFiles: collectWrittenFiles(ctx),
+        workingDirectory: ctx.workingDirectory || process.cwd(),
+      });
+      if (!hygiene.clean) {
+        hygieneNote = `; workspace hygiene warning: ${hygiene.strayFiles.length} stray file(s) outside declared deliverables/scratch (${hygiene.strayFiles.slice(0, 3).join(', ')})`;
+      }
+    }
     return {
       verdict: 'pass',
-      reason: `evidence verified: ${evidenceRefs.length} ref(s)`,
+      reason: `evidence verified: ${evidenceRefs.length} ref(s)${hygieneNote}`,
       evidenceRefs,
     };
   }

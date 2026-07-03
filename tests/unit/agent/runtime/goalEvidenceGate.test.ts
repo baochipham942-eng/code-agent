@@ -106,6 +106,31 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
     expect(result.feedback).toContain('事先声明的产物');
   });
 
+  it('工作区卫生：声明外散落写入只出警告不打回', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'evidence-gate-hygiene-'));
+    const filePath = path.join(dir, 'app.html');
+    await writeFile(filePath, '<html></html>', 'utf-8');
+    const ctx = makeCtx({
+      workingDirectory: dir,
+      declaredDeliverables: { finalArtifacts: ['app.html'], declaredAtMs: 1 },
+      messages: [
+        {
+          id: 'm1', role: 'assistant', content: '', timestamp: 1,
+          toolCalls: [
+            { id: 't1', name: 'Write', arguments: { file_path: 'app.html', content: 'x' } },
+            { id: 't2', name: 'Write', arguments: { file_path: 'stray-notes.md', content: 'x' } },
+          ],
+        },
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ deliverables: ['app.html'] }));
+
+    expect(result.verdict).toBe('pass');
+    expect(result.reason).toContain('workspace hygiene warning');
+    expect(result.reason).toContain('stray-notes.md');
+  });
+
   it('打回预算用尽 → exhausted_release 放行进闸1/闸2', () => {
     const ctx = makeCtx({ goalEvidenceGateBounces: GOAL_MODE.EVIDENCE_GATE_MAX_BOUNCES });
     const result = runGoalEvidenceGate(ctx, makeCall());

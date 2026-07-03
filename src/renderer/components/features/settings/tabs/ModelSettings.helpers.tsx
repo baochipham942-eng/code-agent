@@ -23,6 +23,9 @@ import {
   type ProviderIconValidationResult,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
+import { zh } from '../../../../i18n/zh';
+
+export type ModelSettingsHelperLabels = typeof zh.settings.model.helpers;
 
 export interface ProviderDisplayInfo {
   id: ModelProvider;
@@ -83,18 +86,21 @@ export interface BuildProviderConfigForSaveOptions {
   updatedAt?: number;
 }
 
-export function describeProviderIconValidationError(result: ProviderIconValidationResult): string | null {
+export function describeProviderIconValidationError(
+  result: ProviderIconValidationResult,
+  labels: ModelSettingsHelperLabels = zh.settings.model.helpers,
+): string | null {
   if (result.valid) return null;
   if (result.reason === 'image-too-large') {
     const sizeDetail = result.imageBytes !== undefined
-      ? `当前约 ${(result.imageBytes / 1024).toFixed(1)} KB，`
+      ? `${labels.iconSizePrefix}${(result.imageBytes / 1024).toFixed(1)}${labels.iconSizeMiddle}`
       : '';
-    return `${sizeDetail}Provider 图标不能超过 96 KB。`;
+    return `${sizeDetail}${labels.iconTooLarge}`;
   }
   if (result.reason === 'unsupported-asset-ref') {
-    return 'Provider 图标资产引用无效，请重新上传图片。';
+    return labels.iconUnsupportedAssetRef;
   }
-  return '只支持短文本标识，或 PNG、JPG、WebP、GIF、SVG 的 base64 data:image 图标。';
+  return labels.iconUnsupportedValue;
 }
 
 export function isProviderIdentityManaged(providerConfig?: Pick<ModelProviderSettings, 'managedByCloud'> | null): boolean {
@@ -244,10 +250,12 @@ export function buildProviderManagementRows({
   providers,
   config,
   providerConfigs,
+  labels = zh.settings.model.helpers,
 }: {
   providers: ProviderDisplayInfo[];
   config: ModelConfig;
   providerConfigs?: ProviderConfigMap;
+  labels?: ModelSettingsHelperLabels;
 }): ProviderManagementRow[] {
   return providers.map((provider) => {
     const registryInfo = getProviderInfo(provider.id);
@@ -260,7 +268,7 @@ export function buildProviderManagementRows({
       name: providerConfig?.displayName || provider.name,
       ...(normalizeProviderIcon(providerConfig?.icon) ? { icon: normalizeProviderIcon(providerConfig?.icon) } : {}),
       favorite: providerConfig?.favorite === true,
-      description: `${provider.description}${providerConfig?.protocol === 'claude' ? ' · Claude 协议' : ''}`,
+      description: `${provider.description}${providerConfig?.protocol === 'claude' ? labels.claudeProtocolSuffix : ''}`,
       modelCount: runtimeModels.length,
       evalEligibleCount: provider.models.filter((model) => model.evalEligible !== false).length,
       enabledModelCount: enabledModels.length,
@@ -277,17 +285,23 @@ export function buildProviderManagementRows({
 
 /** keyless provider（local/Ollama）的可用性展示：探测结果 → 状态 + 文案。
  *  undefined=探测未完成，不能直接展示成已可用（假性可用是 dogfood 实测踩坑）。 */
-export function describeKeylessReadiness(reachable: boolean | undefined): {
+export function describeKeylessReadiness(
+  reachable: boolean | undefined,
+  labels: ModelSettingsHelperLabels = zh.settings.model.helpers,
+): {
   state: 'checking' | 'running' | 'unavailable';
   label: string;
 } {
-  if (reachable === true) return { state: 'running', label: '✓ 本地服务' };
-  if (reachable === false) return { state: 'unavailable', label: '服务未运行' };
-  return { state: 'checking', label: '检测本地服务…' };
+  if (reachable === true) return { state: 'running', label: labels.keylessRunning };
+  if (reachable === false) return { state: 'unavailable', label: labels.keylessUnavailable };
+  return { state: 'checking', label: labels.keylessChecking };
 }
 
-export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): string {
-  return protocol === 'claude' ? 'Claude 协议' : 'OpenAI 兼容';
+export function getProtocolLabel(
+  protocol: ModelProviderProtocol | undefined,
+  labels: ModelSettingsHelperLabels = zh.settings.model.helpers,
+): string {
+  return protocol === 'claude' ? labels.protocolClaude : labels.protocolOpenai;
 }
 
 export function providerRequiresApiKey(providerId: ModelProvider): boolean {

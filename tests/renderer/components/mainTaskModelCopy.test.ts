@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,9 +29,13 @@ describe('main task model copy', () => {
 
   it('explains model selection-page gating and default in settings', () => {
     // 设置页模型区精简后：模型行用「进选择页」开关 + 「设为默认」表达 gating 与默认。
-    const source = readSource('src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx');
+    // 文案已迁 i18n（settings 内容区 i18n 批3），断言指向 zh 真源 + 组件引用对应键。
+    const models = zh.settings.model.models;
+    expect(models.selectableLabel).toBe('进选择页');
+    expect(models.selectionHint).toContain('「设为默认」决定 Neo 默认用哪个');
 
-    expect(source).toContain('进选择页');
-    expect(source).toContain('「设为默认」决定 Neo 默认用哪个');
+    const source = readSource('src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx');
+    expect(source).toContain('selectableLabel');
+    expect(source).toContain('selectionHint');
   });
 });

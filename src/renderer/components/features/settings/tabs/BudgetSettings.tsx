@@ -6,6 +6,7 @@ import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { invokeDomain } from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 
 interface BudgetForm {
   enabled: boolean;
@@ -39,6 +40,8 @@ export function sanitizeBudgetForm(form: BudgetForm): BudgetForm {
 }
 
 export function BudgetSettings() {
+  const { t } = useI18n();
+  const budgetText = t.settings.budget;
   const [form, setForm] = useState<BudgetForm>(DEFAULT_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -60,7 +63,7 @@ export function BudgetSettings() {
         }
       })
       .catch(() => {
-        if (!cancelled) toast.error('加载预算设置失败');
+        if (!cancelled) toast.error(budgetText.loadFailed);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -68,7 +71,7 @@ export function BudgetSettings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [budgetText.loadFailed]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -76,16 +79,16 @@ export function BudgetSettings() {
       const sanitized = sanitizeBudgetForm(form);
       setForm(sanitized); // 回填清洗后的值，让用户看到被纠正的输入
       await invokeDomain(IPC_DOMAINS.SETTINGS, 'setBudgetConfig', { budget: sanitized });
-      toast.success('预算设置已保存');
+      toast.success(budgetText.saveSuccess);
     } catch (error) {
-      toast.error(`保存预算设置失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      toast.error(`${budgetText.saveFailedPrefix}${error instanceof Error ? error.message : budgetText.unknownError}`);
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) {
-    return <div className="text-xs text-zinc-500">加载中…</div>;
+    return <div className="text-xs text-zinc-500">{budgetText.loading}</div>;
   }
 
   const inputClass =
@@ -93,23 +96,23 @@ export function BudgetSettings() {
 
   return (
     <SettingsPage
-      title="预算告警"
-      description="设定费用上限和告警阈值。预算为事后记账有滞后，定位为「逼近预警」而非硬性即时拦截。"
+      title={budgetText.title}
+      description={budgetText.description}
     >
-      <SettingsSection title="启用预算告警" description="关闭时不做任何费用监控与染色。">
+      <SettingsSection title={budgetText.enableTitle} description={budgetText.enableDescription}>
         <label className="flex items-center gap-2 text-xs text-zinc-300">
           <input
             type="checkbox"
             checked={form.enabled}
             onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
           />
-          启用
+          {budgetText.enabledLabel}
         </label>
       </SettingsSection>
 
-      <SettingsSection title="费用上限" description="单个周期内的最大费用（美元）。">
+      <SettingsSection title={budgetText.limitTitle} description={budgetText.limitDescription}>
         <label className="flex items-center gap-2 text-xs text-zinc-300">
-          上限 $
+          {budgetText.maxBudgetLabel}
           <input
             type="number"
             min={0}
@@ -121,7 +124,7 @@ export function BudgetSettings() {
           />
         </label>
         <label className="flex items-center gap-2 text-xs text-zinc-300">
-          重置周期（小时）
+          {budgetText.resetPeriodLabel}
           <input
             type="number"
             min={1}
@@ -134,9 +137,9 @@ export function BudgetSettings() {
         </label>
       </SettingsSection>
 
-      <SettingsSection title="告警阈值" description="到达警告阈值时 StatusBar 染琥珀，到达拦截阈值染红并提示。">
+      <SettingsSection title={budgetText.thresholdsTitle} description={budgetText.thresholdsDescription}>
         <label className="flex items-center gap-2 text-xs text-zinc-300">
-          警告阈值 %
+          {budgetText.warningThresholdLabel}
           <input
             type="number"
             min={0}
@@ -151,7 +154,7 @@ export function BudgetSettings() {
           />
         </label>
         <label className="flex items-center gap-2 text-xs text-zinc-300">
-          拦截阈值 %
+          {budgetText.blockThresholdLabel}
           <input
             type="number"
             min={0}
@@ -174,7 +177,7 @@ export function BudgetSettings() {
           disabled={saving}
           className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/20 disabled:opacity-50"
         >
-          {saving ? '保存中…' : '保存'}
+          {saving ? budgetText.saving : budgetText.save}
         </button>
       </div>
     </SettingsPage>

@@ -17,6 +17,13 @@ const MIGRATED: string[] = [
   'tabs/ConversationSettings.tsx',
   'tabs/KeybindingsSettings.tsx',
   'tabs/VoiceInputSettings.tsx',
+  'tabs/ModelSettings.tsx',
+  'tabs/ModelSettings.helpers.tsx',
+  'tabs/ProviderListPanel.tsx',
+  'tabs/ProviderModelsSection.tsx',
+  'tabs/ProviderDetailSections.tsx',
+  'tabs/TaskStrategySettingsPanel.tsx',
+  'tabs/BudgetSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

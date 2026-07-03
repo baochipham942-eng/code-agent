@@ -62,6 +62,13 @@ export const GAME_ARTIFACT_CONTRACT_PROMPT = applyOverride(
 
 For generated or repaired browser games, produce a playable file plus a machine-checkable contract.
 
+Player experience quality:
+- Win/lose feedback must be visible on screen, not only stored in \`status\`. Render a clear message, state change, or overlay so a human player sees the outcome.
+- Use one rendering source of truth for HUD values such as score, health, lives, and objectives. Pick canvas-drawn HUD or one DOM overlay and do not duplicate the same value in both paths.
+- Add simple WebAudio effects for genre events such as jump, collect, hit, hurt, launch, bounce, or powerup. Create/resume \`AudioContext\` only after the first user gesture (keydown/click/pointerdown), never at script load.
+- On touch-capable viewports, render on-screen controls for the same actions as keyboard controls, such as left/right/jump/slide. Virtual buttons must feed the same \`step()\`/input path as keyboard input.
+- First frame must render immediately on load. Show the playable scene or a clear loading state on the first paint, with no blank or white screen during asset/state initialization.
+
 Build rules:
 - Translate genre/reference into mechanics, not only visual skin.
 - First screen shows a game, not an empty test harness: actor, controls, score/health/objective, at least one reward target, at least one risk/hazard/obstacle, and a clear goal must be visible before any key is pressed.
@@ -79,7 +86,7 @@ Metadata required:
 - For subtype \`breakout\` or \`arkanoid\`, include \`paddle\`, \`ball\`, \`bricks\`, \`powerups: ['wide','multi','slow','through','life']\`, \`wallBounceCount\`, \`paddleBounceCount\`, \`brickCount\` or \`bricksRemaining\`, \`score\`, and authored \`scenarios\` with ids: \`paddleMove\`, \`launch\`, \`wallBounce\`, \`paddleBounce\`, \`brickHit\`, \`powerup:wide\`, \`powerup:multi\`, \`powerup:slow\`, \`powerup:through\`, \`powerup:life\`, \`win\`, \`lose\`.
 - Breakout/Arkanoid scaffold: \`snapshot()\` returns \`{ paddleX, paddle, ball, balls, brickCount, bricksRemaining, score, wallBounceCount, paddleBounceCount, lives, status, activePowerups, powerupsTriggered }\`; \`reset(scenario)\` must support every authored scenario id above.
 - Include \`qualityPlan\` or object-shaped \`acceptance\` for actorReadable, mechanics, rewards, risks, levelsCovered, allAuthoredLevelsReachable. Do not use \`acceptance: ['move', 'jump']\` as a checklist; string-array acceptance is quality prose, not an executable validation plan.
-- Include literal \`progressPlan\` or \`reachability\`; inputs come from controls, never \`'none'\`; generic \`progress\`, \`coverage\`, \`objectives\`, \`coreLoop\`, \`qualityPlan\`, or string-array \`acceptance\` does not satisfy this field.
+- Include literal \`progressPlan\` or \`reachability\`; for platformer/breakout every input must come from declared controls, never \`'none'\` or empty. For runner only, one designated auto-run distance probe may use \`input: ""\` or \`input: []\` when metadata has \`autoRun: true\`; every jump/slide/lane step still uses declared controls. Generic \`progress\`, \`coverage\`, \`objectives\`, \`coreLoop\`, \`qualityPlan\`, or string-array \`acceptance\` does not satisfy this field.
 - Each step uses metadata controls, a \`snapshot()\` metric path, and expect increase/decrease/change/truthy or literal target. Example:
   \`progressPlan: [{ label: 'move right', input: 'ArrowRight', frames: 24, metric: 'player.x', expect: 'increase' }, { label: 'jump arc', input: ['ArrowRight', 'Space'], frames: 20, metric: 'player.y', expect: 'change' }]\`
 - For movement metrics like \`player.x\`, \`player.y\`, \`player.vx\`, \`player.vy\`, the expect MUST be one of "increase" / "decrease" / "change", never a numeric target. A numeric or boolean expect means exact final equality after the declared frames, only valid for counters like \`enemiesDefeated\` / \`blocksUsed\` / \`gatesUnlocked\` or boolean flags like \`abilities.doubleJump\`.
@@ -116,7 +123,7 @@ Patch only the generated HTML and the validator-relevant metadata/test contract.
 - Use the exact field name \`progressPlan\` or \`reachability\`; do not rename it to \`progress\`, \`coverage\`, or \`qualityPlan\`.
 - If authored units use string ids such as \`level1\`, \`mechanics-route\`, or \`stomp\`, repair \`reset(levelOrScenario)\` so it accepts those exact values and numeric indexes. Do not leave reset numeric-only while metadata exposes string ids.
 - Do not use string-array \`acceptance\` as the reachability plan; keep executable steps in \`progressPlan\` or \`reachability\`.
-- Do not use \`input: 'none'\` in \`progressPlan\` / \`reachability\`; every step must be executable with declared controls.
+- For platformer/breakout, do not use \`input: 'none'\`, empty string, or empty array in \`progressPlan\` / \`reachability\`; every step must be executable with declared controls. For runner, only the designated \`autoRun: true\` distance probe may use \`input: ""\` or \`input: []\`; jump/slide/lane steps still use declared controls.
 - Every reachability metric must exist in \`snapshot()\` and change within the declared frames; do not assert \`score increase\` after generic movement/jump.
 - For movement metrics (\`player.x\` / \`player.y\` / \`player.vx\` / \`player.vy\`), expect MUST be "increase" / "decrease" / "change", never numeric. Numeric expect = exact equality, only for counters and boolean flags.
 - For platformers, add/repair \`gameplayMechanics\` with enemies, blocks, abilities, gates, and comboChallenge, wired to real \`step()\` gameplay and \`runSmokeTest()\` before/after snapshot evidence.

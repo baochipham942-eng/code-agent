@@ -349,7 +349,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       let sessionAdaptive = false;
-      if (!effectiveModel || !effectiveProvider) {
+      // 只有 model 和 provider 都未显式给出才读 session override（audit R1-MED2：
+      // 半显式 body（只传 model）不能拿 override 的 provider 拼成杂交配置，
+      // 例如显式 deepseek-chat + 持久化 zhipu override → zhipu/deepseek-chat）。
+      if (!effectiveModel && !effectiveProvider) {
         const { getModelSessionState } = await import('../../host/session/modelSessionState');
         const { rehydrateModelOverrideFromSession } = await import('../../host/session/modelOverridePersistence');
         // 重启后内存 Map 为空：按 session 持久化标记回灌（模板=engine 的"DB 列每轮现读"）。
@@ -359,8 +362,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         if (override?.adaptive === true) {
           sessionAdaptive = true;
         } else if (override) {
-          effectiveProvider = effectiveProvider ?? override.provider;
-          effectiveModel = effectiveModel ?? override.model;
+          effectiveProvider = override.provider;
+          effectiveModel = override.model;
         }
       }
 

@@ -10,6 +10,11 @@
 // sessions.model_provider/model_name 在建会话时就写入了默认模型快照，
 // 只按列回灌会把「从未切换过」的会话钉死在建会话时的默认模型上。
 // 标记只在用户显式 switchModel 时写入，从未切换的会话保持跟随全局默认。
+//
+// 并发（Codex audit R1-HIGH1/MED1）：
+// - DB 写走 patchSessionMetadata（key 级同步补丁，无 await 窗口，不整列替换）
+// - 同一会话的 persist/clear 经 per-session promise 链串行，保证 DB 落地顺序
+//   与内存写入顺序一致（否则慢的旧写会在重启后复活已清除的 override）
 
 import { createLogger } from '../services/infra/logger';
 import { getModelSessionState, type ModelOverride } from './modelSessionState';
@@ -31,6 +36,20 @@ export interface PersistedModelOverride {
 
 type SessionLike = Pick<Session, 'id'> & { metadata?: Record<string, unknown> };
 
+// per-session 持久化操作串行链（audit R1-HIGH1：乱序落地会让旧 override 复活）
+const persistChains = new Map<string, Promise<unknown>>();
+
+function enqueuePersistOp<T>(sessionId: string, op: () => Promise<T>): Promise<T> {
+  const prev = persistChains.get(sessionId) ?? Promise.resolve();
+  const next = prev.then(op, op);
+  persistChains.set(sessionId, next);
+  const cleanup = () => {
+    if (persistChains.get(sessionId) === next) persistChains.delete(sessionId);
+  };
+  next.then(cleanup, cleanup);
+  return next;
+}
+
 export function readPersistedModelOverride(
   session: Partial<SessionLike> | null | undefined,
 ): PersistedModelOverride | null {
@@ -50,61 +69,62 @@ export function readPersistedModelOverride(
 }
 
 /**
- * 把模型切换落库。失败只记日志不抛：内存 override 已生效，
+ * 把模型切换落库。返回 persisted 结果（audit R1-HIGH2：失败不再完全静默，
+ * 调用方把 persisted 标志透出到响应）；失败不抛：内存 override 本轮仍生效，
  * 落库失败仅意味着重启后不恢复（如 web 模式无 DB）。
  */
 export async function persistModelOverride(
   sessionId: string,
   override: Omit<ModelOverride, 'setAt'> & { setAt?: number },
 ): Promise<boolean> {
-  try {
-    const { getSessionManager } = await import('../services/infra/sessionManager');
-    const sessionManager = getSessionManager();
-    const session = await sessionManager.getSession(sessionId, 1);
-    if (!session) {
-      logger.warn('Cannot persist model override: session not found', { sessionId });
+  return enqueuePersistOp(sessionId, async () => {
+    try {
+      const { getSessionManager } = await import('../services/infra/sessionManager');
+      const marker: PersistedModelOverride = {
+        provider: override.provider,
+        model: override.model,
+        temperature: override.temperature,
+        maxTokens: override.maxTokens,
+        adaptive: override.adaptive,
+        setAt: override.setAt ?? Date.now(),
+      };
+      const persisted = await getSessionManager().patchSessionMetadata(
+        sessionId,
+        { [MODEL_OVERRIDE_METADATA_KEY]: { ...marker } },
+        {
+          // adaptive（自动路由）时 provider/model 只是占位，不写进列，避免列语义失真
+          ...(override.adaptive === true
+            ? {}
+            : { modelConfig: { provider: override.provider, model: override.model } }),
+          updatedAt: Date.now(),
+        },
+      );
+      if (!persisted) {
+        logger.warn('Cannot persist model override: session not found', { sessionId });
+      }
+      return persisted;
+    } catch (error) {
+      logger.warn('Failed to persist model override', { sessionId, error: String(error) });
       return false;
     }
-    const marker: PersistedModelOverride = {
-      provider: override.provider,
-      model: override.model,
-      temperature: override.temperature,
-      maxTokens: override.maxTokens,
-      adaptive: override.adaptive,
-      setAt: override.setAt ?? Date.now(),
-    };
-    await sessionManager.updateSession(sessionId, {
-      // adaptive（自动路由）时 provider/model 只是占位，不写进列，避免列语义失真
-      ...(override.adaptive === true
-        ? {}
-        : { modelConfig: { provider: override.provider, model: override.model } as Session['modelConfig'] }),
-      metadata: { ...(session.metadata ?? {}), [MODEL_OVERRIDE_METADATA_KEY]: { ...marker } },
-      updatedAt: Date.now(),
-    });
-    return true;
-  } catch (error) {
-    logger.warn('Failed to persist model override', { sessionId, error: String(error) });
-    return false;
-  }
+  });
 }
 
 /**
  * 清除落库的切换标记（用户重置回全局默认）。列值保留为最后快照，无读回语义。
  */
 export async function clearPersistedModelOverride(sessionId: string): Promise<boolean> {
-  try {
-    const { getSessionManager } = await import('../services/infra/sessionManager');
-    const sessionManager = getSessionManager();
-    const session = await sessionManager.getSession(sessionId, 1);
-    if (!session || !readPersistedModelOverride(session)) return false;
-    const metadata = { ...(session.metadata ?? {}) };
-    delete metadata[MODEL_OVERRIDE_METADATA_KEY];
-    await sessionManager.updateSession(sessionId, { metadata, updatedAt: Date.now() });
-    return true;
-  } catch (error) {
-    logger.warn('Failed to clear persisted model override', { sessionId, error: String(error) });
-    return false;
-  }
+  return enqueuePersistOp(sessionId, async () => {
+    try {
+      const { getSessionManager } = await import('../services/infra/sessionManager');
+      return await getSessionManager().patchSessionMetadata(sessionId, {
+        [MODEL_OVERRIDE_METADATA_KEY]: null,
+      });
+    } catch (error) {
+      logger.warn('Failed to clear persisted model override', { sessionId, error: String(error) });
+      return false;
+    }
+  });
 }
 
 /**

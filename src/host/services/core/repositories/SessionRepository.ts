@@ -322,6 +322,63 @@ export class SessionRepository {
     if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
   }
 
+  /**
+   * Key 级 metadata 补丁（Codex audit R1-MED1）：整列替换的 updateSession 在
+   * 读-改-写之间有 await 窗口，会互相覆盖 key。本方法在单次同步调用内完成
+   * 读-合并-写（better-sqlite3 无 await），对其他 JS 调用方原子。
+   * patch 值为 null 表示删除该 key；可选在同一原子调用内写 model 列。
+   * 返回 false = 会话不存在。
+   */
+  patchSessionMetadata(
+    sessionId: string,
+    patch: Record<string, unknown>,
+    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+  ): boolean {
+    const row = this.db.prepare('SELECT metadata FROM sessions WHERE id = ?').get(sessionId) as
+      | { metadata: string | null }
+      | undefined;
+    if (!row) return false;
+
+    let current: Record<string, unknown> = {};
+    try {
+      const parsed = row.metadata ? JSON.parse(row.metadata) : null;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
+    } catch { /* 损坏的 metadata 视为空对象，补丁后修复为合法 JSON */ }
+
+    let changed = Boolean(options?.modelConfig);
+    const merged = { ...current };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) {
+        if (key in merged) {
+          delete merged[key];
+          changed = true;
+        }
+      } else {
+        merged[key] = value;
+        changed = true;
+      }
+    }
+    if (!changed) return true;
+
+    this.db
+      .prepare(`
+        UPDATE sessions
+        SET metadata = ?,
+            model_provider = COALESCE(?, model_provider),
+            model_name = COALESCE(?, model_name),
+            updated_at = ?
+        WHERE id = ?
+      `)
+      .run(
+        JSON.stringify(merged),
+        options?.modelConfig?.provider ?? null,
+        options?.modelConfig?.model ?? null,
+        options?.updatedAt ?? Date.now(),
+        sessionId,
+      );
+    return true;
+  }
+
   deleteSession(sessionId: string, options?: SessionWriteOptions & { deletedAt?: number }): void {
     const deletedAt = options?.deletedAt ?? Date.now();
     this.db

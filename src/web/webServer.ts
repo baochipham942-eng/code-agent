@@ -797,16 +797,18 @@ function registerHandlers(): void {
           adaptive: payload.adaptive,
         };
         getModelSessionState().setOverride(payload.sessionId, override);
-        // 落库让切换跨重启存活（生产 web 路径）；无 DB 时静默跳过，内存 override 本轮仍生效
-        if (dbAvailable) {
-          await persistModelOverride(payload.sessionId, override);
-        }
+        // 落库让切换跨重启存活（生产 web 路径）；无 DB 时跳过，内存 override 本轮仍生效。
+        // persisted 标志透出（audit R1-HIGH2：落库失败不静默谎报成功）
+        const persisted = dbAvailable
+          ? await persistModelOverride(payload.sessionId, override)
+          : false;
         return {
           success: true,
           data: {
             provider: payload.provider,
             model: payload.model,
             adaptive: payload.adaptive,
+            persisted,
           },
         };
       }
@@ -832,10 +834,10 @@ function registerHandlers(): void {
           return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
         }
         getModelSessionState().clearOverride(payload.sessionId);
-        if (dbAvailable) {
-          await clearPersistedModelOverride(payload.sessionId);
-        }
-        return { success: true, data: null };
+        const cleared = dbAvailable
+          ? await clearPersistedModelOverride(payload.sessionId)
+          : false;
+        return { success: true, data: { persisted: cleared } };
       }
 
       let sm: Awaited<ReturnType<typeof import('../host/services/infra/sessionManager').getSessionManager>> | null = null;

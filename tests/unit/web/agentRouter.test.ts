@@ -1723,6 +1723,18 @@ describe('createAgentRouter', () => {
       );
     });
 
+    it('半显式 body（只传 model）不拿 override 的 provider 拼杂交配置（audit R1-MED2）', async () => {
+      mockGetOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({ model: 'deepseek-chat' });
+
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: undefined, model: 'deepseek-chat' }),
+      );
+    });
+
     it('未切换过的会话（回灌返回 null）不受影响，走默认解析', async () => {
       mockGetOverride.mockReturnValue(null);
       mockRehydrateOverride.mockReturnValue(null);

@@ -42,7 +42,7 @@ describe('AgentAppService model override persistence wiring', () => {
   it('switchModel writes the in-memory override and persists it', async () => {
     const service = createService({});
 
-    await service.switchModel({
+    const result = await service.switchModel({
       sessionId: 'session-1',
       provider: 'zhipu',
       model: 'glm-5',
@@ -57,6 +57,22 @@ describe('AgentAppService model override persistence wiring', () => {
       'session-1',
       expect.objectContaining({ provider: 'zhipu', model: 'glm-5' }),
     );
+    expect(result).toEqual({ persisted: true });
+  });
+
+  it('switchModel reports persisted=false when persistence fails (audit R1-HIGH2)', async () => {
+    vi.mocked(persistModelOverride).mockResolvedValueOnce(false);
+    const service = createService({});
+
+    const result = await service.switchModel({
+      sessionId: 'session-1',
+      provider: 'zhipu',
+      model: 'glm-5',
+    });
+
+    expect(result).toEqual({ persisted: false });
+    // 内存 override 本轮仍生效
+    expect(getModelSessionState().getOverride('session-1')).toMatchObject({ model: 'glm-5' });
   });
 
   it('clearModelOverride clears memory and the persisted marker', async () => {

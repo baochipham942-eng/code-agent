@@ -11,6 +11,7 @@ import type {
   AppServiceRunOptions,
   SwitchModelParams,
   ModelOverride,
+  ModelOverridePersistResult,
   SessionMarkdownExport,
   SessionLogExport,
   PromptRewindResult,
@@ -765,7 +766,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   // === Model Override ===
 
-  async switchModel(params: SwitchModelParams): Promise<void> {
+  async switchModel(params: SwitchModelParams): Promise<ModelOverridePersistResult> {
     const modelState = getModelSessionState();
     const override = {
       provider: params.provider as ModelProvider,
@@ -775,8 +776,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       adaptive: params.adaptive,
     };
     modelState.setOverride(params.sessionId, override);
-    // 落库让切换跨重启存活；失败不抛（内存 override 本轮仍生效）
-    await persistModelOverride(params.sessionId, override);
+    // 落库让切换跨重启存活；失败不抛（内存 override 本轮仍生效），
+    // persisted 标志透出到响应（audit R1-HIGH2：失败不完全静默）
+    const persisted = await persistModelOverride(params.sessionId, override);
+    return { persisted };
   }
 
   getModelOverride(sessionId: string): ModelOverride | undefined {
@@ -784,10 +787,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return modelState.getOverride(sessionId) as ModelOverride | undefined;
   }
 
-  async clearModelOverride(sessionId: string): Promise<void> {
+  async clearModelOverride(sessionId: string): Promise<ModelOverridePersistResult> {
     const modelState = getModelSessionState();
     modelState.clearOverride(sessionId);
-    await clearPersistedModelOverride(sessionId);
+    const persisted = await clearPersistedModelOverride(sessionId);
+    return { persisted };
   }
 
   // === Delegate Mode ===

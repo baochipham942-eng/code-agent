@@ -9,8 +9,7 @@ import {
 import { getModelSessionState, resetModelSessionState } from '../../../src/host/session/modelSessionState';
 
 const sessionManagerMocks = vi.hoisted(() => ({
-  getSession: vi.fn(),
-  updateSession: vi.fn(),
+  patchSessionMetadata: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
@@ -21,7 +20,7 @@ describe('modelOverridePersistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetModelSessionState();
-    sessionManagerMocks.updateSession.mockResolvedValue(undefined);
+    sessionManagerMocks.patchSessionMetadata.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -67,69 +66,72 @@ describe('modelOverridePersistence', () => {
   });
 
   describe('persistModelOverride', () => {
-    it('writes model columns and merges the metadata marker (preserving existing keys)', async () => {
-      sessionManagerMocks.getSession.mockResolvedValue({
-        id: 's1',
-        metadata: { existing: 'keep' },
-      });
-
+    it('patches the marker key and model columns atomically, returning persisted=true', async () => {
       const ok = await persistModelOverride('s1', { provider: 'zhipu', model: 'glm-5' });
 
       expect(ok).toBe(true);
-      expect(sessionManagerMocks.updateSession).toHaveBeenCalledTimes(1);
-      const [sessionId, updates] = sessionManagerMocks.updateSession.mock.calls[0];
+      expect(sessionManagerMocks.patchSessionMetadata).toHaveBeenCalledTimes(1);
+      const [sessionId, patch, options] = sessionManagerMocks.patchSessionMetadata.mock.calls[0];
       expect(sessionId).toBe('s1');
-      expect(updates.modelConfig).toEqual({ provider: 'zhipu', model: 'glm-5' });
-      expect(updates.metadata.existing).toBe('keep');
-      expect(updates.metadata[MODEL_OVERRIDE_METADATA_KEY]).toMatchObject({
-        provider: 'zhipu',
-        model: 'glm-5',
-      });
-      expect(typeof updates.metadata[MODEL_OVERRIDE_METADATA_KEY].setAt).toBe('number');
+      expect(patch[MODEL_OVERRIDE_METADATA_KEY]).toMatchObject({ provider: 'zhipu', model: 'glm-5' });
+      expect(typeof patch[MODEL_OVERRIDE_METADATA_KEY].setAt).toBe('number');
+      expect(options.modelConfig).toEqual({ provider: 'zhipu', model: 'glm-5' });
     });
 
     it('does not write model columns for adaptive (auto-routing) overrides', async () => {
-      sessionManagerMocks.getSession.mockResolvedValue({ id: 's1' });
-
       await persistModelOverride('s1', { provider: 'zhipu', model: 'glm-5', adaptive: true });
 
-      const [, updates] = sessionManagerMocks.updateSession.mock.calls[0];
-      expect(updates.modelConfig).toBeUndefined();
-      expect(updates.metadata[MODEL_OVERRIDE_METADATA_KEY]).toMatchObject({ adaptive: true });
+      const [, patch, options] = sessionManagerMocks.patchSessionMetadata.mock.calls[0];
+      expect(options.modelConfig).toBeUndefined();
+      expect(patch[MODEL_OVERRIDE_METADATA_KEY]).toMatchObject({ adaptive: true });
     });
 
-    it('returns false without throwing when session is missing or DB fails', async () => {
-      sessionManagerMocks.getSession.mockResolvedValue(null);
+    it('returns false without throwing when session is missing or DB fails (audit R1-HIGH2)', async () => {
+      sessionManagerMocks.patchSessionMetadata.mockResolvedValue(false);
       expect(await persistModelOverride('gone', { provider: 'zhipu', model: 'glm-5' })).toBe(false);
-      expect(sessionManagerMocks.updateSession).not.toHaveBeenCalled();
 
-      sessionManagerMocks.getSession.mockResolvedValue({ id: 's1' });
-      sessionManagerMocks.updateSession.mockRejectedValue(new Error('db down'));
+      sessionManagerMocks.patchSessionMetadata.mockRejectedValue(new Error('db down'));
       expect(await persistModelOverride('s1', { provider: 'zhipu', model: 'glm-5' })).toBe(false);
+    });
+
+    it('serializes persist/clear per session — DB ops apply in call order (audit R1-HIGH1)', async () => {
+      const applied: string[] = [];
+      let releaseFirst!: () => void;
+      const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      sessionManagerMocks.patchSessionMetadata
+        .mockImplementationOnce(async (...args: unknown[]) => {
+          await firstGate; // 模拟慢写
+          applied.push(`persist:${JSON.stringify((args[1] as Record<string, unknown>)[MODEL_OVERRIDE_METADATA_KEY] ?? null)}`);
+          return true;
+        })
+        .mockImplementationOnce(async (...args: unknown[]) => {
+          applied.push(`clear:${JSON.stringify((args[1] as Record<string, unknown>)[MODEL_OVERRIDE_METADATA_KEY] ?? null)}`);
+          return true;
+        });
+
+      const p1 = persistModelOverride('s1', { provider: 'zhipu', model: 'glm-5' });
+      const p2 = clearPersistedModelOverride('s1');
+      releaseFirst();
+      await Promise.all([p1, p2]);
+
+      expect(applied[0]).toContain('persist:');
+      expect(applied[1]).toBe('clear:null');
     });
   });
 
   describe('clearPersistedModelOverride', () => {
-    it('removes the marker while preserving other metadata keys', async () => {
-      sessionManagerMocks.getSession.mockResolvedValue({
-        id: 's1',
-        metadata: { existing: 'keep', [MODEL_OVERRIDE_METADATA_KEY]: { provider: 'zhipu', model: 'glm-5', setAt: 1 } },
-      });
-
+    it('patches the marker key to null', async () => {
       const ok = await clearPersistedModelOverride('s1');
 
       expect(ok).toBe(true);
-      const [, updates] = sessionManagerMocks.updateSession.mock.calls[0];
-      expect(updates.metadata.existing).toBe('keep');
-      expect(MODEL_OVERRIDE_METADATA_KEY in updates.metadata).toBe(false);
+      const [sessionId, patch] = sessionManagerMocks.patchSessionMetadata.mock.calls[0];
+      expect(sessionId).toBe('s1');
+      expect(patch).toEqual({ [MODEL_OVERRIDE_METADATA_KEY]: null });
     });
 
-    it('is a no-op when no marker is persisted', async () => {
-      sessionManagerMocks.getSession.mockResolvedValue({ id: 's1', metadata: { existing: 'keep' } });
-
-      await clearPersistedModelOverride('s1');
-
-      expect(sessionManagerMocks.updateSession).not.toHaveBeenCalled();
+    it('returns false when session is missing or DB fails', async () => {
+      sessionManagerMocks.patchSessionMetadata.mockRejectedValue(new Error('db down'));
+      expect(await clearPersistedModelOverride('s1')).toBe(false);
     });
   });
 

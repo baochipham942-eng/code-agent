@@ -635,6 +635,40 @@ export class SessionManager implements Disposable {
   }
 
   /**
+   * Key 级 metadata 补丁（并发安全，见 SessionRepository.patchSessionMetadata）。
+   * patch 值为 null 删除该 key；可选同一原子调用内写 model 列。返回 false = 会话不存在。
+   */
+  async patchSessionMetadata(
+    sessionId: string,
+    patch: Record<string, unknown>,
+    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+  ): Promise<boolean> {
+    const db = getDatabase();
+    const ownerId = this.currentOwnerUserId();
+    this.assertAccessibleSession(sessionId, ownerId);
+    const patched = db.patchSessionMetadata(sessionId, patch, options);
+    if (!patched) return false;
+
+    if (this.sessionCache.has(sessionId)) {
+      const cached = this.sessionCache.get(sessionId)!;
+      const metadata = { ...(cached.metadata ?? {}) };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete metadata[key];
+        else metadata[key] = value;
+      }
+      Object.assign(cached, {
+        metadata,
+        ...(options?.modelConfig ? { modelConfig: { ...cached.modelConfig, ...options.modelConfig } } : {}),
+        updatedAt: options?.updatedAt ?? Date.now(),
+      });
+    }
+
+    // 不广播 SESSION_UPDATED：patch 语义（值 null=删 key）与前端整量 merge 语义不同，
+    // 且 modelOverride 标记是 host 内部状态，前端经 getModelOverride 读取。
+    return true;
+  }
+
+  /**
    * 通知前端会话已更新
    */
   private notifySessionUpdated(sessionId: string, updates: Partial<Session>): void {

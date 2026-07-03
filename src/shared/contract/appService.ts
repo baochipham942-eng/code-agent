@@ -92,6 +92,14 @@ export interface SwitchModelParams {
 }
 
 /**
+ * 模型切换/清除的持久化结果（audit R1-HIGH2：落库失败不静默，标志透出）。
+ * persisted=false 表示内存已生效但未落库（重启后不恢复，如无 DB 的 web 模式）。
+ */
+export interface ModelOverridePersistResult {
+  persisted: boolean;
+}
+
+/**
  * 模型覆盖信息
  */
 export interface ModelOverride {
@@ -181,9 +189,9 @@ export interface AgentApplicationService {
   getMemoryContext(sessionId: string, workingDirectory?: string, query?: string): Promise<unknown>;
 
   // === Model Override ===
-  switchModel(params: SwitchModelParams): Promise<void>;
+  switchModel(params: SwitchModelParams): Promise<ModelOverridePersistResult>;
   getModelOverride(sessionId: string): ModelOverride | undefined;
-  clearModelOverride(sessionId: string): Promise<void>;
+  clearModelOverride(sessionId: string): Promise<ModelOverridePersistResult>;
 
   // === Delegate Mode ===
   setDelegateMode(enabled: boolean): void;

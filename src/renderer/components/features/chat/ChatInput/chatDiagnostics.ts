@@ -71,8 +71,9 @@ export async function buildStatusText(): Promise<string> {
 
 export async function buildCostText(): Promise<string> {
   const app = useAppStore.getState();
+  // 口径：BudgetService 是全局预算周期账本（与状态栏 CostDisplay 同源），不是单会话
   const lines = [
-    'Cost (session)',
+    'Cost (budget period)',
     `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}`,
   ];
   const budget = await fetchBudgetStatus();

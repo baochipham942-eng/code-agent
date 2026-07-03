@@ -138,6 +138,9 @@ export function rehydrateModelOverrideFromSession(
   const state = getModelSessionState();
   const existing = state.getOverride(session.id);
   if (existing) return existing;
+  // in-flight 持久化窗口内不回灌（audit R3-MED）：clearModelOverride 先清内存、
+  // DB 删除还在队列里时，传入的 session 快照是陈旧的，回灌会把刚清除的 override 复活。
+  if (persistChains.has(session.id)) return null;
   const persisted = readPersistedModelOverride(session);
   if (!persisted) return null;
   state.setOverride(session.id, {

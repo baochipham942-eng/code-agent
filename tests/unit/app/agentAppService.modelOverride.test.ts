@@ -25,6 +25,10 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbMocks,
 }));
 
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({ getCurrentUser: () => ({ id: 'user-1' }) }),
+}));
+
 vi.mock('../../../src/host/session/modelOverridePersistence', () => ({
   persistModelOverride: vi.fn(async () => true),
   clearPersistedModelOverride: vi.fn(async () => true),
@@ -108,6 +112,8 @@ describe('AgentAppService model override persistence wiring', () => {
 
     const override = service.getModelOverride('session-1');
 
+    // owner filter（audit R3-LOW）：不读当前 owner 不可访问会话的 marker
+    expect(dbMocks.getSession).toHaveBeenCalledWith('session-1', { userId: 'user-1' });
     expect(rehydrateModelOverrideFromSession).toHaveBeenCalledWith(dbSession);
     expect(override).toMatchObject({ provider: 'zhipu', model: 'glm-5' });
   });

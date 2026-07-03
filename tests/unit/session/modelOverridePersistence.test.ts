@@ -172,6 +172,31 @@ describe('modelOverridePersistence', () => {
       expect(getModelSessionState().getOverride('s1')).toMatchObject({ provider: 'deepseek' });
     });
 
+    it('skips rehydrate while a persist/clear op is in flight (audit R3-MED：clear 窗口不复活旧 marker)', async () => {
+      let releaseClear!: () => void;
+      const clearGate = new Promise<void>((resolve) => { releaseClear = resolve; });
+      sessionManagerMocks.patchSessionMetadata.mockImplementationOnce(async () => {
+        await clearGate;
+        return true;
+      });
+
+      // 模拟 clearModelOverride 流程：内存已清、DB 删除仍在队列里
+      const clearing = clearPersistedModelOverride('s1');
+      const staleSession = {
+        id: 's1',
+        metadata: { [MODEL_OVERRIDE_METADATA_KEY]: { provider: 'zhipu', model: 'glm-5', setAt: 1 } },
+      };
+
+      expect(rehydrateModelOverrideFromSession(staleSession)).toBeNull();
+      expect(getModelSessionState().getOverride('s1')).toBeNull();
+
+      releaseClear();
+      await clearing;
+
+      // 队列排空后（DB 已一致），回灌恢复正常工作
+      expect(rehydrateModelOverrideFromSession(staleSession)).toMatchObject({ model: 'glm-5' });
+    });
+
     it('restores adaptive (auto-routing) mode', () => {
       const restored = rehydrateModelOverrideFromSession({
         id: 's1',

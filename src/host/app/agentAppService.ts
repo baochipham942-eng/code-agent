@@ -29,6 +29,7 @@ import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
+import { getAuthService } from '../services/auth/authService';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
@@ -788,9 +789,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (existing) return existing;
     // 对称回灌（audit R2）：web domain 路径已在重启后按持久化标记回灌，
     // IPC 路径首次查询同样要看得到标记（否则 ModelSwitcher 在 loadSession
-    // 完成前拉到 null 且不再重拉）。getDatabase().getSession 是同步调用。
+    // 完成前拉到 null 且不再重拉）。getDatabase().getSession 是同步调用；
+    // 带 owner filter（audit R3-LOW），与 sessionManager 的可访问性口径一致。
     try {
-      const session = getDatabase().getSession(sessionId);
+      const session = getDatabase().getSession(sessionId, {
+        userId: getAuthService().getCurrentUser()?.id ?? null,
+      });
       return (rehydrateModelOverrideFromSession(session ?? null) ?? undefined) as ModelOverride | undefined;
     } catch {
       return undefined;

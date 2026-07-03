@@ -380,6 +380,9 @@ export const en: Translations = {
   // Settings Modal
   settings: {
     title: 'Settings',
+    backToApp: 'Back to app',
+    searchPlaceholder: 'Search settings...',
+    searchNoResults: 'No matching settings',
     tabs: {
       general: 'Permissions & security',
       model: 'General model',

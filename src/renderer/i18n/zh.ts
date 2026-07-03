@@ -378,6 +378,9 @@ export const zh = {
   // Settings Modal
   settings: {
     title: '设置',
+    backToApp: '返回应用',
+    searchPlaceholder: '搜索设置...',
+    searchNoResults: '未找到匹配的设置项',
     tabs: {
       general: '权限与安全',
       model: '通用模型',

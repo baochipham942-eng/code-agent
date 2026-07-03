@@ -33,12 +33,12 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, acce
         tabMap.set(entry.tab, [entry]);
       }
     }
-    // tab 徽标展示走 i18n 导航标签（索引里的 tabLabel 仅作搜索匹配词），agentEngine 例外走 engineCompat
     const tabLabels = t.settings.tabs as Record<string, string | undefined>;
+    const searchIndexLabels = t.settings.searchIndex as Record<string, string | undefined>;
     return Array.from(tabMap.entries()).map(([tab, entries]) => ({
       tab,
-      tabLabel: (tab === 'agentEngine' ? t.engineCompat.engineSection.title : tabLabels[tab]) ?? entries[0].tabLabel,
-      labels: entries.map((e) => e.label),
+      tabBadgeLabel: (tab === 'agentEngine' ? t.engineCompat.engineSection.title : tabLabels[tab]) ?? tab,
+      labels: entries.map((e) => searchIndexLabels[e.labelKey] ?? e.labelKey),
     }));
   }, [results, t]);
 
@@ -95,14 +95,14 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, acce
               {t.settings.searchNoResults}
             </div>
           ) : (
-            groupedResults.map(({ tab, tabLabel, labels }) => (
+            groupedResults.map(({ tab, tabBadgeLabel, labels }) => (
               <button
                 key={tab}
                 onClick={() => handleSelect(tab)}
                 className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-zinc-700 transition-colors"
               >
                 <span className="text-xs font-medium text-zinc-400 bg-zinc-700 px-1.5 py-0.5 rounded shrink-0">
-                  {tabLabel}
+                  {tabBadgeLabel}
                 </span>
                 <span className="text-sm text-zinc-300 truncate">
                   {labels.join(' / ')}

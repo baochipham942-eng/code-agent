@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const SETTINGS_DIR = path.resolve(__dirname, '../../../src/renderer/components/features/settings');
+const RENDERER_DIR = path.resolve(__dirname, '../../../src/renderer');
+const SETTINGS_DIR = path.join(RENDERER_DIR, 'components/features/settings');
 
 /** 已完成 i18n 迁移的文件（相对 settings 目录）。只增不减。 */
 const MIGRATED: string[] = [
@@ -68,6 +69,11 @@ const MIGRATED: string[] = [
   'WebModeBanner.tsx',
 ];
 
+/** Settings 迁移涉及的非 settings 目录文件（相对 src/renderer）。 */
+const EXTRA_FILES: string[] = [
+  'utils/settingsIndex.ts',
+];
+
 const HAN_RE = /[一-鿿]/;
 // 反逃逸：一-鿿 区间的 unicode 转义写法同样算中文字面量（实测批7出现过 '打开' 绕闸）
 const HAN_ESCAPE_RE = /\\u(?:4[e-f]|[5-8][0-9a-f]|9[0-9a-f])[0-9a-f]{2}/i;
@@ -80,16 +86,21 @@ function stripComments(source: string): string {
     .replace(/([^:'"\\])\/\/[^'"\n]*$/gm, '$1');
 }
 
+const SCAN_TARGETS = [
+  ...MIGRATED.map((rel) => ({ rel, abs: path.join(SETTINGS_DIR, rel) })),
+  ...EXTRA_FILES.map((rel) => ({ rel, abs: path.join(RENDERER_DIR, rel) })),
+];
+
 describe('Settings 内容区 i18n 棘轮（已迁文件无中文字面量）', () => {
-  it('MIGRATED 清单内的文件都存在', () => {
-    for (const rel of MIGRATED) {
-      expect(fs.existsSync(path.join(SETTINGS_DIR, rel)), `${rel} 不存在（改名/删除需同步清单）`).toBe(true);
+  it('MIGRATED 与 EXTRA_FILES 清单内的文件都存在', () => {
+    for (const target of SCAN_TARGETS) {
+      expect(fs.existsSync(target.abs), `${target.rel} 不存在（改名/删除需同步清单）`).toBe(true);
     }
   });
 
-  for (const rel of MIGRATED) {
-    it(`已迁文件无中文字面量: ${rel}`, () => {
-      const source = fs.readFileSync(path.join(SETTINGS_DIR, rel), 'utf-8');
+  for (const target of SCAN_TARGETS) {
+    it(`已迁文件无中文字面量: ${target.rel}`, () => {
+      const source = fs.readFileSync(target.abs, 'utf-8');
       const code = stripComments(source);
       const offending = code
         .split('\n')
@@ -97,7 +108,7 @@ describe('Settings 内容区 i18n 棘轮（已迁文件无中文字面量）', (
         .filter(({ line }) => HAN_RE.test(line) || HAN_ESCAPE_RE.test(line));
       expect(
         offending.map(({ no, line }) => `L${no}: ${line.slice(0, 80)}`),
-        `${rel} 还有 ${offending.length} 处中文字面量`,
+        `${target.rel} 还有 ${offending.length} 处中文字面量`,
       ).toEqual([]);
     });
   }

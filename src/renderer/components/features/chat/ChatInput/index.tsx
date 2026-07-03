@@ -15,6 +15,7 @@ import type {
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
+import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
@@ -181,18 +182,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   // /goal 确认卡打开时探测项目 package.json scripts 作为验证命令候选
-  // （fail-closed：候选只来自项目真实脚本，读不到就空）
+  // （fail-closed：候选只来自项目真实脚本，读不到就空）。
+  // 会话尚未落 workingDirectory（首轮前为 null）时兜底问主进程当前工作目录。
   useEffect(() => {
     if (!goalConfirm) return;
-    const workingDirectory = useAppStore.getState().workingDirectory;
-    if (!workingDirectory) {
-      setGoalVerifyCandidates([]);
-      return;
-    }
     let cancelled = false;
-    void readWorkspaceFile(`${workingDirectory}/package.json`).then((raw) => {
+    void (async () => {
+      let workingDirectory = useAppStore.getState().workingDirectory;
+      if (!workingDirectory) {
+        try {
+          const res = await window.domainAPI?.invoke<string | null>(IPC_DOMAINS.WORKSPACE, 'getCurrent');
+          workingDirectory = (res?.success ? res.data : null) ?? null;
+        } catch {
+          workingDirectory = null;
+        }
+      }
+      if (!workingDirectory) {
+        if (!cancelled) setGoalVerifyCandidates([]);
+        return;
+      }
+      const raw = await readWorkspaceFile(`${workingDirectory}/package.json`);
       if (!cancelled) setGoalVerifyCandidates(buildVerifyCandidates(raw));
-    });
+    })();
     return () => {
       cancelled = true;
     };

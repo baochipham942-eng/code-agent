@@ -122,7 +122,7 @@ export const GoalConfirmCard: React.FC<GoalConfirmCardProps> = ({
           </select>
         </label>
 
-        <button
+        <button /* ds-allow:button: 高级编辑折叠 toggle，10px 文本级微按钮，primitive 最小 sm 仍更大 */
           type="button"
           data-goal-advanced-toggle
           onClick={() => setAdvancedOpen((open) => !open)}

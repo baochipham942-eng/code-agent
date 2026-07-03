@@ -375,9 +375,12 @@ export function createAgentLoop(
     config.modelConfig.provider,
     config.modelConfig.model,
   );
+  // /agent 显式选择：与 agentOrchestrator 对齐——agent 路由自带 prompt 时整体替换默认
+  // 主提示词（不叠 provider 变体），config.systemPrompt 仍作追加段保留。
+  const promptBase = config.agentOverride ? config.agentOverride.systemPrompt : variantBase;
   const systemPrompt = config.systemPrompt
-    ? variantBase + "\n\n" + config.systemPrompt
-    : variantBase;
+    ? promptBase + "\n\n" + config.systemPrompt
+    : promptBase;
 
   // 统一使用传入的 sessionId，或生成一个临时 ID
   const explicitSessionId = typeof sessionId === 'string' && sessionId.trim().length > 0
@@ -470,6 +473,11 @@ export function createAgentLoop(
     goalContract: config.goalContract, // /goal 自治模式契约（透传给 ctx.goalMode）
     maxIterations: config.maxIterations, // 迭代数硬上限（角色主动性醒来等预算受限场景）
     executionIntent: config.executionIntent, // 每轮执行意图（designCanvasActive 等）→ RuntimeContext
+    agentId: config.agentOverride?.id ?? 'default',
+    agentName: config.agentOverride?.name ?? 'default',
+    deniedToolNames: config.agentOverride && config.agentOverride.deniedToolNames.length > 0
+      ? [...config.agentOverride.deniedToolNames]
+      : undefined,
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

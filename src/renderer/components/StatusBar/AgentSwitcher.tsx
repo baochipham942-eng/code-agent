@@ -238,7 +238,7 @@ export function AgentSwitcher() {
                   {roleEntries.map((entry) => {
                     const isActive = entry.id === activeAgentId;
                     return (
-                      <button
+                      <button /* ds-allow:button: 角色分组行与同面板 renderGroup 兄弟行同款裸按钮，保持列表视觉一致 */
                         key={`role/${entry.id}`}
                         onClick={() => handleSelect(entry)}
                         className={`

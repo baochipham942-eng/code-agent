@@ -10,6 +10,7 @@ import type { AgentEvent, ModelConfig } from '../shared/contract';
 import type { MessageAttachment } from '../shared/contract';
 import type { AppServiceRunOptions } from '../shared/contract/appService';
 import type { ConversationEnvelopeContext, ConversationExecutionIntent } from '../shared/contract/conversationEnvelope';
+import type { ExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 import type { GoalContract } from '../host/agent/goalModeController';
 
 export interface CLIGlobalOptions {
@@ -50,6 +51,8 @@ export interface CLIConfig {
   maxIterations?: number;
   /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */
   executionIntent?: ConversationExecutionIntent;
+  /** /agent 显式选择（preferredAgentId）；web/CLI 独立 run 路径据此换 prompt + 收窄工具。 */
+  agentOverride?: ExplicitAgentOverride;
 }
 
 /**

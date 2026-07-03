@@ -110,4 +110,22 @@ describe('inferenceViaAiSdk system prompt wiring', () => {
     expect(call.messages[2].role).toBe('tool');
     expectNoSystemMessages(call);
   });
+
+  it('transient 动态尾巴：不进 system 参数，转成末尾 user + <system-reminder>（前缀稳定）', async () => {
+    await inferenceViaAiSdk([
+      { role: 'system', content: 'root system prompt' },
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+      { role: 'system', content: '<git_status>dirty</git_status>', transient: true } as ModelMessage,
+    ], [], CONFIG);
+
+    const call = vi.mocked(generateText).mock.calls[0][0] as CapturedAiSdkCall;
+    // system 参数只有稳定前缀——尾巴若被提升进 system，每请求变化会打掉整个历史的 prompt cache
+    expect(call.system).toEqual([{ role: 'system', content: 'root system prompt' }]);
+    const last = call.messages[call.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(String(last.content)).toContain('<system-reminder>');
+    expect(String(last.content)).toContain('<git_status>dirty</git_status>');
+    expectNoSystemMessages(call);
+  });
 });

@@ -210,6 +210,8 @@ vi.mock('../../../src/shared/constants', () => ({
     FAILURE_COOLDOWN_THRESHOLD: 3,
     FAILURE_COOLDOWN_MS: 10 * 60 * 1000,
   },
+  // L0 active prune（P1 批）：messageBuild 接线读取，mock 不同步会让整个压缩管线静默 fallback
+  ACTIVE_TOOL_RESULT_PRUNE: { ENABLED: true, MAX_TOKENS_PER_RESULT: 4096 },
   // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
   OBSERVATION_MASKING: {
     PRESERVE_RECENT_COUNT: 10,
@@ -360,6 +362,8 @@ import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
 } from '../../../src/host/memory/memoryInjectionTrace';
+import { buildGitStatusBlock } from '../../../src/host/agent/messageHandling/contextBuilder';
+import { drainCompletionNotifications } from '../../../src/host/agent/activeAgentContext';
 
 function buildMessage(id: string, role: Message['role'], content: string): Message {
   return {
@@ -2464,5 +2468,101 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('context-window-too-small'),
     );
     expect(injectedInMessages || injectedViaBuffer).toBe(true);
+  });
+});
+
+// ============================================================================
+// 前缀稳定（P1 request shape）：system 消息在会话内字节级稳定，
+// 每请求变化的内容只出现在历史末尾的 transient 动态尾巴里。
+// OpenAI-compat provider 的自动前缀缓存以 system 开头——system 任何字节变化
+// 等于整个历史 cache miss，这里的字节级断言是本批的核心行为保证。
+// ============================================================================
+
+describe('ContextAssembly 前缀稳定（request shape）', () => {
+  it('轮内连续构建：通知进出/persistent context 追加/git 状态变化只影响尾巴，system 字节稳定', async () => {
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-prefix-intra-turn',
+      messages: [buildMessage('user-prefix-1', 'user', 'fix repo code bug')],
+    });
+    const assembly = new ContextAssembly(ctx as never);
+
+    // 第一步：有一条后台完成通知 + git dirty
+    vi.mocked(drainCompletionNotifications).mockReturnValueOnce(['<agent-completed>agent-x done</agent-completed>']);
+    vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (3 file(s) changed)</git_status>');
+    const first = await assembly.buildModelMessages();
+
+    // 步间发生的事：模型发起工具调用、结果回流、persistent context 追加、git 状态变化
+    (ctx as { messages: Message[] }).messages.push(
+      {
+        id: 'assistant-prefix-1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [{ id: 'tc-prefix-1', name: 'Bash', arguments: { command: 'ls' } }],
+      } as unknown as Message,
+      {
+        id: 'tool-prefix-1',
+        role: 'tool',
+        content: 'file-a\nfile-b',
+        timestamp: Date.now(),
+        toolCallId: 'tc-prefix-1',
+      } as unknown as Message,
+    );
+    (ctx as { persistentSystemContext: string[] }).persistentSystemContext.push('<mode-reminder>stay focused</mode-reminder>');
+    vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (5 file(s) changed)</git_status>');
+    const second = await assembly.buildModelMessages();
+
+    // 核心断言：system 消息字节级一致
+    expect(second[0].role).toBe('system');
+    expect(second[0].content).toBe(first[0].content);
+
+    // 第一步的通知在尾巴里；第二步已 drain，不再出现
+    const firstTail = first[first.length - 1];
+    expect(firstTail.transient).toBe(true);
+    expect(firstTail.content).toContain('<agent-completed>');
+    expect(first[0].content).not.toContain('<agent-completed>');
+
+    const secondTail = second[second.length - 1];
+    expect(secondTail.transient).toBe(true);
+    expect(secondTail.content).not.toContain('<agent-completed>');
+    // persistent context 与新 git 状态出现在第二步尾巴
+    expect(secondTail.content).toContain('<mode-reminder>stay focused</mode-reminder>');
+    expect(secondTail.content).toContain('dirty (5 file(s) changed)');
+
+    // 尾巴之前的消息序列是第一步请求的严格前缀（尾巴换到了新位置，历史只增不改）
+    const firstPrefix = first.slice(0, -1).map((m) => `${m.role} ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`);
+    const secondAll = second.map((m) => `${m.role} ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`);
+    expect(secondAll.slice(0, firstPrefix.length)).toEqual(firstPrefix);
+  });
+
+  it('跨轮意图块变化（repo map/memory intent 进出）不改 system，只改尾巴', async () => {
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-prefix-cross-turn',
+      isSimpleTaskMode: false,
+      messages: [buildMessage('user-prefix-t1', 'user', 'hello there')],
+    });
+    const assembly = new ContextAssembly(ctx as never);
+    const turn1 = await assembly.buildModelMessages();
+
+    // 第二轮：query 命中 repo map + memory intent，advisory 块进场
+    vi.mocked(getRepoMap).mockResolvedValueOnce({
+      text: 'repo map cross-turn',
+      fileCount: 2,
+      symbolCount: 2,
+      estimatedTokens: 30,
+    });
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('memory cross-turn entry');
+    (ctx as { messages: Message[] }).messages.push(
+      buildMessage('assistant-prefix-t1', 'assistant', 'hi, how can I help?'),
+      buildMessage('user-prefix-t2', 'user', '记得之前的 repo code file 结构吗'),
+    );
+    const turn2 = await assembly.buildModelMessages();
+
+    // system 字节级一致——意图块进出不再打掉 system+全史前缀
+    expect(turn2[0].content).toBe(turn1[0].content);
+    const turn2Tail = turn2[turn2.length - 1];
+    expect(turn2Tail.transient).toBe(true);
+    expect(turn2Tail.content).toContain('repo map cross-turn');
+    expect(turn2Tail.content).toContain('memory cross-turn entry');
   });
 });

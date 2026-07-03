@@ -96,6 +96,23 @@ describe('convertToOpenAIMessages', () => {
     expect(result[0]).toEqual({ role: 'user', content: 'Hello world' });
   });
 
+  it('transient 动态尾巴：system 转成原位 user + <system-reminder>（前缀稳定）', () => {
+    const messages: ModelMessage[] = [
+      makeTextMessage('system', 'stable system prompt'),
+      makeTextMessage('user', 'hello'),
+      { role: 'system', content: '<git_status>dirty</git_status>', transient: true },
+    ];
+    const result = convertToOpenAIMessages(messages);
+
+    expect(result).toHaveLength(3);
+    // 稳定 system 原样保留
+    expect(result[0]).toEqual({ role: 'system', content: 'stable system prompt' });
+    // transient 尾巴留在末尾原位，角色转 user 并包 <system-reminder>
+    expect(result[2].role).toBe('user');
+    expect(result[2].content).toContain('<system-reminder>');
+    expect(result[2].content).toContain('<git_status>dirty</git_status>');
+  });
+
   it('converts assistant message with tool_calls', () => {
     const messages: ModelMessage[] = [
       makeAssistantWithToolCalls('Let me search', [

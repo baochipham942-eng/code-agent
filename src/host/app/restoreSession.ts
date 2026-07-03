@@ -15,6 +15,7 @@ import {
 } from '../planning';
 import { buildRecoveredWorkSuggestions } from '../planning/recoveredWorkOrchestrator';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
+import { rehydrateModelOverrideFromSession } from '../session/modelOverridePersistence';
 import { getMainWindow } from './window';
 import type { AppSettings } from '../../shared/contract/settings';
 
@@ -48,6 +49,9 @@ export async function initializeSession(
       taskManager.setSessionContext(sessionId, restoredSession.messages);
       logger.info('Synced messages to orchestrator via TaskManager', { count: restoredSession.messages.length });
     }
+
+    // 会话级模型切换跨重启恢复：按持久化标记回灌内存 Map（未切换的会话无标记，不受影响）
+    rehydrateModelOverrideFromSession(restoredSession);
   } else {
     // Get working directory from a lazy-created orchestrator
     taskManager.setCurrentSessionId('__bootstrap_pending__');

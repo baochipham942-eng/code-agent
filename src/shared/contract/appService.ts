@@ -181,9 +181,9 @@ export interface AgentApplicationService {
   getMemoryContext(sessionId: string, workingDirectory?: string, query?: string): Promise<unknown>;
 
   // === Model Override ===
-  switchModel(params: SwitchModelParams): void;
+  switchModel(params: SwitchModelParams): Promise<void>;
   getModelOverride(sessionId: string): ModelOverride | undefined;
-  clearModelOverride(sessionId: string): void;
+  clearModelOverride(sessionId: string): Promise<void>;
 
   // === Delegate Mode ===
   setDelegateMode(enabled: boolean): void;

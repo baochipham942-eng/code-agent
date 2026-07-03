@@ -335,10 +335,27 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 但必须把 adaptive 标志透传进 agent loop 的 modelConfig，
       // 否则 adaptiveRouter 简单任务路由 / vision capability fallback 全部失效
       //（实测 0.16.89：UI 选"自动"后日志仍报"显式模型 ... 不启用 vision fallback"）。
+      // persistedSession 先取：模型 override 回灌与 workingDirectory 解析都依赖它
+      let persistedSession: Session | null = null;
+      let sessionManagerForRun: AgentSessionManagerLike | null = null;
+      try {
+        const sm = await tryGetSessionManager();
+        sessionManagerForRun = sm ?? null;
+        if (sm?.getSession) {
+          persistedSession = await sm.getSession(sessionId, 1);
+        }
+      } catch (err) {
+        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+      }
+
       let sessionAdaptive = false;
       if (!effectiveModel || !effectiveProvider) {
         const { getModelSessionState } = await import('../../host/session/modelSessionState');
-        const override = getModelSessionState().getOverride(sessionId);
+        const { rehydrateModelOverrideFromSession } = await import('../../host/session/modelOverridePersistence');
+        // 重启后内存 Map 为空：按 session 持久化标记回灌（模板=engine 的"DB 列每轮现读"）。
+        // 未切换过的会话没有标记，不回灌，仍跟随全局默认。
+        const override = getModelSessionState().getOverride(sessionId)
+          ?? rehydrateModelOverrideFromSession(persistedSession);
         if (override?.adaptive === true) {
           sessionAdaptive = true;
         } else if (override) {
@@ -355,17 +372,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
       // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
       // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
-      let persistedSession: Session | null = null;
-      let sessionManagerForRun: AgentSessionManagerLike | null = null;
-      try {
-        const sm = await tryGetSessionManager();
-        sessionManagerForRun = sm ?? null;
-        if (sm?.getSession) {
-          persistedSession = await sm.getSession(sessionId, 1);
-        }
-      } catch (err) {
-        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
-      }
 
       let resolvedProject: string | undefined =
         typeof project === 'string' && project.trim().length > 0

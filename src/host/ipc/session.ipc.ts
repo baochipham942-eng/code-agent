@@ -102,7 +102,7 @@ export function registerSessionHandlers(
           break;
         case 'switchModel': {
           const p = payload as SwitchModelParams;
-          requireAppService().switchModel(p);
+          await requireAppService().switchModel(p);
           data = { provider: p.provider, model: p.model };
           break;
         }
@@ -113,7 +113,7 @@ export function registerSessionHandlers(
         }
         case 'clearModelOverride': {
           const { sessionId } = payload as { sessionId: string };
-          requireAppService().clearModelOverride(sessionId);
+          await requireAppService().clearModelOverride(sessionId);
           data = null;
           break;
         }

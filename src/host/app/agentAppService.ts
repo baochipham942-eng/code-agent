@@ -35,6 +35,11 @@ import type { AgentRunOptions } from '../research/types';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
+import {
+  clearPersistedModelOverride,
+  persistModelOverride,
+  rehydrateModelOverrideFromSession,
+} from '../session/modelOverridePersistence';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import type {
   ConversationEnvelope,
@@ -556,6 +561,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
     // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
 
+    // 会话级模型切换跨重启恢复：按持久化标记回灌内存 Map（未切换的会话无标记，不受影响）
+    rehydrateModelOverrideFromSession(session);
+
     const streamSnapshot = loadStreamSnapshot(session.workingDirectory);
     if (streamSnapshot?.sessionId === session.id) {
       return { ...session, streamSnapshot };
@@ -757,15 +765,18 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   // === Model Override ===
 
-  switchModel(params: SwitchModelParams): void {
+  async switchModel(params: SwitchModelParams): Promise<void> {
     const modelState = getModelSessionState();
-    modelState.setOverride(params.sessionId, {
+    const override = {
       provider: params.provider as ModelProvider,
       model: params.model,
       temperature: params.temperature,
       maxTokens: params.maxTokens,
       adaptive: params.adaptive,
-    });
+    };
+    modelState.setOverride(params.sessionId, override);
+    // 落库让切换跨重启存活；失败不抛（内存 override 本轮仍生效）
+    await persistModelOverride(params.sessionId, override);
   }
 
   getModelOverride(sessionId: string): ModelOverride | undefined {
@@ -773,9 +784,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return modelState.getOverride(sessionId) as ModelOverride | undefined;
   }
 
-  clearModelOverride(sessionId: string): void {
+  async clearModelOverride(sessionId: string): Promise<void> {
     const modelState = getModelSessionState();
     modelState.clearOverride(sessionId);
+    await clearPersistedModelOverride(sessionId);
   }
 
   // === Delegate Mode ===

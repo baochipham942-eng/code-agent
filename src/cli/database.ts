@@ -513,8 +513,8 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts, is_meta, thinking)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts, is_meta, thinking, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -538,7 +538,8 @@ export class CLIDatabaseService {
       attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
       message.contentParts ? JSON.stringify(message.contentParts) : null,
       message.isMeta ? 1 : 0,
-      message.thinking || message.reasoning || null
+      message.thinking || message.reasoning || null,
+      message.metadata ? JSON.stringify(message.metadata) : null
     );
 
     // 更新 session 的 updated_at
@@ -573,6 +574,7 @@ export class CLIDatabaseService {
       attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
       thinking: (row.thinking as string) || undefined,
+      metadata: row.metadata ? parseJson<NonNullable<Message['metadata']>>(String(row.metadata)) : undefined,
       ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
@@ -598,6 +600,7 @@ export class CLIDatabaseService {
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
       thinking: (row.thinking as string) || undefined,
+      metadata: row.metadata ? parseJson<NonNullable<Message['metadata']>>(String(row.metadata)) : undefined,
       ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
@@ -923,6 +926,7 @@ export class CLIDatabaseService {
       toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       thinking: (row.thinking as string) || undefined,
+      metadata: row.metadata ? parseJson<NonNullable<Message['metadata']>>(String(row.metadata)) : undefined,
       ...(row.is_meta ? { isMeta: true } : {}),
     });
 

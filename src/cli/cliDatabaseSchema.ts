@@ -97,6 +97,14 @@ export function createCliTables(db: CliDb): void {
     // 列已存在
   }
 
+  // metadata 列：持久化消息级 metadata（turnQuality 安静徽标等）。缺失时 web 生产
+  // 路径（AgentLoop → CLISessionManager 落库）会丢 metadata，reload 后徽标消失。
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT`);
+  } catch {
+    // 列已存在
+  }
+
   // 添加 pr_link 列（如果不存在）
   try {
     db.exec(`ALTER TABLE sessions ADD COLUMN pr_link TEXT`);

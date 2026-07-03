@@ -1839,6 +1839,136 @@ describe('createAgentRouter', () => {
     );
   });
 
+  // 兜底落库必须带上 message 事件的 metadata（turnQuality 安静徽标数据）——
+  // 三处重建（cache push / sm.addMessageToSession / db.addMessage）此前整体丢弃 metadata，
+  // reload 后徽标（模型名+agent 名+降级警示）消失。
+  it('persists assistant metadata.turnQuality via session manager fallback and cache', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const turnQualityMetadata = {
+      turnQuality: {
+        capabilities: {
+          agentId: 'explore',
+          agentName: 'Explorer',
+          requestedAgentId: 'explore',
+        },
+      },
+    };
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn(async () => []);
+    const getSession = vi.fn(async () => ({
+      workingDirectory: '/tmp/persisted-project',
+    }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message',
+          data: {
+            id: 'loop-assistant-meta',
+            role: 'assistant',
+            content: '最终回复',
+            timestamp: 200,
+            metadata: turnQualityMetadata,
+          },
+        });
+        onEvent({
+          type: 'stream_chunk',
+          data: { content: '最终回复' },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '带徽标元数据的回复',
+        sessionId: 'session-assistant-metadata',
+      }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-assistant-metadata',
+      expect.objectContaining({
+        role: 'assistant',
+        metadata: turnQualityMetadata,
+      }),
+    );
+    const cached = sessionMessages.get('session-assistant-metadata') || [];
+    const assistant = cached.find((message) => message.role === 'assistant');
+    expect(assistant?.metadata).toEqual(turnQualityMetadata);
+  });
+
+  it('persists assistant metadata.turnQuality via direct db fallback when SM unavailable', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const turnQualityMetadata = {
+      turnQuality: {
+        capabilities: {
+          agentId: 'default',
+          agentName: 'default',
+          requestedAgentId: '__ghost_agent__',
+        },
+      },
+    };
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message',
+          data: {
+            id: 'loop-assistant-meta-db',
+            role: 'assistant',
+            content: '降级回复',
+            timestamp: 200,
+            metadata: turnQualityMetadata,
+          },
+        });
+        onEvent({
+          type: 'stream_chunk',
+          data: { content: '降级回复' },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi();
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '降级场景带元数据',
+        sessionId: 'session-assistant-metadata-db',
+      }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(mockDb.addMessage).toHaveBeenCalledWith(
+      'session-assistant-metadata-db',
+      expect.objectContaining({
+        role: 'assistant',
+        metadata: turnQualityMetadata,
+      }),
+    );
+  });
+
   it('drops duplicate sequenced message deltas from /api/run streaming and cache', async () => {
     mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
       run: vi.fn(async () => {

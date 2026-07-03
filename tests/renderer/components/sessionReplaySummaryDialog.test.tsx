@@ -242,6 +242,15 @@ describe('SessionReplaySummaryDialog', () => {
                     category: 'Read',
                   },
                 },
+                {
+                  type: 'event',
+                  content: '17 tool schemas available',
+                  timestamp: 4,
+                  event: {
+                    eventType: 'tool_schema_snapshot',
+                    summary: '17 tool schemas available',
+                  },
+                },
               ],
               inputTokens: 120,
               outputTokens: 80,
@@ -360,11 +369,13 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('missing_event_trace');
     expect(html).toContain('Timeline');
     expect(html).toContain('第 1 轮');
-    expect(html).toContain('3 blocks');
+    expect(html).toContain('4 blocks');
     expect(html).toContain('模型 gpt-5');
     expect(html).toContain('200 tokens');
     expect(html).toContain('工具 Read');
     expect(html).toContain('成功 · 250 ms');
+    expect(html).toContain('事件');
+    expect(html.match(/17 tool schemas available/g)).toHaveLength(1);
     expect(html).toContain('第 2 轮');
     expect(html).toContain('工具失败 Bash');
     expect(html).toContain('失败 · 500 ms');

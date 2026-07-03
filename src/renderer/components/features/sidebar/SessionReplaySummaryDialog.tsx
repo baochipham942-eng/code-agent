@@ -317,7 +317,7 @@ function formatBlockLabel(block: ReplayBlock): string {
   }
   if (block.type === 'tool_result') return '工具结果';
   if (block.type === 'context_event') return '上下文';
-  if (block.type === 'event') return block.event?.summary || '事件';
+  if (block.type === 'event') return '事件';
   if (block.type === 'thinking') return '思考';
   if (block.type === 'user') return '用户';
   if (block.type === 'error') return '错误';

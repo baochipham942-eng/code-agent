@@ -11,6 +11,7 @@ import {
   MessageCircleQuestion, ZapOff, Flame,
   Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus, Clock3, Repeat,
 } from 'lucide-react';
+import { buildCostText, buildStatusText, fmtTokens } from './chatDiagnostics';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSkillStore } from '../../../../stores/skillStore';
@@ -54,28 +55,6 @@ function ensureExtensionMutation(result: ExtensionMutationResult | undefined): v
   }
 }
 
-// 诊断命令格式化 helper（与 newCommands.ts 的 CLI 版对齐）
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-function fmtCost(n: number): string {
-  return `$${n.toFixed(3)}`;
-}
-// /status //cost 的数据源：host 真实记账（settings domain getBudgetStatus）
-interface BudgetStatusRaw {
-  currentCost?: number;
-  maxBudget?: number;
-  usagePercentage?: number;
-  config?: { enabled?: boolean };
-  tokenUsage?: {
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadTokens?: number;
-    cacheCreationTokens?: number;
-  };
-}
 // 把诊断命令的文本输出写进聊天流（assistant 消息）。运行时取 store，不增加 useMemo 依赖。
 // 用代码块包裹：诊断输出是等宽对齐文本，且含 $ 金额（会被 markdown 当 LaTeX 渲染）、
 // 路径等特殊字符——代码块既保证等宽对齐，又屏蔽 markdown/KaTeX 干扰。
@@ -633,29 +612,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: '查看当前会话状态',
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
-        const app = useAppStore.getState();
-        const sessionId = useSessionStore.getState().currentSessionId ?? 'N/A';
-        const health = app.contextHealth;
-        const contextLine = health && health.currentTokens > 0
-          ? `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`
-          : '';
-        // token/成本走 host 真实记账（WP-2：statusStore 推送通道已死，经 BudgetStatus 拉活值）
-        let tokenLine = 'N/A';
-        let costLine = '';
-        try {
-          const b = await invokeDomain<BudgetStatusRaw>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus');
-          const usage = b?.tokenUsage;
-          const total = (usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0)
-            + (usage?.cacheCreationTokens ?? 0) + (usage?.outputTokens ?? 0);
-          if (total > 0) tokenLine = fmtTokens(total);
-          if ((b?.currentCost ?? 0) > 0) costLine = ` (${fmtCost(b.currentCost!)})`;
-        } catch { /* budget surface 不可用时维持 N/A */ }
-        writeAssistant(
-          `Status\n` +
-          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}\n` +
-          `  Session:  ${sessionId}\n` +
-          `  Tokens:   ${tokenLine}${costLine}${contextLine}`
-        );
+        writeAssistant(await buildStatusText());
       },
     },
     {
@@ -664,30 +621,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: '查看当前会话的 token 用量和成本',
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
-        const app = useAppStore.getState();
-        const lines = [
-          'Cost (session)',
-          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}`,
-        ];
-        try {
-          const b = await invokeDomain<BudgetStatusRaw>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus');
-          const usage = b?.tokenUsage;
-          const input = (usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0) + (usage?.cacheCreationTokens ?? 0);
-          const output = usage?.outputTokens ?? 0;
-          lines.push(`  Input:    ${fmtTokens(input)} tokens`);
-          lines.push(`  Output:   ${fmtTokens(output)} tokens`);
-          if ((usage?.cacheReadTokens ?? 0) > 0) {
-            lines.push(`  Cached:   ${fmtTokens(usage!.cacheReadTokens!)} tokens (read)`);
-          }
-          // Total 用 host cache-aware 真实记账，不再用单价×token 的本地估算
-          lines.push(`  Total:    ${fmtCost(b?.currentCost ?? 0)}`);
-          if (b?.config?.enabled && (b?.maxBudget ?? 0) > 0) {
-            lines.push(`  Budget:   ${fmtCost(b.currentCost ?? 0)} / ${fmtCost(b.maxBudget!)} (${((b.usagePercentage ?? 0) * 100).toFixed(1)}%)`);
-          }
-        } catch {
-          lines.push('  (cost data unavailable)');
-        }
-        writeAssistant(lines.join('\n'));
+        writeAssistant(await buildCostText());
       },
     },
     {

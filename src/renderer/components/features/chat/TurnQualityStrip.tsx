@@ -142,12 +142,24 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
   // 不需要也看不懂，只留一颗安静的模型名徽标标注"这轮是谁在干活"。
   if (!developerMode) {
     const modelName = summary.strategy.model || summary.strategy.requestedModel;
-    if (!modelName) return null;
+    // 手动 /agent 指定（非 default）时透出"本轮由 X 执行"的安静徽标，
+    // 恢复自动路由后 agentName 回到 default 徽标自然消失。
+    const agentName = summary.capabilities?.agentName;
+    const showAgent = Boolean(agentName && agentName !== 'default');
+    if (!modelName && !showAgent) return null;
     return (
-      <div className="mb-2">
-        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
-          {modelName}
-        </span>
+      <div className="mb-2 flex items-center gap-1">
+        {modelName && (
+          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
+            {modelName}
+          </span>
+        )}
+        {showAgent && (
+          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500">
+            <Bot className="h-3 w-3" />
+            {agentName}
+          </span>
+        )}
       </div>
     );
   }

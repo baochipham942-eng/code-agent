@@ -75,6 +75,30 @@ describe('TurnQualityStrip', () => {
     expect(container.querySelector('[aria-expanded]')).toBeNull();
   });
 
+  it('手动指定 agent 后，非开发者模式也透出安静 agent 徽标（本轮由 X 执行）', () => {
+    const { container } = render(<TurnQualityStrip summary={summary} />);
+    const text = container.textContent || '';
+    expect(text).toContain('coder');
+    // 仍然安静：无按钮、无展开
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  it('自动路由默认 agent（default/缺失）不显示 agent 徽标', () => {
+    const auto: TurnQualitySummary = {
+      ...summary,
+      capabilities: { agentName: 'default', toolsUsed: [] },
+    } as TurnQualitySummary;
+    const { container } = render(<TurnQualityStrip summary={auto} />);
+    expect(container.textContent || '').not.toContain('default');
+
+    const missing: TurnQualitySummary = {
+      ...summary,
+      capabilities: { toolsUsed: [] },
+    } as TurnQualitySummary;
+    const { container: c2 } = render(<TurnQualityStrip summary={missing} />);
+    expect((c2.textContent || '')).toContain('glm-5');
+  });
+
   it('unescapes html entities in memory preview text when expanded in developer mode', () => {
     useAppStore.setState({ developerMode: true });
     const escaped: TurnQualitySummary = {

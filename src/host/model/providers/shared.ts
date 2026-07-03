@@ -336,7 +336,15 @@ function createToolCallIdNormalizer(messages: ModelMessage[]): (id: string) => s
  * 防止三处实现漂移。
  */
 export function wrapTransientSystemReminder(content: string): string {
-  const neutralized = content.replace(/<\/?system-reminder>/gi, '');
+  // 固定点中和（审计 R2-1）：单遍 replace 不重扫自身输出，拆分/嵌套哨兵
+  // （如 `</system-reminder<system-reminder>>`）会在移除内层后重新拼合出活边界。
+  // 每遍至少消掉一个匹配、字符串严格变短，必然收敛到零匹配。
+  let neutralized = content;
+  let prev: string;
+  do {
+    prev = neutralized;
+    neutralized = neutralized.replace(/<\/?system-reminder>/gi, '');
+  } while (neutralized !== prev);
   return `<system-reminder>\n${neutralized}\n</system-reminder>`;
 }
 
@@ -760,14 +768,22 @@ export function convertToTextOnlyMessages(messages: ModelMessage[]): OpenAIMessa
 export function convertToGeminiMessages(messages: ModelMessage[]): GeminiContent[] {
   const contents: GeminiContent[] = [];
 
+  // Gemini generateContent 要求 user/model 严格交替（审计 R2-2，A4 的对称应用）：
+  // 追加 user 内容时若上一条已是 user，合并进它的 parts 而不是新开一条。
+  const pushUserPart = (text: string) => {
+    const last = contents[contents.length - 1];
+    if (last?.role === 'user') {
+      last.parts.push({ text });
+    } else {
+      contents.push({ role: 'user', parts: [{ text }] });
+    }
+  };
+
   for (const m of messages) {
     // 动态尾巴（transient system）：单条 user + <system-reminder>，不追加假 model
     // 确认——否则 payload 以 model 收尾，Gemini 要求以 user 结束会直接 400（审计 A3）
     if (m.role === 'system' && m.transient) {
-      contents.push({
-        role: 'user',
-        parts: [{ text: wrapTransientSystemReminder(typeof m.content === 'string' ? m.content : '') }],
-      });
+      pushUserPart(wrapTransientSystemReminder(typeof m.content === 'string' ? m.content : ''));
     } else if (m.role === 'system') {
       contents.push({
         role: 'user',
@@ -778,10 +794,7 @@ export function convertToGeminiMessages(messages: ModelMessage[]): GeminiContent
         parts: [{ text: 'Understood. I will follow these instructions.' }],
       });
     } else if (m.role === 'user' || m.role === 'tool') {
-      contents.push({
-        role: 'user',
-        parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
-      });
+      pushUserPart(typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
     } else if (m.role === 'assistant') {
       contents.push({
         role: 'model',

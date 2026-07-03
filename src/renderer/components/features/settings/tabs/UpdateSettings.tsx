@@ -234,7 +234,7 @@ export function getRendererBundleSummaryText(
   return `${text.failedPrefix}${attempt.reason ?? text.unknown}`;
 }
 
-export { getRendererBundleDiagnosticRows, shortContentHash } from './UpdateSettings.helpers';
+export { getRendererBundleDiagnosticRows } from './UpdateSettings.helpers';
 import { getRendererBundleDiagnosticRows, shortContentHash } from './UpdateSettings.helpers';
 export function getDesktopShellSummaryText(
   diagnostics: DesktopShellDiagnostics | null,

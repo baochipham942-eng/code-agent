@@ -9,9 +9,11 @@ import {
 } from './browser/visualSmoke';
 import {
   DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS,
+  runLightPlayabilitySmoke,
   runRuntimeSmoke,
   type RuntimeSmokeSummary,
 } from './gameArtifactRuntimeSmoke';
+import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { gameSubtypeRegistry } from './gameArtifactSubtypeRegistry';
 
 export type { RuntimeSmokeSummary } from './gameArtifactRuntimeSmoke';
@@ -26,6 +28,7 @@ export interface GameArtifactValidationSummary {
   checks: string[];
   runtimeSmoke?: RuntimeSmokeSummary;
   browserVisualSmoke?: BrowserVisualSmokeSummary;
+  playabilitySmoke?: RuntimeSmokeSummary;
 }
 
 export interface GameArtifactValidationOptions {
@@ -42,6 +45,12 @@ export interface GameArtifactValidationOptions {
   browserVisualSmokeTimeoutMs?: number;
   requireBrowserVisualSmoke?: boolean;
   allowBrowserVisualComputerFallback?: boolean;
+  /**
+   * light 契约可玩性冒烟：真实浏览器加载 + 键盘输入，只抓硬崩溃/全黑画面。
+   * 补上 light 路径此前完全没有运行时证据的洞（"验收通过"却交付一玩就崩的游戏）。
+   */
+  runLightPlayabilitySmoke?: boolean;
+  lightPlayabilitySmokeTimeoutMs?: number;
 }
 
 const HTML_EXTENSIONS = new Set(['.html', '.htm']);
@@ -67,6 +76,7 @@ function cloneValidationSummary(summary: GameArtifactValidationSummary): GameArt
     browserVisualSmoke: summary.browserVisualSmoke
       ? cloneBrowserVisualSmoke(summary.browserVisualSmoke)
       : undefined,
+    playabilitySmoke: summary.playabilitySmoke ? cloneRuntimeSmoke(summary.playabilitySmoke) : undefined,
   };
 }
 
@@ -92,6 +102,10 @@ function makeValidationCacheKey(
     visualTimeoutMs,
     options.requireBrowserVisualSmoke ? 'require-visual' : 'visual-optional',
     options.allowBrowserVisualComputerFallback === false ? 'no-computer-fallback' : 'computer-fallback',
+    options.runLightPlayabilitySmoke ? 'light-playability' : 'no-light-playability',
+    options.runLightPlayabilitySmoke
+      ? options.lightPlayabilitySmokeTimeoutMs ?? GAME_VALIDATION_TIMEOUTS.LIGHT_PLAYABILITY_SMOKE_MS
+      : 0,
   ].join('\0');
 }
 
@@ -783,6 +797,19 @@ export async function validateGameArtifact(
     }
   }
 
+  let playabilitySmoke: RuntimeSmokeSummary | undefined;
+  if (options.runLightPlayabilitySmoke && isComplete) {
+    playabilitySmoke = await runLightPlayabilitySmoke(
+      filePath,
+      options.lightPlayabilitySmokeTimeoutMs ?? GAME_VALIDATION_TIMEOUTS.LIGHT_PLAYABILITY_SMOKE_MS,
+    );
+    if (playabilitySmoke.passed) {
+      checks.push(...playabilitySmoke.checks);
+    } else {
+      failures.push(...playabilitySmoke.failures);
+    }
+  }
+
   return writeCachedValidation(cacheKey, {
     shouldValidate: true,
     inferredKind,
@@ -793,5 +820,6 @@ export async function validateGameArtifact(
     checks,
     runtimeSmoke,
     browserVisualSmoke,
+    playabilitySmoke,
   });
 }

@@ -3,6 +3,7 @@ import { isAbsolute, resolve, join } from 'path';
 import { getUserConfigDir } from '../../config/configPaths';
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { createLogger } from '../../services/infra/logger';
 import { runReviewGate } from '../goalReviewGate';
@@ -110,12 +111,16 @@ export async function handleModifiedArtifactValidation({
     const artifactValidationOptions: GameArtifactValidationOptions = {
       contractLevel: fullContract ? 'full' : 'light',
       runRuntimeSmoke: fullContract,
-      runtimeSmokeTimeoutMs: 7000,
+      runtimeSmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.RUNTIME_SMOKE_MS,
       requireRuntimeSmoke: fullContract,
       runBrowserVisualSmoke: fullContract,
-      browserVisualSmokeTimeoutMs: 10000,
+      browserVisualSmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.BROWSER_VISUAL_SMOKE_MS,
       requireBrowserVisualSmoke: fullContract,
       allowBrowserVisualComputerFallback: false,
+      // light 契约此前完全没有运行时证据（"验收通过"却交付一玩就崩的游戏，dogfood 实锤）。
+      // 补一个只抓硬信号（未捕获异常/全黑画面）的可玩性冒烟；重契约 goal 模式已有完整 runtime smoke，不重复跑。
+      runLightPlayabilitySmoke: !fullContract,
+      lightPlayabilitySmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.LIGHT_PLAYABILITY_SMOKE_MS,
     };
     const rawValidation = await validateGameArtifact(absolutePath, artifactValidationOptions);
     const validation = repairTargetLostValidation && !rawValidation.shouldValidate
@@ -266,6 +271,7 @@ export async function handleModifiedArtifactValidation({
           checks: validation.checks,
           runtimeSmoke: validation.runtimeSmoke,
           browserVisualSmoke: validation.browserVisualSmoke,
+          playabilitySmoke: validation.playabilitySmoke,
           repairSpec,
         },
       };
@@ -297,10 +303,21 @@ export async function handleModifiedArtifactValidation({
       });
     }
   } catch (error) {
-    logger.debug('[AgentLoop] game artifact validation skipped', {
-      error: error instanceof Error ? error.message : String(error),
+    // 校验器自身崩溃 ≠ 产物合格。不阻塞交付，但必须留下"未验证"的可见痕迹：
+    // warn 日志 + toolResult 元数据标记，禁止再静默降级成 debug 后当作通过。
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[AgentLoop] artifact validation crashed; artifact delivered unverified', {
+      error: message,
       filePath,
     });
+    toolResult.metadata = {
+      ...toolResult.metadata,
+      artifactValidation: {
+        failed: false,
+        crashed: true,
+        error: message,
+      },
+    };
   }
 }
 

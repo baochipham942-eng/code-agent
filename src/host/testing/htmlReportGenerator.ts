@@ -85,6 +85,16 @@ export function escapeHtmlAttribute(value: unknown): string {
   return escapeHtml(value).replace(/`/g, '&#96;');
 }
 
+// 单个内容块的注入上限：完整数据以 JSON 报告为准，HTML 只做浏览器可承受的展示。
+// 无上限时超大模型输出/工具输出会把自包含 HTML 撑到无法打开（Codex 审计 R1）。
+const HTML_BLOCK_MAX_CHARS = 20_000;
+
+function capText(value: string): string {
+  if (value.length <= HTML_BLOCK_MAX_CHARS) return value;
+  const omitted = value.length - HTML_BLOCK_MAX_CHARS;
+  return `${value.slice(0, HTML_BLOCK_MAX_CHARS)}\n…（已截断 ${omitted} 字符，完整内容见 JSON 报告）`;
+}
+
 const HTML_REPORT_CSS = `
 :root {
   color-scheme: light;
@@ -365,6 +375,7 @@ function renderScoreAuthorityHtml(results: TestResult[]): string {
     '<thead><tr><th>权威桶</th><th>用例数</th><th>通过</th><th>平均分数</th></tr></thead>',
     `<tbody>${rows}</tbody>`,
     '</table>',
+    '<p class="muted">self_check / 未标注分数不作能力证据；L3 实验提案只准引用 deterministic_assertion 与（校准后的）llm_judge 两桶。</p>',
     '</section>',
   ].join('\n');
 }
@@ -421,14 +432,14 @@ function renderEfficiencyTriage(result: TestResult): string {
 }
 
 function renderTextBlock(title: string, value: string): string {
-  const body = value ? `<pre>${escapeHtml(value)}</pre>` : '<p class="empty">无</p>';
+  const body = value ? `<pre>${escapeHtml(capText(value))}</pre>` : '<p class="empty">无</p>';
   return `<div class="block"><h3>${escapeHtml(title)}</h3>${body}</div>`;
 }
 
 function renderListBlock(title: string, values: string[]): string {
   if (values.length === 0) return `<div class="block"><h3>${escapeHtml(title)}</h3><p class="empty">无</p></div>`;
   const body = values
-    .map((value, index) => `<pre>${index + 1}. ${escapeHtml(value)}</pre>`)
+    .map((value, index) => `<pre>${index + 1}. ${escapeHtml(capText(value))}</pre>`)
     .join('');
   return `<div class="block"><h3>${escapeHtml(title)}</h3>${body}</div>`;
 }
@@ -436,14 +447,14 @@ function renderListBlock(title: string, values: string[]): string {
 function renderFailureBlock(result: TestResult): string {
   if (!result.failureReason && !result.failureDetails) return '';
   const details = result.failureDetails;
-  const reason = result.failureReason ? `<p>${escapeHtml(result.failureReason)}</p>` : '';
+  const reason = result.failureReason ? `<p>${escapeHtml(capText(result.failureReason))}</p>` : '';
   const diff = details
     ? [
         '<div class="failure-diff">',
-        `<div class="block expected"><h3>Expected</h3><pre>${escapeHtml(formatUnknown(details.expected))}</pre></div>`,
-        `<div class="block actual"><h3>Actual</h3><pre>${escapeHtml(formatUnknown(details.actual))}</pre></div>`,
+        `<div class="block expected"><h3>Expected</h3><pre>${escapeHtml(capText(formatUnknown(details.expected)))}</pre></div>`,
+        `<div class="block actual"><h3>Actual</h3><pre>${escapeHtml(capText(formatUnknown(details.actual)))}</pre></div>`,
         '</div>',
-        `<div class="block"><h3>Assertion</h3><pre>${escapeHtml(details.assertion)}</pre></div>`,
+        `<div class="block"><h3>Assertion</h3><pre>${escapeHtml(capText(details.assertion))}</pre></div>`,
       ].join('\n')
     : '';
   return `<div class="block"><h3>Failure</h3>${reason}${diff}</div>`;
@@ -459,8 +470,8 @@ function renderToolBlock(result: TestResult): string {
     `<td>${escapeHtml(tool.success ? 'success' : 'failed')}</td>`,
     `<td>${escapeHtml(tool.tool)}</td>`,
     `<td>${escapeHtml(formatDuration(tool.duration))}</td>`,
-    `<td><pre>${escapeHtml(formatUnknown(tool.input))}</pre></td>`,
-    `<td><pre>${escapeHtml(tool.error ?? tool.output)}</pre></td>`,
+    `<td><pre>${escapeHtml(capText(formatUnknown(tool.input)))}</pre></td>`,
+    `<td><pre>${escapeHtml(capText(String(tool.error ?? tool.output ?? '')))}</pre></td>`,
     '</tr>',
   ].join('')).join('\n');
 

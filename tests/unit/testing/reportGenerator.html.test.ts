@@ -284,3 +284,48 @@ describe('saveReport html support', () => {
     expect(latest).toContain('Baseline Delta');
   });
 });
+
+describe('html report content caps (Codex audit R1 MED)', () => {
+  it('caps oversized responses/tool output/prompt blocks with a truncation notice', () => {
+    const huge = 'x'.repeat(80_000);
+    const summary = makeSummary([
+      makeResult({
+        testId: 'case-huge',
+        prompt: huge,
+        responses: [huge],
+        errors: [huge],
+        toolExecutions: [{
+          tool: 'bash',
+          input: { cmd: huge },
+          output: huge,
+          success: true,
+          duration: 5,
+          timestamp: 0,
+        }],
+        failureReason: 'boom',
+        failureDetails: { assertion: 'a', expected: huge, actual: huge },
+      }),
+    ]);
+
+    const html = generateHtmlReport(summary);
+    expect(html).toContain('已截断');
+    // 每个注入点都被截断：整页体积远小于未截断时的 ~480k
+    expect(html.length).toBeLessThan(200_000);
+    expect(html).not.toContain('x'.repeat(30_000));
+  });
+
+  it('keeps small content intact without truncation notice', () => {
+    const summary = makeSummary([makeResult({ testId: 'case-small', responses: ['hello world'] })]);
+    const html = generateHtmlReport(summary);
+    expect(html).toContain('hello world');
+    expect(html).not.toContain('已截断');
+  });
+});
+
+describe('html score authority caveat (parity with markdown WP1-1)', () => {
+  it('renders the non-capability-evidence caveat under the authority table', () => {
+    const summary = makeSummary([makeResult({ testId: 'case-a', scoreAuthority: 'self_check' })]);
+    const html = generateHtmlReport(summary);
+    expect(html).toContain('不作能力证据');
+  });
+});

@@ -14,6 +14,7 @@
  */
 
 import * as esbuild from 'esbuild';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { mkdirSync } from 'fs';
 import { homedir } from 'os';
@@ -159,6 +160,13 @@ function writeControlPlanePublicKeysFile(): void {
   console.log(`  ✓ Control plane public keys → dist/web/control-plane-public-keys.json (${Object.keys(keys).length} key(s))`);
 }
 
+function runGameSkillContentCodegen(): void {
+  execFileSync(process.execPath, ['scripts/generate-game-skill-content.mjs'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Build targets
 // ---------------------------------------------------------------------------
@@ -300,6 +308,7 @@ async function main() {
   }
 
   console.log(`Building ${selected.length} target(s)${isDev ? ' (dev)' : ''}...`);
+  runGameSkillContentCodegen();
 
   // Build all targets in parallel — allSettled ensures one failure doesn't block others
   const results = await Promise.allSettled(selected.map((name) => build(targets[name])));

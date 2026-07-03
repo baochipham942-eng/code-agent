@@ -16,6 +16,7 @@
     "dev:renderer": "vite",
     "build": "npm run build:worker && npm run build:web && npm run build:cli && npm run build:renderer",
     "build:renderer": "vite build",
+    "codegen:game-skills": "node scripts/generate-game-skill-content.mjs",
     "lint": "eslint src --ext .ts,.tsx",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "typecheck": "tsc --noEmit",

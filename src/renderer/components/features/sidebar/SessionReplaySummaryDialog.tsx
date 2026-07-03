@@ -356,7 +356,8 @@ function formatBlockDetail(block: ReplayBlock): string {
     if (summary && duration) return `${summary} · ${duration}`;
     return summary || duration;
   }
-  return normalizeBlockText(block.content);
+  // 完整正文留给下钻视图；timeline 行内截断，防超大 tool_result 拖垮弹层。
+  return truncateContent(normalizeBlockText(block.content), 160);
 }
 
 function getBlockToneClassName(block: ReplayBlock): string {

@@ -522,4 +522,63 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('permission denied once');
     expect(html).toContain('42');
   });
+
+  it('非 event block 的超长 content 在 timeline 里截断（不整段灌进弹层）', () => {
+    const huge = `head-marker ${'w'.repeat(20_000)}`;
+    const html = renderToStaticMarkup(
+      <SessionReplaySummaryDialog
+        sessionTitle="Long Replay"
+        onClose={vi.fn()}
+        replay={{
+          sessionId: 'session-long',
+          traceSource: 'session_replay',
+          traceIdentity: {
+            traceId: 'session:session-long',
+            traceSource: 'session_replay',
+            source: 'session_replay',
+            sessionId: 'session-long',
+            replayKey: 'session-long',
+          },
+          dataSource: 'telemetry',
+          turns: [
+            {
+              turnNumber: 1,
+              turnType: 'iteration',
+              blocks: [
+                {
+                  type: 'tool_result',
+                  content: huge,
+                  timestamp: 1,
+                },
+              ],
+              inputTokens: 0,
+              outputTokens: 0,
+              durationMs: 1,
+              startTime: 1,
+            },
+          ],
+          summary: {
+            totalTurns: 1,
+            toolDistribution: {
+              Read: 0,
+              Edit: 0,
+              Write: 0,
+              Bash: 0,
+              Search: 0,
+              Web: 0,
+              Agent: 0,
+              Skill: 0,
+              Other: 0,
+            },
+            thinkingRatio: 0,
+            selfRepairChains: 0,
+            totalDurationMs: 1,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('head-marker');
+    expect(html).not.toContain('w'.repeat(10_000));
+  });
 });

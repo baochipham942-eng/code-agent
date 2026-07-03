@@ -149,7 +149,8 @@ export const WorkbenchTabs: React.FC = () => {
               className={`flex-shrink-0 p-0.5 rounded hover:bg-zinc-700 transition-opacity ${
                 isActive ? 'opacity-70 hover:opacity-100' : 'opacity-0 group-hover:opacity-70 hover:opacity-100'
               }`}
-              title="关闭"
+              title={t.common.close}
+              aria-label={t.common.close}
             >
               <X className="w-2.5 h-2.5" />
             </button>

@@ -72,6 +72,14 @@ describe('WorkbenchTabs 顶栏按钮 a11y + i18n（en 态无硬编码中文）',
     expect(container.querySelector(`[aria-label="${zh.workbenchTabs.openPanel}"]`)).toBeTruthy();
   });
 
+  it('tab 关闭按钮走 i18n：en 态 aria-label/title 为英文', () => {
+    useAppStore.setState({ workbenchTabs: ['task'], activeWorkbenchTab: 'task' });
+    const { container } = render(<WorkbenchTabs />);
+    const closeBtn = container.querySelector(`button[aria-label="${en.common.close}"]`);
+    expect(closeBtn).toBeTruthy();
+    expect(container.querySelector('button[title="关闭"]')).toBeNull();
+  });
+
   it('画布与媒介表单两枚 icon-only 按钮具备 aria-label 与 title', () => {
     useSessionStore.setState({ currentSessionId: 's1' });
     const { getByTestId } = render(<WorkbenchTabs />);

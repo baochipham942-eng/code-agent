@@ -11,6 +11,7 @@ import type {
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
@@ -77,6 +78,7 @@ export interface UseChatInputSubmitParams {
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
+  const { t } = useI18n();
   const {
     value,
     attachments,
@@ -307,7 +309,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       return;
     }
     if (agentCommand.kind === 'unknown') {
-      toast.warning(`没找到 agent: ${agentCommand.token}`);
+      toast.warning(`${t.agentCommand.notFoundPrefix}${agentCommand.token}`);
       inputAreaRef.current?.focus();
       return;
     }
@@ -320,7 +322,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!contentToSend && attachments.length === 0) {
         setValue('');
         setVoiceInputContext(null);
-        toast.info('已恢复自动 agent');
+        toast.info(t.agentCommand.restoredAuto);
         return;
       }
     }
@@ -344,7 +346,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!contentToSend && attachments.length === 0) {
         setValue('');
         setVoiceInputContext(null);
-        toast.info(`已切到 ${agentCommand.agent.name || agentCommand.agent.id}`);
+        toast.info(`${t.agentCommand.switchedToPrefix}${agentCommand.agent.name || agentCommand.agent.id}`);
         return;
       }
     }

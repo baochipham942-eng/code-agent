@@ -1,10 +1,17 @@
-import type { AgentListEntry } from '@shared/contract/agentRegistry';
+import { isPanelVisibleAgent, type AgentListEntry } from '@shared/contract/agentRegistry';
 
 export interface AgentCommandOption {
   id: string | null;
   name: string;
   description: string;
   token: string;
+  /** 面板分组：内置/自建 agent 在前，角色（roles）折叠成独立组在后 */
+  group: 'agent' | 'role';
+}
+
+export interface AgentCommandOptionLabels {
+  defaultName?: string;
+  defaultDescription?: string;
 }
 
 export type AgentCommandParseResult =
@@ -27,21 +34,27 @@ export function getAgentCommandToken(agent: Pick<AgentListEntry, 'id' | 'name'>)
 export function getAgentCommandOptions(
   agents: AgentListEntry[],
   query = '',
+  labels?: AgentCommandOptionLabels,
 ): AgentCommandOption[] {
   const normalizedQuery = normalizeToken(query);
   const defaultOption: AgentCommandOption = {
     id: null,
-    name: 'Default',
-    description: '恢复自动路由',
+    name: labels?.defaultName ?? 'Default',
+    description: labels?.defaultDescription ?? '恢复自动路由',
     token: 'default',
+    group: 'agent',
   };
-  const agentOptions = agents.map((agent) => ({
+  const visible = agents.filter(isPanelVisibleAgent);
+  const toOption = (agent: AgentListEntry): AgentCommandOption => ({
     id: agent.id,
     name: agent.name || agent.id,
     description: agent.description,
     token: getAgentCommandToken(agent),
-  }));
-  const options = [defaultOption, ...agentOptions];
+    group: agent.isRole ? 'role' : 'agent',
+  });
+  const agentOptions = visible.filter((a) => !a.isRole).map(toOption);
+  const roleOptions = visible.filter((a) => a.isRole).map(toOption);
+  const options = [defaultOption, ...agentOptions, ...roleOptions];
   if (!normalizedQuery) return options;
   return options.filter((option) => {
     const haystack = [

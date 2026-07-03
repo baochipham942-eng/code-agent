@@ -10,7 +10,7 @@
 import type { IpcMain, AppWindow } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import {
-  listAllAgents,
+  listAllAgentsWithRoleFlag,
   onAgentRegistryChange,
 } from '../agent/agentRegistry';
 import { createLogger } from '../services/infra/logger';
@@ -32,7 +32,7 @@ export function registerAgentRegistryHandlers(
     try {
       switch (action) {
         case 'list': {
-          const entries = listAllAgents();
+          const entries = await listAllAgentsWithRoleFlag();
           return { success: true, data: entries };
         }
         default:
@@ -55,17 +55,19 @@ export function registerAgentRegistryHandlers(
 
   // Broadcast 'agents:changed' to all renderer windows
   onAgentRegistryChange(() => {
-    try {
-      const windows = getAllWindows();
-      const entries = listAllAgents();
-      for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send(AGENT_REGISTRY_EVENT, { agents: entries });
+    void (async () => {
+      try {
+        const windows = getAllWindows();
+        const entries = await listAllAgentsWithRoleFlag();
+        for (const win of windows) {
+          if (!win.isDestroyed()) {
+            win.webContents.send(AGENT_REGISTRY_EVENT, { agents: entries });
+          }
         }
+      } catch (err) {
+        logger.warn('Failed to broadcast agents:changed', { error: String(err) });
       }
-    } catch (err) {
-      logger.warn('Failed to broadcast agents:changed', { error: String(err) });
-    }
+    })();
   });
 
   logger.info('AgentRegistry IPC handlers registered');

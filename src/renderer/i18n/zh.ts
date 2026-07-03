@@ -855,6 +855,18 @@ export const zh = {
     skipMessage: '跳过设计澄清，请按你的最佳判断直接生成成品，不要再 emit question-form。',
   },
 
+  // /agent 命令与面板
+  agentCommand: {
+    defaultDescription: '恢复自动路由',
+    roleGroupLabel: '角色',
+    switchedToPrefix: '已切到 ',
+    restoredAuto: '已恢复自动 agent',
+    notFoundPrefix: '没找到 agent: ',
+    chipTitlePrefix: '当前 agent: ',
+    chipTitleSuffix: '。输入 /agent 切换。',
+    chipAriaLabel: '当前 agent',
+  },
+
   // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   goalConfirm: {
     title: '目标确认',

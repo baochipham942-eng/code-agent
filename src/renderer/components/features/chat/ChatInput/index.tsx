@@ -43,6 +43,7 @@ import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
+import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
@@ -130,6 +131,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   hasPlan,
   onPlanClick,
 }, ref) => {
+  const { t } = useI18n();
   const [value, setValue] = useState('');
   const [voiceInputContext, setVoiceInputContext] = useState<{
     anchor: string;
@@ -668,8 +670,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 /agent
               </div>
               {agentCommandOptions.map((option, index) => (
+                <React.Fragment key={option.id ?? 'default'}>
+                  {option.group === 'role' && agentCommandOptions[index - 1]?.group !== 'role' && (
+                    <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                      {t.agentCommand.roleGroupLabel}
+                    </div>
+                  )}
                 <button
-                  key={option.id ?? 'default'}
                   type="button"
                   onClick={() => handleAgentCommandOptionSelect(index)}
                   className={`w-full px-3 py-2 text-left transition-colors ${
@@ -688,6 +695,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                     {option.description}
                   </div>
                 </button>
+                </React.Fragment>
               ))}
               {/* 角色名单底部"招新"：对话式建角色入口（role-creation-flow §7） */}
               <button

@@ -868,6 +868,18 @@ export const en: Translations = {
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
   },
 
+  // /agent 命令与面板
+  agentCommand: {
+    defaultDescription: 'Resume auto routing',
+    roleGroupLabel: 'Roles',
+    switchedToPrefix: 'Switched to ',
+    restoredAuto: 'Auto agent routing restored',
+    notFoundPrefix: 'Agent not found: ',
+    chipTitlePrefix: 'Current agent: ',
+    chipTitleSuffix: '. Type /agent to switch.',
+    chipAriaLabel: 'Current agent',
+  },
+
   // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   goalConfirm: {
     title: 'Confirm goal',

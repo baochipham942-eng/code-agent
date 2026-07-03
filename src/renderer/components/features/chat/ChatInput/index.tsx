@@ -189,6 +189,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     let cancelled = false;
     void (async () => {
       let workingDirectory = useAppStore.getState().workingDirectory;
+      if (!workingDirectory && currentSessionId) {
+        workingDirectory = useSessionStore.getState().sessions
+          .find((session) => session.id === currentSessionId)?.workingDirectory ?? null;
+      }
       if (!workingDirectory) {
         try {
           const res = await window.domainAPI?.invoke<string | null>(IPC_DOMAINS.WORKSPACE, 'getCurrent');
@@ -207,7 +211,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return () => {
       cancelled = true;
     };
-  }, [goalConfirm]);
+  }, [goalConfirm, currentSessionId]);
 
   useEffect(() => {
     const handleOpenSlashMenu = () => {

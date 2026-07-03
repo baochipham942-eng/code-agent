@@ -901,6 +901,11 @@ export const zh = {
     chipTitlePrefix: '当前 agent: ',
     chipTitleSuffix: '。输入 /agent 切换。',
     chipAriaLabel: '当前 agent',
+    badgeNotAppliedSuffix: ' 未生效',
+    badgeNotAppliedTitlePrefix: '指定的 agent 本轮未生效，实际执行: ',
+    degradedToastPrefix: '指定的 agent ',
+    degradedToastMiddle: ' 不可用，本轮已由 ',
+    degradedToastSuffix: ' 执行，已恢复自动路由',
   },
 
   // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）

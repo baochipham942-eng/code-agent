@@ -914,6 +914,11 @@ export const en: Translations = {
     chipTitlePrefix: 'Current agent: ',
     chipTitleSuffix: '. Type /agent to switch.',
     chipAriaLabel: 'Current agent',
+    badgeNotAppliedSuffix: ' not applied',
+    badgeNotAppliedTitlePrefix: 'Requested agent was not applied this turn; actually ran: ',
+    degradedToastPrefix: 'Requested agent ',
+    degradedToastMiddle: ' is unavailable; this turn ran with ',
+    degradedToastSuffix: '. Auto routing restored',
   },
 
   // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）

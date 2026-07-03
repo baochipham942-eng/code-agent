@@ -715,7 +715,7 @@ export function normalizeAssistantMessagePayload(data: unknown): AssistantMessag
 }
 
 export function normalizeRoutingResolvedPayload(data: unknown): RoutingResolvedPayload | null {
-  if (!isRecord(data) || data.mode !== 'auto') return null;
+  if (!isRecord(data) || (data.mode !== 'auto' && data.mode !== 'explicit')) return null;
   const agentId = getStringField(data, 'agentId');
   const agentName = getStringField(data, 'agentName');
   const reason = getStringField(data, 'reason');
@@ -723,13 +723,14 @@ export function normalizeRoutingResolvedPayload(data: unknown): RoutingResolvedP
   if (!agentId || !agentName || !reason || score === undefined) return null;
 
   return {
-    mode: 'auto',
+    mode: data.mode,
     agentId,
     agentName,
     reason,
     score,
     ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
     ...(getBooleanField(data, 'fallbackToDefault') !== undefined ? { fallbackToDefault: getBooleanField(data, 'fallbackToDefault') } : {}),
+    ...(getStringField(data, 'requestedAgentId') !== undefined ? { requestedAgentId: getStringField(data, 'requestedAgentId') } : {}),
   };
 }
 

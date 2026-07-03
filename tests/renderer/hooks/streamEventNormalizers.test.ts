@@ -248,6 +248,51 @@ describe('normalizeRoutingResolvedPayload', () => {
       fallbackToDefault: false,
     });
   });
+
+  it('mode explicit（显式选择命中）+ requestedAgentId 透传', () => {
+    expect(
+      normalizeRoutingResolvedPayload({
+        mode: 'explicit',
+        agentId: 'explore',
+        agentName: 'Explorer',
+        reason: 'Explicit agent selected: explore',
+        score: 1000,
+        timestamp: 456,
+        fallbackToDefault: false,
+        requestedAgentId: 'explore',
+      }),
+    ).toEqual({
+      mode: 'explicit',
+      agentId: 'explore',
+      agentName: 'Explorer',
+      reason: 'Explicit agent selected: explore',
+      score: 1000,
+      timestamp: 456,
+      fallbackToDefault: false,
+      requestedAgentId: 'explore',
+    });
+  });
+
+  it('降级场景：requestedAgentId ≠ agentId 保留（显式选择失败回落）', () => {
+    const result = normalizeRoutingResolvedPayload({
+      mode: 'explicit',
+      agentId: 'default',
+      agentName: 'default',
+      reason: 'Requested agent "__ghost__" is unavailable; continuing with the default conversation loop.',
+      score: 0,
+      fallbackToDefault: true,
+      requestedAgentId: '__ghost__',
+    });
+    expect(result?.mode).toBe('explicit');
+    expect(result?.requestedAgentId).toBe('__ghost__');
+    expect(result?.fallbackToDefault).toBe(true);
+  });
+
+  it('未知 mode（direct 等）仍返回 null', () => {
+    expect(
+      normalizeRoutingResolvedPayload({ mode: 'direct', agentId: 'a', agentName: 'n', reason: 'r', score: 1 }),
+    ).toBeNull();
+  });
 });
 
 describe('normalizeModelDecisionPayload', () => {

@@ -487,15 +487,35 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         : undefined;
       if (preferredAgentId) {
         const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');
+        const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
         const agentOverride = resolveExplicitAgentOverride(preferredAgentId);
+        // 路由真相事件：命中/失败都发射 routing_resolved（此前失败只打 warn 日志，
+        // renderer 零信号=静默兜底；徽标/路由证据在生产 web 路径恒空）。
+        // requestedAgentId 同时进 config → AgentLoop ctx → turnQuality 徽标降级判定。
+        config.requestedAgentId = preferredAgentId;
         if (agentOverride) {
           config.agentOverride = agentOverride;
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(
+              {
+                agent: { id: agentOverride.id, name: agentOverride.name },
+                score: 1000,
+                reason: `Explicit agent selected: ${agentOverride.id}`,
+              },
+              { requestedAgentId: preferredAgentId, timestamp: Date.now() },
+            ),
+          });
           logger.info('[AgentRouter] Explicit agent override applied', {
             agentId: agentOverride.id,
             deniedTools: agentOverride.deniedToolNames.length,
             sessionId,
           });
         } else {
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(null, { requestedAgentId: preferredAgentId, timestamp: Date.now() }),
+          });
           logger.warn('[AgentRouter] Unknown preferredAgentId, falling back to default routing', { preferredAgentId, sessionId });
         }
       }

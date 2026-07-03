@@ -76,6 +76,8 @@ export interface TurnQualityStrategySummary {
 export interface TurnQualityCapabilitySummary {
   agentId?: string;
   agentName?: string;
+  /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择降级为其他 agent 执行 */
+  requestedAgentId?: string;
   activeSkillName?: string;
   toolsUsed?: string[];
 }

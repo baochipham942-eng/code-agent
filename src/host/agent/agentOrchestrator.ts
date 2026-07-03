@@ -44,6 +44,7 @@ import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
+import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
 
 // Sub-modules
@@ -806,9 +807,11 @@ export class AgentOrchestrator {
       this.syncDAGStatus(dagId, event);
     };
 
-    const routingResolution = options?.agentOverrideId
-      ? this.resolveExplicitAgentRouting(options.agentOverrideId) ?? await this.resolveAgentRouting(content, sessionId)
-      : await this.resolveAgentRouting(content, sessionId);
+    const { resolution: routingResolution, requestedAgentId } = await this.resolveTurnRouting(
+      content,
+      sessionId,
+      options?.agentOverrideId ?? undefined,
+    );
     let effectiveModelConfig = modelConfig;
     const neoTagFixedModel = options?.neoTag?.modelIntent.mode === 'fixed_model';
 
@@ -848,15 +851,7 @@ export class AgentOrchestrator {
 
       onEvent({
         type: 'routing_resolved',
-        data: {
-          mode: 'auto',
-          agentId: routingResolution.agent.id,
-          agentName: routingResolution.agent.name,
-          reason: routingResolution.reason,
-          score: routingResolution.score,
-          fallbackToDefault: false,
-          timestamp: Date.now(),
-        },
+        data: buildRoutingResolvedEventData(routingResolution, { requestedAgentId, timestamp: Date.now() }),
       });
 
       onEvent({
@@ -868,15 +863,7 @@ export class AgentOrchestrator {
     } else {
       onEvent({
         type: 'routing_resolved',
-        data: {
-          mode: 'auto',
-          agentId: 'default',
-          agentName: 'default',
-          reason: 'No specialized agent matched; continue with the default conversation loop.',
-          score: 0,
-          fallbackToDefault: true,
-          timestamp: Date.now(),
-        },
+        data: buildRoutingResolvedEventData(null, { requestedAgentId, timestamp: Date.now() }),
       });
     }
 
@@ -965,6 +952,7 @@ export class AgentOrchestrator {
       sessionId,
       agentId: routingResolution?.agent?.id ?? 'default',
       agentName: routingResolution?.agent?.name ?? 'default',
+      requestedAgentId,
       memoryMode: sessionMemoryMode,
       suppressedMemoryEntryIds,
       workingDirectory: this.workingDirectory,
@@ -1070,6 +1058,29 @@ export class AgentOrchestrator {
       logger.warn('Agent routing failed, using default', { error });
       return null;
     }
+  }
+
+  /**
+   * 一轮对话的路由解析单入口：显式选择（agentOverrideId）优先，解析失败回落自动路由，
+   * 但 requestedAgentId 必须保留——它是 routing_resolved 事件里降级信号的判定依据
+   * （requestedAgentId !== 实际 agentId 即显式选择被降级，不再静默兜底）。
+   */
+  private async resolveTurnRouting(
+    content: string,
+    sessionId?: string,
+    agentOverrideId?: string,
+  ): Promise<{ resolution: RoutingResolution | null; requestedAgentId?: string }> {
+    if (agentOverrideId) {
+      const explicit = this.resolveExplicitAgentRouting(agentOverrideId);
+      if (explicit) {
+        return { resolution: explicit, requestedAgentId: agentOverrideId };
+      }
+      return {
+        resolution: await this.resolveAgentRouting(content, sessionId),
+        requestedAgentId: agentOverrideId,
+      };
+    }
+    return { resolution: await this.resolveAgentRouting(content, sessionId) };
   }
 
   private resolveExplicitAgentRouting(agentId: string): RoutingResolution | null {

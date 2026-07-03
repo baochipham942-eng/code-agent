@@ -237,6 +237,149 @@ describe('createAgentRouter', () => {
     setDbAvailable(false);
   });
 
+  // --------------------------------------------------------------------------
+  // /agent 显式选择的路由真相（三层一致性批③）：web 生产路径此前从不发射
+  // routing_resolved，解析失败只打 warn 日志（静默兜底）——徽标/路由证据在生产
+  // 路径恒空。这里锁死：命中/失败都必须发 routing_resolved，且 requestedAgentId
+  // 必须进 AgentLoop config（turnQuality 徽标降级判定用）。
+  // --------------------------------------------------------------------------
+  describe('/api/run preferredAgentId 路由真相（routing_resolved over SSE）', () => {
+    function parseSSEEvent(raw: string, eventName: string): Record<string, unknown> | null {
+      const lines = raw.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === `event: ${eventName}`) {
+          const dataLine = lines[i + 1]?.trim();
+          if (dataLine?.startsWith('data:')) {
+            return JSON.parse(dataLine.slice(5).trim()) as Record<string, unknown>;
+          }
+        }
+      }
+      return null;
+    }
+
+    async function readSSEUntil(response: globalThis.Response, marker: string, timeoutMs = 2000): Promise<string> {
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline && !buffer.includes(marker)) {
+        const chunk = await Promise.race([
+          reader.read(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.max(1, deadline - Date.now()))),
+        ]);
+        if (!chunk || chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+      await reader.cancel().catch(() => {});
+      return buffer;
+    }
+
+    it('显式选择命中 → SSE routing_resolved mode=explicit 且 config 带 agentOverride+requestedAgentId', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '看看这个仓库的结构',
+          sessionId: 'session-explicit-hit',
+          context: { preferredAgentId: 'explore' },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      const raw = await readSSEUntil(response, 'routing_resolved');
+      const payload = parseSSEEvent(raw, 'routing_resolved');
+      expect(payload).toMatchObject({
+        mode: 'explicit',
+        agentId: 'explore',
+        requestedAgentId: 'explore',
+        fallbackToDefault: false,
+      });
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls[0][0] as {
+        agentOverride?: { id: string };
+        requestedAgentId?: string;
+      };
+      expect(config.agentOverride?.id).toBe('explore');
+      expect(config.requestedAgentId).toBe('explore');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+
+    it('显式选择解析失败 → SSE routing_resolved 降级信号（fallbackToDefault+requestedAgentId），不再静默', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hello',
+          sessionId: 'session-explicit-miss',
+          context: { preferredAgentId: '__ghost_agent__' },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      const raw = await readSSEUntil(response, 'routing_resolved');
+      const payload = parseSSEEvent(raw, 'routing_resolved');
+      expect(payload).toMatchObject({
+        mode: 'explicit',
+        agentId: 'default',
+        agentName: 'default',
+        requestedAgentId: '__ghost_agent__',
+        fallbackToDefault: true,
+      });
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls[0][0] as {
+        agentOverride?: { id: string };
+        requestedAgentId?: string;
+      };
+      expect(config.agentOverride).toBeUndefined();
+      expect(config.requestedAgentId).toBe('__ghost_agent__');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+
+    it('无 preferredAgentId → 不发射 routing_resolved（不给无显式选择的轮次加噪音）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hello',
+          sessionId: 'session-no-preferred',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      // 读一小段流（task_start 之后），确认没有 routing_resolved
+      const raw = await readSSEUntil(response, 'task_start', 500);
+      expect(raw).not.toContain('event: routing_resolved');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+  });
+
   it('cancels the active agent loop when the /api/run SSE client disconnects', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/api/run`, {

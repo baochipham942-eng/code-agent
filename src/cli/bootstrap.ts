@@ -475,6 +475,7 @@ export function createAgentLoop(
     executionIntent: config.executionIntent, // 每轮执行意图（designCanvasActive 等）→ RuntimeContext
     agentId: config.agentOverride?.id ?? 'default',
     agentName: config.agentOverride?.name ?? 'default',
+    requestedAgentId: config.requestedAgentId,
     deniedToolNames: config.agentOverride && config.agentOverride.deniedToolNames.length > 0
       ? [...config.agentOverride.deniedToolNames]
       : undefined,

@@ -160,6 +160,7 @@ export class AgentLoop {
       sessionId: resolvedSessionId,
       agentId: config.agentId,
       agentName: config.agentName,
+      requestedAgentId: config.requestedAgentId,
       userId: config.userId,
       memoryMode: config.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,

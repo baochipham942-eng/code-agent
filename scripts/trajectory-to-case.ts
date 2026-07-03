@@ -137,7 +137,7 @@ async function main(): Promise<void> {
       feedback.forEach((row, index) => {
         // web 会话的 user 输入只在 telemetry_turns，messages 回溯是桌面路径兜底
         const prompt = resolveTurnPrompt(db!, row.sessionId, { turnId: row.turnId, anchorTimestamp: row.createdAt })
-          ?? resolveFeedbackPrompt(getSessionMessages(db!, row.sessionId), { messageId: row.messageId, turnId: row.turnId });
+          ?? resolveFeedbackPrompt(getSessionMessages(db!, row.sessionId), { messageId: row.messageId, turnId: row.turnId, anchorTimestamp: row.createdAt });
         if (!prompt) {
           skipped.push(`feedback:${row.id}（会话 ${row.sessionId} 无 user 原话）`);
           return;
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
       riskMessages.forEach((message, index) => {
         const sessionId = riskRows.find((r) => r.id === message.id)?.session_id ?? 'unknown-session';
         const prompt = resolveTurnPrompt(db!, sessionId, { turnId: null, anchorTimestamp: message.timestamp ?? null })
-          ?? resolveFeedbackPrompt(getSessionMessages(db!, sessionId), { messageId: message.id, turnId: message.id });
+          ?? resolveFeedbackPrompt(getSessionMessages(db!, sessionId), { messageId: message.id, turnId: message.id, anchorTimestamp: message.timestamp ?? null });
         if (!prompt) {
           skipped.push(`quality:${message.id}（会话 ${sessionId} 无 user 原话）`);
           return;

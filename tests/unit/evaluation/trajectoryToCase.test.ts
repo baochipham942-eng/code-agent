@@ -241,3 +241,23 @@ describe('Gemini 审计 R1 修复', () => {
     expect(result.written).toHaveLength(0);
   });
 });
+
+describe('Gemini 审计 R2 修复（对称应用）', () => {
+  const messages: Message[] = [
+    msg({ id: 'u1', role: 'user', content: '第一问', timestamp: 1 }),
+    msg({ id: 'a1', role: 'assistant', content: '答一', timestamp: 2 }),
+    msg({ id: 'u2', role: 'user', content: '晚于反馈的追问', timestamp: 100 }),
+  ];
+
+  it('messageId 未命中但有时间锚 → 只回溯锚点之前的 user 原话', () => {
+    expect(resolveFeedbackPrompt(messages, { messageId: 'ghost', turnId: null, anchorTimestamp: 50 })).toBe('第一问');
+  });
+
+  it('messageId 未命中且锚点早于全部消息 → null（不得回落最新）', () => {
+    expect(resolveFeedbackPrompt(messages, { messageId: 'ghost', turnId: null, anchorTimestamp: 0 })).toBeNull();
+  });
+
+  it('无时间锚时保持旧行为（回落最新 user 原话）', () => {
+    expect(resolveFeedbackPrompt(messages, { messageId: 'ghost', turnId: null })).toBe('晚于反馈的追问');
+  });
+});

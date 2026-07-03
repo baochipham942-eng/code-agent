@@ -69,14 +69,30 @@ export function queryNegativeFeedback(
  */
 export function resolveFeedbackPrompt(
   messages: Message[],
-  feedback: { messageId: string | null; turnId: string | null },
+  feedback: { messageId: string | null; turnId: string | null; anchorTimestamp?: number | null },
 ): string | null {
   const ordered = [...messages].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   const anchorIndex = ordered.findIndex(
     (m) => m.id === feedback.messageId || (feedback.turnId !== null && m.id === feedback.turnId),
   );
 
-  const searchFrom = anchorIndex >= 0 ? anchorIndex : ordered.length - 1;
+  // id 未命中时用时间锚收束回溯起点——盲落最后一条会拿到晚于反馈的原话
+  //（与 resolveTurnPrompt 同类问题的对称位置，Gemini 审计 R2）。
+  let searchFrom: number;
+  if (anchorIndex >= 0) {
+    searchFrom = anchorIndex;
+  } else if (feedback.anchorTimestamp !== undefined && feedback.anchorTimestamp !== null) {
+    searchFrom = -1;
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      if ((ordered[i].timestamp ?? 0) <= feedback.anchorTimestamp) {
+        searchFrom = i;
+        break;
+      }
+    }
+    if (searchFrom < 0) return null;
+  } else {
+    searchFrom = ordered.length - 1;
+  }
   for (let i = searchFrom; i >= 0; i--) {
     const m = ordered[i];
     if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {

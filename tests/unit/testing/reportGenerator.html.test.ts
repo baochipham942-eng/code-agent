@@ -329,3 +329,26 @@ describe('html score authority caveat (parity with markdown WP1-1)', () => {
     expect(html).toContain('不作能力证据');
   });
 });
+
+describe('html report caps outside case drilldown (Codex audit R2, symmetric application)', () => {
+  it('caps baseline delta failure reasons and regression details', () => {
+    const huge = 'y'.repeat(80_000);
+    const summary = makeSummary([makeResult({ testId: 'case-a' })]);
+    const html = generateHtmlReport(summary, makeDelta({
+      newFailures: [{ testId: 'case-fail', previousStatus: 'passed', currentStatus: 'failed', reason: huge }],
+      regressionDetails: [huge],
+    }));
+    expect(html).toContain('已截断');
+    expect(html).not.toContain('y'.repeat(30_000));
+  });
+
+  it('caps infra section reasons', () => {
+    const huge = 'z'.repeat(80_000);
+    const summary = makeSummary([
+      makeResult({ testId: 'case-infra', status: 'infra_excluded', failureReason: huge }),
+    ]);
+    const html = generateHtmlReport(summary);
+    expect(html).toContain('已截断');
+    expect(html).not.toContain('z'.repeat(30_000));
+  });
+});

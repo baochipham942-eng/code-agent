@@ -493,7 +493,7 @@ function renderInfraSection(results: TestResult[]): string {
     '<tr>',
     `<td>${escapeHtml(result.testId)}</td>`,
     `<td>${escapeHtml(result.description)}</td>`,
-    `<td>${escapeHtml(result.failureReason ?? 'infra excluded')}</td>`,
+    `<td>${escapeHtml(capText(result.failureReason ?? 'infra excluded'))}</td>`,
     '</tr>',
   ].join('')).join('\n');
 
@@ -516,7 +516,7 @@ function renderBaselineDelta(delta: BaselineDelta): string {
         `<td>${escapeHtml(failure.testId)}</td>`,
         `<td>${escapeHtml(failure.previousStatus)}</td>`,
         `<td>${escapeHtml(failure.currentStatus)}</td>`,
-        `<td>${escapeHtml(failure.reason ?? '')}</td>`,
+        `<td>${escapeHtml(capText(failure.reason ?? ''))}</td>`,
         '</tr>',
       ].join('')).join('\n')
     : '<tr><td colspan="4" class="empty">无新增失败</td></tr>';
@@ -524,7 +524,7 @@ function renderBaselineDelta(delta: BaselineDelta): string {
     ? delta.newPasses.map((pass) => `<li>${escapeHtml(pass.testId)}</li>`).join('')
     : '<li class="empty">无新增通过</li>';
   const regressionDetails = delta.regressionDetails.length > 0
-    ? delta.regressionDetails.map((detail) => `<li>${escapeHtml(detail)}</li>`).join('')
+    ? delta.regressionDetails.map((detail) => `<li>${escapeHtml(capText(detail))}</li>`).join('')
     : '<li class="empty">无</li>';
 
   return [

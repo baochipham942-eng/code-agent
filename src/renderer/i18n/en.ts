@@ -504,11 +504,6 @@ export const en: Translations = {
         ],
       },
     },
-    devMode: {
-      title: 'Developer Options',
-      autoApprove: 'Auto-approve all permissions',
-      autoApproveDescription: 'Skip all permission dialogs in dev mode for faster testing. Recommended to disable in production.',
-    },
   },
 
   // Language Settings

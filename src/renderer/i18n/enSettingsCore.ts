@@ -164,12 +164,6 @@ export const enSettingsCore = {
       developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
     },
     general: {
-      modeTitle: 'Application Mode',
-      modeDescription: 'Choose the mode that fits your workflow',
-      developerMode: 'Developer Mode',
-      developerModeDesc: 'Show full tool call details and parameters',
-      coworkMode: 'Cowork Mode',
-      coworkModeDesc: 'Simplified display for AI collaboration',
       permissions: {
         pageTitle: 'Permissions & security',
         pageDescription: 'Manage permission checks for sensitive Agent actions and the permission inheritance policy for sub-agents.',

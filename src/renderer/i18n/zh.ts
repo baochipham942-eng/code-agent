@@ -492,11 +492,6 @@ export const zh = {
         features: ['原始 API 响应', 'Token 使用指标', '调试控制台', 'MCP 服务器配置'],
       },
     },
-    devMode: {
-      title: '开发者选项',
-      autoApprove: '自动授权所有权限',
-      autoApproveDescription: '开发模式下跳过所有权限确认弹窗，方便快速测试。生产环境建议关闭。',
-    },
   },
 
   // Language Settings

@@ -81,6 +81,37 @@ export function resolveFeedbackPrompt(
   return null;
 }
 
+/**
+ * 从 telemetry_turns 取用户原话（web 会话的 user 输入不落 messages 表，
+ * 只在 telemetry_turns.user_prompt——dogfood 实测踩到）。三级：
+ * turnId 精确且非空 → 锚点时间之前最近非空 → 会话最后一条非空；都无 → null。
+ */
+export function resolveTurnPrompt(
+  db: SQLiteDatabase,
+  sessionId: string,
+  anchor: { turnId: string | null; anchorTimestamp: number | null },
+): string | null {
+  if (anchor.turnId) {
+    const exact = db
+      .prepare(`SELECT user_prompt FROM telemetry_turns WHERE id = ? AND session_id = ?`)
+      .get(anchor.turnId, sessionId) as { user_prompt?: string | null } | undefined;
+    if (exact?.user_prompt?.trim()) return exact.user_prompt;
+  }
+  const rows = db
+    .prepare(
+      `SELECT user_prompt, start_time FROM telemetry_turns
+       WHERE session_id = ? AND user_prompt IS NOT NULL AND trim(user_prompt) != ''
+       ORDER BY start_time DESC`,
+    )
+    .all(sessionId) as Array<{ user_prompt: string; start_time: number }>;
+  if (rows.length === 0) return null;
+  if (anchor.anchorTimestamp !== null) {
+    const before = rows.find((r) => r.start_time <= anchor.anchorTimestamp!);
+    if (before) return before.user_prompt;
+  }
+  return rows[0].user_prompt;
+}
+
 /** 取 turnQuality 总评 grade === 'risk' 的 assistant 消息（回流入口 2）。 */
 export function selectRiskTurnMessages(messages: Message[]): Message[] {
   return messages.filter(

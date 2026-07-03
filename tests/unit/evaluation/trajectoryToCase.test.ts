@@ -153,3 +153,38 @@ describe('draftFileName（幂等）', () => {
     expect(draftFileName('feedback', 'web-session-123', 1)).toMatch(/^draft-feedback-web-session-123-1\.yaml$/);
   });
 });
+
+describe('resolveTurnPrompt（telemetry_turns 优先级）', () => {
+  function makeTurnsDb() {
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE telemetry_turns (
+      id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_number INTEGER,
+      start_time INTEGER NOT NULL, user_prompt TEXT
+    );`);
+    const ins = db.prepare('INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, user_prompt) VALUES (?,?,?,?,?)');
+    ins.run('t1', 's1', 1, 100, '做一个平台跳跃小游戏');
+    ins.run('t2', 's1', 2, 200, null);
+    ins.run('t3', 's1', 3, 300, '加个存档');
+    return db;
+  }
+
+  it('turnId 精确命中且 user_prompt 非空 → 直接用', async () => {
+    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    expect(resolveTurnPrompt(makeTurnsDb(), 's1', { turnId: 't3', anchorTimestamp: null })).toBe('加个存档');
+  });
+
+  it('turnId 命中但 user_prompt 空 → 回退时间锚定之前最近的非空 prompt', async () => {
+    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    expect(resolveTurnPrompt(makeTurnsDb(), 's1', { turnId: 't2', anchorTimestamp: 250 })).toBe('做一个平台跳跃小游戏');
+  });
+
+  it('无 turnId 无锚点 → 取会话最后一条非空 user_prompt', async () => {
+    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    expect(resolveTurnPrompt(makeTurnsDb(), 's1', { turnId: null, anchorTimestamp: null })).toBe('加个存档');
+  });
+
+  it('turns 表无该会话数据 → null（让调用方退 messages 回溯）', async () => {
+    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    expect(resolveTurnPrompt(makeTurnsDb(), 's-none', { turnId: null, anchorTimestamp: null })).toBeNull();
+  });
+});

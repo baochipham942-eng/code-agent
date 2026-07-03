@@ -18,25 +18,10 @@ import {
   resolveOptionalUpdateInfo,
 } from '../../../src/renderer/components/features/settings/SettingsModal';
 
-const t = {
-  settings: {
-    tabs: {
-      general: '通用',
-      model: '通用模型',
-      visualModels: '多模态模型',
-      appearance: '外观',
-      data: '数据',
-      update: '更新',
-      about: '关于',
-      memory: '记忆',
-    },
-  },
-  // 执行引擎 tab（agentEngine）的标签取自 engineCompat 命名空间；mock 须含之，否则
-  // buildSettingsTabGroups 读 t.engineCompat.engineSection.title 抛错。
-  engineCompat: {
-    engineSection: { title: '执行引擎' },
-  },
-} as any;
+// 导航标签走 i18n 单一真源后，直接用真实 zh 翻译对象（含 tabs/tabGroups/engineCompat 全量键）
+import { zh } from '../../../src/renderer/i18n/zh';
+
+const t = zh;
 
 describe('SettingsModal screen memory tab visibility', () => {
   it('shows screen memory for desktop shells without requiring Electron update support', () => {

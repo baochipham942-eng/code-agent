@@ -102,7 +102,10 @@ export {
 export {
   generateMarkdownReport,
   generateJsonReport,
+  generateHtmlReport,
   generateConsoleReport,
+  escapeHtml,
+  escapeHtmlAttribute,
   saveReport,
 } from './reportGenerator';
 

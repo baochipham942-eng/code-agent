@@ -784,7 +784,17 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   getModelOverride(sessionId: string): ModelOverride | undefined {
     const modelState = getModelSessionState();
-    return modelState.getOverride(sessionId) as ModelOverride | undefined;
+    const existing = modelState.getOverride(sessionId) as ModelOverride | undefined;
+    if (existing) return existing;
+    // 对称回灌（audit R2）：web domain 路径已在重启后按持久化标记回灌，
+    // IPC 路径首次查询同样要看得到标记（否则 ModelSwitcher 在 loadSession
+    // 完成前拉到 null 且不再重拉）。getDatabase().getSession 是同步调用。
+    try {
+      const session = getDatabase().getSession(sessionId);
+      return (rehydrateModelOverrideFromSession(session ?? null) ?? undefined) as ModelOverride | undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async clearModelOverride(sessionId: string): Promise<ModelOverridePersistResult> {

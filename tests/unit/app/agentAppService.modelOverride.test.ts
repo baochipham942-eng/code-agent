@@ -17,6 +17,14 @@ vi.mock('../../../src/host/session/streamSnapshot', () => ({
   loadStreamSnapshot: vi.fn(),
 }));
 
+const dbMocks = vi.hoisted(() => ({
+  getSession: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => dbMocks,
+}));
+
 vi.mock('../../../src/host/session/modelOverridePersistence', () => ({
   persistModelOverride: vi.fn(async () => true),
   clearPersistedModelOverride: vi.fn(async () => true),
@@ -83,6 +91,34 @@ describe('AgentAppService model override persistence wiring', () => {
 
     expect(getModelSessionState().getOverride('session-1')).toBeNull();
     expect(clearPersistedModelOverride).toHaveBeenCalledWith('session-1');
+  });
+
+  it('getModelOverride rehydrates from DB when the in-memory map is empty (audit R2 IPC symmetry)', () => {
+    const dbSession = {
+      id: 'session-1',
+      metadata: { modelOverride: { provider: 'zhipu', model: 'glm-5', setAt: 1 } },
+    };
+    dbMocks.getSession.mockReturnValue(dbSession);
+    vi.mocked(rehydrateModelOverrideFromSession).mockReturnValueOnce({
+      provider: 'zhipu',
+      model: 'glm-5',
+      setAt: 1,
+    } as never);
+    const service = createService({});
+
+    const override = service.getModelOverride('session-1');
+
+    expect(rehydrateModelOverrideFromSession).toHaveBeenCalledWith(dbSession);
+    expect(override).toMatchObject({ provider: 'zhipu', model: 'glm-5' });
+  });
+
+  it('getModelOverride returns undefined when DB lookup throws (no crash)', () => {
+    dbMocks.getSession.mockImplementation(() => {
+      throw new Error('db unavailable');
+    });
+    const service = createService({});
+
+    expect(service.getModelOverride('session-1')).toBeUndefined();
   });
 
   it('loadSession rehydrates the model override from the restored session', async () => {

@@ -52,7 +52,9 @@ const UNSTABLE_STDDEV_THRESHOLD = 0.2;
  * harness 自身的超时消息（withTimeout 的 "timeout after Nms"）。
  */
 export function isInfraExclusionError(msg: string): boolean {
-  return isTransientError(msg) || /timeout after \d+ms/i.test(msg);
+  // 'fetch failed'：Node fetch/undici 网络不可达的通用报错，不在 retryStrategy
+  // 词表里（2026-07-03 断网实测：115 个 case 因此被误记 failed 混进能力分母）
+  return isTransientError(msg) || /timeout after \d+ms/i.test(msg) || /fetch failed/i.test(msg);
 }
 
 /**

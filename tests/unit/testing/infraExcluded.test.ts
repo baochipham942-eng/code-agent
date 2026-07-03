@@ -252,3 +252,25 @@ describe('报告与 canonical 映射', () => {
     expect(run.cases[0].metadata?.infraExcluded).toBe(true);
   });
 });
+
+describe('fetch failed 分流（2026-07-03 断网实测缺口）', () => {
+  // Node fetch/undici 网络不可达的通用报错不在 retryStrategy 瞬态词表里，
+  // 断网窗口 115 个 case 被记成 failed 混进能力分母——必须进 infra 桶
+  it('sendMessage 抛 fetch failed → infra_excluded', async () => {
+    const summary = await runWith(agentWith(async () => {
+      throw new Error('fetch failed');
+    }));
+    expect(summary.results[0].status).toBe('infra_excluded');
+    expect(summary.failed).toBe(0);
+  });
+
+  it('errors 数组带 fetch failed 且零产出 → infra_excluded', async () => {
+    const summary = await runWith(agentWith(async () => ({
+      responses: [],
+      toolExecutions: [],
+      turnCount: 0,
+      errors: ['LongCat inference error: fetch failed'],
+    })));
+    expect(summary.results[0].status).toBe('infra_excluded');
+  });
+});

@@ -34,9 +34,16 @@ const MIGRATED: string[] = [
   'tabs/WorkspaceSettings.tsx',
   'tabs/AutomationSettings.tsx',
   'tabs/ChannelsSettings.tsx',
+  'tabs/MemoryTab.tsx',
+  'tabs/MemoryEntriesManager.tsx',
+  'tabs/PrivacySettings.tsx',
+  'tabs/ScreenMemorySettings.tsx',
+  'tabs/OpenchronicleSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;
+// 反逃逸：一-鿿 区间的 unicode 转义写法同样算中文字面量（实测批7出现过 '打开' 绕闸）
+const HAN_ESCAPE_RE = /\\u(?:4[e-f]|[5-8][0-9a-f]|9[0-9a-f])[0-9a-f]{2}/i;
 
 /** 去掉行注释、块注释、JSX 注释后再扫描，避免中文注释误报 */
 function stripComments(source: string): string {
@@ -60,7 +67,7 @@ describe('Settings 内容区 i18n 棘轮（已迁文件无中文字面量）', (
       const offending = code
         .split('\n')
         .map((line, i) => ({ line: line.trim(), no: i + 1 }))
-        .filter(({ line }) => HAN_RE.test(line));
+        .filter(({ line }) => HAN_RE.test(line) || HAN_ESCAPE_RE.test(line));
       expect(
         offending.map(({ no, line }) => `L${no}: ${line.slice(0, 80)}`),
         `${rel} 还有 ${offending.length} 处中文字面量`,

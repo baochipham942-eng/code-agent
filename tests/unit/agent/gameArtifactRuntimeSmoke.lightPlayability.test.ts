@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { runLightPlayabilitySmoke } from '../../../src/host/agent/runtime/gameArtifactRuntimeSmoke';
+import { runLightPlayabilitySmoke } from '../../../src/host/agent/runtime/browser/lightPlayabilitySmoke';
 import { validateGameArtifact } from '../../../src/host/agent/runtime/gameArtifactValidator';
 import { GAME_VALIDATION_TIMEOUTS } from '../../../src/shared/constants/game';
 

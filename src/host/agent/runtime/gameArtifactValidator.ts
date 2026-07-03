@@ -9,10 +9,10 @@ import {
 } from './browser/visualSmoke';
 import {
   DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS,
-  runLightPlayabilitySmoke,
   runRuntimeSmoke,
   type RuntimeSmokeSummary,
 } from './gameArtifactRuntimeSmoke';
+import { runLightPlayabilitySmoke } from './browser/lightPlayabilitySmoke';
 import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { gameSubtypeRegistry } from './gameArtifactSubtypeRegistry';
 

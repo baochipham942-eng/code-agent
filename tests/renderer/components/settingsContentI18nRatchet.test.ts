@@ -28,6 +28,9 @@ const MIGRATED: string[] = [
   'tabs/SkillsInstalledTab.tsx',
   'tabs/SkillsDiscoverTab.tsx',
   'tabs/SkillsSettingsCards.tsx',
+  'tabs/MCPSettings.tsx',
+  'tabs/McpDiscoverTab.tsx',
+  'tabs/PluginsSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

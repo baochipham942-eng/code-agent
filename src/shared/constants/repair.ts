@@ -17,6 +17,34 @@ export const REPAIR_PROMPT_LIMITS = {
 // When either reaches this value the repair turn is force-stopped.
 export const ARTIFACT_REPAIR_MAX_ATTEMPTS = 4;
 
+// ============================================================
+// 修复策略裁决（patience + 修复/重写双信号，maka 借鉴批 WP3）
+// 行业对齐：OpenHands StuckDetector（重复模式 4 次硬停）、
+// Cursor/从业共识（连败 2-3 次=上下文污染该重开）、
+// Agentless/Codex（多候选独立生成+验证器挑选优于深度串行修复）。
+// ============================================================
+
+/** 连续多少轮未刷新"历史最少失败项"→ 停止盲修（切策略或放行） */
+export const ARTIFACT_REPAIR_PATIENCE_ROUNDS = 2;
+
+/** 同一失败码连续存活多少轮 → 判定为"补丁修不动"，直接切重写不等 patience */
+export const ARTIFACT_REPAIR_RESISTANT_STREAK = 2;
+
+/**
+ * 补丁抗性失败码（静态分类）：跨函数行为一致性问题，补丁式修复实测低效
+ * （dogfood：stomp_enemy 类机制失败 3 轮修不动且第 6 轮把别处改坏）。
+ * 命中且存活 ≥RESISTANT_STREAK 轮 → 触发干净上下文重写。
+ */
+export const ARTIFACT_REPAIR_PATCH_RESISTANT_CODES = [
+  'run_smoke_failed',
+  'control_no_state_change',
+  'coverage_without_runtime_evidence',
+  'smoke_missing_coverage',
+  'shortcut_state_mutation',
+  'reset_authored_unit_failed',
+  'level_coverage_incomplete',
+] as const;
+
 // 工具入参 schema 校验失败的 repair 闸上限（Kimi 借鉴 #1）。
 // 与 ARTIFACT_REPAIR（patch/产物修复）是两条独立循环：这条针对"模型反复对
 // 同一工具传错参数"——每次失败把 schema 回灌让模型自我修正，但连续失败超过

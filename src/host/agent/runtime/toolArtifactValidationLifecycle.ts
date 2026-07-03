@@ -27,8 +27,10 @@ import {
   refreshArtifactRepairReadStateAfterRollback,
   restoreArtifactRepairRollbackSnapshot,
   shouldKeepImprovedFailedArtifactPatch,
+  decideArtifactRepairStrategy,
   shouldValidateModifiedArtifact,
   type ArtifactRepairPhase,
+  type ArtifactValidationFailureState,
   type ArtifactRepairRollbackSnapshot,
 } from './toolArtifactRepairPolicy';
 
@@ -177,12 +179,32 @@ export async function handleModifiedArtifactValidation({
       const previousGuard = ctx.artifactRepairGuard?.targetFile === absolutePath
         ? ctx.artifactRepairGuard
         : undefined;
-      const phase: ArtifactRepairPhase = attempts >= 3
+      // 策略裁决（patience + 修复/重写双信号）：先在既有状态上刷新 patience/streak，
+      // 再决定本轮走补丁、切干净重写、还是（goal）降级放行。
+      const failureState = { ...(previousFailure ?? {}), attempts } as ArtifactValidationFailureState;
+      const strategy = decideArtifactRepairStrategy({
+        state: failureState,
+        failureCount: validation.failures.length,
+        issueCodes: repairSpec.issues
+          .map((issue) => issue.code)
+          .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0),
+        goalPending: Boolean(ctx.goalMode?.isPending()),
+      });
+      let phase: ArtifactRepairPhase = attempts >= 3
         ? 'read_then_patch'
         : attempts >= 2
           ? 'targeted_repair'
           : 'baseline_repair';
-      failureMap.set(absolutePath, { attempts, phase });
+      if (strategy.kind === 'switch_rewrite') {
+        phase = 'fresh_rewrite';
+        failureState.rewriteAttempted = true;
+        runFinalizer.emitTaskProgress('tool_running', `补丁修复不收敛（${strategy.reason}），切换为干净重写...`);
+      } else if (strategy.kind === 'degraded_release') {
+        failureState.degradedReleasePending = strategy.reason;
+        runFinalizer.emitTaskProgress('tool_running', 'artifact 修复不再有净进展，准备按最佳版本降级交付...');
+      }
+      failureState.phase = phase;
+      failureMap.set(absolutePath, failureState);
       ctx.artifactRepairGuard = {
         targetFile: absolutePath,
         attempts,
@@ -243,6 +265,17 @@ export async function handleModifiedArtifactValidation({
             : rollbackApplied
             ? '本次修复补丁没有通过 artifact validation，已自动回滚到补丁前的目标文件状态；下一轮不要基于失败补丁继续修改。'
             : '本次修复补丁没有通过 artifact validation，且自动回滚失败；继续前必须先确认目标文件当前状态。',
+          ...(strategy.kind === 'switch_rewrite'
+            ? [[
+                '<artifact-fresh-rewrite>',
+                `补丁式修复已停用（${strategy.reason}）。改为一次性干净重写：`,
+                `1. 用 Read 完整读取 ${absolutePath}（当前磁盘上是历史最佳版本，作为参照）。`,
+                '2. 用一次 Write 输出完整的全新实现——不是在旧代码上打补丁，是带着下面失败清单的完整重写。',
+                '3. 已通过的验收项不得回退：' + validation.checks.slice(0, 8).join('；'),
+                '4. 这是唯一一次重写机会，重写后仍不通过将按最佳版本降级收尾。',
+                '</artifact-fresh-rewrite>',
+              ].join('\n')]
+            : []),
           buildArtifactRepairInstruction(
             absolutePath,
             validation.failures,

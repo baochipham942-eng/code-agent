@@ -856,6 +856,25 @@ export function buildArtifactRepairInstruction(
   const attemptsLine = `attempts: ${attempts}`;
   const platformerStructuralRepair = isPlatformerStructuralGameplayRepair(issueCodes);
 
+  // 干净重写轮：措辞必须与补丁阶梯相反（整文件 Write，禁局部 Edit），
+  // 否则和 attempts>=3 的"不要重写整页"在同一条注入消息里自相矛盾。
+  if (phase === 'fresh_rewrite') {
+    return [
+      '<artifact-validation-failed kind="interactive_artifact">',
+      attemptsLine,
+      phaseLine,
+      `target file: ${absolutePath}`,
+      '补丁式修复已停用（停滞或补丁抗性失败码触发），本轮执行一次性干净重写。',
+      issueSummary,
+      repairSpecBlock,
+      ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
+      '先 Read 一次目标文件——磁盘上保留的是历史最佳版本，作为重写参照。',
+      '然后用一次完整 Write 输出全新实现：一次性满足上面全部失败项，且不得回退已通过的验收项。',
+      '不要在旧代码上做局部 Edit/Append；这是唯一一次重写机会，之后将按最佳版本降级收尾。',
+      '</artifact-validation-failed>',
+    ].join('\n');
+  }
+
   if (attempts >= 3) {
     return [
       '<artifact-validation-failed kind="interactive_artifact">',

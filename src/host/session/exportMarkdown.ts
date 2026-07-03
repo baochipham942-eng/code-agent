@@ -735,7 +735,7 @@ export function suggestExportFilename(session: CachedSession): string {
  * Markdown Export Manager class
  */
 export class MarkdownExporter {
-  private cache: SessionLocalCache;
+  protected cache: SessionLocalCache;
   private defaultOptions: ExportOptions;
 
   constructor(options: {

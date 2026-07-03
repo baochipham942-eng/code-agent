@@ -297,7 +297,9 @@ export class TranscriptExporter extends MarkdownExporter {
     sessionId: string,
     options: TranscriptExportOptions = {}
   ): Promise<TranscriptExportResult> {
-    const cache = getDefaultCache();
+    // 用构造传入的 cache（缺省即 getDefaultCache）——此前直读全局单例，
+    // CLI export 从 db 组装的 cache 实例根本没被消费
+    const cache = this.cache;
     const session = cache.getSession(sessionId);
 
     if (!session) {
@@ -371,6 +373,7 @@ export class TranscriptExporter extends MarkdownExporter {
             role: m.role,
             content: m.content,
             timestamp: m.timestamp,
+            metadata: m.metadata,
           })),
           metadata: {
             startedAt: session.startedAt,
@@ -472,9 +475,11 @@ export class TranscriptExporter extends MarkdownExporter {
    * 匿名化消息中的敏感信息
    */
   private anonymizeMessages(messages: CachedMessage[]): CachedMessage[] {
+    // metadata 含 memory preview/evidence 片段，匿名化面整体剥离
     return messages.map(msg => ({
       ...msg,
       content: this.anonymizeContent(msg.content),
+      metadata: undefined,
     }));
   }
 

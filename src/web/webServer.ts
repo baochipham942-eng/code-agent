@@ -555,6 +555,10 @@ async function initializeServices(): Promise<void> {
     await installBuiltinRoles();
     const { initAgentRegistry } = await import('../host/agent/agentRegistry');
     await initAgentRegistry(undefined);
+    // agents:changed 广播在 web 模式走不到（electronMock getAllWindows=[]），
+    // 用 SSE 桥直接推给全部客户端，否则 renderer registry 停留在启动快照（S4）。
+    const { bridgeAgentRegistryChangesToSSE } = await import('../host/agent/agentRegistrySSEBridge');
+    bridgeAgentRegistryChangesToSSE(broadcastSSE);
     logger.info('Agent registry initialized (user-level agents + builtin roles)');
   } catch (error) {
     logger.warn('Agent registry init failed (non-blocking):', (error as Error).message);

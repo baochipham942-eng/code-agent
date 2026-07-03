@@ -17,7 +17,14 @@ export interface RoutingResolvedInput {
 
 export function buildRoutingResolvedEventData(
   resolution: RoutingResolvedInput | null,
-  opts: { requestedAgentId?: string; timestamp: number },
+  opts: {
+    requestedAgentId?: string;
+    timestamp: number;
+    /** 兜底场景的实际执行者展示名（如外部引擎 kind）；默认 'default' */
+    fallbackAgentName?: string;
+    /** 兜底场景的自定义 reason（如"引擎会话不支持 agent 选择"）；默认 unavailable 文案 */
+    fallbackReason?: string;
+  },
 ): RoutingResolvedEventData {
   const requested = opts.requestedAgentId;
 
@@ -38,10 +45,10 @@ export function buildRoutingResolvedEventData(
   return {
     mode: requested ? 'explicit' : 'auto',
     agentId: 'default',
-    agentName: 'default',
-    reason: requested
+    agentName: opts.fallbackAgentName ?? 'default',
+    reason: opts.fallbackReason ?? (requested
       ? `Requested agent "${requested}" is unavailable; continuing with the default conversation loop.`
-      : 'No specialized agent matched; continue with the default conversation loop.',
+      : 'No specialized agent matched; continue with the default conversation loop.'),
     score: 0,
     fallbackToDefault: true,
     ...(requested ? { requestedAgentId: requested } : {}),

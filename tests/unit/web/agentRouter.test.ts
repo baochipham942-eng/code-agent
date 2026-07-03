@@ -1264,6 +1264,64 @@ describe('createAgentRouter', () => {
     );
   });
 
+  it('外部引擎会话 + 显式 agent 选择 → 发降级 routing_resolved（引擎路径不支持 agent 选择，不再静默）', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-codex-agent-degrade',
+      title: 'Codex engine',
+      type: 'chat',
+      workingDirectory: '/tmp/codex-workspace',
+      engine: {
+        kind: 'codex_cli',
+        cwd: '/tmp/codex-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.codexRun.mockImplementationOnce(async (request) => {
+      request.emitEvent?.({ type: 'agent_complete', data: null });
+      return {
+        runId: 'codex-run-degrade',
+        sessionId: request.sessionId,
+        engine: 'codex_cli',
+        status: 'completed',
+        outputText: 'ok',
+        exitCode: 0,
+      };
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ getSession, updateSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'hi',
+        sessionId: 'session-codex-agent-degrade',
+        context: { preferredAgentId: 'explore' },
+      }),
+    });
+    const raw = await response.text();
+
+    expect(response.ok).toBe(true);
+    const lines = raw.split('\n');
+    const idx = lines.findIndex((line) => line.trim() === 'event: routing_resolved');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const payload = JSON.parse(lines[idx + 1].trim().slice(5).trim()) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      mode: 'explicit',
+      agentId: 'default',
+      agentName: 'codex_cli',
+      requestedAgentId: 'explore',
+      fallbackToDefault: true,
+    });
+  });
+
   it('routes MiMo engine sessions through the MiMo adapter, passing the selected model directly', async () => {
     await closeServer();
 

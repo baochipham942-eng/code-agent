@@ -413,6 +413,29 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
       if (isExternalAgentEngine(selectedEngine.kind)) {
+        // 外部引擎分支在 preferredAgentId 路由真相块之前 return——显式 agent 选择
+        // 在引擎会话不适用，此前完全静默（chip 继续谎报）。发降级事件让 renderer
+        // 清选择 + toast（对称于 native 路径的解析失败降级）。
+        const enginePreferredAgentId = typeof body.context?.preferredAgentId === 'string'
+          ? body.context.preferredAgentId.trim() || undefined
+          : undefined;
+        if (enginePreferredAgentId) {
+          const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(null, {
+              requestedAgentId: enginePreferredAgentId,
+              timestamp: Date.now(),
+              fallbackAgentName: selectedEngine.kind,
+              fallbackReason: `External engine session (${selectedEngine.kind}) does not support agent selection; the engine runs the turn directly.`,
+            }),
+          });
+          logger.info('[AgentRouter] Explicit agent selection ignored on external engine session', {
+            preferredAgentId: enginePreferredAgentId,
+            engine: selectedEngine.kind,
+            sessionId,
+          });
+        }
         externalEngineFailureContext = {
           kind: selectedEngine.kind,
           stage: 'launch_policy',

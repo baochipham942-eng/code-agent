@@ -142,7 +142,7 @@ export async function runAutoTests(
     const summary = await runner.runAll();
 
     // Save reports
-    const savedFiles = await saveReport(summary, runnerConfig.resultsDir, ['markdown', 'json']);
+    const savedFiles = await saveReport(summary, runnerConfig.resultsDir, ['markdown', 'json', 'html']);
     logger.info('Test reports saved', { files: savedFiles });
 
     // Print summary to console

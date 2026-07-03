@@ -13,6 +13,8 @@ import { promises as fs, readFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { computeCalibration, type CalibrationPair, type CalibrationLabel } from '../src/host/testing/calibration/judgeCalibration';
+import { saveCalibrationRecord, isTrustedCalibration, CALIBRATION_TRUST_THRESHOLDS } from '../src/host/testing/calibration/calibrationRegistry';
+import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 
 // ---- zhipu(0ki 代理) 单次 chat 调用 ---------------------------------------
 const ZHIPU_ENDPOINT = 'https://api.0ki.cn/api/paas/v4';
@@ -157,6 +159,22 @@ async function main() {
   const outPath = path.join(path.dirname(reportPath), `calibration-${model}.json`);
   await fs.writeFile(outPath, JSON.stringify({ model, ...rpt }, null, 2), 'utf8');
   console.log(`\n报告已存: ${outPath}`);
+
+  // 制度化落注册表：llm_judge 分数进可信列的唯一凭据（reportGenerator 按此标注）
+  const record = {
+    judgeId: `zhipu/${model}`,
+    kappa: rpt.cohensKappa,
+    agreementRate: rpt.agreementRate,
+    pairs: rpt.total,
+    falsePositiveRate: rpt.falsePositiveRate,
+    computedAt: new Date().toISOString(),
+  };
+  const registryDir = path.join(process.cwd(), CONFIG_DIR_NEW);
+  await saveCalibrationRecord(registryDir, record);
+  const verdict = isTrustedCalibration(record)
+    ? '✅ 达标（llm_judge 分数可进可信列）'
+    : `⚠ 未达标（需 κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 n≥${CALIBRATION_TRUST_THRESHOLDS.minPairs}），llm_judge 分数不作能力证据`;
+  console.log(`注册表已更新: ${path.join(registryDir, 'judge-calibration.json')} → ${verdict}`);
 }
 
 main().catch((e) => { console.error('calibration failed:', e); process.exit(1); });

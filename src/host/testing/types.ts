@@ -5,6 +5,7 @@
 import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
 import type { GoalGateVerdict } from '../../shared/contract/agent';
+import type { JudgeCalibrationRecord } from './calibration/calibrationRegistry';
 
 export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
@@ -459,6 +460,8 @@ export interface TestRunSummary {
   harness?: HarnessVariantConfig;
   /** WP1-4: 本次 run 登记的 prompt 改动预测（deltaReporter 对账用） */
   prediction?: EvalPrediction;
+  /** judge 校准接线：本次 run llm_judge 分数绑定的校准记录；缺失即视为未校准 */
+  judgeCalibration?: JudgeCalibrationRecord;
 }
 
 // ============================================================================

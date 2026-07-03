@@ -801,6 +801,19 @@ export const en: Translations = {
 
   sessionReplay: sessionReplayEn,
 
+  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  workbenchTabs: {
+    openPanel: 'Open panel',
+    filesLabel: 'Files',
+    filesTitle: 'File browser',
+    contextLabel: 'Context',
+    contextTitle: 'Context usage and sources',
+    skillsTitle: 'Session Skills',
+    assetsTitle: 'Workspace Assets',
+    auditTitle: 'Replay / session quality audit',
+    projectCollabTitle: 'Project collaboration',
+  },
+
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）

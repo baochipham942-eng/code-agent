@@ -789,6 +789,19 @@ export const zh = {
 
   sessionReplay: sessionReplayZh,
 
+  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  workbenchTabs: {
+    openPanel: '打开面板',
+    filesLabel: '文件',
+    filesTitle: '文件浏览器',
+    contextLabel: '上下文',
+    contextTitle: '上下文占用与来源拆分',
+    skillsTitle: '会话 Skills',
+    assetsTitle: '工作区 Assets',
+    auditTitle: 'Replay / 会话质量审计',
+    projectCollabTitle: '项目合作',
+  },
+
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）

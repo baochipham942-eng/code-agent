@@ -1070,14 +1070,17 @@ export class AgentOrchestrator {
     sessionId?: string,
     agentOverrideId?: string,
   ): Promise<{ resolution: RoutingResolution | null; requestedAgentId?: string }> {
-    if (agentOverrideId) {
-      const explicit = this.resolveExplicitAgentRouting(agentOverrideId);
+    // trim 后再参与降级判定：未规整的 " explore " 会解析成功（resolver 内部 trim）
+    // 却在 requestedAgentId !== agentId 比较上产生假降级警示
+    const requestedAgentId = agentOverrideId?.trim() || undefined;
+    if (requestedAgentId) {
+      const explicit = this.resolveExplicitAgentRouting(requestedAgentId);
       if (explicit) {
-        return { resolution: explicit, requestedAgentId: agentOverrideId };
+        return { resolution: explicit, requestedAgentId };
       }
       return {
         resolution: await this.resolveAgentRouting(content, sessionId),
-        requestedAgentId: agentOverrideId,
+        requestedAgentId,
       };
     }
     return { resolution: await this.resolveAgentRouting(content, sessionId) };

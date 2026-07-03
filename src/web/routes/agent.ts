@@ -482,8 +482,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // /agent 显式选择透传（P0：此前 web 独立 HTTP 路径完全丢弃 preferredAgentId，
       // /agent 切换在生产 web 路径是 no-op——与 executionIntent 当年同款漏接）。
+      // trim 规整：未规整 id 会在 requestedAgentId !== agentId 比较上产生假降级警示
       const preferredAgentId = typeof body.context?.preferredAgentId === 'string'
-        ? body.context.preferredAgentId
+        ? body.context.preferredAgentId.trim() || undefined
         : undefined;
       if (preferredAgentId) {
         const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');

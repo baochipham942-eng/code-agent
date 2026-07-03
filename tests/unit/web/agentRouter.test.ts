@@ -353,6 +353,35 @@ describe('createAgentRouter', () => {
       });
     });
 
+    it('preferredAgentId 带空白 → 规整后不产生假降级（requestedAgentId === 实际 agentId）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hi',
+          sessionId: 'session-padded-id',
+          context: { preferredAgentId: '  explore  ' },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      const raw = await readSSEUntil(response, 'routing_resolved');
+      const payload = parseSSEEvent(raw, 'routing_resolved');
+      expect(payload).toMatchObject({
+        mode: 'explicit',
+        agentId: 'explore',
+        requestedAgentId: 'explore',
+        fallbackToDefault: false,
+      });
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+
     it('无 preferredAgentId → 不发射 routing_resolved（不给无显式选择的轮次加噪音）', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

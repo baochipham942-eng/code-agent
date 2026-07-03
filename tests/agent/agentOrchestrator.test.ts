@@ -426,5 +426,16 @@ describe('AgentOrchestrator', () => {
       const out = await internals(orchestrator).resolveTurnRouting('hello', undefined, undefined);
       expect(out.requestedAgentId).toBeUndefined();
     });
+
+    it('agentOverrideId 带空白 → 规整后不产生假降级（requestedAgentId === 实际 agent id）', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('看代码', undefined, '  explore  ');
+      expect(out.requestedAgentId).toBe('explore');
+      expect(out.resolution?.agent.id).toBe('explore');
+    });
+
+    it('agentOverrideId 全空白 → 视同无显式选择', async () => {
+      const out = await internals(orchestrator).resolveTurnRouting('hello', undefined, '   ');
+      expect(out.requestedAgentId).toBeUndefined();
+    });
   });
 });

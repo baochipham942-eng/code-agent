@@ -98,6 +98,8 @@ export const enSettingsSystem = {
       telemetry: {
         title: 'Telemetry health',
         description: 'Summary of internal agent telemetry collection. Use session Replay for detailed analysis.',
+        checking: 'Checking collection status',
+        checkingHint: 'Connecting to telemetry:health.',
         running: 'Collection running',
         paused: 'Collection paused',
         sessionPrefix: 'session: ',

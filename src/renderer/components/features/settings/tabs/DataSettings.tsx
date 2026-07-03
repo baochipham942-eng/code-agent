@@ -30,6 +30,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useAuthStore } from '../../../../stores/authStore';
 import ipcService from '../../../../services/ipcService';
 import type { PersistenceHealth } from '@shared/contract';
+import type { TelemetryHealth } from '@shared/contract/telemetry';
 import {
   fetchWebPersistenceHealth,
   getPersistenceWarningText,
@@ -228,7 +229,36 @@ function getStatusClass(tone: DataManagementRow['statusTone']): string {
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
 }
 
+// 探针失败哨兵：不携带用户可见文案（展示层用 dataText.telemetry.notConnected 兜底），
+// 避免在已过 i18n 棘轮的文件里引入中文字面量。
+export const TELEMETRY_HEALTH_UNAVAILABLE = 'TELEMETRY_HEALTH_UNAVAILABLE';
+
+function isTelemetryHealth(value: unknown): value is TelemetryHealth {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.enabled === 'boolean'
+    && typeof record.sessionCount === 'number'
+    && typeof record.storageBytes === 'number'
+    && (typeof record.lastEventAt === 'number' || record.lastEventAt === null);
+}
+
+/** telemetry:health 载荷不完整（web 路径空响应/包裹层吞错）时抛哨兵，禁止把幻影数据当健康态。 */
+export function buildTelemetryHealthSummary(health: unknown): TelemetryHealthSummary {
+  if (!isTelemetryHealth(health)) {
+    throw new Error(TELEMETRY_HEALTH_UNAVAILABLE);
+  }
+  return {
+    loading: false,
+    available: true,
+    enabled: health.enabled,
+    sessionCount: health.sessionCount,
+    storageBytes: health.storageBytes,
+    lastEventAt: health.lastEventAt,
+  };
+}
+
 interface TelemetryHealthSummary {
+  loading: boolean;
   /** IPC 是否成功（true 表示 telemetry:health 返回了数据） */
   available: boolean;
   /** 后端是否在采集（DB 可达即视为在跑） */
@@ -261,6 +291,7 @@ export const DataSettings: React.FC = () => {
   const [stats, setStats] = useState<DataStats | null>(null);
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);
   const [telemetrySummary, setTelemetrySummary] = useState<TelemetryHealthSummary>({
+    loading: true,
     available: false,
     enabled: false,
     sessionCount: null,
@@ -274,6 +305,15 @@ export const DataSettings: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadStats = useCallback(async () => {
+    if (isAdmin) {
+      setTelemetrySummary((current) => ({
+        ...current,
+        loading: true,
+        available: false,
+        error: undefined,
+      }));
+    }
+
     fetchWebPersistenceHealth()
       .then(setPersistenceHealth)
       .catch(() => setPersistenceHealth(null));
@@ -295,6 +335,7 @@ export const DataSettings: React.FC = () => {
 
     if (!isAdmin) {
       setTelemetrySummary({
+        loading: false,
         available: false,
         enabled: false,
         sessionCount: null,
@@ -306,26 +347,25 @@ export const DataSettings: React.FC = () => {
 
     // Telemetry 健康摘要：直接调用 telemetry:health 拿 enabled / sessionCount /
     // storageBytes / lastEventAt 四个字段（main 侧 telemetry.ipc.ts 注册）。
+    // 载荷经 buildTelemetryHealthSummary 严格校验——web 路径空响应不再被
+    // 兜成 available=true 的幻影健康态。
     try {
       const health = await ipcService.invoke(TELEMETRY_CHANNELS.HEALTH);
-      setTelemetrySummary({
-        available: true,
-        enabled: !!health?.enabled,
-        sessionCount: typeof health?.sessionCount === 'number' ? health.sessionCount : 0,
-        storageBytes: typeof health?.storageBytes === 'number' ? health.storageBytes : 0,
-        lastEventAt: typeof health?.lastEventAt === 'number' ? health.lastEventAt : null,
-      });
+      setTelemetrySummary(buildTelemetryHealthSummary(health));
     } catch (error) {
+      const raw = error instanceof Error ? error.message : '';
       setTelemetrySummary({
+        loading: false,
         available: false,
         enabled: false,
         sessionCount: null,
         storageBytes: null,
         lastEventAt: null,
-        error: error instanceof Error ? error.message : dataText.unknownError,
+        // 哨兵/空消息不透传，展示层落 dataText.telemetry.notConnected
+        error: raw && raw !== TELEMETRY_HEALTH_UNAVAILABLE ? raw : undefined,
       });
     }
-  }, [dataText, isAdmin]);
+  }, [isAdmin]);
 
   useEffect(() => {
     loadStats();
@@ -546,7 +586,15 @@ export const DataSettings: React.FC = () => {
             description={dataText.telemetry.description}
           >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3">
-          {telemetrySummary.available ? (
+          {telemetrySummary.loading ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
+                <Activity className="h-3.5 w-3.5" />
+                {dataText.telemetry.checking}
+              </span>
+              <span className="text-zinc-500">{dataText.telemetry.checkingHint}</span>
+            </div>
+          ) : telemetrySummary.available ? (
             <div className="flex flex-wrap items-center gap-3 text-xs">
               {telemetrySummary.enabled ? (
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">

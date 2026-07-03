@@ -4,10 +4,12 @@ import type {
   SnapshotStats,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
 import {
+  buildTelemetryHealthSummary,
   buildDataManagementRows,
   buildDataManagementSummary,
   formatDataSize,
   getRetentionLabel,
+  TELEMETRY_HEALTH_UNAVAILABLE,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
 import { en, zh } from '../../../src/renderer/i18n';
 
@@ -104,5 +106,29 @@ describe('DataSettings telemetry health copy', () => {
     expect(copy.title).toBe('Telemetry health');
     expect(copy.description).toBe('Summary of internal agent telemetry collection. Use session Replay for detailed analysis.');
     expect(copy.description.toLowerCase()).not.toContain('internal eval');
+  });
+});
+
+describe('DataSettings telemetry health summary', () => {
+  it('normalizes a telemetry:health payload', () => {
+    expect(buildTelemetryHealthSummary({
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+    })).toEqual({
+      loading: false,
+      available: true,
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+    });
+  });
+
+  it('treats empty web IPC responses as disconnected (sentinel error, UI falls back to notConnected copy)', () => {
+    expect(() => buildTelemetryHealthSummary(undefined)).toThrow(TELEMETRY_HEALTH_UNAVAILABLE);
+    expect(zh.settings.data.telemetry.notConnected).toBeTruthy();
+    expect(en.settings.data.telemetry.notConnected).toBeTruthy();
   });
 });

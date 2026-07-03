@@ -27,7 +27,7 @@ const PREFERRED_SCRIPT_ORDER = ['typecheck', 'test', 'lint', 'build', 'check'];
 /** 常驻/交互类脚本：跑不完，进验证闸只会超时 */
 const LONG_RUNNING_SCRIPT_PATTERN = /^(dev|start|serve|preview|storybook)([.:_-]|$)|^watch([.:_-]|$)/;
 
-export const MAX_VERIFY_CANDIDATES = 6;
+const MAX_VERIFY_CANDIDATES = 6;
 
 /**
  * 从 package.json 原文提取验证命令候选。

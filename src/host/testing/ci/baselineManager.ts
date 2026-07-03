@@ -63,7 +63,9 @@ export class BaselineManager {
 
     // 能力分母 = total − skipped − infra_excluded，与 markdown/HTML 报告口径一致（WP1-2 完整形态）。
     // infra（429/超时/5xx/网络）是环境噪声，skipped 是未执行——都不是能力信号。
-    const currentInfraExcluded = current.results.filter((r) => r.status === 'infra_excluded').length;
+    // 与 promote/报告同一 coalesce：显式 infraExcluded 优先（total 允许与 results 数组不一致）
+    const currentInfraExcluded = current.infraExcluded
+      ?? current.results.filter((r) => r.status === 'infra_excluded').length;
     const currentCapabilityTotal = current.total - current.skipped - currentInfraExcluded;
     const currentPassRate = currentCapabilityTotal > 0 ? current.passed / currentCapabilityTotal : 0;
     const passRateDelta = currentPassRate - baseline.globalMetrics.passRate;
@@ -74,7 +76,10 @@ export class BaselineManager {
     const newPasses: BaselineDelta['newPasses'] = [];
 
     for (const result of current.results) {
-      const baselineCase = baseline.caseResults[result.testId];
+      // v1 基线的 caseResults 可能残留 skipped 条目——视同不存在，
+      // 与 v2（promote 已不落 skipped）行为一致，避免按基线版本分叉。
+      const rawBaselineCase = baseline.caseResults[result.testId];
+      const baselineCase = rawBaselineCase?.status === 'skipped' ? undefined : rawBaselineCase;
       const currentStatus = result.status;
 
       if (baselineCase) {

@@ -114,3 +114,43 @@ describe('baseline 分母排除 skipped（A 方案）', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe('Gemini 审计 R1 修复', () => {
+  it('HIGH: compare 尊重 summary.infraExcluded 显式值（与 promote/报告同一 coalesce）', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'baseline-denom-'));
+    const manager = new BaselineManager(root);
+    await manager.promote(makeSummary([makeResult({ testId: 'a' })]), 'sha');
+
+    // total=2 含 1 个 infra，但 results 数组只带 1 条 passed（调用方允许不一致，见 ci.mode.test）
+    const summary = makeSummary([makeResult({ testId: 'a' })]);
+    summary.total = 2;
+    summary.infraExcluded = 1;
+    const delta = await manager.compare(summary);
+    // 分母 = 2 - 0(skipped) - 1(infra显式) = 1 → passRate 1.0 → delta 0
+    expect(delta.passRateDelta).toBeCloseTo(0);
+  });
+
+  it('MED: v1 基线里的 skipped 条目视同不存在（不因基线版本产生 newPasses 分叉）', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'baseline-denom-'));
+    const manager = new BaselineManager(root);
+    await manager.save({
+      version: 1,
+      updatedAt: 1,
+      updatedBy: 'legacy',
+      globalMetrics: { passRate: 1, averageScore: 1, totalCases: 2 },
+      caseResults: {
+        a: { status: 'passed', score: 1 },
+        b: { status: 'skipped', score: 0 },
+      },
+      thresholds: { minPassRate: 0.7, maxScoreDrop: 0.15, maxNewFailures: 2 },
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const delta = await manager.compare(makeSummary([
+      makeResult({ testId: 'a' }),
+      makeResult({ testId: 'b' }),
+    ]));
+    // v2 基线不含 skipped 条目、b 不触发 newPass；v1 必须同行为
+    expect(delta.newPasses).toEqual([]);
+  });
+});

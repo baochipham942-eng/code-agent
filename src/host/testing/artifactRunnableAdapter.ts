@@ -20,6 +20,7 @@ import {
 } from '../agent/runtime/browser/artifactPreviewHealth';
 import { runLightPlayabilitySmoke } from '../agent/runtime/browser/lightPlayabilitySmoke';
 import { runRuntimeSmoke, type RuntimeSmokeSummary } from '../agent/runtime/gameArtifactRuntimeSmoke';
+import { requireOptionalNodeModule } from '../runtime/nodeModuleLoader';
 import { resolveBrowserProvider } from '../services/infra/browserProvider';
 import { GAME_VALIDATION_TIMEOUTS } from '../../shared/constants/game';
 import { ARTIFACT_PREVIEW_HEALTH } from '../../shared/constants/previewHealth';
@@ -157,10 +158,18 @@ export async function checkPptxOpens(filePath: string): Promise<ArtifactRunnable
   const checks: string[] = [];
   try {
     const data = await fs.readFile(filePath);
-    // jszip 是 CJS，走 require（与 pptEdit/templateEngine 同款）。
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const JSZip = require('jszip') as { loadAsync(data: Buffer): Promise<JsZipInstance> };
-    const zip = await JSZip.loadAsync(data);
+    // jszip 是 CJS；eval-runner 走 tsx/ESM 时裸 require 不存在（dogfood 实锤
+    // "require is not defined" 让 corrupt 标本假绿），统一走跨运行时加载器。
+    const loaded = requireOptionalNodeModule<{ loadAsync(data: Buffer): Promise<JsZipInstance> }>('jszip');
+    if (!loaded.ok || !loaded.module) {
+      return {
+        verdict: 'skipped',
+        failures: [],
+        checks: [`pptx check skipped: ${loaded.error ?? 'jszip unavailable in this runtime'}`],
+        environment,
+      };
+    }
+    const zip = await loaded.module.loadAsync(data);
     checks.push('pptx zip container parsed');
 
     if (!zip.files['[Content_Types].xml']) {

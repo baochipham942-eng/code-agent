@@ -8,7 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import Module from 'module';
-import { addColumnIfMissing, createCliTables } from '../../../src/cli/cliDatabaseSchema';
+import { addColumnIfMissing, createCliTables, migrateCliSessionsTable } from '../../../src/cli/cliDatabaseSchema';
 
 // vitest ESM 下 better-sqlite3 default import 不是构造器，走 createRequire（对齐 src/cli/database.ts）
 const testRequire = Module.createRequire(import.meta.url);
@@ -37,6 +37,22 @@ describe('CLI schema 列迁移错误处理', () => {
 
   it('addColumnIfMissing 对非 duplicate 失败（如表不存在）上抛不吞', () => {
     expect(() => addColumnIfMissing(db, 'ALTER TABLE missing_table ADD COLUMN a TEXT')).toThrow(/no such table/i);
+  });
+
+  // Codex audit R2-MED：对称应用——sessions/compaction 迁移块同样只吞 duplicate column
+  it('migrateCliSessionsTable 对非 duplicate 失败（sessions 表不存在）上抛不吞', () => {
+    expect(() => migrateCliSessionsTable(db)).toThrow(/no such table/i);
+  });
+
+  it('migrateCliSessionsTable 重复执行幂等', () => {
+    createCliTables(db);
+    migrateCliSessionsTable(db);
+    expect(() => migrateCliSessionsTable(db)).not.toThrow();
+    const cols = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    const names = cols.map((c) => c.name);
+    for (const required of ['status', 'workspace', 'last_token_usage', 'master_task_id']) {
+      expect(names).toContain(required);
+    }
   });
 
   it('createCliTables 重复执行幂等（老库升级不崩）', () => {

@@ -20,11 +20,7 @@ export function migrateCliSessionsTable(db: CliDb): void {
   ];
 
   for (const migration of migrations) {
-    try {
-      db.exec(migration.sql);
-    } catch {
-      // 列已存在，忽略
-    }
+    addColumnIfMissing(db, migration.sql);
   }
 
   // 2026-04-15: 彻底移除废弃的 sessions.generation_id 列（见 databaseService.ts 同名迁移）
@@ -211,11 +207,7 @@ export function createCliTables(db: CliDb): void {
     'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_before TEXT',
     'ALTER TABLE compaction_snapshots ADD COLUMN shape_hash_after TEXT',
   ]) {
-    try {
-      db.exec(sql);
-    } catch {
-      // 列已存在，忽略
-    }
+    addColumnIfMissing(db, sql);
   }
 
   // Episodic FTS5 index — 与 Electron DatabaseService 的 schema 保持一致，

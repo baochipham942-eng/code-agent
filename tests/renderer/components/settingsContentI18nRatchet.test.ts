@@ -31,6 +31,9 @@ const MIGRATED: string[] = [
   'tabs/MCPSettings.tsx',
   'tabs/McpDiscoverTab.tsx',
   'tabs/PluginsSettings.tsx',
+  'tabs/WorkspaceSettings.tsx',
+  'tabs/AutomationSettings.tsx',
+  'tabs/ChannelsSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

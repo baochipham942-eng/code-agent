@@ -35,6 +35,8 @@ import type {
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -49,40 +51,19 @@ export interface ChannelTypeInfo {
 }
 
 export type ChannelStatusFilter = 'all' | ChannelAccount['status'];
+type ChannelsSettingsText = typeof zh.settings.channels;
+type ChannelStatusFilterOption = { value: ChannelStatusFilter; label: string };
+type ChannelPrivacyModeOption = { value: ChannelPrivacyMode; label: string; description: string };
 
-const CHANNEL_STATUS_FILTERS: Array<{ value: ChannelStatusFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'connected', label: '已连接' },
-  { value: 'connecting', label: '连接中' },
-  { value: 'error', label: '异常' },
-  { value: 'disconnected', label: '未连接' },
-];
+export const CHANNEL_PRIVACY_MODE_OPTIONS =
+  zh.settings.channels.privacyModes as ChannelPrivacyModeOption[];
 
-export const CHANNEL_PRIVACY_MODE_OPTIONS: Array<{
-  value: ChannelPrivacyMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'local-redact',
-    label: '默认脱敏',
-    description: '入站消息、附件摘要和 raw payload 在本地落地或分发前脱敏。',
-  },
-  {
-    value: 'allow-raw',
-    label: '保留 raw 调试',
-    description: '业务文本仍走脱敏，但保留原始 raw payload，适合受控连接器排障。',
-  },
-  {
-    value: 'off',
-    label: '关闭通道脱敏',
-    description: '仅用于受控本地调试；消息、附件和 raw payload 可能保留原文。',
-  },
-];
-
-export function getChannelPrivacyModeCopy(mode: ChannelPrivacyMode): { label: string; description: string } {
-  return CHANNEL_PRIVACY_MODE_OPTIONS.find((option) => option.value === mode)
-    ?? CHANNEL_PRIVACY_MODE_OPTIONS[0];
+export function getChannelPrivacyModeCopy(
+  mode: ChannelPrivacyMode,
+  options: ChannelPrivacyModeOption[] = CHANNEL_PRIVACY_MODE_OPTIONS,
+): { label: string; description: string } {
+  return options.find((option) => option.value === mode)
+    ?? options[0]!;
 }
 
 export function getChannelTypeLabel(
@@ -92,10 +73,13 @@ export function getChannelTypeLabel(
   return channelTypes.find((channelType) => channelType.type === type)?.name || type;
 }
 
-export function getChannelConfigSummary(account: ChannelAccount): string {
+export function getChannelConfigSummary(
+  account: ChannelAccount,
+  labels: ChannelsSettingsText['configSummary'] = zh.settings.channels.configSummary,
+): string {
   if (account.type === 'http-api') {
     const config = account.config as HttpApiChannelConfig;
-    return `端口 ${config.port}`;
+    return `${labels.portPrefix}${config.port}`;
   }
 
   if (account.type === 'feishu') {
@@ -111,11 +95,11 @@ export function getChannelConfigSummary(account: ChannelAccount): string {
   if (account.type === 'telegram') {
     const config = account.config as TelegramChannelConfig;
     return config.allowedUserIds?.length
-      ? `${config.allowedUserIds.length} 个白名单用户`
-      : 'Long Polling';
+      ? `${config.allowedUserIds.length}${labels.allowlistUserSuffix}`
+      : labels.longPolling;
   }
 
-  return '已配置';
+  return labels.configured;
 }
 
 export function getChannelStatusSummary(accounts: ChannelAccount[]) {
@@ -215,6 +199,9 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   onSave,
   onClose,
 }) => {
+  const { t } = useI18n();
+  const channelText = t.settings.channels;
+  const privacyModeOptions = channelText.privacyModes as ChannelPrivacyModeOption[];
   const [name, setName] = useState(account?.name || '');
   const [type, setType] = useState<ChannelType>(account?.type || 'http-api');
   const [showSecrets, setShowSecrets] = useState(false);
@@ -304,19 +291,19 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={account ? '编辑通道' : '添加通道'}
+      title={account ? channelText.modal.editTitle : channelText.modal.addTitle}
       size="md"
     >
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 名称 */}
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">名称</label>
+            <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.nameLabel}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
-              placeholder="例如: 测试 API"
+              placeholder={channelText.modal.namePlaceholder}
               required
             />
           </div>
@@ -324,7 +311,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* 类型 */}
           {!account && (
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">通道类型</label>
+              <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.typeLabel}</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as ChannelType)}
@@ -340,20 +327,20 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           )}
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">隐私策略</label>
+            <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.privacyModeLabel}</label>
             <select
               value={privacyMode}
               onChange={(e) => setPrivacyMode(e.target.value as ChannelPrivacyMode)}
               className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
             >
-              {CHANNEL_PRIVACY_MODE_OPTIONS.map((option) => (
+              {privacyModeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
             <p className="mt-1 text-xs text-zinc-500">
-              {getChannelPrivacyModeCopy(privacyMode).description}
+              {getChannelPrivacyModeCopy(privacyMode, privacyModeOptions).description}
             </p>
           </div>
 
@@ -361,7 +348,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {type === 'http-api' && (
             <>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">端口</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.portLabel}</label>
                 <input
                   type="number"
                   value={apiPort}
@@ -388,7 +375,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
-                  placeholder="留空自动生成"
+                  placeholder={channelText.modal.apiKeyPlaceholder}
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -400,7 +387,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   className="rounded border-zinc-600"
                 />
                 <label htmlFor="enableCors" className="text-sm text-zinc-400">
-                  启用 CORS
+                  {channelText.modal.enableCors}
                 </label>
               </div>
             </>
@@ -440,7 +427,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Encrypt Key (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.encryptKeyLabel}</label>
                 <input
                   type={showSecrets ? 'text' : 'password'}
                   value={encryptKey}
@@ -449,7 +436,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Verification Token (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.verificationTokenLabel}</label>
                 <input
                   type={showSecrets ? 'text' : 'password'}
                   value={verificationToken}
@@ -458,7 +445,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Webhook 端口</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.webhookPortLabel}</label>
                 <input
                   type="number"
                   value={webhookPort}
@@ -471,12 +458,16 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
               </div>
               <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
                 <p className="text-xs text-zinc-400">
-                  <strong className="text-zinc-400">配置提示：</strong>
+                  <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
                 </p>
                 <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
-                  <li>连接后本地 Webhook 地址：<code className="text-indigo-400">http://localhost:{webhookPort}/webhook/feishu</code></li>
-                  <li>使用 ngrok 暴露公网：<code className="text-indigo-400">ngrok http {webhookPort}</code></li>
-                  <li>将 ngrok URL 填入{type === 'lark' ? ' Lark Developer Console' : '飞书开放平台'}「事件与回调」请求地址配置</li>
+                  <li>{channelText.modal.larkLocalWebhookPrefix}<code className="text-indigo-400">http://localhost:{webhookPort}/webhook/feishu</code></li>
+                  <li>{channelText.modal.ngrokPrefix}<code className="text-indigo-400">ngrok http {webhookPort}</code></li>
+                  <li>
+                    {channelText.modal.callbackUrlPrefix}
+                    {type === 'lark' ? channelText.modal.larkCallbackPlatform : channelText.modal.feishuCallbackPlatform}
+                    {channelText.modal.callbackUrlSuffix}
+                  </li>
                 </ol>
               </div>
             </>
@@ -501,49 +492,49 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   value={botToken}
                   onChange={(e) => setBotToken(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
-                  placeholder="从 @BotFather 获取"
+                  placeholder={channelText.modal.botTokenPlaceholder}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">代理 URL (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.proxyUrlLabel}</label>
                 <input
                   type="text"
                   value={tgProxyUrl}
                   onChange={(e) => setTgProxyUrl(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
-                  placeholder="http://127.0.0.1:7897 (默认读 HTTPS_PROXY)"
+                  placeholder={channelText.modal.proxyUrlPlaceholder}
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">备用代理 URL (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.fallbackProxyUrlLabel}</label>
                 <input
                   type="text"
                   value={tgFallbackProxy}
                   onChange={(e) => setTgFallbackProxy(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
-                  placeholder="主代理不可用时自动切换"
+                  placeholder={channelText.modal.fallbackProxyUrlPlaceholder}
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">白名单用户 ID (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.allowedUserIdsLabel}</label>
                 <input
                   type="text"
                   value={tgAllowedUserIds}
                   onChange={(e) => setTgAllowedUserIds(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
-                  placeholder="逗号分隔，留空允许所有用户"
+                  placeholder={channelText.modal.allowedUserIdsPlaceholder}
                 />
               </div>
               <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
                 <p className="text-xs text-zinc-400">
-                  <strong className="text-zinc-400">配置提示：</strong>
+                  <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
                 </p>
                 <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
-                  <li>在 Telegram 中搜索 <code className="text-indigo-400">@BotFather</code> 创建 Bot</li>
-                  <li>发送 <code className="text-indigo-400">/newbot</code> 并按提示操作获取 Token</li>
-                  <li>国内环境需配置代理才能连接 Telegram API</li>
-                  <li>使用 Long Polling 模式，无需公网 IP</li>
+                  <li>{channelText.modal.telegramTipSearchPrefix}<code className="text-indigo-400">@BotFather</code>{channelText.modal.telegramTipSearchSuffix}</li>
+                  <li>{channelText.modal.telegramTipNewBotPrefix}<code className="text-indigo-400">/newbot</code>{channelText.modal.telegramTipNewBotSuffix}</li>
+                  <li>{channelText.modal.telegramTipProxy}</li>
+                  <li>{channelText.modal.telegramTipLongPolling}</li>
                 </ol>
               </div>
             </>
@@ -552,10 +543,10 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* 按钮 */}
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="ghost" onClick={onClose}>
-              取消
+              {channelText.actions.cancel}
             </Button>
             <Button type="submit" variant="primary">
-              {account ? '保存' : '添加'}
+              {account ? channelText.actions.save : channelText.actions.add}
             </Button>
           </div>
         </form>
@@ -568,6 +559,9 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
 // ============================================================================
 
 export const ChannelsSettings: React.FC = () => {
+  const { t } = useI18n();
+  const channelText = t.settings.channels;
+  const statusFilters = channelText.statusFilters as ChannelStatusFilterOption[];
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -577,6 +571,8 @@ export const ChannelsSettings: React.FC = () => {
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ChannelStatusFilter>('all');
   const [query, setQuery] = useState('');
+  const getStatusFilterLabel = (value: ChannelStatusFilter): string =>
+    statusFilters.find((filter) => filter.value === value)?.label ?? value;
 
   // 自动清除成功消息
   useEffect(() => {
@@ -649,27 +645,27 @@ export const ChannelsSettings: React.FC = () => {
           name: data.name,
           config: data.config,
         });
-        setMessage({ type: 'success', text: '通道已更新' });
+        setMessage({ type: 'success', text: channelText.toast.updated });
       } else {
         await ipcService.invoke(IPC_CHANNELS.CHANNEL_ADD_ACCOUNT, data);
-        setMessage({ type: 'success', text: '通道已添加' });
+        setMessage({ type: 'success', text: channelText.toast.added });
       }
       setShowModal(false);
       await loadData();
     } catch {
-      setMessage({ type: 'error', text: '操作失败' });
+      setMessage({ type: 'error', text: channelText.toast.operationFailed });
     }
   };
 
   const handleDelete = async (accountId: string) => {
-    if (!confirm('确定要删除这个通道吗？')) return;
+    if (!confirm(channelText.toast.deleteConfirm)) return;
 
     try {
       await ipcService.invoke(IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT, accountId);
-      setMessage({ type: 'success', text: '通道已删除' });
+      setMessage({ type: 'success', text: channelText.toast.deleted });
       await loadData();
     } catch {
-      setMessage({ type: 'error', text: '删除失败' });
+      setMessage({ type: 'error', text: channelText.toast.deleteFailed });
     }
   };
 
@@ -682,7 +678,7 @@ export const ChannelsSettings: React.FC = () => {
         await ipcService.invoke(IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT, account.id);
       }
     } catch {
-      setMessage({ type: 'error', text: '操作失败' });
+      setMessage({ type: 'error', text: channelText.toast.operationFailed });
       setConnectingId(null);
     }
   };
@@ -703,13 +699,13 @@ export const ChannelsSettings: React.FC = () => {
   const getStatusText = (status: ChannelAccount['status']): string => {
     switch (status) {
       case 'connected':
-        return '已连接';
+        return getStatusFilterLabel('connected');
       case 'connecting':
-        return '连接中';
+        return getStatusFilterLabel('connecting');
       case 'error':
-        return '错误';
+        return channelText.status.error;
       default:
-        return '未连接';
+        return getStatusFilterLabel('disconnected');
     }
   };
 
@@ -746,22 +742,22 @@ export const ChannelsSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="通道"
-      description="配置外部入口，让 HTTP API、飞书、Lark 或 Telegram 可以和 Agent 交互。连接说明默认收起。"
+      title={t.settings.tabs.channels}
+      description={channelText.description}
     >
       <WebModeBanner />
 
       <SettingsSection
-        title="低打扰策略"
-        description="通道会话默认不触发桌面 reply notification；处理过程留在通道 typing / streaming / 任务面板里，系统通知只用于需要介入或任务完成。"
+        title={channelText.lowDistraction.title}
+        description={channelText.lowDistraction.description}
       >
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3 text-xs leading-relaxed text-zinc-400">
-          飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。错误回复只发短摘要，完整 trace 留在本机诊断；后续如需每个通道的完成提醒，也必须显式打开并继续走脱敏。
+          {channelText.lowDistraction.body}
         </div>
       </SettingsSection>
 
       <SettingsSection
-        title="通道账号"
+        title={channelText.accounts.title}
         actions={(
           <Button
             size="sm"
@@ -770,17 +766,17 @@ export const ChannelsSettings: React.FC = () => {
             variant="primary"
             leftIcon={<Plus className="w-3 h-3" />}
           >
-            添加通道
+            {channelText.modal.addTitle}
           </Button>
         )}
       >
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <ChannelSummaryTile label="全部账号" value={statusSummary.total} />
-            <ChannelSummaryTile label="已连接" value={statusSummary.connected} tone="success" />
-            <ChannelSummaryTile label="连接中" value={statusSummary.connecting} tone="warning" />
-            <ChannelSummaryTile label="异常" value={statusSummary.error} tone="danger" />
-            <ChannelSummaryTile label="未连接" value={statusSummary.disconnected} />
+            <ChannelSummaryTile label={channelText.summary.total} value={statusSummary.total} />
+            <ChannelSummaryTile label={getStatusFilterLabel('connected')} value={statusSummary.connected} tone="success" />
+            <ChannelSummaryTile label={getStatusFilterLabel('connecting')} value={statusSummary.connecting} tone="warning" />
+            <ChannelSummaryTile label={getStatusFilterLabel('error')} value={statusSummary.error} tone="danger" />
+            <ChannelSummaryTile label={getStatusFilterLabel('disconnected')} value={statusSummary.disconnected} />
           </div>
 
           <div className="flex flex-col gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
@@ -790,12 +786,12 @@ export const ChannelsSettings: React.FC = () => {
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索账号、类型或状态"
+                  placeholder={channelText.searchPlaceholder}
                   className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-950/70 pl-8 pr-3 text-sm text-zinc-200 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-600"
                 />
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {CHANNEL_STATUS_FILTERS.map((filter) => (
+                {statusFilters.map((filter) => (
                   <ChannelFilterButton
                     key={filter.value}
                     active={statusFilter === filter.value}
@@ -808,7 +804,7 @@ export const ChannelsSettings: React.FC = () => {
             </div>
 
             <div className="text-xs text-zinc-500">
-              当前显示 {filteredAccounts.length} / {accounts.length} 个账号
+              {channelText.currentShowingPrefix}{filteredAccounts.length}{channelText.currentShowingMiddle}{accounts.length}{channelText.currentShowingSuffix}
             </div>
           </div>
 
@@ -817,9 +813,9 @@ export const ChannelsSettings: React.FC = () => {
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-400">
                 <MessageSquare className="h-5 w-5" />
               </div>
-              <div className="mt-3 text-sm font-medium text-zinc-200">还没有通道账号</div>
+              <div className="mt-3 text-sm font-medium text-zinc-200">{channelText.empty.title}</div>
               <div className="mt-1 text-xs text-zinc-500">
-                添加 HTTP API、飞书、Lark 或 Telegram 账号后，可以在这里统一查看连接状态和执行启停操作。
+                {channelText.empty.description}
               </div>
               <Button
                 className="mt-4"
@@ -829,22 +825,22 @@ export const ChannelsSettings: React.FC = () => {
                 variant="primary"
                 leftIcon={<Plus className="w-3 h-3" />}
               >
-                添加通道
+                {channelText.modal.addTitle}
               </Button>
             </div>
           ) : filteredAccounts.length === 0 ? (
             <div className="rounded-lg bg-zinc-800 p-6 text-center text-sm text-zinc-400">
-              没有匹配的通道账号
+              {channelText.empty.noMatches}
             </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-zinc-800">
               <div className="min-w-[760px]">
                 <div className="grid grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center border-b border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-500">
-                  <div>账号</div>
-                  <div>类型</div>
-                  <div>状态</div>
-                  <div>配置</div>
-                  <div className="text-right">操作</div>
+                  <div>{channelText.table.account}</div>
+                  <div>{channelText.table.type}</div>
+                  <div>{channelText.table.status}</div>
+                  <div>{channelText.table.config}</div>
+                  <div className="text-right">{channelText.table.actions}</div>
                 </div>
 
                 {filteredAccounts.map((account) => (
@@ -878,7 +874,7 @@ export const ChannelsSettings: React.FC = () => {
                     </div>
 
                     <div className="min-w-0 text-xs text-zinc-400">
-                      <div className="truncate">{getChannelConfigSummary(account)}</div>
+                      <div className="truncate">{getChannelConfigSummary(account, channelText.configSummary)}</div>
                       {account.type === 'http-api' && (
                         <div className="mt-1 flex items-center gap-2">
                           <span className="truncate font-mono text-zinc-500">
@@ -890,13 +886,13 @@ export const ChannelsSettings: React.FC = () => {
                               const key = (account.config as HttpApiChannelConfig).apiKey;
                               if (key) {
                                 navigator.clipboard.writeText(key);
-                                setMessage({ type: 'success', text: 'API Key 已复制到剪贴板' });
+                                setMessage({ type: 'success', text: channelText.toast.apiKeyCopied });
                               }
                             }}
                             className="shrink-0 text-indigo-400 transition-colors hover:text-indigo-300"
-                            title="复制 API Key"
+                            title={channelText.actions.copyApiKey}
                           >
-                            复制
+                            {channelText.actions.copy}
                           </button>
                         </div>
                       )}
@@ -917,7 +913,7 @@ export const ChannelsSettings: React.FC = () => {
                           )
                         }
                       >
-                        {account.status === 'connected' ? '断开' : '连接'}
+                        {account.status === 'connected' ? channelText.actions.disconnect : channelText.actions.connect}
                       </Button>
                       <Button
                         size="sm"
@@ -926,7 +922,7 @@ export const ChannelsSettings: React.FC = () => {
                         onClick={() => handleEdit(account)}
                         leftIcon={<Edit className="w-3 h-3" />}
                       >
-                        编辑
+                        {channelText.actions.edit}
                       </Button>
                       <Button
                         size="sm"
@@ -935,7 +931,7 @@ export const ChannelsSettings: React.FC = () => {
                         onClick={() => handleDelete(account.id)}
                         leftIcon={<Trash2 className="w-3 h-3 text-red-400" />}
                       >
-                        删除
+                        {channelText.actions.delete}
                       </Button>
                     </div>
                   </div>
@@ -963,25 +959,25 @@ export const ChannelsSettings: React.FC = () => {
       )}
 
       <SettingsDetails
-        title="连接说明"
-        description="各通道的认证、端口和代理要求。"
+        title={channelText.details.title}
+        description={channelText.details.description}
       >
         <div className="text-xs text-zinc-400 leading-relaxed space-y-2">
           <p>
-            <strong>HTTP API:</strong> 创建本地 REST API 端点，支持同步和流式响应。
-            使用 X-API-Key 头进行认证。
+            <strong>{channelText.details.httpApiTitle}</strong> {channelText.details.httpApiBody}
+            {channelText.details.httpApiAuth}
           </p>
           <p>
-            <strong>飞书:</strong> 连接飞书机器人，支持私聊和群聊消息。
-            需要在飞书开放平台创建应用并获取凭证。
+            <strong>{channelText.details.feishuTitle}</strong> {channelText.details.feishuBody}
+            {channelText.details.feishuAuth}
           </p>
           <p>
-            <strong>Lark:</strong> 连接 Lark International Bot，使用独立账号和来源标识。
-            需要在 Lark Developer Console 创建应用并配置事件回调。
+            <strong>{channelText.details.larkTitle}</strong> {channelText.details.larkBody}
+            {channelText.details.larkAuth}
           </p>
           <p>
-            <strong>Telegram:</strong> 连接 Telegram Bot，支持私聊和群组。
-            通过 @BotFather 创建 Bot 获取 Token，使用 Long Polling 无需公网。
+            <strong>{channelText.details.telegramTitle}</strong> {channelText.details.telegramBody}
+            {channelText.details.telegramAuth}
           </p>
         </div>
       </SettingsDetails>

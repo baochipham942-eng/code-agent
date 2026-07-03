@@ -254,6 +254,61 @@ describe('AgentAppService lifecycle routing', () => {
     );
   });
 
+  it('backfills empty session working directory with the runtime effective value on first run', async () => {
+    sessionManager.getSession.mockResolvedValue({ id: 'session-1' });
+    const service = createService(taskManager);
+
+    await service.sendMessage({
+      sessionId: 'session-1',
+      content: 'hello',
+    } as any);
+
+    expect(sessionManager.updateSession).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ workingDirectory: '/current/project' }),
+    );
+  });
+
+  it('does not overwrite a persisted working directory with the runtime value', async () => {
+    const service = createService(taskManager);
+
+    await service.sendMessage({
+      sessionId: 'session-1',
+      content: 'hello',
+    } as any);
+
+    expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/old/project');
+    expect(sessionManager.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('skips working directory backfill when the runtime has no value', async () => {
+    sessionManager.getSession.mockResolvedValue({ id: 'session-1' });
+    orchestrator.getWorkingDirectory.mockReturnValue('');
+    const service = createService(taskManager);
+
+    await service.sendMessage({
+      sessionId: 'session-1',
+      content: 'hello',
+    } as any);
+
+    expect(sessionManager.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('backfills empty session working directory on interrupt-and-continue', async () => {
+    sessionManager.getSession.mockResolvedValue({ id: 'session-1' });
+    const service = createService(taskManager);
+
+    await service.interruptAndContinue({
+      sessionId: 'session-1',
+      content: 'steer',
+    } as any);
+
+    expect(sessionManager.updateSession).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ workingDirectory: '/current/project' }),
+    );
+  });
+
   it('rejects session update attempts that write Agent Engine metadata through the generic session route', async () => {
     const service = createService(taskManager);
 

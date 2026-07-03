@@ -344,7 +344,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (effectiveWorkingDirectory) {
       orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
-    await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+    // 无显式值时用本轮实际生效目录（含 orchestrator fallback）补写，
+    // 否则未持久化的会话每次重开都可能解析到不同目录（562/1732 会话曾漂移）；
+    // sync 内部的相等守卫保证已持久化的值不会被覆盖
+    await this.syncSessionWorkingDirectory(
+      resolvedSessionId,
+      envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+    );
 
     const options = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
@@ -449,7 +455,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (effectiveWorkingDirectory) {
       orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
-    await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+    await this.syncSessionWorkingDirectory(
+      resolvedSessionId,
+      envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+    );
     const options = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,

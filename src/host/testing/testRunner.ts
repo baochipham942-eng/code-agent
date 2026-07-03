@@ -388,6 +388,8 @@ export class TestRunner {
     const result: TestResult = {
       testId: testCase.id,
       description: testCase.description,
+      prompt: testCase.prompt,
+      followUpPrompts: testCase.follow_up_prompts,
       status: 'running',
       duration: 0,
       startTime,
@@ -642,6 +644,8 @@ export class TestRunner {
     return {
       testId: testCase.id,
       description: testCase.description,
+      prompt: testCase.prompt,
+      followUpPrompts: testCase.follow_up_prompts,
       status: 'skipped',
       duration: 0,
       startTime: now,

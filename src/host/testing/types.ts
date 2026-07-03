@@ -206,6 +206,10 @@ export interface TestResult {
   testId: string;
   /** Test case description */
   description: string;
+  /** Initial prompt sent to the agent */
+  prompt?: string;
+  /** Follow-up prompts sent after the initial prompt */
+  followUpPrompts?: string[];
   /** Status */
   status: TestStatus;
   /** Duration in ms */

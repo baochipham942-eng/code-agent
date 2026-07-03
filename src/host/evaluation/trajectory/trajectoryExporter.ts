@@ -27,6 +27,10 @@ import {
   writeAgentTrajectoryCollectionMetadata,
 } from '../../../shared/contract/agentTrajectory';
 import { evaluateAgentTrajectoryReplay } from './trajectoryGate';
+import {
+  calculateTrajectoryEfficiency,
+  type TrajectoryEfficiencyInputStep,
+} from './trajectoryEfficiency';
 
 const TIER_RANK: Record<AgentTrajectoryQualityTier, number> = {
   G0: 0,
@@ -167,6 +171,40 @@ function lastTimestamp(replay: StructuredReplay, steps: AgentTrajectoryStep[]): 
   return (
     steps[steps.length - 1]?.timestamp ?? replay.turns[replay.turns.length - 1]?.startTime ?? firstTimestamp(replay)
   );
+}
+
+function buildEfficiencySteps(steps: AgentTrajectoryStep[]): TrajectoryEfficiencyInputStep[] {
+  const resultsByToolCallId = new Map<string, NonNullable<AgentTrajectoryStep['toolResult']>>();
+  for (const step of steps) {
+    if (step.toolResult) {
+      resultsByToolCallId.set(step.toolResult.toolCallId, step.toolResult);
+    }
+  }
+
+  const efficiencySteps: TrajectoryEfficiencyInputStep[] = [];
+  for (const step of steps) {
+    if (step.toolCall) {
+      const result = resultsByToolCallId.get(step.toolCall.id);
+      efficiencySteps.push({
+        type: 'tool_call',
+        toolCall: {
+          name: step.toolCall.name,
+          args: step.toolCall.args,
+          success: result?.success ?? true,
+          duration: result?.durationMs ?? 0,
+        },
+      });
+      continue;
+    }
+    if (step.role === 'thinking') {
+      efficiencySteps.push({ type: 'decision' });
+      continue;
+    }
+    if (step.role === 'error') {
+      efficiencySteps.push({ type: 'error' });
+    }
+  }
+  return efficiencySteps;
 }
 
 export function buildAgentTrajectoryFromReplay(
@@ -333,6 +371,7 @@ export function buildAgentTrajectoryFromReplay(
       distribution[step.toolCall.category]++;
     }
   }
+  const efficiency = calculateTrajectoryEfficiency(buildEfficiencySteps(steps));
 
   return {
     schemaVersion: 1,
@@ -358,6 +397,7 @@ export function buildAgentTrajectoryFromReplay(
       browserComputerProofTimeline: replay.summary.browserComputerProofTimeline,
       evidenceControl: replay.summary.evidenceControl,
     },
+    efficiency,
     toolDefinitions: [...definitions.values()],
     steps,
   };

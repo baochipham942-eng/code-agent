@@ -4,8 +4,13 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { TestRunSummary, TestResult } from './types';
+import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
+import { formatDate, generateHtmlReport } from './htmlReportGenerator';
+
+export { generateHtmlReport } from './htmlReportGenerator';
+
+type ReportFormat = 'markdown' | 'json' | 'console' | 'html';
 
 /**
  * Generate a Markdown test report
@@ -351,7 +356,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
 export async function saveReport(
   summary: TestRunSummary,
   outputDir: string,
-  formats: ('markdown' | 'json' | 'console')[] = ['markdown', 'json']
+  formats: ReportFormat[] = ['markdown', 'json'],
+  baselineDelta?: BaselineDelta,
 ): Promise<string[]> {
   await fs.mkdir(outputDir, { recursive: true });
 
@@ -370,6 +376,12 @@ export async function saveReport(
     savedFiles.push(jsonPath);
   }
 
+  if (formats.includes('html')) {
+    const htmlPath = path.join(outputDir, `report-${timestamp}.html`);
+    await fs.writeFile(htmlPath, generateHtmlReport(summary, baselineDelta));
+    savedFiles.push(htmlPath);
+  }
+
   // Also update "latest" symlinks
   if (formats.includes('markdown')) {
     const latestMd = path.join(outputDir, 'latest-report.md');
@@ -381,24 +393,17 @@ export async function saveReport(
     await fs.writeFile(latestJson, generateJsonReport(summary));
   }
 
+  if (formats.includes('html')) {
+    const latestHtml = path.join(outputDir, 'latest-report.html');
+    await fs.writeFile(latestHtml, generateHtmlReport(summary, baselineDelta));
+  }
+
   return savedFiles;
 }
 
 // ============================================================================
 // Helper functions
 // ============================================================================
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
 
 /**
  * 评分权威分桶表（WP1-1）：deterministic_assertion / llm_judge / self_check，

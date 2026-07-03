@@ -18,6 +18,7 @@ import { execSync } from 'child_process';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { ChangeDetector } from '../src/host/testing/ci/changeDetector';
 import { BaselineManager } from '../src/host/testing/ci/baselineManager';
 import { TrendTracker } from '../src/host/testing/ci/trendTracker';
@@ -41,6 +42,8 @@ import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants'
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
 }
+
+type EvalReportFormat = 'markdown' | 'json' | 'console' | 'html';
 
 const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
@@ -465,6 +468,7 @@ async function runEvals(
     ids?: string[];
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
     caseDir?: string;
+    reportFormats?: EvalReportFormat[];
   }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
@@ -522,7 +526,8 @@ async function runEvals(
 
     const summary = await runner.runAll();
 
-    const savedFiles = await saveReport(summary, config.resultsDir);
+    const reportFormats = opts.reportFormats ?? ['markdown', 'json'];
+    const savedFiles = await saveReport(summary, config.resultsDir, reportFormats);
     console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
 
     if (sandbox) {
@@ -664,8 +669,8 @@ async function runCompareCommand(
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir } = parseArgs(process.argv);
+export async function main(argv = process.argv, cwd = process.cwd()) {
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir } = parseArgs(argv);
   // WP1-4：任一预测 flag 出现即登记（另一侧默认空列表）
   const prediction = (predictedFixes || riskTasks)
     ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }
@@ -674,7 +679,7 @@ async function main() {
   // --model implies --real
   const effectiveReal = real || !!model;
 
-  const workingDir = process.cwd();
+  const workingDir = cwd;
   const manager = new BaselineManager(workingDir);
   const tracker = new TrendTracker(workingDir);
 
@@ -741,7 +746,15 @@ async function main() {
 
     console.log(chalk.bold('  Running evals before promoting to baseline...'));
     console.log('');
-    const summary = await runEvals(workingDir, 'full', { real: effectiveReal, model, provider, concurrency, tags, ids });
+    const summary = await runEvals(workingDir, 'full', {
+      real: effectiveReal,
+      model,
+      provider,
+      concurrency,
+      tags,
+      ids,
+      reportFormats: ['markdown', 'json', 'html'],
+    });
     const commitSha = getCommitSha();
     await manager.promote(summary, commitSha, 'real');
     console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
@@ -819,7 +832,17 @@ async function main() {
   // Run evals
   console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
   console.log('');
-  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids, prediction, caseDir });
+  const summary = await runEvals(workingDir, effectiveScope, {
+    real: effectiveReal,
+    model,
+    provider,
+    concurrency,
+    tags,
+    ids,
+    prediction,
+    caseDir,
+    ...(caseDir ? { reportFormats: ['markdown', 'json', 'html'] } : {}),
+  });
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
   // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据
@@ -849,6 +872,8 @@ async function main() {
   // Compare to baseline
   const delta = await manager.compare(summary);
   console.log(generateDeltaConsole(summary, delta));
+  const htmlFiles = await saveReport(summary, createDefaultConfig(workingDir).resultsDir, ['html'], delta);
+  console.log(chalk.dim(`  HTML report saved to: ${htmlFiles[0]}`));
 
   // Track trend
   const commitSha = getCommitSha();
@@ -880,7 +905,14 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(chalk.red('eval-ci failed:'), err);
-  process.exit(1);
-});
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  return entry ? path.resolve(entry) === fileURLToPath(import.meta.url) : false;
+}
+
+if (isDirectRun()) {
+  main().catch((err) => {
+    console.error(chalk.red('eval-ci failed:'), err);
+    process.exit(1);
+  });
+}

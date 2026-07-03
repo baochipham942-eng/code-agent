@@ -577,6 +577,17 @@ export interface AgentTrajectoryStep {
   };
 }
 
+export interface AgentTrajectoryEfficiency {
+  totalSteps: number;
+  effectiveSteps: number;
+  redundantSteps: number;
+  backtrackCount: number;
+  totalTokens: { input: number; output: number };
+  totalDuration: number;
+  tokensPerEffectiveStep: number;
+  efficiency: number;
+}
+
 export interface AgentTrajectory {
   schemaVersion: AgentTrajectorySchemaVersion;
   trajectoryId: string;
@@ -601,6 +612,7 @@ export interface AgentTrajectory {
     browserComputerProofTimeline?: BrowserComputerProofTimelineEntry[];
     evidenceControl?: EvidenceControlSummaryProjection;
   };
+  efficiency?: AgentTrajectoryEfficiency;
   toolDefinitions: AgentTrajectoryToolDefinition[];
   steps: AgentTrajectoryStep[];
 }

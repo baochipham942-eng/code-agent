@@ -142,7 +142,7 @@ export async function runAutoTests(
     const summary = await runner.runAll();
 
     // Save reports
-    const savedFiles = await saveReport(summary, runnerConfig.resultsDir, ['markdown', 'json']);
+    const savedFiles = await saveReport(summary, runnerConfig.resultsDir, ['markdown', 'json', 'html']);
     logger.info('Test reports saved', { files: savedFiles });
 
     // Print summary to console
@@ -162,6 +162,18 @@ export async function runAutoTests(
 }
 
 /**
+ * 完成消息的通过率与报告口径一致：能力分母 = total - skipped - infraExcluded（WP1-2）。
+ * 分母为 0（全 skipped / 全 infra）时给 0.0%，不产生 NaN/Infinity。
+ */
+export function formatAutoTestCompletionMessage(summary: TestRunSummary): string {
+  const capabilityTotal = summary.total - summary.skipped - (summary.infraExcluded ?? 0);
+  const passRate = capabilityTotal > 0
+    ? ((summary.passed / capabilityTotal) * 100).toFixed(1)
+    : '0.0';
+  return `Auto-test completed: ${summary.passed}/${summary.total} passed (${passRate}%)`;
+}
+
+/**
  * Create the SessionStart hook configuration for auto-testing
  */
 export function createAutoTestHookConfig(): {
@@ -176,13 +188,9 @@ export function createAutoTestHookConfig(): {
       const summary = await runAutoTests(context);
 
       if (summary) {
-        const passRate = summary.total > 0
-          ? ((summary.passed / (summary.total - summary.skipped)) * 100).toFixed(1)
-          : '0';
-
         return {
           action: 'continue' as const,
-          message: `Auto-test completed: ${summary.passed}/${summary.total} passed (${passRate}%)`,
+          message: formatAutoTestCompletionMessage(summary),
         };
       }
 

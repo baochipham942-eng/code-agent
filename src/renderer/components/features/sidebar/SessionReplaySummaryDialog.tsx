@@ -348,8 +348,13 @@ function formatBlockDetail(block: ReplayBlock): string {
     const latency = formatDuration(block.modelDecision.latencyMs);
     return `${tokens} tokens · ${latency}`;
   }
-  if (block.type === 'event' && block.event?.durationMs) {
-    return formatDuration(block.event.durationMs);
+  if (block.type === 'event') {
+    // 去重修复（label 收敛为「事件」）后 summary 必须落在 detail 里，
+    // 不能被 durationMs 短路吞掉（Codex 审计 R1）。
+    const summary = normalizeBlockText(block.event?.summary || block.content);
+    const duration = block.event?.durationMs ? formatDuration(block.event.durationMs) : '';
+    if (summary && duration) return `${summary} · ${duration}`;
+    return summary || duration;
   }
   return normalizeBlockText(block.content);
 }

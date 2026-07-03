@@ -459,4 +459,67 @@ describe('SessionReplaySummaryDialog', () => {
 
     expect(html).toContain('Replay 暂无轮次明细');
   });
+
+  it('event block 带 durationMs 时仍渲染 summary（去重修复不得吞掉事件摘要）', () => {
+    const html = renderToStaticMarkup(
+      <SessionReplaySummaryDialog
+        sessionTitle="Event Replay"
+        onClose={vi.fn()}
+        replay={{
+          sessionId: 'session-event',
+          traceSource: 'session_replay',
+          traceIdentity: {
+            traceId: 'session:session-event',
+            traceSource: 'session_replay',
+            source: 'session_replay',
+            sessionId: 'session-event',
+            replayKey: 'session-event',
+          },
+          dataSource: 'telemetry',
+          turns: [
+            {
+              turnNumber: 1,
+              turnType: 'iteration',
+              blocks: [
+                {
+                  type: 'event',
+                  content: 'permission denied once',
+                  timestamp: 1,
+                  event: {
+                    eventType: 'task_progress',
+                    summary: 'permission denied once',
+                    durationMs: 42,
+                  },
+                },
+              ],
+              inputTokens: 0,
+              outputTokens: 0,
+              durationMs: 42,
+              startTime: 1,
+            },
+          ],
+          summary: {
+            totalTurns: 1,
+            toolDistribution: {
+              Read: 0,
+              Edit: 0,
+              Write: 0,
+              Bash: 0,
+              Search: 0,
+              Web: 0,
+              Agent: 0,
+              Skill: 0,
+              Other: 0,
+            },
+            thinkingRatio: 0,
+            selfRepairChains: 0,
+            totalDurationMs: 42,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('permission denied once');
+    expect(html).toContain('42');
+  });
 });

@@ -37,7 +37,6 @@ const BASELINE_PATH = join(__dirname, 'design-system-baseline.json');
 const VIZ_EXEMPT = [
   'components/LivePreview/TweakPanel',
   'components/features/chat/MessageBubble/ChartBlock',
-  'components/features/telemetry/CostCalendar',
   'components/features/workflow/DependencyEdge',
   'components/features/workflow/DAGViewer',
   'components/features/workflow/TaskNode',

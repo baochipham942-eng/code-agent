@@ -113,6 +113,10 @@ function main() {
   const manusOverall = (86.5 * 53 + 70.1 * 86 + 57.7 * 26) / 165;
   lines.push(`| **合计** | ${latest.size} | ${totalPassed} | ${latest.size - totalCap} | **${overallAcc.toFixed(1)}%** | ${manusOverall.toFixed(1)}% | ${(overallAcc - manusOverall).toFixed(1)}pp |`);
   lines.push('');
+  // 严格口径：外部榜单不会给"超时/网络"豁免——infra_excluded 全按答错算的保守数字
+  const strictAcc = latest.size > 0 ? (totalPassed / latest.size) * 100 : 0;
+  lines.push(`> **严格口径**（infra 排除全按答错计，与外部榜单可比的保守数）：合计 **${strictAcc.toFixed(1)}%**（${totalPassed}/${latest.size}）。`);
+  lines.push('');
   lines.push('## 口径差异（对比 Manus 1.5 时必读）');
   lines.push('');
   lines.push('- 两边都是 GAIA validation 165 题、官方 quasi-exact match 语义；但 Manus 数字来自其官方博客自报，跑法/重试策略/工具面不可见，不是同 harness 复现。');

@@ -494,6 +494,15 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * 向会话事件流注入一个 AgentEvent（走与 orchestrator onEvent 相同的广播链）。
+   * 供不经 orchestrator 的路径（如外部引擎分支）发观测事件，例如
+   * routing_resolved 降级信号。
+   */
+  emitAgentEventForSession(sessionId: string, event: AgentEvent): void {
+    void this.handleAgentEvent(sessionId, event);
+  }
+
+  /**
    * 获取或创建当前会话的 Orchestrator（公开版本，供外部消费方使用）
    *
    * @param sessionId - 会话 ID（可选，不传则使用当前活跃会话）

@@ -195,6 +195,15 @@ export interface AgentEngineModelCatalogResult {
 
 export const AGENT_ENGINE_KINDS: AgentEngineKind[] = ['native', 'codex_cli', 'claude_code', 'mimo_code', 'kimi_code'];
 
+/** 引擎展示名单一真源（registry descriptor 与 UI 文案共用，别把 kind 裸串透给用户） */
+export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
+  native: 'Neo',
+  codex_cli: 'Codex CLI',
+  claude_code: 'Claude Code',
+  mimo_code: 'MiMo-Code',
+  kimi_code: 'Kimi Code',
+};
+
 export const DEFAULT_AGENT_ENGINE_SESSION: AgentEngineSessionMetadata = {
   kind: 'native',
   permissionProfile: 'default',

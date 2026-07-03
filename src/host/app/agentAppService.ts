@@ -59,7 +59,7 @@ import { loadStreamSnapshot } from '../session/streamSnapshot';
 import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
-import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
@@ -281,6 +281,31 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // /命令协议层（roadmap 2.2）：命中注册命令时把 content 展开成模板 prompt；
     // 非命令消息零开销直通（startsWith 守卫在函数内）
     envelope = await applyPromptCommandExpansion(envelope, effectiveWorkingDirectory);
+    // 外部引擎分支在 preferredAgentId 消费点（withWorkbenchTurnSystemContext →
+    // agentOverrideId）之前 return，显式 agent 选择在引擎会话不适用——发降级
+    // routing_resolved 让 renderer 清选择 + toast（与 web /api/run 引擎分支对称）。
+    if (isExternalAgentEngine(engine.kind)) {
+      const enginePreferredAgentId = typeof envelope.context?.preferredAgentId === 'string'
+        ? envelope.context.preferredAgentId.trim() || undefined
+        : undefined;
+      if (enginePreferredAgentId) {
+        const { buildRoutingResolvedEventData } = await import('../agent/routingResolvedEvent');
+        tm.emitAgentEventForSession(resolvedSessionId, {
+          type: 'routing_resolved',
+          data: buildRoutingResolvedEventData(null, {
+            requestedAgentId: enginePreferredAgentId,
+            timestamp: Date.now(),
+            fallbackAgentName: AGENT_ENGINE_LABELS[engine.kind] ?? engine.kind,
+            fallbackReason: `External engine session (${engine.kind}) does not support agent selection; the engine runs the turn directly.`,
+          }),
+        });
+        logger.info('Explicit agent selection ignored on external engine session', {
+          preferredAgentId: enginePreferredAgentId,
+          engine: engine.kind,
+          sessionId: resolvedSessionId,
+        });
+      }
+    }
     if (engine.kind === 'codex_cli') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);

@@ -9,6 +9,7 @@ import type {
   AgentEngineKind,
   AgentEngineRuntimeState,
 } from '../../../shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS } from '../../../shared/contract/agentEngine';
 import { getShellPath } from '../infra/shellEnvironment';
 
 const execFileAsync = promisify(execFile);
@@ -90,7 +91,7 @@ export class AgentEngineRegistry {
   private nativeDescriptor(detectedAt: number): AgentEngineDescriptor {
     return {
       kind: 'native',
-      label: 'Neo',
+      label: AGENT_ENGINE_LABELS.native,
       summary: 'Neo ConversationRuntime, using the existing provider and permission stack.',
       installState: 'builtin',
       runtimeState: 'ready',
@@ -111,7 +112,7 @@ export class AgentEngineRegistry {
 
     return {
       kind: 'codex_cli',
-      label: 'Codex CLI',
+      label: AGENT_ENGINE_LABELS.codex_cli,
       summary: 'Runs Codex CLI through a controlled workspace cwd and normalized event stream.',
       installState: installed ? 'installed' : 'missing',
       runtimeState,
@@ -152,7 +153,7 @@ export class AgentEngineRegistry {
 
     return {
       kind: 'claude_code',
-      label: 'Claude Code',
+      label: AGENT_ENGINE_LABELS.claude_code,
       summary: 'Runs Claude Code in non-interactive plan mode with read-only tools and normalized event stream.',
       installState: installed ? 'installed' : 'missing',
       runtimeState,
@@ -195,7 +196,7 @@ export class AgentEngineRegistry {
 
     return {
       kind: 'mimo_code',
-      label: 'MiMo-Code',
+      label: AGENT_ENGINE_LABELS.mimo_code,
       summary: 'Runs MiMo-Code CLI through a controlled workspace cwd and normalized JSON event stream.',
       installState: installed ? 'installed' : 'missing',
       runtimeState,
@@ -237,7 +238,7 @@ export class AgentEngineRegistry {
 
     return {
       kind: 'kimi_code',
-      label: 'Kimi Code',
+      label: AGENT_ENGINE_LABELS.kimi_code,
       summary: 'Runs Kimi Code CLI through a controlled workspace cwd and normalized stream-json event stream.',
       installState: installed ? 'installed' : 'missing',
       runtimeState,

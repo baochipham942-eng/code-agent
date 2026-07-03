@@ -1316,7 +1316,7 @@ describe('createAgentRouter', () => {
     expect(payload).toMatchObject({
       mode: 'explicit',
       agentId: 'default',
-      agentName: 'codex_cli',
+      agentName: 'Codex CLI',
       requestedAgentId: 'explore',
       fallbackToDefault: true,
     });

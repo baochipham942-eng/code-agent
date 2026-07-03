@@ -9,7 +9,7 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
-import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../host/tools/toolExecutor';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
@@ -426,7 +426,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             data: buildRoutingResolvedEventData(null, {
               requestedAgentId: enginePreferredAgentId,
               timestamp: Date.now(),
-              fallbackAgentName: selectedEngine.kind,
+              fallbackAgentName: AGENT_ENGINE_LABELS[selectedEngine.kind] ?? selectedEngine.kind,
               fallbackReason: `External engine session (${selectedEngine.kind}) does not support agent selection; the engine runs the turn directly.`,
             }),
           });

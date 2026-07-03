@@ -1839,6 +1839,85 @@ describe('createAgentRouter', () => {
     );
   });
 
+  // 兜底判定必须认「终轮」assistant 是否落库（Codex audit HIGH1）：
+  // 多迭代 run 早轮已落库 + 终轮落库失败时，旧 .some() 匹配任一 id 会误跳兜底，
+  // 终轮内容+metadata 静默丢失。
+  it('fires assistant fallback when an earlier loop message persisted but the final one did not', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    // 早轮 a1 已在库，终轮 a2 缺席
+    const getMessages = vi.fn(async () => [
+      { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 },
+    ]);
+    const getSession = vi.fn(async () => ({ workingDirectory: '/tmp/persisted-project' }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'message', data: { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 } });
+        onEvent({ type: 'message', data: { id: 'loop-a2', role: 'assistant', content: '终轮结论', timestamp: 200 } });
+        onEvent({ type: 'stream_chunk', data: { content: '终轮结论' } });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ addMessageToSession, getMessages, getSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '多迭代终轮丢失场景', sessionId: 'session-final-lost' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-final-lost',
+      expect.objectContaining({ role: 'assistant', content: '终轮结论' }),
+    );
+  });
+
+  it('keeps skipping assistant fallback when the final loop message did persist', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn(async () => [
+      { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 },
+      { id: 'loop-a2', role: 'assistant', content: '终轮结论', timestamp: 200 },
+    ]);
+    const getSession = vi.fn(async () => ({ workingDirectory: '/tmp/persisted-project' }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'message', data: { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 } });
+        onEvent({ type: 'message', data: { id: 'loop-a2', role: 'assistant', content: '终轮结论', timestamp: 200 } });
+        onEvent({ type: 'stream_chunk', data: { content: '终轮结论' } });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ addMessageToSession, getMessages, getSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '终轮已落库场景', sessionId: 'session-final-persisted' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).not.toHaveBeenCalledWith(
+      'session-final-persisted',
+      expect.objectContaining({ role: 'assistant' }),
+    );
+  });
+
   // 兜底落库必须带上 message 事件的 metadata（turnQuality 安静徽标数据）——
   // 三处重建（cache push / sm.addMessageToSession / db.addMessage）此前整体丢弃 metadata，
   // reload 后徽标（模型名+agent 名+降级警示）消失。

@@ -237,14 +237,17 @@ async function loadSessionHistoryForRun(
   }
 }
 
-async function hasPersistedLoopAssistantMessage(
+// 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
+// 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
+// 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
+async function hasPersistedFinalLoopAssistantMessage(
   sessionId: string,
-  messageIds: Set<string>,
+  finalMessageId: string | undefined,
   sessionManager: AgentSessionManagerLike | null,
   db: DatabaseService,
   logger: AgentRouterDeps['logger'],
 ): Promise<boolean> {
-  if (messageIds.size === 0) {
+  if (!finalMessageId) {
     return false;
   }
 
@@ -254,7 +257,7 @@ async function hasPersistedLoopAssistantMessage(
       : db.getMessages(sessionId);
 
     return Array.isArray(persisted) && persisted.some((message) => (
-      message.role === 'assistant' && messageIds.has(message.id)
+      message.role === 'assistant' && message.id === finalMessageId
     ));
   } catch (error) {
     logger.warn(`[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`, error);
@@ -821,9 +824,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           }
 
           const sm = await tryGetSessionManager();
-          const loopPersistedAssistant = await hasPersistedLoopAssistantMessage(
+          const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
             sessionId,
-            runEventCollector.loopEmittedAssistantMessageIds,
+            runEventCollector.lastLoopAssistantMessageId,
             sm,
             dbForSession,
             logger,

@@ -10,12 +10,15 @@ import { VersionInfo } from './VersionInfo';
 import { InstallGuide } from './InstallGuide';
 import { WorkingDirectoryPicker } from './WorkingDirectoryPicker';
 import { SecurityLevelConfig } from './SecurityLevelConfig';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 // ============================================================================
 // Component
 // ============================================================================
 
 export const LocalBridgeSection: React.FC = () => {
+  const { t } = useI18n();
+  const bridgeText = t.settings.localBridge.section;
   const [isExpanded, setIsExpanded] = useState(true);
   const { status, version, latestVersion, startPolling, stopPolling } = useLocalBridgeStore();
 
@@ -35,7 +38,7 @@ export const LocalBridgeSection: React.FC = () => {
       >
         <div className="flex items-center gap-3">
           <Server className="w-4 h-4 text-indigo-400" />
-          <span className="text-sm font-medium text-zinc-200">本地桥接服务</span>
+          <span className="text-sm font-medium text-zinc-200">{bridgeText.title}</span>
           <StatusIndicator status={status} />
         </div>
         {isExpanded ? (
@@ -57,7 +60,7 @@ export const LocalBridgeSection: React.FC = () => {
           ) : (
             <>
               <p className="text-xs text-zinc-400">
-                本地桥接服务允许 Web 端操作本地文件系统。安装后即可在浏览器中使用完整的文件操作能力。
+                {bridgeText.description}
               </p>
               <InstallGuide />
             </>

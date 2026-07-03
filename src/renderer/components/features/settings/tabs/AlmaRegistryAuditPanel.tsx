@@ -7,6 +7,7 @@ import type {
 } from '@shared/constants/almaRegistryAudit';
 import ipcService from '../../../../services/ipcService';
 import { Button } from '../../../primitives';
+import { useI18n } from '../../../../hooks/useI18n';
 
 type AuditRefreshResult = {
   success: boolean;
@@ -14,21 +15,23 @@ type AuditRefreshResult = {
   error?: string;
 };
 
-function formatDrift(report: AlmaRegistryDriftReport): string {
+type AlmaRegistryAuditText = ReturnType<typeof useI18n>['t']['settings']['skills']['almaRegistryAudit'];
+
+function formatDrift(report: AlmaRegistryDriftReport, labels: AlmaRegistryAuditText['drift']): string {
   if (report.status === 'unchanged') {
-    return '无漂移';
+    return labels.unchanged;
   }
   const parts: string[] = [];
   if (report.addedFeaturedIds.length) {
-    parts.push(`新增 featured: ${report.addedFeaturedIds.join(', ')}`);
+    parts.push(`${labels.addedFeaturedPrefix}${report.addedFeaturedIds.join(', ')}`);
   }
   if (report.removedFeaturedIds.length) {
-    parts.push(`移除 featured: ${report.removedFeaturedIds.join(', ')}`);
+    parts.push(`${labels.removedFeaturedPrefix}${report.removedFeaturedIds.join(', ')}`);
   }
   if (report.defaultFlagMatches.length) {
-    parts.push(`发现 default/builtin 标记: ${report.defaultFlagMatches.join(', ')}`);
+    parts.push(`${labels.defaultFlagMatchesPrefix}${report.defaultFlagMatches.join(', ')}`);
   }
-  return parts.length ? parts.join(' · ') : `字段变化: ${report.changedFields.join(', ')}`;
+  return parts.length ? parts.join(labels.separator) : `${labels.changedFieldsPrefix}${report.changedFields.join(', ')}`;
 }
 
 function getDriftTone(report: AlmaRegistryDriftReport): string {
@@ -38,6 +41,8 @@ function getDriftTone(report: AlmaRegistryDriftReport): string {
 }
 
 export const AlmaRegistryAuditPanel: React.FC = () => {
+  const { t } = useI18n();
+  const auditText = t.settings.skills.almaRegistryAudit;
   const [result, setResult] = useState<AlmaRegistryAuditRefreshResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,7 +53,7 @@ export const AlmaRegistryAuditPanel: React.FC = () => {
     try {
       const response = await ipcService.invoke(IPC_CHANNELS.ALMA_REGISTRY_AUDIT_REFRESH) as AuditRefreshResult;
       if (!response?.success || !response.data) {
-        throw new Error(response?.error || '刷新 Alma registry audit 失败');
+        throw new Error(response?.error || auditText.refreshFailed);
       }
       setResult(response.data);
     } catch (err) {
@@ -56,7 +61,7 @@ export const AlmaRegistryAuditPanel: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [auditText.refreshFailed]);
 
   const mcpDrift = result?.mcp.drift;
   const pluginDrift = result?.plugin.drift;
@@ -71,9 +76,9 @@ export const AlmaRegistryAuditPanel: React.FC = () => {
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-sm font-medium text-zinc-200">Alma registry 审计</div>
+          <div className="text-sm font-medium text-zinc-200">{auditText.title}</div>
           <p className="mt-1 text-xs leading-5 text-zinc-500">
-            手动拉取官方 MCP / Plugin registry，只生成漂移报告，不自动更新推荐或安装配置。
+            {auditText.description}
           </p>
         </div>
         <Button
@@ -83,7 +88,7 @@ export const AlmaRegistryAuditPanel: React.FC = () => {
           loading={loading}
           leftIcon={!loading ? <RefreshCw className="h-3.5 w-3.5" /> : undefined}
         >
-          刷新审计
+          {auditText.refresh}
         </Button>
       </div>
 
@@ -102,13 +107,13 @@ export const AlmaRegistryAuditPanel: React.FC = () => {
                 {drift.status === 'unchanged'
                   ? <CheckCircle2 className="h-3.5 w-3.5" />
                   : <AlertTriangle className="h-3.5 w-3.5" />}
-                {label} · featured {featuredCount}
+                {label}{auditText.drift.separator}{auditText.featuredLabel} {featuredCount}
               </div>
-              <div className="mt-1 leading-5">{formatDrift(drift)}</div>
+              <div className="mt-1 leading-5">{formatDrift(drift, auditText.drift)}</div>
             </div>
           ))}
           <div className="md:col-span-2 text-[11px] text-zinc-600">
-            fetchedAt {result.fetchedAt}
+            {auditText.fetchedAtPrefix}{result.fetchedAt}
           </div>
         </div>
       )}

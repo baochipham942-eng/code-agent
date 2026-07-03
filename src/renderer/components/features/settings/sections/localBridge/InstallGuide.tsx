@@ -4,6 +4,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 // ============================================================================
 // Helpers
@@ -23,9 +24,11 @@ function detectPlatform(): Platform {
 interface CommandBlockProps {
   label: string;
   command: string;
+  copyTitle: string;
+  copiedLabel: string;
 }
 
-const CommandBlock: React.FC<CommandBlockProps> = ({ label, command }) => {
+const CommandBlock: React.FC<CommandBlockProps> = ({ label, command, copyTitle, copiedLabel }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -44,7 +47,7 @@ const CommandBlock: React.FC<CommandBlockProps> = ({ label, command }) => {
         <button
           onClick={handleCopy}
           className="flex-shrink-0 p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-          title="复制命令"
+          title={copyTitle}
         >
           {copied ? (
             <Check className="w-3.5 h-3.5 text-green-400" />
@@ -53,7 +56,7 @@ const CommandBlock: React.FC<CommandBlockProps> = ({ label, command }) => {
           )}
         </button>
       </div>
-      {copied && <span className="text-xs text-green-400">已复制</span>}
+      {copied && <span className="text-xs text-green-400">{copiedLabel}</span>}
     </div>
   );
 };
@@ -63,6 +66,8 @@ const CommandBlock: React.FC<CommandBlockProps> = ({ label, command }) => {
 // ============================================================================
 
 export const InstallGuide: React.FC = () => {
+  const { t } = useI18n();
+  const installText = t.settings.localBridge.installGuide;
   const [showMore, setShowMore] = useState(false);
   const platform = useMemo(() => detectPlatform(), []);
 
@@ -90,23 +95,38 @@ export const InstallGuide: React.FC = () => {
         <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">
           {platform}
         </span>
-        <span className="text-xs text-zinc-500">自动检测</span>
+        <span className="text-xs text-zinc-500">{installText.autoDetect}</span>
       </div>
 
-      <CommandBlock label="安装" command={installCommands[platform]} />
+      <CommandBlock
+        label={installText.install}
+        command={installCommands[platform]}
+        copyTitle={installText.copyCommand}
+        copiedLabel={installText.copied}
+      />
 
       <button
         onClick={() => setShowMore(!showMore)}
         className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
       >
         {showMore ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        更新 & 卸载
+        {installText.updateAndUninstall}
       </button>
 
       {showMore && (
         <div className="space-y-3 pl-2 border-l-2 border-zinc-700">
-          <CommandBlock label="更新" command={updateCommands[platform]} />
-          <CommandBlock label="卸载" command={uninstallCommands[platform]} />
+          <CommandBlock
+            label={installText.update}
+            command={updateCommands[platform]}
+            copyTitle={installText.copyCommand}
+            copiedLabel={installText.copied}
+          />
+          <CommandBlock
+            label={installText.uninstall}
+            command={uninstallCommands[platform]}
+            copyTitle={installText.copyCommand}
+            copiedLabel={installText.copied}
+          />
         </div>
       )}
     </div>

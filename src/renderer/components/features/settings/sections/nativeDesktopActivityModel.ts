@@ -19,17 +19,9 @@ export interface AppCluster {
   segments: ActivitySegment[];
 }
 
-export const MEETING_APP_NAMES = new Set([
-  'zoom.us', 'Zoom', 'zoom',
-  '飞书', 'Lark', 'Feishu',
-  '钉钉', 'DingTalk',
-  '腾讯会议', 'Tencent Meeting', 'WeMeet',
-  '企业微信', 'WeChat Work', 'WeCom',
-  'Microsoft Teams', 'Teams',
-  'Slack', 'Google Meet',
-  'Webex', 'Cisco Webex Meetings',
-  'Discord', 'FaceTime',
-]);
+export function buildMeetingAppNameSet(appNames: readonly string[]): Set<string> {
+  return new Set(appNames);
+}
 
 export interface HourBlock {
   hour: number; // 0-23
@@ -152,21 +144,23 @@ export function clusterAppsByDuration(segments: ActivitySegment[], intervalSecs:
     .sort((a, b) => b.totalDurationMs - a.totalDurationMs);
 }
 
-export function formatDurationShort(ms: number): string {
+export function formatDurationShort(
+  ms: number,
+  labels: { lessThanMinute: string; minuteSuffix: string },
+): string {
   const totalMin = Math.round(ms / 60000);
-  if (totalMin < 1) return '<1 分钟';
-  if (totalMin < 60) return `${totalMin} 分钟`;
+  if (totalMin < 1) return labels.lessThanMinute;
+  if (totalMin < 60) return `${totalMin}${labels.minuteSuffix}`;
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return m > 0 ? `${h}h${m}m` : `${h}h`;
 }
 
-export function formatDate(date: Date): string {
+export function formatDate(date: Date, labels: { weekdays: readonly string[] }): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return `${y}-${m}-${d} ${weekdays[date.getDay()]}`;
+  return `${y}-${m}-${d} ${labels.weekdays[date.getDay()]}`;
 }
 
 export function appColor(appName: string): string {
@@ -194,7 +188,7 @@ export interface TopicGroup {
   segments: AudioSegment[];
 }
 
-export function clusterAudioTopics(segs: AudioSegment[]): TopicGroup[] {
+export function clusterAudioTopics(segs: AudioSegment[], labels: { fallback: string }): TopicGroup[] {
   if (segs.length === 0) return [];
   const sorted = [...segs].sort((a, b) => a.start_at_ms - b.start_at_ms);
   const groups: TopicGroup[] = [];
@@ -209,7 +203,7 @@ export function clusterAudioTopics(segs: AudioSegment[]): TopicGroup[] {
     const gap = sorted[i].start_at_ms - current.endMs;
     if (gap > 60_000) {
       // Finalize current group
-      current.label = extractTopicLabel(current.segments);
+      current.label = extractTopicLabel(current.segments, labels.fallback);
       groups.push(current);
       current = {
         label: '',
@@ -222,15 +216,15 @@ export function clusterAudioTopics(segs: AudioSegment[]): TopicGroup[] {
       current.segments.push(sorted[i]);
     }
   }
-  current.label = extractTopicLabel(current.segments);
+  current.label = extractTopicLabel(current.segments, labels.fallback);
   groups.push(current);
   return groups;
 }
 
-function extractTopicLabel(segs: AudioSegment[]): string {
+function extractTopicLabel(segs: AudioSegment[], fallback: string): string {
   // Take first ~30 chars from the first segment as topic label
   const text = segs.map((s) => s.transcript).join('');
-  if (text.length <= 20) return text || '对话';
+  if (text.length <= 20) return text || fallback;
   return text.slice(0, 20) + '...';
 }
 

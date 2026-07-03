@@ -174,11 +174,11 @@ export function buildSettingsTabGroups({
     { id: 'channels', label: t.settings.tabs.channels, icon: <MessageSquare className="w-4 h-4" /> },
     { id: 'roles', label: t.settings.tabs.roles, icon: <UserCircle className="w-4 h-4" /> },
     // 记忆与隐私
-    { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <BrainCircuit className="w-4 h-4" /> },
+    { id: 'memory', label: t.settings.tabs.memory, icon: <BrainCircuit className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: t.settings.tabs.openchronicle, icon: <Eye className="w-4 h-4" /> }] : []),
     { id: 'privacy', label: t.settings.tabs.privacy, icon: <ShieldCheck className="w-4 h-4" /> },
     // 系统
-    ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
+    ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update, icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
     // 高级（默认折叠，普通用户可自行配置）
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
@@ -479,7 +479,7 @@ export const SettingsModal: React.FC = () => {
               <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />
             )}
             {(activeTab === 'mcp' || activeTab === 'skills' || (canViewPlugins && activeTab === 'plugins')) && (
-              <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">加载中…</div>}>
+              <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
                 {canViewPlugins && activeTab === 'plugins' && <PluginsSettings />}
                 {activeTab === 'mcp' && <MCPSettings />}
                 {activeTab === 'skills' && <SkillsSettings />}

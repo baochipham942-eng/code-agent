@@ -51,6 +51,21 @@ const MIGRATED: string[] = [
   'tabs/UserDashboardSettings.tsx',
   'tabs/InviteCodesSettings.tsx',
   'tabs/ControlPlaneSettings.tsx',
+  'tabs/AlmaRegistryAuditPanel.tsx',
+  'tabs/AddProviderCard.tsx',
+  'sections/NativeDesktopSection.tsx',
+  'sections/NativeConnectorsSection.tsx',
+  'sections/nativeDesktopActivityModel.ts',
+  'sections/localBridge/SecurityLevelConfig.tsx',
+  'sections/localBridge/WorkingDirectoryPicker.tsx',
+  'sections/localBridge/InstallGuide.tsx',
+  'sections/localBridge/VersionInfo.tsx',
+  'sections/localBridge/StatusIndicator.tsx',
+  'sections/localBridge/LocalBridgeSection.tsx',
+  'ProviderDoctorDialog.tsx',
+  'McpServerEditor.tsx',
+  'SettingsModal.tsx',
+  'WebModeBanner.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

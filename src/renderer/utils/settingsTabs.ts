@@ -57,15 +57,7 @@ export type SettingsTabGroupId =
   | 'advanced'
   | 'management';
 
-export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
-  models: '模型与能力',
-  basics: '基础偏好',
-  work: '工作与协作',
-  memory: '记忆与隐私',
-  system: '系统',
-  advanced: '高级',
-  management: '用户管理',
-};
+// 组标签单一真源在 i18n：t.settings.tabGroups（zh/en 对齐），此处不再维护文案副本
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
   'models',

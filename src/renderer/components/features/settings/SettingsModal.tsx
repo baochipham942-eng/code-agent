@@ -54,7 +54,6 @@ import { FullScreenPage } from '../shared/FullScreenPage';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TAB_GROUP_BY_TAB,
-  SETTINGS_TAB_GROUP_LABELS,
   SETTINGS_TAB_GROUP_ORDER,
   COLLAPSED_SETTINGS_TAB_GROUPS,
   canAccessSettingsTab,
@@ -160,39 +159,39 @@ export function buildSettingsTabGroups({
     // 模型与能力
     { id: 'model', label: t.settings.tabs.model, icon: <Brain className="w-4 h-4" /> },
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
-    { id: 'search', label: '搜索源', icon: <Search className="w-4 h-4" /> },
-    { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
-    { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'search', label: t.settings.tabs.search, icon: <Search className="w-4 h-4" /> },
+    { id: 'soul', label: t.settings.tabs.soul, icon: <Fingerprint className="w-4 h-4" /> },
+    { id: 'skills', label: t.settings.tabs.skills, icon: <Sparkles className="w-4 h-4" /> },
     // 基础偏好
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
-    { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
-    { id: 'conversation', label: '上下文压缩', icon: <FoldVertical className="w-4 h-4" /> },
-    { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
-    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
+    { id: 'general', label: t.settings.tabs.general, icon: <Shield className="w-4 h-4" /> },
+    { id: 'conversation', label: t.settings.tabs.conversation, icon: <FoldVertical className="w-4 h-4" /> },
+    { id: 'keybindings', label: t.settings.tabs.keybindings, icon: <Keyboard className="w-4 h-4" /> },
+    { id: 'voiceInput', label: t.settings.tabs.voiceInput, icon: <Mic className="w-4 h-4" /> },
     // 工作与协作
-    { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
-    { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
-    { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
-    { id: 'roles', label: '角色', icon: <UserCircle className="w-4 h-4" /> },
+    { id: 'workspace', label: t.settings.tabs.workspace, icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'automation', label: t.settings.tabs.automation, icon: <Clock className="w-4 h-4" /> },
+    { id: 'channels', label: t.settings.tabs.channels, icon: <MessageSquare className="w-4 h-4" /> },
+    { id: 'roles', label: t.settings.tabs.roles, icon: <UserCircle className="w-4 h-4" /> },
     // 记忆与隐私
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <BrainCircuit className="w-4 h-4" /> },
-    ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
-    { id: 'privacy', label: '隐私防线', icon: <ShieldCheck className="w-4 h-4" /> },
+    ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: t.settings.tabs.openchronicle, icon: <Eye className="w-4 h-4" /> }] : []),
+    { id: 'privacy', label: t.settings.tabs.privacy, icon: <ShieldCheck className="w-4 h-4" /> },
     // 系统
     ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
     // 高级（默认折叠，普通用户可自行配置）
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
-    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
-    { id: 'plugins', label: '插件管理', icon: <PackagePlus className="w-4 h-4" /> },
-    { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
-    { id: 'appshots', label: '应用截图', icon: <Camera className="w-4 h-4" /> },
-    { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
+    { id: 'mcp', label: t.settings.tabs.mcp, icon: <Plug className="w-4 h-4" /> },
+    { id: 'plugins', label: t.settings.tabs.plugins, icon: <PackagePlus className="w-4 h-4" /> },
+    { id: 'hooks', label: t.settings.tabs.hooks, icon: <Webhook className="w-4 h-4" /> },
+    { id: 'appshots', label: t.settings.tabs.appshots, icon: <Camera className="w-4 h-4" /> },
+    { id: 'cache', label: t.settings.tabs.cache, icon: <Database className="w-4 h-4" /> },
     // 管理（仅 admin）
-    { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
-    { id: 'invites', label: '邀请码管理', icon: <Ticket className="w-4 h-4" /> },
-    { id: 'controlPlane', label: '控制平面', icon: <Cloud className="w-4 h-4" /> },
-    { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
+    { id: 'users', label: t.settings.tabs.users, icon: <Users className="w-4 h-4" /> },
+    { id: 'invites', label: t.settings.tabs.invites, icon: <Ticket className="w-4 h-4" /> },
+    { id: 'controlPlane', label: t.settings.tabs.controlPlane, icon: <Cloud className="w-4 h-4" /> },
+    { id: 'capabilities', label: t.settings.tabs.capabilities, icon: <Boxes className="w-4 h-4" /> },
   ];
 
   const groups = new Map<SettingsTabGroupId, SettingsTabConfig[]>();
@@ -206,7 +205,7 @@ export function buildSettingsTabGroups({
   return SETTINGS_TAB_GROUP_ORDER
     .map((groupId) => ({
       id: groupId,
-      label: SETTINGS_TAB_GROUP_LABELS[groupId],
+      label: t.settings.tabGroups[groupId],
       tabs: groups.get(groupId) || [],
     }))
     .filter((group) => group.tabs.length > 0);
@@ -379,7 +378,7 @@ export const SettingsModal: React.FC = () => {
               className="mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
             >
               <ChevronLeft className="h-4 w-4" />
-              <span>返回应用</span>
+              <span>{t.settings.backToApp}</span>
             </button>
             <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
           </div>

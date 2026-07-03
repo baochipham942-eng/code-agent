@@ -12,10 +12,11 @@ import {
   SETTINGS_TAB_IDS,
   SETTINGS_TAB_GROUP_BY_TAB,
   SETTINGS_TAB_GROUP_ORDER,
-  SETTINGS_TAB_GROUP_LABELS,
   COLLAPSED_SETTINGS_TAB_GROUPS,
   canAccessSettingsTab,
 } from '../../../src/renderer/utils/settingsTabs';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 
 describe('Settings IA 分组 v2', () => {
   it('每个 tab 都有组，且组在排序表里', () => {
@@ -65,9 +66,10 @@ describe('Settings IA 分组 v2', () => {
     expect(visible).toHaveLength(19);
   });
 
-  it('组标签齐全且默认组序为 5 常规组 + 高级 + 管理', () => {
+  it('组标签齐全（zh/en，单一真源 i18n）且默认组序为 5 常规组 + 高级 + 管理', () => {
     for (const group of SETTINGS_TAB_GROUP_ORDER) {
-      expect(SETTINGS_TAB_GROUP_LABELS[group]).toBeTruthy();
+      expect(zh.settings.tabGroups[group], `zh 缺组标签 ${group}`).toBeTruthy();
+      expect(en.settings.tabGroups[group], `en 缺组标签 ${group}`).toBeTruthy();
     }
     expect(SETTINGS_TAB_GROUP_ORDER).toHaveLength(7);
     expect(SETTINGS_TAB_GROUP_ORDER[SETTINGS_TAB_GROUP_ORDER.length - 1]).toBe('management');

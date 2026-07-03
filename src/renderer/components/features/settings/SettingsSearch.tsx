@@ -6,6 +6,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import type { AccessSubject } from '../../../utils/accessControl';
 import { searchSettings, type SettingsTab, type SettingsEntry } from '../../../utils/settingsIndex';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface SettingsSearchProps {
   onNavigate: (tab: SettingsTab) => void;
@@ -15,6 +16,7 @@ interface SettingsSearchProps {
 export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, access = null }) => {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -31,12 +33,14 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, acce
         tabMap.set(entry.tab, [entry]);
       }
     }
+    // tab 徽标展示走 i18n 导航标签（索引里的 tabLabel 仅作搜索匹配词），agentEngine 例外走 engineCompat
+    const tabLabels = t.settings.tabs as Record<string, string | undefined>;
     return Array.from(tabMap.entries()).map(([tab, entries]) => ({
       tab,
-      tabLabel: entries[0].tabLabel,
+      tabLabel: (tab === 'agentEngine' ? t.engineCompat.engineSection.title : tabLabels[tab]) ?? entries[0].tabLabel,
       labels: entries.map((e) => e.label),
     }));
-  }, [results]);
+  }, [results, t]);
 
   const showResults = isFocused && query.trim().length > 0;
 
@@ -67,7 +71,7 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, acce
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setIsFocused(true)}
-          placeholder="搜索设置..."
+          placeholder={t.settings.searchPlaceholder}
           className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600 transition-colors"
         />
         {query && (
@@ -88,7 +92,7 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, acce
         <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
           {groupedResults.length === 0 ? (
             <div className="px-3 py-2 text-xs text-zinc-500">
-              未找到匹配的设置项
+              {t.settings.searchNoResults}
             </div>
           ) : (
             groupedResults.map(({ tab, tabLabel, labels }) => (

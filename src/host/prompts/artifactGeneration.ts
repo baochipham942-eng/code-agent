@@ -41,6 +41,11 @@ Revision Context rules:
 - Preserve the parent path/id, the user change request, and the new validation evidence.
 - Do not create a disconnected fresh artifact when the task is clearly an edit of an existing one.
 
+Artifact path declaration rules:
+1. As the first step of artifact work, call \`declare_deliverables\` with the final artifact path(s) and optional scratch/draft directory.
+2. After declaration, write, validate, and report relative to those declared paths.
+3. Do not let final artifact paths drift or rename mid-task; if scope legitimately changes, re-declare before writing to the new final path.
+
 Writing rules:
 - If the target path is explicit, write that file in the first tool-writing turn. File tools create parent directories.
 - Do not spend a separate shell/tool turn on mkdir for the target directory; Write/Append create parent directories.

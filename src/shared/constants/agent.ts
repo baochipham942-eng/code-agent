@@ -162,6 +162,19 @@ export const GOAL_MODE = {
   REVIEW_MAX_ITERATIONS: 15,
   /** 闸2 评审理由注回模型时的最大字符数（控 token） */
   REVIEW_OUTPUT_MAX_CHARS: 4_000,
+  /**
+   * 闸0（公开证据自证核验，maka self-check gate 借鉴）的打回预算。
+   * 证据不足最多打回这么多次，用尽后放行进闸1/闸2——闸0 是前置增强不设新死锁面。
+   */
+  EVIDENCE_GATE_MAX_BOUNCES: 2,
+  /**
+   * goal 模式下 artifact 修复的硬中止倍数：attempts 达到
+   * ARTIFACT_REPAIR_MAX_ATTEMPTS × 该倍数仍未过验收 → 直接 markAborted 终止 goal。
+   * 背景：admission stop 只 force 当轮 final response，goal 未达成会重进 repair，
+   * attempts 无限涨（dogfood 实测烧到 6/4 仍在盲修）。修复轮有文件变更，闸3 的
+   * NO_PROGRESS_THRESHOLD 兜不住这种循环。
+   */
+  ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER: 2,
 } as const;
 
 /** Swarm goal 配置（P4：goal 内 swarm 执行 + 主动性 advance 合流，内部文档） */

@@ -56,6 +56,7 @@ import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
 import { goalTokensUsedWithSwarm, maybeInjectSwarmGuidance } from './swarmGoalIntegration';
+import { getGoalArtifactRepairReleaseReason } from './toolArtifactRepairPolicy';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
@@ -361,6 +362,38 @@ export class ConversationRuntime {
               wallClockBudgetMs: this.ctx.goalMode.getWallClockBudgetMs(),
             },
           });
+          // 盲修循环止损（闸3 扩展，降级放行版）：修复策略裁决判"不再有净进展"
+          // 或 attempts 达 2×上限兜底 → markMetDegraded 诚实降级交付（最佳版本已由
+          // monotonicity 保护落盘），不是 aborted——aborted 只留给没有任何可用产物的情况。
+          const repairReleaseReason = getGoalArtifactRepairReleaseReason(this.ctx);
+          if (repairReleaseReason) {
+            this.ctx.goalMode.markMetDegraded(repairReleaseReason);
+            this.ctx.onEvent({
+              type: 'goal_complete',
+              data: {
+                status: 'met',
+                turns: iterations,
+                tokensUsed: tokensUsedWithSwarm,
+                degraded: true,
+                degradedReason: repairReleaseReason,
+              },
+            });
+            if (!this.ctx.forceFinalResponseReason) {
+              this.ctx.forceFinalResponseReason = 'artifact-repair-degraded-release';
+              this.ctx.forceFinalResponsePrompt = [
+                '<artifact-repair-degraded-release>',
+                `修复循环已按最佳版本降级收尾：${repairReleaseReason}`,
+                '工具已禁用，请用纯文本向用户诚实收尾：',
+                '1. 产物当前可用的部分（引用具体文件与已通过的验收项）',
+                '2. 仍未通过的验收项及原因（不要淡化或掩饰）',
+                '3. 用户如需继续完善，下一步可以怎么做',
+                '</artifact-repair-degraded-release>',
+              ].join('\n');
+            }
+            // 不 break：让本轮推理以 forced-final（禁工具）产出诚实收尾文本，
+            // markMetDegraded 后 isPending()=false，本块不会重入；终态映射走
+            // 既有 goal_met 路径（isVerificationDegraded 防重发 goal_complete）。
+          }
           const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';

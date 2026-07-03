@@ -1,4 +1,11 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
+import {
+  ARTIFACT_REPAIR_MAX_ATTEMPTS,
+  ARTIFACT_REPAIR_PATIENCE_ROUNDS,
+  ARTIFACT_REPAIR_PATCH_RESISTANT_CODES,
+  ARTIFACT_REPAIR_RESISTANT_STREAK,
+} from '../../../shared/constants/repair';
+import { GOAL_MODE } from '../../../shared/constants/agent';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 import { createHash } from 'crypto';
@@ -722,11 +729,21 @@ export function buildArtifactRepairRecoveryPrompt(
   ].join('\n');
 }
 
-export type ArtifactRepairPhase = 'baseline_repair' | 'targeted_repair' | 'read_then_patch' | 'playability_repair';
+export type ArtifactRepairPhase = 'baseline_repair' | 'targeted_repair' | 'read_then_patch' | 'playability_repair' | 'fresh_rewrite';
 
 export type ArtifactValidationFailureState = {
   attempts: number;
   phase: ArtifactRepairPhase;
+  /** 历史最少失败项数（patience 基准，越小越好） */
+  bestFailureCount?: number;
+  /** 连续未刷新最佳成绩的轮数（patience 计数器） */
+  roundsSinceBest?: number;
+  /** 各失败码连续存活轮数（补丁抗性动态信号） */
+  failureCodeStreaks?: Record<string, number>;
+  /** 干净上下文重写是否已用掉（每目标一次机会） */
+  rewriteAttempted?: boolean;
+  /** goal 模式降级放行待办：由策略裁决置位，conversationRuntime 闸3 消费 */
+  degradedReleasePending?: string;
 };
 
 type RuntimeContextWithArtifactFailures = RuntimeContext & {
@@ -739,6 +756,88 @@ export function getArtifactValidationFailureMap(ctx: RuntimeContext): Map<string
     runtimeCtx.artifactValidationFailures = new Map();
   }
   return runtimeCtx.artifactValidationFailures;
+}
+
+export type ArtifactRepairStrategyDecision =
+  | { kind: 'continue_repair' }
+  | { kind: 'switch_rewrite'; reason: string; resistantCodes: string[] }
+  | { kind: 'degraded_release'; reason: string };
+
+/**
+ * 修复策略裁决（patience + 双信号，maka 借鉴批 WP3）。每轮验收失败后调用：
+ * 1. 刷新 patience 状态（历史最少失败项 / 连续未刷新轮数 / 失败码存活 streak）
+ * 2. 出现存活 ≥RESISTANT_STREAK 轮的补丁抗性失败码，或 patience 耗尽
+ *    → 切一次干净上下文重写（每目标一次机会）
+ * 3. 重写机会已用仍不收敛 → goal 模式降级放行（最佳版本已由 monotonicity
+ *    保护落盘），非 goal 维持既有 attempts 硬停。
+ */
+export function decideArtifactRepairStrategy(options: {
+  state: ArtifactValidationFailureState;
+  failureCount: number;
+  issueCodes: string[];
+  goalPending: boolean;
+}): ArtifactRepairStrategyDecision {
+  const { state, failureCount, issueCodes, goalPending } = options;
+
+  // 刷新失败码存活 streak：本轮还在的 +1，消失的清除
+  const previousStreaks = state.failureCodeStreaks ?? {};
+  const streaks: Record<string, number> = {};
+  for (const code of new Set(issueCodes)) {
+    streaks[code] = (previousStreaks[code] ?? 0) + 1;
+  }
+  state.failureCodeStreaks = streaks;
+
+  // 刷新 patience：失败项比历史最佳更少 = 有净进展
+  if (state.bestFailureCount === undefined || failureCount < state.bestFailureCount) {
+    state.bestFailureCount = failureCount;
+    state.roundsSinceBest = 0;
+  } else {
+    state.roundsSinceBest = (state.roundsSinceBest ?? 0) + 1;
+  }
+
+  const resistantSet = new Set<string>(ARTIFACT_REPAIR_PATCH_RESISTANT_CODES);
+  const resistantCodes = Object.entries(streaks)
+    .filter(([code, streak]) => resistantSet.has(code) && streak >= ARTIFACT_REPAIR_RESISTANT_STREAK)
+    .map(([code]) => code);
+  const patienceExhausted = (state.roundsSinceBest ?? 0) >= ARTIFACT_REPAIR_PATIENCE_ROUNDS;
+
+  if (!resistantCodes.length && !patienceExhausted) {
+    return { kind: 'continue_repair' };
+  }
+
+  if (!state.rewriteAttempted) {
+    const reason = resistantCodes.length
+      ? `失败码 ${resistantCodes.join('/')} 连续 ${ARTIFACT_REPAIR_RESISTANT_STREAK}+ 轮修不动（补丁抗性）`
+      : `连续 ${ARTIFACT_REPAIR_PATIENCE_ROUNDS} 轮未刷新最佳成绩（patience 耗尽）`;
+    return { kind: 'switch_rewrite', reason, resistantCodes };
+  }
+
+  if (goalPending) {
+    const reason = `修复与一次干净重写均未收敛（最佳成绩 ${state.bestFailureCount} 项失败），按最佳版本降级放行`;
+    return { kind: 'degraded_release', reason };
+  }
+  return { kind: 'continue_repair' };
+}
+
+/**
+ * goal 模式降级放行判据（供 conversationRuntime 闸3 消费）：
+ * 策略裁决置位 degradedReleasePending，或 attempts 达 2×上限兜底
+ * （admission stop 只 force 当轮，goal 重进 repair 会无限涨，dogfood 实测 6/4）。
+ * 语义为 markMetDegraded 诚实降级交付（最佳版本已落盘），非 aborted——
+ * aborted 只留给"没有任何可用产物"的情况。
+ */
+export function getGoalArtifactRepairReleaseReason(ctx: RuntimeContext): string | null {
+  const failureMap = getArtifactValidationFailureMap(ctx);
+  const backstopThreshold = ARTIFACT_REPAIR_MAX_ATTEMPTS * GOAL_MODE.ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER;
+  for (const [targetFile, failure] of failureMap) {
+    if (failure.degradedReleasePending) {
+      return `${failure.degradedReleasePending}；目标文件 ${targetFile}`;
+    }
+    if (failure.attempts >= backstopThreshold) {
+      return `artifact 修复 ${failure.attempts} 次（${GOAL_MODE.ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER}×上限兜底）仍未通过验收，按最佳版本降级放行；目标文件 ${targetFile}`;
+    }
+  }
+  return null;
 }
 
 export function buildArtifactRepairInstruction(
@@ -756,6 +855,25 @@ export function buildArtifactRepairInstruction(
   const phaseLine = `repair phase: ${phase}`;
   const attemptsLine = `attempts: ${attempts}`;
   const platformerStructuralRepair = isPlatformerStructuralGameplayRepair(issueCodes);
+
+  // 干净重写轮：措辞必须与补丁阶梯相反（整文件 Write，禁局部 Edit），
+  // 否则和 attempts>=3 的"不要重写整页"在同一条注入消息里自相矛盾。
+  if (phase === 'fresh_rewrite') {
+    return [
+      '<artifact-validation-failed kind="interactive_artifact">',
+      attemptsLine,
+      phaseLine,
+      `target file: ${absolutePath}`,
+      '补丁式修复已停用（停滞或补丁抗性失败码触发），本轮执行一次性干净重写。',
+      issueSummary,
+      repairSpecBlock,
+      ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
+      '先 Read 一次目标文件——磁盘上保留的是历史最佳版本，作为重写参照。',
+      '然后用一次完整 Write 输出全新实现：一次性满足上面全部失败项，且不得回退已通过的验收项。',
+      '不要在旧代码上做局部 Edit/Append；这是唯一一次重写机会，之后将按最佳版本降级收尾。',
+      '</artifact-validation-failed>',
+    ].join('\n');
+  }
 
   if (attempts >= 3) {
     return [

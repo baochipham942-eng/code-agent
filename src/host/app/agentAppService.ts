@@ -290,13 +290,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         : undefined;
       if (enginePreferredAgentId) {
         const { buildRoutingResolvedEventData } = await import('../agent/routingResolvedEvent');
+        const engineLabel = AGENT_ENGINE_LABELS[engine.kind] ?? engine.kind;
         tm.emitAgentEventForSession(resolvedSessionId, {
           type: 'routing_resolved',
           data: buildRoutingResolvedEventData(null, {
             requestedAgentId: enginePreferredAgentId,
             timestamp: Date.now(),
-            fallbackAgentName: AGENT_ENGINE_LABELS[engine.kind] ?? engine.kind,
-            fallbackReason: `External engine session (${engine.kind}) does not support agent selection; the engine runs the turn directly.`,
+            fallbackAgentName: engineLabel,
+            fallbackReason: `External engine session (${engineLabel}) does not support agent selection; the engine runs the turn directly.`,
           }),
         });
         logger.info('Explicit agent selection ignored on external engine session', {

@@ -421,13 +421,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           : undefined;
         if (enginePreferredAgentId) {
           const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
+          const engineLabel = AGENT_ENGINE_LABELS[selectedEngine.kind] ?? selectedEngine.kind;
           runController.emitAgentEvent({
             type: 'routing_resolved',
             data: buildRoutingResolvedEventData(null, {
               requestedAgentId: enginePreferredAgentId,
               timestamp: Date.now(),
-              fallbackAgentName: AGENT_ENGINE_LABELS[selectedEngine.kind] ?? selectedEngine.kind,
-              fallbackReason: `External engine session (${selectedEngine.kind}) does not support agent selection; the engine runs the turn directly.`,
+              fallbackAgentName: engineLabel,
+              fallbackReason: `External engine session (${engineLabel}) does not support agent selection; the engine runs the turn directly.`,
             }),
           });
           logger.info('[AgentRouter] Explicit agent selection ignored on external engine session', {

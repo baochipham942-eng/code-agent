@@ -112,6 +112,7 @@ describe('AgentAppService 外部引擎会话的显式 agent 选择降级', () =>
           agentName: 'Codex CLI',
           requestedAgentId: 'explore',
           fallbackToDefault: true,
+          reason: expect.stringContaining('Codex CLI'),
         }),
       }),
     );

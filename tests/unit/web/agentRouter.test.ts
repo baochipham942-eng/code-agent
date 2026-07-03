@@ -1320,6 +1320,9 @@ describe('createAgentRouter', () => {
       requestedAgentId: 'explore',
       fallbackToDefault: true,
     });
+    // reason 也走展示名，裸 kind 不得泄进任何 UI 可见文案
+    expect(String(payload!.reason)).toContain('Codex CLI');
+    expect(String(payload!.reason)).not.toContain('codex_cli');
   });
 
   it('routes MiMo engine sessions through the MiMo adapter, passing the selected model directly', async () => {

@@ -299,6 +299,7 @@ vi.mock('../../../src/host/agent/messageHandling/converter', () => ({
 }));
 
 vi.mock('../../../src/host/agent/messageHandling/contextBuilder', () => ({
+  buildGitStatusBlock: vi.fn(() => ''),
   injectWorkingDirectoryContext: vi.fn(),
   buildEnhancedSystemPrompt: vi.fn().mockReturnValue('system prompt'),
   buildRuntimeModeBlock: vi.fn().mockReturnValue(''),

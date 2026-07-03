@@ -387,6 +387,12 @@ export function convertToOpenAIMessages(
         content: typeof m.content === 'string' ? m.content : '',
       }];
     }
+    // 动态尾巴（transient system）：转成位于原位（历史末尾）的 user 消息 +
+    // <system-reminder> 包裹，与 aiSdk 路径对齐（部分 provider 对结尾 system 消息
+    // 处理不一致；user 角色语义等价且位置稳定，不打前缀缓存）。
+    if (m.role === 'system' && m.transient && typeof m.content === 'string') {
+      return [{ role: 'user' as const, content: `<system-reminder>\n${m.content}\n</system-reminder>` }];
+    }
     // 其他消息（system, user, 无 toolCalls 的 assistant）
     if (typeof m.content === 'string') {
       const msg: OpenAIMessage = { role: m.role as OpenAIMessage['role'], content: m.content };

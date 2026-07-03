@@ -14,6 +14,7 @@ import type {
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import { Button } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface SkillsMPSearchResult {
   id: string;
@@ -36,28 +37,33 @@ export const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
   repo,
   onInstall,
   isInstalling,
-}) => (
-  <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 flex items-center justify-between">
-    <div className="flex items-center gap-3">
-      <Package className="w-5 h-5 text-blue-400 shrink-0" />
-      <div>
-        <h4 className="text-sm font-medium text-zinc-200">{repo.name}</h4>
-        {repo.description && (
-          <p className="text-xs text-zinc-400 mt-0.5">{repo.description}</p>
-        )}
+}) => {
+  const { t } = useI18n();
+  const cardsText = t.settings.skills.cards;
+
+  return (
+    <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <Package className="w-5 h-5 text-blue-400 shrink-0" />
+        <div>
+          <h4 className="text-sm font-medium text-zinc-200">{repo.name}</h4>
+          {repo.description && (
+            <p className="text-xs text-zinc-400 mt-0.5">{repo.description}</p>
+          )}
+        </div>
       </div>
+      <Button
+        size="sm"
+        variant="primary"
+        onClick={() => onInstall(repo)}
+        loading={isInstalling}
+        leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
+      >
+        {cardsText.install}
+      </Button>
     </div>
-    <Button
-      size="sm"
-      variant="primary"
-      onClick={() => onInstall(repo)}
-      loading={isInstalling}
-      leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
-    >
-      安装
-    </Button>
-  </div>
-);
+  );
+};
 
 // ----------------------------------------------------------------------------
 // 推荐 Skill 卡片（skill 粒度，按产物分类展示）
@@ -80,6 +86,8 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
   onInstall,
   isInstalling,
 }) => {
+  const { t } = useI18n();
+  const cardsText = t.settings.skills.cards;
   const isBuiltin = entry.repoId === BUILTIN_REPO_ID;
 
   return (
@@ -99,12 +107,12 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
       </div>
       <div className="flex items-center justify-between gap-2 mt-auto">
         <span className="text-[10px] text-zinc-500 truncate">
-          {isBuiltin ? '内置 Skill' : sourceRepoName ? `来源: ${sourceRepoName}` : ''}
+          {isBuiltin ? cardsText.builtinSkill : sourceRepoName ? `${cardsText.sourcePrefix}${sourceRepoName}` : ''}
         </span>
         {isBuiltin || isInstalled ? (
           <span className="flex shrink-0 items-center gap-1 text-xs text-emerald-400">
             <Check className="w-3 h-3" />
-            {isBuiltin ? '已内置' : '已安装'}
+            {isBuiltin ? cardsText.builtinInstalled : cardsText.installed}
           </span>
         ) : (
           <Button
@@ -115,7 +123,7 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
             disabled={isWebMode()}
             leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
           >
-            安装
+            {cardsText.install}
           </Button>
         )}
       </div>
@@ -140,43 +148,48 @@ export const RoleBundleCard: React.FC<RoleBundleCardProps> = ({
   isReady,
   onInstall,
   isInstalling,
-}) => (
-  <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 hover:border-zinc-600 transition-colors flex flex-col gap-3">
-    <div>
-      <h5 className="text-sm font-medium text-zinc-200">{bundle.name}</h5>
-      <p className="text-xs text-zinc-400 mt-1">{bundle.description}</p>
+}) => {
+  const { t } = useI18n();
+  const cardsText = t.settings.skills.cards;
+
+  return (
+    <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 hover:border-zinc-600 transition-colors flex flex-col gap-3">
+      <div>
+        <h5 className="text-sm font-medium text-zinc-200">{bundle.name}</h5>
+        <p className="text-xs text-zinc-400 mt-1">{bundle.description}</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {bundle.skills.map((skill) => (
+          <span
+            key={skill.name}
+            className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-300"
+          >
+            {skill.displayName}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center justify-end mt-auto">
+        {isReady ? (
+          <span className="flex items-center gap-1 text-xs text-emerald-400">
+            <Check className="w-3 h-3" />
+            {cardsText.ready}
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => onInstall(bundle)}
+            loading={isInstalling}
+            disabled={isWebMode()}
+            leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
+          >
+            {cardsText.installAll}
+          </Button>
+        )}
+      </div>
     </div>
-    <div className="flex flex-wrap gap-1.5">
-      {bundle.skills.map((skill) => (
-        <span
-          key={skill.name}
-          className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-300"
-        >
-          {skill.displayName}
-        </span>
-      ))}
-    </div>
-    <div className="flex items-center justify-end mt-auto">
-      {isReady ? (
-        <span className="flex items-center gap-1 text-xs text-emerald-400">
-          <Check className="w-3 h-3" />
-          已就绪
-        </span>
-      ) : (
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={() => onInstall(bundle)}
-          loading={isInstalling}
-          disabled={isWebMode()}
-          leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
-        >
-          一键安装
-        </Button>
-      )}
-    </div>
-  </div>
-);
+  );
+};
 
 interface SkillSearchResultCardProps {
   skill: SkillsMPSearchResult;
@@ -189,6 +202,8 @@ export const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
   onInstall,
   isInstalling,
 }) => {
+  const { t } = useI18n();
+  const cardsText = t.settings.skills.cards;
   const formatStars = (stars: number) => {
     if (stars >= 1000) {
       return `${(stars / 1000).toFixed(1)}k`;
@@ -232,7 +247,7 @@ export const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
               variant="secondary"
               leftIcon={<ExternalLink className="w-3 h-3" />}
             >
-              查看
+              {cardsText.view}
             </Button>
           </a>
           <Button
@@ -243,7 +258,7 @@ export const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
             disabled={isWebMode()}
             leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
           >
-            安装
+            {cardsText.install}
           </Button>
         </div>
       </div>

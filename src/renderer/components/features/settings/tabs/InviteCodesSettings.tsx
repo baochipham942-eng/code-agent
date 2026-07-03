@@ -21,6 +21,10 @@ import type {
 import { Button } from '../../../primitives';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
+
+const DEFAULT_INVITE_CODES_TEXT = zh.settings.invites;
 
 interface InviteCodeDraft {
   label: string;
@@ -28,10 +32,13 @@ interface InviteCodeDraft {
   expiresAt: string;
 }
 
-function formatDate(value?: string): string {
-  if (!value) return '不限';
+function formatDate(
+  value?: string,
+  emptyLabel = DEFAULT_INVITE_CODES_TEXT.noLimit,
+): string {
+  if (!value) return emptyLabel;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '不限';
+  if (Number.isNaN(date.getTime())) return emptyLabel;
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -55,20 +62,23 @@ function toIsoOrNull(value: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function getInviteStatus(invite: AdminInviteCodeItem): {
+function getInviteStatus(
+  invite: AdminInviteCodeItem,
+  labels = DEFAULT_INVITE_CODES_TEXT.statusLabels,
+): {
   label: string;
   className: string;
 } {
   if (!invite.isActive) {
-    return { label: '停用', className: 'border-zinc-700 bg-zinc-800 text-zinc-400' };
+    return { label: labels.inactive, className: 'border-zinc-700 bg-zinc-800 text-zinc-400' };
   }
   if (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
-    return { label: '过期', className: 'border-red-500/30 bg-red-500/10 text-red-300' };
+    return { label: labels.expired, className: 'border-red-500/30 bg-red-500/10 text-red-300' };
   }
   if (invite.remainingUses <= 0) {
-    return { label: '用完', className: 'border-amber-500/30 bg-amber-500/10 text-amber-300' };
+    return { label: labels.exhausted, className: 'border-amber-500/30 bg-amber-500/10 text-amber-300' };
   }
-  return { label: '可用', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' };
+  return { label: labels.usable, className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' };
 }
 
 function normalizeCodeInput(value: string): string {
@@ -86,6 +96,8 @@ function matchesQuery(invite: AdminInviteCodeItem, query: string): boolean {
 }
 
 export const InviteCodesSettings: React.FC = () => {
+  const { t } = useI18n();
+  const inviteText = t.settings.invites;
   const [inviteCodes, setInviteCodes] = useState<AdminInviteCodeItem[]>([]);
   const [drafts, setDrafts] = useState<Record<string, InviteCodeDraft>>({});
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
@@ -139,10 +151,10 @@ export const InviteCodesSettings: React.FC = () => {
 
   const summary = useMemo(() => ({
     total: inviteCodes.length,
-    usable: inviteCodes.filter((invite) => getInviteStatus(invite).label === '可用').length,
+    usable: inviteCodes.filter((invite) => getInviteStatus(invite, inviteText.statusLabels).label === inviteText.statusLabels.usable).length,
     used: inviteCodes.reduce((sum, invite) => sum + invite.useCount, 0),
     remaining: inviteCodes.reduce((sum, invite) => sum + invite.remainingUses, 0),
-  }), [inviteCodes]);
+  }), [inviteCodes, inviteText]);
 
   const createInviteCode = useCallback(async () => {
     const maxUses = Math.max(Number.parseInt(newMaxUses, 10) || 1, 1);
@@ -215,11 +227,11 @@ export const InviteCodesSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="邀请码管理"
-      description="邀请码决定注册入口，使用次数、有效期和停用状态在这里维护。"
+      title={inviteText.title}
+      description={inviteText.description}
     >
       <SettingsSection
-        title="邀请码概览"
+        title={inviteText.overviewTitle}
         actions={(
           <Button
             type="button"
@@ -229,26 +241,26 @@ export const InviteCodesSettings: React.FC = () => {
             loading={loading}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {inviteText.refresh}
           </Button>
         )}
       >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
             <div className="text-xl font-semibold text-zinc-100">{summary.total}</div>
-            <div className="mt-1 text-xs text-zinc-500">邀请码</div>
+            <div className="mt-1 text-xs text-zinc-500">{inviteText.summary.invites}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
             <div className="text-xl font-semibold text-emerald-300">{summary.usable}</div>
-            <div className="mt-1 text-xs text-zinc-500">可用</div>
+            <div className="mt-1 text-xs text-zinc-500">{inviteText.statusLabels.usable}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
             <div className="text-xl font-semibold text-zinc-100">{summary.used}</div>
-            <div className="mt-1 text-xs text-zinc-500">已使用</div>
+            <div className="mt-1 text-xs text-zinc-500">{inviteText.summary.used}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
             <div className="text-xl font-semibold text-zinc-100">{summary.remaining}</div>
-            <div className="mt-1 text-xs text-zinc-500">剩余次数</div>
+            <div className="mt-1 text-xs text-zinc-500">{inviteText.summary.remainingUses}</div>
           </div>
         </div>
 
@@ -267,20 +279,20 @@ export const InviteCodesSettings: React.FC = () => {
         )}
       </SettingsSection>
 
-      <SettingsSection title="新建邀请码">
+      <SettingsSection title={inviteText.create.title}>
         <div className="grid gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 md:grid-cols-[1fr_1fr_120px_210px_auto]">
           <input
             type="text"
             value={newCode}
             onChange={(event) => setNewCode(normalizeCodeInput(event.target.value))}
-            placeholder="自动生成或手填"
+            placeholder={inviteText.create.codePlaceholder}
             className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm font-mono text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
           <input
             type="text"
             value={newLabel}
             onChange={(event) => setNewLabel(event.target.value)}
-            placeholder="备注"
+            placeholder={inviteText.create.labelPlaceholder}
             className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
           <input
@@ -288,14 +300,14 @@ export const InviteCodesSettings: React.FC = () => {
             min={1}
             value={newMaxUses}
             onChange={(event) => setNewMaxUses(event.target.value)}
-            aria-label="最大使用次数"
+            aria-label={inviteText.create.maxUsesAria}
             className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
           />
           <input
             type="datetime-local"
             value={newExpiresAt}
             onChange={(event) => setNewExpiresAt(event.target.value)}
-            aria-label="过期时间"
+            aria-label={inviteText.create.expiresAtAria}
             className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
           />
           <Button
@@ -305,26 +317,27 @@ export const InviteCodesSettings: React.FC = () => {
             loading={loading}
             leftIcon={<Ticket className="h-3.5 w-3.5" />}
           >
-            创建
+            {inviteText.create.create}
           </Button>
         </div>
       </SettingsSection>
 
-      <SettingsSection title="字段口径">
+      <SettingsSection title={inviteText.fields.title}>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs leading-6 text-zinc-500">
-          已有字段保留 code、max_uses、use_count、expires_at、is_active、created_at；新增 label、created_by、updated_at、last_used_at。
-          不展示使用人明细、兑换 IP、设备指纹和批量导入模板，它们现在没有稳定业务动作支撑。
+          {inviteText.fields.line1}
+          {' '}
+          {inviteText.fields.line2}
         </div>
       </SettingsSection>
 
-      <SettingsSection title="邀请码列表">
+      <SettingsSection title={inviteText.list.title}>
         <div className="relative md:w-80">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索邀请码、备注、创建人"
+            placeholder={inviteText.list.searchPlaceholder}
             className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
         </div>
@@ -334,14 +347,14 @@ export const InviteCodesSettings: React.FC = () => {
             <table className="min-w-[1180px] w-full text-left text-xs">
               <thead className="bg-zinc-900/80 text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">邀请码</th>
-                  <th className="px-3 py-2 font-medium">备注</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">次数</th>
-                  <th className="px-3 py-2 font-medium">过期时间</th>
-                  <th className="px-3 py-2 font-medium">创建信息</th>
-                  <th className="px-3 py-2 font-medium">最后使用</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.inviteCode}</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.remark}</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.status}</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.uses}</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.expiresAt}</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.createdInfo}</th>
+                  <th className="px-3 py-2 font-medium">{inviteText.list.columns.lastUsedAt}</th>
+                  <th className="px-3 py-2 text-right font-medium">{inviteText.list.columns.action}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800 bg-zinc-950/40 text-zinc-300">
@@ -351,7 +364,7 @@ export const InviteCodesSettings: React.FC = () => {
                     maxUses: String(invite.maxUses),
                     expiresAt: toDateTimeInput(invite.expiresAt),
                   };
-                  const status = getInviteStatus(invite);
+                  const status = getInviteStatus(invite, inviteText.statusLabels);
                   return (
                     <tr key={invite.id} className="hover:bg-zinc-900/60">
                       <td className="px-3 py-3">
@@ -364,7 +377,7 @@ export const InviteCodesSettings: React.FC = () => {
                           value={draft.label}
                           onChange={(event) => updateDraft(invite.id, { label: event.target.value })}
                           className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
-                          placeholder="备注"
+                          placeholder={inviteText.list.remarkPlaceholder}
                         />
                       </td>
                       <td className="px-3 py-3">
@@ -391,15 +404,15 @@ export const InviteCodesSettings: React.FC = () => {
                           onChange={(event) => updateDraft(invite.id, { expiresAt: event.target.value })}
                           className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
                         />
-                        <div className="mt-1 text-[11px] text-zinc-500">{formatDate(invite.expiresAt)}</div>
+                        <div className="mt-1 text-[11px] text-zinc-500">{formatDate(invite.expiresAt, inviteText.noLimit)}</div>
                       </td>
                       <td className="px-3 py-3">
-                        <div className="text-zinc-400">{formatDate(invite.createdAt)}</div>
+                        <div className="text-zinc-400">{formatDate(invite.createdAt, inviteText.noLimit)}</div>
                         <div className="mt-1 truncate text-[11px] text-zinc-500" title={invite.createdByEmail}>
                           {invite.createdByEmail || '-'}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-zinc-400">{formatDate(invite.lastUsedAt)}</td>
+                      <td className="px-3 py-3 text-zinc-400">{formatDate(invite.lastUsedAt, inviteText.noLimit)}</td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-1.5">
                           <Button
@@ -411,7 +424,7 @@ export const InviteCodesSettings: React.FC = () => {
                               ? <Check className="h-3.5 w-3.5" />
                               : <Clipboard className="h-3.5 w-3.5" />}
                           >
-                            复制
+                            {inviteText.list.copy}
                           </Button>
                           <Button
                             type="button"
@@ -420,7 +433,7 @@ export const InviteCodesSettings: React.FC = () => {
                             onClick={() => saveInviteCode(invite)}
                             loading={savingId === invite.id}
                           >
-                            保存
+                            {t.common.save}
                           </Button>
                           <Button
                             type="button"
@@ -432,7 +445,7 @@ export const InviteCodesSettings: React.FC = () => {
                               ? <PowerOff className="h-3.5 w-3.5" />
                               : <Power className="h-3.5 w-3.5" />}
                           >
-                            {invite.isActive ? '停用' : '启用'}
+                            {invite.isActive ? inviteText.list.disable : inviteText.list.enable}
                           </Button>
                         </div>
                       </td>
@@ -442,7 +455,7 @@ export const InviteCodesSettings: React.FC = () => {
                 {!loading && filteredInviteCodes.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-3 py-10 text-center text-zinc-500">
-                      没有匹配的邀请码
+                      {inviteText.list.noMatches}
                     </td>
                   </tr>
                 )}

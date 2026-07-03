@@ -12,6 +12,8 @@ import {
 } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 const logger = createLogger('NativeConnectorsSection');
 
@@ -25,35 +27,30 @@ export interface NativeConnectorRow extends NativeConnectorInventoryItem {
 export type RuntimeConnectorRow = ConnectorStatusSummary;
 
 interface NativeConnectorActionConfig {
-  label: string;
-  busyLabel: string;
   ipcAction: 'retry' | 'probe' | 'repairPermission' | 'disconnect' | 'remove';
   icon: React.ComponentType<{ className?: string }>;
   danger?: boolean;
 }
 
+type NativeConnectorsText = ReturnType<typeof useI18n>['t']['settings']['nativeConnectors'];
+
+// zh 默认值只服务测试兼容（既定模式），组件真实路径由父级传 t 派生值
+const DEFAULT_NATIVE_CONNECTORS_TEXT: NativeConnectorsText = zh.settings.nativeConnectors;
+
 const ACTION_CONFIG: Record<NativeConnectorUiAction, NativeConnectorActionConfig> = {
   probe: {
-    label: '检查',
-    busyLabel: '检查中',
     ipcAction: 'probe',
     icon: RefreshCw,
   },
   repair_permissions: {
-    label: '修复权限',
-    busyLabel: '修复中',
     ipcAction: 'repairPermission',
     icon: Wrench,
   },
   disconnect: {
-    label: '断开',
-    busyLabel: '断开中',
     ipcAction: 'disconnect',
     icon: Unplug,
   },
   remove: {
-    label: '移除',
-    busyLabel: '移除中',
     ipcAction: 'remove',
     icon: Trash2,
     danger: true,
@@ -71,14 +68,10 @@ const FALLBACK_ENABLED_ACTIONS: ConnectorLifecycleAction[] = ['disconnect', 'rem
 
 const RUNTIME_ACTION_CONFIG: Record<RuntimeConnectorUiAction, NativeConnectorActionConfig> = {
   retry: {
-    label: '重试',
-    busyLabel: '重试中',
     ipcAction: 'retry',
     icon: RefreshCw,
   },
   probe: {
-    label: '检查',
-    busyLabel: '检查中',
     ipcAction: 'probe',
     icon: Plug,
   },
@@ -105,13 +98,16 @@ export function buildRuntimeConnectorRows(
   return statuses.filter((status) => !nativeIds.has(status.id));
 }
 
-export function getNativeConnectorReadiness(row: NativeConnectorRow): {
+export function getNativeConnectorReadiness(
+  row: NativeConnectorRow,
+  labels: NativeConnectorsText['readiness'] = DEFAULT_NATIVE_CONNECTORS_TEXT.readiness,
+): {
   label: string;
   className: string;
 } {
   if (!row.enabled) {
     return {
-      label: '已停用',
+      label: labels.disabled,
       className: 'bg-zinc-700 text-zinc-300',
     };
   }
@@ -119,60 +115,63 @@ export function getNativeConnectorReadiness(row: NativeConnectorRow): {
   switch (row.status?.readiness) {
     case 'ready':
       return {
-        label: '可用',
+        label: labels.ready,
         className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
       };
     case 'failed':
       return {
-        label: '检查失败',
+        label: labels.failed,
         className: 'bg-red-500/15 text-red-300 border border-red-500/25',
       };
     case 'unavailable':
       return {
-        label: '不可用',
+        label: labels.unavailable,
         className: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
       };
     case 'unchecked':
       return {
-        label: '未检查',
+        label: labels.unchecked,
         className: 'bg-sky-500/15 text-sky-300 border border-sky-500/25',
       };
     default:
       return {
-        label: '状态未返回',
+        label: labels.unknown,
         className: 'bg-zinc-700 text-zinc-300',
       };
   }
 }
 
-export function getRuntimeConnectorReadiness(row: RuntimeConnectorRow): {
+export function getRuntimeConnectorReadiness(
+  row: RuntimeConnectorRow,
+  labels: NativeConnectorsText['readiness'] = DEFAULT_NATIVE_CONNECTORS_TEXT.readiness,
+): {
   label: string;
   className: string;
 } {
   switch (row.readiness) {
     case 'ready':
       return {
-        label: '可用',
+        label: labels.ready,
         className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
       };
     case 'failed':
       return {
-        label: '检查失败',
+        label: labels.failed,
         className: 'bg-red-500/15 text-red-300 border border-red-500/25',
       };
     case 'unavailable':
       return {
-        label: '不可用',
+        label: labels.unavailable,
         className: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
       };
     case 'unchecked':
       return {
-        label: '未检查',
+        label: labels.unchecked,
         className: 'bg-sky-500/15 text-sky-300 border border-sky-500/25',
       };
     default:
       return {
-        label: '状态未返回',
+        label: labels.unknown,
         className: 'bg-zinc-700 text-zinc-300',
       };
   }
@@ -236,24 +235,25 @@ function formatCheckedAt(checkedAt?: number): string | null {
   });
 }
 
-function formatActionLabels(actions: NativeConnectorUiAction[]): string {
-  if (actions.length === 0) return '无';
-  return actions.map((action) => ACTION_CONFIG[action].label).join('、');
+function formatActionLabels(actions: NativeConnectorUiAction[], text: NativeConnectorsText): string {
+  if (actions.length === 0) return text.empty;
+  return actions.map((action) => text.actions[action].label).join(text.separator);
 }
 
-function formatRuntimeActionLabels(actions: RuntimeConnectorUiAction[]): string {
-  if (actions.length === 0) return '无';
-  return actions.map((action) => RUNTIME_ACTION_CONFIG[action].label).join('、');
+function formatRuntimeActionLabels(actions: RuntimeConnectorUiAction[], text: NativeConnectorsText): string {
+  if (actions.length === 0) return text.empty;
+  return actions.map((action) => text.actions[action].label).join(text.separator);
 }
 
-function formatCapabilities(capabilities: string[]): string {
-  if (capabilities.length === 0) return '无';
-  return capabilities.join('、');
+function formatCapabilities(capabilities: string[], text: NativeConnectorsText): string {
+  if (capabilities.length === 0) return text.empty;
+  return capabilities.join(text.separator);
 }
 
 interface NativeConnectorItemsProps {
   rows: NativeConnectorRow[];
   busyKey: string | null;
+  text?: NativeConnectorsText;
   onToggle: (id: string, enabled: boolean) => void;
   onLifecycleAction: (id: string, action: NativeConnectorUiAction) => void;
 }
@@ -261,12 +261,13 @@ interface NativeConnectorItemsProps {
 export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
   rows,
   busyKey,
+  text = DEFAULT_NATIVE_CONNECTORS_TEXT,
   onToggle,
   onLifecycleAction,
 }) => (
   <div className="space-y-2">
     {rows.map((row) => {
-      const readiness = getNativeConnectorReadiness(row);
+      const readiness = getNativeConnectorReadiness(row, text.readiness);
       const lifecycleActions = getNativeConnectorLifecycleActions(row);
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
       const checkedAt = formatCheckedAt(row.status?.checkedAt);
@@ -286,14 +287,14 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                 </span>
                 {row.status?.connected && (
                   <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
-                    已连接
+                    {text.connected}
                   </span>
                 )}
               </div>
               <div className="mt-1 text-[11px] text-zinc-500">id: {row.id}</div>
               <div className="mt-1 text-[11px] text-zinc-500">
-                可用动作: {formatActionLabels(lifecycleActions)}
-                {checkedAt ? ` · 上次检查: ${checkedAt}` : ''}
+                {text.availableActionsPrefix}{formatActionLabels(lifecycleActions, text)}
+                {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
               </div>
               {detail && (
                 <div className={`mt-1 text-xs ${row.status?.error ? 'text-red-300' : 'text-zinc-400'}`}>
@@ -303,7 +304,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
             </div>
 
             <label className="inline-flex items-center gap-2 text-xs text-zinc-400">
-              <span>{row.enabled ? '启用' : '停用'}</span>
+              <span>{row.enabled ? text.enabled : text.disabled}</span>
               <input
                 type="checkbox"
                 checked={row.enabled}
@@ -318,6 +319,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
             <div className="mt-3 flex flex-wrap gap-2">
               {lifecycleActions.map((action) => {
                 const config = ACTION_CONFIG[action];
+                const actionText = text.actions[action];
                 const Icon = config.icon;
                 const actionBusy = busyKey === `${row.id}:${action}`;
                 return (
@@ -331,14 +333,14 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                         ? 'border-red-500/25 text-red-300 hover:bg-red-500/10'
                         : 'border-zinc-600 text-zinc-300 hover:bg-zinc-800'
                     }`}
-                    title={`${row.label} ${config.label}`}
+                    title={`${row.label} ${actionText.label}`}
                   >
                     {actionBusy ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <Icon className="w-3 h-3" />
                     )}
-                    <span>{actionBusy ? config.busyLabel : config.label}</span>
+                    <span>{actionBusy ? actionText.busyLabel : actionText.label}</span>
                   </button>
                 );
               })}
@@ -353,17 +355,19 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
 interface RuntimeConnectorItemsProps {
   rows: RuntimeConnectorRow[];
   busyKey: string | null;
+  text?: NativeConnectorsText;
   onLifecycleAction: (id: string, action: RuntimeConnectorUiAction) => void;
 }
 
 export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
   rows,
   busyKey,
+  text = DEFAULT_NATIVE_CONNECTORS_TEXT,
   onLifecycleAction,
 }) => (
   <div className="space-y-2">
     {rows.map((row) => {
-      const readiness = getRuntimeConnectorReadiness(row);
+      const readiness = getRuntimeConnectorReadiness(row, text.readiness);
       const lifecycleActions = getRuntimeConnectorLifecycleActions(row);
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
       const checkedAt = formatCheckedAt(row.checkedAt);
@@ -382,17 +386,17 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
               </span>
               {row.connected && (
                 <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
-                  已连接
+                  {text.connected}
                 </span>
               )}
             </div>
             <div className="mt-1 text-[11px] text-zinc-500">id: {row.id}</div>
             <div className="mt-1 text-[11px] text-zinc-500">
-              能力: {formatCapabilities(row.capabilities)}
-              {checkedAt ? ` · 上次检查: ${checkedAt}` : ''}
+              {text.capabilitiesPrefix}{formatCapabilities(row.capabilities, text)}
+              {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
             </div>
             <div className="mt-1 text-[11px] text-zinc-500">
-              可用动作: {formatRuntimeActionLabels(lifecycleActions)}
+              {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
             </div>
             {detail && (
               <div className={`mt-1 text-xs ${row.error ? 'text-red-300' : 'text-zinc-400'}`}>
@@ -405,6 +409,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
             <div className="mt-3 flex flex-wrap gap-2">
               {lifecycleActions.map((action) => {
                 const config = RUNTIME_ACTION_CONFIG[action];
+                const actionText = text.actions[action];
                 const Icon = config.icon;
                 const actionBusy = busyKey === `${row.id}:${action}`;
                 return (
@@ -414,14 +419,14 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                     disabled={rowBusy}
                     onClick={() => onLifecycleAction(row.id, action)}
                     className="inline-flex items-center gap-1.5 rounded border border-zinc-600 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    title={`${row.label} ${config.label}`}
+                    title={`${row.label} ${actionText.label}`}
                   >
                     {actionBusy ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <Icon className="w-3 h-3" />
                     )}
-                    <span>{actionBusy ? config.busyLabel : config.label}</span>
+                    <span>{actionBusy ? actionText.busyLabel : actionText.label}</span>
                   </button>
                 );
               })}
@@ -434,6 +439,8 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
 );
 
 export const NativeConnectorsSection: React.FC = () => {
+  const { t } = useI18n();
+  const connectorText = t.settings.nativeConnectors;
   const [items, setItems] = useState<NativeConnectorInventoryItem[]>([]);
   const [statuses, setStatuses] = useState<ConnectorStatusSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -536,33 +543,35 @@ export const NativeConnectorsSection: React.FC = () => {
     <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
       <div className="flex items-center gap-2 mb-3">
         <Plug className="w-4 h-4 text-sky-400" />
-        <h4 className="text-sm font-medium text-zinc-200">原生连接器</h4>
+        <h4 className="text-sm font-medium text-zinc-200">{connectorText.title}</h4>
         <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">macOS</span>
       </div>
       <p className="text-xs text-zinc-400 mb-3">
-        按需启用 macOS 原生应用的连接器；启用后可在这里检查授权、修复权限、断开或移除。
+        {connectorText.description}
       </p>
 
       {loading ? (
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>加载中…</span>
+          <span>{connectorText.loading}</span>
         </div>
       ) : (
         <>
           <NativeConnectorItems
             rows={rows}
             busyKey={busyKey}
+            text={connectorText}
             onToggle={(id, enabled) => void toggle(id, enabled)}
             onLifecycleAction={(id, action) => void runLifecycleAction(id, action)}
           />
 
           {runtimeRows.length > 0 && (
             <div className="mt-4 border-t border-zinc-700 pt-3">
-              <div className="mb-2 text-xs font-medium text-zinc-300">其他连接器</div>
+              <div className="mb-2 text-xs font-medium text-zinc-300">{connectorText.otherConnectors}</div>
               <RuntimeConnectorItems
                 rows={runtimeRows}
                 busyKey={busyKey}
+                text={connectorText}
                 onLifecycleAction={(id, action) => void runRuntimeLifecycleAction(id, action)}
               />
             </div>
@@ -571,7 +580,7 @@ export const NativeConnectorsSection: React.FC = () => {
       )}
 
       {error && (
-        <div className="mt-3 text-xs text-red-400">连接器操作失败: {error}</div>
+        <div className="mt-3 text-xs text-red-400">{connectorText.operationFailedPrefix}{error}</div>
       )}
     </div>
   );

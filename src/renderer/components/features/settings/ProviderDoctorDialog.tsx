@@ -25,6 +25,7 @@ import { Button } from '../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { toast } from '../../../hooks/useToast';
+import { useI18n } from '../../../hooks/useI18n';
 
 // ============================================================================
 // Types — 与 src/host/diagnostics/types.ts 对齐
@@ -81,18 +82,6 @@ const CATEGORY_ICONS: Record<DoctorCategory, React.FC<{ className?: string }>> =
   version: Package,
 };
 
-const CATEGORY_LABELS: Record<DoctorCategory, string> = {
-  environment: '运行环境',
-  network: '网络连接',
-  config: '配置文件',
-  database: '数据库',
-  disk: '磁盘存储',
-  provider_health: 'Provider 健康',
-  mcp: 'MCP 服务器',
-  hooks: 'Hooks 配置',
-  version: '应用版本',
-};
-
 const CATEGORY_ORDER: DoctorCategory[] = [
   'environment',
   'database',
@@ -138,7 +127,8 @@ const STATUS_LABELS: Record<DoctorStatus, string> = {
 const DoctorItemRow: React.FC<{
   item: DoctorItem;
   defaultExpanded: boolean;
-}> = ({ item, defaultExpanded }) => {
+  suggestionPrefix: string;
+}> = ({ item, defaultExpanded, suggestionPrefix }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasDetails = !!(item.details || item.suggestion);
   const style = STATUS_STYLES[item.status];
@@ -180,7 +170,7 @@ const DoctorItemRow: React.FC<{
         <div className="px-3 pb-2.5 pt-0 space-y-1.5">
           {item.suggestion && (
             <div className="text-xs text-amber-300/90 bg-amber-900/15 border border-amber-700/30 rounded p-2">
-              建议：{item.suggestion}
+              {suggestionPrefix}{item.suggestion}
             </div>
           )}
           {item.details && (
@@ -202,6 +192,8 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useI18n();
+  const doctorText = t.settings.providerDoctor;
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -215,20 +207,20 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
       );
       setReport(result);
     } catch (err) {
-      toast.error(`诊断失败: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${doctorText.toast.failedPrefix}${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsRunning(false);
     }
-  }, []);
+  }, [doctorText.toast.failedPrefix]);
 
   const handleExport = useCallback(() => {
     if (!report) return;
     const json = JSON.stringify(report, null, 2);
     navigator.clipboard.writeText(json).then(
-      () => toast.success('诊断报告已复制到剪贴板'),
-      () => toast.error('复制失败'),
+      () => toast.success(doctorText.toast.copied),
+      () => toast.error(doctorText.toast.copyFailed),
     );
-  }, [report]);
+  }, [doctorText.toast.copied, doctorText.toast.copyFailed, report]);
 
   // Group by category, ordered by CATEGORY_ORDER
   const groupedItems: Array<[DoctorCategory, DoctorItem[]]> = (() => {
@@ -246,7 +238,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="系统诊断"
+      title={doctorText.title}
       size="lg"
       headerIcon={<Stethoscope className="w-5 h-5 text-blue-400" />}
       footer={
@@ -259,7 +251,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
                 onClick={handleExport}
               >
                 <ClipboardCopy className="w-4 h-4 mr-1.5" />
-                导出日志
+                {doctorText.exportLogs}
               </Button>
             )}
           </div>
@@ -271,7 +263,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
                 loading={isRunning}
               >
                 <RefreshCw className="w-4 h-4 mr-1.5" />
-                重新诊断
+                {doctorText.rerun}
               </Button>
             ) : (
               <Button
@@ -279,7 +271,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
                 onClick={runDoctor}
                 loading={isRunning}
               >
-                开始诊断
+                {doctorText.start}
               </Button>
             )}
           </div>
@@ -291,19 +283,19 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
         <div className="flex items-center gap-4 mb-4 px-3 py-2.5 rounded-lg bg-zinc-800/60 border border-zinc-700/50 flex-wrap">
           <span className="flex items-center gap-1.5 text-sm text-green-400">
             <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
-            {report.summary.pass} 通过
+            {report.summary.pass}{doctorText.summary.passSuffix}
           </span>
           <span className="flex items-center gap-1.5 text-sm text-amber-400">
             <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
-            {report.summary.warn} 警告
+            {report.summary.warn}{doctorText.summary.warnSuffix}
           </span>
           <span className="flex items-center gap-1.5 text-sm text-red-400">
             <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
-            {report.summary.fail} 失败
+            {report.summary.fail}{doctorText.summary.failSuffix}
           </span>
           <span className="flex items-center gap-1.5 text-sm text-zinc-400">
             <span className="inline-block w-2 h-2 rounded-full bg-zinc-400" />
-            {report.summary.skip} 跳过
+            {report.summary.skip}{doctorText.summary.skipSuffix}
           </span>
           <span className="ml-auto text-xs text-zinc-500">
             {(report.durationMs / 1000).toFixed(1)}s · {new Date(report.timestamp).toLocaleTimeString()}
@@ -315,7 +307,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
       {!report && !isRunning && (
         <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
           <Stethoscope className="w-12 h-12 mb-3 opacity-30" />
-          <p className="text-sm">点击下方按钮开始系统诊断</p>
+          <p className="text-sm">{doctorText.empty}</p>
         </div>
       )}
 
@@ -323,7 +315,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
       {isRunning && (
         <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
           <RefreshCw className="w-8 h-8 mb-3 animate-spin opacity-50" />
-          <p className="text-sm">正在运行诊断...</p>
+          <p className="text-sm">{doctorText.running}</p>
         </div>
       )}
 
@@ -337,7 +329,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
                 <div className="flex items-center gap-2 mb-2">
                   <Icon className="w-4 h-4 text-zinc-400" />
                   <h3 className="text-sm font-medium text-zinc-300">
-                    {CATEGORY_LABELS[category]}
+                    {doctorText.categoryLabels[category]}
                   </h3>
                 </div>
                 <div className="space-y-1.5">
@@ -346,6 +338,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
                       key={`${item.name}-${idx}`}
                       item={item}
                       defaultExpanded={item.status === 'fail'}
+                      suggestionPrefix={doctorText.suggestionPrefix}
                     />
                   ))}
                 </div>

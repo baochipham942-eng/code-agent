@@ -10,6 +10,8 @@ import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import type {
   OpenchronicleSettings as OcSettings,
   OpenchronicleStatus,
@@ -18,13 +20,25 @@ import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../../../shared/contract/o
 
 const logger = createLogger('OpenchronicleSettings');
 
-const STATE_LABEL: Record<OpenchronicleStatus['state'], { dot: string; text: string }> = {
-  running:  { dot: 'bg-green-500',  text: '运行中' },
-  starting: { dot: 'bg-yellow-500', text: '启动中…' },
-  stopping: { dot: 'bg-yellow-500', text: '停止中…' },
-  stopped:  { dot: 'bg-zinc-500',   text: '已停止' },
-  error:    { dot: 'bg-red-500',    text: '异常' },
+type OpenchronicleSettingsText = typeof zh.settings.openchronicle;
+
+const STATE_DOT: Record<OpenchronicleStatus['state'], string> = {
+  running: 'bg-green-500',
+  starting: 'bg-yellow-500',
+  stopping: 'bg-yellow-500',
+  stopped: 'bg-zinc-500',
+  error: 'bg-red-500',
 };
+
+function getOpenchronicleStateLabel(
+  state: OpenchronicleStatus['state'],
+  labels: OpenchronicleSettingsText['stateLabels'] = zh.settings.openchronicle.stateLabels,
+): { dot: string; text: string } {
+  return {
+    dot: STATE_DOT[state],
+    text: labels[state],
+  };
+}
 
 interface OpenchronicleSettingsProps {
   embedded?: boolean;
@@ -40,27 +54,32 @@ export const OpenchronicleToggleSwitch: React.FC<OpenchronicleToggleSwitchProps>
   checked,
   busy = false,
   onToggle,
-}) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={checked}
-    aria-label="启用屏幕记忆"
-    onClick={onToggle}
-    disabled={busy}
-    className={`relative inline-flex h-6 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-hidden ${
-      checked ? 'bg-emerald-500' : 'bg-zinc-600'
-    } ${busy ? 'cursor-wait opacity-50' : 'cursor-pointer'}`}
-  >
-    <span
-      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-        checked ? 'translate-x-6' : 'translate-x-0'
-      }`}
-    />
-  </button>
-);
+}) => {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={t.settings.openchronicle.control.enableScreenMemory}
+      onClick={onToggle}
+      disabled={busy}
+      className={`relative inline-flex h-6 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-hidden ${
+        checked ? 'bg-emerald-500' : 'bg-zinc-600'
+      } ${busy ? 'cursor-wait opacity-50' : 'cursor-pointer'}`}
+    >
+      <span
+        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+};
 
 export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false }) => {
+  const { t } = useI18n();
+  const openchronicleText = t.settings.openchronicle;
   const [settings, setSettings] = useState<OcSettings>(DEFAULT_OPENCHRONICLE_SETTINGS);
   const [status, setStatus] = useState<OpenchronicleStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,7 +114,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
         { enabled: next },
       );
       if (!result?.ok) {
-        setError(result?.error ?? '操作失败');
+        setError(result?.error ?? openchronicleText.operationFailed);
       }
       await refresh();
     } catch (e) {
@@ -116,13 +135,13 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       <div className={embedded ? 'space-y-3' : 'p-6'}>
         <WebModeBanner />
         <p className="text-sm text-zinc-400 mt-4">
-          屏幕记忆功能仅在 macOS 桌面版可用——它需要本地后台 daemon 监听系统活动。
+          {openchronicleText.webUnavailable}
         </p>
       </div>
     );
   }
 
-  const stateUi = status ? STATE_LABEL[status.state] : STATE_LABEL.stopped;
+  const stateUi = getOpenchronicleStateLabel(status?.state ?? 'stopped', openchronicleText.stateLabels);
 
   return (
     <div className={embedded ? 'space-y-4' : 'p-6 space-y-6 max-w-3xl'}>
@@ -131,15 +150,15 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       <header>
         <h2 className="text-xl font-semibold flex items-center gap-2">
           {settings.enabled ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
-          屏幕记忆
+          {t.settings.tabs.openchronicle}
         </h2>
         <p className="text-sm text-zinc-400 mt-1">
-          通过外部 <code className="text-xs bg-zinc-800 px-1 rounded">OpenChronicle</code> daemon
-          抓取你的跨 app 工作活动（macOS AX Tree），让 Agent Neo 在新对话开始时知道你刚才在干啥。
+          {openchronicleText.header.introPrefix}<code className="text-xs bg-zinc-800 px-1 rounded">OpenChronicle</code>{openchronicleText.header.introMiddle}
+          {openchronicleText.header.introSuffix}
         </p>
         <p className="text-xs text-amber-400 mt-2 flex items-start gap-1">
           <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-          开启后 OpenChronicle 会 7×24 在后台运行（即使关闭 Agent Neo），直到你在这里关掉它。
+          {openchronicleText.header.warning}
         </p>
       </header>
       )}
@@ -148,9 +167,9 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       <section className="border border-zinc-700 rounded-lg p-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="font-medium">启用屏幕记忆</div>
+            <div className="font-medium">{openchronicleText.control.enableScreenMemory}</div>
             <div className="text-xs text-zinc-400 mt-0.5">
-              ON：启动 OC daemon + 注册 MCP server · OFF：彻底退出 daemon
+              {openchronicleText.control.description}
             </div>
           </div>
           <OpenchronicleToggleSwitch
@@ -162,7 +181,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
 
         <div className="mt-4 pt-4 border-t border-zinc-700 grid grid-cols-2 gap-3 text-xs">
           <div>
-            <div className="text-zinc-400">Daemon 状态</div>
+            <div className="text-zinc-400">{openchronicleText.status.daemon}</div>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`w-2 h-2 rounded-full ${stateUi.dot}`} />
               <span>{stateUi.text}</span>
@@ -170,10 +189,10 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
             </div>
           </div>
           <div>
-            <div className="text-zinc-400">MCP 端点</div>
+            <div className="text-zinc-400">{openchronicleText.status.mcpEndpoint}</div>
             <div className="mt-1">
               <span className={status?.mcpHealthy ? 'text-green-400' : 'text-zinc-500'}>
-                {status?.mcpHealthy ? '✓ 已连通' : '— 未连接'}
+                {status?.mcpHealthy ? openchronicleText.status.connected : openchronicleText.status.disconnected}
               </span>
             </div>
           </div>
@@ -198,10 +217,10 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
             onClick={refresh}
             className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
           >
-            <RefreshCw className="w-3 h-3" /> 刷新
+            <RefreshCw className="w-3 h-3" /> {openchronicleText.refresh}
           </button>
           <span className="text-xs text-zinc-500">
-            数据目录: <code className="bg-zinc-800 px-1 rounded">~/.openchronicle/memory/</code>
+            {openchronicleText.status.dataDirPrefix}<code className="bg-zinc-800 px-1 rounded">~/.openchronicle/memory/</code>
           </span>
         </div>
       </section>
@@ -210,9 +229,9 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       <section className="border border-zinc-700 rounded-lg p-4">
         <label className="flex items-center justify-between cursor-pointer">
           <div>
-            <div className="font-medium">自动注入上下文到对话</div>
+            <div className="font-medium">{openchronicleText.autoInject.title}</div>
             <div className="text-xs text-zinc-400 mt-0.5">
-              新会话第一轮时把"你刚才在哪个 app 看什么"作为 system message 注入（限 500 tokens）
+              {openchronicleText.autoInject.description}
             </div>
           </div>
           <input
@@ -227,14 +246,14 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
 
       {/* 黑名单（Phase 3 真正实现，先给 UI 占位） */}
       <section className="border border-zinc-700 rounded-lg p-4">
-        <div className="font-medium mb-2">隐私黑名单</div>
+        <div className="font-medium mb-2">{openchronicleText.blacklist.title}</div>
         <div className="text-xs text-zinc-400 mb-3">
-          命中黑名单的 app 或 URL 不会被注入到对话上下文（OC daemon 仍会捕获，但 Agent Neo 端过滤）
+          {openchronicleText.blacklist.description}
         </div>
 
         <div className="space-y-3">
           <div>
-            <div className="text-xs text-zinc-300 mb-1">黑名单 App（每行一个）</div>
+            <div className="text-xs text-zinc-300 mb-1">{openchronicleText.blacklist.appsLabel}</div>
             <textarea
               value={settings.blacklistApps.join('\n')}
               onChange={(e) =>
@@ -243,11 +262,11 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
               disabled={!settings.enabled}
               rows={4}
               className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono"
-              placeholder="1Password&#10;Bitwarden&#10;微信"
+              placeholder={openchronicleText.blacklist.appsPlaceholder}
             />
           </div>
           <div>
-            <div className="text-xs text-zinc-300 mb-1">黑名单 URL pattern（glob，每行一个）</div>
+            <div className="text-xs text-zinc-300 mb-1">{openchronicleText.blacklist.urlPatternsLabel}</div>
             <textarea
               value={settings.blacklistUrlPatterns.join('\n')}
               onChange={(e) =>

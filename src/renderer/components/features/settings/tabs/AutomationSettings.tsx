@@ -29,24 +29,22 @@ import { CronJobEditor } from '../../cron/CronJobEditor';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { WebModeBanner } from '../WebModeBanner';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
-const FILTER_OPTIONS: Array<{ value: CronJobFilterMode; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'enabled', label: '启用中' },
-  { value: 'disabled', label: '已暂停' },
-];
+type AutomationSettingsText = typeof zh.settings.automation;
 
-function describeSchedule(job: CronJobDefinition): string {
+const FILTER_VALUES: CronJobFilterMode[] = ['all', 'enabled', 'disabled'];
+
+function describeSchedule(
+  job: CronJobDefinition,
+  labels: AutomationSettingsText['schedule'] = zh.settings.automation.schedule,
+): string {
   const schedule = job.schedule;
   if (!schedule) return '—';
   if (schedule.type === 'every') {
-    const unitLabel: Record<string, string> = {
-      seconds: '秒',
-      minutes: '分钟',
-      hours: '小时',
-      days: '天',
-    };
-    return `每 ${schedule.interval} ${unitLabel[schedule.unit] ?? schedule.unit}`;
+    const unit = labels.units[schedule.unit as keyof typeof labels.units] ?? schedule.unit;
+    return `${labels.everyPrefix}${schedule.interval}${labels.everyMiddle}${unit}`;
   }
   if (schedule.type === 'cron') {
     return `cron: ${schedule.expression}${schedule.timezone ? ` (${schedule.timezone})` : ''}`;
@@ -55,7 +53,7 @@ function describeSchedule(job: CronJobDefinition): string {
     const datetime = typeof schedule.datetime === 'number'
       ? new Date(schedule.datetime).toLocaleString()
       : schedule.datetime;
-    return `一次性 @ ${datetime}`;
+    return `${labels.atPrefix}${datetime}`;
   }
   return '—';
 }
@@ -80,14 +78,17 @@ function formatTimestamp(ts?: number | null): string {
   }
 }
 
-function statusLabel(execution: CronJobExecution | null | undefined): string {
-  if (!execution) return '尚未运行';
-  if (execution.status === 'completed') return '成功';
-  if (execution.status === 'failed') return '失败';
-  if (execution.status === 'running') return '运行中';
-  if (execution.status === 'pending') return '等待';
-  if (execution.status === 'cancelled') return '取消';
-  if (execution.status === 'paused') return '暂停';
+function statusLabel(
+  execution: CronJobExecution | null | undefined,
+  labels: AutomationSettingsText['executionStatus'] = zh.settings.automation.executionStatus,
+): string {
+  if (!execution) return labels.notRun;
+  if (execution.status === 'completed') return labels.completed;
+  if (execution.status === 'failed') return labels.failed;
+  if (execution.status === 'running') return labels.running;
+  if (execution.status === 'pending') return labels.pending;
+  if (execution.status === 'cancelled') return labels.cancelled;
+  if (execution.status === 'paused') return labels.paused;
   return execution.status;
 }
 
@@ -100,6 +101,8 @@ function statusClass(execution: CronJobExecution | null | undefined): string {
 }
 
 export const AutomationSettings: React.FC = () => {
+  const { t } = useI18n();
+  const automationText = t.settings.automation;
   const {
     jobs,
     stats,
@@ -120,6 +123,10 @@ export const AutomationSettings: React.FC = () => {
 
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
+  const filterOptions = useMemo(
+    () => FILTER_VALUES.map((value) => ({ value, label: automationText.filters[value] })),
+    [automationText],
+  );
 
   useEffect(() => {
     void refresh();
@@ -158,7 +165,7 @@ export const AutomationSettings: React.FC = () => {
   }, [triggerJob]);
 
   const handleDelete = useCallback(async (job: CronJobDefinition) => {
-    if (!window.confirm(`确认删除任务「${job.name}」？该操作不可恢复。`)) return;
+    if (!window.confirm(`${automationText.deleteConfirmPrefix}${job.name}${automationText.deleteConfirmSuffix}`)) return;
     setBusyJobId(job.id);
     try {
       await deleteJob(job.id);
@@ -166,18 +173,18 @@ export const AutomationSettings: React.FC = () => {
     } finally {
       setBusyJobId(null);
     }
-  }, [deleteJob, detailJobId]);
+  }, [automationText, deleteJob, detailJobId]);
 
   return (
     <SettingsPage
-      title="自动化"
-      description="定时任务（Cron）：列出已注册的任务、查看运行状态，并通过编辑器新建/修改任务。"
+      title={t.settings.tabs.automation}
+      description={automationText.description}
     >
       <WebModeBanner />
 
       <SettingsSection
-        title="任务总览"
-        description="日常只看启用数、最近一次执行、下次运行时间。详细执行历史可点开任务进入详情。"
+        title={automationText.overview.title}
+        description={automationText.overview.description}
         actions={(
           <div className="flex items-center gap-2">
             <Button
@@ -187,7 +194,7 @@ export const AutomationSettings: React.FC = () => {
               disabled={isLoading}
               leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
             >
-              刷新
+              {automationText.actions.refresh}
             </Button>
             <Button
               size="sm"
@@ -196,7 +203,7 @@ export const AutomationSettings: React.FC = () => {
               onClick={openCreateEditor}
               leftIcon={<Plus className="h-3.5 w-3.5" />}
             >
-              新建任务
+              {automationText.actions.createJob}
             </Button>
           </div>
         )}
@@ -204,10 +211,10 @@ export const AutomationSettings: React.FC = () => {
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
-              ['任务总数', String(stats?.totalJobs ?? jobs.length), `${stats?.activeJobs ?? 0} 个启用中`],
-              ['执行次数', String(stats?.totalExecutions ?? 0), `${stats?.successfulExecutions ?? 0} 次成功`],
-              ['失败次数', String(stats?.failedExecutions ?? 0), '需要关注'],
-              ['成功率', `${(stats?.successRate ?? 0).toFixed(0)}%`, '近期统计'],
+              [automationText.stats.totalJobs, String(stats?.totalJobs ?? jobs.length), `${stats?.activeJobs ?? 0}${automationText.stats.activeJobsSuffix}`],
+              [automationText.stats.totalExecutions, String(stats?.totalExecutions ?? 0), `${stats?.successfulExecutions ?? 0}${automationText.stats.successfulExecutionsSuffix}`],
+              [automationText.stats.failedExecutions, String(stats?.failedExecutions ?? 0), automationText.stats.needsAttention],
+              [automationText.stats.successRate, `${(stats?.successRate ?? 0).toFixed(0)}%`, automationText.stats.recentStats],
             ].map(([label, value, caption]) => (
               <div key={label} className="bg-zinc-900/80 px-3 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -219,8 +226,8 @@ export const AutomationSettings: React.FC = () => {
 
           <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
             <Filter className="h-3.5 w-3.5 text-zinc-500" />
-            <span>筛选：</span>
-            {FILTER_OPTIONS.map((opt) => (
+            <span>{automationText.filterLabel}</span>
+            {filterOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -240,25 +247,25 @@ export const AutomationSettings: React.FC = () => {
             <table className="w-full min-w-[920px] text-left text-xs">
               <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">名称</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">频率</th>
-                  <th className="px-3 py-2 font-medium">下次运行</th>
-                  <th className="px-3 py-2 font-medium">最近运行</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{automationText.table.name}</th>
+                  <th className="px-3 py-2 font-medium">{automationText.table.status}</th>
+                  <th className="px-3 py-2 font-medium">{automationText.table.frequency}</th>
+                  <th className="px-3 py-2 font-medium">{automationText.table.nextRun}</th>
+                  <th className="px-3 py-2 font-medium">{automationText.table.latestRun}</th>
+                  <th className="px-3 py-2 text-right font-medium">{automationText.table.actions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/80">
                 {isLoading && jobs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">加载中...</td>
+                    <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">{automationText.loading}</td>
                   </tr>
                 ) : jobs.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">
                       <div className="flex flex-col items-center gap-1">
                         <Sparkles className="h-5 w-5 text-zinc-600" />
-                        <div>还没有定时任务，点右上「新建任务」开始。</div>
+                        <div>{automationText.empty}</div>
                       </div>
                     </td>
                   </tr>
@@ -295,16 +302,16 @@ export const AutomationSettings: React.FC = () => {
                                 : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                             }`}
                           >
-                            {job.enabled ? '启用' : '已暂停'}
+                            {job.enabled ? automationText.actions.enable : automationText.jobStatus.disabled}
                           </span>
                         </td>
                         <td className="px-3 py-3 align-middle text-zinc-300" title={describeAction(job)}>
-                          {describeSchedule(job)}
+                          {describeSchedule(job, automationText.schedule)}
                         </td>
                         <td className="px-3 py-3 align-middle text-zinc-400">{formatTimestamp(job.nextRunAt)}</td>
                         <td className="px-3 py-3 align-middle">
                           <span className={`inline-flex rounded border px-2 py-1 ${statusClass(latest)}`}>
-                            {statusLabel(latest)}
+                            {statusLabel(latest, automationText.executionStatus)}
                           </span>
                           {latest?.startedAt && (
                             <div className="mt-1 text-[11px] text-zinc-500">{formatTimestamp(latest.startedAt)}</div>
@@ -319,7 +326,7 @@ export const AutomationSettings: React.FC = () => {
                               onClick={() => void handleTrigger(job)}
                               leftIcon={<Play className="h-3.5 w-3.5" />}
                             >
-                              运行
+                              {automationText.actions.run}
                             </Button>
                             <Button
                               size="sm"
@@ -328,7 +335,7 @@ export const AutomationSettings: React.FC = () => {
                               onClick={() => void handleToggleEnabled(job)}
                               leftIcon={job.enabled ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                             >
-                              {job.enabled ? '暂停' : '启用'}
+                              {job.enabled ? automationText.actions.pause : automationText.actions.enable}
                             </Button>
                             <Button
                               size="sm"
@@ -336,7 +343,7 @@ export const AutomationSettings: React.FC = () => {
                               disabled={busy || isWebMode()}
                               onClick={() => openEditEditor(job.id)}
                             >
-                              编辑
+                              {automationText.actions.edit}
                             </Button>
                           </div>
                         </td>
@@ -373,40 +380,40 @@ export const AutomationSettings: React.FC = () => {
                 type="button"
                 onClick={() => setDetailJobId(null)}
                 className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-                aria-label="关闭详情"
+                aria-label={automationText.actions.closeDetails}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="space-y-3 text-xs text-zinc-300">
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">频率</div>
-                <div className="mt-1">{describeSchedule(detailJob)}</div>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">{automationText.table.frequency}</div>
+                <div className="mt-1">{describeSchedule(detailJob, automationText.schedule)}</div>
               </div>
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">动作</div>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">{automationText.details.action}</div>
                 <div className="mt-1 break-all">{describeAction(detailJob)}</div>
               </div>
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">下次运行</div>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">{automationText.table.nextRun}</div>
                 <div className="mt-1">{formatTimestamp(detailJob.nextRunAt)}</div>
               </div>
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">最近一次执行</div>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">{automationText.details.latestExecution}</div>
                 <div className="mt-1">
                   <span className={`inline-flex rounded border px-2 py-1 ${statusClass(latestExecutions[detailJob.id])}`}>
-                    {statusLabel(latestExecutions[detailJob.id])}
+                    {statusLabel(latestExecutions[detailJob.id], automationText.executionStatus)}
                   </span>
                 </div>
                 <div className="mt-2 text-[11px] text-zinc-500">
-                  开始时间：{formatTimestamp(latestExecutions[detailJob.id]?.startedAt)}
+                  {automationText.details.startedAtPrefix}{formatTimestamp(latestExecutions[detailJob.id]?.startedAt)}
                 </div>
                 <div className="text-[11px] text-zinc-500">
-                  完成时间：{formatTimestamp(latestExecutions[detailJob.id]?.completedAt)}
+                  {automationText.details.completedAtPrefix}{formatTimestamp(latestExecutions[detailJob.id]?.completedAt)}
                 </div>
                 {latestExecutions[detailJob.id]?.error && (
                   <div className="mt-1 break-all text-[11px] text-red-300">
-                    错误：{latestExecutions[detailJob.id]?.error}
+                    {automationText.details.errorPrefix}{latestExecutions[detailJob.id]?.error}
                   </div>
                 )}
               </div>
@@ -417,7 +424,7 @@ export const AutomationSettings: React.FC = () => {
                   disabled={isWebMode()}
                   onClick={() => openEditEditor(detailJob.id)}
                 >
-                  编辑
+                  {automationText.actions.edit}
                 </Button>
                 <Button
                   size="sm"
@@ -425,7 +432,7 @@ export const AutomationSettings: React.FC = () => {
                   disabled={isWebMode()}
                   onClick={() => void handleDelete(detailJob)}
                 >
-                  删除
+                  {automationText.actions.delete}
                 </Button>
               </div>
             </div>

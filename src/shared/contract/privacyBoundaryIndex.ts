@@ -123,3 +123,11 @@ export const PRIVACY_BOUNDARY_INDEX_IDS = Object.keys(PRIVACY_BOUNDARY_INDEX) as
 export function listPrivacyBoundaryIndexEntries(): PrivacyBoundaryIndexEntry[] {
   return PRIVACY_BOUNDARY_INDEX_IDS.map((id) => PRIVACY_BOUNDARY_INDEX[id]);
 }
+
+/**
+ * 紧凑按钮文案：去掉 actionTarget.label 的「打开」前缀（本索引是 zh 数据契约，
+ * zh 耦合的文本处理放在数据同文件，渲染层不持有中文逻辑）。
+ */
+export function getPrivacyBoundaryActionShortLabel(entry: PrivacyBoundaryIndexEntry): string {
+  return entry.actionTarget.label.replace(/^打开/, '');
+}

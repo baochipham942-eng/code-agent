@@ -25,6 +25,8 @@ import {
 } from '@shared/constants/almaRecommendationPolicy';
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import {
   RecommendedRepoCard,
   RecommendedSkillCard,
@@ -60,6 +62,8 @@ export interface SkillsDiscoverTabProps {
   onAddCustom: () => void;
 }
 
+type SkillsDiscoverLabels = typeof zh.settings.skills.discover;
+
 /** 判断场景包是否就绪：所有非内置 skill 的来源仓库都已安装 */
 export function isBundleReady(bundle: SkillRoleBundle, installedRepoIds: Set<string>): boolean {
   return bundle.skills.every(
@@ -77,13 +81,6 @@ export function getBundleMissingRepoIds(
     .filter((repoId) => repoId !== BUILTIN_REPO_ID && !installedRepoIds.has(repoId));
   return [...new Set(missing)];
 }
-
-const ALMA_MAPPING_LABELS: Record<AlmaBundledSkillRecommendation, string> = {
-  covered: '已覆盖',
-  default_visible: '默认可见',
-  conditional: '条件推荐',
-  unsupported: '暂不支持',
-};
 
 function getAlmaMappingClasses(
   tier: AlmaRecommendationPolicyTier,
@@ -117,7 +114,10 @@ function getAlmaMappingIcon(recommendation: AlmaBundledSkillRecommendation): Rea
   }
 }
 
-const AlmaBundledSkillCard: React.FC<{ mapping: AlmaBundledSkillMapping }> = ({ mapping }) => {
+const AlmaBundledSkillCard: React.FC<{
+  mapping: AlmaBundledSkillMapping;
+  labels: SkillsDiscoverLabels;
+}> = ({ mapping, labels }) => {
   const policy = getAlmaSkillRecommendationPolicy(mapping);
 
   return (
@@ -128,7 +128,7 @@ const AlmaBundledSkillCard: React.FC<{ mapping: AlmaBundledSkillMapping }> = ({ 
           <div className="flex items-center gap-2">
             <h5 className="truncate text-sm font-medium text-zinc-200">{mapping.displayName}</h5>
             <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${getAlmaMappingClasses(policy.tier, mapping.recommendation)}`}>
-              {policy.label || ALMA_MAPPING_LABELS[mapping.recommendation]}
+              {labels.almaMappingLabels[mapping.recommendation]}
             </span>
           </div>
           <div className="mt-0.5 truncate text-[11px] font-mono text-zinc-500">{mapping.name}</div>
@@ -163,6 +163,8 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   onCustomUrlChange,
   onAddCustom,
 }) => {
+  const { t } = useI18n();
+  const discoverText = t.settings.skills.discover;
   const categoryGroups = groupRecommendedSkillsByCategory(catalog);
 
   // 推荐 skill 的安装动作 = 安装其来源仓库
@@ -178,14 +180,14 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
       {/* Alma bundled skills 对标 */}
       <div className="space-y-3">
         <div>
-          <h4 className="text-sm font-medium text-zinc-200">Alma bundled skills 对标</h4>
+          <h4 className="text-sm font-medium text-zinc-200">{discoverText.almaTitle}</h4>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Alma 没有 skill featured 排序；这里把 33 个 bundled skills 映射到 code-agent 当前能力面。
+            {discoverText.almaDescription}
           </p>
         </div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           {ALMA_BUNDLED_SKILL_MAPPINGS.map((mapping) => (
-            <AlmaBundledSkillCard key={mapping.name} mapping={mapping} />
+            <AlmaBundledSkillCard key={mapping.name} mapping={mapping} labels={discoverText} />
           ))}
         </div>
       </div>
@@ -193,8 +195,8 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
       {/* 角色场景包 */}
       <div className="space-y-3">
         <div>
-          <h4 className="text-sm font-medium text-zinc-200">角色场景包</h4>
-          <p className="text-xs text-zinc-500 mt-0.5">按你的角色一键配齐常用 Skill</p>
+          <h4 className="text-sm font-medium text-zinc-200">{discoverText.roleBundlesTitle}</h4>
+          <p className="text-xs text-zinc-500 mt-0.5">{discoverText.roleBundlesDescription}</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           {catalog.bundles.map((bundle) => (
@@ -212,8 +214,8 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
       {/* 按场景浏览 */}
       <div className="space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-zinc-200">按场景浏览</h4>
-          <p className="text-xs text-zinc-500 mt-0.5">社区与官方的热门 Skill，按要做的事分类</p>
+          <h4 className="text-sm font-medium text-zinc-200">{discoverText.browseTitle}</h4>
+          <p className="text-xs text-zinc-500 mt-0.5">{discoverText.browseDescription}</p>
         </div>
         {categoryGroups.map(({ category, skills }) => (
           <div key={category.id} className="space-y-2">
@@ -241,7 +243,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
 
       {/* SkillsMP 搜索 */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-200">搜索社区 Skill</h4>
+        <h4 className="text-sm font-medium text-zinc-200">{discoverText.searchTitle}</h4>
         <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-4">
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -254,7 +256,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
                     onSearch();
                   }
                 }}
-                placeholder="输入需求，如：代码审查、Git 提交..."
+                placeholder={discoverText.searchPlaceholder}
                 inputSize="sm"
                 disabled={isSearching}
                 className="pr-8"
@@ -277,11 +279,11 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
               loading={isSearching}
               leftIcon={!isSearching ? <Search className="h-3 w-3" /> : undefined}
             >
-              搜索
+              {discoverText.searchButton}
             </Button>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
-            从{' '}
+            {discoverText.searchSourcePrefix}{' '}
             <a
               href="https://skillsmp.com"
               target="_blank"
@@ -290,7 +292,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
             >
               SkillsMP
             </a>
-            {' '}搜索 9 万+ 社区 Skills
+            {' '}{discoverText.searchSourceSuffix}
           </p>
 
           {/* 搜索结果 */}
@@ -298,8 +300,8 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
             <div className="mt-4 max-h-80 space-y-2 overflow-y-auto">
               <div className="mb-2 text-xs text-zinc-400">
                 {searchTotal
-                  ? `共 ${searchTotal.toLocaleString()} 个结果，显示前 ${searchResults.length} 个：`
-                  : `找到 ${searchResults.length} 个结果：`}
+                  ? `${discoverText.resultCountPrefix}${searchTotal.toLocaleString()}${discoverText.resultCountMiddle}${searchResults.length}${discoverText.resultCountSuffix}`
+                  : `${discoverText.foundCountPrefix}${searchResults.length}${discoverText.foundCountSuffix}`}
               </div>
               {searchResults.map((skill) => (
                 <SkillSearchResultCard
@@ -326,8 +328,8 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
       {recommendedRepos.length > 0 && (
         <div className="space-y-3">
           <div>
-            <h4 className="text-sm font-medium text-zinc-200">整库安装</h4>
-            <p className="text-xs text-zinc-500 mt-0.5">一次安装一个 Skill 仓库的全部内容</p>
+            <h4 className="text-sm font-medium text-zinc-200">{discoverText.reposTitle}</h4>
+            <p className="text-xs text-zinc-500 mt-0.5">{discoverText.reposDescription}</p>
           </div>
           {recommendedRepos.map((repo) => (
             <RecommendedRepoCard
@@ -342,7 +344,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
 
       {/* 自定义仓库 */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-200">添加自定义 Skill 库</h4>
+        <h4 className="text-sm font-medium text-zinc-200">{discoverText.customTitle}</h4>
         <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-4">
           <div className="space-y-2">
             <Input
@@ -353,7 +355,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
               disabled={actionLoading === 'custom'}
             />
             <p className="text-xs text-zinc-500">
-              输入 GitHub 仓库 URL，仓库根目录需包含 skill 目录结构
+              {discoverText.customDescription}
             </p>
           </div>
           <div className="mt-3">
@@ -365,7 +367,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
               loading={actionLoading === 'custom'}
               leftIcon={actionLoading !== 'custom' ? <Plus className="h-3 w-3" /> : undefined}
             >
-              添加仓库
+              {discoverText.addRepo}
             </Button>
           </div>
         </div>

@@ -2,6 +2,8 @@
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
 
+import { zhSettings } from './zhSettings';
+
 export const zh = {
   // Common
   common: {
@@ -376,161 +378,7 @@ export const zh = {
   },
 
   // Settings Modal
-  settings: {
-    title: '设置',
-    backToApp: '返回应用',
-    searchPlaceholder: '搜索设置...',
-    searchNoResults: '未找到匹配的设置项',
-    tabs: {
-      general: '权限与安全',
-      model: '通用模型',
-      visualModels: '多模态模型',
-      imageVideo: '生成默认值',
-      disclosure: '界面',
-      appearance: '外观',
-      language: '语言',
-      data: '数据',
-      cloud: '云端',
-      memory: '记忆',
-      update: '更新',
-      about: '关于',
-      // IA v2 导航补齐（此前 SettingsModal 硬编码中文，en 态中英混排）
-      search: '搜索源',
-      soul: '人格',
-      skills: 'Skills',
-      conversation: '上下文压缩',
-      keybindings: '快捷键',
-      voiceInput: '语音输入',
-      workspace: '工作区',
-      automation: '自动化',
-      channels: '通道',
-      roles: '角色',
-      openchronicle: '屏幕记忆',
-      privacy: '隐私防线',
-      mcp: 'MCP',
-      plugins: '插件管理',
-      hooks: 'Hook',
-      appshots: '应用截图',
-      cache: '数据与存储',
-      users: '用户管理',
-      invites: '邀请码管理',
-      controlPlane: '控制平面',
-      capabilities: '能力中心',
-    },
-    // IA v2 侧栏分组标签（单一真源，SettingsModal 导航消费）
-    tabGroups: {
-      models: '模型与能力',
-      basics: '基础偏好',
-      work: '工作与协作',
-      memory: '记忆与隐私',
-      system: '系统',
-      advanced: '高级',
-      management: '用户管理',
-    },
-    general: {
-      modeTitle: '应用模式',
-      modeDescription: '选择适合你工作方式的模式',
-      developerMode: '开发者模式',
-      developerModeDesc: '显示完整的工具调用详情和参数',
-      coworkMode: 'Cowork 模式',
-      coworkModeDesc: '简化展示，适合与其他 AI 协作',
-    },
-    cloud: {
-      title: '云端配置',
-      description: 'System Prompt、Skills 等配置从云端实时获取，支持热更新。',
-    },
-    visualModels: {
-      title: '多模态模型',
-      subtitle: '选择图像 / 视频生成的默认模型，并管理你自己的端点。模型在这里配置，设计页只负责选择已配置的模型。',
-      imageSection: '生图模型',
-      videoSection: '生视频模型',
-      musicSection: '生音乐模型',
-      bridgedFromBadge: '来自 {name}',
-      builtinTitle: '内置模型',
-      defaultBadge: '默认',
-      defaultHint: '点选一个作为默认；设计画布出图时使用，画布里手动切换过的不受影响。',
-      defaultSaved: '默认生成模型已保存',
-      videoTitle: '自定义视频端点',
-      videoSubtitle: '接入你自己的视频生成端点。密钥只存在本机。',
-      videoEmpty: '还没有自定义视频端点。点「新增」接入你自己的视频模型。',
-      videoCostLabel: '单条成本（元，可选）',
-      videoNamePlaceholder: '例如：我的视频模型',
-      videoModelNamePlaceholder: '例如：sora-1',
-      videoBaseUrlHint: '视频生成端点根地址。仅支持 https 公网地址。',
-      videoPendingNote: '出片能力接入中：自定义视频端点目前可配置保存，出片调用待接入真实协议。',
-      consistencySection: '图像编辑一致性',
-      strictLabel: '严格模式：保证只改选中区域',
-      strictHint:
-        '开启后，局部重绘若无法逐像素保证未选区域不变，会直接取消并提示（而不是给你一张可能被偷改其它区域的图）。默认关闭：尽力锁定，无法锁定时仍采用模型结果不打断你。',
-    },
-  },
-
-  // Update Settings
-  update: {
-    title: '版本更新',
-    description: '检查并下载最新版本的 Agent Neo',
-    currentVersion: '当前版本',
-    checking: '检查中...',
-    checkNow: '检查更新',
-    checkError: '检查更新失败，请稍后重试',
-    newVersion: '发现新版本',
-    upToDate: '已是最新版本',
-    download: '立即更新',
-  },
-
-  // Model Settings
-  model: {
-    title: '模型提供商',
-    apiKey: 'API 密钥',
-    apiKeyPlaceholder: '请输入您的 API 密钥',
-    apiKeyHint: '您的 API 密钥仅存储在本地，不会发送到我们的服务器。',
-    modelSelect: '模型',
-    temperature: '温度',
-    temperaturePrecise: '精确',
-    temperatureCreative: '创意',
-    providers: {
-      deepseek: {
-        name: 'DeepSeek',
-        description: 'DeepSeek 聊天 API',
-      },
-      anthropic: {
-        name: 'Claude',
-        description: 'Anthropic Claude API',
-      },
-      openai: {
-        name: 'OpenAI',
-        description: 'GPT-4.1 / o3 系列',
-      },
-      gemini: {
-        name: 'Gemini',
-        description: 'Google Gemini 2.5 系列',
-      },
-      openrouter: {
-        name: 'OpenRouter',
-        description: '中转服务 (Gemini/Claude/GPT)',
-      },
-      zhipu: {
-        name: '智谱 AI',
-        description: 'GLM-4 系列模型',
-      },
-      qwen: {
-        name: '通义千问',
-        description: '阿里云通义千问模型',
-      },
-      moonshot: {
-        name: 'Kimi',
-        description: 'Moonshot AI 模型',
-      },
-      minimax: {
-        name: 'MiniMax',
-        description: 'MiniMax 海螺 AI',
-      },
-      perplexity: {
-        name: 'Perplexity',
-        description: 'AI 搜索服务',
-      },
-    },
-  },
+  settings: zhSettings,
 
   // 执行引擎 × 模型兼容矩阵（billingMode + 不可用原因）
   engineCompat: {
@@ -649,24 +497,6 @@ export const zh = {
       autoApprove: '自动授权所有权限',
       autoApproveDescription: '开发模式下跳过所有权限确认弹窗，方便快速测试。生产环境建议关闭。',
     },
-  },
-
-  // Appearance Settings
-  appearance: {
-    theme: '主题',
-    themes: {
-      dark: '深色',
-      light: '浅色',
-      auto: '自动',
-    },
-    fontSize: '字体大小',
-    fontSizes: {
-      small: '小',
-      medium: '中',
-      large: '大',
-    },
-    developerMode: '开发者模式',
-    developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
   },
 
   // Language Settings

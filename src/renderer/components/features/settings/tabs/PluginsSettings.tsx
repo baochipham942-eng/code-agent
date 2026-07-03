@@ -38,267 +38,35 @@ import type {
   PluginScope,
 } from '@shared/contract/marketplace';
 import { useAuthStore } from '../../../../stores/authStore';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import ipcService from '../../../../services/ipcService';
 import { Button } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { AlmaRegistryAuditPanel } from './AlmaRegistryAuditPanel';
 
 type Notice = { type: 'success' | 'error'; text: string };
-
-export interface PluginVisibilityItem {
-  spec: string;
-  name: string;
-  marketplace: string;
-  kind: 'installed' | 'available';
-  isEnabled: boolean;
-  scope?: PluginScope;
-  types: string[];
-  skills: string[];
-  commands: string[];
-  reason: string;
-}
-
-export interface PluginVisibilityAssessment {
-  userVisible: PluginVisibilityItem[];
-  adminOnly: PluginVisibilityItem[];
-  installedTotal: number;
-  enabledTotal: number;
-  catalogTotal: number;
-}
-
-export type PluginRuntimeReadiness =
-  | 'disabled'
-  | 'runtime_ready'
-  | 'adapter_pending'
-  | 'asset_only';
-
-export const PLUGIN_COMPLETENESS_ROWS = [
-  { area: '市场源', status: 'complete', detail: '可新增、刷新、移除 marketplace，并展示缓存位置与插件数量。' },
-  { area: '发现', status: 'complete', detail: '可按市场源、关键词、标签、作者、skill、command 过滤插件目录。' },
-  { area: '安装', status: 'complete', detail: '支持用户级和项目级安装；skills、commands、provider/theme/UI 都会先落为受管资产，安装后保持禁用。' },
-  { area: '生命周期', status: 'complete', detail: '已安装插件可启用、禁用、卸载，并回读最新状态；卸载会移除插件资产目录。' },
-  { area: '权限', status: 'complete', detail: '前端入口和后端 marketplace IPC 都只对管理员开放。' },
-  { area: '运行时适配', status: 'partial', detail: 'skill/command 型插件启用后进入运行面；provider/theme/UI 目前只作为受管资产和 adapter pending 展示。' },
-  { area: '治理', status: 'partial', detail: '已展示来源、路径、scope 和安装时间；签名校验、审核流、版本升级策略还没有前端闭环。' },
-] as const;
-
-export function getPluginSpec(plugin: Pick<MarketplacePluginEntry | InstalledPlugin, 'name' | 'marketplace'>): string {
-  return `${plugin.name}@${plugin.marketplace}`;
-}
-
-export function getPluginTrustSummary(plugin: Pick<MarketplacePluginEntry | InstalledPlugin, 'skills'> & {
-  commands?: string[];
-  permissions?: string[];
-  hooks?: string[];
-}): string {
-  const skills = normalizeList(plugin.skills).length;
-  const commands = normalizeList(plugin.commands).length;
-  const permissions = normalizeList(plugin.permissions).length;
-  const hooks = normalizeList(plugin.hooks).length;
-  return `Trust: ${skills} skills · ${commands} commands · ${permissions || '未声明'} permissions · ${hooks || '未声明'} hooks · 外部服务未声明时按未知风险处理`;
-}
-
-function normalizeList(values?: string[]): string[] {
-  return values?.filter(Boolean) ?? [];
-}
-
-function hasPluginRuntimeSurface(plugin: Pick<InstalledPlugin, 'skills' | 'commands'>): boolean {
-  return normalizeList(plugin.skills).length > 0 || normalizeList(plugin.commands).length > 0;
-}
-
-function hasAdapterPendingSurface(plugin: Pick<InstalledPlugin, 'types'>): boolean {
-  const types = normalizeList(plugin.types);
-  return types.includes('provider') || types.includes('theme') || types.includes('ui');
-}
-
-export function getPluginRuntimeReadiness(
-  plugin: Pick<InstalledPlugin, 'isEnabled' | 'skills' | 'commands' | 'types'>,
-): PluginRuntimeReadiness {
-  if (!plugin.isEnabled) return 'disabled';
-  if (hasPluginRuntimeSurface(plugin)) return 'runtime_ready';
-  if (hasAdapterPendingSurface(plugin)) return 'adapter_pending';
-  return 'asset_only';
-}
-
-export function isPluginRuntimeVisible(
-  plugin: Pick<InstalledPlugin, 'isEnabled' | 'skills' | 'commands' | 'types'>,
-): boolean {
-  return getPluginRuntimeReadiness(plugin) === 'runtime_ready';
-}
-
-function getPluginRuntimeLabel(readiness: PluginRuntimeReadiness): string {
-  switch (readiness) {
-    case 'runtime_ready':
-      return '运行面可用';
-    case 'adapter_pending':
-      return 'Adapter 待接入';
-    case 'asset_only':
-      return '仅资产';
-    case 'disabled':
-    default:
-      return '已安装未启用';
-  }
-}
-
-function getPluginRuntimeTone(readiness: PluginRuntimeReadiness): 'default' | 'success' | 'warning' | 'danger' {
-  switch (readiness) {
-    case 'runtime_ready':
-      return 'success';
-    case 'adapter_pending':
-    case 'asset_only':
-    case 'disabled':
-    default:
-      return 'warning';
-  }
-}
-
-function getPluginRuntimeReason(plugin: Pick<InstalledPlugin, 'isEnabled' | 'skills' | 'commands' | 'types'>): string {
-  const readiness = getPluginRuntimeReadiness(plugin);
-  switch (readiness) {
-    case 'runtime_ready':
-      return '已启用，且提供 skill 或 command，普通用户能在会话页和运行时使用。';
-    case 'adapter_pending':
-      return '已启用为受管资产，但 provider/theme/UI adapter 尚未接入运行时，不进入普通用户运行面。';
-    case 'asset_only':
-      return '已启用为受管资产，但没有声明可执行的 skill、command 或已接入 adapter。';
-    case 'disabled':
-    default:
-      return '已安装但未启用，只能由管理员在插件管理里看到和处理。';
-  }
-}
-
-export function buildPluginVisibilityAssessment({
-  catalog,
-  installed,
-}: {
-  catalog: MarketplacePluginEntry[];
-  installed: InstalledPlugin[];
-}): PluginVisibilityAssessment {
-  const installedBySpec = new Map(installed.map((plugin) => [getPluginSpec(plugin), plugin]));
-  const userVisible: PluginVisibilityItem[] = [];
-  const adminOnly: PluginVisibilityItem[] = [];
-
-  for (const plugin of installed) {
-    const runtimeVisible = isPluginRuntimeVisible(plugin);
-    const item: PluginVisibilityItem = {
-      spec: getPluginSpec(plugin),
-      name: plugin.name,
-      marketplace: plugin.marketplace,
-      kind: 'installed',
-      isEnabled: plugin.isEnabled,
-      scope: plugin.scope,
-      types: normalizeList(plugin.types),
-      skills: normalizeList(plugin.skills),
-      commands: normalizeList(plugin.commands),
-      reason: getPluginRuntimeReason(plugin),
-    };
-
-    if (runtimeVisible) {
-      userVisible.push(item);
-    } else {
-      adminOnly.push(item);
-    }
-  }
-
-  for (const plugin of catalog) {
-    const spec = getPluginSpec(plugin);
-    if (installedBySpec.has(spec)) continue;
-
-    adminOnly.push({
-      spec,
-      name: plugin.name,
-      marketplace: plugin.marketplace,
-      kind: 'available',
-      isEnabled: false,
-      types: normalizeList(plugin.types),
-      skills: normalizeList(plugin.skills),
-      commands: normalizeList(plugin.commands),
-      reason: '市场目录中的未安装插件，不进入普通用户运行面。',
-    });
-  }
-
-  return {
-    userVisible,
-    adminOnly,
-    installedTotal: installed.length,
-    enabledTotal: installed.filter((plugin) => plugin.isEnabled).length,
-    catalogTotal: catalog.length,
-  };
-}
-
-export function filterMarketplacePlugins({
-  plugins,
-  query,
-  marketplace,
-}: {
-  plugins: MarketplacePluginEntry[];
-  query: string;
-  marketplace: string;
-}): MarketplacePluginEntry[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  return plugins.filter((plugin) => {
-    const matchesMarketplace = marketplace === 'all' || plugin.marketplace === marketplace;
-    if (!matchesMarketplace) return false;
-    if (!normalizedQuery) return true;
-
-    const haystack = [
-      plugin.name,
-      plugin.description,
-      plugin.marketplace,
-      plugin.source,
-      plugin.author,
-      plugin.version,
-      ...(plugin.types ?? []),
-      ...(plugin.tags ?? []),
-      ...(plugin.skills ?? []),
-      ...(plugin.commands ?? []),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-
-    return haystack.includes(normalizedQuery);
-  });
-}
-
-function formatMarketplaceSource(source: MarketplaceSource): string {
-  switch (source.source) {
-    case 'github':
-      return `github:${source.repo}${source.ref ? `@${source.ref}` : ''}${source.path ? `#${source.path}` : ''}`;
-    case 'url':
-      return source.url;
-    case 'npm':
-      return `npm:${source.package}`;
-    case 'directory':
-      return source.path;
-    default:
-      return 'unknown';
-  }
-}
-
-function formatDate(value?: string): string {
-  if (!value) return '未知';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
-function getResultError(result?: MarketplaceResult<unknown> | PluginInstallResult): string {
-  return result?.error || '操作失败';
-}
-
-function normalizeMarketplaceResult<T>(
-  result: MarketplaceResult<T> | T | undefined,
-  fallbackError: string,
-): MarketplaceResult<T> {
-  if (result && typeof result === 'object' && 'success' in result && typeof result.success === 'boolean') {
-    return result as MarketplaceResult<T>;
-  }
-  if (result === undefined) {
-    return { success: false, error: fallbackError };
-  }
-  return { success: true, data: result as T };
-}
+export * from './PluginsSettings.helpers';
+import {
+  type PluginsSettingsText,
+  type PluginCompletenessRow,
+  type PluginRuntimeReadiness,
+  type PluginVisibilityItem,
+  PLUGIN_COMPLETENESS_ROWS,
+  getPluginSpec,
+  getPluginTrustSummary,
+  getPluginRuntimeReadiness,
+  isPluginRuntimeVisible,
+  getPluginRuntimeLabel,
+  getPluginRuntimeTone,
+  getPluginRuntimeReason,
+  buildPluginVisibilityAssessment,
+  filterMarketplacePlugins,
+  formatMarketplaceSource,
+  formatDate,
+  getResultError,
+  normalizeMarketplaceResult,
+} from './PluginsSettings.helpers';
 
 const SummaryTile: React.FC<{
   label: string;
@@ -353,7 +121,10 @@ function getAlmaPluginTierTone(tier: AlmaRecommendationPolicyTier): 'default' | 
   }
 }
 
-const AlmaFeaturedPluginCard: React.FC<{ plugin: AlmaFeaturedPluginEntry }> = ({ plugin }) => {
+const AlmaFeaturedPluginCard: React.FC<{
+  plugin: AlmaFeaturedPluginEntry;
+  labels: PluginsSettingsText['almaFeatured']['card'];
+}> = ({ plugin, labels }) => {
   const policy = getAlmaPluginRecommendationPolicy(plugin);
   const adapter = adaptAlmaPluginToCodeAgentSpec(plugin);
 
@@ -369,7 +140,7 @@ const AlmaFeaturedPluginCard: React.FC<{ plugin: AlmaFeaturedPluginEntry }> = ({
               {policy.label}
             </Pill>
             <Pill tone={adapter.canInstall ? 'success' : 'warning'}>
-              {adapter.canInstall ? '可安装' : '仅展示'}
+              {adapter.canInstall ? labels.installable : labels.displayOnly}
             </Pill>
           </div>
           <p className="mt-2 text-xs leading-5 text-zinc-500">{policy.reason}</p>
@@ -377,11 +148,11 @@ const AlmaFeaturedPluginCard: React.FC<{ plugin: AlmaFeaturedPluginEntry }> = ({
         <PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-sky-300" />
       </div>
       <div className="mt-3 rounded-md bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-500">
-        <div><span className="text-zinc-300">作者</span> {plugin.author}</div>
-        <div><span className="text-zinc-300">边界</span> {policy.riskNote}</div>
-        <div><span className="text-zinc-300">适配面</span> {adapter.surface} · {adapter.installability}</div>
-        <div><span className="text-zinc-300">还缺</span> {adapter.requiredRuntimeCapabilities.join(', ') || '无'}</div>
-        <div><span className="text-zinc-300">原因</span> {adapter.unsupportedReason}</div>
+        <div><span className="text-zinc-300">{labels.author}</span> {plugin.author}</div>
+        <div><span className="text-zinc-300">{labels.boundary}</span> {policy.riskNote}</div>
+        <div><span className="text-zinc-300">{labels.surface}</span> {adapter.surface} · {adapter.installability}</div>
+        <div><span className="text-zinc-300">{labels.missing}</span> {adapter.requiredRuntimeCapabilities.join(', ') || labels.none}</div>
+        <div><span className="text-zinc-300">{labels.reason}</span> {adapter.unsupportedReason}</div>
       </div>
     </div>
   );
@@ -394,6 +165,8 @@ const EmptyState: React.FC<{ text: string }> = ({ text }) => (
 );
 
 export const PluginsSettings: React.FC = () => {
+  const { t } = useI18n();
+  const pluginsText = t.settings.plugins;
   const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const [marketplaces, setMarketplaces] = useState<MarketplaceInfo[]>([]);
   const [catalog, setCatalog] = useState<MarketplacePluginEntry[]>([]);
@@ -420,20 +193,20 @@ export const PluginsSettings: React.FC = () => {
 
       const marketplacesState = normalizeMarketplaceResult<MarketplaceInfo[]>(
         marketplaceResult,
-        '读取 marketplace 失败',
+        pluginsText.loadErrors.marketplaces,
       );
       const catalogState = normalizeMarketplaceResult<MarketplacePluginEntry[]>(
         catalogResult,
-        '读取插件市场失败',
+        pluginsText.loadErrors.catalog,
       );
       const installedState = normalizeMarketplaceResult<InstalledPlugin[]>(
         installedResult,
-        '读取已安装插件失败',
+        pluginsText.loadErrors.installed,
       );
 
-      if (!marketplacesState.success) throw new Error(getResultError(marketplacesState));
-      if (!catalogState.success) throw new Error(getResultError(catalogState));
-      if (!installedState.success) throw new Error(getResultError(installedState));
+      if (!marketplacesState.success) throw new Error(getResultError(marketplacesState, pluginsText.errors));
+      if (!catalogState.success) throw new Error(getResultError(catalogState, pluginsText.errors));
+      if (!installedState.success) throw new Error(getResultError(installedState, pluginsText.errors));
 
       setMarketplaces(marketplacesState.data ?? []);
       setCatalog(catalogState.data ?? []);
@@ -444,7 +217,7 @@ export const PluginsSettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin]);
+  }, [isAdmin, pluginsText]);
 
   useEffect(() => {
     void reload();
@@ -456,8 +229,8 @@ export const PluginsSettings: React.FC = () => {
   );
 
   const visibility = useMemo(
-    () => buildPluginVisibilityAssessment({ catalog, installed }),
-    [catalog, installed],
+    () => buildPluginVisibilityAssessment({ catalog, installed, labels: pluginsText }),
+    [catalog, installed, pluginsText],
   );
 
   const installedBySpec = useMemo(
@@ -483,44 +256,46 @@ export const PluginsSettings: React.FC = () => {
   const handleAddMarketplace = useCallback(() => {
     const source = newMarketplaceSource.trim();
     if (!source) {
-      setNotice({ type: 'error', text: '先填 marketplace 源地址或本地目录。' });
+      setNotice({ type: 'error', text: pluginsText.toast.fillMarketplaceSource });
       return;
     }
 
     void runAction('marketplace:add', async () => {
       const result = normalizeMarketplaceResult<MarketplaceInfo>(
         await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_ADD, source),
-        '添加 marketplace 失败',
+        pluginsText.toast.addMarketplaceFailed,
       );
-      if (!result.success) throw new Error(getResultError(result));
+      if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
       setNewMarketplaceSource('');
-      return `已添加 marketplace：${result.data?.name || source}`;
+      return `${pluginsText.toast.addMarketplaceSuccessPrefix}${result.data?.name || source}`;
     });
-  }, [newMarketplaceSource, runAction]);
+  }, [newMarketplaceSource, pluginsText, runAction]);
 
   const handleRefreshMarketplace = useCallback((name?: string) => {
     const key = name ? `marketplace:refresh:${name}` : 'marketplace:refresh:all';
     void runAction(key, async () => {
       const result = normalizeMarketplaceResult<void>(
         await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_REFRESH, name),
-        '刷新 marketplace 失败',
+        pluginsText.toast.refreshMarketplaceFailed,
       );
-      if (!result.success) throw new Error(getResultError(result));
-      return name ? `已刷新 marketplace：${name}` : '已刷新全部 marketplace';
+      if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
+      return name
+        ? `${pluginsText.toast.refreshMarketplaceSuccessPrefix}${name}`
+        : pluginsText.toast.refreshAllMarketplaceSuccess;
     });
-  }, [runAction]);
+  }, [pluginsText, runAction]);
 
   const handleRemoveMarketplace = useCallback((name: string) => {
-    if (!window.confirm(`移除 marketplace「${name}」？已安装插件不会自动卸载。`)) return;
+    if (!window.confirm(`${pluginsText.toast.removeMarketplaceConfirmPrefix}${name}${pluginsText.toast.removeMarketplaceConfirmSuffix}`)) return;
     void runAction(`marketplace:remove:${name}`, async () => {
       const result = normalizeMarketplaceResult<void>(
         await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_REMOVE, name),
-        '移除 marketplace 失败',
+        pluginsText.toast.removeMarketplaceFailed,
       );
-      if (!result.success) throw new Error(getResultError(result));
-      return `已移除 marketplace：${name}`;
+      if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
+      return `${pluginsText.toast.removeMarketplaceSuccessPrefix}${name}`;
     });
-  }, [runAction]);
+  }, [pluginsText, runAction]);
 
   const handleInstall = useCallback((plugin: MarketplacePluginEntry) => {
     const spec = getPluginSpec(plugin);
@@ -529,10 +304,10 @@ export const PluginsSettings: React.FC = () => {
         ? { scope: installScope, projectPath: projectPath.trim() || undefined }
         : { scope: installScope };
       const result = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, options);
-      if (!result?.success) throw new Error(getResultError(result));
-      return `已安装 ${spec}，默认保持禁用。`;
+      if (!result?.success) throw new Error(getResultError(result, pluginsText.errors));
+      return `${pluginsText.toast.installSuccessPrefix}${spec}${pluginsText.toast.installSuccessSuffix}`;
     });
-  }, [installScope, projectPath, runAction]);
+  }, [installScope, pluginsText, projectPath, runAction]);
 
   const handleToggle = useCallback((plugin: InstalledPlugin) => {
     const spec = getPluginSpec(plugin);
@@ -540,20 +315,22 @@ export const PluginsSettings: React.FC = () => {
       const result = plugin.isEnabled
         ? normalizeMarketplaceResult<void>(
           await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN, spec),
-          '禁用插件失败',
+          pluginsText.toast.disablePluginFailed,
         )
         : normalizeMarketplaceResult<void>(
           await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN, spec),
-          '启用插件失败',
+          pluginsText.toast.enablePluginFailed,
         );
-      if (!result.success) throw new Error(getResultError(result));
-      return plugin.isEnabled ? `已禁用 ${spec}` : `已启用 ${spec}`;
+      if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
+      return plugin.isEnabled
+        ? `${pluginsText.toast.disablePluginSuccessPrefix}${spec}`
+        : `${pluginsText.toast.enablePluginSuccessPrefix}${spec}`;
     });
-  }, [runAction]);
+  }, [pluginsText, runAction]);
 
   const handleUninstall = useCallback((plugin: InstalledPlugin) => {
     const spec = getPluginSpec(plugin);
-    if (!window.confirm(`卸载插件「${spec}」？这会移除它安装的插件资产、skills 和 commands。`)) return;
+    if (!window.confirm(`${pluginsText.toast.uninstallConfirmPrefix}${spec}${pluginsText.toast.uninstallConfirmSuffix}`)) return;
     void runAction(`plugin:uninstall:${spec}`, async () => {
       const result = normalizeMarketplaceResult<void>(
         await ipcService.invoke(
@@ -561,21 +338,21 @@ export const PluginsSettings: React.FC = () => {
           spec,
           plugin.scope,
         ),
-        '卸载插件失败',
+        pluginsText.toast.uninstallFailed,
       );
-      if (!result.success) throw new Error(getResultError(result));
-      return `已卸载 ${spec}`;
+      if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
+      return `${pluginsText.toast.uninstallSuccessPrefix}${spec}`;
     });
-  }, [runAction]);
+  }, [pluginsText, runAction]);
 
   if (!isAdmin) {
     return (
       <SettingsPage
-        title="插件管理"
-        description="插件市场和生命周期管理需要管理员权限。"
+        title={pluginsText.title}
+        description={pluginsText.adminRequiredDescription}
       >
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-          当前用户不能查看 marketplace 插件目录，也不能安装、启用或卸载插件。
+          {pluginsText.adminRequiredNotice}
         </div>
       </SettingsPage>
     );
@@ -583,8 +360,8 @@ export const PluginsSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="插件管理"
-      description="管理 marketplace、插件安装和启停状态；普通用户只会接触启用后暴露出来的能力。"
+      title={pluginsText.title}
+      description={pluginsText.description}
     >
       {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
       {notice && (
@@ -600,8 +377,8 @@ export const PluginsSettings: React.FC = () => {
       )}
 
       <SettingsSection
-        title="Alma 官方精选插件"
-        description="对标 Alma plugin registry 的 featured 项；可添加官方插件源后按 marketplace 生命周期安装为受管资产。"
+        title={pluginsText.almaFeatured.title}
+        description={pluginsText.almaFeatured.description}
         actions={(
           <Button
             variant="secondary"
@@ -610,31 +387,35 @@ export const PluginsSettings: React.FC = () => {
               void runAction('marketplace:add:alma-plugins', async () => {
                 const result = normalizeMarketplaceResult<MarketplaceInfo>(
                   await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_ADD, ALMA_PLUGIN_REGISTRY_URL),
-                  '添加 Alma 插件源失败',
+                  pluginsText.toast.addAlmaSourceFailed,
                 );
-                if (!result.success) throw new Error(getResultError(result));
-                return `已添加 Alma 插件源：${result.data?.name || 'alma-plugins'}`;
+                if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
+                return `${pluginsText.toast.addAlmaSourceSuccessPrefix}${result.data?.name || pluginsText.toast.almaFallbackName}`;
               });
             }}
             loading={busyKey === 'marketplace:add:alma-plugins'}
             disabled={busyKey !== null}
             leftIcon={<PackagePlus className="h-3.5 w-3.5" />}
           >
-            添加官方源
+            {pluginsText.almaFeatured.addOfficialSource}
           </Button>
         )}
       >
         <div className="grid gap-3 lg:grid-cols-2">
           {ALMA_FEATURED_PLUGIN_REGISTRY.map((plugin) => (
-            <AlmaFeaturedPluginCard key={plugin.id} plugin={plugin} />
+            <AlmaFeaturedPluginCard
+              key={plugin.id}
+              plugin={plugin}
+              labels={pluginsText.almaFeatured.card}
+            />
           ))}
         </div>
         <AlmaRegistryAuditPanel />
       </SettingsSection>
 
       <SettingsSection
-        title="已安装插件"
-        description="禁用状态下只对管理员可见；启用后才进入普通用户运行面。"
+        title={pluginsText.installed.title}
+        description={pluginsText.installed.description}
         actions={(
           <Button
             variant="ghost"
@@ -643,17 +424,17 @@ export const PluginsSettings: React.FC = () => {
             loading={loading}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {pluginsText.installed.refresh}
           </Button>
         )}
       >
         {loading ? (
           <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 py-8 text-sm text-zinc-500">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            正在读取插件状态
+            {pluginsText.installed.loading}
           </div>
         ) : installed.length === 0 ? (
-          <EmptyState text="还没有安装任何 marketplace 插件。" />
+          <EmptyState text={pluginsText.installed.empty} />
         ) : (
           <div className="space-y-3">
             {installed.map((plugin) => {
@@ -672,15 +453,15 @@ export const PluginsSettings: React.FC = () => {
                           <Pill key={type}>{type}</Pill>
                         ))}
                         <Pill tone={plugin.isEnabled ? 'success' : 'warning'}>
-                          {plugin.isEnabled ? '已启用' : '已禁用'}
+                          {plugin.isEnabled ? pluginsText.installed.enabled : pluginsText.installed.disabled}
                         </Pill>
                         <Pill tone={getPluginRuntimeTone(runtimeReadiness)}>
-                          {getPluginRuntimeLabel(runtimeReadiness)}
+                          {getPluginRuntimeLabel(runtimeReadiness, pluginsText.runtimeLabels)}
                         </Pill>
                       </div>
                       <div className="mt-2 text-xs leading-5 text-zinc-500">
-                        安装时间 {formatDate(plugin.installedAt)}
-                        {plugin.projectPath ? ` · 项目 ${plugin.projectPath}` : ''}
+                        {pluginsText.installed.installedAtPrefix}{formatDate(plugin.installedAt, pluginsText.date)}
+                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${plugin.projectPath}` : ''}
                       </div>
                       {plugin.pluginRoot && (
                         <div className="mt-1 break-all text-xs text-zinc-600">{plugin.pluginRoot}</div>
@@ -695,7 +476,7 @@ export const PluginsSettings: React.FC = () => {
                         onClick={() => handleToggle(plugin)}
                         leftIcon={plugin.isEnabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
                       >
-                        {plugin.isEnabled ? '禁用' : '启用'}
+                        {plugin.isEnabled ? pluginsText.installed.disable : pluginsText.installed.enable}
                       </Button>
                       <Button
                         variant="danger"
@@ -705,30 +486,30 @@ export const PluginsSettings: React.FC = () => {
                         onClick={() => handleUninstall(plugin)}
                         leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                       >
-                        卸载
+                        {pluginsText.installed.uninstall}
                       </Button>
                     </div>
                   </div>
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
-                      <span className="text-zinc-300">Runtime</span>
-                      <span className="ml-2">{getPluginRuntimeReason(plugin)}</span>
+                      <span className="text-zinc-300">{pluginsText.installed.runtime}</span>
+                      <span className="ml-2">{getPluginRuntimeReason(plugin, pluginsText.runtimeReasons)}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
-                      <span className="text-zinc-300">Skills</span>
-                      <span className="ml-2">{plugin.skills.length ? plugin.skills.join(' · ') : '无'}</span>
+                      <span className="text-zinc-300">{pluginsText.installed.skills}</span>
+                      <span className="ml-2">{plugin.skills.length ? plugin.skills.join(' · ') : pluginsText.installed.none}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
-                      <span className="text-zinc-300">Commands</span>
-                      <span className="ml-2">{(plugin.commands ?? []).length ? plugin.commands?.join(' · ') : '无'}</span>
+                      <span className="text-zinc-300">{pluginsText.installed.commands}</span>
+                      <span className="ml-2">{(plugin.commands ?? []).length ? plugin.commands?.join(' · ') : pluginsText.installed.none}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
-                      <span className="text-zinc-300">Plugin asset</span>
-                      <span className="ml-2 break-all">{plugin.pluginRoot || '无'}</span>
+                      <span className="text-zinc-300">{pluginsText.installed.pluginAsset}</span>
+                      <span className="ml-2 break-all">{plugin.pluginRoot || pluginsText.installed.none}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
-                      <span className="text-zinc-300">Trust</span>
-                      <span className="ml-2">{getPluginTrustSummary(plugin)}</span>
+                      <span className="text-zinc-300">{pluginsText.installed.trust}</span>
+                      <span className="ml-2">{getPluginTrustSummary(plugin, pluginsText.trustSummary)}</span>
                     </div>
                   </div>
                 </div>
@@ -739,8 +520,8 @@ export const PluginsSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsSection
-        title="插件市场"
-        description="安装只复制插件资源，不自动启用；启用前普通用户不可见。"
+        title={pluginsText.marketplace.title}
+        description={pluginsText.marketplace.description}
       >
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
           <div className="grid gap-3 lg:grid-cols-[1fr_180px_160px]">
@@ -750,7 +531,7 @@ export const PluginsSettings: React.FC = () => {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索插件、skill、command、标签"
+                placeholder={pluginsText.marketplace.searchPlaceholder}
                 className="h-9 w-full rounded-lg border border-zinc-700 bg-zinc-950 pl-9 pr-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
               />
             </label>
@@ -758,9 +539,9 @@ export const PluginsSettings: React.FC = () => {
               value={selectedMarketplace}
               onChange={(event) => setSelectedMarketplace(event.target.value)}
               className="h-9 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
-              aria-label="选择 marketplace"
+              aria-label={pluginsText.marketplace.marketplaceAria}
             >
-              <option value="all">全部市场</option>
+              <option value="all">{pluginsText.marketplace.allMarketplaces}</option>
               {marketplaces.map((marketplace) => (
                 <option key={marketplace.name} value={marketplace.name}>{marketplace.name}</option>
               ))}
@@ -769,10 +550,10 @@ export const PluginsSettings: React.FC = () => {
               value={installScope}
               onChange={(event) => setInstallScope(event.target.value as PluginScope)}
               className="h-9 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
-              aria-label="安装 scope"
+              aria-label={pluginsText.marketplace.installScopeAria}
             >
-              <option value="user">用户级安装</option>
-              <option value="project">项目级安装</option>
+              <option value="user">{pluginsText.marketplace.userScope}</option>
+              <option value="project">{pluginsText.marketplace.projectScope}</option>
             </select>
           </div>
           {installScope === 'project' && (
@@ -780,14 +561,14 @@ export const PluginsSettings: React.FC = () => {
               type="text"
               value={projectPath}
               onChange={(event) => setProjectPath(event.target.value)}
-              placeholder="项目路径，留空时使用当前工作目录"
+              placeholder={pluginsText.marketplace.projectPathPlaceholder}
               className="mt-3 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
             />
           )}
         </div>
 
         {filteredCatalog.length === 0 ? (
-          <EmptyState text={catalog.length === 0 ? '当前 marketplace 目录为空。' : '没有匹配的插件。'} />
+          <EmptyState text={catalog.length === 0 ? pluginsText.marketplace.emptyCatalog : pluginsText.marketplace.noMatches} />
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
             {filteredCatalog.map((plugin) => {
@@ -806,14 +587,14 @@ export const PluginsSettings: React.FC = () => {
                         {plugin.version && <Pill>v{plugin.version}</Pill>}
                         {installedPlugin ? (
                           <Pill tone={installedPlugin.isEnabled ? 'success' : 'warning'}>
-                            {installedPlugin.isEnabled ? '已启用' : '已安装未启用'}
+                            {installedPlugin.isEnabled ? pluginsText.marketplace.enabled : pluginsText.marketplace.installedDisabled}
                           </Pill>
                         ) : (
-                          <Pill tone="warning">仅管理员可见</Pill>
+                          <Pill tone="warning">{pluginsText.marketplace.adminOnly}</Pill>
                         )}
                         {installedPlugin && (
                           <Pill tone={getPluginRuntimeTone(getPluginRuntimeReadiness(installedPlugin))}>
-                            {getPluginRuntimeLabel(getPluginRuntimeReadiness(installedPlugin))}
+                            {getPluginRuntimeLabel(getPluginRuntimeReadiness(installedPlugin), pluginsText.runtimeLabels)}
                           </Pill>
                         )}
                       </div>
@@ -833,7 +614,7 @@ export const PluginsSettings: React.FC = () => {
                         onClick={() => handleInstall(plugin)}
                         leftIcon={<Download className="h-3.5 w-3.5" />}
                       >
-                        安装
+                        {pluginsText.marketplace.install}
                       </Button>
                     )}
                   </div>
@@ -842,12 +623,12 @@ export const PluginsSettings: React.FC = () => {
                       <Pill key={tag}>{tag}</Pill>
                     ))}
                     {(plugin.types ?? []).length > 0 && <Pill>{plugin.types?.join(' · ')}</Pill>}
-                    {(plugin.skills ?? []).length > 0 && <Pill>{plugin.skills?.length} skills</Pill>}
-                    {(plugin.commands ?? []).length > 0 && <Pill>{plugin.commands?.length} commands</Pill>}
+                    {(plugin.skills ?? []).length > 0 && <Pill>{plugin.skills?.length}{pluginsText.marketplace.skillsCountSuffix}</Pill>}
+                    {(plugin.commands ?? []).length > 0 && <Pill>{plugin.commands?.length}{pluginsText.marketplace.commandsCountSuffix}</Pill>}
                   </div>
                   <div className="mt-3 rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
-                    <span className="text-zinc-300">Trust</span>
-                    <span className="ml-2">{getPluginTrustSummary(plugin)}</span>
+                    <span className="text-zinc-300">{pluginsText.installed.trust}</span>
+                    <span className="ml-2">{getPluginTrustSummary(plugin, pluginsText.trustSummary)}</span>
                   </div>
                 </div>
               );
@@ -857,40 +638,40 @@ export const PluginsSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsDetails
-        title="管理概览"
-        description="插件规模统计与角色可见性说明，默认收起。"
+        title={pluginsText.overview.title}
+        description={pluginsText.overview.description}
       >
         <div className="grid gap-3 md:grid-cols-6">
-          <SummaryTile label="Marketplace" value={marketplaces.length} />
-          <SummaryTile label="市场插件" value={catalog.length} />
-          <SummaryTile label="已安装" value={visibility.installedTotal} />
-          <SummaryTile label="已启用" value={visibility.enabledTotal} tone="success" />
-          <SummaryTile label="运行面可见" value={visibility.userVisible.length} tone="success" />
-          <SummaryTile label="仅管理员可见" value={visibility.adminOnly.length} tone="warning" />
+          <SummaryTile label={pluginsText.overview.marketplace} value={marketplaces.length} />
+          <SummaryTile label={pluginsText.overview.marketPlugins} value={catalog.length} />
+          <SummaryTile label={pluginsText.overview.installed} value={visibility.installedTotal} />
+          <SummaryTile label={pluginsText.overview.enabled} value={visibility.enabledTotal} tone="success" />
+          <SummaryTile label={pluginsText.overview.runtimeVisible} value={visibility.userVisible.length} tone="success" />
+          <SummaryTile label={pluginsText.overview.adminOnly} value={visibility.adminOnly.length} tone="warning" />
         </div>
 
         <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
             <Shield className="h-4 w-4 text-amber-300" />
-            角色可见性
+            {pluginsText.overview.roleVisibility}
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <div className="rounded-lg bg-zinc-950/60 p-3">
-              <div className="text-xs font-medium text-zinc-300">管理员</div>
+              <div className="text-xs font-medium text-zinc-300">{pluginsText.overview.adminTitle}</div>
               <p className="mt-1 text-xs leading-5 text-zinc-500">
-                可见 marketplace、未安装插件、禁用插件和全部生命周期操作。
+                {pluginsText.overview.adminDescription}
               </p>
             </div>
             <div className="rounded-lg bg-zinc-950/60 p-3">
-              <div className="text-xs font-medium text-zinc-300">普通用户</div>
+              <div className="text-xs font-medium text-zinc-300">{pluginsText.overview.userTitle}</div>
               <p className="mt-1 text-xs leading-5 text-zinc-500">
-                不显示插件管理面板；只在运行面看到已启用且真正暴露 skills 或 commands 的插件能力。
+                {pluginsText.overview.userDescription}
               </p>
             </div>
             <div className="rounded-lg bg-zinc-950/60 p-3">
-              <div className="text-xs font-medium text-zinc-300">安装策略</div>
+              <div className="text-xs font-medium text-zinc-300">{pluginsText.overview.installPolicyTitle}</div>
               <p className="mt-1 text-xs leading-5 text-zinc-500">
-                安装后保持禁用，由管理员复核后再启用。
+                {pluginsText.overview.installPolicyDescription}
               </p>
             </div>
           </div>
@@ -898,25 +679,25 @@ export const PluginsSettings: React.FC = () => {
       </SettingsDetails>
 
       <SettingsDetails
-        title="完整性评估"
-        description="前端插件管理闭环的开放状态，默认收起。"
+        title={pluginsText.completeness.title}
+        description={pluginsText.completeness.description}
       >
         <div className="overflow-hidden rounded-lg border border-zinc-800">
           <table className="w-full text-left text-sm">
             <thead className="bg-zinc-900 text-xs text-zinc-500">
               <tr>
-                <th className="px-3 py-2 font-medium">模块</th>
-                <th className="px-3 py-2 font-medium">状态</th>
-                <th className="px-3 py-2 font-medium">说明</th>
+                <th className="px-3 py-2 font-medium">{pluginsText.completeness.moduleColumn}</th>
+                <th className="px-3 py-2 font-medium">{pluginsText.completeness.statusColumn}</th>
+                <th className="px-3 py-2 font-medium">{pluginsText.completeness.descriptionColumn}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800 bg-zinc-950/30">
-              {PLUGIN_COMPLETENESS_ROWS.map((row) => (
+              {(pluginsText.completeness.rows as PluginCompletenessRow[]).map((row) => (
                 <tr key={row.area}>
                   <td className="px-3 py-2 text-zinc-300">{row.area}</td>
                   <td className="px-3 py-2">
                     <Pill tone={row.status === 'complete' ? 'success' : 'warning'}>
-                      {row.status === 'complete' ? '已开放' : '部分'}
+                      {row.status === 'complete' ? pluginsText.completeness.complete : pluginsText.completeness.partial}
                     </Pill>
                   </td>
                   <td className="px-3 py-2 text-xs leading-5 text-zinc-500">{row.detail}</td>
@@ -928,15 +709,15 @@ export const PluginsSettings: React.FC = () => {
       </SettingsDetails>
 
       <SettingsDetails
-        title="Marketplace 源"
-        description="新增支持本地目录、GitHub repo、URL、npm 包等后端已支持的源格式。"
+        title={pluginsText.marketplaceSources.title}
+        description={pluginsText.marketplaceSources.description}
       >
         <div className="flex flex-col gap-3 md:flex-row">
           <input
             type="text"
             value={newMarketplaceSource}
             onChange={(event) => setNewMarketplaceSource(event.target.value)}
-            placeholder="dir:/path/to/plugins 或 owner/repo"
+            placeholder={pluginsText.marketplaceSources.placeholder}
             className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
           />
           <Button
@@ -947,7 +728,7 @@ export const PluginsSettings: React.FC = () => {
             disabled={busyKey !== null}
             leftIcon={<PackagePlus className="h-3.5 w-3.5" />}
           >
-            添加
+            {pluginsText.marketplaceSources.add}
           </Button>
           <Button
             variant="ghost"
@@ -957,13 +738,13 @@ export const PluginsSettings: React.FC = () => {
             disabled={busyKey !== null}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            全部刷新
+            {pluginsText.marketplaceSources.refreshAll}
           </Button>
         </div>
 
         <div className="mt-4 space-y-2">
           {marketplaces.length === 0 ? (
-            <EmptyState text="还没有配置 marketplace 源。" />
+            <EmptyState text={pluginsText.marketplaceSources.empty} />
           ) : (
             marketplaces.map((marketplace) => (
               <div key={marketplace.name} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
@@ -981,7 +762,8 @@ export const PluginsSettings: React.FC = () => {
                       {formatMarketplaceSource(marketplace.source)}
                     </div>
                     <div className="mt-1 break-all text-xs text-zinc-600">
-                      缓存 {marketplace.installLocation} · 更新 {formatDate(marketplace.lastUpdated)}
+                      {pluginsText.marketplaceSources.cachePrefix}{marketplace.installLocation}
+                      {pluginsText.marketplaceSources.updatePrefix}{formatDate(marketplace.lastUpdated, pluginsText.date)}
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -993,7 +775,7 @@ export const PluginsSettings: React.FC = () => {
                       disabled={busyKey !== null}
                       leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
                     >
-                      刷新
+                      {pluginsText.marketplaceSources.refresh}
                     </Button>
                     <Button
                       variant="danger"
@@ -1003,7 +785,7 @@ export const PluginsSettings: React.FC = () => {
                       disabled={busyKey !== null}
                       leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                     >
-                      移除
+                      {pluginsText.marketplaceSources.remove}
                     </Button>
                   </div>
                 </div>
@@ -1014,14 +796,14 @@ export const PluginsSettings: React.FC = () => {
       </SettingsDetails>
 
       <SettingsDetails
-        title="可见插件清单"
-        description="按当前安装与启用状态拆分管理员可见和普通用户可见，默认收起。"
+        title={pluginsText.visibleList.title}
+        description={pluginsText.visibleList.description}
       >
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
-            <h4 className="mb-2 text-xs font-medium text-emerald-300">普通用户可见</h4>
+            <h4 className="mb-2 text-xs font-medium text-emerald-300">{pluginsText.visibleList.userVisibleTitle}</h4>
             {visibility.userVisible.length === 0 ? (
-              <EmptyState text="当前没有启用插件进入普通用户运行面。" />
+              <EmptyState text={pluginsText.visibleList.userVisibleEmpty} />
             ) : (
               <div className="space-y-2">
                 {visibility.userVisible.map((item) => (
@@ -1037,16 +819,16 @@ export const PluginsSettings: React.FC = () => {
             )}
           </div>
           <div>
-            <h4 className="mb-2 text-xs font-medium text-amber-300">仅管理员可见</h4>
+            <h4 className="mb-2 text-xs font-medium text-amber-300">{pluginsText.visibleList.adminOnlyTitle}</h4>
             {visibility.adminOnly.length === 0 ? (
-              <EmptyState text="没有仅管理员可见的插件记录。" />
+              <EmptyState text={pluginsText.visibleList.adminOnlyEmpty} />
             ) : (
               <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
                 {visibility.adminOnly.map((item) => (
                   <div key={`${item.kind}:${item.spec}`} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-zinc-100">{item.spec}</span>
-                      <Pill tone="warning">{item.kind === 'installed' ? '已安装未启用' : '未安装'}</Pill>
+                      <Pill tone="warning">{item.kind === 'installed' ? pluginsText.visibleList.installedDisabled : pluginsText.visibleList.notInstalled}</Pill>
                     </div>
                     <p className="mt-1 text-xs leading-5 text-zinc-500">{item.reason}</p>
                   </div>

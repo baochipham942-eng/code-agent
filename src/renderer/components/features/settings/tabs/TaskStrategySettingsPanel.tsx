@@ -11,13 +11,7 @@ import type {
 import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions } from '@shared/modelRuntime';
 import { Select, Toggle } from '../../../primitives';
-
-const PROFILE_META: Record<TaskStrategyProfileId, { label: string; description: string }> = {
-  fast: { label: '快速任务模型', description: '短问答、改写、格式整理' },
-  main: { label: '任务主模型', description: '代码、文件、工具任务' },
-  deep: { label: '深度任务模型', description: '研究、规划、重构' },
-  vision: { label: '视觉任务模型', description: '图片、截图、视觉输入' },
-};
+import { useI18n } from '../../../../hooks/useI18n';
 
 // 自动模式下只让用户挑这三类；主任务用「默认模型」（在上方模型列表设默认），不在这里重复配置。
 const AUTO_PROFILES: TaskStrategyProfileId[] = ['fast', 'deep', 'vision'];
@@ -55,6 +49,8 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   disabled,
   onChange,
 }) => {
+  const { t } = useI18n();
+  const strategyText = t.settings.model.taskStrategy;
   const effectiveSettings = useMemo<AppSettings | null>(() => {
     if (!settings) return null;
     const providers = Object.fromEntries(
@@ -112,7 +108,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   }, [strategy, modelOptions, config.provider, config.model, onChange]);
 
   if (!strategy) {
-    return <div className="text-sm text-zinc-500">任务策略配置还没有加载完成。</div>;
+    return <div className="text-sm text-zinc-500">{strategyText.loading}</div>;
   }
 
   const patchStrategy = (patch: Partial<TaskModelStrategySettings>) => {
@@ -137,14 +133,14 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     <div className="space-y-4">
       <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
         <span className="min-w-0">
-          <span className="block text-sm font-medium text-zinc-200">开启自动切换</span>
-          <span className="block text-xs text-zinc-500">开启后快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。</span>
+          <span className="block text-sm font-medium text-zinc-200">{strategyText.toggleTitle}</span>
+          <span className="block text-xs text-zinc-500">{strategyText.toggleDescription}</span>
         </span>
         <Toggle
           checked={strategy.mode === 'auto'}
           onChange={(checked) => patchStrategy({ mode: checked ? 'auto' : 'manual' })}
           disabled={disabled}
-          aria-label="开启自动按任务切换模型"
+          aria-label={strategyText.toggleAriaLabel}
         />
       </label>
 
@@ -158,10 +154,10 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
               <div key={profile} className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2.5">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-200">
                   <Brain className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-                  <span className="truncate">{PROFILE_META[profile].label}</span>
+                  <span className="truncate">{strategyText.profiles[profile].label}</span>
                   {unavailable ? (
                     <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] text-amber-200">
-                      不可用
+                      {strategyText.unavailableBadge}
                     </span>
                   ) : null}
                 </div>
@@ -174,7 +170,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                   disabled={disabled}
                   className="w-full"
                 >
-                  {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}（不可用）</option> : null}
+                  {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}{strategyText.unavailableSuffix}</option> : null}
                   {groupedOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (

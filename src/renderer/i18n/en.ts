@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Translations } from './zh';
+import { enSettings } from './enSettings';
 
 export const en: Translations = {
   // Common
@@ -378,161 +379,7 @@ export const en: Translations = {
   },
 
   // Settings Modal
-  settings: {
-    title: 'Settings',
-    backToApp: 'Back to app',
-    searchPlaceholder: 'Search settings...',
-    searchNoResults: 'No matching settings',
-    tabs: {
-      general: 'Permissions & security',
-      model: 'General model',
-      visualModels: 'Multimodal models',
-      imageVideo: 'Generation defaults',
-      disclosure: 'Disclosure',
-      appearance: 'Appearance',
-      language: 'Language',
-      data: 'Data',
-      cloud: 'Cloud',
-      memory: 'Memory',
-      update: 'Update',
-      about: 'About',
-      // IA v2 导航补齐（此前 SettingsModal 硬编码中文，en 态中英混排）
-      search: 'Search sources',
-      soul: 'Persona',
-      skills: 'Skills',
-      conversation: 'Context compaction',
-      keybindings: 'Shortcuts',
-      voiceInput: 'Voice input',
-      workspace: 'Workspace',
-      automation: 'Automation',
-      channels: 'Channels',
-      roles: 'Roles',
-      openchronicle: 'Screen memory',
-      privacy: 'Privacy guard',
-      mcp: 'MCP',
-      plugins: 'Plugins',
-      hooks: 'Hooks',
-      appshots: 'App snapshots',
-      cache: 'Data & storage',
-      users: 'User management',
-      invites: 'Invite codes',
-      controlPlane: 'Control plane',
-      capabilities: 'Capability center',
-    },
-    // IA v2 侧栏分组标签（单一真源，SettingsModal 导航消费）
-    tabGroups: {
-      models: 'Models & capabilities',
-      basics: 'Preferences',
-      work: 'Work & collaboration',
-      memory: 'Memory & privacy',
-      system: 'System',
-      advanced: 'Advanced',
-      management: 'User management',
-    },
-    general: {
-      modeTitle: 'Application Mode',
-      modeDescription: 'Choose the mode that fits your workflow',
-      developerMode: 'Developer Mode',
-      developerModeDesc: 'Show full tool call details and parameters',
-      coworkMode: 'Cowork Mode',
-      coworkModeDesc: 'Simplified display for AI collaboration',
-    },
-    cloud: {
-      title: 'Cloud Config',
-      description: 'System Prompt, Skills and other configurations are fetched from cloud in real-time.',
-    },
-    visualModels: {
-      title: 'Multimodal models',
-      subtitle: 'Pick the default image / video generation model and manage your own endpoints. Configure models here; the design canvas only selects from configured ones.',
-      imageSection: 'Image generation',
-      videoSection: 'Video generation',
-      musicSection: 'Music Models',
-      bridgedFromBadge: 'from {name}',
-      builtinTitle: 'Built-in models',
-      defaultBadge: 'Default',
-      defaultHint: 'Click one to set as default; used when the design canvas generates, unless you switch manually in the canvas.',
-      defaultSaved: 'Default generation model saved',
-      videoTitle: 'Custom video endpoints',
-      videoSubtitle: 'Connect your own video generation endpoint. Keys stay on this device.',
-      videoEmpty: 'No custom video endpoints yet. Click "Add" to connect your own video model.',
-      videoCostLabel: 'Cost per video (CNY, optional)',
-      videoNamePlaceholder: 'e.g. My video model',
-      videoModelNamePlaceholder: 'e.g. sora-1',
-      videoBaseUrlHint: 'Video generation endpoint root. HTTPS public URLs only.',
-      videoPendingNote: 'Generation coming soon: custom video endpoints can be saved now; the generate call will be wired up later.',
-      consistencySection: 'Image-edit consistency',
-      strictLabel: 'Strict mode: guarantee only the selected area changes',
-      strictHint:
-        'When on, a region edit that cannot pixel-guarantee the unselected area is unchanged is cancelled with a notice (instead of handing you an image whose other areas may have been silently altered). Off by default: best-effort lock, and when it cannot be enforced the model result is still used so your editing is not interrupted.',
-    },
-  },
-
-  // Update Settings
-  update: {
-    title: 'Version Update',
-    description: 'Check and download the latest version of Agent Neo',
-    currentVersion: 'Current Version',
-    checking: 'Checking...',
-    checkNow: 'Check for Updates',
-    checkError: 'Failed to check for updates, please try again later',
-    newVersion: 'New version available',
-    upToDate: 'You are up to date',
-    download: 'Update Now',
-  },
-
-  // Model Settings
-  model: {
-    title: 'Model Provider',
-    apiKey: 'API Key',
-    apiKeyPlaceholder: 'Enter your API key',
-    apiKeyHint: 'Your API key is stored locally and never sent to our servers.',
-    modelSelect: 'Model',
-    temperature: 'Temperature',
-    temperaturePrecise: 'Precise',
-    temperatureCreative: 'Creative',
-    providers: {
-      deepseek: {
-        name: 'DeepSeek',
-        description: 'DeepSeek Chat API',
-      },
-      anthropic: {
-        name: 'Claude',
-        description: 'Anthropic Claude API',
-      },
-      openai: {
-        name: 'OpenAI',
-        description: 'GPT-4.1 / o3 Series',
-      },
-      gemini: {
-        name: 'Gemini',
-        description: 'Google Gemini 2.5 Series',
-      },
-      openrouter: {
-        name: 'OpenRouter',
-        description: 'Proxy (Gemini/Claude/GPT)',
-      },
-      zhipu: {
-        name: 'Zhipu AI',
-        description: 'GLM-4 Series Models',
-      },
-      qwen: {
-        name: 'Qwen',
-        description: 'Alibaba Cloud Qwen Models',
-      },
-      moonshot: {
-        name: 'Kimi',
-        description: 'Moonshot AI Models',
-      },
-      minimax: {
-        name: 'MiniMax',
-        description: 'MiniMax Hailuo AI',
-      },
-      perplexity: {
-        name: 'Perplexity',
-        description: 'AI Search Service',
-      },
-    },
-  },
+  settings: enSettings,
 
   // Runtime(engine) × model compatibility matrix (billingMode + unsupported reason)
   engineCompat: {
@@ -662,24 +509,6 @@ export const en: Translations = {
       autoApprove: 'Auto-approve all permissions',
       autoApproveDescription: 'Skip all permission dialogs in dev mode for faster testing. Recommended to disable in production.',
     },
-  },
-
-  // Appearance Settings
-  appearance: {
-    theme: 'Theme',
-    themes: {
-      dark: 'Dark',
-      light: 'Light',
-      auto: 'Auto',
-    },
-    fontSize: 'Font Size',
-    fontSizes: {
-      small: 'Small',
-      medium: 'Medium',
-      large: 'Large',
-    },
-    developerMode: 'Developer Mode',
-    developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
   },
 
   // Language Settings

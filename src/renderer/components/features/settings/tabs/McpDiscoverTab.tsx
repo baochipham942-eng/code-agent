@@ -15,6 +15,10 @@ import {
 } from '@shared/constants/almaRecommendationPolicy';
 import { Button } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
+
+type McpDiscoverLabels = typeof zh.settings.mcp.discover;
 
 export interface McpDiscoverTabProps {
   /** 推荐目录（云端下发优先，内置兜底） */
@@ -56,6 +60,7 @@ interface McpServerCardProps {
   action: ReturnType<typeof getEntryAction>;
   canManageMcp: boolean;
   isLoading: boolean;
+  labels: McpDiscoverLabels;
   onQuickConnect: (entry: RecommendedMcpServerEntry) => void;
   onConnectWithConfig: (entry: RecommendedMcpServerEntry) => void;
   onEnableBuiltin: (serverId: string) => void;
@@ -81,6 +86,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
   action,
   canManageMcp,
   isLoading,
+  labels,
   onQuickConnect,
   onConnectWithConfig,
   onEnableBuiltin,
@@ -99,12 +105,12 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
           )}
           {entry.chinaDirect && (
             <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
-              国内直连
+              {labels.chinaDirect}
             </span>
           )}
           {entry.officialFeatured && (
             <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-              官方精选
+              {labels.officialFeatured}
             </span>
           )}
           {policy && (
@@ -121,13 +127,13 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
       <div className="flex items-center justify-between gap-2 mt-auto">
         <span className="text-[10px] text-zinc-500 truncate">
           {entry.requiredCredentials?.length
-            ? `需要: ${entry.requiredCredentials.join(', ')}`
-            : '免配置'}
+            ? `${labels.requiredCredentialsPrefix}${entry.requiredCredentials.join(', ')}`
+            : labels.noConfig}
         </span>
         {action === 'enabled' || action === 'connected' ? (
           <span className="flex shrink-0 items-center gap-1 text-xs text-emerald-400">
             <Check className="w-3 h-3" />
-            {action === 'enabled' ? '已启用' : '已连接'}
+            {action === 'enabled' ? labels.enabled : labels.connected}
           </span>
         ) : action === 'enable-builtin' ? (
           <Button
@@ -138,7 +144,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
             disabled={isWebMode() || !canManageMcp}
             leftIcon={!isLoading ? <Plug className="w-3 h-3" /> : undefined}
           >
-            启用
+            {labels.enable}
           </Button>
         ) : action === 'quick-connect' ? (
           <Button
@@ -149,7 +155,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
             disabled={isWebMode() || !canManageMcp}
             leftIcon={!isLoading ? <Plus className="w-3 h-3" /> : undefined}
           >
-            一键连接
+            {labels.quickConnect}
           </Button>
         ) : (
           <Button
@@ -160,7 +166,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
             disabled={isWebMode() || !canManageMcp}
             leftIcon={!isLoading ? <Plus className="w-3 h-3" /> : undefined}
           >
-            连接
+            {labels.connect}
           </Button>
         )}
       </div>
@@ -172,6 +178,7 @@ interface ComputerUseCardProps {
   existing: boolean;
   enabled: boolean;
   canManageMcp: boolean;
+  labels: McpDiscoverLabels['computerUse'];
   onOpenComputerUsePanel?: () => void;
 }
 
@@ -179,6 +186,7 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
   existing,
   enabled,
   canManageMcp,
+  labels,
   onOpenComputerUsePanel,
 }) => (
   <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3">
@@ -188,23 +196,23 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h5 className="text-sm font-medium text-zinc-100">Computer Use 本机能力</h5>
+          <h5 className="text-sm font-medium text-zinc-100">{labels.title}</h5>
           <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-            Alma 对标
+            {labels.almaBadge}
           </span>
           <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">
-            高权限
+            {labels.highPrivilegeBadge}
           </span>
         </div>
         <p className="mt-1 text-xs leading-relaxed text-zinc-400">
-          Alma 会自动注册 `computer-use` MCP；code-agent 对应本机底座是 `cua-driver`，需要 `CODE_AGENT_ENABLE_CUA=1` 和系统辅助功能权限。
+          {labels.description}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
           <span className="inline-flex items-center gap-1">
             <ShieldAlert className="h-3 w-3 text-amber-300" />
-            默认可见，不默认强启
+            {labels.defaultVisible}
           </span>
-          <span>{existing ? (enabled ? '当前已启用' : '已注册但未启用') : '当前未注册'}</span>
+          <span>{existing ? (enabled ? labels.registeredEnabled : labels.registeredDisabled) : labels.unregistered}</span>
         </div>
       </div>
       <Button
@@ -214,7 +222,7 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
         disabled={!canManageMcp || !onOpenComputerUsePanel}
         onClick={onOpenComputerUsePanel}
       >
-        查看本机能力
+        {labels.openButton}
       </Button>
     </div>
   </div>
@@ -231,6 +239,8 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
   onEnableBuiltin,
   onOpenComputerUsePanel,
 }) => {
+  const { t } = useI18n();
+  const discoverText = t.settings.mcp.discover;
   const featuredServers = getAlmaFeaturedMcpServers(catalog);
   const featuredServerIds = new Set(featuredServers.map((server) => server.id));
   const categoryGroups = groupRecommendedMcpServersByCategory({
@@ -244,15 +254,16 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
         existing={existingServerIds.has('cua-driver')}
         enabled={enabledServerIds.has('cua-driver')}
         canManageMcp={canManageMcp}
+        labels={discoverText.computerUse}
         onOpenComputerUsePanel={onOpenComputerUsePanel}
       />
 
       {featuredServers.length > 0 && (
         <div className="space-y-2">
           <div>
-            <h4 className="text-sm font-medium text-zinc-200">Alma 官方精选</h4>
+            <h4 className="text-sm font-medium text-zinc-200">{discoverText.featuredTitle}</h4>
             <p className="text-xs text-zinc-500 mt-0.5">
-              对齐 Alma MCP registry 的 featured 项；这里只表示官方精选，安装和启用仍然分开。
+              {discoverText.featuredDescription}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -263,6 +274,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                 action={getEntryAction(entry, existingServerIds, enabledServerIds)}
                 canManageMcp={canManageMcp}
                 isLoading={actionLoading === entry.id}
+                labels={discoverText}
                 onQuickConnect={onQuickConnect}
                 onConnectWithConfig={onConnectWithConfig}
                 onEnableBuiltin={onEnableBuiltin}
@@ -273,9 +285,9 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
       )}
 
       <div>
-        <h4 className="text-sm font-medium text-zinc-200">按用途浏览</h4>
+        <h4 className="text-sm font-medium text-zinc-200">{discoverText.browseTitle}</h4>
         <p className="text-xs text-zinc-500 mt-0.5">
-          热门 MCP 连接，按要连的能力分类。免配置的可一键连接，需要凭证的会打开配置面板。
+          {discoverText.browseDescription}
         </p>
       </div>
       {categoryGroups.map(({ category, servers }) => (
@@ -292,6 +304,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                 action={getEntryAction(entry, existingServerIds, enabledServerIds)}
                 canManageMcp={canManageMcp}
                 isLoading={actionLoading === entry.id}
+                labels={discoverText}
                 onQuickConnect={onQuickConnect}
                 onConnectWithConfig={onConnectWithConfig}
                 onEnableBuiltin={onEnableBuiltin}

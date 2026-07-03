@@ -8,6 +8,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { getRuntimeAssetDisplayKind } from '@shared/contract';
 import type {
   DesktopShellDiagnostics,
   NativePermissionSnapshot,
@@ -41,6 +42,7 @@ import {
   getNativeDesktopPermissionStatus,
   isNativeDesktopAvailable,
 } from '../../../../services/nativeDesktop';
+import { zh } from '../../../../i18n/zh';
 
 export {
   getRendererBundleActivationText,
@@ -53,6 +55,8 @@ export {
 } from '../../../../utils/rendererBundleActivation';
 
 const logger = createLogger('UpdateSettings');
+type UpdateSettingsText = typeof zh.settings.update;
+const DEFAULT_UPDATE_SETTINGS_TEXT = zh.settings.update;
 
 async function enrichDesktopShellDiagnostics(
   diagnostics: DesktopShellDiagnostics,
@@ -129,31 +133,37 @@ export function getInstallProgressPercent(progress: UpdateInstallProgress | null
 export function getInstallButtonLabel(
   isInstalling: boolean,
   progress: UpdateInstallProgress | null,
+  text: UpdateSettingsText = DEFAULT_UPDATE_SETTINGS_TEXT,
 ): string {
-  if (!isInstalling) return '立即更新';
-  if (!progress) return '准备中...';
-  if (progress.phase === 'install') return '正在安装...';
-  if (progress.phase === 'relaunch') return '正在重启...';
+  if (!isInstalling) return text.download;
+  if (!progress) return text.install.preparing;
+  if (progress.phase === 'install') return text.install.installing;
+  if (progress.phase === 'relaunch') return text.install.relaunching;
   const percent = getInstallProgressPercent(progress);
-  if (percent !== null) return `下载中 ${percent}%`;
-  return `下载中 ${(progress.downloaded / 1024 / 1024).toFixed(1)} MB`;
+  if (percent !== null) return `${text.install.downloadingPrefix}${percent}%`;
+  return `${text.install.downloadingPrefix}${(progress.downloaded / 1024 / 1024).toFixed(1)}${text.install.downloadedMbSuffix}`;
 }
 
-export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null): string | null {
+export function getRuntimeAssetsSummaryText(
+  status: RuntimeAssetsStatus | null,
+  text: UpdateSettingsText['runtimeAssets'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets,
+): string | null {
   if (!status) return null;
   const optionalMissing = status.assets.filter((asset) => asset.delivery === 'optional' && asset.state === 'missing').length;
   const bundledMissingAssets = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing');
   const bundledMissing = bundledMissingAssets.length;
   const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
   if (bundledMissing > 0) {
-    const names = Array.from(new Set(bundledMissingAssets.map(getRuntimeAssetDisplayName))).slice(0, 3);
-    return `${names.join('、')}暂不可用`;
+    const names = Array.from(new Set(
+      bundledMissingAssets.map((asset) => getRuntimeAssetDisplayName(asset, text.displayNames)),
+    )).slice(0, 3);
+    return `${names.join(text.listSeparator)}${text.summary.unavailableSuffix}`;
   }
-  if (optionalMissing > 0 && bundledReady > 0) return '图片理解已可用；语音输入、网页操作首次使用时自动下载';
-  if (optionalMissing > 0) return '语音输入、网页操作首次使用时自动下载';
-  if (status.summary.missing > 0) return '部分功能暂不可用';
-  if (status.summary.installed > 0) return '语音输入、网页操作、图片理解都已可用';
-  return '图片理解已可用';
+  if (optionalMissing > 0 && bundledReady > 0) return text.summary.optionalWithBundled;
+  if (optionalMissing > 0) return text.summary.optionalOnly;
+  if (status.summary.missing > 0) return text.summary.partialUnavailable;
+  if (status.summary.installed > 0) return text.summary.allReady;
+  return text.summary.imageReady;
 }
 
 export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): boolean {
@@ -164,165 +174,72 @@ export function shouldDisableUpdateActions(webMode: boolean, hasNativeBridge: bo
   return webMode && !hasNativeBridge;
 }
 
-export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
-  return isPreparing ? '正在准备语音输入和网页操作...' : '提前准备语音输入和网页操作';
+export function getRuntimeAssetsPrepareText(
+  isPreparing: boolean,
+  text: UpdateSettingsText['runtimeAssets'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets,
+): string {
+  return isPreparing ? text.prepareBusy : text.prepareIdle;
 }
 
-export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
-  if (asset.state === 'installed') return '已可用';
-  if (asset.state === 'bundledFallback') return '已可用';
-  if (asset.delivery === 'optional') return '首次使用时下载';
-  return '缺失';
+export function getRuntimeAssetStatusText(
+  asset: RuntimeAssetStatusEntry,
+  text: UpdateSettingsText['runtimeAssets']['status'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets.status,
+): string {
+  if (asset.state === 'installed') return text.available;
+  if (asset.state === 'bundledFallback') return text.available;
+  if (asset.delivery === 'optional') return text.firstUseDownload;
+  return text.missing;
 }
 
-export function getRuntimeAssetDisplayName(asset: RuntimeAssetStatusEntry): string {
-  const value = `${asset.id} ${asset.label}`.toLowerCase();
-  if (value.includes('computer-use')) return 'Computer Use';
-  if (value === 'uv uv sidecar binary' || value.includes('uv sidecar')) return 'uv';
-  if (value === 'rtk rtk sidecar binary' || value.includes('rtk sidecar')) return 'rtk';
-  if (value.includes('audio') || value.includes('vad')) return '语音输入';
-  if (value.includes('browser') || value.includes('playwright')) return '网页操作';
-  if (value.includes('image') || value.includes('sharp') || value.includes('vision')) return '图片理解';
-  return asset.label;
+export function getRuntimeAssetDisplayName(
+  asset: RuntimeAssetStatusEntry,
+  text: UpdateSettingsText['runtimeAssets']['displayNames'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets.displayNames,
+): string {
+  const kind = getRuntimeAssetDisplayKind(asset);
+  return kind ? text[kind] : asset.label;
 }
 
-export function getRendererBundleSummaryText(status: RendererBundleStatus | null): string | null {
+export function getRendererBundleSummaryText(
+  status: RendererBundleStatus | null,
+  text: UpdateSettingsText['rendererBundle']['summary'] = DEFAULT_UPDATE_SETTINGS_TEXT.rendererBundle.summary,
+): string | null {
   if (!status) return null;
   if (status.disabled) {
-    return '前端热更已停用，使用包内版本';
+    return text.disabled;
   }
   const attempt = status.lastAttempt;
   if (!attempt) {
     return status.activeBundle
-      ? `前端界面已应用 v${status.activeBundle.version}`
-      : '前端界面使用包内版本';
+      ? `${text.activePrefix}${status.activeBundle.version}`
+      : text.builtin;
   }
   if (attempt.outcome === 'applied') {
-    return `前端界面已热更到 v${attempt.manifest?.version ?? status.activeBundle?.version ?? 'unknown'}`;
+    return `${text.appliedPrefix}${attempt.manifest?.version ?? status.activeBundle?.version ?? text.unknown}`;
   }
   if (attempt.outcome === 'rolled-back') {
-    return '前端热更已回退到包内版本';
+    return text.rolledBack;
   }
   if (attempt.outcome === 'skipped') {
     if (attempt.reason === 'already-current') {
-      return `前端界面已是最新热更 v${attempt.manifest?.version ?? status.activeBundle?.version ?? 'unknown'}`;
+      return `${text.alreadyCurrentPrefix}${attempt.manifest?.version ?? status.activeBundle?.version ?? text.unknown}`;
     }
     if (attempt.reason === 'shell-too-old') {
-      return `前端热更需要壳版本 v${attempt.manifest?.minShellVersion ?? 'unknown'}`;
+      return `${text.shellTooOldPrefix}${attempt.manifest?.minShellVersion ?? text.unknown}`;
     }
     if (attempt.reason === 'missing-shell-capability') {
-      return '前端热更需要新壳能力';
+      return text.missingCapability;
     }
-    return `前端热更已跳过：${attempt.reason ?? 'unknown'}`;
+    return `${text.skippedPrefix}${attempt.reason ?? text.unknown}`;
   }
-  return `前端热更检查失败：${attempt.reason ?? 'unknown'}`;
+  return `${text.failedPrefix}${attempt.reason ?? text.unknown}`;
 }
 
-function shortContentHash(contentHash: string | undefined): string {
-  return contentHash ? contentHash.slice(0, 12) : 'unknown';
-}
-
-export function getRendererBundleDiagnosticRows(status: RendererBundleStatus | null): Array<{ label: string; value: string }> {
-  if (!status) return [];
-  const rows: Array<{ label: string; value: string }> = [];
-  rows.push({
-    label: '当前热更',
-    value: status.activeBundle
-      ? `v${status.activeBundle.version} · ${shortContentHash(status.activeBundle.contentHash)}`
-      : '包内版本',
-  });
-  if (status.disabledReason) {
-    rows.push({ label: '停用开关', value: status.disabledReason });
-  }
-  if (status.source) {
-    rows.push({
-      label: '配置入口',
-      value: [
-        status.source.manifestUrlOverride ? 'manifest override' : 'channel',
-        status.source.channel,
-      ].filter(Boolean).join(' · '),
-    });
-    if (status.source.errorReason) {
-      rows.push({
-        label: '入口配置错误',
-        value: [
-          status.source.errorReason,
-          status.source.errorTarget,
-        ].filter(Boolean).join(' · '),
-      });
-    } else if (status.source.manifestUrl) {
-      rows.push({ label: '配置 manifest', value: status.source.manifestUrl });
-    }
-    if (status.source.rolloutPolicyUrl) {
-      rows.push({ label: '策略入口', value: status.source.rolloutPolicyUrl });
-    }
-    if (status.source.cohort) {
-      rows.push({ label: '灰度 cohort', value: status.source.cohort });
-    }
-  }
-  const attempt = status.lastAttempt;
-  if (!attempt) return rows;
-  rows.push({
-    label: '最近检查',
-    value: [
-      attempt.outcome,
-      attempt.reason,
-      attempt.checkedAt,
-    ].filter(Boolean).join(' · '),
-  });
-  if (attempt.manifest) {
-    rows.push({
-      label: '候选版本',
-      value: [
-        `v${attempt.manifest.version}`,
-        `min shell v${attempt.manifest.minShellVersion}`,
-        `${attempt.manifest.requiredShellCapabilitiesCount} capabilities`,
-        attempt.manifest.requiredRuntimeAssetsCount
-          ? `${attempt.manifest.requiredRuntimeAssetsCount} runtime assets`
-          : null,
-        attempt.manifest.requiredResourcesCount
-          ? `${attempt.manifest.requiredResourcesCount} resources`
-          : null,
-        attempt.manifest.rollbackToBuiltin ? 'rollback' : null,
-      ].filter(Boolean).join(' · '),
-    });
-    if (attempt.manifest.contentHash) {
-      rows.push({
-        label: '候选 hash',
-        value: shortContentHash(attempt.manifest.contentHash),
-      });
-    }
-  }
-  if (attempt.manifestUrl) {
-    rows.push({ label: 'manifest', value: attempt.manifestUrl });
-  }
-  if (attempt.rollout) {
-    rows.push({
-      label: '策略决策',
-      value: [
-        attempt.rollout.decision,
-        attempt.rollout.policyVersion,
-        attempt.rollout.rolloutApplied === true ? 'target' : null,
-        attempt.rollout.rolloutApplied === false ? 'fallback' : null,
-        attempt.rollout.fallbackReason,
-        attempt.rollout.reason,
-      ].filter(Boolean).join(' · '),
-    });
-  }
-  if (attempt.runtimeAssetPreparation) {
-    rows.push({
-      label: '运行资源预备',
-      value: [
-        `${attempt.runtimeAssetPreparation.installed.length} installed`,
-        `${attempt.runtimeAssetPreparation.skipped.length} skipped`,
-        attempt.runtimeAssetPreparation.errorMessage,
-      ].filter(Boolean).join(' · '),
-    });
-  }
-  return rows;
-}
-
-export function getDesktopShellSummaryText(diagnostics: DesktopShellDiagnostics | null): string | null {
+export { getRendererBundleDiagnosticRows } from './UpdateSettings.helpers';
+import { getRendererBundleDiagnosticRows, shortContentHash } from './UpdateSettings.helpers';
+export function getDesktopShellSummaryText(
+  diagnostics: DesktopShellDiagnostics | null,
+  text: UpdateSettingsText['desktopShell']['summary'] = DEFAULT_UPDATE_SETTINGS_TEXT.desktopShell.summary,
+): string | null {
   if (!diagnostics) return null;
   const nativePermissionError = diagnostics.nativePermissions?.permissions.some((permission) => (
     permission.required && ['denied', 'needs_restart', 'wrong_bundle_id'].includes(permission.status)
@@ -332,7 +249,7 @@ export function getDesktopShellSummaryText(diagnostics: DesktopShellDiagnostics 
     diagnostics.issues.some((issue) => issue.severity === 'error') ||
     nativePermissionError
   ) {
-    return '桌面壳启动存在错误';
+    return text.error;
   }
   const nativePermissionWarning = diagnostics.nativePermissions?.permissions.some((permission) => (
     permission.status === 'unknown' || (!permission.required && permission.status !== 'granted' && permission.status !== 'unsupported')
@@ -343,9 +260,9 @@ export function getDesktopShellSummaryText(diagnostics: DesktopShellDiagnostics 
     diagnostics.resources.some((resource) => resource.status !== 'present') ||
     nativePermissionWarning
   ) {
-    return '桌面壳启动有警告';
+    return text.warning;
   }
-  return '桌面壳启动正常';
+  return text.ok;
 }
 
 function getNativePermissionSummaryText(snapshot: NativePermissionSnapshot | null | undefined): string | null {
@@ -363,11 +280,13 @@ function getNativePermissionSummaryText(snapshot: NativePermissionSnapshot | nul
 
 export function getDesktopShellDiagnosticRows(
   diagnostics: DesktopShellDiagnostics | null,
+  text: UpdateSettingsText = DEFAULT_UPDATE_SETTINGS_TEXT,
 ): Array<{ label: string; value: string }> {
   if (!diagnostics) return [];
+  const labels = text.desktopShell.diagnosticLabels;
   const missingResources = diagnostics.resources.filter((resource) => resource.status !== 'present');
   const rows: Array<{ label: string; value: string }> = [
-    { label: '启动阶段', value: diagnostics.boot.stage },
+    { label: labels.bootStage, value: diagnostics.boot.stage },
     {
       label: 'webServer',
       value: [
@@ -387,7 +306,7 @@ export function getDesktopShellDiagnosticRows(
   ];
   if (diagnostics.channelIsolation) {
     rows.push({
-      label: '通道隔离',
+      label: labels.channelIsolation,
       value: [
         diagnostics.channelIsolation.channel,
         diagnostics.channelIsolation.status,
@@ -415,14 +334,14 @@ export function getDesktopShellDiagnosticRows(
     }
   }
   rows.push({
-    label: '资源检查',
+    label: labels.resourceCheck,
     value: missingResources.length
       ? `${missingResources.length} missing · ${missingResources.map((resource) => resource.id).join(', ')}`
       : `${diagnostics.resources.length} present`,
   });
   if (diagnostics.runtimeAssets) {
     rows.push({
-      label: '运行资源',
+      label: labels.runtimeAssets,
       value: [
         `${diagnostics.runtimeAssets.summary.installed} installed`,
         `${diagnostics.runtimeAssets.summary.bundledFallback} bundled`,
@@ -430,7 +349,7 @@ export function getDesktopShellDiagnosticRows(
       ].join(' · '),
     });
     rows.push({
-      label: '运行资源账本',
+      label: labels.runtimeLedger,
       value: [
         `${diagnostics.runtimeAssets.assets.length} registered`,
         `${diagnostics.runtimeAssets.assets.filter((asset) => asset.registry?.hash).length} hashed`,
@@ -441,7 +360,7 @@ export function getDesktopShellDiagnosticRows(
       const registry = asset.registry;
       if (!registry) continue;
       rows.push({
-        label: `asset:${getRuntimeAssetDisplayName(asset)}`,
+        label: `asset:${getRuntimeAssetDisplayName(asset, text.runtimeAssets.displayNames)}`,
         value: [
           registry.state,
           registry.source,
@@ -455,7 +374,7 @@ export function getDesktopShellDiagnosticRows(
   }
   const permissionSummary = getNativePermissionSummaryText(diagnostics.nativePermissions);
   if (permissionSummary) {
-    rows.push({ label: '系统权限', value: permissionSummary });
+    rows.push({ label: labels.systemPermissions, value: permissionSummary });
     for (const permission of diagnostics.nativePermissions?.permissions ?? []) {
       rows.push({
         label: permission.label,
@@ -469,17 +388,17 @@ export function getDesktopShellDiagnosticRows(
     }
   }
   if (diagnostics.boot.diagnosticFile) {
-    rows.push({ label: '诊断文件', value: diagnostics.boot.diagnosticFile });
+    rows.push({ label: labels.diagnosticFile, value: diagnostics.boot.diagnosticFile });
   }
   if (diagnostics.issues.length > 0) {
     rows.push({
-      label: '已知问题',
+      label: labels.knownIssues,
       value: diagnostics.issues.map((issue) => `${issue.severity}:${issue.code}`).join(' · '),
     });
   }
   if (diagnostics.boot.previousFailure) {
     rows.push({
-      label: '上次启动失败',
+      label: labels.previousFailure,
       value: [
         diagnostics.boot.previousFailure.stage,
         diagnostics.boot.previousFailure.code,
@@ -489,7 +408,7 @@ export function getDesktopShellDiagnosticRows(
   }
   if (diagnostics.repairActions?.length) {
     rows.push({
-      label: '修复动作',
+      label: labels.repairActions,
       value: diagnostics.repairActions.map((action) => action.label).join(' · '),
     });
   }
@@ -548,6 +467,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   onShowUpdateModal,
 }) => {
   const { t } = useI18n();
+  const updateText = t.settings.update;
   const [isChecking, setIsChecking] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
   const [installProgress, setInstallProgress] = useState<UpdateInstallProgress | null>(null);
@@ -682,7 +602,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         // 检查彻底失败（native + cloud 都没结果）：报"检查失败"，绝不渲染成"已是最新"
         if (isFailedUpdateCheck(info)) {
           onUpdateInfoChange(null);
-          setError(t.update?.checkError || '检查更新失败，请稍后重试');
+          setError(updateText.checkError);
           logger.error('Update check failed (native + cloud unavailable)');
         } else {
           let runtimeAssets = info.runtimeAssets;
@@ -714,7 +634,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         setLocalVersion(fallbackVersion);
       }
       onUpdateInfoChange(null);
-      setError(t.update?.checkError || '检查更新失败，请稍后重试');
+      setError(updateText.checkError);
       logger.error('Update check failed', err);
       persistClientError('UpdateCheck', 'Update check failed', err);
     } finally {
@@ -739,7 +659,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         });
       }
     } catch (err) {
-      setRuntimeAssetsError('可选能力下载失败，已继续使用内置能力');
+      setRuntimeAssetsError(updateText.runtimeAssets.optionalPrepareFailed);
       logger.error('Runtime assets prepare failed', err);
     } finally {
       setIsPreparingRuntimeAssets(false);
@@ -770,7 +690,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       setIsInstalling(false);
       setInstallProgress(null);
     } catch (err) {
-      setError('更新安装失败，请稍后重试');
+      setError(updateText.install.installFailed);
       logger.error('Tauri update install failed', err);
       persistClientError('UpdateInstall', 'Tauri update install failed', err);
       setIsInstalling(false);
@@ -802,8 +722,8 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
   return (
     <SettingsPage
-      title={t.update?.title || '版本更新'}
-      description={t.update?.description || '检查并下载最新版本的 Agent Neo'}
+      title={updateText.title}
+      description={updateText.description}
     >
       <WebModeBanner />
 
@@ -811,7 +731,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       <div className="bg-zinc-800 rounded-lg p-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm text-zinc-400">{t.update?.currentVersion || '当前版本'}</div>
+            <div className="text-sm text-zinc-400">{updateText.currentVersion}</div>
             <div className="text-lg font-semibold text-zinc-200">v{currentVersion}</div>
           </div>
           <Button
@@ -822,7 +742,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             size="sm"
             leftIcon={!isChecking ? <RefreshCw className="w-4 h-4" /> : undefined}
           >
-            {isChecking ? (t.update?.checking || '检查中...') : (t.update?.checkNow || '检查更新')}
+            {isChecking ? updateText.checking : updateText.checkNow}
           </Button>
         </div>
       </div>
@@ -831,17 +751,19 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-zinc-400">本机功能</div>
+              <div className="text-sm text-zinc-400">{updateText.runtimeAssets.title}</div>
               <div className="text-sm font-medium text-zinc-200 mt-1">
-                {getRuntimeAssetsSummaryText(runtimeAssetsStatus)}
+                {getRuntimeAssetsSummaryText(runtimeAssetsStatus, updateText.runtimeAssets)}
               </div>
             </div>
             <div className="space-y-2 text-right">
               {runtimeAssetsStatus.assets.map((asset) => (
                 <div key={asset.id} className="flex items-center justify-end gap-2">
-                  <span className="text-xs text-zinc-400">{getRuntimeAssetDisplayName(asset)}</span>
+                  <span className="text-xs text-zinc-400">
+                    {getRuntimeAssetDisplayName(asset, updateText.runtimeAssets.displayNames)}
+                  </span>
                   <span className={`text-xs px-2 py-1 rounded border ${getRuntimeAssetTone(asset)}`}>
-                    {getRuntimeAssetStatusText(asset)}
+                    {getRuntimeAssetStatusText(asset, updateText.runtimeAssets.status)}
                   </span>
                 </div>
               ))}
@@ -856,7 +778,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               leftIcon={isPreparingRuntimeAssets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               className="mt-4"
             >
-              {getRuntimeAssetsPrepareText(isPreparingRuntimeAssets)}
+              {getRuntimeAssetsPrepareText(isPreparingRuntimeAssets, updateText.runtimeAssets)}
             </Button>
           )}
           {runtimeAssetsError && (
@@ -872,9 +794,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-zinc-400">桌面壳诊断</div>
+              <div className="text-sm text-zinc-400">{updateText.desktopShell.title}</div>
               <div className="text-sm font-medium text-zinc-200 mt-1">
-                {getDesktopShellSummaryText(desktopShellDiagnostics)}
+                {getDesktopShellSummaryText(desktopShellDiagnostics, updateText.desktopShell.summary)}
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -886,7 +808,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 onClick={refreshDesktopShellDiagnostics}
                 variant="ghost"
                 size="sm"
-                title="刷新诊断"
+                title={updateText.desktopShell.refreshDiagnostics}
                 className="px-2"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -894,7 +816,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             </div>
           </div>
           <div className="mt-3 grid gap-2 text-xs">
-            {getDesktopShellDiagnosticRows(desktopShellDiagnostics).map((row) => (
+            {getDesktopShellDiagnosticRows(desktopShellDiagnostics, updateText).map((row) => (
               <div key={row.label} className="flex items-start justify-between gap-3">
                 <span className="shrink-0 text-zinc-500">{row.label}</span>
                 <span className="min-w-0 text-right text-zinc-400 break-all">{row.value}</span>
@@ -908,9 +830,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-zinc-400">前端界面</div>
+              <div className="text-sm text-zinc-400">{updateText.rendererBundle.title}</div>
               <div className="text-sm font-medium text-zinc-200 mt-1">
-                {getRendererBundleSummaryText(rendererBundleStatus)}
+                {getRendererBundleSummaryText(rendererBundleStatus, updateText.rendererBundle.summary)}
               </div>
             </div>
             <span className={`text-xs px-2 py-1 rounded border ${getRendererBundleTone(rendererBundleStatus)}`}>
@@ -919,17 +841,20 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           </div>
           {rendererBundleStatus.lastAttempt?.missingShellCapabilities?.length ? (
             <div className="mt-3 text-xs text-zinc-500 truncate">
-              缺少能力: {rendererBundleStatus.lastAttempt.missingShellCapabilities.join(', ')}
+              {updateText.rendererBundle.missingShellCapabilitiesPrefix}
+              {rendererBundleStatus.lastAttempt.missingShellCapabilities.join(', ')}
             </div>
           ) : null}
           {rendererBundleStatus.lastAttempt?.missingRuntimeAssets?.length ? (
             <div className="mt-3 text-xs text-zinc-500 truncate">
-              缺少运行资源: {rendererBundleStatus.lastAttempt.missingRuntimeAssets.join(', ')}
+              {updateText.rendererBundle.missingRuntimeAssetsPrefix}
+              {rendererBundleStatus.lastAttempt.missingRuntimeAssets.join(', ')}
             </div>
           ) : null}
           {rendererBundleStatus.lastAttempt?.missingResources?.length ? (
             <div className="mt-3 text-xs text-zinc-500 truncate">
-              缺少包内资源: {rendererBundleStatus.lastAttempt.missingResources.join(', ')}
+              {updateText.rendererBundle.missingResourcesPrefix}
+              {rendererBundleStatus.lastAttempt.missingResources.join(', ')}
             </div>
           ) : null}
           {rendererBundlePendingActivation && (
@@ -950,12 +875,12 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 leftIcon={<RefreshCw className="w-4 h-4" />}
                 className="shrink-0"
               >
-                刷新界面生效
+                {updateText.rendererBundle.refreshToApply}
               </Button>
             </div>
           )}
           <div className="mt-3 grid gap-2 text-xs">
-            {getRendererBundleDiagnosticRows(rendererBundleStatus).map((row) => (
+            {getRendererBundleDiagnosticRows(rendererBundleStatus, updateText.rendererBundle).map((row) => (
               <div key={row.label} className="flex items-start justify-between gap-3">
                 <span className="shrink-0 text-zinc-500">{row.label}</span>
                 <span className="min-w-0 text-right text-zinc-400 break-all">{row.value}</span>
@@ -976,11 +901,12 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 <Download className="w-5 h-5 text-indigo-400 mt-0.5" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-200">
-                    {t.update?.newVersion || '发现新版本'}: v{visibleUpdateInfo.latestVersion}
+                    {updateText.newVersion}: v{visibleUpdateInfo.latestVersion}
                   </div>
                   {visibleUpdateInfo.fileSize && (
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      文件大小: {formatSize(visibleUpdateInfo.fileSize)}
+                      {updateText.fileSizePrefix}
+                      {formatSize(visibleUpdateInfo.fileSize)}
                     </p>
                   )}
                   {visibleUpdateInfo.releaseNotes && (
@@ -1005,7 +931,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                     leftIcon={isInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     className="!bg-indigo-600 hover:!bg-indigo-500"
                   >
-                    {getInstallButtonLabel(isInstalling, installProgress)}
+                    {getInstallButtonLabel(isInstalling, installProgress, updateText)}
                   </Button>
                   {isInstalling && installProgress?.phase === 'download' && (
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-700">
@@ -1029,14 +955,14 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                   leftIcon={<Download className="w-4 h-4" />}
                   className="!bg-indigo-600 hover:!bg-indigo-500"
                 >
-                  {t.update?.download || '立即更新'}
+                  {updateText.download}
                 </Button>
               )}
             </div>
           ) : (
             <div className="flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-400" />
-              <span className="text-sm text-zinc-200">{t.update?.upToDate || '已是最新版本'}</span>
+              <span className="text-sm text-zinc-200">{updateText.upToDate}</span>
             </div>
           )}
         </div>
@@ -1046,7 +972,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       {installedNeedsRestart && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 text-green-400">
           <CheckCircle className="w-4 h-4" />
-          <span className="text-sm">更新已下载安装完成，请重启 Agent Neo 生效</span>
+          <span className="text-sm">{updateText.install.installedNeedsRestart}</span>
         </div>
       )}
 

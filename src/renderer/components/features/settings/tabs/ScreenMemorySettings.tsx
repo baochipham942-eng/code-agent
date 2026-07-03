@@ -21,6 +21,8 @@ import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayou
 import ipcService from '../../../../services/ipcService';
 import { NativeDesktopSection } from '../sections/NativeDesktopSection';
 import { OpenchronicleSettings } from './OpenchronicleSettings';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import {
   getCurrentActivityContext,
   type ActivityContextPreview,
@@ -40,6 +42,7 @@ const toneClass: Record<StatusItem['tone'], string> = {
 };
 
 type ProviderKind = ActivityProviderDescriptor['kind'];
+type ScreenMemorySettingsText = typeof zh.settings.openchronicle.screenMemory;
 
 const providerKindLabel: Record<ProviderKind, string> = {
   bundled: 'Bundled provider',
@@ -47,23 +50,24 @@ const providerKindLabel: Record<ProviderKind, string> = {
   daemon: 'Daemon provider',
 };
 
-const providerStateLabel: Record<ActivityProviderState, string> = {
-  running: '运行中',
-  starting: '启动中',
-  stopping: '停止中',
-  stopped: '已停止',
-  available: '可用',
-  unavailable: '不可用',
-  error: '异常',
-};
+function getProviderStateLabel(
+  state: ActivityProviderState,
+  labels: ScreenMemorySettingsText['providerStateLabels'] = zh.settings.openchronicle.screenMemory.providerStateLabels,
+): string {
+  return labels[state];
+}
 
-const EMPTY_CONTEXT: ActivityContextPreview = {
-  status: 'empty',
-  recentContextSummary: '正在读取最近屏幕上下文。',
-  agentInjectionPreview: '正在读取将注入 agent 的内容。',
-  sources: [],
-  evidence: [],
-};
+function buildEmptyActivityContext(
+  labels: ScreenMemorySettingsText['activityContext']['empty'] = zh.settings.openchronicle.screenMemory.activityContext.empty,
+): ActivityContextPreview {
+  return {
+    status: 'empty',
+    recentContextSummary: labels.recentContextSummary,
+    agentInjectionPreview: labels.agentInjectionPreview,
+    sources: [],
+    evidence: [],
+  };
+}
 
 function getShellLabel(): string {
   return getDesktopShellLabel();
@@ -84,29 +88,31 @@ function stateDotClass(state?: ActivityProviderState): string {
 
 function buildStatusItems(
   openchronicle?: ActivityProviderDescriptor,
-  nativeDesktop?: ActivityProviderDescriptor
+  nativeDesktop?: ActivityProviderDescriptor,
+  labels: ScreenMemorySettingsText['status'] = zh.settings.openchronicle.screenMemory.status,
+  providerStateLabels: ScreenMemorySettingsText['providerStateLabels'] = zh.settings.openchronicle.screenMemory.providerStateLabels,
 ): StatusItem[] {
   const desktopShell = isDesktopShellMode();
   const tauri = isTauriMode();
 
   return [
     {
-      label: '当前运行',
-      value: desktopShell ? getShellLabel() : 'Web 降级',
+      label: labels.currentRuntime,
+      value: desktopShell ? getShellLabel() : labels.webFallback,
       tone: desktopShell ? 'ready' : 'blocked',
     },
     {
-      label: '自动屏幕记忆',
+      label: labels.automaticScreenMemory,
       value: openchronicle
-        ? providerStateLabel[openchronicle.state]
-        : desktopShell ? 'OpenChronicle 可配置' : '桌面版可用',
+        ? getProviderStateLabel(openchronicle.state, providerStateLabels)
+        : desktopShell ? labels.openchronicleConfigurable : labels.desktopAvailable,
       tone: desktopShell ? stateTone(openchronicle?.state) : 'blocked',
     },
     {
-      label: '手动桌面活动',
+      label: labels.manualDesktopActivity,
       value: nativeDesktop
-        ? providerStateLabel[nativeDesktop.state]
-        : tauri ? 'Native Desktop 可用' : '仅 Tauri 可用',
+        ? getProviderStateLabel(nativeDesktop.state, providerStateLabels)
+        : tauri ? labels.nativeDesktopAvailable : labels.tauriOnly,
       tone: tauri ? stateTone(nativeDesktop?.state) : 'idle',
     },
   ];
@@ -118,45 +124,56 @@ const ProviderHeading: React.FC<{
   description: string;
   provider?: ActivityProviderDescriptor;
   fallbackKind?: ProviderKind;
-}> = ({ icon, title, description, provider, fallbackKind }) => (
-  <div className="flex items-start gap-3">
-    <div className="mt-0.5 text-zinc-400">{icon}</div>
-    <div className="min-w-0 flex-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-200">{title}</h3>
-        {(provider || fallbackKind) && (
-          <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
-            {providerKindLabel[provider?.kind || fallbackKind!]}
-          </span>
-        )}
-        {provider && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
-            <Circle className={`h-2 w-2 fill-current stroke-0 ${stateDotClass(provider.state)}`} />
-            {providerStateLabel[provider.state]}
-          </span>
-        )}
-      </div>
-      <p className="text-xs text-zinc-500 mt-1">{description}</p>
-    </div>
-  </div>
-);
-
-const NativeDesktopUnavailable: React.FC = () => (
-  <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-4">
-    <div className="flex items-start gap-2 text-sm text-zinc-300">
-      <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-400 shrink-0" />
-      <div>
-        <div className="font-medium">当前桌面壳没有 Tauri Native Desktop provider</div>
-        <p className="text-xs text-zinc-500 mt-1">
-          这里保留入口和能力说明；手动桌面活动采集、截图和录音控制只在 Tauri 桌面版执行。
-        </p>
+}> = ({ icon, title, description, provider, fallbackKind }) => {
+  const { t } = useI18n();
+  const screenMemoryText = t.settings.openchronicle.screenMemory;
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 text-zinc-400">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-medium text-zinc-200">{title}</h3>
+          {(provider || fallbackKind) && (
+            <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
+              {providerKindLabel[provider?.kind || fallbackKind!]}
+            </span>
+          )}
+          {provider && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
+              <Circle className={`h-2 w-2 fill-current stroke-0 ${stateDotClass(provider.state)}`} />
+              {getProviderStateLabel(provider.state, screenMemoryText.providerStateLabels)}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 mt-1">{description}</p>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-function formatCapturedAt(ms?: number | null): string {
-  if (!ms) return '尚无时间';
+const NativeDesktopUnavailable: React.FC = () => {
+  const { t } = useI18n();
+  const nativeUnavailableText = t.settings.openchronicle.screenMemory.nativeUnavailable;
+  return (
+    <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-4">
+      <div className="flex items-start gap-2 text-sm text-zinc-300">
+        <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-400 shrink-0" />
+        <div>
+          <div className="font-medium">{nativeUnavailableText.title}</div>
+          <p className="text-xs text-zinc-500 mt-1">
+            {nativeUnavailableText.description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function formatCapturedAt(
+  ms?: number | null,
+  labels: ScreenMemorySettingsText['activityContext']['capturedAt'] = zh.settings.openchronicle.screenMemory.activityContext.capturedAt,
+): string {
+  if (!ms) return labels.none;
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -194,64 +211,74 @@ const PreviewBlock: React.FC<{ title: string; children: React.ReactNode }> = ({ 
 export const ActivityContextPreviewPanel: React.FC<{
   context: ActivityContextPreview;
   degraded?: string | null;
-}> = ({ context, degraded }) => (
-  <section className="rounded-lg border border-zinc-700 bg-zinc-800/40 p-4">
-    <div className="mb-3 flex items-start justify-between gap-3">
-      <div>
-        <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-          <Sparkles className="h-4 w-4 text-cyan-300" />
-          ActivityContext 预览
+}> = ({ context, degraded }) => {
+  const { t } = useI18n();
+  const activityText = t.settings.openchronicle.screenMemory.activityContext;
+  return (
+    <section className="rounded-lg border border-zinc-700 bg-zinc-800/40 p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+            <Sparkles className="h-4 w-4 text-cyan-300" />
+            {activityText.title}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+            <Clock className="h-3.5 w-3.5" />
+            {formatCapturedAt(context.capturedAtMs, activityText.capturedAt)}
+          </div>
         </div>
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
-          <Clock className="h-3.5 w-3.5" />
-          {formatCapturedAt(context.capturedAtMs)}
-        </div>
+        {degraded ? (
+          <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+            {activityText.degraded}
+          </span>
+        ) : null}
       </div>
+
       {degraded ? (
-        <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
-          降级
-        </span>
+        <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          {degraded}
+        </div>
       ) : null}
-    </div>
 
-    {degraded ? (
-      <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-        {degraded}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {context.sources.length > 0 ? (
+          context.sources.map((source, index) => (
+            <SourceBadge key={`${source.kind}:${index}`} source={source} />
+          ))
+        ) : (
+          <span className="text-xs text-zinc-500">{activityText.noSources}</span>
+        )}
       </div>
-    ) : null}
 
-    <div className="mb-3 flex flex-wrap gap-1.5">
-      {context.sources.length > 0 ? (
-        context.sources.map((source, index) => (
-          <SourceBadge key={`${source.kind}:${index}`} source={source} />
-        ))
-      ) : (
-        <span className="text-xs text-zinc-500">暂无来源</span>
-      )}
-    </div>
-
-    <div className="grid gap-3 md:grid-cols-2">
-      <PreviewBlock title="最近上下文预览">
-        {context.recentContextSummary}
-      </PreviewBlock>
-      <PreviewBlock title="将注入 agent 的内容预览">
-        {context.agentInjectionPreview}
-      </PreviewBlock>
-    </div>
-
-    <div className="mt-3 flex items-start gap-2 rounded-lg border border-zinc-700/60 bg-zinc-900/50 px-3 py-2">
-      <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
-      <div className="min-w-0 text-xs text-zinc-500">
-        {context.evidence.length > 0
-          ? context.evidence.join(' · ')
-          : '证据预览只展示摘要，本地截图路径和文件路径不会在这里展开。'}
+      <div className="grid gap-3 md:grid-cols-2">
+        <PreviewBlock title={activityText.recentContextPreview}>
+          {context.recentContextSummary}
+        </PreviewBlock>
+        <PreviewBlock title={activityText.agentInjectionPreview}>
+          {context.agentInjectionPreview}
+        </PreviewBlock>
       </div>
-    </div>
-  </section>
-);
+
+      <div className="mt-3 flex items-start gap-2 rounded-lg border border-zinc-700/60 bg-zinc-900/50 px-3 py-2">
+        <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
+        <div className="min-w-0 text-xs text-zinc-500">
+          {context.evidence.length > 0
+            ? context.evidence.join(' · ')
+            : activityText.evidenceFallback}
+        </div>
+      </div>
+    </section>
+  );
+};
 
 export const ScreenMemorySettings: React.FC = () => {
-  const [activityContext, setActivityContext] = useState<ActivityContextPreview>(EMPTY_CONTEXT);
+  const { t } = useI18n();
+  const screenMemoryText = t.settings.openchronicle.screenMemory;
+  const emptyActivityContext = useMemo(
+    () => buildEmptyActivityContext(screenMemoryText.activityContext.empty),
+    [screenMemoryText.activityContext.empty],
+  );
+  const [activityContext, setActivityContext] = useState<ActivityContextPreview>(() => buildEmptyActivityContext());
   const [providers, setProviders] = useState<ActivityProviderDescriptor[]>([]);
   const [contextLoading, setContextLoading] = useState(true);
   const [contextError, setContextError] = useState<string | null>(null);
@@ -266,7 +293,12 @@ export const ScreenMemorySettings: React.FC = () => {
     () => providers.find((provider) => provider.id === 'tauri-native-desktop'),
     [providers]
   );
-  const statusItems = buildStatusItems(openchronicleProvider, nativeDesktopProvider);
+  const statusItems = buildStatusItems(
+    openchronicleProvider,
+    nativeDesktopProvider,
+    screenMemoryText.status,
+    screenMemoryText.providerStateLabels,
+  );
 
   const refreshActivityContext = useCallback(async () => {
     setContextLoading(true);
@@ -281,14 +313,14 @@ export const ScreenMemorySettings: React.FC = () => {
     } catch (error) {
       setContextError(error instanceof Error ? error.message : String(error));
       setActivityContext({
-        ...EMPTY_CONTEXT,
-        recentContextSummary: 'ActivityContext 暂不可用。',
-        agentInjectionPreview: '本轮不会从屏幕记忆注入额外上下文。',
+        ...emptyActivityContext,
+        recentContextSummary: screenMemoryText.activityContext.error.recentContextUnavailable,
+        agentInjectionPreview: screenMemoryText.activityContext.error.agentInjectionUnavailable,
       });
     } finally {
       setContextLoading(false);
     }
-  }, []);
+  }, [emptyActivityContext, screenMemoryText.activityContext.error.agentInjectionUnavailable, screenMemoryText.activityContext.error.recentContextUnavailable]);
 
   useEffect(() => {
     if (!web) {
@@ -299,12 +331,12 @@ export const ScreenMemorySettings: React.FC = () => {
   if (web) {
     return (
       <SettingsPage
-        title="屏幕记忆"
-        description="Web 模式不直接控制本机屏幕记忆。请在桌面版里配置。"
+        title={t.settings.tabs.openchronicle}
+        description={screenMemoryText.webDescription}
       >
         <WebModeBanner />
         <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-4 text-sm text-zinc-400">
-          统一入口已保留，但 OpenChronicle daemon 和 Native Desktop provider 都需要桌面壳能力。
+          {screenMemoryText.webBody}
         </div>
       </SettingsPage>
     );
@@ -312,8 +344,8 @@ export const ScreenMemorySettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="屏幕记忆"
-      description="配置屏幕记忆采集、注入和隐私边界。预览与桌面活动控制默认收在诊断区。"
+      title={t.settings.tabs.openchronicle}
+      description={screenMemoryText.pageDescription}
     >
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {statusItems.map((item) => (
@@ -324,11 +356,11 @@ export const ScreenMemorySettings: React.FC = () => {
         ))}
       </div>
 
-      <SettingsSection title="采集与注入设置">
+      <SettingsSection title={screenMemoryText.captureSection.title}>
         <ProviderHeading
           icon={<Server className="w-4 h-4" />}
-          title="自动屏幕记忆 / OpenChronicle 外部 provider"
-          description={openchronicleProvider?.summary || '通过 Agent Neo 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
+          title={screenMemoryText.captureSection.openchronicleTitle}
+          description={openchronicleProvider?.summary || screenMemoryText.captureSection.openchronicleDescription}
           provider={openchronicleProvider}
           fallbackKind="daemon"
         />
@@ -336,8 +368,8 @@ export const ScreenMemorySettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsDetails
-        title="诊断与预览"
-        description="ActivityContext 预览和手动桌面活动控制用于排查采集链路，默认收起。"
+        title={screenMemoryText.diagnostics.title}
+        description={screenMemoryText.diagnostics.description}
         actions={(
           <button
             onClick={refreshActivityContext}
@@ -345,22 +377,22 @@ export const ScreenMemorySettings: React.FC = () => {
             className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${contextLoading ? 'animate-spin' : ''}`} />
-            刷新
+            {screenMemoryText.refresh}
           </button>
         )}
       >
         <div className="space-y-4">
           <ProviderHeading
             icon={<Sparkles className="w-4 h-4" />}
-            title="统一 ActivityContext 预览"
-            description="预览最近屏幕上下文和即将注入 agent 的摘要，不展示本地截图路径。"
+            title={screenMemoryText.diagnostics.activityTitle}
+            description={screenMemoryText.diagnostics.activityDescription}
           />
           <ActivityContextPreviewPanel context={activityContext} degraded={contextError} />
 
           <ProviderHeading
             icon={tauri ? <Monitor className="w-4 h-4" /> : <Globe2 className="w-4 h-4" />}
-            title="手动桌面活动 / Tauri Native Desktop provider"
-            description={nativeDesktopProvider?.summary || 'Tauri 桌面版可直接查看和控制本机桌面活动采集；其他桌面壳只展示能力边界。'}
+            title={screenMemoryText.diagnostics.nativeDesktopTitle}
+            description={nativeDesktopProvider?.summary || screenMemoryText.diagnostics.nativeDesktopDescription}
             provider={nativeDesktopProvider}
             fallbackKind="bundled"
           />

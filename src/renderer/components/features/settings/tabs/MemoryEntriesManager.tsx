@@ -25,10 +25,13 @@ import { Input } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
 import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 type EntryStatusFilter = MemoryEntryStatus | 'all';
 type EntryKindFilter = MemoryEntryKind | 'all';
 type EntrySourceFilter = MemoryEntrySourceOfTruth | 'all';
+type MemorySettingsText = typeof zh.settings.memory;
 
 type MemoryEntryCommand =
   | { action: 'memoryEntries' }
@@ -60,48 +63,39 @@ export interface MemoryEntryManagerRow {
   selected: boolean;
 }
 
-const STATUS_LABELS: Record<MemoryEntryStatus, string> = {
-  candidate: '待确认',
-  active: '启用',
-  rejected: '拒绝',
-  stale: '过期',
-  archived: '归档',
-};
-
-const KIND_LABELS: Record<MemoryEntryKind, string> = {
-  user: '用户',
-  feedback: '反馈',
-  project: '项目',
-  reference: '引用',
-  session: '会话',
-  pattern: '经验',
-};
-
-const SOURCE_LABELS: Record<MemoryEntrySourceOfTruth, string> = {
-  light_file: 'Light 文件',
-  db_memory: 'DB memory',
-};
-
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
 const KIND_OPTIONS: MemoryEntryKind[] = ['user', 'feedback', 'project', 'reference', 'session', 'pattern'];
 
-export function getMemoryEntryStatusLabel(status: MemoryEntryStatus): string {
-  return STATUS_LABELS[status] || status;
+export function getMemoryEntryStatusLabel(
+  status: MemoryEntryStatus,
+  labels: MemorySettingsText['entries']['statusLabels'] = zh.settings.memory.entries.statusLabels,
+): string {
+  return labels[status] || status;
 }
 
-export function getMemoryEntryKindLabel(kind: MemoryEntryKind): string {
-  return KIND_LABELS[kind] || kind;
+export function getMemoryEntryKindLabel(
+  kind: MemoryEntryKind,
+  labels: MemorySettingsText['entries']['kindLabels'] = zh.settings.memory.entries.kindLabels,
+): string {
+  return labels[kind] || kind;
 }
 
-export function getMemoryEntrySourceLabel(source: MemoryEntrySourceOfTruth): string {
-  return SOURCE_LABELS[source] || source;
+export function getMemoryEntrySourceLabel(
+  source: MemoryEntrySourceOfTruth,
+  labels: MemorySettingsText['sourceLabels'] = zh.settings.memory.sourceLabels,
+): string {
+  return labels[source] || source;
 }
 
-export function formatMemoryEntryUpdatedAt(timestamp: number, now = Date.now()): string {
+export function formatMemoryEntryUpdatedAt(
+  timestamp: number,
+  now = Date.now(),
+  labels: MemorySettingsText['relativeDate'] = zh.settings.memory.relativeDate,
+): string {
   const diffDays = Math.floor((now - timestamp) / (1000 * 60 * 60 * 24));
-  if (diffDays <= 0) return '今天';
-  if (diffDays === 1) return '昨天';
-  if (diffDays < 7) return `${diffDays}天前`;
+  if (diffDays <= 0) return labels.today;
+  if (diffDays === 1) return labels.yesterday;
+  if (diffDays < 7) return `${diffDays}${labels.daysAgoSuffix}`;
   return new Date(timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
@@ -113,6 +107,7 @@ export function buildMemoryEntryRows({
   kindFilter,
   sourceFilter,
   now = Date.now(),
+  labels = zh.settings.memory,
 }: {
   entries: MemoryEntry[];
   selectedEntryId: string | null;
@@ -121,6 +116,7 @@ export function buildMemoryEntryRows({
   kindFilter: EntryKindFilter;
   sourceFilter: EntrySourceFilter;
   now?: number;
+  labels?: MemorySettingsText;
 }): MemoryEntryManagerRow[] {
   const query = searchQuery.trim().toLowerCase();
   return entries
@@ -138,10 +134,10 @@ export function buildMemoryEntryRows({
       id: entry.id,
       title: entry.title,
       summary: entry.summary,
-      statusLabel: getMemoryEntryStatusLabel(entry.status),
-      kindLabel: getMemoryEntryKindLabel(entry.kind),
-      sourceLabel: getMemoryEntrySourceLabel(entry.source.sourceOfTruth),
-      updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now),
+      statusLabel: getMemoryEntryStatusLabel(entry.status, labels.entries.statusLabels),
+      kindLabel: getMemoryEntryKindLabel(entry.kind, labels.entries.kindLabels),
+      sourceLabel: getMemoryEntrySourceLabel(entry.source.sourceOfTruth, labels.sourceLabels),
+      updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now, labels.relativeDate),
       selected: entry.id === selectedEntryId,
     }));
 }
@@ -183,6 +179,8 @@ function createDraft(entry: MemoryEntry): MemoryEntryDraft {
 }
 
 export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<void> }> = ({ onChanged }) => {
+  const { t } = useI18n();
+  const memoryText = t.settings.memory;
   const [result, setResult] = useState<MemoryEntryListResult | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [draft, setDraft] = useState<MemoryEntryDraft | null>(null);
@@ -207,8 +205,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       statusFilter,
       kindFilter,
       sourceFilter,
+      labels: memoryText,
     }),
-    [entries, kindFilter, searchQuery, selectedEntry?.id, sourceFilter, statusFilter],
+    [entries, kindFilter, memoryText, searchQuery, selectedEntry?.id, sourceFilter, statusFilter],
   );
 
   const loadEntries = async () => {
@@ -221,7 +220,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
         return response.data?.entries[0]?.id ?? null;
       });
     } else {
-      setMessage({ type: 'error', text: response.error || '加载统一记忆失败' });
+      setMessage({ type: 'error', text: response.error || memoryText.entries.loadFailed });
     }
     setBusy((current) => (current === 'load' ? null : current));
   };
@@ -246,11 +245,11 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       kind: next.kind,
     });
     if (response.success && response.data) {
-      setMessage({ type: 'success', text: '记忆已更新' });
+      setMessage({ type: 'success', text: memoryText.entries.updateSuccess });
       await loadEntries();
       await onChanged?.();
     } else {
-      setMessage({ type: 'error', text: response.error || '更新失败' });
+      setMessage({ type: 'error', text: response.error || memoryText.entries.updateFailed });
     }
     setBusy(null);
   };
@@ -263,13 +262,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       entryId: selectedEntry.id,
     });
     if (response.success && response.data?.deleted) {
-      setMessage({ type: 'success', text: '记忆已删除' });
+      setMessage({ type: 'success', text: memoryText.entries.deleteSuccess });
       setDeleteConfirmId(null);
       setSelectedEntryId(null);
       await loadEntries();
       await onChanged?.();
     } else {
-      setMessage({ type: 'error', text: response.error || '删除失败' });
+      setMessage({ type: 'error', text: response.error || memoryText.entries.deleteFailed });
     }
     setBusy(null);
   };
@@ -277,15 +276,15 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   return (
     <SettingsSection
       title="All Memory"
-      description="统一查看 Light Memory 和 DB memory，编辑后会同步对应 source of truth。"
+      description={memoryText.entries.description}
     >
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
         <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
           {[
-            ['总数', String(entries.length), `${result?.sourceCounts.light_file ?? 0} Light / ${result?.sourceCounts.db_memory ?? 0} DB`],
-            ['当前匹配', String(rows.length), '受搜索和筛选影响'],
-            ['启用', String(entries.filter((entry) => entry.status === 'active').length), '会进入注入候选'],
-            ['待治理', String(entries.filter((entry) => entry.status === 'candidate' || entry.status === 'stale').length), '待确认 / 过期'],
+            [memoryText.entries.stats.total, String(entries.length), `${result?.sourceCounts.light_file ?? 0} Light / ${result?.sourceCounts.db_memory ?? 0} DB`],
+            [memoryText.entries.stats.currentMatched, String(rows.length), memoryText.entries.stats.filteredCaption],
+            [memoryText.entries.stats.active, String(entries.filter((entry) => entry.status === 'active').length), memoryText.entries.stats.activeCaption],
+            [memoryText.entries.stats.governance, String(entries.filter((entry) => entry.status === 'candidate' || entry.status === 'stale').length), memoryText.entries.stats.governanceCaption],
           ].map(([label, value, caption]) => (
             <div key={label} className="bg-zinc-900/80 px-3 py-3">
               <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -314,7 +313,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                 <Input
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="搜索标题、摘要或正文..."
+                  placeholder={memoryText.entries.searchPlaceholder}
                   className="pl-9"
                   data-testid="memory-entry-search-input"
                 />
@@ -324,9 +323,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                 onChange={(event) => setStatusFilter(event.target.value as EntryStatusFilter)}
                 className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
-                <option value="all">全部状态</option>
+                <option value="all">{memoryText.entries.filters.allStatus}</option>
                 {STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>{getMemoryEntryStatusLabel(status)}</option>
+                  <option key={status} value={status}>{getMemoryEntryStatusLabel(status, memoryText.entries.statusLabels)}</option>
                 ))}
               </select>
               <select
@@ -334,9 +333,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                 onChange={(event) => setKindFilter(event.target.value as EntryKindFilter)}
                 className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
-                <option value="all">全部类型</option>
+                <option value="all">{memoryText.entries.filters.allKind}</option>
                 {KIND_OPTIONS.map((kind) => (
-                  <option key={kind} value={kind}>{getMemoryEntryKindLabel(kind)}</option>
+                  <option key={kind} value={kind}>{getMemoryEntryKindLabel(kind, memoryText.entries.kindLabels)}</option>
                 ))}
               </select>
               <select
@@ -344,8 +343,8 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                 onChange={(event) => setSourceFilter(event.target.value as EntrySourceFilter)}
                 className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
-                <option value="all">全部来源</option>
-                <option value="light_file">Light 文件</option>
+                <option value="all">{memoryText.entries.filters.allSource}</option>
+                <option value="light_file">{getMemoryEntrySourceLabel('light_file', memoryText.sourceLabels)}</option>
                 <option value="db_memory">DB memory</option>
               </select>
             </div>
@@ -360,10 +359,10 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <thead className="sticky top-0 border-b border-zinc-800 bg-zinc-950 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                     <tr>
                       <th className="px-3 py-2 font-medium">Entry</th>
-                      <th className="px-3 py-2 font-medium">状态</th>
-                      <th className="px-3 py-2 font-medium">类型</th>
-                      <th className="px-3 py-2 font-medium">来源</th>
-                      <th className="px-3 py-2 font-medium">更新</th>
+                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.status}</th>
+                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.kind}</th>
+                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.source}</th>
+                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.updated}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800">
@@ -387,7 +386,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     {rows.length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-3 py-10 text-center text-zinc-500">
-                          没有匹配的记忆。
+                          {memoryText.entries.noMatches}
                         </td>
                       </tr>
                     )}
@@ -418,39 +417,39 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
-                    刷新
+                    {memoryText.entries.refresh}
                   </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <label className="text-xs text-zinc-500">
-                    状态
+                    {memoryText.entries.fields.status}
                     <select
                       value={draft.status}
                       onChange={(event) => setDraft({ ...draft, status: event.target.value as MemoryEntryStatus })}
                       className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
                     >
                       {STATUS_OPTIONS.map((status) => (
-                        <option key={status} value={status}>{getMemoryEntryStatusLabel(status)}</option>
+                        <option key={status} value={status}>{getMemoryEntryStatusLabel(status, memoryText.entries.statusLabels)}</option>
                       ))}
                     </select>
                   </label>
                   <label className="text-xs text-zinc-500">
-                    类型
+                    {memoryText.entries.fields.kind}
                     <select
                       value={draft.kind}
                       onChange={(event) => setDraft({ ...draft, kind: event.target.value as MemoryEntryKind })}
                       className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
                     >
                       {KIND_OPTIONS.map((kind) => (
-                        <option key={kind} value={kind}>{getMemoryEntryKindLabel(kind)}</option>
+                        <option key={kind} value={kind}>{getMemoryEntryKindLabel(kind, memoryText.entries.kindLabels)}</option>
                       ))}
                     </select>
                   </label>
                 </div>
 
                 <label className="block text-xs text-zinc-500">
-                  标题
+                  {memoryText.entries.fields.title}
                   <Input
                     value={draft.title}
                     onChange={(event) => setDraft({ ...draft, title: event.target.value })}
@@ -458,7 +457,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   />
                 </label>
                 <label className="block text-xs text-zinc-500">
-                  摘要
+                  {memoryText.entries.fields.summary}
                   <Input
                     value={draft.summary}
                     onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
@@ -466,7 +465,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   />
                 </label>
                 <label className="block text-xs text-zinc-500">
-                  正文
+                  {memoryText.entries.fields.content}
                   <textarea
                     value={draft.content}
                     onChange={(event) => setDraft({ ...draft, content: event.target.value })}
@@ -482,7 +481,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    保存
+                    {memoryText.entries.save}
                   </button>
                   <button
                     type="button"
@@ -491,7 +490,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Archive className="h-3.5 w-3.5" />
-                    {draft.status === 'archived' ? '激活' : '归档'}
+                    {draft.status === 'archived' ? memoryText.entries.activate : memoryText.entries.archive}
                   </button>
                   {deleteConfirmId === selectedEntry.id ? (
                     <>
@@ -500,7 +499,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         onClick={() => setDeleteConfirmId(null)}
                         className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800"
                       >
-                        取消
+                        {memoryText.entries.cancel}
                       </button>
                       <button
                         type="button"
@@ -509,7 +508,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         className="inline-flex items-center gap-1.5 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        确认删除
+                        {memoryText.entries.confirmDelete}
                       </button>
                     </>
                   ) : (
@@ -519,13 +518,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                       className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      删除
+                      {memoryText.entries.delete}
                     </button>
                   )}
                 </div>
 
                 <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
-                  <div className="mb-2 font-medium text-zinc-400">证据</div>
+                  <div className="mb-2 font-medium text-zinc-400">{memoryText.entries.evidence}</div>
                   {selectedEntry.evidence.length > 0 ? (
                     <div className="space-y-1">
                       {selectedEntry.evidence.slice(0, 4).map((item, index) => (
@@ -535,13 +534,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                       ))}
                     </div>
                   ) : (
-                    <div>无证据记录</div>
+                    <div>{memoryText.entries.noEvidence}</div>
                   )}
                 </div>
               </div>
             ) : (
               <div className="flex h-40 items-center justify-center text-xs text-zinc-500">
-                选择一条记忆后编辑。
+                {memoryText.entries.selectToEdit}
               </div>
             )}
           </div>

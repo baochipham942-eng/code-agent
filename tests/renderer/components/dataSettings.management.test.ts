@@ -3,6 +3,9 @@ import type {
   DataStats,
   SnapshotStats,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
+import { zh } from '../../../src/renderer/i18n/zh';
+
+const dataText = zh.settings.data;
 import {
   buildDataManagementRows,
   buildDataManagementSummary,
@@ -34,53 +37,53 @@ describe('DataSettings management helpers', () => {
   });
 
   it('resolves retention labels', () => {
-    expect(getRetentionLabel(7)).toBe('7 天');
-    expect(getRetentionLabel(-1)).toBe('永久');
-    expect(getRetentionLabel(999)).toBe('1 天');
+    expect(getRetentionLabel(7, dataText.retentionOptions)).toBe(dataText.retentionOptions.sevenDays);
+    expect(getRetentionLabel(-1, dataText.retentionOptions)).toBe(dataText.retentionOptions.forever);
+    expect(getRetentionLabel(999, dataText.retentionOptions)).toBe(dataText.retentionOptions.oneDay);
   });
 
   it('builds management summary from data and snapshot stats', () => {
-    expect(buildDataManagementSummary(dataStats, snapshotStats)).toEqual({
+    expect(buildDataManagementSummary(dataStats, snapshotStats, dataText)).toEqual({
       sessionCount: 12,
       messageCount: 140,
       databaseSizeLabel: '2.0 MB',
       cacheEntries: 8,
       snapshotCount: 6,
       snapshotSizeLabel: '1.5 KB',
-      retentionLabel: '7 天',
+      retentionLabel: dataText.retentionOptions.sevenDays,
     });
   });
 
   it('builds table rows and marks cache as clearable', () => {
-    const rows = buildDataManagementRows(dataStats);
+    const rows = buildDataManagementRows(dataStats, dataText);
 
     expect(rows).toHaveLength(6);
     expect(rows[0]).toMatchObject({
       id: 'sessions',
-      statusLabel: '保留',
-      cleanupLabel: '不清理',
+      statusLabel: dataText.dataRows.sessions.status,
+      cleanupLabel: dataText.dataRows.sessions.cleanup,
       action: 'none',
     });
     expect(rows[5]).toMatchObject({
       id: 'cache',
-      valueLabel: '8 条',
-      statusLabel: '可清理',
+      valueLabel: `8${dataText.units.itemSuffix}`,
+      statusLabel: dataText.dataRows.cache.statusClearable,
       statusTone: 'warning',
-      cleanupLabel: '清空缓存',
+      cleanupLabel: dataText.dataRows.cache.cleanup,
       action: 'clear-cache',
     });
   });
 
   it('falls back to zero stats when IPC data has not loaded', () => {
-    expect(buildDataManagementSummary(null, null)).toMatchObject({
+    expect(buildDataManagementSummary(null, null, dataText)).toMatchObject({
       sessionCount: 0,
       databaseSizeLabel: '0 B',
       snapshotCount: 0,
-      retentionLabel: '1 天',
+      retentionLabel: dataText.retentionOptions.oneDay,
     });
-    expect(buildDataManagementRows(null).find((row) => row.id === 'cache')).toMatchObject({
-      valueLabel: '0 条',
-      statusLabel: '干净',
+    expect(buildDataManagementRows(null, dataText).find((row) => row.id === 'cache')).toMatchObject({
+      valueLabel: `0${dataText.units.itemSuffix}`,
+      statusLabel: dataText.dataRows.cache.statusClean,
       statusTone: 'stable',
     });
   });

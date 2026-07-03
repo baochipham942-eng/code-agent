@@ -121,6 +121,27 @@ export interface RuntimeAssetStatusEntry {
   registry?: RuntimeAssetRegistryEntry;
 }
 
+export type RuntimeAssetDisplayKind =
+  | 'computerUse'
+  | 'uv'
+  | 'rtk'
+  | 'audioInput'
+  | 'browserAutomation'
+  | 'imageUnderstanding';
+
+export function getRuntimeAssetDisplayKind(
+  asset: Pick<RuntimeAssetStatusEntry, 'id' | 'label'>,
+): RuntimeAssetDisplayKind | null {
+  const value = `${asset.id} ${asset.label}`.toLowerCase();
+  if (value.includes('computer-use')) return 'computerUse';
+  if (value === 'uv uv sidecar binary' || value.includes('uv sidecar')) return 'uv';
+  if (value === 'rtk rtk sidecar binary' || value.includes('rtk sidecar')) return 'rtk';
+  if (value.includes('audio') || value.includes('vad')) return 'audioInput';
+  if (value.includes('browser') || value.includes('playwright')) return 'browserAutomation';
+  if (value.includes('image') || value.includes('sharp') || value.includes('vision')) return 'imageUnderstanding';
+  return null;
+}
+
 export interface RuntimeAssetsStatus {
   runtimeBaseDir: string;
   activeManifestPath: string;

@@ -39,6 +39,9 @@ const MIGRATED: string[] = [
   'tabs/PrivacySettings.tsx',
   'tabs/ScreenMemorySettings.tsx',
   'tabs/OpenchronicleSettings.tsx',
+  'tabs/UpdateSettings.tsx',
+  'tabs/DataSettings.tsx',
+  'tabs/AppshotsSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

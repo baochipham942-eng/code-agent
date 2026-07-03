@@ -11,6 +11,7 @@
 // Mutates message.content directly (pre-transcript, not API-view mutation).
 // ============================================================================
 
+import * as fs from 'fs';
 import { CompressionState } from '../compressionState';
 import { estimateTokens } from '../tokenEstimator';
 import { spillToolResultArchive, SPILL_NOTICE_MARKER, type ToolResultArchiveRef } from '../../utils/toolResultSpill';
@@ -94,7 +95,13 @@ export function applyActiveToolResultPrune(
     // 跨轮复用已有归档：避免长会话每轮同步重写同一批大文件（可达 10MB 级，
     // 阻塞事件循环）。内容不变则归档路径由内容哈希决定不变，复用已记录的
     // archiveRef 重建占位符与首次落盘字节完全相同。
-    const existingArchiveRef = alreadyPruned.get(msg.id)?.archiveRef;
+    // R2-4：复用前先确认文件仍在磁盘上——session tmp 目录可能被清理 cron 收割，
+    // 盲信缓存的 archiveRef 会让 placeholder 指向不存在的文件，模型 Read 必失败；
+    // 文件缺失就当作没归档过，回落到重新 spill（内容哈希相同会落回同一路径）。
+    const cachedArchiveRef = alreadyPruned.get(msg.id)?.archiveRef;
+    const existingArchiveRef = cachedArchiveRef && fs.existsSync(cachedArchiveRef.filePath)
+      ? cachedArchiveRef
+      : undefined;
     let archiveRef: ToolResultArchiveRef;
     let filePath: string;
 

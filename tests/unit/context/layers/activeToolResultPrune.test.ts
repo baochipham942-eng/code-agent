@@ -385,6 +385,46 @@ describe('applyActiveToolResultPrune', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Missing-archive fallback (R2-4·LOW)
+  // --------------------------------------------------------------------------
+  describe('missing-archive fallback', () => {
+    it('re-spills when the recorded archiveRef no longer exists on disk (e.g. reaped by a cleanup cron), and reconstructs an identical placeholder', () => {
+      const bigContent = makeText(5000);
+
+      const round1Msg = makeToolMsg('t1', bigContent, 'Bash');
+      applyActiveToolResultPrune([round1Msg, makeAssistantMsg('a1', 'done')], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-missing-archive',
+      });
+      const placeholderRound1 = round1Msg.content;
+      const archiveMatch = placeholderRound1.match(/archive: (.+)/);
+      expect(archiveMatch).not.toBeNull();
+      const archivePath = archiveMatch![1].trim();
+      expect(fs.existsSync(archivePath)).toBe(true);
+
+      // 模拟 session tmp 目录被每周清理 cron 收割：归档文件被删，但 state 里
+      // 仍记着这条消息的 archiveRef（budgetedResults 快照不会跟着文件系统变化）。
+      fs.rmSync(archivePath);
+      expect(fs.existsSync(archivePath)).toBe(false);
+
+      const round2Msg = makeToolMsg('t1', bigContent, 'Bash');
+      const pruned = applyActiveToolResultPrune([round2Msg, makeAssistantMsg('a1', 'done')], state, {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-missing-archive',
+      });
+
+      // 重新落盘：内容 hash 相同 → 落回同一路径，文件重新存在
+      expect(pruned).toBe(1);
+      expect(fs.existsSync(archivePath)).toBe(true);
+      expect(fs.readFileSync(archivePath, 'utf-8')).toBe(bigContent);
+      // 占位符字节和第一轮完全一致（archiveRef 的 bytes/sha256/filePath 都是内容确定性的）
+      expect(round2Msg.content).toBe(placeholderRound1);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Commit bookkeeping
   // --------------------------------------------------------------------------
   describe('commit bookkeeping', () => {

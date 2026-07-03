@@ -356,8 +356,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
       // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
       let persistedSession: Session | null = null;
+      let sessionManagerForRun: AgentSessionManagerLike | null = null;
       try {
         const sm = await tryGetSessionManager();
+        sessionManagerForRun = sm ?? null;
         if (sm?.getSession) {
           persistedSession = await sm.getSession(sessionId, 1);
         }
@@ -378,6 +380,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (!resolvedProject) {
         resolvedProject = await ensureDefaultWebWorkingDirectory();
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
+      }
+
+      // 首轮生效值补写（只补空）：working_directory 为空的会话每次重开都按
+      // 上面的解析链重解析，而 context.workingDirectory 来自 renderer 全局
+      // workspace 值（随其他会话切目录漂移）→ 同一会话隔天 <env> 目录漂移。
+      // 已持久化的值（用户显式选择或既有补写）不覆盖。
+      if (
+        persistedSession &&
+        !persistedSession.workingDirectory?.trim() &&
+        resolvedProject &&
+        sessionManagerForRun?.updateSession
+      ) {
+        try {
+          await sessionManagerForRun.updateSession(sessionId, {
+            workingDirectory: resolvedProject,
+            updatedAt: Date.now(),
+          });
+        } catch (err) {
+          logger.warn(`[AgentRouter] Failed to backfill workingDirectory for ${sessionId}:`, err);
+        }
       }
 
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);

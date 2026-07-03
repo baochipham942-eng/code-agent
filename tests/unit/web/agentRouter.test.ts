@@ -835,6 +835,112 @@ describe('createAgentRouter', () => {
     }));
   });
 
+  it('backfills empty session working directory with the resolved run directory', async () => {
+    await closeServer();
+    const updateSession = vi.fn(async () => undefined);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ id: 'session-backfill-empty' })),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        sessionId: 'session-backfill-empty',
+        context: { workingDirectory: '/tmp/context-project' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(updateSession).toHaveBeenCalledWith(
+      'session-backfill-empty',
+      expect.objectContaining({ workingDirectory: '/tmp/context-project' }),
+    );
+  });
+
+  it('does not overwrite a persisted session working directory from the run path', async () => {
+    await closeServer();
+    const updateSession = vi.fn(async () => undefined);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ id: 'session-persisted', workingDirectory: '/persisted/project' })),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        sessionId: 'session-persisted',
+        context: { workingDirectory: '/tmp/other-project' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    // runtime 现状不变：context 显式值仍然优先生效
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: '/tmp/other-project',
+    }));
+    // 但持久化值不被覆盖（只补空）
+    expect(updateSession).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workingDirectory: expect.anything() }),
+    );
+  });
+
+  it('skips working directory backfill for unpersisted temp sessions', async () => {
+    await closeServer();
+    const updateSession = vi.fn(async () => undefined);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        context: { workingDirectory: '/tmp/context-project' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(updateSession).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workingDirectory: expect.anything() }),
+    );
+  });
+
   it('propagates adaptive flag into the agent loop config when session override is auto mode', async () => {
     mockGetOverride.mockReturnValueOnce({
       provider: 'custom-commonstack-claude',

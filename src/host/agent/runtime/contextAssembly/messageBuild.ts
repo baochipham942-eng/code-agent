@@ -1,7 +1,7 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
 import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
-import { getContextWindow } from '../../../../shared/constants';
+import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE } from '../../../../shared/constants';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
@@ -912,6 +912,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           enableMicrocompact: true,
           enableContextCollapse: true,
           toolResultBudget: 2000,
+          activeToolResultPrune: {
+            enabled: ACTIVE_TOOL_RESULT_PRUNE.ENABLED,
+            maxTokensPerResult: ACTIVE_TOOL_RESULT_PRUNE.MAX_TOKENS_PER_RESULT,
+            spillSessionId: ctx.runtime.sessionId,
+          },
           protectedToolResultPredicate: (entry) =>
             entry.role === 'tool' &&
             (entry as ContextTranscriptEntry).preserveObservation === true,

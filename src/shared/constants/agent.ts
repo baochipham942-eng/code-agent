@@ -105,6 +105,18 @@ export const OBSERVATION_MASKING = {
 } as const;
 
 /**
+ * L0 Active Tool Result Prune 常量。
+ * 压缩管线里跑在 L1 tool-result-budget 之前：超预算结果整体换成确定性占位符
+ * （先落盘归档再替换），而不是走 L1 的有损 head+tail 截断——占位符与轮次无关，
+ * 同内容每轮生成同字节，避免压缩层反复改写内容打掉 provider prompt cache 前缀。
+ */
+export const ACTIVE_TOOL_RESULT_PRUNE = {
+  ENABLED: true,
+  /** 高于 L1 的 2000：2000-4096 tokens 之间仍走 L1 有损截断，超过此值才整体换占位符 */
+  MAX_TOKENS_PER_RESULT: 4096,
+} as const;
+
+/**
  * 上下文压缩经济学闸（WP2-3）：省下 tokens − 压缩调用成本×权重 ≥ 阈值才提交。
  * 只闸自动触发源（auto_threshold）；手动压缩与溢出恢复不受限。
  */

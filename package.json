@@ -43,6 +43,7 @@
     "acceptance:agent-engine-selector": "npx tsx scripts/acceptance/agent-engine-selector-smoke.ts",
     "acceptance:claude-subscription-cli": "jiti scripts/acceptance/claude-subscription-cli-smoke.ts",
     "acceptance:codex-cli-engine": "jiti scripts/acceptance/codex-cli-engine-smoke.ts",
+    "trajectory:to-case": "tsx scripts/trajectory-to-case.ts",
     "acceptance:agent-trajectory-fresh-sample": "npx tsx scripts/acceptance/agent-trajectory-fresh-sample-smoke.ts",
     "acceptance:provider-saved-tokens": "jiti scripts/acceptance/provider-reported-saved-tokens-smoke.ts",
     "acceptance:model-strategy-fallback": "node scripts/acceptance/run-vite-acceptance.mjs scripts/acceptance/model-strategy-fallback-visibility.ts",

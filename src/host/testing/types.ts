@@ -150,6 +150,10 @@ export interface TestCase {
   expectations?: Expectation[];
   /** Rotation metadata for test lifecycle */
   rotation?: { introduced: string; retire_after?: string; variant?: number };
+  /** 回流草稿溯源：生成该用例的原始会话 id（trajectory:to-case，批 1 B1） */
+  sourceSessionId?: string;
+  /** 回流草稿 review 状态：pending=未补断言不进正式套件，reviewed=已人工硬化 */
+  reviewStatus?: 'pending' | 'reviewed';
 }
 
 /**

@@ -46,6 +46,7 @@ import {
   type SlashPickerCandidate,
 } from './slashPickerModel';
 import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
+import { useI18n } from '../../../../hooks/useI18n';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -258,6 +259,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const { keybindings, platform } = useKeybindingsSettings();
   const getShortcutLabel = useMemo(() => (actionId: KeybindingActionId): string | undefined => {
     const accelerator = getKeybindingAccelerator(keybindings, actionId, platform);
@@ -389,11 +391,12 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   }), []);
 
   // GUI-only commands (operate on store/UI directly, not in registry)
+  const sc = t.slashCommands;
   const guiOnlyCommands: SlashCommand[] = useMemo(() => ([
     {
       id: 'new',
-      label: '新建会话',
-      description: '创建新对话',
+      label: sc.new.label,
+      description: sc.new.description,
       icon: <Plus className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.new'),
       emptyQueryVisible: true,
@@ -402,23 +405,23 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'clear',
-      label: '清空对话',
-      description: '清除当前会话消息',
+      label: sc.clear.label,
+      description: sc.clear.description,
       icon: <Trash2 className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.clear'),
       action: () => clearCurrentSession(),
     },
     {
       id: 'help',
-      label: '帮助',
-      description: '查看帮助文档',
+      label: sc.help.label,
+      description: sc.help.description,
       icon: <HelpCircle className="w-4 h-4" />,
       action: () => window.open('https://github.com/anthropics/claude-code/issues', '_blank'),
     },
     {
       id: 'archive',
-      label: '归档会话',
-      description: '将当前会话移至归档',
+      label: sc.archive.label,
+      description: sc.archive.description,
       icon: <Archive className="w-4 h-4" />,
       action: async () => {
         if (currentSessionId) await archiveSession(currentSessionId);
@@ -426,68 +429,68 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'sidebar',
-      label: sidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
-      description: '切换侧边栏',
+      label: sidebarCollapsed ? sc.sidebar.labelShow : sc.sidebar.labelHide,
+      description: sc.sidebar.description,
       icon: <FileText className="w-4 h-4" />,
       shortcut: getShortcutLabel('sidebar.toggle'),
       action: () => setSidebarCollapsed(!sidebarCollapsed),
     },
     {
       id: 'dag',
-      label: showDAGPanel ? '隐藏 DAG' : '显示 DAG',
-      description: '任务 DAG 可视化',
+      label: showDAGPanel ? sc.dag.labelHide : sc.dag.labelShow,
+      description: sc.dag.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: () => setShowDAGPanel(!showDAGPanel),
     },
     {
       id: 'workspace',
-      label: showWorkspace ? '隐藏工作区' : '显示工作区',
-      description: '切换工作区面板',
+      label: showWorkspace ? sc.workspace.labelHide : sc.workspace.labelShow,
+      description: sc.workspace.description,
       icon: <FolderOpen className="w-4 h-4" />,
       action: () => setShowWorkspace(!showWorkspace),
     },
     {
       id: 'settings',
-      label: '设置',
-      description: '打开应用设置',
+      label: sc.settings.label,
+      description: sc.settings.description,
       icon: <Settings className="w-4 h-4" />,
       shortcut: getShortcutLabel('settings.open'),
       action: () => setShowSettings(true),
     },
     {
       id: 'shortcuts',
-      label: '快捷键',
-      description: '查看键盘快捷键',
+      label: sc.shortcuts.label,
+      description: sc.shortcuts.description,
       icon: <Keyboard className="w-4 h-4" />,
       action: () => openSettingsTab('keybindings'),
     },
     // --- 模式 / 强度 / 权限命令 ---
     {
       id: 'agent',
-      label: '选择 Agent',
-      description: '输入 /agent coder 切换本轮 agent',
+      label: sc.agent.label,
+      description: sc.agent.description,
       icon: <Bot className="w-4 h-4" />,
       actionKind: 'open-agent-command',
       emptyQueryVisible: true,
       emptyQueryRank: 20,
-      effectLabel: '打开 agent 选择',
+      effectLabel: sc.agent.effectLabel,
       action: () => {},
     },
     {
       id: 'create-role',
-      label: '新建角色',
-      description: '对话式创建一个新的持久化角色（专家 Agent）',
+      label: sc['create-role'].label,
+      description: sc['create-role'].description,
       icon: <UserPlus className="w-4 h-4" />,
       actionKind: 'create-role',
       emptyQueryVisible: true,
       emptyQueryRank: 25,
-      effectLabel: '开始角色创建',
+      effectLabel: sc['create-role'].effectLabel,
       action: () => {},
     },
     {
       id: 'goal',
-      label: '设定目标',
-      description: '直接输入目标，可选 --verify 或 --review',
+      label: sc.goal.label,
+      description: sc.goal.description,
       icon: <Target className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
       commandId: 'goal',
@@ -497,8 +500,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'schedule',
-      label: '定时任务',
-      description: '自然语言创建提醒、巡检或周期任务',
+      label: sc.schedule.label,
+      description: sc.schedule.description,
       icon: <Clock3 className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
       commandId: 'schedule',
@@ -508,8 +511,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'loop',
-      label: '会话循环',
-      description: '在当前会话反复执行同一任务直到完成或喊停',
+      label: sc.loop.label,
+      description: sc.loop.description,
       commandId: 'loop',
       icon: <Repeat className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
@@ -519,8 +522,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'workflow',
-      label: '编排工作流',
-      description: '输入目标，让模型写 JS 脚本编排多个子 agent（循环/扇出/流水线）',
+      label: sc.workflow.label,
+      description: sc.workflow.description,
       icon: <GitBranch className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
       emptyQueryVisible: true,
@@ -529,57 +532,57 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'code',
-      label: 'Code 模式',
-      description: '切换到 Code 模式',
+      label: sc.code.label,
+      description: sc.code.description,
       icon: <Terminal className="w-4 h-4" />,
       action: () => setInteractionMode('code'),
     },
     {
       id: 'plan',
-      label: 'Plan 模式',
-      description: '切换到 Plan 模式（只出方案不动代码）',
+      label: sc.plan.label,
+      description: sc.plan.description,
       icon: <ClipboardList className="w-4 h-4" />,
       action: () => setInteractionMode('plan'),
     },
     {
       id: 'ask',
-      label: 'Ask 模式',
-      description: '切换到 Ask 模式（只回答问题）',
+      label: sc.ask.label,
+      description: sc.ask.description,
       icon: <MessageCircleQuestion className="w-4 h-4" />,
       action: () => setInteractionMode('ask'),
     },
     {
       id: 'low',
-      label: '低推理强度',
-      description: '设置低推理强度',
+      label: sc.low.label,
+      description: sc.low.description,
       icon: <ZapOff className="w-4 h-4" />,
       action: () => setEffortLevel('low'),
     },
     {
       id: 'med',
-      label: '中推理强度',
-      description: '设置中推理强度',
+      label: sc.med.label,
+      description: sc.med.description,
       icon: <Zap className="w-4 h-4" />,
       action: () => setEffortLevel('medium'),
     },
     {
       id: 'high',
-      label: '高推理强度',
-      description: '设置高推理强度',
+      label: sc.high.label,
+      description: sc.high.description,
       icon: <Flame className="w-4 h-4" />,
       action: () => setEffortLevel('high'),
     },
     {
       id: 'default',
-      label: '默认权限',
-      description: '默认权限模式',
+      label: sc.default.label,
+      description: sc.default.description,
       icon: <Lock className="w-4 h-4" />,
       action: () => setGlobalMode('default'),
     },
     {
       id: 'fullaccess',
-      label: '完全访问',
-      description: '完全访问模式（跳过确认）',
+      label: sc.fullaccess.label,
+      description: sc.fullaccess.description,
       icon: <LockOpen className="w-4 h-4" />,
       action: () => setGlobalMode('full_access'),
     },
@@ -588,8 +591,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     // 这里用 renderer store + 现成 IPC + diagnostics domain 取真实数据重新实现。
     {
       id: 'context',
-      label: 'Context',
-      description: '查看上下文窗口使用情况',
+      label: sc.context.label,
+      description: sc.context.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
         const health = useAppStore.getState().contextHealth;
@@ -617,8 +620,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'status',
-      label: '状态',
-      description: '查看当前会话状态',
+      label: sc.status.label,
+      description: sc.status.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: () => {
         const app = useAppStore.getState();
@@ -640,8 +643,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'cost',
-      label: 'Cost',
-      description: '查看当前会话的 token 用量和成本',
+      label: sc.cost.label,
+      description: sc.cost.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
         const app = useAppStore.getState();
@@ -667,8 +670,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'agents',
-      label: 'Agent 列表',
-      description: '查看历史 Agent 记录',
+      label: sc.agents.label,
+      description: sc.agents.description,
       icon: <Terminal className="w-4 h-4" />,
       action: async () => {
         const lines: string[] = ['最近完成'];
@@ -694,8 +697,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'hooks',
-      label: 'Hooks',
-      description: '查看 Hook 配置',
+      label: sc.hooks.label,
+      description: sc.hooks.description,
       icon: <Zap className="w-4 h-4" />,
       action: async () => {
         try {
@@ -719,8 +722,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'permissions',
-      label: 'Permissions',
-      description: '查看安全决策链状态',
+      label: sc.permissions.label,
+      description: sc.permissions.description,
       icon: <Lock className="w-4 h-4" />,
       action: async () => {
         const mode = usePermissionStore.getState().globalMode;
@@ -759,8 +762,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     // --- 老 registry 命令的 GUI 实现（原 handler 依赖未注入的 ctx.agent，GUI 会报 "Agent not available"）---
     {
       id: 'model',
-      label: '模型',
-      description: '查看或切换当前模型',
+      label: sc.model.label,
+      description: sc.model.description,
       icon: <Cpu className="w-4 h-4" />,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
@@ -769,8 +772,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'compact',
-      label: '压缩上下文',
-      description: '手动触发上下文压缩',
+      label: sc.compact.label,
+      description: sc.compact.description,
       icon: <Zap className="w-4 h-4" />,
       action: () => {
         const count = useSessionStore.getState().messages.length;
@@ -787,8 +790,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'config',
-      label: '配置',
-      description: '查看当前配置',
+      label: sc.config.label,
+      description: sc.config.description,
       icon: <Settings className="w-4 h-4" />,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
@@ -805,7 +808,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
   ] as SlashCommandSeed[]).map(makeCommand), [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
-    getShortcutLabel,
+    getShortcutLabel, sc,
     setShowSettings, openSettingsTab, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
     setInteractionMode, setEffortLevel, setGlobalMode,
@@ -1014,13 +1017,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             {group.items.map((cmd) => {
               const i = filtered.indexOf(cmd);
               const skillStatus = cmd.kind === 'skill'
-                ? cmd.skillSelected ? '已选' : cmd.skillMounted ? '已挂载' : '可挂载'
+                ? cmd.skillSelected ? sc.badges.skillSelected : cmd.skillMounted ? sc.badges.skillMounted : sc.badges.skillMountable
                 : null;
               const connectorStatus = cmd.kind === 'connector'
-                ? cmd.connectorConnected ? '已连接' : '未连接'
+                ? cmd.connectorConnected ? sc.badges.connectorConnected : sc.badges.connectorDisconnected
                 : null;
               const mcpStatus = cmd.kind === 'mcp'
-                ? cmd.mcpConnected ? '可用' : '未连接'
+                ? cmd.mcpConnected ? sc.badges.mcpAvailable : sc.badges.mcpDisconnected
                 : null;
               return (
                 <button

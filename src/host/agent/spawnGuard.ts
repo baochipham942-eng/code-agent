@@ -13,6 +13,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { createLogger } from '../services/infra/logger';
 import { SPAWN_GUARD } from '../../shared/constants/agent';
+import { READONLY_TOOL_DENYLIST } from './routingToolPolicy';
 import type { SubagentResult } from './subagentExecutorTypes';
 import {
   collectDescendantAgentIds,
@@ -863,15 +864,9 @@ const SUBAGENT_DISABLED_TOOLS = [
 /**
  * Additional tools disabled for read-only roles (explorer, reviewer)
  * Enforces immutability at tool level, not just prompt level.
+ * 单一来源：routingToolPolicy.READONLY_TOOL_DENYLIST（主对话 /agent 显式路由共用）。
  */
-const READONLY_DISABLED_TOOLS = [
-  'write_file',
-  'Write',
-  'append_file',
-  'Append',
-  'edit_file',
-  'Edit',
-];
+const READONLY_DISABLED_TOOLS = [...READONLY_TOOL_DENYLIST];
 
 // ============================================================================
 // Singleton

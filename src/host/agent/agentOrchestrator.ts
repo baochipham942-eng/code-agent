@@ -44,6 +44,7 @@ import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
+import { buildRoutingToolDenylist } from './routingToolPolicy';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -932,15 +933,19 @@ export class AgentOrchestrator {
       });
     }
 
-    const deniedToolNames = sessionMemoryMode === 'off'
-      ? Array.from(new Set([
+    // 显式路由到 readonly agent（explore/plan）时收窄文件写入工具（Explorer 真只读）
+    const routingDeniedToolNames = buildRoutingToolDenylist(routingResolution?.agent);
+    const baseDeniedToolNames = sessionMemoryMode === 'off'
+      ? [
           ...(options?.deniedToolNames || []),
           'MemoryRead',
           'MemoryWrite',
           'History',
           'EpisodicRecall',
-        ]))
-      : options?.deniedToolNames;
+        ]
+      : (options?.deniedToolNames || []);
+    const mergedDeniedToolNames = Array.from(new Set([...baseDeniedToolNames, ...routingDeniedToolNames]));
+    const deniedToolNames = mergedDeniedToolNames.length > 0 ? mergedDeniedToolNames : undefined;
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
       || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);
@@ -1077,6 +1082,7 @@ export class AgentOrchestrator {
           description: agent.description,
           systemPrompt: agent.prompt,
           tools: agent.tools,
+          readonly: agent.coordination?.readonly === true,
           enabled: true,
           tags: agent.tags,
         },

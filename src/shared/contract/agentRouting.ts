@@ -17,6 +17,8 @@ export interface AgentRoutingConfig {
   systemPrompt: string;
   /** 可用工具列表（留空表示所有工具） */
   tools?: string[];
+  /** 只读 agent（explore/plan）：主链路显式选中后收窄文件写入工具 */
+  readonly?: boolean;
   /** 模型覆盖配置 */
   modelOverride?: {
     provider?: string;

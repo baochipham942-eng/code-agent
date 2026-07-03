@@ -767,6 +767,8 @@ export type EvalRunMode = 'mock' | 'real';
 
 export interface EvalBaseline {
   version: number;
+  /** 分母口径版本：2=能力分母排除 skipped+infra（与报告一致）；缺省=旧口径（只排 infra） */
+  denominatorVersion?: number;
   updatedAt: number;
   updatedBy: string;
   /** 晋升此 baseline 的运行来源。缺省视为历史遗留（来源不明，可能是 mock） */

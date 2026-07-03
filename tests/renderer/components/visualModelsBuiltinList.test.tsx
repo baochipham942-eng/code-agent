@@ -26,6 +26,8 @@ function render(readOnly: boolean): string {
       unconfiguredBadge={cm.unconfiguredBadge}
       defaultBadge={s.defaultBadge}
       bridgedFromBadge={s.bridgedFromBadge}
+      manageButton={cm.manage}
+      configureButton={s.configureButton}
       onConfigure={noop}
       readOnly={readOnly}
     />,

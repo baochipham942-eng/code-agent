@@ -45,6 +45,8 @@ const MIGRATED: string[] = [
   'tabs/SoulSettings.tsx',
   'tabs/SearchSettings.tsx',
   'tabs/HooksSettings.tsx',
+  'tabs/RolesTab.tsx',
+  'tabs/VisualModelsSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

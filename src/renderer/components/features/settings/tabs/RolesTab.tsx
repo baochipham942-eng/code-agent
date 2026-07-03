@@ -13,6 +13,7 @@ import type { SkillCategory } from '@shared/contract/skillRepository';
 import { SKILL_CATEGORIES } from '@shared/constants/skillCatalog';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
+import { useI18n } from '../../../../hooks/useI18n';
 import { RoleIcon } from '../../shared/RoleIcon';
 import { SettingsPage, SettingsSection, SettingsDetails } from '../SettingsLayout';
 
@@ -30,9 +31,14 @@ export interface RoleCategoryGroup {
   entries: RolePanelEntry[];
 }
 
-/** 取分类中文名（来自 SKILL_CATEGORIES）；未知 category 返回 undefined */
-function categoryLabel(category: SkillCategory): string | undefined {
-  return SKILL_CATEGORIES.find((c) => c.id === category)?.label;
+export interface RoleCategoryLabels {
+  categories: Record<SkillCategory, string>;
+  uncategorized: string;
+}
+
+/** 取分类显示名；未知 category 返回 undefined */
+function categoryLabel(category: SkillCategory, labels: RoleCategoryLabels): string | undefined {
+  return labels.categories[category];
 }
 
 /**
@@ -40,17 +46,17 @@ function categoryLabel(category: SkillCategory): string | undefined {
  * - 顺序跟随 SKILL_CATEGORIES，空分类不出现
  * - 无 category（用户自建角色）统一归入末尾"其他"组
  */
-export function groupRolesByCategory(entries: RolePanelEntry[]): RoleCategoryGroup[] {
+export function groupRolesByCategory(entries: RolePanelEntry[], labels: RoleCategoryLabels): RoleCategoryGroup[] {
   const groups: RoleCategoryGroup[] = [];
   for (const meta of SKILL_CATEGORIES) {
     const inCategory = entries.filter((e) => e.category === meta.id);
     if (inCategory.length > 0) {
-      groups.push({ key: meta.id, label: meta.label, entries: inCategory });
+      groups.push({ key: meta.id, label: labels.categories[meta.id], entries: inCategory });
     }
   }
-  const uncategorized = entries.filter((e) => !e.category || !categoryLabel(e.category));
+  const uncategorized = entries.filter((e) => !e.category || !categoryLabel(e.category, labels));
   if (uncategorized.length > 0) {
-    groups.push({ key: UNCATEGORIZED_KEY, label: '其他', entries: uncategorized });
+    groups.push({ key: UNCATEGORIZED_KEY, label: labels.uncategorized, entries: uncategorized });
   }
   return groups;
 }
@@ -94,50 +100,81 @@ async function setRoleProactivity(roleId: string, level: RoleProactivityLevel): 
 interface RoleCardProps {
   entry: RolePanelEntry;
   onClick: () => void;
+  labels: {
+    source: {
+      builtin: string;
+      user: string;
+      project: string;
+      missing: string;
+    };
+    memoryCountOneSuffix: string;
+    memoryCountOtherSuffix: string;
+    noWork: string;
+  };
 }
 
-const RoleCard: React.FC<RoleCardProps> = ({ entry, onClick }) => (
-  <button /* ds-allow:button: 角色卡片，全宽左对齐多行内容卡，primitive 居中变体不兼容 */
-    type="button"
-    onClick={onClick}
-    className="w-full rounded-lg border border-zinc-700/70 bg-zinc-900/50 p-4 text-left transition-colors hover:border-zinc-500 hover:bg-zinc-800/60"
-  >
-    <div className="flex items-center gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
-        <RoleIcon name={entry.icon} className="h-6 w-6" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-zinc-200">{entry.roleId}</span>
-          {entry.source === 'builtin' || entry.source === 'user' || entry.source === 'project' ? (
-            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-              {entry.source === 'builtin' ? '预设' : entry.source === 'user' ? '自建' : '项目'}
-            </span>
-          ) : (
-            <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-400">缺定义</span>
-          )}
+function formatRoleMemoryCount(
+  count: number,
+  labels: Pick<RoleCardProps['labels'], 'memoryCountOneSuffix' | 'memoryCountOtherSuffix'>,
+): string {
+  return `${count}${count === 1 ? labels.memoryCountOneSuffix : labels.memoryCountOtherSuffix}`;
+}
+
+const RoleCard: React.FC<RoleCardProps> = ({ entry, onClick, labels }) => {
+  const sourceLabel =
+    entry.source === 'builtin'
+      ? labels.source.builtin
+      : entry.source === 'user'
+        ? labels.source.user
+        : entry.source === 'project'
+          ? labels.source.project
+          : null;
+
+  return (
+    <button /* ds-allow:button: 角色卡片，全宽左对齐多行内容卡，primitive 居中变体不兼容 */
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-lg border border-zinc-700/70 bg-zinc-900/50 p-4 text-left transition-colors hover:border-zinc-500 hover:bg-zinc-800/60"
+    >
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
+          <RoleIcon name={entry.icon} className="h-6 w-6" />
         </div>
-        {entry.description ? (
-          <p className="mt-0.5 truncate text-xs text-zinc-500">{entry.description}</p>
-        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-zinc-200">{entry.roleId}</span>
+            {sourceLabel ? (
+              <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                {sourceLabel}
+              </span>
+            ) : (
+              <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-400">
+                {labels.source.missing}
+              </span>
+            )}
+          </div>
+          {entry.description ? (
+            <p className="mt-0.5 truncate text-xs text-zinc-500">{entry.description}</p>
+          ) : null}
+        </div>
       </div>
-    </div>
-    <div className="mt-3 flex items-center gap-4 text-xs text-zinc-500">
-      <span className="flex items-center gap-1">
-        <Brain className="h-3 w-3" />
-        {entry.memoryCount} 条记忆
-      </span>
-      {entry.lastWork ? (
-        <span className="flex min-w-0 items-center gap-1">
-          <History className="h-3 w-3 shrink-0" />
-          <span className="truncate">{entry.lastWork.replace(/^- /, '')}</span>
+      <div className="mt-3 flex items-center gap-4 text-xs text-zinc-500">
+        <span className="flex items-center gap-1">
+          <Brain className="h-3 w-3" />
+          {formatRoleMemoryCount(entry.memoryCount, labels)}
         </span>
-      ) : (
-        <span className="text-zinc-600">尚无工作记录</span>
-      )}
-    </div>
-  </button>
-);
+        {entry.lastWork ? (
+          <span className="flex min-w-0 items-center gap-1">
+            <History className="h-3 w-3 shrink-0" />
+            <span className="truncate">{entry.lastWork.replace(/^- /, '')}</span>
+          </span>
+        ) : (
+          <span className="text-zinc-600">{labels.noWork}</span>
+        )}
+      </div>
+    </button>
+  );
+};
 
 // ----------------------------------------------------------------------------
 // 记忆条目（可删可编辑）
@@ -150,6 +187,9 @@ interface MemoryRowProps {
 }
 
 const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
+  const { t } = useI18n();
+  const roleText = t.settings.roles;
+  const commonText = t.common;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(memory.content);
@@ -199,7 +239,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             <>
               <button /* ds-allow:button: 记忆编辑图标按钮 p-1.5，primitive 变体会改变尺寸与外观 */
                 type="button"
-                title="编辑"
+                title={commonText.edit}
                 onClick={() => setEditing(true)}
                 className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200"
               >
@@ -207,7 +247,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
               </button>
               <button /* ds-allow:button: 记忆删除图标按钮 p-1.5（hover 红），primitive 变体会改变尺寸 */
                 type="button"
-                title="删除"
+                title={commonText.delete}
                 onClick={() => setConfirmingDelete(true)}
                 className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-red-900/40 hover:text-red-400"
               >
@@ -217,21 +257,21 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
           ) : null}
           {confirmingDelete ? (
             <>
-              <span className="text-xs text-red-400">确认删除？</span>
+              <span className="text-xs text-red-400">{roleText.confirmDeleteQuestion}</span>
               <button /* ds-allow:button: 删除确认按钮，自定义小尺寸弱化红（bg-red-900/50），与 danger 变体实心红不同 */
                 type="button"
                 disabled={busy}
                 onClick={handleDelete}
                 className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-300 hover:bg-red-900/80 disabled:opacity-50"
               >
-                删除
+                {commonText.delete}
               </button>
               <button /* ds-allow:button: 删除取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
                 className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-700/60"
               >
-                取消
+                {commonText.cancel}
               </button>
             </>
           ) : null}
@@ -253,7 +293,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
               onClick={handleSaveEdit}
               className="flex items-center gap-1 rounded bg-zinc-700 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
             >
-              <Check className="h-3 w-3" /> 保存
+              <Check className="h-3 w-3" /> {commonText.save}
             </button>
             <button /* ds-allow:button: 记忆编辑取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */
               type="button"
@@ -263,7 +303,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
               }}
               className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-zinc-400 hover:bg-zinc-700/60"
             >
-              <X className="h-3 w-3" /> 取消
+              <X className="h-3 w-3" /> {commonText.cancel}
             </button>
           </div>
         </div>
@@ -282,11 +322,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
 // 主动性等级选择（内部文档 §4.2）
 // ----------------------------------------------------------------------------
 
-const PROACTIVITY_OPTIONS: Array<{ value: RoleProactivityLevel; label: string; hint: string }> = [
-  { value: 'silent', label: '静默', hint: '不会主动醒来（默认）' },
-  { value: 'daily', label: '每日简报', hint: '每天 09:00 醒来巡检产物，有进展时生成简报会话' },
-  { value: 'realtime', label: '实时介入', hint: '可自定义频率（每天最多 4 次）+ 有产出时桌面通知' },
-];
+const PROACTIVITY_LEVELS: RoleProactivityLevel[] = ['silent', 'daily', 'realtime'];
 
 interface ProactivitySelectorProps {
   roleId: string;
@@ -295,6 +331,8 @@ interface ProactivitySelectorProps {
 }
 
 const ProactivitySelector: React.FC<ProactivitySelectorProps> = ({ roleId, current, onChanged }) => {
+  const { t } = useI18n();
+  const optionsText = t.settings.roles.proactivity.options;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -315,14 +353,15 @@ const ProactivitySelector: React.FC<ProactivitySelectorProps> = ({ roleId, curre
 
   return (
     <div className="space-y-2">
-      {PROACTIVITY_OPTIONS.map((option) => {
-        const selected = option.value === current;
+      {PROACTIVITY_LEVELS.map((level) => {
+        const option = optionsText[level];
+        const selected = level === current;
         return (
           <button /* ds-allow:button: 主动性等级单选卡，全宽左对齐含单选圈+多行，primitive 居中变体不兼容 */
-            key={option.value}
+            key={level}
             type="button"
             disabled={busy}
-            onClick={() => void handleSelect(option.value)}
+            onClick={() => void handleSelect(level)}
             className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
               selected
                 ? 'border-emerald-600/70 bg-emerald-900/20'
@@ -360,6 +399,8 @@ interface RoleDetailViewProps {
 }
 
 const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack }) => {
+  const { t } = useI18n();
+  const roleText = t.settings.roles;
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -388,7 +429,7 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
         onClick={onBack}
         className="flex items-center gap-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
       >
-        <ArrowLeft className="h-3.5 w-3.5" /> 返回角色列表
+        <ArrowLeft className="h-3.5 w-3.5" /> {roleText.detail.backToList}
       </button>
 
       <header className="flex items-center gap-3">
@@ -397,29 +438,29 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-medium text-zinc-200">{roleId}</h3>
-          <p className="text-xs text-zinc-500">持久化角色 — 记忆与履历归你所有</p>
+          <p className="text-xs text-zinc-500">{roleText.detail.subtitle}</p>
         </div>
         {/* 对话式修改：起会话改这个角色的定义/工具/提示词（只换定义，不动记忆履历） */}
         <button /* ds-allow:button: 对话式修改入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
           type="button"
           onClick={() => void startEditRoleChat(roleId)}
-          title="用对话修改这个角色（改描述 / 工具 / 系统提示词）"
+          title={roleText.detail.editByChatTitle}
           className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
-          对话式修改
+          {roleText.detail.editByChat}
         </button>
       </header>
 
-      {loading ? <div className="text-sm text-zinc-500">加载中…</div> : null}
+      {loading ? <div className="text-sm text-zinc-500">{roleText.loading}</div> : null}
       {error ? <div className="text-sm text-red-400">{error}</div> : null}
 
       {detail ? (
         <>
           {/* 主动性（定时醒来巡检产物） */}
           <SettingsSection
-            title="主动性"
-            description="角色定时醒来巡检自己经手的产物，自主决定推进 / 汇报 / 沉默。改动立即生效。"
+            title={roleText.detail.proactivityTitle}
+            description={roleText.detail.proactivityDescription}
           >
             <div className="flex items-start gap-2">
               <AlarmClock className="mt-1 h-4 w-4 shrink-0 text-zinc-500" />
@@ -435,12 +476,12 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
 
           {/* 记忆（可删可编辑） */}
           <SettingsSection
-            title={`角色记忆（${detail.memories.length}）`}
-            description="该角色跨项目积累的专业知识。删除后实例不再引用。"
+            title={`${roleText.detail.memoriesTitlePrefix}${detail.memories.length}${roleText.detail.memoriesTitleSuffix}`}
+            description={roleText.detail.memoriesDescription}
           >
             {detail.memories.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-center text-xs text-zinc-500">
-                暂无记忆 — 角色完成工作后会自动沉淀
+                {roleText.detail.memoriesEmpty}
               </div>
             ) : (
               <div className="space-y-2">
@@ -452,10 +493,10 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
           </SettingsSection>
 
           {/* 履历（产物清单） */}
-          <SettingsSection title="工作履历" description="该角色参与过的产物清单（最新在后）。">
+          <SettingsSection title={roleText.detail.historyTitle} description={roleText.detail.historyDescription}>
             {detail.history.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-center text-xs text-zinc-500">
-                暂无履历
+                {roleText.detail.historyEmpty}
               </div>
             ) : (
               <ul className="space-y-1 rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
@@ -471,8 +512,12 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
 
           {/* 定义（只读） */}
           <SettingsDetails
-            title="角色定义"
-            description={detail.definition ? `只读展示 — 编辑请打开 ${detail.definitionPath}` : '未找到角色定义文件'}
+            title={roleText.detail.definitionTitle}
+            description={
+              detail.definition
+                ? `${roleText.detail.definitionDescriptionPrefix}${detail.definitionPath}`
+                : roleText.detail.definitionMissingDescription
+            }
           >
             {detail.definition ? (
               <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-zinc-950/60 p-3 font-mono text-xs text-zinc-400">
@@ -481,7 +526,7 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <FileText className="h-3.5 w-3.5" />
-                该角色只有资产目录，没有 agent 定义文件（{detail.definitionPath}）
+                {roleText.detail.definitionMissingPrefix}{detail.definitionPath}{roleText.detail.definitionMissingSuffix}
               </div>
             )}
           </SettingsDetails>
@@ -496,6 +541,8 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
 // ----------------------------------------------------------------------------
 
 export const RolesTab: React.FC = () => {
+  const { t } = useI18n();
+  const roleText = t.settings.roles;
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -533,11 +580,11 @@ export const RolesTab: React.FC = () => {
 
   return (
     <SettingsPage
-      title="角色"
-      description="持久化角色 = 角色定义 + 角色记忆 + 工作履历。记忆与履历跨实例累积，归你所有。任何自定义 agent 在 ~/.code-agent/roles/ 下建同名目录即可升级为持久角色。"
+      title={t.settings.tabs.roles}
+      description={roleText.description}
     >
       <SettingsSection
-        title={`持久化角色（${entries.length}）`}
+        title={`${roleText.listTitlePrefix}${entries.length}${roleText.listTitleSuffix}`}
         actions={
           <div className="flex items-center gap-2">
             <button /* ds-allow:button: 新建角色入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
@@ -546,12 +593,12 @@ export const RolesTab: React.FC = () => {
               className="flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"
             >
               <UserPlus className="h-3.5 w-3.5" />
-              新建角色
+              {roleText.newRole}
             </button>
             <button /* ds-allow:button: 刷新图标按钮 p-1.5，primitive 变体会改变尺寸与外观 */
               type="button"
               onClick={() => void loadList()}
-              title="刷新"
+              title={roleText.refresh}
               className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200"
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -559,21 +606,29 @@ export const RolesTab: React.FC = () => {
           </div>
         }
       >
-        {loading ? <div className="text-sm text-zinc-500">加载中…</div> : null}
+        {loading ? <div className="text-sm text-zinc-500">{roleText.loading}</div> : null}
         {error ? <div className="text-sm text-red-400">{error}</div> : null}
         {!loading && !error && entries.length === 0 ? (
           <div className="rounded-lg border border-dashed border-zinc-700/70 p-6 text-center text-sm text-zinc-500">
-            暂无持久化角色。重启应用后会自动安装预设角色（研究员 / 数据分析师）。
+            {roleText.empty}
           </div>
         ) : null}
-        {groupRolesByCategory(entries).map((group) => (
+        {groupRolesByCategory(entries, {
+          categories: roleText.categories,
+          uncategorized: roleText.uncategorizedCategory,
+        }).map((group) => (
           <div key={group.key} className="mb-4 last:mb-0" data-role-category={group.key}>
             <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-              {group.label}（{group.entries.length}）
+              {group.label}{roleText.categoryCountPrefix}{group.entries.length}{roleText.categoryCountSuffix}
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {group.entries.map((entry) => (
-                <RoleCard key={entry.roleId} entry={entry} onClick={() => setSelectedRoleId(entry.roleId)} />
+                <RoleCard
+                  key={entry.roleId}
+                  entry={entry}
+                  labels={roleText.card}
+                  onClick={() => setSelectedRoleId(entry.roleId)}
+                />
               ))}
             </div>
           </div>

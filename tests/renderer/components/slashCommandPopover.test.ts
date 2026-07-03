@@ -3,7 +3,7 @@ import React from 'react';
 import {
   buildSlashCommandGroups,
   orderSlashCommandsForDisplay,
-} from '../../../src/renderer/components/features/chat/ChatInput/SlashCommandPopover';
+} from '../../../src/renderer/components/features/chat/ChatInput/slashCommandDisplayGroups';
 
 type SlashCommandFixture = Parameters<typeof buildSlashCommandGroups>[0][number];
 

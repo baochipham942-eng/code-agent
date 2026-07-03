@@ -44,6 +44,7 @@ import {
   type PromptCommandCandidateInput,
   type SlashCandidateAction,
   type SlashPickerCandidate,
+  type SlashPickerLabels,
 } from './slashPickerModel';
 import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -97,9 +98,9 @@ interface SlashCommandSeed {
   action: () => void;
 }
 
-function makeCommand(seed: SlashCommandSeed): SlashCommand {
+function makeCommand(seed: SlashCommandSeed, labels?: SlashPickerLabels): SlashCommand {
   return {
-    ...createCommandCandidate(seed),
+    ...createCommandCandidate(seed, labels),
     icon: seed.icon,
     action: seed.action,
     ...(seed.sourceLabel ? { sourceLabel: seed.sourceLabel } : {}),
@@ -701,7 +702,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         );
       },
     },
-  ] as SlashCommandSeed[]).map(makeCommand), [
+  ] as SlashCommandSeed[]).map((seed) => makeCommand(seed, sc.picker)), [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     getShortcutLabel, sc,
     setShowSettings, openSettingsTab, setShowDAGPanel, showDAGPanel,
@@ -761,20 +762,20 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               writeAssistant('❌ ')(`/${def.id} 执行失败：${message}`);
             });
         },
-      }));
+      }, sc.picker));
 
     // Prompt commands（文件式 + MCP），同名让位于 GUI/registry 命令
     const takenIds = new Set([...guiOnlyIds, ...fromRegistry.map((c) => c.id)]);
     const fromPrompts: SlashCommand[] = promptCommands
       .filter((pc) => !takenIds.has(pc.name))
       .map((pc) => ({
-        ...createPromptCandidate(pc),
+        ...createPromptCandidate(pc, sc.picker),
         icon: <Terminal className="w-4 h-4" />,
         sourceLabel: getPromptCommandSourceLabel(pc),
         action: () => {},
       }));
 
-    const fromAgents: SlashCommand[] = createAgentCandidates(agents).map((candidate) => ({
+    const fromAgents: SlashCommand[] = createAgentCandidates(agents, sc.picker).map((candidate) => ({
       ...candidate,
       icon: <Bot className="w-4 h-4" />,
       action: () => {},
@@ -784,7 +785,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       mountedSkills,
       selectedSkillIds,
       recommendations: skillRecommendations,
-    }).map((candidate) => ({
+    }, sc.picker).map((candidate) => ({
       ...candidate,
       icon: <Sparkles className="w-4 h-4" />,
       action: () => {},
@@ -793,6 +794,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     const fromWorkbenchCapabilities: SlashCommand[] = createWorkbenchCapabilityCandidates(
       capabilityItems,
       suggestedCapabilityKeys,
+      sc.picker,
     ).map((candidate) => ({
       ...candidate,
       icon: candidate.kind === 'connector' ? <Plug className="w-4 h-4" /> : <Server className="w-4 h-4" />,
@@ -812,6 +814,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     mountedSkills,
     promptCommands,
     registryIconMap,
+    sc,
     selectedSkillIds,
     skillRecommendations,
     skillOps,

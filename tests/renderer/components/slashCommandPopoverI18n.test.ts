@@ -55,8 +55,9 @@ describe('SlashCommandPopover i18n（slashCommands 键组）', () => {
 
   it('每个命令条目都有 description 和 label（或动态 labelShow/labelHide 对）', () => {
     const entries = zh.slashCommands as unknown as Tree;
+    const auxiliaryGroups = new Set(['badges', 'picker']); // 渲染层徽标/装饰文案，不是命令条目
     for (const [id, value] of Object.entries(entries)) {
-      if (id === 'badges') continue; // 渲染层状态徽标，不是命令条目
+      if (auxiliaryGroups.has(id)) continue;
       const item = value as Record<string, string>;
       expect(item.description, `${id}.description 缺失`).toBeTruthy();
       const hasStaticLabel = Boolean(item.label);

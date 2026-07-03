@@ -16,6 +16,8 @@ import {
   removeTrailingSlashToken,
 } from '../../../src/renderer/components/features/chat/ChatInput/slashPickerModel';
 import type { WorkbenchCapabilityRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const makeSkill = (overrides: Partial<ParsedSkill>): ParsedSkill => ({
   name: 'docx',
@@ -214,6 +216,39 @@ describe('slash picker model', () => {
 
     expect(groups.map((group) => group.group)).toEqual(['command', 'prompt']);
     expect(groups[0]?.items.map((item) => item.id)).toEqual(['low', 'loop']);
+  });
+
+  it('effectLabel/描述装饰走注入 labels（en 传入则输出英文，缺省回退中文）', () => {
+    const pickerEn = en.slashCommands.picker;
+    expect(createCommandCandidate(
+      { id: 'goal', label: 'Goal', description: 'Set goal', actionKind: 'prefill-leading-command' },
+      pickerEn,
+    ).effectLabel).toBe(pickerEn.prefillCommand);
+    expect(createCommandCandidate({ id: 'x', label: 'X', description: 'X' }, pickerEn).effectLabel)
+      .toBe(pickerEn.executeNow);
+
+    const prompt = createPromptCandidate(
+      { name: 'sum', description: 'Summarize', source: 'file', hints: ['$ARGUMENTS'] },
+      pickerEn,
+    );
+    expect(prompt.effectLabel).toBe(pickerEn.prefillPromptWithArgs);
+    expect(prompt.description).toContain(pickerEn.paramsPrefix.trim());
+
+    const agentCandidates = createAgentCandidates(agents, pickerEn);
+    expect(agentCandidates.find((c) => c.agentId === 'reviewer')?.effectLabel).toBe(pickerEn.setAgentForTurn);
+    expect(agentCandidates.find((c) => c.agentId === null)?.effectLabel).toBe(pickerEn.restoreAutoAgent);
+    expect(agentCandidates.find((c) => c.agentId === null)?.description).toBe(pickerEn.defaultAgentDescription);
+
+    const skills = createSkillCandidates({
+      availableSkills: [makeSkill({ basePath: '/repo/libraries/office/docx' })],
+      mountedSkills: [],
+      selectedSkillIds: [],
+    }, pickerEn);
+    expect(skills[0]?.effectLabel).toBe(pickerEn.mountAndSelect);
+
+    // 缺省回退中文（zh 键即历史硬编码文案）
+    expect(createCommandCandidate({ id: 'x', label: 'X', description: 'X' }).effectLabel)
+      .toBe(zh.slashCommands.picker.executeNow);
   });
 
   it('creates connector and MCP candidates for the unified slash picker', () => {

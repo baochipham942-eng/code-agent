@@ -872,6 +872,7 @@ export const en: Translations = {
   agentCommand: {
     defaultDescription: 'Resume auto routing',
     roleGroupLabel: 'Roles',
+    createRoleEntry: 'New role…',
     switchedToPrefix: 'Switched to ',
     restoredAuto: 'Auto agent routing restored',
     notFoundPrefix: 'Agent not found: ',
@@ -935,6 +936,28 @@ export const en: Translations = {
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
   slashCommands: {
+    // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
+    picker: {
+      prefillCommand: 'Prefill command',
+      executeNow: 'Runs now',
+      builtinCommand: 'Builtin command',
+      paramsPrefix: 'Args: ',
+      noParams: 'No args',
+      mcpPromptFallback: 'MCP prompt command',
+      filePromptFallback: 'Custom command',
+      prefillPromptWithArgs: 'Prefill, then add args',
+      prefillPrompt: 'Prefill prompt',
+      setAgentForTurn: 'Set agent for this turn',
+      restoreAutoAgent: 'Restore auto agent',
+      defaultAgentDescription: 'Restore automatic routing',
+      mountedSkillPrefix: 'Mounted skill',
+      selectForTurn: 'Select for this turn',
+      mountAndSelect: 'Mount & select for this turn',
+      installAndSelect: 'Install & select for this turn',
+      localConnector: 'Local connector',
+      connectorNeedsConnection: 'Connect before use',
+      mcpNeedsConnection: 'Requires connection',
+    },
     badges: {
       skillSelected: 'Selected',
       skillMounted: 'Mounted',

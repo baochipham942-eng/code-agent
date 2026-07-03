@@ -859,6 +859,7 @@ export const zh = {
   agentCommand: {
     defaultDescription: '恢复自动路由',
     roleGroupLabel: '角色',
+    createRoleEntry: '新建角色…',
     switchedToPrefix: '已切到 ',
     restoredAuto: '已恢复自动 agent',
     notFoundPrefix: '没找到 agent: ',
@@ -922,6 +923,28 @@ export const zh = {
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
   slashCommands: {
+    // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
+    picker: {
+      prefillCommand: '预填命令',
+      executeNow: '立即执行',
+      builtinCommand: '内置命令',
+      paramsPrefix: '参数: ',
+      noParams: '无参数',
+      mcpPromptFallback: 'MCP prompt 命令',
+      filePromptFallback: '自定义命令',
+      prefillPromptWithArgs: '预填后补参数',
+      prefillPrompt: '预填 prompt',
+      setAgentForTurn: '设为本轮 agent',
+      restoreAutoAgent: '恢复自动 agent',
+      defaultAgentDescription: '恢复自动路由',
+      mountedSkillPrefix: '已挂载 Skill',
+      selectForTurn: '选入本轮',
+      mountAndSelect: '挂载并选入本轮',
+      installAndSelect: '安装并选入本轮',
+      localConnector: '本地 connector',
+      connectorNeedsConnection: '打开后需先连接',
+      mcpNeedsConnection: '需要先连接',
+    },
     badges: {
       skillSelected: '已选',
       skillMounted: '已挂载',

@@ -719,7 +719,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10"
               >
                 <UserPlus className="h-3.5 w-3.5 shrink-0" />
-                新建角色…
+                {t.agentCommand.createRoleEntry}
               </button>
             </div>
           )}

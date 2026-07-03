@@ -9,44 +9,29 @@ import type { AppSettings, SpeechInputSettings, SpeechRetainedAudioClearResult, 
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
+import { useI18n } from '../../../../hooks/useI18n';
 
 const logger = createLogger('VoiceInputSettings');
 
 const MODE_OPTIONS: Array<{
   id: SpeechTranscriptionMode;
-  label: string;
-  description: string;
   icon: React.ReactNode;
 }> = [
   {
     id: 'local-first',
-    label: '本地优先',
-    description: 'whisper-cpp 可用时本地转写，失败后用 Groq 兜底',
     icon: <Cpu className="h-4 w-4" />,
   },
   {
     id: 'local-only',
-    label: '仅本地',
-    description: '音频不离开本机，缺模型或转写失败时直接返回错误',
     icon: <Mic className="h-4 w-4" />,
   },
   {
     id: 'cloud-only',
-    label: '仅云端',
-    description: '使用 Groq Whisper，适合本地模型不可用时临时使用',
     icon: <Cloud className="h-4 w-4" />,
   },
 ];
 
-const LANGUAGE_OPTIONS = [
-  { id: 'auto', label: '自动检测' },
-  { id: 'zh', label: '中文' },
-  { id: 'en', label: 'English' },
-  { id: 'ja', label: '日本語' },
-  { id: 'ko', label: '한국어' },
-  { id: 'es', label: 'Español' },
-  { id: 'fr', label: 'Français' },
-];
+const LANGUAGE_OPTION_IDS = ['auto', 'zh', 'en', 'ja', 'ko', 'es', 'fr'] as const;
 
 const MODEL_OPTIONS = [
   { id: 'ggml-large-v3-turbo.bin', label: 'large-v3-turbo' },
@@ -64,6 +49,8 @@ function mergeSpeechSettings(value?: Partial<SpeechInputSettings>): SpeechInputS
 }
 
 export const VoiceInputSettings: React.FC = () => {
+  const { t } = useI18n();
+  const voiceText = t.settings.voiceInput;
   const [settings, setSettings] = useState<SpeechInputSettings>(DEFAULT_SPEECH_INPUT_SETTINGS);
   const [saving, setSaving] = useState(false);
   const [clearingAudio, setClearingAudio] = useState(false);
@@ -78,14 +65,14 @@ export const VoiceInputSettings: React.FC = () => {
           setSettings(mergeSpeechSettings(appSettings.speech));
         }
       } catch (error) {
-        logger.error('加载语音输入设置失败', error);
+        logger.error(voiceText.loadSettingsFailedLog, error);
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [voiceText.loadSettingsFailedLog]);
 
   const persist = async (patch: Partial<SpeechInputSettings>) => {
     const next = mergeSpeechSettings({ ...settings, ...patch });
@@ -97,7 +84,7 @@ export const VoiceInputSettings: React.FC = () => {
       } as Partial<AppSettings>);
       window.dispatchEvent(new CustomEvent(VOICE_INPUT_SETTINGS_UPDATED_EVENT, { detail: next }));
     } catch (error) {
-      logger.error('保存语音输入设置失败', error);
+      logger.error(voiceText.saveSettingsFailedLog, error);
     } finally {
       setSaving(false);
     }
@@ -108,10 +95,10 @@ export const VoiceInputSettings: React.FC = () => {
     setClearAudioMessage(null);
     try {
       const result = await ipcService.unsafeInvoke<SpeechRetainedAudioClearResult>('speech:clear-retained-audio');
-      setClearAudioMessage(`已清理 ${result?.deletedFiles ?? 0} 个文件`);
+      setClearAudioMessage(`${voiceText.clearAudioSuccessPrefix}${result?.deletedFiles ?? 0}${voiceText.clearAudioSuccessSuffix}`);
     } catch (error) {
-      logger.error('清理语音保留音频失败', error);
-      setClearAudioMessage('清理失败');
+      logger.error(voiceText.clearAudioFailedLog, error);
+      setClearAudioMessage(voiceText.clearAudioFailed);
     } finally {
       setClearingAudio(false);
     }
@@ -121,8 +108,8 @@ export const VoiceInputSettings: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="pr-4">
-          <h3 className="mb-1 text-sm font-medium text-zinc-200">启用会话语音输入</h3>
-          <p className="text-xs text-zinc-500">会话输入框显示麦克风入口，转写结果进入草稿。</p>
+          <h3 className="mb-1 text-sm font-medium text-zinc-200">{voiceText.enableTitle}</h3>
+          <p className="text-xs text-zinc-500">{voiceText.enableDescription}</p>
         </div>
         <button
           type="button"
@@ -142,10 +129,11 @@ export const VoiceInputSettings: React.FC = () => {
       </div>
 
       <div className="border-t border-zinc-700 pt-4">
-        <h3 className="mb-3 text-sm font-medium text-zinc-200">转写模式</h3>
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.modeTitle}</h3>
         <div className="grid grid-cols-3 gap-3">
           {MODE_OPTIONS.map((option) => {
             const active = settings.mode === option.id;
+            const optionText = voiceText.modes[option.id];
             return (
               <button
                 key={option.id}
@@ -159,9 +147,9 @@ export const VoiceInputSettings: React.FC = () => {
               >
                 <div className="mb-2 flex items-center gap-2 text-zinc-300">
                   {option.icon}
-                  <span className="text-sm font-medium">{option.label}</span>
+                  <span className="text-sm font-medium">{optionText.label}</span>
                 </div>
-                <p className="text-xs leading-5 text-zinc-500">{option.description}</p>
+                <p className="text-xs leading-5 text-zinc-500">{optionText.description}</p>
                 {active && (
                   <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-200">
                     <Check className="h-3 w-3 text-zinc-950" />
@@ -175,20 +163,20 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
         <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">语言</span>
+          <span className="text-sm font-medium text-zinc-200">{voiceText.languageLabel}</span>
           <select
             value={settings.language}
             onChange={(event) => persist({ language: event.target.value })}
             className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
           >
-            {LANGUAGE_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
+            {LANGUAGE_OPTION_IDS.map((id) => (
+              <option key={id} value={id}>{voiceText.languages[id]}</option>
             ))}
           </select>
         </label>
 
         <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">本地模型</span>
+          <span className="text-sm font-medium text-zinc-200">{voiceText.localModelLabel}</span>
           <select
             value={settings.localModel}
             onChange={(event) => persist({ localModel: event.target.value })}
@@ -203,7 +191,7 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-4">
         <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">线程数</span>
+          <span className="text-sm font-medium text-zinc-200">{voiceText.threadsLabel}</span>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -220,7 +208,7 @@ export const VoiceInputSettings: React.FC = () => {
         </label>
 
         <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">最长录音</span>
+          <span className="text-sm font-medium text-zinc-200">{voiceText.maxDurationLabel}</span>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -240,7 +228,7 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
         <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">快捷键</span>
+          <span className="text-sm font-medium text-zinc-200">{voiceText.shortcutLabel}</span>
           <input
             value={settings.shortcut || ''}
             onChange={(event) => persist({ shortcut: event.target.value.trim() })}
@@ -260,8 +248,8 @@ export const VoiceInputSettings: React.FC = () => {
         >
           <RotateCcw className="h-4 w-4 shrink-0 text-zinc-400" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">失败后保留重试</div>
-            <div className="mt-1 text-xs text-zinc-500">保留本次录音，用户可在会话页重新转写。</div>
+            <div className="text-sm font-medium text-zinc-200">{voiceText.preserveAudioTitle}</div>
+            <div className="mt-1 text-xs text-zinc-500">{voiceText.preserveAudioDescription}</div>
           </div>
           {settings.preserveAudioOnFailure && <Check className="h-4 w-4 text-zinc-200" />}
         </button>
@@ -274,9 +262,9 @@ export const VoiceInputSettings: React.FC = () => {
         >
           <Trash2 className="h-4 w-4 shrink-0 text-zinc-400" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">清理失败录音</div>
+            <div className="text-sm font-medium text-zinc-200">{voiceText.clearAudioTitle}</div>
             <div className="mt-1 text-xs text-zinc-500">
-              {clearAudioMessage || '删除本机保留的重试音频，不影响已发送消息。'}
+              {clearAudioMessage || voiceText.clearAudioDescription}
             </div>
           </div>
         </button>
@@ -292,8 +280,8 @@ export const VoiceInputSettings: React.FC = () => {
         >
           <Wand2 className="h-4 w-4 shrink-0 text-zinc-400" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">轻量整理转写文本</div>
-            <div className="mt-1 text-xs text-zinc-500">去掉常见口头停顿并整理空格，保留原始转写用于元数据追踪。</div>
+            <div className="text-sm font-medium text-zinc-200">{voiceText.postProcessingTitle}</div>
+            <div className="mt-1 text-xs text-zinc-500">{voiceText.postProcessingDescription}</div>
           </div>
           {settings.postProcessingEnabled && <Check className="h-4 w-4 text-zinc-200" />}
         </button>
@@ -301,7 +289,7 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="flex items-center gap-2 border-t border-zinc-700 pt-4 text-xs text-zinc-500">
         <SlidersHorizontal className="h-3.5 w-3.5" />
-        <span>{saving ? '正在保存' : '设置会在下一次录音时生效'}</span>
+        <span>{saving ? voiceText.saving : voiceText.effectiveNextRecording}</span>
       </div>
     </div>
   );

@@ -13,6 +13,10 @@ const SETTINGS_DIR = path.resolve(__dirname, '../../../src/renderer/components/f
 /** 已完成 i18n 迁移的文件（相对 settings 目录）。只增不减。 */
 const MIGRATED: string[] = [
   'tabs/AppearanceSettings.tsx',
+  'tabs/GeneralSettings.tsx',
+  'tabs/ConversationSettings.tsx',
+  'tabs/KeybindingsSettings.tsx',
+  'tabs/VoiceInputSettings.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

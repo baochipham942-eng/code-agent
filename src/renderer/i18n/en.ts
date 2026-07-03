@@ -4,6 +4,7 @@
 
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
+import { sessionReplayEn } from './sessionReplay';
 
 export const en: Translations = {
   // Common
@@ -798,39 +799,7 @@ export const en: Translations = {
     resume: 'Resume',
   },
 
-  sessionReplay: {
-    trajectory: 'Trajectory',
-    dataset: 'Dataset',
-    evidenceControl: 'Evidence Control',
-    turns: 'Turns',
-    source: 'Source',
-    duration: 'Duration',
-    deviation: 'Deviation',
-    deviationTooltip: 'Deviations are anomalies, gaps, or inconsistencies found by Replay quality checks.',
-    toolDistribution: 'Tool distribution',
-    noToolCalls: 'No tool calls',
-    trajectoryGate: 'Trajectory Gate',
-    evidenceGaps: 'Evidence Gaps',
-    workflowBackground: 'Workflow / Background',
-    timeline: 'Timeline',
-    emptyTimeline: 'Replay has no turn details yet',
-    incompletePrefix: 'Replay data is incomplete: ',
-    confirmReview: 'Confirm review',
-    markAs: 'Mark as',
-    datasetRoles: {
-      coreEval: 'Core eval',
-      diagnostic: 'Diagnostic',
-      excluded: 'Excluded',
-    },
-    taskKinds: {
-      coding: 'Coding',
-      search: 'Search',
-      data: 'Data',
-      agentTask: 'Agent task',
-      chat: 'Chat',
-      other: 'Other',
-    },
-  },
+  sessionReplay: sessionReplayEn,
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
   slashCommands: {

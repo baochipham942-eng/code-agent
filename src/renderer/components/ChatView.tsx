@@ -493,7 +493,7 @@ export const ChatView: React.FC = () => {
     const neoResult = await requireAuthAsync(async () => {
       if (!currentSessionId) return null;
       try {
-        // @neo 跨会话续接（ADR-033）：chip 即意图 —— 有续接目标就走同卡追加轮，
+        // @neo 跨会话续接（ADR-035）：chip 即意图 —— 有续接目标就走同卡追加轮，
         // 执行落当前会话（过程流式可见），本地补显同 ID 去重。
         const continuationTarget = useNeoWorkCardStore.getState().continuationTarget;
         if (continuationTarget) {

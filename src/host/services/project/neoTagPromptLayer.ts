@@ -2,14 +2,14 @@ import type { NeoTagRunContext, NeoWorkCardDelta, NeoWorkCardRevision } from '..
 import type { NeoTopicRound } from '../../../shared/neoTag/topicRounds';
 import { estimateTokens } from '../../context/tokenOptimizer';
 
-/** Topic 历史段独立预算（ADR-033 D3）：超出从最老的轮截断。 */
+/** Topic 历史段独立预算（ADR-035 D3）：超出从最老的轮截断。 */
 export const TOPIC_HISTORY_MAX_TOKENS = 4000;
 
 function list(items: string[], fallback = 'none'): string {
   return items.length > 0 ? items.map((item) => `- ${item}`).join('\n') : `- ${fallback}`;
 }
 
-// ADR-033：跨会话续接时 Neo 不再"跑在源会话里白拿上下文"，topic 历史轮必须物化正文注入。
+// ADR-035：跨会话续接时 Neo 不再"跑在源会话里白拿上下文"，topic 历史轮必须物化正文注入。
 // 最新优先塞预算（至少保一轮），输出仍按时间序；砍了多少轮如实写明。
 function renderTopicHistory(rounds: NeoTopicRound[]): string[] {
   if (rounds.length === 0) return [];
@@ -45,7 +45,7 @@ export function buildNeoTagPromptLayer(args: {
   runContext: NeoTagRunContext;
   revision: NeoWorkCardRevision;
   previousDelta?: NeoWorkCardDelta | null;
-  /** topic 历史轮（其他会话的用户原话+Neo 最终回复），跨会话续接时物化注入（ADR-033）。 */
+  /** topic 历史轮（其他会话的用户原话+Neo 最终回复），跨会话续接时物化注入（ADR-035）。 */
   topicRounds?: NeoTopicRound[];
   /** topic 原工作目录（源会话的）；跨会话跑时告知 Neo，文件类任务用绝对路径。 */
   topicWorkspace?: string;

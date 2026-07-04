@@ -1,4 +1,4 @@
-# ADR-032 — Neo Tag 轻量化重设计（@neo 直接开干 + 内联清单 + topic 目录）
+# ADR-034 — Neo Tag 轻量化重设计（@neo 直接开干 + 内联清单 + topic 目录）
 
 - 状态: accepted
 - 日期: 2026-07-01

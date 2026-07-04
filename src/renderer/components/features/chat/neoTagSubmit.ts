@@ -134,7 +134,7 @@ export interface SubmitNeoTagContinuationParams {
   runContinuation: (input: ContinueNeoWorkCardRequest) => Promise<ContinueNeoWorkCardResult>;
 }
 
-/** @neo 续接（ADR-033）：chip 即意图，@neo 前缀可有可无；正文空则报人话错误。 */
+/** @neo 续接（ADR-035）：chip 即意图，@neo 前缀可有可无；正文空则报人话错误。 */
 export async function submitNeoTagContinuation(
   params: SubmitNeoTagContinuationParams,
 ): Promise<ContinueNeoWorkCardResult> {

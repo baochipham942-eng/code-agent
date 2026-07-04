@@ -150,7 +150,7 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
         }
 
         case 'continueAndRun': {
-          // @neo 跨会话续接（ADR-033）：既有 topic 追加一轮，落点 = 发起续接的会话。
+          // @neo 跨会话续接（ADR-035）：既有 topic 追加一轮，落点 = 发起续接的会话。
           const input = payload as ContinueNeoWorkCardRequest | undefined;
           if (!input?.workCardId || !input.conversationId || !input.requesterUserId) {
             return invalid('workCardId, conversationId and requesterUserId are required');

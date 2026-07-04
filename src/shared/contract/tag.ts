@@ -396,7 +396,7 @@ export interface CreateNeoWorkCardDraftResult {
   sourceTurnId: string;
 }
 
-/** @neo 跨会话续接（ADR-033）：在任意会话把一轮追加到既有 topic。 */
+/** @neo 跨会话续接（ADR-035）：在任意会话把一轮追加到既有 topic。 */
 export interface ContinueNeoWorkCardRequest {
   workCardId: string;
   /** 续接发生的会话 = 本轮执行落点。 */

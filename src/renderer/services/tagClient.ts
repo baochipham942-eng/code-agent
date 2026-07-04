@@ -117,7 +117,7 @@ export const tagClient = {
     };
   },
 
-  // @neo 跨会话续接：既有 topic 追加一轮，落点 = 当前会话（ADR-033）。
+  // @neo 跨会话续接：既有 topic 追加一轮，落点 = 当前会话（ADR-035）。
   async continueAndRun(input: ContinueNeoWorkCardRequest): Promise<ContinueNeoWorkCardResult> {
     const result = await invokeTag<{
       workCard: NeoWorkCardWithCurrentRevision['workCard'];

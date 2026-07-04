@@ -52,7 +52,7 @@ export interface LaunchApprovedNeoWorkCardInput {
   service?: NeoWorkCardService;
   now?: () => number;
   onWorkCardUpdated?: (workCardId: string, reason: NeoWorkCardUpdateReason) => void;
-  /** 本轮落点：缺省回源会话（向后兼容）。跨会话续接时 = 当前会话 + 该轮 turnId（ADR-033）。 */
+  /** 本轮落点：缺省回源会话（向后兼容）。跨会话续接时 = 当前会话 + 该轮 turnId（ADR-035）。 */
   target?: { conversationId: string; turnId: string };
 }
 
@@ -246,7 +246,7 @@ export async function launchApprovedNeoWorkCard(
   const detail = requireApprovedDetail(service.get(input.workCardId));
   const { workCard, approvedRevision } = detail;
   const latestDelta = detail.deltas.at(-1);
-  // ADR-033：本轮落点缺省回源会话；跨会话续接时落发起续接的会话（过程在用户眼前流式可见）
+  // ADR-035：本轮落点缺省回源会话；跨会话续接时落发起续接的会话（过程在用户眼前流式可见）
   const roundConversationId = input.target?.conversationId ?? workCard.sourceConversationId;
   const roundTurnId = input.target?.turnId ?? workCard.sourceTurnId;
   const isCrossConversation = roundConversationId !== workCard.sourceConversationId;
@@ -259,7 +259,7 @@ export async function launchApprovedNeoWorkCard(
     previousDeltas: detail.deltas,
     now: now(),
   });
-  // Topic 历史（ADR-033 D3）：从本轮之外的参与会话物化历史轮正文。
+  // Topic 历史（ADR-035 D3）：从本轮之外的参与会话物化历史轮正文。
   // Neo 懂当前会话靠 run 在场（session 历史天然加载）；其他会话的轮必须以正文注入 prompt。
   const historyConversationIds = Array.from(new Set([
     workCard.sourceConversationId,
@@ -424,7 +424,7 @@ const CONTINUATION_BLOCKED_STATUSES = new Set<NeoWorkCard['status']>([
 
 export interface ContinueAndRunNeoWorkCardInput {
   workCardId: string;
-  /** 续接发生的会话 = 本轮执行落点（ADR-033 D2）。 */
+  /** 续接发生的会话 = 本轮执行落点（ADR-035 D2）。 */
   conversationId: string;
   /** 本轮用户消息 ID（renderer 本地补显与 host 落库同 ID 去重，机制同 sourceTurnId）。 */
   turnId: string;
@@ -438,7 +438,7 @@ export interface ContinueAndRunNeoWorkCardInput {
 }
 
 /**
- * @neo 跨会话续接（ADR-033）：既有 topic 追加一轮 —— 新 revision → 自动批准 → 在当前会话运行。
+ * @neo 跨会话续接（ADR-035）：既有 topic 追加一轮 —— 新 revision → 自动批准 → 在当前会话运行。
  * completed/failed 卡可续接重开；运行中拒绝（同卡双会话并发 fail-closed）。
  * readScope.conversationIds 自动推导 = 当前会话 ∪ 源会话 ∪ 历史轮会话，不做手动多选。
  */
@@ -474,7 +474,7 @@ export function continueAndRunNeoWorkCard(
         conversationIds,
         messageIds: [],
         artifactIds: input.selectedArtifactIds ?? [],
-        notes: ['Follow-up round appended from another conversation (ADR-033).'],
+        notes: ['Follow-up round appended from another conversation (ADR-035).'],
       },
       writeScope: base.writeScope,
       modelIntent: base.modelIntent,

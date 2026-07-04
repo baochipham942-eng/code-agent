@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */
+ 
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { tableExists, safeAlter, type Logger } from './schemaHelpers';
@@ -962,7 +962,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (work_card_id) REFERENCES neo_work_cards(id) ON DELETE CASCADE
     )
   `);
-  // 跨会话 topic（ADR-033）：老库补轮会话归属列（新库上面 CREATE 已含）
+  // 跨会话 topic（ADR-035）：老库补轮会话归属列（新库上面 CREATE 已含）
   safeAlter(db, `ALTER TABLE neo_work_card_deltas ADD COLUMN conversation_id TEXT`, logger);
 
   db.exec(`

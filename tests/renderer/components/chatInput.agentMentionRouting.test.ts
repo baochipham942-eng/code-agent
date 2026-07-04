@@ -150,7 +150,7 @@ describe('agent mention routing', () => {
   });
 });
 
-describe('neo topic mention candidates (ADR-033)', () => {
+describe('neo topic mention candidates (ADR-035)', () => {
   const topics = [
     { workCardId: 'nwc_1', title: '整理竞品报告', status: 'completed', updatedAt: 30 },
     { workCardId: 'nwc_2', title: '梳理定价', status: 'in_result_review', updatedAt: 20 },

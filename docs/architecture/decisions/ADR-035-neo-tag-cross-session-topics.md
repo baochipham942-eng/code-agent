@@ -1,8 +1,8 @@
-# ADR-033 — Neo Tag 跨会话 Topic（@neo 续接不被发起会话困住）
+# ADR-035 — Neo Tag 跨会话 Topic（@neo 续接不被发起会话困住）
 
 - 状态: accepted（已实现并通过 Dev 包跨会话 dogfood）
 - 日期: 2026-07-02
-- 相关: ADR-032（轻量化重设计，本 ADR 的地基）、ADR-031（运行时安全护栏，不受影响）、`src/shared/contract/tag.ts`、`neoTagRuntimeService`、`neoTagContextSelector`、`projectCollaborationData.ts`
+- 相关: ADR-034（轻量化重设计，本 ADR 的地基）、ADR-031（运行时安全护栏，不受影响）、`src/shared/contract/tag.ts`、`neoTagRuntimeService`、`neoTagContextSelector`、`projectCollaborationData.ts`
 - 触发: 轻量化重设计收尾后，topic 仍绑死发起会话——用户在别的会话无法续接一个已交代给 Neo 的 topic，Neo 也拿不到跨会话上下文。
 
 ## 北极星
@@ -37,7 +37,7 @@ topic 是用户交代给 Neo 的「一件事」，不是「某个会话里的一
 
 ### D2 执行落点：续接的这轮在哪个会话跑？（最大架构决策）
 
-**决策：在当前会话跑（方案 B）。** 这是北极星的直接推论——「@neo = 正常聊天」意味着我在哪儿说话，Neo 就在哪儿回我；过程流式可见是轻量化重设计（ADR-032）拿掉审批卡后仅剩的信任来源，不能丢。
+**决策：在当前会话跑（方案 B）。** 这是北极星的直接推论——「@neo = 正常聊天」意味着我在哪儿说话，Neo 就在哪儿回我；过程流式可见是轻量化重设计（ADR-034）拿掉审批卡后仅剩的信任来源，不能丢。
 
 两边利弊写透：
 
@@ -75,7 +75,7 @@ B 的代价拆解（全部是加法、零破坏）：
 - 手动多选会话 UI —— 自动推导足够，配置面 = 负资产。
 - 自动把「相关会话」（非本 topic 的轮）纳入上下文 —— 语义检索式的召回另立项，本轮只带 topic 自己的历史。
 - topic 合并 / 拆分 / 改绑 —— 等真实使用暴露需求再说。
-- 契约硬减重（ADR-032 已 deferred 的 approval/revision 层清理）—— 不搭车。
+- 契约硬减重（ADR-034 已 deferred 的 approval/revision 层清理）—— 不搭车。
 
 ## 实施分期（拍板后 TDD，每段 commit + typecheck + 测试）
 

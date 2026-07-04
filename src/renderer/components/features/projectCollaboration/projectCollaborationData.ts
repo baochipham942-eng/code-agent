@@ -11,7 +11,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { statusPhase } from '../chat/neoWorkCardPhase';
 
 // ============================================================================
-// Topic 详情的多轮执行结果：实现已搬 shared（host prompt 层与 renderer 共用，ADR-033），
+// Topic 详情的多轮执行结果：实现已搬 shared（host prompt 层与 renderer 共用，ADR-035），
 // 这里 re-export 保持既有 import 路径不变。
 // ============================================================================
 

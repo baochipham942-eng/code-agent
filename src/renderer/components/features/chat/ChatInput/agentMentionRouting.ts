@@ -175,7 +175,7 @@ export function getLeadingAgentMentionAutocomplete(
   });
 
   // 输入 @n / @ne / @neo 时把 Neo 工作卡作为可点候选置顶（发现性 + 顺带压掉文件 popup），
-  // 紧随其后是「续接既有 topic」候选（ADR-033 D1）。
+  // 紧随其后是「续接既有 topic」候选（ADR-035 D1）。
   const withNeo = shouldSuggestNeoMention(query)
     ? [NEO_TAG_MENTION_AGENT, ...(neoTopicCandidates ?? []), ...matches]
     : matches;

@@ -32,9 +32,9 @@ interface NeoWorkCardState {
   loadAll: (options?: { includeArchived?: boolean }) => Promise<void>;
   createDraft: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
   createAndRun: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
-  /** @neo 跨会话续接：既有 topic 追加一轮（ADR-033）。 */
+  /** @neo 跨会话续接：既有 topic 追加一轮（ADR-035）。 */
   continueAndRun: (input: ContinueNeoWorkCardRequest) => Promise<ContinueNeoWorkCardResult>;
-  /** @neo 续接 chip：从 mention 下拉选中既有 topic 后挂在 composer 上（ADR-033 D1）。 */
+  /** @neo 续接 chip：从 mention 下拉选中既有 topic 后挂在 composer 上（ADR-035 D1）。 */
   continuationTarget: { workCardId: string; title: string } | null;
   setContinuationTarget: (target: { workCardId: string; title: string } | null) => void;
   updateDraftRevision: (input: UpdateNeoWorkCardDraftRevisionRequest) => Promise<NeoWorkCardDetail>;

@@ -56,7 +56,7 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
 
-  // @neo 下拉的「续接既有 topic」候选（ADR-033 D1）：数据源 = store 全局目录，
+  // @neo 下拉的「续接既有 topic」候选（ADR-035 D1）：数据源 = store 全局目录，
   // 下拉首次可见时懒加载一次（listAll，与「Neo 协同」目录同源）。
   const detailsById = useNeoWorkCardStore((state) => state.detailsById);
   const loadAllTopics = useNeoWorkCardStore((state) => state.loadAll);
@@ -110,7 +110,7 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   }, [agentSlashCommandQuery, agentCommandOptions.length]);
 
   const handleAgentMentionSelect = useCallback((agentId: string) => {
-    // 续接既有 topic（ADR-033）：挂 composer chip（可移除），正文照常插 `@neo `——不做文本编码。
+    // 续接既有 topic（ADR-035）：挂 composer chip（可移除），正文照常插 `@neo `——不做文本编码。
     if (agentId.startsWith(NEO_TOPIC_MENTION_PREFIX)) {
       const workCardId = agentId.slice(NEO_TOPIC_MENTION_PREFIX.length);
       const detail = useNeoWorkCardStore.getState().detailsById[workCardId];

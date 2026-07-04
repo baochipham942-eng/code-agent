@@ -188,7 +188,7 @@ describe('Neo tag ChatView submit boundary', () => {
   });
 });
 
-describe('Neo tag continuation submit (ADR-033)', () => {
+describe('Neo tag continuation submit (ADR-035)', () => {
   const target = { workCardId: 'nwc_1', title: '整理竞品报告' };
   const fakeResult = () => ({
     detail: makeDetail({

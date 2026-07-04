@@ -40,7 +40,7 @@ export interface NeoTopicMentionSource {
   updatedAt: number;
 }
 
-/** @neo 下拉的「续接既有 topic」候选：最近活跃前 5，已结束的不进（ADR-033 D1）。 */
+/** @neo 下拉的「续接既有 topic」候选：最近活跃前 5，已结束的不进（ADR-035 D1）。 */
 export function buildNeoTopicMentionCandidates(
   topics: NeoTopicMentionSource[],
 ): Array<MentionRoutingAgent & { role: string }> {

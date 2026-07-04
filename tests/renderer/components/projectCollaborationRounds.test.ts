@@ -71,7 +71,7 @@ describe('isInternalRuntimeText（运行时记账文案不进用户视野）', (
   });
 });
 
-describe('多会话轮聚合（ADR-033）', () => {
+describe('多会话轮聚合（ADR-035）', () => {
   it('aggregates rounds across the topic conversation set, ordered by time, each tagged with its conversation', () => {
     const messagesInConvA: Message[] = [
       msg({ id: 'u1', role: 'user', content: '@neo 整理竞品', timestamp: 10, metadata: { neoTag: { workCardId: 'nwc_1' } } }),

@@ -237,7 +237,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
   });
 });
 
-describe('topic 详情跨会话聚合（ADR-033）', () => {
+describe('topic 详情跨会话聚合（ADR-035）', () => {
   it('aggregates rounds from every topic conversation with per-round 打开会话', () => {
     const details = [makeDetail({
       id: 'a',

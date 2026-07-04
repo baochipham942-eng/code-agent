@@ -27,7 +27,7 @@ import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
 export interface ProjectCollaborationDetailPaneProps {
   detail: NeoWorkCardDetail | null;
   currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null;
-  /** 注入的各会话消息（测试/fixture 用）。传入时绕开 IPC 拉取（ADR-033：topic 可跨多会话）。 */
+  /** 注入的各会话消息（测试/fixture 用）。传入时绕开 IPC 拉取（ADR-035：topic 可跨多会话）。 */
   messagesByConversation?: Record<string, Message[]>;
   onOpenConversation?: (sessionId: string) => void;
   onCancel?: (workCardId: string) => void | Promise<void>;
@@ -63,7 +63,7 @@ const RoundItem: React.FC<{
         </div>
         <span className="flex shrink-0 items-center gap-1.5">
           <span className="text-[10px] text-zinc-600">{formatTime(round.at)}</span>
-          {/* 轮级跳转（ADR-033）：跳到该轮真正发生的会话 */}
+          {/* 轮级跳转（ADR-035）：跳到该轮真正发生的会话 */}
           {onOpenConversation && round.conversationId && (
             <button
               type="button"
@@ -118,7 +118,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [followUpSending, setFollowUpSending] = useState(false);
 
-  // topic 参与过的会话集合（ADR-033）：源会话 + 各轮 delta 归属；老卡自然退化为单会话
+  // topic 参与过的会话集合（ADR-035）：源会话 + 各轮 delta 归属；老卡自然退化为单会话
   const conversationIds = useMemo(
     () => (detail ? topicConversationIds(detail) : []),
     [detail, detailUpdatedAt],
@@ -137,7 +137,6 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       setLoadedByConversation(Object.fromEntries(buckets.map((bucket) => [bucket.conversationId, bucket.messages])));
     });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesByConversation, conversationIdsKey, detailUpdatedAt]);
 
   if (!detail) {
@@ -158,7 +157,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const rounds = mergeTopicRounds(conversationIds.map((conversationId) =>
     extractNeoTopicRounds(messageSource[conversationId] ?? [], workCard.id, conversationId)));
 
-  // 详情页追问（ADR-033）：落最近一轮的会话（详情页没有"当前会话"语境，最近轮 = topic 最新上下文所在）
+  // 详情页追问（ADR-035）：落最近一轮的会话（详情页没有"当前会话"语境，最近轮 = topic 最新上下文所在）
   const followUpConversationId = rounds.at(-1)?.conversationId ?? workCard.sourceConversationId;
   const canFollowUp = phase !== 'running' && phase !== 'needs_input' && workCard.status !== 'archived' && workCard.status !== 'cancelled';
   const sendFollowUp = async () => {
@@ -309,7 +308,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
         </div>
       )}
 
-      {/* 追问（ADR-033）：同 topic 追加一轮，落最近一轮的会话 */}
+      {/* 追问（ADR-035）：同 topic 追加一轮，落最近一轮的会话 */}
       {canFollowUp && (
         <div className="mt-4" data-testid="neo-topic-detail-followup">
           <div className="flex items-center gap-2">

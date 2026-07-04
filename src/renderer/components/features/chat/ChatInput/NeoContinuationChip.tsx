@@ -1,7 +1,7 @@
 import { Sparkles, X } from 'lucide-react';
 import { useNeoWorkCardStore } from '../../../../stores/neoWorkCardStore';
 
-/** @neo 续接 chip：composer 态标记「这条消息续接哪个 topic」，可移除（ADR-033 D1）。 */
+/** @neo 续接 chip：composer 态标记「这条消息续接哪个 topic」，可移除（ADR-035 D1）。 */
 export function NeoContinuationChip() {
   const target = useNeoWorkCardStore((state) => state.continuationTarget);
   const setTarget = useNeoWorkCardStore((state) => state.setContinuationTarget);

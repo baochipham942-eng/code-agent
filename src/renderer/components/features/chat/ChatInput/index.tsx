@@ -628,7 +628,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
-        {/* @neo 续接 chip（ADR-033）：标记这条消息续接哪个 topic */}
+        {/* @neo 续接 chip（ADR-035）：标记这条消息续接哪个 topic */}
         <div className="empty:hidden mb-2 px-2">
           <NeoContinuationChip />
         </div>

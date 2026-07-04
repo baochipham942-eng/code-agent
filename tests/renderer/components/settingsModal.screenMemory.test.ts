@@ -18,25 +18,10 @@ import {
   resolveOptionalUpdateInfo,
 } from '../../../src/renderer/components/features/settings/SettingsModal';
 
-const t = {
-  settings: {
-    tabs: {
-      general: '通用',
-      model: '通用模型',
-      visualModels: '多模态模型',
-      appearance: '外观',
-      data: '数据',
-      update: '更新',
-      about: '关于',
-      memory: '记忆',
-    },
-  },
-  // 执行引擎 tab（agentEngine）的标签取自 engineCompat 命名空间；mock 须含之，否则
-  // buildSettingsTabGroups 读 t.engineCompat.engineSection.title 抛错。
-  engineCompat: {
-    engineSection: { title: '执行引擎' },
-  },
-} as any;
+// 导航标签走 i18n 单一真源后，直接用真实 zh 翻译对象（含 tabs/tabGroups/engineCompat 全量键）
+import { zh } from '../../../src/renderer/i18n/zh';
+
+const t = zh;
 
 describe('SettingsModal screen memory tab visibility', () => {
   it('shows screen memory for desktop shells without requiring Electron update support', () => {
@@ -72,56 +57,57 @@ describe('SettingsModal screen memory tab visibility', () => {
       access: { isAdmin: true },
     });
 
+    // Settings IA v2（2026-07-03 拍板）：默认 5 组 + 高级折叠组 + admin 管理组
     expect(groups.map((group) => group.label)).toEqual([
       '模型与能力',
       '基础偏好',
-      '能力与连接',
-      '工作区与自动化',
+      '工作与协作',
       '记忆与隐私',
-      '用户管理',
       '系统',
+      '高级',
+      '用户管理',
     ]);
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
       'model',
       'visualModels',
-      'voiceInput',
       'search',
-      'agentEngine',
+      'soul',
+      'skills',
     ]);
     expect(groups[0].tabs[0].label).toBe('通用模型');
     expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
-      'soul',
       'appearance',
       'general',
       'conversation',
       'keybindings',
+      'voiceInput',
     ]);
-    expect(groups[1].tabs[0].label).toBe('人格');
+    expect(groups[2].tabs.map((tab) => tab.id)).toEqual([
+      'workspace',
+      'automation',
+      'channels',
+      'roles',
+    ]);
+    // 高级组：技术项收纳（普通用户可自行配置，默认折叠）
     expect(groups[5].tabs.map((tab) => tab.id)).toEqual([
+      'agentEngine',
+      'mcp',
+      'plugins',
+      'hooks',
+      'appshots',
+      'cache',
+    ]);
+    // 管理组仅 admin
+    expect(groups[6].tabs.map((tab) => tab.id)).toEqual([
       'users',
       'invites',
       'controlPlane',
-    ]);
-    expect(groups[5].tabs.map((tab) => tab.label)).toEqual([
-      '用户管理',
-      '邀请码管理',
-      '控制平面',
-    ]);
-    expect(groups[2].tabs.map((tab) => tab.id)).toEqual([
       'capabilities',
-      'plugins',
-      'mcp',
-      'skills',
-      'roles',
-      'channels',
-      'hooks',
     ]);
-    expect(groups[6].tabs.map((tab) => tab.id)).toEqual([
-      'cache',
+    expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'update',
       'about',
     ]);
-    expect(groups[6].tabs[0].label).toBe('数据与存储');
   });
 
   it('hides user management tabs for non-admin users', () => {
@@ -138,8 +124,9 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('invites');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('controlPlane');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('capabilities');
-    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('plugins');
-    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('hooks');
+    // v2 拍板：plugins/hooks 下放普通用户（高级组内可自行配置）
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toContain('plugins');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toContain('hooks');
   });
 
   it('keeps personal settings tabs visible for non-admin users', () => {

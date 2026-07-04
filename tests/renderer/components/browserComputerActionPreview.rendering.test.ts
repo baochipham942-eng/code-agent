@@ -4,14 +4,22 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { ToolCall } from '../../../src/shared/contract';
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      processingSessionIds: new Set<string>(),
-      openPreview: vi.fn(),
-      workingDirectory: '/repo/app',
-    }),
-}));
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  // useI18n 不带 selector 直接解构整个 store（language/setLanguage/cloudUIStrings），
+  // 其余调用方都走 selector 形式——mock 必须两种调用方式都支持。
+  const state = {
+    processingSessionIds: new Set<string>(),
+    openPreview: vi.fn(),
+    workingDirectory: '/repo/app',
+    language: 'zh' as const,
+    setLanguage: vi.fn(),
+    cloudUIStrings: undefined,
+  };
+  return {
+    useAppStore: (selector?: (state: typeof state) => unknown) =>
+      (selector ? selector(state) : state),
+  };
+});
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) =>
@@ -338,7 +346,9 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('trace-grouped-click');
   });
 
-  it('redacts failed browser-scoped computer groups in the default-collapsed row summary', () => {
+  it('探索性失败的浏览器/电脑操作组（未分类错误）默认折叠，原始敏感文本不泄漏', () => {
+    // 产品拍板：探索性失败（这里是"没找到元素"，未被 humanizeToolError 分类，非
+    // 鉴权/额度/限流）一律默认折叠成一行，不再强制整组展开。
     const nodes: TraceNode[] = [
       {
         id: 'node-computer-failure',
@@ -363,65 +373,72 @@ describe('browser/computer action preview rendering', () => {
       },
     ];
 
-    const html = renderToStaticMarkup(
-      React.createElement(ToolStepGroup, {
-        nodes,
-      }),
+    const collapsedHtml = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, { nodes }),
     );
+    expect(collapsedHtml).toContain('aria-expanded="false"');
+    expect(collapsedHtml).not.toContain('app-host-secret@example.com');
 
-    // 失败的浏览器组仍整组展开（组头 aria-expanded），但每个工具行默认折叠：
-    // 折叠态显示已脱敏的"智能输入 27 chars"摘要，详细恢复步骤移到点击展开后。
-    expect(html).toContain('Computer');
-    expect(html).toContain('trace-computer-failure');
-    expect(html).toContain('智能输入 27 chars');
-    expect(html).not.toContain('app-host-secret@example.com');
+    // 折叠不等于信息丢失：展开后仍能看到脱敏摘要"智能输入 27 chars"，原始邮箱地址依旧不泄漏。
+    const expandedHtml = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, { nodes, defaultExpanded: true }),
+    );
+    expect(expandedHtml).toContain('Computer');
+    expect(expandedHtml).toContain('trace-computer-failure');
+    expect(expandedHtml).toContain('智能输入 27 chars');
+    expect(expandedHtml).not.toContain('app-host-secret@example.com');
   });
 
   it('redacts failed computer tool result from turn header tooltip markup', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(TurnCard, {
-        defaultExpanded: true,
-        turn: {
-          turnNumber: 1,
-          turnId: 'turn-computer-failure',
-          status: 'completed',
-          startTime: 1,
-          endTime: 2,
-          nodes: [
-            {
-              id: 'user-1',
-              type: 'user',
-              content: 'Trigger failure',
-              timestamp: 1,
-            },
-            {
-              id: 'node-computer-failure',
-              type: 'tool_call',
-              content: '',
-              timestamp: 2,
-              toolCall: {
-                id: 'tool-computer-failure',
-                name: 'computer_use',
-                args: {
-                  action: 'smart_type',
-                  selector: '#missing-email',
-                  text: 'app-host-secret@example.com',
-                },
-                result: 'No element found after trying app-host-secret@example.com',
-                success: false,
-                metadata: {
-                  traceId: 'trace-computer-failure',
-                },
-              },
-            },
-          ],
+    // 探索性失败（未分类错误）现在默认折叠成一行：回合层面渲染时原始敏感文本
+    // 绝不出现在 DOM 里（既不在折叠态也不在任何 tooltip/title 属性上）。
+    const turn = {
+      turnNumber: 1,
+      turnId: 'turn-computer-failure',
+      status: 'completed' as const,
+      startTime: 1,
+      endTime: 2,
+      nodes: [
+        {
+          id: 'user-1',
+          type: 'user' as const,
+          content: 'Trigger failure',
+          timestamp: 1,
         },
-      }),
-    );
+        {
+          id: 'node-computer-failure',
+          type: 'tool_call' as const,
+          content: '',
+          timestamp: 2,
+          toolCall: {
+            id: 'tool-computer-failure',
+            name: 'computer_use',
+            args: {
+              action: 'smart_type',
+              selector: '#missing-email',
+              text: 'app-host-secret@example.com',
+            },
+            result: 'No element found after trying app-host-secret@example.com',
+            success: false,
+            metadata: {
+              traceId: 'trace-computer-failure',
+            },
+          },
+        },
+      ],
+    };
 
-    // 默认折叠态下，回合头里的失败工具结果不泄漏原文：只出现脱敏摘要"智能输入 27 chars"。
-    expect(html).toContain('智能输入 27 chars');
-    expect(html).not.toContain('app-host-secret@example.com');
+    const collapsedHtml = renderToStaticMarkup(
+      React.createElement(TurnCard, { defaultExpanded: true, turn }),
+    );
+    expect(collapsedHtml).not.toContain('app-host-secret@example.com');
+
+    // 折叠不等于信息丢失：点开工具组后依旧只看到脱敏摘要"智能输入 27 chars"，不是原文。
+    const expandedGroupHtml = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, { nodes: [turn.nodes[1]], defaultExpanded: true }),
+    );
+    expect(expandedGroupHtml).toContain('智能输入 27 chars');
+    expect(expandedGroupHtml).not.toContain('app-host-secret@example.com');
   });
 
   it('marks mixed tool groups as partial instead of a full failure', () => {
@@ -525,17 +542,21 @@ describe('browser/computer action preview rendering', () => {
       },
     ];
 
-    const html = renderToStaticMarkup(
-      React.createElement(ToolStepGroup, {
-        nodes,
-        defaultExpanded: false,
-      }),
+    // 组头摘要（"1 failed, 2 empty, 1 completed"）在组头按钮里，折叠/展开态都可见。
+    // "File not found" 是未分类的探索性失败，产品拍板后默认折叠成一行，逐条文件路径
+    // 明细移到点开之后——折叠不等于信息丢失，只是不再强制摊开。
+    const collapsedHtml = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, { nodes, defaultExpanded: false }),
     );
+    expect(collapsedHtml).toContain('1 failed, 2 empty, 1 completed');
+    expect(collapsedHtml).not.toContain('4/4 results');
+    expect(collapsedHtml).not.toContain('1 output');
+    expect(collapsedHtml).not.toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');
 
-    expect(html).toContain('1 failed, 2 empty, 1 completed');
-    expect(html).not.toContain('4/4 results');
-    expect(html).not.toContain('1 output');
-    expect(html).toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');
+    const expandedHtml = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, { nodes, defaultExpanded: true }),
+    );
+    expect(expandedHtml).toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');
   });
 
   it('labels empty grep and glob results as no matches in collapsed details', () => {

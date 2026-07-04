@@ -160,6 +160,7 @@ export class AgentLoop {
       sessionId: resolvedSessionId,
       agentId: config.agentId,
       agentName: config.agentName,
+      requestedAgentId: config.requestedAgentId,
       userId: config.userId,
       memoryMode: config.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,
@@ -305,6 +306,8 @@ export class AgentLoop {
       _consecutiveCompacts: 0,
       MAX_CONSECUTIVE_COMPACTS: 2,
       _autoCompactPaused: false,
+      _summaryFailureStreak: 0,
+      _summaryCooldownUntil: 0,
 
       // Content verification
       contentVerificationRetries: new Map(),

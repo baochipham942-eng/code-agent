@@ -45,7 +45,7 @@ export const Toggle: React.FC<ToggleProps> = ({
       onClick={() => onChange(!checked)}
       disabled={disabled}
       className={`relative inline-flex shrink-0 items-center rounded-full transition-colors focus:outline-hidden ${sizeClasses.track} ${
-        checked ? 'bg-emerald-500' : 'bg-zinc-600'
+        checked ? 'bg-primary-700' : 'bg-zinc-600'
       } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
     >
       <span

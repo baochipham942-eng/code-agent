@@ -4,11 +4,16 @@ import type {
   SnapshotStats,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
 import {
+  buildTelemetryHealthSummary,
   buildDataManagementRows,
   buildDataManagementSummary,
   formatDataSize,
   getRetentionLabel,
+  TELEMETRY_HEALTH_UNAVAILABLE,
 } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
+import { en, zh } from '../../../src/renderer/i18n';
+
+const dataText = zh.settings.data;
 
 const dataStats = {
   sessionCount: 12,
@@ -34,54 +39,96 @@ describe('DataSettings management helpers', () => {
   });
 
   it('resolves retention labels', () => {
-    expect(getRetentionLabel(7)).toBe('7 天');
-    expect(getRetentionLabel(-1)).toBe('永久');
-    expect(getRetentionLabel(999)).toBe('1 天');
+    expect(getRetentionLabel(7, dataText.retentionOptions)).toBe(dataText.retentionOptions.sevenDays);
+    expect(getRetentionLabel(-1, dataText.retentionOptions)).toBe(dataText.retentionOptions.forever);
+    expect(getRetentionLabel(999, dataText.retentionOptions)).toBe(dataText.retentionOptions.oneDay);
   });
 
   it('builds management summary from data and snapshot stats', () => {
-    expect(buildDataManagementSummary(dataStats, snapshotStats)).toEqual({
+    expect(buildDataManagementSummary(dataStats, snapshotStats, dataText)).toEqual({
       sessionCount: 12,
       messageCount: 140,
       databaseSizeLabel: '2.0 MB',
       cacheEntries: 8,
       snapshotCount: 6,
       snapshotSizeLabel: '1.5 KB',
-      retentionLabel: '7 天',
+      retentionLabel: dataText.retentionOptions.sevenDays,
     });
   });
 
   it('builds table rows and marks cache as clearable', () => {
-    const rows = buildDataManagementRows(dataStats);
+    const rows = buildDataManagementRows(dataStats, dataText);
 
     expect(rows).toHaveLength(6);
     expect(rows[0]).toMatchObject({
       id: 'sessions',
-      statusLabel: '保留',
-      cleanupLabel: '不清理',
+      statusLabel: dataText.dataRows.sessions.status,
+      cleanupLabel: dataText.dataRows.sessions.cleanup,
       action: 'none',
     });
     expect(rows[5]).toMatchObject({
       id: 'cache',
-      valueLabel: '8 条',
-      statusLabel: '可清理',
+      valueLabel: `8${dataText.units.itemSuffix}`,
+      statusLabel: dataText.dataRows.cache.statusClearable,
       statusTone: 'warning',
-      cleanupLabel: '清空缓存',
+      cleanupLabel: dataText.dataRows.cache.cleanup,
       action: 'clear-cache',
     });
   });
 
   it('falls back to zero stats when IPC data has not loaded', () => {
-    expect(buildDataManagementSummary(null, null)).toMatchObject({
+    expect(buildDataManagementSummary(null, null, dataText)).toMatchObject({
       sessionCount: 0,
       databaseSizeLabel: '0 B',
       snapshotCount: 0,
-      retentionLabel: '1 天',
+      retentionLabel: dataText.retentionOptions.oneDay,
     });
-    expect(buildDataManagementRows(null).find((row) => row.id === 'cache')).toMatchObject({
-      valueLabel: '0 条',
-      statusLabel: '干净',
+    expect(buildDataManagementRows(null, dataText).find((row) => row.id === 'cache')).toMatchObject({
+      valueLabel: `0${dataText.units.itemSuffix}`,
+      statusLabel: dataText.dataRows.cache.statusClean,
       statusTone: 'stable',
     });
+  });
+});
+
+describe('DataSettings telemetry health copy', () => {
+  it('中文遥测健康文案指向会话 Replay，不再引用已删除的「内部评测」面板', () => {
+    const copy = zh.settings.data.telemetry;
+
+    expect(copy.title).toBe('Telemetry 健康');
+    expect(copy.description).toBe('Agent 内部遥测的采集状态摘要。详细分析可从会话 Replay 查看。');
+    expect(copy.description).not.toContain('内部评测');
+  });
+
+  it('keeps the English telemetry health copy in sync', () => {
+    const copy = en.settings.data.telemetry;
+
+    expect(copy.title).toBe('Telemetry health');
+    expect(copy.description).toBe('Summary of internal agent telemetry collection. Use session Replay for detailed analysis.');
+    expect(copy.description.toLowerCase()).not.toContain('internal eval');
+  });
+});
+
+describe('DataSettings telemetry health summary', () => {
+  it('normalizes a telemetry:health payload', () => {
+    expect(buildTelemetryHealthSummary({
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+    })).toEqual({
+      loading: false,
+      available: true,
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+    });
+  });
+
+  it('treats empty web IPC responses as disconnected (sentinel error, UI falls back to notConnected copy)', () => {
+    expect(() => buildTelemetryHealthSummary(undefined)).toThrow(TELEMETRY_HEALTH_UNAVAILABLE);
+    expect(zh.settings.data.telemetry.notConnected).toBeTruthy();
+    expect(en.settings.data.telemetry.notConnected).toBeTruthy();
   });
 });

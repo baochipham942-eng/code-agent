@@ -1,6 +1,6 @@
 # Artifact Verification 架构
 
-> 2026-06-01 当前口径：Game / Deck / Dashboard verifier + ArtifactIssue / EvalReplayQualityReport / Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线
+> 2026-07-04 当前口径：Game / Deck / Dashboard verifier + ArtifactIssue / EvalReplayQualityReport / Admin Review Queue + 评测侧 artifact_runnable 断言家族；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线
 
 ## 目标
 
@@ -54,6 +54,22 @@ Artifact / replay / eval evidence
 | deck | `runtime/deck/DeckVerifier.ts` | schema probe + declarative / imperative narrative probes | 替代旧 `validateNarrative`，并接入 `pptGenerate` |
 | dashboard / interactive app | `runtime/dashboard/*` + `GeneralDashboardChecker` | HTML probes + browser visual smoke + interaction probes | `state_change_on_click` 用来拦截只长得像可交互的假 dashboard |
 | browser visual smoke | `runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow | 供 dashboard 和 game 共享真实浏览器证据 |
+
+## 评测侧：artifact_runnable 断言家族
+
+产品运行时验证器同样服务批量评测（"验收通过 ≠ 可玩"的接口层补齐）：`src/host/testing/artifactRunnableAdapter.ts` 把验证器包成无 IPC、无 App 运行时依赖的纯函数，供 `assertionEngine` 的 P1 expectations 调用，全部落 `deterministic_assertion` 桶。
+
+| ExpectationType | 包装的验证器 | 判定口径 |
+|------|----------|----------|
+| `game_smoke` | `runLightPlayabilitySmoke`（默认 light）/ `runRuntimeSmoke`（`contract: full`） | light=启动+首帧+无未捕获异常+canvas 非全程空白；full=goal 验收级机制证据契约（对非 goal 产物几乎必红，仅回归标本类 case 显式选用） |
+| `html_renders` | `runSelfStartedArtifactPreviewHealth`（自启动 Chrome 路径，绕开 in-app 路由） | 仅 `page_error` / `console_error` / `blank_body_text` 硬信号判 not_runnable；布局质量 finding（`missing_main_element` 等）记 informational——canvas 游戏没有 `<main>`，照搬整体 passed 会误杀全部游戏产物 |
+| `pptx_opens` | jszip 最小解包校验 | zip 容器 + `[Content_Types].xml` + `ppt/presentation.xml` + ≥1 slide；无浏览器依赖 |
+
+case 参数：`path`（相对 eval workingDirectory）、`expected_verdict`（默认 `runnable`；回归标本 pin `not_runnable`，即"探测器必须抓红"= case 绿，探测能力退化时 case 转红）、`timeout_ms`、`contract`（仅 game_smoke）。参数校验 fail-loud：拼错的 `expected_verdict`/`contract`、漏写 `path`、非法 `timeout_ms` 一律显式 fail，不做静默 fallback（防回归标本因配置笔误失效）。
+
+环境与缺失语义：浏览器/Playwright（或 jszip）不可用时 adapter 返回 `skipped`，断言**显式 fail** 并注明环境原因——不假绿、不进 `infra_excluded` 桶（分母口径不动）。产物文件缺失返回独立的 `file_missing` verdict，永远 fail、不匹配任何 `expected_verdict` 极性（文件缺失 ≠ 探测器抓红）。断言 evidence 携带环境指纹（平台/node/浏览器 provider），headless 平台差异先按 mac 本机口径。
+
+回归锚点套件：`.claude/test-cases/artifact-runnable/`（GAIA 式外部套件，loader 不递归、默认能力套件不含它），fixtures 为 2026-07-03 dogfood 实锤的真实坏游戏标本两具 + 已知好产物 + pptxgenjs 真实 deck。运行：`npm run eval -- --scope smoke --case-dir .claude/test-cases/artifact-runnable`。
 
 ## Repair Guard
 

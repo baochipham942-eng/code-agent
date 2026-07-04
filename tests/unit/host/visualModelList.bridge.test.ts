@@ -4,6 +4,7 @@ vi.mock('../../../src/host/services/media/imageGenerationService', () => ({
   providerKeyConfigured: () => false,
   getDashscopeApiKey: () => '', getZhipuOfficialApiKey: () => '',
   getGptImageConfig: () => ({}), getMinimaxApiKey: () => '',
+  getGeminiApiKey: () => '', getArkApiKey: () => '',
 }));
 
 describe('list handler 合并桥接生成模型', () => {

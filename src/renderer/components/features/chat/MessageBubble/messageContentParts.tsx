@@ -655,10 +655,14 @@ const SYSTEM_TAG_PATTERNS = [
   /<arg_name>[^<]*<\/arg_name>/g,
   /<arg_value>/g,
   /<tool_call>/g,
-  // 过滤 think 标签（模型推理过程不应显示给用户）
+  // 过滤 think 标签（模型推理过程不应显示给用户）。
+  // 未闭合的 <think>（流式异常截断等）没有 </think> 可匹配——只删标签本身会把
+  // 整段推理原文原样留在正文里、绕过思考折叠机制摊在转录里。兜底：把 <think> 到
+  // 字符串结尾的全部内容都当推理一并删掉（宿主层 sseStream.ts 已修复不再产出这种
+  // 数据，这里是渲染层兜底，防历史脏数据 / 未知泄漏路径）。
   /<think>[\s\S]*?<\/think>/g,
   /<\/think>/g,
-  /<think>/g,
+  /<think>[\s\S]*$/g,
   // 过滤 skill 加载状态标签（应由 SkillStatusMessage 组件渲染，此处作为兜底）
   /<command-message>[\s\S]*?<\/command-message>/g,
   /<command-name>[\s\S]*?<\/command-name>/g,

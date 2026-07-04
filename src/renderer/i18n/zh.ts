@@ -2,6 +2,9 @@
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
 
+import { zhSettings } from './zhSettings';
+import { sessionReplayZh } from './sessionReplay';
+
 export const zh = {
   // Common
   common: {
@@ -19,6 +22,13 @@ export const zh = {
     active: '当前',
     coming: '即将推出',
     sessionExpiredReconnect: '登录已过期，请重新登录以恢复云端同步',
+  },
+
+  // 状态栏
+  statusBar: {
+    sessionCostTitle: '会话成本: {cost}',
+    budgetUsageTitle: '预算用量: {cost} / {max} ({percent}%)',
+    cacheSavedLine: '缓存已省 {saved}',
   },
 
   // Design Workspace（Kun 借鉴：设计 tab）
@@ -369,126 +379,7 @@ export const zh = {
   },
 
   // Settings Modal
-  settings: {
-    title: '设置',
-    tabs: {
-      general: '通用',
-      model: '通用模型',
-      visualModels: '多模态模型',
-      imageVideo: '生成默认值',
-      disclosure: '界面',
-      appearance: '外观',
-      language: '语言',
-      data: '数据',
-      cloud: '云端',
-      memory: '记忆',
-      update: '更新',
-      about: '关于',
-    },
-    general: {
-      modeTitle: '应用模式',
-      modeDescription: '选择适合你工作方式的模式',
-      developerMode: '开发者模式',
-      developerModeDesc: '显示完整的工具调用详情和参数',
-      coworkMode: 'Cowork 模式',
-      coworkModeDesc: '简化展示，适合与其他 AI 协作',
-    },
-    cloud: {
-      title: '云端配置',
-      description: 'System Prompt、Skills 等配置从云端实时获取，支持热更新。',
-    },
-    visualModels: {
-      title: '多模态模型',
-      subtitle: '选择图像 / 视频生成的默认模型，并管理你自己的端点。模型在这里配置，设计页只负责选择已配置的模型。',
-      imageSection: '生图模型',
-      videoSection: '生视频模型',
-      musicSection: '生音乐模型',
-      bridgedFromBadge: '来自 {name}',
-      builtinTitle: '内置模型',
-      defaultBadge: '默认',
-      defaultHint: '点选一个作为默认；设计画布出图时使用，画布里手动切换过的不受影响。',
-      defaultSaved: '默认生成模型已保存',
-      videoTitle: '自定义视频端点',
-      videoSubtitle: '接入你自己的视频生成端点。密钥只存在本机。',
-      videoEmpty: '还没有自定义视频端点。点「新增」接入你自己的视频模型。',
-      videoCostLabel: '单条成本（元，可选）',
-      videoNamePlaceholder: '例如：我的视频模型',
-      videoModelNamePlaceholder: '例如：sora-1',
-      videoBaseUrlHint: '视频生成端点根地址。仅支持 https 公网地址。',
-      videoPendingNote: '出片能力接入中：自定义视频端点目前可配置保存，出片调用待接入真实协议。',
-      consistencySection: '图像编辑一致性',
-      strictLabel: '严格模式：保证只改选中区域',
-      strictHint:
-        '开启后，局部重绘若无法逐像素保证未选区域不变，会直接取消并提示（而不是给你一张可能被偷改其它区域的图）。默认关闭：尽力锁定，无法锁定时仍采用模型结果不打断你。',
-    },
-  },
-
-  // Update Settings
-  update: {
-    title: '版本更新',
-    description: '检查并下载最新版本的 Agent Neo',
-    currentVersion: '当前版本',
-    checking: '检查中...',
-    checkNow: '检查更新',
-    checkError: '检查更新失败，请稍后重试',
-    newVersion: '发现新版本',
-    upToDate: '已是最新版本',
-    download: '立即更新',
-  },
-
-  // Model Settings
-  model: {
-    title: '模型提供商',
-    apiKey: 'API 密钥',
-    apiKeyPlaceholder: '请输入您的 API 密钥',
-    apiKeyHint: '您的 API 密钥仅存储在本地，不会发送到我们的服务器。',
-    modelSelect: '模型',
-    temperature: '温度',
-    temperaturePrecise: '精确',
-    temperatureCreative: '创意',
-    providers: {
-      deepseek: {
-        name: 'DeepSeek',
-        description: 'DeepSeek 聊天 API',
-      },
-      anthropic: {
-        name: 'Claude',
-        description: 'Anthropic Claude API',
-      },
-      openai: {
-        name: 'OpenAI',
-        description: 'GPT-4.1 / o3 系列',
-      },
-      gemini: {
-        name: 'Gemini',
-        description: 'Google Gemini 2.5 系列',
-      },
-      openrouter: {
-        name: 'OpenRouter',
-        description: '中转服务 (Gemini/Claude/GPT)',
-      },
-      zhipu: {
-        name: '智谱 AI',
-        description: 'GLM-4 系列模型',
-      },
-      qwen: {
-        name: '通义千问',
-        description: '阿里云通义千问模型',
-      },
-      moonshot: {
-        name: 'Kimi',
-        description: 'Moonshot AI 模型',
-      },
-      minimax: {
-        name: 'MiniMax',
-        description: 'MiniMax 海螺 AI',
-      },
-      perplexity: {
-        name: 'Perplexity',
-        description: 'AI 搜索服务',
-      },
-    },
-  },
+  settings: zhSettings,
 
   // 执行引擎 × 模型兼容矩阵（billingMode + 不可用原因）
   engineCompat: {
@@ -601,27 +492,6 @@ export const zh = {
         description: '开发者的完整访问权限',
         features: ['原始 API 响应', 'Token 使用指标', '调试控制台', 'MCP 服务器配置'],
       },
-    },
-    devMode: {
-      title: '开发者选项',
-      autoApprove: '自动授权所有权限',
-      autoApproveDescription: '开发模式下跳过所有权限确认弹窗，方便快速测试。生产环境建议关闭。',
-    },
-  },
-
-  // Appearance Settings
-  appearance: {
-    theme: '主题',
-    themes: {
-      dark: '深色',
-      light: '浅色',
-      auto: '自动',
-    },
-    fontSize: '字体大小',
-    fontSizes: {
-      small: '小',
-      medium: '中',
-      large: '大',
     },
   },
 
@@ -844,6 +714,176 @@ export const zh = {
     sampleSans: '中文字体样例',
     continueMessage: '已锁定 design brief，请按它直接生成成品。',
     skipMessage: '跳过设计澄清，请按你的最佳判断直接生成成品，不要再 emit question-form。',
+  },
+
+  // /agent 命令与面板
+  agentCommand: {
+    defaultDescription: '恢复自动路由',
+    roleGroupLabel: '角色',
+    createRoleEntry: '新建角色…',
+    switchedToPrefix: '已切到 ',
+    restoredAuto: '已恢复自动 agent',
+    notFoundPrefix: '没找到 agent: ',
+    chipTitlePrefix: '当前 agent: ',
+    chipTitleSuffix: '。输入 /agent 切换。',
+    chipAriaLabel: '当前 agent',
+    badgeNotAppliedSuffix: ' 未生效',
+    badgeNotAppliedTitlePrefix: '指定的 agent 本轮未生效，实际执行: ',
+    degradedToastPrefix: '指定的 agent ',
+    degradedToastMiddle: ' 不可用，本轮已由 ',
+    degradedToastSuffix: ' 执行，已恢复自动路由',
+  },
+
+  // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  goalConfirm: {
+    title: '目标确认',
+    goalLabel: '目标',
+    goalPlaceholder: '用一句话说明要交付什么结果',
+    verifyLabel: '验证命令',
+    verifyEmpty: '留空（按软验收评审）',
+    verifyCustomLabel: '自定义验证命令',
+    verifyCustomPlaceholder: '自己填写要执行的验证命令',
+    acceptanceLabel: '软验收',
+    acceptancePlaceholder: '结果需要满足哪些条件',
+    boundariesLabel: '边界',
+    pauseLabel: '暂停条件',
+    maxTurnsLabel: '轮次上限',
+    budgetLabel: 'Token 预算',
+    maxTimeLabel: '时间上限(分)',
+    defaultPlaceholder: '默认',
+    noLimitPlaceholder: '不限',
+    advancedToggle: '高级编辑',
+    start: '启动目标',
+    cancel: '取消',
+    defaultBoundaries: '只修改与目标直接相关的文件和配置，避免无关重构、无关功能和破坏性操作。',
+    defaultPauseConditions: '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。',
+  },
+
+  // /goal 生命周期通知卡片
+  goalNotice: {
+    startPrefix: '开启目标：',
+    metPrefix: '目标已完成：',
+    abortedPrefix: '目标已中止：',
+    durationPrefix: '耗时 ',
+    turnsSuffix: ' 轮',
+    degradedBadge: '已完成 · 验证未全过',
+    degradedReasonPrefix: '最后一次验证：',
+  },
+
+  // /goal 运行进度状态条
+  goalStatusBar: {
+    runningPrefix: '目标进行中：',
+    pausedPrefix: '目标已暂停：',
+    verifying: '验证中…',
+    reviewing: '评审中…',
+    remainingPrefix: '剩 ',
+    turnPrefix: '第 ',
+    turnSuffix: ' 轮',
+    elapsedTitle: '已运行时长',
+    remainingTitle: '墙钟剩余时间',
+    turnTitle: '轮次',
+    tokenTitle: 'token 用量',
+    pause: '暂停',
+    resume: '继续',
+  },
+
+  sessionReplay: sessionReplayZh,
+
+  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  // 聊天转录（TurnCard / StreamingIndicator 等）
+  chat: {
+    thinking: '正在思考…',
+    thinkingDigest: '思考',
+    thinkingSegments: ' · {count} 段',
+    expandThinking: '展开思考',
+    collapseThinking: '收起思考',
+  },
+
+  workbenchTabs: {
+    openPanel: '打开面板',
+    filesLabel: '文件',
+    filesTitle: '文件浏览器',
+    contextLabel: '上下文',
+    contextTitle: '上下文占用与来源拆分',
+    skillsTitle: '会话 Skills',
+    assetsTitle: '工作区 Assets',
+    auditTitle: 'Replay / 会话质量审计',
+    projectCollabTitle: '项目合作',
+  },
+
+  // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
+  slashCommands: {
+    // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
+    picker: {
+      prefillCommand: '预填命令',
+      executeNow: '立即执行',
+      builtinCommand: '内置命令',
+      paramsPrefix: '参数: ',
+      noParams: '无参数',
+      mcpPromptFallback: 'MCP prompt 命令',
+      filePromptFallback: '自定义命令',
+      prefillPromptWithArgs: '预填后补参数',
+      prefillPrompt: '预填 prompt',
+      setAgentForTurn: '设为本轮 agent',
+      restoreAutoAgent: '恢复自动 agent',
+      defaultAgentDescription: '恢复自动路由',
+      mountedSkillPrefix: '已挂载 Skill',
+      selectForTurn: '选入本轮',
+      mountAndSelect: '挂载并选入本轮',
+      installAndSelect: '安装并选入本轮',
+      localConnector: '本地 connector',
+      connectorNeedsConnection: '打开后需先连接',
+      mcpNeedsConnection: '需要先连接',
+    },
+    badges: {
+      skillSelected: '已选',
+      skillMounted: '已挂载',
+      skillMountable: '可挂载',
+      connectorConnected: '已连接',
+      connectorDisconnected: '未连接',
+      mcpAvailable: '可用',
+      mcpDisconnected: '未连接',
+    },
+    new: { label: '新建会话', description: '创建新对话' },
+    clear: { label: '清空对话', description: '清除当前会话消息' },
+    help: { label: '帮助', description: '查看帮助文档' },
+    archive: { label: '归档会话', description: '将当前会话移至归档' },
+    sidebar: { labelShow: '显示侧边栏', labelHide: '隐藏侧边栏', description: '切换侧边栏' },
+    dag: { labelShow: '显示 DAG', labelHide: '隐藏 DAG', description: '任务 DAG 可视化' },
+    workspace: { labelShow: '显示工作区', labelHide: '隐藏工作区', description: '切换工作区面板' },
+    settings: { label: '设置', description: '打开应用设置' },
+    shortcuts: { label: '快捷键', description: '查看键盘快捷键' },
+    agent: {
+      label: '选择 Agent',
+      description: '输入 /agent coder 切换本轮 agent',
+      effectLabel: '打开 agent 选择',
+    },
+    'create-role': {
+      label: '新建角色',
+      description: '对话式创建一个新的持久化角色（专家 Agent）',
+      effectLabel: '开始角色创建',
+    },
+    goal: { label: '设定目标', description: '直接输入目标，可选 --verify 或 --review' },
+    schedule: { label: '定时任务', description: '自然语言创建提醒、巡检或周期任务' },
+    loop: { label: '会话循环', description: '在当前会话反复执行同一任务直到完成或喊停' },
+    workflow: { label: '编排工作流', description: '输入目标，让模型写 JS 脚本编排多个子 agent（循环/扇出/流水线）' },
+    code: { label: 'Code 模式', description: '切换到 Code 模式' },
+    plan: { label: 'Plan 模式', description: '切换到 Plan 模式（只出方案不动代码）' },
+    ask: { label: 'Ask 模式', description: '切换到 Ask 模式（只回答问题）' },
+    low: { label: '低推理强度', description: '设置低推理强度' },
+    med: { label: '中推理强度', description: '设置中推理强度' },
+    high: { label: '高推理强度', description: '设置高推理强度' },
+    default: { label: '默认权限', description: '默认权限模式' },
+    fullaccess: { label: '完全访问', description: '完全访问模式（跳过确认）' },
+    context: { label: 'Context', description: '查看上下文窗口使用情况' },
+    status: { label: '状态', description: '查看当前会话状态' },
+    cost: { label: 'Cost', description: '查看当前会话的 token 用量和成本' },
+    agents: { label: 'Agent 列表', description: '查看历史 Agent 记录' },
+    hooks: { label: 'Hooks', description: '查看 Hook 配置' },
+    permissions: { label: 'Permissions', description: '查看安全决策链状态' },
+    model: { label: '模型', description: '查看或切换当前模型' },
+    compact: { label: '压缩上下文', description: '手动触发上下文压缩' },
+    config: { label: '配置', description: '查看当前配置' },
   },
 };
 

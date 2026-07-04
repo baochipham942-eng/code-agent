@@ -15,6 +15,10 @@ import {
   getChannelTypeLabel,
   type ChannelTypeInfo,
 } from '../../../src/renderer/components/features/settings/tabs/ChannelsSettings';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
+
+const channelsText = zh.settings.channels;
 
 const channelTypes: ChannelTypeInfo[] = [
   { type: 'http-api', name: 'HTTP API' },
@@ -124,21 +128,28 @@ describe('ChannelsSettings management helpers', () => {
 
   it('keeps compact config summaries stable for table rows', () => {
     expect(getChannelTypeLabel('feishu', channelTypes)).toBe('飞书');
-    expect(getChannelConfigSummary(accounts[0])).toBe('端口 8080');
+    expect(getChannelConfigSummary(accounts[0])).toBe(`${channelsText.configSummary.portPrefix}8080`);
     expect(getChannelConfigSummary(accounts[1])).toBe('Webhook 3201');
-    expect(getChannelConfigSummary(accounts[2])).toBe('2 个白名单用户');
+    expect(getChannelConfigSummary(accounts[2])).toBe(`2${channelsText.configSummary.allowlistUserSuffix}`);
     expect(getChannelTypeLabel('lark', channelTypes)).toBe('Lark');
     expect(getChannelConfigSummary(accounts[3])).toBe('Webhook 3301');
   });
 
   it('uses readable privacy copy instead of raw enum labels', () => {
-    expect(CHANNEL_PRIVACY_MODE_OPTIONS.map((option) => option.label)).toEqual([
-      '默认脱敏',
-      '保留 raw 调试',
-      '关闭通道脱敏',
-    ]);
-    expect(getChannelPrivacyModeCopy('local-redact').description).toContain('脱敏');
-    expect(getChannelPrivacyModeCopy('allow-raw').description).toContain('受控连接器排障');
-    expect(getChannelPrivacyModeCopy('off').description).toContain('受控本地调试');
+    expect(CHANNEL_PRIVACY_MODE_OPTIONS.map((option) => option.label)).toEqual(
+      channelsText.privacyModes.map((option) => option.label),
+    );
+    expect(getChannelPrivacyModeCopy('local-redact').description).toBe(channelsText.privacyModes[0]!.description);
+    expect(getChannelPrivacyModeCopy('allow-raw').description).toBe(channelsText.privacyModes[1]!.description);
+    expect(getChannelPrivacyModeCopy('off').description).toBe(channelsText.privacyModes[2]!.description);
+  });
+
+  it('channels i18n arrays keep zh/en data-field value sequences aligned', () => {
+    expect(en.settings.channels.statusFilters.map((option) => option.value)).toEqual(
+      channelsText.statusFilters.map((option) => option.value),
+    );
+    expect(en.settings.channels.privacyModes.map((option) => option.value)).toEqual(
+      channelsText.privacyModes.map((option) => option.value),
+    );
   });
 });

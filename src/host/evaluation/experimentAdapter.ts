@@ -90,6 +90,11 @@ export class ExperimentAdapter {
     if (status === 'passed' || status === 'failed' || status === 'partial' || status === 'skipped') {
       return status;
     }
+    // WP1-2：infra_excluded（429/超时/5xx/网络）在 canonical 层归 skipped
+    // （不进能力分母），metadata.infraExcluded 保留可追溯性。
+    if (status === 'infra_excluded') {
+      return 'skipped';
+    }
     return 'error';
   }
 
@@ -153,6 +158,7 @@ export class ExperimentAdapter {
       aggregation: run.aggregation,
       source: run.source,
       score100: c.score,
+      ...(c.scoreAuthority ? { scoreAuthority: c.scoreAuthority } : {}),
       ...(c.trials ? { trials: c.trials } : {}),
     });
   }
@@ -325,6 +331,7 @@ export class ExperimentAdapter {
         telemetryCompleteness,
         status: this.normalizeTestStatus(r.status),
         score: this.normalizeScore(r.score ?? (r.status === 'passed' ? 1 : 0), 'zero_one'),
+        scoreAuthority: r.scoreAuthority,
         durationMs: r.duration || 0,
         failureReason: r.failureReason,
         failureStage: r.failureStage,
@@ -343,6 +350,7 @@ export class ExperimentAdapter {
           expectationResults: r.expectationResults,
           telemetryGate: r.telemetryGate,
           realAgentRun,
+          ...(r.status === 'infra_excluded' ? { infraExcluded: true } : {}),
           ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
         },
       };
@@ -384,6 +392,8 @@ export class ExperimentAdapter {
           unstableCaseCount: summary.unstableCaseCount,
           averageStdDev: summary.averageStdDev,
         } : {}),
+        // WP1-4: prompt 改动预测登记（对账证据链落 DB）
+        ...(summary.prediction ? { prediction: summary.prediction } : {}),
       },
     };
   }

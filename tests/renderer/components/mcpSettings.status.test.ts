@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const invalidTokenError = [
   'Streamable HTTP error: Error POSTing to endpoint:',
@@ -93,11 +94,15 @@ const serverStates = [
   },
 ];
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({
-    t: {},
-  }),
-}));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return {
+    useI18n: () => ({
+      t: zh,
+      language: 'zh',
+    }),
+  };
+});
 
 vi.mock('../../../src/renderer/hooks/useMcpStatus', () => ({
   useMcpStatus: () => ({
@@ -190,6 +195,8 @@ vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', ()
 import { MCPSettings, getMcpTrustSummary } from '../../../src/renderer/components/features/settings/tabs/MCPSettings';
 
 describe('MCPSettings status', () => {
+  const mcpText = zh.settings.mcp;
+
   beforeEach(() => {
     mcpServers = [connectedGithubServer];
     authIsAdmin = true;
@@ -200,17 +207,17 @@ describe('MCPSettings status', () => {
       React.createElement(MCPSettings),
     );
 
-    expect(html).toContain('总览');
+    expect(html).toContain(mcpText.management.stats.overview.label);
     expect(html).toContain('github');
-    expect(html).toContain('12 工具');
-    expect(html).toContain('3 资源');
-    expect(html).toContain('destructive/openWorld 调用前仍需审批');
+    expect(html).toContain(`12${mcpText.management.countToolSuffix}`);
+    expect(html).toContain(`3${mcpText.management.countResourceSuffix}`);
+    expect(html).toContain(mcpText.trustSummary.approvalNotice);
     expect(html).toContain('查看 github 详情');
   });
 
   it('summarizes MCP trust boundaries without exposing token values', () => {
-    expect(getMcpTrustSummary(connectedGithubServer)).toContain('凭证默认 masked');
-    expect(getMcpTrustSummary(authErrorTavilyServer)).toContain('OAuth/token 需要重新授权');
+    expect(getMcpTrustSummary(connectedGithubServer)).toContain(mcpText.trustSummary.authMaskedHint);
+    expect(getMcpTrustSummary(authErrorTavilyServer)).toContain(mcpText.trustSummary.authReauthorizeHint);
   });
 
   it('shows reauthorization instead of reconnect for invalid MCP bearer tokens', () => {
@@ -220,10 +227,10 @@ describe('MCPSettings status', () => {
       React.createElement(MCPSettings),
     );
 
-    expect(html).toContain('重新授权');
-    expect(html).toContain('禁用');
+    expect(html).toContain(mcpText.management.reauthorize);
+    expect(html).toContain(mcpText.management.disable);
     expect(html).toContain('禁用 MCP 后内置搜索仍可用');
-    expect(html).not.toContain('重连');
+    expect(html).not.toContain(mcpText.management.reconnect);
   });
 
   it('keeps reconnect for non-auth MCP disconnections', () => {
@@ -233,8 +240,8 @@ describe('MCPSettings status', () => {
       React.createElement(MCPSettings),
     );
 
-    expect(html).toContain('重连');
-    expect(html).not.toContain('重新授权');
+    expect(html).toContain(mcpText.management.reconnect);
+    expect(html).not.toContain(mcpText.management.reauthorize);
   });
 
   it('lets non-admin users manage MCP servers while hiding bridge diagnostics', () => {
@@ -244,9 +251,9 @@ describe('MCPSettings status', () => {
       React.createElement(MCPSettings),
     );
 
-    expect(html).toContain('从云端刷新 MCP 配置');
-    expect(html).toContain('添加服务器');
-    expect(html).toContain('禁用');
+    expect(html).toContain(mcpText.management.refreshFromCloud);
+    expect(html).toContain(mcpText.management.addServer);
+    expect(html).toContain(mcpText.management.disable);
     expect(html).not.toContain('LocalBridge');
   });
 });

@@ -30,13 +30,18 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useAuthStore } from '../../../../stores/authStore';
 import ipcService from '../../../../services/ipcService';
 import type { PersistenceHealth } from '@shared/contract';
+import type { TelemetryHealth } from '@shared/contract/telemetry';
 import {
   fetchWebPersistenceHealth,
   getPersistenceWarningText,
   shouldShowPersistenceWarning,
 } from '../../../../services/persistenceHealth';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 const logger = createLogger('DataSettings');
+type DataSettingsText = typeof zh.settings.data;
+const DEFAULT_DATA_SETTINGS_TEXT = zh.settings.data;
 
 export interface DataStats {
   sessionCount: number;
@@ -91,12 +96,18 @@ const EMPTY_SNAPSHOT_STATS: SnapshotStats = {
   retentionDays: 1,
 };
 
-const RETENTION_OPTIONS: Array<{ value: number; label: string }> = [
-  { value: 1, label: '1 天' },
-  { value: 7, label: '7 天' },
-  { value: 30, label: '30 天' },
-  { value: -1, label: '永久' },
-];
+const RETENTION_OPTIONS = [1, 7, 30, -1] as const;
+type RetentionOptionValue = typeof RETENTION_OPTIONS[number];
+
+function getRetentionOptionLabel(
+  value: RetentionOptionValue,
+  text: DataSettingsText['retentionOptions'] = DEFAULT_DATA_SETTINGS_TEXT.retentionOptions,
+): string {
+  if (value === 7) return text.sevenDays;
+  if (value === 30) return text.thirtyDays;
+  if (value === -1) return text.forever;
+  return text.oneDay;
+}
 
 export function formatDataSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -104,13 +115,19 @@ export function formatDataSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function getRetentionLabel(days: number): string {
-  return RETENTION_OPTIONS.find((option) => option.value === days)?.label ?? '1 天';
+export function getRetentionLabel(
+  days: number,
+  text: DataSettingsText['retentionOptions'] = DEFAULT_DATA_SETTINGS_TEXT.retentionOptions,
+): string {
+  return RETENTION_OPTIONS.includes(days as RetentionOptionValue)
+    ? getRetentionOptionLabel(days as RetentionOptionValue, text)
+    : text.oneDay;
 }
 
 export function buildDataManagementSummary(
   stats: DataStats | null,
   snapshotStats: SnapshotStats | null,
+  text: DataSettingsText = DEFAULT_DATA_SETTINGS_TEXT,
 ): DataManagementSummary {
   const safeStats = stats ?? EMPTY_DATA_STATS;
   const safeSnapshotStats = snapshotStats ?? EMPTY_SNAPSHOT_STATS;
@@ -122,72 +139,76 @@ export function buildDataManagementSummary(
     cacheEntries: safeStats.cacheEntries,
     snapshotCount: safeSnapshotStats.snapshotCount,
     snapshotSizeLabel: formatDataSize(safeSnapshotStats.totalBytes),
-    retentionLabel: getRetentionLabel(safeSnapshotStats.retentionDays),
+    retentionLabel: getRetentionLabel(safeSnapshotStats.retentionDays, text.retentionOptions),
   };
 }
 
-export function buildDataManagementRows(stats: DataStats | null): DataManagementRow[] {
+export function buildDataManagementRows(
+  stats: DataStats | null,
+  text: DataSettingsText = DEFAULT_DATA_SETTINGS_TEXT,
+): DataManagementRow[] {
   const safeStats = stats ?? EMPTY_DATA_STATS;
+  const rowsText = text.dataRows;
 
   return [
     {
       id: 'sessions',
-      title: '会话',
-      description: '本地会话索引和历史工作线程。',
-      valueLabel: `${safeStats.sessionCount.toLocaleString()} 条`,
-      statusLabel: '保留',
+      title: rowsText.sessions.title,
+      description: rowsText.sessions.description,
+      valueLabel: `${safeStats.sessionCount.toLocaleString()}${text.units.itemSuffix}`,
+      statusLabel: rowsText.sessions.status,
       statusTone: 'stable',
-      cleanupLabel: '不清理',
+      cleanupLabel: rowsText.sessions.cleanup,
       action: 'none',
     },
     {
       id: 'messages',
-      title: '消息',
-      description: '对话消息与上下文记录。',
-      valueLabel: `${safeStats.messageCount.toLocaleString()} 条`,
-      statusLabel: '保留',
+      title: rowsText.messages.title,
+      description: rowsText.messages.description,
+      valueLabel: `${safeStats.messageCount.toLocaleString()}${text.units.itemSuffix}`,
+      statusLabel: rowsText.messages.status,
       statusTone: 'stable',
-      cleanupLabel: '不清理',
+      cleanupLabel: rowsText.messages.cleanup,
       action: 'none',
     },
     {
       id: 'tool-executions',
-      title: '工具执行缓存',
-      description: '工具调用结果的短期缓存，用于复用和排查。',
-      valueLabel: `${safeStats.toolExecutionCount.toLocaleString()} 条`,
-      statusLabel: safeStats.toolExecutionCount > 0 ? '缓存' : '干净',
+      title: rowsText.toolExecutions.title,
+      description: rowsText.toolExecutions.description,
+      valueLabel: `${safeStats.toolExecutionCount.toLocaleString()}${text.units.itemSuffix}`,
+      statusLabel: safeStats.toolExecutionCount > 0 ? rowsText.toolExecutions.statusCached : rowsText.toolExecutions.statusClean,
       statusTone: 'info',
-      cleanupLabel: '随运行缓存',
+      cleanupLabel: rowsText.toolExecutions.cleanup,
       action: 'none',
     },
     {
       id: 'knowledge',
-      title: '项目知识库',
-      description: '工作区知识、索引和可复用材料。',
-      valueLabel: `${safeStats.knowledgeCount.toLocaleString()} 条`,
-      statusLabel: '保留',
+      title: rowsText.knowledge.title,
+      description: rowsText.knowledge.description,
+      valueLabel: `${safeStats.knowledgeCount.toLocaleString()}${text.units.itemSuffix}`,
+      statusLabel: rowsText.knowledge.status,
       statusTone: 'info',
-      cleanupLabel: '不清理',
+      cleanupLabel: rowsText.knowledge.cleanup,
       action: 'none',
     },
     {
       id: 'database',
-      title: '数据库文件',
-      description: '本机应用数据库占用。',
+      title: rowsText.database.title,
+      description: rowsText.database.description,
       valueLabel: formatDataSize(safeStats.databaseSize),
-      statusLabel: '本地',
+      statusLabel: rowsText.database.status,
       statusTone: 'info',
-      cleanupLabel: '只查看',
+      cleanupLabel: rowsText.database.cleanup,
       action: 'none',
     },
     {
       id: 'cache',
-      title: '运行缓存',
-      description: '内存工具缓存与持久化工具结果缓存，可在异常时清理后重建。',
-      valueLabel: `${safeStats.cacheEntries.toLocaleString()} 条`,
-      statusLabel: safeStats.cacheEntries > 0 ? '可清理' : '干净',
+      title: rowsText.cache.title,
+      description: rowsText.cache.description,
+      valueLabel: `${safeStats.cacheEntries.toLocaleString()}${text.units.itemSuffix}`,
+      statusLabel: safeStats.cacheEntries > 0 ? rowsText.cache.statusClearable : rowsText.cache.statusClean,
       statusTone: safeStats.cacheEntries > 0 ? 'warning' : 'stable',
-      cleanupLabel: '清空缓存',
+      cleanupLabel: rowsText.cache.cleanup,
       action: 'clear-cache',
     },
   ];
@@ -208,7 +229,36 @@ function getStatusClass(tone: DataManagementRow['statusTone']): string {
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
 }
 
+// 探针失败哨兵：不携带用户可见文案（展示层用 dataText.telemetry.notConnected 兜底），
+// 避免在已过 i18n 棘轮的文件里引入中文字面量。
+export const TELEMETRY_HEALTH_UNAVAILABLE = 'TELEMETRY_HEALTH_UNAVAILABLE';
+
+function isTelemetryHealth(value: unknown): value is TelemetryHealth {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.enabled === 'boolean'
+    && typeof record.sessionCount === 'number'
+    && typeof record.storageBytes === 'number'
+    && (typeof record.lastEventAt === 'number' || record.lastEventAt === null);
+}
+
+/** telemetry:health 载荷不完整（web 路径空响应/包裹层吞错）时抛哨兵，禁止把幻影数据当健康态。 */
+export function buildTelemetryHealthSummary(health: unknown): TelemetryHealthSummary {
+  if (!isTelemetryHealth(health)) {
+    throw new Error(TELEMETRY_HEALTH_UNAVAILABLE);
+  }
+  return {
+    loading: false,
+    available: true,
+    enabled: health.enabled,
+    sessionCount: health.sessionCount,
+    storageBytes: health.storageBytes,
+    lastEventAt: health.lastEventAt,
+  };
+}
+
 interface TelemetryHealthSummary {
+  loading: boolean;
   /** IPC 是否成功（true 表示 telemetry:health 返回了数据） */
   available: boolean;
   /** 后端是否在采集（DB 可达即视为在跑） */
@@ -221,21 +271,27 @@ interface TelemetryHealthSummary {
   error?: string;
 }
 
-function formatLastEventAt(ts: number | null): string {
-  if (!ts) return '暂无事件';
+function formatLastEventAt(
+  ts: number | null,
+  text: DataSettingsText['telemetry']['time'] = DEFAULT_DATA_SETTINGS_TEXT.telemetry.time,
+): string {
+  if (!ts) return text.noEvents;
   const delta = Date.now() - ts;
-  if (delta < 60_000) return '刚刚';
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} 分钟前`;
-  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)} 小时前`;
+  if (delta < 60_000) return text.justNow;
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}${text.minuteSuffix}`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}${text.hourSuffix}`;
   return new Date(ts).toLocaleString();
 }
 
 export const DataSettings: React.FC = () => {
+  const { t } = useI18n();
+  const dataText = t.settings.data;
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);
   const [telemetrySummary, setTelemetrySummary] = useState<TelemetryHealthSummary>({
+    loading: true,
     available: false,
     enabled: false,
     sessionCount: null,
@@ -249,6 +305,15 @@ export const DataSettings: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadStats = useCallback(async () => {
+    if (isAdmin) {
+      setTelemetrySummary((current) => ({
+        ...current,
+        loading: true,
+        available: false,
+        error: undefined,
+      }));
+    }
+
     fetchWebPersistenceHealth()
       .then(setPersistenceHealth)
       .catch(() => setPersistenceHealth(null));
@@ -270,6 +335,7 @@ export const DataSettings: React.FC = () => {
 
     if (!isAdmin) {
       setTelemetrySummary({
+        loading: false,
         available: false,
         enabled: false,
         sessionCount: null,
@@ -281,23 +347,22 @@ export const DataSettings: React.FC = () => {
 
     // Telemetry 健康摘要：直接调用 telemetry:health 拿 enabled / sessionCount /
     // storageBytes / lastEventAt 四个字段（main 侧 telemetry.ipc.ts 注册）。
+    // 载荷经 buildTelemetryHealthSummary 严格校验——web 路径空响应不再被
+    // 兜成 available=true 的幻影健康态。
     try {
       const health = await ipcService.invoke(TELEMETRY_CHANNELS.HEALTH);
-      setTelemetrySummary({
-        available: true,
-        enabled: !!health?.enabled,
-        sessionCount: typeof health?.sessionCount === 'number' ? health.sessionCount : 0,
-        storageBytes: typeof health?.storageBytes === 'number' ? health.storageBytes : 0,
-        lastEventAt: typeof health?.lastEventAt === 'number' ? health.lastEventAt : null,
-      });
+      setTelemetrySummary(buildTelemetryHealthSummary(health));
     } catch (error) {
+      const raw = error instanceof Error ? error.message : '';
       setTelemetrySummary({
+        loading: false,
         available: false,
         enabled: false,
         sessionCount: null,
         storageBytes: null,
         lastEventAt: null,
-        error: error instanceof Error ? error.message : '未知错误',
+        // 哨兵/空消息不透传，展示层落 dataText.telemetry.notConnected
+        error: raw && raw !== TELEMETRY_HEALTH_UNAVAILABLE ? raw : undefined,
       });
     }
   }, [isAdmin]);
@@ -306,27 +371,39 @@ export const DataSettings: React.FC = () => {
     loadStats();
   }, [loadStats]);
 
-  const dataRows = useMemo(() => buildDataManagementRows(stats), [stats]);
+  const dataRows = useMemo(() => buildDataManagementRows(stats, dataText), [dataText, stats]);
   const summary = useMemo(
-    () => buildDataManagementSummary(stats, snapshotStats),
-    [snapshotStats, stats],
+    () => buildDataManagementSummary(stats, snapshotStats, dataText),
+    [dataText, snapshotStats, stats],
   );
   const persistenceWarningText = getPersistenceWarningText(persistenceHealth);
   const summaryCards = useMemo(() => {
     const cards = [
-      ['会话', summary.sessionCount.toLocaleString(), `${summary.messageCount.toLocaleString()} 条消息`],
-      ['数据库', summary.databaseSizeLabel, '本机应用数据'],
-      ['运行缓存', summary.cacheEntries.toLocaleString(), '可按需清理'],
+      [
+        dataText.controlPlane.summaryCards.sessions,
+        summary.sessionCount.toLocaleString(),
+        `${summary.messageCount.toLocaleString()}${dataText.units.messageSuffix}`,
+      ],
+      [
+        dataText.controlPlane.summaryCards.database,
+        summary.databaseSizeLabel,
+        dataText.controlPlane.summaryCards.localAppData,
+      ],
+      [
+        dataText.controlPlane.summaryCards.cache,
+        summary.cacheEntries.toLocaleString(),
+        dataText.controlPlane.summaryCards.clearAsNeeded,
+      ],
     ];
     if (isAdmin) {
       cards.push([
-        '调试快照',
+        dataText.controlPlane.summaryCards.snapshots,
         summary.snapshotCount.toLocaleString(),
         `${summary.snapshotSizeLabel} / ${summary.retentionLabel}`,
       ]);
     }
     return cards;
-  }, [isAdmin, summary]);
+  }, [dataText, isAdmin, summary]);
 
   const handleClearSnapshots = async () => {
     if (!isAdmin) return;
@@ -336,11 +413,13 @@ export const DataSettings: React.FC = () => {
       const cleared = await ipcService.invokeDomain<number>(IPC_DOMAINS.DATA, 'clearSnapshots', {});
       setMessage({
         type: 'success',
-        text: cleared && cleared > 0 ? `已清空 ${cleared} 条调试快照` : '没有可清理的快照',
+        text: cleared && cleared > 0
+          ? `${dataText.messages.snapshotsClearedPrefix}${cleared}${dataText.messages.snapshotsClearedSuffix}`
+          : dataText.messages.noSnapshotsToClear,
       });
       await loadStats();
     } catch {
-      setMessage({ type: 'error', text: '清理失败' });
+      setMessage({ type: 'error', text: dataText.messages.clearFailed });
     } finally {
       setIsClearingSnapshots(false);
     }
@@ -363,11 +442,13 @@ export const DataSettings: React.FC = () => {
       const cleared = await ipcService.invokeDomain<number>(IPC_DOMAINS.DATA, 'clearToolCache');
       setMessage({
         type: 'success',
-        text: cleared === 0 ? '缓存已经是空的' : `已清理 ${cleared} 条本地缓存记录`,
+        text: cleared === 0
+          ? dataText.messages.cacheAlreadyEmpty
+          : `${dataText.messages.cacheClearedPrefix}${cleared}${dataText.messages.cacheClearedSuffix}`,
       });
       await loadStats();
     } catch {
-      setMessage({ type: 'error', text: '清理失败' });
+      setMessage({ type: 'error', text: dataText.messages.clearFailed });
     } finally {
       setIsClearing(false);
     }
@@ -375,8 +456,8 @@ export const DataSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="数据与存储"
-      description="查看本机数据、运行缓存和调试快照。会话、消息和知识库默认保留。"
+      title={dataText.title}
+      description={dataText.description}
     >
       <WebModeBanner />
 
@@ -384,10 +465,10 @@ export const DataSettings: React.FC = () => {
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="font-medium">历史持久化不可用</div>
+            <div className="font-medium">{dataText.persistence.title}</div>
             <div className="mt-0.5 text-xs text-amber-200/80">
               {persistenceWarningText}
-              {persistenceHealth.reason ? ` 原因：${persistenceHealth.reason}` : ''}
+              {persistenceHealth.reason ? `${dataText.persistence.reasonPrefix}${persistenceHealth.reason}` : ''}
             </div>
           </div>
         </div>
@@ -404,8 +485,8 @@ export const DataSettings: React.FC = () => {
       )}
 
       <SettingsSection
-        title="数据控制面"
-        description="日常只看会话、消息、数据库大小和可清理缓存；调试快照放在高级区。"
+        title={dataText.controlPlane.title}
+        description={dataText.controlPlane.description}
         actions={(
           <Button
             size="sm"
@@ -414,7 +495,7 @@ export const DataSettings: React.FC = () => {
             disabled={isLoading}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {dataText.actions.refresh}
           </Button>
         )}
       >
@@ -433,11 +514,11 @@ export const DataSettings: React.FC = () => {
             <table className="w-full min-w-[860px] text-left text-xs">
               <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">数据对象</th>
-                  <th className="px-3 py-2 font-medium">数量 / 占用</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">清理策略</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{dataText.controlPlane.columns.dataObject}</th>
+                  <th className="px-3 py-2 font-medium">{dataText.controlPlane.columns.quantity}</th>
+                  <th className="px-3 py-2 font-medium">{dataText.controlPlane.columns.status}</th>
+                  <th className="px-3 py-2 font-medium">{dataText.controlPlane.columns.cleanupPolicy}</th>
+                  <th className="px-3 py-2 text-right font-medium">{dataText.controlPlane.columns.action}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/80">
@@ -445,7 +526,7 @@ export const DataSettings: React.FC = () => {
                   <tr>
                     <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
                       <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-                      加载中...
+                      {dataText.controlPlane.loading}
                     </td>
                   </tr>
                 ) : (
@@ -480,11 +561,11 @@ export const DataSettings: React.FC = () => {
                               onClick={handleClearToolCache}
                               leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                             >
-                              清空
+                              {dataText.actions.clear}
                             </Button>
                           ) : (
                             <span className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-zinc-500">
-                              -
+                              {dataText.actions.noAction}
                             </span>
                           )}
                         </div>
@@ -501,41 +582,55 @@ export const DataSettings: React.FC = () => {
       {isAdmin && (
         <>
           <SettingsSection
-            title="Telemetry 健康"
-            description="Agent 内部遥测的采集状态摘要。详细分析请进入「内部评测」面板。"
+            title={dataText.telemetry.title}
+            description={dataText.telemetry.description}
           >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3">
-          {telemetrySummary.available ? (
+          {telemetrySummary.loading ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
+                <Activity className="h-3.5 w-3.5" />
+                {dataText.telemetry.checking}
+              </span>
+              <span className="text-zinc-500">{dataText.telemetry.checkingHint}</span>
+            </div>
+          ) : telemetrySummary.available ? (
             <div className="flex flex-wrap items-center gap-3 text-xs">
               {telemetrySummary.enabled ? (
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
                   <Activity className="h-3.5 w-3.5" />
-                  采集运行中
+                  {dataText.telemetry.running}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-300">
                   <Activity className="h-3.5 w-3.5" />
-                  采集已暂停
+                  {dataText.telemetry.paused}
                 </span>
               )}
               <span className="text-zinc-300">
-                session：{(telemetrySummary.sessionCount ?? 0).toLocaleString()} 条
+                {dataText.telemetry.sessionPrefix}
+                {(telemetrySummary.sessionCount ?? 0).toLocaleString()}
+                {dataText.units.itemSuffix}
               </span>
               <span className="text-zinc-300">
-                占用：{telemetrySummary.storageBytes !== null ? formatDataSize(telemetrySummary.storageBytes) : '未知'}
+                {dataText.telemetry.storagePrefix}
+                {telemetrySummary.storageBytes !== null ? formatDataSize(telemetrySummary.storageBytes) : dataText.telemetry.unknown}
               </span>
               <span className="text-zinc-400">
-                最近事件：{formatLastEventAt(telemetrySummary.lastEventAt)}
+                {dataText.telemetry.recentPrefix}
+                {formatLastEventAt(telemetrySummary.lastEventAt, dataText.telemetry.time)}
               </span>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
                 <Activity className="h-3.5 w-3.5" />
-                采集状态未知
+                {dataText.telemetry.statusUnknown}
               </span>
               <span className="text-zinc-500">
-                telemetry:health 调用失败（{telemetrySummary.error || '未连接'}）。
+                {dataText.telemetry.callFailedPrefix}
+                {telemetrySummary.error || dataText.telemetry.notConnected}
+                {dataText.telemetry.callFailedSuffix}
               </span>
             </div>
           )}
@@ -543,21 +638,22 @@ export const DataSettings: React.FC = () => {
           </SettingsSection>
 
           <SettingsDetails
-            title="调试快照"
-            description="用于 debug session 和上下文排查，默认折叠在高级区。清空不会影响会话消息。"
+            title={dataText.snapshots.title}
+            description={dataText.snapshots.description}
             actions={(
               <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
                 <Bug className="h-3 w-3" />
-                {summary.snapshotCount.toLocaleString()} 条
+                {summary.snapshotCount.toLocaleString()}
+                {dataText.units.itemSuffix}
               </span>
             )}
           >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             {[
-              ['快照数', String(snapshotStats?.snapshotCount ?? 0), 'turn + compaction'],
-              ['覆盖 session', String(snapshotStats?.sessionCount ?? 0), '用于回放排查'],
-              ['占用', formatDataSize(snapshotStats?.totalBytes ?? 0), '本机数据库内'],
+              [dataText.snapshots.countCard, String(snapshotStats?.snapshotCount ?? 0), dataText.snapshots.countCaption],
+              [dataText.snapshots.sessionsCard, String(snapshotStats?.sessionCount ?? 0), dataText.snapshots.sessionsCaption],
+              [dataText.snapshots.sizeCard, formatDataSize(snapshotStats?.totalBytes ?? 0), dataText.snapshots.sizeCaption],
             ].map(([label, value, caption]) => (
               <div key={label} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
                 <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -568,15 +664,15 @@ export const DataSettings: React.FC = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-xs text-zinc-400">保留时长</label>
+            <label className="mb-2 block text-xs text-zinc-400">{dataText.snapshots.retentionLabel}</label>
             <div className="flex flex-wrap gap-2">
               {RETENTION_OPTIONS.map((option) => {
-                const active = (snapshotStats?.retentionDays ?? 1) === option.value;
+                const active = (snapshotStats?.retentionDays ?? 1) === option;
                 return (
                   <button
-                    key={option.value}
+                    key={option}
                     type="button"
-                    onClick={() => handleRetentionChange(option.value)}
+                    onClick={() => handleRetentionChange(option)}
                     disabled={isWebMode()}
                     className={`rounded border px-3 py-1.5 text-xs transition-colors ${
                       active
@@ -584,13 +680,13 @@ export const DataSettings: React.FC = () => {
                         : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-700'
                     } ${isWebMode() ? 'cursor-not-allowed opacity-50' : ''}`}
                   >
-                    {option.label}
+                    {getRetentionOptionLabel(option, dataText.retentionOptions)}
                   </button>
                 );
               })}
             </div>
             <p className="mt-2 text-xs text-zinc-500">
-              启动时自动清理超出保留时长的快照；「永久」表示禁用自动清理。
+              {dataText.snapshots.retentionHint}
             </p>
           </div>
 
@@ -601,7 +697,8 @@ export const DataSettings: React.FC = () => {
             variant="secondary"
             leftIcon={<Trash2 className="h-4 w-4" />}
           >
-            清空调试快照 {(snapshotStats?.snapshotCount || 0) > 0 && `(${snapshotStats?.snapshotCount} 条)`}
+            {dataText.snapshots.clearButtonPrefix}
+            {(snapshotStats?.snapshotCount || 0) > 0 && `(${snapshotStats?.snapshotCount}${dataText.units.itemSuffix})`}
           </Button>
         </div>
           </SettingsDetails>

@@ -54,7 +54,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
 
   return {
     id: name as CoreAgentId,
-    name: description || name,
+    name,
     description: description || `Custom agent: ${name}`,
     prompt,
     tools: stringArrayValue(frontmatter.tools) || ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],

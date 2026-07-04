@@ -78,6 +78,12 @@ for (const root of scanRoots) {
   else if (stat.isFile() && sourceExtensions.has(path.extname(root)) && !isExcluded(root)) files.push(root);
 }
 
+// 自检：目标不存在或扫到 0 个文件 = 门在空转（源码目录拆分/改名后静默恒绿），必须 fail loud
+if (scanRoots.length === 0 || files.length === 0) {
+  console.error(`[console-scan] ✗ 自检失败：扫描目标不存在或匹配 0 个源文件（roots=${JSON.stringify(scanRoots)}）。若目录结构调整过，请同步更新本脚本。`);
+  process.exit(1);
+}
+
 const violations = [];
 for (const file of files) {
   const lines = fs.readFileSync(file, 'utf-8').split('\n');

@@ -14,11 +14,13 @@ import {
   safeJsonParse,
   convertToolsToClaude,
   convertToClaudeMessages,
+  wrapTransientSystemReminder,
   parseClaudeResponse,
   electronFetch,
   normalizeClaudeBaseUrl,
 } from './shared';
 import { parseClaudeSSEEvent } from './wrappers/anthropicWrapper';
+import { normalizeClaudeUsage } from './wrappers/usageNormalization';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -50,7 +52,9 @@ function claudeSSEStream(options: {
     let blockIndex = 0;
     let charCount = 0;
     let lastEstimateTime = 0;
-    let usageData: { inputTokens: number; outputTokens: number } | undefined;
+    let usageData:
+      | { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+      | undefined;
     const contentParts: ResponseContentPart[] = [];
     let currentBlockType: 'text' | 'tool_use' | 'thinking' | null = null;
     let currentTextBuffer = '';
@@ -134,10 +138,8 @@ function claudeSSEStream(options: {
             switch (event.type) {
               case 'message_start': {
                 if (event.message.usage) {
-                  usageData = {
-                    inputTokens: event.message.usage.input_tokens ?? 0,
-                    outputTokens: event.message.usage.output_tokens ?? 0,
-                  };
+                  // cache_read/cache_creation 在 message_start 报告，归一化后带回预算层
+                  usageData = normalizeClaudeUsage(event.message.usage);
                 }
                 break;
               }
@@ -232,6 +234,7 @@ function claudeSSEStream(options: {
                 }
                 if (event.usage) {
                   usageData = {
+                    ...usageData,
                     inputTokens: usageData?.inputTokens ?? 0,
                     outputTokens: event.usage.output_tokens ?? usageData?.outputTokens ?? 0,
                   };
@@ -266,6 +269,8 @@ function claudeSSEStream(options: {
                     type: 'usage',
                     inputTokens: usageData.inputTokens,
                     outputTokens: usageData.outputTokens,
+                    cacheReadTokens: usageData.cacheReadTokens,
+                    cacheCreationTokens: usageData.cacheCreationTokens,
                   });
                 }
                 if (onStream) {
@@ -374,9 +379,17 @@ export class ClaudeProvider implements Provider {
       effectiveConfig.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude
     );
 
+    // 动态尾巴（transient system）先转成历史末尾的 user + <system-reminder>：
+    // 本路径只保留首条 system 进 system 参数、其余 system 全部丢弃，不转换会静默丢失；
+    // 且尾巴每请求变化，进 system 参数会打掉 prompt cache 前缀。
+    const normalizedMessages = messages.map((m) =>
+      m.role === 'system' && m.transient && typeof m.content === 'string'
+        ? { ...m, role: 'user', content: wrapTransientSystemReminder(m.content), transient: undefined }
+        : m,
+    );
     // System message 单独提取（Claude API 要求 system 不在 messages 数组中）
-    const systemMessage = messages.find((m) => m.role === 'system');
-    const otherMessages = messages.filter((m) => m.role !== 'system');
+    const systemMessage = normalizedMessages.find((m) => m.role === 'system');
+    const otherMessages = normalizedMessages.filter((m) => m.role !== 'system');
 
     const claudeTools = convertToolsToClaude(tools);
 

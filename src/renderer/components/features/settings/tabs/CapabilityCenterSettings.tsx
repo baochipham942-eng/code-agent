@@ -26,6 +26,8 @@ import {
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { Button, Input, type ButtonVariant } from '../../../primitives';
 import { useCapabilityInventory } from '../../../../hooks/useCapabilityInventory';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
 import type {
   CapabilityCenterDiagnostic,
@@ -37,42 +39,8 @@ import type {
   CapabilitySourceKind,
 } from '@shared/contract/capability';
 
-const KIND_LABELS: Record<CapabilityKind, string> = {
-  agent_engine: '引擎',
-  skill: '技能',
-  mcp_template: 'MCP',
-  tool_bundle: '工具集',
-  channel_adapter: '通道',
-  workflow_recipe: '工作流',
-  connector: '连接器',
-};
-
-const RUNTIME_LABELS: Record<CapabilityRuntimeState, string> = {
-  ready: '就绪',
-  connected: '已连接',
-  lazy: '惰性加载',
-  disconnected: '未连接',
-  not_configured: '待配置',
-  blocked: '已阻止',
-  error: '错误',
-  unknown: '未知',
-};
-
-const SOURCE_LABELS: Partial<Record<CapabilitySourceKind, string>> = {
-  builtin: '内置',
-  curated: '精选',
-  project: '项目',
-  user: '用户',
-  library: '资源库',
-  runtime: '运行时',
-  memory: '记忆',
-  cloud: '云端',
-  team: '团队',
-  local: '本地',
-  marketplace: '市场',
-  remote: '远程',
-  plugin: '插件',
-};
+type CapabilityCenterText = typeof zh.settings.capabilities;
+const DEFAULT_CAPABILITY_CENTER_TEXT = zh.settings.capabilities;
 
 const KIND_FILTERS: Array<'all' | CapabilityKind> = [
   'all',
@@ -154,23 +122,19 @@ function getRuntimeClass(runtime: CapabilityRuntimeState): string {
   }
 }
 
-function getHealthFilterLabel(filter: HealthFilter): string {
-  switch (filter) {
-    case 'ready':
-      return '就绪';
-    case 'needs_config':
-      return '待配置';
-    case 'disabled':
-      return '已禁用';
-    case 'error':
-      return '错误';
-    default:
-      return '全部';
-  }
+function getHealthFilterLabel(
+  filter: HealthFilter,
+  labels: CapabilityCenterText['healthFilters'],
+): string {
+  return labels[filter];
 }
 
-function getSourceFilterLabel(filter: SourceFilter): string {
-  return filter === 'all' ? '全部来源' : SOURCE_LABELS[filter] || filter;
+function getSourceFilterLabel(
+  filter: SourceFilter,
+  sourceLabels: Partial<Record<CapabilitySourceKind, string>>,
+  allLabel: string,
+): string {
+  return filter === 'all' ? allLabel : sourceLabels[filter] || filter;
 }
 
 function matchesHealth(item: CapabilityCenterItem, filter: HealthFilter): boolean {
@@ -248,19 +212,23 @@ function getCapabilitySettingsTab(item: CapabilityCenterItem): SettingsTab | nul
   }
 }
 
-function getSettingsActionLabel(item: CapabilityCenterItem): string {
+function getSettingsActionLabel(
+  item: CapabilityCenterItem,
+  labels: CapabilityCenterText['actions'],
+): string {
   return item.state.install === 'available' || item.state.runtime === 'not_configured'
-    ? '去配置'
-    : '去管理';
+    ? labels.configure
+    : labels.manage;
 }
 
 function getCapabilityActionPresentation(
   item: CapabilityCenterItem,
   canNavigateSettings: boolean,
+  labels: CapabilityCenterText['actions'],
 ): CapabilityActionPresentation {
   if (item.actions.canRemoveDraft) {
     return {
-      label: '删除草稿',
+      label: labels.removeDraft,
       variant: 'ghost',
       disabled: false,
       title: item.actions.reason,
@@ -275,7 +243,7 @@ function getCapabilityActionPresentation(
   if (item.installPlan && item.state.install === 'available') {
     if (item.actions.canInstallDraft) {
       return {
-        label: '生成草稿',
+        label: labels.generateDraft,
         variant: 'secondary',
         disabled: false,
         title: item.installPlan.summary,
@@ -287,7 +255,7 @@ function getCapabilityActionPresentation(
       };
     }
     return {
-      label: '安装预览',
+      label: labels.installPreview,
       variant: 'secondary',
       disabled: true,
       title: item.actions.reason || item.installPlan.summary,
@@ -302,7 +270,7 @@ function getCapabilityActionPresentation(
   if (item.state.enable === 'not_applicable') {
     const settingsTab = getCapabilitySettingsTab(item);
     return {
-      label: settingsTab ? getSettingsActionLabel(item) : '只读',
+      label: settingsTab ? getSettingsActionLabel(item, labels) : labels.readOnly,
       variant: 'ghost',
       disabled: !settingsTab || !canNavigateSettings,
       title: item.actions.reason,
@@ -319,7 +287,7 @@ function getCapabilityActionPresentation(
   if (!canToggle) {
     const settingsTab = getCapabilitySettingsTab(item);
     return {
-      label: settingsTab ? getSettingsActionLabel(item) : '只读',
+      label: settingsTab ? getSettingsActionLabel(item, labels) : labels.readOnly,
       variant: 'ghost',
       disabled: !settingsTab || !canNavigateSettings,
       title: item.actions.reason,
@@ -332,7 +300,7 @@ function getCapabilityActionPresentation(
   }
 
   return {
-    label: isEnabled ? '禁用' : '启用',
+    label: isEnabled ? labels.disable : labels.enable,
     variant: isEnabled ? 'ghost' : 'secondary',
     disabled: false,
     title: undefined,
@@ -346,6 +314,7 @@ function getCapabilityActionPresentation(
 
 interface CapabilityCardProps {
   item: CapabilityCenterItem;
+  text: CapabilityCenterText;
   actionLoading: boolean;
   onToggle: (item: CapabilityCenterItem, enabled: boolean) => void;
   onInstallDraft: (item: CapabilityCenterItem, inputs?: Record<string, string>) => void;
@@ -353,7 +322,7 @@ interface CapabilityCardProps {
   onNavigateSettings?: (tab: SettingsTab) => void;
 }
 
-const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, onToggle, onInstallDraft, onRemoveDraft, onNavigateSettings }) => {
+const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoading, onToggle, onInstallDraft, onRemoveDraft, onNavigateSettings }) => {
   const draftParameters = item.installPlan?.draft?.parameters || [];
   const [draftInputs, setDraftInputs] = useState<Record<string, string>>({});
   const missingDraftParameters = draftParameters.filter((parameter) => {
@@ -364,14 +333,14 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
     const draftKey = draftParameterKeyByLabel.get(requirement.label);
     return !draftKey || !draftInputs[draftKey]?.trim();
   });
-  const action = getCapabilityActionPresentation(item, Boolean(onNavigateSettings));
+  const action = getCapabilityActionPresentation(item, Boolean(onNavigateSettings), text.actions);
   const draftSettingsTab = item.actions.canRemoveDraft ? getCapabilitySettingsTab(item) : null;
   const showDraftManageAction = Boolean(draftSettingsTab && onNavigateSettings);
   const actionDisabled = action.disabled || (action.installDraft && missingDraftParameters.length > 0);
   const actionTitle = action.installDraft && missingDraftParameters.length > 0
-    ? `缺少 ${missingDraftParameters.map((parameter) => parameter.label).join(', ')}`
+    ? `${text.missingPrefix}${missingDraftParameters.map((parameter) => parameter.label).join(', ')}`
     : action.title;
-  const agentEngineBadges = formatAgentEngineBadges(item);
+  const agentEngineBadges = formatAgentEngineBadges(item, text.agentEngineBadges);
   const assessment = item.assessment;
 
   return (
@@ -385,7 +354,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="truncate text-sm font-medium text-zinc-100">{item.name}</h4>
               <span className="rounded border border-zinc-600 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                {KIND_LABELS[item.kind]}
+                {text.kindLabels[item.kind]}
               </span>
               <span className={`rounded border px-1.5 py-0.5 text-[11px] ${getRiskClass(item.risk.tier)}`}>
                 {item.risk.tier}
@@ -396,7 +365,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
                     {assessment.priority}
                   </span>
                   <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-200">
-                    {formatAssessmentPortability(assessment.portability)}
+                    {formatAssessmentPortability(assessment.portability, text.assessmentPortability)}
                   </span>
                 </>
               ) : null}
@@ -409,7 +378,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
             ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
               <span className={getRuntimeClass(item.state.runtime)}>
-                {RUNTIME_LABELS[item.state.runtime]}
+                {text.runtimeLabels[item.state.runtime]}
               </span>
               <span className="text-zinc-500">{item.source.label}</span>
               {item.source.version ? <span className="text-zinc-500">{item.source.version}</span> : null}
@@ -450,7 +419,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
                 }
               }}
             >
-              去管理
+              {text.actions.manage}
             </Button>
           ) : null}
           <Button
@@ -508,7 +477,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
             {item.state.error ? <div className="truncate">{item.state.error}</div> : null}
             {missingConfig.length > 0 ? (
               <div className="truncate">
-                缺少 {missingConfig.map((req) => req.label).join(', ')}
+                {text.missingPrefix}{missingConfig.map((req) => req.label).join(', ')}
               </div>
             ) : null}
           </div>
@@ -517,20 +486,20 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
 
       <details className="group mt-3 rounded-lg border border-zinc-700/60 bg-zinc-900/40">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs text-zinc-400">
-          <span>权限、配置与审计</span>
-          <span className="text-zinc-500 group-open:hidden">展开</span>
-          <span className="hidden text-zinc-500 group-open:inline">收起</span>
+          <span>{text.detail.summaryTitle}</span>
+          <span className="text-zinc-500 group-open:hidden">{text.detail.expand}</span>
+          <span className="hidden text-zinc-500 group-open:inline">{text.detail.collapse}</span>
         </summary>
         <div className="space-y-3 border-t border-zinc-700/60 px-3 py-3 text-xs">
-          {item.installPlan ? <InfoBlock title="安装预览" values={formatInstallPlan(item)} /> : null}
-          {item.kind === 'agent_engine' ? <InfoBlock title="检测状态" values={formatAgentEngineInspection(item)} /> : null}
-          {item.assessment ? <InfoBlock title="借鉴评估" values={formatAssessment(item)} /> : null}
-          <InfoBlock title="权限" values={item.permissions.map((entry) => `${entry.label}${entry.detail ? ` · ${entry.detail}` : ''}`)} />
-          <InfoBlock title="风险" values={item.risk.reasons} />
-          <InfoBlock title="配置" values={item.config.map(formatRequirement)} empty="无配置项" />
-          <InfoBlock title="依赖" values={item.dependencies.map(formatRequirement)} empty="无依赖项" />
-          <InfoBlock title="来源" values={formatSource(item)} />
-          <InfoBlock title="审计" values={formatAudit(item)} empty="暂无审计记录" />
+          {item.installPlan ? <InfoBlock title={text.actions.installPreview} values={formatInstallPlan(item)} empty={text.detail.empty} /> : null}
+          {item.kind === 'agent_engine' ? <InfoBlock title={text.detail.inspectionStatus} values={formatAgentEngineInspection(item)} empty={text.detail.empty} /> : null}
+          {item.assessment ? <InfoBlock title={text.detail.assessment} values={formatAssessment(item, text)} empty={text.detail.empty} /> : null}
+          <InfoBlock title={text.detail.permissions} values={item.permissions.map((entry) => `${entry.label}${entry.detail ? ` · ${entry.detail}` : ''}`)} empty={text.detail.empty} />
+          <InfoBlock title={text.detail.risk} values={item.risk.reasons} empty={text.detail.empty} />
+          <InfoBlock title={text.detail.config} values={item.config.map(formatRequirement)} empty={text.detail.noConfigItems} />
+          <InfoBlock title={text.detail.dependencies} values={item.dependencies.map(formatRequirement)} empty={text.detail.noDependencies} />
+          <InfoBlock title={text.detail.source} values={formatSource(item)} empty={text.detail.empty} />
+          <InfoBlock title={text.detail.audit} values={formatAudit(item)} empty={text.detail.noAuditRecords} />
         </div>
       </details>
     </article>
@@ -543,7 +512,7 @@ interface InfoBlockProps {
   empty?: string;
 }
 
-const InfoBlock: React.FC<InfoBlockProps> = ({ title, values, empty = '无' }) => (
+const InfoBlock: React.FC<InfoBlockProps> = ({ title, values, empty = DEFAULT_CAPABILITY_CENTER_TEXT.detail.empty }) => (
   <div>
     <div className="mb-1 text-[11px] font-medium text-zinc-500">{title}</div>
     <div className="space-y-1 text-zinc-300">
@@ -564,18 +533,21 @@ function findRequirementValue(item: CapabilityCenterItem, label: string): string
   return [...item.config, ...item.dependencies].find((requirement) => requirement.label === label)?.value;
 }
 
-function formatAgentEngineBadges(item: CapabilityCenterItem): string[] {
+function formatAgentEngineBadges(
+  item: CapabilityCenterItem,
+  text: CapabilityCenterText['agentEngineBadges'] = DEFAULT_CAPABILITY_CENTER_TEXT.agentEngineBadges,
+): string[] {
   if (item.kind !== 'agent_engine') return [];
   const launchMode = findRequirementValue(item, 'Launch mode');
   const permissionProfile = findRequirementValue(item, 'Permission profile');
   const workspacePolicy = findRequirementValue(item, 'Workspace policy');
   const launchBadge = launchMode
-    ? launchMode === 'external CLI' ? '外部 CLI' : '内置 runtime'
+    ? launchMode === 'external CLI' ? text.externalCli : text.builtinRuntime
     : undefined;
   return [
     launchBadge,
-    permissionProfile === 'read_only' ? '只读默认' : permissionProfile,
-    workspacePolicy === 'current workspace only' ? '当前 workspace' : workspacePolicy,
+    permissionProfile === 'read_only' ? text.readOnlyDefault : permissionProfile,
+    workspacePolicy === 'current workspace only' ? text.currentWorkspace : workspacePolicy,
   ].filter((value): value is string => Boolean(value));
 }
 
@@ -609,26 +581,32 @@ function getAssessmentPriorityClass(priority: CapabilityAssessmentPriorityValue)
   }
 }
 
-function formatAssessmentPortability(portability: CapabilityAssessmentPortabilityValue): string {
+function formatAssessmentPortability(
+  portability: CapabilityAssessmentPortabilityValue,
+  labels: CapabilityCenterText['assessmentPortability'] = DEFAULT_CAPABILITY_CENTER_TEXT.assessmentPortability,
+): string {
   switch (portability) {
     case 'native':
-      return 'Mac 原生可用';
+      return labels.native;
     case 'portable_model':
-      return '可迁移模型';
+      return labels.portable_model;
     case 'reference_only':
-      return '仅作参考';
+      return labels.reference_only;
     case 'reject':
-      return '不建议借鉴';
+      return labels.reject;
     default:
       return portability;
   }
 }
 
-function formatAssessment(item: CapabilityCenterItem): string[] {
+function formatAssessment(
+  item: CapabilityCenterItem,
+  text: CapabilityCenterText = DEFAULT_CAPABILITY_CENTER_TEXT,
+): string[] {
   const assessment = item.assessment;
   if (!assessment) return [];
   return [
-    `${assessment.priority} · ${formatAssessmentPortability(assessment.portability)}`,
+    `${assessment.priority} · ${formatAssessmentPortability(assessment.portability, text.assessmentPortability)}`,
     assessment.recommendedUse,
     ...assessment.evidenceRefs.map((ref) => `evidence · ${ref}`),
   ];
@@ -685,6 +663,8 @@ interface CapabilityCenterSettingsProps {
 }
 
 export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> = ({ onNavigateSettings }) => {
+  const { t } = useI18n();
+  const capabilityText = t.settings.capabilities;
   const {
     inventory,
     items,
@@ -728,11 +708,11 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
 
   return (
     <SettingsPage
-      title="能力中心"
-      description="本地 Skills、MCP、Tools、Connectors、Channels 和 workflow recipes 的库存与审计。"
+      title={capabilityText.title}
+      description={capabilityText.description}
     >
       <SettingsSection
-        title="总览"
+        title={capabilityText.overviewTitle}
         actions={(
           <Button
             size="sm"
@@ -740,24 +720,24 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
             onClick={() => void reload()}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {capabilityText.refresh}
           </Button>
         )}
       >
         <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <SummaryTile label="全部" value={inventory?.summary.total ?? 0} />
-          <SummaryTile label="已安装" value={inventory?.summary.installed ?? 0} />
-          <SummaryTile label="已启用" value={inventory?.summary.enabled ?? 0} />
-          <SummaryTile label="模板" value={availableTemplateCount} />
-          <SummaryTile label="阻塞" value={inventory?.summary.blocked ?? 0} />
-          <SummaryTile label="高风险" value={inventory?.summary.highRisk ?? 0} />
+          <SummaryTile label={capabilityText.summary.all} value={inventory?.summary.total ?? 0} />
+          <SummaryTile label={capabilityText.summary.installed} value={inventory?.summary.installed ?? 0} />
+          <SummaryTile label={capabilityText.summary.enabled} value={inventory?.summary.enabled ?? 0} />
+          <SummaryTile label={capabilityText.summary.templates} value={availableTemplateCount} />
+          <SummaryTile label={capabilityText.summary.blocked} value={inventory?.summary.blocked ?? 0} />
+          <SummaryTile label={capabilityText.summary.highRisk} value={inventory?.summary.highRisk ?? 0} />
         </div>
       </SettingsSection>
 
       {registryDiagnostics.length > 0 ? (
         <SettingsDetails
-          title="Registry warnings"
-          description={`${registryDiagnostics.length} 条本地 registry 诊断。坏文件会被跳过，信任元数据不通过的安装项只保留预览。`}
+          title={capabilityText.registryWarnings.title}
+          description={`${registryDiagnostics.length}${capabilityText.registryWarnings.descriptionSuffix}`}
         >
           <div className="space-y-2 text-xs leading-relaxed text-amber-200">
             {registryDiagnostics.slice(0, 6).map((diagnostic) => (
@@ -770,13 +750,15 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
               </div>
             ))}
             {registryDiagnostics.length > 6 ? (
-              <div className="text-zinc-500">还有 {registryDiagnostics.length - 6} 条 registry 诊断未展开。</div>
+              <div className="text-zinc-500">
+                {capabilityText.registryWarnings.hiddenPrefix}{registryDiagnostics.length - 6}{capabilityText.registryWarnings.hiddenSuffix}
+              </div>
             ) : null}
           </div>
         </SettingsDetails>
       ) : null}
 
-      <SettingsSection title="能力">
+      <SettingsSection title={capabilityText.capabilitySectionTitle}>
         <div className="space-y-3">
           <div className="flex flex-col gap-2">
             <div className="relative">
@@ -784,7 +766,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索能力、权限、配置或来源"
+                placeholder={capabilityText.searchPlaceholder}
                 inputSize="sm"
                 className="pl-8 pr-8"
               />
@@ -804,7 +786,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
                   active={kindFilter === filter}
                   onClick={() => setKindFilter(filter)}
                 >
-                  {filter === 'all' ? '全部' : KIND_LABELS[filter]}
+                  {filter === 'all' ? capabilityText.summary.all : capabilityText.kindLabels[filter]}
                 </FilterButton>
               ))}
             </div>
@@ -816,7 +798,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
                   active={sourceFilter === filter}
                   onClick={() => setSourceFilter(filter)}
                 >
-                  {getSourceFilterLabel(filter)}
+                  {getSourceFilterLabel(filter, capabilityText.sourceLabels, capabilityText.sourceFilters.all)}
                 </FilterButton>
               ))}
             </div>
@@ -828,7 +810,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
                   active={healthFilter === filter}
                   onClick={() => setHealthFilter(filter)}
                 >
-                  {getHealthFilterLabel(filter)}
+                  {getHealthFilterLabel(filter, capabilityText.healthFilters)}
                 </FilterButton>
               ))}
             </div>
@@ -854,7 +836,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="rounded-lg bg-zinc-800 p-6 text-center text-sm text-zinc-400">
-              没有匹配的能力
+              {capabilityText.noMatches}
             </div>
           ) : (
             <div className="space-y-3">
@@ -862,6 +844,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
                 <CapabilityCard
                   key={item.id}
                   item={item}
+                  text={capabilityText}
                   actionLoading={actionKey === item.id}
                   onToggle={(target, enabled) => void setEnabled(target, enabled)}
                   onInstallDraft={(target, inputs) => void installDraft(target, inputs)}
@@ -875,17 +858,17 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
       </SettingsSection>
 
       <SettingsDetails
-        title="安全边界"
-        description="安装、启用、连接和真实调用分开记录。P0 不执行远程模板安装。"
+        title={capabilityText.securityBoundary.title}
+        description={capabilityText.securityBoundary.description}
       >
         <div className="space-y-2 text-xs leading-relaxed text-zinc-400">
           <div className="flex gap-2">
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-            <span>Skill 的 allowed-tools 不会给 user/project/library skill 自动扩权。</span>
+            <span>{capabilityText.securityBoundary.skillBoundary}</span>
           </div>
           <div className="flex gap-2">
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-            <span>MCP 模板只能生成禁用草稿；Channel 和 Workflow 模板仍回到各自设置页。</span>
+            <span>{capabilityText.securityBoundary.templateBoundary}</span>
           </div>
         </div>
       </SettingsDetails>

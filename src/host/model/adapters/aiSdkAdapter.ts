@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
+import { normalizeAiSdkUsage } from '../providers/wrappers/usageNormalization';
 import type {
   LanguageModel,
   ModelMessage as AiModelMessage,
@@ -51,7 +52,7 @@ import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/prov
 import { withTransientRetry, isTransientError, abortableSleep } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
-import { convertToolsToOpenAI, getHttpsAgent } from '../providers/shared';
+import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -439,7 +440,12 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
 
   const out: AiModelMessage[] = [];
   for (const m of ordered) {
-    if (m.role === 'system') {
+    if (m.role === 'system' && m.transient) {
+      // 动态尾巴（transient）：不能进 system 参数——buildAiSdkPrompt 会把全部 system
+      // 消息提升到最前，尾巴每请求变化会把整个历史的 prompt cache 前缀打掉。
+      // 转成位于原位（历史末尾）的 user 消息 + <system-reminder> 包裹（Claude Code 模式）。
+      out.push({ role: 'user', content: wrapTransientSystemReminder(textOf(m.content)) });
+    } else if (m.role === 'system') {
       out.push({ role: 'system', content: textOf(m.content) });
     } else if (m.role === 'tool') {
       const id = toolMsgCallId(m);
@@ -753,10 +759,7 @@ async function generateViaAiSdk(params: {
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     contentParts: contentParts.length > 0 ? contentParts : undefined,
     thinking: result.reasoningText || undefined,
-    usage: {
-      inputTokens: result.usage?.inputTokens ?? 0,
-      outputTokens: result.usage?.outputTokens ?? 0,
-    },
+    usage: normalizeAiSdkUsage(result.usage ?? {}),
     finishReason: result.finishReason,
   };
 }
@@ -766,7 +769,9 @@ interface StreamAccumulator {
   content: string;
   reasoning: string;
   finishReason: string | undefined;
-  usage: { inputTokens: number; outputTokens: number } | undefined;
+  usage:
+    | { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+    | undefined;
   // 按 toolCallId 索引；index 保留模型发出的先后顺序，对齐 SSE delta.tool_calls[].index 语义。
   toolCalls: Map<string, { id: string; name: string; argsText: string; input?: Record<string, unknown>; index: number }>;
   contentParts: ResponseContentPart[];
@@ -979,10 +984,7 @@ async function streamViaAiSdk(params: {
           }
           case 'finish': {
             acc.finishReason = part.finishReason;
-            acc.usage = {
-              inputTokens: part.totalUsage?.inputTokens ?? 0,
-              outputTokens: part.totalUsage?.outputTokens ?? 0,
-            };
+            acc.usage = normalizeAiSdkUsage(part.totalUsage ?? {});
             break;
           }
           case 'error': {
@@ -1005,7 +1007,13 @@ async function streamViaAiSdk(params: {
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
       healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
       if (acc.usage) {
-        onStream({ type: 'usage', inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens });
+        onStream({
+          type: 'usage',
+          inputTokens: acc.usage.inputTokens,
+          outputTokens: acc.usage.outputTokens,
+          cacheReadTokens: acc.usage.cacheReadTokens,
+          cacheCreationTokens: acc.usage.cacheCreationTokens,
+        });
       }
       onStream({ type: 'complete', finishReason: acc.finishReason || 'stop' });
       emitSnapshot(true);

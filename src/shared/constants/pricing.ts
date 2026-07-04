@@ -1,18 +1,33 @@
+/** 模型定价条目（每 1M tokens，美元）。cacheRead/cacheWrite 缺省时按比例回退（见下方 ratio 常量）。 */
+export interface ModelPricingEntry {
+  input: number;
+  output: number;
+  /** 缓存命中读取价（prompt cache hit）。缺省 = input × DEFAULT_CACHE_READ_PRICE_RATIO */
+  cacheRead?: number;
+  /** 缓存写入价（Anthropic cache_creation）。缺省 = input × DEFAULT_CACHE_WRITE_PRICE_RATIO */
+  cacheWrite?: number;
+}
+
+/** 无显式 cacheRead 价的模型按 input × 0.1 近似（Anthropic/DeepSeek/Moonshot 均为 ~0.1x 档） */
+export const DEFAULT_CACHE_READ_PRICE_RATIO = 0.1;
+/** 无显式 cacheWrite 价的模型按 input × 1.25 近似（Anthropic 5m ephemeral 档） */
+export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
+
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
-export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
-  // DeepSeek — V4 官方价格待公告，先沿用 V3.2 价格作为近似，实测后校正
-  'deepseek-v4-flash': { input: 0.14, output: 0.28 },
-  'deepseek-v4-pro': { input: 0.55, output: 2.19 },
-  'deepseek-chat': { input: 0.14, output: 0.28 },
-  'deepseek-coder': { input: 0.14, output: 0.28 },
-  'deepseek-reasoner': { input: 0.55, output: 2.19 },
-  // OpenAI
-  'gpt-4o': { input: 2.5, output: 10 },
-  'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  // Anthropic
-  'claude-sonnet-4-20250514': { input: 3, output: 15 },
-  'claude-3-5-sonnet-20241022': { input: 3, output: 15 },
-  'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25 },
+export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
+  // DeepSeek — V4 官方价格待公告，先沿用 V3.2 价格作为近似，实测后校正；缓存命中为 0.1x 档
+  'deepseek-v4-flash': { input: 0.14, output: 0.28, cacheRead: 0.014 },
+  'deepseek-v4-pro': { input: 0.55, output: 2.19, cacheRead: 0.055 },
+  'deepseek-chat': { input: 0.14, output: 0.28, cacheRead: 0.014 },
+  'deepseek-coder': { input: 0.14, output: 0.28, cacheRead: 0.014 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19, cacheRead: 0.055 },
+  // OpenAI — cached input 为 0.5x 档
+  'gpt-4o': { input: 2.5, output: 10, cacheRead: 1.25 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6, cacheRead: 0.075 },
+  // Anthropic — cacheRead 0.1x / cacheWrite(5m ephemeral) 1.25x
+  'claude-sonnet-4-20250514': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  'claude-3-5-sonnet-20241022': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25, cacheRead: 0.025, cacheWrite: 0.3125 },
   // Zhipu
   'glm-5': { input: 0.05, output: 0.05 },
   'glm-4.7': { input: 0.05, output: 0.05 },
@@ -20,8 +35,8 @@ export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: numbe
   'glm-4.7-flash': { input: 0, output: 0 },
   'glm-4-flash': { input: 0, output: 0 },
   'glm-4.6v-flash': { input: 0, output: 0 },
-  // Moonshot
-  'kimi-k2.6': { input: 0.6, output: 2.5 },
+  // Moonshot — K2 系缓存命中为 $0.15/M 档
+  'kimi-k2.6': { input: 0.6, output: 2.5, cacheRead: 0.15 },
   'kimi-k2.5': { input: 0, output: 0 },
   'moonshot-v1-8k': { input: 0.12, output: 0.12 },
   'moonshot-v1-32k': { input: 0.24, output: 0.24 },

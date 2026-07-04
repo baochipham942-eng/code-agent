@@ -70,6 +70,8 @@ export interface GenerateVideoToCanvasParams {
   prompt?: string;
   /** i2v 底图节点。 */
   baseNode?: CanvasNode;
+  /** 付费命令幂等键（WP3-1，agent 路径带；表单态无自动重放不带）：透传 host 生成收口。 */
+  commandId?: string;
 }
 
 export interface GenerateVideoToCanvasResult {
@@ -88,7 +90,7 @@ export interface GenerateVideoToCanvasResult {
 export async function generateVideoToCanvas(
   params: GenerateVideoToCanvasParams,
 ): Promise<GenerateVideoToCanvasResult> {
-  const { mode, modelId, durationSec, prompt, baseNode } = params;
+  const { mode, modelId, durationSec, prompt, baseNode, commandId } = params;
   try {
     let runDir = useDesignCanvasStore.getState().runDir;
     if (!runDir) {
@@ -120,6 +122,7 @@ export async function generateVideoToCanvas(
         baseImagePath: mode === 'i2v' && baseNode ? `${runDir}/${baseNode.src}` : undefined,
         outputPath: assetAbs,
         durationSec,
+        commandId,
       });
       if (!res?.success) {
         useDesignCanvasStore.getState().setGenerating(false);

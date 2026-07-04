@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { SidebarSessionItem } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 
-describe('SidebarSessionItem Evidence Control badge', () => {
-  it('renders evidence trust from trajectory quality summary without opening replay', () => {
+describe('SidebarSessionItem Evidence Control quietness', () => {
+  // PR#287 会话历史极简重构：eval 诊断徽标（轨迹质量 G1·Diag / 证据等级 EV）
+  // 移出会话行默认视图（经项目控制台 / Replay 面板查看）。本测试锁定安静性：
+  // 即使传入完整 trajectory quality summary，行内也不得出现工程徽标与敏感信息。
+  it('keeps eval diagnostics off the session row even with full trajectory quality summary', () => {
     const session = {
       id: 'session-evidence',
       title: 'Evidence Review Session',
@@ -121,12 +124,13 @@ describe('SidebarSessionItem Evidence Control badge', () => {
       />,
     );
 
-    expect(html).toContain('G1 · Diag');
-    expect(html).toContain('EV partial');
-    expect(html).toContain('Evidence Control partial');
-    expect(html).toContain('3 items · 4 refs');
-    expect(html).toContain('blocked 0 · stale 1 · conflicts 1');
-    expect(html).toContain('stale evidence present');
+    expect(html).toContain('Evidence Review Session');
+    expect(html).not.toContain('G1 · Diag');
+    expect(html).not.toContain('EV partial');
+    expect(html).not.toContain('Evidence Control partial');
+    expect(html).not.toContain('3 items · 4 refs');
+    expect(html).not.toContain('blocked 0 · stale 1 · conflicts 1');
+    expect(html).not.toContain('stale evidence present');
     expect(html).not.toContain('/Users/linchen');
     expect(html).not.toContain('secret-token');
     expect(html).not.toContain('base64,abcdef');

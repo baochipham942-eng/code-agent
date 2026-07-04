@@ -6,6 +6,7 @@ import React, { useState, useCallback } from 'react';
 import { Folder, FolderOpen, ChevronRight, ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import { useLocalBridgeStore } from '../../../../../stores/localBridgeStore';
 import { Button } from '../../../../primitives';
+import { useI18n } from '../../../../../hooks/useI18n';
 import {
   invokeLocalBridgeTool,
   readBridgeDirectoryEntries,
@@ -29,6 +30,8 @@ interface DirNode {
 // ============================================================================
 
 export const WorkingDirectoryPicker: React.FC = () => {
+  const { t } = useI18n();
+  const pickerText = t.settings.localBridge.workingDirectory;
   const { workingDirectory, setWorkingDirectory, token } = useLocalBridgeStore();
   const [showPicker, setShowPicker] = useState(false);
   const [homeDir, setHomeDir] = useState<string | null>(null);
@@ -146,7 +149,7 @@ export const WorkingDirectoryPicker: React.FC = () => {
               className="text-xs text-zinc-500 py-1"
               style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
             >
-              (空目录)
+              {pickerText.emptyDirectory}
             </div>
           ) : (
             node.children.map((child) => renderNode(child, depth + 1))
@@ -160,24 +163,24 @@ export const WorkingDirectoryPicker: React.FC = () => {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <span className="text-xs text-zinc-400">工作目录</span>
+          <span className="text-xs text-zinc-400">{pickerText.title}</span>
           <div className="text-sm text-zinc-200 font-mono mt-0.5">
-            {workingDirectory || '未设置'}
+            {workingDirectory || pickerText.notSet}
           </div>
         </div>
         <Button size="sm" variant="secondary" onClick={handleOpenPicker}>
-          {workingDirectory ? '更换' : '选择'}
+          {workingDirectory ? pickerText.change : pickerText.choose}
         </Button>
       </div>
 
       {showPicker && (
         <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-zinc-400">选择工作目录</span>
+            <span className="text-xs text-zinc-400">{pickerText.chooseTitle}</span>
             <button
               onClick={handleOpenPicker}
               className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-              title="刷新"
+              title={pickerText.refresh}
             >
               <RefreshCw className="w-3 h-3" />
             </button>
@@ -193,10 +196,10 @@ export const WorkingDirectoryPicker: React.FC = () => {
           </div>
           <div className="flex justify-end gap-2 mt-3 pt-2 border-t border-zinc-700">
             <Button size="sm" variant="ghost" onClick={() => setShowPicker(false)}>
-              取消
+              {pickerText.cancel}
             </Button>
             <Button size="sm" variant="primary" onClick={handleSelect} disabled={!selectedPath}>
-              确认
+              {pickerText.confirm}
             </Button>
           </div>
         </div>

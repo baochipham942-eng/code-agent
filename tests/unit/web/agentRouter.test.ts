@@ -60,6 +60,11 @@ vi.mock('../../../src/host/session/modelSessionState', () => ({
   }),
 }));
 
+const mockRehydrateOverride = vi.hoisted(() => vi.fn<(session: unknown) => unknown>(() => null));
+vi.mock('../../../src/host/session/modelOverridePersistence', () => ({
+  rehydrateModelOverrideFromSession: mockRehydrateOverride,
+}));
+
 vi.mock('../../../src/host/services/agentEngine', () => ({
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return {
@@ -232,6 +237,178 @@ describe('createAgentRouter', () => {
     setDbAvailable(false);
   });
 
+  // --------------------------------------------------------------------------
+  // /agent 显式选择的路由真相（三层一致性批③）：web 生产路径此前从不发射
+  // routing_resolved，解析失败只打 warn 日志（静默兜底）——徽标/路由证据在生产
+  // 路径恒空。这里锁死：命中/失败都必须发 routing_resolved，且 requestedAgentId
+  // 必须进 AgentLoop config（turnQuality 徽标降级判定用）。
+  // --------------------------------------------------------------------------
+  describe('/api/run preferredAgentId 路由真相（routing_resolved over SSE）', () => {
+    function parseSSEEvent(raw: string, eventName: string): Record<string, unknown> | null {
+      const lines = raw.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === `event: ${eventName}`) {
+          const dataLine = lines[i + 1]?.trim();
+          if (dataLine?.startsWith('data:')) {
+            return JSON.parse(dataLine.slice(5).trim()) as Record<string, unknown>;
+          }
+        }
+      }
+      return null;
+    }
+
+    async function readSSEUntil(response: globalThis.Response, marker: string, timeoutMs = 2000): Promise<string> {
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline && !buffer.includes(marker)) {
+        const chunk = await Promise.race([
+          reader.read(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.max(1, deadline - Date.now()))),
+        ]);
+        if (!chunk || chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+      await reader.cancel().catch(() => {});
+      return buffer;
+    }
+
+    it('显式选择命中 → SSE routing_resolved mode=explicit 且 config 带 agentOverride+requestedAgentId', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '看看这个仓库的结构',
+          sessionId: 'session-explicit-hit',
+          context: { preferredAgentId: 'explore' },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      const raw = await readSSEUntil(response, 'routing_resolved');
+      const payload = parseSSEEvent(raw, 'routing_resolved');
+      expect(payload).toMatchObject({
+        mode: 'explicit',
+        agentId: 'explore',
+        requestedAgentId: 'explore',
+        fallbackToDefault: false,
+      });
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls[0][0] as {
+        agentOverride?: { id: string };
+        requestedAgentId?: string;
+      };
+      expect(config.agentOverride?.id).toBe('explore');
+      expect(config.requestedAgentId).toBe('explore');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+
+    it('显式选择解析失败 → SSE routing_resolved 降级信号（fallbackToDefault+requestedAgentId），不再静默', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hello',
+          sessionId: 'session-explicit-miss',
+          context: { preferredAgentId: '__ghost_agent__' },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      const raw = await readSSEUntil(response, 'routing_resolved');
+      const payload = parseSSEEvent(raw, 'routing_resolved');
+      expect(payload).toMatchObject({
+        mode: 'explicit',
+        agentId: 'default',
+        agentName: 'default',
+        requestedAgentId: '__ghost_agent__',
+        fallbackToDefault: true,
+      });
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls[0][0] as {
+        agentOverride?: { id: string };
+        requestedAgentId?: string;
+      };
+      expect(config.agentOverride).toBeUndefined();
+      expect(config.requestedAgentId).toBe('__ghost_agent__');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+
+    it('preferredAgentId 带空白 → 规整后不产生假降级（requestedAgentId === 实际 agentId）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hi',
+          sessionId: 'session-padded-id',
+          context: { preferredAgentId: '  explore  ' },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      const raw = await readSSEUntil(response, 'routing_resolved');
+      const payload = parseSSEEvent(raw, 'routing_resolved');
+      expect(payload).toMatchObject({
+        mode: 'explicit',
+        agentId: 'explore',
+        requestedAgentId: 'explore',
+        fallbackToDefault: false,
+      });
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+
+    it('无 preferredAgentId → 不发射 routing_resolved（不给无显式选择的轮次加噪音）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hello',
+          sessionId: 'session-no-preferred',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      // 读一小段流（task_start 之后），确认没有 routing_resolved
+      const raw = await readSSEUntil(response, 'task_start', 500);
+      expect(raw).not.toContain('event: routing_resolved');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
+  });
+
   it('cancels the active agent loop when the /api/run SSE client disconnects', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/api/run`, {
@@ -253,6 +430,136 @@ describe('createAgentRouter', () => {
 
     await waitForAssertion(() => {
       expect(mockCancel).toHaveBeenCalledWith('user');
+    });
+  });
+
+  describe('/api/run SSE per-token 并发上限（WP3-4）', () => {
+    // 外层 beforeEach 的 releaseRun 是单值会被并发 run 覆盖（只能释放最后一个），
+    // 本组测试开 N 条并发流，改用 per-loop 释放器（cancel 只放行自己的 run）；
+    // 每个测试收尾必须排空（放行全部悬挂 run + 等 activeAgentLoops 清零），
+    // 否则悬挂 handler 泄漏进下一个测试。
+    const pendingReleases: Array<() => void> = [];
+    beforeEach(() => {
+      pendingReleases.length = 0;
+      mockCreateAgentLoop.mockImplementation(() => {
+        // 注意不能复用 mockRun.mockImplementation（后创建的 loop 会覆盖前者的闭包），
+        // 每个 loop 拿独立函数；mockCancel 仅作调用计数 spy。
+        let release: (() => void) | null = null;
+        return {
+          run: () => new Promise<void>((resolve) => {
+            release = resolve;
+            pendingReleases.push(resolve);
+          }),
+          cancel: (...args: unknown[]) => {
+            mockCancel(...args);
+            release?.();
+          },
+          steer: mockSteer,
+        };
+      });
+    });
+
+    const drainRuns = async (opened: Array<{ controller: AbortController }>) => {
+      for (const o of opened) o.controller.abort();
+      // 反复排空：run promise 可能在 abort 之后才被 handler 创建（异步 setup 竞态），
+      // 单次 splice 会漏掉迟到的 release。
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline && activeAgentLoops.size > 0) {
+        pendingReleases.splice(0).forEach((release) => release());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      pendingReleases.splice(0).forEach((release) => release());
+      expect(activeAgentLoops.size).toBe(0);
+    };
+
+    const openRun = (sessionId: string, token: string) => {
+      const controller = new AbortController();
+      const responsePromise = fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ prompt: '长任务', sessionId }),
+        signal: controller.signal,
+      });
+      return { controller, responsePromise };
+    };
+
+    it('同 token 超并发上限 → 第 N+1 条返回 429 JSON（writeHead 之前拒绝），不起 agent loop', async () => {
+      const { WEB_SSE } = await import('../../../src/shared/constants');
+      const max = WEB_SSE.MAX_CONCURRENT_PER_TOKEN;
+      const opened: Array<{ controller: AbortController; responsePromise: Promise<Response> }> = [];
+      try {
+        for (let i = 0; i < max; i++) {
+          opened.push(openRun(`session-cap-${i}`, 'tok-cap'));
+        }
+        const responses = await Promise.all(opened.map((o) => o.responsePromise));
+        for (const r of responses) expect(r.status).toBe(200);
+        await waitForAssertion(() => {
+          expect(mockCreateAgentLoop).toHaveBeenCalledTimes(max);
+        });
+
+        const overflow = openRun(`session-cap-overflow`, 'tok-cap');
+        const overflowRes = await overflow.responsePromise;
+        expect(overflowRes.status).toBe(429);
+        expect(overflowRes.headers.get('content-type')).toContain('application/json');
+        const body = await overflowRes.json();
+        expect(typeof body.error).toBe('string');
+        expect(mockCreateAgentLoop).toHaveBeenCalledTimes(max); // 超限请求没起 loop
+      } finally {
+        await drainRuns(opened);
+      }
+    });
+
+    it('断线释放槽位 → 新连接可进（断线清理）', async () => {
+      const { WEB_SSE } = await import('../../../src/shared/constants');
+      const max = WEB_SSE.MAX_CONCURRENT_PER_TOKEN;
+      const opened: Array<{ controller: AbortController; responsePromise: Promise<Response> }> = [];
+      try {
+        for (let i = 0; i < max; i++) {
+          opened.push(openRun(`session-rel-${i}`, 'tok-rel'));
+        }
+        await Promise.all(opened.map((o) => o.responsePromise));
+
+        opened[0].controller.abort(); // 断线其中一条
+        await waitForAssertion(() => {
+          expect(mockCancel).toHaveBeenCalled();
+        });
+
+        // 槽位释放后，新连接应被接受（重试等待释放传播）
+        let accepted = false;
+        const deadline = Date.now() + 3000;
+        while (!accepted && Date.now() < deadline) {
+          const retry = openRun(`session-rel-new-${Date.now()}`, 'tok-rel');
+          const res = await retry.responsePromise;
+          retry.controller.abort();
+          if (res.status === 200) {
+            accepted = true;
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
+        expect(accepted).toBe(true);
+      } finally {
+        await drainRuns(opened);
+      }
+    });
+
+    it('不同 token 各自计数：token A 打满不影响 token B', async () => {
+      const { WEB_SSE } = await import('../../../src/shared/constants');
+      const max = WEB_SSE.MAX_CONCURRENT_PER_TOKEN;
+      const opened: Array<{ controller: AbortController; responsePromise: Promise<Response> }> = [];
+      try {
+        for (let i = 0; i < max; i++) {
+          opened.push(openRun(`session-multi-${i}`, 'tok-full'));
+        }
+        await Promise.all(opened.map((o) => o.responsePromise));
+
+        const other = openRun('session-other-token', 'tok-free');
+        opened.push(other);
+        const res = await other.responsePromise;
+        expect(res.status).toBe(200);
+      } finally {
+        await drainRuns(opened);
+      }
     });
   });
 
@@ -705,6 +1012,112 @@ describe('createAgentRouter', () => {
     }));
   });
 
+  it('backfills empty session working directory with the resolved run directory', async () => {
+    await closeServer();
+    const updateSession = vi.fn(async () => undefined);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ id: 'session-backfill-empty' })),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        sessionId: 'session-backfill-empty',
+        context: { workingDirectory: '/tmp/context-project' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(updateSession).toHaveBeenCalledWith(
+      'session-backfill-empty',
+      expect.objectContaining({ workingDirectory: '/tmp/context-project' }),
+    );
+  });
+
+  it('does not overwrite a persisted session working directory from the run path', async () => {
+    await closeServer();
+    const updateSession = vi.fn(async () => undefined);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ id: 'session-persisted', workingDirectory: '/persisted/project' })),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        sessionId: 'session-persisted',
+        context: { workingDirectory: '/tmp/other-project' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    // runtime 现状不变：context 显式值仍然优先生效
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: '/tmp/other-project',
+    }));
+    // 但持久化值不被覆盖（只补空）
+    expect(updateSession).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workingDirectory: expect.anything() }),
+    );
+  });
+
+  it('skips working directory backfill for unpersisted temp sessions', async () => {
+    await closeServer();
+    const updateSession = vi.fn(async () => undefined);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        context: { workingDirectory: '/tmp/context-project' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(updateSession).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workingDirectory: expect.anything() }),
+    );
+  });
+
   it('propagates adaptive flag into the agent loop config when session override is auto mode', async () => {
     mockGetOverride.mockReturnValueOnce({
       provider: 'custom-commonstack-claude',
@@ -849,6 +1262,67 @@ describe('createAgentRouter', () => {
       'session-codex-engine',
       expect.objectContaining({ status: 'completed' }),
     );
+  });
+
+  it('外部引擎会话 + 显式 agent 选择 → 发降级 routing_resolved（引擎路径不支持 agent 选择，不再静默）', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-codex-agent-degrade',
+      title: 'Codex engine',
+      type: 'chat',
+      workingDirectory: '/tmp/codex-workspace',
+      engine: {
+        kind: 'codex_cli',
+        cwd: '/tmp/codex-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.codexRun.mockImplementationOnce(async (request) => {
+      request.emitEvent?.({ type: 'agent_complete', data: null });
+      return {
+        runId: 'codex-run-degrade',
+        sessionId: request.sessionId,
+        engine: 'codex_cli',
+        status: 'completed',
+        outputText: 'ok',
+        exitCode: 0,
+      };
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ getSession, updateSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'hi',
+        sessionId: 'session-codex-agent-degrade',
+        context: { preferredAgentId: 'explore' },
+      }),
+    });
+    const raw = await response.text();
+
+    expect(response.ok).toBe(true);
+    const lines = raw.split('\n');
+    const idx = lines.findIndex((line) => line.trim() === 'event: routing_resolved');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const payload = JSON.parse(lines[idx + 1].trim().slice(5).trim()) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      mode: 'explicit',
+      agentId: 'default',
+      agentName: 'Codex CLI',
+      requestedAgentId: 'explore',
+      fallbackToDefault: true,
+    });
+    // reason 也走展示名，裸 kind 不得泄进任何 UI 可见文案
+    expect(String(payload!.reason)).toContain('Codex CLI');
+    expect(String(payload!.reason)).not.toContain('codex_cli');
   });
 
   it('routes MiMo engine sessions through the MiMo adapter, passing the selected model directly', async () => {
@@ -1365,6 +1839,215 @@ describe('createAgentRouter', () => {
     );
   });
 
+  // 兜底判定必须认「终轮」assistant 是否落库（Codex audit HIGH1）：
+  // 多迭代 run 早轮已落库 + 终轮落库失败时，旧 .some() 匹配任一 id 会误跳兜底，
+  // 终轮内容+metadata 静默丢失。
+  it('fires assistant fallback when an earlier loop message persisted but the final one did not', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    // 早轮 a1 已在库，终轮 a2 缺席
+    const getMessages = vi.fn(async () => [
+      { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 },
+    ]);
+    const getSession = vi.fn(async () => ({ workingDirectory: '/tmp/persisted-project' }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'message', data: { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 } });
+        onEvent({ type: 'message', data: { id: 'loop-a2', role: 'assistant', content: '终轮结论', timestamp: 200 } });
+        onEvent({ type: 'stream_chunk', data: { content: '终轮结论' } });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ addMessageToSession, getMessages, getSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '多迭代终轮丢失场景', sessionId: 'session-final-lost' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-final-lost',
+      expect.objectContaining({ role: 'assistant', content: '终轮结论' }),
+    );
+  });
+
+  it('keeps skipping assistant fallback when the final loop message did persist', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn(async () => [
+      { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 },
+      { id: 'loop-a2', role: 'assistant', content: '终轮结论', timestamp: 200 },
+    ]);
+    const getSession = vi.fn(async () => ({ workingDirectory: '/tmp/persisted-project' }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'message', data: { id: 'loop-a1', role: 'assistant', content: '早轮工具调用', timestamp: 100 } });
+        onEvent({ type: 'message', data: { id: 'loop-a2', role: 'assistant', content: '终轮结论', timestamp: 200 } });
+        onEvent({ type: 'stream_chunk', data: { content: '终轮结论' } });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ addMessageToSession, getMessages, getSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '终轮已落库场景', sessionId: 'session-final-persisted' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).not.toHaveBeenCalledWith(
+      'session-final-persisted',
+      expect.objectContaining({ role: 'assistant' }),
+    );
+  });
+
+  // 兜底落库必须带上 message 事件的 metadata（turnQuality 安静徽标数据）——
+  // 三处重建（cache push / sm.addMessageToSession / db.addMessage）此前整体丢弃 metadata，
+  // reload 后徽标（模型名+agent 名+降级警示）消失。
+  it('persists assistant metadata.turnQuality via session manager fallback and cache', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const turnQualityMetadata = {
+      turnQuality: {
+        capabilities: {
+          agentId: 'explore',
+          agentName: 'Explorer',
+          requestedAgentId: 'explore',
+        },
+      },
+    };
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn(async () => []);
+    const getSession = vi.fn(async () => ({
+      workingDirectory: '/tmp/persisted-project',
+    }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message',
+          data: {
+            id: 'loop-assistant-meta',
+            role: 'assistant',
+            content: '最终回复',
+            timestamp: 200,
+            metadata: turnQualityMetadata,
+          },
+        });
+        onEvent({
+          type: 'stream_chunk',
+          data: { content: '最终回复' },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '带徽标元数据的回复',
+        sessionId: 'session-assistant-metadata',
+      }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-assistant-metadata',
+      expect.objectContaining({
+        role: 'assistant',
+        metadata: turnQualityMetadata,
+      }),
+    );
+    const cached = sessionMessages.get('session-assistant-metadata') || [];
+    const assistant = cached.find((message) => message.role === 'assistant');
+    expect(assistant?.metadata).toEqual(turnQualityMetadata);
+  });
+
+  it('persists assistant metadata.turnQuality via direct db fallback when SM unavailable', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const turnQualityMetadata = {
+      turnQuality: {
+        capabilities: {
+          agentId: 'default',
+          agentName: 'default',
+          requestedAgentId: '__ghost_agent__',
+        },
+      },
+    };
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message',
+          data: {
+            id: 'loop-assistant-meta-db',
+            role: 'assistant',
+            content: '降级回复',
+            timestamp: 200,
+            metadata: turnQualityMetadata,
+          },
+        });
+        onEvent({
+          type: 'stream_chunk',
+          data: { content: '降级回复' },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi();
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '降级场景带元数据',
+        sessionId: 'session-assistant-metadata-db',
+      }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(mockDb.addMessage).toHaveBeenCalledWith(
+      'session-assistant-metadata-db',
+      expect.objectContaining({
+        role: 'assistant',
+        metadata: turnQualityMetadata,
+      }),
+    );
+  });
+
   it('drops duplicate sequenced message deltas from /api/run streaming and cache', async () => {
     mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
       run: vi.fn(async () => {
@@ -1424,5 +2107,97 @@ describe('createAgentRouter', () => {
     const cached = sessionMessages.get('session-duplicate-delta') || [];
     const assistant = cached.find((message) => message.role === 'assistant');
     expect(assistant?.content).toBe('hello world');
+  });
+
+  describe('/api/run 会话模型切换跨重启恢复（WP-1 回灌接线）', () => {
+    const persistedSession = {
+      id: 'session-model-restore',
+      title: 'Restored',
+      workingDirectory: '/tmp/model-restore-work',
+      metadata: { modelOverride: { provider: 'zhipu', model: 'glm-5', setAt: 1 } },
+    };
+
+    async function restartWithSession(session: unknown) {
+      await closeServer();
+      await startAgentApi({
+        tryGetSessionManager: async () => ({
+          getSession: vi.fn(async () => session),
+          getMessages: vi.fn(async () => []),
+          updateSession: vi.fn(async () => undefined),
+        }),
+      });
+    }
+
+    async function postRun(body: Record<string, unknown>) {
+      mockRun.mockResolvedValueOnce(undefined);
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '继续', sessionId: 'session-model-restore', ...body }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+
+    it('内存 Map 为空时按 persistedSession 回灌并路由到切换值', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({});
+
+      expect(mockRehydrateOverride).toHaveBeenCalledWith(persistedSession);
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'zhipu', model: 'glm-5' }),
+      );
+    });
+
+    it('显式 body.model/provider 仍最优先，不触发回灌', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({ model: 'deepseek-chat', provider: 'deepseek' });
+
+      expect(mockRehydrateOverride).not.toHaveBeenCalled();
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'deepseek', model: 'deepseek-chat' }),
+      );
+    });
+
+    it('半显式 body（只传 model）不拿 override 的 provider 拼杂交配置（audit R1-MED2）', async () => {
+      mockGetOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({ model: 'deepseek-chat' });
+
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: undefined, model: 'deepseek-chat' }),
+      );
+    });
+
+    it('未切换过的会话（回灌返回 null）不受影响，走默认解析', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue(null);
+      await restartWithSession({ ...persistedSession, metadata: undefined });
+
+      await postRun({});
+
+      expect(createCLIAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: undefined, model: undefined }),
+      );
+    });
+
+    it('回灌得到 adaptive 覆盖时透传自动路由标志', async () => {
+      mockGetOverride.mockReturnValue(null);
+      mockRehydrateOverride.mockReturnValue({ provider: 'zhipu', model: 'glm-5', adaptive: true, setAt: 1 });
+      await restartWithSession(persistedSession);
+
+      await postRun({});
+
+      const config = mockCreateAgentLoop.mock.calls[0]?.[0] as { modelConfig: { adaptive?: boolean } };
+      expect(config.modelConfig.adaptive).toBe(true);
+    });
   });
 });

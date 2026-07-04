@@ -13,14 +13,11 @@ import { Button } from '../../../primitives';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { useAuthStore } from '../../../../stores/authStore';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 type UserStatusFilter = 'all' | AdminUserDashboardItem['status'];
-
-const STATUS_LABELS: Record<AdminUserDashboardItem['status'], string> = {
-  active: '正常',
-  suspended: '暂停',
-  deleted: '删除',
-};
+const DEFAULT_USER_DASHBOARD_TEXT = zh.settings.users;
 
 const STATUS_CLASSES: Record<AdminUserDashboardItem['status'], string> = {
   active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
@@ -28,17 +25,15 @@ const STATUS_CLASSES: Record<AdminUserDashboardItem['status'], string> = {
   deleted: 'border-red-500/30 bg-red-500/10 text-red-300',
 };
 
-const STATUS_FILTERS: Array<{ value: UserStatusFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'active', label: '正常' },
-  { value: 'suspended', label: '暂停' },
-  { value: 'deleted', label: '删除' },
-];
+const STATUS_FILTERS: UserStatusFilter[] = ['all', 'active', 'suspended', 'deleted'];
 
-function formatDate(value?: string | number): string {
-  if (!value) return '从未';
+function formatDate(
+  value?: string | number,
+  emptyLabel = DEFAULT_USER_DASHBOARD_TEXT.dateNever,
+): string {
+  if (!value) return emptyLabel;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '从未';
+  if (Number.isNaN(date.getTime())) return emptyLabel;
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -87,6 +82,8 @@ const SummaryTile: React.FC<{
 };
 
 export const UserDashboardSettings: React.FC = () => {
+  const { t } = useI18n();
+  const userText = t.settings.users;
   const currentUserId = useAuthStore((state) => state.user?.id);
   const [users, setUsers] = useState<AdminUserDashboardItem[]>([]);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
@@ -176,11 +173,11 @@ export const UserDashboardSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="用户管理"
-      description="注册用户、注册时间、登录与活跃信息放在同一张运营表里。"
+      title={userText.title}
+      description={userText.description}
     >
       <SettingsSection
-        title="用户概览"
+        title={userText.overviewTitle}
         actions={(
           <Button
             type="button"
@@ -190,15 +187,15 @@ export const UserDashboardSettings: React.FC = () => {
             loading={loading}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {userText.refresh}
           </Button>
         )}
       >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <SummaryTile label="注册用户" value={summary.total} />
-          <SummaryTile label="正常状态" value={summary.active} tone="success" />
-          <SummaryTile label="管理员" value={summary.admins} tone="warning" />
-          <SummaryTile label="7 天内活跃" value={summary.recent} />
+          <SummaryTile label={userText.summary.registeredUsers} value={summary.total} />
+          <SummaryTile label={userText.summary.activeStatus} value={summary.active} tone="success" />
+          <SummaryTile label={userText.summary.admins} value={summary.admins} tone="warning" />
+          <SummaryTile label={userText.summary.active7Days} value={summary.recent} />
         </div>
 
         {unavailableReason && (
@@ -216,30 +213,30 @@ export const UserDashboardSettings: React.FC = () => {
         )}
       </SettingsSection>
 
-      <SettingsSection title="字段口径">
+      <SettingsSection title={userText.fields.title}>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
               <Users className="h-3.5 w-3.5 text-emerald-300" />
-              已接入
+              {userText.fields.connectedTitle}
             </div>
             <div className="text-xs leading-6 text-zinc-500">
-              邮箱、昵称、角色、状态、注册来源、邀请码、注册时间、上次登录、最近活跃、同步时间、设备数、会话数、消息数
+              {userText.fields.connectedBody}
             </div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
               <Shield className="h-3.5 w-3.5 text-amber-300" />
-              暂不放入看板
+              {userText.fields.excludedTitle}
             </div>
             <div className="text-xs leading-6 text-zinc-500">
-              原始 token、OAuth identity 明细、IP、设备指纹、计费额度。当前功能链路里没有稳定来源，展示会制造误判。
+              {userText.fields.excludedBody}
             </div>
           </div>
         </div>
       </SettingsSection>
 
-      <SettingsSection title="注册用户">
+      <SettingsSection title={userText.list.title}>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="relative md:w-80">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
@@ -247,23 +244,23 @@ export const UserDashboardSettings: React.FC = () => {
               type="text"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索邮箱、昵称、邀请码"
+              placeholder={userText.list.searchPlaceholder}
               className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
             />
           </div>
           <div className="flex flex-wrap gap-2">
             {STATUS_FILTERS.map((filter) => (
               <button
-                key={filter.value}
+                key={filter}
                 type="button"
-                onClick={() => setStatusFilter(filter.value)}
+                onClick={() => setStatusFilter(filter)}
                 className={`h-8 rounded-md px-3 text-xs transition-colors ${
-                  statusFilter === filter.value
+                  statusFilter === filter
                     ? 'bg-zinc-200 text-zinc-950'
                     : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
                 }`}
               >
-                {filter.label}
+                {filter === 'all' ? userText.statusFilters.all : userText.statusLabels[filter]}
               </button>
             ))}
           </div>
@@ -274,16 +271,16 @@ export const UserDashboardSettings: React.FC = () => {
             <table className="min-w-[1100px] w-full text-left text-xs">
               <thead className="bg-zinc-900/80 text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">用户</th>
-                  <th className="px-3 py-2 font-medium">角色</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">共享 key</th>
-                  <th className="px-3 py-2 font-medium">来源</th>
-                  <th className="px-3 py-2 font-medium">注册时间</th>
-                  <th className="px-3 py-2 font-medium">上次登录</th>
-                  <th className="px-3 py-2 font-medium">最近活跃</th>
-                  <th className="px-3 py-2 text-right font-medium">设备</th>
-                  <th className="px-3 py-2 text-right font-medium">会话 / 消息</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.user}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.role}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.status}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.sharedKey}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.source}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.createdAt}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.lastSignInAt}</th>
+                  <th className="px-3 py-2 font-medium">{userText.list.columns.lastActiveAt}</th>
+                  <th className="px-3 py-2 text-right font-medium">{userText.list.columns.devices}</th>
+                  <th className="px-3 py-2 text-right font-medium">{userText.list.columns.sessionsMessages}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800 bg-zinc-950/40 text-zinc-300">
@@ -300,7 +297,7 @@ export const UserDashboardSettings: React.FC = () => {
                             Admin
                           </span>
                         ) : (
-                          <span className="text-zinc-500">用户</span>
+                          <span className="text-zinc-500">{userText.role.user}</span>
                         )}
                         <button
                           type="button"
@@ -309,9 +306,9 @@ export const UserDashboardSettings: React.FC = () => {
                           title={
                             user.isAdmin
                               ? user.id === currentUserId
-                                ? '不能撤销自己的管理员角色'
-                                : '点击撤销管理员角色'
-                              : '点击设为管理员'
+                                ? userText.role.selfAdminTitle
+                                : userText.role.removeAdminTitle
+                              : userText.role.setAdminTitle
                           }
                           className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                             user.isAdmin
@@ -323,14 +320,14 @@ export const UserDashboardSettings: React.FC = () => {
                           {busyUserId === user.id
                             ? '…'
                             : user.isAdmin
-                              ? user.id === currentUserId ? '本人' : '撤销'
-                              : '设为 Admin'}
+                              ? user.id === currentUserId ? userText.role.self : userText.role.remove
+                              : userText.role.setAdmin}
                         </button>
                       </div>
                     </td>
                     <td className="px-3 py-3">
                       <span className={`rounded-md border px-2 py-1 text-[11px] ${STATUS_CLASSES[user.status]}`}>
-                        {STATUS_LABELS[user.status]}
+                        {userText.statusLabels[user.status]}
                       </span>
                     </td>
                     <td className="px-3 py-3">
@@ -338,24 +335,24 @@ export const UserDashboardSettings: React.FC = () => {
                         type="button"
                         disabled={busyUserId === user.id}
                         onClick={() => void toggleSharedRelay(user)}
-                        title={user.hasSharedRelay ? '点击撤销团队共享 key' : '点击授予团队共享 key'}
+                        title={user.hasSharedRelay ? userText.sharedRelay.revokeTitle : userText.sharedRelay.grantTitle}
                         className={`rounded-md px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
                           user.hasSharedRelay
                             ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
                             : 'border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
                         }`}
                       >
-                        {busyUserId === user.id ? '…' : user.hasSharedRelay ? '● 已开' : '○ 开通'}
+                        {busyUserId === user.id ? '…' : user.hasSharedRelay ? userText.sharedRelay.enabled : userText.sharedRelay.open}
                       </button>
                     </td>
                     <td className="px-3 py-3">
                       <div className="text-zinc-300">{user.signupSource || user.provider || 'unknown'}</div>
                       <div className="mt-1 font-mono text-[11px] text-zinc-500">{user.inviteCode || '-'}</div>
                     </td>
-                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.createdAt)}</td>
-                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.lastSignInAt)}</td>
+                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.createdAt, userText.dateNever)}</td>
+                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.lastSignInAt, userText.dateNever)}</td>
                     <td className="px-3 py-3 text-zinc-400">
-                      {formatDate(user.lastActiveAt || user.lastSessionUpdatedAt)}
+                      {formatDate(user.lastActiveAt || user.lastSessionUpdatedAt, userText.dateNever)}
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-zinc-300">{user.deviceCount}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-zinc-300">
@@ -366,7 +363,7 @@ export const UserDashboardSettings: React.FC = () => {
                 {!loading && filteredUsers.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-3 py-10 text-center text-zinc-500">
-                      没有匹配的用户
+                      {userText.list.noMatches}
                     </td>
                   </tr>
                 )}

@@ -11,6 +11,7 @@ import { getSubagentExecutor } from './subagentExecutor';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import { getModelConfig } from './hybrid/coreAgents';
 import { resolveProviderApiKey } from '../model/providers/providerResolution';
+import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 import { GOAL_MODE } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig } from '../../shared/contract';
@@ -27,6 +28,60 @@ export interface ReviewGateResult {
   parsed: boolean;
   /** 评审判定条件在本会话内根本不可达成 → 调用方主动止损（roadmap 1.4） */
   impossible?: boolean;
+  /**
+   * 评审基础设施不可用（auth/4xx 类 infra 错误，降级重试后仍失败）→ 未产生任何
+   * 评审结论。调用方不得按"评审不过"处理（不烧修复预算、不注误导反馈），应走
+   * 降级放行诚实收尾。infra 故障是环境信号，不是能力信号。
+   */
+  unverifiable?: boolean;
+}
+
+/**
+ * auth/4xx 类 infra 错误判别（对齐 retryStrategy 的 NON_RETRYABLE_PATTERNS 中
+ * key/配额/权限一族）：这类错误意味着"评审子代理根本没跑起来"，与被评审内容
+ * 的质量无关，绝不能落成评审 FAIL。
+ */
+const REVIEW_INFRA_ERROR_PATTERNS = [
+  'invalid_api_key',
+  'invalid api key',
+  'invalid token',
+  'api key',
+  'unauthorized',
+  'authentication',
+  'forbidden',
+  'insufficient_quota',
+  'insufficient balance',
+  'payment required',
+  'no available accounts',
+];
+
+/**
+ * 状态码用词边界匹配（Gemini R1-H1）：裸 substring '401' 会误伤
+ * "Request failed after 4013ms" 这类消息，把普通错误误吞成 infra。
+ */
+const REVIEW_INFRA_STATUS_CODE_RE = /\b40[123]\b/;
+
+function isReviewInfraError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  if (REVIEW_INFRA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern))) return true;
+  return REVIEW_INFRA_STATUS_CODE_RE.test(message);
+}
+
+/**
+ * 健康监视器已判 unavailable 的 provider（如持续 401）在选型时直接跳过。
+ * 监视器的键有两套口径（retryStrategy 路径用显示名 'Xiaomi'，aiSdkAdapter/
+ * modelRouter 用 provider id 'xiaomi'），按大小写不敏感匹配。
+ * fail-open：健康信号缺失/监视器没初始化 → 返回 false 保持现行为。
+ */
+function isProviderUnavailable(provider: string): boolean {
+  try {
+    for (const [name, health] of getProviderHealthMonitor().getHealthMap()) {
+      if (name.toLowerCase() === provider.toLowerCase() && health.status === 'unavailable') {
+        return true;
+      }
+    }
+  } catch { /* fail-open */ }
+  return false;
 }
 
 /** 从 RuntimeContext 凑出来的派发依赖 */
@@ -56,6 +111,15 @@ export function resolveReviewModelConfig(parentModelConfig?: ModelConfig): Model
   const powerful: ModelConfig = { ...getModelConfig('powerful') };
   // 子代理路径的 key 解析策略（trustConfigKey:false）：configService → env
   if (resolveProviderApiKey(powerful, { trustConfigKey: false })) {
+    // key 存在 ≠ key 有效：key 配了但已失效（持续 401）时健康监视器会把该
+    // provider 判成 unavailable——选型消费该信号，省一次注定失败的往返。
+    if (parentModelConfig && isProviderUnavailable(powerful.provider)) {
+      logger.warn('[GoalGate] powerful tier provider 健康状态 unavailable（key 可能已失效），评审子代理降级用主 run 模型', {
+        powerful: `${powerful.provider}/${powerful.model}`,
+        fallback: `${parentModelConfig.provider}/${parentModelConfig.model}`,
+      });
+      return { ...parentModelConfig };
+    }
     return powerful;
   }
   if (parentModelConfig) {
@@ -125,21 +189,17 @@ export function parseVerdict(output: string): { pass: boolean; parsed: boolean; 
   return { pass: last === 'PASS', parsed: true };
 }
 
-/**
- * 跑闸2：派 Reviewer 子代理（强模型 'powerful' tier）评 reviewCondition。
- * 仅在 goal 契约带 reviewCondition 时由 messageProcessor 在闸1 pass 后调用。
- */
-export async function runReviewGate(
+/** 单次评审派发的结果：产生了评审结论，或撞上 infra 类错误（没有结论） */
+type ReviewAttemptOutcome =
+  | { kind: 'result'; result: ReviewGateResult }
+  | { kind: 'infra'; error: string };
+
+async function executeReviewAttempt(
+  modelConfig: ModelConfig,
   reviewCondition: string,
   goal: string,
   deps: ReviewGateDeps,
-): Promise<ReviewGateResult> {
-  logger.debug('[GoalGate] running review gate', { reviewCondition, cwd: deps.workingDirectory });
-
-  // 强模型路由 + 可用性降级链（见 resolveReviewModelConfig）。只传 provider+model 时
-  // apiKey/baseUrl 由 executor 内部 modelRouter/适配器自解析。
-  const modelConfig: ModelConfig = resolveReviewModelConfig(deps.parentModelConfig);
-
+): Promise<ReviewAttemptOutcome> {
   // reviewer 只给只读检索工具（read/grep/glob/ls，不含 bash/write/edit）：
   // 闸2 评的是"无法落退出码的软判断"，跑命令/测试是闸1 的活；且子代理权限策略
   // 默认就拦 execute 级 bash，给了也只会被拒、白费迭代还污染上下文（实测）。
@@ -173,22 +233,36 @@ export async function runReviewGate(
       },
     );
   } catch (err) {
-    // 子代理派发本身抛错 → 默认 FAIL（不误放行），把错误注回让模型继续
     const message = err instanceof Error ? err.message : String(err);
+    // 取消/中止不算 infra（对称 result.cancellationReason 的过滤，Gemini R1-M1）：
+    // 即使中止错误的消息碰巧含 infra 词（如 "request forbidden by abort signal"）
+    const isAborted = (err instanceof Error && err.name === 'AbortError') || deps.abortSignal?.aborted;
+    // infra 类错误（auth/4xx）→ 交给调用方走降级重试/unverifiable，不落评审 FAIL
+    if (!isAborted && isReviewInfraError(message)) {
+      return { kind: 'infra', error: message };
+    }
+    // 其余抛错 → 默认 FAIL（不误放行），把错误注回让模型继续
     logger.warn('[GoalGate] review subagent threw, defaulting to FAIL', { error: message });
-    return { pass: false, parsed: false, reason: `评审子代理执行出错：${message}` };
+    return { kind: 'result', result: { pass: false, parsed: false, reason: `评审子代理执行出错：${message}` } };
   }
 
-  // 子代理执行失败（取消/预算耗尽/child-error）→ 默认 FAIL
+  // 子代理执行失败（取消/预算耗尽/child-error）→ 默认 FAIL；
+  // 但 child-error 若是 infra 类（非取消）同样不许伪装成评审不过
   if (!result.success) {
+    if (!result.cancellationReason && result.error && isReviewInfraError(result.error)) {
+      return { kind: 'infra', error: result.error };
+    }
     logger.warn('[GoalGate] review subagent failed, defaulting to FAIL', {
       error: result.error,
       cancellationReason: result.cancellationReason,
     });
     return {
-      pass: false,
-      parsed: false,
-      reason: `评审子代理未完成（${result.cancellationReason ?? result.error ?? 'unknown'}）`,
+      kind: 'result',
+      result: {
+        pass: false,
+        parsed: false,
+        reason: `评审子代理未完成（${result.cancellationReason ?? result.error ?? 'unknown'}）`,
+      },
     };
   }
 
@@ -203,5 +277,54 @@ export async function runReviewGate(
     outputTail: result.output.slice(-220),
   });
 
-  return { pass: verdict.pass, parsed: verdict.parsed, impossible: verdict.impossible, reason };
+  return { kind: 'result', result: { pass: verdict.pass, parsed: verdict.parsed, impossible: verdict.impossible, reason } };
+}
+
+/**
+ * 跑闸2：派 Reviewer 子代理（强模型 'powerful' tier）评 reviewCondition。
+ * 仅在 goal 契约带 reviewCondition 时由 messageProcessor 在闸1 pass 后调用。
+ *
+ * infra 故障降级链：评审模型撞 auth/4xx 类错误（key 配了但已失效等）时，用主
+ * run 模型降级重试一次（主 run 本身在跑，它的 key 必然可用）；重试仍是 infra
+ * 错误 → 返回 unverifiable（没有评审结论），绝不伪装成评审 FAIL。
+ */
+export async function runReviewGate(
+  reviewCondition: string,
+  goal: string,
+  deps: ReviewGateDeps,
+): Promise<ReviewGateResult> {
+  logger.debug('[GoalGate] running review gate', { reviewCondition, cwd: deps.workingDirectory });
+
+  // 强模型路由 + 可用性降级链（见 resolveReviewModelConfig）。只传 provider+model 时
+  // apiKey/baseUrl 由 executor 内部 modelRouter/适配器自解析。
+  const primary: ModelConfig = resolveReviewModelConfig(deps.parentModelConfig);
+  let outcome = await executeReviewAttempt(primary, reviewCondition, goal, deps);
+
+  if (outcome.kind === 'infra') {
+    const parent = deps.parentModelConfig;
+    const canRetryWithParent =
+      parent && (parent.provider !== primary.provider || parent.model !== primary.model);
+    if (canRetryWithParent) {
+      logger.warn('[GoalGate] review model hit infra error, retrying once with parent run model', {
+        error: outcome.error,
+        primary: `${primary.provider}/${primary.model}`,
+        fallback: `${parent.provider}/${parent.model}`,
+      });
+      outcome = await executeReviewAttempt({ ...parent }, reviewCondition, goal, deps);
+    }
+  }
+
+  if (outcome.kind === 'infra') {
+    logger.warn('[GoalGate] review infrastructure unavailable, marking unverifiable (not a review FAIL)', {
+      error: outcome.error,
+    });
+    return {
+      pass: false,
+      parsed: false,
+      unverifiable: true,
+      reason: `评审基础设施不可用：${outcome.error}`,
+    };
+  }
+
+  return outcome.result;
 }

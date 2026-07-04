@@ -158,6 +158,8 @@ export interface GoalRunState {
   wallClockBudgetMs?: number;
   /** 中止原因（status=aborted 时） */
   abortReason?: string;
+  /** 到限放行：met 但验证未全过（修复预算耗尽，安静降级标识） */
+  degraded?: boolean;
   /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
   finishedAt?: number;
   /** 最近一次闸判定（UI 可显示"验证中/评审中"反馈） */
@@ -187,8 +189,10 @@ interface AppState {
   taskPanelTab: TaskPanelTab;
   showAgentTeamPanel: boolean;
   selectedSwarmAgentId: string | null;
-  /** 用户在 StatusBar 选中的默认 agent id（来自 agentRegistryStore），持久化到 localStorage。 */
+  /** 当前会话的显式 agent 选择（per-session 作用域，随会话切换同步；持久化到 per-session map）。 */
   activeAgentId: string | null;
+  /** activeAgentId 当前绑定的会话 id；null = draft（尚无会话）。 */
+  activeAgentSessionKey: string | null;
   showCapturePanel: boolean;
   showBrowserSurfacePanel: boolean;
   showDesktopPanel: boolean;
@@ -214,6 +218,9 @@ interface AppState {
 
   // 渐进披露 - Progressive Disclosure
   disclosureLevel: DisclosureLevel;
+
+  // 开发者模式：对话流中显示回合质量评分等调试信息
+  developerMode: boolean;
 
 
   // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
@@ -273,13 +280,6 @@ interface AppState {
   contextHealth: ContextHealthState | null;
   contextHealthCollapsed: boolean;
 
-  // Cache Stats (缓存统计)
-  cacheStats: {
-    promptCacheHits: number;
-    promptCacheMisses: number;
-    totalCachedTokens: number;
-  } | null;
-
   // Actions
   setShowSettings: (show: boolean) => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
@@ -296,6 +296,10 @@ interface AppState {
   setSelectedSwarmAgentId: (agentId: string | null) => void;
   /** 设置默认 agent；传 null 表示回到 builtin 'coder'（spawn 端处理）。 */
   setActiveAgentId: (agentId: string | null) => void;
+  /** 会话切换/创建/清空时同步当前会话的 agent 选择；inheritCurrent=会话创建时继承 draft 期选择。 */
+  syncActiveAgentForSession: (sessionId: string | null, opts?: { inheritCurrent?: boolean }) => void;
+  /** 清理某会话持久化的 agent 选择；onlyIfAgentId = 仅当存量选择等于该值才清（防误清用户新选择）。 */
+  clearActiveAgentForSession: (sessionId: string, opts?: { onlyIfAgentId?: string }) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowBrowserSurfacePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
@@ -317,6 +321,7 @@ interface AppState {
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
+  setDeveloperMode: (enabled: boolean) => void;
   setIsProcessing: (processing: boolean) => void;
   // 按会话设置处理状态
   setSessionProcessing: (sessionId: string, processing: boolean) => void;
@@ -368,7 +373,7 @@ interface AppState {
   startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string; verificationCard?: GoalGateVerificationCard }) => void;
-  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string) => void;
+  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string, degraded?: boolean) => void;
   /** ③ session 内暂停/恢复：仅切换 running↔paused，不动 met/aborted（UI 态，配合后端 isPaused 循环挂起） */
   setGoalPaused: (sessionId: string, paused: boolean) => void;
   clearGoalRun: (sessionId: string) => void;
@@ -378,18 +383,45 @@ interface AppState {
   setWorkingDirectory: (dir: string | null) => void;
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
-  setCacheStats: (stats: { promptCacheHits: number; promptCacheMisses: number; totalCachedTokens: number } | null) => void;
 }
 
-// localStorage key for activeAgentId 持久化
-const ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
+// activeAgentId per-session 持久化（S3 收敛）：legacy 全局单值 key 是跨会话残留
+// 路由的根源，读到即丢弃（旧值无法归属到会话）；新 key 存 sessionId → agentId map。
+const LEGACY_ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
+const ACTIVE_AGENT_SESSION_MAP_KEY = 'app:activeAgentIdBySession';
 
-function loadInitialActiveAgentId(): string | null {
+function readActiveAgentSessionMap(): Record<string, string> {
   try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage.getItem(ACTIVE_AGENT_STORAGE_KEY);
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(ACTIVE_AGENT_SESSION_MAP_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string',
+      ),
+    );
   } catch {
-    return null;
+    return {};
+  }
+}
+
+function writeActiveAgentSessionMap(map: Record<string, string>): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(ACTIVE_AGENT_SESSION_MAP_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage 在隐私模式下可能不可用——降级为纯内存状态
+  }
+}
+
+function dropLegacyActiveAgentKey(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(LEGACY_ACTIVE_AGENT_STORAGE_KEY);
+  } catch {
+    // ignore
   }
 }
 
@@ -416,7 +448,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   taskPanelTab: 'monitor',
   showAgentTeamPanel: false,
   selectedSwarmAgentId: null,
-  activeAgentId: loadInitialActiveAgentId(),
+  activeAgentId: null,
+  activeAgentSessionKey: null,
   showCapturePanel: false, // Capture panel hidden by default
   showBrowserSurfacePanel: false,
   showDesktopPanel: false,
@@ -442,6 +475,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // 渐进披露默认级别
   disclosureLevel: 'standard',
+
+  // 开发者模式默认关闭
+  developerMode: false,
 
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
@@ -492,9 +528,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   contextHealth: null,
   contextHealthCollapsed: true, // 默认收起
 
-  // Initial Cache Stats
-  cacheStats: null,
-
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
@@ -532,13 +565,38 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSelectedSwarmAgentId: (agentId) => set({ selectedSwarmAgentId: agentId }),
   setActiveAgentId: (agentId) => {
     set({ activeAgentId: agentId });
-    try {
-      if (typeof localStorage !== 'undefined') {
-        if (agentId) localStorage.setItem(ACTIVE_AGENT_STORAGE_KEY, agentId);
-        else localStorage.removeItem(ACTIVE_AGENT_STORAGE_KEY);
+    const sessionKey = get().activeAgentSessionKey;
+    if (!sessionKey) return; // draft：仅内存，会话创建时经 inheritCurrent 落盘
+    const map = readActiveAgentSessionMap();
+    if (agentId) map[sessionKey] = agentId;
+    else delete map[sessionKey];
+    writeActiveAgentSessionMap(map);
+  },
+  syncActiveAgentForSession: (sessionId, opts) => {
+    dropLegacyActiveAgentKey();
+    if (!sessionId) {
+      set({ activeAgentSessionKey: null, activeAgentId: null });
+      return;
+    }
+    const map = readActiveAgentSessionMap();
+    if (opts?.inheritCurrent) {
+      const draftSelection = get().activeAgentId;
+      if (draftSelection && !map[sessionId]) {
+        map[sessionId] = draftSelection;
+        writeActiveAgentSessionMap(map);
       }
-    } catch {
-      // localStorage 在隐私模式下可能不可用——降级为纯内存状态
+    }
+    set({ activeAgentSessionKey: sessionId, activeAgentId: map[sessionId] ?? null });
+  },
+  clearActiveAgentForSession: (sessionId, opts) => {
+    const map = readActiveAgentSessionMap();
+    if (sessionId in map) {
+      if (opts?.onlyIfAgentId && map[sessionId] !== opts.onlyIfAgentId) return;
+      delete map[sessionId];
+      writeActiveAgentSessionMap(map);
+    }
+    if (get().activeAgentSessionKey === sessionId) {
+      set({ activeAgentId: null });
     }
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
@@ -580,6 +638,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
+  setDeveloperMode: (enabled) => set({ developerMode: enabled }),
 
 
   setIsProcessing: (processing) => set({ isProcessing: processing }),
@@ -634,7 +693,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
           ...state,
           activePreviewTabId: existing.id,
           previewTabs: state.previewTabs.map((t) =>
-            t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
+            t.id === existing.id
+              ? {
+                  ...t,
+                  lastActivatedAt: nextPreviewTabTick(),
+                  // 产物可能在上次打开后被修复/重写过；重新打开时若没有未保存的
+                  // 编辑（content===savedContent），重置 isLoaded 让加载 effect
+                  // 重读磁盘，避免 iframe 一直渲染修复前的旧版本。
+                  isLoaded: t.content !== t.savedContent ? t.isLoaded : false,
+                }
+              : t,
           ),
           workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
             ? state.workbenchTabs
@@ -1074,14 +1142,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     }),
 
-  finishGoalRun: (sessionId, status, abortReason) =>
+  finishGoalRun: (sessionId, status, abortReason, degraded) =>
     set((state) => {
       const prev = state.goalRuns[sessionId];
       if (!prev) return {};
       return {
         goalRuns: {
           ...state.goalRuns,
-          [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now() },
+          [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now(), ...(degraded ? { degraded } : {}) },
         },
       };
     }),
@@ -1116,7 +1184,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setContextHealth: (health) => set({ contextHealth: health }),
   setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
-  setCacheStats: (stats) => set({ cacheStats: stats }),
 }));
 
 // E2E/dev 调试钩子：真机测试用 openSettingsTab 打开设置并跳到指定 tab（同 window.__neo* 例）。

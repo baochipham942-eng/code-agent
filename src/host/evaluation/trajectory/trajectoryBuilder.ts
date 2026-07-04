@@ -6,7 +6,6 @@ import type {
   Trajectory,
   TrajectoryStep,
   RecoveryPattern,
-  TrajectoryEfficiency,
   TestResult,
   TestCase,
 } from '../../testing/types';
@@ -14,6 +13,7 @@ import {
   buildAgentPointerTimeline,
   extractAgentPointerEvent,
 } from '../../../shared/utils/agentPointerEvidence';
+import { calculateTrajectoryEfficiency } from './trajectoryEfficiency';
 
 /**
  * Raw event input shape (matches StoredEvent fields relevant to building)
@@ -41,7 +41,7 @@ export class TrajectoryBuilder {
   buildFromEvents(events: EventInput[]): Trajectory {
     const steps = this.buildSteps(events);
     const recoveryPatterns = this.detectRecoveryPatterns(steps);
-    const efficiency = this.calculateEfficiency(steps);
+    const efficiency = calculateTrajectoryEfficiency(steps);
     const deviations: Trajectory['deviations'] = []; // filled later by DeviationDetector
 
     const startTs = events.length > 0 ? this.toTimestamp(events[0].timestamp) : Date.now();
@@ -317,54 +317,6 @@ export class TrajectoryBuilder {
     }
 
     return patterns;
-  }
-
-  private calculateEfficiency(steps: TrajectoryStep[]): TrajectoryEfficiency {
-    const totalSteps = steps.length;
-    let redundantSteps = 0;
-    let backtrackCount = 0;
-    let totalDuration = 0;
-
-    // Detect redundant steps: consecutive identical tool calls
-    for (let i = 1; i < steps.length; i++) {
-      const prev = steps[i - 1];
-      const curr = steps[i];
-      if (
-        prev.type === 'tool_call' &&
-        curr.type === 'tool_call' &&
-        prev.toolCall &&
-        prev.toolCall.name === curr.toolCall?.name &&
-        JSON.stringify(prev.toolCall.args) === JSON.stringify(curr.toolCall.args)
-      ) {
-        redundantSteps++;
-        backtrackCount++;
-      }
-    }
-
-    // Add failed tool calls to redundant if they didn't contribute
-    for (const step of steps) {
-      if (step.type === 'tool_call' && step.toolCall) {
-        totalDuration += step.toolCall.duration;
-        if (!step.toolCall.success) redundantSteps++;
-      }
-    }
-
-    // Deduplicate: a failed call that was also counted as consecutive
-    redundantSteps = Math.min(redundantSteps, totalSteps);
-
-    const effectiveSteps = Math.max(totalSteps - redundantSteps, 0);
-    const efficiency = totalSteps > 0 ? effectiveSteps / totalSteps : 1;
-
-    return {
-      totalSteps,
-      effectiveSteps,
-      redundantSteps,
-      backtrackCount,
-      totalTokens: { input: 0, output: 0 },
-      totalDuration,
-      tokensPerEffectiveStep: 0,
-      efficiency,
-    };
   }
 
   private extractCriticalPath(steps: TrajectoryStep[]): number[] {

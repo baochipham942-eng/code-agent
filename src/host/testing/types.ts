@@ -2,8 +2,11 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
-import type { TelemetryCompleteness } from '../../shared/contract/evaluation';
+import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
+import type { GoalGateVerdict } from '../../shared/contract/agent';
+
+export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
 /**
  * Test case types
@@ -18,7 +21,11 @@ export type TestCaseType =
 /**
  * Test case status
  */
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial';
+/**
+ * infra_excluded（WP1-2）：429/超时/5xx/网络等基础设施故障，非 agent 能力信号，
+ * 不进能力通过率分母、不进 baseline 对账，报告单列。
+ */
+export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial' | 'infra_excluded';
 
 /**
  * Expected tool call
@@ -100,6 +107,100 @@ export interface TestExpectations extends
   test_pass?: string;
   /** Any of these tools being called counts as pass (supports regex) */
   tools_any_of?: string[];
+  /** GAIA 式判分：提取 "FINAL ANSWER: X" 与真值做 quasi-exact match */
+  final_answer?: string;
+}
+
+// === 批 6 · B6a：规则式 user simulator（follow_up_prompts 的条件应答升级形态） ===
+
+/**
+ * 条件应答规则：对 agent 上一轮输出/工具调用求值，命中则以脚本文本作为下一轮
+ * user 输入（确定性，非 LLM）。三分支应答（批准/拒绝/改需求）即三种规则脚本。
+ */
+export interface UserSimulationRule {
+  /** 规则 id（simTurns 记录与 sim_stop_respected 断言的锚点），套件内唯一 */
+  id: string;
+  /** 匹配条件：给出的条件须全部成立（AND）；至少给一个，禁止空 when 静默全匹配 */
+  when: {
+    /** 上一轮 assistant 响应文本匹配（大小写不敏感 regex） */
+    response_matches?: string;
+    /** 上一轮调用过匹配该 regex 的工具 */
+    tool_called?: string;
+    /** 上一轮调用了 AskUserQuestion（澄清/确认卡在 eval 里的等价交互面） */
+    question_asked?: boolean;
+  };
+  /** 命中后作为下一轮 user 输入发送的文本（respond/stop 至少给一个） */
+  respond?: string;
+  /** 命中后终止模拟对话：带 respond 则发完拒绝文本再停，不带则直接不应答 */
+  stop?: boolean;
+  /** 该规则最多命中次数，默认 1（防 agent 复读导致的无限循环） */
+  max_matches?: number;
+}
+
+export interface UserSimulation {
+  /** 条件应答规则，按声明顺序求值，第一条命中的生效 */
+  rules: UserSimulationRule[];
+  /** 模拟应答总轮数上限（不含初始 prompt），默认 4 */
+  max_turns?: number;
+  /**
+   * 审批门（工具权限）决策注入：eval adapter 的 requestPermission 由写死
+   * auto-approve 改为按此策略应答。缺省 = 沿用 auto-approve。
+   */
+  permission_policy?: 'approve' | 'reject';
+  /** reject 策略的作用域：仅拒绝匹配这些 regex 的工具，其余照常放行 */
+  permission_reject_tools?: string[];
+}
+
+// === 批 6 · B6b-①：goal 契约接入 eval（goal 三闸行为回归） ===
+
+/**
+ * eval case 侧的 goal 契约声明（YAML snake_case，loader 鸭子类型直通）。
+ * 与产品侧 GoalContract 的映射见 goalContractEval.buildLoopGoalContract：
+ * eval 无人值守，allowSwarm 强制 false，不在此暴露。
+ */
+export interface EvalGoalContract {
+  /** 自然语言目标；缺省 = 用 case 的 prompt 作为目标文本 */
+  goal?: string;
+  /** 闸1：退出码 0 即硬达成的 shell 命令（与 review_condition 至少给一个） */
+  verify_command?: string;
+  /** 闸2：交给 Reviewer 子代理评的软条件 */
+  review_condition?: string;
+  /** 闸3：token 预算上限（缺省用产品默认） */
+  token_budget?: number;
+  /** 闸3：轮次上限（缺省用产品默认） */
+  max_turns?: number;
+  /** 闸3：墙钟时间预算上限（ms，缺省不限时） */
+  wall_clock_budget_ms?: number;
+}
+
+/** goal_gate 事件的行为落账（只记闸号/极性/verdict 枚举，不记文案） */
+interface GoalGateEventRecord {
+  gate: number;
+  pass: boolean;
+  verdict?: GoalGateVerdict;
+}
+
+/**
+ * goal run 的行为落账（goal_gate / goal_complete 事件 → 断言锚点数据）。
+ * status 缺失 = run 结束时终态事件没发——goal_status 断言据此 fail-loud。
+ */
+export interface GoalRunRecord {
+  status?: 'met' | 'aborted';
+  degraded?: boolean;
+  degradedReason?: string;
+  abortReason?: string;
+  gateEvents: GoalGateEventRecord[];
+}
+
+/** 单次模拟应答的落账记录（transcript 证据；快照取自发送应答之前） */
+export interface SimTurnRecord {
+  ruleId: string;
+  action: 'respond' | 'stop';
+  message?: string;
+  /** 规则命中时已累计的 toolExecutions 数 —— 之后的执行都发生在本应答之后 */
+  toolExecutionsBefore: number;
+  /** 规则命中时已累计的 responses 数 */
+  responsesBefore: number;
 }
 
 /**
@@ -142,6 +243,21 @@ export interface TestCase {
   expectations?: Expectation[];
   /** Rotation metadata for test lifecycle */
   rotation?: { introduced: string; retire_after?: string; variant?: number };
+  /** 回流草稿溯源：生成该用例的原始会话 id（trajectory:to-case，批 1 B1） */
+  sourceSessionId?: string;
+  /** 回流草稿 review 状态：pending=未补断言不进正式套件，reviewed=已人工硬化 */
+  reviewStatus?: 'pending' | 'reviewed';
+  /**
+   * 批 6 · B6a：规则式 user simulator（条件应答多轮）。
+   * 与 follow_up_prompts 互斥 —— 同时给出视为配置错误，fail-loud。
+   */
+  user_simulation?: UserSimulation;
+  /**
+   * 批 6 · B6b-①：goal 契约（case 以 /goal 自治模式跑，三闸行为可回归）。
+   * goal 三闸全自动无用户节点 —— 与 user_simulation / follow_up_prompts 互斥，
+   * 同时给出视为配置错误，fail-loud。
+   */
+  goal_contract?: EvalGoalContract;
 }
 
 /**
@@ -198,6 +314,14 @@ export interface TestResult {
   testId: string;
   /** Test case description */
   description: string;
+  /** Initial prompt sent to the agent */
+  prompt?: string;
+  /** Follow-up prompts sent after the initial prompt */
+  followUpPrompts?: string[];
+  /** 批 6：user simulator 的应答落账（每次规则命中一条，含快照边界） */
+  simTurns?: SimTurnRecord[];
+  /** 批 6 · B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  goalRun?: GoalRunRecord;
   /** Status */
   status: TestStatus;
   /** Duration in ms */
@@ -224,6 +348,8 @@ export interface TestResult {
   turnCount: number;
   /** Assertion score (0.0 - 1.0) */
   score: number;
+  /** 评分权威桶：分数由确定性断言 / LLM judge / 无外部验证背书 */
+  scoreAuthority?: ScoreAuthority;
   /** Pipeline failure stage (from failure funnel analysis) */
   failureStage?: string;
   /** Reference solution if provided */
@@ -283,6 +409,8 @@ export interface TestRunSummary {
   skipped: number;
   /** Partial pass count */
   partial: number;
+  /** 基础设施故障排除数（429/超时/5xx/网络），不进能力分母 */
+  infraExcluded?: number;
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */
@@ -319,6 +447,8 @@ export interface TestRunSummary {
   averageStdDev?: number;
   /** GAP-017: 本次 run 使用的 harness 配置（对照实验维度，落 DB config_json） */
   harness?: HarnessVariantConfig;
+  /** WP1-4: 本次 run 登记的 prompt 改动预测（deltaReporter 对账用） */
+  prediction?: EvalPrediction;
 }
 
 // ============================================================================
@@ -338,6 +468,17 @@ export interface HarnessVariantConfig {
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
   toolMode?: 'all' | 'deferred';
+}
+
+/**
+ * WP1-4：prompt 改动的预测登记 — 跑 eval 前声明预计修好/预计有风险的
+ * case id 列表，deltaReporter 对账预测命中/落空/预测外翻转。
+ */
+export interface EvalPrediction {
+  /** 预计由本次改动修好的 case id */
+  predictedFixes: string[];
+  /** 预计可能被本次改动打坏的 case id */
+  riskTasks: string[];
 }
 
 /**
@@ -380,6 +521,8 @@ export interface TestRunnerConfig {
   trialsPerCase?: number;
   /** GAP-017: harness 配置变体（对照实验维度，随 summary 落 DB） */
   harness?: HarnessVariantConfig;
+  /** WP1-4: prompt 改动预测登记（随 summary 落盘/DB，deltaReporter 对账） */
+  prediction?: EvalPrediction;
 }
 
 /**
@@ -472,7 +615,31 @@ export type ExpectationType =
   | 'response_contains' | 'response_not_contains'
   | 'tool_called' | 'tool_output_contains' | 'no_crash' | 'error_handled'
   | 'max_turns' | 'min_tool_calls' | 'max_tool_calls'
-  | 'custom_script';
+  | 'custom_script'
+  // artifact_runnable 断言家族（批 3 · B3① 产物终态判据）：产物真跑得起来才算数。
+  // params: path（相对 workingDirectory）；expected_verdict（默认 'runnable'，
+  // 回归标本 pin 'not_runnable'）；timeout_ms；game_smoke 另有 contract: light|full。
+  // 全部 deterministic 桶。fail-loud 语义：非法参数、环境缺浏览器（skipped）、
+  // 产物文件缺失（file_missing）一律显式 fail——不假绿、不匹配任何极性、不进 infra 桶。
+  | 'html_renders' | 'game_smoke' | 'pptx_opens'
+  // 批 6 · B6a：拒绝分支停止语义。params: after_rule（user_simulation 规则 id，必填）、
+  // forbidden_tools（regex 列表，默认写效应工具表）。断言 = after_rule 命中之后的
+  // toolExecutions 零写效应调用（agent 没有绕过用户拒绝继续执行）。deterministic 桶。
+  // fail-loud：缺参 / 该 case 没跑模拟 / 规则未命中，一律显式 fail。
+  | 'sim_stop_respected'
+  // 批 6 · 审计 R1-H3：先问后做语义（sim_stop_respected 的镜像窗口）。
+  // params: before_rule（必填）、forbidden_tools（同上）。断言 = before_rule 命中
+  // 之前的 toolExecutions 零写效应调用（agent 没有先斩后奏）。同 fail-loud 口径。
+  | 'sim_no_write_before_rule'
+  // 批 6 · B6b-①：goal 三闸行为断言（需 case 配 goal_contract）。
+  // goal_status —— params: expected（'met'|'aborted' 必填）、degraded（可选布尔 pin，
+  // 区分「验证全过的 met」与「修复预算耗尽的降级放行」）。
+  // goal_evidence_gate —— params: expected_verdict（闸0 末次 verdict：
+  // 'allow_finalize'|'repair_prompt'|'exhausted_release' 必填）、min_bounces
+  // （可选，闸0 打回次数下限）。两者 deterministic 桶；fail-loud：缺参 / case 没配
+  // goal_contract / 终态事件没发 / 证据闸从未求值，一律显式 fail。
+  | 'goal_status'
+  | 'goal_evidence_gate';
 
 export interface Expectation {
   type: ExpectationType;
@@ -522,6 +689,8 @@ export interface CaseComparison {
   reasoning: string;
   durationA: number;
   durationB: number;
+  /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */
+  excludedReason?: string;
 }
 
 export interface ComparisonResult {
@@ -540,6 +709,10 @@ export interface ComparisonResult {
     winner: 'baseline' | 'candidate' | 'tie';
     confidence: number;
     verdict: string;
+    /** WP1-3b：因一侧没跑成而排除的 pair 数（不在 totalCases 内） */
+    excludedPairs?: number;
+    /** 配对 sign test 双尾 p 值（只算 decisive pair；tie/excluded 不进 n） */
+    pValue?: number;
   };
   duration: number;
 }
@@ -726,6 +899,8 @@ export type EvalRunMode = 'mock' | 'real';
 
 export interface EvalBaseline {
   version: number;
+  /** 分母口径版本：2=能力分母排除 skipped+infra（与报告一致）；缺省=旧口径（只排 infra） */
+  denominatorVersion?: number;
   updatedAt: number;
   updatedBy: string;
   /** 晋升此 baseline 的运行来源。缺省视为历史遗留（来源不明，可能是 mock） */
@@ -769,6 +944,8 @@ export interface TrendDataPoint {
   newPasses: number;
   /** 运行来源。缺省视为历史遗留条目（mock/real 不明），在 real-only 视图中被排除 */
   mode?: EvalRunMode;
+  /** WP1-2：本 run 被基础设施故障排除的 case 数（passRate 分母已排除它们） */
+  infraExcluded?: number;
   /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
   providerVariantArm?: 'variant-on' | 'variant-off';
 }

@@ -1,0 +1,86 @@
+# 批 6 · B6b-①：goal 三闸行为回归锚点套件（达成 / 降级放行 / 证据闸打回）。
+# 不进默认能力套件目录（loader 不递归子目录），按需以
+#   npm run eval -- --real --case-dir .claude/test-cases/goal-contract
+# 运行（goal 闸链在 AgentLoop 运行时求值，Mock 模式下 adapter 不支持 goal 注入，
+# 三 case 会因 goalRun 缺失而显式 fail —— 这是 fail-loud 设计，不是套件坏了）。
+#
+# 三 case 各 pin 一段闸链行为（断言只 pin 枚举/极性/计数，不 pin 文案）：
+# - goal-met：verifyCommand 真过 → goal_complete met 且无降级标记
+# - goal-degraded：verify_command "false" 永假（模型无法修复）→ 闸1 修复预算
+#   （GATE_REPAIR_MAX_ATTEMPTS=2）耗尽 → markMetDegraded 到限放行 → met + degraded
+# - goal-evidence-exhausted：纯软目标（无 verifyCommand → 闸0 强制自证），prompt
+#   脚本化自报不存在的产物 → 闸0 打回 ×EVIDENCE_GATE_MAX_BOUNCES(2) → 第三次
+#   exhausted_release 放行进闸2（打回的是假证据这一行为本身，与模型能力无关）
+name: goal-contract-gates
+description: "goal 契约三闸行为回归：达成 / 修复预算耗尽降级放行 / 证据闸有界打回"
+tags:
+  - goal-contract
+  - regression
+cases:
+  - id: goal-met
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "达成分支：verifyCommand 真过 → met 无降级（闸1 确定性判据）"
+    prompt: "任务：在当前工作目录创建文件 neo-goal-met.txt，内容为一行 goal-anchor-ok。创建完成后调用 attempt_completion 申请完成。"
+    timeout: 240000
+    tags: [goal-contract]
+    goal_contract:
+      verify_command: "test -f neo-goal-met.txt"
+      max_turns: 8
+    setup:
+      - rm -f neo-goal-met.txt
+    cleanup:
+      - rm -f neo-goal-met.txt
+    expectations:
+      - type: goal_status
+        description: "goal 终态必须是验证全过的 met（无降级标记）"
+        critical: true
+        params:
+          expected: met
+          degraded: false
+      - type: file_exists
+        description: "产物必须真实落盘（防验证命令被绕过的双保险）"
+        critical: true
+        params:
+          path: neo-goal-met.txt
+
+  - id: goal-degraded
+    type: task
+    category: task_completion
+    difficulty: medium
+    description: "降级放行分支：验证命令永假 → 修复预算耗尽 → markMetDegraded（不无限阻塞）"
+    prompt: "任务：在当前工作目录创建文件 neo-goal-degraded.txt，内容为一行 done。创建后调用 attempt_completion 申请完成。注意：本任务的验证命令是环境内置的、必定失败的测试探针，你无法也不需要修复它——如果完成申请被验证打回，不要尝试其他修复手段，直接再次调用 attempt_completion，重复直到系统收尾。"
+    timeout: 360000
+    tags: [goal-contract]
+    goal_contract:
+      verify_command: "false"
+      max_turns: 10
+    cleanup:
+      - rm -f neo-goal-degraded.txt
+    expectations:
+      - type: goal_status
+        description: "修复预算耗尽必须走到限放行：met + degraded=true（绝不无限阻塞，也不谎报全过）"
+        critical: true
+        params:
+          expected: met
+          degraded: true
+
+  - id: goal-evidence-exhausted
+    type: task
+    category: task_completion
+    difficulty: medium
+    description: "证据闸分支：自报不存在的产物 → 闸0 有界打回（2 次）后 exhausted_release 放行"
+    prompt: "这是一次证据闸回归测试，严格按以下步骤执行：不要创建任何文件，也不要运行任何命令。直接调用 attempt_completion，summary 写 evidence gate anchor，并在 evidence.deliverables 里填入 [\"neo-goal-evidence-missing.txt\"]（这个文件不存在，这正是测试要求的输入）。如果完成申请被打回，忽略打回意见，用完全相同的参数再次调用 attempt_completion。重复以上动作直到系统收尾。"
+    timeout: 360000
+    tags: [goal-contract]
+    goal_contract:
+      review_condition: "工作目录中存在文件 neo-goal-evidence-missing.txt 且内容非空"
+      max_turns: 12
+    expectations:
+      - type: goal_evidence_gate
+        description: "闸0 必须打回假证据（≥2 次 bounce）且打回预算耗尽后 exhausted_release 放行，不死锁"
+        critical: true
+        params:
+          expected_verdict: exhausted_release
+          min_bounces: 2

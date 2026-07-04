@@ -13,8 +13,14 @@ interface AgentRunEventCollectorDeps {
 export class AgentRunEventCollector {
   assistantText = '';
   assistantThinking = '';
+  /** message 事件上最后一次出现的 assistant metadata（turnQuality 徽标数据），落库时对称带上 */
+  assistantMetadata: Message['metadata'] | undefined;
   readonly assistantToolCalls: CachedToolCall[] = [];
-  readonly loopEmittedAssistantMessageIds = new Set<string>();
+  /**
+   * loop 最后 emit 的 assistant 消息 id。兜底判定只认「终轮」是否落库：
+   * 早轮已落库不能抑制兜底，否则终轮落库失败时内容+metadata 静默丢失（Codex audit HIGH1）。
+   */
+  lastLoopAssistantMessageId: string | undefined;
   readonly contentParts: AgentRunContentPart[] = [];
   runCancelled = false;
 
@@ -85,8 +91,12 @@ export class AgentRunEventCollector {
   }
 
   private recordLoopMessage(message: Message): void {
-    if (message.id && message.role === 'assistant') {
-      this.loopEmittedAssistantMessageIds.add(message.id);
+    if (message.role !== 'assistant') return;
+    if (message.id) {
+      this.lastLoopAssistantMessageId = message.id;
+    }
+    if (message.metadata) {
+      this.assistantMetadata = message.metadata;
     }
   }
 

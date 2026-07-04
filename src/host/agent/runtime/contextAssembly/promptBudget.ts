@@ -77,11 +77,17 @@ export function removePromptBlock(prompt: string, block: string | null | undefin
     .replace(new RegExp(`^${escapedBlock}$`), '');
 }
 
+/**
+ * @param extraTokens 稳定前缀之外、同属本请求指令负载的 token 数（动态尾巴消息）。
+ * 前缀稳定改造后 system 只承载稳定前缀，必需修复块走尾巴且允许超预算追加——
+ * trim 判断必须按「稳定前缀 + 尾巴」合并口径，否则修复压力下 preamble 永远不裁（审计 A8）。
+ */
 export function trimPreambleBeforeRequiredArtifactBlock(
   prompt: string,
   ctx?: ContextAssemblyCtx,
+  extraTokens = 0,
 ): string {
-  if (estimateTokens(prompt) <= promptBudget(ctx)) return prompt;
+  if (estimateTokens(prompt) + extraTokens <= promptBudget(ctx)) return prompt;
 
   const markerMatch = /\n\n## Game Artifact (?:Repair )?Contract\b/.exec(prompt);
   if (!markerMatch || typeof markerMatch.index !== 'number' || markerMatch.index <= 0) return prompt;
@@ -90,14 +96,14 @@ export function trimPreambleBeforeRequiredArtifactBlock(
   let prefix = prompt.slice(0, markerMatch.index);
   const trimNotice = '\n[base prompt trimmed to preserve required artifact contract]\n';
 
-  while (prefix.length > 0 && estimateTokens(`${prefix}${trimNotice}${suffix}`) > promptBudget(ctx)) {
-    const overflow = estimateTokens(`${prefix}${trimNotice}${suffix}`) - promptBudget(ctx);
+  while (prefix.length > 0 && estimateTokens(`${prefix}${trimNotice}${suffix}`) + extraTokens > promptBudget(ctx)) {
+    const overflow = estimateTokens(`${prefix}${trimNotice}${suffix}`) + extraTokens - promptBudget(ctx);
     const removeChars = Math.max(240, overflow * 5);
     prefix = prefix.slice(0, Math.max(0, prefix.length - removeChars)).trimEnd();
   }
 
   const trimmedPrompt = `${prefix}${trimNotice}${suffix}`;
-  if (estimateTokens(trimmedPrompt) <= promptBudget(ctx)) {
+  if (estimateTokens(trimmedPrompt) + extraTokens <= promptBudget(ctx)) {
     ctx?.runtime.pendingRuntimeDiagnostics.push('上下文预算压缩 base prompt：保留必需 game artifact contract');
     return trimmedPrompt;
   }

@@ -47,6 +47,18 @@ function parseJsonRecord(value: string): Record<string, unknown> {
   return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
 }
 
+// metadata 是装饰性字段（turnQuality 徽标等）：单行损坏不应让整个会话读回崩溃，
+// 解析失败回 undefined（Codex audit R1-MED2，对齐主库 parseStoredJson 语义）。
+function parseMessageMetadata(value: unknown): Message['metadata'] {
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    return typeof parsed === 'object' && parsed !== null ? parsed as Message['metadata'] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ----------------------------------------------------------------------------
 // CLI Database Service
 // ----------------------------------------------------------------------------
@@ -233,6 +245,8 @@ export class CLIDatabaseService {
     preMessagesSummary?: unknown;
     postMessagesSummary?: unknown;
     createdAt?: number;
+    shapeHashBefore?: string | null;
+    shapeHashAfter?: string | null;
   }): { id: string; createdAt: number; byteSize: number } {
     if (!this.db) throw new Error('Database not initialized');
     const id = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -245,8 +259,8 @@ export class CLIDatabaseService {
 
     this.db
       .prepare(
-        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at, shape_hash_before, shape_hash_after)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -262,6 +276,8 @@ export class CLIDatabaseService {
         postJson,
         byteSize,
         createdAt,
+        input.shapeHashBefore ?? null,
+        input.shapeHashAfter ?? null,
       );
     return { id, createdAt, byteSize };
   }
@@ -509,8 +525,8 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts, is_meta, thinking)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts, is_meta, thinking, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -534,7 +550,8 @@ export class CLIDatabaseService {
       attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
       message.contentParts ? JSON.stringify(message.contentParts) : null,
       message.isMeta ? 1 : 0,
-      message.thinking || message.reasoning || null
+      message.thinking || message.reasoning || null,
+      message.metadata ? JSON.stringify(message.metadata) : null
     );
 
     // 更新 session 的 updated_at
@@ -569,6 +586,7 @@ export class CLIDatabaseService {
       attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
       thinking: (row.thinking as string) || undefined,
+      metadata: parseMessageMetadata(row.metadata),
       ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
@@ -594,6 +612,7 @@ export class CLIDatabaseService {
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
       thinking: (row.thinking as string) || undefined,
+      metadata: parseMessageMetadata(row.metadata),
       ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
@@ -919,6 +938,7 @@ export class CLIDatabaseService {
       toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       thinking: (row.thinking as string) || undefined,
+      metadata: parseMessageMetadata(row.metadata),
       ...(row.is_meta ? { isMeta: true } : {}),
     });
 

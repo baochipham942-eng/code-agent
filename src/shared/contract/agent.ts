@@ -293,6 +293,9 @@ export interface GoalGateVerificationCommand {
   evidenceRefId?: string;
 }
 
+/** goal 闸三分支裁决（有界修复 + 到限放行，绝不无限阻塞收尾） */
+export type GoalGateVerdict = 'allow_finalize' | 'repair_prompt' | 'exhausted_release';
+
 export interface GoalGateVerificationCard {
   status: GoalGateVerificationStatus;
   failureType?: GoalGateVerificationFailureType;
@@ -307,6 +310,20 @@ export interface GoalGateVerificationCard {
   commands: GoalGateVerificationCommand[];
   evidenceRefIds: string[];
   skippedChecks: GoalGateSkippedCheck[];
+}
+
+// routing_resolved 事件载荷：路由真相的权威数据源（IPC 与 web HTTP 两条 run 路径都发射）。
+// mode='explicit' 表示本轮 agent 来自用户显式 /agent 选择；requestedAgentId 携带用户
+// 请求的 agent id，与 agentId 不一致即为静默兜底被显式化的降级信号。
+export interface RoutingResolvedEventData {
+  mode: 'auto' | 'explicit';
+  agentId: string;
+  agentName: string;
+  reason: string;
+  score: number;
+  fallbackToDefault?: boolean;
+  requestedAgentId?: string;
+  timestamp?: number;
 }
 
 export type AgentEvent =
@@ -326,22 +343,15 @@ export type AgentEvent =
   | { type: 'todo_update'; data: TodoItem[] }
   | { type: 'task_update'; data: TaskUpdateEventData }
   | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
-  | { type: 'routing_resolved'; data: {
-      mode: 'auto';
-      agentId: string;
-      agentName: string;
-      reason: string;
-      score: number;
-      fallbackToDefault?: boolean;
-      timestamp?: number;
-    } }
+  | { type: 'routing_resolved'; data: RoutingResolvedEventData }
   | { type: 'agent_complete'; data: null }
   | { type: 'agent_cancelled'; data: null }
   // /goal 自治模式观测事件
   | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number; parentToolUseId?: string } }
-  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string; verificationStatus?: GoalGateVerificationStatus; failureType?: GoalGateVerificationFailureType; evidenceRefs?: EvidenceRef[]; skippedChecks?: GoalGateSkippedCheck[]; plannedOptionalCommands?: GoalGatePlannedCommand[]; verificationCard?: GoalGateVerificationCard } }
+  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string; verdict?: GoalGateVerdict; attempt?: number; verificationStatus?: GoalGateVerificationStatus; failureType?: GoalGateVerificationFailureType; evidenceRefs?: EvidenceRef[]; skippedChecks?: GoalGateSkippedCheck[]; plannedOptionalCommands?: GoalGatePlannedCommand[]; verificationCard?: GoalGateVerificationCard } }
   // /goal 终态：三闸全过(met) 或 闸3 兜底中止(aborted)。前端据此展示"已完成/已中止"+停表。
-  | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; parentToolUseId?: string } }
+  // degraded：到限放行（修复预算耗尽仍未过验证）——met 但带安静降级标识。
+  | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string; parentToolUseId?: string } }
   // Auto Agent 思考/规划事件
   | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
@@ -444,7 +454,7 @@ export type AgentEvent =
   | { type: 'context_compacting'; data: { tokensBefore: number; messagesCount: number } }
   | { type: 'context_compacted'; data: { tokensBefore: number; tokensAfter: number; messagesRemoved: number; duration_ms: number } }
   // 实时 token 用量（SSE usage / token_estimate 事件）
-  | { type: 'stream_usage'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
+  | { type: 'stream_usage'; data: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; turnId?: string } }
   | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
   // Web Bridge: 本地工具调用请求（webServer → 前端 → Bridge）
   | { type: 'tool_call_local'; data: LocalToolCallData }

@@ -45,74 +45,78 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'model';
 
+// Settings IA 收敛（maka⑤批 v2 拍板 2026-07-03）：面向非程序员协作者，
+// 默认 5 组 19 项；技术项收进默认折叠的「高级」组（点开即用，不设开关）；
+// admin 项独立「管理」组（现有 canAccessSettingsTab 门控）。
 export type SettingsTabGroupId =
   | 'models'
   | 'basics'
-  | 'connections'
-  | 'workspace'
-  | 'management'
+  | 'work'
   | 'memory'
-  | 'system';
+  | 'system'
+  | 'advanced'
+  | 'management';
 
-export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
-  models: '模型与能力',
-  basics: '基础偏好',
-  connections: '能力与连接',
-  workspace: '工作区与自动化',
-  management: '用户管理',
-  memory: '记忆与隐私',
-  system: '系统',
-};
+// 组标签单一真源在 i18n：t.settings.tabGroups（zh/en 对齐），此处不再维护文案副本
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
   'models',
   'basics',
-  'connections',
-  'workspace',
+  'work',
   'memory',
-  'management',
   'system',
+  'advanced',
+  'management',
 ];
 
+/** 侧栏默认折叠的组（无权限语义，点组头展开） */
+export const COLLAPSED_SETTINGS_TAB_GROUPS: ReadonlySet<SettingsTabGroupId> = new Set(['advanced']);
+
 export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> = {
+  // 基础偏好
   general: 'basics',
   conversation: 'basics',
-  search: 'models',
-  voiceInput: 'models',
+  appearance: 'basics',
   keybindings: 'basics',
+  voiceInput: 'basics',
+  // 模型与能力
   model: 'models',
   visualModels: 'models',
-  agentEngine: 'models',
-  appearance: 'basics',
-  soul: 'basics',
-  mcp: 'connections',
-  capabilities: 'connections',
-  plugins: 'connections',
-  skills: 'connections',
-  roles: 'connections',
-  channels: 'connections',
-  hooks: 'connections',
-  workspace: 'workspace',
-  automation: 'workspace',
-  appshots: 'workspace',
-  users: 'management',
-  invites: 'management',
-  controlPlane: 'management',
+  search: 'models',
+  soul: 'models',
+  skills: 'models',
+  // 工作与协作
+  workspace: 'work',
+  automation: 'work',
+  channels: 'work',
+  roles: 'work',
+  // 记忆与隐私
   memory: 'memory',
   openchronicle: 'memory',
   privacy: 'memory',
-  cache: 'system',
+  // 系统
   update: 'system',
   about: 'system',
+  // 高级（默认折叠，普通用户可自行配置）
+  agentEngine: 'advanced',
+  mcp: 'advanced',
+  plugins: 'advanced',
+  hooks: 'advanced',
+  appshots: 'advanced',
+  cache: 'advanced',
+  // 管理（仅 admin）
+  users: 'management',
+  invites: 'management',
+  controlPlane: 'management',
+  capabilities: 'management',
 };
 
+// v2 拍板：plugins/hooks 下放普通用户（自行配置），从门控表移除
 const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {
   users: 'settings.users',
   invites: 'settings.invites',
   controlPlane: 'settings.controlPlane',
   capabilities: 'settings.capabilities',
-  plugins: 'settings.plugins',
-  hooks: 'settings.hooks',
 };
 
 export function canAccessSettingsTab(tab: SettingsTab, subject?: AccessSubject | null): boolean {

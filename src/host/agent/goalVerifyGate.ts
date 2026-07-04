@@ -21,6 +21,14 @@ export interface VerifyGateResult {
   durationMs: number;
   stdoutTail: string;
   stderrTail: string;
+  /**
+   * true 仅当验证命令的宿主进程本身没跑起来（cwd 不存在/不是目录、解释器无
+   * 执行权限等 OS 级 spawn 失败）——这是"验证基础设施不可用"，不是"验证不过"。
+   * 与 exitCode!==null 的正常失败（如 exit 127 命令未解析）是两回事：后者
+   * 进程确实执行了 shell，只是命令本身有问题，模型可能靠装依赖/改命令修复；
+   * 前者进程根本没起来，模型改代码无从下手。
+   */
+  spawnFailed: boolean;
 }
 
 /**
@@ -35,7 +43,35 @@ export function runVerifyGate(
   return new Promise((resolve) => {
     logger.debug('[GoalGate] running verify command', { verifyCommand, cwd });
     const startedAt = Date.now();
-    const child = spawn('/bin/sh', ['-c', verifyCommand], { cwd });
+
+    const resolveSpawnFailure = (err: Error) => {
+      logger.warn('[GoalGate] verify command failed to start', { error: err.message });
+      resolve({
+        pass: false,
+        exitCode: null,
+        output: `验证命令启动失败: ${err.message}`,
+        timedOut: false,
+        command: verifyCommand,
+        cwd,
+        durationMs: Date.now() - startedAt,
+        stdoutTail: '',
+        stderrTail: '',
+        spawnFailed: true,
+      });
+    };
+
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn('/bin/sh', ['-c', verifyCommand], { cwd });
+    } catch (err) {
+      // Node 对部分 spawn 参数错误（如 cwd 是文件而非目录 → ENOTDIR）同步抛出而非
+      // 走 'error' 事件；这里如果不捕获，Promise executor 里的同步 throw 会让整个
+      // Promise reject，上游 runVerificationPlan/goalCompletionGate 都没包
+      // try/catch，会直接崩掉整轮 turn 而不是走"验证不过"的正常闸门语义。
+      resolveSpawnFailure(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+
     let out = '';
     let stdoutTail = '';
     let stderrTail = '';
@@ -68,18 +104,28 @@ export function runVerifyGate(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      logger.warn('[GoalGate] verify command failed to start', { error: err.message });
-      resolve({
-        pass: false,
-        exitCode: null,
-        output: `验证命令启动失败: ${err.message}`,
-        timedOut,
-        command: verifyCommand,
-        cwd,
-        durationMs: Date.now() - startedAt,
-        stdoutTail,
-        stderrTail,
-      });
+      // Node 文档：child 的 'error' 事件在 spawn 失败 / kill 失败 / send 失败三种
+      // 场景都会触发。若 timer 已经判定超时（timedOut 已置位），说明进程确实
+      // 跑起来过，这里是 child.kill() 本身失败（如 EPERM）——不能按"进程根本
+      // 没起来"处理，否则闸1 会把一次慢测试误判成 infraFailure 走降级放行。
+      if (timedOut) {
+        const trimmed = out.slice(0, GOAL_MODE.VERIFY_OUTPUT_MAX_CHARS);
+        logger.warn('[GoalGate] verify command timed out and kill failed', { error: err.message });
+        resolve({
+          pass: false,
+          exitCode: null,
+          output: `${trimmed}\n[验证命令超时 ${timeoutMs}ms，终止失败: ${err.message}]`,
+          timedOut: true,
+          command: verifyCommand,
+          cwd,
+          durationMs: Date.now() - startedAt,
+          stdoutTail,
+          stderrTail,
+          spawnFailed: false,
+        });
+        return;
+      }
+      resolveSpawnFailure(err);
     });
 
     child.on('close', (code) => {
@@ -99,6 +145,7 @@ export function runVerifyGate(
         durationMs: Date.now() - startedAt,
         stdoutTail,
         stderrTail,
+        spawnFailed: false,
       });
     });
   });

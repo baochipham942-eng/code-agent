@@ -8,6 +8,7 @@ import {
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
 import { ProviderDetailCard } from './ProviderDetailSections';
 
 const CAPABILITY_ICONS: Record<string, React.ReactNode> = { tool: <Wrench className="h-3 w-3" />, vision: <Eye className="h-3 w-3" />, reasoning: <Brain className="h-3 w-3" />, code: <Code2 className="h-3 w-3" />, fast: <Gauge className="h-3 w-3" /> };
@@ -40,6 +41,8 @@ function ModelRow({
   onSetDefaultModel,
   onToggleModelEnabled,
 }: ModelRowProps) {
+  const { t } = useI18n();
+  const modelText = t.settings.model.models;
   const features = featuresFromModelMetadata({
     modelId: model.id,
     capabilities: model.capabilities,
@@ -58,10 +61,10 @@ function ModelRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-zinc-100">{model.label}</span>
           {isDefault && (
-            <span className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200">★ 默认</span>
+            <span className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200">{modelText.defaultBadge}</span>
           )}
           <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-            {model.source === 'discovered' ? '发现' : '内置'}
+            {model.source === 'discovered' ? modelText.sourceDiscovered : modelText.sourceBuiltin}
           </span>
         </div>
         {features.length > 0 && (
@@ -82,7 +85,7 @@ function ModelRow({
       {/* 右：固定列宽对齐——上下文 / MAX OUTPUT / 设为默认（占位保留）/ 进选择页 */}
       <div className="grid shrink-0 grid-cols-[4rem_5rem_5.5rem_3.5rem] items-center gap-3">
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">上下文</div>
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">{modelText.contextLabel}</div>
           <div className="text-xs text-zinc-300">{formatTokens(contextWindow)}</div>
         </div>
         <div className="text-right">
@@ -97,16 +100,16 @@ function ModelRow({
               disabled={settingDefaultModelId !== null}
               className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-400 transition hover:text-zinc-200"
             >
-              {settingDefaultModelId === model.id ? '保存中...' : '设为默认'}
+              {settingDefaultModelId === model.id ? modelText.setDefaultSaving : modelText.setDefault}
             </button>
           ) : null}
         </div>
         <div className="flex flex-col items-center gap-1">
-          <span className="text-[10px] text-zinc-500">进选择页</span>
+          <span className="text-[10px] text-zinc-500">{modelText.selectableLabel}</span>
           <Toggle
             checked={model.enabled}
             onChange={(checked) => onToggleModelEnabled(model, checked)}
-            aria-label="该模型是否进入模型选择页"
+            aria-label={modelText.selectableAriaLabel}
           />
         </div>
       </div>
@@ -152,10 +155,12 @@ export function ProviderModelsSection({
   onSetDefaultModel,
   onToggleModelEnabled,
 }: ProviderModelsSectionProps) {
+  const { t } = useI18n();
+  const modelText = t.settings.model.models;
   if (!hasApiKey) {
     return (
       <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/30 px-4 py-6 text-center text-xs text-zinc-500">
-        填写 API Key 并测试连接后，即可发现和启用该 Provider 的模型。
+        {modelText.needsApiKeyEmpty}
       </div>
     );
   }
@@ -163,8 +168,8 @@ export function ProviderModelsSection({
   return (
     <ProviderDetailCard
       step="2"
-      title="模型"
-      meta={`${currentEnabledModels.length} 已启用 / ${currentModels.length} 个`}
+      title={modelText.title}
+      meta={`${currentEnabledModels.length}${modelText.metaEnabledSuffix}${currentModels.length}${modelText.metaTotalSuffix}`}
       actions={(
         <Button
           size="sm"
@@ -174,7 +179,7 @@ export function ProviderModelsSection({
           loading={isDiscovering}
           leftIcon={<RefreshCw className="h-3 w-3" />}
         >
-          发现模型
+          {modelText.discover}
         </Button>
       )}
     >
@@ -183,20 +188,20 @@ export function ProviderModelsSection({
         <Input
           value={modelSearch}
           onChange={(event) => onModelSearchChange(event.target.value)}
-          placeholder="搜索模型..."
+          placeholder={modelText.searchPlaceholder}
           inputSize="sm"
           leftIcon={<Search className="h-3.5 w-3.5" />}
         />
       </div>
       <p className="mb-3 text-xs leading-relaxed text-zinc-500">
-        勾上「进选择页」的模型会出现在对话的模型选择里；「设为默认」决定 Neo 默认用哪个。
+        {modelText.selectionHint}
       </p>
 
       {/* 模型列表 */}
       <div className="max-h-[420px] overflow-y-auto rounded-lg border border-zinc-800">
         {filteredCurrentModels.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-zinc-500">
-            没有匹配模型
+            {modelText.noMatch}
           </div>
         ) : (
           <div className="divide-y divide-zinc-800">

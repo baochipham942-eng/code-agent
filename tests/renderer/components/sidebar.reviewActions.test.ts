@@ -337,7 +337,9 @@ describe('Sidebar review actions', () => {
     expect(showToastMock).not.toHaveBeenCalledWith('error', expect.any(String));
   });
 
-  it('surfaces pending review evidence on the session row for admins', () => {
+  // PR#287 极简重构：待审徽标/Review 证据按钮移出会话行默认视图（Replay 面板与
+  // 状态筛选仍可达）。本测试锁定行内安静性。
+  it('keeps pending review evidence off the session row for admins', () => {
     authState.user = { isAdmin: true };
     reactState.forcedReviewItemsBySessionId = {
       'session-1': [
@@ -349,9 +351,10 @@ describe('Sidebar review actions', () => {
 
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(html).toContain('aria-label="打开 Reviewable Session 的 Review 证据"');
-    expect(html).toContain('2 待审');
-    expect(html).toContain('2 个待审 issue · Missing artifact proof');
+    expect(html).toContain('Reviewable Session');
+    expect(html).not.toContain('aria-label="打开 Reviewable Session 的 Review 证据"');
+    expect(html).not.toContain('2 待审');
+    expect(html).not.toContain('Missing artifact proof');
   });
 
   it('filters the sidebar to sessions with pending review evidence for admins', () => {
@@ -380,7 +383,8 @@ describe('Sidebar review actions', () => {
       const html = renderToStaticMarkup(React.createElement(Sidebar));
 
       expect(html).toContain('Reviewable Session');
-      expect(html).toContain('1 待审');
+      // PR#287 后行内不再渲染"N 待审"计数徽标，筛选行为本身仍生效
+      expect(html).not.toContain('1 待审');
       expect(html).not.toContain('Reviewed Session');
     } finally {
       sessionState.sessions = originalSessions;

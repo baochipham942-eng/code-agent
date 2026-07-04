@@ -104,6 +104,33 @@ export const OBSERVATION_MASKING = {
   PLACEHOLDER_FILE_READ: '[File content omitted from history to save context. You have already received this file content earlier in this conversation. Do NOT re-read this file unless you have specific reason to believe it changed externally — rely on your prior understanding to proceed.]',
 } as const;
 
+/**
+ * L0 Active Tool Result Prune 常量。
+ * 压缩管线里跑在 L1 tool-result-budget 之前：超预算结果整体换成确定性占位符
+ * （先落盘归档再替换），而不是走 L1 的有损 head+tail 截断——占位符与轮次无关，
+ * 同内容每轮生成同字节，避免压缩层反复改写内容打掉 provider prompt cache 前缀。
+ */
+export const ACTIVE_TOOL_RESULT_PRUNE = {
+  ENABLED: true,
+  /** 高于 L1 的 2000：2000-4096 tokens 之间仍走 L1 有损截断，超过此值才整体换占位符 */
+  MAX_TOKENS_PER_RESULT: 4096,
+} as const;
+
+/**
+ * 上下文压缩经济学闸（WP2-3）：省下 tokens − 压缩调用成本×权重 ≥ 阈值才提交。
+ * 只闸自动触发源（auto_threshold）；手动压缩与溢出恢复不受限。
+ */
+export const COMPACTION_ECONOMICS = {
+  /** 压缩调用成本折权：调用走轻量 compact model 且节省按后续多轮摊销，故折算而非全价 */
+  CALL_COST_WEIGHT: 0.2,
+  /** 净节省阈值（tokens）：低于此不值得打掉 provider prompt cache 前缀 */
+  MIN_NET_SAVINGS_TOKENS: 500,
+  /** 连续 N 次摘要失败（校验不过/调用异常）进入冷却 */
+  FAILURE_COOLDOWN_THRESHOLD: 3,
+  /** 冷却时长（冷却期内跳过付费 AI 摘要，确定性压缩层不受影响） */
+  FAILURE_COOLDOWN_MS: 10 * 60 * 1000,
+} as const;
+
 /** 子 Agent 上下文压缩配置 */
 export const SUBAGENT_COMPACTION = {
   /** 触发压缩的上下文窗口占用比例 */
@@ -133,6 +160,12 @@ export const GOAL_MODE = {
    * 比基础间隔长——轻任务不需要每 3 轮就跑一次重型完成前自检，省 token 又不脱敏。
    */
   SIMPLE_CHECKPOINT_INTERVAL: 6,
+  /**
+   * 闸1/闸2 失败后的有界修复机会（三分支裁决：allow_finalize / repair_prompt /
+   * exhausted_release）。到限不再注回失败输出，放行收尾但带降级标记——
+   * 长任务绝不无限阻塞在验证修复循环里（此前只有 maxIterations 兜底）。
+   */
+  GATE_REPAIR_MAX_ATTEMPTS: 2,
   /** 闸1 验证命令超时（ms）；测试/构建可能较久，超时即判失败 */
   VERIFY_TIMEOUT_MS: 600_000,
   /** 闸1 验证输出注回模型时的最大字符数（控 token） */
@@ -141,6 +174,19 @@ export const GOAL_MODE = {
   REVIEW_MAX_ITERATIONS: 15,
   /** 闸2 评审理由注回模型时的最大字符数（控 token） */
   REVIEW_OUTPUT_MAX_CHARS: 4_000,
+  /**
+   * 闸0（公开证据自证核验，maka self-check gate 借鉴）的打回预算。
+   * 证据不足最多打回这么多次，用尽后放行进闸1/闸2——闸0 是前置增强不设新死锁面。
+   */
+  EVIDENCE_GATE_MAX_BOUNCES: 2,
+  /**
+   * goal 模式下 artifact 修复的硬中止倍数：attempts 达到
+   * ARTIFACT_REPAIR_MAX_ATTEMPTS × 该倍数仍未过验收 → 直接 markAborted 终止 goal。
+   * 背景：admission stop 只 force 当轮 final response，goal 未达成会重进 repair，
+   * attempts 无限涨（dogfood 实测烧到 6/4 仍在盲修）。修复轮有文件变更，闸3 的
+   * NO_PROGRESS_THRESHOLD 兜不住这种循环。
+   */
+  ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER: 2,
 } as const;
 
 /** Swarm goal 配置（P4：goal 内 swarm 执行 + 主动性 advance 合流，内部文档） */

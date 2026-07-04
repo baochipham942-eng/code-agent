@@ -40,6 +40,7 @@ describe('shell capabilities', () => {
     expect(supported.has(makeTauriCommandCapabilityId('appshots_read_image_data_url'))).toBe(true);
     expect(supported.has(makeTauriCommandCapabilityId('pip_show'))).toBe(true);
     expect(supported.has(makeTauriCommandCapabilityId('install_update'))).toBe(true);
+    expect(supported.has(makeTauriCommandCapabilityId('renderer_ready'))).toBe(true);
   });
 
   it('labels shell capabilities by hot-update layer', () => {

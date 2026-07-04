@@ -1,0 +1,123 @@
+# 产物终态判据回归套件（批 3 · B3①）—— GAIA 式外部锚点套件，
+# 不进默认能力套件目录（loader 不递归子目录），按需以
+#   npm run eval -- --scope smoke --case-dir .claude/test-cases/artifact-runnable
+# 运行。fixtures/ 里的坏游戏是 2026-07-03 dogfood 实锤的真实生成产物
+# （"验收通过但机制全挂"），expected_verdict=not_runnable 把"探测器必须抓红"
+# pin 成回归资产：这些 case 转红 = artifact_runnable 探测能力退化。
+# 好产物 case 走默认极性（必须 runnable），防单边优化。
+# 断言全部 deterministic 桶；需要本机浏览器（mac 口径），环境缺失=断言显式 fail。
+name: artifact-runnable-regression
+description: "artifact_runnable 断言家族回归锚点：坏产物必须被抓红，好产物必须放行"
+tags:
+  - artifact-runnable
+  - regression
+cases:
+  - id: artifact-bad-game-pageerror-caught
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "坏游戏标本（游玩即抛未捕获 ReferenceError）必须被 game_smoke 判红"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 60000
+    tags: [artifact-runnable]
+    expectations:
+      - type: game_smoke
+        description: "light 契约必须探出未捕获运行时异常（2026-07-03 run4 标本）"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/bad-game-referenceerror.html
+          expected_verdict: not_runnable
+
+  - id: artifact-bad-game-mechanics-caught-full
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "坏游戏标本（runSmokeTest 机制 5/5 挂）必须被 full 契约判红"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 60000
+    tags: [artifact-runnable]
+    expectations:
+      - type: game_smoke
+        description: "full（goal 验收级）契约必须探出机制证据缺失（2026-07-03 run3 标本）"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/bad-game-mechanics-broken.html
+          expected_verdict: not_runnable
+          contract: full
+
+  - id: artifact-good-game-passes-smoke
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "已知好产物（修复批后验收可玩）必须通过 game_smoke（防单边优化）"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 60000
+    tags: [artifact-runnable]
+    expectations:
+      - type: game_smoke
+        description: "好游戏 light 契约必须 runnable"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/good-game-playable.html
+
+  - id: artifact-bad-game-html-hard-signal
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "坏游戏标本的运行时 page_error 必须被 html_renders 硬信号判红"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 60000
+    tags: [artifact-runnable]
+    expectations:
+      - type: html_renders
+        description: "page_error 是 html_renders 硬信号"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/bad-game-referenceerror.html
+          expected_verdict: not_runnable
+
+  - id: artifact-good-game-html-renders
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "好产物（canvas 游戏无 <main>）必须通过 html_renders：布局 finding 只记 informational"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 60000
+    tags: [artifact-runnable]
+    expectations:
+      - type: html_renders
+        description: "布局质量 finding（missing_main_element 等）不判 not_runnable"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/good-game-playable.html
+
+  - id: artifact-good-pptx-opens
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "pptxgenjs 真实生成的 deck 必须通过 pptx_opens"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 30000
+    tags: [artifact-runnable]
+    expectations:
+      - type: pptx_opens
+        description: "OOXML 结构完整（Content_Types + presentation.xml + ≥1 slide）"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/good-deck.pptx
+
+  - id: artifact-corrupt-pptx-caught
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "损坏的 pptx 必须被 pptx_opens 判红"
+    prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
+    timeout: 30000
+    tags: [artifact-runnable]
+    expectations:
+      - type: pptx_opens
+        description: "非 zip 字节流必须 not_runnable"
+        critical: true
+        params:
+          path: .claude/test-cases/artifact-runnable/fixtures/corrupt-deck.pptx
+          expected_verdict: not_runnable

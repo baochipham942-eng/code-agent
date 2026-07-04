@@ -274,8 +274,13 @@ async function handleSetIntegration(
 async function handleGetBudgetStatus(): Promise<unknown> {
   const { getBudgetService } = await import('../services/core/budgetService');
   const service = getBudgetService();
-  // 状态（含用量百分比/告警级别）+ 配置（enabled/上限）一并回给 UI 染色与表单回填
-  return { ...service.checkBudget(), config: service.getConfig() };
+  // 状态（含用量百分比/告警级别）+ 配置（enabled/上限）+ 缓存节省 + token 用量汇总一并回给 UI
+  return {
+    ...service.checkBudget(),
+    config: service.getConfig(),
+    cacheSavings: service.getCacheSavingsSummary(),
+    tokenUsage: service.getTokenUsageSummary(),
+  };
 }
 
 async function handleSetBudgetConfig(

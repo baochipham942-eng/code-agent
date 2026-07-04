@@ -207,7 +207,10 @@ export function getDeferredToolsSummary(): string {
     if (!byServer.has(server)) byServer.set(server, []);
     byServer.get(server)!.push(meta.name);
   }
-  for (const [server, names] of byServer) {
+  // 按 server / 工具名字节序稳定排序：MCP 连接时序跨进程不确定，
+  // 该 summary 进 system 稳定前缀，顺序漂移会弱化跨会话前缀复用
+  for (const server of [...byServer.keys()].sort()) {
+    const names = [...(byServer.get(server) ?? [])].sort();
     lines.push(`[mcp:${server}] ${names.join(' | ')}`);
   }
 

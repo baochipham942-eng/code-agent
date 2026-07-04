@@ -3,6 +3,7 @@ import { Button, Input, Select } from '../../../primitives';
 import type { ModelProviderProtocol } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { ProviderDetailCard } from './ProviderDetailSections';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface AddProviderCardProps {
   name: string;
@@ -27,12 +28,16 @@ export function AddProviderCard({
   onApiKeyChange,
   onAddProvider,
 }: AddProviderCardProps) {
+  const { t } = useI18n();
+  const addProviderText = t.settings.model.addProvider;
+  const connectionText = t.settings.model.connection;
+
   return (
-    <ProviderDetailCard step="+" title="新增">
+    <ProviderDetailCard step="+" title={addProviderText.title}>
       <div className="space-y-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-200">显示名称</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">{addProviderText.displayName}</label>
             <Input
               value={name}
               onChange={(event) => onNameChange(event.target.value)}
@@ -40,27 +45,27 @@ export function AddProviderCard({
             />
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">{connectionText.protocolLabel}</label>
             <Select
               value={protocol}
               onChange={(event) => onProtocolChange(event.target.value as ModelProviderProtocol)}
             >
-              <option value="openai">OpenAI 兼容</option>
-              <option value="claude">Claude 协议</option>
+              <option value="openai">{connectionText.protocolOpenai}</option>
+              <option value="claude">{connectionText.protocolClaude}</option>
             </Select>
           </div>
         </div>
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
+          <label className="mb-2 block text-sm font-medium text-zinc-200">{connectionText.baseUrlLabel}</label>
           <Input
             value={baseUrl}
             onChange={(event) => onBaseUrlChange(event.target.value)}
             placeholder="https://example.com/v1"
           />
-          <p className="mt-2 text-xs text-zinc-500">填到 /v1 为止，不要带 /chat/completions。</p>
+          <p className="mt-2 text-xs text-zinc-500">{addProviderText.baseUrlHint}</p>
         </div>
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-200">API Key</label>
+          <label className="mb-2 block text-sm font-medium text-zinc-200">{addProviderText.apiKeyLabel}</label>
           <Input
             type="password"
             value={apiKey}
@@ -69,7 +74,7 @@ export function AddProviderCard({
             leftIcon={<Key className="h-4 w-4" />}
           />
         </div>
-        <p className="text-xs text-zinc-500">添加后点击「发现模型」拉取该 Provider 的可用模型列表。</p>
+        <p className="text-xs text-zinc-500">{addProviderText.afterAddHint}</p>
         <Button
           onClick={onAddProvider}
           disabled={isWebMode() || !name.trim() || !baseUrl.trim()}
@@ -77,7 +82,7 @@ export function AddProviderCard({
           size="lg"
           className="w-full"
         >
-          添加 Provider
+          {addProviderText.submit}
         </Button>
       </div>
     </ProviderDetailCard>

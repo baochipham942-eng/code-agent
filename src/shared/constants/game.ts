@@ -38,3 +38,13 @@ export const SKILL_LOADER_DEFAULTS = {
   /** YAML frontmatter delimiter */
   FRONTMATTER_DELIMITER: '---',
 } as const;
+
+/** Game artifact 校验超时（validation lifecycle / repair admission 共用） */
+export const GAME_VALIDATION_TIMEOUTS = {
+  /** goal 模式重契约 runtime smoke（浏览器驱动测试合约） */
+  RUNTIME_SMOKE_MS: 7000,
+  /** goal 模式浏览器视觉冒烟（多视口截查） */
+  BROWSER_VISUAL_SMOKE_MS: 10000,
+  /** light 契约可玩性冒烟（真实加载+按键，只抓硬崩溃/全黑画面） */
+  LIGHT_PLAYABILITY_SMOKE_MS: 6000,
+} as const;

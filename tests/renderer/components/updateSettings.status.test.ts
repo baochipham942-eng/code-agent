@@ -22,6 +22,9 @@ import {
   shouldDisableUpdateActions,
   shouldAutoReloadRendererBundle,
 } from '../../../src/renderer/components/features/settings/tabs/UpdateSettings';
+import { zh } from '../../../src/renderer/i18n/zh';
+
+const updateText = zh.settings.update;
 
 const upToDateInfo: UpdateInfo = {
   hasUpdate: false,
@@ -110,7 +113,7 @@ describe('UpdateSettings status visibility', () => {
   it('hides stale success status while a fresh check is running or failed', () => {
     expect(getVisibleUpdateInfo(upToDateInfo, false, null)).toBe(upToDateInfo);
     expect(getVisibleUpdateInfo(upToDateInfo, true, null)).toBeNull();
-    expect(getVisibleUpdateInfo(upToDateInfo, false, '检查更新失败，请稍后重试')).toBeNull();
+    expect(getVisibleUpdateInfo(upToDateInfo, false, updateText.checkError)).toBeNull();
   });
 
   it('treats a failed check as failure, not as up-to-date', () => {
@@ -119,16 +122,18 @@ describe('UpdateSettings status visibility', () => {
     expect(isFailedUpdateCheck(availableUpdateInfo)).toBe(false);
     expect(isFailedUpdateCheck({ hasUpdate: false, currentVersion: '0.16.91', checkFailed: true })).toBe(true);
     // 检查失败时必须连同 error 一起隐藏旧的成功状态，不能渲染"已是最新"
-    expect(getVisibleUpdateInfo(upToDateInfo, false, '检查更新失败，请稍后重试')).toBeNull();
+    expect(getVisibleUpdateInfo(upToDateInfo, false, updateText.checkError)).toBeNull();
   });
 
   it('renders install progress: percent → install → relaunch', () => {
-    expect(getInstallButtonLabel(false, null)).toBe('立即更新');
-    expect(getInstallButtonLabel(true, null)).toBe('准备中...');
-    expect(getInstallButtonLabel(true, { phase: 'download', downloaded: 5_000_000, total: 10_000_000 })).toBe('下载中 50%');
-    expect(getInstallButtonLabel(true, { phase: 'download', downloaded: 2_097_152 })).toBe('下载中 2.0 MB');
-    expect(getInstallButtonLabel(true, { phase: 'install', downloaded: 10, total: 10 })).toBe('正在安装...');
-    expect(getInstallButtonLabel(true, { phase: 'relaunch', downloaded: 10, total: 10 })).toBe('正在重启...');
+    expect(getInstallButtonLabel(false, null, updateText)).toBe(updateText.download);
+    expect(getInstallButtonLabel(true, null, updateText)).toBe(updateText.install.preparing);
+    expect(getInstallButtonLabel(true, { phase: 'download', downloaded: 5_000_000, total: 10_000_000 }, updateText))
+      .toBe(`${updateText.install.downloadingPrefix}50%`);
+    expect(getInstallButtonLabel(true, { phase: 'download', downloaded: 2_097_152 }, updateText))
+      .toBe(`${updateText.install.downloadingPrefix}2.0${updateText.install.downloadedMbSuffix}`);
+    expect(getInstallButtonLabel(true, { phase: 'install', downloaded: 10, total: 10 }, updateText)).toBe(updateText.install.installing);
+    expect(getInstallButtonLabel(true, { phase: 'relaunch', downloaded: 10, total: 10 }, updateText)).toBe(updateText.install.relaunching);
 
     expect(getInstallProgressPercent(null)).toBeNull();
     expect(getInstallProgressPercent({ phase: 'download', downloaded: 3, total: 4 })).toBe(75);
@@ -149,7 +154,7 @@ describe('UpdateSettings status visibility', () => {
   });
 
   it('summarizes local runtime component status for settings', () => {
-    expect(getRuntimeAssetsSummaryText(null)).toBeNull();
+    expect(getRuntimeAssetsSummaryText(null, updateText.runtimeAssets)).toBeNull();
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -161,7 +166,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 0 },
-    })).toBe('图片理解已可用');
+    }, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.summary.imageReady);
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -173,7 +178,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 1, bundledFallback: 0, missing: 0 },
-    })).toBe('语音输入、网页操作、图片理解都已可用');
+    }, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.summary.allReady);
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -191,7 +196,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 1 },
-    })).toBe('图片理解已可用；语音输入、网页操作首次使用时自动下载');
+    }, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.summary.optionalWithBundled);
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -203,7 +208,9 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 0, missing: 1 },
-    })).toBe('图片理解暂不可用');
+    }, updateText.runtimeAssets)).toBe(
+      `${updateText.runtimeAssets.displayNames.imageUnderstanding}${updateText.runtimeAssets.summary.unavailableSuffix}`,
+    );
   });
 
   it('labels bundled Sharp fallback separately from optional runtime downloads', () => {
@@ -213,14 +220,14 @@ describe('UpdateSettings status visibility', () => {
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('已可用');
+    }, updateText.runtimeAssets.status)).toBe(updateText.runtimeAssets.status.available);
     expect(getRuntimeAssetStatusText({
       id: 'playwright-browser-runtime',
       label: 'Browser automation components',
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('首次使用时下载');
+    }, updateText.runtimeAssets.status)).toBe(updateText.runtimeAssets.status.firstUseDownload);
   });
 
   it('uses user-facing runtime capability names instead of package labels', () => {
@@ -230,35 +237,35 @@ describe('UpdateSettings status visibility', () => {
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('语音输入');
+    }, updateText.runtimeAssets.displayNames)).toBe(updateText.runtimeAssets.displayNames.audioInput);
     expect(getRuntimeAssetDisplayName({
       id: 'playwright-browser-runtime',
       label: 'Browser automation components',
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('网页操作');
+    }, updateText.runtimeAssets.displayNames)).toBe(updateText.runtimeAssets.displayNames.browserAutomation);
     expect(getRuntimeAssetDisplayName({
       id: 'sharp-image-runtime',
       label: 'Image processing components',
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('图片理解');
+    }, updateText.runtimeAssets.displayNames)).toBe(updateText.runtimeAssets.displayNames.imageUnderstanding);
     expect(getRuntimeAssetDisplayName({
       id: 'computer-use-app',
       label: 'Agent Neo Computer Use app',
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('Computer Use');
+    }, updateText.runtimeAssets.displayNames)).toBe(updateText.runtimeAssets.displayNames.computerUse);
     expect(getRuntimeAssetDisplayName({
       id: 'uv',
       label: 'uv sidecar binary',
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('uv');
+    }, updateText.runtimeAssets.displayNames)).toBe(updateText.runtimeAssets.displayNames.uv);
   });
 
   it('shows prepare action only when runtime assets need an update', () => {
@@ -273,8 +280,8 @@ describe('UpdateSettings status visibility', () => {
         manifestSha256: 'a'.repeat(64),
       },
     })).toBe(true);
-    expect(getRuntimeAssetsPrepareText(false)).toBe('提前准备语音输入和网页操作');
-    expect(getRuntimeAssetsPrepareText(true)).toBe('正在准备语音输入和网页操作...');
+    expect(getRuntimeAssetsPrepareText(false, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.prepareIdle);
+    expect(getRuntimeAssetsPrepareText(true, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.prepareBusy);
   });
 
   it('summarizes renderer bundle hot-update status', () => {
@@ -283,14 +290,15 @@ describe('UpdateSettings status visibility', () => {
       activeBundle: null,
       lastAttempt: null,
     };
-    expect(getRendererBundleSummaryText(builtinStatus)).toBe('前端界面使用包内版本');
+    expect(getRendererBundleSummaryText(builtinStatus, updateText.rendererBundle.summary))
+      .toBe(updateText.rendererBundle.summary.builtin);
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
       disabled: true,
       disabledReason: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE',
       activeBundle: { version: '0.16.93', contentHash: 'abc' },
       lastAttempt: null,
-    })).toBe('前端热更已停用，使用包内版本');
+    }, updateText.rendererBundle.summary)).toBe(updateText.rendererBundle.summary.disabled);
 
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
@@ -308,7 +316,7 @@ describe('UpdateSettings status visibility', () => {
           requiredShellCapabilitiesCount: 155,
         },
       },
-    })).toBe('前端界面已热更到 v0.16.94');
+    }, updateText.rendererBundle.summary)).toBe(`${updateText.rendererBundle.summary.appliedPrefix}0.16.94`);
 
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
@@ -326,7 +334,7 @@ describe('UpdateSettings status visibility', () => {
           rollbackToBuiltin: true,
         },
       },
-    })).toBe('前端热更已回退到包内版本');
+    }, updateText.rendererBundle.summary)).toBe(updateText.rendererBundle.summary.rolledBack);
 
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
@@ -345,7 +353,7 @@ describe('UpdateSettings status visibility', () => {
           requiredShellCapabilitiesCount: 155,
         },
       },
-    })).toBe('前端热更需要壳版本 v0.16.93');
+    }, updateText.rendererBundle.summary)).toBe(`${updateText.rendererBundle.summary.shellTooOldPrefix}0.16.93`);
 
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
@@ -358,7 +366,7 @@ describe('UpdateSettings status visibility', () => {
         reason: 'missing-shell-capability',
         missingShellCapabilities: ['domain:local/newAction'],
       },
-    })).toBe('前端热更需要新壳能力');
+    }, updateText.rendererBundle.summary)).toBe(updateText.rendererBundle.summary.missingCapability);
 
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
@@ -370,7 +378,7 @@ describe('UpdateSettings status visibility', () => {
         outcome: 'failed',
         reason: 'envelope-untrusted',
       },
-    })).toBe('前端热更检查失败：envelope-untrusted');
+    }, updateText.rendererBundle.summary)).toBe(`${updateText.rendererBundle.summary.failedPrefix}envelope-untrusted`);
   });
 
   it('shows renderer bundle diagnostics for active bundle, last attempt, and manifest gates', () => {
@@ -407,14 +415,14 @@ describe('UpdateSettings status visibility', () => {
       },
     };
 
-    expect(getRendererBundleDiagnosticRows(status)).toEqual([
-      { label: '当前热更', value: 'v0.16.93 · abcdef123456' },
-      { label: '最近检查', value: 'skipped · already-current · 2026-06-06T00:00:00.000Z' },
-      { label: '候选版本', value: 'v0.16.93 · min shell v0.16.93 · 180 capabilities · 2 runtime assets · 1 resources' },
-      { label: '候选 hash', value: 'abcdef123456' },
-      { label: 'manifest', value: 'https://oss.example/renderer-bundle/latest/manifest.json' },
-      { label: '策略决策', value: 'use-manifest · policy-1 · fallback · rollout-percent-excluded' },
-      { label: '运行资源预备', value: '1 installed · 1 skipped' },
+    expect(getRendererBundleDiagnosticRows(status, updateText.rendererBundle)).toEqual([
+      { label: updateText.rendererBundle.diagnosticLabels.current, value: 'v0.16.93 · abcdef123456' },
+      { label: updateText.rendererBundle.diagnosticLabels.recentCheck, value: 'skipped · already-current · 2026-06-06T00:00:00.000Z' },
+      { label: updateText.rendererBundle.diagnosticLabels.candidateVersion, value: 'v0.16.93 · min shell v0.16.93 · 180 capabilities · 2 runtime assets · 1 resources' },
+      { label: updateText.rendererBundle.diagnosticLabels.candidateHash, value: 'abcdef123456' },
+      { label: updateText.rendererBundle.diagnosticLabels.manifest, value: 'https://oss.example/renderer-bundle/latest/manifest.json' },
+      { label: updateText.rendererBundle.diagnosticLabels.policyDecision, value: 'use-manifest · policy-1 · fallback · rollout-percent-excluded' },
+      { label: updateText.rendererBundle.diagnosticLabels.runtimePrepare, value: '1 installed · 1 skipped' },
     ]);
   });
 
@@ -430,12 +438,12 @@ describe('UpdateSettings status visibility', () => {
       },
       activeBundle: null,
       lastAttempt: null,
-    })).toEqual([
-      { label: '当前热更', value: '包内版本' },
-      { label: '配置入口', value: 'channel · beta' },
-      { label: '配置 manifest', value: 'https://oss.example/renderer-bundle/channels/beta/manifest.json' },
-      { label: '策略入口', value: 'https://agentneo.example/api/v1/control-plane?kind=renderer_bundle_rollout' },
-      { label: '灰度 cohort', value: 'staff' },
+    }, updateText.rendererBundle)).toEqual([
+      { label: updateText.rendererBundle.diagnosticLabels.current, value: updateText.rendererBundle.diagnosticLabels.builtinVersion },
+      { label: updateText.rendererBundle.diagnosticLabels.sourceEntry, value: 'channel · beta' },
+      { label: updateText.rendererBundle.diagnosticLabels.manifestConfig, value: 'https://oss.example/renderer-bundle/channels/beta/manifest.json' },
+      { label: updateText.rendererBundle.diagnosticLabels.policyEntry, value: 'https://agentneo.example/api/v1/control-plane?kind=renderer_bundle_rollout' },
+      { label: updateText.rendererBundle.diagnosticLabels.cohort, value: 'staff' },
     ]);
 
     expect(getRendererBundleDiagnosticRows({
@@ -447,11 +455,11 @@ describe('UpdateSettings status visibility', () => {
       },
       activeBundle: null,
       lastAttempt: null,
-    })).toEqual([
-      { label: '当前热更', value: '包内版本' },
-      { label: '配置入口', value: 'channel · ../beta' },
+    }, updateText.rendererBundle)).toEqual([
+      { label: updateText.rendererBundle.diagnosticLabels.current, value: updateText.rendererBundle.diagnosticLabels.builtinVersion },
+      { label: updateText.rendererBundle.diagnosticLabels.sourceEntry, value: 'channel · ../beta' },
       {
-        label: '入口配置错误',
+        label: updateText.rendererBundle.diagnosticLabels.sourceError,
         value: 'invalid-renderer-bundle-channel · CODE_AGENT_RENDERER_BUNDLE_CHANNEL=../beta',
       },
     ]);
@@ -464,14 +472,15 @@ describe('UpdateSettings status visibility', () => {
       disabledReason: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE',
       activeBundle: null,
       lastAttempt: null,
-    })).toEqual([
-      { label: '当前热更', value: '包内版本' },
-      { label: '停用开关', value: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE' },
+    }, updateText.rendererBundle)).toEqual([
+      { label: updateText.rendererBundle.diagnosticLabels.current, value: updateText.rendererBundle.diagnosticLabels.builtinVersion },
+      { label: updateText.rendererBundle.diagnosticLabels.disabledReason, value: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE' },
     ]);
   });
 
   it('summarizes desktop shell diagnostics across ok, warning, and error states', () => {
-    expect(getDesktopShellSummaryText(desktopShellDiagnostics())).toBe('桌面壳启动正常');
+    expect(getDesktopShellSummaryText(desktopShellDiagnostics(), updateText.desktopShell.summary))
+      .toBe(updateText.desktopShell.summary.ok);
 
     expect(getDesktopShellSummaryText(desktopShellDiagnostics({
       resources: [
@@ -485,12 +494,12 @@ describe('UpdateSettings status visibility', () => {
         },
       ],
       issues: [{ severity: 'warning', code: 'desktop-shell-optional-resource-missing', message: 'optional missing' }],
-    }))).toBe('桌面壳启动有警告');
+    }), updateText.desktopShell.summary)).toBe(updateText.desktopShell.summary.warning);
 
     expect(getDesktopShellSummaryText(desktopShellDiagnostics({
       boot: { stage: 'failed' },
       issues: [{ severity: 'error', code: 'desktop-shell-healthcheck-failed', message: 'timeout' }],
-    }))).toBe('桌面壳启动存在错误');
+    }), updateText.desktopShell.summary)).toBe(updateText.desktopShell.summary.error);
   });
 
   it('renders desktop shell diagnostics rows without exposing raw tokens', () => {
@@ -609,34 +618,34 @@ describe('UpdateSettings status visibility', () => {
           unsupported: 0,
         },
       },
-    }));
+    }), updateText);
 
-    expect(rows).toContainEqual({ label: '启动阶段', value: 'window-navigated' });
+    expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.bootStage, value: 'window-navigated' });
     expect(rows).toContainEqual({ label: 'boot token', value: 'matched' });
     expect(rows).toContainEqual({ label: 'renderer', value: 'active · active-healthy' });
     expect(rows).toContainEqual({ label: 'active bundle', value: 'v0.16.103 · abcdef123456' });
     expect(rows).toContainEqual({
-      label: '通道隔离',
+      label: updateText.desktopShell.diagnosticLabels.channelIsolation,
       value: 'dev · ok · port 8181/8181 · com.linchen.code-agent.dev',
     });
     expect(rows).toContainEqual({
       label: 'channel:data dir',
       value: 'ok · /Users/x/.code-agent-dev',
     });
-    expect(rows).toContainEqual({ label: '运行资源账本', value: '1 registered · 1 hashed · 1 min-shell' });
+    expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.runtimeLedger, value: '1 registered · 1 hashed · 1 min-shell' });
     expect(rows).toContainEqual({
       label: 'asset:uv',
       value: 'bundledFallback · bundled · darwin-arm64 · v0.11.16 · min 0.16.103 · pinnedBinarySha256:f63ec276fa13',
     });
     expect(rows).toContainEqual({
-      label: '上次启动失败',
+      label: updateText.desktopShell.diagnosticLabels.previousFailure,
       value: 'web-server-spawned · desktop-shell-healthcheck-failed · 2026-06-23T23:59:00.000Z',
     });
     expect(rows).toContainEqual({
-      label: '修复动作',
+      label: updateText.desktopShell.diagnosticLabels.repairActions,
       value: '清理 webServer 端口 · 禁用 hot renderer',
     });
-    expect(rows).toContainEqual({ label: '系统权限', value: '0 granted · 1 needs_restart · 1 wrong_bundle_id' });
+    expect(rows).toContainEqual({ label: updateText.desktopShell.diagnosticLabels.systemPermissions, value: '0 granted · 1 needs_restart · 1 wrong_bundle_id' });
     expect(rows).toContainEqual({
       label: 'Microphone',
       value: 'wrong_bundle_id · required · open_microphone_settings_for_current_bundle · bundle com.linchen.code-agent.dev',

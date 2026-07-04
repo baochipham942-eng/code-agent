@@ -81,31 +81,31 @@ export const WorkbenchTabs: React.FC = () => {
       return { id, label: t.taskPanel.title, title: t.taskPanel.title, isDirty: false };
     }
     if (id === 'skills') {
-      return { id, label: 'Skills', title: 'Session Skills', isDirty: false };
+      return { id, label: 'Skills', title: t.workbenchTabs.skillsTitle, isDirty: false };
     }
     if (id === 'files') {
-      return { id, label: '文件', title: '文件浏览器', isDirty: false };
+      return { id, label: t.workbenchTabs.filesLabel, title: t.workbenchTabs.filesTitle, isDirty: false };
     }
     if (id === 'workspace-preview') {
       const count = workspacePreviewItems.length + savedPresetCount + savedRecipeCount;
       return {
         id,
         label: count > 0 ? `Assets ${count}` : 'Assets',
-        title: 'Workspace Assets',
+        title: t.workbenchTabs.assetsTitle,
         isDirty: false,
       };
     }
     if (id === 'context') {
-      return { id, label: '上下文', title: '上下文占用与来源拆分', isDirty: false };
+      return { id, label: t.workbenchTabs.contextLabel, title: t.workbenchTabs.contextTitle, isDirty: false };
     }
     if (id === 'audit') {
-      return { id, label: 'Audit', title: 'Replay / 会话质量审计', isDirty: false };
+      return { id, label: 'Audit', title: t.workbenchTabs.auditTitle, isDirty: false };
     }
     if (id === 'design-canvas') {
       return { id, label: t.design.canvasTabLabel, title: t.design.canvasTabLabel, isDirty: false };
     }
     if (id === 'project-collab') {
-      return { id, label: 'Neo', title: '项目合作', isDirty: false };
+      return { id, label: 'Neo', title: t.workbenchTabs.projectCollabTitle, isDirty: false };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
@@ -149,7 +149,8 @@ export const WorkbenchTabs: React.FC = () => {
               className={`flex-shrink-0 p-0.5 rounded hover:bg-zinc-700 transition-opacity ${
                 isActive ? 'opacity-70 hover:opacity-100' : 'opacity-0 group-hover:opacity-70 hover:opacity-100'
               }`}
-              title="关闭"
+              title={t.common.close}
+              aria-label={t.common.close}
             >
               <X className="w-2.5 h-2.5" />
             </button>
@@ -209,8 +210,8 @@ export const WorkbenchTabs: React.FC = () => {
             type="button"
             onClick={() => setAddOpen((v) => !v)}
             className="flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors"
-            title="打开面板"
-            aria-label="打开面板"
+            title={t.workbenchTabs.openPanel}
+            aria-label={t.workbenchTabs.openPanel}
           >
             <Plus className="w-3 h-3" />
           </button>
@@ -243,7 +244,7 @@ export const WorkbenchTabs: React.FC = () => {
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
                 >
                   <FolderTree className="w-3.5 h-3.5 text-amber-400/80" />
-                  文件
+                  {t.workbenchTabs.filesLabel}
                 </button>
               )}
               {!hasWorkspacePreview && (
@@ -263,7 +264,7 @@ export const WorkbenchTabs: React.FC = () => {
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
                 >
                   <Activity className="w-3.5 h-3.5 text-emerald-400/80" />
-                  上下文
+                  {t.workbenchTabs.contextLabel}
                 </button>
               )}
               {!hasAudit && (

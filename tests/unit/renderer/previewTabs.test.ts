@@ -30,6 +30,32 @@ describe('appStore preview tabs', () => {
     expect(state.activePreviewTabId).toBe(firstId);
   });
 
+  it('openPreview re-activation resets isLoaded so repaired artifacts reload from disk', () => {
+    const { openPreview, markPreviewTabLoaded } = useAppStore.getState();
+    openPreview('/tmp/game.html');
+    const tabId = useAppStore.getState().previewTabs[0].id;
+    markPreviewTabLoaded(tabId, '<html>old</html>');
+    expect(useAppStore.getState().previewTabs[0].isLoaded).toBe(true);
+
+    openPreview('/tmp/game.html');
+
+    expect(useAppStore.getState().previewTabs[0].isLoaded).toBe(false);
+  });
+
+  it('openPreview re-activation keeps unsaved edits loaded instead of clobbering them', () => {
+    const { openPreview, markPreviewTabLoaded, updatePreviewTabContent } = useAppStore.getState();
+    openPreview('/tmp/game.html');
+    const tabId = useAppStore.getState().previewTabs[0].id;
+    markPreviewTabLoaded(tabId, '<html>old</html>');
+    updatePreviewTabContent(tabId, '<html>edited-but-unsaved</html>');
+
+    openPreview('/tmp/game.html');
+
+    const tab = useAppStore.getState().previewTabs[0];
+    expect(tab.isLoaded).toBe(true);
+    expect(tab.content).toBe('<html>edited-but-unsaved</html>');
+  });
+
   it('openPreview evicts the least-recently-activated tab when at capacity', () => {
     const { openPreview, setActivePreviewTab } = useAppStore.getState();
     for (let i = 0; i < MAX_PREVIEW_TABS; i++) {

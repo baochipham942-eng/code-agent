@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Monitor, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
+import { useAppStore } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
@@ -47,8 +48,11 @@ function getFontSizeName(fontSize: number): 'small' | 'medium' | 'large' | null 
 
 export const AppearanceSettings: React.FC = () => {
   const { t, language, setLanguage, availableLanguages } = useI18n();
+  const appearanceText = t.settings.appearance;
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const developerMode = useAppStore((state) => state.developerMode);
+  const setDeveloperMode = useAppStore((state) => state.setDeveloperMode);
 
   // 加载已保存的字体大小
   useEffect(() => {
@@ -70,9 +74,9 @@ export const AppearanceSettings: React.FC = () => {
   const themeOptions: ThemeOption[] = [
     {
       id: 'dark',
-      label: t.appearance.themes.dark,
+      label: appearanceText.themes.dark,
       icon: <Moon className="w-4 h-4" />,
-      description: '深色背景，适合夜间使用',
+      description: appearanceText.themeDescriptions.dark,
       preview: (
         <div className="w-full h-16 rounded bg-zinc-900 border border-zinc-700 flex items-center justify-center">
           <div className="w-8 h-3 bg-zinc-600 rounded" />
@@ -81,9 +85,9 @@ export const AppearanceSettings: React.FC = () => {
     },
     {
       id: 'light',
-      label: t.appearance.themes.light,
+      label: appearanceText.themes.light,
       icon: <Sun className="w-4 h-4" />,
-      description: '浅色背景，适合日间使用',
+      description: appearanceText.themeDescriptions.light,
       preview: (
         <div className="w-full h-16 rounded bg-white border border-zinc-700 flex items-center justify-center">
           <div className="w-8 h-3 bg-zinc-700 rounded" />
@@ -92,9 +96,9 @@ export const AppearanceSettings: React.FC = () => {
     },
     {
       id: 'system',
-      label: t.appearance.themes.auto,
+      label: appearanceText.themes.auto,
       icon: <Monitor className="w-4 h-4" />,
-      description: '跟随系统设置自动切换',
+      description: appearanceText.themeDescriptions.system,
       preview: (
         <div className="w-full h-16 rounded bg-gradient-to-r from-white to-zinc-900 border border-zinc-600 flex items-center justify-center">
           <div className="w-8 h-3 bg-zinc-600 rounded" />
@@ -130,6 +134,19 @@ export const AppearanceSettings: React.FC = () => {
     }
   };
 
+  // 处理开发者模式开关
+  const handleDeveloperModeChange = async (enabled: boolean) => {
+    setDeveloperMode(enabled);
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        ui: { developerMode: enabled },
+      } as Partial<AppSettings>);
+      logger.info('Developer mode saved', { enabled });
+    } catch (error) {
+      logger.error('Failed to save developer mode', error);
+    }
+  };
+
   // 处理字体大小切换
   const handleFontSizeChange = async (size: 'small' | 'medium' | 'large') => {
     setFontSize(size);
@@ -152,9 +169,9 @@ export const AppearanceSettings: React.FC = () => {
       <WebModeBanner />
       {/* Theme Selection */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.appearance.theme}</h3>
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{appearanceText.theme}</h3>
         <p className="text-xs text-zinc-500 mb-4">
-          选择你偏好的界面主题
+          {appearanceText.themeDescription}
         </p>
         <div className="grid grid-cols-3 gap-3">
           {themeOptions.map((option) => {
@@ -198,22 +215,23 @@ export const AppearanceSettings: React.FC = () => {
         {/* Current theme indicator */}
         {theme === 'system' && (
           <p className="mt-2 text-xs text-zinc-500">
-            当前系统主题：{resolvedTheme === 'dark' ? '深色' : '浅色'}
+            {appearanceText.currentSystemThemePrefix}
+            {resolvedTheme === 'dark' ? appearanceText.themes.dark : appearanceText.themes.light}
           </p>
         )}
       </div>
 
       {/* Font Size */}
       <div className="pt-4 border-t border-zinc-700">
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.appearance.fontSize}</h3>
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{appearanceText.fontSize}</h3>
         <p className="text-xs text-zinc-500 mb-4">
-          调整界面文字大小
+          {appearanceText.fontSizeDescription}
         </p>
         <div className="grid grid-cols-3 gap-2">
           {([
-            { id: 'small', label: t.appearance.fontSizes.small, size: '13px' },
-            { id: 'medium', label: t.appearance.fontSizes.medium, size: '14px' },
-            { id: 'large', label: t.appearance.fontSizes.large, size: '16px' },
+            { id: 'small', label: appearanceText.fontSizes.small, size: '13px' },
+            { id: 'medium', label: appearanceText.fontSizes.medium, size: '14px' },
+            { id: 'large', label: appearanceText.fontSizes.large, size: '16px' },
           ] as const).map((option) => {
             const isActive = fontSize === option.id;
 
@@ -245,9 +263,9 @@ export const AppearanceSettings: React.FC = () => {
 
       {/* Language Selection */}
       <div className="pt-4 border-t border-zinc-700">
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.language.title}</h3>
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{appearanceText.languageTitle}</h3>
         <p className="text-xs text-zinc-400 mb-4">
-          {t.language.description}
+          {appearanceText.languageDescription}
         </p>
         <div className="space-y-2">
           {availableLanguages.map((lang) => (
@@ -270,7 +288,7 @@ export const AppearanceSettings: React.FC = () => {
                         : 'bg-zinc-700 text-zinc-400'
                     }`}
                   >
-                    {lang.code === 'zh' ? '中' : 'En'}
+                    {lang.code === 'zh' ? appearanceText.languageBadges.zh : appearanceText.languageBadges.en}
                   </div>
                   <div>
                     <div className="font-medium text-zinc-200 text-sm">{lang.native}</div>
@@ -285,6 +303,32 @@ export const AppearanceSettings: React.FC = () => {
               </div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Developer Mode */}
+      <div className="pt-4 border-t border-zinc-700">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-medium text-zinc-200 mb-1">{appearanceText.developerMode}</h3>
+            <p className="text-xs text-zinc-500">{appearanceText.developerModeDesc}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={developerMode ? 'true' : 'false'}
+            aria-label={appearanceText.developerMode}
+            onClick={() => handleDeveloperModeChange(!developerMode)}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+              developerMode ? 'bg-primary-500' : 'bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                developerMode ? 'translate-x-[18px]' : 'translate-x-[3px]'
+              }`}
+            />
+          </button>
         </div>
       </div>
     </div>

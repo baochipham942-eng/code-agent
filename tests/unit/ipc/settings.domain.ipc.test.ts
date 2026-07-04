@@ -23,7 +23,12 @@ const env = vi.hoisted(() => ({
     set: vi.fn(),
     getStoredApiKeyProviders: vi.fn((): string[] => []),
   },
-  budget: { checkBudget: vi.fn(() => ({ used: 0 })), getConfig: vi.fn(() => ({ enabled: true })) },
+  budget: {
+    checkBudget: vi.fn(() => ({ used: 0 })),
+    getConfig: vi.fn(() => ({ enabled: true })),
+    getCacheSavingsSummary: vi.fn(() => ({ cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 })),
+    getTokenUsageSummary: vi.fn(() => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })),
+  },
   syncBudget: vi.fn(),
   saveIcon: vi.fn(async () => ({ icon: 'saved' })),
   resolveIcon: vi.fn(async () => 'resolved'),
@@ -281,8 +286,13 @@ describe('service api keys', () => {
 });
 
 describe('budget', () => {
-  it('getBudgetStatus 合并 check + config', async () => {
-    expect((await callSettings('getBudgetStatus')).data).toEqual({ used: 0, config: { enabled: true } });
+  it('getBudgetStatus 合并 check + config + cacheSavings + tokenUsage', async () => {
+    expect((await callSettings('getBudgetStatus')).data).toEqual({
+      used: 0,
+      config: { enabled: true },
+      cacheSavings: { cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 },
+      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    });
   });
 
   it('setBudgetConfig 从 {budget:{...}} 提取并同步运行时', async () => {

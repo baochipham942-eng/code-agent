@@ -34,6 +34,11 @@ import { initPostHogNode } from '../host/observability/posthogNode';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../host/services/core/sessionDefaults';
 import { getModelSessionState } from '../host/session/modelSessionState';
+import {
+  clearPersistedModelOverride,
+  persistModelOverride,
+  rehydrateModelOverrideFromSession,
+} from '../host/session/modelOverridePersistence';
 import type { AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
@@ -550,6 +555,10 @@ async function initializeServices(): Promise<void> {
     await installBuiltinRoles();
     const { initAgentRegistry } = await import('../host/agent/agentRegistry');
     await initAgentRegistry(undefined);
+    // agents:changed 广播在 web 模式走不到（electronMock getAllWindows=[]），
+    // 用 SSE 桥直接推给全部客户端，否则 renderer registry 停留在启动快照（S4）。
+    const { bridgeAgentRegistryChangesToSSE } = await import('../host/agent/agentRegistrySSEBridge');
+    bridgeAgentRegistryChangesToSSE(broadcastSSE);
     logger.info('Agent registry initialized (user-level agents + builtin roles)');
   } catch (error) {
     logger.warn('Agent registry init failed (non-blocking):', (error as Error).message);
@@ -784,19 +793,26 @@ function registerHandlers(): void {
         if (!payload?.sessionId || !payload?.provider || !payload?.model) {
           return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId, provider and model are required' } };
         }
-        getModelSessionState().setOverride(payload.sessionId, {
+        const override = {
           provider: payload.provider,
           model: payload.model,
           temperature: payload.temperature,
           maxTokens: payload.maxTokens,
           adaptive: payload.adaptive,
-        });
+        };
+        getModelSessionState().setOverride(payload.sessionId, override);
+        // 落库让切换跨重启存活（生产 web 路径）；无 DB 时跳过，内存 override 本轮仍生效。
+        // persisted 标志透出（audit R1-HIGH2：落库失败不静默谎报成功）
+        const persisted = dbAvailable
+          ? await persistModelOverride(payload.sessionId, override)
+          : false;
         return {
           success: true,
           data: {
             provider: payload.provider,
             model: payload.model,
             adaptive: payload.adaptive,
+            persisted,
           },
         };
       }
@@ -805,7 +821,16 @@ function registerHandlers(): void {
         if (!payload?.sessionId) {
           return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
         }
-        return { success: true, data: getModelSessionState().getOverride(payload.sessionId) };
+        let override = getModelSessionState().getOverride(payload.sessionId);
+        // 重启后内存 Map 为空：按持久化标记回灌，保证 UI（ModelSwitcher）重开会话即显示切换值
+        if (!override && dbAvailable) {
+          try {
+            const { getSessionManager } = await import('../host/services/infra/sessionManager');
+            const session = await getSessionManager().getSession(payload.sessionId, 1);
+            override = rehydrateModelOverrideFromSession(session);
+          } catch { /* 会话不存在或 DB 异常：维持 null，UI 回落默认 */ }
+        }
+        return { success: true, data: override };
       }
 
       if (action === 'clearModelOverride') {
@@ -813,7 +838,10 @@ function registerHandlers(): void {
           return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
         }
         getModelSessionState().clearOverride(payload.sessionId);
-        return { success: true, data: null };
+        const cleared = dbAvailable
+          ? await clearPersistedModelOverride(payload.sessionId)
+          : false;
+        return { success: true, data: { persisted: cleared } };
       }
 
       let sm: Awaited<ReturnType<typeof import('../host/services/infra/sessionManager').getSessionManager>> | null = null;

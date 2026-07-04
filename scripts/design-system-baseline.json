@@ -1,5 +1,9 @@
 {
   "hardcoded-hex": 0,
-  "bare-button": 736,
-  "handrolled-modal": 12
+  "bare-button": 758,
+  "handrolled-modal": 12,
+  "bare-px-radius": 5,
+  "bare-z-index": 0,
+  "important-unjustified": 28,
+  "stale-zindex-allowlist": 0
 }

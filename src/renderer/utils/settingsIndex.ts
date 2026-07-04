@@ -3,14 +3,15 @@
 // Static index of all settings entries for fuzzy search
 // ============================================================================
 
+import { en } from '../i18n/en';
+import { zh } from '../i18n/zh';
 import type { AccessSubject } from './accessControl';
 import { canAccessSettingsTab, type SettingsTab } from './settingsTabs';
 export type { SettingsTab } from './settingsTabs';
 
 export interface SettingsEntry {
   tab: SettingsTab;
-  tabLabel: string;
-  label: string;
+  labelKey: string;
   keywords: string[];
 }
 
@@ -22,141 +23,163 @@ export type SearchSettingsOptions = AccessSubject;
  */
 export const SETTINGS_INDEX: SettingsEntry[] = [
   // General
-  { tab: 'general', tabLabel: '权限与安全', label: '安全模式', keywords: ['permission', 'safety', '权限', '安全', 'YOLO', '自动编辑', 'bypassPermissions'] },
+  { tab: 'general', labelKey: 'permissionMode', keywords: ['permission', 'permissions', 'safety', 'safe mode', 'yolo', 'auto edit', 'auto-edit', 'bypassPermissions'] },
 
   // Conversation
-  { tab: 'conversation', tabLabel: '对话', label: '模型路由策略', keywords: ['routing', 'route', '模型路由', '路由', 'auto', 'direct', 'parallel'] },
+  { tab: 'conversation', labelKey: 'modelRoutingStrategy', keywords: ['routing', 'route', 'model routing', 'auto', 'direct', 'parallel'] },
 
   // Voice Input
-  { tab: 'voiceInput', tabLabel: '语音输入', label: '语音输入', keywords: ['voice', 'speech', 'mic', 'microphone', '语音', '麦克风', '录音', '转写'] },
-  { tab: 'voiceInput', tabLabel: '语音输入', label: 'Whisper 模型', keywords: ['whisper', 'model', 'asr', 'speech to text', '模型', '本地模型', '转写模型'] },
-  { tab: 'voiceInput', tabLabel: '语音输入', label: '转写语言', keywords: ['language', 'locale', '语言', '多语言', '中文', '英文'] },
+  { tab: 'voiceInput', labelKey: 'voiceInput', keywords: ['voice', 'speech', 'mic', 'microphone', 'recording', 'transcription', 'asr'] },
+  { tab: 'voiceInput', labelKey: 'whisperModel', keywords: ['whisper', 'model', 'asr', 'speech to text', 'local model', 'transcription model'] },
+  { tab: 'voiceInput', labelKey: 'transcriptionLanguage', keywords: ['language', 'locale', 'multilingual', 'chinese', 'english'] },
 
   // Keybindings
-  { tab: 'keybindings', tabLabel: '快捷键', label: '快捷键配置', keywords: ['keyboard', 'shortcut', 'hotkey', 'keybinding', '快捷键', '热键', '键盘', '命令面板', 'Cmd K', 'Ctrl K'] },
-  { tab: 'keybindings', tabLabel: '快捷键', label: '冲突检测', keywords: ['conflict', '冲突', '占用', 'macOS', 'Windows', 'Linux', '恢复默认'] },
-  { tab: 'keybindings', tabLabel: '快捷键', label: '全局热键', keywords: ['global hotkey', '全局唤起', '语音输入', '截图问答', 'appshot', 'voice'] },
+  { tab: 'keybindings', labelKey: 'keybindingsConfig', keywords: ['keyboard', 'shortcut', 'shortcuts', 'hotkey', 'keybinding', 'command palette', 'cmd k', 'ctrl k'] },
+  { tab: 'keybindings', labelKey: 'conflictDetection', keywords: ['conflict', 'occupied', 'macos', 'windows', 'linux', 'restore defaults'] },
+  { tab: 'keybindings', labelKey: 'globalHotkeys', keywords: ['global hotkey', 'global launch', 'voice input', 'screenshot qa', 'appshot', 'voice'] },
 
   // Workspace
-  { tab: 'workspace', tabLabel: '工作区', label: '当前工作目录', keywords: ['workspace', '工作区', 'cwd', 'working directory', '目录', '当前'] },
-  { tab: 'workspace', tabLabel: '工作区', label: '配置作用域', keywords: ['personalization', 'config scope', 'scope', '配置作用域', '全局配置', '项目配置', '本地配置', '个性化', 'user config', 'project config', 'local config'] },
-  { tab: 'workspace', tabLabel: '工作区', label: '最近目录', keywords: ['recent', '最近', 'recent directories', '历史', '切换'] },
-  { tab: 'workspace', tabLabel: '工作区', label: '本地桥', keywords: ['bridge', 'local', '桥接', '本地', 'ipc'] },
-  { tab: 'workspace', tabLabel: '工作区', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
+  { tab: 'workspace', labelKey: 'currentWorkingDirectory', keywords: ['workspace', 'cwd', 'working directory', 'directory', 'current'] },
+  { tab: 'workspace', labelKey: 'configScope', keywords: ['personalization', 'config scope', 'scope', 'global config', 'project config', 'local config', 'user config'] },
+  { tab: 'workspace', labelKey: 'recentDirectories', keywords: ['recent', 'recent directories', 'history', 'switch'] },
+  { tab: 'workspace', labelKey: 'localBridge', keywords: ['bridge', 'local', 'ipc'] },
+  { tab: 'workspace', labelKey: 'browserToolMode', keywords: ['browser', 'playwright', 'chrome', 'managed', 'desktop'] },
 
   // Automation
-  { tab: 'automation', tabLabel: '自动化', label: '定时任务', keywords: ['cron', '定时', 'schedule', '任务', '自动化', 'automation'] },
-  { tab: 'automation', tabLabel: '自动化', label: '新建任务', keywords: ['new task', 'create', '新建', '任务', 'cron', '自动化向导'] },
-  { tab: 'automation', tabLabel: '自动化', label: '执行历史', keywords: ['history', 'execution', '执行', '历史', '运行', '日志'] },
+  { tab: 'automation', labelKey: 'scheduledTasks', keywords: ['cron', 'schedule', 'task', 'tasks', 'automation'] },
+  { tab: 'automation', labelKey: 'newTask', keywords: ['new task', 'create', 'task', 'cron', 'automation wizard'] },
+  { tab: 'automation', labelKey: 'executionHistory', keywords: ['history', 'execution', 'run', 'runs', 'log', 'logs'] },
 
   // User Management
-  { tab: 'users', tabLabel: '用户管理', label: '注册用户', keywords: ['user', 'users', '用户', '用户管理', '注册用户', 'email', '邮箱', 'last login', '上次登录', '活跃'] },
-  { tab: 'users', tabLabel: '用户管理', label: '用户字段', keywords: ['profile', '字段', '注册时间', '注册来源', '设备', '会话', '消息'] },
-  { tab: 'invites', tabLabel: '邀请码管理', label: '邀请码管理', keywords: ['invite', '邀请码', '邀请码管理', '注册', 'code', '使用次数', '有效期'] },
-  { tab: 'invites', tabLabel: '邀请码管理', label: '新建邀请码', keywords: ['create invite', 'new invite', '创建', '新建', '发放', '停用', '启用'] },
-  { tab: 'controlPlane', tabLabel: '控制平面', label: '发布审计', keywords: ['control plane', 'audit', 'release', 'rollout', '发布', '审计', '灰度', '签名', 'payload'] },
-  { tab: 'controlPlane', tabLabel: '控制平面', label: '线上版本与 hash', keywords: ['hash', 'keyId', 'artifact', 'capability registry', 'prompt registry', 'cloud config', '版本'] },
+  { tab: 'users', labelKey: 'registeredUsers', keywords: ['user', 'users', 'user management', 'registered users', 'email', 'last login', 'active'] },
+  { tab: 'users', labelKey: 'userFields', keywords: ['profile', 'fields', 'registration time', 'registration source', 'device', 'session', 'message'] },
+  { tab: 'invites', labelKey: 'inviteManagement', keywords: ['invite', 'invite code', 'invite codes', 'registration', 'code', 'usage count', 'validity'] },
+  { tab: 'invites', labelKey: 'newInvite', keywords: ['create invite', 'new invite', 'create', 'issue', 'disable', 'enable'] },
+  { tab: 'controlPlane', labelKey: 'releaseAudit', keywords: ['control plane', 'audit', 'release', 'rollout', 'gray release', 'signature', 'payload'] },
+  { tab: 'controlPlane', labelKey: 'onlineVersionHash', keywords: ['hash', 'keyId', 'artifact', 'capability registry', 'prompt registry', 'cloud config', 'version'] },
 
   // Model
-  { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },
-  { tab: 'model', tabLabel: '模型', label: 'API Key', keywords: ['apikey', 'api key', '密钥', 'key', '认证', 'provider key', '模型凭证'] },
-  { tab: 'model', tabLabel: '模型', label: '模型选择', keywords: ['model', '模型', '选择', '切换'] },
-  { tab: 'model', tabLabel: '模型', label: '温度', keywords: ['temperature', '温度', '创造性', '精确'] },
-  { tab: 'model', tabLabel: '模型', label: '测试连接', keywords: ['test', 'connection', '测试', '连接'] },
-  { tab: 'model', tabLabel: '模型', label: '中转站', keywords: ['relay', '中转', '自定义', 'custom', 'new-api', 'one-api', '接口地址', 'base url'] },
+  { tab: 'model', labelKey: 'modelProviders', keywords: ['provider', 'providers', 'api', 'deepseek', 'claude', 'kimi', 'openai', 'zhipu', 'moonshot'] },
+  { tab: 'model', labelKey: 'apiKey', keywords: ['apikey', 'api key', 'secret', 'key', 'auth', 'authentication', 'provider key', 'model credential'] },
+  { tab: 'model', labelKey: 'modelSelection', keywords: ['model', 'select', 'selection', 'switch'] },
+  { tab: 'model', labelKey: 'temperature', keywords: ['temperature', 'creativity', 'precision'] },
+  { tab: 'model', labelKey: 'testConnection', keywords: ['test', 'connection'] },
+  { tab: 'model', labelKey: 'relay', keywords: ['relay', 'custom', 'new-api', 'one-api', 'endpoint', 'base url'] },
 
   // Visual Models（生成模型：生图 / 生视频）
-  { tab: 'visualModels', tabLabel: '生成模型', label: '生图模型', keywords: ['image', '生图', '文生图', 't2i', 'wanx', '通义万相', 'gpt-image', 'cogview', 'flux', '视觉模型', 'visual'] },
-  { tab: 'visualModels', tabLabel: '生成模型', label: '生视频模型', keywords: ['video', '生视频', '文生视频', '图生视频', 't2v', 'i2v', '海螺', 'minimax', '通义万相', 'visual'] },
-  { tab: 'visualModels', tabLabel: '生成模型', label: '自定义生图端点', keywords: ['custom', '自定义', '端点', 'endpoint', 'base url', 'openai', '兼容', 'byo', 'sdxl', 'seedream'] },
-  { tab: 'visualModels', tabLabel: '生成模型', label: '自定义视频端点', keywords: ['custom', '自定义', '视频端点', 'video endpoint', 'base url'] },
+  { tab: 'visualModels', labelKey: 'imageModel', keywords: ['image', 'text to image', 't2i', 'wanx', 'tongyi wanxiang', 'gpt-image', 'cogview', 'flux', 'visual'] },
+  { tab: 'visualModels', labelKey: 'videoModel', keywords: ['video', 'text to video', 'image to video', 't2v', 'i2v', 'hailuo', 'minimax', 'tongyi wanxiang', 'visual'] },
+  { tab: 'visualModels', labelKey: 'customImageEndpoint', keywords: ['custom', 'endpoint', 'base url', 'openai', 'compatible', 'byo', 'sdxl', 'seedream'] },
+  { tab: 'visualModels', labelKey: 'customVideoEndpoint', keywords: ['custom', 'video endpoint', 'base url'] },
 
   // Agent Engine（执行引擎）
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: '执行引擎', keywords: ['执行引擎', 'engine', '引擎', '计费', 'billing', '订阅', '安装状态'] },
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Neo（原生引擎）', keywords: ['native', 'neo', '原生', '内置', '引擎', 'engine'] },
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Codex CLI', keywords: ['codex', 'cli', '引擎', 'engine', '外部引擎'] },
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Claude Code', keywords: ['claude code', 'cli', '引擎', 'engine', '外部引擎'] },
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'MiMo-Code', keywords: ['mimo', 'cli', '引擎', 'engine', '外部引擎'] },
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: 'Kimi Code', keywords: ['kimi', 'cli', '引擎', 'engine', '外部引擎'] },
-  { tab: 'agentEngine', tabLabel: '执行引擎', label: '引擎默认模型', keywords: ['engine', 'model', '引擎模型', '默认模型'] },
+  { tab: 'agentEngine', labelKey: 'agentEngine', keywords: ['execution engine', 'engine', 'billing', 'subscription', 'install state'] },
+  { tab: 'agentEngine', labelKey: 'neoNativeEngine', keywords: ['native', 'neo', 'built-in', 'engine'] },
+  { tab: 'agentEngine', labelKey: 'codexCli', keywords: ['codex', 'cli', 'engine', 'external engine'] },
+  { tab: 'agentEngine', labelKey: 'claudeCode', keywords: ['claude code', 'cli', 'engine', 'external engine'] },
+  { tab: 'agentEngine', labelKey: 'mimoCode', keywords: ['mimo', 'cli', 'engine', 'external engine'] },
+  { tab: 'agentEngine', labelKey: 'kimiCode', keywords: ['kimi', 'cli', 'engine', 'external engine'] },
+  { tab: 'agentEngine', labelKey: 'engineDefaultModel', keywords: ['engine', 'model', 'engine model', 'default model'] },
 
   // Appearance
-  { tab: 'appearance', tabLabel: '外观', label: '主题', keywords: ['theme', '主题', '深色', '浅色', 'dark', 'light', '夜间'] },
-  { tab: 'appearance', tabLabel: '外观', label: '字体大小', keywords: ['font', 'size', '字体', '大小', '文字'] },
-  { tab: 'appearance', tabLabel: '外观', label: '语言', keywords: ['language', '语言', '中文', 'English', '国际化', 'i18n'] },
+  { tab: 'appearance', labelKey: 'theme', keywords: ['theme', 'dark', 'light', 'night'] },
+  { tab: 'appearance', labelKey: 'fontSize', keywords: ['font', 'size', 'text'] },
+  { tab: 'appearance', labelKey: 'language', keywords: ['language', 'chinese', 'english', 'internationalization', 'i18n'] },
 
   // Data
-  { tab: 'cache', tabLabel: '数据与存储', label: '数据管理', keywords: ['data', '数据', '统计', '会话数', '消息数'] },
-  { tab: 'cache', tabLabel: '数据与存储', label: '数据库大小', keywords: ['database', '数据库', '大小', '存储'] },
-  { tab: 'cache', tabLabel: '数据与存储', label: '清空缓存', keywords: ['cache', 'clear', '缓存', '清理', '清空'] },
+  { tab: 'cache', labelKey: 'dataManagement', keywords: ['data', 'statistics', 'session count', 'message count'] },
+  { tab: 'cache', labelKey: 'databaseSize', keywords: ['database', 'size', 'storage'] },
+  { tab: 'cache', labelKey: 'clearCache', keywords: ['cache', 'clear', 'cleanup', 'empty'] },
 
   // Capability Center
-  { tab: 'capabilities', tabLabel: '能力中心', label: '本地能力库存', keywords: ['capability', 'capabilities', '能力', '能力中心', 'marketplace', 'registry', '审计'] },
-  { tab: 'capabilities', tabLabel: '能力中心', label: 'Skill / MCP / Tool / Channel 审计', keywords: ['skill', 'mcp', 'tool', 'channel', 'connector', 'workflow', '权限', '风险', '来源'] },
+  { tab: 'capabilities', labelKey: 'localCapabilityInventory', keywords: ['capability', 'capabilities', 'capability center', 'marketplace', 'registry', 'audit'] },
+  { tab: 'capabilities', labelKey: 'capabilityAudit', keywords: ['skill', 'mcp', 'tool', 'channel', 'connector', 'workflow', 'permission', 'risk', 'source'] },
 
   // Plugins
-  { tab: 'plugins', tabLabel: '插件管理', label: '插件市场', keywords: ['plugin', 'plugins', '插件', 'marketplace', '市场', '安装', '卸载', '启用', '禁用'] },
-  { tab: 'plugins', tabLabel: '插件管理', label: '插件可见性', keywords: ['visibility', 'admin', 'user', '普通用户', '管理员', '仅管理员可见', '普通用户可见', '权限'] },
-  { tab: 'plugins', tabLabel: '插件管理', label: '插件权限', keywords: ['plugin permission', '插件权限', '插件风险', 'external service', '外部服务', 'hook 权限'] },
-  { tab: 'plugins', tabLabel: '插件管理', label: 'Marketplace 源', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', '源', '刷新'] },
+  { tab: 'plugins', labelKey: 'pluginMarketplace', keywords: ['plugin', 'plugins', 'marketplace', 'install', 'uninstall', 'enable', 'disable'] },
+  { tab: 'plugins', labelKey: 'pluginVisibility', keywords: ['visibility', 'admin', 'user', 'regular user', 'admin only', 'visible to users', 'permission'] },
+  { tab: 'plugins', labelKey: 'pluginPermissions', keywords: ['plugin permission', 'plugin risk', 'external service', 'hook permission'] },
+  { tab: 'plugins', labelKey: 'marketplaceSource', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', 'source', 'refresh'] },
+
+  // Hooks（Settings IA v2 下放普通用户后补索引——此前 admin-only 从未被索引）
+  { tab: 'hooks', labelKey: 'hookConfig', keywords: ['hook', 'hooks', 'pre', 'post', 'intercept', 'auto run', 'event'] },
 
   // MCP
-  { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 服务器', keywords: ['mcp', 'server', '服务器', 'protocol', '工具', '资源'] },
-  { tab: 'mcp', tabLabel: 'MCP', label: 'MCP OAuth', keywords: ['mcp oauth', 'oauth', '重新授权', 'reauthorize', 'revoke', 'token', '授权'] },
-  { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 凭证边界', keywords: ['mcp env', 'mcp header', 'header auth', 'env secret', 'authorization', 'bearer', '凭证', '密钥'] },
-  { tab: 'mcp', tabLabel: 'MCP', label: 'Codex CLI', keywords: ['codex', 'sandbox', '沙箱', '交叉验证', 'cross verify'] },
-  { tab: 'mcp', tabLabel: 'MCP', label: '本地桥接', keywords: ['bridge', 'local', '桥接', '本地'] },
-  { tab: 'mcp', tabLabel: 'MCP', label: '云端刷新', keywords: ['cloud', 'refresh', '云端', '刷新', '配置'] },
+  { tab: 'mcp', labelKey: 'mcpServers', keywords: ['mcp', 'server', 'servers', 'protocol', 'tool', 'resource'] },
+  { tab: 'mcp', labelKey: 'mcpOAuth', keywords: ['mcp oauth', 'oauth', 'reauthorize', 'revoke', 'token', 'authorization'] },
+  { tab: 'mcp', labelKey: 'mcpCredentialBoundary', keywords: ['mcp env', 'mcp header', 'header auth', 'env secret', 'authorization', 'bearer', 'credential', 'secret'] },
+  { tab: 'mcp', labelKey: 'mcpCodexCli', keywords: ['codex', 'sandbox', 'cross verify'] },
+  { tab: 'mcp', labelKey: 'mcpLocalBridge', keywords: ['bridge', 'local'] },
+  { tab: 'mcp', labelKey: 'cloudRefresh', keywords: ['cloud', 'refresh', 'config'] },
 
   // Skills
-  { tab: 'skills', tabLabel: 'Skills', label: 'Skill 库管理', keywords: ['skill', '技能', '库', '管理', '安装', '卸载'] },
-  { tab: 'skills', tabLabel: 'Skills', label: '搜索 Skill', keywords: ['search', 'skill', '搜索', '技能', 'skillsmp'] },
-  { tab: 'skills', tabLabel: 'Skills', label: '自定义仓库', keywords: ['custom', 'repository', '自定义', '仓库', 'github'] },
+  { tab: 'skills', labelKey: 'skillLibraryManagement', keywords: ['skill', 'skills', 'library', 'management', 'install', 'uninstall'] },
+  { tab: 'skills', labelKey: 'searchSkill', keywords: ['search', 'skill', 'skillsmp'] },
+  { tab: 'skills', labelKey: 'customRepository', keywords: ['custom', 'repository', 'github'] },
 
   // Channels
-  { tab: 'channels', tabLabel: '通道', label: '多通道接入', keywords: ['channel', '通道', '接入', 'http', 'api'] },
-  { tab: 'channels', tabLabel: '通道', label: '通道隐私策略', keywords: ['channel privacy', '隐私策略', '默认脱敏', 'local-redact', 'allow-raw', 'channel token', '通道 token', 'app secret', 'bot token'] },
-  { tab: 'channels', tabLabel: '通道', label: '低打扰通知', keywords: ['notification', '通知', '低打扰', 'typing', 'progress spam', 'desktop reply notification', 'channel reply'] },
-  { tab: 'channels', tabLabel: '通道', label: '飞书', keywords: ['feishu', '飞书', 'lark', 'webhook', 'bot'] },
-  { tab: 'channels', tabLabel: '通道', label: 'Telegram', keywords: ['telegram', 'bot', 'tg'] },
-  { tab: 'channels', tabLabel: '通道', label: 'HTTP API', keywords: ['http', 'api', 'rest', '端口', 'port', 'cors'] },
+  { tab: 'channels', labelKey: 'multichannelAccess', keywords: ['channel', 'channels', 'access', 'http', 'api'] },
+  { tab: 'channels', labelKey: 'channelPrivacyPolicy', keywords: ['channel privacy', 'privacy policy', 'default redaction', 'local-redact', 'allow-raw', 'channel token', 'app secret', 'bot token'] },
+  { tab: 'channels', labelKey: 'lowNoiseNotifications', keywords: ['notification', 'low noise', 'typing', 'progress spam', 'desktop reply notification', 'channel reply'] },
+  { tab: 'channels', labelKey: 'feishu', keywords: ['feishu', 'lark', 'webhook', 'bot'] },
+  { tab: 'channels', labelKey: 'telegram', keywords: ['telegram', 'bot', 'tg'] },
+  { tab: 'channels', labelKey: 'httpApi', keywords: ['http', 'api', 'rest', 'port', 'cors'] },
 
   // Memory
-  { tab: 'memory', tabLabel: '记忆', label: 'Light Memory', keywords: ['memory', '记忆', '文件', '记忆文件'] },
-  { tab: 'memory', tabLabel: '记忆', label: '会话统计', keywords: ['session', 'stats', '会话', '统计', '深度', '活跃'] },
-  { tab: 'memory', tabLabel: '记忆', label: '模型使用', keywords: ['model', 'usage', '模型', '使用', '分布'] },
+  { tab: 'memory', labelKey: 'lightMemory', keywords: ['memory', 'file', 'memory file'] },
+  { tab: 'memory', labelKey: 'sessionStats', keywords: ['session', 'stats', 'statistics', 'depth', 'active'] },
+  { tab: 'memory', labelKey: 'modelUsage', keywords: ['model', 'usage', 'distribution'] },
 
   // Screen Memory
-  { tab: 'openchronicle', tabLabel: '屏幕记忆', label: '自动屏幕记忆', keywords: ['screen memory', '屏幕记忆', 'openchronicle', 'daemon', '桌面活动'] },
-  { tab: 'openchronicle', tabLabel: '屏幕记忆', label: '手动桌面活动', keywords: ['native desktop', 'tauri', 'desktop', '桌面活动', '截图', '录音'] },
+  { tab: 'openchronicle', labelKey: 'automaticScreenMemory', keywords: ['screen memory', 'openchronicle', 'daemon', 'desktop activity'] },
+  { tab: 'openchronicle', labelKey: 'manualDesktopActivity', keywords: ['native desktop', 'tauri', 'desktop', 'desktop activity', 'screenshot', 'recording'] },
 
   // Privacy
-  { tab: 'privacy', tabLabel: '隐私防线', label: '权限与数据边界', keywords: ['privacy boundary', '权限边界', '数据边界', '本地优先', '云端例外', 'local first', '诊断例外'] },
-  { tab: 'privacy', tabLabel: '隐私防线', label: '语音转写', keywords: ['语音转写', 'transcription', 'voice paste', 'whisper', 'groq', '麦克风', 'desktop audio', 'channel audio'] },
-  { tab: 'privacy', tabLabel: '隐私防线', label: '诊断包', keywords: ['diagnostic bundle', '诊断包', 'trace', 'stack trace', 'scrub', '脱敏', '遥测', 'telemetry'] },
-  { tab: 'privacy', tabLabel: '隐私防线', label: '凭证库存', keywords: ['auth inventory', '凭证库存', 'api key', 'oauth', 'channel token', 'browser relay', 'mcp header'] },
-  { tab: 'privacy', tabLabel: '隐私防线', label: 'Browser Relay', keywords: ['browser relay', '浏览器 relay', 'chrome extension', 'debugger', 'tabs', 'activeTab', 'host permissions'] },
+  { tab: 'privacy', labelKey: 'permissionDataBoundary', keywords: ['privacy boundary', 'permission boundary', 'data boundary', 'local first', 'cloud exception', 'diagnostic exception'] },
+  { tab: 'privacy', labelKey: 'voiceTranscription', keywords: ['transcription', 'voice paste', 'whisper', 'groq', 'microphone', 'desktop audio', 'channel audio'] },
+  { tab: 'privacy', labelKey: 'diagnosticBundle', keywords: ['diagnostic bundle', 'trace', 'stack trace', 'scrub', 'redaction', 'telemetry'] },
+  { tab: 'privacy', labelKey: 'credentialInventory', keywords: ['auth inventory', 'credential inventory', 'api key', 'oauth', 'channel token', 'browser relay', 'mcp header'] },
+  { tab: 'privacy', labelKey: 'browserRelay', keywords: ['browser relay', 'chrome extension', 'debugger', 'tabs', 'activeTab', 'host permissions'] },
 
   // Update
-  { tab: 'update', tabLabel: '更新', label: '版本更新', keywords: ['update', 'version', '更新', '版本', '升级', '下载'] },
-  { tab: 'update', tabLabel: '更新', label: '检查更新', keywords: ['check', 'update', '检查', '更新'] },
+  { tab: 'update', labelKey: 'versionUpdate', keywords: ['update', 'version', 'upgrade', 'download'] },
+  { tab: 'update', labelKey: 'checkForUpdates', keywords: ['check', 'update'] },
 
   // About
-  { tab: 'about', tabLabel: '关于', label: '关于', keywords: ['about', '关于', '版本', '技术栈'] },
+  { tab: 'about', labelKey: 'about', keywords: ['about', 'version', 'tech stack'] },
 ];
+
+type SearchLabelMap = Record<string, string | undefined>;
+type TabLabelMap = Partial<Record<SettingsTab, string>>;
+
+const zhSearchIndex = zh.settings.searchIndex as SearchLabelMap;
+const enSearchIndex = en.settings.searchIndex as SearchLabelMap;
+const zhTabLabels = zh.settings.tabs as TabLabelMap;
+const enTabLabels = en.settings.tabs as TabLabelMap;
+
+const SETTINGS_SEARCH_TEXT = SETTINGS_INDEX.map((entry) => (
+  [
+    ...entry.keywords,
+    zhSearchIndex[entry.labelKey],
+    enSearchIndex[entry.labelKey],
+    zhTabLabels[entry.tab],
+    enTabLabels[entry.tab],
+  ]
+    .filter((term): term is string => typeof term === 'string' && term.length > 0)
+    .join('\n')
+    .toLowerCase()
+));
 
 /**
  * Search settings entries by query string.
- * Matches against label and keywords using simple substring matching.
+ * Matches against precomputed keywords plus zh/en labels and tab labels.
  */
 export function searchSettings(query: string, options?: SearchSettingsOptions): SettingsEntry[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
 
-  return SETTINGS_INDEX.filter((entry) => {
+  return SETTINGS_INDEX.filter((entry, index) => {
     if (!canAccessSettingsTab(entry.tab, options)) return false;
-    if (entry.label.toLowerCase().includes(q)) return true;
-    if (entry.tabLabel.toLowerCase().includes(q)) return true;
-    return entry.keywords.some((kw) => kw.toLowerCase().includes(q));
+    return SETTINGS_SEARCH_TEXT[index].includes(q);
   });
 }

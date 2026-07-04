@@ -54,6 +54,8 @@ export interface RuntimeContext {
   sessionId: string;
   agentId?: string;
   agentName?: string;
+  /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
+  requestedAgentId?: string;
   userId?: string;
   memoryMode?: SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
@@ -145,6 +147,8 @@ export interface RuntimeContext {
   currentTurnId: string;
   messageDeltaSeq: number;
   currentSystemPromptHash?: string;
+  /** WP2-2b：完整请求前缀 shape hash（system+消息结构），仅 telemetry 诊断 */
+  currentRequestShapeHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   turnTrace: TurnTraceRecorder;
   turnQualityMemory?: TurnQualityMemorySummary;
@@ -156,6 +160,19 @@ export interface RuntimeContext {
   forceFinalResponsePrompt?: string;
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   artifactValidationPassedTargetFile?: string;
+  /**
+   * Final artifact contract（maka 借鉴）：模型开工前声明的最终产物与草稿区。
+   * 声明后产物校验/修复锁定/goal 证据闸/工作区卫生检查都以此为锚。
+   */
+  declaredDeliverables?: {
+    /** 最终交付产物路径（相对 workingDirectory 或绝对路径） */
+    finalArtifacts: string[];
+    /** 草稿/中间产物目录（卫生检查豁免区） */
+    scratchDir?: string;
+    declaredAtMs: number;
+  };
+  /** goal 证据闸（闸0）：本次 goal 内因证据不足被打回的次数（防无限打回） */
+  goalEvidenceGateBounces?: number;
   activeSkillInvocation?: {
     skillName: string;
     source: string;
@@ -245,6 +262,10 @@ export interface RuntimeContext {
   MAX_CONSECUTIVE_COMPACTS: number;
   /** ≥MAX_CONSECUTIVE_COMPACTS 后置位：窗口太小，暂停自动压缩、停止烧 token 摘要。 */
   _autoCompactPaused: boolean;
+  /** WP2-3：连续摘要失败次数（校验不过/调用异常），成功清零。 */
+  _summaryFailureStreak: number;
+  /** WP2-3：摘要失败冷却截止时间戳；冷却期内跳过付费 AI 摘要。 */
+  _summaryCooldownUntil: number;
 
   // --- Content verification ---
   contentVerificationRetries: Map<string, number>;

@@ -242,6 +242,7 @@ export class AutoContextCompressor {
           postTokens,
           savedTokens: result.savedTokens,
           usagePercent: health.usagePercent,
+          systemPrompt,
         });
       } catch {
         // 写快照失败不阻塞压缩
@@ -557,8 +558,10 @@ Generate the handoff summary:`;
         strategy: 'ai_summary',
       };
     } catch (error) {
-      logger.error('[AutoCompressor] AI summary failed, falling back to truncate:', error);
-      return this.applyTruncate(messages, preservedContext);
+      // WP2-3：摘要调用失败保留原文，不再 truncate——truncate 不可逆地破坏内容，
+      // 保留原文本轮不压，交给下轮重试/确定性压缩层/溢出恢复兜底
+      logger.error('[AutoCompressor] AI summary failed, keeping original messages:', error);
+      return { compressed: false, messages, savedTokens: 0 };
     }
   }
 

@@ -56,6 +56,7 @@ import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
 import { goalTokensUsedWithSwarm, maybeInjectSwarmGuidance } from './swarmGoalIntegration';
+import { getGoalArtifactRepairReleaseReason } from './toolArtifactRepairPolicy';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
@@ -361,6 +362,38 @@ export class ConversationRuntime {
               wallClockBudgetMs: this.ctx.goalMode.getWallClockBudgetMs(),
             },
           });
+          // 盲修循环止损（闸3 扩展，降级放行版）：修复策略裁决判"不再有净进展"
+          // 或 attempts 达 2×上限兜底 → markMetDegraded 诚实降级交付（最佳版本已由
+          // monotonicity 保护落盘），不是 aborted——aborted 只留给没有任何可用产物的情况。
+          const repairReleaseReason = getGoalArtifactRepairReleaseReason(this.ctx);
+          if (repairReleaseReason) {
+            this.ctx.goalMode.markMetDegraded(repairReleaseReason);
+            this.ctx.onEvent({
+              type: 'goal_complete',
+              data: {
+                status: 'met',
+                turns: iterations,
+                tokensUsed: tokensUsedWithSwarm,
+                degraded: true,
+                degradedReason: repairReleaseReason,
+              },
+            });
+            if (!this.ctx.forceFinalResponseReason) {
+              this.ctx.forceFinalResponseReason = 'artifact-repair-degraded-release';
+              this.ctx.forceFinalResponsePrompt = [
+                '<artifact-repair-degraded-release>',
+                `修复循环已按最佳版本降级收尾：${repairReleaseReason}`,
+                '工具已禁用，请用纯文本向用户诚实收尾：',
+                '1. 产物当前可用的部分（引用具体文件与已通过的验收项）',
+                '2. 仍未通过的验收项及原因（不要淡化或掩饰）',
+                '3. 用户如需继续完善，下一步可以怎么做',
+                '</artifact-repair-degraded-release>',
+              ].join('\n');
+            }
+            // 不 break：让本轮推理以 forced-final（禁工具）产出诚实收尾文本，
+            // markMetDegraded 后 isPending()=false，本块不会重入；终态映射走
+            // 既有 goal_met 路径（isVerificationDegraded 防重发 goal_complete）。
+          }
           const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
@@ -581,14 +614,18 @@ export class ConversationRuntime {
         // 闸1 验证通过 → markMet → loop 退出，收尾标 goal_met。
         // （闸3 兜底中止已在 loop 内直接 terminal = 'aborted'。）
         // 终态事件：目标达成（UI 展示"目标已完成"+停表）
-        this.ctx.onEvent({
-          type: 'goal_complete',
-          data: {
-            status: 'met',
-            turns: iterations,
-            tokensUsed: goalTokensUsedWithSwarm(this.ctx),
-          },
-        });
+        // 到限放行（degraded）的 goal_complete 已在闸内发出（对齐 IMPOSSIBLE 分支，
+        // 防 final 推理失败/取消时 UI 拿不到终态），此处不重发。
+        if (!this.ctx.goalMode.isVerificationDegraded()) {
+          this.ctx.onEvent({
+            type: 'goal_complete',
+            data: {
+              status: 'met',
+              turns: iterations,
+              tokensUsed: goalTokensUsedWithSwarm(this.ctx),
+            },
+          });
+        }
         terminal = { status: 'goal_met' };
       } else if (this.ctx.goalMode?.getStatus() === 'aborted' && terminal.status === 'completed') {
         // 闸内主动止损（如 IMPOSSIBLE）后 loop 自然退出：映射 aborted，

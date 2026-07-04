@@ -33,11 +33,12 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: [
-    'bg-gradient-to-r from-primary-600 to-primary-500',
-    'hover:from-primary-500 hover:to-primary-400',
+    // teal-800→700 渐变：白字对比度浅端 5.47:1 / 深端 7.58:1（WCAG AA），勿回浅色系
+    'bg-gradient-to-r from-primary-800 to-primary-700',
+    'hover:from-primary-700 hover:to-primary-600',
     'text-white',
-    'shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30',
-    'disabled:from-primary-600/50 disabled:to-primary-500/50',
+    'shadow-lg shadow-primary-700/20 hover:shadow-primary-700/30',
+    'disabled:from-primary-800/50 disabled:to-primary-700/50',
   ].join(' '),
   secondary: [
     'bg-zinc-600 hover:bg-zinc-600',

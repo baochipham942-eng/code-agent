@@ -103,7 +103,7 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('已引导对话');
   });
 
-  it('renders the turn quality score chip with memory/strategy details collapsed', () => {
+  it('renders the turn quality summary as a quiet model badge by default', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {
         node: {
@@ -151,11 +151,14 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    // 降噪后：折叠态只显示评分 chip；记忆/策略/agent 收进展开面板，默认不在静态 markup 里。
-    expect(html).toContain('88');
+    // 降级后：默认（非开发者模式）只显示模型名安静徽标；评分/记忆详情
+    // 收进开发者模式。命令交互降噪批起：手动指定的 agent（非 default）以
+    // 安静徽标透出"本轮由谁执行"，与模型名徽标同级同风格。
+    expect(html).toContain('gpt-4.1');
+    expect(html).not.toContain('88');
     expect(html).not.toContain('记忆 1');
     expect(html).not.toContain('openai/gpt-4.1');
-    expect(html).not.toContain('coder');
+    expect(html).toContain('coder');
   });
 
   it('renders pending launch request as an inline approval card', () => {

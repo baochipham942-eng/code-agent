@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InstalledPlugin, MarketplacePluginEntry } from '../../../src/shared/contract/marketplace';
+import { zh } from '../../../src/renderer/i18n/zh';
 import {
   ALMA_FEATURED_PLUGIN_REGISTRY,
   adaptAlmaPluginToCodeAgentSpec,
@@ -83,6 +84,8 @@ const installed: InstalledPlugin[] = [
 ];
 
 describe('PluginsSettings helpers', () => {
+  const pluginsText = zh.settings.plugins;
+
   it('builds stable plugin specs', () => {
     expect(getPluginSpec(catalog[0]!)).toBe('browser-tools@core');
   });
@@ -131,13 +134,21 @@ describe('PluginsSettings helpers', () => {
 
   it('keeps management complete while marking governance as partial', () => {
     expect(PLUGIN_COMPLETENESS_ROWS.filter((row) => row.status === 'complete').map((row) => row.area)).toEqual([
-      '市场源',
-      '发现',
-      '安装',
-      '生命周期',
-      '权限',
+      pluginsText.completeness.rows[0]!.area,
+      pluginsText.completeness.rows[1]!.area,
+      pluginsText.completeness.rows[2]!.area,
+      pluginsText.completeness.rows[3]!.area,
+      pluginsText.completeness.rows[4]!.area,
     ]);
-    expect(PLUGIN_COMPLETENESS_ROWS.find((row) => row.area === '治理')?.status).toBe('partial');
+    expect(PLUGIN_COMPLETENESS_ROWS.find((row) => row.area === pluginsText.completeness.rows[6]!.area)?.status).toBe('partial');
+  });
+
+  it('completeness rows 是带 status 数据字段的 i18n 数组：zh/en 行数与 status 序列必须一致', async () => {
+    const { en } = await import('../../../src/renderer/i18n/en');
+    const zhRows = pluginsText.completeness.rows;
+    const enRows = en.settings.plugins.completeness.rows;
+    expect(enRows.length).toBe(zhRows.length);
+    expect(enRows.map((row) => row.status)).toEqual(zhRows.map((row) => row.status));
   });
 
   it('keeps Alma featured plugins as installable managed assets instead of skill plugins', () => {
@@ -276,7 +287,7 @@ describe('PluginsSettings helpers', () => {
   it('summarizes plugin trust fields and treats missing declarations as unknown risk', () => {
     expect(getPluginTrustSummary(catalog[0]!)).toContain('1 skills');
     expect(getPluginTrustSummary(catalog[0]!)).toContain('1 commands');
-    expect(getPluginTrustSummary(catalog[1]!)).toContain('未声明 permissions');
-    expect(getPluginTrustSummary(catalog[1]!)).toContain('未知风险');
+    expect(getPluginTrustSummary(catalog[1]!)).toContain(`${pluginsText.trustSummary.undeclared} ${pluginsText.trustSummary.permissionsUnit}`);
+    expect(getPluginTrustSummary(catalog[1]!)).toContain(pluginsText.trustSummary.unknownRiskNotice);
   });
 });

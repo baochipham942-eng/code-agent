@@ -6,6 +6,44 @@ import chalk from 'chalk';
 import type { TestRunSummary, BaselineDelta } from '../types';
 
 // ---------------------------------------------------------------------------
+// WP1-4：预测对账 — prompt 改动登记的 predictedFixes/riskTasks vs 实际翻转
+// ---------------------------------------------------------------------------
+
+interface PredictionReconciliation {
+  /** 预测命中：登记要修好且真变 pass */
+  hits: string[];
+  /** 预测落空：登记要修好但没翻转 */
+  misses: string[];
+  /** 风险兑现：登记有风险且真变 fail */
+  risksRealized: string[];
+  /** 预测外新通过：没登记却翻绿（改动有未预期的正面副作用） */
+  unexpectedPasses: string[];
+  /** 预测外新失败：没登记却翻红（最值钱的信号——未预期的负面副作用） */
+  unexpectedFailures: string[];
+}
+
+function reconcilePrediction(
+  summary: TestRunSummary,
+  delta: BaselineDelta,
+): PredictionReconciliation | null {
+  const prediction = summary.prediction;
+  if (!prediction) return null;
+
+  const newPassIds = new Set(delta.newPasses.map((p) => p.testId));
+  const newFailureIds = new Set(delta.newFailures.map((f) => f.testId));
+  const predictedFixes = new Set(prediction.predictedFixes);
+  const riskTasks = new Set(prediction.riskTasks);
+
+  return {
+    hits: prediction.predictedFixes.filter((id) => newPassIds.has(id)),
+    misses: prediction.predictedFixes.filter((id) => !newPassIds.has(id)),
+    risksRealized: prediction.riskTasks.filter((id) => newFailureIds.has(id)),
+    unexpectedPasses: [...newPassIds].filter((id) => !predictedFixes.has(id)),
+    unexpectedFailures: [...newFailureIds].filter((id) => !riskTasks.has(id)),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Markdown report
 // ---------------------------------------------------------------------------
 
@@ -75,6 +113,23 @@ export function generateDeltaMarkdown(
     lines.push('');
     for (const p of delta.newPasses) {
       lines.push(`- ${p.testId}`);
+    }
+    lines.push('');
+  }
+
+  // 预测对账（WP1-4）
+  const reconciliation = reconcilePrediction(summary, delta);
+  if (reconciliation) {
+    lines.push('### 预测对账');
+    lines.push('');
+    lines.push(`- 预测命中（登记修复且翻绿）: ${fmtIdList(reconciliation.hits)}`);
+    lines.push(`- 预测落空（登记修复未翻转）: ${fmtIdList(reconciliation.misses)}`);
+    lines.push(`- 风险兑现（登记风险且翻红）: ${fmtIdList(reconciliation.risksRealized)}`);
+    lines.push(`- 预测外新通过: ${fmtIdList(reconciliation.unexpectedPasses)}`);
+    lines.push(`- 预测外新失败: ${fmtIdList(reconciliation.unexpectedFailures)}`);
+    if (reconciliation.unexpectedFailures.length > 0) {
+      lines.push('');
+      lines.push('> ⚠️ 预测外新失败说明改动有未预期副作用，先解释再合入。');
     }
     lines.push('');
   }
@@ -152,6 +207,27 @@ export function generateDeltaConsole(
     lines.push('');
   }
 
+  // 预测对账（WP1-4）
+  const reconciliation = reconcilePrediction(summary, delta);
+  if (reconciliation) {
+    lines.push(chalk.bold('  预测对账'));
+    lines.push(`    ${chalk.green('✓')} 命中:     ${fmtIdList(reconciliation.hits)}`);
+    lines.push(`    ${chalk.yellow('○')} 落空:     ${fmtIdList(reconciliation.misses)}`);
+    lines.push(`    ${chalk.red('!')} 风险兑现: ${fmtIdList(reconciliation.risksRealized)}`);
+    const unexpectedPass = reconciliation.unexpectedPasses.length > 0
+      ? chalk.green(fmtIdList(reconciliation.unexpectedPasses))
+      : fmtIdList(reconciliation.unexpectedPasses);
+    const unexpectedFail = reconciliation.unexpectedFailures.length > 0
+      ? chalk.red(fmtIdList(reconciliation.unexpectedFailures))
+      : fmtIdList(reconciliation.unexpectedFailures);
+    lines.push(`    ${chalk.cyan('?')} 预测外新通过: ${unexpectedPass}`);
+    lines.push(`    ${chalk.cyan('?')} 预测外新失败: ${unexpectedFail}`);
+    if (reconciliation.unexpectedFailures.length > 0) {
+      lines.push(chalk.red('    ⚠️ 预测外新失败 = 未预期副作用，先解释再合入'));
+    }
+    lines.push('');
+  }
+
   if (!delta.isRegression && delta.newFailures.length === 0) {
     lines.push(chalk.green('  All clear — no regressions detected'));
     lines.push('');
@@ -163,6 +239,10 @@ export function generateDeltaConsole(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function fmtIdList(ids: string[]): string {
+  return ids.length > 0 ? ids.join(', ') : '（无）';
+}
 
 function fmtPct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;

@@ -136,6 +136,56 @@ describe('openAISSEStream snapshot and incomplete tool calls', () => {
     expect(snapshots.at(-1)?.reasoning).toBe(second);
   });
 
+  it('folds an unclosed <think> block into thinking instead of leaking raw reasoning into content on DONE', async () => {
+    // 真实事故：流式响应命中 length 截断时 <think> 可能没等到闭合标签就结束，
+    // 未闭合的推理原文如果留在 content 里会绕过思考折叠机制，原样摊在转录里当"正文"显示。
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        Connection: 'close',
+      });
+      res.write(`data: ${JSON.stringify({
+        choices: [{ delta: { content: '<think>Long chain of reasoning that never closes' } }],
+      })}\n\n`);
+      res.write(`data: ${JSON.stringify({ choices: [{ finish_reason: 'length' }] })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+
+    const response = await openAISSEStream({
+      providerName: 'TestProvider',
+      baseUrl,
+      apiKey: 'test-key',
+      requestBody: { model: 'test', messages: [], stream: true },
+    });
+
+    expect(response.content).toBeFalsy();
+    expect(response.thinking).toBe('Long chain of reasoning that never closes');
+  });
+
+  it('folds an unclosed <think> block into thinking when the stream ends abruptly before DONE', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        Connection: 'close',
+      });
+      res.write(`data: ${JSON.stringify({
+        choices: [{ delta: { content: '<think>Reasoning cut off by a dropped connection' } }],
+      })}\n\n`);
+      res.end();
+    });
+
+    const response = await openAISSEStream({
+      providerName: 'TestProvider',
+      baseUrl,
+      apiKey: 'test-key',
+      requestBody: { model: 'test', messages: [], stream: true },
+    });
+
+    expect(response.content).toBeFalsy();
+    expect(response.thinking).toBe('Reasoning cut off by a dropped connection');
+  });
+
   it('rejects repeated reasoning loops before returning poisoned thinking', async () => {
     const repeated = '老公，萌萌看到了，这是我们的聊天记录，显示在 Agent Neo 的界面里。';
     const baseUrl = await startServer((_req, res) => {

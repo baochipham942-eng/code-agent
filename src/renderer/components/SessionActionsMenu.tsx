@@ -266,14 +266,13 @@ export const SessionActionsMenu: React.FC = () => {
   if (items.length === 0) return null;
 
   return (
-    <div ref={wrapperRef} className="relative window-no-drag">
+    <div ref={wrapperRef} className="relative">
       <IconButton
         icon={<MoreHorizontal className="w-4 h-4" />}
         aria-label="会话动作"
         onClick={() => setOpen((v) => !v)}
         variant="ghost"
         size="md"
-        windowNoDrag
         className={open ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-100'}
       />
       {open && (

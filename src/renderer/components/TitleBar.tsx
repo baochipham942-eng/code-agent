@@ -65,7 +65,7 @@ export const TitleBar: React.FC = () => {
     }
   }, [effectiveWorkingDirectory, setAppWorkingDirectory, setComposerWorkingDirectory]);
   return (
-    <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] window-drag bg-transparent backdrop-blur-sm relative z-30">
+    <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] bg-transparent backdrop-blur-sm relative z-30">
       {/* Left: sidebar toggle + workspace chip */}
       <div className="flex items-center gap-2">
         {/* Sidebar Toggle */}
@@ -75,13 +75,12 @@ export const TitleBar: React.FC = () => {
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           variant="ghost"
           size="md"
-          windowNoDrag
         />
         {/* Workspace Chip — 点击切换当前消息/会话的工作目录 */}
         <button
           type="button"
           onClick={handleSelectDirectory}
-          className="window-no-drag inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2 py-1 text-xs text-zinc-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-zinc-100"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2 py-1 text-xs text-zinc-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-zinc-100"
           // 未选目录时按钮已显示「选择目录」自解释，不再挂 title——否则原生 tooltip
           // 会在窗口左上角悬出一个看似卡住的「选择工作目录」浮层。选了目录才用 title 显示完整路径。
           title={effectiveWorkingDirectory || undefined}
@@ -100,7 +99,6 @@ export const TitleBar: React.FC = () => {
           onClick={() => (isTaskTabOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
           variant="ghost"
           size="md"
-          windowNoDrag
         />
       </div>
     </div>

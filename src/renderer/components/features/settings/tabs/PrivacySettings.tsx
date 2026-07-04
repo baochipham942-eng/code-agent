@@ -16,6 +16,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ShieldCheck, Loader2, AlertTriangle, RefreshCw, XCircle, Activity, ArrowRight, KeyRound, Mic } from 'lucide-react';
 import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
 import {
+  getPrivacyBoundaryActionShortLabel,
   listAuthInventoryItems,
   listPrivacyBoundaryIndexEntries,
   listVoiceTranscriptionPaths,
@@ -26,6 +27,8 @@ import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 type SetupState = 'idle' | 'running' | 'completed' | 'error';
 
@@ -48,12 +51,24 @@ type SetupEvent =
   | { type: 'step'; description: string }
   | { type: 'state'; state: SetupState; error?: string };
 
-const STATE_LABEL: Record<SetupState, { dot: string; text: string }> = {
-  idle:      { dot: 'bg-zinc-500',  text: '未启用' },
-  running:   { dot: 'bg-yellow-500 animate-pulse', text: '安装中…' },
-  completed: { dot: 'bg-green-500', text: '已完成' },
-  error:     { dot: 'bg-red-500',   text: '失败' },
+type PrivacySettingsText = typeof zh.settings.privacy;
+
+const STATE_DOT: Record<SetupState, string> = {
+  idle: 'bg-zinc-500',
+  running: 'bg-yellow-500 animate-pulse',
+  completed: 'bg-green-500',
+  error: 'bg-red-500',
 };
+
+function getSetupStateLabel(
+  state: SetupState,
+  labels: PrivacySettingsText['setupState'] = zh.settings.privacy.setupState,
+): { dot: string; text: string } {
+  return {
+    dot: STATE_DOT[state],
+    text: labels[state],
+  };
+}
 
 function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string }): string {
   const line = entry.line.trim();
@@ -71,6 +86,8 @@ interface PrivacySettingsProps {
 }
 
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
+  const { t } = useI18n();
+  const privacyText = t.settings.privacy;
   const [state, setState] = useState<SetupState>('idle');
   const [step, setStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -201,8 +218,8 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   if (isWebMode()) {
     return (
       <SettingsPage
-        title="隐私防线"
-        description="本地 PII 防线，启用后协作内容进入云端 LLM 前自动脱敏命名实体（姓名/地址/医疗 ID 等）。"
+        title={t.settings.tabs.privacy}
+        description={privacyText.webDescription}
       >
         <WebModeBanner />
       </SettingsPage>
@@ -210,16 +227,16 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   }
 
   const isReadyGreen = ready?.ready === true;
-  const stateLabel = STATE_LABEL[state];
+  const stateLabel = getSetupStateLabel(state, privacyText.setupState);
 
   return (
     <SettingsPage
-      title="隐私防线"
-      description="权限与数据边界总览。默认本地优先；会出云端的路径、通道凭证和诊断包单独表达。"
+      title={t.settings.tabs.privacy}
+      description={privacyText.pageDescription}
     >
       <SettingsSection
-        title="权限与数据边界"
-        description="只解释和跳转，具体开关仍留在原设置页。"
+        title={privacyText.boundary.title}
+        description={privacyText.boundary.description}
       >
         <div className="grid gap-3 md:grid-cols-2">
           {listPrivacyBoundaryIndexEntries().map((entry) => (
@@ -236,14 +253,14 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                   className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
                 >
                   <ArrowRight className="h-3 w-3" />
-                  {entry.actionTarget.label.replace(/^打开/, '')}
+                  {getPrivacyBoundaryActionShortLabel(entry)}
                 </button>
               </div>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">数据: </span>{entry.data.join('、')}</div>
-                <div><span className="text-zinc-400">存储: </span>{entry.storage}</div>
-                <div><span className="text-zinc-400">云端: </span>{entry.cloud}</div>
-                <div><span className="text-zinc-400">撤回: </span>{entry.revoke}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{entry.data.join('、')}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{entry.storage}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{entry.cloud}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.revokeLabel}</span>{entry.revoke}</div>
               </div>
             </div>
           ))}
@@ -251,8 +268,8 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       </SettingsSection>
 
       <SettingsSection
-        title="语音转写边界"
-        description="桌面语音、voice paste、桌面音频和通道语音不共用一个权限解释。"
+        title={privacyText.voice.title}
+        description={privacyText.voice.description}
       >
         <div className="grid gap-3 md:grid-cols-2">
           {listVoiceTranscriptionPaths().map((path) => (
@@ -264,9 +281,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               <p className="mt-1 text-xs text-zinc-400">{path.trigger}</p>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
                 <div><span className="text-zinc-400">Provider: </span>{path.providers.join('、')}</div>
-                <div><span className="text-zinc-400">云端: </span>{path.cloud}</div>
-                <div><span className="text-zinc-400">临时文件: </span>{path.temporaryStorage}</div>
-                <div><span className="text-zinc-400">日志: </span>{path.logPolicy}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{path.cloud}</div>
+                <div><span className="text-zinc-400">{privacyText.voice.temporaryFileLabel}</span>{path.temporaryStorage}</div>
+                <div><span className="text-zinc-400">{privacyText.voice.logLabel}</span>{path.logPolicy}</div>
               </div>
             </div>
           ))}
@@ -274,8 +291,8 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       </SettingsSection>
 
       <SettingsSection
-        title="凭证库存"
-        description="API key、OAuth、channel token、MCP env/header、browser relay token 分开管理和展示。"
+        title={privacyText.auth.title}
+        description={privacyText.auth.description}
       >
         <div className="grid gap-3 md:grid-cols-2">
           {listAuthInventoryItems().map((item) => (
@@ -285,10 +302,10 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 {item.title}
               </div>
               <div className="mt-2 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">例子: </span>{item.examples.join('、')}</div>
-                <div><span className="text-zinc-400">存储: </span>{item.storage}</div>
-                <div><span className="text-zinc-400">展示: </span>{item.display}</div>
-                <div><span className="text-zinc-400">诊断: </span>{item.diagnosticPolicy}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{item.examples.join('、')}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{item.storage}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.displayLabel}</span>{item.display}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.diagnosticsLabel}</span>{item.diagnosticPolicy}</div>
               </div>
             </div>
           ))}
@@ -296,13 +313,13 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       </SettingsSection>
 
       <SettingsSection
-        title="使用数据上报（Telemetry）"
-        description="自动遥测只上报运行轨迹元数据；失败诊断包和用户手动导出是单独边界，上传或导出前必须 scrub。关闭后本设备不再向云端上报，改动重启后生效。"
+        title={privacyText.telemetry.title}
+        description={privacyText.telemetry.description}
       >
         <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-primary-600"
+            className="mt-0.5 h-4 w-4 accent-primary-700"
             checked={telemetryEnabled}
             disabled={telemetrySaving}
             onChange={(e) => handleTelemetryToggle(e.target.checked)}
@@ -311,10 +328,10 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
             <Activity className="h-4 w-4 text-zinc-400" />
             <div>
               <div className="text-zinc-200 font-medium">
-                {telemetryEnabled ? '已开启遥测上报' : '已关闭遥测上报'}
+                {telemetryEnabled ? privacyText.telemetry.enabled : privacyText.telemetry.disabled}
               </div>
               <div className="text-xs text-zinc-400 mt-0.5">
-                取消勾选即可 opt-out。metadata 不含完整 prompt/代码内容；诊断包会包含 scrub 后 payload，用于排障。
+                {privacyText.telemetry.body}
               </div>
             </div>
           </div>
@@ -322,8 +339,8 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       </SettingsSection>
 
       <SettingsSection
-        title="状态"
-        description="是否已配置完成 + 当前任务状态"
+        title={privacyText.status.title}
+        description={privacyText.status.description}
       >
         <div className="space-y-3">
           <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
@@ -331,9 +348,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               <>
                 <ShieldCheck className="h-5 w-5 text-green-400" />
                 <div className="text-sm">
-                  <div className="text-zinc-200 font-medium">本地 PII 防线已生效</div>
+                  <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
                   <div className="text-xs text-zinc-400 mt-0.5">
-                    模型: {ready?.modelOnnx} · Python: {ready?.pythonPath}
+                    {privacyText.status.modelPrefix}{ready?.modelOnnx} · Python: {ready?.pythonPath}
                   </div>
                 </div>
               </>
@@ -342,8 +359,8 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 <AlertTriangle className="h-5 w-5 text-zinc-500" />
                 <div className="text-sm text-zinc-300">
                   {ready?.envFile.exists
-                    ? '配置存在但未生效（venv 或模型文件缺失）'
-                    : '尚未启用本地 PII 防线'}
+                    ? privacyText.status.configExistsNotReady
+                    : privacyText.status.notEnabled}
                 </div>
               </>
             )}
@@ -367,8 +384,8 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       </SettingsSection>
 
       <SettingsSection
-        title="操作"
-        description="一键启用流程：准备 Python 3.12 运行环境 → 安装本地识别依赖 → 下载约 190MB 量化模型 → 写 ~/.code-agent/.env"
+        title={privacyText.actions.title}
+        description={privacyText.actions.description}
       >
         <div className="flex flex-wrap gap-3">
           {state === 'running' ? (
@@ -379,7 +396,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <XCircle className="h-4 w-4" />
-              取消
+              {privacyText.actions.cancel}
             </button>
           ) : (
             <button
@@ -391,12 +408,12 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               {state === 'completed' || isReadyGreen ? (
                 <>
                   <RefreshCw className="h-4 w-4" />
-                  重新装
+                  {privacyText.actions.reinstall}
                 </>
               ) : (
                 <>
                   <ShieldCheck className="h-4 w-4" />
-                  启用本地 PII 防线
+                  {privacyText.actions.enable}
                 </>
               )}
             </button>
@@ -404,19 +421,19 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           {state === 'running' && (
             <span className="inline-flex items-center gap-2 text-xs text-zinc-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              首次需要下载运行环境和模型,可在后台等待
+              {privacyText.actions.runningHint}
             </span>
           )}
         </div>
       </SettingsSection>
 
       <SettingsSection
-        title="日志"
-        description="脚本实时输出（自动滚动）"
+        title={privacyText.logs.title}
+        description={privacyText.logs.description}
       >
         <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed">
           {logs.length === 0 ? (
-            <div className="text-zinc-600">暂无输出</div>
+            <div className="text-zinc-600">{privacyText.logs.empty}</div>
           ) : (
             logs.map((entry, idx) => (
               <div

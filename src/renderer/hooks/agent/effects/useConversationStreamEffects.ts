@@ -5,6 +5,7 @@ import type { Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
+import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
@@ -412,10 +413,10 @@ export const useConversationStreamEffects = ({
         case 'goal_complete': {
           logHandledEvent();
           if (eventSessionId) {
-            const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number };
+            const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string };
             const appStore = useAppStore.getState();
             const run = appStore.goalRuns[eventSessionId];
-            appStore.finishGoalRun(eventSessionId, d.status, d.reason);
+            appStore.finishGoalRun(eventSessionId, d.status, d.reason, d.degraded);
             if (isCurrentSessionEvent) {
               addMessage(buildGoalNoticeMessage({
                 kind: d.status === 'met' ? 'met' : 'aborted',
@@ -424,6 +425,8 @@ export const useConversationStreamEffects = ({
                 turns: d.turns,
                 tokensUsed: d.tokensUsed,
                 durationMs: run ? Date.now() - run.startedAt : undefined,
+                degraded: d.degraded,
+                degradedReason: d.degradedReason,
                 verificationCard: [...(run?.gates ?? [])].reverse().find((gate) => gate.verificationCard)?.verificationCard,
               }));
             }
@@ -544,14 +547,17 @@ export const useConversationStreamEffects = ({
             }
             useTurnExecutionStore.getState().recordRoutingEvidence(eventSessionId, {
               kind: 'auto',
-              mode: 'auto',
+              mode: routingData.mode,
               timestamp: routingData.timestamp || Date.now(),
               agentId: routingData.agentId,
               agentName: routingData.agentName,
               reason: routingData.reason,
               score: routingData.score,
               fallbackToDefault: routingData.fallbackToDefault,
+              requestedAgentId: routingData.requestedAgentId,
             });
+            // S2 显式化：显式选择未生效（requested ≠ actual）→ 清 per-session 选择 + toast 警示
+            applyRoutingDegradationSignal(eventSessionId, routingData);
           }
           break;
 

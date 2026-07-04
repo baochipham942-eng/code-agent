@@ -9,11 +9,12 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
-import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../host/tools/toolExecutor';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE } from '../helpers/sse';
+import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
@@ -236,14 +237,17 @@ async function loadSessionHistoryForRun(
   }
 }
 
-async function hasPersistedLoopAssistantMessage(
+// 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
+// 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
+// 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
+async function hasPersistedFinalLoopAssistantMessage(
   sessionId: string,
-  messageIds: Set<string>,
+  finalMessageId: string | undefined,
   sessionManager: AgentSessionManagerLike | null,
   db: DatabaseService,
   logger: AgentRouterDeps['logger'],
 ): Promise<boolean> {
-  if (messageIds.size === 0) {
+  if (!finalMessageId) {
     return false;
   }
 
@@ -253,7 +257,7 @@ async function hasPersistedLoopAssistantMessage(
       : db.getMessages(sessionId);
 
     return Array.isArray(persisted) && persisted.some((message) => (
-      message.role === 'assistant' && messageIds.has(message.id)
+      message.role === 'assistant' && message.id === finalMessageId
     ));
   } catch (error) {
     logger.warn(`[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`, error);
@@ -291,6 +295,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return;
     }
 
+    // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒——
+    // text/event-stream 头一旦写出就无法再回 429。释放走 res 'close' + finally 双保险（release 幂等）。
+    const releaseSseSlot = agentRunSseLimiter.tryAcquire(extractRequestToken(req));
+    if (!releaseSseSlot) {
+      res.status(429).json({ error: 'Too many concurrent runs for this token', code: 'TOO_MANY_CONNECTIONS' });
+      return;
+    }
+    res.once('close', releaseSseSlot);
+
     // SSE response
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -325,15 +338,35 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 但必须把 adaptive 标志透传进 agent loop 的 modelConfig，
       // 否则 adaptiveRouter 简单任务路由 / vision capability fallback 全部失效
       //（实测 0.16.89：UI 选"自动"后日志仍报"显式模型 ... 不启用 vision fallback"）。
+      // persistedSession 先取：模型 override 回灌与 workingDirectory 解析都依赖它
+      let persistedSession: Session | null = null;
+      let sessionManagerForRun: AgentSessionManagerLike | null = null;
+      try {
+        const sm = await tryGetSessionManager();
+        sessionManagerForRun = sm ?? null;
+        if (sm?.getSession) {
+          persistedSession = await sm.getSession(sessionId, 1);
+        }
+      } catch (err) {
+        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+      }
+
       let sessionAdaptive = false;
-      if (!effectiveModel || !effectiveProvider) {
+      // 只有 model 和 provider 都未显式给出才读 session override（audit R1-MED2：
+      // 半显式 body（只传 model）不能拿 override 的 provider 拼成杂交配置，
+      // 例如显式 deepseek-chat + 持久化 zhipu override → zhipu/deepseek-chat）。
+      if (!effectiveModel && !effectiveProvider) {
         const { getModelSessionState } = await import('../../host/session/modelSessionState');
-        const override = getModelSessionState().getOverride(sessionId);
+        const { rehydrateModelOverrideFromSession } = await import('../../host/session/modelOverridePersistence');
+        // 重启后内存 Map 为空：按 session 持久化标记回灌（模板=engine 的"DB 列每轮现读"）。
+        // 未切换过的会话没有标记，不回灌，仍跟随全局默认。
+        const override = getModelSessionState().getOverride(sessionId)
+          ?? rehydrateModelOverrideFromSession(persistedSession);
         if (override?.adaptive === true) {
           sessionAdaptive = true;
         } else if (override) {
-          effectiveProvider = effectiveProvider ?? override.provider;
-          effectiveModel = effectiveModel ?? override.model;
+          effectiveProvider = override.provider;
+          effectiveModel = override.model;
         }
       }
 
@@ -345,15 +378,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
       // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
       // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
-      let persistedSession: Session | null = null;
-      try {
-        const sm = await tryGetSessionManager();
-        if (sm?.getSession) {
-          persistedSession = await sm.getSession(sessionId, 1);
-        }
-      } catch (err) {
-        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
-      }
 
       let resolvedProject: string | undefined =
         typeof project === 'string' && project.trim().length > 0
@@ -370,8 +394,52 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       }
 
+      // 首轮生效值补写（只补空）：working_directory 为空的会话每次重开都按
+      // 上面的解析链重解析，而 context.workingDirectory 来自 renderer 全局
+      // workspace 值（随其他会话切目录漂移）→ 同一会话隔天 <env> 目录漂移。
+      // 已持久化的值（用户显式选择或既有补写）不覆盖。
+      if (
+        persistedSession &&
+        !persistedSession.workingDirectory?.trim() &&
+        resolvedProject &&
+        sessionManagerForRun?.updateSession
+      ) {
+        try {
+          await sessionManagerForRun.updateSession(sessionId, {
+            workingDirectory: resolvedProject,
+            updatedAt: Date.now(),
+          });
+        } catch (err) {
+          logger.warn(`[AgentRouter] Failed to backfill workingDirectory for ${sessionId}:`, err);
+        }
+      }
+
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
       if (isExternalAgentEngine(selectedEngine.kind)) {
+        // 外部引擎分支在 preferredAgentId 路由真相块之前 return——显式 agent 选择
+        // 在引擎会话不适用，此前完全静默（chip 继续谎报）。发降级事件让 renderer
+        // 清选择 + toast（对称于 native 路径的解析失败降级）。
+        const enginePreferredAgentId = typeof body.context?.preferredAgentId === 'string'
+          ? body.context.preferredAgentId.trim() || undefined
+          : undefined;
+        if (enginePreferredAgentId) {
+          const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
+          const engineLabel = AGENT_ENGINE_LABELS[selectedEngine.kind] ?? selectedEngine.kind;
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(null, {
+              requestedAgentId: enginePreferredAgentId,
+              timestamp: Date.now(),
+              fallbackAgentName: engineLabel,
+              fallbackReason: `External engine session (${engineLabel}) does not support agent selection; the engine runs the turn directly.`,
+            }),
+          });
+          logger.info('[AgentRouter] Explicit agent selection ignored on external engine session', {
+            preferredAgentId: enginePreferredAgentId,
+            engine: selectedEngine.kind,
+            sessionId,
+          });
+        }
         externalEngineFailureContext = {
           kind: selectedEngine.kind,
           stage: 'launch_policy',
@@ -437,6 +505,47 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 自动模式标志透传：adaptiveRouter 简单任务路由 + vision capability fallback 的总闸门
       if (sessionAdaptive) {
         config.modelConfig.adaptive = true;
+      }
+
+      // /agent 显式选择透传（P0：此前 web 独立 HTTP 路径完全丢弃 preferredAgentId，
+      // /agent 切换在生产 web 路径是 no-op——与 executionIntent 当年同款漏接）。
+      // trim 规整：未规整 id 会在 requestedAgentId !== agentId 比较上产生假降级警示
+      const preferredAgentId = typeof body.context?.preferredAgentId === 'string'
+        ? body.context.preferredAgentId.trim() || undefined
+        : undefined;
+      if (preferredAgentId) {
+        const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');
+        const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
+        const agentOverride = resolveExplicitAgentOverride(preferredAgentId);
+        // 路由真相事件：命中/失败都发射 routing_resolved（此前失败只打 warn 日志，
+        // renderer 零信号=静默兜底；徽标/路由证据在生产 web 路径恒空）。
+        // requestedAgentId 同时进 config → AgentLoop ctx → turnQuality 徽标降级判定。
+        config.requestedAgentId = preferredAgentId;
+        if (agentOverride) {
+          config.agentOverride = agentOverride;
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(
+              {
+                agent: { id: agentOverride.id, name: agentOverride.name },
+                score: 1000,
+                reason: `Explicit agent selected: ${agentOverride.id}`,
+              },
+              { requestedAgentId: preferredAgentId, timestamp: Date.now() },
+            ),
+          });
+          logger.info('[AgentRouter] Explicit agent override applied', {
+            agentId: agentOverride.id,
+            deniedTools: agentOverride.deniedToolNames.length,
+            sessionId,
+          });
+        } else {
+          runController.emitAgentEvent({
+            type: 'routing_resolved',
+            data: buildRoutingResolvedEventData(null, { requestedAgentId: preferredAgentId, timestamp: Date.now() }),
+          });
+          logger.warn('[AgentRouter] Unknown preferredAgentId, falling back to default routing', { preferredAgentId, sessionId });
+        }
       }
 
       // /goal 自治模式：body.goal 存在则激活（schema 保证 verify/review 至少有一个）。
@@ -671,6 +780,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           thinking: runEventCollector.assistantThinking || undefined,
           contentParts: runEventCollector.hasInterleaving() ? runEventCollector.contentParts : undefined,
           artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+          metadata: runEventCollector.assistantMetadata,
         });
       }
       sessionMessages.set(sessionId, cached);
@@ -714,9 +824,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           }
 
           const sm = await tryGetSessionManager();
-          const loopPersistedAssistant = await hasPersistedLoopAssistantMessage(
+          const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
             sessionId,
-            runEventCollector.loopEmittedAssistantMessageIds,
+            runEventCollector.lastLoopAssistantMessageId,
             sm,
             dbForSession,
             logger,
@@ -741,6 +851,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
                 thinking: runEventCollector.assistantThinking || undefined,
                 artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+                metadata: runEventCollector.assistantMetadata,
               } as import('../../shared/contract').Message);
             }
           } else {
@@ -765,6 +876,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
                 thinking: runEventCollector.assistantThinking || undefined,
                 artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+                metadata: runEventCollector.assistantMetadata,
               } as import('../../shared/contract').Message);
             }
           }
@@ -876,6 +988,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         collector.endSession(sessionId);
       } catch { /* telemetry cleanup failure is non-fatal */ }
       runController.endResponseIfOpen();
+      releaseSseSlot(); // 并发槽位释放兜底（与 res 'close' 双保险，release 幂等）
     }
   });
 

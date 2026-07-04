@@ -16,13 +16,18 @@ import type {
   ToolExecutionRecord,
   TestEvent,
   TestEventListener,
+  UserSimulation,
+  EvalGoalContract,
+  GoalRunRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
+import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
+import { validateGoalContract } from './goalContractEval';
 import { withTimeout } from '../services/infra/timeoutController';
-import { runAssertions, runExpectations } from './assertionEngine';
+import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
-import { isNonRetryableError } from '../model/providers/retryStrategy';
+import { isNonRetryableError, isTransientError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import type { StructuredReplay } from '../../shared/contract/evaluation';
@@ -37,6 +42,17 @@ const logger = createLogger('TestRunner');
 
 /** Cases with stdDev above this threshold are marked unstable */
 const UNSTABLE_STDDEV_THRESHOLD = 0.2;
+
+/**
+ * WP1-2：判定错误是否属基础设施故障（429/超时/5xx/网络）。
+ * 这类失败是环境噪声不是 agent 能力信号，分流进 infra_excluded 桶，
+ * 不进能力通过率分母。复用 retryStrategy 的瞬态错误词表（已排除
+ * 余额/认证等致命错误——那些走 circuit breaker abort），另补 test
+ * harness 自身的超时消息（withTimeout 的 "timeout after Nms"）。
+ */
+export function isInfraExclusionError(msg: string): boolean {
+  return isTransientError(msg) || /timeout after \d+ms/i.test(msg);
+}
 
 /**
  * Interface for agent interaction
@@ -58,6 +74,18 @@ export interface AgentInterface {
   getSessionId?(): string | undefined;
   /** Flush/end the current telemetry session after a case completes (optional) */
   finalizeSession?(): Promise<void>;
+  /**
+   * 批 6：接收当前 case 的 user_simulation 配置（审批门 permission_policy 注入用）。
+   * runner 每个 case 都会调用（无模拟时传 undefined 清除上个 case 的配置）。
+   */
+  configureUserSimulation?(sim: UserSimulation | undefined): void;
+  /**
+   * B6b-①：接收当前 case 的 goal 契约（case 以 /goal 自治模式跑）。
+   * runner 每个 case 都会调用（无契约时传 undefined 清除上个 case 的配置）。
+   */
+  configureGoalContract?(contract: EvalGoalContract | undefined): void;
+  /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  getGoalRunRecord?(): GoalRunRecord | undefined;
 }
 
 /**
@@ -305,7 +333,8 @@ export class TestRunner {
     const endTime = Date.now();
     const genInfo = this.agent.getAgentInfo();
 
-    const nonSkipped = results.filter((r) => r.status !== 'skipped');
+    // skipped 与 infra_excluded 都不进能力分母（后者是环境噪声，WP1-2）
+    const nonSkipped = results.filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded');
     const avgScore = nonSkipped.length > 0
       ? nonSkipped.reduce((sum, r) => sum + r.score, 0) / nonSkipped.length
       : 0;
@@ -327,6 +356,7 @@ export class TestRunner {
       failed: results.filter((r) => r.status === 'failed').length,
       skipped: results.filter((r) => r.status === 'skipped').length,
       partial: results.filter((r) => r.status === 'partial').length,
+      infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
       averageScore: avgScore,
       results,
       environment: {
@@ -342,6 +372,8 @@ export class TestRunner {
       ...(this.aborted && this.abortReason ? { aborted: true, abortReason: this.abortReason } : {}),
       // GAP-017: harness 配置随 summary 落 DB（对照实验维度）
       ...(this.config.harness ? { harness: this.config.harness } : {}),
+      // WP1-4: prompt 改动预测随 summary 落盘/DB，deltaReporter 对账
+      ...(this.config.prediction ? { prediction: this.config.prediction } : {}),
     };
 
     this.emit({ type: 'suite_end', summary });
@@ -373,6 +405,8 @@ export class TestRunner {
     const result: TestResult = {
       testId: testCase.id,
       description: testCase.description,
+      prompt: testCase.prompt,
+      followUpPrompts: testCase.follow_up_prompts,
       status: 'running',
       duration: 0,
       startTime,
@@ -388,6 +422,35 @@ export class TestRunner {
     this.emit({ type: 'case_start', testId: testCase.id, description: testCase.description });
 
     try {
+      // 批 6 fail-loud：user_simulation 配置错误在花任何 agent 调用之前显式失败，
+      // 绝不静默降级成单轮跑（那会把"模拟没生效"伪装成能力数据）。
+      if (testCase.user_simulation) {
+        const configError = testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0
+          ? 'user_simulation cannot be combined with follow_up_prompts (ambiguous multi-turn semantics)'
+          : validateUserSimulation(testCase.user_simulation);
+        if (configError) {
+          result.status = 'failed';
+          result.failureReason = configError;
+          result.errors.push(configError);
+          this.emit({ type: 'error', testId: testCase.id, error: configError });
+          return result;
+        }
+        result.simTurns = [];
+      }
+
+      // B6b-① fail-loud：goal_contract 配置错误（无完成判据 / 与 user_simulation·
+      // follow_up_prompts 互斥）同样在花任何 agent 调用之前显式失败。
+      if (testCase.goal_contract) {
+        const goalConfigError = validateGoalContract(testCase);
+        if (goalConfigError) {
+          result.status = 'failed';
+          result.failureReason = goalConfigError;
+          result.errors.push(goalConfigError);
+          this.emit({ type: 'error', testId: testCase.id, error: goalConfigError });
+          return result;
+        }
+      }
+
       // Run setup commands
       if (testCase.setup && testCase.setup.length > 0) {
         await this.runCommands(testCase.setup, 'setup');
@@ -395,6 +458,12 @@ export class TestRunner {
 
       // Reset agent state
       await this.agent.reset();
+
+      // 批 6：审批门策略注入（无模拟的 case 传 undefined，清掉上个 case 的配置）
+      this.agent.configureUserSimulation?.(testCase.user_simulation);
+
+      // B6b-①：goal 契约注入（无契约的 case 传 undefined，清掉上个 case 的配置）
+      this.agent.configureGoalContract?.(testCase.goal_contract);
 
       // Set up timeout — CODE_AGENT_FORCE_TIMEOUT overrides per-case timeout (for slow local models)
       const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
@@ -421,6 +490,73 @@ export class TestRunner {
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
       result.sessionId = this.agent.getSessionId?.();
+
+      // B6b-①：goal run 行为落账必须在断言求值之前就位（runAssertions/runExpectations
+      // 都在本 try 内），否则 goal_status/goal_evidence_gate 会 fail-loud 把真达成判红。
+      // 超时/异常路径的兜底捕获见 finally（审计 R1-M2）。
+      if (testCase.goal_contract) {
+        result.goalRun = this.agent.getGoalRunRecord?.();
+      }
+
+      // 批 6：条件应答多轮（follow_up_prompts 的升级形态，两者互斥已在入口校验）。
+      // 每轮只对 agent 上一轮的输出求值；命中 respond 则把脚本文本作为下一轮
+      // user 输入，命中 stop（或无规则命中/轮数用尽）即终止 —— 模拟用户离场。
+      if (testCase.user_simulation) {
+        const sim = testCase.user_simulation;
+        const maxSimTurns = sim.max_turns ?? DEFAULT_SIM_MAX_TURNS;
+        const matchCounts = new Map<string, number>();
+        let lastTurn = {
+          responses: agentResult.responses,
+          toolExecutions: agentResult.toolExecutions,
+        };
+        for (let simTurn = 0; simTurn < maxSimTurns; simTurn++) {
+          const match = evaluateSimRules(sim, lastTurn, matchCounts);
+          if (!match) break;
+          result.simTurns?.push({
+            ruleId: match.rule.id,
+            action: match.action,
+            message: match.message,
+            toolExecutionsBefore: result.toolExecutions.length,
+            responsesBefore: result.responses.length,
+          });
+          if (match.action === 'stop') break;
+
+          const remainingTime = timeout - (Date.now() - startTime);
+          if (remainingTime <= 0) {
+            // 审计 R1-H2：规则要求应答但预算耗尽 —— 静默 break 会让
+            // sim_stop_respected 在"拒绝从未送达"时假绿。显式抛超时，
+            // 与首轮/follow-up 的 withTimeout 同款消息格式 → 外层 catch
+            // 按存量口径分流 infra_excluded（时间预算问题不是能力数据）。
+            throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
+          }
+          const simResult = await withTimeout(
+            this.agent.sendMessage(match.message!),
+            remainingTime,
+            `Simulated user turn timeout after ${timeout}ms`,
+          );
+          result.responses.push(...simResult.responses);
+          result.toolExecutions.push(...simResult.toolExecutions);
+          result.turnCount += simResult.turnCount;
+          result.errors.push(...simResult.errors);
+          lastTurn = {
+            responses: simResult.responses,
+            toolExecutions: simResult.toolExecutions,
+          };
+
+          if (match.rule.stop) {
+            // respond+stop（拒绝分支）：发完拒绝文本、收完 agent 的应答后离场。
+            // 该 stop 记录的快照即"拒绝之后"边界，sim_stop_respected 以 respond
+            // 记录为锚点检查其后的工具调用。
+            result.simTurns?.push({
+              ruleId: match.rule.id,
+              action: 'stop',
+              toolExecutionsBefore: result.toolExecutions.length,
+              responsesBefore: result.responses.length,
+            });
+            break;
+          }
+        }
+      }
 
       // Multi-turn: send follow-up prompts sequentially
       if (testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0) {
@@ -472,6 +608,12 @@ export class TestRunner {
 
       result.score = assertionResult.score;
       result.reference_solution = testCase.reference_solution;
+      // 评分权威：有声明断言（含 P1 expectations）= 确定性背书；
+      // 零断言的自动 pass 只是 agent 没崩，标 self_check 不作能力证据。
+      const hasDeterministicEvidence =
+        countDeclaredAssertions(testCase.expect) > 0 ||
+        (testCase.expectations?.length ?? 0) > 0;
+      result.scoreAuthority = hasDeterministicEvidence ? 'deterministic_assertion' : 'self_check';
 
       if (assertionResult.score === 1.0) {
         result.status = 'passed';
@@ -505,6 +647,8 @@ export class TestRunner {
           errors: result.errors,
           turnCount: result.turnCount,
           workingDirectory: this.config.workingDirectory,
+          simTurns: result.simTurns,
+          goalRun: result.goalRun,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;
@@ -527,6 +671,20 @@ export class TestRunner {
         }
       }
 
+      // WP1-2：agentAdapter 把 inference error 塞 errors 数组不 throw（同上
+      // circuit breaker 注释）。零产出 + 全零分 + errors 里是瞬态基础设施错
+      // → 这 case 没有能力数据，分流进 infra 桶而非记 failed。
+      if (
+        result.status === 'failed' &&
+        result.score === 0 &&
+        result.toolExecutions.length === 0 &&
+        result.errors.length > 0 &&
+        result.errors.some(isInfraExclusionError)
+      ) {
+        result.status = 'infra_excluded';
+        result.failureStage = 'infra';
+      }
+
       await this.attachTelemetryReplay(testCase, result);
 
       // P3: Trajectory analysis (when enabled)
@@ -542,7 +700,13 @@ export class TestRunner {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      result.status = 'failed';
+      // WP1-2：429/超时/5xx/网络 → infra 桶，不算 agent 能力失败
+      if (isInfraExclusionError(message)) {
+        result.status = 'infra_excluded';
+        result.failureStage = 'infra';
+      } else {
+        result.status = 'failed';
+      }
       result.failureReason = message || 'Unknown error';
       result.errors.push(message || String(error));
       this.emit({ type: 'error', testId: testCase.id, error: message });
@@ -554,6 +718,13 @@ export class TestRunner {
         this.abortReason = message;
       }
     } finally {
+      // B6b-①（审计 R1-M2）：超时/异常跳过了 try 内的断言前捕获时，在此兜底保留
+      // 已发生的 goal_gate 观测事件（对称于 simTurns 的增量落账），供 infra 排查。
+      // 只在未捕获时补——不许覆盖断言时刻的定格快照（审计 R2-M1 幽灵事件面）。
+      if (testCase.goal_contract && result.goalRun === undefined) {
+        result.goalRun = this.agent.getGoalRunRecord?.();
+      }
+
       // Run cleanup commands
       if (testCase.cleanup && testCase.cleanup.length > 0) {
         try {
@@ -601,6 +772,8 @@ export class TestRunner {
     return {
       testId: testCase.id,
       description: testCase.description,
+      prompt: testCase.prompt,
+      followUpPrompts: testCase.follow_up_prompts,
       status: 'skipped',
       duration: 0,
       startTime: now,
@@ -620,7 +793,9 @@ export class TestRunner {
   private calculatePerformanceStats(
     results: TestResult[]
   ): TestRunSummary['performance'] {
-    const durations = results.filter((r) => r.status !== 'skipped').map((r) => r.duration);
+    const durations = results
+      .filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded')
+      .map((r) => r.duration);
 
     return {
       avgResponseTime: durations.length > 0

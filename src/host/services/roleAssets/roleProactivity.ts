@@ -720,8 +720,10 @@ async function readGoalTerminalFromEvents(sessionId: string): Promise<'met' | 'a
     const { getSessionEventService } = await import('../../evaluation/sessionEventService');
     const events = getSessionEventService().getEventsByType(sessionId, 'goal_complete');
     const last = events[events.length - 1];
-    const data = last?.eventData as { status?: string } | undefined;
-    return data?.status === 'met' ? 'met' : 'aborted';
+    const data = last?.eventData as { status?: string; degraded?: boolean } | undefined;
+    // 到限放行（degraded）在无人值守场景保守当未达成：没有用户看降级徽标
+    // 自行判断产物，把"验证未全过的放行"当全过会让父编排静默吞掉未完成任务。
+    return data?.status === 'met' && data?.degraded !== true ? 'met' : 'aborted';
   } catch {
     return 'aborted';
   }

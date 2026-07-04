@@ -30,6 +30,15 @@ on:
       - 'scripts/console-scan.mjs'
       - 'scripts/a11y-scan.mjs'
       - 'scripts/stale-dist-scan.mjs'
+      - 'scripts/check-design-system.mjs'
+      - 'scripts/design-system-baseline.json'
+      - 'scripts/design-system-zindex-allowlist.json'
+      - 'scripts/check-token-integrity.mjs'
+      - 'tailwind.config.js'
+      - 'scripts/knip-ratchet.mjs'
+      - 'knip.json'
+      - 'scripts/architecture-debt-report.mjs'
+      - 'eslint.config.js'
       - 'scripts/build-renderer-bundle.mjs'
       - 'scripts/control-plane-*.mjs'
       - 'scripts/generate-control-plane-env.mjs'
@@ -92,16 +101,33 @@ jobs:
           npm ci --prefix vercel-api --ignore-scripts
           npm --prefix vercel-api run typecheck
 
-      - name: Static gates (console / a11y / stale-dist)
-        # 三个轻量静态门（纯 node 脚本，无额外依赖，秒级），fast-fail 在跑测试套件之前：
-        #   console-scan:    限制裸 console.log/debug 蔓延（基线棘轮 318）
-        #   a11y-scan:       轻量可访问性规则（基线棘轮 48）
-        #   stale-dist-scan: 禁止构建产物入库
-        # 三者均为 hard gate（接入前已确认当前 main 绿、只对"超基线/新增"才红）。
+      - name: Static gates (console / a11y / stale-dist / design-system / token-integrity)
+        # 五个轻量静态门（纯 node 脚本，无额外依赖，秒级），fast-fail 在跑测试套件之前：
+        #   console-scan:          限制裸 console.log/debug 蔓延（基线棘轮 318）
+        #   a11y-scan:             轻量可访问性规则（基线棘轮 48）
+        #   stale-dist-scan:       禁止构建产物入库
+        #   check-design-system:   设计系统棘轮门（此前只有 vitest 版且未进任何 CI 套件，
+        #                          bare-button 在 main 上静默漂移 736→758 后接入，基线已如实重置）
+        #   check-token-integrity: var(--*) 引用逐主题核对，未定义即红（首跑抓出 DiffView 4 个死 token）
+        # 均为 hard gate（接入前已确认当前 main 绿、只对"超基线/新增"才红）。
         run: |
           node scripts/console-scan.mjs
           node scripts/a11y-scan.mjs
           node scripts/stale-dist-scan.mjs
+          node scripts/check-design-system.mjs
+          node scripts/check-token-integrity.mjs
+
+      - name: Script gates (vitest tests/scripts)
+        # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
+        # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
+        # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
+        run: npx vitest run tests/scripts --retry=1
+
+      - name: Knip dead-export ratchet
+        # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。
+        # knip 版本锁在脚本内（npx knip@<pin>），未入 devDependencies；本地实测 ~12s，
+        # CI 走 setup-node 的 npm 缓存。独立 step 便于失败归因。
+        run: node scripts/knip-ratchet.mjs
 
       - name: Lint (non-blocking trend)
         # lint 基线当前为红（46 errors + 1620 warnings 的历史债），直接 hard-gate 会卡死所有 PR。

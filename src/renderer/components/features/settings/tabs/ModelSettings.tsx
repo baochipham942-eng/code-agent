@@ -87,6 +87,7 @@ interface DefaultModelSelection {
 
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
   const { t } = useI18n();
+  const modelText = t.settings.model;
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isTesting, setIsTesting] = useState(false);
@@ -118,10 +119,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
   // Build provider display list with i18n names where available
   const providers = useMemo(() => {
+    const providerTexts = modelText.providers as Record<string, { name?: string; description?: string }>;
     const builtInProviders = PROVIDER_MODELS.map((p) => ({
       id: p.id,
-      name: (t.model.providers as Record<string, { name?: string }>)?.[p.id === 'claude' ? 'anthropic' : p.id]?.name || p.name,
-      description: (t.model.providers as Record<string, { description?: string }>)?.[p.id === 'claude' ? 'anthropic' : p.id]?.description || p.description,
+      name: providerTexts?.[p.id === 'claude' ? 'anthropic' : p.id]?.name || p.name,
+      description: providerTexts?.[p.id === 'claude' ? 'anthropic' : p.id]?.description || p.description,
       models: p.models,
     }));
     const seen = new Set(builtInProviders.map((provider) => provider.id));
@@ -130,7 +132,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       .map(([providerId, providerConfig]) => buildProviderInfoFromSettings(providerId as ModelProvider, providerConfig))
       .filter((provider): provider is ProviderDisplayInfo => Boolean(provider));
     return [...builtInProviders, ...customProviders];
-  }, [providerConfigs, t]);
+  }, [modelText.providers, providerConfigs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,8 +200,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     );
   }, [currentModels, modelSearch]);
   const providerRows = useMemo(
-    () => buildProviderManagementRows({ providers, config, providerConfigs }),
-    [providers, config, providerConfigs],
+    () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers }),
+    [providers, config, providerConfigs, modelText.helpers],
   );
   const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows, defaultSelection.provider), [providerRows, defaultSelection.provider]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
@@ -316,36 +318,36 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     }
     patchCurrentProviderConfig({ baseUrl: registryEndpoint });
     onChange({ ...config, baseUrl: registryEndpoint });
-    toast.success('已恢复官方地址');
-  }, [config, onChange, patchCurrentProviderConfig, registryEndpoint]);
+    toast.success(modelText.toast.officialEndpointRestored);
+  }, [config, modelText.toast.officialEndpointRestored, onChange, patchCurrentProviderConfig, registryEndpoint]);
 
   const handleDisplayNameChange = useCallback((value: string) => {
     if (isProviderIdentityManaged(currentProviderConfig)) {
-      toast.warning('团队托管 Provider 的名称由控制面下发。');
+      toast.warning(modelText.toast.managedNameWarning);
       return;
     }
     patchCurrentProviderConfig({ displayName: value });
-  }, [currentProviderConfig, patchCurrentProviderConfig]);
+  }, [currentProviderConfig, modelText.toast.managedNameWarning, patchCurrentProviderConfig]);
   const handleProviderIconChange = useCallback((value: string) => {
     if (isProviderIdentityManaged(currentProviderConfig)) {
-      toast.warning('团队托管 Provider 的图标由控制面下发。');
+      toast.warning(modelText.toast.managedIconWarning);
       return;
     }
     const result = validateProviderIcon(value);
     if (!result.valid) {
-      toast.warning(describeProviderIconValidationError(result) ?? 'Provider 图标无效。');
+      toast.warning(describeProviderIconValidationError(result, modelText.helpers) ?? modelText.toast.invalidIconFallback);
       return;
     }
     patchCurrentProviderConfig({ icon: result.normalized });
-  }, [currentProviderConfig, patchCurrentProviderConfig]);
+  }, [currentProviderConfig, modelText.helpers, modelText.toast.invalidIconFallback, modelText.toast.managedIconWarning, patchCurrentProviderConfig]);
   const handleProviderIconImageUpload = useCallback(async (dataUrl: string) => {
     const result = await saveProviderIconAssetFromDataUrl({
       provider: config.provider,
       dataUrl,
     });
-    toast.success('Provider 图标已保存到本机资产目录');
+    toast.success(modelText.toast.iconSaved);
     return result.icon;
-  }, [config.provider]);
+  }, [config.provider, modelText.toast.iconSaved]);
   const handleProviderFavoriteChange = useCallback((favorite: boolean) => {
     patchCurrentProviderConfig({ favorite });
   }, [patchCurrentProviderConfig]);
@@ -422,14 +424,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         },
       } : prev);
       setDefaultSelection({ provider: config.provider, model: modelId });
-      toast.success('主任务模型已更新');
+      toast.success(modelText.toast.defaultModelUpdated);
     } catch (error) {
       logger.error('Failed to set default model', error);
-      toast.error('主任务模型保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      toast.error(modelText.toast.defaultModelSaveFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));
     } finally {
       setSettingDefaultModelId(null);
     }
-  }, [buildCurrentProviderConfigForSave, config, currentModels, onChange, patchCurrentProviderConfig]);
+  }, [buildCurrentProviderConfigForSave, config, currentModels, modelText.toast.defaultModelSaveFailedPrefix, modelText.toast.defaultModelUpdated, modelText.unknownError, onChange, patchCurrentProviderConfig]);
 
   const handleToggleModelEnabled = useCallback((model: RuntimeProviderModel, enabled: boolean) => {
     patchCurrentModelSettings(model, { enabled });
@@ -488,7 +490,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           );
           const promotedModel = providerConfigForSave.model || config.model;
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          toast.success(`原主任务模型未配置 API Key，主任务模型已自动切换到 ${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
+          toast.success(`${modelText.toast.defaultPromotedPrefix}${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {
@@ -520,13 +522,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       } : prev);
     } catch (error) {
       logger.error('Failed to save task strategy', error);
-      toast.error('自动切换保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      toast.error(modelText.toast.taskStrategySaveFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));
     }
-  }, []);
+  }, [modelText.toast.taskStrategySaveFailedPrefix, modelText.unknownError]);
 
   const handleTestConnection = async () => {
     if (needsApiKey && !config.apiKey && !hasStoredApiKey) {
-      toast.warning('请先填写 API Key');
+      toast.warning(modelText.toast.apiKeyRequired);
       return;
     }
     setIsTesting(true);
@@ -541,14 +543,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         { provider: config.provider, apiKey: config.apiKey || '', baseUrl: effectiveBaseUrl, model: config.model, protocol: effectiveProtocol }
       );
       if (result?.success) {
-        toast.success(`连接成功，延迟 ${result.latencyMs}ms`);
+        toast.success(`${modelText.toast.connectionSuccessPrefix}${result.latencyMs}${modelText.toast.connectionSuccessSuffix}`);
       } else if (result?.error) {
         toast.error(`${result.error.message}\n${result.error.suggestion}`);
       } else {
-        toast.error('连接失败，请检查 API Key 和网络连接');
+        toast.error(modelText.toast.connectionFailed);
       }
     } catch (err) {
-      toast.error('连接测试失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查网络连接');
+      toast.error(modelText.toast.connectionTestFailedPrefix + (err instanceof Error ? err.message : modelText.unknownError) + modelText.toast.connectionTestFailedSuffix);
     } finally {
       setIsTesting(false);
     }
@@ -557,7 +559,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const handleDiscoverModels = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
     if (!effectiveBaseUrl) {
-      if (!silent) toast.warning('请先填写 Provider 地址');
+      if (!silent) toast.warning(modelText.toast.providerAddressRequired);
       return;
     }
     setIsDiscovering(true);
@@ -576,13 +578,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       if (!result?.success) {
         if (!silent) {
           const detail = result?.error?.suggestion ? `\n${result.error.suggestion}` : '';
-          toast.error(`${result?.error?.message || '模型发现失败'}${detail}`);
+          toast.error(`${result?.error?.message || modelText.toast.modelDiscoveryFailed}${detail}`);
         }
         return;
       }
 
       if (!result.models.length) {
-        if (!silent) toast.warning('没有从 Provider 返回可用模型');
+        if (!silent) toast.warning(modelText.toast.noModelsReturned);
         return;
       }
 
@@ -622,13 +624,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         });
       }
 
-      if (!silent) toast.success(`发现 ${result.models.length} 个模型，已合入当前 Provider`);
+      if (!silent) toast.success(`${modelText.toast.discoveredModelsPrefix}${result.models.length}${modelText.toast.discoveredModelsSuffix}`);
     } catch (error) {
-      if (!silent) toast.error('模型发现失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      if (!silent) toast.error(modelText.toast.modelDiscoveryFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));
     } finally {
       setIsDiscovering(false);
     }
-  }, [config, currentEnabledModels, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, onChange]);
+  }, [config, currentEnabledModels, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, modelText.toast.discoveredModelsPrefix, modelText.toast.discoveredModelsSuffix, modelText.toast.modelDiscoveryFailed, modelText.toast.modelDiscoveryFailedPrefix, modelText.toast.noModelsReturned, modelText.toast.providerAddressRequired, modelText.unknownError, onChange]);
 
   // 本地 Ollama：选中即自动发现已装模型，下拉框出厂预填，避免用户手敲出幽灵模型名。
   // 本地清单零成本、随时可读，静默发现（失败不弹错），每个 Provider 一个会话只跑一次。
@@ -680,11 +682,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     const baseUrl = newProviderBaseUrl.trim().replace(/\/+$/, '');
     const apiKey = newProviderApiKey.trim();
     if (!displayName) {
-      toast.warning('请先填写 Provider 名称');
+      toast.warning(modelText.toast.providerNameRequired);
       return;
     }
     if (!baseUrl) {
-      toast.warning('请先填写 Provider 地址');
+      toast.warning(modelText.toast.providerAddressRequired);
       return;
     }
 
@@ -730,13 +732,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setNewProviderProtocol('openai');
     setModelSearch('');
     setIsAddingProvider(false);
-    toast.success('Provider 已添加，点击「发现模型」拉取可用模型');
-  }, [config, newProviderApiKey, newProviderBaseUrl, newProviderName, newProviderProtocol, onChange, providerConfigs]);
+    toast.success(modelText.toast.providerAdded);
+  }, [config, modelText.toast.providerAdded, modelText.toast.providerAddressRequired, modelText.toast.providerNameRequired, newProviderApiKey, newProviderBaseUrl, newProviderName, newProviderProtocol, onChange, providerConfigs]);
 
   const handleAddManualModel = useCallback(() => {
     const modelId = manualModelId.trim();
     if (!modelId) {
-      toast.warning('请先填写模型 ID');
+      toast.warning(modelText.toast.modelIdRequired);
       return;
     }
 
@@ -769,8 +771,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setManualModelId('');
     setManualModelLabel('');
     setModelSearch('');
-    toast.success('模型已加入当前 Provider');
-  }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, onChange]);
+    toast.success(modelText.toast.modelAdded);
+  }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, modelText.toast.modelAdded, modelText.toast.modelIdRequired, onChange]);
 
   const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
   const providerIcon = normalizeProviderIcon(currentProviderConfig?.icon) || providerTitle.slice(0, 1).toUpperCase();
@@ -781,8 +783,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
   return (
     <SettingsPage
-      title="模型配置"
-      description="先（可选）开启「按任务自动切换」，再到下方接入 Provider、配置模型。"
+      title={modelText.title}
+      description={modelText.description}
     >
       <WebModeBanner />
 
@@ -797,7 +799,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
-      <SettingsSection title="模型提供商" description="接入 Provider、选默认模型；勾选哪些模型进对话的模型选择。">
+      <SettingsSection title={modelText.providerSection.title} description={modelText.providerSection.description}>
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}
@@ -843,20 +845,20 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   <div>
                     <h4 className="text-base font-semibold text-zinc-100">{providerTitle}</h4>
                     <p className="mt-0.5 max-w-[420px] truncate text-xs text-zinc-500" title={effectiveBaseUrl}>
-                      {getProtocolLabel(effectiveProtocol)} · {effectiveBaseUrl || '未设置地址'}
+                      {getProtocolLabel(effectiveProtocol, modelText.helpers)} · {effectiveBaseUrl || modelText.header.unsetAddress}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <span className={`text-xs ${hasApiKey ? 'text-emerald-300' : 'text-amber-300'}`}>
-                    {!needsApiKey ? '无需 API Key' : hasApiKey ? 'API Key 已保存' : '等待 API Key'}
+                    {!needsApiKey ? modelText.header.noApiKey : hasApiKey ? modelText.header.apiKeySaved : modelText.header.waitingApiKey}
                   </span>
-                  <label className="flex items-center gap-2 text-xs text-zinc-400" title="关闭后该 Provider 的模型不出现在对话的模型选择里">
-                    <span>进模型选择页</span>
+                  <label className="flex items-center gap-2 text-xs text-zinc-400" title={modelText.header.selectableTitle}>
+                    <span>{modelText.header.selectableLabel}</span>
                     <Toggle
                       checked={currentProviderConfig?.enabled !== false}
                       onChange={(checked) => patchCurrentProviderConfig({ enabled: checked })}
-                      aria-label="该 Provider 是否进入模型选择页"
+                      aria-label={modelText.header.selectableAriaLabel}
                     />
                   </label>
                 </div>
@@ -941,10 +943,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   variant={saveStatus === 'error' ? 'danger' : 'primary'}
                   className={`w-full ${saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}`}
                 >
-                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : '保存配置'}
+                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : modelText.header.saveConfig}
                 </Button>
                 <span className="text-xs text-zinc-500">
-                  保存 {providerTitle} 的连接、模型和高级配置。
+                  {modelText.header.saveHintPrefix}{providerTitle}{modelText.header.saveHintSuffix}
                 </span>
               </div>
             </>

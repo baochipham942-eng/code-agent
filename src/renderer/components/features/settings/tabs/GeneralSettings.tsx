@@ -31,37 +31,43 @@ import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
 
 export type PermissionRiskLevel = 'low' | 'medium' | 'high';
 
-interface PermissionModeMetadata {
+type GeneralSettingsText = typeof zh.settings.general.permissions;
+
+const DEFAULT_GENERAL_SETTINGS_TEXT = zh.settings.general.permissions;
+
+interface PermissionModeBaseMetadata {
   id: PermissionMode;
+  riskLevel: PermissionRiskLevel;
+}
+
+export interface PermissionModeRow extends PermissionModeBaseMetadata {
   title: string;
   description: string;
   operationScope: string;
-  riskLevel: PermissionRiskLevel;
   riskLabel: string;
-}
-
-export interface PermissionModeRow extends PermissionModeMetadata {
   selected: boolean;
   actionLabel: string;
 }
 
-interface InheritanceModeMetadata {
+interface InheritanceModeBaseMetadata {
   id: InheritanceMode;
+  recommended?: boolean;
+}
+
+export interface InheritanceManagementRow extends InheritanceModeBaseMetadata {
   title: string;
   description: string;
   statusLabel: string;
   exposureLabel: string;
-  recommended?: boolean;
   warning?: string;
-}
-
-export interface InheritanceManagementRow extends InheritanceModeMetadata {
   selected: boolean;
   actionLabel: string;
 }
@@ -83,56 +89,43 @@ export interface PermissionRuleSummary {
 const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions'];
 const INHERITANCE_MODES: InheritanceMode[] = ['strict-inherit', 'child-narrow', 'independent'];
 
-const PERMISSION_MODE_METADATA: PermissionModeMetadata[] = [
+const PERMISSION_MODE_TEXT_KEYS: Record<PermissionMode, keyof GeneralSettingsText['permissionModes']> = {
+  default: 'default',
+  acceptEdits: 'acceptEdits',
+  bypassPermissions: 'bypassPermissions',
+};
+
+const INHERITANCE_MODE_TEXT_KEYS: Record<InheritanceMode, keyof GeneralSettingsText['inheritanceModes']> = {
+  'strict-inherit': 'strictInherit',
+  'child-narrow': 'childNarrow',
+  independent: 'independent',
+};
+
+const PERMISSION_MODE_METADATA: PermissionModeBaseMetadata[] = [
   {
     id: 'default',
-    title: '安全模式',
-    description: '执行写入、命令、网络操作前需要确认，适合日常工作。',
-    operationScope: '写入 / 命令 / 网络前询问',
     riskLevel: 'low',
-    riskLabel: '低风险',
   },
   {
     id: 'acceptEdits',
-    title: '自动编辑',
-    description: '自动接受文件编辑，命令和外部访问仍保留确认。',
-    operationScope: '编辑自动通过，命令仍询问',
     riskLevel: 'medium',
-    riskLabel: '中风险',
   },
   {
     id: 'bypassPermissions',
-    title: 'YOLO 模式',
-    description: '跳过所有权限检查，只适合完全可信的隔离环境。',
-    operationScope: '跳过权限检查',
     riskLevel: 'high',
-    riskLabel: '高风险',
   },
 ];
 
-const INHERITANCE_MODE_METADATA: InheritanceModeMetadata[] = [
+const INHERITANCE_MODE_METADATA: InheritanceModeBaseMetadata[] = [
   {
     id: 'strict-inherit',
-    title: '严格继承',
-    description: '子 Agent = 父真子集；tools 取交集、deny 取并集、mode 取更严。',
-    statusLabel: '推荐',
-    exposureLabel: '永不扩张',
     recommended: true,
   },
   {
     id: 'child-narrow',
-    title: '子可窄化',
-    description: '父 mode 宽松时允许子在父集合内窄化 allow，其余等同严格继承。',
-    statusLabel: '受控放宽',
-    exposureLabel: '父集合内调整',
   },
   {
     id: 'independent',
-    title: '独立模式',
-    description: '子 Agent 自管 ask/allow，仅强制 deny 并集、topology 和用户 deny。',
-    statusLabel: '谨慎使用',
-    exposureLabel: '可能扩张',
-    warning: '建议只给 e2e 测试或老 CLI grandfathering 使用。',
   },
 ];
 
@@ -143,23 +136,34 @@ export function parsePermissionRules(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-export function buildPermissionModeRows(activeMode: PermissionMode): PermissionModeRow[] {
+export function buildPermissionModeRows(
+  activeMode: PermissionMode,
+  text: GeneralSettingsText = DEFAULT_GENERAL_SETTINGS_TEXT,
+): PermissionModeRow[] {
   return PERMISSION_MODE_METADATA.map((mode) => ({
     ...mode,
+    ...text.permissionModes[PERMISSION_MODE_TEXT_KEYS[mode.id]],
     selected: mode.id === activeMode,
-    actionLabel: mode.id === activeMode ? '当前模式' : '切换',
+    actionLabel: mode.id === activeMode ? text.currentModeAction : text.switchAction,
   }));
 }
 
-export function buildInheritanceRows(activeInheritance: InheritanceMode): InheritanceManagementRow[] {
+export function buildInheritanceRows(
+  activeInheritance: InheritanceMode,
+  text: GeneralSettingsText = DEFAULT_GENERAL_SETTINGS_TEXT,
+): InheritanceManagementRow[] {
   return INHERITANCE_MODE_METADATA.map((mode) => ({
     ...mode,
+    ...text.inheritanceModes[INHERITANCE_MODE_TEXT_KEYS[mode.id]],
     selected: mode.id === activeInheritance,
-    actionLabel: mode.id === activeInheritance ? '当前策略' : '使用',
+    actionLabel: mode.id === activeInheritance ? text.currentPolicyAction : text.useAction,
   }));
 }
 
-export function buildPermissionRuleSummary(input: PermissionRuleInput): PermissionRuleSummary {
+export function buildPermissionRuleSummary(
+  input: PermissionRuleInput,
+  noRulesLabel: string = DEFAULT_GENERAL_SETTINGS_TEXT.noRules,
+): PermissionRuleSummary {
   const denyCount = parsePermissionRules(input.denyRules).length;
   const askCount = parsePermissionRules(input.askRules).length;
   const allowCount = parsePermissionRules(input.allowRules).length;
@@ -169,7 +173,7 @@ export function buildPermissionRuleSummary(input: PermissionRuleInput): Permissi
     askCount,
     allowCount,
     totalCount: denyCount + askCount + allowCount,
-    highestPriority: denyCount > 0 ? 'Deny' : askCount > 0 ? 'Ask' : allowCount > 0 ? 'Allow' : '无规则',
+    highestPriority: denyCount > 0 ? 'Deny' : askCount > 0 ? 'Ask' : allowCount > 0 ? 'Allow' : noRulesLabel,
   };
 }
 
@@ -193,23 +197,27 @@ function getRiskClass(riskLevel: PermissionRiskLevel): string {
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
 }
 
-function getRuleRows(ruleSummary: PermissionRuleSummary) {
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsText) {
   return [
     {
       label: 'Deny',
-      caption: '拒绝，最高优先级',
+      caption: text.userRules.denyCaption,
       value: ruleSummary.denyCount,
       color: 'text-red-300',
     },
     {
       label: 'Ask',
-      caption: '需要确认',
+      caption: text.userRules.askCaption,
       value: ruleSummary.askCount,
       color: 'text-amber-300',
     },
     {
       label: 'Allow',
-      caption: '允许，最低优先级',
+      caption: text.userRules.allowCaption,
       value: ruleSummary.allowCount,
       color: 'text-emerald-300',
     },
@@ -217,6 +225,8 @@ function getRuleRows(ruleSummary: PermissionRuleSummary) {
 }
 
 export const GeneralSettings: React.FC = () => {
+  const { t } = useI18n();
+  const generalText = t.settings.general.permissions;
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [inheritance, setInheritance] = useState<InheritanceMode>('strict-inherit');
   const [denyRules, setDenyRules] = useState<string>('');
@@ -226,16 +236,16 @@ export const GeneralSettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const permissionModeRows = useMemo(
-    () => buildPermissionModeRows(permissionMode),
-    [permissionMode],
+    () => buildPermissionModeRows(permissionMode, generalText),
+    [generalText, permissionMode],
   );
   const inheritanceRows = useMemo(
-    () => buildInheritanceRows(inheritance),
-    [inheritance],
+    () => buildInheritanceRows(inheritance, generalText),
+    [generalText, inheritance],
   );
   const ruleSummary = useMemo(
-    () => buildPermissionRuleSummary({ denyRules, askRules, allowRules }),
-    [allowRules, askRules, denyRules],
+    () => buildPermissionRuleSummary({ denyRules, askRules, allowRules }, generalText.noRules),
+    [allowRules, askRules, denyRules, generalText.noRules],
   );
   const activeModeRow = permissionModeRows.find((row) => row.selected) ?? permissionModeRows[0];
   const activeInheritanceRow = inheritanceRows.find((row) => row.selected) ?? inheritanceRows[0];
@@ -261,7 +271,7 @@ export const GeneralSettings: React.FC = () => {
           setShowMigrationBanner(true);
         }
       } catch (error) {
-        toast.error('加载权限设置失败: ' + (error instanceof Error ? error.message : '未知错误'));
+        toast.error(generalText.loadFailedPrefix + getErrorMessage(error, generalText.unknownError));
       } finally {
         setIsLoading(false);
       }
@@ -276,7 +286,7 @@ export const GeneralSettings: React.FC = () => {
         setPermissionMode(newMode);
       }
     } catch (error) {
-      toast.error('设置权限模式失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      toast.error(generalText.setModeFailedPrefix + getErrorMessage(error, generalText.unknownError));
     }
   };
 
@@ -286,7 +296,7 @@ export const GeneralSettings: React.FC = () => {
         permissions: patch,
       } as Partial<AppSettings>);
     } catch (error) {
-      toast.error('保存权限设置失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      toast.error(generalText.saveFailedPrefix + getErrorMessage(error, generalText.unknownError));
       throw error;
     }
   };
@@ -298,13 +308,13 @@ export const GeneralSettings: React.FC = () => {
       inheritanceMigrationAcked: true,
     });
     setShowMigrationBanner(false);
-    toast.success('继承策略已保存');
+    toast.success(generalText.inheritanceSaved);
   };
 
   const handleRulesBlur = async (kind: 'deny' | 'ask' | 'allow', text: string) => {
     const rules = parsePermissionRules(text);
     await persistPermissions({ [kind]: rules });
-    toast.success(`${kind} 规则已保存 (${rules.length} 条)`);
+    toast.success(`${kind}${generalText.ruleSavedPrefix}${rules.length}${generalText.ruleSavedSuffix}`);
   };
 
   const handleAckMigration = async () => {
@@ -314,8 +324,8 @@ export const GeneralSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="权限与安全"
-      description="管理 Agent 执行敏感操作时的权限检查，以及子 Agent 的权限继承策略。"
+      title={generalText.pageTitle}
+      description={generalText.pageDescription}
     >
       <WebModeBanner />
 
@@ -324,10 +334,9 @@ export const GeneralSettings: React.FC = () => {
           <div className="flex items-start gap-2">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
             <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-medium text-blue-300">安全模型升级提示</h4>
+              <h4 className="text-sm font-medium text-blue-300">{generalText.migration.title}</h4>
               <p className="mt-1 text-xs leading-relaxed text-blue-400/80">
-                子 Agent 默认启用「严格继承」，防止 plan → coder、reviewer → coder 等工作流绕过权限。
-                如需保留旧行为请选择「独立模式」。
+                {generalText.migration.description}
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <button
@@ -336,7 +345,7 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   className="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-xs text-blue-200 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  知道了
+                  {generalText.migration.acknowledge}
                 </button>
                 <a
                   href="https://github.com/baochipham942-eng/code-agent/releases/latest"
@@ -344,7 +353,7 @@ export const GeneralSettings: React.FC = () => {
                   rel="noreferrer"
                   className="text-xs text-blue-400 underline hover:text-blue-300"
                 >
-                  查看 release notes
+                  {generalText.migration.releaseNotes}
                 </a>
               </div>
             </div>
@@ -353,7 +362,7 @@ export const GeneralSettings: React.FC = () => {
               onClick={handleAckMigration}
               disabled={isWebMode()}
               className="text-blue-300/60 hover:text-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="关闭"
+              aria-label={t.common.close}
             >
               <X className="h-4 w-4" />
             </button>
@@ -362,16 +371,20 @@ export const GeneralSettings: React.FC = () => {
       )}
 
       <SettingsSection
-        title="权限控制面"
-        description="日常只需要看当前模式、风险级别、继承策略和用户规则数量。"
+        title={generalText.controlPlane.title}
+        description={generalText.controlPlane.description}
       >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
-              ['当前模式', activeModeRow.title, activeModeRow.operationScope],
-              ['风险级别', activeModeRow.riskLabel, activeModeRow.description],
-              ['子 Agent', activeInheritanceRow.title, activeInheritanceRow.exposureLabel],
-              ['用户规则', String(ruleSummary.totalCount), `最高优先级：${ruleSummary.highestPriority}`],
+              [generalText.controlPlane.summaryCurrentMode, activeModeRow.title, activeModeRow.operationScope],
+              [generalText.controlPlane.summaryRiskLevel, activeModeRow.riskLabel, activeModeRow.description],
+              [generalText.controlPlane.summarySubAgent, activeInheritanceRow.title, activeInheritanceRow.exposureLabel],
+              [
+                generalText.controlPlane.summaryUserRules,
+                String(ruleSummary.totalCount),
+                `${generalText.highestPriorityPrefix}${ruleSummary.highestPriority}`,
+              ],
             ].map(([label, value, caption]) => (
               <div key={label} className="bg-zinc-900/80 px-3 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -387,17 +400,17 @@ export const GeneralSettings: React.FC = () => {
             <table className="w-full min-w-[820px] text-left text-xs">
               <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">主 Agent 权限模式</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">权限行为</th>
-                  <th className="px-3 py-2 font-medium">风险</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{generalText.controlPlane.mainAgentMode}</th>
+                  <th className="px-3 py-2 font-medium">{generalText.controlPlane.status}</th>
+                  <th className="px-3 py-2 font-medium">{generalText.controlPlane.permissionBehavior}</th>
+                  <th className="px-3 py-2 font-medium">{generalText.controlPlane.risk}</th>
+                  <th className="px-3 py-2 text-right font-medium">{generalText.controlPlane.action}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/80">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">加载中...</td>
+                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">{t.common.loading}</td>
                   </tr>
                 ) : (
                   permissionModeRows.map((row) => (
@@ -420,11 +433,11 @@ export const GeneralSettings: React.FC = () => {
                         {row.selected ? (
                           <span className="inline-flex items-center gap-1 rounded border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-blue-300">
                             <CheckCircle className="h-3 w-3" />
-                            当前启用
+                            {generalText.controlPlane.currentEnabled}
                           </span>
                         ) : (
                           <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
-                            可切换
+                            {generalText.controlPlane.switchable}
                           </span>
                         )}
                       </td>
@@ -459,9 +472,9 @@ export const GeneralSettings: React.FC = () => {
             <div className="flex items-start gap-2">
               <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
               <div>
-                <h4 className="text-sm font-medium text-red-300">YOLO 模式已启用</h4>
+                <h4 className="text-sm font-medium text-red-300">{generalText.bypassWarning.title}</h4>
                 <p className="mt-1 text-xs text-red-400/70">
-                  权限检查已跳过。Agent 可以直接执行文件写入、命令执行等操作，请只在可信隔离环境中使用。
+                  {generalText.bypassWarning.description}
                 </p>
               </div>
             </div>
@@ -470,24 +483,24 @@ export const GeneralSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsSection
-        title="子 Agent 权限继承"
-        description="控制 plan → coder、reviewer → coder、CI subagent 等场景下，子 Agent 是否继承父权限约束。"
+        title={generalText.inheritanceSection.title}
+        description={generalText.inheritanceSection.description}
       >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-xs">
               <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">继承策略</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">暴露面</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{generalText.inheritanceSection.strategy}</th>
+                  <th className="px-3 py-2 font-medium">{generalText.inheritanceSection.status}</th>
+                  <th className="px-3 py-2 font-medium">{generalText.inheritanceSection.exposure}</th>
+                  <th className="px-3 py-2 text-right font-medium">{generalText.inheritanceSection.action}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/80">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-zinc-500">加载中...</td>
+                    <td colSpan={4} className="px-3 py-6 text-center text-zinc-500">{t.common.loading}</td>
                   </tr>
                 ) : (
                   inheritanceRows.map((row) => (
@@ -505,7 +518,7 @@ export const GeneralSettings: React.FC = () => {
                               <span className="text-sm font-medium text-zinc-200">{row.title}</span>
                               {row.recommended ? (
                                 <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">
-                                  推荐
+                                  {generalText.inheritanceSection.recommended}
                                 </span>
                               ) : null}
                             </div>
@@ -526,7 +539,7 @@ export const GeneralSettings: React.FC = () => {
                             : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                         }`}
                         >
-                          {row.selected ? '当前策略' : row.statusLabel}
+                          {row.selected ? generalText.currentPolicyAction : row.statusLabel}
                         </span>
                       </td>
                       <td className="px-3 py-3 align-top text-zinc-300">{row.exposureLabel}</td>
@@ -552,22 +565,22 @@ export const GeneralSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsDetails
-        title="用户级权限规则"
-        description="每行一条 Tool(glob) 规则，同时影响主 Agent 和所有子 Agent。"
+        title={generalText.userRules.title}
+        description={generalText.userRules.description}
         defaultOpen={ruleSummary.totalCount > 0}
         actions={(
           <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
             <ListChecks className="h-3 w-3" />
-            {ruleSummary.totalCount} 条
+            {ruleSummary.totalCount}{generalText.ruleCountSuffix}
           </span>
         )}
       >
         {isLoading ? (
-          <div className="text-xs text-zinc-500">加载中...</div>
+          <div className="text-xs text-zinc-500">{t.common.loading}</div>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-              {getRuleRows(ruleSummary).map((row) => (
+              {getRuleRows(ruleSummary, generalText).map((row) => (
                 <div key={row.label} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
                   <div className={`text-sm font-medium ${row.color}`}>{row.label}</div>
                   <div className="mt-1 text-lg font-semibold text-zinc-100">{row.value}</div>
@@ -577,15 +590,15 @@ export const GeneralSettings: React.FC = () => {
             </div>
 
             <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3 text-xs text-zinc-500">
-              示例：
+              {generalText.userRules.examplePrefix}
               <code className="mx-1 rounded bg-zinc-800 px-1 py-0.5 text-[11px] text-zinc-300">Bash(rm -rf *)</code>
               <code className="mx-1 rounded bg-zinc-800 px-1 py-0.5 text-[11px] text-zinc-300">Write(/etc/*)</code>
-              焦点离开输入框时自动保存，重启 Agent 后生效。
+              {generalText.userRules.autoSaveHint}
             </div>
 
             <div className="grid grid-cols-1 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-red-300">Deny（拒绝，最高优先级）</label>
+                <label className="mb-1 block text-xs text-red-300">{generalText.userRules.denyLabel}</label>
                 <textarea
                   value={denyRules}
                   onChange={(event) => setDenyRules(event.target.value)}
@@ -597,7 +610,7 @@ export const GeneralSettings: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-amber-300">Ask（询问）</label>
+                <label className="mb-1 block text-xs text-amber-300">{generalText.userRules.askLabel}</label>
                 <textarea
                   value={askRules}
                   onChange={(event) => setAskRules(event.target.value)}
@@ -609,7 +622,7 @@ export const GeneralSettings: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-emerald-300">Allow（允许，最低优先级）</label>
+                <label className="mb-1 block text-xs text-emerald-300">{generalText.userRules.allowLabel}</label>
                 <textarea
                   value={allowRules}
                   onChange={(event) => setAllowRules(event.target.value)}
@@ -626,23 +639,23 @@ export const GeneralSettings: React.FC = () => {
       </SettingsDetails>
 
       <SettingsDetails
-        title="权限语义说明"
-        description="把低频解释折叠在高级区，避免干扰普通用户。"
+        title={generalText.semantics.title}
+        description={generalText.semantics.description}
       >
         <div className="grid grid-cols-1 gap-3 text-xs text-zinc-400 md:grid-cols-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
             <div className="mb-1 flex items-center gap-2 text-zinc-200">
               <ShieldCheck className="h-4 w-4 text-emerald-300" />
-              权限优先级
+              {generalText.semantics.priorityTitle}
             </div>
-            <p>Deny 优先于 Ask，Ask 优先于 Allow；用户 deny 会覆盖 Agent 与子 Agent 的局部配置。</p>
+            <p>{generalText.semantics.priorityDescription}</p>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
             <div className="mb-1 flex items-center gap-2 text-zinc-200">
               <Bot className="h-4 w-4 text-blue-300" />
-              子 Agent 安全边界
+              {generalText.semantics.boundaryTitle}
             </div>
-            <p>默认严格继承，适合生活和工作助手场景；独立模式只保留给迁移、测试或强控制环境。</p>
+            <p>{generalText.semantics.boundaryDescription}</p>
           </div>
         </div>
       </SettingsDetails>

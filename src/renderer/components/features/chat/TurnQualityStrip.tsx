@@ -3,8 +3,11 @@ import type { TurnQualitySummary, TurnQualityMemoryItem } from '@shared/contract
 import { IPC_DOMAINS } from '@shared/ipc';
 import { Archive, Bot, Brain, ChevronDown, ChevronRight, Cpu, EyeOff, Gauge, Wrench } from 'lucide-react';
 import ipcService from '../../../services/ipcService';
+import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
+import { useI18n } from '../../../hooks/useI18n';
+import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
@@ -85,6 +88,8 @@ function blockLabel(blockType: string): string {
 }
 
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
+  const developerMode = useAppStore((state) => state.developerMode);
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
   const [archivedEntryIds, setArchivedEntryIds] = useState<Set<string>>(() => new Set());
@@ -134,6 +139,48 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
       setBusyEntryId(null);
     }
   }, [currentSessionId, suppressMemoryEntryForSession]);
+
+  // 默认（非开发者模式）：评分/记忆/failure-journal 是引擎自检信息，普通协作者
+  // 不需要也看不懂，只留一颗安静的模型名徽标标注"这轮是谁在干活"。
+  if (!developerMode) {
+    const modelName = summary.strategy.model || summary.strategy.requestedModel;
+    // 手动 /agent 指定（非 default）时透出"本轮由 X 执行"的安静徽标，
+    // 恢复自动路由后 agentName 回到 default 徽标自然消失。
+    const agentName = summary.capabilities?.agentName;
+    const showAgent = Boolean(agentName && agentName !== 'default');
+    // 显式选择降级：用户点名的 agent 没生效（requestedAgentId ≠ 实际 agentId）。
+    // 徽标显示 host 实际路由值，降级不再静默——透出安静警示。
+    const requestedAgentId = summary.capabilities?.requestedAgentId;
+    const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
+      ? requestedAgentId
+      : null;
+    if (!modelName && !showAgent && !degradedAgentId) return null;
+    return (
+      <div className="mb-2 flex items-center gap-1">
+        {modelName && (
+          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
+            {modelName}
+          </span>
+        )}
+        {showAgent && (
+          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500">
+            <Bot className="h-3 w-3" />
+            {agentName}
+          </span>
+        )}
+        {degradedAgentId && (
+          <span
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-500/80"
+            title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${summary.capabilities?.agentName || 'default'}`}
+          >
+            <Bot className="h-3 w-3" />
+            {degradedAgentId}
+            {t.agentCommand.badgeNotAppliedSuffix}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mb-2">
@@ -249,12 +296,12 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
                   <div key={item.entryId} className="rounded-md bg-white/[0.025] px-2 py-1.5">
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-zinc-200">{item.title}</div>
+                        <div className="truncate text-zinc-200">{unescapeHtmlEntities(item.title)}</div>
                         {item.preview && (
-                          <div className="mt-0.5 line-clamp-2 text-zinc-500">{item.preview}</div>
+                          <div className="mt-0.5 line-clamp-2 text-zinc-500">{unescapeHtmlEntities(item.preview)}</div>
                         )}
                         {item.scoreReasons?.length ? (
-                          <div className="mt-1 text-[10px] text-zinc-600">{item.scoreReasons.join(' / ')}</div>
+                          <div className="mt-1 text-[10px] text-zinc-600">{unescapeHtmlEntities(item.scoreReasons.join(' / '))}</div>
                         ) : null}
                       </div>
                       <button
@@ -286,7 +333,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
           {summary.warnings?.length ? (
             <div className="mt-2 space-y-1 text-amber-300/80">
               {summary.warnings.map((warning) => (
-                <div key={warning}>{warning}</div>
+                <div key={warning}>{unescapeHtmlEntities(warning)}</div>
               ))}
             </div>
           ) : null}

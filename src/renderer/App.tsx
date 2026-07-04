@@ -408,6 +408,12 @@ export const App: React.FC = () => {
           logger.info('Loaded disclosure level', { level: settings.ui.disclosureLevel });
         }
 
+        // 加载开发者模式
+        if (settings?.ui?.developerMode) {
+          useAppStore.getState().setDeveloperMode(true);
+          logger.info('Loaded developer mode', { enabled: true });
+        }
+
 
         // 加载模型配置
         if (settings?.models) {

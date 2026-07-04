@@ -17,6 +17,7 @@ import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaul
 import { summarizeUserFacingError } from '../security/userFacingError';
 import type { ChannelResponseCallback } from './channelInterface';
 import { summarizeChannelError } from './channelErrorSummary';
+import { CHANNEL_INGRESS } from '../../shared/constants';
 import { transcribeAudioFile } from '../services/media/audioTranscriptionService';
 import { sanitizeChannelText } from './privacy/channelPrivacyFirewall';
 
@@ -768,6 +769,13 @@ export class ChannelAgentBridge {
       return false;
     }
     this.processedMessages.set(key, { status: 'processing', timestamp: Date.now() });
+    // 容量上界（WP3-2）：此前仅 24h TTL 无上界，高频入站会无界增长。Map 迭代序 = 插入序，
+    // 超界逐出最旧（最旧条目早已过了平台重推窗口，逐出不影响正常去重语义）。
+    while (this.processedMessages.size > CHANNEL_INGRESS.PROCESSED_MESSAGES_MAX) {
+      const oldest = this.processedMessages.keys().next().value;
+      if (oldest === undefined) break;
+      this.processedMessages.delete(oldest);
+    }
     return true;
   }
 

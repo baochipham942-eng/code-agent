@@ -337,6 +337,11 @@ export function projectTurns(
 
       const turn = currentTurn;
 
+      // 一条 assistant 消息若因 content_parts 交错（text 穿插 tool_call）拆成多个
+      // assistant_text 节点，思考只在这次模型回复里发生一次，只挂在第一个节点上，
+      // 避免同一段 thinking 在多个折叠行里重复出现（P0 去噪：思考块过多问题的根因之一）。
+      let reasoningAttachedForMessage = false;
+
       const pushAssistantTextNode = (content: string, index?: number) => {
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
@@ -351,14 +356,16 @@ export function projectTurns(
             lastModelDecisionKey = key;
           }
         }
+        const attachReasoning = !reasoningAttachedForMessage;
+        reasoningAttachedForMessage = true;
         turn.nodes.push({
           id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
           messageId: msg.id,
           type: 'assistant_text',
           content,
           timestamp: msg.timestamp,
-          reasoning: msg.reasoning,
-          thinking: msg.thinking,
+          reasoning: attachReasoning ? msg.reasoning : undefined,
+          thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
           metadata: msg.metadata,

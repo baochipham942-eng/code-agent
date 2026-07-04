@@ -116,6 +116,34 @@ describe('verification plan and runner', () => {
     });
   });
 
+  it('验证命令产生工作区副作用 → evidence 标 workspaceSideEffects（卫生契约，不阻断验证）', async () => {
+    mockRunVerifyGate.mockImplementation(async () => {
+      writeFileSync(path.join(root, 'debris.log'), 'side effect', 'utf-8');
+      return {
+        pass: true, exitCode: 0, output: 'ok', timedOut: false,
+        command: 'npm test', cwd: root, durationMs: 5, stdoutTail: '', stderrTail: '',
+      };
+    });
+    const plan = buildVerificationPlan({ cwd: root, verifyCommand: 'npm test', changedFiles: [], packageScripts: [] });
+
+    const evidence = await runVerificationPlan(plan);
+
+    expect(evidence.status).toBe('passed');
+    expect(evidence.workspaceSideEffects).toContain('added: debris.log');
+  });
+
+  it('验证命令无副作用 → workspaceSideEffects 不出现', async () => {
+    mockRunVerifyGate.mockResolvedValue({
+      pass: true, exitCode: 0, output: 'ok', timedOut: false,
+      command: 'npm test', cwd: root, durationMs: 5, stdoutTail: '', stderrTail: '',
+    });
+    const plan = buildVerificationPlan({ cwd: root, verifyCommand: 'npm test', changedFiles: [], packageScripts: [] });
+
+    const evidence = await runVerificationPlan(plan);
+
+    expect(evidence.workspaceSideEffects).toBeUndefined();
+  });
+
   it('classifies local verification failures without replacing full output', () => {
     expect(classifyVerificationFailure('npm run typecheck', 'TS2322', false)).toBe('typecheck');
     expect(classifyVerificationFailure('npx vitest run foo.test.ts', 'Cannot find package vitest', false)).toBe('dependency_missing');

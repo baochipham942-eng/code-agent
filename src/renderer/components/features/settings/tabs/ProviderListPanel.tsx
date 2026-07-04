@@ -12,6 +12,7 @@ import type { ModelProvider } from '@shared/contract';
 import { isProviderImageIcon } from '@shared/modelRuntime';
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
 import { describeKeylessReadiness, type ProviderManagementRow } from './ModelSettings.helpers';
 import { useProviderIconImageSource } from '../../../../utils/providerIconAssets';
 
@@ -64,19 +65,21 @@ const ConfiguredRowStatus: React.FC<{
   row: ProviderManagementRow;
   reachable?: boolean;
 }> = ({ row, reachable }) => {
+  const { t } = useI18n();
+  const listText = t.settings.model.list;
   if (!row.keyless) {
     return (
       <>
-        <span className="text-emerald-300">✓ Key</span> · {row.enabledModelCount}/{row.modelCount} 模型
+        <span className="text-emerald-300">{listText.keyStatus}</span> · {row.enabledModelCount}/{row.modelCount} {listText.modelUnit}
       </>
     );
   }
-  const readiness = describeKeylessReadiness(reachable);
+  const readiness = describeKeylessReadiness(reachable, t.settings.model.helpers);
   return (
     <>
       <span className={KEYLESS_READINESS_TONE[readiness.state]}>{readiness.label}</span>
-      {readiness.state === 'running' && <> · {row.enabledModelCount}/{row.modelCount} 模型</>}
-      {readiness.state === 'unavailable' && <> · 启动 Ollama 后可用</>}
+      {readiness.state === 'running' && <> · {row.enabledModelCount}/{row.modelCount} {listText.modelUnit}</>}
+      {readiness.state === 'unavailable' && <> · {listText.ollamaUnavailableHint}</>}
     </>
   );
 };
@@ -87,52 +90,60 @@ const ConfiguredRow: React.FC<{
   isDefault?: boolean;
   reachable?: boolean;
   onSelect: () => void;
-}> = ({ row, selected, isDefault, reachable, onSelect }) => (
-  <button
-    type="button"
-    onClick={onSelect}
-    className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition ${
-      selected
-        ? 'border-blue-400/40 bg-blue-500/10'
-        : 'border-transparent hover:bg-zinc-800/60'
-    }`}
-  >
-    <ProviderMark row={row} size="md" />
-    <span className="min-w-0 flex-1">
-      <span className="flex items-center gap-1.5">
-        <span className="truncate text-[13px] text-zinc-100">{row.name}</span>
-        {isDefault && (
-          <span className="shrink-0 rounded border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] text-amber-200">★ 默认</span>
-        )}
+}> = ({ row, selected, isDefault, reachable, onSelect }) => {
+  const { t } = useI18n();
+  const listText = t.settings.model.list;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition ${
+        selected
+          ? 'border-blue-400/40 bg-blue-500/10'
+          : 'border-transparent hover:bg-zinc-800/60'
+      }`}
+    >
+      <ProviderMark row={row} size="md" />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[13px] text-zinc-100">{row.name}</span>
+          {isDefault && (
+            <span className="shrink-0 rounded border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] text-amber-200">{listText.defaultBadge}</span>
+          )}
+        </span>
+        <span className="block truncate text-[11px] text-zinc-500">
+          <ConfiguredRowStatus row={row} reachable={reachable} />
+        </span>
       </span>
-      <span className="block truncate text-[11px] text-zinc-500">
-        <ConfiguredRowStatus row={row} reachable={reachable} />
-      </span>
-    </span>
-  </button>
-);
+    </button>
+  );
+};
 
 const UnconfiguredRow: React.FC<{
   row: ProviderManagementRow;
   selected: boolean;
   onSelect: () => void;
-}> = ({ row, selected, onSelect }) => (
-  <button
-    type="button"
-    onClick={onSelect}
-    className={`group flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition ${
-      selected
-        ? 'border-blue-400/40 bg-blue-500/10'
-        : 'border-transparent hover:bg-zinc-800/60'
-    }`}
-  >
-    <ProviderMark row={row} size="sm" />
-    <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{row.name}</span>
-    <span className={`shrink-0 text-[11px] ${selected ? 'text-blue-400' : 'text-zinc-600 group-hover:text-blue-400'}`}>
-      添加 Key
-    </span>
-  </button>
-);
+}> = ({ row, selected, onSelect }) => {
+  const { t } = useI18n();
+  const listText = t.settings.model.list;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`group flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition ${
+        selected
+          ? 'border-blue-400/40 bg-blue-500/10'
+          : 'border-transparent hover:bg-zinc-800/60'
+      }`}
+    >
+      <ProviderMark row={row} size="sm" />
+      <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{row.name}</span>
+      <span className={`shrink-0 text-[11px] ${selected ? 'text-blue-400' : 'text-zinc-600 group-hover:text-blue-400'}`}>
+        {listText.addKey}
+      </span>
+    </button>
+  );
+};
 
 export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   configuredRows,
@@ -145,6 +156,8 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   onStartAddProvider,
   onOpenDoctor,
 }) => {
+  const { t } = useI18n();
+  const listText = t.settings.model.list;
   const [search, setSearch] = useState('');
   // 选中项在待添加 Key 组里时自动展开该组
   const selectedInUnconfigured = unconfiguredRows.some((row) => row.id === selectedProviderId);
@@ -168,7 +181,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索 Provider 或模型..."
+          placeholder={listText.searchPlaceholder}
           inputSize="sm"
           leftIcon={<Search className="h-3.5 w-3.5" />}
         />
@@ -181,7 +194,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
             leftIcon={<Plus className="h-3 w-3" />}
             className="flex-1"
           >
-            新增
+            {listText.addProvider}
           </Button>
           <Button
             size="sm"
@@ -190,14 +203,14 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
             disabled={isWebMode()}
             leftIcon={<Stethoscope className="h-3 w-3" />}
           >
-            诊断
+            {listText.doctor}
           </Button>
         </div>
       </div>
 
       <div className="max-h-[560px] space-y-0.5 overflow-y-auto p-2">
         <div className="px-1.5 pb-1 pt-1.5 text-[11px] text-zinc-500">
-          已可用 · {filteredConfigured.length}
+          {listText.configuredPrefix}{filteredConfigured.length}
         </div>
         {filteredConfigured.map((row) => (
           <ConfiguredRow
@@ -210,7 +223,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
           />
         ))}
         {filteredConfigured.length === 0 && (
-          <div className="px-1.5 py-2 text-xs text-zinc-600">没有匹配的 Provider</div>
+          <div className="px-1.5 py-2 text-xs text-zinc-600">{listText.noMatch}</div>
         )}
 
         {filteredUnconfigured.length > 0 && (
@@ -219,10 +232,10 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
               type="button"
               onClick={() => setUnconfiguredExpanded((prev) => !prev)}
               className="flex w-full items-center gap-1 px-1.5 pb-1 pt-3 text-left text-[11px] text-zinc-500 hover:text-zinc-400"
-              title="这些 Provider 还没有保存 API Key，添加后才会显示模型列表。"
+              title={listText.unconfiguredTooltip}
             >
               {showUnconfigured ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              待添加 Key · {filteredUnconfigured.length}
+              {listText.unconfiguredPrefix}{filteredUnconfigured.length}
             </button>
             {showUnconfigured && filteredUnconfigured.map((row) => (
               <UnconfiguredRow

@@ -5,6 +5,7 @@
 import React, { useState, useCallback } from 'react';
 import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { Modal, ModalFooter, Button, Input } from '../../primitives';
+import { useI18n } from '../../../hooks/useI18n';
 
 // ============================================================================
 // Types
@@ -32,6 +33,7 @@ interface McpServerEditorProps {
 
 type ServerType = McpServerConfig['type'];
 type ViewMode = 'form' | 'json';
+type McpServerEditorText = ReturnType<typeof useI18n>['t']['settings']['mcp']['editor'];
 
 // ============================================================================
 // Constants
@@ -66,9 +68,10 @@ export function isSensitiveMcpCredentialKey(key: string): boolean {
 /** Key-value pair editor for env vars / headers */
 const KeyValueEditor: React.FC<{
   label: string;
+  text: McpServerEditorText;
   entries: Record<string, string>;
   onChange: (entries: Record<string, string>) => void;
-}> = ({ label, entries, onChange }) => {
+}> = ({ label, text, entries, onChange }) => {
   const pairs = Object.entries(entries);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(() => new Set());
 
@@ -117,11 +120,11 @@ const KeyValueEditor: React.FC<{
           className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
         >
           <Plus className="w-3 h-3" />
-          添加
+          {text.add}
         </button>
       </div>
       {pairs.length === 0 && (
-        <p className="text-xs text-zinc-500 italic">暂无条目</p>
+        <p className="text-xs text-zinc-500 italic">{text.empty}</p>
       )}
       {pairs.map(([key, value], idx) => {
         const rowKey = `${label}:${idx}`;
@@ -151,7 +154,7 @@ const KeyValueEditor: React.FC<{
                 <button
                   type="button"
                   onClick={() => toggleReveal(key, rowKey)}
-                  aria-label={revealed ? '隐藏敏感值' : '显示敏感值'}
+                  aria-label={revealed ? text.hideSensitive : text.showSensitive}
                   className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
                 >
                   {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -182,6 +185,8 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   onSave,
   initialConfig,
 }) => {
+  const { t } = useI18n();
+  const editorText = t.settings.mcp.editor;
   const [config, setConfig] = useState<McpServerConfig>(() => (
     initialConfig ? { ...EMPTY_CONFIG, ...initialConfig } : { ...EMPTY_CONFIG }
   ));
@@ -243,12 +248,12 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
         setJsonError(null);
       } catch {
         // Keep JSON view if parse fails
-        setJsonError('JSON 格式错误');
+        setJsonError(editorText.jsonError);
         return;
       }
     }
     setViewMode(mode);
-  }, [config, jsonText, configToJson]);
+  }, [config, jsonText, configToJson, editorText.jsonError]);
 
   // Validation
   const isValid = useCallback((): boolean => {
@@ -273,7 +278,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
           headers: parsed.headers,
         });
       } catch {
-        setJsonError('JSON 格式错误，无法保存');
+        setJsonError(editorText.jsonSaveError);
         return;
       }
     } else {
@@ -290,13 +295,13 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title="添加 MCP 服务器"
+      title={editorText.title}
       size="lg"
       headerIcon={<Server className="w-5 h-5 text-indigo-400" />}
       footer={
         <ModalFooter
-          cancelText="取消"
-          confirmText="保存"
+          cancelText={editorText.cancel}
+          confirmText={editorText.save}
           onCancel={handleClose}
           onConfirm={handleSave}
           confirmDisabled={viewMode === 'form' && !isValid()}
@@ -307,18 +312,18 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
       <div className="space-y-5">
         {/* Server Name */}
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1.5">服务器名称</label>
+          <label className="block text-xs font-medium text-zinc-400 mb-1.5">{editorText.serverName}</label>
           <Input
             value={config.name}
             onChange={(e) => updateConfig('name', e.target.value)}
-            placeholder="例如: filesystem, brave-search"
+            placeholder={editorText.serverNamePlaceholder}
             inputSize="sm"
           />
         </div>
 
         {/* Type Selector (pills) */}
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1.5">传输类型</label>
+          <label className="block text-xs font-medium text-zinc-400 mb-1.5">{editorText.transportType}</label>
           <div className="flex items-center gap-0.5 p-0.5 bg-zinc-800 rounded-lg border border-zinc-700 w-fit">
             {SERVER_TYPES.map((st) => {
               const isActive = config.type === st.value;
@@ -355,7 +360,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                 : 'text-zinc-500 hover:text-zinc-400'
             }`}
           >
-            表单
+            {editorText.form}
           </button>
           <button
             type="button"
@@ -378,11 +383,11 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               <>
                 {/* Command */}
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">命令</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">{editorText.command}</label>
                   <Input
                     value={config.command || ''}
                     onChange={(e) => updateConfig('command', e.target.value)}
-                    placeholder="例如: npx, node, python"
+                    placeholder={editorText.commandPlaceholder}
                     inputSize="sm"
                   />
                 </div>
@@ -390,7 +395,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                 {/* Args */}
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                    参数 <span className="text-zinc-500">（逗号分隔）</span>
+                    {editorText.args} <span className="text-zinc-500">{editorText.commaSeparated}</span>
                   </label>
                   <Input
                     value={(config.args || []).join(', ')}
@@ -401,14 +406,15 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                         .filter(Boolean);
                       updateConfig('args', args);
                     }}
-                    placeholder="例如: -y, @modelcontextprotocol/server-filesystem, /tmp"
+                    placeholder={editorText.argsPlaceholder}
                     inputSize="sm"
                   />
                 </div>
 
                 {/* Env */}
                 <KeyValueEditor
-                  label="环境变量"
+                  label={editorText.env}
+                  text={editorText}
                   entries={config.env || {}}
                   onChange={(env) => updateConfig('env', env)}
                 />
@@ -428,7 +434,8 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
 
                 {/* Headers */}
                 <KeyValueEditor
-                  label="请求头"
+                  label={editorText.headers}
+                  text={editorText}
                   entries={config.headers || {}}
                   onChange={(headers) => updateConfig('headers', headers)}
                 />
@@ -453,7 +460,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               <p className="text-xs text-red-400">{jsonError}</p>
             )}
             <p className="text-xs text-zinc-500">
-              JSON 视图会显示原始 env/header，只用于粘贴配置或诊断。
+              {editorText.jsonHint}
             </p>
           </div>
         )}

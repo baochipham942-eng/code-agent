@@ -105,6 +105,9 @@ describe('ProposeSlidesOps 付费配图路径', () => {
     const payload = deckMock.mock.calls[0][0];
     expect(payload.illustrate).toBe(true);
     expect(typeof payload.imageModel).toBe('string');
+    // WP3-1 幂等：确认成本后铸造 commandId 透传 deck（付费配图路径的幂等键）。
+    expect(typeof payload.commandId).toBe('string');
+    expect(payload.commandId).toMatch(/^gencmd-/);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.output).toContain('¥0.56');
     // 审计 F1：下游 maxImages 必须 = 成本确认时的张数（confirmedImageCount），保证实际配图

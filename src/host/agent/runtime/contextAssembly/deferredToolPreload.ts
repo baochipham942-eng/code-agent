@@ -10,20 +10,25 @@ type RuntimeForDeferredToolPreload = Pick<
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'skillToolBoundary'
 >;
 
+// 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
+// \bnotes\b；裸词缺 \b 会被子串误命中（"express" 含 "press"）。误触的代价不止暴露
+// 无关工具——工具表突变会整体打掉 provider 前缀缓存（PR#321 审计附录实测归因）。
+// 所以：常见文件名词必须要求明确 app/动作语境或排除扩展名形态（(?!\.\w)），
+// 英文单词一律带 \b，高频 CLI 语境（git/svn checkout）用 lookbehind 排除。
 const COMPUTER_INTENT_RE =
-  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bscreenshot\b|\bscreen\s+capture\b|\bcapture\s+(?:the\s+)?(?:current\s+)?screen\b|\b(?:current\s+)?desktop\s+(?:context|browser|window|app)\b|frontmost|notepad|\bnotes\b|桌面|当前屏幕|屏幕|截屏|截图|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)/i;
+  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bscreenshot\b(?!\.\w)|\bscreen\s+capture\b|\bcapture\s+(?:the\s+)?(?:current\s+)?screen\b|\b(?:current\s+)?desktop\s+(?:context|browser|window|app)\b|frontmost|notepad|\b(?:apple\s+)?notes\s+app\b|\bopen\s+(?:the\s+)?notes\b|桌面|当前屏幕|屏幕|截屏|截图|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)/i;
 
 const MEETING_DESKTOP_CONTEXT_RE =
-  /腾讯会议|tencent\s*meeting|会议内容|当前会议|正在(?:开的|进行的)?会议|meeting\s+(?:content|notes?|transcript)|current\s+meeting/i;
+  /腾讯会议|tencent\s*meeting|会议内容|当前会议|正在(?:开的|进行的)?会议|meeting\s+(?:content|notes?|transcript)\b(?!\.\w)|current\s+meeting/i;
 
 const BROWSER_INTERACTIVE_INTENT_RE =
-  /\bbrowser[\s_-]?action\b|\bbrowser automation\b|\bplaywright\b|托管浏览器|浏览器自动化|登录|登陆|sign[\s-]?in|log[\s-]?in|表单|填表|填写|输入账号|输入密码|按钮|点击|click|press|提交|submit|多页|翻页|分页|下一页|上传|下载|视觉验证|动态页面|弹窗|dropdown|下拉|选择框|checkout|支付/i;
+  /\bbrowser[\s_-]?action\b|\bbrowser automation\b|\bplaywright\b|托管浏览器|浏览器自动化|登录|登陆|\bsign[\s-]?in\b|\blog[\s-]?in\b|表单|填表|填写|输入账号|输入密码|按钮|点击|\bclick\b|\bpress\b|提交|\bsubmit\b|多页|翻页|分页|下一页|上传|下载|视觉验证|动态页面|弹窗|\bdropdown\b|下拉|选择框|(?<!git\s)(?<!svn\s)\bcheckout\b|支付/i;
 
 const DYNAMIC_WORKFLOW_INTENT_RE =
   /(?:^|\s)\/workflow\b|\bdynamic[-\s]?workflow\b|\bscript(?:ed)?[-\s]?workflow\b|\bprogrammatic[-\s]?workflow\b|\bDynamicWorkflow\b|命令式(?:工作流|workflow)|脚本(?:化|式)?工作流|代码化工作流/i;
 
 const WORKFLOW_ORCHESTRATE_INTENT_RE =
-  /\bworkflow_orchestrate\b|\bWorkflowOrchestrate\b|\blegacy[-\s]?workflow\b|\bdeclarative[-\s]?workflow\b|\bcowork\b|\bco[-\s]?work\b|\bmulti[-\s]?agent\b|\bdag\b|多\s*agent|多代理|多智能体|子代理|子\s*agent|子阶段|协作(?:任务|流程|模式|审查)|工作流(?:编排|子阶段)?/i;
+  /\bworkflow_orchestrate\b|\bWorkflowOrchestrate\b|\blegacy[-\s]?workflow\b|\bdeclarative[-\s]?workflow\b|\bcowork\b|\bco[-\s]?work\b|\bmulti[-\s]?agent\b|\bdag\b(?!\.\w)|多\s*agent|多代理|多智能体|子代理|子\s*agent|子阶段|协作(?:任务|流程|模式|审查)|工作流(?:编排|子阶段)?/i;
 
 const MCP_MANAGEMENT_INTENT_RE =
   /\bMCPUnified\b|\bmcp[_\s-]*(?:add|server|config|configure|setup|connect|status|tool|resource)\b|\badd\s+(?:an?\s+)?mcp\b|\bconfigure\s+(?:an?\s+)?mcp\b|配置\s*mcp|添加\s*mcp|新增\s*mcp|连接\s*mcp|管理\s*mcp|mcp\s*(?:配置|服务器|工具|资源|状态)/i;

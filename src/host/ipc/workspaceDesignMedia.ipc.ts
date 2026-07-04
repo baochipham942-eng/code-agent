@@ -44,7 +44,11 @@ import { readDesignSettings } from '../services/design/designSettings';
 import type { RegionLockReport } from '../../shared/contract/imageConsistency';
 import { deriveBridgedVisualModels } from '../../shared/visualModelBridge';
 import { resolveBridgedEndpoint } from '../services/media/bridgedEndpoint';
+import { designGenerationIdempotency } from '../services/media/generationIdempotency';
 import type { AppSettings } from '../../shared/contract';
+
+// 幂等缓存命中校验：缓存产物文件已被删则视为失效重新生成，不返回死路径。
+const artifactExists = (p: string): Promise<boolean> => fsp.access(p).then(() => true, () => false);
 
 // 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
 // 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
@@ -66,10 +70,29 @@ export async function handleGenerateDesignImage(
     model?: string;
     /** 参考图（base64 dataURL）：存在时走 wanx description_edit 垫图，而非纯文生图。 */
     referenceImageDataUrl?: string;
+    /** 付费命令幂等键（WP3-1）：同 commandId 的自动重放返回缓存产物不再计费；缺省保持既有行为。 */
+    commandId?: string;
   },
   // 多模态桥接（Spec 1）：注入源聊天 provider 的 settings，供桥接图像模型解析端点。
   // 带默认值（() => null）保证既有调用点零破坏；IPC 注册处传真 settings。
   getSettings: () => AppSettings | null = () => null,
+): Promise<{ path: string; actualModel: string; costCny: number }> {
+  return designGenerationIdempotency.run(
+    payload?.commandId,
+    () => generateDesignImageOnce(payload, getSettings),
+    (cached) => artifactExists(cached.path),
+  );
+}
+
+async function generateDesignImageOnce(
+  payload: {
+    prompt: string;
+    aspectRatio?: string;
+    outputPath: string;
+    model?: string;
+    referenceImageDataUrl?: string;
+  },
+  getSettings: () => AppSettings | null,
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   // prompt 须为非空白（trim 后非空）：空白 prompt 是 paid no-op（尤其 wanx/gptimage 用 raw prompt），
   // 直连 IPC/未来调用方可能绕过 renderer 的 trim 守卫，在主进程兜底拦住付费空调用。
@@ -419,10 +442,31 @@ export async function handleGenerateDesignVideo(
     outputPath: string;
     model: string;
     durationSec?: number;
+    /** 付费命令幂等键（WP3-1）：同 commandId 的自动重放返回缓存产物不再计费；缺省保持既有行为。 */
+    commandId?: string;
   },
   // 多模态桥接（Spec 1）：注入源聊天 provider 的 settings，供桥接视频模型解析端点。
   // 带默认值（() => null）保证既有调用点零破坏；IPC 注册处传真 settings。
   getSettings: () => AppSettings | null = () => null,
+): Promise<{ path: string; actualModel: string; costCny: number; durationSec: number }> {
+  // 幂等收口在 provider 分派之前：桥接/custom/veo/内置（wanx/minimax/ark）四路对称覆盖。
+  return designGenerationIdempotency.run(
+    payload?.commandId,
+    () => generateDesignVideoOnce(payload, getSettings),
+    (cached) => artifactExists(cached.path),
+  );
+}
+
+async function generateDesignVideoOnce(
+  payload: {
+    mode: 't2v' | 'i2v';
+    prompt?: string;
+    baseImagePath?: string;
+    outputPath: string;
+    model: string;
+    durationSec?: number;
+  },
+  getSettings: () => AppSettings | null,
 ): Promise<{ path: string; actualModel: string; costCny: number; durationSec: number }> {
   if (!payload?.outputPath) throw new Error('generateDesignVideo 需要 outputPath');
   if (payload.mode === 't2v' && !payload.prompt?.trim()) throw new Error('文生视频需要非空 prompt');
@@ -538,10 +582,28 @@ export async function handleGenerateDesignVideo(
 // 守门顺序（全在付费 service 调用之前，杜绝 paid no-op 与越界写盘）：
 // outputPath 必填 → prompt/lyrics 至少一项非空 → 路径守卫。成本按真实模型查价表（待价表补全）。
 export async function handleGenerateDesignMusic(
-  payload: { prompt?: string; lyrics?: string; outputPath: string; model: string },
+  payload: {
+    prompt?: string;
+    lyrics?: string;
+    outputPath: string;
+    model: string;
+    /** 付费命令幂等键（WP3-1）：同 commandId 的自动重放返回缓存产物不再计费；缺省保持既有行为。 */
+    commandId?: string;
+  },
   // 多模态桥接（Spec 1）：注入源聊天 provider 的 settings，供桥接音乐模型解析端点。
   // 带默认值（() => null）保证既有调用点零破坏；IPC 注册处传真 settings。
   getSettings: () => AppSettings | null = () => null,
+): Promise<{ path: string; actualModel: string; costCny: number }> {
+  return designGenerationIdempotency.run(
+    payload?.commandId,
+    () => generateDesignMusicOnce(payload, getSettings),
+    (cached) => artifactExists(cached.path),
+  );
+}
+
+async function generateDesignMusicOnce(
+  payload: { prompt?: string; lyrics?: string; outputPath: string; model: string },
+  getSettings: () => AppSettings | null,
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.outputPath) throw new Error('generateDesignMusic 需要 outputPath');
   // prompt 与 lyrics 至少一项非空白：双空是 paid no-op，主进程兜底拦住付费空调用（与 service 守卫同口径）。

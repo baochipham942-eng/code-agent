@@ -1,13 +1,14 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
 import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
-import { getContextWindow } from '../../../../shared/constants';
+import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE } from '../../../../shared/constants';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
   injectWorkingDirectoryContext,
   buildEnhancedSystemPrompt,
   buildRuntimeModeBlock,
+  buildGitStatusBlock,
 } from '../../../agent/messageHandling/contextBuilder';
 import { loadMemoryIndex } from '../../../lightMemory/indexLoader';
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
@@ -33,6 +34,11 @@ import {
   GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT,
   needsGameArtifactContract,
 } from '../../../prompts/artifactGeneration';
+import {
+  GAME_SKILL_GENERATION_CONTRACT,
+  GAME_SKILL_REPAIR_HINTS,
+} from '../game/generatedSkillContent';
+import { detectGameSubtypeFromMessage } from '../game/subtypeDetection';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
 import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
@@ -42,6 +48,7 @@ import { getContextInterventionState } from '../../../context/contextInterventio
 import { applyInterventionsToMessages } from '../../../context/contextInterventionHelpers';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
+import { computeRequestPrefixShapeHash } from '../../../context/requestShapeHash';
 import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
@@ -84,11 +91,27 @@ const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
 const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
 const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
 const REPO_MAP_INTENT_PATTERN = /代码|仓库|文件|实现|测试|修复|报错|构建|重构|性能|源码|模块|函数|类|bug|repo|code|file|test|fix|implement|refactor|build|performance|source|module/i;
+const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'recent conversations', 'deferred tools'];
+/**
+ * 前缀稳定（P1 request shape）拆分产物：
+ * - systemPrompt：会话内字节稳定的可缓存前缀（identity/工具描述/契约类块/env/runtime
+ *   mode/plugins/deferred tools/APPEND_SYSTEM）。
+ * - turnContext：按当前轮 userQuery 计算的 advisory 块（skills/session metadata/
+ *   failure journal/memory/repo map/recent conversations/generative UI/question form）。
+ *   不进 system 消息，由 buildModelMessages 放进历史之后的 transient 动态尾巴，
+ *   避免每轮意图块进出把整个历史的 provider prompt cache 打掉。
+ */
+interface DynamicPromptParts {
+  systemPrompt: string;
+  turnContext: string;
+}
+
 type RuntimeAssemblyCache = {
   dynamicPrompt?: {
     key: string;
     createdAt: number;
     prompt: string;
+    turnContext: string;
     tokens: number;
     /** GAP-023: 该缓存 prompt 构建时被预算丢弃的块（缓存命中时恢复，保持可见化一致） */
     droppedBlocks?: string[];
@@ -146,7 +169,7 @@ export function buildDynamicPromptCacheKey(
   ].join('\u0000');
 }
 
-async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<string> {
+async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<DynamicPromptParts> {
   const lastUserMessage = getLastUserMessage(ctx);
   const userQuery = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
   const artifactRepairMode = isArtifactRepairMode(ctx);
@@ -162,7 +185,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     logger.debug('[ContextAssembly] dynamic system prompt cache hit', { tokens: cached.tokens });
     // GAP-023: 缓存命中时恢复该 prompt 构建时的丢弃记录，保持可见化与实际 prompt 一致
     ctx.runtime.droppedPromptBlocks = [...(cached.droppedBlocks ?? [])];
-    return cached.prompt;
+    return { systemPrompt: cached.prompt, turnContext: cached.turnContext };
   }
 
   // GAP-023: 实际重建 prompt，重置丢弃记录
@@ -176,7 +199,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     const fullPrompt = projectSystemPrompt.fullReplace;
     const tokens = estimateTokens(fullPrompt);
     if (tokens <= promptBudget(ctx)) {
-      cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, tokens };
+      cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, turnContext: '', tokens };
     } else {
       cache.dynamicPrompt = undefined;
       logger.warn(
@@ -188,7 +211,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       bytes: fullPrompt.length,
       tokens,
     });
-    return fullPrompt;
+    return { systemPrompt: fullPrompt, turnContext: '' };
   }
 
   // Use optimized prompt based on task complexity
@@ -241,7 +264,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       artifactPromptLabel,
       appendedBlocks,
       ctx,
-      { kind: 'required', trimCandidates: ['repo map', 'skills', 'recent conversations', 'deferred tools'] },
+      { kind: 'required', trimCandidates: REQUIRED_GAME_PROMPT_TRIM_CANDIDATES },
     );
     systemPrompt = result.prompt;
     if (result.appended) {
@@ -251,6 +274,34 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       );
       if (result.trimmed?.length) {
         logger.warn(`[ContextAssembly] Trimmed prompt blocks to preserve ${artifactPromptLabel}: ${result.trimmed.join(', ')}`);
+      }
+    }
+  }
+
+  if (shouldInjectArtifactBrief && shouldInjectGameContract) {
+    const subtype = detectGameSubtypeFromMessage(userQuery);
+    const skillPromptBlock = subtype
+      ? artifactRepairMode
+        ? GAME_SKILL_REPAIR_HINTS[subtype]
+        : GAME_SKILL_GENERATION_CONTRACT[subtype]
+      : undefined;
+    if (subtype && skillPromptBlock) {
+      const skillPromptLabel = `game skill knowledge (${subtype})`;
+      const result = appendPromptBlockWithinBudgetWithStatus(
+        systemPrompt,
+        skillPromptBlock,
+        skillPromptLabel,
+        appendedBlocks,
+        ctx,
+        { kind: 'required', trimCandidates: REQUIRED_GAME_PROMPT_TRIM_CANDIDATES },
+      );
+      systemPrompt = result.prompt;
+      if (result.appended) {
+        appendedBlocks.set(skillPromptLabel, skillPromptBlock);
+        logger.debug(`[ContextAssembly] ${skillPromptLabel} prompt injected`);
+        if (result.trimmed?.length) {
+          logger.warn(`[ContextAssembly] Trimmed prompt blocks to preserve ${skillPromptLabel}: ${result.trimmed.join(', ')}`);
+        }
       }
     }
   }
@@ -291,7 +342,9 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   try {
     const activePlugins = getPluginRegistry()
       .getPlugins()
-      .filter((p) => p.state === 'active' && p.manifest.description);
+      .filter((p) => p.state === 'active' && p.manifest.description)
+      // 按 id 字节序稳定排序：注册表 Map 插入序跨进程不确定，会弱化跨会话前缀复用
+      .sort((a, b) => (a.manifest.id < b.manifest.id ? -1 : a.manifest.id > b.manifest.id ? 1 : 0));
     if (activePlugins.length > 0) {
       const lines = activePlugins.map((p) => {
         const desc = (p.manifest.description ?? '').slice(0, 60);
@@ -308,6 +361,56 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       `[ContextAssembly] plugin description injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
     );
   }
+
+  // 注入延迟工具提示（能力发现块，GAP-023 提前到锦上添花块之前）
+  if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.enableToolDeferredLoading) {
+    const deferredToolsSummary = getDeferredToolsSummary();
+    if (deferredToolsSummary) {
+      const deferredToolsBlock = `<deferred-tools>
+除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
+
+${deferredToolsSummary}
+
+用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
+[mcp:*] 分组下是外部 MCP 服务器提供的工具（命名格式 mcp__<server>__<tool>），同样通过 ToolSearch 加载后才能调用，例如 {"query":"select:mcp__github__search_code"}。
+</deferred-tools>`;
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        deferredToolsBlock,
+        'deferred tools',
+        ctx,
+      );
+      if (systemPrompt.includes(deferredToolsBlock)) {
+        appendedBlocks.set('deferred tools', deferredToolsBlock);
+      }
+    }
+  }
+
+  // 项目级 / 全局级 APPEND_SYSTEM.md(Pi 借鉴 ④):追加到稳定默认层之后
+  // 走 appendPromptBlockWithinBudget 保证不撑爆 system prompt budget。
+  // 前缀稳定改造后它属于稳定前缀（文件不变则字节不变），排在 advisory 块之前。
+  if (projectSystemPrompt.append !== null) {
+    const appendBlock = `<project_append_system_prompt>\n${projectSystemPrompt.append}\n</project_append_system_prompt>`;
+    const beforeAppend = systemPrompt;
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      appendBlock,
+      'project append system prompt',
+      ctx,
+    );
+    if (systemPrompt !== beforeAppend) {
+      logger.debug('[ContextAssembly] append system prompt added', {
+        source: projectSystemPrompt.sources.appendPath,
+        bytes: projectSystemPrompt.append.length,
+      });
+    }
+  }
+
+  // ── 稳定前缀边界 ─────────────────────────────────────────────────────────
+  // 到此为止的内容 = system 消息（会话内字节稳定）。以下 advisory 块按当前轮
+  // userQuery 计算，随轮进出——继续在同一 working string 上追加以保留原有的
+  // 预算/丢弃/trace 语义，最后 slice 出 turnContext 放进动态尾巴。
+  const stableSystemPrompt = systemPrompt;
 
   // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配。
   // P3.5 change: artifact-brief turns (Round 0 generation) now ALSO get skill
@@ -347,30 +450,6 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       logger.debug(
         `[ContextAssembly] Skill injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
       );
-    }
-  }
-
-  // 注入延迟工具提示（能力发现块，GAP-023 提前到锦上添花块之前）
-  if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.enableToolDeferredLoading) {
-    const deferredToolsSummary = getDeferredToolsSummary();
-    if (deferredToolsSummary) {
-      const deferredToolsBlock = `<deferred-tools>
-除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
-
-${deferredToolsSummary}
-
-用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
-[mcp:*] 分组下是外部 MCP 服务器提供的工具（命名格式 mcp__<server>__<tool>），同样通过 ToolSearch 加载后才能调用，例如 {"query":"select:mcp__github__search_code"}。
-</deferred-tools>`;
-      systemPrompt = appendPromptBlockWithinBudget(
-        systemPrompt,
-        deferredToolsBlock,
-        'deferred tools',
-        ctx,
-      );
-      if (systemPrompt.includes(deferredToolsBlock)) {
-        appendedBlocks.set('deferred tools', deferredToolsBlock);
-      }
     }
   }
 
@@ -572,31 +651,17 @@ ${deferredToolsSummary}
     logger.debug('[ContextAssembly] GenerativeUI + QuestionForm prompts injected (intent matched)');
   }
 
-  // 项目级 / 全局级 APPEND_SYSTEM.md(Pi 借鉴 ④):追加到所有默认层之后
-  // 走 appendPromptBlockWithinBudget 保证不撑爆 system prompt budget
-  if (projectSystemPrompt.append !== null) {
-    const appendBlock = `<project_append_system_prompt>\n${projectSystemPrompt.append}\n</project_append_system_prompt>`;
-    const beforeAppend = systemPrompt;
-    systemPrompt = appendPromptBlockWithinBudget(
-      systemPrompt,
-      appendBlock,
-      'project append system prompt',
-      ctx,
-    );
-    if (systemPrompt !== beforeAppend) {
-      logger.debug('[ContextAssembly] append system prompt added', {
-        source: projectSystemPrompt.sources.appendPath,
-        bytes: projectSystemPrompt.append.length,
-      });
-    }
-  }
+  // 从 working string 切出本轮 advisory 上下文；system 消息只保留稳定前缀
+  const turnContext = systemPrompt.slice(stableSystemPrompt.length).trim();
+  systemPrompt = stableSystemPrompt;
 
-  const tokens = estimateTokens(systemPrompt);
+  const tokens = estimateTokens(systemPrompt) + (turnContext ? estimateTokens(turnContext) : 0);
   if (tokens <= promptBudget(ctx)) {
     cache.dynamicPrompt = {
       key: cacheKey,
       createdAt: now,
       prompt: systemPrompt,
+      turnContext,
       tokens,
       // GAP-023: 缓存丢弃记录，命中时恢复
       droppedBlocks: [...(ctx.runtime.droppedPromptBlocks ?? [])],
@@ -605,7 +670,7 @@ ${deferredToolsSummary}
     cache.dynamicPrompt = undefined;
   }
 
-  return systemPrompt;
+  return { systemPrompt, turnContext };
 }
 
 function buildCompressionCacheKey(
@@ -675,21 +740,37 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   const modelMessages: ModelMessage[] = [];
   const modelMessageSourceIds: string[] = [];
 
-  let systemPrompt = await buildCachedDynamicSystemPrompt(ctx);
+  const { systemPrompt: stableSystemPrompt, turnContext } = await buildCachedDynamicSystemPrompt(ctx);
   const appendedBlocks = new Map<string, string>();
+
+  // ── 动态尾巴组装（前缀稳定，P1 request shape）────────────────────────────
+  // 以下每请求变化的块（本轮 advisory 上下文 / git 状态 / 子代理状态 / 完成通知 /
+  // persistent context / repair focus）此前直接追加进 system 消息，任何一个字节变化
+  // 都会把 OpenAI-compat provider 的整个历史前缀缓存打掉。现在收进一条位于全部
+  // 历史之后的 transient system 消息：每步重发（不可缓存），换 system+历史字节稳定。
+  // 预算核算仍以「稳定前缀 + 尾巴」的合并视图进行，保留原有丢弃/可见化语义。
+  let tailWorking = turnContext
+    ? `${stableSystemPrompt}\n\n${turnContext}`
+    : stableSystemPrompt;
+
+  // git 状态（易变，从 <env> block 移出；GAP-010 的仓库感知保留）
+  const gitStatusBlock = buildGitStatusBlock(ctx.runtime.workingDirectory || '');
+  if (gitStatusBlock) {
+    tailWorking = appendPromptBlockWithinBudget(tailWorking, gitStatusBlock, 'git status', ctx);
+  }
 
   // 注入活跃子代理上下文（Phase 3: 让主 Agent 感知当前 team 状态）
   const activeAgentBlock = buildActiveAgentContext();
   if (activeAgentBlock) {
     const nextPrompt = appendPromptBlockWithinBudget(
-      systemPrompt,
+      tailWorking,
       activeAgentBlock,
       'active agent context',
       ctx,
     );
-    if (nextPrompt !== systemPrompt) {
+    if (nextPrompt !== tailWorking) {
       appendedBlocks.set('active agent context', activeAgentBlock);
-      systemPrompt = nextPrompt;
+      tailWorking = nextPrompt;
     }
   }
 
@@ -698,14 +779,14 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   if (completionNotifications.length > 0) {
     const completionBlock = completionNotifications.join('\n');
     const nextPrompt = appendPromptBlockWithinBudget(
-      systemPrompt,
+      tailWorking,
       completionBlock,
       'completion notifications',
       ctx,
     );
-    if (nextPrompt !== systemPrompt) {
+    if (nextPrompt !== tailWorking) {
       appendedBlocks.set('completion notifications', completionBlock);
-      systemPrompt = nextPrompt;
+      tailWorking = nextPrompt;
     }
   }
 
@@ -718,7 +799,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     const contextBlock = persistentSystemContext[index];
     const repairContext = artifactRepairContextSet.has(contextBlock);
     const result = appendPromptBlockWithinBudgetWithStatus(
-      systemPrompt,
+      tailWorking,
       contextBlock,
       `persistent system context #${index + 1}`,
       appendedBlocks,
@@ -727,29 +808,33 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         ? { kind: 'required', trimCandidates: REQUIRED_REPAIR_TRIM_CANDIDATES }
         : { kind: 'optional' },
     );
-    systemPrompt = result.prompt;
+    tailWorking = result.prompt;
   }
 
   const artifactRepairFocusBlock = buildArtifactRepairFocusBlock(ctx, artifactRepairContext);
   if (artifactRepairFocusBlock) {
     const result = appendPromptBlockWithinBudgetWithStatus(
-      systemPrompt,
+      tailWorking,
       artifactRepairFocusBlock,
       'artifact repair focus',
       appendedBlocks,
       ctx,
       { kind: 'required', trimCandidates: REQUIRED_REPAIR_TRIM_CANDIDATES },
     );
-    systemPrompt = result.prompt;
+    tailWorking = result.prompt;
   }
 
-  // Check system prompt length and warn if too long
-  systemPrompt = trimPreambleBeforeRequiredArtifactBlock(systemPrompt, ctx);
-  const trimmedSystemPromptTokens = estimateTokens(systemPrompt);
-  if (trimmedSystemPromptTokens > promptBudget(ctx)) {
-    logger.warn(`[AgentLoop] System prompt too long: ${trimmedSystemPromptTokens} tokens (limit: ${promptBudget(ctx)})`);
+  // 尾巴内容 = 合并视图里稳定前缀之后的部分（trim 前切出，稳定前缀字节不动）
+  const dynamicTailContent = tailWorking.slice(stableSystemPrompt.length).trim();
+
+  // Check prompt length and warn if too long（合并视图口径，与改造前一致）
+  const dynamicTailTokens = dynamicTailContent ? estimateTokens(dynamicTailContent) : 0;
+  const systemPrompt = trimPreambleBeforeRequiredArtifactBlock(stableSystemPrompt, ctx, dynamicTailTokens);
+  const combinedPromptTokens = estimateTokens(systemPrompt) + dynamicTailTokens;
+  if (combinedPromptTokens > promptBudget(ctx)) {
+    logger.warn(`[AgentLoop] System prompt too long: ${combinedPromptTokens} tokens (limit: ${promptBudget(ctx)})`);
     logCollector.agent('WARN', 'System prompt exceeds recommended limit', {
-      tokens: trimmedSystemPromptTokens,
+      tokens: combinedPromptTokens,
       limit: promptBudget(ctx),
     });
   }
@@ -758,7 +843,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   try {
     const hash = createHash('sha256').update(systemPrompt).digest('hex');
     ctx.runtime.currentSystemPromptHash = hash;
-    getSystemPromptCache().store(hash, systemPrompt, trimmedSystemPromptTokens);
+    getSystemPromptCache().store(hash, systemPrompt, estimateTokens(systemPrompt));
   } catch {
     // Non-critical: don't break agent loop if cache fails
   }
@@ -829,6 +914,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           enableMicrocompact: true,
           enableContextCollapse: true,
           toolResultBudget: 2000,
+          activeToolResultPrune: {
+            enabled: ACTIVE_TOOL_RESULT_PRUNE.ENABLED,
+            maxTokensPerResult: ACTIVE_TOOL_RESULT_PRUNE.MAX_TOKENS_PER_RESULT,
+            spillSessionId: ctx.runtime.sessionId,
+          },
           protectedToolResultPredicate: (entry) =>
             entry.role === 'tool' &&
             (entry as ContextTranscriptEntry).preserveObservation === true,
@@ -986,6 +1076,25 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       });
       modelMessageSourceIds.push(entry.originMessageId);
     }
+  }
+
+  // 动态尾巴：位于全部历史之后的 transient system 消息（每请求重建，不参与
+  // provider prompt cache 前缀；Anthropic 路径不在其上打 cache_control 断点）
+  if (dynamicTailContent) {
+    modelMessages.push({
+      role: 'system',
+      content: dynamicTailContent,
+      transient: true,
+    });
+    modelMessageSourceIds.push('__dynamic_tail__');
+  }
+
+  // WP2-2b：完整请求前缀 shape hash（systemPromptHash 只盖 system prompt，这里盖
+  // system + 全部消息结构），仅存 runtime 供 telemetry/压缩归因，不参与运行时决策
+  try {
+    ctx.runtime.currentRequestShapeHash = computeRequestPrefixShapeHash({ messages: modelMessages });
+  } catch {
+    // 诊断字段，失败不阻塞主链路
   }
 
   // Proactive compression check: trigger at 75% capacity to prevent hitting hard limits

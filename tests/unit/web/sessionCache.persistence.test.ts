@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Message } from '../../../src/shared/contract';
 import {
   getPersistenceHealth,
   setDbAvailable,
+  toCachedSessionMessages,
 } from '../../../src/web/helpers/sessionCache';
 
 afterEach(() => {
@@ -30,5 +32,25 @@ describe('web session persistence health', () => {
       message: '历史持久化不可用，当前只会话内有效。',
       reason: 'native binding missing',
     });
+  });
+});
+
+describe('toCachedSessionMessages metadata 保留', () => {
+  it('assistant 消息的 metadata（turnQuality）经缓存水合不丢失', () => {
+    const metadata = {
+      turnQuality: {
+        capabilities: { agentId: 'explore', agentName: 'Explorer', requestedAgentId: 'explore' },
+      },
+    } as Message['metadata'];
+    const cached = toCachedSessionMessages([
+      {
+        id: 'm-1',
+        role: 'assistant',
+        content: '回复',
+        timestamp: 100,
+        metadata,
+      } as Message,
+    ]);
+    expect(cached[0]?.metadata).toEqual(metadata);
   });
 });

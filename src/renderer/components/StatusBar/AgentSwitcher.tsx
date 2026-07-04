@@ -12,7 +12,8 @@ import { createPortal } from 'react-dom';
 import { Bot, Hammer, User, FolderTree } from 'lucide-react';
 import { useAgentRegistryStore } from '../../stores/agentRegistryStore';
 import { useAppStore } from '../../stores/appStore';
-import type { AgentListEntry, AgentSource } from '@shared/contract/agentRegistry';
+import { isPanelVisibleAgent, type AgentListEntry, type AgentSource } from '@shared/contract/agentRegistry';
+import { useI18n } from '../../hooks/useI18n';
 
 const SOURCE_META: Record<AgentSource, { label: string; icon: React.ReactNode; badge: string }> = {
   builtin: {
@@ -40,11 +41,16 @@ interface GroupedAgents {
 
 function groupBySource(entries: AgentListEntry[]): GroupedAgents {
   const out: GroupedAgents = { builtin: [], user: [], project: [] };
-  for (const entry of entries) out[entry.source].push(entry);
+  // 面板收敛：系统型内置不进选择面板；roles 单独分组（见 roles 渲染段）
+  for (const entry of entries) {
+    if (!isPanelVisibleAgent(entry) || entry.isRole) continue;
+    out[entry.source].push(entry);
+  }
   return out;
 }
 
 export function AgentSwitcher() {
+  const { t } = useI18n();
   const entries = useAgentRegistryStore((s) => s.entries);
   const isLoaded = useAgentRegistryStore((s) => s.isLoaded);
   const refresh = useAgentRegistryStore((s) => s.refresh);
@@ -122,6 +128,10 @@ export function AgentSwitcher() {
   }, [entries, search]);
 
   const grouped = useMemo(() => groupBySource(filtered), [filtered]);
+  const roleEntries = useMemo(
+    () => filtered.filter((e) => e.isRole && isPanelVisibleAgent(e)),
+    [filtered],
+  );
 
   // 显示标签：activeAgentId 命中的 entry 名字；否则显示 'Agent' 占位
   const activeEntry = useMemo(
@@ -218,6 +228,38 @@ export function AgentSwitcher() {
               {renderGroup('builtin', grouped.builtin)}
               {renderGroup('user', grouped.user)}
               {renderGroup('project', grouped.project)}
+              {roleEntries.length > 0 && (
+                <div className="border-b border-zinc-700/40 last:border-b-0">
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase text-zinc-500">
+                    <Bot className="w-3 h-3 text-violet-400" />
+                    <span>{t.agentCommand.roleGroupLabel}</span>
+                    <span className="text-zinc-600">({roleEntries.length})</span>
+                  </div>
+                  {roleEntries.map((entry) => {
+                    const isActive = entry.id === activeAgentId;
+                    return (
+                      <button /* ds-allow:button: 角色分组行与同面板 renderGroup 兄弟行同款裸按钮，保持列表视觉一致 */
+                        key={`role/${entry.id}`}
+                        onClick={() => handleSelect(entry)}
+                        className={`
+                          w-full text-left px-3 py-1.5 text-xs
+                          hover:bg-zinc-700 transition-colors
+                          ${isActive ? 'text-amber-300 bg-zinc-700/50' : 'text-gray-300'}
+                        `}
+                        title={entry.description}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium truncate">{entry.name || entry.id}</span>
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-violet-500/15 text-violet-300">R</span>
+                        </div>
+                        {entry.description && (
+                          <div className="text-[10px] text-zinc-500 truncate">{entry.description}</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
         </div>

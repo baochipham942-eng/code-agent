@@ -46,6 +46,12 @@ export interface ModelMessage {
   toolCallText?: string;
   /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */
   thinking?: string;
+  /**
+   * 每请求重建的动态尾巴消息（位于全部历史之后，内容随请求变化）。
+   * provider 侧统一转成末尾 user + <system-reminder>，不参与可缓存前缀，
+   * 也不得在其上打 cache_control 断点。
+   */
+  transient?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -68,8 +74,14 @@ export interface ModelResponse {
   fallback?: ModelFallbackInfo;
   // Adaptive Thinking: 思考过程
   thinking?: string;
-  // Token usage from API response
-  usage?: { inputTokens: number; outputTokens: number; providerReportedSavedTokens?: number };
+  // Token usage from API response（inputTokens = 非缓存输入，见 wrappers/usageNormalization.ts）
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    providerReportedSavedTokens?: number;
+  };
   // 内容块顺序（text 和 tool_call 的交错顺序，用于前端渲染）
   contentParts?: ResponseContentPart[];
   runtimeDiagnostics?: {
@@ -114,9 +126,11 @@ export interface StreamChunk {
     name?: string;
     argumentsDelta?: string;
   };
-  // Real-time token estimation (type: 'token_estimate')
+  // Real-time token estimation (type: 'token_estimate') / real usage (type: 'usage')
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
   providerReportedSavedTokens?: number;
   // complete event
   finishReason?: string;

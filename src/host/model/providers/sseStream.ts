@@ -9,6 +9,7 @@ import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
 import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator, safeJsonStringify } from './shared';
 import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';
+import { normalizeOpenAIUsage } from './wrappers/usageNormalization';
 import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -148,6 +149,39 @@ function stripChatMLToolCallResidue(content: string, providerName: string): stri
   return cleaned;
 }
 
+/**
+ * 从 content 中提取 <think> 块合并到 reasoning，并把它从 content 里剥离。
+ *
+ * Why: 流式响应异常结束（命中 length 截断、连接中断等）时 <think> 可能没等到闭合标签，
+ * 原来的正则只匹配 `<think>...</think>` 完整闭合块——未闭合时整段推理原文会滞留在
+ * content 里，当作"正文答案"持久化+渲染，绕过思考折叠机制直接摊在转录里（真实事故：
+ * 大段英文推理原样展示给用户，看起来像是"思考默认展开"，实际是未提取、泄漏进了正文）。
+ * 兜底：找到未闭合的 <think> 时，把它和后面剩下的全部文本都当思考处理，不留在 content 里。
+ */
+function extractThinkTagsFromContent(
+  content: string,
+  reasoning: string,
+): { content: string; reasoning: string } {
+  let nextReasoning = reasoning;
+  const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+  let thinkMatch;
+  while ((thinkMatch = thinkRegex.exec(content)) !== null) {
+    nextReasoning += (nextReasoning ? '\n' : '') + thinkMatch[1].trim();
+  }
+  let nextContent = content.replace(/<think>[\s\S]*?<\/think>/g, '');
+
+  const unclosedIndex = nextContent.indexOf('<think>');
+  if (unclosedIndex !== -1) {
+    const dangling = nextContent.slice(unclosedIndex + '<think>'.length).trim();
+    if (dangling) {
+      nextReasoning += (nextReasoning ? '\n' : '') + dangling;
+    }
+    nextContent = nextContent.slice(0, unclosedIndex);
+  }
+
+  return { content: nextContent.trim(), reasoning: nextReasoning };
+}
+
 function detectRepeatedReasoningLoop(text: string): { sentence: string; count: number } | null {
   if (text.length < 240) return null;
 
@@ -227,7 +261,9 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
     let charCount = 0;
     let lastEstimateTime = 0;
-    let usageData: { inputTokens: number; outputTokens: number } | undefined;
+    let usageData:
+      | { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+      | undefined;
     // 追踪 content 和 tool_call 的交错顺序
     const contentParts: ResponseContentPart[] = [];
     let lastPartType: 'text' | 'tool_call' | null = null;
@@ -390,13 +426,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           const data = line.slice(5).trim();
 
           if (data === '[DONE]') {
-            // 从 content 中提取 <think> 块，合并到 reasoning
-            const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
-            let thinkMatch;
-            while ((thinkMatch = thinkRegex.exec(content)) !== null) {
-              reasoning += (reasoning ? '\n' : '') + thinkMatch[1].trim();
-            }
-            content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+            ({ content, reasoning } = extractThinkTagsFromContent(content, reasoning));
             content = stripChatMLToolCallResidue(content, providerName);
 
             const truncated = finishReason === 'length';
@@ -433,6 +463,8 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                 type: 'usage',
                 inputTokens: usageData.inputTokens,
                 outputTokens: usageData.outputTokens,
+                cacheReadTokens: usageData.cacheReadTokens,
+                cacheCreationTokens: usageData.cacheCreationTokens,
               });
             }
 
@@ -465,12 +497,9 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           const choice = chunk.choices?.[0];
           const delta = choice?.delta;
 
-          // 捕获 usage
+          // 捕获 usage（归一化：inputTokens 扣除缓存命中部分，cache 字段独立带回）
           if (chunk.usage) {
-            usageData = {
-              inputTokens: chunk.usage.prompt_tokens ?? 0,
-              outputTokens: chunk.usage.completion_tokens ?? 0,
-            };
+            usageData = normalizeOpenAIUsage(chunk.usage);
           }
 
           // 捕获 finish_reason
@@ -600,16 +629,12 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       res.on('end', () => {
         clearTimeout(firstByteTimer);
         clearInactivityTimer();
-        // 从 content 中提取 <think> 块，合并到 reasoning
-        const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
-        let thinkMatch;
-        while ((thinkMatch = thinkRegex.exec(content)) !== null) {
-          reasoning += (reasoning ? '\n' : '') + thinkMatch[1].trim();
-        }
-        content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        ({ content, reasoning } = extractThinkTagsFromContent(content, reasoning));
         content = stripChatMLToolCallResidue(content, providerName);
 
-        if (content || toolCalls.size > 0) {
+        // 未闭合的 <think> 把原本非空的 content 全部折进了 reasoning——纯思考被截断
+        // 也是一次有效响应（只是没写出正文），不该被判成"无内容"拒绝掉。
+        if (content || reasoning || toolCalls.size > 0) {
           emitSnapshot(false);
           const incompleteToolCallIds = getIncompleteToolCallIds(toolCalls.values());
           if (toolCalls.size > 0) {

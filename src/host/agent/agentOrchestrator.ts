@@ -44,6 +44,8 @@ import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
+import { buildRoutingResolvedEventData } from './routingResolvedEvent';
+import { buildRoutingToolDenylist } from './routingToolPolicy';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -805,9 +807,11 @@ export class AgentOrchestrator {
       this.syncDAGStatus(dagId, event);
     };
 
-    const routingResolution = options?.agentOverrideId
-      ? this.resolveExplicitAgentRouting(options.agentOverrideId) ?? await this.resolveAgentRouting(content, sessionId)
-      : await this.resolveAgentRouting(content, sessionId);
+    const { resolution: routingResolution, requestedAgentId } = await this.resolveTurnRouting(
+      content,
+      sessionId,
+      options?.agentOverrideId ?? undefined,
+    );
     let effectiveModelConfig = modelConfig;
     const neoTagFixedModel = options?.neoTag?.modelIntent.mode === 'fixed_model';
 
@@ -847,15 +851,7 @@ export class AgentOrchestrator {
 
       onEvent({
         type: 'routing_resolved',
-        data: {
-          mode: 'auto',
-          agentId: routingResolution.agent.id,
-          agentName: routingResolution.agent.name,
-          reason: routingResolution.reason,
-          score: routingResolution.score,
-          fallbackToDefault: false,
-          timestamp: Date.now(),
-        },
+        data: buildRoutingResolvedEventData(routingResolution, { requestedAgentId, timestamp: Date.now() }),
       });
 
       onEvent({
@@ -867,15 +863,7 @@ export class AgentOrchestrator {
     } else {
       onEvent({
         type: 'routing_resolved',
-        data: {
-          mode: 'auto',
-          agentId: 'default',
-          agentName: 'default',
-          reason: 'No specialized agent matched; continue with the default conversation loop.',
-          score: 0,
-          fallbackToDefault: true,
-          timestamp: Date.now(),
-        },
+        data: buildRoutingResolvedEventData(null, { requestedAgentId, timestamp: Date.now() }),
       });
     }
 
@@ -932,15 +920,19 @@ export class AgentOrchestrator {
       });
     }
 
-    const deniedToolNames = sessionMemoryMode === 'off'
-      ? Array.from(new Set([
+    // 显式路由到 readonly agent（explore/plan）时收窄文件写入工具（Explorer 真只读）
+    const routingDeniedToolNames = buildRoutingToolDenylist(routingResolution?.agent);
+    const baseDeniedToolNames = sessionMemoryMode === 'off'
+      ? [
           ...(options?.deniedToolNames || []),
           'MemoryRead',
           'MemoryWrite',
           'History',
           'EpisodicRecall',
-        ]))
-      : options?.deniedToolNames;
+        ]
+      : (options?.deniedToolNames || []);
+    const mergedDeniedToolNames = Array.from(new Set([...baseDeniedToolNames, ...routingDeniedToolNames]));
+    const deniedToolNames = mergedDeniedToolNames.length > 0 ? mergedDeniedToolNames : undefined;
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
       || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);
@@ -960,6 +952,7 @@ export class AgentOrchestrator {
       sessionId,
       agentId: routingResolution?.agent?.id ?? 'default',
       agentName: routingResolution?.agent?.name ?? 'default',
+      requestedAgentId,
       memoryMode: sessionMemoryMode,
       suppressedMemoryEntryIds,
       workingDirectory: this.workingDirectory,
@@ -1067,6 +1060,32 @@ export class AgentOrchestrator {
     }
   }
 
+  /**
+   * 一轮对话的路由解析单入口：显式选择（agentOverrideId）优先，解析失败回落自动路由，
+   * 但 requestedAgentId 必须保留——它是 routing_resolved 事件里降级信号的判定依据
+   * （requestedAgentId !== 实际 agentId 即显式选择被降级，不再静默兜底）。
+   */
+  private async resolveTurnRouting(
+    content: string,
+    sessionId?: string,
+    agentOverrideId?: string,
+  ): Promise<{ resolution: RoutingResolution | null; requestedAgentId?: string }> {
+    // trim 后再参与降级判定：未规整的 " explore " 会解析成功（resolver 内部 trim）
+    // 却在 requestedAgentId !== agentId 比较上产生假降级警示
+    const requestedAgentId = agentOverrideId?.trim() || undefined;
+    if (requestedAgentId) {
+      const explicit = this.resolveExplicitAgentRouting(requestedAgentId);
+      if (explicit) {
+        return { resolution: explicit, requestedAgentId };
+      }
+      return {
+        resolution: await this.resolveAgentRouting(content, sessionId),
+        requestedAgentId,
+      };
+    }
+    return { resolution: await this.resolveAgentRouting(content, sessionId) };
+  }
+
   private resolveExplicitAgentRouting(agentId: string): RoutingResolution | null {
     try {
       const agent = getPredefinedAgent(agentId);
@@ -1077,6 +1096,7 @@ export class AgentOrchestrator {
           description: agent.description,
           systemPrompt: agent.prompt,
           tools: agent.tools,
+          readonly: agent.coordination?.readonly === true,
           enabled: true,
           tags: agent.tags,
         },

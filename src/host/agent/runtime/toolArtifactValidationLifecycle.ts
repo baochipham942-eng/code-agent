@@ -3,6 +3,7 @@ import { isAbsolute, resolve, join } from 'path';
 import { getUserConfigDir } from '../../config/configPaths';
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { createLogger } from '../../services/infra/logger';
 import { runReviewGate } from '../goalReviewGate';
@@ -26,8 +27,10 @@ import {
   refreshArtifactRepairReadStateAfterRollback,
   restoreArtifactRepairRollbackSnapshot,
   shouldKeepImprovedFailedArtifactPatch,
+  decideArtifactRepairStrategy,
   shouldValidateModifiedArtifact,
   type ArtifactRepairPhase,
+  type ArtifactValidationFailureState,
   type ArtifactRepairRollbackSnapshot,
 } from './toolArtifactRepairPolicy';
 
@@ -110,12 +113,16 @@ export async function handleModifiedArtifactValidation({
     const artifactValidationOptions: GameArtifactValidationOptions = {
       contractLevel: fullContract ? 'full' : 'light',
       runRuntimeSmoke: fullContract,
-      runtimeSmokeTimeoutMs: 7000,
+      runtimeSmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.RUNTIME_SMOKE_MS,
       requireRuntimeSmoke: fullContract,
       runBrowserVisualSmoke: fullContract,
-      browserVisualSmokeTimeoutMs: 10000,
+      browserVisualSmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.BROWSER_VISUAL_SMOKE_MS,
       requireBrowserVisualSmoke: fullContract,
       allowBrowserVisualComputerFallback: false,
+      // light 契约此前完全没有运行时证据（"验收通过"却交付一玩就崩的游戏，dogfood 实锤）。
+      // 补一个只抓硬信号（未捕获异常/全黑画面）的可玩性冒烟；重契约 goal 模式已有完整 runtime smoke，不重复跑。
+      runLightPlayabilitySmoke: !fullContract,
+      lightPlayabilitySmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.LIGHT_PLAYABILITY_SMOKE_MS,
     };
     const rawValidation = await validateGameArtifact(absolutePath, artifactValidationOptions);
     const validation = repairTargetLostValidation && !rawValidation.shouldValidate
@@ -126,7 +133,13 @@ export async function handleModifiedArtifactValidation({
       : null;
 
     if (validation.shouldValidate && !validation.passed) {
-      runFinalizer.emitTaskProgress('tool_running', 'artifact 验收失败，正在准备修复指令...');
+      const failureMap = getArtifactValidationFailureMap(ctx);
+      const previousFailure = failureMap.get(absolutePath);
+      const attempts = (previousFailure?.attempts || 0) + 1;
+      runFinalizer.emitTaskProgress(
+        'tool_running',
+        `artifact 验收失败，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} 次修复...`,
+      );
       ctx.artifactValidationPassedTargetFile = undefined;
       const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
         ? readFileSync(absolutePath, 'utf-8')
@@ -163,18 +176,35 @@ export async function handleModifiedArtifactValidation({
         await fileReadTracker.recordReadWithStats(absolutePath);
       }
       const repairSpecBlock = formatArtifactRepairSpecForPrompt(repairSpec);
-      const failureMap = getArtifactValidationFailureMap(ctx);
-      const previousFailure = failureMap.get(absolutePath);
       const previousGuard = ctx.artifactRepairGuard?.targetFile === absolutePath
         ? ctx.artifactRepairGuard
         : undefined;
-      const attempts = (previousFailure?.attempts || 0) + 1;
-      const phase: ArtifactRepairPhase = attempts >= 3
+      // 策略裁决（patience + 修复/重写双信号）：先在既有状态上刷新 patience/streak，
+      // 再决定本轮走补丁、切干净重写、还是（goal）降级放行。
+      const failureState = { ...(previousFailure ?? {}), attempts } as ArtifactValidationFailureState;
+      const strategy = decideArtifactRepairStrategy({
+        state: failureState,
+        failureCount: validation.failures.length,
+        issueCodes: repairSpec.issues
+          .map((issue) => issue.code)
+          .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0),
+        goalPending: Boolean(ctx.goalMode?.isPending()),
+      });
+      let phase: ArtifactRepairPhase = attempts >= 3
         ? 'read_then_patch'
         : attempts >= 2
           ? 'targeted_repair'
           : 'baseline_repair';
-      failureMap.set(absolutePath, { attempts, phase });
+      if (strategy.kind === 'switch_rewrite') {
+        phase = 'fresh_rewrite';
+        failureState.rewriteAttempted = true;
+        runFinalizer.emitTaskProgress('tool_running', `补丁修复不收敛（${strategy.reason}），切换为干净重写...`);
+      } else if (strategy.kind === 'degraded_release') {
+        failureState.degradedReleasePending = strategy.reason;
+        runFinalizer.emitTaskProgress('tool_running', 'artifact 修复不再有净进展，准备按最佳版本降级交付...');
+      }
+      failureState.phase = phase;
+      failureMap.set(absolutePath, failureState);
       ctx.artifactRepairGuard = {
         targetFile: absolutePath,
         attempts,
@@ -235,6 +265,17 @@ export async function handleModifiedArtifactValidation({
             : rollbackApplied
             ? '本次修复补丁没有通过 artifact validation，已自动回滚到补丁前的目标文件状态；下一轮不要基于失败补丁继续修改。'
             : '本次修复补丁没有通过 artifact validation，且自动回滚失败；继续前必须先确认目标文件当前状态。',
+          ...(strategy.kind === 'switch_rewrite'
+            ? [[
+                '<artifact-fresh-rewrite>',
+                `补丁式修复已停用（${strategy.reason}）。改为一次性干净重写：`,
+                `1. 用 Read 完整读取 ${absolutePath}（当前磁盘上是历史最佳版本，作为参照）。`,
+                '2. 用一次 Write 输出完整的全新实现——不是在旧代码上打补丁，是带着下面失败清单的完整重写。',
+                '3. 已通过的验收项不得回退：' + validation.checks.slice(0, 8).join('；'),
+                '4. 这是唯一一次重写机会，重写后仍不通过将按最佳版本降级收尾。',
+                '</artifact-fresh-rewrite>',
+              ].join('\n')]
+            : []),
           buildArtifactRepairInstruction(
             absolutePath,
             validation.failures,
@@ -266,6 +307,7 @@ export async function handleModifiedArtifactValidation({
           checks: validation.checks,
           runtimeSmoke: validation.runtimeSmoke,
           browserVisualSmoke: validation.browserVisualSmoke,
+          playabilitySmoke: validation.playabilitySmoke,
           repairSpec,
         },
       };
@@ -297,10 +339,21 @@ export async function handleModifiedArtifactValidation({
       });
     }
   } catch (error) {
-    logger.debug('[AgentLoop] game artifact validation skipped', {
-      error: error instanceof Error ? error.message : String(error),
+    // 校验器自身崩溃 ≠ 产物合格。不阻塞交付，但必须留下"未验证"的可见痕迹：
+    // warn 日志 + toolResult 元数据标记，禁止再静默降级成 debug 后当作通过。
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[AgentLoop] artifact validation crashed; artifact delivered unverified', {
+      error: message,
       filePath,
     });
+    toolResult.metadata = {
+      ...toolResult.metadata,
+      artifactValidation: {
+        failed: false,
+        crashed: true,
+        error: message,
+      },
+    };
   }
 }
 

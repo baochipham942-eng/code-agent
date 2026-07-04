@@ -20,6 +20,7 @@ import {
 import type { ParsedSkill } from '@shared/contract/agentSkill';
 import { createLogger } from '../../../../utils/logger';
 import { useAppStore } from '../../../../stores/appStore';
+import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
@@ -71,6 +72,8 @@ const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]):
 // ============================================================================
 
 export const SkillsSettings: React.FC = () => {
+  const { t } = useI18n();
+  const skillsText = t.settings.skills.main;
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   // 视图状态
@@ -118,11 +121,11 @@ export const SkillsSettings: React.FC = () => {
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
     } catch (err) {
       logger.error('Failed to load skill data', err);
-      setMessage({ type: 'error', text: '加载失败' });
+      setMessage({ type: 'error', text: skillsText.loadFailed });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [skillsText.loadFailed]);
 
   useEffect(() => {
     loadData();
@@ -150,7 +153,7 @@ export const SkillsSettings: React.FC = () => {
     } catch (err) {
       logger.error('Failed to toggle skill', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: '操作失败' });
+      setMessage({ type: 'error', text: skillsText.actionFailed });
     }
   };
 
@@ -164,15 +167,15 @@ export const SkillsSettings: React.FC = () => {
         repo
       );
       if (result?.success) {
-        setMessage({ type: 'success', text: `${repo.name} 安装成功` });
+        setMessage({ type: 'success', text: `${repo.name}${skillsText.installSuccessSuffix}` });
         setActiveTab('installed');
         await loadData();
       } else {
-        setMessage({ type: 'error', text: result?.error || '安装失败' });
+        setMessage({ type: 'error', text: result?.error || skillsText.installFailed });
       }
     } catch (err) {
       logger.error('Failed to download repo', err);
-      setMessage({ type: 'error', text: '安装失败' });
+      setMessage({ type: 'error', text: skillsText.installFailed });
     } finally {
       setActionLoading(null);
     }
@@ -209,15 +212,15 @@ export const SkillsSettings: React.FC = () => {
         }
       }
       if (failures.length === 0) {
-        setMessage({ type: 'success', text: `${bundle.name} 安装成功` });
+        setMessage({ type: 'success', text: `${bundle.name}${skillsText.installSuccessSuffix}` });
         setActiveTab('installed');
       } else {
-        setMessage({ type: 'error', text: `部分安装失败: ${failures.join(', ')}` });
+        setMessage({ type: 'error', text: `${skillsText.partialInstallFailedPrefix}${failures.join(', ')}` });
       }
       await loadData();
     } catch (err) {
       logger.error('Failed to install bundle', err);
-      setMessage({ type: 'error', text: '安装失败' });
+      setMessage({ type: 'error', text: skillsText.installFailed });
     } finally {
       setActionLoading(null);
     }
@@ -235,15 +238,15 @@ export const SkillsSettings: React.FC = () => {
       if (result?.success) {
         setMessage({
           type: 'success',
-          text: result.hasUpdates ? '更新成功' : '已是最新版本',
+          text: result.hasUpdates ? skillsText.updateSuccess : skillsText.alreadyLatest,
         });
         await loadData();
       } else {
-        setMessage({ type: 'error', text: result?.error || '更新失败' });
+        setMessage({ type: 'error', text: result?.error || skillsText.updateFailed });
       }
     } catch (err) {
       logger.error('Failed to update repo', err);
-      setMessage({ type: 'error', text: '更新失败' });
+      setMessage({ type: 'error', text: skillsText.updateFailed });
     } finally {
       setActionLoading(null);
     }
@@ -251,7 +254,7 @@ export const SkillsSettings: React.FC = () => {
 
   // 删除仓库
   const handleRemoveLibrary = async (repoId: string) => {
-    if (!confirm('确定要删除这个 Skill 库吗？删除后需要重新下载。')) return;
+    if (!confirm(skillsText.removeConfirm)) return;
     setActionLoading(`remove-${repoId}`);
     setMessage(null);
     try {
@@ -260,14 +263,14 @@ export const SkillsSettings: React.FC = () => {
         repoId
       );
       if (result?.success !== false) {
-        setMessage({ type: 'success', text: '删除成功' });
+        setMessage({ type: 'success', text: skillsText.removeSuccess });
         await loadData();
       } else {
-        setMessage({ type: 'error', text: result?.error || '删除失败' });
+        setMessage({ type: 'error', text: result?.error || skillsText.removeFailed });
       }
     } catch (err) {
       logger.error('Failed to remove repo', err);
-      setMessage({ type: 'error', text: '删除失败' });
+      setMessage({ type: 'error', text: skillsText.removeFailed });
     } finally {
       setActionLoading(null);
     }
@@ -279,7 +282,7 @@ export const SkillsSettings: React.FC = () => {
     if (!url) return;
 
     if (!url.startsWith('https://github.com/')) {
-      setMessage({ type: 'error', text: '请输入有效的 GitHub 仓库 URL' });
+      setMessage({ type: 'error', text: skillsText.invalidGithubUrl });
       return;
     }
 
@@ -291,16 +294,16 @@ export const SkillsSettings: React.FC = () => {
         url
       );
       if (result?.success) {
-        setMessage({ type: 'success', text: '仓库添加成功' });
+        setMessage({ type: 'success', text: skillsText.repoAdded });
         setCustomUrl('');
         setActiveTab('installed');
         await loadData();
       } else {
-        setMessage({ type: 'error', text: result?.error || '添加失败' });
+        setMessage({ type: 'error', text: result?.error || skillsText.addFailed });
       }
     } catch (err) {
       logger.error('Failed to add custom repo', err);
-      setMessage({ type: 'error', text: '添加失败' });
+      setMessage({ type: 'error', text: skillsText.addFailed });
     } finally {
       setActionLoading(null);
     }
@@ -323,7 +326,7 @@ export const SkillsSettings: React.FC = () => {
       );
 
       if (!result) {
-        setSearchError('搜索请求失败');
+        setSearchError(skillsText.searchRequestFailed);
         return;
       }
 
@@ -331,15 +334,15 @@ export const SkillsSettings: React.FC = () => {
         setSearchResults(result.data);
         setSearchTotal(result.total);
         if (result.data.length === 0) {
-          setSearchError('没有找到匹配的 Skill');
+          setSearchError(skillsText.noMatchingSkill);
         }
       } else {
-        setSearchError(result.error?.message || '搜索失败');
+        setSearchError(result.error?.message || skillsText.searchFailed);
         setSearchTotal(undefined);
       }
     } catch (err) {
       logger.error('SkillsMP search failed', err);
-      setSearchError('搜索服务暂时不可用，请稍后重试');
+      setSearchError(skillsText.searchServiceUnavailable);
     } finally {
       setIsSearching(false);
     }
@@ -357,7 +360,7 @@ export const SkillsSettings: React.FC = () => {
   const handleInstallFromSearch = async (skill: SkillsMPSearchResult) => {
     const match = skill.githubUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (!match) {
-      setMessage({ type: 'error', text: '无法解析仓库地址' });
+      setMessage({ type: 'error', text: skillsText.cannotParseRepoUrl });
       return;
     }
     const repoUrl = `https://github.com/${match[1]}/${match[2]}`;
@@ -370,16 +373,16 @@ export const SkillsSettings: React.FC = () => {
         repoUrl
       );
       if (result?.success) {
-        setMessage({ type: 'success', text: `${skill.name} 安装成功` });
+        setMessage({ type: 'success', text: `${skill.name}${skillsText.installSuccessSuffix}` });
         handleClearSearch();
         setActiveTab('installed');
         await loadData();
       } else {
-        setMessage({ type: 'error', text: result?.error || '安装失败' });
+        setMessage({ type: 'error', text: result?.error || skillsText.installFailed });
       }
     } catch (err) {
       logger.error('Failed to install skill from SkillsMP', err);
-      setMessage({ type: 'error', text: '安装失败' });
+      setMessage({ type: 'error', text: skillsText.installFailed });
     } finally {
       setActionLoading(null);
     }
@@ -402,14 +405,14 @@ export const SkillsSettings: React.FC = () => {
       {settingsCapabilityFocus?.kind === 'skill' && (
         <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            来自会话页：正在处理 Skill <span className="font-mono">{settingsCapabilityFocus.id}</span>
+            {skillsText.focusPromptPrefix}<span className="font-mono">{settingsCapabilityFocus.id}</span>
           </div>
           <Button
             size="sm"
             variant="ghost"
             onClick={clearSettingsCapabilityFocus}
           >
-            关闭提示
+            {skillsText.closeFocusPrompt}
           </Button>
         </div>
       )}
@@ -436,8 +439,8 @@ export const SkillsSettings: React.FC = () => {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
           {([
-            ['installed', `已安装 (${discoveredSkills.length})`],
-            ['discover', '发现安装'],
+            ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
+            ['discover', skillsText.discoverTab],
           ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
             <button
               key={tab}
@@ -460,7 +463,7 @@ export const SkillsSettings: React.FC = () => {
           disabled={loading}
           leftIcon={<RefreshCw className="h-3 w-3" />}
         >
-          刷新
+          {skillsText.refresh}
         </Button>
       </div>
 

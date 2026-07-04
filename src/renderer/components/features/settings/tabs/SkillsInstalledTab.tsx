@@ -17,6 +17,8 @@ import type { LocalSkillLibrary, SkillCategory } from '@shared/contract/skillRep
 import { SKILL_CATEGORIES } from '@shared/constants/skillCatalog';
 import { Button, Input, Toggle } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 // ============================================================================
 // 分组与摘要（导出供测试）
@@ -41,11 +43,9 @@ export interface InstalledSkillSummary {
   missingDependencySkills: number;
 }
 
-const GROUP_LABELS: Record<Exclude<SkillGroupKind, 'library'>, string> = {
-  builtin: '内置',
-  project: '项目',
-  user: '用户',
-};
+export type SkillsInstalledLabels = typeof zh.settings.skills.installed;
+
+const DEFAULT_SKILLS_INSTALLED_LABELS = zh.settings.skills.installed;
 
 /** 按组排序：内置 → 项目 → 用户 → 库 */
 const GROUP_ORDER: Record<SkillGroupKind, number> = {
@@ -85,7 +85,10 @@ function skillCategoryId(skill: ParsedSkill): SkillCategory | undefined {
  * - 无 category 的内置 skill 统一归入末尾"其他"组
  * - 组内 skill 按名排序（与来源组一致）
  */
-export function groupBuiltinSkillsByCategory(skills: ParsedSkill[]): SkillCategorySubGroup[] {
+export function groupBuiltinSkillsByCategory(
+  skills: ParsedSkill[],
+  labels: SkillsInstalledLabels = DEFAULT_SKILLS_INSTALLED_LABELS,
+): SkillCategorySubGroup[] {
   const groups: SkillCategorySubGroup[] = [];
   for (const meta of SKILL_CATEGORIES) {
     const inCategory = skills.filter((s) => skillCategoryId(s) === meta.id);
@@ -95,7 +98,11 @@ export function groupBuiltinSkillsByCategory(skills: ParsedSkill[]): SkillCatego
   }
   const uncategorized = skills.filter((s) => !skillCategoryId(s));
   if (uncategorized.length > 0) {
-    groups.push({ key: UNCATEGORIZED_SKILL_KEY, label: '其他', skills: sortSkills(uncategorized) });
+    groups.push({
+      key: UNCATEGORIZED_SKILL_KEY,
+      label: labels.groupLabels.uncategorized,
+      skills: sortSkills(uncategorized),
+    });
   }
   return groups;
 }
@@ -121,6 +128,7 @@ export function findLibraryForSkill(
 export function buildInstalledSkillGroups(
   skills: ParsedSkill[],
   libraries: LocalSkillLibrary[],
+  labels: SkillsInstalledLabels = DEFAULT_SKILLS_INSTALLED_LABELS,
 ): InstalledSkillGroup[] {
   const builtin: ParsedSkill[] = [];
   const project: ParsedSkill[] = [];
@@ -158,13 +166,13 @@ export function buildInstalledSkillGroups(
   const groups: InstalledSkillGroup[] = [];
 
   if (builtin.length > 0) {
-    groups.push({ key: 'builtin', kind: 'builtin', label: GROUP_LABELS.builtin, skills: sortSkills(builtin) });
+    groups.push({ key: 'builtin', kind: 'builtin', label: labels.groupLabels.builtin, skills: sortSkills(builtin) });
   }
   if (project.length > 0) {
-    groups.push({ key: 'project', kind: 'project', label: GROUP_LABELS.project, skills: sortSkills(project) });
+    groups.push({ key: 'project', kind: 'project', label: labels.groupLabels.project, skills: sortSkills(project) });
   }
   if (user.length > 0) {
-    groups.push({ key: 'user', kind: 'user', label: GROUP_LABELS.user, skills: sortSkills(user) });
+    groups.push({ key: 'user', kind: 'user', label: labels.groupLabels.user, skills: sortSkills(user) });
   }
 
   // 每个已下载的库一个组（即使扫描到 0 个 skill 也展示，便于管理）
@@ -184,7 +192,7 @@ export function buildInstalledSkillGroups(
     groups.push({
       key: 'library:unknown',
       kind: 'library',
-      label: '未知库',
+      label: labels.groupLabels.unknownLibrary,
       skills: sortSkills(orphanLibrarySkills),
     });
   }
@@ -242,11 +250,12 @@ export function filterSkillGroups(
 
 interface SkillRowProps {
   skill: ParsedSkill;
+  labels: SkillsInstalledLabels;
   onToggle: (skillName: string, enabled: boolean) => void;
   toggleDisabled?: boolean;
 }
 
-const SkillRow: React.FC<SkillRowProps> = ({ skill, onToggle, toggleDisabled }) => {
+const SkillRow: React.FC<SkillRowProps> = ({ skill, labels, onToggle, toggleDisabled }) => {
   const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
   const missingDepsTitle = hasMissingDeps
     ? [
@@ -267,10 +276,10 @@ const SkillRow: React.FC<SkillRowProps> = ({ skill, onToggle, toggleDisabled }) 
           {hasMissingDeps && (
             <span
               className="inline-flex shrink-0 items-center gap-1 text-[11px] text-amber-400"
-              title={`缺少依赖: ${missingDepsTitle}`}
+              title={`${labels.missingDependenciesTitlePrefix}${missingDepsTitle}`}
             >
               <AlertTriangle className="h-3 w-3" />
-              缺依赖
+              {labels.missingDependenciesBadge}
             </span>
           )}
         </div>
@@ -282,7 +291,7 @@ const SkillRow: React.FC<SkillRowProps> = ({ skill, onToggle, toggleDisabled }) 
         checked={enabled}
         onChange={(next) => onToggle(skill.name, next)}
         disabled={toggleDisabled}
-        aria-label={`启用 ${skill.name}`}
+        aria-label={`${labels.enableSkillAriaPrefix}${skill.name}`}
       />
     </div>
   );
@@ -309,10 +318,15 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
   onUpdateLibrary,
   onRemoveLibrary,
 }) => {
+  const { t } = useI18n();
+  const installedText = t.settings.skills.installed;
   const [query, setQuery] = useState('');
 
   const summary = useMemo(() => buildInstalledSkillSummary(skills, libraries), [skills, libraries]);
-  const groups = useMemo(() => buildInstalledSkillGroups(skills, libraries), [skills, libraries]);
+  const groups = useMemo(
+    () => buildInstalledSkillGroups(skills, libraries, installedText),
+    [installedText, libraries, skills],
+  );
   const filteredGroups = useMemo(() => filterSkillGroups(groups, query), [groups, query]);
 
   return (
@@ -320,19 +334,23 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
       {/* 摘要 + 搜索 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-zinc-500">
-          {summary.totalSkills} 个 Skill · {summary.libraryCount} 个库
+          {summary.totalSkills}{installedText.summarySkillCountSuffix}{summary.libraryCount}{installedText.summaryLibraryCountSuffix}
           {summary.disabledSkills > 0 && (
-            <span> · {summary.disabledSkills} 已禁用</span>
+            <span>
+              {installedText.summaryDisabledPrefix}{summary.disabledSkills}{installedText.summaryDisabledSuffix}
+            </span>
           )}
           {summary.missingDependencySkills > 0 && (
-            <span className="text-amber-400"> · {summary.missingDependencySkills} 依赖缺口</span>
+            <span className="text-amber-400">
+              {installedText.summaryMissingDependenciesPrefix}{summary.missingDependencySkills}{installedText.summaryMissingDependenciesSuffix}
+            </span>
           )}
         </p>
         <div className="relative w-56">
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索 Skill"
+            placeholder={installedText.searchPlaceholder}
             inputSize="sm"
             leftIcon={<Search className="h-3 w-3" />}
           />
@@ -353,7 +371,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-8 text-center">
           <Package className="mx-auto mb-2 h-8 w-8 text-zinc-500" />
           <p className="text-sm text-zinc-400">
-            {query ? '没有匹配的 Skill' : '还没有发现 Skill'}
+            {query ? installedText.noMatchingSkill : installedText.noDiscoveredSkill}
           </p>
         </div>
       ) : (
@@ -383,7 +401,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         leftIcon={!isUpdating ? <RefreshCw className="h-3 w-3" /> : undefined}
                         disabled={isRemoving || isWebMode()}
                       >
-                        更新
+                        {installedText.update}
                       </Button>
                       <Button
                         size="sm"
@@ -394,7 +412,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         disabled={isUpdating || isWebMode()}
                         className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
                       >
-                        删除
+                        {t.common.delete}
                       </Button>
                     </div>
                   )}
@@ -402,19 +420,22 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
 
                 {/* 组内 skill 行：内置组按产物分类二次分组，其余组平铺 */}
                 {group.skills.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-zinc-500">该库中没有可用的 Skill</p>
+                  <p className="px-3 py-4 text-center text-xs text-zinc-500">
+                    {installedText.emptyLibrary}
+                  </p>
                 ) : group.kind === 'builtin' ? (
                   <div>
-                    {groupBuiltinSkillsByCategory(group.skills).map((sub) => (
+                    {groupBuiltinSkillsByCategory(group.skills, installedText).map((sub) => (
                       <div key={sub.key} data-skill-category={sub.key}>
                         <div className="border-b border-zinc-800/60 bg-zinc-900/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                          {sub.label}（{sub.skills.length}）
+                          {sub.label}{installedText.categoryCountPrefix}{sub.skills.length}{installedText.categoryCountSuffix}
                         </div>
                         <div className="divide-y divide-zinc-800/80">
                           {sub.skills.map((skill) => (
                             <SkillRow
                               key={`${skill.source}:${skill.basePath || skill.name}`}
                               skill={skill}
+                              labels={installedText}
                               onToggle={onToggleSkill}
                               toggleDisabled={Boolean(actionLoading)}
                             />
@@ -429,6 +450,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                       <SkillRow
                         key={`${skill.source}:${skill.basePath || skill.name}`}
                         skill={skill}
+                        labels={installedText}
                         onToggle={onToggleSkill}
                         toggleDisabled={Boolean(actionLoading)}
                       />

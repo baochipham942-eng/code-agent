@@ -90,14 +90,16 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
   onTestConnection,
 }) => {
   const { t } = useI18n();
+  const modelText = t.settings.model;
+  const connectionText = modelText.connection;
 
   return (
-    <ProviderDetailCard step="1" title="连接">
+    <ProviderDetailCard step="1" title={connectionText.title}>
       <div className="space-y-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_12rem] lg:items-start">
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <label className="block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
+              <label className="block text-sm font-medium text-zinc-200">{connectionText.baseUrlLabel}</label>
               {showOfficialEndpointReset && (
                 <Button
                   type="button"
@@ -106,7 +108,7 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
                   onClick={onResetOfficialEndpoint}
                   disabled={isWebMode()}
                 >
-                  恢复官方
+                  {connectionText.resetOfficial}
                 </Button>
               )}
             </div>
@@ -116,22 +118,22 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
               placeholder={registryEndpoint || 'https://api.example.com/v1'}
             />
             <p className="mt-2 text-xs text-zinc-500">
-              OpenAI 兼容通常填到 /v1；Claude 协议通常填 Anthropic-compatible base URL。
+              {connectionText.baseUrlHint}
             </p>
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">{connectionText.protocolLabel}</label>
             {isCustomProviderProtocolEditable ? (
               <Select
                 value={effectiveProtocol}
                 onChange={(event) => onProviderProtocolChange(event.target.value as ModelProviderProtocol)}
               >
-                <option value="openai">OpenAI 兼容</option>
-                <option value="claude">Claude 协议</option>
+                <option value="openai">{connectionText.protocolOpenai}</option>
+                <option value="claude">{connectionText.protocolClaude}</option>
               </Select>
             ) : (
               <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300">
-                {getProtocolLabel(effectiveProtocol)}
+                {getProtocolLabel(effectiveProtocol, modelText.helpers)}
               </div>
             )}
           </div>
@@ -139,7 +141,7 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
 
         <div className="flex items-end gap-3">
           <div className="min-w-0 flex-1">
-            <label className="mb-2 block text-sm font-medium text-zinc-200">{t.model.apiKey}</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">{connectionText.apiKey}</label>
             <Input
               type="password"
               value={apiKey}
@@ -147,9 +149,9 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
               placeholder={
                 needsApiKey
                   ? hasStoredApiKey
-                    ? '••••••••••••  已保存，输入新密钥可替换'
-                    : t.model.apiKeyPlaceholder
-                  : '本地模型无需 API Key'
+                    ? connectionText.storedApiKeyPlaceholder
+                    : connectionText.apiKeyPlaceholder
+                  : connectionText.localNoApiKeyPlaceholder
               }
               disabled={!needsApiKey}
               leftIcon={<Key className="w-4 h-4" />}
@@ -162,15 +164,15 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
             variant="secondary"
             className="shrink-0"
           >
-            测试连接
+            {connectionText.testConnection}
           </Button>
         </div>
         <p className="text-xs text-zinc-500">
           {needsApiKey
             ? hasStoredApiKey && !apiKey
-              ? 'API Key 已在本机加密保存。'
-              : t.model.apiKeyHint
-            : '使用本机 OpenAI-compatible 服务。'}
+              ? connectionText.apiKeyStoredHint
+              : connectionText.apiKeyHint
+            : connectionText.localServiceHint}
         </p>
       </div>
     </ProviderDetailCard>
@@ -201,6 +203,7 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
   onTemperatureChange,
 }) => {
   const { t } = useI18n();
+  const advancedText = t.settings.model.advanced;
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -214,17 +217,17 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
           <span className="flex h-5 w-5 items-center justify-center rounded bg-zinc-800 text-[11px] font-medium text-zinc-400">
             3
           </span>
-          高级
+          {advancedText.title}
           <span className={`text-[11px] text-zinc-500 transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
         </div>
-        <span className="text-xs text-zinc-500">并发 · 代理 · 温度</span>
+        <span className="text-xs text-zinc-500">{advancedText.meta}</span>
       </button>
 
       {open && (
         <div className="space-y-4 border-t border-zinc-800 p-4">
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">最大并发请求数</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-200">{advancedText.maxConcurrentLabel}</label>
               <Input
                 type="number"
                 min={0}
@@ -238,32 +241,33 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
                   const n = Math.floor(Number(raw));
                   onMaxConcurrentChange(Number.isFinite(n) && n > 0 ? n : undefined);
                 }}
-                placeholder={defaultMaxConcurrent ? `默认 ${defaultMaxConcurrent}` : '留空 = 不限流'}
+                placeholder={defaultMaxConcurrent ? `${advancedText.defaultMaxConcurrentPrefix}${defaultMaxConcurrent}` : advancedText.unlimitedPlaceholder}
               />
               <p className="mt-2 text-xs text-zinc-500">
-                限制该 Provider 的同时请求数，防止高并发（如批量子代理 / workflow）触发 429 限流。
-                留空或 0 = 使用内置默认{defaultMaxConcurrent ? `（${defaultMaxConcurrent}）` : '（不限流）'}。命中限流自动降级，5 分钟无限流后回升。
+                {advancedText.maxConcurrentHintPrefix}
+                {defaultMaxConcurrent ? `${advancedText.defaultValuePrefix}${defaultMaxConcurrent}${advancedText.defaultValueSuffix}` : advancedText.unlimitedDefault}
+                {advancedText.maxConcurrentHintSuffix}
               </p>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">代理模式</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-200">{advancedText.proxyModeLabel}</label>
               <Select
                 value={proxyMode ?? 'auto'}
                 onChange={(event) => onProxyModeChange(event.target.value as ProxyMode)}
               >
-                <option value="auto">自动（按内置国内外判断）</option>
-                <option value="direct">强制直连</option>
-                <option value="proxy">强制走代理</option>
+                <option value="auto">{advancedText.proxyAuto}</option>
+                <option value="direct">{advancedText.proxyDirect}</option>
+                <option value="proxy">{advancedText.proxyProxy}</option>
               </Select>
               <p className="mt-2 text-xs text-zinc-500">
-                控制该 Provider 是否走全局 HTTPS_PROXY。自动 = 海外 provider 走代理、国内（含小米 mimo）直连；direct / proxy 强制覆盖。
+                {advancedText.proxyHint}
               </p>
             </div>
           </div>
 
           <div>
             <label className="mb-2 block text-sm font-medium text-zinc-200">
-              {t.model.temperature}: {temperature}
+              {advancedText.temperature}: {temperature}
             </label>
             <input
               type="range"
@@ -275,8 +279,8 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
               className="w-full"
             />
             <div className="flex justify-between text-xs text-zinc-500">
-              <span>{t.model.temperaturePrecise}</span>
-              <span>{t.model.temperatureCreative}</span>
+              <span>{advancedText.temperaturePrecise}</span>
+              <span>{advancedText.temperatureCreative}</span>
             </div>
           </div>
         </div>

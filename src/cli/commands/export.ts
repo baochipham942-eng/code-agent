@@ -90,6 +90,7 @@ export const exportCommand = new Command('export')
           role: msg.role as 'user' | 'assistant' | 'system',
           content: msg.content,
           timestamp: msg.timestamp,
+          metadata: msg.metadata as Record<string, unknown> | undefined,
         })),
         startedAt: session.createdAt,
         lastActivityAt: session.updatedAt,

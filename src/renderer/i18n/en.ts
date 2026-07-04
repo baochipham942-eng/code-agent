@@ -3,6 +3,8 @@
 // ============================================================================
 
 import type { Translations } from './zh';
+import { enSettings } from './enSettings';
+import { sessionReplayEn } from './sessionReplay';
 
 export const en: Translations = {
   // Common
@@ -21,6 +23,13 @@ export const en: Translations = {
     active: 'Active',
     coming: 'Coming',
     sessionExpiredReconnect: 'Your session has expired. Please sign in again to resume cloud sync.',
+  },
+
+  // Status bar
+  statusBar: {
+    sessionCostTitle: 'Session cost: {cost}',
+    budgetUsageTitle: 'Budget usage: {cost} / {max} ({percent}%)',
+    cacheSavedLine: 'Cache saved {saved}',
   },
 
   // Design Workspace (borrowed from Kun: design tab)
@@ -371,126 +380,7 @@ export const en: Translations = {
   },
 
   // Settings Modal
-  settings: {
-    title: 'Settings',
-    tabs: {
-      general: 'General',
-      model: 'General model',
-      visualModels: 'Multimodal models',
-      imageVideo: 'Generation defaults',
-      disclosure: 'Disclosure',
-      appearance: 'Appearance',
-      language: 'Language',
-      data: 'Data',
-      cloud: 'Cloud',
-      memory: 'Memory',
-      update: 'Update',
-      about: 'About',
-    },
-    general: {
-      modeTitle: 'Application Mode',
-      modeDescription: 'Choose the mode that fits your workflow',
-      developerMode: 'Developer Mode',
-      developerModeDesc: 'Show full tool call details and parameters',
-      coworkMode: 'Cowork Mode',
-      coworkModeDesc: 'Simplified display for AI collaboration',
-    },
-    cloud: {
-      title: 'Cloud Config',
-      description: 'System Prompt, Skills and other configurations are fetched from cloud in real-time.',
-    },
-    visualModels: {
-      title: 'Multimodal models',
-      subtitle: 'Pick the default image / video generation model and manage your own endpoints. Configure models here; the design canvas only selects from configured ones.',
-      imageSection: 'Image generation',
-      videoSection: 'Video generation',
-      musicSection: 'Music Models',
-      bridgedFromBadge: 'from {name}',
-      builtinTitle: 'Built-in models',
-      defaultBadge: 'Default',
-      defaultHint: 'Click one to set as default; used when the design canvas generates, unless you switch manually in the canvas.',
-      defaultSaved: 'Default generation model saved',
-      videoTitle: 'Custom video endpoints',
-      videoSubtitle: 'Connect your own video generation endpoint. Keys stay on this device.',
-      videoEmpty: 'No custom video endpoints yet. Click "Add" to connect your own video model.',
-      videoCostLabel: 'Cost per video (CNY, optional)',
-      videoNamePlaceholder: 'e.g. My video model',
-      videoModelNamePlaceholder: 'e.g. sora-1',
-      videoBaseUrlHint: 'Video generation endpoint root. HTTPS public URLs only.',
-      videoPendingNote: 'Generation coming soon: custom video endpoints can be saved now; the generate call will be wired up later.',
-      consistencySection: 'Image-edit consistency',
-      strictLabel: 'Strict mode: guarantee only the selected area changes',
-      strictHint:
-        'When on, a region edit that cannot pixel-guarantee the unselected area is unchanged is cancelled with a notice (instead of handing you an image whose other areas may have been silently altered). Off by default: best-effort lock, and when it cannot be enforced the model result is still used so your editing is not interrupted.',
-    },
-  },
-
-  // Update Settings
-  update: {
-    title: 'Version Update',
-    description: 'Check and download the latest version of Agent Neo',
-    currentVersion: 'Current Version',
-    checking: 'Checking...',
-    checkNow: 'Check for Updates',
-    checkError: 'Failed to check for updates, please try again later',
-    newVersion: 'New version available',
-    upToDate: 'You are up to date',
-    download: 'Update Now',
-  },
-
-  // Model Settings
-  model: {
-    title: 'Model Provider',
-    apiKey: 'API Key',
-    apiKeyPlaceholder: 'Enter your API key',
-    apiKeyHint: 'Your API key is stored locally and never sent to our servers.',
-    modelSelect: 'Model',
-    temperature: 'Temperature',
-    temperaturePrecise: 'Precise',
-    temperatureCreative: 'Creative',
-    providers: {
-      deepseek: {
-        name: 'DeepSeek',
-        description: 'DeepSeek Chat API',
-      },
-      anthropic: {
-        name: 'Claude',
-        description: 'Anthropic Claude API',
-      },
-      openai: {
-        name: 'OpenAI',
-        description: 'GPT-4.1 / o3 Series',
-      },
-      gemini: {
-        name: 'Gemini',
-        description: 'Google Gemini 2.5 Series',
-      },
-      openrouter: {
-        name: 'OpenRouter',
-        description: 'Proxy (Gemini/Claude/GPT)',
-      },
-      zhipu: {
-        name: 'Zhipu AI',
-        description: 'GLM-4 Series Models',
-      },
-      qwen: {
-        name: 'Qwen',
-        description: 'Alibaba Cloud Qwen Models',
-      },
-      moonshot: {
-        name: 'Kimi',
-        description: 'Moonshot AI Models',
-      },
-      minimax: {
-        name: 'MiniMax',
-        description: 'MiniMax Hailuo AI',
-      },
-      perplexity: {
-        name: 'Perplexity',
-        description: 'AI Search Service',
-      },
-    },
-  },
+  settings: enSettings,
 
   // Runtime(engine) × model compatibility matrix (billingMode + unsupported reason)
   engineCompat: {
@@ -614,27 +504,6 @@ export const en: Translations = {
           'MCP server config',
         ],
       },
-    },
-    devMode: {
-      title: 'Developer Options',
-      autoApprove: 'Auto-approve all permissions',
-      autoApproveDescription: 'Skip all permission dialogs in dev mode for faster testing. Recommended to disable in production.',
-    },
-  },
-
-  // Appearance Settings
-  appearance: {
-    theme: 'Theme',
-    themes: {
-      dark: 'Dark',
-      light: 'Light',
-      auto: 'Auto',
-    },
-    fontSize: 'Font Size',
-    fontSizes: {
-      small: 'Small',
-      medium: 'Medium',
-      large: 'Large',
     },
   },
 
@@ -857,5 +726,175 @@ export const en: Translations = {
     sampleSans: 'Aa Bb Cc 字体样例',
     continueMessage: 'Design brief locked—generate the deliverable directly from it.',
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
+  },
+
+  // /agent 命令与面板
+  agentCommand: {
+    defaultDescription: 'Resume auto routing',
+    roleGroupLabel: 'Roles',
+    createRoleEntry: 'New role…',
+    switchedToPrefix: 'Switched to ',
+    restoredAuto: 'Auto agent routing restored',
+    notFoundPrefix: 'Agent not found: ',
+    chipTitlePrefix: 'Current agent: ',
+    chipTitleSuffix: '. Type /agent to switch.',
+    chipAriaLabel: 'Current agent',
+    badgeNotAppliedSuffix: ' not applied',
+    badgeNotAppliedTitlePrefix: 'Requested agent was not applied this turn; actually ran: ',
+    degradedToastPrefix: 'Requested agent ',
+    degradedToastMiddle: ' is unavailable; this turn ran with ',
+    degradedToastSuffix: '. Auto routing restored',
+  },
+
+  // /goal 确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
+  goalConfirm: {
+    title: 'Confirm goal',
+    goalLabel: 'Goal',
+    goalPlaceholder: 'Describe the outcome to deliver in one sentence',
+    verifyLabel: 'Verify command',
+    verifyEmpty: 'Leave empty (soft review only)',
+    verifyCustomLabel: 'Custom verify command',
+    verifyCustomPlaceholder: 'Type the verification command to run',
+    acceptanceLabel: 'Soft acceptance',
+    acceptancePlaceholder: 'What conditions should the result meet',
+    boundariesLabel: 'Boundaries',
+    pauseLabel: 'Pause conditions',
+    maxTurnsLabel: 'Max turns',
+    budgetLabel: 'Token budget',
+    maxTimeLabel: 'Time limit (min)',
+    defaultPlaceholder: 'Default',
+    noLimitPlaceholder: 'No limit',
+    advancedToggle: 'Advanced',
+    start: 'Start goal',
+    cancel: 'Cancel',
+    defaultBoundaries: 'Only touch files and config directly related to the goal; avoid unrelated refactors, extra features, and destructive operations.',
+    defaultPauseConditions: 'Pause when credentials, payment, production data, destructive actions, or scope expansion are needed, or after 2 consecutive failed verifications without new evidence.',
+  },
+
+  // /goal 生命周期通知卡片
+  goalNotice: {
+    startPrefix: 'Goal started: ',
+    metPrefix: 'Goal completed: ',
+    abortedPrefix: 'Goal aborted: ',
+    durationPrefix: 'took ',
+    turnsSuffix: ' turns',
+    degradedBadge: 'Completed · verification incomplete',
+    degradedReasonPrefix: 'Last verification: ',
+  },
+
+  // /goal 运行进度状态条
+  goalStatusBar: {
+    runningPrefix: 'Goal in progress: ',
+    pausedPrefix: 'Goal paused: ',
+    verifying: 'Verifying…',
+    reviewing: 'Reviewing…',
+    remainingPrefix: 'remaining ',
+    turnPrefix: 'Turn ',
+    turnSuffix: '',
+    elapsedTitle: 'Elapsed time',
+    remainingTitle: 'Wall-clock time remaining',
+    turnTitle: 'Turns',
+    tokenTitle: 'Token usage',
+    pause: 'Pause',
+    resume: 'Resume',
+  },
+
+  sessionReplay: sessionReplayEn,
+
+  // Chat transcript (TurnCard / StreamingIndicator, etc.)
+  chat: {
+    thinking: 'Thinking…',
+    thinkingDigest: 'Thinking',
+    thinkingSegments: ' · {count} segments',
+    expandThinking: 'Expand thinking',
+    collapseThinking: 'Collapse thinking',
+  },
+
+  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  workbenchTabs: {
+    openPanel: 'Open panel',
+    filesLabel: 'Files',
+    filesTitle: 'File browser',
+    contextLabel: 'Context',
+    contextTitle: 'Context usage and sources',
+    skillsTitle: 'Session Skills',
+    assetsTitle: 'Workspace Assets',
+    auditTitle: 'Replay / session quality audit',
+    projectCollabTitle: 'Project collaboration',
+  },
+
+  // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
+  slashCommands: {
+    // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
+    picker: {
+      prefillCommand: 'Prefill command',
+      executeNow: 'Runs now',
+      builtinCommand: 'Builtin command',
+      paramsPrefix: 'Args: ',
+      noParams: 'No args',
+      mcpPromptFallback: 'MCP prompt command',
+      filePromptFallback: 'Custom command',
+      prefillPromptWithArgs: 'Prefill, then add args',
+      prefillPrompt: 'Prefill prompt',
+      setAgentForTurn: 'Set agent for this turn',
+      restoreAutoAgent: 'Restore auto agent',
+      defaultAgentDescription: 'Restore automatic routing',
+      mountedSkillPrefix: 'Mounted skill',
+      selectForTurn: 'Select for this turn',
+      mountAndSelect: 'Mount & select for this turn',
+      installAndSelect: 'Install & select for this turn',
+      localConnector: 'Local connector',
+      connectorNeedsConnection: 'Connect before use',
+      mcpNeedsConnection: 'Requires connection',
+    },
+    badges: {
+      skillSelected: 'Selected',
+      skillMounted: 'Mounted',
+      skillMountable: 'Mountable',
+      connectorConnected: 'Connected',
+      connectorDisconnected: 'Not connected',
+      mcpAvailable: 'Available',
+      mcpDisconnected: 'Not connected',
+    },
+    new: { label: 'New session', description: 'Create a new conversation' },
+    clear: { label: 'Clear conversation', description: 'Clear messages in the current session' },
+    help: { label: 'Help', description: 'Open help docs' },
+    archive: { label: 'Archive session', description: 'Move the current session to archive' },
+    sidebar: { labelShow: 'Show sidebar', labelHide: 'Hide sidebar', description: 'Toggle sidebar' },
+    dag: { labelShow: 'Show DAG', labelHide: 'Hide DAG', description: 'Task DAG visualization' },
+    workspace: { labelShow: 'Show workspace', labelHide: 'Hide workspace', description: 'Toggle workspace panel' },
+    settings: { label: 'Settings', description: 'Open app settings' },
+    shortcuts: { label: 'Shortcuts', description: 'View keyboard shortcuts' },
+    agent: {
+      label: 'Select agent',
+      description: 'Type /agent coder to switch agent for this turn',
+      effectLabel: 'Open agent picker',
+    },
+    'create-role': {
+      label: 'New role',
+      description: 'Create a new persistent role (expert agent) conversationally',
+      effectLabel: 'Start role creation',
+    },
+    goal: { label: 'Set goal', description: 'Type the goal directly, optional --verify or --review' },
+    schedule: { label: 'Scheduled task', description: 'Create reminders, checks or recurring tasks in natural language' },
+    loop: { label: 'Session loop', description: 'Repeat the same task in this session until done or stopped' },
+    workflow: { label: 'Orchestrate workflow', description: 'Describe a goal and let the model write a JS script orchestrating subagents (loop/fan-out/pipeline)' },
+    code: { label: 'Code mode', description: 'Switch to Code mode' },
+    plan: { label: 'Plan mode', description: 'Switch to Plan mode (plans only, no code changes)' },
+    ask: { label: 'Ask mode', description: 'Switch to Ask mode (answers only)' },
+    low: { label: 'Low reasoning effort', description: 'Set low reasoning effort' },
+    med: { label: 'Medium reasoning effort', description: 'Set medium reasoning effort' },
+    high: { label: 'High reasoning effort', description: 'Set high reasoning effort' },
+    default: { label: 'Default permissions', description: 'Default permission mode' },
+    fullaccess: { label: 'Full access', description: 'Full access mode (skip confirmations)' },
+    context: { label: 'Context', description: 'View context window usage' },
+    status: { label: 'Status', description: 'View current session status' },
+    cost: { label: 'Cost', description: 'View token usage and cost for this session' },
+    agents: { label: 'Agent history', description: 'View past agent runs' },
+    hooks: { label: 'Hooks', description: 'View hook configuration' },
+    permissions: { label: 'Permissions', description: 'View security decision chain status' },
+    model: { label: 'Model', description: 'View or switch the current model' },
+    compact: { label: 'Compact context', description: 'Manually trigger context compression' },
+    config: { label: 'Config', description: 'View current configuration' },
   },
 };

@@ -10,6 +10,7 @@ import {
   NEO_TAG_MENTION_AGENT,
   NEO_TOPIC_MENTION_PREFIX,
 } from './neoMentionRouting';
+import { useI18n } from '../../../../hooks/useI18n';
 import {
   applyAgentCommandOption,
   getAgentCommandOptions,
@@ -39,6 +40,7 @@ export interface UseChatInputAgentCommandParams {
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
 export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams) {
+  const { t } = useI18n();
   const {
     value,
     swarmAgents,
@@ -87,8 +89,12 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   );
   const agentSlashCommandQuery = useMemo(() => getAgentSlashCommandQuery(value), [value]);
   const agentCommandOptions = useMemo(
-    () => agentSlashCommandQuery === null ? [] : getAgentCommandOptions(agentEntries, agentSlashCommandQuery),
-    [agentEntries, agentSlashCommandQuery],
+    () => agentSlashCommandQuery === null
+      ? []
+      : getAgentCommandOptions(agentEntries, agentSlashCommandQuery, {
+        defaultDescription: t.agentCommand.defaultDescription,
+      }),
+    [agentEntries, agentSlashCommandQuery, t],
   );
   const isAgentCommandAutocompleteOpen = agentSlashCommandQuery !== null && agentCommandOptions.length > 0;
 

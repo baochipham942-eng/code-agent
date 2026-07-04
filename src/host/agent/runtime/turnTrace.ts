@@ -22,7 +22,10 @@ export type TraceEventType =
   | 'loop_decision'
   | 'tool_dispatch'
   | 'compaction'
-  | 'verification';
+  | 'verification'
+  | 'goal_verdict'
+  | 'goal_evidence_gate'
+  | 'deliverables_declaration';
 
 export interface TraceEvent {
   ts: number;

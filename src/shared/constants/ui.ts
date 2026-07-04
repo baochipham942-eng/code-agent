@@ -36,6 +36,8 @@ export const UI = {
   TODO_PANEL_FADE_DELAY: 3000,
   /** Todo 面板计时更新间隔 (ms) */
   TODO_PANEL_TICK_INTERVAL: 1000,
+  /** 工具调用耗时展示阈值 (ms)：低于此值对非程序员是噪音，不展示单条耗时 */
+  TOOL_DURATION_MIN_VISIBLE_MS: 1000,
 } as const;
 
 /** 窗口配置 */

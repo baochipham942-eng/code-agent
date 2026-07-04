@@ -35,11 +35,11 @@
   --text-disabled: #52525B;
   --text-inverse: #18181B;
 
-  /* Brand color - Teal */
-  --brand-primary: #14B8A6;
-  --brand-primary-hover: #0D9488;
-  --brand-primary-muted: rgba(20, 184, 166, 0.15);
-  --brand-primary-glow: rgba(20, 184, 166, 0.25);
+  /* Brand color - Teal（teal-700 系：白色前景对比度 ≥4.5:1，见 check-design-system --contrast） */
+  --brand-primary: #0F766E;
+  --brand-primary-hover: #115E59;
+  --brand-primary-muted: rgba(15, 118, 110, 0.15);
+  --brand-primary-glow: rgba(15, 118, 110, 0.25);
 
   /* Semantic colors */
   --color-success: #4ADE80;

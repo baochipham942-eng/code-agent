@@ -75,13 +75,15 @@ export const BuiltinModelList: React.FC<{
   unconfiguredBadge: string;
   defaultBadge: string;
   bridgedFromBadge: string;
+  manageButton: string;
+  configureButton: string;
   selectedId?: string;
   groupName?: string;
   onSelect?: (id: string) => void;
   onConfigure: (provider: string) => void;
   // 只读模式（如生音乐段）：仅展示，不渲染默认选择 radio。
   readOnly?: boolean;
-}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => (
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => (
   <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-zinc-300">{title}</span>
@@ -132,7 +134,7 @@ export const BuiltinModelList: React.FC<{
                 onClick={(event) => { event.preventDefault(); event.stopPropagation(); onConfigure(m.provider); }}
                 className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300 transition hover:text-zinc-100"
               >
-                {m.available ? '管理' : '去配置'}
+                {m.available ? manageButton : configureButton}
               </button>
             </label>
           </li>
@@ -313,10 +315,10 @@ export const VisualModelsSettings: React.FC = () => {
         setDefaultVideoModelId(settings?.design?.defaultVideoModelId ?? '');
       })
       .catch(() => {
-        if (!cancelled) toast.error('加载生成默认值失败');
+        if (!cancelled) toast.error(s.loadDefaultsFailed);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [s.loadDefaultsFailed]);
 
   const saveDefaults = useCallback(async (nextImage: string, nextVideo: string) => {
     const prevImage = defaultImageModelId;
@@ -333,9 +335,9 @@ export const VisualModelsSettings: React.FC = () => {
     } catch (error) {
       setDefaultImageModelId(prevImage);
       setDefaultVideoModelId(prevVideo);
-      toast.error(`${cm.saveFailed}: ${error instanceof Error ? error.message : '未知错误'}`);
+      toast.error(`${cm.saveFailed}: ${error instanceof Error ? error.message : s.unknownError}`);
     }
-  }, [defaultImageModelId, defaultVideoModelId, s.defaultSaved, cm.saveFailed]);
+  }, [defaultImageModelId, defaultVideoModelId, s.defaultSaved, s.unknownError, cm.saveFailed]);
 
   return (
     <SettingsPage title={s.title} description={s.subtitle}>
@@ -350,6 +352,8 @@ export const VisualModelsSettings: React.FC = () => {
           unconfiguredBadge={cm.unconfiguredBadge}
           defaultBadge={s.defaultBadge}
           bridgedFromBadge={s.bridgedFromBadge}
+          manageButton={cm.manage}
+          configureButton={s.configureButton}
           selectedId={defaultImageModelId}
           groupName="design-image-model"
           onSelect={(id) => saveDefaults(id, defaultVideoModelId)}
@@ -383,6 +387,8 @@ export const VisualModelsSettings: React.FC = () => {
           unconfiguredBadge={cm.unconfiguredBadge}
           defaultBadge={s.defaultBadge}
           bridgedFromBadge={s.bridgedFromBadge}
+          manageButton={cm.manage}
+          configureButton={s.configureButton}
           selectedId={defaultVideoModelId}
           groupName="design-video-model"
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
@@ -418,6 +424,8 @@ export const VisualModelsSettings: React.FC = () => {
           unconfiguredBadge={cm.unconfiguredBadge}
           defaultBadge={s.defaultBadge}
           bridgedFromBadge={s.bridgedFromBadge}
+          manageButton={cm.manage}
+          configureButton={s.configureButton}
           onConfigure={handleConfigure}
           readOnly
         />

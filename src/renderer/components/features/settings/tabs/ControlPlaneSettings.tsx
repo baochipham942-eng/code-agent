@@ -14,17 +14,10 @@ import type {
 import { Button } from '../../../primitives';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
-const ARTIFACT_LABELS: Record<AdminControlPlaneAuditEventItem['artifactKind'], string> = {
-  cloud_config: '云配置',
-  capability_registry: '能力注册表',
-  agent_engine_model_catalog: 'Agent Engine 模型目录',
-  prompt_registry: '提示词注册表',
-  update_manifest: '更新清单',
-  runtime_assets_manifest: '运行时资产清单',
-  renderer_bundle: '前端热更包',
-  renderer_bundle_rollout: '前端热更灰度策略',
-};
+type ControlPlaneText = typeof zh.settings.controlPlane;
 
 const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string> = {
   served: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
@@ -59,22 +52,25 @@ function releaseLabel(item: Pick<AdminControlPlaneAuditEventItem, 'payloadVersio
 
 const SummaryTile: React.FC<{
   item: AdminControlPlaneRolloutSummaryItem;
-}> = ({ item }) => (
+  text: ControlPlaneText;
+  successLabel: string;
+  errorLabel: string;
+}> = ({ item, text, successLabel, errorLabel }) => (
   <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
     <div className="flex items-center justify-between gap-3">
-      <div className="text-sm font-medium text-zinc-100">{ARTIFACT_LABELS[item.artifactKind]}</div>
+      <div className="text-sm font-medium text-zinc-100">{text.artifactLabels[item.artifactKind]}</div>
       <span className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300">
-        {item.releaseChannel || 'n/a'}
+        {item.releaseChannel || text.releaseChannelFallback}
       </span>
     </div>
     <div className="mt-2 font-mono text-xs text-zinc-400">{item.payloadVersion || '-'}</div>
     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
       <div>
-        <div className="text-zinc-500">成功</div>
+        <div className="text-zinc-500">{successLabel}</div>
         <div className="mt-1 text-base font-semibold text-emerald-300">{item.servedCount}</div>
       </div>
       <div>
-        <div className="text-zinc-500">错误</div>
+        <div className="text-zinc-500">{errorLabel}</div>
         <div className="mt-1 text-base font-semibold text-red-300">{item.errorCount}</div>
       </div>
     </div>
@@ -85,6 +81,8 @@ const SummaryTile: React.FC<{
 );
 
 export const ControlPlaneSettings: React.FC = () => {
+  const { t } = useI18n();
+  const controlText = t.settings.controlPlane;
   const [events, setEvents] = useState<AdminControlPlaneAuditEventItem[]>([]);
   const [summary, setSummary] = useState<AdminControlPlaneRolloutSummaryItem[]>([]);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
@@ -126,11 +124,11 @@ export const ControlPlaneSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="控制平面"
-      description="线上签名配置、能力 registry 和发布审计留痕。"
+      title={controlText.title}
+      description={controlText.description}
     >
       <SettingsSection
-        title="发布状态"
+        title={controlText.releaseStatusTitle}
         actions={(
           <Button
             type="button"
@@ -140,15 +138,15 @@ export const ControlPlaneSettings: React.FC = () => {
             loading={loading}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {controlText.refresh}
           </Button>
         )}
       >
         <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />
           <div>
-            <div className="text-sm font-medium text-zinc-100">最新版本 {latestVersion}</div>
-            <div className="mt-1 text-xs text-zinc-500">审计数据来自 Supabase admin RPC，production env 缺省时页面显示为空。</div>
+            <div className="text-sm font-medium text-zinc-100">{controlText.latestVersionPrefix}{latestVersion}</div>
+            <div className="mt-1 text-xs text-zinc-500">{controlText.auditDataDescription}</div>
           </div>
         </div>
 
@@ -171,30 +169,33 @@ export const ControlPlaneSettings: React.FC = () => {
             <SummaryTile
               key={`${item.artifactKind}:${item.payloadVersion || ''}:${item.contentHash || ''}`}
               item={item}
+              text={controlText}
+              successLabel={t.common.success}
+              errorLabel={t.common.error}
             />
           ))}
           {summary.length === 0 && (
             <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-950/50 px-4 py-8 text-center text-xs text-zinc-500 md:col-span-3">
-              暂无 control-plane 审计事件
+              {controlText.noAuditEvents}
             </div>
           )}
         </div>
       </SettingsSection>
 
-      <SettingsSection title="最近事件">
+      <SettingsSection title={controlText.recentEventsTitle}>
         <div className="overflow-hidden rounded-lg border border-zinc-800">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-xs">
               <thead className="bg-zinc-900/80 text-zinc-500">
                 <tr>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">时间</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">Artifact</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">版本</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">Key</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">Hash</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">结果</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">Subject</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">Entitlement</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.time}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.artifact}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.version}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.key}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.hash}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.result}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.subject}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{controlText.columns.entitlement}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800 bg-zinc-950/40 text-zinc-300">
@@ -202,7 +203,7 @@ export const ControlPlaneSettings: React.FC = () => {
                   <tr key={event.id} className="hover:bg-zinc-900/60">
                     <td className="whitespace-nowrap px-3 py-3 text-zinc-400">{formatDate(event.createdAt)}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-medium text-zinc-100">
-                      {ARTIFACT_LABELS[event.artifactKind]}
+                      {controlText.artifactLabels[event.artifactKind]}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 font-mono text-zinc-400">{releaseLabel(event)}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-mono text-zinc-500">{event.keyId || '-'}</td>
@@ -237,7 +238,7 @@ export const ControlPlaneSettings: React.FC = () => {
                 {events.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-3 py-8 text-center text-zinc-500">
-                      暂无事件
+                      {controlText.noEvents}
                     </td>
                   </tr>
                 )}

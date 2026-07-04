@@ -37,7 +37,7 @@ export { useAuthStore, initializeAuthStore } from './authStore';
 // -----------------------------------------------------------------------------
 
 export { useDAGStore, useDAGList, useCurrentDAG, useDAGVisible, useActiveDAGCount } from './dagStore';
-export { useModeStore, useIsDeveloperMode, useIsCoworkMode, type AppMode } from './modeStore';
+export { useModeStore, useIsCoworkMode, type AppMode } from './modeStore';
 export {
   usePermissionStore,
   type PermissionMode,
@@ -155,8 +155,6 @@ export function useLanguage() {
 export function useStatusBarInfo() {
   return useStatusStore(
     useShallow((state) => ({
-      inputTokens: state.inputTokens,
-      outputTokens: state.outputTokens,
       sessionCost: state.sessionCost,
       contextUsagePercent: state.contextUsagePercent,
       networkStatus: state.networkStatus,

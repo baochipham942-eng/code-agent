@@ -11,6 +11,7 @@ import type {
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
@@ -29,6 +30,7 @@ import {
   normalizeGoalCommand,
   type ParsedGoalCommand,
 } from './parseGoalCommand';
+import { shouldOpenGoalConfirm } from './goalConfirm';
 import { getAgentCommandToken, parseAgentSlashCommand } from './agentCommand';
 import { shouldClearComposerAfterSend } from './utils';
 
@@ -61,7 +63,9 @@ export interface UseChatInputSubmitParams {
   setPendingPromptCommand: React.Dispatch<React.SetStateAction<ComposerPromptCommandSelection | null>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
   setScheduleComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setGoalComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 打开 /goal 安静确认卡（initialGoal = 用户自然语言原话，空串 = 引导态） */
+  openGoalConfirm: (initialGoal: string) => void;
+  closeGoalConfirm: () => void;
   setActiveAgentId: (id: string | null) => void;
 }
 
@@ -74,6 +78,7 @@ export interface UseChatInputSubmitParams {
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
+  const { t } = useI18n();
   const {
     value,
     attachments,
@@ -98,7 +103,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setPendingPromptCommand,
     setPendingAgentSelection,
     setScheduleComposerOpen,
-    setGoalComposerOpen,
+    openGoalConfirm,
+    closeGoalConfirm,
     setActiveAgentId,
   } = params;
 
@@ -191,7 +197,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     addToInputHistory(historyEntry);
     setValue('');
     setAttachments([]);
-    setGoalComposerOpen(false);
+    closeGoalConfirm();
     try {
       const sent = await onSend(goalEnvelope);
       if (sent === false) {
@@ -203,7 +209,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, currentSessionId, onSend, setAttachments, setGoalComposerOpen, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -221,7 +227,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!parsed?.description) {
         // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
         setValue('');
-        setGoalComposerOpen(false);
+        closeGoalConfirm();
         setScheduleComposerOpen(true);
         return;
       }
@@ -282,13 +288,14 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       return;
     }
 
-    // /goal 自治模式：拦截斜杠命令，只有目标文本也能启动；未给判据时默认走软目标评审。
+    // /goal 自治模式：主路径 = 自然语言 → 安静确认卡（提炼草案 + 一键启动）；
+    // 显式 --verify/--review/预算 flags = power-user 合同，跳过确认直接启动。
     if (isGoalCommand(trimmedValue)) {
       const rawParsed = parseGoalCommand(trimmedValue);
-      if (!rawParsed?.goal) {
+      if (!rawParsed || shouldOpenGoalConfirm(rawParsed)) {
         setValue('');
         setScheduleComposerOpen(false);
-        setGoalComposerOpen(true);
+        openGoalConfirm(rawParsed?.goal ?? '');
         return;
       }
       const parsed = normalizeGoalCommand(rawParsed);
@@ -302,7 +309,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       return;
     }
     if (agentCommand.kind === 'unknown') {
-      toast.warning(`没找到 agent: ${agentCommand.token}`);
+      toast.warning(`${t.agentCommand.notFoundPrefix}${agentCommand.token}`);
       inputAreaRef.current?.focus();
       return;
     }
@@ -315,7 +322,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!contentToSend && attachments.length === 0) {
         setValue('');
         setVoiceInputContext(null);
-        toast.info('已恢复自动 agent');
+        toast.info(t.agentCommand.restoredAuto);
         return;
       }
     }
@@ -339,7 +346,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!contentToSend && attachments.length === 0) {
         setValue('');
         setVoiceInputContext(null);
-        toast.info(`已切到 ${agentCommand.agent.name || agentCommand.agent.id}`);
+        toast.info(`${t.agentCommand.switchedToPrefix}${agentCommand.agent.name || agentCommand.agent.id}`);
         return;
       }
     }

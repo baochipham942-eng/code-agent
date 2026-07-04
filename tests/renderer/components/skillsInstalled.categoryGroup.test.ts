@@ -8,6 +8,7 @@ import type { SkillCategory } from '../../../src/shared/contract/skillRepository
 import { SKILL_CATEGORIES } from '../../../src/shared/constants/skillCatalog';
 import { groupBuiltinSkillsByCategory } from '../../../src/renderer/components/features/settings/tabs/SkillsInstalledTab';
 import { getBuiltinSkills } from '../../../src/host/services/skills/builtinSkills';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 function makeSkill(name: string, category?: SkillCategory): ParsedSkill {
   return {
@@ -45,7 +46,7 @@ describe('groupBuiltinSkillsByCategory', () => {
     expect(groups[0].key).toBe('docs-office');
     const last = groups[groups.length - 1];
     expect(last.key).toBe('__uncategorized__');
-    expect(last.label).toBe('其他');
+    expect(last.label).toBe(zh.settings.skills.installed.groupLabels.uncategorized);
     expect(last.skills.map((s) => s.name)).toEqual(['mystery']);
   });
 

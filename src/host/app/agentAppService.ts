@@ -11,6 +11,7 @@ import type {
   AppServiceRunOptions,
   SwitchModelParams,
   ModelOverride,
+  ModelOverridePersistResult,
   SessionMarkdownExport,
   SessionLogExport,
   PromptRewindResult,
@@ -28,6 +29,7 @@ import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
+import { getAuthService } from '../services/auth/authService';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
@@ -35,6 +37,11 @@ import type { AgentRunOptions } from '../research/types';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
+import {
+  clearPersistedModelOverride,
+  persistModelOverride,
+  rehydrateModelOverrideFromSession,
+} from '../session/modelOverridePersistence';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import type {
   ConversationEnvelope,
@@ -52,7 +59,7 @@ import { loadStreamSnapshot } from '../session/streamSnapshot';
 import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
-import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
@@ -274,6 +281,32 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // /命令协议层（roadmap 2.2）：命中注册命令时把 content 展开成模板 prompt；
     // 非命令消息零开销直通（startsWith 守卫在函数内）
     envelope = await applyPromptCommandExpansion(envelope, effectiveWorkingDirectory);
+    // 外部引擎分支在 preferredAgentId 消费点（withWorkbenchTurnSystemContext →
+    // agentOverrideId）之前 return，显式 agent 选择在引擎会话不适用——发降级
+    // routing_resolved 让 renderer 清选择 + toast（与 web /api/run 引擎分支对称）。
+    if (isExternalAgentEngine(engine.kind)) {
+      const enginePreferredAgentId = typeof envelope.context?.preferredAgentId === 'string'
+        ? envelope.context.preferredAgentId.trim() || undefined
+        : undefined;
+      if (enginePreferredAgentId) {
+        const { buildRoutingResolvedEventData } = await import('../agent/routingResolvedEvent');
+        const engineLabel = AGENT_ENGINE_LABELS[engine.kind] ?? engine.kind;
+        tm.emitAgentEventForSession(resolvedSessionId, {
+          type: 'routing_resolved',
+          data: buildRoutingResolvedEventData(null, {
+            requestedAgentId: enginePreferredAgentId,
+            timestamp: Date.now(),
+            fallbackAgentName: engineLabel,
+            fallbackReason: `External engine session (${engineLabel}) does not support agent selection; the engine runs the turn directly.`,
+          }),
+        });
+        logger.info('Explicit agent selection ignored on external engine session', {
+          preferredAgentId: enginePreferredAgentId,
+          engine: engine.kind,
+          sessionId: resolvedSessionId,
+        });
+      }
+    }
     if (engine.kind === 'codex_cli') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
@@ -344,7 +377,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (effectiveWorkingDirectory) {
       orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
-    await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+    // 无显式值时用本轮实际生效目录（含 orchestrator fallback）补写，
+    // 否则未持久化的会话每次重开都可能解析到不同目录（562/1732 会话曾漂移）；
+    // sync 内部的相等守卫保证已持久化的值不会被覆盖
+    await this.syncSessionWorkingDirectory(
+      resolvedSessionId,
+      envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+    );
 
     const options = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
@@ -449,7 +488,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (effectiveWorkingDirectory) {
       orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
-    await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+    await this.syncSessionWorkingDirectory(
+      resolvedSessionId,
+      envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+    );
     const options = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
@@ -546,6 +588,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       orchestrator.setWorkingDirectory(session.workingDirectory);
     }
     // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
+
+    // 会话级模型切换跨重启恢复：按持久化标记回灌内存 Map（未切换的会话无标记，不受影响）
+    rehydrateModelOverrideFromSession(session);
 
     const streamSnapshot = loadStreamSnapshot(session.workingDirectory);
     if (streamSnapshot?.sessionId === session.id) {
@@ -748,25 +793,45 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   // === Model Override ===
 
-  switchModel(params: SwitchModelParams): void {
+  async switchModel(params: SwitchModelParams): Promise<ModelOverridePersistResult> {
     const modelState = getModelSessionState();
-    modelState.setOverride(params.sessionId, {
+    const override = {
       provider: params.provider as ModelProvider,
       model: params.model,
       temperature: params.temperature,
       maxTokens: params.maxTokens,
       adaptive: params.adaptive,
-    });
+    };
+    modelState.setOverride(params.sessionId, override);
+    // 落库让切换跨重启存活；失败不抛（内存 override 本轮仍生效），
+    // persisted 标志透出到响应（audit R1-HIGH2：失败不完全静默）
+    const persisted = await persistModelOverride(params.sessionId, override);
+    return { persisted };
   }
 
   getModelOverride(sessionId: string): ModelOverride | undefined {
     const modelState = getModelSessionState();
-    return modelState.getOverride(sessionId) as ModelOverride | undefined;
+    const existing = modelState.getOverride(sessionId) as ModelOverride | undefined;
+    if (existing) return existing;
+    // 对称回灌（audit R2）：web domain 路径已在重启后按持久化标记回灌，
+    // IPC 路径首次查询同样要看得到标记（否则 ModelSwitcher 在 loadSession
+    // 完成前拉到 null 且不再重拉）。getDatabase().getSession 是同步调用；
+    // 带 owner filter（audit R3-LOW），与 sessionManager 的可访问性口径一致。
+    try {
+      const session = getDatabase().getSession(sessionId, {
+        userId: getAuthService().getCurrentUser()?.id ?? null,
+      });
+      return (rehydrateModelOverrideFromSession(session ?? null) ?? undefined) as ModelOverride | undefined;
+    } catch {
+      return undefined;
+    }
   }
 
-  clearModelOverride(sessionId: string): void {
+  async clearModelOverride(sessionId: string): Promise<ModelOverridePersistResult> {
     const modelState = getModelSessionState();
     modelState.clearOverride(sessionId);
+    const persisted = await clearPersistedModelOverride(sessionId);
+    return { persisted };
   }
 
   // === Delegate Mode ===

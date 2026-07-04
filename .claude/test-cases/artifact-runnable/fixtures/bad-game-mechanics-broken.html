@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>萌萌冒险记</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  background: linear-gradient(180deg, #0f3460 0%, #16213e 60%, #533483 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 40px rgba(83, 52, 131, 0.5);
+  max-width: 95vw;
+  max-height: 80vh;
+  aspect-ratio: 1280 / 720;
+  height: auto;
+}
+#ui {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  gap: 30px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+#message {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 36px;
+  font-weight: bold;
+  text-shadow: 0 4px 8px rgba(0,0,0,0.8);
+  display: none;
+  text-align: center;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+  <span id="score">金币: 0</span>
+  <span id="lives">生命: 3</span>
+  <span id="status">关卡: 1</span>
+</div>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="message"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720;
+
+// ========== LEVEL DATA ==========
+const LEVELS = [
+  {
+    name: '草原序曲',
+    platforms: [
+      { x: 0, y: 640, w: 600, h: 80 },
+      { x: 680, y: 640, w: 400, h: 80 },
+      { x: 1150, y: 640, w: 200, h: 80 },
+      { x: 200, y: 500, w: 150, h: 20 },
+      { x: 450, y: 420, w: 150, h: 20 },
+      { x: 700, y: 350, w: 180, h: 20 },
+      { x: 950, y: 480, w: 120, h: 20 },
+      { x: 1100, y: 380, w: 150, h: 20 },
+    ],
+    enemies: [
+      { id: 'e1', x: 300, y: 600, w: 36, h: 36, patrol: { minX: 250, maxX: 450 }, defeatReward: 100 },
+      { id: 'e2', x: 750, y: 600, w: 36, h: 36, patrol: { minX: 700, maxX: 900 }, defeatReward: 100 },
+      { id: 'e3', x: 1000, y: 440, w: 36, h: 36, patrol: { minX: 960, maxX: 1060 }, defeatReward: 100 },
+    ],
+    blocks: [
+      { id: 'b1', x: 470, y: 320, w: 36, h: 36, reward: 'doubleJump', type: 'question' },
+      { id: 'b2', x: 960, y: 380, w: 36, h: 36, reward: 'coin', type: 'question' },
+    ],
+    gates: [
+      { id: 'g1', x: 1100, y: 300, w: 30, h: 80, requiresAbility: 'doubleJump' },
+    ],
+    coins: [
+      { x: 250, y: 460 }, { x: 290, y: 460 }, { x: 330, y: 460 },
+      { x: 740, y: 310 }, { x: 780, y: 310 },
+      { x: 1000, y: 440 }, { x: 1040, y: 440 },
+      { x: 1150, y: 340 }, { x: 1190, y: 340 },
+    ],
+    goal: { x: 1250, y: 570, w: 30, h: 70 },
+    playerStart: { x: 80, y: 560 },
+  },
+];
+
+// ========== STATE ==========
+const state = {
+  player: { x: 80, y: 560, w: 32, h: 40, vx: 0, vy: 0, onGround: false, abilities: { doubleJump: false }, gatesUnlocked: [], facing: 1 },
+  enemies: [],
+  blocks: [],
+  gates: [],
+  coins: [],
+  platforms: [],
+  enemiesDefeated: 0,
+  blocksUsed: 0,
+  score: 0,
+  lives: 3,
+  currentLevel: 0,
+  goal: null,
+  won: false,
+  coinsCollected: 0,
+  coyoteTime: 0,
+  jumpBuffer: 0,
+  invincible: 0,
+};
+
+// ========== CONSTANTS ==========
+const GRAVITY = 0.6;
+const ACCEL = 0.8;
+const FRICTION = 0.85;
+const MAX_VX = 6;
+const JUMP_VY = -13;
+const DOUBLE_JUMP_VY = -11;
+
+// ========== INPUT ==========
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ========== RESET ==========
+function reset(levelIdx = 0) {
+  const lv = LEVELS[levelIdx];
+  state.player = { x: lv.playerStart.x, y: lv.playerStart.y, w: 32, h: 40, vx: 0, vy: 0, onGround: false, abilities: { doubleJump: false }, doubleJumpUsed: false, gatesUnlocked: [], facing: 1 };
+  state.enemies = lv.enemies.map(e => ({ ...e, vx: 1, alive: true }));
+  state.blocks = lv.blocks.map(b => ({ ...b, used: false, bumpAnim: 0 }));
+  state.gates = lv.gates.map(g => ({ ...g, unlocked: false }));
+  state.coins = lv.coins.map(c => ({ ...c, r: 10, collected: false, anim: Math.random() * Math.PI * 2 }));
+  state.platforms = lv.platforms.map(p => ({ ...p }));
+  state.enemiesDefeated = 0;
+  state.blocksUsed = 0;
+  state.score = 0;
+  state.lives = 3;
+  state.currentLevel = levelIdx;
+  state.goal = { ...lv.goal };
+  state.won = false;
+  state.coinsCollected = 0;
+  state.coyoteTime = 0;
+  state.jumpBuffer = 0;
+  state.invincible = 0;
+}
+
+// ========== COLLISION ==========
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function resolvePlatformCollisions() {
+  state.player.onGround = false;
+  for (const p of state.platforms) {
+    if (!overlap(state.player, p)) continue;
+    // Landing on top
+    if (state.player.vy > 0 && state.player.y + state.player.h - state.player.vy <= p.y + 4) {
+      state.player.y = p.y - state.player.h;
+      state.player.vy = 0;
+      state.player.onGround = true;
+      state.coyoteTime = 6;
+    }
+    // Hit from below
+    else if (state.player.vy < 0 && state.player.y - state.player.vy >= p.y + p.h - 4) {
+      state.player.y = p.y + p.h;
+      state.player.vy = 0;
+    }
+    // Side collision
+    else {
+      if (state.player.x < p.x) state.player.x = p.x - state.player.w;
+      else state.player.x = p.x + p.w;
+      state.player.vx = 0;
+    }
+  }
+}
+
+function resolveEnemyCollisions() {
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    if (!overlap(state.player, e)) continue;
+    // Stomp: player falling onto enemy top
+    if (state.player.vy > 0 && state.player.y + state.player.h <= e.y + 12) {
+      e.alive = false;
+      state.enemiesDefeated += 1;
+      state.player.vy = -10;
+      state.score += e.defeatReward;
+    } else if (state.invincible <= 0) {
+      // Side hit - lose life
+      state.lives -= 1;
+      state.invincible = 90;
+      state.player.vy = -8;
+      state.player.vx = state.player.x < e.x ? -5 : 5;
+      if (state.lives <= 0) {
+        // Reset level
+        reset(state.currentLevel);
+      }
+    }
+  }
+}
+
+function resolveBlockCollisions() {
+  for (const b of state.blocks) {
+    if (b.used) continue;
+    if (!overlap(state.player, b)) continue;
+    // Bump from below
+    if (state.player.vy < 0 && state.player.y >= b.y + b.h - 8) {
+      b.used = true;
+      b.bumpAnim = 10;
+      state.blocksUsed += 1;
+      state.player.vy = 0;
+      if (b.reward === 'doubleJump') {
+        state.player.abilities.doubleJump = true;
+      } else if (b.reward === 'coin') {
+        state.score += 200;
+        state.coinsCollected += 1;
+      }
+      state.score += 50;
+    } else {
+      // Side
+      if (state.player.x < b.x) state.player.x = b.x - state.player.w;
+      else state.player.x = b.x + b.w;
+      state.player.vx = 0;
+    }
+  }
+}
+
+function resolveGateCollisions() {
+  for (const g of state.gates) {
+    if (g.unlocked) continue;
+    if (!overlap(state.player, g)) continue;
+    if (state.player.abilities[g.requiresAbility]) {
+      g.unlocked = true;
+      state.player.gatesUnlocked.push(g.id);
+    }
+  }
+}
+
+function resolveCoinCollisions() {
+  for (const c of state.coins) {
+    if (c.collected) continue;
+    const dx = (state.player.x + state.player.w/2) - c.x;
+    const dy = (state.player.y + state.player.h/2) - c.y;
+    if (dx*dx + dy*dy < (c.r + 20)*(c.r + 20)) {
+      c.collected = true;
+      state.coinsCollected += 1;
+      state.score += 50;
+    }
+  }
+}
+
+function resolveGoalCollision() {
+  if (state.won) return;
+  if (overlap(state.player, state.goal)) {
+    state.won = true;
+    showMessage('通关!', '#4ecdc4');
+  }
+}
+
+function resolveFall() {
+  if (state.player.y > H + 50) {
+    state.lives -= 1;
+    if (state.lives <= 0) {
+      reset(state.currentLevel);
+    } else {
+      const lv = LEVELS[state.currentLevel];
+      state.player.x = lv.playerStart.x;
+      state.player.y = lv.playerStart.y;
+      state.player.vx = 0;
+      state.player.vy = 0;
+      state.invincible = 60;
+    }
+  }
+}
+
+// ========== TICK PHYSICS ==========
+function tickPhysics(input) {
+  const p = state.player;
+
+  // Horizontal movement
+  if (input.ArrowLeft) { p.vx -= ACCEL; p.facing = -1; }
+  if (input.ArrowRight) { p.vx += ACCEL; p.facing = 1; }
+  p.vx *= FRICTION;
+  p.vx = Math.max(-MAX_VX, Math.min(MAX_VX, p.vx));
+
+  // Jump buffering
+  if (input.Space) state.jumpBuffer = 6;
+  if (state.jumpBuffer > 0) state.jumpBuffer--;
+  if (state.coyoteTime > 0) state.coyoteTime--;
+
+  // Jump
+  if (state.jumpBuffer > 0) {
+    if (p.onGround || state.coyoteTime > 0) {
+      p.vy = JUMP_VY;
+      p.onGround = false;
+      state.coyoteTime = 0;
+      state.jumpBuffer = 0;
+      p.doubleJumpUsed = false;
+    } else if (p.abilities.doubleJump && !p.doubleJumpUsed && p.vy > -2) {
+      p.vy = DOUBLE_JUMP_VY;
+      p.doubleJumpUsed = true;
+      state.jumpBuffer = 0;
+    }
+  }
+
+  // Gravity
+  p.vy += GRAVITY;
+  if (p.vy > 15) p.vy = 15;
+
+  // Integrate
+  p.x += p.vx;
+  p.y += p.vy;
+
+  // Bounds
+  if (p.x < 0) { p.x = 0; p.vx = 0; }
+  if (p.x > W - p.w) { p.x = W - p.w; p.vx = 0; }
+
+  resolvePlatformCollisions();
+  resolveEnemyCollisions();
+  resolveBlockCollisions();
+  resolveGateCollisions();
+  resolveCoinCollisions();
+  resolveGoalCollision();
+  resolveFall();
+
+  // Enemy patrol
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    e.x += e.vx;
+    if (e.x <= e.patrol.minX || e.x >= e.patrol.maxX) e.vx *= -1;
+  }
+
+  // Block bump anim
+  for (const b of state.blocks) {
+    if (b.bumpAnim > 0) b.bumpAnim--;
+  }
+
+  // Invincibility
+  if (state.invincible > 0) state.invincible--;
+
+  // Coin anim
+  for (const c of state.coins) c.anim += 0.05;
+}
+
+// ========== RENDER ==========
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0f3460');
+  grad.addColorStop(0.6, '#16213e');
+  grad.addColorStop(1, '#533483');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  for (let i = 0; i < 50; i++) {
+    const sx = (i * 137 + 50) % W;
+    const sy = (i * 89 + 30) % (H * 0.6);
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+
+  // Platforms
+  for (const p of state.platforms) {
+    const pg = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+    pg.addColorStop(0, '#4ecdc4');
+    pg.addColorStop(1, '#2d8a82');
+    ctx.fillStyle = pg;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(p.x, p.y, p.w, 4);
+  }
+
+  // Coins
+  for (const c of state.coins) {
+    if (c.collected) continue;
+    const wobble = Math.sin(c.anim) * 3;
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y + wobble, c.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffed4a';
+    ctx.beginPath();
+    ctx.arc(c.x - 2, c.y + wobble - 2, c.r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Blocks
+  for (const b of state.blocks) {
+    const offset = b.bumpAnim > 0 ? -b.bumpAnim : 0;
+    if (b.used) {
+      ctx.fillStyle = '#8b7355';
+    } else {
+      ctx.fillStyle = '#ffa500';
+    }
+    ctx.fillRect(b.x, b.y + offset, b.w, b.h);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x, b.y + offset, b.w, b.h);
+    if (!b.used) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('?', b.x + b.w/2, b.y + offset + b.h/2 + 7);
+    }
+  }
+
+  // Gates
+  for (const g of state.gates) {
+    if (g.unlocked) {
+      ctx.fillStyle = 'rgba(78, 205, 196, 0.3)';
+    } else {
+      ctx.fillStyle = 'rgba(255, 100, 100, 0.6)';
+    }
+    ctx.fillRect(g.x, g.y, g.w, g.h);
+    ctx.strokeStyle = g.unlocked ? '#4ecdc4' : '#ff6464';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(g.x, g.y, g.w, g.h);
+  }
+
+  // Enemies
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    // Body
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI * 2);
+    ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(e.x + e.w/3, e.y + e.h/3, 5, 0, Math.PI * 2);
+    ctx.arc(e.x + 2*e.w/3, e.y + e.h/3, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(e.x + e.w/3 + 1, e.y + e.h/3 + 1, 2, 0, Math.PI * 2);
+    ctx.arc(e.x + 2*e.w/3 + 1, e.y + e.h/3 + 1, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Goal flag
+  if (state.goal) {
+    const g = state.goal;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(g.x + 5, g.y, 4, g.h);
+    ctx.fillStyle = state.won ? '#4ecdc4' : '#ffd700';
+    ctx.beginPath();
+    ctx.moveTo(g.x + 9, g.y);
+    ctx.lineTo(g.x + 40, g.y + 15);
+    ctx.lineTo(g.x + 9, g.y + 30);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Player
+  const p = state.player;
+  if (state.invincible > 0 && Math.floor(state.invincible / 4) % 2 === 0) {
+    // blink
+  } else {
+    // Body
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillRect(p.x + 4, p.y + 10, 24, 22);
+    // Head
+    ctx.fillStyle = '#ffeaa7';
+    ctx.beginPath();
+    ctx.arc(p.x + p.w/2, p.y + 8, 10, 0, Math.PI * 2);
+    ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#2d3436';
+    const eyeX = p.facing > 0 ? p.x + p.w/2 + 3 : p.x + p.w/2 - 5;
+    ctx.fillRect(eyeX, p.y + 5, 3, 4);
+    // Legs
+    ctx.fillStyle = '#2d3436';
+    ctx.fillRect(p.x + 6, p.y + 32, 8, 8);
+    ctx.fillRect(p.x + 18, p.y + 32, 8, 8);
+    // Ability indicator
+    if (p.abilities.doubleJump) {
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.arc(p.x + p.w/2, p.y - 8, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // HUD
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`金币: ${state.score}`, 20, 35);
+  ctx.fillText(`生命: ${'❤'.repeat(state.lives)}`, 20, 60);
+  ctx.fillText(`关卡: ${state.currentLevel + 1} - ${LEVELS[state.currentLevel].name}`, 20, 85);
+
+  if (p.abilities.doubleJump) {
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('★ 二段跳已解锁', W - 200, 35);
+  }
+}
+
+// ========== UI ==========
+function showMessage(text, color) {
+  const el = document.getElementById('message');
+  el.textContent = text;
+  el.style.color = color;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+// ========== GAME LOOP ==========
+function getInput() {
+  return {
+    ArrowLeft: !!keys.ArrowLeft,
+    ArrowRight: !!keys.ArrowRight,
+    Space: !!keys.Space || !!keys.ArrowUp,
+  };
+}
+
+function gameLoop() {
+  if (!state.won) {
+    tickPhysics(getInput());
+  }
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ========== TEST CONTRACT ==========
+function snapshot() {
+  return {
+    player: {
+      x: state.player.x, y: state.player.y,
+      vx: state.player.vx, vy: state.player.vy,
+      onGround: state.player.onGround,
+      abilities: { ...state.player.abilities },
+      gatesUnlocked: [...state.player.gatesUnlocked],
+    },
+    enemiesDefeated: state.enemiesDefeated,
+    blocksUsed: state.blocksUsed,
+    score: state.score,
+    coinsCollected: state.coinsCollected,
+    lives: state.lives,
+    won: state.won,
+  };
+}
+
+function step(inputState = {}, frames = 1) {
+  for (let i = 0; i < frames; i++) tickPhysics(inputState);
+  return snapshot();
+}
+
+function runSmokeTest() {
+  const checks = [], failures = [];
+  const coverage = { mechanics: [], rewards: [], risks: [], stateChanges: [], levelsPassed: [], totalLevels: 1, allLevelsReachable: true };
+
+  // Mechanic 1: stomp enemy
+  reset();
+  const a1 = snapshot();
+  step({ ArrowRight: true, Space: true }, 30);
+  const b1 = snapshot();
+  if (b1.enemiesDefeated > a1.enemiesDefeated && b1.player.vy < 0) {
+    checks.push('stomp_enemy');
+    coverage.mechanics.push('stompEnemy');
+    coverage.stateChanges.push('enemiesDefeated', 'player.vy');
+  } else failures.push('stomp_enemy: enemiesDefeated or player.vy did not change');
+
+  // Mechanic 2: bump block
+  reset();
+  const a2 = snapshot();
+  step({ ArrowRight: true, Space: true }, 30);
+  const b2 = snapshot();
+  if (b2.blocksUsed > a2.blocksUsed) {
+    checks.push('bump_block');
+    coverage.mechanics.push('bumpBlock');
+    coverage.stateChanges.push('blocksUsed');
+  } else failures.push('bump_block: blocksUsed did not increase');
+
+  // Mechanic 3: gain ability
+  reset();
+  const a3 = snapshot();
+  step({ ArrowRight: true, Space: true }, 60);
+  const b3 = snapshot();
+  if (!a3.player.abilities.doubleJump && b3.player.abilities.doubleJump) {
+    checks.push('gain_ability');
+    coverage.mechanics.push('gainAbility');
+    coverage.stateChanges.push('abilities.doubleJump');
+  } else failures.push('gain_ability: abilities.doubleJump did not flip false->true');
+
+  // Mechanic 4: unlock gate
+  reset();
+  step({ ArrowRight: true, Space: true }, 60);
+  step({ ArrowRight: true, Space: true }, 80);
+  const b4 = snapshot();
+  if (b4.player.gatesUnlocked.length > 0) {
+    checks.push('unlock_gate');
+    coverage.mechanics.push('unlockGate');
+    coverage.stateChanges.push('gatesUnlocked');
+  } else failures.push('unlock_gate: gatesUnlocked stayed empty after acquiring ability');
+
+  // Mechanic 5: combo
+  reset();
+  step({ ArrowRight: true, Space: true }, 30);
+  step({ ArrowRight: true, Space: true }, 30);
+  step({ ArrowRight: true, Space: true }, 40);
+  const b5 = snapshot();
+  if (b5.enemiesDefeated > 0 && b5.player.abilities.doubleJump && b5.player.gatesUnlocked.length > 0) {
+    checks.push('combo_challenge');
+    coverage.mechanics.push('comboChallenge');
+  } else failures.push('combo_challenge: missing prerequisite evidence');
+
+  coverage.levelsPassed = failures.length === 0 ? ['meadow-run'] : [];
+  return { passed: failures.length === 0, checks, failures, coverage };
+}
+
+window.__GAME_TEST__ = { start() { reset(); }, reset, snapshot, step, runSmokeTest };
+
+window.__GAME_META__ = {
+  subtype: 'platformer',
+  controls: {
+    ArrowLeft: { description: 'move left' },
+    ArrowRight: { description: 'move right' },
+    Space: { description: 'jump / double-jump if ability acquired' },
+  },
+  levels: [
+    { id: 'meadow-run', name: 'Meadow Run', reachable: true, passing: 'reach goal flag at right edge' },
+  ],
+  qualityPlan: {
+    actor: 'cute character with head, body, legs, 32x40',
+    rewards: ['stomp score +100', 'bump block reward doubleJump', 'coin collection +50', 'gate unlock'],
+    risks: ['fall off screen', 'enemy side-touch', 'lose lives'],
+    promise: 'playable with arrow keys + space, every mechanic reachable in <60s',
+  },
+  progressPlan: [
+    { metric: 'player.x', expect: 'increase', input: 'ArrowRight', frames: 20 },
+    { metric: 'player.y', expect: 'change', input: 'Space', frames: 20 },
+    { metric: 'enemiesDefeated', expect: 'increase', input: ['ArrowRight', 'Space'], frames: 30 },
+    { metric: 'blocksUsed', expect: 'increase', input: ['ArrowRight', 'Space'], frames: 30 },
+    { metric: 'player.abilities.doubleJump', expect: true, input: ['ArrowRight', 'Space'], frames: 60 },
+    { metric: 'player.gatesUnlocked', expect: 'increase', input: ['ArrowRight', 'Space'], frames: 90 },
+  ],
+  gameplayMechanics: {
+    enemies: [{ id: 'e1', type: 'goomba', stompable: true, patrol: { minX: 250, maxX: 450 }, defeatReward: 100 }],
+    blocks: [{ id: 'b1', type: 'question', bumpableFromBelow: true, reward: 'doubleJump', usedState: false }],
+    abilities: [{ id: 'doubleJump', type: 'movement', acquiredFrom: 'b1', effect: 'second jump in air', unlocksRoute: 'upper-platform' }],
+    gates: [{ id: 'g1', requiresAbility: 'doubleJump', blocksAccessTo: 'upper-platform' }],
+    comboChallenge: [{ id: 'stomp-bump-jump', target: 'unlock gate after stomp+bump', requires: ['stomp', 'bump', 'doubleJump'] }],
+  },
+  browserVisualSmoke: {
+    desktop: { width: 1280, height: 720, expect: 'canvas non-blank' },
+    mobile: { width: 390, height: 844, expect: 'canvas fits, HUD visible' },
+  },
+};
+
+// ========== START ==========
+reset();
+gameLoop();
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ import {
   MessageCircleQuestion, ZapOff, Flame,
   Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus, Clock3, Repeat,
 } from 'lucide-react';
+import { buildCostText, buildStatusText, fmtTokens } from './chatDiagnostics';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSkillStore } from '../../../../stores/skillStore';
@@ -18,7 +19,6 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import { useModeStore } from '../../../../stores/modeStore';
 import { usePermissionStore } from '../../../../stores/permissionStore';
 import { useStatusStore } from '../../../../stores/statusStore';
-import { MODEL_PRICING_PER_1M } from '@shared/constants';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
@@ -44,8 +44,10 @@ import {
   type PromptCommandCandidateInput,
   type SlashCandidateAction,
   type SlashPickerCandidate,
+  type SlashPickerLabels,
 } from './slashPickerModel';
 import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
+import { useI18n } from '../../../../hooks/useI18n';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -55,15 +57,6 @@ function ensureExtensionMutation(result: ExtensionMutationResult | undefined): v
   }
 }
 
-// 诊断命令格式化 helper（与 newCommands.ts 的 CLI 版对齐）
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-function fmtCost(n: number): string {
-  return `$${n.toFixed(3)}`;
-}
 // 把诊断命令的文本输出写进聊天流（assistant 消息）。运行时取 store，不增加 useMemo 依赖。
 // 用代码块包裹：诊断输出是等宽对齐文本，且含 $ 金额（会被 markdown 当 LaTeX 渲染）、
 // 路径等特殊字符——代码块既保证等宽对齐，又屏蔽 markdown/KaTeX 干扰。
@@ -96,9 +89,9 @@ interface SlashCommandSeed {
   action: () => void;
 }
 
-function makeCommand(seed: SlashCommandSeed): SlashCommand {
+function makeCommand(seed: SlashCommandSeed, labels?: SlashPickerLabels): SlashCommand {
   return {
-    ...createCommandCandidate(seed),
+    ...createCommandCandidate(seed, labels),
     icon: seed.icon,
     action: seed.action,
     ...(seed.sourceLabel ? { sourceLabel: seed.sourceLabel } : {}),
@@ -112,65 +105,6 @@ const slashKindLabel: Record<SlashCommand['kind'], string> = {
   skill: 'Skill',
   connector: 'Connector',
   mcp: 'MCP',
-};
-
-type SlashCommandDisplayGroupId =
-  | 'session'
-  | 'tools'
-  | 'prompt_file'
-  | 'prompt_mcp'
-  | 'mode'
-  | 'agent'
-  | 'model'
-  | 'context'
-  | 'status'
-  | 'ui'
-  | 'system';
-
-interface SlashCommandDisplayItem {
-  id: string;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-  group: SlashCommandDisplayGroupId;
-  sourceLabel?: string;
-  shortcut?: string;
-  action: () => void;
-}
-
-interface SlashCommandGroup<T extends SlashCommandDisplayItem = SlashCommandDisplayItem> {
-  id: SlashCommandDisplayGroupId;
-  label: string;
-  description: string;
-  commands: T[];
-}
-
-const SLASH_COMMAND_GROUP_ORDER: SlashCommandDisplayGroupId[] = [
-  'session',
-  'agent',
-  'tools',
-  'prompt_file',
-  'prompt_mcp',
-  'mode',
-  'model',
-  'context',
-  'status',
-  'ui',
-  'system',
-];
-
-const SLASH_COMMAND_GROUP_META: Record<SlashCommandDisplayGroupId, Omit<SlashCommandGroup, 'id' | 'commands'>> = {
-  session: { label: '会话', description: '创建、清理、归档和恢复会话' },
-  agent: { label: 'Agent 与编排', description: '选择 Agent、创建角色、设定目标和工作流' },
-  tools: { label: '工具与能力', description: 'Skills、MCP、Connectors、Plugins 等能力面' },
-  prompt_file: { label: '自定义命令', description: '用户、项目和插件安装的文件式 prompt command' },
-  prompt_mcp: { label: 'MCP Prompts', description: '来自 MCP server 的 prompt 命令' },
-  mode: { label: '模式与权限', description: '交互模式、推理强度和权限模式' },
-  model: { label: '模型', description: '查看或切换模型配置' },
-  context: { label: '上下文', description: '查看和管理上下文窗口' },
-  status: { label: '状态与诊断', description: '状态、成本、Hooks、权限和诊断信息' },
-  ui: { label: '界面', description: '打开设置、工作区、DAG 和侧边栏' },
-  system: { label: '系统', description: '帮助、配置和系统命令' },
 };
 
 function getPromptCommandSourceLabel(command: PromptCommandCandidateInput): string {
@@ -189,52 +123,6 @@ function getPromptCommandSourceLabel(command: PromptCommandCandidateInput): stri
   return 'File command';
 }
 
-export function buildSlashCommandGroups<T extends SlashCommandDisplayItem>(commands: T[]): Array<SlashCommandGroup<T>> {
-  const grouped = new Map<SlashCommandDisplayGroupId, T[]>();
-  const groupOrder: SlashCommandDisplayGroupId[] = [];
-  for (const command of commands) {
-    if (!grouped.has(command.group)) {
-      groupOrder.push(command.group);
-    }
-    const existing = grouped.get(command.group) ?? [];
-    existing.push(command);
-    grouped.set(command.group, existing);
-  }
-
-  return groupOrder
-    .map((id) => ({
-      id,
-      ...SLASH_COMMAND_GROUP_META[id],
-      commands: grouped.get(id) ?? [],
-    } as SlashCommandGroup<T>));
-}
-
-function getSlashCommandGroupRank(
-  group: SlashCommandDisplayGroupId,
-  preferredGroup?: SlashCommandDisplayGroupId,
-): number {
-  if (preferredGroup && group === preferredGroup) {
-    return -1;
-  }
-  const index = SLASH_COMMAND_GROUP_ORDER.indexOf(group);
-  return index === -1 ? SLASH_COMMAND_GROUP_ORDER.length : index;
-}
-
-export function orderSlashCommandsForDisplay<T extends SlashCommandDisplayItem>(
-  commands: T[],
-  options: { preferredGroup?: SlashCommandDisplayGroupId; exactId?: string } = {},
-): T[] {
-  return [...commands].sort((a, b) => {
-    const rankDelta = getSlashCommandGroupRank(a.group, options.preferredGroup) - getSlashCommandGroupRank(b.group, options.preferredGroup);
-    if (rankDelta !== 0) return rankDelta;
-    if (options.exactId) {
-      const aExact = a.id.toLowerCase() === options.exactId ? 0 : 1;
-      const bExact = b.id.toLowerCase() === options.exactId ? 0 : 1;
-      if (aExact !== bExact) return aExact - bExact;
-    }
-    return a.label.localeCompare(b.label, 'zh-CN');
-  });
-}
 interface SlashCommandPopoverProps {
   isOpen: boolean;
   filter: string;
@@ -258,6 +146,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const { keybindings, platform } = useKeybindingsSettings();
   const getShortcutLabel = useMemo(() => (actionId: KeybindingActionId): string | undefined => {
     const accelerator = getKeybindingAccelerator(keybindings, actionId, platform);
@@ -389,11 +278,12 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   }), []);
 
   // GUI-only commands (operate on store/UI directly, not in registry)
+  const sc = t.slashCommands;
   const guiOnlyCommands: SlashCommand[] = useMemo(() => ([
     {
       id: 'new',
-      label: '新建会话',
-      description: '创建新对话',
+      label: sc.new.label,
+      description: sc.new.description,
       icon: <Plus className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.new'),
       emptyQueryVisible: true,
@@ -402,23 +292,23 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'clear',
-      label: '清空对话',
-      description: '清除当前会话消息',
+      label: sc.clear.label,
+      description: sc.clear.description,
       icon: <Trash2 className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.clear'),
       action: () => clearCurrentSession(),
     },
     {
       id: 'help',
-      label: '帮助',
-      description: '查看帮助文档',
+      label: sc.help.label,
+      description: sc.help.description,
       icon: <HelpCircle className="w-4 h-4" />,
       action: () => window.open('https://github.com/anthropics/claude-code/issues', '_blank'),
     },
     {
       id: 'archive',
-      label: '归档会话',
-      description: '将当前会话移至归档',
+      label: sc.archive.label,
+      description: sc.archive.description,
       icon: <Archive className="w-4 h-4" />,
       action: async () => {
         if (currentSessionId) await archiveSession(currentSessionId);
@@ -426,88 +316,91 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'sidebar',
-      label: sidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
-      description: '切换侧边栏',
+      label: sidebarCollapsed ? sc.sidebar.labelShow : sc.sidebar.labelHide,
+      description: sc.sidebar.description,
       icon: <FileText className="w-4 h-4" />,
       shortcut: getShortcutLabel('sidebar.toggle'),
       action: () => setSidebarCollapsed(!sidebarCollapsed),
     },
     {
       id: 'dag',
-      label: showDAGPanel ? '隐藏 DAG' : '显示 DAG',
-      description: '任务 DAG 可视化',
+      label: showDAGPanel ? sc.dag.labelHide : sc.dag.labelShow,
+      description: sc.dag.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: () => setShowDAGPanel(!showDAGPanel),
     },
     {
       id: 'workspace',
-      label: showWorkspace ? '隐藏工作区' : '显示工作区',
-      description: '切换工作区面板',
+      label: showWorkspace ? sc.workspace.labelHide : sc.workspace.labelShow,
+      description: sc.workspace.description,
       icon: <FolderOpen className="w-4 h-4" />,
       action: () => setShowWorkspace(!showWorkspace),
     },
     {
       id: 'settings',
-      label: '设置',
-      description: '打开应用设置',
+      label: sc.settings.label,
+      description: sc.settings.description,
       icon: <Settings className="w-4 h-4" />,
       shortcut: getShortcutLabel('settings.open'),
       action: () => setShowSettings(true),
     },
     {
       id: 'shortcuts',
-      label: '快捷键',
-      description: '查看键盘快捷键',
+      label: sc.shortcuts.label,
+      description: sc.shortcuts.description,
       icon: <Keyboard className="w-4 h-4" />,
       action: () => openSettingsTab('keybindings'),
     },
     // --- 模式 / 强度 / 权限命令 ---
     {
       id: 'agent',
-      label: '选择 Agent',
-      description: '输入 /agent coder 切换本轮 agent',
+      label: sc.agent.label,
+      description: sc.agent.description,
       icon: <Bot className="w-4 h-4" />,
       actionKind: 'open-agent-command',
       emptyQueryVisible: true,
       emptyQueryRank: 20,
-      effectLabel: '打开 agent 选择',
+      effectLabel: sc.agent.effectLabel,
       action: () => {},
     },
     {
       id: 'create-role',
-      label: '新建角色',
-      description: '对话式创建一个新的持久化角色（专家 Agent）',
+      label: sc['create-role'].label,
+      description: sc['create-role'].description,
       icon: <UserPlus className="w-4 h-4" />,
       actionKind: 'create-role',
       emptyQueryVisible: true,
       emptyQueryRank: 25,
-      effectLabel: '开始角色创建',
+      effectLabel: sc['create-role'].effectLabel,
       action: () => {},
     },
     {
       id: 'goal',
-      label: '设定目标',
-      description: '直接输入目标，可选 --verify 或 --review',
+      label: sc.goal.label,
+      description: sc.goal.description,
       icon: <Target className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
+      commandId: 'goal',
       emptyQueryVisible: true,
       emptyQueryRank: 30,
       action: () => {},
     },
     {
       id: 'schedule',
-      label: '定时任务',
-      description: '自然语言创建提醒、巡检或周期任务',
+      label: sc.schedule.label,
+      description: sc.schedule.description,
       icon: <Clock3 className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
+      commandId: 'schedule',
       emptyQueryVisible: true,
       emptyQueryRank: 35,
       action: () => {},
     },
     {
       id: 'loop',
-      label: '会话循环',
-      description: '在当前会话反复执行同一任务直到完成或喊停',
+      label: sc.loop.label,
+      description: sc.loop.description,
+      commandId: 'loop',
       icon: <Repeat className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
       emptyQueryVisible: true,
@@ -516,8 +409,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'workflow',
-      label: '编排工作流',
-      description: '输入目标，让模型写 JS 脚本编排多个子 agent（循环/扇出/流水线）',
+      label: sc.workflow.label,
+      description: sc.workflow.description,
       icon: <GitBranch className="w-4 h-4" />,
       actionKind: 'prefill-leading-command',
       emptyQueryVisible: true,
@@ -526,57 +419,57 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'code',
-      label: 'Code 模式',
-      description: '切换到 Code 模式',
+      label: sc.code.label,
+      description: sc.code.description,
       icon: <Terminal className="w-4 h-4" />,
       action: () => setInteractionMode('code'),
     },
     {
       id: 'plan',
-      label: 'Plan 模式',
-      description: '切换到 Plan 模式（只出方案不动代码）',
+      label: sc.plan.label,
+      description: sc.plan.description,
       icon: <ClipboardList className="w-4 h-4" />,
       action: () => setInteractionMode('plan'),
     },
     {
       id: 'ask',
-      label: 'Ask 模式',
-      description: '切换到 Ask 模式（只回答问题）',
+      label: sc.ask.label,
+      description: sc.ask.description,
       icon: <MessageCircleQuestion className="w-4 h-4" />,
       action: () => setInteractionMode('ask'),
     },
     {
       id: 'low',
-      label: '低推理强度',
-      description: '设置低推理强度',
+      label: sc.low.label,
+      description: sc.low.description,
       icon: <ZapOff className="w-4 h-4" />,
       action: () => setEffortLevel('low'),
     },
     {
       id: 'med',
-      label: '中推理强度',
-      description: '设置中推理强度',
+      label: sc.med.label,
+      description: sc.med.description,
       icon: <Zap className="w-4 h-4" />,
       action: () => setEffortLevel('medium'),
     },
     {
       id: 'high',
-      label: '高推理强度',
-      description: '设置高推理强度',
+      label: sc.high.label,
+      description: sc.high.description,
       icon: <Flame className="w-4 h-4" />,
       action: () => setEffortLevel('high'),
     },
     {
       id: 'default',
-      label: '默认权限',
-      description: '默认权限模式',
+      label: sc.default.label,
+      description: sc.default.description,
       icon: <Lock className="w-4 h-4" />,
       action: () => setGlobalMode('default'),
     },
     {
       id: 'fullaccess',
-      label: '完全访问',
-      description: '完全访问模式（跳过确认）',
+      label: sc.fullaccess.label,
+      description: sc.fullaccess.description,
       icon: <LockOpen className="w-4 h-4" />,
       action: () => setGlobalMode('full_access'),
     },
@@ -585,8 +478,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     // 这里用 renderer store + 现成 IPC + diagnostics domain 取真实数据重新实现。
     {
       id: 'context',
-      label: 'Context',
-      description: '查看上下文窗口使用情况',
+      label: sc.context.label,
+      description: sc.context.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
         const health = useAppStore.getState().contextHealth;
@@ -614,58 +507,26 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'status',
-      label: '状态',
-      description: '查看当前会话状态',
+      label: sc.status.label,
+      description: sc.status.description,
       icon: <BarChart2 className="w-4 h-4" />,
-      action: () => {
-        const app = useAppStore.getState();
-        const status = useStatusStore.getState();
-        const sessionId = useSessionStore.getState().currentSessionId ?? 'N/A';
-        const total = status.inputTokens + status.outputTokens;
-        const health = app.contextHealth;
-        const contextLine = health && health.currentTokens > 0
-          ? `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`
-          : '';
-        const costLine = status.sessionCost > 0 ? ` (${fmtCost(status.sessionCost)})` : '';
-        writeAssistant(
-          `Status\n` +
-          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}\n` +
-          `  Session:  ${sessionId}\n` +
-          `  Tokens:   ${total > 0 ? fmtTokens(total) : 'N/A'}${costLine}${contextLine}`
-        );
+      action: async () => {
+        writeAssistant(await buildStatusText());
       },
     },
     {
       id: 'cost',
-      label: 'Cost',
-      description: '查看当前会话的 token 用量和成本',
+      label: sc.cost.label,
+      description: sc.cost.description,
       icon: <BarChart2 className="w-4 h-4" />,
       action: async () => {
-        const app = useAppStore.getState();
-        const status = useStatusStore.getState();
-        const pricing = MODEL_PRICING_PER_1M[app.modelConfig.model] || MODEL_PRICING_PER_1M['default'];
-        const inputCost = (status.inputTokens * pricing.input) / 1_000_000;
-        const outputCost = (status.outputTokens * pricing.output) / 1_000_000;
-        const lines = [
-          'Cost (session)',
-          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}`,
-          `  Input:    ${fmtTokens(status.inputTokens)} tokens (${fmtCost(inputCost)})`,
-          `  Output:   ${fmtTokens(status.outputTokens)} tokens (${fmtCost(outputCost)})`,
-          `  Total:    ${fmtCost(inputCost + outputCost)}`,
-        ];
-        try {
-          const b = await invokeDomain<{ currentCost: number; maxBudget: number; usagePercentage: number }>(IPC_DOMAINS.DIAGNOSTICS, 'budget');
-          if (b.maxBudget > 0) {
-            lines.push(`  Budget:   ${fmtCost(b.currentCost)} / ${fmtCost(b.maxBudget)} (${b.usagePercentage.toFixed(1)}%)`);
-          }
-        } catch { /* budget optional */ }
-        writeAssistant(lines.join('\n'));
+        writeAssistant(await buildCostText());
       },
     },
     {
       id: 'agents',
-      label: 'Agent 列表',
-      description: '查看历史 Agent 记录',
+      label: sc.agents.label,
+      description: sc.agents.description,
       icon: <Terminal className="w-4 h-4" />,
       action: async () => {
         const lines: string[] = ['最近完成'];
@@ -691,8 +552,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'hooks',
-      label: 'Hooks',
-      description: '查看 Hook 配置',
+      label: sc.hooks.label,
+      description: sc.hooks.description,
       icon: <Zap className="w-4 h-4" />,
       action: async () => {
         try {
@@ -716,8 +577,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'permissions',
-      label: 'Permissions',
-      description: '查看安全决策链状态',
+      label: sc.permissions.label,
+      description: sc.permissions.description,
       icon: <Lock className="w-4 h-4" />,
       action: async () => {
         const mode = usePermissionStore.getState().globalMode;
@@ -756,8 +617,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     // --- 老 registry 命令的 GUI 实现（原 handler 依赖未注入的 ctx.agent，GUI 会报 "Agent not available"）---
     {
       id: 'model',
-      label: '模型',
-      description: '查看或切换当前模型',
+      label: sc.model.label,
+      description: sc.model.description,
       icon: <Cpu className="w-4 h-4" />,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
@@ -766,8 +627,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'compact',
-      label: '压缩上下文',
-      description: '手动触发上下文压缩',
+      label: sc.compact.label,
+      description: sc.compact.description,
       icon: <Zap className="w-4 h-4" />,
       action: () => {
         const count = useSessionStore.getState().messages.length;
@@ -784,8 +645,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
     {
       id: 'config',
-      label: '配置',
-      description: '查看当前配置',
+      label: sc.config.label,
+      description: sc.config.description,
       icon: <Settings className="w-4 h-4" />,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
@@ -800,9 +661,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         );
       },
     },
-  ] as SlashCommandSeed[]).map(makeCommand), [
+  ] as SlashCommandSeed[]).map((seed) => makeCommand(seed, sc.picker)), [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
-    getShortcutLabel,
+    getShortcutLabel, sc,
     setShowSettings, openSettingsTab, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
     setInteractionMode, setEffortLevel, setGlobalMode,
@@ -860,20 +721,20 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               writeAssistant('❌ ')(`/${def.id} 执行失败：${message}`);
             });
         },
-      }));
+      }, sc.picker));
 
     // Prompt commands（文件式 + MCP），同名让位于 GUI/registry 命令
     const takenIds = new Set([...guiOnlyIds, ...fromRegistry.map((c) => c.id)]);
     const fromPrompts: SlashCommand[] = promptCommands
       .filter((pc) => !takenIds.has(pc.name))
       .map((pc) => ({
-        ...createPromptCandidate(pc),
+        ...createPromptCandidate(pc, sc.picker),
         icon: <Terminal className="w-4 h-4" />,
         sourceLabel: getPromptCommandSourceLabel(pc),
         action: () => {},
       }));
 
-    const fromAgents: SlashCommand[] = createAgentCandidates(agents).map((candidate) => ({
+    const fromAgents: SlashCommand[] = createAgentCandidates(agents, sc.picker).map((candidate) => ({
       ...candidate,
       icon: <Bot className="w-4 h-4" />,
       action: () => {},
@@ -883,7 +744,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       mountedSkills,
       selectedSkillIds,
       recommendations: skillRecommendations,
-    }).map((candidate) => ({
+    }, sc.picker).map((candidate) => ({
       ...candidate,
       icon: <Sparkles className="w-4 h-4" />,
       action: () => {},
@@ -892,6 +753,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     const fromWorkbenchCapabilities: SlashCommand[] = createWorkbenchCapabilityCandidates(
       capabilityItems,
       suggestedCapabilityKeys,
+      sc.picker,
     ).map((candidate) => ({
       ...candidate,
       icon: candidate.kind === 'connector' ? <Plug className="w-4 h-4" /> : <Server className="w-4 h-4" />,
@@ -911,6 +773,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     mountedSkills,
     promptCommands,
     registryIconMap,
+    sc,
     selectedSkillIds,
     skillRecommendations,
     skillOps,
@@ -1011,13 +874,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             {group.items.map((cmd) => {
               const i = filtered.indexOf(cmd);
               const skillStatus = cmd.kind === 'skill'
-                ? cmd.skillSelected ? '已选' : cmd.skillMounted ? '已挂载' : '可挂载'
+                ? cmd.skillSelected ? sc.badges.skillSelected : cmd.skillMounted ? sc.badges.skillMounted : sc.badges.skillMountable
                 : null;
               const connectorStatus = cmd.kind === 'connector'
-                ? cmd.connectorConnected ? '已连接' : '未连接'
+                ? cmd.connectorConnected ? sc.badges.connectorConnected : sc.badges.connectorDisconnected
                 : null;
               const mcpStatus = cmd.kind === 'mcp'
-                ? cmd.mcpConnected ? '可用' : '未连接'
+                ? cmd.mcpConnected ? sc.badges.mcpAvailable : sc.badges.mcpDisconnected
                 : null;
               return (
                 <button

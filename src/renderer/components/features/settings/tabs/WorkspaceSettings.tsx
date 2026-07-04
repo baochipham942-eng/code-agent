@@ -48,6 +48,8 @@ import {
   getBrowserWorkbenchOperationalHint,
   type BrowserWorkbenchStatusTone,
 } from '../../../../utils/workbenchPresentation';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
@@ -56,29 +58,34 @@ import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('WorkspaceSettings');
 
-const BROWSER_OPTIONS: Array<{ value: BrowserSessionMode; label: string; hint: string }> = [
-  { value: 'none', label: 'Off', hint: '禁用浏览器工具（默认）' },
-  { value: 'managed', label: 'Managed', hint: '使用 in-app managed browser；默认 System Chrome via CDP，应用隔离 profile' },
-  { value: 'desktop', label: 'Desktop', hint: '读取当前桌面/前台浏览器上下文 + Computer Surface；前台动作需人工确认' },
+type WorkspaceSettingsText = typeof zh.settings.workspace;
+
+const BROWSER_OPTIONS: Array<{ value: BrowserSessionMode }> = [
+  { value: 'none' },
+  { value: 'managed' },
+  { value: 'desktop' },
 ];
 
 type DefaultOpenTarget = NonNullable<AppSettings['workspace']['defaultOpenTarget']>;
 
-const DEFAULT_OPEN_OPTIONS: Array<{ value: DefaultOpenTarget; label: string; hint: string }> = [
-  { value: 'lastDirectory', label: '上次目录', hint: '默认沿用最近一次进入的工作区' },
-  { value: 'fixedDirectory', label: '固定目录', hint: '总是进入下面指定的目录' },
-  { value: 'askEachTime', label: '每次询问', hint: '启动时让我选，不预设 cwd' },
+const DEFAULT_OPEN_OPTIONS: Array<{ value: DefaultOpenTarget }> = [
+  { value: 'lastDirectory' },
+  { value: 'fixedDirectory' },
+  { value: 'askEachTime' },
 ];
 
-function describeOpenTarget(target: DefaultOpenTarget | undefined): string {
+function describeOpenTarget(
+  target: DefaultOpenTarget | undefined,
+  labels: WorkspaceSettingsText['openTargets'] = zh.settings.workspace.openTargets,
+): string {
   switch (target ?? 'lastDirectory') {
     case 'fixedDirectory':
-      return '固定目录';
+      return labels.fixedDirectory.label;
     case 'askEachTime':
-      return '每次询问';
+      return labels.askEachTime.label;
     case 'lastDirectory':
     default:
-      return '上次目录';
+      return labels.lastDirectory.label;
   }
 }
 
@@ -140,11 +147,14 @@ function scopeStatusClass(status: ConfigScopeItemStatus): string {
   return 'border-zinc-700 bg-zinc-900 text-zinc-500';
 }
 
-function scopeStatusLabel(item: ConfigScopeItem): string {
-  if (item.status === 'warning') return '需确认';
-  if (item.status === 'active') return '生效';
-  if (item.status === 'present') return item.active ? '生效' : '仅存在';
-  return '未命中';
+function scopeStatusLabel(
+  item: ConfigScopeItem,
+  labels: WorkspaceSettingsText['scopeStatus'] = zh.settings.workspace.scopeStatus,
+): string {
+  if (item.status === 'warning') return labels.warning;
+  if (item.status === 'active') return labels.active;
+  if (item.status === 'present') return item.active ? labels.active : labels.presentOnly;
+  return labels.missing;
 }
 
 function scopeIcon(layerId: ConfigScopeLayerId): React.ReactNode {
@@ -154,11 +164,14 @@ function scopeIcon(layerId: ConfigScopeLayerId): React.ReactNode {
   return <Database className="h-4 w-4" />;
 }
 
-function scopeLayerLabel(layerId: ConfigScopeLayerId): string {
-  if (layerId === 'user') return 'User';
-  if (layerId === 'project') return 'Project';
-  if (layerId === 'local') return 'Local';
-  return 'Runtime';
+function scopeLayerLabel(
+  layerId: ConfigScopeLayerId,
+  labels: WorkspaceSettingsText['scopeLayers'] = zh.settings.workspace.scopeLayers,
+): string {
+  if (layerId === 'user') return labels.user;
+  if (layerId === 'project') return labels.project;
+  if (layerId === 'local') return labels.local;
+  return labels.runtime;
 }
 
 function scopeLayerClass(layerId: ConfigScopeLayerId): string {
@@ -168,11 +181,14 @@ function scopeLayerClass(layerId: ConfigScopeLayerId): string {
   return 'border-zinc-600 bg-zinc-800 text-zinc-300';
 }
 
-function shareabilityLabel(recommendation: ConfigWriteRecommendation): string {
-  if (recommendation.shareability === 'team-shareable') return '适合团队共享';
-  if (recommendation.shareability === 'local-only') return '本机私有';
-  if (recommendation.shareability === 'runtime-private') return '运行态私有';
-  return '个人私有';
+function shareabilityLabel(
+  recommendation: ConfigWriteRecommendation,
+  labels: WorkspaceSettingsText['shareability'] = zh.settings.workspace.shareability,
+): string {
+  if (recommendation.shareability === 'team-shareable') return labels.teamShareable;
+  if (recommendation.shareability === 'local-only') return labels.localOnly;
+  if (recommendation.shareability === 'runtime-private') return labels.runtimePrivate;
+  return labels.personalPrivate;
 }
 
 function safetySeverityClass(severity: ConfigSafetySeverity): string {
@@ -181,20 +197,28 @@ function safetySeverityClass(severity: ConfigSafetySeverity): string {
   return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
 }
 
-function safetySeverityLabel(severity: ConfigSafetySeverity): string {
-  if (severity === 'critical') return '高风险';
-  if (severity === 'warning') return '需确认';
-  return '提示';
+function safetySeverityLabel(
+  severity: ConfigSafetySeverity,
+  labels: WorkspaceSettingsText['safetySeverity'] = zh.settings.workspace.safetySeverity,
+): string {
+  if (severity === 'critical') return labels.critical;
+  if (severity === 'warning') return labels.warning;
+  return labels.info;
 }
 
-function safetyStatusText(scan: ConfigSafetyScanSummary): string {
-  if (scan.status === 'no_workspace') return '未设置工作区';
-  if (scan.totalFindings === 0) return '共享前未发现明显风险';
-  if (scan.criticalCount > 0) return '共享前需要处理';
-  return '共享前需要确认';
+function safetyStatusText(
+  scan: ConfigSafetyScanSummary,
+  labels: WorkspaceSettingsText['safetyStatus'] = zh.settings.workspace.safetyStatus,
+): string {
+  if (scan.status === 'no_workspace') return labels.noWorkspace;
+  if (scan.totalFindings === 0) return labels.noFindings;
+  if (scan.criticalCount > 0) return labels.needsAction;
+  return labels.needsReview;
 }
 
 export const WorkspaceSettings: React.FC = () => {
+  const { t } = useI18n();
+  const workspaceText = t.settings.workspace;
   const browserSessionMode = useComposerStore((s) => s.browserSessionMode);
   const setBrowserSessionMode = useComposerStore((s) => s.setBrowserSessionMode);
   const browserSession = useWorkbenchBrowserSession();
@@ -244,6 +268,22 @@ export const WorkspaceSettings: React.FC = () => {
 
   const rows = useMemo(() => buildRecentRows(currentDir, recentDirs), [currentDir, recentDirs]);
   const configScopeTiles = useMemo(() => buildConfigScopeTiles(configScope), [configScope]);
+  const browserOptions = useMemo(
+    () => BROWSER_OPTIONS.map((option) => ({
+      ...option,
+      label: workspaceText.browserOptions[option.value].label,
+      hint: workspaceText.browserOptions[option.value].hint,
+    })),
+    [workspaceText],
+  );
+  const defaultOpenOptions = useMemo(
+    () => DEFAULT_OPEN_OPTIONS.map((option) => ({
+      ...option,
+      label: workspaceText.openTargets[option.value].label,
+      hint: workspaceText.openTargets[option.value].hint,
+    })),
+    [workspaceText],
+  );
 
   const handleReveal = useCallback(async (path: string) => {
     try {
@@ -331,14 +371,14 @@ export const WorkspaceSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="工作区"
-      description="管理当前工作目录、最近打开的目录、本地桥状态，以及浏览器工具的默认行为。"
+      title={t.settings.tabs.workspace}
+      description={workspaceText.description}
     >
       <WebModeBanner />
 
       <SettingsSection
-        title="当前工作区"
-        description="Agent 默认在这个目录下读取/写入文件，可以随时切换。"
+        title={workspaceText.currentWorkspace.title}
+        description={workspaceText.currentWorkspace.description}
         actions={(
           <Button
             size="sm"
@@ -347,17 +387,17 @@ export const WorkspaceSettings: React.FC = () => {
             onClick={handlePickDirectory}
             leftIcon={<FolderOpen className="h-3.5 w-3.5" />}
           >
-            选择目录
+            {workspaceText.actions.chooseDirectory}
           </Button>
         )}
       >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
-              ['当前 cwd', currentDir ?? '未设置', '所有 agent 操作的默认根目录'],
-              ['默认打开目标', describeOpenTarget(defaultOpenTarget), '启动时如何挑选 working dir'],
-              ['本地桥', getDesktopShellLabel(), isWebMode() ? 'Web 模式：通过 HTTP API 连后端' : '应用内 IPC 通道（renderer ↔ main）'],
-              ['最近目录数', String(rows.length), '含当前 cwd'],
+              [workspaceText.summary.currentCwd, currentDir ?? workspaceText.values.notSet, workspaceText.summary.currentCwdCaption],
+              [workspaceText.summary.defaultOpenTarget, describeOpenTarget(defaultOpenTarget, workspaceText.openTargets), workspaceText.summary.defaultOpenTargetCaption],
+              [workspaceText.summary.localBridge, getDesktopShellLabel(), isWebMode() ? workspaceText.summary.localBridgeWebCaption : workspaceText.summary.localBridgeIpcCaption],
+              [workspaceText.summary.recentCount, String(rows.length), workspaceText.summary.recentCountCaption],
             ].map(([label, value, caption]) => (
               <div key={label} className="bg-zinc-900/80 px-3 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -377,7 +417,7 @@ export const WorkspaceSettings: React.FC = () => {
                 onClick={() => handleReveal(currentDir)}
                 leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
               >
-                在 Finder 打开
+                {workspaceText.actions.revealInFinder}
               </Button>
             </div>
           )}
@@ -385,15 +425,17 @@ export const WorkspaceSettings: React.FC = () => {
           <div className="border-t border-zinc-700/60 px-3 py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
-                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">默认打开目标</div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">
+                  {workspaceText.defaultOpenTarget.title}
+                </div>
                 <div className="mt-0.5 text-[11px] text-zinc-500">
-                  启动时 agent 选哪个目录当 working dir。
+                  {workspaceText.defaultOpenTarget.description}
                 </div>
               </div>
-              {savingPreference && <span className="text-[11px] text-zinc-500">保存中…</span>}
+              {savingPreference && <span className="text-[11px] text-zinc-500">{workspaceText.saving}</span>}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {DEFAULT_OPEN_OPTIONS.map((opt) => {
+              {defaultOpenOptions.map((opt) => {
                 const selected = defaultOpenTarget === opt.value;
                 return (
                   <button
@@ -417,7 +459,7 @@ export const WorkspaceSettings: React.FC = () => {
               <div className="mt-3 flex items-center gap-2 rounded border border-zinc-700/60 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-300">
                 <Folder className="h-3.5 w-3.5 text-zinc-500" />
                 <span className="flex-1 truncate font-mono" title={pinnedDirectory ?? ''}>
-                  {pinnedDirectory || '尚未指定固定目录'}
+                  {pinnedDirectory || workspaceText.values.noPinnedDirectory}
                 </span>
                 <Button
                   size="sm"
@@ -426,7 +468,7 @@ export const WorkspaceSettings: React.FC = () => {
                   onClick={handlePickPinnedDirectory}
                   leftIcon={<FolderOpen className="h-3.5 w-3.5" />}
                 >
-                  {pinnedDirectory ? '更换' : '选择目录'}
+                  {pinnedDirectory ? workspaceText.actions.change : workspaceText.actions.chooseDirectory}
                 </Button>
                 {pinnedDirectory && (
                   <Button
@@ -436,7 +478,7 @@ export const WorkspaceSettings: React.FC = () => {
                     onClick={handleClearPinnedDirectory}
                     leftIcon={<X className="h-3.5 w-3.5" />}
                   >
-                    清除
+                    {workspaceText.actions.clear}
                   </Button>
                 )}
               </div>
@@ -446,8 +488,8 @@ export const WorkspaceSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsSection
-        title="配置作用域"
-        description="当前工作区会叠加 User、Project、Local 和 Runtime 四层配置；这里先只读展示命中关系。"
+        title={workspaceText.configScope.title}
+        description={workspaceText.configScope.description}
       >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
@@ -472,7 +514,7 @@ export const WorkspaceSettings: React.FC = () => {
               </div>
             )) : (
               <div className="col-span-full bg-zinc-900/80 px-3 py-4 text-xs text-zinc-500">
-                {loading ? '读取配置作用域…' : '暂无配置作用域数据'}
+                {loading ? workspaceText.configScope.loading : workspaceText.configScope.empty}
               </div>
             )}
           </div>
@@ -482,12 +524,14 @@ export const WorkspaceSettings: React.FC = () => {
               <ConfigScopeGuidance
                 recommendations={configScope.writeRecommendations}
                 safetyScan={configScope.safetyScan}
+                labels={workspaceText}
               />
               {configScope.layers.map((layer) => (
                 <ConfigScopeLayerBlock
                   key={layer.id}
                   layer={layer}
                   onReveal={handleReveal}
+                  labels={workspaceText}
                 />
               ))}
             </div>
@@ -496,15 +540,15 @@ export const WorkspaceSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsSection
-        title="Browser 默认模式"
-        description="决定 agent 默认怎么操作浏览器。原本在「对话」tab，迁到这里和工作区一起管。"
+        title={workspaceText.browser.title}
+        description={workspaceText.browser.description}
       >
         <div className="flex items-center gap-2 mb-3">
           <Globe className="w-4 h-4 text-zinc-400" />
-          <span className="text-xs text-zinc-500">运行状态在任务面板和顶栏呈现</span>
+          <span className="text-xs text-zinc-500">{workspaceText.browser.statusHint}</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          {BROWSER_OPTIONS.map((opt) => {
+          {browserOptions.map((opt) => {
             const selected = browserSessionMode === opt.value;
             return (
               <button
@@ -533,8 +577,8 @@ export const WorkspaceSettings: React.FC = () => {
                   <div className="text-sm font-medium text-zinc-200">Session Inspector</div>
                   <div className="text-[11px] text-zinc-500">
                     {browserSessionMode === 'managed'
-                      ? 'Managed browser 状态摘要'
-                      : 'Desktop / Computer Surface 状态摘要'}
+                      ? workspaceText.browser.managedSummary
+                      : workspaceText.browser.desktopSummary}
                   </div>
                 </div>
               </div>
@@ -561,7 +605,7 @@ export const WorkspaceSettings: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="text-[11px] text-zinc-500">还没有 browser session 状态。</div>
+              <div className="text-[11px] text-zinc-500">{workspaceText.browser.noSessionStatus}</div>
             )}
 
             {browserOperationalHint && (
@@ -582,7 +626,7 @@ export const WorkspaceSettings: React.FC = () => {
                       disabled={busy}
                       className="rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-white/[0.16] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {busy ? '处理中...' : action.label}
+                      {busy ? workspaceText.actions.processing : action.label}
                     </button>
                   );
                 })}
@@ -593,8 +637,8 @@ export const WorkspaceSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsSection
-        title="最近目录"
-        description="过去打开过的工作区，点击直接切换；保留行为由 settings.workspace 决定。"
+        title={workspaceText.recentDirectories.title}
+        description={workspaceText.recentDirectories.description}
         actions={(
           <Button
             size="sm"
@@ -603,7 +647,7 @@ export const WorkspaceSettings: React.FC = () => {
             disabled={loading}
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           >
-            刷新
+            {workspaceText.actions.refresh}
           </Button>
         )}
       >
@@ -612,24 +656,24 @@ export const WorkspaceSettings: React.FC = () => {
             <table className="w-full min-w-[640px] text-left text-xs">
               <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">目录</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{workspaceText.recentDirectories.columns.directory}</th>
+                  <th className="px-3 py-2 font-medium">{workspaceText.recentDirectories.columns.status}</th>
+                  <th className="px-3 py-2 text-right font-medium">{workspaceText.recentDirectories.columns.actions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/80">
                 {loading ? (
                   <tr>
-                    <td colSpan={3} className="px-3 py-6 text-center text-zinc-500">加载中...</td>
+                    <td colSpan={3} className="px-3 py-6 text-center text-zinc-500">{workspaceText.loading}</td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-zinc-500">
                       <div className="flex flex-col items-center gap-1">
                         <Clock className="h-5 w-5 text-zinc-600" />
-                        <div>暂无最近目录</div>
+                        <div>{workspaceText.recentDirectories.emptyTitle}</div>
                         <div className="text-[11px] text-zinc-600">
-                          切换或选择一个目录后会自动出现在这里。
+                          {workspaceText.recentDirectories.emptyDescription}
                         </div>
                       </div>
                     </td>
@@ -665,7 +709,7 @@ export const WorkspaceSettings: React.FC = () => {
                               : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                           }`}
                         >
-                          {row.active ? '当前' : '最近'}
+                          {row.active ? workspaceText.recentDirectories.current : workspaceText.recentDirectories.recent}
                         </span>
                       </td>
                       <td className="px-3 py-3 align-middle">
@@ -677,7 +721,7 @@ export const WorkspaceSettings: React.FC = () => {
                             onClick={() => handleReveal(row.path)}
                             leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
                           >
-                            打开
+                            {workspaceText.actions.open}
                           </Button>
                           {!row.active && (
                             <>
@@ -687,7 +731,7 @@ export const WorkspaceSettings: React.FC = () => {
                                 disabled={isWebMode()}
                                 onClick={() => handleSwitchTo(row.path)}
                               >
-                                切换
+                                {workspaceText.actions.switch}
                               </Button>
                               <Button
                                 size="sm"
@@ -696,7 +740,7 @@ export const WorkspaceSettings: React.FC = () => {
                                 onClick={() => handleRemoveRecent(row.path)}
                                 leftIcon={<X className="h-3.5 w-3.5" />}
                               >
-                                移除
+                                {workspaceText.actions.remove}
                               </Button>
                             </>
                           )}
@@ -714,7 +758,7 @@ export const WorkspaceSettings: React.FC = () => {
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/40 border border-white/[0.06]">
         <Info className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 mt-0.5" />
         <p className="text-[11px] text-zinc-500 leading-relaxed">
-          本地桥的健康状态与可视化目前由 IPC 服务承载，后续会把"重启桥""桥协议版本"等运维入口暴露到这里。
+          {workspaceText.localBridgeNotice}
         </p>
       </div>
 
@@ -736,18 +780,24 @@ export const WorkspaceSettings: React.FC = () => {
                 type="button"
                 onClick={() => setSelectedDetail(null)}
                 className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-                aria-label="关闭详情"
+                aria-label={workspaceText.actions.closeDetails}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="space-y-3 text-xs text-zinc-300">
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">状态</div>
-                <div className="mt-1">{selectedDetail.active ? '当前工作区' : '最近访问'}</div>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">
+                  {workspaceText.recentDirectories.columns.status}
+                </div>
+                <div className="mt-1">
+                  {selectedDetail.active ? workspaceText.details.currentWorkspace : workspaceText.details.recentVisit}
+                </div>
               </div>
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">操作</div>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">
+                  {workspaceText.recentDirectories.columns.actions}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button
                     size="sm"
@@ -756,7 +806,7 @@ export const WorkspaceSettings: React.FC = () => {
                     onClick={() => handleReveal(selectedDetail.path)}
                     leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
                   >
-                    在 Finder 打开
+                    {workspaceText.actions.revealInFinder}
                   </Button>
                   {!selectedDetail.active && (
                     <Button
@@ -769,13 +819,13 @@ export const WorkspaceSettings: React.FC = () => {
                       }}
                       leftIcon={<Plug className="h-3.5 w-3.5" />}
                     >
-                      切到此工作区
+                      {workspaceText.actions.switchToWorkspace}
                     </Button>
                   )}
                 </div>
               </div>
               <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3 text-[11px] text-zinc-500">
-                TODO：补充该目录的最近 session 数、index 健康、git 状态等摘要。
+                {workspaceText.details.todo}
               </div>
             </div>
           </aside>
@@ -788,7 +838,8 @@ export const WorkspaceSettings: React.FC = () => {
 const ConfigScopeGuidance: React.FC<{
   recommendations: ConfigWriteRecommendation[];
   safetyScan: ConfigSafetyScanSummary;
-}> = ({ recommendations, safetyScan }) => {
+  labels: WorkspaceSettingsText;
+}> = ({ recommendations, safetyScan, labels }) => {
   const scannedFileCount = safetyScan.targets.reduce((sum, target) => sum + target.scannedFiles, 0);
 
   return (
@@ -797,13 +848,13 @@ const ConfigScopeGuidance: React.FC<{
         <div className="min-w-0 rounded-md border border-zinc-800 bg-zinc-950/25 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-medium text-zinc-200">推荐写入层</div>
+              <div className="text-sm font-medium text-zinc-200">{labels.guidance.recommendedLayerTitle}</div>
               <div className="text-[11px] text-zinc-500">
-                新配置先按归属层写，团队共享只走可审计的 Project 项。
+                {labels.guidance.recommendedLayerDescription}
               </div>
             </div>
             <span className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] text-zinc-400">
-              只读指导
+              {labels.guidance.readonlyBadge}
             </span>
           </div>
           <div className="space-y-2">
@@ -812,7 +863,7 @@ const ConfigScopeGuidance: React.FC<{
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-medium text-zinc-200">{item.label}</span>
                   <span className={`rounded border px-1.5 py-0.5 text-[10px] ${scopeLayerClass(item.recommendedLayer)}`}>
-                    {scopeLayerLabel(item.recommendedLayer)}
+                    {scopeLayerLabel(item.recommendedLayer, labels.scopeLayers)}
                   </span>
                   <span className={`rounded border px-1.5 py-0.5 text-[10px] ${
                     item.teamShareable
@@ -820,7 +871,7 @@ const ConfigScopeGuidance: React.FC<{
                       : 'border-zinc-700 bg-zinc-900 text-zinc-400'
                   }`}
                   >
-                    {shareabilityLabel(item)}
+                    {shareabilityLabel(item, labels.shareability)}
                   </span>
                 </div>
                 <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.description}</div>
@@ -833,9 +884,9 @@ const ConfigScopeGuidance: React.FC<{
         <div className="min-w-0 rounded-md border border-zinc-800 bg-zinc-950/25 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-medium text-zinc-200">共享前检查</div>
+              <div className="text-sm font-medium text-zinc-200">{labels.safety.title}</div>
               <div className="text-[11px] text-zinc-500">
-                扫描项目配置和 skills，只展示风险摘要，不展示原文。
+                {labels.safety.description}
               </div>
             </div>
             <span className={`rounded border px-2 py-1 text-[10px] ${
@@ -844,16 +895,16 @@ const ConfigScopeGuidance: React.FC<{
                 : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
             }`}
             >
-              {safetyStatusText(safetyScan)}
+              {safetyStatusText(safetyScan, labels.safetyStatus)}
             </span>
           </div>
 
           <div className="grid grid-cols-4 gap-px overflow-hidden rounded border border-zinc-800 bg-zinc-800 text-center">
             {[
-              ['扫描文件', String(scannedFileCount)],
-              ['风险项', String(safetyScan.totalFindings)],
-              ['高风险', String(safetyScan.criticalCount)],
-              ['需确认', String(safetyScan.warningCount)],
+              [labels.safety.scannedFiles, String(scannedFileCount)],
+              [labels.safety.findings, String(safetyScan.totalFindings)],
+              [labels.safetySeverity.critical, String(safetyScan.criticalCount)],
+              [labels.safetySeverity.warning, String(safetyScan.warningCount)],
             ].map(([label, value]) => (
               <div key={label} className="bg-zinc-900/80 px-2 py-2">
                 <div className="text-sm font-semibold text-zinc-100">{value}</div>
@@ -864,7 +915,7 @@ const ConfigScopeGuidance: React.FC<{
 
           {safetyScan.findings.length === 0 ? (
             <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
-              当前项目配置没有命中绝对路径、疑似 secret、私有 endpoint、危险 shell 或 hooks 位置风险。
+              {labels.safety.noFindingsDescription}
             </div>
           ) : (
             <div className="mt-3 space-y-2">
@@ -872,7 +923,7 @@ const ConfigScopeGuidance: React.FC<{
                 <div key={finding.id} className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded border px-1.5 py-0.5 text-[10px] ${safetySeverityClass(finding.severity)}`}>
-                      {safetySeverityLabel(finding.severity)}
+                      {safetySeverityLabel(finding.severity, labels.safetySeverity)}
                     </span>
                     <span className="text-xs font-medium text-zinc-200">{finding.label}</span>
                     <span className="truncate font-mono text-[10px] text-zinc-500" title={finding.target}>
@@ -890,7 +941,7 @@ const ConfigScopeGuidance: React.FC<{
               ))}
               {safetyScan.findings.length > 6 && (
                 <div className="text-[11px] text-zinc-500">
-                  还有 {safetyScan.findings.length - 6} 项风险未展开。
+                  {labels.safety.hiddenPrefix}{safetyScan.findings.length - 6}{labels.safety.hiddenSuffix}
                 </div>
               )}
             </div>
@@ -904,7 +955,8 @@ const ConfigScopeGuidance: React.FC<{
 const ConfigScopeLayerBlock: React.FC<{
   layer: ConfigScopeLayer;
   onReveal: (path: string) => void;
-}> = ({ layer, onReveal }) => (
+  labels: WorkspaceSettingsText;
+}> = ({ layer, onReveal, labels }) => (
   <div className="px-3 py-3">
     <div className="mb-2 flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2">
@@ -919,12 +971,12 @@ const ConfigScopeLayerBlock: React.FC<{
         </div>
       </div>
       <div className="shrink-0 text-[11px] text-zinc-500">
-        {layer.presentCount} 命中 / {layer.items.length} 项
+        {layer.presentCount}{labels.configScope.presentCountMiddle}{layer.items.length}{labels.configScope.presentCountSuffix}
       </div>
     </div>
     {layer.items.length === 0 ? (
       <div className="rounded border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-500">
-        未设置工作区时没有 {layer.label} 级配置。
+        {labels.configScope.noWorkspacePrefix}{layer.label}{labels.configScope.noWorkspaceSuffix}
       </div>
     ) : (
       <div className="overflow-hidden rounded border border-zinc-800">
@@ -939,7 +991,7 @@ const ConfigScopeLayerBlock: React.FC<{
                       <span className="font-medium text-zinc-200">{item.label}</span>
                       {item.private && (
                         <span className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                          私有
+                          {labels.configScope.privateBadge}
                         </span>
                       )}
                     </div>
@@ -964,7 +1016,7 @@ const ConfigScopeLayerBlock: React.FC<{
                   <td className="w-[160px] px-3 py-2 align-top">
                     <div className="flex items-center justify-end gap-2">
                       <span className={`rounded border px-1.5 py-0.5 text-[10px] ${scopeStatusClass(item.status)}`}>
-                        {scopeStatusLabel(item)}
+                        {scopeStatusLabel(item, labels.scopeStatus)}
                       </span>
                       <Button
                         size="sm"
@@ -973,7 +1025,7 @@ const ConfigScopeLayerBlock: React.FC<{
                         onClick={() => onReveal(item.path)}
                         leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
                       >
-                        定位
+                        {labels.actions.locate}
                       </Button>
                     </div>
                   </td>

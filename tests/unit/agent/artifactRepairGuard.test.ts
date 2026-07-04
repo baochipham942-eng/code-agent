@@ -40,6 +40,19 @@ describe('artifactRepairGuard', () => {
     expect(ctx.artifactRepairGuard).toBeUndefined();
   });
 
+  it('does not re-seed a guard for a target that already passed validation this run', () => {
+    const ctx = makeRuntimeContext(
+      '请修复当前 validator 失败，目标文件: 失败状态写到/tmp/x.html',
+    );
+    // 同一 run 内该目标已通过验收（lifecycle 设置的通行标记）——
+    // 不允许下一轮凭历史文本重新种 guard 进入幻影修复模式。
+    ctx.artifactValidationPassedTargetFile = '/tmp/x.html';
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+  });
+
   it('does not include a Chinese prefix when extracting a target path', () => {
     const ctx = makeRuntimeContext(
       '请修复当前 validator 失败，目标文件: 失败状态写到/tmp/x.html',

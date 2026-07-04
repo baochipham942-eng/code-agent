@@ -15,31 +15,19 @@ import {
   type KeybindingActionId,
   type KeybindingCategory,
   type KeybindingDefinition,
+  type KeybindingPlatform,
   type KeybindingSetting,
   type KeybindingsSettings as KeybindingsSettingsContract,
 } from '@shared/keybindings';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { emitKeybindingsChanged } from '../../../../hooks/useKeybindingsSettings';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 
 const logger = createLogger('KeybindingsSettings');
 
-const CATEGORY_LABELS: Record<KeybindingCategory, string> = {
-  global: '全局唤起',
-  sessionEditing: '会话编辑',
-  delivery: '交付物',
-  workbench: '工作台',
-  settings: '设置与能力',
-};
-
-const SCOPE_LABELS: Record<string, string> = {
-  global: '全局',
-  session: '会话',
-  composer: '输入区',
-  artifact: '交付物',
-  workbench: '工作台',
-  settings: '设置',
-};
+type KeybindingsSettingsText = typeof zh.settings.keybindings;
 
 function replaceBinding(
   settings: KeybindingsSettingsContract,
@@ -55,7 +43,19 @@ function replaceBinding(
   };
 }
 
+function getSystemReservedReason(
+  text: KeybindingsSettingsText,
+  platform: KeybindingPlatform,
+  shortcut: string,
+  fallback: string
+): string {
+  const reasons = text.systemReservedReasons[platform] as Record<string, string>;
+  return reasons[shortcut] ?? fallback;
+}
+
 export const KeybindingsSettings: React.FC = () => {
+  const { t } = useI18n();
+  const keybindingsText = t.settings.keybindings;
   const platform = useMemo(() => getCurrentKeybindingPlatform(), []);
   const [keybindings, setKeybindings] = useState<KeybindingsSettingsContract>(() =>
     createDefaultKeybindingsSettings(platform)
@@ -75,14 +75,14 @@ export const KeybindingsSettings: React.FC = () => {
         }
       } catch (error) {
         logger.error('Failed to load keybindings', error);
-        if (!cancelled) setLoadError('快捷键设置加载失败');
+        if (!cancelled) setLoadError(keybindingsText.loadError);
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [platform]);
+  }, [keybindingsText.loadError, platform]);
 
   const mergedKeybindings = useMemo(
     () => mergeKeybindingsWithDefaults(keybindings, platform),
@@ -173,16 +173,17 @@ export const KeybindingsSettings: React.FC = () => {
   const filteredDefinitions = useMemo(() => {
     if (!normalizedQuery) return KEYBINDING_DEFINITIONS;
     return KEYBINDING_DEFINITIONS.filter((definition) => {
+      const actionText = keybindingsText.actions[definition.id];
       const haystack = [
         definition.id,
-        definition.label,
-        definition.description,
-        CATEGORY_LABELS[definition.category],
-        SCOPE_LABELS[definition.scope],
+        actionText.label,
+        actionText.description,
+        keybindingsText.categories[definition.category],
+        keybindingsText.scopes[definition.scope],
       ].join(' ').toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [normalizedQuery]);
+  }, [keybindingsText, normalizedQuery]);
 
   const groupedDefinitions = useMemo(() => {
     const groups = new Map<KeybindingCategory, KeybindingDefinition[]>();
@@ -197,9 +198,11 @@ export const KeybindingsSettings: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-200">快捷键配置</h3>
+          <h3 className="text-sm font-medium text-zinc-200">{keybindingsText.title}</h3>
           <p className="mt-1 text-xs text-zinc-500">
-            当前平台：{platform === 'darwin' ? 'macOS' : platform === 'win32' ? 'Windows' : 'Linux'}。冲突按作用域提示，系统保留组合键单独提醒。
+            {keybindingsText.platformPrefix}
+            {platform === 'darwin' ? 'macOS' : platform === 'win32' ? 'Windows' : 'Linux'}
+            {keybindingsText.platformSuffix}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -214,7 +217,7 @@ export const KeybindingsSettings: React.FC = () => {
                 : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
-            系统级热键
+            {keybindingsText.globalHotkeys}
             <span className={`h-2 w-2 rounded-full ${mergedKeybindings.globalHotkeysEnabled !== false ? 'bg-primary-300' : 'bg-zinc-600'}`} />
           </button>
           <button
@@ -223,7 +226,7 @@ export const KeybindingsSettings: React.FC = () => {
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800"
           >
             <RotateCcw className="h-4 w-4" />
-            恢复默认
+            {keybindingsText.resetDefaults}
           </button>
         </div>
       </div>
@@ -239,13 +242,18 @@ export const KeybindingsSettings: React.FC = () => {
         <div className="space-y-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
             <AlertTriangle className="h-4 w-4" />
-            存在快捷键冲突
+            {keybindingsText.conflictTitle}
           </div>
-          {conflicts.map((conflict) => (
-            <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-amber-100/80">
-              {SCOPE_LABELS[conflict.scope]} · {formatShortcutForDisplay(conflict.shortcut, platform)}：{conflict.labels.join(' / ')}
-            </div>
-          ))}
+          {conflicts.map((conflict) => {
+            const conflictLabels = conflict.actionIds
+              .map((actionId, index) => keybindingsText.actions[actionId]?.label ?? conflict.labels[index] ?? actionId)
+              .join(' / ');
+            return (
+              <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-amber-100/80">
+                {keybindingsText.scopes[conflict.scope]} · {formatShortcutForDisplay(conflict.shortcut, platform)}：{conflictLabels}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -253,11 +261,12 @@ export const KeybindingsSettings: React.FC = () => {
         <div className="space-y-2 rounded-lg border border-sky-700/40 bg-sky-950/20 p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-sky-200">
             <AlertTriangle className="h-4 w-4" />
-            可能被系统占用
+            {keybindingsText.systemWarningTitle}
           </div>
           {systemWarnings.map((warning) => (
             <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-sky-100/80">
-              {warning.label} · {formatShortcutForDisplay(warning.shortcut, platform)}：{warning.reason}
+              {keybindingsText.actions[warning.actionId].label} · {formatShortcutForDisplay(warning.shortcut, platform)}：
+              {getSystemReservedReason(keybindingsText, platform, warning.normalizedShortcut, warning.reason)}
             </div>
           ))}
         </div>
@@ -268,7 +277,7 @@ export const KeybindingsSettings: React.FC = () => {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索快捷键、功能或作用域"
+          placeholder={keybindingsText.searchPlaceholder}
           className="min-w-0 flex-1 bg-transparent text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
         />
       </label>
@@ -278,10 +287,11 @@ export const KeybindingsSettings: React.FC = () => {
           <section key={category} className="space-y-2">
             <div className="flex items-center gap-2">
               <Keyboard className="h-4 w-4 text-zinc-500" />
-              <h3 className="text-sm font-medium text-zinc-200">{CATEGORY_LABELS[category]}</h3>
+              <h3 className="text-sm font-medium text-zinc-200">{keybindingsText.categories[category]}</h3>
             </div>
             <div className="overflow-hidden rounded-lg border border-zinc-800">
               {definitions.map((definition) => {
+                const actionText = keybindingsText.actions[definition.id];
                 const binding = mergedKeybindings.bindings[definition.id] || {
                   enabled: false,
                   accelerator: null,
@@ -290,7 +300,7 @@ export const KeybindingsSettings: React.FC = () => {
                 const hasSystemWarning = systemWarningActionIds.has(definition.id);
                 const defaultBinding = getDefaultKeybinding(definition.id, platform);
                 const shortcutLabel = recordingActionId === definition.id
-                  ? '按下组合键...'
+                  ? keybindingsText.recording
                   : formatShortcutForDisplay(binding.accelerator, platform);
                 return (
                   <div
@@ -301,29 +311,29 @@ export const KeybindingsSettings: React.FC = () => {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-medium text-zinc-200">{definition.label}</div>
+                        <div className="text-sm font-medium text-zinc-200">{actionText.label}</div>
                         <span className="rounded border border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-500">
-                          {SCOPE_LABELS[definition.scope]}
+                          {keybindingsText.scopes[definition.scope]}
                         </span>
                         {definition.risk === 'destructive' && (
                           <span className="rounded border border-red-900/70 px-1.5 py-0.5 text-[11px] text-red-300">
-                            高风险
+                            {keybindingsText.destructiveRisk}
                           </span>
                         )}
                         {hasConflict && (
                           <span className="rounded border border-amber-700/60 px-1.5 py-0.5 text-[11px] text-amber-200">
-                            冲突
+                            {keybindingsText.conflictBadge}
                           </span>
                         )}
                         {hasSystemWarning && (
                           <span className="rounded border border-sky-700/60 px-1.5 py-0.5 text-[11px] text-sky-200">
-                            系统占用
+                            {keybindingsText.systemWarningBadge}
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-zinc-500">{definition.description}</p>
+                      <p className="mt-1 text-xs text-zinc-500">{actionText.description}</p>
                       <p className="mt-1 text-[11px] text-zinc-600">
-                        默认：{formatShortcutForDisplay(defaultBinding?.accelerator, platform)}
+                        {keybindingsText.defaultPrefix}{formatShortcutForDisplay(defaultBinding?.accelerator, platform)}
                       </p>
                     </div>
 
@@ -352,7 +362,7 @@ export const KeybindingsSettings: React.FC = () => {
                         className={`relative h-6 w-11 rounded-full transition-colors ${
                           binding.enabled ? 'bg-primary-500' : 'bg-zinc-700'
                         }`}
-                        title={binding.enabled ? '停用快捷键' : '启用快捷键'}
+                        title={binding.enabled ? keybindingsText.disableShortcut : keybindingsText.enableShortcut}
                       >
                         <span
                           className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
@@ -364,7 +374,7 @@ export const KeybindingsSettings: React.FC = () => {
                         type="button"
                         onClick={() => updateBinding(definition.id, { enabled: false, accelerator: null })}
                         className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-                        title="清空快捷键"
+                        title={keybindingsText.clearShortcut}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -372,7 +382,7 @@ export const KeybindingsSettings: React.FC = () => {
                         type="button"
                         onClick={() => resetAction(definition.id)}
                         className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-                        title="恢复该项默认"
+                        title={keybindingsText.resetShortcut}
                       >
                         <RotateCcw className="h-4 w-4" />
                       </button>
@@ -386,7 +396,7 @@ export const KeybindingsSettings: React.FC = () => {
       </div>
 
       <div className="text-xs text-zinc-600">
-        {saving ? '正在保存...' : '修改会自动保存。系统级热键会在桌面运行时重新注册，失败项会保留在配置中并记录诊断日志。'}
+        {saving ? keybindingsText.saving : keybindingsText.autosaveHint}
       </div>
     </div>
   );

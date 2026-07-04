@@ -7,9 +7,13 @@
 // ============================================================================
 
 import type { ToolCall } from '../../../shared/contract';
+import type { GoalGateVerdict } from '../../../shared/contract/agent';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
+import { GOAL_MODE } from '../../../shared/constants';
+import { getDatabase } from '../../services/core/databaseService';
 import { runReviewGate } from '../goalReviewGate';
+import { runGoalEvidenceGate } from './goalEvidenceGate';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import {
   buildVerificationCard,
@@ -18,6 +22,37 @@ import {
   runVerificationPlan,
   type VerificationEvidence,
 } from '../verification';
+
+/**
+ * 裁决落账：turnTrace（诊断 JSONL）+ tool_execution_events（append-only，
+ * 经 execution lane 进 session 一本账）。复用 fail-safe 写入，绝不阻断收尾。
+ */
+function recordGateVerdict(
+  ctx: RuntimeContext,
+  // 'unverifiable'：闸2 评审基础设施不可用（非评审结论）——只进诊断/账本词汇，
+  // 不进 GoalGateVerdict 契约（观测事件的可区分信号走 verificationStatus:not_run）
+  input: { gate: 1 | 2; verdict: GoalGateVerdict | 'unverifiable'; attempt: number; detail: string },
+): void {
+  const recordedAt = Date.now();
+  ctx.turnTrace?.record('goal_verdict', {
+    gate: input.gate,
+    verdict: input.verdict,
+    attempt: input.attempt,
+    maxAttempts: GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS,
+    detail: input.detail,
+  });
+  try {
+    getDatabase().appendToolExecutionComplete({
+      executionId: `goal-gate-${input.gate}-${ctx.sessionId}-${recordedAt}`,
+      toolName: 'goal_gate_verdict',
+      status: input.verdict === 'allow_finalize' ? 'success' : 'error',
+      summary: `gate${input.gate} ${input.verdict} (attempt ${input.attempt}/${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS})`,
+      sessionId: ctx.sessionId,
+      error: input.verdict === 'allow_finalize' ? undefined : input.detail,
+      recordedAt,
+    });
+  } catch { /* fail-safe：账本写入永不阻断裁决 */ }
+}
 
 /**
  * 拦截 goal 模式下的 attempt_completion，跑双闸验证。
@@ -41,6 +76,37 @@ export async function handleGoalCompletionGate(
   const summary = typeof rawSummary === 'string' ? rawSummary : '';
   ctx.goalMode.requestCompletion(summary);
 
+  // 闸0（公开证据自证核验，maka self-check gate 借鉴）：零 LLM 成本的程序化前置闸。
+  // 产物文件存在性 + 命令真实执行过；不足则有界打回，预算用尽放行进闸1/闸2。
+  const evidenceVerdict = runGoalEvidenceGate(ctx, completionCall);
+  ctx.turnTrace?.record('goal_evidence_gate', {
+    verdict: evidenceVerdict.verdict,
+    reason: evidenceVerdict.reason,
+    evidenceRefs: evidenceVerdict.evidenceRefs,
+  });
+  ctx.onEvent({
+    type: 'goal_gate',
+    data: {
+      gate: 0,
+      pass: evidenceVerdict.verdict !== 'bounce',
+      // 三态映射到闸1/闸2 既有 verdict 词汇表（eval/UI 可区分「核验通过」与
+      // 「打回预算耗尽放行」——两者 pass 同为 true）：
+      // pass → allow_finalize / bounce → repair_prompt / exhausted_release → 原样
+      verdict: evidenceVerdict.verdict === 'pass'
+        ? 'allow_finalize'
+        : evidenceVerdict.verdict === 'bounce'
+          ? 'repair_prompt'
+          : 'exhausted_release',
+      reason: evidenceVerdict.reason,
+      evidenceRefs: evidenceVerdict.evidenceRefs,
+    },
+  });
+  if (evidenceVerdict.verdict === 'bounce') {
+    ctx.goalMode.clearCompletionRequest();
+    contextAssembly.injectSystemMessage(evidenceVerdict.feedback ?? evidenceVerdict.reason);
+    return 'continue';
+  }
+
   const reviewCondition = ctx.goalMode.getReviewCondition();
   const verificationPlan = buildVerificationPlan({
     cwd: ctx.workingDirectory,
@@ -55,6 +121,7 @@ export async function handleGoalCompletionGate(
       failureType: evidence.failureType || null,
       evidenceRefs: evidence.evidenceRefs,
       skippedChecks: evidence.skippedChecks,
+      workspaceSideEffects: evidence.workspaceSideEffects ?? null,
       commands: evidence.commandResults.map((result) => ({
         id: result.id,
         command: result.command,
@@ -75,7 +142,8 @@ export async function handleGoalCompletionGate(
     recordVerificationEvidence(verificationEvidence);
     const gate = verificationEvidence.commandResults[0];
     const pass = verificationEvidence.status === 'passed';
-    // 观测事件：闸1 判定结果（UI 用）
+    // 观测事件：闸1 判定结果（UI 用）。infraFailure 时带 not_run 标记——
+    // "验证没跑成"与"验证不过"必须可区分（infra 错误不许伪装成能力信号）。
     ctx.onEvent({
       type: 'goal_gate',
       data: {
@@ -83,29 +151,141 @@ export async function handleGoalCompletionGate(
         pass,
         exitCode: gate?.exitCode ?? null,
         timedOut: gate?.timedOut ?? false,
-        verificationStatus: verificationEvidence.status,
+        verificationStatus: verificationEvidence.infraFailure ? 'not_run' : verificationEvidence.status,
         failureType: verificationEvidence.failureType,
         evidenceRefs: verificationEvidence.evidenceRefs,
         skippedChecks: verificationEvidence.skippedChecks,
         plannedOptionalCommands: verificationPlan.optional,
-        verificationCard: buildVerificationCard(verificationEvidence),
+        // infraFailure 时卡片也要一并盖成 not_run，否则 verificationStatus 说
+        // "没跑成"，卡片却按 buildVerificationCard 原样渲染成失败红色态，UI 层
+        // 会自相矛盾（Gemini R1-L01）。buildVerificationCard 本体不改，只在
+        // 组装 payload 时覆写，保持卡片 status/requiredStatus 内部自洽。
+        verificationCard: {
+          ...buildVerificationCard(verificationEvidence),
+          ...(verificationEvidence.infraFailure
+            ? { status: 'not_run' as const, requiredStatus: 'not_run' as const }
+            : {}),
+        },
       },
     });
-    if (!pass) {
+    // 闸1 infra 故障：验证命令的宿主进程本身没跑起来（cwd 不存在/不是目录、
+    // 解释器无执行权限等 OS 级 spawn 失败），与"进程跑了但退出码非 0/未解析
+    // 命令（如 exit 127）"是两回事——前者模型改代码也无能为力，硬套修复预算
+    // 只会在死循环里烧干（对齐闸2 unverifiable 分支，PR#326）。不
+    // recordGateFailure（不烧修复预算）、不注入"验证不过"的误导反馈；确定性
+    // 验证没跑成不能静默 markMet（假绿），有产物也不该 aborted（丢产物）→
+    // 复用降级放行语义诚实收尾（met + degraded）。
+    if (!pass && verificationEvidence.infraFailure) {
+      const releaseReason = `验证基础设施不可用：${gate?.output || '验证命令未能执行'}`;
+      recordGateVerdict(ctx, {
+        gate: 1,
+        verdict: 'unverifiable',
+        attempt: ctx.goalMode.getGateFailureCount(1),
+        detail: releaseReason,
+      });
       ctx.goalMode.clearCompletionRequest();
-      contextAssembly.injectSystemMessage(
-        [
-          '<goal-verify-failed>',
-          `验证命令 \`${verifyCommand}\` 未通过（exit ${gate?.exitCode ?? 'null'}${gate?.timedOut ? '，超时' : ''}）。`,
-          `失败归因：${verificationEvidence.failureType || 'unverifiable'}。${verificationEvidence.summary}`,
-          '目标尚未达成。请根据下面的失败输出继续修复，修好后再调 attempt_completion。',
-          '--- 验证输出（截断）---',
-          gate?.output || '(无输出)',
-          '</goal-verify-failed>',
-        ].join('\n'),
-      );
+      ctx.goalMode.markMetDegraded(releaseReason);
+      // 终态 gate:1 事件（对齐闸2 unverifiable 分支形状）：可区分信号走
+      // verificationStatus:'not_run'，不新造 verdict 词汇。
+      ctx.onEvent({
+        type: 'goal_gate',
+        data: {
+          gate: 1,
+          pass: false,
+          verificationStatus: 'not_run',
+          attempt: ctx.goalMode.getGateFailureCount(1),
+          reason: releaseReason,
+        },
+      });
+      // 同闸2：终态事件在闸内立即发出，final 推理失败也不留"永远 running"的 UI。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-verify-unverifiable';
+        ctx.forceFinalResponsePrompt = [
+          '<goal-verify-unverifiable>',
+          `确定性验证本次未能核实：${releaseReason}。本次 goal 按降级放行收尾（工作已完成，但验证因本地执行环境不可用而未经核实）。`,
+          '工具已禁用，请用纯文本向用户诚实收尾：',
+          '1. 已完成并可用的部分（引用具体产物/文件）',
+          `2. 未能核实的验证条件：\`${verifyCommand}\`——说明是本地验证环境不可用导致未核实，不要说成验证不通过`,
+          '3. 用户如需完成核实，下一步可以怎么做（如确认工作目录/命令可执行环境后重试）',
+          '</goal-verify-unverifiable>',
+        ].join('\n');
+      }
       return 'continue';
     }
+    if (!pass) {
+      // 三分支裁决：失败 → 有界修复（repair_prompt），预算耗尽 → 到限放行
+      // （exhausted_release），绝不无限阻塞在验证修复循环里。
+      const attempt = ctx.goalMode.recordGateFailure(1);
+      const failDetail = `验证命令 \`${verifyCommand}\` exit ${gate?.exitCode ?? 'null'}${gate?.timedOut ? '（超时）' : ''}：${verificationEvidence.summary}`;
+      if (!ctx.goalMode.isGateRepairExhausted(1)) {
+        recordGateVerdict(ctx, { gate: 1, verdict: 'repair_prompt', attempt, detail: failDetail });
+        ctx.goalMode.clearCompletionRequest();
+        contextAssembly.injectSystemMessage(
+          [
+            '<goal-verify-failed>',
+            `验证命令 \`${verifyCommand}\` 未通过（exit ${gate?.exitCode ?? 'null'}${gate?.timedOut ? '，超时' : ''}）。`,
+            `失败归因：${verificationEvidence.failureType || 'unverifiable'}。${verificationEvidence.summary}`,
+            `修复机会 ${attempt}/${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS}：请根据下面的失败输出继续修复，修好后再调 attempt_completion；修复机会用尽后将按当前验证结果收尾。`,
+            '--- 验证输出（截断）---',
+            gate?.output || '(无输出)',
+            '</goal-verify-failed>',
+          ].join('\n'),
+        );
+        return 'continue';
+      }
+      // 到限放行：官方判定（验证命令失败）保持原样，收尾但带降级标记。
+      const releaseReason = `验证命令 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会用尽仍未通过：${failDetail}`;
+      recordGateVerdict(ctx, { gate: 1, verdict: 'exhausted_release', attempt, detail: releaseReason });
+      ctx.goalMode.clearCompletionRequest();
+      ctx.goalMode.markMetDegraded(releaseReason);
+      ctx.onEvent({
+        type: 'goal_gate',
+        data: { gate: 1, pass: false, verdict: 'exhausted_release', attempt, reason: releaseReason },
+      });
+      // 终态事件在闸内立即发出（对齐 IMPOSSIBLE 分支）：final 推理若失败/取消，
+      // UI 仍能拿到终态；conversationRuntime met 路径见 degraded 不重发。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-verify-exhausted';
+        ctx.forceFinalResponsePrompt = [
+          '<goal-verify-exhausted>',
+          `验证命令 \`${verifyCommand}\` 在 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会后仍未通过，本次 goal 按到限放行收尾（完成但验证未全过）。`,
+          '工具已禁用，请用纯文本向用户诚实收尾：',
+          '1. 已完成并可用的部分（引用具体产物/文件）',
+          '2. 验证仍未通过的部分及最后一次失败原因（不要淡化或掩饰）',
+          '3. 用户如需完全通过验证，下一步可以怎么做',
+          '--- 最后一次验证输出（截断）---',
+          gate?.output || '(无输出)',
+          '</goal-verify-exhausted>',
+        ].join('\n');
+      }
+      return 'continue';
+    }
+    recordGateVerdict(ctx, {
+      gate: 1,
+      verdict: 'allow_finalize',
+      attempt: ctx.goalMode.getGateFailureCount(1),
+      detail: verificationEvidence.summary,
+    });
   } else {
     recordVerificationEvidence(verificationEvidence);
     ctx.onEvent({
@@ -133,11 +313,69 @@ export async function handleGoalCompletionGate(
       // 可用性降级链：powerful tier 没配 key 时，闸2 降级用主 run 的模型
       parentModelConfig: ctx.modelConfig,
     });
-    // 观测事件：闸2 判定结果（UI 用）
+    // 观测事件：闸2 判定结果（UI 用）。unverifiable 时带 not_run 标记——
+    // "评审没跑成"与"评审不过"必须可区分（infra 错误不许伪装成能力信号）。
     ctx.onEvent({
       type: 'goal_gate',
-      data: { gate: 2, pass: review.pass, reason: review.reason },
+      data: {
+        gate: 2,
+        pass: review.pass,
+        reason: review.reason,
+        ...(review.unverifiable ? { verificationStatus: 'not_run' as const } : {}),
+      },
     });
+    // 闸2 infra 故障（unverifiable）：评审基础设施不可用（降级重试后仍失败），
+    // 没有产生任何评审结论。不 recordGateFailure（不烧修复预算）、不注入"评审
+    // 不过"的误导反馈；软条件没核实不能静默 markMet（假绿），有产物也不该
+    // aborted（丢产物）→ 复用降级放行语义诚实收尾（met + degraded）。
+    if (review.unverifiable) {
+      const releaseReason = review.reason; // 已是"评审基础设施不可用：<真实错误>"
+      recordGateVerdict(ctx, {
+        gate: 2,
+        verdict: 'unverifiable',
+        attempt: ctx.goalMode.getGateFailureCount(2),
+        detail: releaseReason,
+      });
+      ctx.goalMode.clearCompletionRequest();
+      ctx.goalMode.markMetDegraded(releaseReason);
+      // 终态 gate:2 事件（对齐 exhausted_release 的终态事件形状，Gemini R1-M2）：
+      // 可区分信号走 verificationStatus:'not_run'，不新造 verdict 词汇。
+      ctx.onEvent({
+        type: 'goal_gate',
+        data: {
+          gate: 2,
+          pass: false,
+          verificationStatus: 'not_run',
+          attempt: ctx.goalMode.getGateFailureCount(2),
+          reason: releaseReason,
+        },
+      });
+      // 同 exhausted_release：终态事件在闸内立即发出，final 推理失败也不留
+      // "永远 running"的 UI。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-review-unverifiable';
+        ctx.forceFinalResponsePrompt = [
+          '<goal-review-unverifiable>',
+          `软评审条件本次未能核实：${releaseReason}。本次 goal 按降级放行收尾（工作已完成，但软条件因评审服务不可用而未经核实）。`,
+          '工具已禁用，请用纯文本向用户诚实收尾：',
+          '1. 已完成并可用的部分（引用具体产物/文件）',
+          `2. 未能核实的软条件：${reviewCondition}——说明是评审基础设施不可用导致未核实，不要说成质量不达标`,
+          '3. 用户如需完成核实，下一步可以怎么做（如修复评审模型的 API key 后重新验收）',
+          '</goal-review-unverifiable>',
+        ].join('\n');
+      }
+      return 'continue';
+    }
     // IMPOSSIBLE 主动止损（roadmap 1.4）：评审独立核实后判定条件在本会话内
     // 根本不可达成 → markAborted 结束 goal，并通过 forceFinalResponse 通道
     // （禁工具）让下一轮推理向用户解释原因——直接 break 会让用户拿到一个
@@ -167,19 +405,65 @@ export async function handleGoalCompletionGate(
     }
 
     if (!review.pass) {
+      // 与闸1 共享同一修复预算：软评审反复不过同样不允许无限阻塞收尾。
+      const attempt = ctx.goalMode.recordGateFailure(2);
+      const failDetail = `软评审条件未通过：${reviewCondition}。${review.reason}`;
+      if (!ctx.goalMode.isGateRepairExhausted(2)) {
+        recordGateVerdict(ctx, { gate: 2, verdict: 'repair_prompt', attempt, detail: failDetail });
+        ctx.goalMode.clearCompletionRequest();
+        contextAssembly.injectSystemMessage(
+          [
+            '<goal-review-failed>',
+            `软评审条件未通过：${reviewCondition}`,
+            `修复机会 ${attempt}/${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS}：请根据下面的评审意见继续改进，改好后再调 attempt_completion；修复机会用尽后将按当前评审结果收尾。`,
+            '--- 评审意见（截断）---',
+            review.reason,
+            '</goal-review-failed>',
+          ].join('\n'),
+        );
+        return 'continue';
+      }
+      const releaseReason = `软评审 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会用尽仍未通过：${failDetail}`;
+      recordGateVerdict(ctx, { gate: 2, verdict: 'exhausted_release', attempt, detail: releaseReason });
       ctx.goalMode.clearCompletionRequest();
-      contextAssembly.injectSystemMessage(
-        [
-          '<goal-review-failed>',
-          `软评审条件未通过：${reviewCondition}`,
-          '目标尚未达成。请根据下面的评审意见继续改进，改好后再调 attempt_completion。',
-          '--- 评审意见（截断）---',
+      ctx.goalMode.markMetDegraded(releaseReason);
+      ctx.onEvent({
+        type: 'goal_gate',
+        data: { gate: 2, pass: false, verdict: 'exhausted_release', attempt, reason: releaseReason },
+      });
+      // 同闸1：终态事件在闸内立即发出，final 推理失败也不留"永远 running"的 UI。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-verify-exhausted';
+        ctx.forceFinalResponsePrompt = [
+          '<goal-verify-exhausted>',
+          `软评审条件在 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会后仍未通过，本次 goal 按到限放行收尾（完成但验证未全过）。`,
+          '工具已禁用，请用纯文本向用户诚实收尾：',
+          '1. 已完成并可用的部分（引用具体产物/文件）',
+          '2. 评审仍不满意的部分及最后一次评审意见（不要淡化或掩饰）',
+          '3. 用户如需完全达标，下一步可以怎么做',
+          '--- 最后一次评审意见（截断）---',
           review.reason,
-          '</goal-review-failed>',
-        ].join('\n'),
-      );
+          '</goal-verify-exhausted>',
+        ].join('\n');
+      }
       return 'continue';
     }
+    recordGateVerdict(ctx, {
+      gate: 2,
+      verdict: 'allow_finalize',
+      attempt: ctx.goalMode.getGateFailureCount(2),
+      detail: `软评审通过：${reviewCondition}`,
+    });
   }
 
   // 闸1（或跳过）+ 闸2（或跳过）全过 → 达成。

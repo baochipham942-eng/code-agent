@@ -6,6 +6,9 @@ import type {
   CapabilityCenterInventory,
   CapabilityCenterItem,
 } from '../../../src/shared/contract/capability';
+import { zh } from '../../../src/renderer/i18n/zh';
+
+const capabilityText = zh.settings.capabilities;
 
 const mocks = vi.hoisted(() => ({
   useCapabilityInventory: vi.fn(),
@@ -124,9 +127,9 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('去配置');
-    expect(html).toContain('只读');
-    expect(html).not.toContain('<span>禁用</span></button>');
+    expect(html).toContain(capabilityText.actions.configure);
+    expect(html).toContain(capabilityText.actions.readOnly);
+    expect(html).not.toContain(`<span>${capabilityText.actions.disable}</span></button>`);
   });
 
   it('shows source filters and available template count for curated registry entries', () => {
@@ -161,10 +164,10 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('精选');
-    expect(html).toContain('模板');
+    expect(html).toContain(capabilityText.sourceLabels.curated);
+    expect(html).toContain(capabilityText.summary.templates);
     expect(html).toContain('Filesystem MCP template');
-    expect(html).toContain('去配置');
+    expect(html).toContain(capabilityText.actions.configure);
     expect(html).toContain('author Agent Neo');
     expect(html).toContain('reviewed 2026-05-15');
     expect(html).toContain('hash sha256:fixture');
@@ -197,8 +200,8 @@ describe('CapabilityCenterSettings', () => {
     );
 
     expect(html).toContain('P0');
-    expect(html).toContain('Mac 原生可用');
-    expect(html).toContain('借鉴评估');
+    expect(html).toContain(capabilityText.assessmentPortability.native);
+    expect(html).toContain(capabilityText.detail.assessment);
     expect(html).toContain('用于登录态、表单、多页网页操作');
     expect(html).toContain('evidence · marvis:browser-computer-desktop');
     expect(html).not.toContain('暂无评估');
@@ -277,12 +280,12 @@ describe('CapabilityCenterSettings', () => {
 
     expect(html).toContain('Engine');
     expect(html).toContain('Codex CLI');
-    expect(html).toContain('外部 CLI');
-    expect(html).toContain('只读默认');
-    expect(html).toContain('当前 workspace');
+    expect(html).toContain(capabilityText.agentEngineBadges.externalCli);
+    expect(html).toContain(capabilityText.agentEngineBadges.readOnlyDefault);
+    expect(html).toContain(capabilityText.agentEngineBadges.currentWorkspace);
     expect(html).toContain('codex-cli 0.130.0');
     expect(html).toContain('/usr/local/bin/codex');
-    expect(html).toContain('检测状态');
+    expect(html).toContain(capabilityText.detail.inspectionStatus);
     expect(html).toContain('permission read_only');
     expect(html).toContain('cwd current workspace only');
   });
@@ -319,8 +322,8 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('禁用');
-    expect(html).toContain('启用');
+    expect(html).toContain(capabilityText.actions.disable);
+    expect(html).toContain(capabilityText.actions.enable);
   });
 
   it('shows install preview for curated available templates without enabling them', () => {
@@ -367,11 +370,11 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('安装预览');
+    expect(html).toContain(capabilityText.actions.installPreview);
     expect(html).toContain('preview_only');
     expect(html).toContain('project or user mcp.json');
     expect(html).toContain('No command execution during preview.');
-    expect(html).not.toContain('<span>启用</span></button>');
+    expect(html).not.toContain(`<span>${capabilityText.actions.enable}</span></button>`);
   });
 
   it('shows trust-blocked draft previews without exposing the draft action', () => {
@@ -434,10 +437,10 @@ describe('CapabilityCenterSettings', () => {
     expect(html).toContain('Blocked MCP template');
     expect(html).toContain('trust blocked');
     expect(html).toContain('Registry trust metadata blocked draft generation: expired_registry');
-    expect(html).toContain('安装预览');
+    expect(html).toContain(capabilityText.actions.installPreview);
     expect(html).toContain('draft_config');
     expect(html).toContain('expires 2000-01-01T00:00:00.000Z');
-    expect(html).not.toContain('生成草稿</span></button>');
+    expect(html).not.toContain(`${capabilityText.actions.generateDraft}</span></button>`);
   });
 
   it('shows draft install action only for templates with a safe draft spec', () => {
@@ -511,13 +514,13 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('生成草稿');
+    expect(html).toContain(capabilityText.actions.generateDraft);
     expect(html).toContain('draft_config');
     expect(html).toContain('allowedRoot');
     expect(html).toContain('/path/to/folder');
-    expect(html).toContain('缺少 allowedRoot');
+    expect(html).toContain(`${capabilityText.missingPrefix}allowedRoot`);
     expect(html).toContain('No package install or command execution during draft install.');
-    expect(html).not.toContain('安装预览</span></button>');
+    expect(html).not.toContain(`${capabilityText.actions.installPreview}</span></button>`);
   });
 
   it('shows rollback action for generated capability drafts', () => {
@@ -565,12 +568,12 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('删除草稿');
-    expect(html).toContain('去管理');
+    expect(html).toContain(capabilityText.actions.removeDraft);
+    expect(html).toContain(capabilityText.actions.manage);
     expect(html).toContain('draft');
     expect(html).toContain('project:mcp.json');
     expect(html).toContain('Draft generated as disabled MCP server');
-    expect(html).not.toContain('生成草稿</span></button>');
+    expect(html).not.toContain(`${capabilityText.actions.generateDraft}</span></button>`);
   });
 
   it('shows successful capability action feedback', () => {
@@ -629,12 +632,12 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('Registry warnings');
+    expect(html).toContain(capabilityText.registryWarnings.title);
     expect(html).toContain('content_hash_mismatch');
     expect(html).toContain('error · blocking');
     expect(html).toContain(`expected sha256:${'0'.repeat(64)}`);
     expect(html).toContain(`actual sha256:${'b'.repeat(64)}`);
-    expect(html).toContain('信任元数据不通过的安装项只保留预览');
-    expect(html).not.toContain('去配置');
+    expect(html).toContain(capabilityText.registryWarnings.descriptionSuffix);
+    expect(html).not.toContain(capabilityText.actions.configure);
   });
 });

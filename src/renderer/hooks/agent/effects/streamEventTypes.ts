@@ -48,13 +48,15 @@ export interface AssistantMessagePayload extends TurnIdPayload {
 }
 
 export interface RoutingResolvedPayload {
-  mode: 'auto';
+  mode: 'auto' | 'explicit';
   timestamp?: number;
   agentId: string;
   agentName: string;
   reason: string;
   score: number;
   fallbackToDefault?: boolean;
+  /** 用户显式请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
+  requestedAgentId?: string;
 }
 
 export interface ModelFallbackPayload {

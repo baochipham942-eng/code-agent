@@ -2,6 +2,7 @@ import type { ContextAssembly } from './contextAssembly';
 import type { RuntimeContext } from './runtimeContext';
 import { validateGameArtifact } from './gameArtifactValidator';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 
 export type ArtifactRepairStopKind = 'unavailable-tool' | 'attempts-exhausted';
 
@@ -91,14 +92,20 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
   }
 
   try {
+    // 与 toolArtifactValidationLifecycle 的分级保持同一口径：goal 模式走重契约，
+    // 普通聊天走 light + 可玩性冒烟。否则 light 产物在这里被 full 契约卡住，提前解锁永不触发。
+    const fullContract = Boolean(ctx.goalMode?.isPending());
     const validation = await validateGameArtifact(guard.targetFile, {
-      runRuntimeSmoke: true,
-      runtimeSmokeTimeoutMs: 7000,
-      requireRuntimeSmoke: true,
-      runBrowserVisualSmoke: true,
-      browserVisualSmokeTimeoutMs: 10000,
-      requireBrowserVisualSmoke: true,
+      contractLevel: fullContract ? 'full' : 'light',
+      runRuntimeSmoke: fullContract,
+      runtimeSmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.RUNTIME_SMOKE_MS,
+      requireRuntimeSmoke: fullContract,
+      runBrowserVisualSmoke: fullContract,
+      browserVisualSmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.BROWSER_VISUAL_SMOKE_MS,
+      requireBrowserVisualSmoke: fullContract,
       allowBrowserVisualComputerFallback: false,
+      runLightPlayabilitySmoke: !fullContract,
+      lightPlayabilitySmokeTimeoutMs: GAME_VALIDATION_TIMEOUTS.LIGHT_PLAYABILITY_SMOKE_MS,
     });
     if (!validation.shouldValidate || !validation.passed) {
       return false;

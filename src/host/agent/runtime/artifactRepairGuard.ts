@@ -168,6 +168,15 @@ export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
   for (const text of textBlocks) {
     const targetFile = extractArtifactRepairTargetFromText(ctx, text);
     if (!targetFile) continue;
+    // 该目标本次 run 已通过 artifact validation：禁止再凭历史文本重新种 guard，
+    // 否则验收通过后的下一轮会进入幻影修复模式（无修复发生却显示"正在写入修复补丁"，
+    // 且 write-priority 会白白抬高 maxTokens）。
+    if (
+      ctx.artifactValidationPassedTargetFile
+      && isSameArtifactRepairPath(ctx, targetFile, ctx.artifactValidationPassedTargetFile)
+    ) {
+      continue;
+    }
     const issueCodes = inferArtifactRepairIssueCodesFromText(text);
     ctx.artifactRepairGuard = {
       targetFile,

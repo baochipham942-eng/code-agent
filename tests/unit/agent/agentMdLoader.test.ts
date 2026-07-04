@@ -53,6 +53,30 @@ describe('parseAgentMd', () => {
     expect(config!.tools).toEqual(['Read']);
   });
 
+  it('should keep frontmatter name as display name（roles「描述当名字」修复）', () => {
+    const content = [
+      '---',
+      'name: 数据分析师',
+      'description: 数据处理、看板、周报专家',
+      '---',
+      '你是一名专业数据分析师。',
+    ].join('\n');
+
+    const config = parseAgentMd(content, '数据分析师.md');
+    expect(config).not.toBeNull();
+    expect(config!.id).toBe('数据分析师');
+    expect(config!.name).toBe('数据分析师');
+    expect(config!.description).toBe('数据处理、看板、周报专家');
+  });
+
+  it('should fall back name to filename and description to placeholder', () => {
+    const content = ['---', 'model: balanced', '---', 'Prompt.'].join('\n');
+    const config = parseAgentMd(content, 'my-agent.md');
+    expect(config).not.toBeNull();
+    expect(config!.name).toBe('my-agent');
+    expect(config!.description).toBe('Custom agent: my-agent');
+  });
+
   it('should leave skills undefined when not declared', () => {
     const content = [
       '---',

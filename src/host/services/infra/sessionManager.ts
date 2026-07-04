@@ -11,6 +11,7 @@ import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { Session, Message, ModelConfig, TodoItem } from '../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
+import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
 import { stripAppshotBlocks } from '../../../shared/contract/appshot';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { createLogger } from './logger';
@@ -617,6 +618,22 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
+
+    // 整列 metadata 替换保护（Codex audit R2）：通用 update 不得静默抹掉模型切换
+    // 持久化标记；清除标记必须走 clearModelOverride（key 级 patch 通道）。
+    if (
+      updates.metadata !== undefined &&
+      updates.metadata !== null &&
+      !(MODEL_OVERRIDE_METADATA_KEY in updates.metadata)
+    ) {
+      try {
+        const marker = db.getSession(sessionId)?.metadata?.[MODEL_OVERRIDE_METADATA_KEY];
+        if (marker !== undefined) {
+          updates = { ...updates, metadata: { ...updates.metadata, [MODEL_OVERRIDE_METADATA_KEY]: marker } };
+        }
+      } catch { /* 读不到当前 metadata 时按原样写入 */ }
+    }
+
     db.updateSession(sessionId, updates);
 
     // 更新缓存
@@ -632,6 +649,41 @@ export class SessionManager implements Disposable {
 
     // 记录审计日志
     db.logAuditEvent('session_updated', { sessionId, updates }, sessionId);
+  }
+
+  /**
+   * Key 级 metadata 补丁（并发安全，见 SessionRepository.patchSessionMetadata）。
+   * patch 值为 null 删除该 key；可选同一原子调用内写 model 列。返回 false = 会话不存在。
+   */
+  async patchSessionMetadata(
+    sessionId: string,
+    patch: Record<string, unknown>,
+    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+  ): Promise<boolean> {
+    const db = getDatabase();
+    const ownerId = this.currentOwnerUserId();
+    this.assertAccessibleSession(sessionId, ownerId);
+    const patched = db.patchSessionMetadata(sessionId, patch, options);
+    if (!patched) return false;
+
+    if (this.sessionCache.has(sessionId)) {
+      const cached = this.sessionCache.get(sessionId)!;
+      const metadata = { ...(cached.metadata ?? {}) };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete metadata[key];
+        else metadata[key] = value;
+      }
+      Object.assign(cached, {
+        metadata,
+        ...(options?.modelConfig ? { modelConfig: { ...cached.modelConfig, ...options.modelConfig } } : {}),
+        updatedAt: options?.updatedAt ?? Date.now(),
+      });
+    }
+
+    // 不广播 SESSION_UPDATED：patch 语义（值 null=删 key）与前端整量 merge 语义不同，
+    // 且 modelOverride 标记是 host 内部状态，前端经 getModelOverride 读取。
+    db.logAuditEvent('session_metadata_patched', { sessionId, keys: Object.keys(patch) }, sessionId);
+    return true;
   }
 
   /**

@@ -421,6 +421,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     );
   }
   tools = dedupeToolDefinitions(tools);
+  // 前缀稳定（P1 request shape）：工具表按 name 字节序稳定排序，消除 registry 插入
+  // 顺序 / MCP 连接时序带来的排序漂移——工具 schema 在 provider 侧位于可缓存前缀，
+  // 顺序抖动等于打掉整个 prompt cache。排序对两条推理路径（aiSdk / modelRouter）生效。
+  tools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   emitToolSchemaSnapshot(ctx, tools);
 
   let effectiveTools = tools;
@@ -435,6 +439,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       {
         role: 'system',
         content: ctx.runtime.forceFinalResponsePrompt,
+        // transient：走各 provider 边界的末尾 user + <system-reminder> 转换——
+        // 非 transient 的尾部 system 在 legacy claude 路径会被静默丢弃、
+        // 在 aiSdk 路径会被提升进 system 参数打掉前缀缓存（审计 A2）
+        transient: true,
       },
     ];
   }
@@ -756,12 +764,14 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           },
         });
       } else if (chunk.type === 'usage') {
-        // SSE 实时 usage 数据（API 返回的真实 token 用量）
+        // SSE 实时 usage 数据（API 返回的真实 token 用量，含缓存读/写）
         ctx.runtime.onEvent({
           type: 'stream_usage',
           data: {
             inputTokens: chunk.inputTokens || 0,
             outputTokens: chunk.outputTokens || 0,
+            cacheReadTokens: chunk.cacheReadTokens,
+            cacheCreationTokens: chunk.cacheCreationTokens,
             turnId: ctx.runtime.currentTurnId,
           },
         });
@@ -858,19 +868,28 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     ctx.runtime.abortController = null;
     logger.debug('[AgentLoop] Model response received:', response.type);
 
-    // Record token usage with precise estimation
-    const estimatedInputTokens = estimateModelMessageTokens(
-      modelMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      }))
-    );
-    const outputContent = (response.content || '') +
-      (response.toolCalls?.map((tc: ToolCall) => JSON.stringify(tc.arguments || {})).join('') || '');
-    const estimatedOutputTokens = estimateModelMessageTokens([
-      { role: 'assistant', content: outputContent },
-    ]);
-    ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
+    // Record token usage：优先 provider 回传的真实 usage（含 cache 读/写，cache-aware 记账，WP2-1）；
+    // provider 未回传（inputTokens=0 视为未回传，如 SSE 断流兜底）才退回本地估算
+    const providerUsage = response.usage;
+    if (providerUsage && providerUsage.inputTokens > 0) {
+      ctx.recordTokenUsage(providerUsage.inputTokens, providerUsage.outputTokens, {
+        cacheReadTokens: providerUsage.cacheReadTokens,
+        cacheCreationTokens: providerUsage.cacheCreationTokens,
+      });
+    } else {
+      const estimatedInputTokens = estimateModelMessageTokens(
+        modelMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        }))
+      );
+      const outputContent = (response.content || '') +
+        (response.toolCalls?.map((tc: ToolCall) => JSON.stringify(tc.arguments || {})).join('') || '');
+      const estimatedOutputTokens = estimateModelMessageTokens([
+        { role: 'assistant', content: outputContent },
+      ]);
+      ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
+    }
 
     langfuse.endGeneration(llmCallId, {
       type: response.type,

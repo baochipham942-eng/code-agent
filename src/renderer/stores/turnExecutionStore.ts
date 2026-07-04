@@ -14,13 +14,16 @@ export interface DirectRoutingEvidenceEvent {
 
 export interface AutoRoutingEvidenceEvent {
   kind: 'auto';
-  mode: 'auto';
+  /** explicit = 用户显式 /agent 选择产生的路由真相事件 */
+  mode: 'auto' | 'explicit';
   timestamp: number;
   agentId: string;
   agentName: string;
   reason: string;
   score: number;
   fallbackToDefault?: boolean;
+  /** 用户显式请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
+  requestedAgentId?: string;
 }
 
 export type RoutingEvidenceEvent =

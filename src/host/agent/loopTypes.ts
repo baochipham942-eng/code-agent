@@ -44,6 +44,8 @@ export interface AgentLoopConfig {
   sessionId?: string;
   agentId?: string;
   agentName?: string;
+  /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
+  requestedAgentId?: string;
   userId?: string;
   memoryMode?: import('../../shared/contract/session').SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
@@ -133,7 +135,7 @@ export interface ModelResponse {
   // Adaptive Thinking: 思考过程
   thinking?: string;
   // Token usage from API response
-  usage?: { inputTokens: number; outputTokens: number; providerReportedSavedTokens?: number };
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number };
   // 内容块顺序（text 和 tool_call 的交错顺序）
   contentParts?: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }>;
   runtimeDiagnostics?: {
@@ -202,6 +204,12 @@ export interface ModelMessage {
   toolCallText?: string;
   /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */
   thinking?: string;
+  /**
+   * 每请求重建的动态尾巴消息（git 状态 / 通知 / persistent context 等）。
+   * 位于全部历史之后，内容随请求变化，不属于可缓存前缀；Anthropic 路径
+   * 不得在其上打 cache_control 断点。不落库、不进 transcript。
+   */
+  transient?: boolean;
 }
 
 // ----------------------------------------------------------------------------

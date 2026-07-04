@@ -37,10 +37,10 @@ import {
 } from '../../../../services/nativeDesktop';
 
 import {
-  MEETING_APP_NAMES,
   appColor,
   appInitial,
   build24HourBlocks,
+  buildMeetingAppNameSet,
   clusterAppsByDuration,
   clusterAudioTopics,
   formatAnalysisText,
@@ -52,6 +52,9 @@ import {
   type HourBlock,
   type NativeDesktopSectionProps,
 } from './nativeDesktopActivityModel';
+import { useI18n } from '../../../../hooks/useI18n';
+
+type NativeDesktopText = ReturnType<typeof useI18n>['t']['settings']['nativeDesktop'];
 
 // ============================================================================
 // Screenshot components
@@ -165,9 +168,10 @@ const HourSlot: React.FC<{
 const MeetingDetailPanel: React.FC<{
   appName: string;
   audioSegs: AudioSegment[];
+  text: NativeDesktopText;
   onClose: () => void;
-}> = ({ appName, audioSegs, onClose }) => {
-  const topics = useMemo(() => clusterAudioTopics(audioSegs), [audioSegs]);
+}> = ({ appName, audioSegs, text, onClose }) => {
+  const topics = useMemo(() => clusterAudioTopics(audioSegs, text.topics), [audioSegs, text]);
   const [activeTopic, setActiveTopic] = useState<number>(0);
   const transcriptRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
@@ -200,10 +204,10 @@ const MeetingDetailPanel: React.FC<{
           {appInitial(appName)}
         </div>
         <div>
-          <div className="text-sm font-medium text-zinc-200">{appName} · 会议详情</div>
+          <div className="text-sm font-medium text-zinc-200">{appName}{text.separator}{text.meetingDetails}</div>
           <div className="text-[11px] text-zinc-500">
-            {audioSegs.length} 段发言 · {formatDurationShort(totalDuration)}
-            {speakerIds.length > 0 && ` · ${speakerIds.length} 位说话人`}
+            {audioSegs.length}{text.units.speechSegmentSuffix}{text.separator}{formatDurationShort(totalDuration, text.duration)}
+            {speakerIds.length > 0 && `${text.separator}${speakerIds.length}${text.units.speakerCountSuffix}`}
           </div>
         </div>
       </div>
@@ -215,14 +219,14 @@ const MeetingDetailPanel: React.FC<{
           {/* Speaker legend */}
           {speakerIds.length > 0 && (
             <div className="px-4 pb-3 mb-3 border-b border-zinc-800/50">
-              <div className="text-[10px] text-zinc-600 mb-1.5">说话人</div>
+              <div className="text-[10px] text-zinc-600 mb-1.5">{text.speaker}</div>
               <div className="space-y-1">
                 {speakerIds.map((id) => {
                   const style = speakerStyle(id);
                   return (
                     <div key={id} className="flex items-center gap-1.5">
                       <div className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
-                      <span className={`text-[11px] ${style.text}`}>说话人 {id}</span>
+                      <span className={`text-[11px] ${style.text}`}>{text.speaker} {id}</span>
                     </div>
                   );
                 })}
@@ -249,7 +253,7 @@ const MeetingDetailPanel: React.FC<{
                   {topic.label}
                 </div>
                 <div className="text-[10px] text-zinc-600 mt-0.5">
-                  {topic.segments.length} 段
+                  {topic.segments.length}{text.units.segmentSuffix}
                 </div>
               </button>
             ))}
@@ -292,7 +296,7 @@ const MeetingDetailPanel: React.FC<{
                       <div className={`shrink-0 w-16 flex items-center gap-1 pt-0.5`}>
                         <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
                         <span className={`text-[10px] font-medium ${style.text}`}>
-                          说话人{spkId}
+                          {text.speaker}{spkId}
                         </span>
                       </div>
                     ) : (
@@ -318,11 +322,13 @@ const AppGroupCard: React.FC<{
   cluster: AppCluster;
   audioSegs: AudioSegment[];
   expanded: boolean;
+  meetingAppNames: Set<string>;
+  text: NativeDesktopText;
   onToggle: () => void;
   onScreenshotClick: (path: string) => void;
   onOpenMeeting?: () => void;
-}> = ({ cluster, audioSegs, expanded, onToggle, onScreenshotClick, onOpenMeeting }) => {
-  const isMeeting = MEETING_APP_NAMES.has(cluster.appName);
+}> = ({ cluster, audioSegs, expanded, meetingAppNames, text, onToggle, onScreenshotClick, onOpenMeeting }) => {
+  const isMeeting = meetingAppNames.has(cluster.appName);
   const allEvents = cluster.segments.flatMap((s) => s.events);
   const allScreenshots = allEvents.filter(
     (e): e is DesktopActivityEvent & { screenshotPath: string } => Boolean(e.screenshotPath),
@@ -361,12 +367,12 @@ const AppGroupCard: React.FC<{
           <div className="text-sm font-medium text-zinc-200">
             {cluster.appName}
             {isMeeting && audioSegs.length > 0 && (
-              <span className="ml-2 text-[10px] text-amber-400 font-normal">会议记录 {audioSegs.length} 段</span>
+              <span className="ml-2 text-[10px] text-amber-400 font-normal">{text.meetingRecordPrefix}{audioSegs.length}{text.units.segmentSuffix}</span>
             )}
           </div>
           <div className="text-[11px] text-zinc-500">
-            {formatDurationShort(cluster.totalDurationMs)} · {cluster.eventCount} 条记录
-            {allScreenshots.length > 0 && ` · ${allScreenshots.length} 张截图`}
+            {formatDurationShort(cluster.totalDurationMs, text.duration)}{text.separator}{cluster.eventCount}{text.units.recordSuffix}
+            {allScreenshots.length > 0 && `${text.separator}${allScreenshots.length}${text.units.screenshotSuffix}`}
           </div>
         </div>
         <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`} />
@@ -423,12 +429,12 @@ const AppGroupCard: React.FC<{
                 <div className="flex items-center gap-2 text-[12px] text-zinc-400 mb-2">
                   <FileText className="w-3.5 h-3.5 text-amber-400" />
                   <span>
-                    {audioSegs.length} 段发言
+                    {audioSegs.length}{text.units.speechSegmentSuffix}
                     {(() => {
                       const ids = new Set(audioSegs.filter((s) => s.speaker_id && s.speaker_id > 0).map((s) => s.speaker_id));
-                      return ids.size > 0 ? ` · ${ids.size} 位说话人` : '';
+                      return ids.size > 0 ? `${text.separator}${ids.size}${text.units.speakerCountSuffix}` : '';
                     })()}
-                    {audioSegs.length >= 2 && ` · ${formatDurationShort(audioSegs[audioSegs.length - 1].end_at_ms - audioSegs[0].start_at_ms)}`}
+                    {audioSegs.length >= 2 && `${text.separator}${formatDurationShort(audioSegs[audioSegs.length - 1].end_at_ms - audioSegs[0].start_at_ms, text.duration)}`}
                   </span>
                 </div>
                 {/* Preview: first 3 transcript lines */}
@@ -439,14 +445,14 @@ const AppGroupCard: React.FC<{
                     return (
                       <div key={seg.id} className="flex gap-1.5 text-[12px]">
                         {style && (
-                          <span className={`shrink-0 ${style.text}`}>说话人{spkId}:</span>
+                          <span className={`shrink-0 ${style.text}`}>{text.speaker}{spkId}:</span>
                         )}
                         <span className="text-zinc-400 line-clamp-1">{seg.transcript}</span>
                       </div>
                     );
                   })}
                   {audioSegs.length > 3 && (
-                    <div className="text-[11px] text-zinc-600">...还有 {audioSegs.length - 3} 段</div>
+                    <div className="text-[11px] text-zinc-600">{text.moreSegmentsPrefix}{audioSegs.length - 3}{text.units.segmentSuffix}</div>
                   )}
                 </div>
                 {/* Detail entry button */}
@@ -455,7 +461,7 @@ const AppGroupCard: React.FC<{
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[12px] hover:bg-amber-500/20 transition-colors"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  查看会议详情
+                  {text.viewMeetingDetails}
                 </button>
               </div>
             )}
@@ -466,7 +472,12 @@ const AppGroupCard: React.FC<{
   );
 };
 
-const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, date }) => {
+const HourDetailPanel: React.FC<{
+  block: HourBlock;
+  date: Date;
+  meetingAppNames: Set<string>;
+  text: NativeDesktopText;
+}> = ({ block, date, meetingAppNames, text }) => {
   const [lightboxPath, setLightboxPath] = useState<string | null>(null);
   const [audioSegs, setAudioSegs] = useState<AudioSegment[]>([]);
   const [collapsedApps, setCollapsedApps] = useState<Set<string>>(new Set());
@@ -502,7 +513,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
       <div className="flex items-center justify-center h-full text-zinc-600">
         <div className="text-center">
           <Monitor className="w-8 h-8 mx-auto mb-2 text-zinc-700" />
-          <div className="text-sm">该时段无活动记录</div>
+          <div className="text-sm">{text.emptyHour}</div>
         </div>
       </div>
     );
@@ -533,7 +544,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
         <div className="flex items-baseline gap-2">
           <h2 className="text-lg font-medium text-zinc-200">{block.label}</h2>
           <span className="text-xs text-zinc-500">
-            {block.eventCount} 条记录 · {appSet.size} 个应用
+            {block.eventCount}{text.units.recordSuffix}{text.separator}{appSet.size}{text.units.appSuffix}
           </span>
         </div>
 
@@ -550,7 +561,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
               </div>
               <span className="text-[11px] text-zinc-300">{cluster.appName}</span>
               <span className="text-[10px] text-zinc-500">
-                {formatDurationShort(cluster.totalDurationMs)}
+                {formatDurationShort(cluster.totalDurationMs, text.duration)}
               </span>
             </button>
           ))}
@@ -564,11 +575,11 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
             <div className="flex items-center gap-2.5 px-4 py-3 border-b border-amber-500/10">
               <Mic className="w-4 h-4 text-amber-400" />
               <div className="flex-1">
-                <div className="text-sm font-medium text-zinc-200">录音记录</div>
+                <div className="text-sm font-medium text-zinc-200">{text.audioRecords}</div>
                 <div className="text-[11px] text-zinc-500">
-                  {audioSegs.length} 段发言 · {audioSegs.length >= 2
-                    ? formatDurationShort(audioSegs[audioSegs.length - 1].end_at_ms - audioSegs[0].start_at_ms)
-                    : formatDurationShort(audioSegs[0].duration_ms)}
+                  {audioSegs.length}{text.units.speechSegmentSuffix}{text.separator}{audioSegs.length >= 2
+                    ? formatDurationShort(audioSegs[audioSegs.length - 1].end_at_ms - audioSegs[0].start_at_ms, text.duration)
+                    : formatDurationShort(audioSegs[0].duration_ms, text.duration)}
                 </div>
               </div>
             </div>
@@ -579,7 +590,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
                     {formatTime(seg.start_at_ms)}
                   </span>
                   <span className="text-zinc-300 leading-relaxed">
-                    {seg.transcript || <span className="text-zinc-600 italic">转录中...</span>}
+                    {seg.transcript || <span className="text-zinc-600 italic">{text.transcribing}</span>}
                   </span>
                 </div>
               ))}
@@ -601,9 +612,9 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
               <div className="flex items-center gap-2.5 px-4 py-3 border-b border-cyan-500/10">
                 <Eye className="w-4 h-4 text-cyan-400" />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-zinc-200">视觉分析</div>
+                  <div className="text-sm font-medium text-zinc-200">{text.visualAnalysis}</div>
                   <div className="text-[11px] text-zinc-500">
-                    {allAnalyses.length} 条分析 · {new Set(allAnalyses.map(e => e.appName)).size} 个应用
+                    {allAnalyses.length}{text.units.analysisSuffix}{text.separator}{new Set(allAnalyses.map(e => e.appName)).size}{text.units.appSuffix}
                   </div>
                 </div>
               </div>
@@ -629,7 +640,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
       {/* App groups */}
       <div className="px-5 py-4 space-y-3">
         {appClusters.map((cluster) => {
-          const isMeeting = MEETING_APP_NAMES.has(cluster.appName);
+          const isMeeting = meetingAppNames.has(cluster.appName);
           const clusterAudioSegs = isMeeting ? audioSegs : [];
           return (
             <div
@@ -640,6 +651,8 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
                 cluster={cluster}
                 audioSegs={clusterAudioSegs}
                 expanded={!collapsedApps.has(cluster.appName)}
+                meetingAppNames={meetingAppNames}
+                text={text}
                 onToggle={() => toggleApp(cluster.appName)}
                 onScreenshotClick={(p) => setLightboxPath(p)}
                 onOpenMeeting={isMeeting && clusterAudioSegs.length > 0 ? () => setMeetingDetailApp(cluster.appName) : undefined}
@@ -654,6 +667,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
         <MeetingDetailPanel
           appName={meetingDetailApp}
           audioSegs={audioSegs}
+          text={text}
           onClose={() => setMeetingDetailApp(null)}
         />
       )}
@@ -671,6 +685,8 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
   onClose,
   variant = 'embedded',
 }) => {
+  const { t } = useI18n();
+  const nativeDesktopText = t.settings.nativeDesktop;
   const [collectorStatus, setCollectorStatus] = useState<NativeDesktopCollectorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<DesktopActivityEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -767,6 +783,10 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
 
   const hourBlocks = useMemo(() => build24HourBlocks(filteredEvents), [filteredEvents]);
   const selectedBlock = hourBlocks[selectedHour];
+  const meetingAppNames = useMemo(
+    () => buildMeetingAppNameSet(nativeDesktopText.meetingAppNames),
+    [nativeDesktopText.meetingAppNames],
+  );
 
   // Auto-scroll to current hour on mount
   useEffect(() => {
@@ -794,14 +814,14 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         <div className="flex items-center gap-2.5">
           <Monitor className="w-4 h-4 text-cyan-400" />
           <span className={fullscreen ? 'text-base font-semibold text-zinc-100' : 'text-sm font-medium text-zinc-200'}>
-            桌面活动
+            {nativeDesktopText.title}
           </span>
           <div className={`px-1.5 py-0.5 rounded-full text-[10px] ${
             collectorStatus?.running
               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
               : 'bg-zinc-700/40 text-zinc-500 border border-zinc-600/30'
           }`}>
-            {collectorStatus?.running ? '采集中' : '已停止'}
+            {collectorStatus?.running ? nativeDesktopText.status.collecting : nativeDesktopText.status.stopped}
           </div>
         </div>
 
@@ -810,7 +830,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             <button /* ds-allow:button: 日期前翻图标按钮 p-0.5，primitive 变体会改变尺寸 */ onClick={() => navigateDate(-1)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50">
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="text-[11px] text-zinc-400 w-[110px] text-center">{formatDate(currentDate)}</span>
+            <span className="text-[11px] text-zinc-400 w-[110px] text-center">{formatDate(currentDate, nativeDesktopText.date)}</span>
             <button /* ds-allow:button: 日期后翻图标按钮 p-0.5，primitive 变体会改变尺寸 */ onClick={() => navigateDate(1)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50">
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -820,13 +840,13 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {!audioStatus?.capturing && (
             <button /* ds-allow:button: 采集模式切换，自定义小尺寸 chip+图标随状态切换，primitive 无对应变体 */
               onClick={() => setAudioCaptureMode(m => m === 'microphone' ? 'system-audio' : 'microphone')}
-              title={audioCaptureMode === 'system-audio' ? '系统音频（戴耳机也能录）' : '麦克风'}
+              title={audioCaptureMode === 'system-audio' ? nativeDesktopText.audioMode.systemAudioTitle : nativeDesktopText.audioMode.microphone}
               className="px-2 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 border border-zinc-700/50 transition-colors"
             >
               {audioCaptureMode === 'system-audio' ? (
-                <><Volume2 className="w-3 h-3" /> 系统音频</>
+                <><Volume2 className="w-3 h-3" /> {nativeDesktopText.audioMode.systemAudio}</>
               ) : (
-                <><Mic className="w-3 h-3" /> 麦克风</>
+                <><Mic className="w-3 h-3" /> {nativeDesktopText.audioMode.microphone}</>
               )}
             </button>
           )}
@@ -835,10 +855,10 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             onClick={handleToggleAudio}
             disabled={audioBusy}
             title={audioStatus?.capturing
-              ? '停止录音'
+              ? nativeDesktopText.recording.stopTitle
               : audioCaptureMode === 'system-audio'
-                ? '录制系统音频（戴耳机也能录会议）'
-                : '录制麦克风（环境音）'}
+                ? nativeDesktopText.recording.systemAudioTitle
+                : nativeDesktopText.recording.microphoneTitle}
             className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
               audioStatus?.capturing
                 ? 'bg-rose-600/80 text-white hover:bg-rose-500 animate-pulse'
@@ -846,9 +866,9 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             } disabled:opacity-50`}
           >
             {audioStatus?.capturing ? (
-              <><MicOff className="w-3 h-3" /> 录音中</>
+              <><MicOff className="w-3 h-3" /> {nativeDesktopText.recording.recording}</>
             ) : (
-              <><Mic className="w-3 h-3" /> 录音</>
+              <><Mic className="w-3 h-3" /> {nativeDesktopText.recording.record}</>
             )}
           </button>
 
@@ -862,9 +882,9 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             } disabled:opacity-50`}
           >
             {collectorStatus?.running ? (
-              <><Square className="w-3 h-3" /> 停止</>
+              <><Square className="w-3 h-3" /> {nativeDesktopText.collector.stop}</>
             ) : (
-              <><Play className="w-3 h-3" /> 采集</>
+              <><Play className="w-3 h-3" /> {nativeDesktopText.collector.collect}</>
             )}
           </button>
 
@@ -872,7 +892,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             <button /* ds-allow:button: 面板关闭按钮，方形图标按钮（h-8 w-8），primitive 变体会改变外观 */
               type="button"
               onClick={onClose}
-              aria-label="关闭 桌面采集"
+              aria-label={nativeDesktopText.closeCaptureAria}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
             >
               <X className="h-4 w-4" />
@@ -890,14 +910,14 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       {/* Stats bar */}
       {totalEvents > 0 && (
         <div className="flex items-center gap-4 px-5 py-2 border-b border-zinc-800/50 text-[11px] text-zinc-500 shrink-0">
-          <span>{totalEvents} 条记录</span>
-          <span>{appCount} 个应用</span>
-          {screenshotCount > 0 && <span>{screenshotCount} 张截图</span>}
-          {analyzedCount > 0 && <span>{analyzedCount} 条 AI 分析</span>}
+          <span>{totalEvents}{nativeDesktopText.units.recordSuffix}</span>
+          <span>{appCount}{nativeDesktopText.units.appSuffix}</span>
+          {screenshotCount > 0 && <span>{screenshotCount}{nativeDesktopText.units.screenshotSuffix}</span>}
+          {analyzedCount > 0 && <span>{analyzedCount}{nativeDesktopText.units.aiAnalysisSuffix}</span>}
           {audioStatus?.capturing && (
             <span className="text-rose-400">
-              录音中 · {audioStatus.totalSegments} 段 · {audioStatus.asrEngine}
-              {audioStatus.captureMode === 'system-audio' ? ' · 系统音频' : ''}
+              {nativeDesktopText.recording.recording}{nativeDesktopText.separator}{audioStatus.totalSegments}{nativeDesktopText.units.segmentSuffix}{nativeDesktopText.separator}{audioStatus.asrEngine}
+              {audioStatus.captureMode === 'system-audio' ? `${nativeDesktopText.separator}${nativeDesktopText.audioMode.systemAudio}` : ''}
             </span>
           )}
         </div>
@@ -920,9 +940,14 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         {/* Right: detail for selected hour */}
         <div className="flex-1 min-w-0">
           {loading ? (
-            <div className="flex items-center justify-center h-full text-xs text-zinc-500">加载中...</div>
+            <div className="flex items-center justify-center h-full text-xs text-zinc-500">{nativeDesktopText.loading}</div>
           ) : (
-            <HourDetailPanel block={selectedBlock} date={currentDate} />
+            <HourDetailPanel
+              block={selectedBlock}
+              date={currentDate}
+              meetingAppNames={meetingAppNames}
+              text={nativeDesktopText}
+            />
           )}
         </div>
       </div>

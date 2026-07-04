@@ -7,6 +7,9 @@ import path from 'path';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import type { EvalBaseline, BaselineDelta, TestRunSummary, EvalRunMode } from '../types';
 
+/** 分母口径版本：2 = 能力分母排除 skipped 与 infra_excluded（与报告口径一致） */
+export const BASELINE_DENOMINATOR_VERSION = 2;
+
 const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
   minPassRate: 0.7,
   maxScoreDrop: 0.15,
@@ -50,7 +53,21 @@ export class BaselineManager {
       };
     }
 
-    const currentPassRate = current.total > 0 ? current.passed / current.total : 0;
+    // 旧版基线（分母含 skipped 口径）只告警不硬拦：下一次 real promote 自然迁移。
+    if (baseline.denominatorVersion !== BASELINE_DENOMINATOR_VERSION) {
+      console.warn(
+        `[baseline] 基线口径较老（denominatorVersion=${baseline.denominatorVersion ?? 1}，当前=${BASELINE_DENOMINATOR_VERSION}）：`
+        + '其 passRate 分母未排除 skipped，本次对比在含 skipped 的 run 上可能有偏差；建议尽快重新 promote。',
+      );
+    }
+
+    // 能力分母 = total − skipped − infra_excluded，与 markdown/HTML 报告口径一致（WP1-2 完整形态）。
+    // infra（429/超时/5xx/网络）是环境噪声，skipped 是未执行——都不是能力信号。
+    // 与 promote/报告同一 coalesce：显式 infraExcluded 优先（total 允许与 results 数组不一致）
+    const currentInfraExcluded = current.infraExcluded
+      ?? current.results.filter((r) => r.status === 'infra_excluded').length;
+    const currentCapabilityTotal = current.total - current.skipped - currentInfraExcluded;
+    const currentPassRate = currentCapabilityTotal > 0 ? current.passed / currentCapabilityTotal : 0;
     const passRateDelta = currentPassRate - baseline.globalMetrics.passRate;
     const scoreDelta = current.averageScore - baseline.globalMetrics.averageScore;
 
@@ -59,7 +76,10 @@ export class BaselineManager {
     const newPasses: BaselineDelta['newPasses'] = [];
 
     for (const result of current.results) {
-      const baselineCase = baseline.caseResults[result.testId];
+      // v1 基线的 caseResults 可能残留 skipped 条目——视同不存在，
+      // 与 v2（promote 已不落 skipped）行为一致，避免按基线版本分叉。
+      const rawBaselineCase = baseline.caseResults[result.testId];
+      const baselineCase = rawBaselineCase?.status === 'skipped' ? undefined : rawBaselineCase;
       const currentStatus = result.status;
 
       if (baselineCase) {
@@ -127,10 +147,20 @@ export class BaselineManager {
       );
     }
 
-    const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+    // WP1-2 完整形态：infra_excluded 是「无数据」、skipped 是「未执行」，
+    // 都不是结果，都不落 baseline——否则一次限流/一次过滤跑会把幻影状态
+    // 写进基线，下次对账全是噪声。分母用 summary 计数（不用 results.length：
+    // 调用方的 total 允许与 results 数组不完全一致，见 ci.mode.test 的构造）。
+    const capabilityResults = summary.results.filter(
+      (r) => r.status !== 'infra_excluded' && r.status !== 'skipped',
+    );
+    const infraExcluded = summary.infraExcluded
+      ?? summary.results.filter((r) => r.status === 'infra_excluded').length;
+    const capabilityTotal = summary.total - summary.skipped - infraExcluded;
+    const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
 
     const caseResults: EvalBaseline['caseResults'] = {};
-    for (const result of summary.results) {
+    for (const result of capabilityResults) {
       caseResults[result.testId] = {
         status: result.status,
         score: result.score,
@@ -140,13 +170,14 @@ export class BaselineManager {
 
     const baseline: EvalBaseline = {
       version: 1,
+      denominatorVersion: BASELINE_DENOMINATOR_VERSION,
       updatedAt: Date.now(),
       updatedBy: commitSha,
       mode,
       globalMetrics: {
         passRate,
         averageScore: summary.averageScore,
-        totalCases: summary.total,
+        totalCases: capabilityTotal,
       },
       caseResults,
       thresholds: DEFAULT_THRESHOLDS,

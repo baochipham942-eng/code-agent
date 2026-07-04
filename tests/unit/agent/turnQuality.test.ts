@@ -117,4 +117,25 @@ describe('turnQuality', () => {
       strategyProfile: 'deep',
     });
   });
+
+  it('capabilities 透出 requestedAgentId（显式选择降级时 ≠ agentId，供徽标判定）', () => {
+    const ctx = runtime({
+      agentId: 'default',
+      agentName: 'default',
+      requestedAgentId: '__ghost__',
+    });
+
+    const summary = buildTurnQualitySummary(ctx);
+
+    expect(summary.capabilities?.agentId).toBe('default');
+    expect(summary.capabilities?.requestedAgentId).toBe('__ghost__');
+  });
+
+  it('无显式请求时 capabilities.requestedAgentId 不出现', () => {
+    const ctx = runtime({ agentId: 'coder', agentName: 'Coder' });
+
+    const summary = buildTurnQualitySummary(ctx);
+
+    expect(summary.capabilities?.requestedAgentId).toBeUndefined();
+  });
 });

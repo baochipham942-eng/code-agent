@@ -4,6 +4,10 @@ import type { GoalGateVerificationCard } from '../../shared/contract/agent';
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef } from '../../shared/contract/evidence';
 import { ChangeDetector } from '../testing/ci/changeDetector';
 import { runVerifyGate } from './goalVerifyGate';
+import { captureWorkspaceSnapshot, diffWorkspaceSnapshots } from './workspaceSnapshot';
+
+/** 副作用清单上限（控证据体积） */
+const WORKSPACE_SIDE_EFFECTS_MAX = 20;
 
 export type VerificationStatus = 'passed' | 'failed' | 'not_run';
 
@@ -77,6 +81,8 @@ export interface VerificationCommandResult {
   stderrTail: string;
   output: string;
   evidenceRef: EvidenceRef;
+  /** 见 VerifyGateResult.spawnFailed：进程本身没跑起来（OS 级 spawn 失败）。 */
+  spawnFailed: boolean;
 }
 
 export interface VerificationEvidence {
@@ -87,6 +93,20 @@ export interface VerificationEvidence {
   commandResults: VerificationCommandResult[];
   skippedChecks: VerificationSkippedCheck[];
   evidenceRefs: EvidenceRef[];
+  /**
+   * 工作区卫生契约：验证命令跑前后工作区快照 diff 非空时如实记录
+   * （added/modified/removed 清单，有界）。不阻断验证，只入证据——
+   * QA/验证在用户工作区留下临时产物是信任问题，必须可见。
+   */
+  workspaceSideEffects?: string[];
+  /**
+   * true 仅当验证失败的根因是验证命令的宿主进程没跑起来（spawnFailed，OS 级
+   * spawn 失败：cwd 不存在/不是目录、解释器无执行权限等）——这是本地验证
+   * 基础设施故障，不是"验证不过"。exit 127 命令未解析等仍走 failureType
+   * dependency_missing，不算 infra（模型可能自行装依赖/改命令修复）。
+   * 调用方（goalCompletionGate 闸1）据此判断是否要绕开修复预算走降级放行。
+   */
+  infraFailure?: boolean;
 }
 
 export interface RunVerificationPlanOptions {
@@ -422,6 +442,10 @@ export async function runVerificationPlan(
     return buildNotRunVerificationEvidence(plan);
   }
 
+  // 工作区卫生契约：跑前拍快照，跑完 diff（fail-safe：快照失败按空处理，
+  // truncated 时 diff 返回空防误报）。
+  const snapshotBefore = captureWorkspaceSnapshot(plan.cwd);
+
   const commandResults: VerificationCommandResult[] = [];
   const evidenceRefs: EvidenceRef[] = [];
 
@@ -451,6 +475,7 @@ export async function runVerificationPlan(
       stderrTail: gate.stderrTail,
       output: gate.output,
       evidenceRef,
+      spawnFailed: gate.spawnFailed,
     });
   }
 
@@ -458,6 +483,10 @@ export async function runVerificationPlan(
   const failureType = failed
     ? classifyVerificationFailure(failed.command, `${failed.output}\n${failed.stdoutTail}\n${failed.stderrTail}`, failed.timedOut)
     : undefined;
+
+  const snapshotAfter = captureWorkspaceSnapshot(plan.cwd);
+  const sideEffects = diffWorkspaceSnapshots(snapshotBefore, snapshotAfter)
+    .slice(0, WORKSPACE_SIDE_EFFECTS_MAX);
 
   return {
     status: failed ? 'failed' : 'passed',
@@ -469,5 +498,7 @@ export async function runVerificationPlan(
     commandResults,
     skippedChecks: plan.skippedChecks,
     evidenceRefs,
+    ...(sideEffects.length > 0 ? { workspaceSideEffects: sideEffects } : {}),
+    ...(failed?.spawnFailed ? { infraFailure: true } : {}),
   };
 }

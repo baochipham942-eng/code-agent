@@ -421,6 +421,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     );
   }
   tools = dedupeToolDefinitions(tools);
+  // 前缀稳定（P1 request shape）：工具表按 name 字节序稳定排序，消除 registry 插入
+  // 顺序 / MCP 连接时序带来的排序漂移——工具 schema 在 provider 侧位于可缓存前缀，
+  // 顺序抖动等于打掉整个 prompt cache。排序对两条推理路径（aiSdk / modelRouter）生效。
+  tools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   emitToolSchemaSnapshot(ctx, tools);
 
   let effectiveTools = tools;
@@ -435,6 +439,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       {
         role: 'system',
         content: ctx.runtime.forceFinalResponsePrompt,
+        // transient：走各 provider 边界的末尾 user + <system-reminder> 转换——
+        // 非 transient 的尾部 system 在 legacy claude 路径会被静默丢弃、
+        // 在 aiSdk 路径会被提升进 system 参数打掉前缀缓存（审计 A2）
+        transient: true,
       },
     ];
   }

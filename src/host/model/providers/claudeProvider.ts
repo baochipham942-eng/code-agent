@@ -14,6 +14,7 @@ import {
   safeJsonParse,
   convertToolsToClaude,
   convertToClaudeMessages,
+  wrapTransientSystemReminder,
   parseClaudeResponse,
   electronFetch,
   normalizeClaudeBaseUrl,
@@ -378,9 +379,17 @@ export class ClaudeProvider implements Provider {
       effectiveConfig.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude
     );
 
+    // 动态尾巴（transient system）先转成历史末尾的 user + <system-reminder>：
+    // 本路径只保留首条 system 进 system 参数、其余 system 全部丢弃，不转换会静默丢失；
+    // 且尾巴每请求变化，进 system 参数会打掉 prompt cache 前缀。
+    const normalizedMessages = messages.map((m) =>
+      m.role === 'system' && m.transient && typeof m.content === 'string'
+        ? { ...m, role: 'user', content: wrapTransientSystemReminder(m.content), transient: undefined }
+        : m,
+    );
     // System message 单独提取（Claude API 要求 system 不在 messages 数组中）
-    const systemMessage = messages.find((m) => m.role === 'system');
-    const otherMessages = messages.filter((m) => m.role !== 'system');
+    const systemMessage = normalizedMessages.find((m) => m.role === 'system');
+    const otherMessages = normalizedMessages.filter((m) => m.role !== 'system');
 
     const claudeTools = convertToolsToClaude(tools);
 

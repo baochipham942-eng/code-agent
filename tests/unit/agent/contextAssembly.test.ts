@@ -81,6 +81,7 @@ vi.mock('../../../src/host/prompts/builder', () => ({
 }));
 
 vi.mock('../../../src/host/agent/messageHandling/contextBuilder', () => ({
+  buildGitStatusBlock: vi.fn(() => ''),
   injectWorkingDirectoryContext: vi.fn((prompt: string) => prompt),
   buildEnhancedSystemPrompt: vi.fn().mockImplementation(async (prompt: string) => prompt),
   buildRuntimeModeBlock: vi.fn().mockReturnValue(''),
@@ -209,6 +210,8 @@ vi.mock('../../../src/shared/constants', () => ({
     FAILURE_COOLDOWN_THRESHOLD: 3,
     FAILURE_COOLDOWN_MS: 10 * 60 * 1000,
   },
+  // L0 active prune（P1 批）：messageBuild 接线读取，mock 不同步会让整个压缩管线静默 fallback
+  ACTIVE_TOOL_RESULT_PRUNE: { ENABLED: true, MAX_TOKENS_PER_RESULT: 4096 },
   // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
   OBSERVATION_MASKING: {
     PRESERVE_RECENT_COUNT: 10,
@@ -359,6 +362,8 @@ import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
 } from '../../../src/host/memory/memoryInjectionTrace';
+import { buildGitStatusBlock } from '../../../src/host/agent/messageHandling/contextBuilder';
+import { drainCompletionNotifications } from '../../../src/host/agent/activeAgentContext';
 
 function buildMessage(id: string, role: Message['role'], content: string): Message {
   return {
@@ -765,7 +770,11 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
-    expect(modelMessages[0].content).toContain('<memory_index>');
+    // 前缀稳定改造：advisory 块从 system 消息挪到历史末尾的 transient 动态尾巴
+    const memoryIndexTail = modelMessages[modelMessages.length - 1];
+    expect(memoryIndexTail.transient).toBe(true);
+    expect(memoryIndexTail.content).toContain('<memory_index>');
+    expect(modelMessages[0].content).not.toContain('<memory_index>');
     expect(listMemoryInjectionTraces({ sessionId: 'session-memory-index' })).toContainEqual(
       expect.objectContaining({
         blockType: 'memory_index',
@@ -790,7 +799,10 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
-    expect(modelMessages[0].content).toContain('<memory_hint>');
+    const memoryHintTail = modelMessages[modelMessages.length - 1];
+    expect(memoryHintTail.transient).toBe(true);
+    expect(memoryHintTail.content).toContain('<memory_hint>');
+    expect(modelMessages[0].content).not.toContain('<memory_hint>');
     expect(listMemoryInjectionTraces({ sessionId: 'session-memory-hint' })).toEqual([
       expect.objectContaining({
         blockType: 'memory_hint',
@@ -815,7 +827,9 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
-    expect(modelMessages[0].content).toContain('- Previous task: memory audit');
+    const recentTail = modelMessages[modelMessages.length - 1];
+    expect(recentTail.transient).toBe(true);
+    expect(recentTail.content).toContain('- Previous task: memory audit');
     expect(listMemoryInjectionTraces({ sessionId: 'session-recent-conversations' })).toContainEqual(
       expect.objectContaining({
         blockType: 'recent_conversations',
@@ -913,17 +927,17 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
+    // 前缀稳定改造后 GAP-023 的排序保证变成结构性的：能力发现块（deferred tools）
+    // 留在 system 稳定前缀，锦上添花块（session metadata / memory hint）在历史末尾
+    // 的 transient 尾巴里——前者必然先于后者被模型看到。
     const systemPrompt = modelMessages[0].content;
-    const deferredToolsIndex = systemPrompt.indexOf('<deferred-tools>');
-    const sessionMetadataIndex = systemPrompt.indexOf('<session_metadata>');
-    const memoryHintIndex = systemPrompt.indexOf('<memory_hint>');
-
-    expect(deferredToolsIndex).toBeGreaterThan(-1);
-    expect(sessionMetadataIndex).toBeGreaterThan(-1);
-    expect(memoryHintIndex).toBeGreaterThan(-1);
-    // 能力发现块（deferred tools）在锦上添花块（session metadata / memory hint）之前
-    expect(deferredToolsIndex).toBeLessThan(sessionMetadataIndex);
-    expect(deferredToolsIndex).toBeLessThan(memoryHintIndex);
+    const orderTail = modelMessages[modelMessages.length - 1];
+    expect(systemPrompt.indexOf('<deferred-tools>')).toBeGreaterThan(-1);
+    expect(orderTail.transient).toBe(true);
+    expect(orderTail.content).toContain('<session_metadata>');
+    expect(orderTail.content).toContain('<memory_hint>');
+    expect(systemPrompt).not.toContain('<session_metadata>');
+    expect(systemPrompt).not.toContain('<memory_hint>');
   });
 
   it('injects compact game contract and skips optional prompt blocks for game artifact generation tasks', async () => {
@@ -1077,8 +1091,12 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(systemPrompt).toContain('## Game Artifact Repair Contract');
     expect(systemPrompt).toContain('window.__GAME_META__');
     expect(systemPrompt).toContain('start()');
-    expect(systemPrompt).toContain('<artifact-validation-failed kind="interactive_artifact">');
-    expect(systemPrompt).toContain('缺少真实可点击开始按钮');
+    // 前缀稳定改造：persistent context（validation-failed 修复指令）挪到 transient 尾巴，
+    // 修复契约仍在 system 稳定前缀
+    const repairTail = modelMessages[modelMessages.length - 1];
+    expect(repairTail.transient).toBe(true);
+    expect(repairTail.content).toContain('<artifact-validation-failed kind="interactive_artifact">');
+    expect(repairTail.content).toContain('缺少真实可点击开始按钮');
     expect(systemPrompt).not.toContain('<session_metadata>');
     expect(systemPrompt).not.toContain('<memory_index>');
     expect(systemPrompt).not.toContain('<memory_hint>');
@@ -1115,7 +1133,10 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
     expect(systemPrompt).toContain('ARTIFACT_BRIEF_MARKER');
     expect(systemPrompt).not.toContain('## Game Artifact Contract');
-    expect(systemPrompt).toContain('<artifact-repair-focus>');
+    // repair focus 属于每请求动态内容，在 transient 尾巴里
+    const briefRepairTail = modelMessages[modelMessages.length - 1];
+    expect(briefRepairTail.transient).toBe(true);
+    expect(briefRepairTail.content).toContain('<artifact-repair-focus>');
   });
 
   it('adds focused repair instructions when artifact validation names a target and failures', async () => {
@@ -1177,25 +1198,28 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
-    const systemPrompt = modelMessages[0].content;
 
-    expect(systemPrompt).toContain('<artifact-repair-focus>');
-    expect(systemPrompt).toContain(`Target file: ${targetFile}`);
-    expect(systemPrompt).toContain('Repair phase: targeted_repair');
-    expect(systemPrompt).toContain('Validation failures to fix now:');
-    expect(systemPrompt).toContain('runSmokeTest records enemy_present instead of input-driven before/after state changes.');
-    expect(systemPrompt).toContain('Active issue codes: coverage_without_runtime_evidence');
-    expect(systemPrompt).toContain('Direct repair requirements:');
-    expect(systemPrompt).toContain('missing_contract_start: add a real `start()` method');
-    expect(systemPrompt).toContain('missing_coverage_metadata: add literal `window.__GAME_META__`');
-    expect(systemPrompt).toContain('validator-readable authored units');
-    expect(systemPrompt).toContain('`levels`, `segments`, `scenarios`');
-    expect(systemPrompt).toContain('smoke_missing_coverage: make `runSmokeTest()` return structured input-driven coverage');
-    expect(systemPrompt).toContain('reachability_evidence: every `progressPlan` / `reachability` step');
-    expect(systemPrompt).toContain('Edit, Append, or Write the target file now');
-    expect(systemPrompt).toContain('Do not use Grep, Glob, Task, ToolSearch');
-    expect(systemPrompt).toContain(`Repair ${targetFile} directly`);
-    expect(systemPrompt).toContain('Keep the interactive contract tied to live gameplay state');
+    // repair focus 属于每请求动态内容，在 transient 尾巴里（system 保持字节稳定）
+    const focusTail = modelMessages[modelMessages.length - 1];
+    expect(focusTail.transient).toBe(true);
+    const focusContent = focusTail.content as string;
+    expect(focusContent).toContain('<artifact-repair-focus>');
+    expect(focusContent).toContain(`Target file: ${targetFile}`);
+    expect(focusContent).toContain('Repair phase: targeted_repair');
+    expect(focusContent).toContain('Validation failures to fix now:');
+    expect(focusContent).toContain('runSmokeTest records enemy_present instead of input-driven before/after state changes.');
+    expect(focusContent).toContain('Active issue codes: coverage_without_runtime_evidence');
+    expect(focusContent).toContain('Direct repair requirements:');
+    expect(focusContent).toContain('missing_contract_start: add a real `start()` method');
+    expect(focusContent).toContain('missing_coverage_metadata: add literal `window.__GAME_META__`');
+    expect(focusContent).toContain('validator-readable authored units');
+    expect(focusContent).toContain('`levels`, `segments`, `scenarios`');
+    expect(focusContent).toContain('smoke_missing_coverage: make `runSmokeTest()` return structured input-driven coverage');
+    expect(focusContent).toContain('reachability_evidence: every `progressPlan` / `reachability` step');
+    expect(focusContent).toContain('Edit, Append, or Write the target file now');
+    expect(focusContent).toContain('Do not use Grep, Glob, Task, ToolSearch');
+    expect(focusContent).toContain(`Repair ${targetFile} directly`);
+    expect(focusContent).toContain('Keep the interactive contract tied to live gameplay state');
   });
 
   it('keeps the full target file read history during artifact repair mode (Route A — no compression)', async () => {
@@ -1544,14 +1568,18 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
     const systemPrompt = modelMessages[0].content;
 
-    expect(systemPrompt).toContain('<session_metadata>normal</session_metadata>');
-    expect(systemPrompt).toContain('<memory_index>normal memory</memory_index>');
-    expect(systemPrompt).toContain('<relevant_skills>perf</relevant_skills>');
-    expect(systemPrompt).toContain('<repo_map>');
-    expect(systemPrompt).toContain('repo map normal');
-    expect(systemPrompt).toContain('<recent_conversations>normal</recent_conversations>');
+    // 稳定前缀：能力发现块留在 system；advisory 块进 transient 尾巴，注入条件不变
     expect(systemPrompt).toContain('<deferred-tools>');
     expect(systemPrompt).toContain('browser: deferred');
+    const normalTail = modelMessages[modelMessages.length - 1];
+    expect(normalTail.transient).toBe(true);
+    const normalTailContent = normalTail.content as string;
+    expect(normalTailContent).toContain('<session_metadata>normal</session_metadata>');
+    expect(normalTailContent).toContain('<memory_index>normal memory</memory_index>');
+    expect(normalTailContent).toContain('<relevant_skills>perf</relevant_skills>');
+    expect(normalTailContent).toContain('<repo_map>');
+    expect(normalTailContent).toContain('repo map normal');
+    expect(normalTailContent).toContain('<recent_conversations>normal</recent_conversations>');
   });
 
   it('reuses heavy prompt blocks within a user turn and invalidates compression on transcript change', async () => {
@@ -2440,5 +2468,101 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('context-window-too-small'),
     );
     expect(injectedInMessages || injectedViaBuffer).toBe(true);
+  });
+});
+
+// ============================================================================
+// 前缀稳定（P1 request shape）：system 消息在会话内字节级稳定，
+// 每请求变化的内容只出现在历史末尾的 transient 动态尾巴里。
+// OpenAI-compat provider 的自动前缀缓存以 system 开头——system 任何字节变化
+// 等于整个历史 cache miss，这里的字节级断言是本批的核心行为保证。
+// ============================================================================
+
+describe('ContextAssembly 前缀稳定（request shape）', () => {
+  it('轮内连续构建：通知进出/persistent context 追加/git 状态变化只影响尾巴，system 字节稳定', async () => {
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-prefix-intra-turn',
+      messages: [buildMessage('user-prefix-1', 'user', 'fix repo code bug')],
+    });
+    const assembly = new ContextAssembly(ctx as never);
+
+    // 第一步：有一条后台完成通知 + git dirty
+    vi.mocked(drainCompletionNotifications).mockReturnValueOnce(['<agent-completed>agent-x done</agent-completed>']);
+    vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (3 file(s) changed)</git_status>');
+    const first = await assembly.buildModelMessages();
+
+    // 步间发生的事：模型发起工具调用、结果回流、persistent context 追加、git 状态变化
+    (ctx as { messages: Message[] }).messages.push(
+      {
+        id: 'assistant-prefix-1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [{ id: 'tc-prefix-1', name: 'Bash', arguments: { command: 'ls' } }],
+      } as unknown as Message,
+      {
+        id: 'tool-prefix-1',
+        role: 'tool',
+        content: 'file-a\nfile-b',
+        timestamp: Date.now(),
+        toolCallId: 'tc-prefix-1',
+      } as unknown as Message,
+    );
+    (ctx as { persistentSystemContext: string[] }).persistentSystemContext.push('<mode-reminder>stay focused</mode-reminder>');
+    vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (5 file(s) changed)</git_status>');
+    const second = await assembly.buildModelMessages();
+
+    // 核心断言：system 消息字节级一致
+    expect(second[0].role).toBe('system');
+    expect(second[0].content).toBe(first[0].content);
+
+    // 第一步的通知在尾巴里；第二步已 drain，不再出现
+    const firstTail = first[first.length - 1];
+    expect(firstTail.transient).toBe(true);
+    expect(firstTail.content).toContain('<agent-completed>');
+    expect(first[0].content).not.toContain('<agent-completed>');
+
+    const secondTail = second[second.length - 1];
+    expect(secondTail.transient).toBe(true);
+    expect(secondTail.content).not.toContain('<agent-completed>');
+    // persistent context 与新 git 状态出现在第二步尾巴
+    expect(secondTail.content).toContain('<mode-reminder>stay focused</mode-reminder>');
+    expect(secondTail.content).toContain('dirty (5 file(s) changed)');
+
+    // 尾巴之前的消息序列是第一步请求的严格前缀（尾巴换到了新位置，历史只增不改）
+    const firstPrefix = first.slice(0, -1).map((m) => `${m.role} ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`);
+    const secondAll = second.map((m) => `${m.role} ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`);
+    expect(secondAll.slice(0, firstPrefix.length)).toEqual(firstPrefix);
+  });
+
+  it('跨轮意图块变化（repo map/memory intent 进出）不改 system，只改尾巴', async () => {
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-prefix-cross-turn',
+      isSimpleTaskMode: false,
+      messages: [buildMessage('user-prefix-t1', 'user', 'hello there')],
+    });
+    const assembly = new ContextAssembly(ctx as never);
+    const turn1 = await assembly.buildModelMessages();
+
+    // 第二轮：query 命中 repo map + memory intent，advisory 块进场
+    vi.mocked(getRepoMap).mockResolvedValueOnce({
+      text: 'repo map cross-turn',
+      fileCount: 2,
+      symbolCount: 2,
+      estimatedTokens: 30,
+    });
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('memory cross-turn entry');
+    (ctx as { messages: Message[] }).messages.push(
+      buildMessage('assistant-prefix-t1', 'assistant', 'hi, how can I help?'),
+      buildMessage('user-prefix-t2', 'user', '记得之前的 repo code file 结构吗'),
+    );
+    const turn2 = await assembly.buildModelMessages();
+
+    // system 字节级一致——意图块进出不再打掉 system+全史前缀
+    expect(turn2[0].content).toBe(turn1[0].content);
+    const turn2Tail = turn2[turn2.length - 1];
+    expect(turn2Tail.transient).toBe(true);
+    expect(turn2Tail.content).toContain('repo map cross-turn');
+    expect(turn2Tail.content).toContain('memory cross-turn entry');
   });
 });

@@ -163,6 +163,24 @@ describe('contextAssembly inference artifact retry', () => {
     else process.env.CODE_AGENT_MODEL_ENGINE = prevEngine;
   });
 
+  it('forceFinalResponsePrompt 以 transient 尾巴形式追加（不打前缀缓存、legacy claude 不丢失）', async () => {
+    const ctx = buildCtx();
+    ctx.runtime.forceFinalResponsePrompt = '<force-final-response>wrap up now</force-final-response>';
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'final',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    const [sentMessages] = ctx.runtime.modelRouter.inference.mock.calls[0];
+    const last = sentMessages[sentMessages.length - 1];
+    expect(last.role).toBe('system');
+    expect(last.content).toContain('wrap up now');
+    expect(last.transient).toBe(true);
+  });
+
   it('emits user-visible progress while waiting for artifact model output', async () => {
     const ctx = buildCtx();
     ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
@@ -440,7 +458,7 @@ describe('contextAssembly inference artifact retry', () => {
         reason: 'fallback_model_without_tool_support',
         originalToolCount: 6,
         effectiveToolCount: 0,
-        disabledToolNames: ['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task'],
+        disabledToolNames: ['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write'],
       },
     });
     const [, effectiveTools] = ctx.runtime.modelRouter.inference.mock.calls[0];
@@ -679,7 +697,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
     // Route A: repair mode is always write-priority — the goal is to patch.
     expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: true });
   });
@@ -700,7 +718,7 @@ describe('contextAssembly inference artifact retry', () => {
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
     // Route A: post-patch keeps Read alongside the mutation tools and adds Bash.
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
   });
 
   it('seeds artifact repair guard before the first inference from a repair request', async () => {
@@ -729,7 +747,7 @@ describe('contextAssembly inference artifact retry', () => {
     });
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
   });
 
   it('does not seed artifact repair guard for fresh generation requests that mention the test contract', async () => {
@@ -754,7 +772,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.artifactRepairGuard).toBeUndefined();
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write']);
     expect(options).toMatchObject({ artifactRepairActive: false });
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
@@ -790,7 +808,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.runtime.artifactRepairGuard).toBeUndefined();
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task']);
+    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write']);
     expect(options).toMatchObject({ artifactRepairActive: false });
   });
 
@@ -823,7 +841,7 @@ describe('contextAssembly inference artifact retry', () => {
       activeIssueCodes: ['coverage_without_runtime_evidence'],
     });
     const [, tools, config, , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
     expect(config.maxTokens).toBe(4096);
     expect(options?.artifactRepairActive).toBe(true);
     // Route A: repair mode is always write-priority.
@@ -870,7 +888,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
   });
 
   it('keeps the full repair tool set available regardless of attempt count (Route A)', async () => {
@@ -887,7 +905,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
       artifactRepairWritePriority: true,
@@ -936,7 +954,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
       artifactRepairWritePriority: true,
@@ -1017,7 +1035,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(2);
     const [, retryTools, retryConfig, retryStream, , retryOptions] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[1];
     // Route A: the repair tool set stays full (Read/Edit/Write/Append) on the retry too.
-    expect(retryTools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(retryTools.map((tool: { name: string }) => tool.name)).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
     expect(retryConfig.maxTokens).toBe(8192);
     expect(retryStream).toBeUndefined();
     expect(retryOptions).toMatchObject({

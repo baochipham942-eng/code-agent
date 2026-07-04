@@ -11,7 +11,7 @@
 import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 
 export interface CompressionCommit {
-  layer: 'tool-result-budget' | 'snip' | 'microcompact' | 'contextCollapse' | 'autocompact' | 'overflow-recovery' | 'system';
+  layer: 'active-prune' | 'tool-result-budget' | 'snip' | 'microcompact' | 'contextCollapse' | 'autocompact' | 'overflow-recovery' | 'system';
   operation: 'truncate' | 'snip' | 'compact' | 'collapse' | 'drain' | 'reset';
   targetMessageIds: string[];
   timestamp: number;

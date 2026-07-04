@@ -204,6 +204,12 @@ export interface ModelMessage {
   toolCallText?: string;
   /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */
   thinking?: string;
+  /**
+   * 每请求重建的动态尾巴消息（git 状态 / 通知 / persistent context 等）。
+   * 位于全部历史之后，内容随请求变化，不属于可缓存前缀；Anthropic 路径
+   * 不得在其上打 cache_control 断点。不落库、不进 transcript。
+   */
+  transient?: boolean;
 }
 
 // ----------------------------------------------------------------------------

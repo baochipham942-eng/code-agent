@@ -13,6 +13,7 @@
 import { CompressionState } from './compressionState';
 import { ProjectionEngine, type ProjectableMessage } from './projectionEngine';
 import { estimateTokens } from './tokenEstimator';
+import { applyActiveToolResultPrune, type ActiveToolResultPruneConfig } from './layers/activeToolResultPrune';
 import { applyToolResultBudget } from './layers/toolResultBudget';
 import { applySnip } from './layers/snip';
 import { applyMicrocompact } from './layers/microcompact';
@@ -39,6 +40,8 @@ export interface PipelineConfig {
   interventions?: ContextInterventionSnapshot;
   /** GAP-009: 提供时 L1 超预算结果先落盘再截断（透传给 toolResultBudget） */
   spillSessionId?: string;
+  /** L0：跑在 L1 之前，超预算结果整体归档换确定性占位符（不参与 L1 的有损截断） */
+  activeToolResultPrune?: ActiveToolResultPruneConfig;
 }
 
 export interface PipelineResult {
@@ -104,6 +107,21 @@ export class CompressionPipeline {
           protectedMessageIds.add(message.id);
         }
       }
+    }
+
+    // -------------------------------------------------------------------------
+    // L0: Active tool result prune — runs before L1, only if enabled.
+    // Deterministic full-body archive + placeholder for oversized results,
+    // so they never enter L1's lossy head+tail truncation.
+    // -------------------------------------------------------------------------
+    if (config.activeToolResultPrune?.enabled) {
+      const prunedCount = applyActiveToolResultPrune(transcript, state, {
+        enabled: true,
+        maxTokensPerResult: config.activeToolResultPrune.maxTokensPerResult,
+        protectedMessageIds,
+        spillSessionId: config.activeToolResultPrune.spillSessionId,
+      });
+      if (prunedCount > 0) layersTriggered.push('active-prune');
     }
 
     // -------------------------------------------------------------------------

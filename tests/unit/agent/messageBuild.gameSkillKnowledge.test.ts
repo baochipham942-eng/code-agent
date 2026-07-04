@@ -45,6 +45,7 @@ vi.mock('../../../src/host/prompts/providerVariants', () => ({
 }));
 
 vi.mock('../../../src/host/agent/messageHandling/contextBuilder', () => ({
+  buildGitStatusBlock: vi.fn(() => ''),
   injectWorkingDirectoryContext: vi.fn((prompt: string) => prompt),
   buildEnhancedSystemPrompt: vi.fn(async (prompt: string) => prompt),
   buildRuntimeModeBlock: vi.fn(() => ''),

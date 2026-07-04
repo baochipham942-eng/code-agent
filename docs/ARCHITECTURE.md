@@ -88,6 +88,7 @@
 | 029 | 统一 Evidence / Provenance 契约 | accepted |
 | 030 | Fleet 遥测双通道（Sentry 错误通道 + Supabase 分析通道） | proposed |
 | 031 | @Neo 运行时安全护栏（approved Neo run 的 fail-closed 工具边界） | accepted |
+| 032 | 请求前缀稳定与主动工具结果裁剪（cache 经济学下半场） | accepted |
 
 ---
 

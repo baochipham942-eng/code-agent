@@ -5,7 +5,9 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import {
   injectWorkingDirectoryContext,
+  buildGitStatusBlock,
   resetGitContextCache,
+  resetEnvironmentBlockCache,
 } from '../../../src/host/agent/messageHandling/contextBuilder';
 
 describe('injectWorkingDirectoryContext', () => {
@@ -21,11 +23,12 @@ describe('injectWorkingDirectoryContext', () => {
 });
 
 // ============================================================================
-// GAP-010: env block 注入 git 分支 / 最近 commit / working tree dirty 状态
-// 验收：env block 包含当前分支、最近 commit、working tree dirty 状态
+// GAP-010 × 前缀稳定：git 分支 / 最近 commit / dirty 状态是轮内易变信息，
+// 从 env block（system 稳定前缀）移到 buildGitStatusBlock（动态尾巴）。
+// env block 只保留会话内稳定的 "Is directory a git repo" 一行。
 // ============================================================================
 
-describe('environment block git context (GAP-010)', () => {
+describe('git status block (GAP-010, dynamic tail)', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-gitctx-'));
   const gitDir = path.join(tmpRoot, 'repo');
   const plainDir = path.join(tmpRoot, 'plain');
@@ -56,31 +59,44 @@ describe('environment block git context (GAP-010)', () => {
   it('injects branch, recent commits and dirty state for git repos', () => {
     resetGitContextCache();
 
-    const prompt = injectWorkingDirectoryContext('BASE', gitDir, false);
+    const block = buildGitStatusBlock(gitDir);
 
-    expect(prompt).toContain('Is directory a git repo: Yes');
-    expect(prompt).toContain('Current branch: feature/test-branch');
-    expect(prompt).toContain('Recent commits:');
-    expect(prompt).toContain('fix: second commit for git context');
-    expect(prompt).toContain('feat: first commit for git context');
-    expect(prompt).toMatch(/Working tree: dirty \(\d+ file\(s\) changed\)/);
+    expect(block).toContain('<git_status>');
+    expect(block).toContain('Current branch: feature/test-branch');
+    expect(block).toContain('Recent commits:');
+    expect(block).toContain('fix: second commit for git context');
+    expect(block).toContain('feat: first commit for git context');
+    expect(block).toMatch(/Working tree: dirty \(\d+ file\(s\) changed\)/);
   });
 
   it('reports clean working tree when there are no uncommitted changes', () => {
     resetGitContextCache();
     fs.rmSync(path.join(gitDir, 'dirty.txt'));
 
-    const prompt = injectWorkingDirectoryContext('BASE', gitDir, false);
+    const block = buildGitStatusBlock(gitDir);
 
-    expect(prompt).toContain('Working tree: clean');
-    expect(prompt).not.toContain('Working tree: dirty');
+    expect(block).toContain('Working tree: clean');
+    expect(block).not.toContain('Working tree: dirty');
   });
 
-  it('keeps the plain "No" line for non-git directories', () => {
+  it('keeps git volatile details out of the system env block, repo flag stays', () => {
     resetGitContextCache();
+    resetEnvironmentBlockCache();
 
+    const prompt = injectWorkingDirectoryContext('BASE', gitDir, false);
+
+    expect(prompt).toContain('Is directory a git repo: Yes');
+    expect(prompt).not.toContain('Current branch:');
+    expect(prompt).not.toContain('Recent commits:');
+    expect(prompt).not.toContain('Working tree:');
+  });
+
+  it('returns empty block for non-git directories, env block keeps the "No" line', () => {
+    resetGitContextCache();
+    resetEnvironmentBlockCache();
+
+    expect(buildGitStatusBlock(plainDir)).toBe('');
     const prompt = injectWorkingDirectoryContext('BASE', plainDir, false);
-
     expect(prompt).toContain('Is directory a git repo: No');
     expect(prompt).not.toContain('Current branch:');
     expect(prompt).not.toContain('Recent commits:');
@@ -88,20 +104,33 @@ describe('environment block git context (GAP-010)', () => {
 
   it('serves git context from cache within the TTL window', () => {
     resetGitContextCache();
-    injectWorkingDirectoryContext('BASE', gitDir, false);
+    buildGitStatusBlock(gitDir);
 
     // TTL 窗口内新增 commit，缓存命中时不应反映出来
     fs.writeFileSync(path.join(gitDir, 'c.txt'), 'new');
     runInRepo('git add c.txt');
     runInRepo('git commit -m "feat: commit inside ttl window"');
 
-    const cached = injectWorkingDirectoryContext('BASE', gitDir, false);
+    const cached = buildGitStatusBlock(gitDir);
     expect(cached).not.toContain('commit inside ttl window');
 
     // 清缓存后能看到新 commit
     resetGitContextCache();
-    const fresh = injectWorkingDirectoryContext('BASE', gitDir, false);
+    const fresh = buildGitStatusBlock(gitDir);
     expect(fresh).toContain('commit inside ttl window');
+  });
+
+  it('freezes the env block per working directory (byte-stable prefix)', () => {
+    resetGitContextCache();
+    resetEnvironmentBlockCache();
+
+    const first = injectWorkingDirectoryContext('BASE', gitDir, false);
+    // 目录状态变化（新增未提交文件）不应影响已冻结的 env block
+    fs.writeFileSync(path.join(gitDir, 'freeze.txt'), 'x');
+    resetGitContextCache();
+    const second = injectWorkingDirectoryContext('BASE', gitDir, false);
+
+    expect(second).toBe(first);
   });
 });
 

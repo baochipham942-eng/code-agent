@@ -165,6 +165,27 @@ describe('applyGoalEvent', () => {
     expect(record.abortReason).toBe('预算耗尽');
   });
 
+  it('terminal barrier is global: gate events after goal_complete are ignored (audit R2-M2)', () => {
+    const record = createGoalRunRecord();
+    applyGoalEvent(record, {
+      type: 'goal_gate',
+      data: { gate: 0, pass: true, verdict: 'exhausted_release' },
+    });
+    applyGoalEvent(record, {
+      type: 'goal_complete',
+      data: { status: 'met', turns: 5, tokensUsed: 100, degraded: true },
+    });
+    // 终态后的游离 gate 事件（状态机 bug / 超时孤儿 loop）不得改写落账——
+    // goal_evidence_gate 断言取末条 gate-0 verdict，杂音会翻转判定。
+    applyGoalEvent(record, {
+      type: 'goal_gate',
+      data: { gate: 0, pass: true, verdict: 'allow_finalize' },
+    });
+    expect(record.gateEvents).toEqual([
+      { gate: 0, pass: true, verdict: 'exhausted_release' },
+    ]);
+  });
+
   it('ignores non-goal events', () => {
     const record = createGoalRunRecord();
     applyGoalEvent(record, { type: 'agent_complete', data: null });

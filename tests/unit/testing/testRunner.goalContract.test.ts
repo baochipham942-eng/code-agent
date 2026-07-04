@@ -119,6 +119,37 @@ describe('TestRunner goal_contract integration', () => {
     ]);
   });
 
+  it('goal expectations evaluate against the captured goalRun (assertion-time capture, R1-M2 regression guard)', async () => {
+    const agent = goalAgent({
+      status: 'met',
+      degraded: false,
+      gateEvents: [{ gate: 0, pass: true, verdict: 'allow_finalize' }],
+    });
+    const report = await runSuite([
+      'name: goal-suite',
+      'cases:',
+      '  - id: goal-asserted',
+      '    type: task',
+      '    description: goal case with goal_status expectation',
+      '    prompt: "做任务"',
+      '    goal_contract:',
+      '      verify_command: "true"',
+      '    expect: {}',
+      '    expectations:',
+      '      - type: goal_status',
+      '        description: "终态必须是 met"',
+      '        critical: true',
+      '        params:',
+      '          expected: met',
+      '          degraded: false',
+    ], agent);
+    const result = report.results.find((r) => r.testId === 'goal-asserted');
+    // 断言在 try 内跑：goalRun 必须在断言求值之前就位，
+    // 否则 goal_status 会 fail-loud 把真达成判成红（finally 才捕获就太晚了）。
+    expect(result?.status).toBe('passed');
+    expect(result?.expectationResults?.[0]?.passed).toBe(true);
+  });
+
   it('captures goalRun even when the case times out (audit R1-M2: observability survives infra failure)', async () => {
     const record: GoalRunRecord = {
       gateEvents: [

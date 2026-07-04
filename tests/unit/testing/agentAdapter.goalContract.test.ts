@@ -16,6 +16,10 @@ interface CapturedLoopConfig {
   onEvent: (event: AgentEvent) => void;
 }
 
+function goalCompleteEvent(status: 'met' | 'aborted'): AgentEvent {
+  return { type: 'goal_complete', data: { status, turns: 1, tokensUsed: 1 } };
+}
+
 const capturedConfigs: CapturedLoopConfig[] = [];
 let scriptedGoalEvents: AgentEvent[] = [];
 
@@ -115,6 +119,39 @@ describe('StandaloneAgentAdapter goal contract injection', () => {
     ];
     await adapter.sendMessage('普通 case');
     expect(adapter.getGoalRunRecord()).toBeUndefined();
+  });
+
+  it('orphaned loop events do not pollute the next case record (audit R2-H1: timeout leak)', async () => {
+    const adapter = makeAdapter();
+    // case 1（goal）：模拟超时——run 挂着没发终态，testRunner 已结案进下个 case
+    adapter.configureGoalContract({ verify_command: 'true' });
+    await adapter.sendMessage('case 1');
+    const orphanedOnEvent = capturedConfigs[0].onEvent;
+
+    // case 2（goal）：正常开跑
+    await adapter.reset();
+    adapter.configureGoalContract({ verify_command: 'true' });
+    await adapter.sendMessage('case 2');
+
+    // 孤儿 loop 的残余事件此刻才到——不得写进 case 2 的落账
+    orphanedOnEvent({ type: 'goal_gate', data: { gate: 0, pass: false, verdict: 'repair_prompt' } });
+    orphanedOnEvent(goalCompleteEvent('aborted'));
+
+    const record = adapter.getGoalRunRecord();
+    expect(record?.gateEvents ?? []).toEqual([]);
+    expect(record?.status).toBeUndefined();
+  });
+
+  it('getGoalRunRecord returns a frozen snapshot, not a live reference (audit R2-M1: ghost events)', async () => {
+    const adapter = makeAdapter();
+    adapter.configureGoalContract({ verify_command: 'true' });
+    await adapter.sendMessage('goal case');
+    const snapshot = adapter.getGoalRunRecord();
+    expect(snapshot?.gateEvents).toEqual([]);
+
+    // 结案后挂起 loop 还在推事件——已交出的快照不得被追写
+    capturedConfigs[0].onEvent({ type: 'goal_gate', data: { gate: 0, pass: true, verdict: 'allow_finalize' } });
+    expect(snapshot?.gateEvents).toEqual([]);
   });
 
   it('reset() clears the contract and the run record (per-case isolation)', async () => {

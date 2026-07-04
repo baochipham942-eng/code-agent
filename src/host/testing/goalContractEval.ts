@@ -178,6 +178,12 @@ export function evaluateGoalEvidenceGateExpectation(
 
 /** goal 观测事件 → 行为落账。非 goal 事件一律忽略（adapter 的 onEvent 直通调用）。 */
 export function applyGoalEvent(record: GoalRunRecord, event: AgentEvent): void {
+  // 全局终态屏障（审计 R1-M1 + R2-M2 对称升级）：goal_complete 之后的一切事件
+  // ——冗余终态或游离 gate（状态机 bug / 超时孤儿 loop 残余）——一律拦截。
+  // 落账严格定格在状态机结案瞬间：断言取末条 gate-0 verdict，终态后的杂音
+  // 会翻转判定；后写终态则会把真实 aborted 洗成假绿。eval 的职责是暴露
+  // 这类 bug 而不是掩盖它。
+  if (record.status) return;
   if (event.type === 'goal_gate') {
     record.gateEvents.push({
       gate: event.data.gate,
@@ -187,10 +193,6 @@ export function applyGoalEvent(record: GoalRunRecord, event: AgentEvent): void {
     return;
   }
   if (event.type === 'goal_complete') {
-    // 首个终态锁死（审计 R1-M1）：产品侧本不该双发终态，但若状态机 bug 导致
-    // 二次 goal_complete，后写覆盖会把真实终态（如 aborted）洗成假绿——eval
-    // 的职责是暴露这种 bug 而不是掩盖它，落账以第一次申明的终态为准。
-    if (record.status) return;
     record.status = event.data.status;
     record.degraded = event.data.degraded ?? false;
     record.degradedReason = event.data.degradedReason;

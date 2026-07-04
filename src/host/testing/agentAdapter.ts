@@ -419,11 +419,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // B6b-①：goal 契约 case → 构建产线同款 GoalContract（goal 缺省回落 case prompt）。
       // goalRun 每次 run 重建 —— goal case 是单 prompt，多次 sendMessage 属异常路径，
       // 以最后一次 run 的落账为准。
+      // 审计 R2-H1：onEvent 闭包必须绑定本次 run 的局部记录，不能动态读 this.goalRun
+      // ——超时后 testRunner 已进下个 case（reset + 重建），孤儿 loop 的残余事件若走
+      // this 引用会污染新 case 的落账（不可复现的假红/假绿）。
       const loopGoalContract = this.goalContract
         ? buildLoopGoalContract(this.goalContract, prompt)
         : undefined;
-      if (loopGoalContract) {
-        this.goalRun = createGoalRunRecord();
+      const goalRunForThisRun = loopGoalContract ? createGoalRunRecord() : undefined;
+      if (goalRunForThisRun) {
+        this.goalRun = goalRunForThisRun;
       }
       const loop = new AgentLoop({
         sessionId: this.currentSessionId,
@@ -451,8 +455,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
           if (this.currentSessionId) {
             telemetryCollector.handleEvent(this.currentSessionId, event);
           }
-          if (this.goalRun) {
-            applyGoalEvent(this.goalRun, event);
+          if (goalRunForThisRun) {
+            applyGoalEvent(goalRunForThisRun, event);
           }
           switch (event.type) {
             case 'message':
@@ -535,9 +539,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.goalRun = undefined;
   }
 
-  /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  /**
+   * B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据）。
+   * 返回定格快照而非活引用（审计 R2-M1）：超时后挂起的 loop 还会向内部记录推
+   * 事件，活引用会让已结案 case 的 report.json 混入结案之后的"幽灵事件"。
+   */
   getGoalRunRecord(): GoalRunRecord | undefined {
-    return this.goalRun;
+    return this.goalRun ? structuredClone(this.goalRun) : undefined;
   }
 
   async reset(): Promise<void> {

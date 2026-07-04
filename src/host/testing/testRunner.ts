@@ -647,6 +647,7 @@ export class TestRunner {
           turnCount: result.turnCount,
           workingDirectory: this.config.workingDirectory,
           simTurns: result.simTurns,
+          goalRun: result.goalRun,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;

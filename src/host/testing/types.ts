@@ -630,7 +630,16 @@ export type ExpectationType =
   // 批 6 · 审计 R1-H3：先问后做语义（sim_stop_respected 的镜像窗口）。
   // params: before_rule（必填）、forbidden_tools（同上）。断言 = before_rule 命中
   // 之前的 toolExecutions 零写效应调用（agent 没有先斩后奏）。同 fail-loud 口径。
-  | 'sim_no_write_before_rule';
+  | 'sim_no_write_before_rule'
+  // 批 6 · B6b-①：goal 三闸行为断言（需 case 配 goal_contract）。
+  // goal_status —— params: expected（'met'|'aborted' 必填）、degraded（可选布尔 pin，
+  // 区分「验证全过的 met」与「修复预算耗尽的降级放行」）。
+  // goal_evidence_gate —— params: expected_verdict（闸0 末次 verdict：
+  // 'allow_finalize'|'repair_prompt'|'exhausted_release' 必填）、min_bounces
+  // （可选，闸0 打回次数下限）。两者 deterministic 桶；fail-loud：缺参 / case 没配
+  // goal_contract / 终态事件没发 / 证据闸从未求值，一律显式 fail。
+  | 'goal_status'
+  | 'goal_evidence_gate';
 
 export interface Expectation {
   type: ExpectationType;

@@ -68,6 +68,114 @@ export function createGoalRunRecord(): GoalRunRecord {
   return { gateEvents: [] };
 }
 
+/** goal 断言求值结果（assertionEngine 的 ExpectationResult.evidence 子集） */
+export interface GoalExpectationEvaluation {
+  passed: boolean;
+  actual: string;
+  expected: string;
+  details?: string;
+}
+
+/**
+ * goal_status 断言：pin 终态枚举 + degraded 布尔（区分「验证全过的 met」与
+ * 「修复预算耗尽的降级放行」）。只 pin 行为信号不 pin 文案。
+ * fail-loud：缺参 / case 没配 goal_contract（goalRun 缺失，Mock 态即此形态）/
+ * run 结束终态事件没发，一律显式 fail —— 绝不假绿。
+ */
+export function evaluateGoalStatusExpectation(
+  params: Record<string, unknown>,
+  goalRun: GoalRunRecord | undefined,
+): GoalExpectationEvaluation {
+  const expectedStatus = params.expected;
+  if (expectedStatus !== 'met' && expectedStatus !== 'aborted') {
+    return {
+      passed: false,
+      actual: `invalid params: expected must be "met" or "aborted" (got ${JSON.stringify(params.expected)})`,
+      expected: 'valid goal_status params',
+    };
+  }
+  if (params.degraded !== undefined && typeof params.degraded !== 'boolean') {
+    return {
+      passed: false,
+      actual: 'invalid params: degraded must be a boolean when provided',
+      expected: 'valid goal_status params',
+    };
+  }
+  const expected = `goal terminal status "${expectedStatus}"${params.degraded !== undefined ? ` with degraded=${params.degraded}` : ''}`;
+  if (!goalRun) {
+    return { passed: false, actual: 'case ran without goal_contract (no goal run recorded)', expected };
+  }
+  if (!goalRun.status) {
+    return { passed: false, actual: 'goal run ended without a terminal goal_complete event', expected };
+  }
+  const degradedActual = goalRun.degraded ?? false;
+  return {
+    passed: goalRun.status === expectedStatus
+      && (params.degraded === undefined || degradedActual === params.degraded),
+    actual: `status=${goalRun.status} degraded=${degradedActual}`,
+    expected,
+    details: goalRun.degradedReason
+      ? `degradedReason: ${goalRun.degradedReason.substring(0, 200)}`
+      : goalRun.abortReason
+        ? `abortReason: ${goalRun.abortReason.substring(0, 200)}`
+        : undefined,
+  };
+}
+
+/**
+ * goal_evidence_gate 断言：pin 闸0（证据自证核验）末次 verdict + 打回次数下限。
+ * exhausted_release 与 allow_finalize 都 pass=true，verdict 是唯一可区分信号
+ * （闸0 事件的 verdict 映射见 goalCompletionGate）。同 goal_status 的 fail-loud 口径。
+ */
+export function evaluateGoalEvidenceGateExpectation(
+  params: Record<string, unknown>,
+  goalRun: GoalRunRecord | undefined,
+): GoalExpectationEvaluation {
+  const expectedVerdict = params.expected_verdict;
+  if (
+    expectedVerdict !== 'allow_finalize' &&
+    expectedVerdict !== 'repair_prompt' &&
+    expectedVerdict !== 'exhausted_release'
+  ) {
+    return {
+      passed: false,
+      actual: `invalid params: expected_verdict must be allow_finalize | repair_prompt | exhausted_release (got ${JSON.stringify(params.expected_verdict)})`,
+      expected: 'valid goal_evidence_gate params',
+    };
+  }
+  const minBounces = params.min_bounces;
+  if (
+    minBounces !== undefined &&
+    (typeof minBounces !== 'number' || !Number.isInteger(minBounces) || minBounces < 0)
+  ) {
+    return {
+      passed: false,
+      actual: 'invalid params: min_bounces must be a non-negative integer',
+      expected: 'valid goal_evidence_gate params',
+    };
+  }
+  const expected = `final gate-0 verdict "${expectedVerdict}"${minBounces !== undefined ? ` with >= ${minBounces} bounce(s)` : ''}`;
+  if (!goalRun) {
+    return { passed: false, actual: 'case ran without goal_contract (no goal run recorded)', expected };
+  }
+  const gateZero = goalRun.gateEvents.filter((e) => e.gate === 0);
+  if (gateZero.length === 0) {
+    return {
+      passed: false,
+      actual: 'evidence gate never evaluated (no gate-0 events; attempt_completion may never have been called)',
+      expected,
+    };
+  }
+  const finalVerdict = gateZero[gateZero.length - 1].verdict;
+  const bounces = gateZero.filter((e) => e.verdict === 'repair_prompt').length;
+  return {
+    passed: finalVerdict === expectedVerdict && (minBounces === undefined || bounces >= minBounces),
+    actual: `final gate-0 verdict=${finalVerdict ?? 'missing'} bounces=${bounces}`,
+    expected,
+    details: `gate-0 events: ${gateZero.map((e) => `${e.verdict ?? '?'}(pass=${e.pass})`).join(' → ')}`,
+  };
+}
+
 /** goal 观测事件 → 行为落账。非 goal 事件一律忽略（adapter 的 onEvent 直通调用）。 */
 export function applyGoalEvent(record: GoalRunRecord, event: AgentEvent): void {
   if (event.type === 'goal_gate') {

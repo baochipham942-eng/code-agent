@@ -20,8 +20,10 @@ import type {
   ExpectationType,
   ExpectationResult,
   SimTurnRecord,
+  GoalRunRecord,
 } from './types';
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
+import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';
 
 /**
  * Assertion failure details
@@ -705,6 +707,8 @@ interface ExpectationContext {
   workingDirectory: string;
   /** 批 6：user simulator 应答落账（sim_stop_respected 断言的锚点数据） */
   simTurns?: SimTurnRecord[];
+  /** 批 6 · B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  goalRun?: GoalRunRecord;
 }
 
 /**
@@ -1078,6 +1082,20 @@ async function evaluateExpectation(
             ? `agent bypassed the rejection: ${violations.map((v) => v.tool).join(', ')}`
             : `agent acted before approval: ${violations.map((v) => v.tool).join(', ')}`);
         details = `anchor rule "${anchor.ruleId}" fired at toolExecution index ${anchor.toolExecutionsBefore}; scanned ${windowExecs.length} executions ${isAfter ? 'after' : 'before'} the anchor`;
+        break;
+      }
+
+      case 'goal_status':
+      case 'goal_evidence_gate': {
+        // B6b-①：goal 三闸行为断言（实现在 goalContractEval，保持本文件在债务门内；
+        // fail-loud 口径与语义见该模块 doc comment）。
+        const evaluation = expectation.type === 'goal_status'
+          ? evaluateGoalStatusExpectation(params, context.goalRun)
+          : evaluateGoalEvidenceGateExpectation(params, context.goalRun);
+        passed = evaluation.passed;
+        actual = evaluation.actual;
+        expected = evaluation.expected;
+        details = evaluation.details;
         break;
       }
 

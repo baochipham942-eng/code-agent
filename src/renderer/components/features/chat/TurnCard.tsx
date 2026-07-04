@@ -10,6 +10,7 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import {
   Anchor,
   AlertTriangle,
+  Brain,
   ChevronRight,
   ChevronDown,
   CheckCircle2,
@@ -30,6 +31,7 @@ import {
   groupAdjacentToolCalls,
   formatTurnDuration,
 } from '../../../utils/toolStepGrouping';
+import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   buildStreamingUiState,
   hasCancelledRunMarker,
@@ -120,13 +122,23 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
   // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
   const lastIndex = displayNodes.length - 1;
-  // 末个展示节点是否「正在流式输出文字」—— 若是，正文自带内联光标，状态槽不再重复渲染光标
   const lastDisplay = displayNodes[lastIndex];
+  const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
+  // 末个展示节点是否「正在流式输出可见正文」——若是，正文自带内联光标，状态槽不再重复渲染光标。
+  // 必须看 content 是否非空：思考中的合成节点也是 assistant_text 类型但 content 为空，
+  // 不能算「正文正在流式」，否则状态槽会误判着落而整个隐去，思考阶段变得完全没有信号。
   const lastNodeIsStreamingText =
     isStreaming &&
-    !!lastDisplay &&
-    lastDisplay.kind !== 'tool_group' &&
-    lastDisplay.node.type === 'assistant_text';
+    !!lastDisplayNode &&
+    lastDisplayNode.type === 'assistant_text' &&
+    Boolean(lastDisplayNode.content?.trim());
+  // 末个展示节点正在接收思考增量：assistant_text 类型、正文还是空、但已经有思考内容在流入。
+  const isThinkingPhase =
+    isStreaming &&
+    !!lastDisplayNode &&
+    lastDisplayNode.type === 'assistant_text' &&
+    !lastDisplayNode.content?.trim() &&
+    Boolean((lastDisplayNode.thinking || lastDisplayNode.reasoning)?.trim());
   const runningToolStartTime = useMemo(
     () => getRunningToolStartTime(turn.nodes),
     [turn.nodes],
@@ -144,6 +156,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   );
   const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
   const skillActivity = useMemo(() => getTurnSkillActivity(turn), [turn]);
+  const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
 
   return (
     <div
@@ -207,6 +220,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
+            {/* 一个回合内所有思考段合并成一行「思考」，不再按节点单列（产品拍板）。 */}
+            <ThinkingDigestBanner segments={thinkingSegments} />
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
                 return (
@@ -265,6 +280,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 startTime={turn.startTime}
                 runningToolStartTime={runningToolStartTime}
                 showCaret={!lastNodeIsStreamingText}
+                isThinking={isThinkingPhase}
               />
             )}
           </>
@@ -465,6 +481,63 @@ const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activi
               <span className="min-w-0 truncate text-zinc-400">{item.label}</span>
               <span className="shrink-0">{getSkillActionLabel(item.action)}</span>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface TurnThinkingSegment {
+  id: string;
+  text: string;
+}
+
+/**
+ * 一个回合内所有思考段合并展示的数据源：按时序收集每个 assistant_text 节点上
+ * 的 thinking/reasoning，过滤掉清洗后为空的。产品拍板：主流视野里一回合最多
+ * 一行「思考」，不再按节点单列——这里只负责收集，展示在 ThinkingDigestBanner。
+ */
+function getTurnThinkingSegments(turn: TraceTurn): TurnThinkingSegment[] {
+  const segments: TurnThinkingSegment[] = [];
+  for (const node of turn.nodes) {
+    if (node.type !== 'assistant_text') continue;
+    const text = sanitizeThinkingForDisplay(node.thinking || node.reasoning)?.trim();
+    if (text) segments.push({ id: node.id, text });
+  }
+  return segments;
+}
+
+const ThinkingDigestBanner: React.FC<{ segments: TurnThinkingSegment[] }> = ({ segments }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (segments.length === 0) return null;
+
+  return (
+    <div className="py-0.5 text-sm text-zinc-500">
+      <button
+        type="button"
+        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        title={expanded ? '收起思考' : '展开思考'}
+      >
+        <Brain className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 truncate font-medium">
+          思考{segments.length > 1 ? ` · ${segments.length} 段` : ''}
+        </span>
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        )}
+      </button>
+      {expanded && (
+        <div className="ml-7 mt-1 space-y-2 text-[13px] leading-5 text-zinc-500">
+          {segments.map((segment, index) => (
+            <p key={segment.id} className="whitespace-pre-line font-mono">
+              {segments.length > 1 ? `${index + 1}. ` : ''}
+              {segment.text}
+            </p>
           ))}
         </div>
       )}

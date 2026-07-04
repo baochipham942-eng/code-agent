@@ -790,6 +790,11 @@ export const zh = {
   sessionReplay: sessionReplayZh,
 
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
+  // 聊天转录（TurnCard / StreamingIndicator 等）
+  chat: {
+    thinking: '正在思考…',
+  },
+
   workbenchTabs: {
     openPanel: '打开面板',
     filesLabel: '文件',

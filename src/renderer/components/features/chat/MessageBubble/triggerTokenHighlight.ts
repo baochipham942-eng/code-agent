@@ -33,7 +33,7 @@ const TRIGGER_TOKEN_RULES: Array<{ kind: TriggerTokenKind; pattern: RegExp; clas
     kind: 'workflow',
     // 彩虹渐变文字（Tailwind 单 via 限制，用 arbitrary linear-gradient）
     pattern: /^\/workflow(?=\s|$)/,
-    className: 'font-semibold bg-[linear-gradient(90deg,#f87171,#fbbf24,#34d399,#38bdf8,#a78bfa)] bg-clip-text text-transparent',
+    className: 'font-semibold bg-[linear-gradient(90deg,#f87171,#fbbf24,#34d399,#38bdf8,#a78bfa)] bg-clip-text text-transparent', // ds-allow 装饰性彩虹渐变字面色，5 色阶跳变非语义色板，无法映射 design token
   },
 ];
 

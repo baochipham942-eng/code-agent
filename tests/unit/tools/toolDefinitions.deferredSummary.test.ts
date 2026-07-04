@@ -80,8 +80,9 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
 
     const summary = getDeferredToolsSummary();
 
-    // 两个 server 各成一组
-    expect(summary).toContain('[mcp:github] mcp__github__search_code | mcp__github__create_issue');
+    // 两个 server 各成一组；server 内工具名按字节序稳定排序（前缀稳定批：
+    // MCP 连接时序跨进程不确定，summary 进 system 稳定前缀，顺序漂移会弱化跨会话前缀复用）
+    expect(summary).toContain('[mcp:github] mcp__github__create_issue | mcp__github__search_code');
     expect(summary).toContain('[mcp:supabase] mcp__supabase__execute_sql');
     // 名字索引不携带 schema / 描述正文
     expect(summary).not.toContain('Search code across GitHub repositories');

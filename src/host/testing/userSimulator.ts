@@ -12,7 +12,7 @@
 import type { ToolExecutionRecord, UserSimulation, UserSimulationRule } from './types';
 
 /** 澄清/确认交互面的工具名（产品侧 schema 单一真源为 askUserQuestion.schema.ts） */
-export const USER_QUESTION_TOOL = 'AskUserQuestion';
+const USER_QUESTION_TOOL = 'AskUserQuestion';
 
 /** 默认模拟应答轮数上限（不含初始 prompt） */
 export const DEFAULT_SIM_MAX_TURNS = 4;
@@ -50,14 +50,14 @@ export const WRITE_EFFECT_TOOL_PATTERNS: string[] = [
   '^workflow_orchestrate$',
 ];
 
-export interface SimTurnContext {
+interface SimTurnContext {
   /** 上一轮 assistant 响应（仅该轮，不是全量累计） */
   responses: string[];
   /** 上一轮工具执行（仅该轮） */
   toolExecutions: ToolExecutionRecord[];
 }
 
-export interface SimRuleMatch {
+interface SimRuleMatch {
   rule: UserSimulationRule;
   action: 'respond' | 'stop';
   message?: string;

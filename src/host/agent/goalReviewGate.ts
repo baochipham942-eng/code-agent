@@ -53,14 +53,18 @@ const REVIEW_INFRA_ERROR_PATTERNS = [
   'insufficient balance',
   'payment required',
   'no available accounts',
-  '401',
-  '402',
-  '403',
 ];
+
+/**
+ * 状态码用词边界匹配（Gemini R1-H1）：裸 substring '401' 会误伤
+ * "Request failed after 4013ms" 这类消息，把普通错误误吞成 infra。
+ */
+const REVIEW_INFRA_STATUS_CODE_RE = /\b40[123]\b/;
 
 function isReviewInfraError(message: string): boolean {
   const normalized = message.toLowerCase();
-  return REVIEW_INFRA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+  if (REVIEW_INFRA_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern))) return true;
+  return REVIEW_INFRA_STATUS_CODE_RE.test(message);
 }
 
 /**
@@ -230,8 +234,11 @@ async function executeReviewAttempt(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // 取消/中止不算 infra（对称 result.cancellationReason 的过滤，Gemini R1-M1）：
+    // 即使中止错误的消息碰巧含 infra 词（如 "request forbidden by abort signal"）
+    const isAborted = (err instanceof Error && err.name === 'AbortError') || deps.abortSignal?.aborted;
     // infra 类错误（auth/4xx）→ 交给调用方走降级重试/unverifiable，不落评审 FAIL
-    if (isReviewInfraError(message)) {
+    if (!isAborted && isReviewInfraError(message)) {
       return { kind: 'infra', error: message };
     }
     // 其余抛错 → 默认 FAIL（不误放行），把错误注回让模型继续

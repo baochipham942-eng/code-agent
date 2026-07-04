@@ -311,6 +311,30 @@ describe('runReviewGate（infra 故障降级链：auth/4xx 不许伪装成评审
     expect(executorState.execute).toHaveBeenCalledTimes(2);
   });
 
+  it('错误消息里数字撞车（如 4013ms 含 "401"）→ 不算 infra，默认 FAIL 不重试（词边界匹配）', async () => {
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-xiaomi-valid');
+    executorState.execute.mockRejectedValue(new Error('Request failed after 4013ms'));
+
+    const result = await runReviewGate('代码无重复逻辑', '重构 utils', deps);
+
+    expect(result.unverifiable).toBeUndefined();
+    expect(result.pass).toBe(false);
+    expect(executorState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('AbortError 抛错（即使消息碰巧含 infra 词，如 forbidden）→ 不算 infra、不重试（对称 cancellationReason 过滤）', async () => {
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-xiaomi-valid');
+    const abortErr = new Error('request forbidden by abort signal');
+    abortErr.name = 'AbortError';
+    executorState.execute.mockRejectedValue(abortErr);
+
+    const result = await runReviewGate('代码无重复逻辑', '重构 utils', deps);
+
+    expect(result.unverifiable).toBeUndefined();
+    expect(result.pass).toBe(false);
+    expect(executorState.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('子代理被取消（cancellationReason）→ 保持默认 FAIL，不算 infra、不重试', async () => {
     providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-xiaomi-valid');
     executorState.execute.mockResolvedValue({

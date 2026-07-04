@@ -274,6 +274,18 @@ export async function handleGoalCompletionGate(
       });
       ctx.goalMode.clearCompletionRequest();
       ctx.goalMode.markMetDegraded(releaseReason);
+      // 终态 gate:2 事件（对齐 exhausted_release 的终态事件形状，Gemini R1-M2）：
+      // 可区分信号走 verificationStatus:'not_run'，不新造 verdict 词汇。
+      ctx.onEvent({
+        type: 'goal_gate',
+        data: {
+          gate: 2,
+          pass: false,
+          verificationStatus: 'not_run',
+          attempt: ctx.goalMode.getGateFailureCount(2),
+          reason: releaseReason,
+        },
+      });
       // 同 exhausted_release：终态事件在闸内立即发出，final 推理失败也不留
       // "永远 running"的 UI。
       ctx.onEvent({

@@ -269,6 +269,25 @@ describe('handleGoalCompletionGate — 闸2 评审基础设施故障（unverifia
     );
   });
 
+  it('unverifiable → 终态 gate:2 事件带 attempt（对齐 exhausted_release 的终态事件形状，Gemini R1-M2）', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, contextAssembly } = makeCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_gate',
+        data: expect.objectContaining({
+          gate: 2,
+          pass: false,
+          verificationStatus: 'not_run',
+          attempt: expect.any(Number),
+        }),
+      }),
+    );
+  });
+
   it('unverifiable → forceFinalResponse 无工具诚实收尾（对齐 exhausted_release 分支）', async () => {
     mockRunReviewGate.mockResolvedValue(unverifiableReview);
     const { ctx, contextAssembly } = makeCtx();

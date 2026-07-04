@@ -193,3 +193,120 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     );
   });
 });
+
+describe('handleGoalCompletionGate — 闸2 评审基础设施故障（unverifiable，infra 错误不许伪装成评审不过）', () => {
+  beforeEach(() => {
+    mockRunVerifyGate.mockReset();
+    mockRunReviewGate.mockReset();
+  });
+
+  const unverifiableReview = {
+    pass: false,
+    parsed: false,
+    unverifiable: true,
+    reason: '评审基础设施不可用：Invalid API Key',
+  };
+
+  it('unverifiable → 不烧修复预算：recordGateFailure(2) 不被调用，也不注入评审修复反馈', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, goalMode, contextAssembly } = makeCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(goalMode.recordGateFailure).not.toHaveBeenCalled();
+    // 不注入 <goal-review-failed> 这类"评审不过"的误导反馈
+    expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalled();
+  });
+
+  it('unverifiable → markMetDegraded 诚实收尾，degradedReason 带真实 infra 错误', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, goalMode, contextAssembly } = makeCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(goalMode.markMetDegraded).toHaveBeenCalledWith(expect.stringContaining('Invalid API Key'));
+    expect(goalMode.markMet).not.toHaveBeenCalled();
+    expect(goalMode.markAborted).not.toHaveBeenCalled();
+    expect(goalMode.clearCompletionRequest).toHaveBeenCalled();
+  });
+
+  it('unverifiable → goal_complete 事件 met + degraded（不许静默 markMet 假绿，也不许 aborted 丢产物）', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, contextAssembly } = makeCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_complete',
+        data: expect.objectContaining({
+          status: 'met',
+          degraded: true,
+          degradedReason: expect.stringContaining('Invalid API Key'),
+          turns: 5,
+          tokensUsed: 2000,
+        }),
+      }),
+    );
+  });
+
+  it('unverifiable → gate:2 观测事件带 verificationStatus not_run + reason（与评审 FAIL 可区分）', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, contextAssembly } = makeCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_gate',
+        data: expect.objectContaining({
+          gate: 2,
+          verificationStatus: 'not_run',
+          reason: expect.stringContaining('Invalid API Key'),
+        }),
+      }),
+    );
+  });
+
+  it('unverifiable → 终态 gate:2 事件带 attempt（对齐 exhausted_release 的终态事件形状，Gemini R1-M2）', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, contextAssembly } = makeCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_gate',
+        data: expect.objectContaining({
+          gate: 2,
+          pass: false,
+          verificationStatus: 'not_run',
+          attempt: expect.any(Number),
+        }),
+      }),
+    );
+  });
+
+  it('unverifiable → forceFinalResponse 无工具诚实收尾（对齐 exhausted_release 分支）', async () => {
+    mockRunReviewGate.mockResolvedValue(unverifiableReview);
+    const { ctx, contextAssembly } = makeCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(ctx.forceFinalResponseReason).toBeTruthy();
+    expect(ctx.forceFinalResponsePrompt).toContain('Invalid API Key');
+  });
+
+  it('普通评审 FAIL（非 unverifiable）仍走修复预算路径（行为不回退）', async () => {
+    mockRunReviewGate.mockResolvedValue({ pass: false, parsed: true, reason: '还有重复' });
+    const { ctx, goalMode, contextAssembly } = makeCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(goalMode.recordGateFailure).toHaveBeenCalledWith(2);
+    expect(goalMode.markMetDegraded).not.toHaveBeenCalled();
+  });
+});

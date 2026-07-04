@@ -344,20 +344,9 @@ function getHookStatusText(activity: TurnHookActivity): string {
   return '已放行';
 }
 
-function getHookSourceLabel(sources: Array<'global' | 'project'>): string {
-  const sourceSet = new Set(sources);
-  const labels = (['global', 'project'] as const)
-    .filter((source) => sourceSet.has(source))
-    .map((source) => source === 'global' ? '全局' : '项目');
-  return labels.length > 0 ? Array.from(new Set(labels)).join('+') : '未标注来源';
-}
-
-function getHookTypeLabel(hookType: 'decision' | 'observer'): string {
-  return hookType === 'decision' ? '可干预' : '仅观察';
-}
-
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
-  const [expanded, setExpanded] = useState(false);
+  // 默认展开：非程序员用户不需要多点一次才能看到钩子做了什么。
+  const [expanded, setExpanded] = useState(true);
   const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
   const durationMs = activity.items.reduce((sum, item) => sum + item.durationMs, 0);
   const tone = getHookActivityTone(activity);
@@ -390,15 +379,11 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
-            const source = getHookSourceLabel(item.sources);
-            const hookType = getHookTypeLabel(item.hookType);
-            const hookTypeDetail = item.hookType === 'decision'
-              ? '可干预·能拦截或改写'
-              : '仅观察·不改动';
+            // 钩子实际注入/触发的内容类型：优先用钩子自己的输出消息（最贴近"注入了什么"），
+            // 没有消息时退回工具名或 matcher，作为能推出的最有用信息。
+            // 来源(全局/项目)、可干预/仅观察对非程序员是噪音，连 hover tooltip 也不放。
+            const injectedContentLabel = item.message || item.toolName || item.matcher || undefined;
             const title = [
-              item.toolName,
-              source,
-              hookType,
               item.matcher ? `matcher: ${item.matcher}` : undefined,
               `${item.hookCount} 个 hook`,
               `${item.durationMs}ms`,
@@ -412,10 +397,8 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
                 title={title || undefined}
               >
                 <span className="shrink-0">{label}</span>
-                <span className="shrink-0 text-zinc-600">{source}</span>
-                <span className="shrink-0 text-zinc-600">{hookTypeDetail}</span>
-                {item.matcher && (
-                  <span className="min-w-0 truncate text-zinc-600">{item.matcher}</span>
+                {injectedContentLabel && (
+                  <span className="min-w-0 truncate text-zinc-600">{injectedContentLabel}</span>
                 )}
                 {itemStatus && (
                   <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(itemStatus.tone)}`}>

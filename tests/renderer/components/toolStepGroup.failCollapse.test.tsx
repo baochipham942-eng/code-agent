@@ -7,7 +7,7 @@ import { ToolStepGroup } from '../../../src/renderer/components/features/chat/To
 import type { TraceNode } from '../../../src/shared/contract/trace';
 
 let nid = 0;
-function toolNode(name: string, success: boolean): TraceNode {
+function toolNode(name: string, success: boolean, result?: string): TraceNode {
   nid += 1;
   return {
     id: `tool-${nid}`,
@@ -19,7 +19,7 @@ function toolNode(name: string, success: boolean): TraceNode {
       name,
       args: { url: `https://site${nid}.com` },
       success,
-      result: success ? 'ok' : 'anti-scraping wall',
+      result: result ?? (success ? 'ok' : 'anti-scraping wall'),
     },
   } as TraceNode;
 }
@@ -47,5 +47,26 @@ describe('ToolStepGroup — 失败工具组默认折叠', () => {
       <ToolStepGroup nodes={[toolNode('WebFetch', true), toolNode('WebFetch', true)]} defaultExpanded />,
     );
     expect(html).toContain(EXPANDED_MARKER);
+  });
+
+  it('非网络工具组的探索性失败（Bash 非零退出码，未分类错误）仍展开（既有透明度机制不变），但不顶红', () => {
+    // 展开策略本身不变（这是被 browserComputerActionPreview.rendering 测试锁定的既有设计：
+    // 折叠会让"哪些找到了/哪些失败了"的信息完全消失，不只是变安静）。本次改动只降噪颜色：
+    // 探索性失败（未被 humanizeToolError 分类）用中性色，不喊红。
+    const html = renderToStaticMarkup(
+      <ToolStepGroup nodes={[toolNode('Bash', false, 'command failed with exit code 1')]} />,
+    );
+    expect(html).toContain(EXPANDED_MARKER);
+    expect(html).not.toContain('bg-red-400');
+    expect(html).not.toContain('text-red-300');
+  });
+
+  it('非网络工具组的真正需要介入的失败（鉴权失效）仍展开并顶红', () => {
+    const html = renderToStaticMarkup(
+      <ToolStepGroup nodes={[toolNode('Bash', false, '401 Unauthorized: invalid api key')]} />,
+    );
+    expect(html).toContain(EXPANDED_MARKER);
+    expect(html).toContain('bg-red-400');
+    expect(html).toContain('text-red-300');
   });
 });

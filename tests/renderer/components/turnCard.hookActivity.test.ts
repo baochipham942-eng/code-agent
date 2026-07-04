@@ -68,7 +68,7 @@ describe('TurnCard hook activity', () => {
     expect(html).not.toContain('bg-amber-500/10');
   });
 
-  it('shows hook execution summary as a collapsed turn banner by default', () => {
+  it('shows hook execution summary as an expanded turn banner by default', () => {
     const turn: TraceTurn = {
       turnNumber: 1,
       turnId: 'turn-1',
@@ -130,12 +130,17 @@ describe('TurnCard hook activity', () => {
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
     expect(html).toContain('执行了 2 个钩子');
-    // 降噪：折叠态不再展示「全局/项目」来源与「可干预/仅观察」机制黑话（展开后仍可见）
+    // 默认展开：非程序员用户不用点开就能看到钩子做了什么
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('用户提示提交');
+    expect(html).toContain('会话开始');
+    // 展开内容只保留「钩子类型 + 注入/触发的内容类型」两样，来源(全局/项目)与
+    // 可干预/仅观察机制黑话对非程序员是纯噪音，即使展开也不再展示为可见徽标
     expect(html).not.toContain('全局+项目');
     expect(html).not.toContain('可干预');
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain('用户提示提交');
-    expect(html).not.toContain('会话开始');
+    expect(html).not.toContain('仅观察');
+    // 没有 message 时退回能推出的最有用信息（这里是 matcher）
+    expect(html).toContain('Bash');
     expect(html).not.toContain('已放行');
   });
 });

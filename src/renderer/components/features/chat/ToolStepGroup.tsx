@@ -13,6 +13,7 @@ import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGro
 import {
   formatToolDuration,
   isAutoLoadedRetry,
+  isEscalatedToolError,
 } from '../../../utils/toolExecutionPresentation';
 
 // 网络抓取类工具：失败多为反爬墙/限流瞬态噪音（与浏览器/电脑/文件操作的 actionable 失败不同）。
@@ -63,19 +64,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     if (hasError && hasSuccess) return 'partial';
     return hasError ? 'error' : 'ok';
   }, [nodes]);
-  // 纯网络抓取组（WebSearch/WebFetch）的失败多是反爬墙/限流类瞬态噪音，撑开成报错墙
-  // 反而干扰——这类组失败不强制展开，组头状态徽标已传达，需要细节再点开。
-  // 浏览器/电脑操作/文件查找等组的失败是 actionable（且需展开做敏感数据脱敏展示），
-  // 仍保持原来的失败即展开。
-  const isNetworkFetchGroup = nodes.length > 0
-    && nodes.every((n) => NETWORK_FETCH_TOOLS.has(n.toolCall?.name ?? ''));
-  const forceExpandOnFailure = (status === 'error' || status === 'partial') && !isNetworkFetchGroup;
-  const [expanded, setExpanded] = useState(defaultExpanded || forceExpandOnFailure);
-  useEffect(() => {
-    if (forceExpandOnFailure) {
-      setExpanded(true);
-    }
-  }, [forceExpandOnFailure]);
 
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
   const toolCalls = useMemo<ToolCall[]>(() => {
@@ -109,6 +97,30 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+
+  // 组里是否存在需要用户介入的失败（鉴权失效/额度耗尽/限流），而非 agent 试错的
+  // 探索性失败（工具未安装、非零退出码等未分类错误）。只有前者才值得顶红——
+  // 注意：是否强制展开是另一件事，不由这个判断决定（见下方 forceExpandOnFailure 注释）。
+  const hasEscalatedError = useMemo(
+    () => toolCalls.some((tc) => isEscalatedToolError(tc)),
+    [toolCalls],
+  );
+  // 纯网络抓取组（WebSearch/WebFetch）的失败多是反爬墙/限流类瞬态噪音，撑开成报错墙
+  // 反而干扰——这类组失败不强制展开，组头状态徽标已传达，需要细节再点开。
+  // 浏览器/电脑操作/文件查找等组即便是未分类的探索性失败，也仍保持强制展开——
+  // 这是既有、被测试锁定的设计：失败的浏览器/电脑操作组要展开才能看到脱敏后的
+  // 恢复步骤，部分失败的搜索类组要展开才能看到"哪些找到了/哪些没找到"的透明度信息，
+  // 折叠会让这些信息完全消失（不只是变安静）。本批改动只把颜色降噪，不动这个展开策略。
+  const isNetworkFetchGroup = nodes.length > 0
+    && nodes.every((n) => NETWORK_FETCH_TOOLS.has(n.toolCall?.name ?? ''));
+  const forceExpandOnFailure = (status === 'error' || status === 'partial') && !isNetworkFetchGroup;
+  const [expanded, setExpanded] = useState(defaultExpanded || forceExpandOnFailure);
+  useEffect(() => {
+    if (forceExpandOnFailure) {
+      setExpanded(true);
+    }
+  }, [forceExpandOnFailure]);
+
   const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls), [toolCalls]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
@@ -140,13 +152,19 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
         )}
         {status === 'error' && (
-          <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" aria-label="失败" />
+          <span
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-red-400' : 'bg-zinc-500'}`}
+            aria-label="失败"
+          />
         )}
         {status === 'partial' && (
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" aria-label="部分失败" />
+          <span
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-amber-400' : 'bg-zinc-500'}`}
+            aria-label="部分失败"
+          />
         )}
         {status !== 'ok' && (
-          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status)}`}>{getToolGroupStatusLabel(status)}</span>
+          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status)}</span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
@@ -229,7 +247,7 @@ export function buildToolGroupHeadSummary(toolCalls: ToolCall[]): string | null 
   if (toolCalls.length === 0) return null;
   if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls);
   const only = toolCalls[0];
-  if (only.result && only.result.success === false) return null;
+  if (only.result?.success === false) return null;
   return summarizeTool(only);
 }
 
@@ -277,8 +295,11 @@ function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok
   return 'completed';
 }
 
-function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok'): string {
+// hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
+// 跟成功行视觉权重接近，agent 试错不该喊给用户看。
+function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
   if (status === 'streaming') return 'text-sky-300';
+  if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
   if (status === 'partial') return 'text-amber-300';
   if (status === 'error') return 'text-red-300';
   return 'text-emerald-300';

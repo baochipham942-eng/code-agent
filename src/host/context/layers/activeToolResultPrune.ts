@@ -72,6 +72,10 @@ export function applyActiveToolResultPrune(
   // 的结果——本轮先让它走 L1 的 2000-token head+tail 摘要，下一步出现新 assistant
   // 后才收归 L0（单轮编辑流不会被逼多一次 Read 回读）。整个数组没有 assistant
   // （还没进入过对话轮次）时保守豁免全部。
+  // 已知 cosmetic（审计 R2-3，评估后不修）：豁免的结果若在同轮被 L1 spill 归档，
+  // ledger 归因记为 tool-result-budget 且下一步 L0 因 SPILL_NOTICE_MARKER 跳过，
+  // 归因永远留在 L1——按层统计时 L1 会略高估。归因反映的是实际执行层（活确实是
+  // L1 干的），真修需要跨层重归因/改 ledger 语义，成本远超收益。
   const lastAssistantIndex = messages.reduce(
     (acc, msg, i) => (msg.role === 'assistant' ? i : acc),
     -1,

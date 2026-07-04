@@ -260,6 +260,65 @@ describe('deferred tool preload', () => {
     expect(preload).toEqual(['propose_role']);
   });
 
+  // issue #322：意图正则不能把"常见文件名词"误判成工具意图（\b 对 . / - 等
+  // 非单词字符也成立，所以 "notes.md" 能穿过 \bnotes\b；同类还有裸词缺 \b 导致
+  // 的子串误命中，如 "express" 含 "press"、"git checkout" 含 "checkout"）。
+  // 误触后果 = 工具表突变 → provider 前缀缓存整体失配（PR#321 审计附录实测归因）。
+  describe('intent regex filename/substring false positives (issue #322)', () => {
+    it.each([
+      '在工作目录新建 notes.md，把结论写进去',           // issue 原始复现
+      'append the summary to release-notes.txt',
+      'update release_notes.txt with the changelog',   // _ 是 \w，本就不命中，守住边界行为
+      'please summarize meeting notes.md',              // MEETING_DESKTOP_CONTEXT_RE 的 meeting\s+notes?
+      'attach screenshot.png to the report',            // \bscreenshot\b 中文件名
+      'take notes on this article and save them',       // 泛化动词短语，非桌面 app 意图
+    ])('does not preload Computer for: %s', (content) => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
+      }))).toEqual([]);
+    });
+
+    it.each([
+      'run git checkout main then rebuild',   // 裸 checkout 误中 git checkout
+      'deploy the express server to prod',    // 裸 press 误中 express
+      'query the clickhouse table',           // 裸 click 误中 clickhouse
+      'refine the design in figma',           // 裸 sign[\s-]?in 误中 "design in"
+      'update my blog index page',            // 裸 log[\s-]?in 误中 "blog index"
+    ])('does not preload Browser for: %s', (content) => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
+      }))).toEqual([]);
+    });
+
+    it('does not preload workflow_orchestrate for dag filenames', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: 'fix the import error in dag.py', timestamp: 1 }],
+      }))).toEqual([]);
+    });
+
+    // 收窄后真意图必须保留
+    it('still preloads Computer for explicit Notes app intent', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: 'open the Notes app and jot this down', timestamp: 1 }],
+      }))).toEqual(['Computer']);
+    });
+
+    it.each([
+      'go to the checkout page and complete the payment',
+      'sign in to the dashboard and export the report',
+    ])('still preloads Browser for real interactive intent: %s', (content) => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
+      }))).toEqual(['Browser']);
+    });
+
+    it('still preloads Computer for live meeting notes intent', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: 'capture the current meeting notes for me', timestamp: 1 }],
+      }))).toEqual(['Computer']);
+    });
+  });
+
   it('actually loads propose_role through the skill boundary path', () => {
     registerProtocolToolForPreload('propose_role' as never);
     resetToolSearchService();

@@ -305,11 +305,6 @@ export function ensureNeoWorkCardLiveUpdates(): void {
   });
 }
 
-export function resetNeoWorkCardLiveUpdatesForTests(): void {
-  neoWorkCardLiveUpdatesUnsubscribe?.();
-  neoWorkCardLiveUpdatesUnsubscribe = undefined;
-}
-
 export function selectNeoWorkCardDetailsForConversation(
   state: Pick<NeoWorkCardState, 'detailsById'>,
   sourceConversationId: string | null,

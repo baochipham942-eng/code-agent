@@ -5,7 +5,7 @@
 // 只匹配消息开头的完整 token——正文中途提到的词不是触发词，不上色。
 // ============================================================================
 
-export type TriggerTokenKind = 'neo' | 'goal' | 'workflow';
+type TriggerTokenKind = 'neo' | 'goal' | 'workflow';
 
 export interface ParsedTriggerToken {
   kind: TriggerTokenKind;

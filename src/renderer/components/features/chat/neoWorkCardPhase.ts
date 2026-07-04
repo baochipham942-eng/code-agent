@@ -42,11 +42,6 @@ export function statusPhase(status: NeoWorkCardStatus): NeoWorkCardPhase {
   return PHASE_BY_STATUS[status] ?? 'running';
 }
 
-/** 运行中 / 待确认 = 还在活动，尚未收尾。 */
-export function isActivePhase(phase: NeoWorkCardPhase): boolean {
-  return phase === 'running' || phase === 'needs_input';
-}
-
 // 运行时生命周期内部标记，不是用户视角的工作项，从清单里滤掉。
 const INTERNAL_COMPLETED_MARKERS = [
   /^Queued approved revision/i,

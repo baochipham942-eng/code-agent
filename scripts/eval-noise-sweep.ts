@@ -93,12 +93,13 @@ async function main() {
     if (model) cliArgs.push('--model', model);
     if (provider) cliArgs.push('--provider', provider);
     // timeout 强杀：eval-ci 偶发跑完不退出（悬挂 handle 吊住进程，2026-07-04 实测
-    // 挂起 100 分钟），报告在挂起前已落盘，超时杀掉不丢数据
+    // 挂起 100 分钟），报告在挂起前已落盘，超时杀掉不丢数据。
+    // 45min：含 600s 超时 case 的慢轮实测可超 30min，别误杀合法慢跑
     const res = spawnSync('npx', cliArgs, {
       cwd,
       stdio: ['ignore', 'inherit', 'inherit'],
       env: process.env,
-      timeout: 30 * 60_000,
+      timeout: 45 * 60_000,
       killSignal: 'SIGKILL',
     });
     if (res.status !== 0) console.warn(`  ⚠ run ${k} eval-ci exit ${res.status ?? `signal:${res.signal}`}（若有报告仍尝试收集）`);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# 重签名 cua-driver (trycua, MIT) → "Agent Neo Computer Use.app"
+# 重签名 cua-driver (trycua, MIT) → staged "Agent Neo Computer Use.app"
 # ============================================================================
 # 上游: https://github.com/trycua/cua (libs/cua-driver, MIT)
 # 用途: Neo 的 computer-use 新底座（AX 树优先 + 后台不抢焦点），stdio MCP 接入。
@@ -14,7 +14,7 @@
 #   Agent Neo，并消除多 CuaDriver 冲突。
 #
 # 设计原则（对齐 fetch-rtk.sh）:
-#   - 不 commit .app 进 git（产物在 scripts/，由 .gitignore 排除）
+#   - 不 commit .app 进 git（产物在 .tauri-resources.noindex/，由 .gitignore 排除）
 #   - 版本锁定：源 app 必须等于 CUA_DRIVER_VERSION，否则报错
 #   - 增量：已重签且版本一致则跳过
 #   - 重签用自有 Developer ID + hardened runtime，沿用源 app 的 entitlements
@@ -32,7 +32,10 @@ CUA_APP_NAME="Agent Neo Computer Use"
 CUA_SIGN_IDENTITY="${CUA_SIGN_IDENTITY:-Developer ID Application: jay lem (D7CVTJ72NV)}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST_APP="$SCRIPT_DIR/$CUA_APP_NAME.app"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+STAGING_ROOT="$ROOT_DIR/.tauri-resources.noindex"
+DEST_PARENT="$STAGING_ROOT/scripts"
+DEST_APP="$DEST_PARENT/$CUA_APP_NAME.app"
 DEST_BIN="$DEST_APP/Contents/MacOS/cua-driver"
 
 if [[ "$(uname)" != "Darwin" ]]; then
@@ -57,9 +60,20 @@ dest_app_ready() {
   [[ "$exist_id" == "$CUA_BUNDLE_ID" ]] && codesign --verify --strict "$DEST_APP" 2>/dev/null
 }
 
+prepare_destination_root() {
+  mkdir -p "$DEST_PARENT"
+  touch "$STAGING_ROOT/.metadata_never_index" 2>/dev/null || true
+}
+
+cleanup_legacy_script_app() {
+  bash "$SCRIPT_DIR/stage-cua-driver-resource.sh" >/dev/null 2>&1 || true
+}
+
 if [[ "${CUA_FETCH_PREBUILT:-}" == "1" ]]; then
+  prepare_destination_root
   if dest_app_ready; then
     echo "✓ $CUA_APP_NAME.app ($CUA_BUNDLE_ID) 已就绪且签名有效（跳过下载）"
+    cleanup_legacy_script_app
     exit 0
   fi
   TMP_TAR="$(mktemp -d)/cua-prebuilt.tar.gz"
@@ -71,11 +85,12 @@ if [[ "${CUA_FETCH_PREBUILT:-}" == "1" ]]; then
     exit 1
   fi
   rm -rf "$DEST_APP"
-  tar -xzf "$TMP_TAR" -C "$SCRIPT_DIR"
+  tar -xzf "$TMP_TAR" -C "$DEST_PARENT"
   if ! dest_app_ready; then
     echo "❌ 预构建解包后签名/bundle id 校验失败" >&2
     exit 1
   fi
+  cleanup_legacy_script_app
   echo "✓ $CUA_APP_NAME.app ($CUA_DRIVER_VERSION) 预构建就位（重签产物，无需本机源 app）"
   exit 0
 fi
@@ -121,6 +136,7 @@ echo "→ 源: $SOURCE_APP (v$SRC_VERSION)"
 echo "→ 目标: $DEST_APP (id=$CUA_BUNDLE_ID, sign=$CUA_SIGN_IDENTITY)"
 
 # ── 复制 + 改身份 ───────────────────────────────────────────
+prepare_destination_root
 rm -rf "$DEST_APP"
 cp -R "$SOURCE_APP" "$DEST_APP"
 # 清掉源签名残留（必须，否则 codesign 拒绝覆盖）
@@ -158,3 +174,4 @@ fi
 echo "✓ $CUA_APP_NAME.app ($CUA_DRIVER_VERSION) 重签完成 → bundle id $NEW_ID"
 echo "  二进制: $DEST_BIN"
 echo "  注：本地 dogfood 无需公证；正式发版由 release.yml 在 CI 用 secret 证书签名+公证。"
+cleanup_legacy_script_app

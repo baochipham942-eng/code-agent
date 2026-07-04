@@ -22,27 +22,32 @@ import type { MCPClient } from './mcpClient';
 
 const logger = createLogger('MCPDefaultServers');
 
-// 重签后的 cua-driver 二进制（bundle 内）相对 scripts/ 的路径。
-// 由 scripts/fetch-cua-driver.sh 生成，进 tauri.conf.json bundle resources。
-const CUA_BUNDLED_BIN_REL = path.join('Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver');
+// 重签后的 cua-driver 二进制。fetch 脚本把开发态产物放进 noindex staging，
+// Tauri 打包时再映射回 bundle 内 scripts/ 下的标准 .app 路径。
+const CUA_BUNDLED_BIN_RELS = [
+  path.join('scripts', 'Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver'),
+  path.join('.tauri-resources.noindex', 'scripts', 'Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver'),
+];
 
 /**
  * 解析 cua-driver 二进制路径。优先级：
  *   1. CODE_AGENT_CUA_DRIVER_PATH 显式覆盖
- *   2. bundle 内重签后的 Agent Neo Computer Use.app（dev: scripts/，打包: Resources/…/scripts/）
- *   3. 回退 PATH 上的 `cua-driver`（dev 未跑 fetch 脚本时）
+ *   2. bundle 内重签后的 Agent Neo Computer Use.app（打包: Resources/…/scripts/）
+ *   3. 开发态 noindex staging 下的 Agent Neo Computer Use.app
+ *   4. 回退 PATH 上的 `cua-driver`（dev 未跑 fetch 脚本时）
  * 探针顺序跟 rtkRewriter.findRtkBinary 同模式。
  */
 function resolveCuaDriverPath(): string {
   const override = process.env.CODE_AGENT_CUA_DRIVER_PATH;
   if (override) return override;
-  const candidates = [
-    path.join(__dirname, '..', '..', '..', '..', 'scripts', CUA_BUNDLED_BIN_REL),
-    path.join(__dirname, '..', '..', '..', 'scripts', CUA_BUNDLED_BIN_REL),
-    path.join(__dirname, '..', '..', 'scripts', CUA_BUNDLED_BIN_REL),
-    path.join(__dirname, '..', 'scripts', CUA_BUNDLED_BIN_REL),
-    path.join(__dirname, 'scripts', CUA_BUNDLED_BIN_REL),
+  const roots = [
+    path.join(__dirname, '..', '..', '..', '..'),
+    path.join(__dirname, '..', '..', '..'),
+    path.join(__dirname, '..', '..'),
+    path.join(__dirname, '..'),
+    __dirname,
   ];
+  const candidates = roots.flatMap((root) => CUA_BUNDLED_BIN_RELS.map((rel) => path.join(root, rel)));
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;

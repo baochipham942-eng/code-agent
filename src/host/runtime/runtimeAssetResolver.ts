@@ -245,8 +245,11 @@ export function resolveHelperBinary(
     path.join(root, 'resources', name),
     path.join(root, 'resources', 'bin', name),
     path.join(root, 'dist', 'native', name),
+    path.join(root, '.tauri-resources.noindex', 'scripts', name),
     path.join(resolvedOptions.cwd, 'scripts', name),
+    path.join(resolvedOptions.cwd, '.tauri-resources.noindex', 'scripts', name),
     path.join(resolvedOptions.dirname, '..', '..', 'scripts', name),
+    path.join(resolvedOptions.dirname, '..', '..', '.tauri-resources.noindex', 'scripts', name),
   ]);
 
   return firstExisting(candidates, resolvedOptions.existsSync);

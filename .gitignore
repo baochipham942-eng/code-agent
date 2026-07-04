@@ -123,3 +123,6 @@ docs/specs/2026-05-31-runtime-consolidation-and-workflow.md
 # Tauri release build 临时配置（由 scripts/tauri-release-bundle.sh 生成）
 .tauri-release/
 .claude/test-cases/drafts/
+
+# Tauri staged resources that must keep app bundles out of Spotlight/Launchpad
+.tauri-resources.noindex/

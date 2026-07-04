@@ -34,6 +34,24 @@ function readWorkflow(path: string): WorkflowFile {
   return loadYaml(readRepoFile(path)) as WorkflowFile;
 }
 
+type TauriResources = string[] | Record<string, string>;
+
+function readTauriResources(): { sources: string[]; targets: string[]; map: Record<string, string> } {
+  const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
+    bundle?: { resources?: TauriResources };
+  };
+  const resources = tauriConfig.bundle?.resources ?? [];
+  const map = Array.isArray(resources)
+    ? Object.fromEntries(resources.map((resource) => [resource, resource]))
+    : resources;
+
+  return {
+    sources: Object.keys(map),
+    targets: Object.values(map),
+    map,
+  };
+}
+
 function readWorkflowTriggers(path: string): Record<string, { paths?: string[]; tags?: string[] }> {
   const workflow = readWorkflow(path) as Record<string, unknown>;
   const triggers = (workflow.on ?? workflow['on']) as Record<string, { paths?: string[] }> | undefined;
@@ -517,6 +535,7 @@ describe('macOS release fail-closed gates', () => {
     expect(releaseNeo).toContain('npm run release:security-scan');
     expect(releaseNeo).toContain('tests/scripts/verifyProductionEnv.test.ts');
     expect(releaseNeo).toContain('tests/scripts/releaseMacosGates.test.ts');
+    expect(prebuildCleanup).toContain('stage-cua-driver-resource.sh');
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');
@@ -525,32 +544,68 @@ describe('macOS release fail-closed gates', () => {
   });
 
   it('bundles Sharp runtime while keeping optional browser and audio runtimes out of Tauri resources', () => {
-    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
-      bundle?: { resources?: string[] };
-    };
-    const resources = tauriConfig.bundle?.resources ?? [];
+    const { sources } = readTauriResources();
 
-    expect(resources.some((resource) => resource.includes('node_modules/onnxruntime-node'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/onnxruntime-common'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/avr-vad'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/playwright'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/playwright-core'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/onnxruntime-node'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/onnxruntime-common'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/avr-vad'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/playwright'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/playwright-core'))).toBe(false);
 
-    expect(resources).toContain('../node_modules/sharp/package.json');
-    expect(resources).toContain('../node_modules/sharp/lib/*.js');
-    expect(resources).toContain('../node_modules/sharp/node_modules/semver/**/*');
-    expect(resources).toContain('../node_modules/@img/colour/package.json');
-    expect(resources).toContain('../node_modules/@img/colour/*.cjs');
-    expect(resources).toContain('../node_modules/@img/sharp-darwin-arm64/package.json');
-    expect(resources).toContain('../node_modules/@img/sharp-darwin-arm64/lib/**/*.node');
-    expect(resources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/package.json');
-    expect(resources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/versions.json');
-    expect(resources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/lib/**/*');
-    expect(resources).toContain('../node_modules/detect-libc/package.json');
-    expect(resources).toContain('../node_modules/detect-libc/lib/**/*');
-    expect(resources.some((resource) => resource.includes('node_modules/sharp/src'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/sharp/install'))).toBe(false);
-    expect(resources.some((resource) => resource.endsWith('index.d.ts'))).toBe(false);
+    expect(sources).toContain('../node_modules/sharp/package.json');
+    expect(sources).toContain('../node_modules/sharp/lib/*.js');
+    expect(sources).toContain('../node_modules/sharp/node_modules/semver');
+    expect(sources).toContain('../node_modules/@img/colour/package.json');
+    expect(sources).toContain('../node_modules/@img/colour/*.cjs');
+    expect(sources).toContain('../node_modules/@img/sharp-darwin-arm64/package.json');
+    expect(sources).toContain('../node_modules/@img/sharp-darwin-arm64/lib');
+    expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/package.json');
+    expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/versions.json');
+    expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/lib');
+    expect(sources).toContain('../node_modules/detect-libc/package.json');
+    expect(sources).toContain('../node_modules/detect-libc/lib');
+    expect(sources.some((resource) => resource.includes('node_modules/sharp/src'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/sharp/install'))).toBe(false);
+    expect(sources.some((resource) => resource.endsWith('index.d.ts'))).toBe(false);
+  });
+
+  it('stages the CUA helper from a noindex source while preserving its packaged app path', () => {
+    const { sources, targets, map } = readTauriResources();
+    const fetchCuaDriver = readRepoFile('scripts/fetch-cua-driver.sh');
+    const stageCuaDriver = readRepoFile('scripts/stage-cua-driver-resource.sh');
+    const cleanBundleApps = readRepoFile('scripts/tauri-clean-bundle-apps.sh');
+    const gitignore = readRepoFile('.gitignore');
+
+    expect(sources).toContain('../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app');
+    expect(map['../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app']).toBe('scripts/Agent Neo Computer Use.app');
+    expect(targets).toContain('scripts/Agent Neo Computer Use.app');
+    expect(sources).not.toContain('../scripts/Agent Neo Computer Use.app');
+    expect(sources.some((resource) => resource.startsWith('../scripts/Agent Neo Computer Use.app'))).toBe(false);
+
+    expect(fetchCuaDriver).toContain('.tauri-resources.noindex');
+    expect(stageCuaDriver).toContain('LEGACY_APP');
+    expect(stageCuaDriver).toContain('rm -rf "${LEGACY_APP}"');
+    expect(cleanBundleApps).toContain('Agent Neo Computer Use');
+    expect(cleanBundleApps).toContain('*/_up_/scripts/${HELPER_APP_NAME}.app');
+    expect(gitignore).toContain('.tauri-resources.noindex/');
+  });
+
+  it('removes the macOS-only CUA helper from the Windows Tauri resource overlay', () => {
+    const result = spawnSync('node', ['scripts/tauri-platform-config.mjs', 'win32-x64'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    const overlay = JSON.parse(result.stdout) as { bundle?: { resources?: TauriResources } };
+    const resources = overlay.bundle?.resources ?? {};
+    const sources = Array.isArray(resources) ? resources : Object.keys(resources);
+    const targets = Array.isArray(resources) ? resources : Object.values(resources);
+
+    expect(sources.some((resource) => resource.includes('Agent Neo Computer Use.app'))).toBe(false);
+    expect(targets.some((resource) => resource.includes('Agent Neo Computer Use.app'))).toBe(false);
+    expect(sources).toContain('../scripts/rtk.exe');
+    expect(targets).toContain('scripts/rtk.exe');
   });
 
   it('keeps default runtime asset downloads limited to optional browser and audio components', () => {
@@ -602,42 +657,33 @@ describe('macOS release fail-closed gates', () => {
   });
 
   it('keeps better-sqlite3 source and build inputs out of default Tauri resources', () => {
-    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
-      bundle?: { resources?: string[] };
-    };
-    const resources = tauriConfig.bundle?.resources ?? [];
+    const { sources } = readTauriResources();
 
-    expect(resources).toContain('../node_modules/better-sqlite3/package.json');
-    expect(resources).toContain('../node_modules/better-sqlite3/lib/**/*');
-    expect(resources).toContain('../node_modules/better-sqlite3/build/Release/better_sqlite3.node');
-    expect(resources.some((resource) => resource.includes('node_modules/better-sqlite3/deps'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/better-sqlite3/src'))).toBe(false);
-    expect(resources.some((resource) => resource === '../node_modules/better-sqlite3/**/*')).toBe(false);
+    expect(sources).toContain('../node_modules/better-sqlite3/package.json');
+    expect(sources).toContain('../node_modules/better-sqlite3/lib');
+    expect(sources).toContain('../node_modules/better-sqlite3/build/Release/better_sqlite3.node');
+    expect(sources.some((resource) => resource.includes('node_modules/better-sqlite3/deps'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/better-sqlite3/src'))).toBe(false);
+    expect(sources.some((resource) => resource === '../node_modules/better-sqlite3')).toBe(false);
   });
 
   it('keeps node-pty runtime resources free of source maps, typings, and tests', () => {
-    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
-      bundle?: { resources?: string[] };
-    };
-    const resources = tauriConfig.bundle?.resources ?? [];
+    const { sources } = readTauriResources();
 
-    expect(resources).toContain('../node_modules/node-pty/package.json');
-    expect(resources).toContain('../node_modules/node-pty/lib/index.js');
-    expect(resources).toContain('../node_modules/node-pty/lib/unixTerminal.js');
-    expect(resources).toContain('../node_modules/node-pty/prebuilds/darwin-arm64/**/*');
+    expect(sources).toContain('../node_modules/node-pty/package.json');
+    expect(sources).toContain('../node_modules/node-pty/lib/index.js');
+    expect(sources).toContain('../node_modules/node-pty/lib/unixTerminal.js');
+    expect(sources).toContain('../node_modules/node-pty/prebuilds/darwin-arm64');
 
-    expect(resources.some((resource) => resource.includes('node_modules/node-pty/lib/**/*'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/node-pty/typings'))).toBe(false);
-    expect(resources.some((resource) => resource.endsWith('.map'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('.test.'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/node-pty/lib/**/*'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('node_modules/node-pty/typings'))).toBe(false);
+    expect(sources.some((resource) => resource.endsWith('.map'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('.test.'))).toBe(false);
   });
 
   it('bundles the prepared Node runtime in default Tauri resources', () => {
-    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
-      bundle?: { resources?: string[] };
-    };
-    const resources = tauriConfig.bundle?.resources ?? [];
+    const { sources } = readTauriResources();
 
-    expect(resources).toContain('../dist/bundled-node/**/*');
+    expect(sources).toContain('../dist/bundled-node');
   });
 });

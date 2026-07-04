@@ -174,7 +174,7 @@ export interface EvalGoalContract {
 }
 
 /** goal_gate 事件的行为落账（只记闸号/极性/verdict 枚举，不记文案） */
-export interface GoalGateEventRecord {
+interface GoalGateEventRecord {
   gate: number;
   pass: boolean;
   verdict?: GoalGateVerdict;

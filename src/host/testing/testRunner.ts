@@ -489,7 +489,13 @@ export class TestRunner {
           if (match.action === 'stop') break;
 
           const remainingTime = timeout - (Date.now() - startTime);
-          if (remainingTime <= 0) break;
+          if (remainingTime <= 0) {
+            // 审计 R1-H2：规则要求应答但预算耗尽 —— 静默 break 会让
+            // sim_stop_respected 在"拒绝从未送达"时假绿。显式抛超时，
+            // 与首轮/follow-up 的 withTimeout 同款消息格式 → 外层 catch
+            // 按存量口径分流 infra_excluded（时间预算问题不是能力数据）。
+            throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
+          }
           const simResult = await withTimeout(
             this.agent.sendMessage(match.message!),
             remainingTime,

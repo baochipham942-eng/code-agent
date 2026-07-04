@@ -383,7 +383,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const permissionDecider = this.simConfig ? buildPermissionDecider(this.simConfig) : null;
       const toolExecutor = new ToolExecutor({
         requestPermission: permissionDecider
-          ? async (request) => permissionDecider({ toolName: request.tool })
+          ? async (request) => permissionDecider({ ...request, toolName: request.tool })
           : async () => true,
         workingDirectory: this.workingDirectory,
       });

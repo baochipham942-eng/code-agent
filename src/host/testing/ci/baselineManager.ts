@@ -5,6 +5,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
+import { loadNoiseBand } from './noiseBand';
 import type { EvalBaseline, BaselineDelta, TestRunSummary, EvalRunMode } from '../types';
 
 /** 分母口径版本：2 = 能力分母排除 skipped 与 infra_excluded（与报告口径一致） */
@@ -105,7 +106,13 @@ export class BaselineManager {
     }
 
     // Determine regression
-    const thresholds = baseline.thresholds ?? DEFAULT_THRESHOLDS;
+    // WP1b：噪声带文件（sweep 实测 2σ）优先于固定 maxScoreDrop=0.15——
+    // 固定值比真实噪声宽会漏报回归，比噪声窄会假警报逼人无视门。
+    const noiseBand = await loadNoiseBand(this.workingDir);
+    const baseThresholds = baseline.thresholds ?? DEFAULT_THRESHOLDS;
+    const thresholds = noiseBand
+      ? { ...baseThresholds, maxScoreDrop: noiseBand.maxScoreDrop }
+      : baseThresholds;
     const regressionDetails: string[] = [];
 
     if (currentPassRate < thresholds.minPassRate) {

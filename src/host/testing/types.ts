@@ -5,6 +5,7 @@
 import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
 import type { GoalGateVerdict } from '../../shared/contract/agent';
+import type { JudgeCalibrationRecord } from './calibration/calibrationRegistry';
 
 export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
@@ -258,6 +259,16 @@ export interface TestCase {
    * 同时给出视为配置错误，fail-loud。
    */
   goal_contract?: EvalGoalContract;
+  /** 附件注入（GAIA 等外部基准）：跑前从 source 拷进工作目录 dest（相对路径，默认 source 的 basename），跑后清理 */
+  files?: CaseFileInjection[];
+}
+
+/** 单个附件注入声明 */
+interface CaseFileInjection {
+  /** 本地源文件绝对路径（支持 ~ 前缀） */
+  source: string;
+  /** 工作目录内相对目标路径；缺省用 source 的 basename */
+  dest?: string;
 }
 
 /**
@@ -449,6 +460,8 @@ export interface TestRunSummary {
   harness?: HarnessVariantConfig;
   /** WP1-4: 本次 run 登记的 prompt 改动预测（deltaReporter 对账用） */
   prediction?: EvalPrediction;
+  /** judge 校准接线：本次 run llm_judge 分数绑定的校准记录；缺失即视为未校准 */
+  judgeCalibration?: JudgeCalibrationRecord;
 }
 
 // ============================================================================

@@ -7,6 +7,11 @@ import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { formatDate, generateHtmlReport } from './htmlReportGenerator';
+import {
+  CALIBRATION_TRUST_THRESHOLDS,
+  isTrustedCalibration,
+  type JudgeCalibrationRecord,
+} from './calibration/calibrationRegistry';
 
 export { generateHtmlReport } from './htmlReportGenerator';
 
@@ -52,7 +57,7 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   // Score authority buckets（WP1-1）：分数由什么背书，judge/自报分不冒充硬 pass
   lines.push('## 评分权威分桶');
   lines.push('');
-  lines.push(generateScoreAuthoritySection(summary.results));
+  lines.push(generateScoreAuthoritySection(summary.results, summary.judgeCalibration));
   lines.push('');
 
   // Environment
@@ -409,14 +414,33 @@ export async function saveReport(
  * 评分权威分桶表（WP1-1）：deterministic_assertion / llm_judge / self_check，
  * 无标注的历史结果归 unknown 行，不冒充 deterministic。
  * L3 实验提案只准引用前两桶；self_check/unknown 分数不作能力证据。
+ *
+ * scoreAuthority 第二步：llm_judge 桶必须绑定达标的校准记录
+ * （calibrationRegistry.isTrustedCalibration）才进可信列；未绑定/不达标
+ * 的 judge 分强制标注，不作能力证据。
  */
-function generateScoreAuthoritySection(results: TestResult[]): string {
+function generateScoreAuthoritySection(
+  results: TestResult[],
+  judgeCalibration?: JudgeCalibrationRecord,
+): string {
   const buckets: Array<{ key: string; label: string }> = [
     { key: 'deterministic_assertion', label: '确定性断言' },
     { key: 'llm_judge', label: 'LLM 评审' },
     { key: 'self_check', label: '无外部验证' },
     { key: 'unknown', label: '未标注（历史遗留）' },
   ];
+
+  const hasLlmJudge = results.some(
+    (r) => r.scoreAuthority === 'llm_judge' && r.status !== 'skipped' && r.status !== 'infra_excluded',
+  );
+  const judgeTrusted = judgeCalibration ? isTrustedCalibration(judgeCalibration) : false;
+  const judgeNote = !hasLlmJudge
+    ? ''
+    : !judgeCalibration
+      ? ' ⚠ 未校准——不作能力证据'
+      : judgeTrusted
+        ? ` ✅ 已校准 ${judgeCalibration.judgeId} κ=${judgeCalibration.kappa.toFixed(2)} (n=${judgeCalibration.pairs})`
+        : ` ⚠ 校准未达标（κ=${judgeCalibration.kappa.toFixed(2)}, n=${judgeCalibration.pairs}，需 κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 n≥${CALIBRATION_TRUST_THRESHOLDS.minPairs}）——不作能力证据`;
 
   const lines: string[] = [];
   lines.push('| 权威桶 | 用例数 | 通过 | 平均分数 |');
@@ -431,12 +455,17 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
     if (inBucket.length === 0) continue;
     const passed = inBucket.filter((r) => r.status === 'passed').length;
     const avgScore = inBucket.reduce((sum, r) => sum + r.score, 0) / inBucket.length;
+    const suffix = bucket.key === 'llm_judge' ? judgeNote : '';
     lines.push(
-      `| ${bucket.key}（${bucket.label}） | ${inBucket.length} | ${passed} | ${(avgScore * 100).toFixed(1)}% |`,
+      `| ${bucket.key}（${bucket.label}）${suffix} | ${inBucket.length} | ${passed} | ${(avgScore * 100).toFixed(1)}% |`,
     );
   }
   lines.push('');
-  lines.push('> self_check / 未标注分数不作能力证据；L3 实验提案只准引用 deterministic_assertion 与（校准后的）llm_judge 两桶。');
+  lines.push('> self_check / 未标注分数不作能力证据；L3 实验提案只准引用 deterministic_assertion 与（校准达标的）llm_judge 两桶。');
+  if (hasLlmJudge && !judgeTrusted) {
+    lines.push('>');
+    lines.push('> ⚠ 本次 run 的 llm_judge 分数未通过校准背书，视同 self_check：只能参考，不得作为能力结论或 L3 实验证据。');
+  }
 
   return lines.join('\n');
 }

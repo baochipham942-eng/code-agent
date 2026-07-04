@@ -24,8 +24,12 @@ import { requireOptionalNodeModule } from '../runtime/nodeModuleLoader';
 import { resolveBrowserProvider } from '../services/infra/browserProvider';
 import { GAME_VALIDATION_TIMEOUTS } from '../../shared/constants/game';
 import { ARTIFACT_PREVIEW_HEALTH } from '../../shared/constants/previewHealth';
+import { ARTIFACT_RUNNABLE_TIMEOUTS } from '../../shared/constants/timeouts';
 
-export type ArtifactRunnableVerdict = 'runnable' | 'not_runnable' | 'skipped';
+// file_missing 独立于 not_runnable（审计 R1-H1）：回归标本 case pin expected_verdict=
+// not_runnable 时，若把"文件缺失"混入 not_runnable，标本路径拼错/未就位会静默假绿
+// ——此时根本没验证探测逻辑。file_missing 永远不匹配任何 expected_verdict。
+export type ArtifactRunnableVerdict = 'runnable' | 'not_runnable' | 'file_missing' | 'skipped';
 
 export interface ArtifactRunnableCheckResult {
   verdict: ArtifactRunnableVerdict;
@@ -63,7 +67,7 @@ async function missingFileResult(filePath: string, environment: string): Promise
     return null;
   } catch {
     return {
-      verdict: 'not_runnable',
+      verdict: 'file_missing',
       failures: [`artifact file not found: ${filePath}`],
       checks: [],
       environment,
@@ -145,15 +149,25 @@ interface JsZipInstance {
   files: Record<string, JsZipEntry>;
 }
 
+export interface PptxOpensOptions {
+  timeoutMs?: number;
+}
+
 /**
  * pptx_opens：pptx 产物可解析打开（zip 结构 + [Content_Types].xml +
- * presentation.xml + ≥1 张 slide）。无浏览器依赖，永不 skipped。
+ * presentation.xml + ≥1 张 slide）。无浏览器依赖；仅 jszip 在当前运行时
+ * 不可加载时返回 skipped（与浏览器缺失同语义）。解析有 timeout 防御，
+ * 超大/构造恶意的 zip 超时按 not_runnable 报，不卡死评测执行流。
  */
-export async function checkPptxOpens(filePath: string): Promise<ArtifactRunnableCheckResult> {
+export async function checkPptxOpens(
+  filePath: string,
+  options: PptxOpensOptions = {},
+): Promise<ArtifactRunnableCheckResult> {
   const environment = environmentFingerprint('zip-parse');
   const missing = await missingFileResult(filePath, environment);
   if (missing) return missing;
 
+  const timeoutMs = options.timeoutMs ?? ARTIFACT_RUNNABLE_TIMEOUTS.PPTX_OPENS_MS;
   const failures: string[] = [];
   const checks: string[] = [];
   try {
@@ -169,7 +183,13 @@ export async function checkPptxOpens(filePath: string): Promise<ArtifactRunnable
         environment,
       };
     }
-    const zip = await loaded.module.loadAsync(data);
+    let parseTimer: NodeJS.Timeout | undefined;
+    const parseTimeout = new Promise<never>((_, reject) => {
+      parseTimer = setTimeout(() => reject(new Error(`pptx parse timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+    const zip = await Promise.race([loaded.module.loadAsync(data), parseTimeout]).finally(() => {
+      if (parseTimer) clearTimeout(parseTimer);
+    });
     checks.push('pptx zip container parsed');
 
     if (!zip.files['[Content_Types].xml']) {

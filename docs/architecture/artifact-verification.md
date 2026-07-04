@@ -65,9 +65,9 @@ Artifact / replay / eval evidence
 | `html_renders` | `runSelfStartedArtifactPreviewHealth`（自启动 Chrome 路径，绕开 in-app 路由） | 仅 `page_error` / `console_error` / `blank_body_text` 硬信号判 not_runnable；布局质量 finding（`missing_main_element` 等）记 informational——canvas 游戏没有 `<main>`，照搬整体 passed 会误杀全部游戏产物 |
 | `pptx_opens` | jszip 最小解包校验 | zip 容器 + `[Content_Types].xml` + `ppt/presentation.xml` + ≥1 slide；无浏览器依赖 |
 
-case 参数：`path`（相对 eval workingDirectory）、`expected_verdict`（默认 `runnable`；回归标本 pin `not_runnable`，即"探测器必须抓红"= case 绿，探测能力退化时 case 转红）、`timeout_ms`、`contract`（仅 game_smoke）。
+case 参数：`path`（相对 eval workingDirectory）、`expected_verdict`（默认 `runnable`；回归标本 pin `not_runnable`，即"探测器必须抓红"= case 绿，探测能力退化时 case 转红）、`timeout_ms`、`contract`（仅 game_smoke）。参数校验 fail-loud：拼错的 `expected_verdict`/`contract`、漏写 `path`、非法 `timeout_ms` 一律显式 fail，不做静默 fallback（防回归标本因配置笔误失效）。
 
-环境语义：浏览器/Playwright 不可用时 adapter 返回 `skipped`，断言**显式 fail** 并注明环境原因——不假绿、不进 `infra_excluded` 桶（分母口径不动）。断言 evidence 携带环境指纹（平台/node/浏览器 provider），headless 平台差异先按 mac 本机口径。
+环境与缺失语义：浏览器/Playwright（或 jszip）不可用时 adapter 返回 `skipped`，断言**显式 fail** 并注明环境原因——不假绿、不进 `infra_excluded` 桶（分母口径不动）。产物文件缺失返回独立的 `file_missing` verdict，永远 fail、不匹配任何 `expected_verdict` 极性（文件缺失 ≠ 探测器抓红）。断言 evidence 携带环境指纹（平台/node/浏览器 provider），headless 平台差异先按 mac 本机口径。
 
 回归锚点套件：`.claude/test-cases/artifact-runnable/`（GAIA 式外部套件，loader 不递归、默认能力套件不含它），fixtures 为 2026-07-03 dogfood 实锤的真实坏游戏标本两具 + 已知好产物 + pptxgenjs 真实 deck。运行：`npm run eval -- --scope smoke --case-dir .claude/test-cases/artifact-runnable`。
 

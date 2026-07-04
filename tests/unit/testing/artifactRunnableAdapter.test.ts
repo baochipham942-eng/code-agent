@@ -53,73 +53,73 @@ const THROW_ON_LOAD_PAGE = `
 `;
 
 describe('checkGameSmoke (light contract)', () => {
-  it('judges the bad-game specimen (uncaught ReferenceError on play) not_runnable', async () => {
+  it('judges the bad-game specimen (uncaught ReferenceError on play) not_runnable', async (ctx) => {
     const result = await checkGameSmoke(BAD_GAME_REFERENCEERROR);
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
     expect(result.failures.some((f) => f.includes('ReferenceError'))).toBe(true);
     expect(result.environment).toContain(process.platform);
   });
 
-  it('judges the known-good playable specimen runnable', async () => {
+  it('judges the known-good playable specimen runnable', async (ctx) => {
     const result = await checkGameSmoke(GOOD_GAME_PLAYABLE);
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');
     expect(result.failures).toEqual([]);
   });
 
-  it('fails a missing artifact file without needing a browser', async () => {
+  it('reports a missing artifact file as file_missing (审计 R1-H1：不许与 not_runnable 混同，防回归标本假绿)', async () => {
     const result = await checkGameSmoke(path.join(FIXTURE_DIR, 'does-not-exist.html'));
 
-    expect(result.verdict).toBe('not_runnable');
+    expect(result.verdict).toBe('file_missing');
     expect(result.failures.some((f) => f.includes('not found'))).toBe(true);
   });
 });
 
 describe('checkGameSmoke (full contract)', () => {
-  it('judges the mechanics-broken specimen not_runnable under the full goal-mode contract', async () => {
+  it('judges the mechanics-broken specimen not_runnable under the full goal-mode contract', async (ctx) => {
     const result = await checkGameSmoke(BAD_GAME_MECHANICS_BROKEN, { contract: 'full' });
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
     expect(result.failures.length).toBeGreaterThan(0);
   });
 });
 
 describe('checkHtmlRenders', () => {
-  it('judges a clean static page runnable', async () => {
+  it('judges a clean static page runnable', async (ctx) => {
     const filePath = await writeTempFile(CLEAN_HTML_PAGE, 'clean.html');
     const result = await checkHtmlRenders(filePath);
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');
   });
 
-  it('judges a page with an uncaught load-time error not_runnable', async () => {
+  it('judges a page with an uncaught load-time error not_runnable', async (ctx) => {
     const filePath = await writeTempFile(THROW_ON_LOAD_PAGE, 'throw-on-load.html');
     const result = await checkHtmlRenders(filePath);
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
     expect(result.failures.some((f) => f.includes('page error') || f.includes('missingFunction'))).toBe(true);
   });
 
-  it('treats layout-quality findings (e.g. canvas game without <main>) as informational, not failures', async () => {
+  it('treats layout-quality findings (e.g. canvas game without <main>) as informational, not failures', async (ctx) => {
     // 校准 pin：canvas 游戏没有 <main> 元素，missing_main_element 是布局质量信号，
     // 不是"能不能跑"的硬信号——好游戏标本必须 runnable，防止 html_renders 误杀全部游戏产物。
     const result = await checkHtmlRenders(GOOD_GAME_PLAYABLE);
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');
     expect(result.checks.some((c) => c.includes('missing_main_element'))).toBe(true);
   });
 
-  it('judges the bad-game specimen not_runnable via its runtime page error', async () => {
+  it('judges the bad-game specimen not_runnable via its runtime page error', async (ctx) => {
     const result = await checkHtmlRenders(BAD_GAME_REFERENCEERROR);
 
-    if (result.verdict === 'skipped') return;
+    if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
     expect(result.failures.some((f) => f.includes('ReferenceError') || f.includes('page error'))).toBe(true);
   });
@@ -171,10 +171,10 @@ describe('checkPptxOpens', () => {
     expect(result.failures.some((f) => f.includes('slide'))).toBe(true);
   });
 
-  it('fails a missing file with a clear message', async () => {
+  it('reports a missing file as file_missing with a clear message', async () => {
     const result = await checkPptxOpens(path.join(FIXTURE_DIR, 'does-not-exist.pptx'));
 
-    expect(result.verdict).toBe('not_runnable');
+    expect(result.verdict).toBe('file_missing');
     expect(result.failures.some((f) => f.includes('not found'))).toBe(true);
   });
 });

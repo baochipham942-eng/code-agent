@@ -187,6 +187,10 @@ export function applyGoalEvent(record: GoalRunRecord, event: AgentEvent): void {
     return;
   }
   if (event.type === 'goal_complete') {
+    // 首个终态锁死（审计 R1-M1）：产品侧本不该双发终态，但若状态机 bug 导致
+    // 二次 goal_complete，后写覆盖会把真实终态（如 aborted）洗成假绿——eval
+    // 的职责是暴露这种 bug 而不是掩盖它，落账以第一次申明的终态为准。
+    if (record.status) return;
     record.status = event.data.status;
     record.degraded = event.data.degraded ?? false;
     record.degradedReason = event.data.degradedReason;

@@ -491,12 +491,6 @@ export class TestRunner {
       result.errors = agentResult.errors;
       result.sessionId = this.agent.getSessionId?.();
 
-      // B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据）。
-      // adapter 不支持 goal 注入（如 Mock 态）时为 undefined —— 断言侧 fail-loud 显式红。
-      if (testCase.goal_contract) {
-        result.goalRun = this.agent.getGoalRunRecord?.();
-      }
-
       // 批 6：条件应答多轮（follow_up_prompts 的升级形态，两者互斥已在入口校验）。
       // 每轮只对 agent 上一轮的输出求值；命中 respond 则把脚本文本作为下一轮
       // user 输入，命中 stop（或无规则命中/轮数用尽）即终止 —— 模拟用户离场。
@@ -717,6 +711,13 @@ export class TestRunner {
         this.abortReason = message;
       }
     } finally {
+      // B6b-①（审计 R1-M2）：goal run 行为落账放 finally——超时/异常路径也要保留
+      // 已发生的 goal_gate 观测事件（对称于 simTurns 的增量落账），供 infra 排查。
+      // adapter 不支持 goal 注入（如 Mock 态）时为 undefined —— 断言侧 fail-loud 显式红。
+      if (testCase.goal_contract) {
+        result.goalRun = this.agent.getGoalRunRecord?.();
+      }
+
       // Run cleanup commands
       if (testCase.cleanup && testCase.cleanup.length > 0) {
         try {

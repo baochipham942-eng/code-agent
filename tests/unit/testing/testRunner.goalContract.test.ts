@@ -119,6 +119,38 @@ describe('TestRunner goal_contract integration', () => {
     ]);
   });
 
+  it('captures goalRun even when the case times out (audit R1-M2: observability survives infra failure)', async () => {
+    const record: GoalRunRecord = {
+      gateEvents: [
+        { gate: 0, pass: false, verdict: 'repair_prompt' },
+        { gate: 0, pass: false, verdict: 'repair_prompt' },
+      ],
+    };
+    const configuredContracts: Array<EvalGoalContract | undefined> = [];
+    const hangingAgent: AgentInterface = {
+      sendMessage: () => new Promise(() => { /* never resolves — forces withTimeout to throw */ }),
+      reset: async () => undefined,
+      getAgentInfo: () => ({ name: 'hanging', model: 'hanging-model', provider: 'mock' }),
+      configureGoalContract: (contract) => { configuredContracts.push(contract); },
+      getGoalRunRecord: () => record,
+    };
+    const report = await runSuite([
+      'name: goal-suite',
+      'cases:',
+      '  - id: goal-timeout',
+      '    type: task',
+      '    description: goal case that hangs',
+      '    prompt: "做任务"',
+      '    timeout: 200',
+      '    goal_contract:',
+      '      verify_command: "true"',
+      '    expect: {}',
+    ], hangingAgent);
+    const result = report.results.find((r) => r.testId === 'goal-timeout');
+    expect(result?.status).not.toBe('passed');
+    expect(result?.goalRun?.gateEvents).toEqual(record.gateEvents);
+  });
+
   it('fails loud on goal_contract without any completion criterion (zero agent calls)', async () => {
     const agent = goalAgent();
     const report = await runSuite([

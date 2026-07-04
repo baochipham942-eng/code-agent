@@ -151,6 +151,20 @@ describe('applyGoalEvent', () => {
     expect(record.abortReason).toBe('达到轮次上限');
   });
 
+  it('first terminal wins: a second goal_complete cannot overwrite the recorded terminal (audit R1-M1)', () => {
+    const record = createGoalRunRecord();
+    applyGoalEvent(record, {
+      type: 'goal_complete',
+      data: { status: 'aborted', reason: '预算耗尽', turns: 8, tokensUsed: 9000 },
+    });
+    applyGoalEvent(record, {
+      type: 'goal_complete',
+      data: { status: 'met', turns: 9, tokensUsed: 9100 },
+    });
+    expect(record.status).toBe('aborted');
+    expect(record.abortReason).toBe('预算耗尽');
+  });
+
   it('ignores non-goal events', () => {
     const record = createGoalRunRecord();
     applyGoalEvent(record, { type: 'agent_complete', data: null });

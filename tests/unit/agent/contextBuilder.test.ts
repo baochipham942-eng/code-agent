@@ -8,6 +8,8 @@ import {
   buildGitStatusBlock,
   resetGitContextCache,
   resetEnvironmentBlockCache,
+  CONTEXT_CACHE_MAX_ENTRIES,
+  __getContextCacheSizesForTest,
 } from '../../../src/host/agent/messageHandling/contextBuilder';
 
 describe('injectWorkingDirectoryContext', () => {
@@ -153,5 +155,50 @@ describe('buildComputerUseBlock — 验证信号独立性', () => {
     } finally {
       delete process.env.CODE_AGENT_ENABLE_CUA;
     }
+  });
+});
+
+// ============================================================================
+// 缓存容量上限：长生命周期进程里 workingDirectory 会变多，三个模块级 Map
+// 缓存（gitRepoCache / gitContextCache / environmentBlockCache）若无上限会
+// 无界增长。验证：超上限后按插入序驱逐最旧条目，Map size 不超上限，
+// 新条目仍可正常读取。
+// ============================================================================
+
+describe('context cache capacity cap (avoids unbounded growth)', () => {
+  it('caps gitRepoCache/gitContextCache/environmentBlockCache and evicts the oldest entry (FIFO)', () => {
+    resetGitContextCache();
+    resetEnvironmentBlockCache();
+
+    const dirs = Array.from(
+      { length: CONTEXT_CACHE_MAX_ENTRIES },
+      (_, i) => `/nonexistent/context-cache-cap-test-dir-${i}`
+    );
+
+    for (const dir of dirs) {
+      buildGitStatusBlock(dir);
+      injectWorkingDirectoryContext('BASE', dir, false);
+    }
+
+    const sizesAtCap = __getContextCacheSizesForTest();
+    expect(sizesAtCap.gitRepo).toBe(CONTEXT_CACHE_MAX_ENTRIES);
+    expect(sizesAtCap.gitContext).toBe(CONTEXT_CACHE_MAX_ENTRIES);
+    expect(sizesAtCap.environmentBlock).toBe(CONTEXT_CACHE_MAX_ENTRIES);
+
+    // 再插入一个新目录，应驱逐最旧条目而非无界增长
+    const extraDir = '/nonexistent/context-cache-cap-test-dir-extra';
+    buildGitStatusBlock(extraDir);
+    injectWorkingDirectoryContext('BASE', extraDir, false);
+
+    const sizesAfterEvict = __getContextCacheSizesForTest();
+    expect(sizesAfterEvict.gitRepo).toBe(CONTEXT_CACHE_MAX_ENTRIES);
+    expect(sizesAfterEvict.gitContext).toBe(CONTEXT_CACHE_MAX_ENTRIES);
+    expect(sizesAfterEvict.environmentBlock).toBe(CONTEXT_CACHE_MAX_ENTRIES);
+
+    // 新条目仍可正常读取（非 git 目录 → 空 git 状态块 + env block 里的 "No" 行）
+    expect(buildGitStatusBlock(extraDir)).toBe('');
+    expect(injectWorkingDirectoryContext('BASE', extraDir, false)).toContain(
+      'Is directory a git repo: No'
+    );
   });
 });

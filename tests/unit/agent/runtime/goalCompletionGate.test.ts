@@ -401,6 +401,20 @@ describe('handleGoalCompletionGate — 闸1 验证基础设施故障（infraFail
     }
   });
 
+  it('infraFailure → 初始 gate:1 事件里 verificationCard.status/requiredStatus 也一并盖成 not_run（不能 verificationStatus 说 not_run 但卡片仍渲染 failed 红色态）', async () => {
+    mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
+    const { ctx, contextAssembly } = makeInfraCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    const initialGate1Event = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0])
+      .find((event) => event.type === 'goal_gate' && event.data.gate === 1 && event.data.verificationCard);
+    expect(initialGate1Event).toBeTruthy();
+    expect(initialGate1Event.data.verificationCard.status).toBe('not_run');
+    expect(initialGate1Event.data.verificationCard.requiredStatus).toBe('not_run');
+  });
+
   it('infraFailure → forceFinalResponse 无工具诚实收尾（对齐闸2 unverifiable 分支）', async () => {
     mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
     const { ctx, contextAssembly } = makeInfraCtx();

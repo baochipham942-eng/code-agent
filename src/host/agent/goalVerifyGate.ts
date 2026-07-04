@@ -104,6 +104,27 @@ export function runVerifyGate(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // Node 文档：child 的 'error' 事件在 spawn 失败 / kill 失败 / send 失败三种
+      // 场景都会触发。若 timer 已经判定超时（timedOut 已置位），说明进程确实
+      // 跑起来过，这里是 child.kill() 本身失败（如 EPERM）——不能按"进程根本
+      // 没起来"处理，否则闸1 会把一次慢测试误判成 infraFailure 走降级放行。
+      if (timedOut) {
+        const trimmed = out.slice(0, GOAL_MODE.VERIFY_OUTPUT_MAX_CHARS);
+        logger.warn('[GoalGate] verify command timed out and kill failed', { error: err.message });
+        resolve({
+          pass: false,
+          exitCode: null,
+          output: `${trimmed}\n[验证命令超时 ${timeoutMs}ms，终止失败: ${err.message}]`,
+          timedOut: true,
+          command: verifyCommand,
+          cwd,
+          durationMs: Date.now() - startedAt,
+          stdoutTail,
+          stderrTail,
+          spawnFailed: false,
+        });
+        return;
+      }
       resolveSpawnFailure(err);
     });
 

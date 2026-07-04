@@ -156,7 +156,16 @@ export async function handleGoalCompletionGate(
         evidenceRefs: verificationEvidence.evidenceRefs,
         skippedChecks: verificationEvidence.skippedChecks,
         plannedOptionalCommands: verificationPlan.optional,
-        verificationCard: buildVerificationCard(verificationEvidence),
+        // infraFailure 时卡片也要一并盖成 not_run，否则 verificationStatus 说
+        // "没跑成"，卡片却按 buildVerificationCard 原样渲染成失败红色态，UI 层
+        // 会自相矛盾（Gemini R1-L01）。buildVerificationCard 本体不改，只在
+        // 组装 payload 时覆写，保持卡片 status/requiredStatus 内部自洽。
+        verificationCard: {
+          ...buildVerificationCard(verificationEvidence),
+          ...(verificationEvidence.infraFailure
+            ? { status: 'not_run' as const, requiredStatus: 'not_run' as const }
+            : {}),
+        },
       },
     });
     // 闸1 infra 故障：验证命令的宿主进程本身没跑起来（cwd 不存在/不是目录、

@@ -16,8 +16,10 @@ import type {
   ToolExecutionRecord,
   TestEvent,
   TestEventListener,
+  UserSimulation,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
+import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
 import { withTimeout } from '../services/infra/timeoutController';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
@@ -69,6 +71,11 @@ export interface AgentInterface {
   getSessionId?(): string | undefined;
   /** Flush/end the current telemetry session after a case completes (optional) */
   finalizeSession?(): Promise<void>;
+  /**
+   * 批 6：接收当前 case 的 user_simulation 配置（审批门 permission_policy 注入用）。
+   * runner 每个 case 都会调用（无模拟时传 undefined 清除上个 case 的配置）。
+   */
+  configureUserSimulation?(sim: UserSimulation | undefined): void;
 }
 
 /**
@@ -405,6 +412,22 @@ export class TestRunner {
     this.emit({ type: 'case_start', testId: testCase.id, description: testCase.description });
 
     try {
+      // 批 6 fail-loud：user_simulation 配置错误在花任何 agent 调用之前显式失败，
+      // 绝不静默降级成单轮跑（那会把"模拟没生效"伪装成能力数据）。
+      if (testCase.user_simulation) {
+        const configError = testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0
+          ? 'user_simulation cannot be combined with follow_up_prompts (ambiguous multi-turn semantics)'
+          : validateUserSimulation(testCase.user_simulation);
+        if (configError) {
+          result.status = 'failed';
+          result.failureReason = configError;
+          result.errors.push(configError);
+          this.emit({ type: 'error', testId: testCase.id, error: configError });
+          return result;
+        }
+        result.simTurns = [];
+      }
+
       // Run setup commands
       if (testCase.setup && testCase.setup.length > 0) {
         await this.runCommands(testCase.setup, 'setup');
@@ -412,6 +435,9 @@ export class TestRunner {
 
       // Reset agent state
       await this.agent.reset();
+
+      // 批 6：审批门策略注入（无模拟的 case 传 undefined，清掉上个 case 的配置）
+      this.agent.configureUserSimulation?.(testCase.user_simulation);
 
       // Set up timeout — CODE_AGENT_FORCE_TIMEOUT overrides per-case timeout (for slow local models)
       const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
@@ -438,6 +464,60 @@ export class TestRunner {
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
       result.sessionId = this.agent.getSessionId?.();
+
+      // 批 6：条件应答多轮（follow_up_prompts 的升级形态，两者互斥已在入口校验）。
+      // 每轮只对 agent 上一轮的输出求值；命中 respond 则把脚本文本作为下一轮
+      // user 输入，命中 stop（或无规则命中/轮数用尽）即终止 —— 模拟用户离场。
+      if (testCase.user_simulation) {
+        const sim = testCase.user_simulation;
+        const maxSimTurns = sim.max_turns ?? DEFAULT_SIM_MAX_TURNS;
+        const matchCounts = new Map<string, number>();
+        let lastTurn = {
+          responses: agentResult.responses,
+          toolExecutions: agentResult.toolExecutions,
+        };
+        for (let simTurn = 0; simTurn < maxSimTurns; simTurn++) {
+          const match = evaluateSimRules(sim, lastTurn, matchCounts);
+          if (!match) break;
+          result.simTurns?.push({
+            ruleId: match.rule.id,
+            action: match.action,
+            message: match.message,
+            toolExecutionsBefore: result.toolExecutions.length,
+            responsesBefore: result.responses.length,
+          });
+          if (match.action === 'stop') break;
+
+          const remainingTime = timeout - (Date.now() - startTime);
+          if (remainingTime <= 0) break;
+          const simResult = await withTimeout(
+            this.agent.sendMessage(match.message!),
+            remainingTime,
+            `Simulated user turn timeout after ${timeout}ms`,
+          );
+          result.responses.push(...simResult.responses);
+          result.toolExecutions.push(...simResult.toolExecutions);
+          result.turnCount += simResult.turnCount;
+          result.errors.push(...simResult.errors);
+          lastTurn = {
+            responses: simResult.responses,
+            toolExecutions: simResult.toolExecutions,
+          };
+
+          if (match.rule.stop) {
+            // respond+stop（拒绝分支）：发完拒绝文本、收完 agent 的应答后离场。
+            // 该 stop 记录的快照即"拒绝之后"边界，sim_stop_respected 以 respond
+            // 记录为锚点检查其后的工具调用。
+            result.simTurns?.push({
+              ruleId: match.rule.id,
+              action: 'stop',
+              toolExecutionsBefore: result.toolExecutions.length,
+              responsesBefore: result.responses.length,
+            });
+            break;
+          }
+        }
+      }
 
       // Multi-turn: send follow-up prompts sequentially
       if (testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0) {
@@ -528,6 +608,7 @@ export class TestRunner {
           errors: result.errors,
           turnCount: result.turnCount,
           workingDirectory: this.config.workingDirectory,
+          simTurns: result.simTurns,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;

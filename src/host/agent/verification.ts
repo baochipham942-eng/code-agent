@@ -81,6 +81,8 @@ export interface VerificationCommandResult {
   stderrTail: string;
   output: string;
   evidenceRef: EvidenceRef;
+  /** 见 VerifyGateResult.spawnFailed：进程本身没跑起来（OS 级 spawn 失败）。 */
+  spawnFailed: boolean;
 }
 
 export interface VerificationEvidence {
@@ -97,6 +99,14 @@ export interface VerificationEvidence {
    * QA/验证在用户工作区留下临时产物是信任问题，必须可见。
    */
   workspaceSideEffects?: string[];
+  /**
+   * true 仅当验证失败的根因是验证命令的宿主进程没跑起来（spawnFailed，OS 级
+   * spawn 失败：cwd 不存在/不是目录、解释器无执行权限等）——这是本地验证
+   * 基础设施故障，不是"验证不过"。exit 127 命令未解析等仍走 failureType
+   * dependency_missing，不算 infra（模型可能自行装依赖/改命令修复）。
+   * 调用方（goalCompletionGate 闸1）据此判断是否要绕开修复预算走降级放行。
+   */
+  infraFailure?: boolean;
 }
 
 export interface RunVerificationPlanOptions {
@@ -465,6 +475,7 @@ export async function runVerificationPlan(
       stderrTail: gate.stderrTail,
       output: gate.output,
       evidenceRef,
+      spawnFailed: gate.spawnFailed,
     });
   }
 
@@ -488,5 +499,6 @@ export async function runVerificationPlan(
     skippedChecks: plan.skippedChecks,
     evidenceRefs,
     ...(sideEffects.length > 0 ? { workspaceSideEffects: sideEffects } : {}),
+    ...(failed?.spawnFailed ? { infraFailure: true } : {}),
   };
 }

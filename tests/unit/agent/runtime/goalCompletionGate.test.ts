@@ -310,3 +310,152 @@ describe('handleGoalCompletionGate — 闸2 评审基础设施故障（unverifia
     expect(goalMode.markMetDegraded).not.toHaveBeenCalled();
   });
 });
+
+describe('handleGoalCompletionGate — 闸1 验证基础设施故障（infraFailure，本地执行环境不许伪装成验证不过）', () => {
+  beforeEach(() => {
+    mockRunVerifyGate.mockReset();
+    mockRunReviewGate.mockReset();
+  });
+
+  // 地面真值（tests/unit/agent/goalVerifyGate.spawnFailure.test.ts 实测）：
+  // cwd 不存在/不是目录、解释器无执行权限等 OS 级 spawn 失败时，runVerifyGate
+  // 产出 exitCode:null + spawnFailed:true，与"进程跑了但退出码非 0"结构性可区分。
+  const spawnFailureResult = {
+    pass: false,
+    exitCode: null,
+    output: '验证命令启动失败: spawn /bin/sh ENOENT',
+    timedOut: false,
+    command: 'npm test',
+    cwd: '/tmp/does-not-exist',
+    durationMs: 2,
+    stdoutTail: '',
+    stderrTail: '',
+    spawnFailed: true,
+  };
+
+  function makeInfraCtx() {
+    return makeCtx({
+      getVerifyCommand: vi.fn().mockReturnValue('npm test'),
+      getReviewCondition: vi.fn().mockReturnValue(undefined),
+    });
+  }
+
+  it('infraFailure → 不烧修复预算：recordGateFailure(1) 不被调用，也不注入 <goal-verify-failed> 误导反馈', async () => {
+    mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
+    const { ctx, goalMode, contextAssembly } = makeInfraCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(goalMode.recordGateFailure).not.toHaveBeenCalled();
+    expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('<goal-verify-failed>'),
+    );
+  });
+
+  it('infraFailure → markMetDegraded 诚实收尾，degradedReason 带真实 spawn 错误', async () => {
+    mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
+    const { ctx, goalMode, contextAssembly } = makeInfraCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(goalMode.markMetDegraded).toHaveBeenCalledWith(expect.stringContaining('ENOENT'));
+    expect(goalMode.markMet).not.toHaveBeenCalled();
+    expect(goalMode.markAborted).not.toHaveBeenCalled();
+    expect(goalMode.clearCompletionRequest).toHaveBeenCalled();
+  });
+
+  it('infraFailure → goal_complete 事件 met + degraded（不许静默 markMet 假绿，也不许 aborted 丢产物）', async () => {
+    mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
+    const { ctx, contextAssembly } = makeInfraCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_complete',
+        data: expect.objectContaining({
+          status: 'met',
+          degraded: true,
+          degradedReason: expect.stringContaining('ENOENT'),
+          turns: 5,
+          tokensUsed: 2000,
+        }),
+      }),
+    );
+  });
+
+  it('infraFailure → gate:1 观测事件（初始+终态）都带 verificationStatus not_run（与验证 FAIL 可区分）', async () => {
+    mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
+    const { ctx, contextAssembly } = makeInfraCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    const gate1Events = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0])
+      .filter((event) => event.type === 'goal_gate' && event.data.gate === 1);
+    expect(gate1Events.length).toBe(2);
+    for (const event of gate1Events) {
+      expect(event.data.pass).toBe(false);
+      expect(event.data.verificationStatus).toBe('not_run');
+    }
+  });
+
+  it('infraFailure → forceFinalResponse 无工具诚实收尾（对齐闸2 unverifiable 分支）', async () => {
+    mockRunVerifyGate.mockResolvedValue(spawnFailureResult);
+    const { ctx, contextAssembly } = makeInfraCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(ctx.forceFinalResponseReason).toBeTruthy();
+    expect(ctx.forceFinalResponsePrompt).toContain('ENOENT');
+  });
+
+  it('普通验证 FAIL（非 infraFailure，退出码非 0）仍走修复预算路径（行为不回退）', async () => {
+    mockRunVerifyGate.mockResolvedValue({
+      pass: false,
+      exitCode: 1,
+      output: 'test failed',
+      timedOut: false,
+      command: 'npm test',
+      cwd: '/tmp/test',
+      durationMs: 12,
+      stdoutTail: 'test failed',
+      stderrTail: '',
+      spawnFailed: false,
+    });
+    const { ctx, goalMode, contextAssembly } = makeInfraCtx();
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(goalMode.recordGateFailure).toHaveBeenCalledWith(1);
+    expect(goalMode.markMetDegraded).not.toHaveBeenCalled();
+  });
+
+  it('命令未找到（exit 127，classify=dependency_missing）不算 infra：模型可能自行装依赖修复，仍走修复预算路径', async () => {
+    mockRunVerifyGate.mockResolvedValue({
+      pass: false,
+      exitCode: 127,
+      output: '/bin/sh: nonexistent-cmd: command not found',
+      timedOut: false,
+      command: 'nonexistent-cmd',
+      cwd: '/tmp/test',
+      durationMs: 5,
+      stdoutTail: '',
+      stderrTail: '/bin/sh: nonexistent-cmd: command not found',
+      spawnFailed: false,
+    });
+    const { ctx, goalMode, contextAssembly } = makeCtx({
+      getVerifyCommand: vi.fn().mockReturnValue('nonexistent-cmd'),
+      getReviewCondition: vi.fn().mockReturnValue(undefined),
+    });
+
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
+
+    expect(result).toBe('continue');
+    expect(goalMode.recordGateFailure).toHaveBeenCalledWith(1);
+    expect(goalMode.markMetDegraded).not.toHaveBeenCalled();
+  });
+});

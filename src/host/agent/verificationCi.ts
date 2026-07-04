@@ -142,6 +142,7 @@ export function ingestCiLogEvidence(input: CiLogIngestInput): VerificationEviden
       stderrTail: output,
       output,
       evidenceRef: attribution.evidenceRef,
+      spawnFailed: false,
     }],
     skippedChecks: [],
     evidenceRefs: [attribution.evidenceRef],

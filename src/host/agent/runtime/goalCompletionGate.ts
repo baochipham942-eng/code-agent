@@ -142,7 +142,8 @@ export async function handleGoalCompletionGate(
     recordVerificationEvidence(verificationEvidence);
     const gate = verificationEvidence.commandResults[0];
     const pass = verificationEvidence.status === 'passed';
-    // 观测事件：闸1 判定结果（UI 用）
+    // 观测事件：闸1 判定结果（UI 用）。infraFailure 时带 not_run 标记——
+    // "验证没跑成"与"验证不过"必须可区分（infra 错误不许伪装成能力信号）。
     ctx.onEvent({
       type: 'goal_gate',
       data: {
@@ -150,7 +151,7 @@ export async function handleGoalCompletionGate(
         pass,
         exitCode: gate?.exitCode ?? null,
         timedOut: gate?.timedOut ?? false,
-        verificationStatus: verificationEvidence.status,
+        verificationStatus: verificationEvidence.infraFailure ? 'not_run' : verificationEvidence.status,
         failureType: verificationEvidence.failureType,
         evidenceRefs: verificationEvidence.evidenceRefs,
         skippedChecks: verificationEvidence.skippedChecks,
@@ -158,6 +159,60 @@ export async function handleGoalCompletionGate(
         verificationCard: buildVerificationCard(verificationEvidence),
       },
     });
+    // 闸1 infra 故障：验证命令的宿主进程本身没跑起来（cwd 不存在/不是目录、
+    // 解释器无执行权限等 OS 级 spawn 失败），与"进程跑了但退出码非 0/未解析
+    // 命令（如 exit 127）"是两回事——前者模型改代码也无能为力，硬套修复预算
+    // 只会在死循环里烧干（对齐闸2 unverifiable 分支，PR#326）。不
+    // recordGateFailure（不烧修复预算）、不注入"验证不过"的误导反馈；确定性
+    // 验证没跑成不能静默 markMet（假绿），有产物也不该 aborted（丢产物）→
+    // 复用降级放行语义诚实收尾（met + degraded）。
+    if (!pass && verificationEvidence.infraFailure) {
+      const releaseReason = `验证基础设施不可用：${gate?.output || '验证命令未能执行'}`;
+      recordGateVerdict(ctx, {
+        gate: 1,
+        verdict: 'unverifiable',
+        attempt: ctx.goalMode.getGateFailureCount(1),
+        detail: releaseReason,
+      });
+      ctx.goalMode.clearCompletionRequest();
+      ctx.goalMode.markMetDegraded(releaseReason);
+      // 终态 gate:1 事件（对齐闸2 unverifiable 分支形状）：可区分信号走
+      // verificationStatus:'not_run'，不新造 verdict 词汇。
+      ctx.onEvent({
+        type: 'goal_gate',
+        data: {
+          gate: 1,
+          pass: false,
+          verificationStatus: 'not_run',
+          attempt: ctx.goalMode.getGateFailureCount(1),
+          reason: releaseReason,
+        },
+      });
+      // 同闸2：终态事件在闸内立即发出，final 推理失败也不留"永远 running"的 UI。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-verify-unverifiable';
+        ctx.forceFinalResponsePrompt = [
+          '<goal-verify-unverifiable>',
+          `确定性验证本次未能核实：${releaseReason}。本次 goal 按降级放行收尾（工作已完成，但验证因本地执行环境不可用而未经核实）。`,
+          '工具已禁用，请用纯文本向用户诚实收尾：',
+          '1. 已完成并可用的部分（引用具体产物/文件）',
+          `2. 未能核实的验证条件：\`${verifyCommand}\`——说明是本地验证环境不可用导致未核实，不要说成验证不通过`,
+          '3. 用户如需完成核实，下一步可以怎么做（如确认工作目录/命令可执行环境后重试）',
+          '</goal-verify-unverifiable>',
+        ].join('\n');
+      }
+      return 'continue';
+    }
     if (!pass) {
       // 三分支裁决：失败 → 有界修复（repair_prompt），预算耗尽 → 到限放行
       // （exhausted_release），绝不无限阻塞在验证修复循环里。

@@ -29,7 +29,9 @@ import {
  */
 function recordGateVerdict(
   ctx: RuntimeContext,
-  input: { gate: 1 | 2; verdict: GoalGateVerdict; attempt: number; detail: string },
+  // 'unverifiable'：闸2 评审基础设施不可用（非评审结论）——只进诊断/账本词汇，
+  // 不进 GoalGateVerdict 契约（观测事件的可区分信号走 verificationStatus:not_run）
+  input: { gate: 1 | 2; verdict: GoalGateVerdict | 'unverifiable'; attempt: number; detail: string },
 ): void {
   const recordedAt = Date.now();
   ctx.turnTrace?.record('goal_verdict', {
@@ -247,11 +249,57 @@ export async function handleGoalCompletionGate(
       // 可用性降级链：powerful tier 没配 key 时，闸2 降级用主 run 的模型
       parentModelConfig: ctx.modelConfig,
     });
-    // 观测事件：闸2 判定结果（UI 用）
+    // 观测事件：闸2 判定结果（UI 用）。unverifiable 时带 not_run 标记——
+    // "评审没跑成"与"评审不过"必须可区分（infra 错误不许伪装成能力信号）。
     ctx.onEvent({
       type: 'goal_gate',
-      data: { gate: 2, pass: review.pass, reason: review.reason },
+      data: {
+        gate: 2,
+        pass: review.pass,
+        reason: review.reason,
+        ...(review.unverifiable ? { verificationStatus: 'not_run' as const } : {}),
+      },
     });
+    // 闸2 infra 故障（unverifiable）：评审基础设施不可用（降级重试后仍失败），
+    // 没有产生任何评审结论。不 recordGateFailure（不烧修复预算）、不注入"评审
+    // 不过"的误导反馈；软条件没核实不能静默 markMet（假绿），有产物也不该
+    // aborted（丢产物）→ 复用降级放行语义诚实收尾（met + degraded）。
+    if (review.unverifiable) {
+      const releaseReason = review.reason; // 已是"评审基础设施不可用：<真实错误>"
+      recordGateVerdict(ctx, {
+        gate: 2,
+        verdict: 'unverifiable',
+        attempt: ctx.goalMode.getGateFailureCount(2),
+        detail: releaseReason,
+      });
+      ctx.goalMode.clearCompletionRequest();
+      ctx.goalMode.markMetDegraded(releaseReason);
+      // 同 exhausted_release：终态事件在闸内立即发出，final 推理失败也不留
+      // "永远 running"的 UI。
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: {
+          status: 'met',
+          turns: iterations,
+          tokensUsed: goalTokensUsedWithSwarm(ctx),
+          degraded: true,
+          degradedReason: releaseReason,
+        },
+      });
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-review-unverifiable';
+        ctx.forceFinalResponsePrompt = [
+          '<goal-review-unverifiable>',
+          `软评审条件本次未能核实：${releaseReason}。本次 goal 按降级放行收尾（工作已完成，但软条件因评审服务不可用而未经核实）。`,
+          '工具已禁用，请用纯文本向用户诚实收尾：',
+          '1. 已完成并可用的部分（引用具体产物/文件）',
+          `2. 未能核实的软条件：${reviewCondition}——说明是评审基础设施不可用导致未核实，不要说成质量不达标`,
+          '3. 用户如需完成核实，下一步可以怎么做（如修复评审模型的 API key 后重新验收）',
+          '</goal-review-unverifiable>',
+        ].join('\n');
+      }
+      return 'continue';
+    }
     // IMPOSSIBLE 主动止损（roadmap 1.4）：评审独立核实后判定条件在本会话内
     // 根本不可达成 → markAborted 结束 goal，并通过 forceFinalResponse 通道
     // （禁工具）让下一轮推理向用户解释原因——直接 break 会让用户拿到一个

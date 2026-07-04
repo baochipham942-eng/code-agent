@@ -33,7 +33,7 @@ if (target !== 'win32-x64') {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const confPath = path.join(root, 'src-tauri', 'tauri.conf.json');
 const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
-const resources = Array.isArray(conf.bundle?.resources) ? conf.bundle.resources : [];
+const resources = conf.bundle?.resources ?? [];
 
 // macOS 专属资源：Windows bundle 必须剔除（按"平台不支持→优雅降级"决策，
 // 对应能力的代码层降级见 windows-support.md §1.5）
@@ -41,20 +41,39 @@ const MACOS_ONLY_PREFIXES = [
   '../scripts/system-audio-capture',
   '../scripts/vision-ocr',
   '../scripts/vision-tagger',
-  '../scripts/Agent Neo Computer Use.app',
+  '../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app',
   // PII 安装链已 Node 化（setup-gliner-pii.mjs，2026-06-11），win32 照常带上
   '../node_modules/@img/sharp-libvips-darwin-arm64', // win32 libvips 静态打进 sharp 包
 ];
 
-function mapEntry(entry) {
-  if (MACOS_ONLY_PREFIXES.some((prefix) => entry.startsWith(prefix))) return null;
+function shouldKeepResource(source) {
+  return !MACOS_ONLY_PREFIXES.some((prefix) => source.startsWith(prefix));
+}
+
+function mapPath(entry) {
   return entry
     .replaceAll('node-pty/prebuilds/darwin-arm64', 'node-pty/prebuilds/win32-x64')
     .replaceAll('@img/sharp-darwin-arm64', '@img/sharp-win32-x64')
     // win32 sharp 包的 lib/ 同时含 .node 与 libvips DLL，必须整目录打包
     .replace('@img/sharp-win32-x64/lib/**/*.node', '@img/sharp-win32-x64/lib/**/*')
     .replace(/^\.\.\/scripts\/rtk$/, '../scripts/rtk.exe')
-    .replace(/^\.\.\/scripts\/uv$/, '../scripts/uv.exe');
+    .replace(/^\.\.\/scripts\/uv$/, '../scripts/uv.exe')
+    .replace(/^scripts\/rtk$/, 'scripts/rtk.exe')
+    .replace(/^scripts\/uv$/, 'scripts/uv.exe');
+}
+
+function mapResources(value) {
+  if (Array.isArray(value)) {
+    return value.filter(shouldKeepResource).map(mapPath);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([source]) => shouldKeepResource(source))
+        .map(([source, target]) => [mapPath(source), mapPath(String(target))]),
+    );
+  }
+  return value;
 }
 
 const overlay = {
@@ -69,7 +88,7 @@ const overlay = {
       'icons/128x128@2x.png',
       'icons/icon.ico',
     ],
-    resources: resources.map(mapEntry).filter(Boolean),
+    resources: mapResources(resources),
     windows: {
       // WebView2 运行时：Win11/新 Win10 自带，但旧 Win10/Server 2019 不带，缺了 app
       // 窗口创建失败秒退（真机实测 Server 2019）。embedBootstrapper 在安装包里嵌 ~2MB

@@ -29,19 +29,22 @@ export function useFileAutocomplete() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const search = useCallback((text: string, cursorPos: number) => {
+    // 先取消上一次挂起的防抖请求，否则清空输入后它仍会回调 setIsOpen(true) 把 popup 弹回来。
+    clearTimeout(debounceRef.current);
+
     // Find @ symbol before cursor
     const beforeCursor = text.slice(0, cursorPos);
     const atMatch = beforeCursor.match(/@([^\s@]*)$/);
 
     if (!atMatch) {
       setIsOpen(false);
+      setMatches([]);
       return;
     }
 
     const searchQuery = atMatch[1];
     setQuery(searchQuery);
 
-    clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
         const files = await listWorkspaceFiles(searchQuery || '.');

@@ -33,15 +33,27 @@ if (arch !== 'arm64' && arch !== 'x64') {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const confPath = path.join(root, 'src-tauri', 'tauri.conf.json');
 const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
-const resources = Array.isArray(conf.bundle?.resources) ? conf.bundle.resources : [];
+const resources = conf.bundle?.resources ?? [];
 
 // arch 相关路径全部含 `darwin-arm64` 子串（node-pty prebuild / sharp / sharp-libvips），
 // 一次替换即覆盖全部三类；arm64 时原样返回（base 即 arm64）。
-function mapEntry(entry) {
+function mapPath(entry) {
   return arch === 'x64' ? entry.replaceAll('darwin-arm64', 'darwin-x64') : entry;
 }
 
-const overlay = { bundle: { resources: resources.map(mapEntry) } };
+function mapResources(value) {
+  if (Array.isArray(value)) {
+    return value.map(mapPath);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([source, target]) => [mapPath(source), mapPath(String(target))]),
+    );
+  }
+  return value;
+}
+
+const overlay = { bundle: { resources: mapResources(resources) } };
 const json = `${JSON.stringify(overlay, null, 2)}\n`;
 
 const outIdx = process.argv.indexOf('--out');

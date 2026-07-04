@@ -264,7 +264,7 @@ export interface TestCase {
 }
 
 /** 单个附件注入声明 */
-export interface CaseFileInjection {
+interface CaseFileInjection {
   /** 本地源文件绝对路径（支持 ~ 前缀） */
   source: string;
   /** 工作目录内相对目标路径；缺省用 source 的 basename */

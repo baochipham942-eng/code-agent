@@ -12,7 +12,7 @@ import path from 'path';
 
 // GAIA 官方论文的作答约定：判分是 quasi-exact match，模型必须按此格式收尾，
 // 否则答案对了也提不出来。嵌在每题 prompt 前部（不动 system prompt）。
-export const GAIA_ANSWER_CONVENTION = [
+const GAIA_ANSWER_CONVENTION = [
   'You are a general AI assistant. I will ask you a question. Report your thoughts, and finish your answer with the following template: FINAL ANSWER: [YOUR FINAL ANSWER].',
   'YOUR FINAL ANSWER should be a number OR as few words as possible OR a comma separated list of numbers and/or strings.',
   "If you are asked for a number, don't use comma to write your number neither use units such as $ or percent sign unless specified otherwise.",
@@ -21,7 +21,7 @@ export const GAIA_ANSWER_CONVENTION = [
 ].join(' ');
 
 /** 单题超时：GAIA 多为联网多步任务，比本地 case 宽松得多 */
-export const GAIA_CASE_TIMEOUT_MS = 600_000;
+const GAIA_CASE_TIMEOUT_MS = 600_000;
 
 export interface GaiaRow {
   task_id: string;
@@ -40,7 +40,7 @@ export interface GaiaSuiteOptions {
   limit?: number;
 }
 
-export interface GaiaCase {
+interface GaiaCase {
   id: string;
   type: 'task';
   description: string;

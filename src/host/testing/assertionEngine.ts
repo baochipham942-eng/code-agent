@@ -6,6 +6,13 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
 import { extractFinalAnswer, gaiaQuestionScorer } from './gaiaScorer';
+import {
+  checkGameSmoke,
+  checkHtmlRenders,
+  checkPptxOpens,
+  type ArtifactRunnableCheckResult,
+  type ArtifactRunnableVerdict,
+} from './artifactRunnableAdapter';
 import type {
   TestExpectations,
   ToolExecutionRecord,
@@ -697,6 +704,38 @@ interface ExpectationContext {
 }
 
 /**
+ * artifact_runnable params 校验：返回错误描述，合法时返回 null。
+ * 三个类型对称应用；非法值一律 fail-loud，不做静默 fallback。
+ */
+function validateArtifactRunnableParams(
+  type: ExpectationType,
+  params: Record<string, unknown>,
+): string | null {
+  if (typeof params.path !== 'string' || params.path.length === 0) {
+    return 'path must be a non-empty string';
+  }
+  if (
+    params.expected_verdict !== undefined &&
+    params.expected_verdict !== 'runnable' &&
+    params.expected_verdict !== 'not_runnable'
+  ) {
+    return `expected_verdict "${String(params.expected_verdict)}" is not allowed (runnable | not_runnable)`;
+  }
+  if (params.timeout_ms !== undefined && (typeof params.timeout_ms !== 'number' || params.timeout_ms <= 0)) {
+    return `timeout_ms "${String(params.timeout_ms)}" must be a positive number`;
+  }
+  if (params.contract !== undefined) {
+    if (type !== 'game_smoke') {
+      return `contract is only supported by game_smoke (got type "${type}")`;
+    }
+    if (params.contract !== 'light' && params.contract !== 'full') {
+      return `contract "${String(params.contract)}" is not allowed (light | full)`;
+    }
+  }
+  return null;
+}
+
+/**
  * Evaluate a single expectation
  */
 async function evaluateExpectation(
@@ -925,6 +964,55 @@ async function evaluateExpectation(
         passed = texts.every(t => outputs.includes(t));
         actual = passed ? 'found in tool output' : outputs.substring(0, 200);
         expected = `tool output contains ${JSON.stringify(texts)}`;
+        break;
+      }
+
+      case 'html_renders':
+      case 'game_smoke':
+      case 'pptx_opens': {
+        // 参数校验 fail-loud（审计 R1-M1/M2）：拼错/漏写静默降级会掩盖回归标本失效。
+        const invalidParam = validateArtifactRunnableParams(expectation.type, params);
+        if (invalidParam) {
+          passed = false;
+          actual = `invalid params: ${invalidParam}`;
+          expected = 'valid artifact_runnable params';
+          break;
+        }
+        const artifactPath = path.isAbsolute(params.path as string)
+          ? (params.path as string)
+          : path.join(context.workingDirectory, params.path as string);
+        const expectedVerdict: ArtifactRunnableVerdict =
+          params.expected_verdict === 'not_runnable' ? 'not_runnable' : 'runnable';
+        const timeoutMs = typeof params.timeout_ms === 'number' ? params.timeout_ms : undefined;
+
+        let check: ArtifactRunnableCheckResult;
+        if (expectation.type === 'game_smoke') {
+          check = await checkGameSmoke(artifactPath, {
+            timeoutMs,
+            contract: params.contract === 'full' ? 'full' : 'light',
+          });
+        } else if (expectation.type === 'html_renders') {
+          check = await checkHtmlRenders(artifactPath, { timeoutMs });
+        } else {
+          check = await checkPptxOpens(artifactPath, { timeoutMs });
+        }
+
+        if (check.verdict === 'skipped') {
+          // 环境缺浏览器 ≠ 产物可跑，也 ≠ 探测有效：显式 fail，绝不假绿。
+          passed = false;
+          actual = `skipped: ${check.checks.join('; ') || 'check environment unavailable'}`;
+        } else if (check.verdict === 'file_missing') {
+          // 文件缺失永远 fail（审计 R1-H1）：不许与 not_runnable pin 匹配成假绿。
+          passed = false;
+          actual = `file_missing: ${check.failures.join('; ')}`;
+        } else {
+          passed = check.verdict === expectedVerdict;
+          actual = check.failures.length > 0
+            ? `${check.verdict}: ${check.failures.join(' | ').substring(0, 400)}`
+            : check.verdict;
+        }
+        expected = `artifact verdict is "${expectedVerdict}"`;
+        details = `environment: ${check.environment}${check.checks.length > 0 ? `; checks: ${check.checks.join(' | ').substring(0, 300)}` : ''}`;
         break;
       }
 

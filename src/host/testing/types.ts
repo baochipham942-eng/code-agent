@@ -507,7 +507,13 @@ export type ExpectationType =
   | 'response_contains' | 'response_not_contains'
   | 'tool_called' | 'tool_output_contains' | 'no_crash' | 'error_handled'
   | 'max_turns' | 'min_tool_calls' | 'max_tool_calls'
-  | 'custom_script';
+  | 'custom_script'
+  // artifact_runnable 断言家族（批 3 · B3① 产物终态判据）：产物真跑得起来才算数。
+  // params: path（相对 workingDirectory）；expected_verdict（默认 'runnable'，
+  // 回归标本 pin 'not_runnable'）；timeout_ms；game_smoke 另有 contract: light|full。
+  // 全部 deterministic 桶。fail-loud 语义：非法参数、环境缺浏览器（skipped）、
+  // 产物文件缺失（file_missing）一律显式 fail——不假绿、不匹配任何极性、不进 infra 桶。
+  | 'html_renders' | 'game_smoke' | 'pptx_opens';
 
 export interface Expectation {
   type: ExpectationType;

@@ -185,6 +185,12 @@ export const BROWSER_TIMEOUTS = {
   COMPUTER_USE_WAIT: 5_000,
 } as const;
 
+/** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
+export const ARTIFACT_RUNNABLE_TIMEOUTS = {
+  /** pptx 解包校验超时（本地 CPU 解析，防超大/恶意 zip 卡死评测流） */
+  PPTX_OPENS_MS: 10_000,
+} as const;
+
 /** 内存服务超时 */
 export const MEMORY_TIMEOUTS = {
   /** 云搜索超时 */

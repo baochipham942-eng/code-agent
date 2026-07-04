@@ -110,6 +110,57 @@ export interface TestExpectations extends
   final_answer?: string;
 }
 
+// === 批 6 · B6a：规则式 user simulator（follow_up_prompts 的条件应答升级形态） ===
+
+/**
+ * 条件应答规则：对 agent 上一轮输出/工具调用求值，命中则以脚本文本作为下一轮
+ * user 输入（确定性，非 LLM）。三分支应答（批准/拒绝/改需求）即三种规则脚本。
+ */
+export interface UserSimulationRule {
+  /** 规则 id（simTurns 记录与 sim_stop_respected 断言的锚点），套件内唯一 */
+  id: string;
+  /** 匹配条件：给出的条件须全部成立（AND）；至少给一个，禁止空 when 静默全匹配 */
+  when: {
+    /** 上一轮 assistant 响应文本匹配（大小写不敏感 regex） */
+    response_matches?: string;
+    /** 上一轮调用过匹配该 regex 的工具 */
+    tool_called?: string;
+    /** 上一轮调用了 AskUserQuestion（澄清/确认卡在 eval 里的等价交互面） */
+    question_asked?: boolean;
+  };
+  /** 命中后作为下一轮 user 输入发送的文本（respond/stop 至少给一个） */
+  respond?: string;
+  /** 命中后终止模拟对话：带 respond 则发完拒绝文本再停，不带则直接不应答 */
+  stop?: boolean;
+  /** 该规则最多命中次数，默认 1（防 agent 复读导致的无限循环） */
+  max_matches?: number;
+}
+
+export interface UserSimulation {
+  /** 条件应答规则，按声明顺序求值，第一条命中的生效 */
+  rules: UserSimulationRule[];
+  /** 模拟应答总轮数上限（不含初始 prompt），默认 4 */
+  max_turns?: number;
+  /**
+   * 审批门（工具权限）决策注入：eval adapter 的 requestPermission 由写死
+   * auto-approve 改为按此策略应答。缺省 = 沿用 auto-approve。
+   */
+  permission_policy?: 'approve' | 'reject';
+  /** reject 策略的作用域：仅拒绝匹配这些 regex 的工具，其余照常放行 */
+  permission_reject_tools?: string[];
+}
+
+/** 单次模拟应答的落账记录（transcript 证据；快照取自发送应答之前） */
+export interface SimTurnRecord {
+  ruleId: string;
+  action: 'respond' | 'stop';
+  message?: string;
+  /** 规则命中时已累计的 toolExecutions 数 —— 之后的执行都发生在本应答之后 */
+  toolExecutionsBefore: number;
+  /** 规则命中时已累计的 responses 数 */
+  responsesBefore: number;
+}
+
 /**
  * Single test case definition
  */
@@ -154,6 +205,11 @@ export interface TestCase {
   sourceSessionId?: string;
   /** 回流草稿 review 状态：pending=未补断言不进正式套件，reviewed=已人工硬化 */
   reviewStatus?: 'pending' | 'reviewed';
+  /**
+   * 批 6 · B6a：规则式 user simulator（条件应答多轮）。
+   * 与 follow_up_prompts 互斥 —— 同时给出视为配置错误，fail-loud。
+   */
+  user_simulation?: UserSimulation;
 }
 
 /**
@@ -214,6 +270,8 @@ export interface TestResult {
   prompt?: string;
   /** Follow-up prompts sent after the initial prompt */
   followUpPrompts?: string[];
+  /** 批 6：user simulator 的应答落账（每次规则命中一条，含快照边界） */
+  simTurns?: SimTurnRecord[];
   /** Status */
   status: TestStatus;
   /** Duration in ms */
@@ -513,7 +571,16 @@ export type ExpectationType =
   // 回归标本 pin 'not_runnable'）；timeout_ms；game_smoke 另有 contract: light|full。
   // 全部 deterministic 桶。fail-loud 语义：非法参数、环境缺浏览器（skipped）、
   // 产物文件缺失（file_missing）一律显式 fail——不假绿、不匹配任何极性、不进 infra 桶。
-  | 'html_renders' | 'game_smoke' | 'pptx_opens';
+  | 'html_renders' | 'game_smoke' | 'pptx_opens'
+  // 批 6 · B6a：拒绝分支停止语义。params: after_rule（user_simulation 规则 id，必填）、
+  // forbidden_tools（regex 列表，默认写效应工具表）。断言 = after_rule 命中之后的
+  // toolExecutions 零写效应调用（agent 没有绕过用户拒绝继续执行）。deterministic 桶。
+  // fail-loud：缺参 / 该 case 没跑模拟 / 规则未命中，一律显式 fail。
+  | 'sim_stop_respected'
+  // 批 6 · 审计 R1-H3：先问后做语义（sim_stop_respected 的镜像窗口）。
+  // params: before_rule（必填）、forbidden_tools（同上）。断言 = before_rule 命中
+  // 之前的 toolExecutions 零写效应调用（agent 没有先斩后奏）。同 fail-loud 口径。
+  | 'sim_no_write_before_rule';
 
 export interface Expectation {
   type: ExpectationType;

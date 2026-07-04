@@ -3,7 +3,8 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation } from './types';
+import { buildPermissionDecider } from './userSimulator';
 import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
@@ -281,6 +282,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
   private messages: import('../../shared/contract').Message[] = [];
 
+  // 批 6：当前 case 的 user_simulation（testRunner 每 case 注入，reset() 清除）。
+  // 只影响 requestPermission 应答；未配置时保持写死 auto-approve 的存量行为。
+  private simConfig?: UserSimulation;
+
   constructor(config: {
     workingDirectory: string;
     modelConfig: {
@@ -373,9 +378,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
       // 1. System prompt
 
-      // 2. ToolExecutor (auto-approve all permissions for testing)
+      // 2. ToolExecutor —— 默认 auto-approve；case 配了 permission_policy 时
+      // 按 user simulator 的审批门策略应答（批 6 B6a）
+      const permissionDecider = this.simConfig ? buildPermissionDecider(this.simConfig) : null;
       const toolExecutor = new ToolExecutor({
-        requestPermission: async () => true,
+        requestPermission: permissionDecider
+          ? async (request) => permissionDecider({ ...request, toolName: request.tool })
+          : async () => true,
         workingDirectory: this.workingDirectory,
       });
 
@@ -494,6 +503,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
     return { responses, toolExecutions, turnCount: turnCount || responses.length, errors };
   }
 
+  /** 批 6：testRunner 每 case 注入 user_simulation（无模拟的 case 传 undefined 清除） */
+  configureUserSimulation(sim: UserSimulation | undefined): void {
+    this.simConfig = sim;
+  }
+
   async reset(): Promise<void> {
     // Clear conversation history and session id between cases so each case starts fresh.
     // Within a case, sendMessage() reuses this.messages so follow-ups share history.
@@ -501,6 +515,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.messages = [];
     this.currentSessionId = undefined;
     this.sessionRecordEnsured = false;
+    this.simConfig = undefined;
   }
 
   async finalizeSession(): Promise<void> {

@@ -124,6 +124,22 @@ describe('NeoWorkCardService', () => {
     expect(service.listByProject('proj_alpha', { statuses: ['draft'] })).toEqual([]);
   });
 
+  it('lists all work cards across projects for the global topic directory (listAll, BUG2)', () => {
+    const alpha = service.createDraft(draft('proj_alpha'), NOW);
+    const beta = service.createDraft(draft('proj_beta'), NOW + 1);
+
+    // 全局目录：不按 projectId 过滤，最近活动在前
+    expect(service.listAll().map((card) => card.id)).toEqual([beta.workCard.id, alpha.workCard.id]);
+
+    // 归档默认排除，includeArchived 才带上
+    service.archive(beta.workCard.id, NOW + 2);
+    expect(service.listAll().map((card) => card.id)).toEqual([alpha.workCard.id]);
+    expect(service.listAll({ includeArchived: true }).map((card) => card.id)).toEqual([
+      beta.workCard.id,
+      alpha.workCard.id,
+    ]);
+  });
+
   it('lists work card details by source conversation', () => {
     const first = service.createDraft(draft('proj_alpha'), NOW);
     const second = service.createDraft({
@@ -271,6 +287,37 @@ describe('NeoWorkCardService', () => {
     expect(detail.deltas).toHaveLength(1);
     expect(detail.deltas[0].completed).toEqual(['contract']);
     expect(detail.revisions).toHaveLength(1);
+  });
+
+  it('appendDelta persists conversationId and reads it back; legacy deltas stay undefined', () => {
+    const created = service.createDraft(draft(), NOW);
+    service.approveRevision({
+      workCardId: created.workCard.id,
+      reviewerUserId: 'user_reviewer',
+    }, NOW + 1);
+
+    const withConv = service.appendDelta({
+      workCardId: created.workCard.id,
+      runId: 'run_conv',
+      completed: ['round in conv B'],
+      conversationId: 'conv_B',
+      markResultReview: false,
+    }, NOW + 2);
+    expect(withConv.conversationId).toBe('conv_B');
+
+    const withoutConv = service.appendDelta({
+      workCardId: created.workCard.id,
+      runId: 'run_legacy',
+      completed: ['legacy round'],
+      markResultReview: false,
+    }, NOW + 3);
+    expect(withoutConv.conversationId).toBeUndefined();
+
+    const detail = service.get(created.workCard.id)!;
+    const stored = detail.deltas.find((d) => d.runId === 'run_conv');
+    expect(stored?.conversationId).toBe('conv_B');
+    const legacy = detail.deltas.find((d) => d.runId === 'run_legacy');
+    expect(legacy?.conversationId).toBeUndefined();
   });
 
   it('moves completed work into result review and only completes after accepting result', () => {

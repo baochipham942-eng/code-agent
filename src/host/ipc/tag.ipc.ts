@@ -1,8 +1,10 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { randomUUID } from 'crypto';
 import type {
   AppendNeoWorkCardDeltaInput,
   CloseNeoWorkCardInput,
+  ContinueNeoWorkCardRequest,
   CreateNeoWorkCardDraftInput,
   ListNeoWorkCardsBySourceInput,
   NeoMemoryCandidateDecisionInput,
@@ -19,7 +21,11 @@ import {
   getNeoWorkCardService,
   NeoWorkCardServiceError,
 } from '../services/project/neoWorkCardService';
-import { launchApprovedNeoWorkCard } from '../services/project/neoTagRuntimeService';
+import {
+  continueAndRunNeoWorkCard,
+  createAndRunNeoWorkCard,
+  launchApprovedNeoWorkCard,
+} from '../services/project/neoTagRuntimeService';
 import { getTaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
 
@@ -127,6 +133,50 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
           return { success: true, data: created };
         }
 
+        case 'createAndRun': {
+          // @neo 直接开干（轻量化重设计）：建卡 → 自动批准 → 落地运行，无审批门。
+          const input = payload as CreateNeoWorkCardDraftInput | undefined;
+          if (!input) return invalid('payload is required');
+          const started = createAndRunNeoWorkCard({
+            draft: input,
+            taskManager: getTaskManager(),
+            service,
+            onWorkCardUpdated: (workCardId, reason) => emitWorkCardUpdated(service, workCardId, reason),
+          });
+          started.run.catch((error) => {
+            logger.error('Failed to run direct @neo work card', error);
+          });
+          return { success: true, data: { workCard: started.workCard, revision: started.revision } };
+        }
+
+        case 'continueAndRun': {
+          // @neo 跨会话续接（ADR-035）：既有 topic 追加一轮，落点 = 发起续接的会话。
+          const input = payload as ContinueNeoWorkCardRequest | undefined;
+          if (!input?.workCardId || !input.conversationId || !input.requesterUserId) {
+            return invalid('workCardId, conversationId and requesterUserId are required');
+          }
+          const roundTurnId = input.clientSourceMessageId?.trim()
+            || `neo-source-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+          const started = continueAndRunNeoWorkCard({
+            workCardId: input.workCardId,
+            conversationId: input.conversationId,
+            turnId: roundTurnId,
+            userText: input.userText ?? '',
+            requesterUserId: input.requesterUserId,
+            selectedArtifactIds: input.selectedArtifactIds,
+            taskManager: getTaskManager(),
+            service,
+            onWorkCardUpdated: (workCardId, reason) => emitWorkCardUpdated(service, workCardId, reason),
+          });
+          started.run.catch((error) => {
+            logger.error('Failed to run @neo follow-up round', error);
+          });
+          return {
+            success: true,
+            data: { workCard: started.workCard, revision: started.revision, roundTurnId },
+          };
+        }
+
         case 'get':
         case 'read': {
           const { workCardId } = (payload ?? {}) as GetPayload;
@@ -140,6 +190,12 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
           const { projectId, includeArchived, statuses, limit } = (payload ?? {}) as ListPayload;
           if (!projectId) return invalid('projectId is required');
           return { success: true, data: service.listByProject(projectId, { includeArchived, statuses, limit }) };
+        }
+
+        // 全局 topic 目录：跨项目列全部工作卡（账号菜单「Neo 协同」在无绑定项目时用）
+        case 'listAll': {
+          const { includeArchived, statuses, limit } = (payload ?? {}) as NeoWorkCardListOptions;
+          return { success: true, data: service.listAll({ includeArchived, statuses, limit }) };
         }
 
         case 'listBySourceConversation': {

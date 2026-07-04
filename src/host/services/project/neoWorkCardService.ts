@@ -292,6 +292,11 @@ export class NeoWorkCardService {
     return this.repoProvider().listByProject(normalizedProjectId, options);
   }
 
+  // 全局 topic 目录：跨项目列全部工作卡（@neo 兜底建的卡挂在 proj_unsorted 等桶下，也要能看到）
+  listAll(options: NeoWorkCardListOptions = {}): NeoWorkCard[] {
+    return this.repoProvider().listAll(options);
+  }
+
   listBySourceConversation(
     sourceConversationId: string,
     options: NeoWorkCardListOptions = {},
@@ -447,6 +452,7 @@ export class NeoWorkCardService {
       id: shortId('nwcd'),
       workCardId: workCard.id,
       runId,
+      conversationId: cleanString(input.conversationId) || undefined,
       completed: cleanStringArray(input.completed),
       changedFiles: cleanStringArray(input.changedFiles),
       decisions: cleanStringArray(input.decisions),

@@ -63,7 +63,12 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
-import { submitNeoTagDraft } from './features/chat/neoTagSubmit';
+import {
+  buildNeoTagContinuationMessage,
+  buildNeoTagSourceMessage,
+  submitNeoTagContinuation,
+  submitNeoTagDraft,
+} from './features/chat/neoTagSubmit';
 import {
   ArrowRight,
   BarChart3,
@@ -121,7 +126,7 @@ export const ChatView: React.FC = () => {
   const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
     selectNeoWorkCardDetailsForConversation(state, currentSessionId),
   ));
-  const createNeoWorkCardDraft = useNeoWorkCardStore((state) => state.createDraft);
+  const runNeoTag = useNeoWorkCardStore((state) => state.createAndRun);
   const loadNeoWorkCardsForConversation = useNeoWorkCardStore((state) => state.loadForConversation);
   const {
     messages,
@@ -488,33 +493,49 @@ export const ChatView: React.FC = () => {
     const neoResult = await requireAuthAsync(async () => {
       if (!currentSessionId) return null;
       try {
+        // @neo 跨会话续接（ADR-035）：chip 即意图 —— 有续接目标就走同卡追加轮，
+        // 执行落当前会话（过程流式可见），本地补显同 ID 去重。
+        const continuationTarget = useNeoWorkCardStore.getState().continuationTarget;
+        if (continuationTarget) {
+          const continuation = await submitNeoTagContinuation({
+            envelope,
+            conversationId: currentSessionId,
+            continuationTarget,
+            requesterUserId: authUser?.id ?? 'local-user',
+            runContinuation: useNeoWorkCardStore.getState().continueAndRun,
+          });
+          const roundMessage = buildNeoTagContinuationMessage({
+            envelope,
+            conversationId: currentSessionId,
+            workCardId: continuationTarget.workCardId,
+            roundTurnId: continuation.roundTurnId,
+          });
+          if (!messagesRef.current.some((message) => message.id === roundMessage.id)) {
+            useSessionStore.getState().addMessage(roundMessage);
+          }
+          useNeoWorkCardStore.getState().setContinuationTarget(null);
+          return true;
+        }
         const result = await submitNeoTagDraft({
           envelope,
           sourceConversationId: currentSessionId,
           projectId: currentSession?.projectId ?? null,
           workspacePath: currentSessionWorkingDirectory,
           requesterUserId: authUser?.id ?? 'local-user',
-          createDraft: createNeoWorkCardDraft,
+          runNeoTag,
         });
         if (!result) return null;
-        if (result.sourceMessage) {
-          const sourceMessage = {
-            ...result.sourceMessage,
-            metadata: {
-              ...(result.sourceMessage.metadata ?? {}),
-              neoTag: {
-                ...(result.sourceMessage.metadata?.neoTag ?? {}),
-                workCardId: result.detail.workCard.id,
-                sourceConversationId: currentSessionId,
-                sourceTurnId: result.sourceTurnId,
-              },
-            },
-          };
-          if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
-            useSessionStore.getState().addMessage(sourceMessage);
-          }
+        // @neo = 正常 agent 聊天：用户那句原话按普通用户消息进会话（BUG1）。
+        // host 落库的用户消息与这里同 ID（sourceTurnId），reload 不会出现双份。
+        const sourceMessage = buildNeoTagSourceMessage({
+          envelope,
+          sourceConversationId: currentSessionId,
+          result,
+        });
+        if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
+          useSessionStore.getState().addMessage(sourceMessage);
         }
-        toast.success('Neo work card 已生成');
+        // 轻量化重设计:@neo = 正常 agent 聊天,不弹 toast(回复直接流式出现在对话里)。
         return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error));
@@ -534,7 +555,7 @@ export const ChatView: React.FC = () => {
     return didSend === true;
   }, [
     authUser?.id,
-    createNeoWorkCardDraft,
+    runNeoTag,
     currentSession?.projectId,
     currentSessionId,
     currentSessionWorkingDirectory,

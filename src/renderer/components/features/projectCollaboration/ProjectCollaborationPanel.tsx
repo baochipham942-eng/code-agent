@@ -1,547 +1,379 @@
-/* eslint-disable max-lines */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
-import {
-  Brain,
-  Archive,
-  AlertTriangle,
-  CheckCircle2,
-  ClipboardCheck,
-  Clock3,
-  Edit3,
-  Eye,
-  GitPullRequestArrow,
-  ListOrdered,
-  Loader2,
-  RotateCcw,
-  Save,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  XCircle,
-} from 'lucide-react';
-import type { NeoWorkCardDetail, NeoWorkCardStatus } from '@shared/contract/tag';
+import { Loader2, Search, Sparkles, X } from 'lucide-react';
+import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
+  NEO_WORK_CARD_ALL_SCOPE,
   NEO_WORK_CARD_LIVE_REFRESH_MS,
+  selectAllNeoWorkCardDetails,
   selectNeoWorkCardDetailsForProject,
   useNeoWorkCardStore,
 } from '../../../stores/neoWorkCardStore';
 import {
-  buildProjectCollaborationGroups,
-  type ProjectCollaborationContextAudit,
-  type ProjectCollaborationDecisionItem,
-  type ProjectCollaborationMemoryCandidate,
-  type ProjectCollaborationWorkCardRecord,
-} from './projectCollaborationData';
+  isInternalRuntimeText,
+  NEO_WORK_CARD_PHASE_CHIP_STYLE,
+  NEO_WORK_CARD_PHASE_LABEL,
+  statusPhase,
+  type NeoWorkCardPhase,
+} from '../chat/neoWorkCardPhase';
+import type { Message } from '@shared/contract/message';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { formatRequesterLabel } from './projectCollaborationData';
 import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane';
-import {
-  buildSearchText,
-  ContextAuditRow,
-  DecisionRow,
-  detailFromRecord,
-  EmptySection,
-  getDefaultSelectedWorkCardId,
-  matchesStatusFilter,
-  MemoryCandidateRow,
-  type ProjectCollaborationStatusFilter,
-  recordFromDetail,
-  STATUS_FILTERS,
-  WorkCardSection,
-} from './ProjectCollaborationRows';
+
+// ============================================================================
+// @neo topic 目录（Neo Tag 轻量化重设计）
+// 左下 tag 菜单点开 = 所有 @neo topic 的列表（标题/相位/发起人/最近活动）+ 详情。
+// 砍掉旧的 status 分组仪表盘 / 决策 / 上下文审计 / 审批动作。
+// ============================================================================
 
 export interface ProjectCollaborationPanelProps {
   projectId?: string | null;
-  records?: ProjectCollaborationWorkCardRecord[];
-  onUpdateDraft?: (workCardId: string, title: string, taskSummary: string) => void | Promise<void>;
-  onApprove?: (workCardId: string) => void | Promise<void>;
-  onReject?: (workCardId: string) => void | Promise<void>;
+  /** 注入的 topic 明细（测试/fixture 用）。传入时绕开 store 加载。 */
+  details?: NeoWorkCardDetail[];
+  /** 注入的源会话消息（测试/fixture 用），key=sourceConversationId。传入时详情绕开 IPC 拉取。 */
+  sourceMessagesByConversation?: Record<string, Message[]>;
+  /** 跳回源会话；不传默认 switchSession（Page 入口会再叠加关闭全屏页）。 */
+  onOpenConversation?: (sessionId: string) => void;
   onCancel?: (workCardId: string) => void | Promise<void>;
-  onAcceptResult?: (workCardId: string) => void | Promise<void>;
-  onRequestChanges?: (workCardId: string) => void | Promise<void>;
   onArchive?: (workCardId: string) => void | Promise<void>;
   onApproveMemory?: (candidateId: string) => void | Promise<void>;
-  onRejectMemory?: (candidateId: string) => void | Promise<void>;
+}
+
+type PhaseFilter = 'all' | NeoWorkCardPhase;
+
+const PHASE_FILTERS: Array<{ id: PhaseFilter; label: string }> = [
+  { id: 'all', label: '全部' },
+  { id: 'running', label: '运行中' },
+  { id: 'needs_input', label: '待确认' },
+  { id: 'done', label: '已完成' },
+  { id: 'failed', label: '失败' },
+  { id: 'closed', label: '已结束' },
+];
+
+function topicSearchText(detail: NeoWorkCardDetail): string {
+  const revision = detail.currentRevision ?? detail.approvedRevision;
+  return [
+    detail.workCard.title,
+    detail.workCard.requesterUserId,
+    revision?.taskSummary,
+    ...detail.deltas.flatMap((delta) => [...delta.completed, ...delta.changedFiles, delta.nextStep ?? '']),
+  ].filter(Boolean).join('\n').toLowerCase();
+}
+
+function topicActivitySnippet(detail: NeoWorkCardDetail): string | null {
+  const latest = detail.deltas.at(-1);
+  if (!latest) return null;
+  // 运行时记账文案（英文生命周期字符串）不是执行结果，不给用户看
+  const done = latest.completed.filter((item) => !isInternalRuntimeText(item));
+  if (done.length > 0) return done[done.length - 1];
+  if (statusPhase(detail.workCard.status) === 'failed') {
+    const lastRisk = latest.risks.at(-1)?.trim();
+    if (lastRisk) return lastRisk;
+  }
+  const nextStep = latest.nextStep?.trim();
+  return nextStep && !isInternalRuntimeText(nextStep) ? nextStep : null;
+}
+
+function TopicRow({
+  detail,
+  isSelected,
+  currentUser,
+  onSelect,
+}: {
+  detail: NeoWorkCardDetail;
+  isSelected: boolean;
+  currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null;
+  onSelect: (id: string) => void;
+}) {
+  const { workCard } = detail;
+  const phase = statusPhase(workCard.status);
+  const snippet = topicActivitySnippet(detail);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(workCard.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(workCard.id);
+        }
+      }}
+      className={`rounded-md border px-3 py-2 text-left outline-none transition-colors ${
+        isSelected ? 'border-emerald-500/45 bg-emerald-500/[0.07]' : 'border-zinc-800 bg-zinc-950/45 hover:border-zinc-700'
+      }`}
+      data-testid={`neo-topic-row-${workCard.id}`}
+    >
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0 truncate text-[13px] font-medium text-zinc-100" title={workCard.title}>
+          {workCard.title}
+        </div>
+        <span className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${NEO_WORK_CARD_PHASE_CHIP_STYLE[phase]}`}>
+          {phase === 'running' && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+          {NEO_WORK_CARD_PHASE_LABEL[phase]}
+        </span>
+      </div>
+      {snippet && <div className="mt-1 line-clamp-1 text-[11px] leading-5 text-zinc-500">{snippet}</div>}
+      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-600">
+        <span className="truncate">{formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
+        <span>{new Date(workCard.updatedAt).toLocaleString()}</span>
+      </div>
+    </div>
+  );
 }
 
 export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps> = ({
   projectId = null,
-  records,
-  onUpdateDraft,
-  onApprove,
-  onReject,
+  details,
+  sourceMessagesByConversation,
+  onOpenConversation,
   onCancel,
-  onAcceptResult,
-  onRequestChanges,
   onArchive,
   onApproveMemory,
-  onRejectMemory,
 }) => {
-  const actorUserId = useAuthStore((state) => state.user?.id ?? 'local-user');
-  const storeDetails = useNeoWorkCardStore(useShallow((state) => selectNeoWorkCardDetailsForProject(state, projectId)));
-  const loading = useNeoWorkCardStore((state) => projectId ? Boolean(state.loadingProjectIds[projectId]) : false);
-  const loadError = useNeoWorkCardStore((state) => projectId ? state.lastErrorByProjectId[projectId] ?? null : null);
+  const currentUser = useAuthStore((state) => state.user ?? null);
+  const actorUserId = currentUser?.id ?? 'local-user';
+  // 无绑定项目（projectId=null）= 全局目录：跨项目列全部 @neo topic（兜底建的卡挂在 proj_unsorted 等桶下）
+  const scopeKey = projectId ?? NEO_WORK_CARD_ALL_SCOPE;
+  const storeDetails = useNeoWorkCardStore(useShallow((state) => (
+    projectId ? selectNeoWorkCardDetailsForProject(state, projectId) : selectAllNeoWorkCardDetails(state)
+  )));
+  const loading = useNeoWorkCardStore((state) => Boolean(state.loadingProjectIds[scopeKey]));
+  const loadError = useNeoWorkCardStore((state) => state.lastErrorByProjectId[scopeKey] ?? null);
   const loadForProject = useNeoWorkCardStore((state) => state.loadForProject);
-  const updateDraftRevision = useNeoWorkCardStore((state) => state.updateDraftRevision);
-  const approve = useNeoWorkCardStore((state) => state.approve);
-  const reject = useNeoWorkCardStore((state) => state.reject);
+  const loadAll = useNeoWorkCardStore((state) => state.loadAll);
   const cancel = useNeoWorkCardStore((state) => state.cancel);
-  const acceptResult = useNeoWorkCardStore((state) => state.acceptResult);
-  const requestChanges = useNeoWorkCardStore((state) => state.requestChanges);
   const archive = useNeoWorkCardStore((state) => state.archive);
   const approveMemoryCandidate = useNeoWorkCardStore((state) => state.approveMemoryCandidate);
-  const rejectMemoryCandidate = useNeoWorkCardStore((state) => state.rejectMemoryCandidate);
-  const derivedRecords = useMemo(
-    () => storeDetails.map(recordFromDetail).filter((record): record is ProjectCollaborationWorkCardRecord => Boolean(record)),
-    [storeDetails],
-  );
-  const panelRecords = records ?? derivedRecords;
-  const [selectedWorkCardId, setSelectedWorkCardId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<ProjectCollaborationStatusFilter>('all');
-  const [requesterFilter, setRequesterFilter] = useState('all');
+
+  const topics = useMemo(() => {
+    const source = details ?? storeDetails;
+    return [...source].sort((a, b) => b.workCard.updatedAt - a.workCard.updatedAt);
+  }, [details, storeDetails]);
+
+  // 抽屉模型：默认不选中（列表先"扫"），点行才开详情抽屉
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>('all');
   const [mineOnly, setMineOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const detailById = useMemo(() => {
-    const map = new Map(storeDetails.map((detail) => [detail.workCard.id, detail]));
-    for (const record of panelRecords) {
-      if (!map.has(record.card.id)) map.set(record.card.id, detailFromRecord(record));
-    }
-    return map;
-  }, [panelRecords, storeDetails]);
-  const requesterOptions = useMemo(() => {
-    return Array.from(new Set(panelRecords.map((record) => record.card.requesterUserId))).sort();
-  }, [panelRecords]);
-  const filteredRecords = useMemo(() => {
+
+  const filteredTopics = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return panelRecords.filter((record) => {
-      if (!matchesStatusFilter(record.card.status, statusFilter)) return false;
-      if (requesterFilter !== 'all' && record.card.requesterUserId !== requesterFilter) return false;
-      if (mineOnly && record.card.requesterUserId !== actorUserId) return false;
-      if (query && !buildSearchText(record, detailById.get(record.card.id)).includes(query)) return false;
+    return topics.filter((detail) => {
+      if (phaseFilter !== 'all' && statusPhase(detail.workCard.status) !== phaseFilter) return false;
+      if (mineOnly && detail.workCard.requesterUserId !== actorUserId) return false;
+      if (query && !topicSearchText(detail).includes(query)) return false;
       return true;
     });
-  }, [actorUserId, detailById, mineOnly, panelRecords, requesterFilter, searchQuery, statusFilter]);
-  const groups = useMemo(() => buildProjectCollaborationGroups(filteredRecords), [filteredRecords]);
-  const selectedDetail = selectedWorkCardId ? detailById.get(selectedWorkCardId) ?? null : null;
+  }, [actorUserId, mineOnly, phaseFilter, searchQuery, topics]);
+
+  const selectedDetail = selectedId ? topics.find((detail) => detail.workCard.id === selectedId) ?? null : null;
+
   useEffect(() => {
     ensureNeoWorkCardLiveUpdates();
   }, []);
   useEffect(() => {
-    if (records !== undefined || !projectId) return;
-    void loadForProject(projectId, { includeArchived: true }).catch((error) => {
-      toast.error(error instanceof Error ? error.message : '加载 Neo work cards 失败');
+    if (details !== undefined) return;
+    const load = projectId
+      ? () => loadForProject(projectId, { includeArchived: true })
+      : () => loadAll({ includeArchived: true });
+    void load().catch((error) => {
+      toast.error(error instanceof Error ? error.message : '加载 Neo topic 失败');
     });
-  }, [loadForProject, projectId, records]);
-  const hasNeoWorkCardAwaitingRuntimeTerminal = storeDetails.some((detail) =>
-    isNeoWorkCardAwaitingRuntimeTerminal(detail.workCard.status)
-  );
+  }, [details, loadAll, loadForProject, projectId]);
+  const hasActiveTopic = storeDetails.some((detail) => isNeoWorkCardAwaitingRuntimeTerminal(detail.workCard.status));
   useEffect(() => {
-    if (records !== undefined || !projectId || !hasNeoWorkCardAwaitingRuntimeTerminal) return;
+    if (details !== undefined || !hasActiveTopic) return;
+    const load = projectId
+      ? () => loadForProject(projectId, { includeArchived: true })
+      : () => loadAll({ includeArchived: true });
     const interval = window.setInterval(() => {
-      void loadForProject(projectId, { includeArchived: true }).catch((error) => {
-        toast.error(error instanceof Error ? error.message : '刷新 Neo work cards 失败');
+      void load().catch((error) => {
+        toast.error(error instanceof Error ? error.message : '刷新 Neo topic 失败');
       });
     }, NEO_WORK_CARD_LIVE_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [hasNeoWorkCardAwaitingRuntimeTerminal, loadForProject, projectId, records]);
+  }, [details, hasActiveTopic, loadAll, loadForProject, projectId]);
+  // 选中的 topic 被过滤/删除后关抽屉；不自动替它选下一个（抽屉只因用户点击而开）
   useEffect(() => {
-    if (filteredRecords.length === 0) {
-      if (selectedWorkCardId !== null) setSelectedWorkCardId(null);
-      return;
+    if (selectedId && !filteredTopics.some((detail) => detail.workCard.id === selectedId)) {
+      setSelectedId(null);
     }
-    if (!selectedWorkCardId || !filteredRecords.some((record) => record.card.id === selectedWorkCardId)) {
-      setSelectedWorkCardId(getDefaultSelectedWorkCardId(filteredRecords));
-    }
-  }, [filteredRecords, selectedWorkCardId]);
-  const handleUpdateDraft = useCallback(async (workCardId: string, title: string, taskSummary: string) => {
-    try {
-      if (onUpdateDraft) {
-        await onUpdateDraft(workCardId, title, taskSummary);
-        return;
-      }
-      const detail = detailById.get(workCardId);
-      const revision = detail?.currentRevision ?? detail?.approvedRevision;
-      if (!revision) throw new Error('Neo work card 缺少当前修订，无法保存草稿。');
-      await updateDraftRevision({
-        workCardId,
-        updatedByUserId: actorUserId,
-        title,
-        revision: {
-          intent: revision.intent,
-          taskSummary,
-          readScope: revision.readScope,
-          writeScope: revision.writeScope,
-          modelIntent: revision.modelIntent,
-          memoryPlan: revision.memoryPlan,
-          expectedOutputs: revision.expectedOutputs,
-          risks: revision.risks,
-          assumptions: revision.assumptions,
-        },
-      });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '保存 Neo work card 草稿失败');
-      throw error;
-    }
-  }, [actorUserId, detailById, onUpdateDraft, updateDraftRevision]);
-  const handleApprove = useCallback(async (workCardId: string) => {
-    try {
-      if (onApprove) {
-        await onApprove(workCardId);
-      } else {
-        const detail = detailById.get(workCardId);
-        await approve({ workCardId, actorUserId, revisionId: detail?.workCard.currentRevisionId });
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '批准 Neo work card 失败');
-    }
-  }, [actorUserId, approve, detailById, onApprove]);
-  const handleReject = useCallback(async (workCardId: string) => {
-    try {
-      if (onReject) {
-        await onReject(workCardId);
-      } else {
-        const detail = detailById.get(workCardId);
-        await reject({ workCardId, actorUserId, revisionId: detail?.workCard.currentRevisionId, feedback: '退回修改' });
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '拒绝 Neo work card 失败');
-    }
-  }, [actorUserId, detailById, onReject, reject]);
+  }, [filteredTopics, selectedId]);
+
+  // Esc 关抽屉
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedId]);
+
   const handleCancel = useCallback(async (workCardId: string) => {
     try {
-      if (onCancel) {
-        await onCancel(workCardId);
-      } else {
-        await cancel({ workCardId, actorUserId, feedback: '用户取消' });
-      }
+      if (onCancel) await onCancel(workCardId);
+      else await cancel({ workCardId, actorUserId, feedback: '用户取消' });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '取消 Neo work card 失败');
+      toast.error(error instanceof Error ? error.message : '取消 topic 失败');
     }
   }, [actorUserId, cancel, onCancel]);
-  const handleAcceptResult = useCallback(async (workCardId: string) => {
-    try {
-      if (onAcceptResult) {
-        await onAcceptResult(workCardId);
-      } else {
-        await acceptResult({ workCardId, actorUserId });
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '接受 Neo work card 结果失败');
-    }
-  }, [acceptResult, actorUserId, onAcceptResult]);
-  const handleRequestChanges = useCallback(async (workCardId: string) => {
-    try {
-      if (onRequestChanges) {
-        await onRequestChanges(workCardId);
-      } else {
-        await requestChanges({ workCardId, actorUserId, feedback: '需要继续修改' });
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '退回 Neo work card 失败');
-    }
-  }, [actorUserId, onRequestChanges, requestChanges]);
   const handleArchive = useCallback(async (workCardId: string) => {
     try {
-      if (onArchive) {
-        await onArchive(workCardId);
-      } else {
-        await archive({ workCardId, actorUserId });
-      }
+      if (onArchive) await onArchive(workCardId);
+      else await archive({ workCardId, actorUserId });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '归档 Neo work card 失败');
+      toast.error(error instanceof Error ? error.message : '归档 topic 失败');
     }
   }, [actorUserId, archive, onArchive]);
   const handleApproveMemory = useCallback(async (candidateId: string) => {
     try {
-      if (onApproveMemory) {
-        await onApproveMemory(candidateId);
-      } else {
-        await approveMemoryCandidate({ candidateId, actorUserId });
-      }
+      if (onApproveMemory) await onApproveMemory(candidateId);
+      else await approveMemoryCandidate({ candidateId, actorUserId });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '批准 Neo 记忆候选失败');
+      toast.error(error instanceof Error ? error.message : '写入记忆失败');
     }
   }, [actorUserId, approveMemoryCandidate, onApproveMemory]);
-  const handleRejectMemory = useCallback(async (candidateId: string) => {
-    try {
-      if (onRejectMemory) {
-        await onRejectMemory(candidateId);
-      } else {
-        await rejectMemoryCandidate({ candidateId, actorUserId, reason: '用户忽略' });
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '忽略 Neo 记忆候选失败');
+  const handleOpenConversation = useCallback((sessionId: string) => {
+    if (onOpenConversation) {
+      onOpenConversation(sessionId);
+      return;
     }
-  }, [actorUserId, onRejectMemory, rejectMemoryCandidate]);
+    void useSessionStore.getState().switchSession(sessionId).catch((error) => {
+      toast.error(error instanceof Error ? error.message : '打开会话失败');
+    });
+  }, [onOpenConversation]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-zinc-900">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
       <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-violet-500/20 bg-violet-500/10">
-            <Sparkles className="h-4 w-4 text-violet-200" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10">
+            <Sparkles className="h-4 w-4 text-emerald-200" />
           </div>
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-zinc-100">Neo 项目合作</h2>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-zinc-100">Neo 协同</h2>
             <div className="mt-0.5 text-[11px] text-zinc-500">
-              {projectId ? `Project work cards · ${projectId}` : 'Project work cards'}
+              {projectId ? `所有 @neo topic · ${projectId}` : '所有 @neo topic'}
             </div>
           </div>
+          <span className="shrink-0 text-[11px] text-zinc-500" data-testid="neo-topic-count">
+            {filteredTopics.length}/{topics.length}
+          </span>
         </div>
         {loading && (
           <div className="mt-3 inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在加载 Neo work cards
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
           </div>
         )}
         {loadError && (
-          <div
-            className="mt-3 rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100"
-            data-testid="project-collab-load-error"
-          >
+          <div className="mt-3 rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
             {loadError}
-          </div>
-        )}
-        {!projectId && records === undefined && (
-          <div className="mt-3 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] leading-5 text-zinc-500">
-            当前 web/browser 会话还没有项目绑定。浏览器模式不能打开系统目录选择器时，先使用当前工作区发起 @neo，或切到已经绑定项目的会话再看这里。
           </div>
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(360px,420px)_minmax(0,1fr)]">
-        <div className="min-h-0 overflow-y-auto px-4 py-3">
-          <section data-testid="project-collab-section-overview" className="mb-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
-                <ClipboardCheck className="h-3.5 w-3.5 text-zinc-500" />
-                Overview
-              </div>
-              <span className="text-[10px] text-zinc-600">{filteredRecords.length}/{panelRecords.length}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
-              {[
-                ['全部', groups.overview.total, 'text-zinc-200'],
-                ['待审', groups.overview.review, 'text-amber-200'],
-                ['运行中', groups.overview.running, 'text-emerald-200'],
-                ['结果待看', groups.overview.resultReview, 'text-cyan-200'],
-                ['需处理', groups.overview.attention, 'text-rose-200'],
-                ['队列', groups.overview.queue, 'text-sky-200'],
-                ['已完成', groups.overview.completed, 'text-zinc-300'],
-                ['已关闭', groups.overview.closed, 'text-zinc-500'],
-              ].map(([label, value, tone]) => (
-                <div key={label} className="rounded-md border border-zinc-800 bg-zinc-950/45 px-2 py-2">
-                  <div className="text-zinc-600">{label}</div>
-                  <div className={`mt-0.5 text-sm font-semibold ${tone}`}>{value}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section data-testid="project-collab-filters" className="mb-4 space-y-2 rounded-md border border-zinc-800 bg-zinc-950/45 p-2">
+      <div className="min-h-0 flex-1">
+        <div className="h-full min-h-0 overflow-y-auto px-4 py-3">
+          <div className="mb-3 space-y-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="搜索 title / summary / changedFiles"
-                className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-violet-500/60"
-                data-testid="project-collab-search"
+                placeholder="搜索 topic / 步骤 / 文件"
+                className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
+                data-testid="neo-topic-search"
               />
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {STATUS_FILTERS.map((filter) => (
+              {PHASE_FILTERS.map((filter) => (
                 <button
                   key={filter.id}
                   type="button"
-                  onClick={() => setStatusFilter(filter.id)}
+                  onClick={() => setPhaseFilter(filter.id)}
                   className={`h-7 rounded-md border px-2 text-[11px] transition-colors ${
-                    statusFilter === filter.id
-                      ? 'border-violet-500/40 bg-violet-500/10 text-violet-100'
+                    phaseFilter === filter.id
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
                       : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
                   }`}
-                  data-testid={`project-collab-status-filter-${filter.id}`}
+                  data-testid={`neo-topic-filter-${filter.id}`}
                 >
                   {filter.label}
                 </button>
               ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex min-w-[160px] flex-1 items-center gap-1.5 text-[11px] text-zinc-500">
-                发起人
-                <select
-                  value={requesterFilter}
-                  onChange={(event) => setRequesterFilter(event.target.value)}
-                  className="h-7 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-300 outline-none focus:border-violet-500/60"
-                  data-testid="project-collab-requester-filter"
-                >
-                  <option value="all">全部</option>
-                  {requesterOptions.map((requester) => (
-                    <option key={requester} value={requester}>{requester}</option>
-                  ))}
-                </select>
-              </label>
               <label className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-400">
                 <input
                   type="checkbox"
                   checked={mineOnly}
                   onChange={(event) => setMineOnly(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-violet-500"
-                  data-testid="project-collab-mine-filter"
+                  className="h-3.5 w-3.5 accent-emerald-500"
+                  data-testid="neo-topic-mine-filter"
                 />
                 只看我的
               </label>
             </div>
-          </section>
+          </div>
 
-          <div className="grid gap-4">
-            <WorkCardSection
-              id="review"
-              title="待审"
-              icon={<Clock3 className="h-3.5 w-3.5 text-amber-300" />}
-              records={groups.review}
-              emptyLabel="暂无待审 work card"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
-              onArchive={handleArchive}
-              onUpdateDraft={handleUpdateDraft}
-              onApprove={handleApprove}
-              onReject={handleReject}
+          {filteredTopics.length > 0 ? (
+            <div className="grid gap-1.5">
+              {filteredTopics.map((detail) => (
+                <TopicRow
+                  key={detail.workCard.id}
+                  detail={detail}
+                  isSelected={selectedId === detail.workCard.id}
+                  currentUser={currentUser}
+                  onSelect={setSelectedId}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-zinc-800/70 bg-zinc-950/30 px-3 py-6 text-center text-xs text-zinc-600" data-testid="neo-topic-empty">
+              还没有 @neo topic。在对话里 @neo 交代一件事，它就会出现在这里。
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc 关闭 */}
+      {selectedDetail && (
+        <div
+          className="absolute inset-y-0 right-0 z-40 flex w-[min(560px,100%)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
+          data-testid="neo-topic-drawer"
+          role="complementary"
+          aria-label="topic 详情"
+        >
+          <div className="flex shrink-0 items-center justify-end border-b border-zinc-800/70 px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              aria-label="关闭详情"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-200"
+              data-testid="neo-topic-drawer-close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ProjectCollaborationDetailPane
+              detail={selectedDetail}
+              currentUser={currentUser}
+              messagesByConversation={sourceMessagesByConversation}
+              onOpenConversation={handleOpenConversation}
               onCancel={handleCancel}
-            />
-            <WorkCardSection
-              id="running"
-              title="运行中"
-              icon={<Loader2 className="h-3.5 w-3.5 text-emerald-300" />}
-              records={groups.running}
-              emptyLabel="暂无运行中的 work card"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
               onArchive={handleArchive}
-              onCancel={handleCancel}
-            />
-            <WorkCardSection
-              id="result-review"
-              title="结果待看"
-              icon={<Eye className="h-3.5 w-3.5 text-cyan-300" />}
-              records={groups.resultReview}
-              emptyLabel="暂无结果待看"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
-              onAcceptResult={handleAcceptResult}
-              onRequestChanges={handleRequestChanges}
-              onArchive={handleArchive}
-              onCancel={handleCancel}
-            />
-            <WorkCardSection
-              id="attention"
-              title="需要处理"
-              icon={<AlertTriangle className="h-3.5 w-3.5 text-rose-300" />}
-              records={groups.attention}
-              emptyLabel="暂无失败或阻塞的 work card"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
-              onArchive={handleArchive}
-            />
-            <WorkCardSection
-              id="completed"
-              title="已完成"
-              icon={<CheckCircle2 className="h-3.5 w-3.5 text-zinc-400" />}
-              records={groups.completed}
-              emptyLabel="暂无已完成 work card"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
-              onArchive={handleArchive}
-            />
-            <WorkCardSection
-              id="closed"
-              title="已关闭"
-              icon={<Archive className="h-3.5 w-3.5 text-zinc-500" />}
-              records={groups.closed}
-              emptyLabel="暂无已关闭 work card"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
-              onArchive={handleArchive}
-            />
-
-            <section data-testid="project-collab-section-decisions" className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
-                  <GitPullRequestArrow className="h-3.5 w-3.5 text-violet-300" />
-                  决策
-                </div>
-                <span className="text-[10px] text-zinc-600">{groups.decisions.length}</span>
-              </div>
-              {groups.decisions.length > 0
-                ? <div className="grid gap-1.5">{groups.decisions.map((item) => <DecisionRow key={item.id} item={item} />)}</div>
-                : <EmptySection label="暂无项目决策" />}
-            </section>
-
-            <section data-testid="project-collab-section-memory" className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
-                  <Brain className="h-3.5 w-3.5 text-fuchsia-300" />
-                  记忆候选
-                </div>
-                <span className="text-[10px] text-zinc-600">{groups.memoryCandidates.length}</span>
-              </div>
-              {groups.memoryCandidates.length > 0
-                ? (
-                  <div className="grid gap-1.5">
-                    {groups.memoryCandidates.map((item) => (
-                      <MemoryCandidateRow
-                        key={item.id}
-                        item={item}
-                        onApproveMemory={handleApproveMemory}
-                        onRejectMemory={handleRejectMemory}
-                      />
-                    ))}
-                  </div>
-                )
-                : <EmptySection label="暂无记忆候选" />}
-            </section>
-
-            <section data-testid="project-collab-section-context-audit" className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
-                  <ShieldCheck className="h-3.5 w-3.5 text-sky-300" />
-                  上下文审计
-                </div>
-                <span className="text-[10px] text-zinc-600">{groups.contextAudits.length}</span>
-              </div>
-              {groups.contextAudits.length > 0
-                ? <div className="grid gap-1.5">{groups.contextAudits.map((item) => <ContextAuditRow key={item.id} item={item} />)}</div>
-                : <EmptySection label="暂无上下文审计" />}
-            </section>
-
-            <WorkCardSection
-              id="queue"
-              title="队列"
-              icon={<ListOrdered className="h-3.5 w-3.5 text-sky-300" />}
-              records={groups.queue}
-              emptyLabel="暂无排队 work card"
-              selectedWorkCardId={selectedWorkCardId}
-              onSelectWorkCard={setSelectedWorkCardId}
-              onCancel={handleCancel}
+              onApproveMemory={handleApproveMemory}
             />
           </div>
         </div>
-
-        <ProjectCollaborationDetailPane
-          detail={selectedDetail}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onCancel={handleCancel}
-          onAcceptResult={handleAcceptResult}
-          onRequestChanges={handleRequestChanges}
-          onArchive={handleArchive}
-          onApproveMemory={handleApproveMemory}
-          onRejectMemory={handleRejectMemory}
-        />
-      </div>
+      )}
     </div>
   );
 };

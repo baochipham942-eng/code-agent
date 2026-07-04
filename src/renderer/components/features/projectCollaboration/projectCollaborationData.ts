@@ -6,6 +6,45 @@ import type {
   NeoWorkCardRevision,
   NeoWorkCardStatus,
 } from '@shared/contract/tag';
+import type { Message } from '@shared/contract/message';
+import { IPC_DOMAINS } from '@shared/ipc';
+import { statusPhase } from '../chat/neoWorkCardPhase';
+
+// ============================================================================
+// Topic 详情的多轮执行结果：实现已搬 shared（host prompt 层与 renderer 共用，ADR-035），
+// 这里 re-export 保持既有 import 路径不变。
+// ============================================================================
+
+export type { NeoTopicRound } from '@shared/neoTag/topicRounds';
+export { extractNeoTopicRounds, mergeTopicRounds, topicConversationIds } from '@shared/neoTag/topicRounds';
+
+/** 只读拉取某个会话的消息（供 topic 详情回溯多轮结果；失败静默返回空）。 */
+export async function fetchConversationMessages(sessionId: string): Promise<Message[]> {
+  try {
+    const response = await window.domainAPI?.invoke<Message[]>(IPC_DOMAINS.SESSION, 'getMessages', { sessionId });
+    if (!response?.success) return [];
+    return response.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 把发起人 userId 显示成人话：当前用户显示成「我（名字）」，其他人显示原 id。
+ * 本地单用户场景下大多是自己，没有单独的成员目录，先做最诚实的映射。
+ */
+export function formatRequesterLabel(
+  requesterUserId: string,
+  currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null,
+): string {
+  const id = requesterUserId?.trim() || '未知';
+  const currentId = currentUser?.id?.trim();
+  if (currentId && currentId === id) {
+    const name = currentUser?.name?.trim() || currentUser?.email?.trim();
+    return name ? `我 · ${name}` : '我';
+  }
+  return id;
+}
 
 export interface ProjectCollaborationWorkCardRecord {
   card: NeoWorkCard;
@@ -15,78 +54,14 @@ export interface ProjectCollaborationWorkCardRecord {
   memoryCandidates?: NeoMemoryCandidate[];
 }
 
-export interface ProjectCollaborationDecisionItem {
-  id: string;
-  workCardId: string;
-  workCardTitle: string;
-  text: string;
-  createdAt: number;
-}
-
-export interface ProjectCollaborationMemoryCandidate {
-  id: string;
-  workCardId: string;
-  workCardTitle: string;
-  text: string;
-  source: NeoMemoryCandidate['source'];
-  status: NeoMemoryCandidate['status'];
-  createdAt: number;
-}
-
-export interface ProjectCollaborationContextAudit {
-  id: string;
-  workCardId: string;
-  workCardTitle: string;
-  strategy: NeoTagContextPack['strategy'];
-  selectedEvidenceCount: number;
-  excludedCount: number;
-  estimatedTokens: number;
-  maxTokens: number;
-  sourceTypes: string[];
-  createdAt: number;
-}
-
-export interface ProjectCollaborationGroups {
-  overview: {
-    total: number;
-    review: number;
-    running: number;
-    resultReview: number;
-    completed: number;
-    attention: number;
-    closed: number;
-    queue: number;
-    decisions: number;
-    memoryCandidates: number;
-    contextAudits: number;
-  };
-  review: ProjectCollaborationWorkCardRecord[];
-  running: ProjectCollaborationWorkCardRecord[];
-  resultReview: ProjectCollaborationWorkCardRecord[];
-  completed: ProjectCollaborationWorkCardRecord[];
-  attention: ProjectCollaborationWorkCardRecord[];
-  closed: ProjectCollaborationWorkCardRecord[];
-  queue: ProjectCollaborationWorkCardRecord[];
-  decisions: ProjectCollaborationDecisionItem[];
-  memoryCandidates: ProjectCollaborationMemoryCandidate[];
-  contextAudits: ProjectCollaborationContextAudit[];
-}
-
 export interface ProjectCollaborationBadge {
-  openCount: number;
-  reviewCount: number;
+  /** topic 总数 */
+  topicCount: number;
+  /** 活动中（运行中 + 待你确认） */
+  activeCount: number;
   runningCount: number;
-  resultReviewCount: number;
-  queueCount: number;
+  needsInputCount: number;
 }
-
-const REVIEW_STATUSES = new Set<NeoWorkCardStatus>(['draft', 'needs_review']);
-const RUNNING_STATUSES = new Set<NeoWorkCardStatus>(['working', 'waiting_for_user']);
-const RESULT_REVIEW_STATUSES = new Set<NeoWorkCardStatus>(['in_result_review']);
-const COMPLETED_STATUSES = new Set<NeoWorkCardStatus>(['completed']);
-const ATTENTION_STATUSES = new Set<NeoWorkCardStatus>(['failed']);
-const CLOSED_STATUSES = new Set<NeoWorkCardStatus>(['cancelled', 'archived']);
-const QUEUE_STATUSES = new Set<NeoWorkCardStatus>(['approved', 'queued']);
 
 const PROJECT_ID = 'project-neo-tag-p0';
 const CONVERSATION_ID = 'conversation-neo-tag-p0';
@@ -257,44 +232,7 @@ function contextPack(input: {
   };
 }
 
-function parseContextAuditDecision(
-  text: string,
-  record: ProjectCollaborationWorkCardRecord,
-  index: number,
-): ProjectCollaborationContextAudit | null {
-  if (!text.startsWith('Context audit: ')) return null;
-  const pairs = new Map<string, string>();
-  for (const segment of text.slice('Context audit: '.length).split(/\s+/)) {
-    const splitAt = segment.indexOf('=');
-    if (splitAt <= 0) continue;
-    pairs.set(segment.slice(0, splitAt), segment.slice(splitAt + 1));
-  }
-  const tokens = pairs.get('tokens') ?? '0/0';
-  const [estimatedTokens, maxTokens] = tokens.split('/').map((value) => Number(value) || 0);
-  const selectedEvidenceCount =
-    (Number(pairs.get('messages')) || 0)
-    + (Number(pairs.get('artifacts')) || 0)
-    + (Number(pairs.get('files')) || 0)
-    + (Number(pairs.get('memory')) || 0);
-  const sourceTypes = (pairs.get('sources') ?? 'none')
-    .split('+')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0 && item !== 'none');
-  return {
-    id: pairs.get('pack') || `${record.delta?.id ?? record.card.id}:context:${index}`,
-    workCardId: record.card.id,
-    workCardTitle: record.card.title,
-    strategy: (pairs.get('strategy') as NeoTagContextPack['strategy']) || 'plain',
-    selectedEvidenceCount,
-    excludedCount: Number(pairs.get('excluded')) || 0,
-    estimatedTokens,
-    maxTokens,
-    sourceTypes,
-    createdAt: record.delta?.createdAt ?? record.card.updatedAt,
-  };
-}
-
-export const NEO_PROJECT_COLLABORATION_FIXTURE: ProjectCollaborationWorkCardRecord[] = [
+const NEO_PROJECT_COLLABORATION_FIXTURE: ProjectCollaborationWorkCardRecord[] = [
   {
     card: card({
       id: 'wc-review',
@@ -440,112 +378,20 @@ export const NEO_PROJECT_COLLABORATION_FIXTURE: ProjectCollaborationWorkCardReco
   },
 ];
 
-export function buildProjectCollaborationGroups(
-  records: ProjectCollaborationWorkCardRecord[] = NEO_PROJECT_COLLABORATION_FIXTURE,
-): ProjectCollaborationGroups {
-  const review = records.filter((record) => REVIEW_STATUSES.has(record.card.status));
-  const running = records.filter((record) => RUNNING_STATUSES.has(record.card.status));
-  const resultReview = records.filter((record) => RESULT_REVIEW_STATUSES.has(record.card.status));
-  const completed = records.filter((record) => COMPLETED_STATUSES.has(record.card.status));
-  const attention = records.filter((record) => ATTENTION_STATUSES.has(record.card.status));
-  const closed = records.filter((record) => CLOSED_STATUSES.has(record.card.status));
-  const queue = records.filter((record) => QUEUE_STATUSES.has(record.card.status));
-  const decisions = records.flatMap((record) =>
-    (record.delta?.decisions ?? []).map((text, index) => ({
-      id: `${record.delta?.id ?? record.card.id}:decision:${index}`,
-      workCardId: record.card.id,
-      workCardTitle: record.card.title,
-      text,
-      createdAt: record.delta?.createdAt ?? record.card.updatedAt,
-    })),
-  );
-  const memoryCandidates = records.flatMap((record) => {
-    if (record.memoryCandidates?.length) {
-      return record.memoryCandidates.map((candidate) => ({
-        id: candidate.id,
-        workCardId: record.card.id,
-        workCardTitle: record.card.title,
-        text: candidate.text,
-        source: candidate.source,
-        status: candidate.status,
-        createdAt: candidate.createdAt,
-      }));
-    }
-    return (record.delta?.memoryCandidates ?? []).map((text, index) => ({
-      id: `${record.delta?.id ?? record.card.id}:memory:${index}`,
-      workCardId: record.card.id,
-      workCardTitle: record.card.title,
-      text,
-      source: 'result_review' as const,
-      status: 'pending' as const,
-      createdAt: record.delta?.createdAt ?? record.card.updatedAt,
-    }));
-  });
-  const contextAudits = records.flatMap((record) => {
-    const pack = record.contextPack;
-    const fromPack = pack ? [{
-      id: pack.id,
-      workCardId: record.card.id,
-      workCardTitle: record.card.title,
-      strategy: pack.strategy,
-      selectedEvidenceCount:
-        pack.selectedMessages.length
-        + pack.selectedArtifacts.length
-        + pack.selectedFiles.length
-        + pack.selectedMemoryEntryIds.length,
-      excludedCount: pack.excluded.length,
-      estimatedTokens: pack.budget.estimatedTokens,
-      maxTokens: pack.budget.maxTokens,
-      sourceTypes: [
-        pack.selectedMessages.length > 0 ? 'messages' : null,
-        pack.selectedArtifacts.length > 0 ? 'artifacts' : null,
-        pack.selectedFiles.length > 0 ? 'files' : null,
-        pack.selectedMemoryEntryIds.length > 0 ? 'memory' : null,
-      ].filter((item): item is string => Boolean(item)),
-      createdAt: pack.createdAt,
-    }] : [];
-    const fromDelta = (record.delta?.decisions ?? [])
-      .map((text, index) => parseContextAuditDecision(text, record, index))
-      .filter((item): item is ProjectCollaborationContextAudit => Boolean(item));
-    return [...fromPack, ...fromDelta];
-  });
-
-  return {
-    overview: {
-      total: records.length,
-      review: review.length,
-      running: running.length,
-      resultReview: resultReview.length,
-      completed: completed.length,
-      attention: attention.length,
-      closed: closed.length,
-      queue: queue.length,
-      decisions: decisions.length,
-      memoryCandidates: memoryCandidates.length,
-      contextAudits: contextAudits.length,
-    },
-    review,
-    running,
-    resultReview,
-    completed,
-    attention,
-    closed,
-    queue,
-    decisions,
-    memoryCandidates,
-    contextAudits,
-  };
-}
-
 export function getProjectCollaborationBadge(
   records: ProjectCollaborationWorkCardRecord[] = NEO_PROJECT_COLLABORATION_FIXTURE,
 ): ProjectCollaborationBadge {
-  const groups = buildProjectCollaborationGroups(records);
+  let runningCount = 0;
+  let needsInputCount = 0;
+  for (const record of records) {
+    const phase = statusPhase(record.card.status);
+    if (phase === 'running') runningCount += 1;
+    else if (phase === 'needs_input') needsInputCount += 1;
+  }
   return {
-    openCount: groups.overview.review + groups.overview.running + groups.overview.resultReview + groups.overview.queue,
-    reviewCount: groups.overview.review,
-    runningCount: groups.overview.running,
-    resultReviewCount: groups.overview.resultReview,
-    queueCount: groups.overview.queue,
+    topicCount: records.length,
+    activeCount: runningCount + needsInputCount,
+    runningCount,
+    needsInputCount,
   };
 }

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Clock3, CornerDownRight, X, UserPlus, Sparkles } from 'lucide-react';
+import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
   ComposerAgentSelection,
@@ -20,6 +20,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
 import { AttachmentBar } from './AttachmentBar';
+import { NeoContinuationChip } from './NeoContinuationChip';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -627,6 +628,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
+        {/* @neo 续接 chip（ADR-035）：标记这条消息续接哪个 topic */}
+        <div className="empty:hidden mb-2 px-2">
+          <NeoContinuationChip />
+        </div>
+
         {/* 附件预览区 */}
         {attachments.length > 0 && (
           <div className="mb-2">
@@ -765,15 +771,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               ))}
             </div>
           )}
-          {neoTagInvocation && (
-            <div className="px-3 pt-2">
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-200">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span className="font-medium">Neo</span>
-                <span className="text-emerald-200/65">work card</span>
-              </div>
-            </div>
-          )}
+          {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
+              (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
           <InputArea
             ref={inputAreaRef}
             value={value}

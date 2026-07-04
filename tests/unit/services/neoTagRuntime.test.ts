@@ -13,19 +13,25 @@ import type {
 import { resolveNeoTagModelIntent } from '../../../src/host/services/project/neoTagModelIntentResolver';
 import { buildNeoTagContextPack } from '../../../src/host/services/project/neoTagContextSelector';
 import { buildNeoTagPromptLayer } from '../../../src/host/services/project/neoTagPromptLayer';
-import { launchApprovedNeoWorkCard } from '../../../src/host/services/project/neoTagRuntimeService';
+import {
+  createAndRunNeoWorkCard,
+  launchApprovedNeoWorkCard,
+} from '../../../src/host/services/project/neoTagRuntimeService';
 import type { NeoWorkCardService } from '../../../src/host/services/project/neoWorkCardService';
+import type { CreateNeoWorkCardDraftInput } from '../../../src/shared/contract/tag';
 
 const sessionMessages: Message[] = [];
 let sessionWorkingDirectory = '/repo/project';
+// 按 sessionId 区分的会话数据（跨会话用例用）；未注册的 sessionId 走上面的全局兜底，既有用例不受影响。
+const sessionsById = new Map<string, { workingDirectory?: string; messages: Message[] }>();
 const tempDirs: string[] = [];
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    getSession: vi.fn(async () => ({
-      id: 'conv_1',
-      workingDirectory: sessionWorkingDirectory,
-      messages: sessionMessages,
+    getSession: vi.fn(async (sessionId: string) => ({
+      id: sessionId,
+      workingDirectory: sessionsById.get(sessionId)?.workingDirectory ?? sessionWorkingDirectory,
+      messages: sessionsById.get(sessionId)?.messages ?? sessionMessages,
     })),
   }),
 }));
@@ -105,6 +111,7 @@ describe('Neo Tag runtime helpers', () => {
   beforeEach(() => {
     sessionMessages.splice(0, sessionMessages.length);
     sessionWorkingDirectory = '/repo/project';
+    sessionsById.clear();
   });
 
   afterEach(async () => {
@@ -305,12 +312,189 @@ describe('Neo Tag runtime helpers', () => {
           status: 'working',
         }),
       }),
-      expect.any(String),
+      // clientMessageId 必须用 sourceTurnId：renderer 本地补的用户消息与 host 落库消息同 ID，
+      // 任何 reload/合并路径都能按 ID 去重（BUG1：@neo 用户消息不显示）。
+      card.sourceTurnId,
     );
     expect(deltas[0].completed[0]).toContain('Queued approved revision');
     expect(deltas[0].decisions.join('\n')).toContain('Context audit: pack=');
     expect(deltas.at(-1)?.changedFiles).toEqual(['src/host/services/project/neoTagRuntimeService.ts']);
     expect(deltas.at(-1)?.decisions.join('\n')).toContain('sources=messages+artifacts+files+memory');
+  });
+
+  it('launches into target conversation: startTask/metadata/delta bind to the round conversation, working dir untouched', async () => {
+    sessionsById.set('conv_B', { workingDirectory: '/repo/other', messages: [] });
+    const card = workCard();
+    const rev = revision();
+    const deltas: NeoWorkCardDelta[] = [];
+    const service = {
+      get: vi.fn((): NeoWorkCardDetail => ({
+        workCard: card,
+        currentRevision: rev,
+        approvedRevision: rev,
+        revisions: [rev],
+        approvals: [],
+        deltas,
+      })),
+      setStatus: vi.fn(() => card),
+      appendDelta: vi.fn((input: Partial<NeoWorkCardDelta>) => {
+        const delta = { ...input, id: `delta_${deltas.length + 1}`, createdAt: deltas.length + 1 } as NeoWorkCardDelta;
+        deltas.push(delta);
+        return delta;
+      }),
+    } as unknown as NeoWorkCardService;
+    const startTask = vi.fn(async () => {});
+    const setWorkingDirectory = vi.fn();
+    const orchestratorSetWd = vi.fn();
+    const taskManager = {
+      getOrCreateCurrentOrchestrator: vi.fn(() => ({ setWorkingDirectory: orchestratorSetWd })),
+      setWorkingDirectory,
+      startTask,
+      getSessionState: vi.fn(() => ({ status: 'idle' })),
+    };
+
+    await launchApprovedNeoWorkCard({
+      workCardId: card.id,
+      taskManager,
+      service,
+      now: () => 100,
+      target: { conversationId: 'conv_B', turnId: 'turn_round2' },
+    });
+
+    // 执行落在目标会话，锚点用轮 turnId
+    expect(startTask).toHaveBeenCalledWith(
+      'conv_B',
+      expect.any(String),
+      undefined,
+      expect.any(Object),
+      expect.objectContaining({ neoTag: expect.objectContaining({ sourceTurnId: 'turn_round2' }) }),
+      'turn_round2',
+    );
+    // D2 护栏：跨会话续接不得持久改写目标会话工作目录
+    expect(setWorkingDirectory).not.toHaveBeenCalled();
+    expect(orchestratorSetWd).not.toHaveBeenCalled();
+    // 每条 delta 都带轮会话归属
+    expect(deltas.length).toBeGreaterThan(0);
+    for (const delta of deltas) {
+      expect(delta.conversationId).toBe('conv_B');
+    }
+  });
+
+  it('defaults to source conversation when no target given (existing behaviour + conversationId backfill)', async () => {
+    const card = workCard();
+    const rev = revision();
+    const deltas: NeoWorkCardDelta[] = [];
+    const service = {
+      get: vi.fn((): NeoWorkCardDetail => ({
+        workCard: card,
+        currentRevision: rev,
+        approvedRevision: rev,
+        revisions: [rev],
+        approvals: [],
+        deltas,
+      })),
+      setStatus: vi.fn(() => card),
+      appendDelta: vi.fn((input: Partial<NeoWorkCardDelta>) => {
+        const delta = { ...input, id: `delta_${deltas.length + 1}`, createdAt: deltas.length + 1 } as NeoWorkCardDelta;
+        deltas.push(delta);
+        return delta;
+      }),
+    } as unknown as NeoWorkCardService;
+    const startTask = vi.fn(async () => {});
+    const taskManager = { startTask, getSessionState: vi.fn(() => ({ status: 'idle' })) };
+
+    await launchApprovedNeoWorkCard({ workCardId: card.id, taskManager, service, now: () => 100 });
+
+    expect(startTask.mock.calls[0][0]).toBe('conv_1');
+    expect(deltas.length).toBeGreaterThan(0);
+    for (const delta of deltas) {
+      expect(delta.conversationId).toBe('conv_1');
+    }
+  });
+
+  it('creates, auto-approves, and launches a work card in one direct-run step (@neo 直接开干)', async () => {
+    sessionMessages.splice(0, sessionMessages.length,
+      { id: 'msg_source', role: 'user', content: '@neo 直接开干', timestamp: 1 },
+    );
+    const card = workCard({ status: 'draft', approvedRevisionId: null });
+    const rev = revision();
+    const deltas: NeoWorkCardDelta[] = [];
+    const statuses: string[] = [];
+    const reasons: string[] = [];
+    const approveCalls: Array<{ workCardId: string; revisionId?: string; reviewerUserId: string }> = [];
+    const service = {
+      createDraft: vi.fn(() => ({ workCard: card, revision: rev })),
+      approveRevision: vi.fn((input: { workCardId: string; revisionId?: string; reviewerUserId: string }) => {
+        approveCalls.push(input);
+        card.status = 'approved';
+        card.approvedRevisionId = rev.id;
+        return { id: 'appr_1' };
+      }),
+      get: vi.fn((): NeoWorkCardDetail => ({
+        workCard: card,
+        currentRevision: rev,
+        approvedRevision: rev,
+        revisions: [rev],
+        approvals: [],
+        deltas,
+        resultReviews: [],
+        memoryCandidates: [],
+      })),
+      setStatus: vi.fn((_workCardId: string, status: NeoWorkCard['status']) => {
+        statuses.push(status);
+        card.status = status;
+        return card;
+      }),
+      appendDelta: vi.fn((input: Partial<NeoWorkCardDelta>) => {
+        const delta = {
+          id: `delta_${deltas.length + 1}`,
+          workCardId: card.id,
+          runId: input.runId || 'run_1',
+          completed: input.completed || [],
+          changedFiles: input.changedFiles || [],
+          decisions: input.decisions || [],
+          openQuestions: input.openQuestions || [],
+          risks: input.risks || [],
+          memoryCandidates: input.memoryCandidates || [],
+          nextStep: input.nextStep,
+          createdAt: deltas.length + 1,
+        };
+        deltas.push(delta);
+        return delta;
+      }),
+    } as unknown as NeoWorkCardService;
+
+    const draft: CreateNeoWorkCardDraftInput = {
+      projectId: 'proj_1',
+      sourceConversationId: 'conv_1',
+      sourceTurnId: 'msg_source',
+      requesterUserId: 'user_1',
+      title: '直接开干',
+      revision: { intent: 'implement', taskSummary: '直接开干' },
+    };
+
+    const started = createAndRunNeoWorkCard({
+      draft,
+      service,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+      now: () => 100,
+      onWorkCardUpdated: (_workCardId, reason) => reasons.push(reason),
+    });
+
+    // 建卡 + 批准同步完成，卡立即可返回（IPC 无需等待后台运行）
+    expect(service.createDraft).toHaveBeenCalledTimes(1);
+    expect(approveCalls[0]).toMatchObject({ workCardId: card.id, reviewerUserId: 'user_1' });
+    expect(started.workCard.id).toBe(card.id);
+    expect(reasons).toContain('draft_created');
+    expect(reasons).toContain('revision_approved');
+
+    // 无审批门：后台运行落地
+    const launched = await started.run;
+    expect(statuses).toEqual(['queued', 'working', 'in_result_review']);
+    expect(launched.runId).toBeTruthy();
   });
 
   it('moves provider launch failures into failed work card delta instead of leaving working', async () => {

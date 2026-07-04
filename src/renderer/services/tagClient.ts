@@ -1,7 +1,10 @@
 import type {
+  ContinueNeoWorkCardRequest,
+  ContinueNeoWorkCardResult,
   CreateNeoWorkCardDraftInput,
   CreateNeoWorkCardDraftRequest,
   CreateNeoWorkCardDraftResult,
+  ListAllNeoWorkCardsInput,
   ListNeoWorkCardsByProjectInput,
   ListNeoWorkCardsBySourceInput,
   NeoMemoryCandidate,
@@ -104,12 +107,42 @@ export const tagClient = {
     };
   },
 
+  // @neo 直接开干：建卡即运行（无审批门），后台落地运行，立即返回已建卡。
+  async createAndRun(input: CreateNeoWorkCardDraftRequest): Promise<CreateNeoWorkCardDraftResult> {
+    const backendInput = toCreateDraftInput(input);
+    const created = await invokeTag<NeoWorkCardWithCurrentRevision>('createAndRun', backendInput);
+    return {
+      detail: toDetail(created),
+      sourceTurnId: created.workCard.sourceTurnId,
+    };
+  },
+
+  // @neo 跨会话续接：既有 topic 追加一轮，落点 = 当前会话（ADR-035）。
+  async continueAndRun(input: ContinueNeoWorkCardRequest): Promise<ContinueNeoWorkCardResult> {
+    const result = await invokeTag<{
+      workCard: NeoWorkCardWithCurrentRevision['workCard'];
+      revision: NeoWorkCardWithCurrentRevision['revision'];
+      roundTurnId: string;
+    }>('continueAndRun', input);
+    return {
+      detail: toDetail({ workCard: result.workCard, revision: result.revision }),
+      roundTurnId: result.roundTurnId,
+    };
+  },
+
   listBySourceConversation(input: ListNeoWorkCardsBySourceInput): Promise<NeoWorkCardDetail[]> {
     return invokeTag<NeoWorkCardDetail[]>('listBySourceConversation', input);
   },
 
   async listByProject(input: ListNeoWorkCardsByProjectInput): Promise<NeoWorkCardDetail[]> {
     const cards = await invokeTag<NeoWorkCardWithCurrentRevision['workCard'][]>('listByProject', input);
+    const details = await Promise.all(cards.map((card) => readDetail(card.id)));
+    return details;
+  },
+
+  // 全局 topic 目录：跨项目列全部工作卡（无绑定项目的入口也能看历史）
+  async listAll(input: ListAllNeoWorkCardsInput = {}): Promise<NeoWorkCardDetail[]> {
+    const cards = await invokeTag<NeoWorkCardWithCurrentRevision['workCard'][]>('listAll', input);
     const details = await Promise.all(cards.map((card) => readDetail(card.id)));
     return details;
   },

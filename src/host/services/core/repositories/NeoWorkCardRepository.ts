@@ -107,6 +107,7 @@ function rowToDelta(row: SQLiteRow): NeoWorkCardDelta {
     id: String(row.id),
     workCardId: String(row.work_card_id),
     runId: String(row.run_id),
+    conversationId: row.conversation_id == null ? undefined : String(row.conversation_id),
     completed: deserialize<string[]>(row.completed_json, []),
     changedFiles: deserialize<string[]>(row.changed_files_json, []),
     decisions: deserialize<string[]>(row.decisions_json, []),
@@ -198,6 +199,29 @@ export class NeoWorkCardRepository {
   listByProject(projectId: string, options: NeoWorkCardListOptions = {}): NeoWorkCard[] {
     const clauses = ['project_id = ?'];
     const args: unknown[] = [projectId];
+    if (!options.includeArchived) {
+      clauses.push("status != 'archived'");
+    }
+    if (options.statuses && options.statuses.length > 0) {
+      clauses.push(`status IN (${options.statuses.map(() => '?').join(', ')})`);
+      args.push(...options.statuses);
+    }
+    const boundedLimit = Math.max(1, Math.min(options.limit ?? 100, 500));
+    const rows = this.db
+      .prepare(`
+        SELECT * FROM neo_work_cards
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY updated_at DESC
+        LIMIT ?
+      `)
+      .all(...args, boundedLimit) as SQLiteRow[];
+    return rows.map(rowToWorkCard);
+  }
+
+  // 全局 topic 目录（账号菜单「Neo 协同」）：跨项目列全部工作卡，不按 projectId 过滤
+  listAll(options: NeoWorkCardListOptions = {}): NeoWorkCard[] {
+    const clauses = ['1 = 1'];
+    const args: unknown[] = [];
     if (!options.includeArchived) {
       clauses.push("status != 'archived'");
     }
@@ -407,13 +431,14 @@ export class NeoWorkCardRepository {
     const tx = this.db.transaction(() => {
       this.db.prepare(`
         INSERT INTO neo_work_card_deltas (
-          id, work_card_id, run_id, completed_json, changed_files_json, decisions_json,
+          id, work_card_id, run_id, conversation_id, completed_json, changed_files_json, decisions_json,
           open_questions_json, risks_json, memory_candidates_json, next_step, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         delta.id,
         delta.workCardId,
         delta.runId,
+        delta.conversationId ?? null,
         serialize(delta.completed),
         serialize(delta.changedFiles),
         serialize(delta.decisions),

@@ -210,6 +210,8 @@ export interface NeoWorkCardDelta {
   id: string;
   workCardId: string;
   runId: string;
+  /** 本轮实际发生的会话（跨会话续接后 ≠ sourceConversationId；老数据无此值时回退 sourceConversationId）。 */
+  conversationId?: string;
   completed: string[];
   changedFiles: string[];
   decisions: string[];
@@ -254,6 +256,8 @@ export interface NeoTagRunContext {
   projectId: string;
   sourceConversationId: string;
   sourceTurnId: string;
+  /** 本轮实际执行的会话；缺省 = sourceConversationId（跨会话续接时不同）。 */
+  targetConversationId?: string;
   approvedRevisionId: string;
   runId: string;
   contextPackId: string;
@@ -334,6 +338,7 @@ export interface CloseNeoWorkCardInput {
 export interface AppendNeoWorkCardDeltaInput {
   workCardId: string;
   runId: string;
+  conversationId?: string;
   completed?: string[];
   changedFiles?: string[];
   decisions?: string[];
@@ -389,7 +394,24 @@ export interface CreateNeoWorkCardDraftRequest {
 export interface CreateNeoWorkCardDraftResult {
   detail: NeoWorkCardDetail;
   sourceTurnId: string;
-  sourceMessage?: import('./message').Message;
+}
+
+/** @neo 跨会话续接（ADR-035）：在任意会话把一轮追加到既有 topic。 */
+export interface ContinueNeoWorkCardRequest {
+  workCardId: string;
+  /** 续接发生的会话 = 本轮执行落点。 */
+  conversationId: string;
+  userText: string;
+  requesterUserId: string;
+  selectedArtifactIds?: string[];
+  /** renderer 本地补显的用户消息 ID；host 落库同 ID 去重（同 createAndRun 的 clientSourceMessageId 机制）。 */
+  clientSourceMessageId?: string;
+}
+
+export interface ContinueNeoWorkCardResult {
+  detail: NeoWorkCardDetail;
+  /** 本轮用户消息锚点 ID。 */
+  roundTurnId: string;
 }
 
 export interface ListNeoWorkCardsBySourceInput {
@@ -399,6 +421,9 @@ export interface ListNeoWorkCardsBySourceInput {
 export interface ListNeoWorkCardsByProjectInput extends NeoWorkCardListOptions {
   projectId: string;
 }
+
+/** 全局 topic 目录（账号菜单「Neo 协同」）：跨项目列全部工作卡。 */
+export type ListAllNeoWorkCardsInput = NeoWorkCardListOptions;
 
 export type UpdateNeoWorkCardDraftRevisionRequest = UpdateNeoWorkCardDraftRevisionInput;
 

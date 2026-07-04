@@ -9,6 +9,7 @@ import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
+import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
@@ -431,9 +432,17 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   // For user messages, render as plain text (no markdown processing)
   // 使用 span 而非 div，避免复制时末尾多出换行符
   if (isUser) {
+    // 核心功能触发词（@neo / /goal / /workflow）上色，正文逐字符不变
+    const trigger = parseLeadingTriggerToken(content);
     return (
       <span className="text-sm leading-relaxed whitespace-pre-wrap break-words block">
-        {content}
+        {trigger ? (
+          <>
+            {trigger.prefix}
+            <span className={trigger.className} data-testid={`trigger-token-${trigger.kind}`}>{trigger.token}</span>
+            {trigger.rest}
+          </>
+        ) : content}
       </span>
     );
   }

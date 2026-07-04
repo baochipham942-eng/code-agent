@@ -10,7 +10,9 @@ import {
   syncLeadingAgentMentions,
 } from '../../../src/renderer/components/features/chat/ChatInput/agentMentionRouting';
 import {
+  buildNeoTopicMentionCandidates,
   NEO_TAG_MENTION_AGENT,
+  NEO_TOPIC_MENTION_PREFIX,
   parseLeadingNeoTagInvocation,
 } from '../../../src/renderer/components/features/chat/ChatInput/neoMentionRouting';
 
@@ -51,11 +53,16 @@ describe('agent mention routing', () => {
     expect(nMatches[0]).toEqual(NEO_TAG_MENTION_AGENT);
   });
 
-  it('does not inject Neo for a bare @ so file mention still works', () => {
+  it('summons Neo on a bare @ (置顶 Neo,压掉文件 popup 噪音)', () => {
+    // 产品负责人 2026-07-02：裸 @ 应像 @teammate 一样召唤 Neo,而不是弹一堆文件名噪音。
     const matches = getLeadingAgentMentionAutocomplete('@', agents)?.matches ?? [];
+    expect(matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
+  });
+
+  it('still routes @<filename> to file mention (query 非 neo 前缀不注入 Neo)', () => {
+    // 打 @ 后接文件名前缀(非 n/ne/neo)时不召唤 Neo,文件 mention 照常
+    const matches = getLeadingAgentMentionAutocomplete('@src', agents)?.matches ?? [];
     expect(matches).not.toContainEqual(NEO_TAG_MENTION_AGENT);
-    // 保留 neo 的 swarm agent 也不在裸 @ 候选里
-    expect(matches.some((m) => m.id === 'neo-agent')).toBe(false);
   });
 
   it('applies the Neo work-card mention as @neo ', () => {
@@ -140,5 +147,47 @@ describe('agent mention routing', () => {
     expect(
       syncLeadingAgentMentions('@reviewer 先看一下这轮改动', [], agents),
     ).toBe('先看一下这轮改动');
+  });
+});
+
+describe('neo topic mention candidates (ADR-035)', () => {
+  const topics = [
+    { workCardId: 'nwc_1', title: '整理竞品报告', status: 'completed', updatedAt: 30 },
+    { workCardId: 'nwc_2', title: '梳理定价', status: 'in_result_review', updatedAt: 20 },
+    { workCardId: 'nwc_3', title: '已归档的活', status: 'archived', updatedAt: 99 },
+    { workCardId: 'nwc_4', title: '已取消的活', status: 'cancelled', updatedAt: 98 },
+  ];
+
+  it('builds candidates from active topics, newest first, closed excluded', () => {
+    const candidates = buildNeoTopicMentionCandidates(topics);
+    expect(candidates.map((c) => c.id)).toEqual([
+      `${NEO_TOPIC_MENTION_PREFIX}nwc_1`,
+      `${NEO_TOPIC_MENTION_PREFIX}nwc_2`,
+    ]);
+    expect(candidates[0].role).toContain('整理竞品报告');
+  });
+
+  it('caps candidates at 5 most recently active', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      workCardId: `nwc_m${i}`,
+      title: `topic ${i}`,
+      status: 'completed',
+      updatedAt: i,
+    }));
+    const candidates = buildNeoTopicMentionCandidates(many);
+    expect(candidates).toHaveLength(5);
+    expect(candidates[0].id).toBe(`${NEO_TOPIC_MENTION_PREFIX}nwc_m7`);
+  });
+
+  it('surfaces topic candidates in the @ autocomplete right after the Neo entry', () => {
+    const autocomplete = getLeadingAgentMentionAutocomplete('@neo', agents, buildNeoTopicMentionCandidates(topics));
+    expect(autocomplete?.matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
+    expect(autocomplete?.matches[1]?.id).toBe(`${NEO_TOPIC_MENTION_PREFIX}nwc_1`);
+    expect(autocomplete?.matches[2]?.id).toBe(`${NEO_TOPIC_MENTION_PREFIX}nwc_2`);
+  });
+
+  it('keeps topic candidates out when query does not summon Neo', () => {
+    const matches = getLeadingAgentMentionAutocomplete('@src', agents, buildNeoTopicMentionCandidates(topics))?.matches ?? [];
+    expect(matches.some((m) => m.id.startsWith(NEO_TOPIC_MENTION_PREFIX))).toBe(false);
   });
 });

@@ -154,6 +154,7 @@ export function syncLeadingAgentMentions(
 export function getLeadingAgentMentionAutocomplete(
   value: string,
   agents: MentionRoutingAgent[],
+  neoTopicCandidates?: MentionRoutingAgent[],
 ): AgentMentionAutocompleteResult | null {
   const query = getTrailingMentionQuery(value);
   if (query === null) {
@@ -173,9 +174,10 @@ export function getLeadingAgentMentionAutocomplete(
     return Array.from(aliases).some((alias) => alias.startsWith(normalizedQuery));
   });
 
-  // 输入 @n / @ne / @neo 时把 Neo 工作卡作为可点候选置顶（发现性 + 顺带压掉文件 popup）。
+  // 输入 @n / @ne / @neo 时把 Neo 工作卡作为可点候选置顶（发现性 + 顺带压掉文件 popup），
+  // 紧随其后是「续接既有 topic」候选（ADR-035 D1）。
   const withNeo = shouldSuggestNeoMention(query)
-    ? [NEO_TAG_MENTION_AGENT, ...matches]
+    ? [NEO_TAG_MENTION_AGENT, ...(neoTopicCandidates ?? []), ...matches]
     : matches;
 
   if (withNeo.length === 0) {

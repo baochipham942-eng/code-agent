@@ -89,6 +89,8 @@
 | 030 | Fleet 遥测双通道（Sentry 错误通道 + Supabase 分析通道） | proposed |
 | 031 | @Neo 运行时安全护栏（approved Neo run 的 fail-closed 工具边界） | accepted |
 | 032 | 请求前缀稳定与主动工具结果裁剪（cache 经济学下半场） | accepted |
+| 034 | Neo Tag 轻量化重设计（@neo 直接开干 + 内联清单 + topic 目录） | accepted |
+| 035 | Neo Tag 跨会话 Topic（@neo 续接不被发起会话困住） | accepted |
 
 ---
 

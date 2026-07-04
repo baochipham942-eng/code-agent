@@ -157,6 +157,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   );
   const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
   const skillActivity = useMemo(() => getTurnSkillActivity(turn), [turn]);
+  // @neo tag 触发的 turn：回复以 Neo 参与者身份标识（轻量名字+头像，不是卡片）
+  const isNeoTagTurn = useMemo(
+    () => turn.nodes.some((node) => node.type === 'user' && Boolean(node.metadata?.neoTag)),
+    [turn.nodes],
+  );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
 
   return (
@@ -189,6 +194,16 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onRewindUserPrompt={onRewindUserPrompt}
             rewindDisabled={Boolean(isSessionProcessing)}
           />
+        )}
+
+        {/* Neo 以参与者身份回复（像 Claude Tag）：轻量身份标识挂在回复头部，会话里不出现工作卡 */}
+        {isNeoTagTurn && (
+          <div className="flex items-center gap-1.5 pt-0.5" data-testid="neo-turn-identity">
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
+              <Sparkles className="h-2.5 w-2.5 text-emerald-300" />
+            </span>
+            <span className="text-[11px] font-medium text-emerald-200/90">Neo</span>
+          </div>
         )}
 
         <TurnRunHeader turn={turn} streamingState={streamingState} />

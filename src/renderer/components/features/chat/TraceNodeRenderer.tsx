@@ -10,6 +10,7 @@ import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnve
 import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { MessageContent } from './MessageBubble/MessageContent';
+import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { AttachmentDisplay } from './MessageBubble/AttachmentPreview';
 import { FileArtifactCard } from './MessageBubble/FileArtifactCard';
@@ -22,7 +23,6 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
-import { NeoWorkCardInlineCard } from './NeoWorkCardInlineCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
@@ -62,6 +62,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           metadata={node.metadata?.workbench}
+          isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           onRewind={onRewindUserPrompt}
           rewindDisabled={rewindDisabled}
         />
@@ -84,13 +85,9 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = <SystemNode node={node} />;
       break;
     case 'neo_work_card':
-      if (!node.neoWorkCard) return null;
-      content = (
-        <div className="flex w-full justify-start py-2">
-          <NeoWorkCardInlineCard detail={node.neoWorkCard} />
-        </div>
-      );
-      break;
+      // 轻量化重设计：@neo = 正常 agent 聊天,会话里不再渲染独立工作卡(2026-07-02 产品负责人拍板)。
+      // 历史/产物在账号菜单「Neo 协同」topic 目录看。
+      return null;
     case 'swarm_launch_request':
       content = <LaunchRequestNode node={node} />;
       break;
@@ -219,11 +216,16 @@ const UserNode: React.FC<{
   content: string;
   attachments?: import('@shared/contract').MessageAttachment[];
   metadata?: WorkbenchMessageMetadata;
+  isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, metadata, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, metadata, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
-  const displayContent = stripAppshotBlocks(content || '');
+  // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
+  const displayContent = restoreNeoTagTokenForDisplay(
+    stripAppshotBlocks(content || ''),
+    Boolean(isNeoTagMessage),
+  );
 
   return (
     <div>

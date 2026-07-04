@@ -487,7 +487,9 @@ export function projectTurns(
     }
   }
 
-  appendNeoWorkCardNodes(turns, neoWorkCards);
+  // Neo Tag 轻量化重设计（产品负责人拍板 2026-07-02）：@neo = 正常 agent 聊天体验，
+  // 会话里不再投影独立的 neo_work_card 卡片。@neo 的运行本就是同会话的正常 agent turn，
+  // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
 
   // Direct-routed sidecar messages should not steal the active marker from
   // the in-flight task. Normal user turns can still be active while waiting
@@ -535,51 +537,6 @@ export function projectTurns(
     activeTurnIndex,
   };
   });
-}
-
-function appendNeoWorkCardNodes(turns: TraceTurn[], neoWorkCards: NeoWorkCardDetail[]): void {
-  if (neoWorkCards.length === 0) return;
-
-  const turnBySourceId = new Map<string, TraceTurn>();
-  for (const turn of turns) {
-    turnBySourceId.set(turn.turnId, turn);
-    const userNode = turn.nodes.find((node) => node.type === 'user');
-    if (userNode) {
-      turnBySourceId.set(userNode.id, turn);
-      if (userNode.metadata?.neoTag?.sourceTurnId) {
-        turnBySourceId.set(userNode.metadata.neoTag.sourceTurnId, turn);
-      }
-    }
-  }
-
-  for (const detail of neoWorkCards) {
-    const nodeId = `neo-work-card-${detail.workCard.id}`;
-    const existingTurn = turnBySourceId.get(detail.workCard.sourceTurnId);
-    const targetTurn = existingTurn ?? {
-      turnNumber: turns.length + 1,
-      turnId: detail.workCard.sourceTurnId,
-      nodes: [],
-      status: 'completed' as const,
-      startTime: detail.workCard.createdAt,
-      endTime: detail.workCard.updatedAt,
-    };
-
-    if (!targetTurn.nodes.some((node) => node.id === nodeId)) {
-      targetTurn.nodes.push({
-        id: nodeId,
-        type: 'neo_work_card',
-        content: detail.currentRevision?.taskSummary || detail.workCard.title,
-        timestamp: detail.workCard.updatedAt,
-        neoWorkCard: detail,
-      });
-      targetTurn.endTime = Math.max(targetTurn.endTime ?? targetTurn.startTime, detail.workCard.updatedAt);
-    }
-
-    if (!existingTurn) {
-      turns.push(targetTurn);
-      turnBySourceId.set(targetTurn.turnId, targetTurn);
-    }
-  }
 }
 
 function markFeedbackEligibleNodes(turns: TraceTurn[]): void {

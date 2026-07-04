@@ -10,6 +10,7 @@
 import React, { useState, useEffect } from 'react';
 import { StopCircle } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface StreamingIndicatorProps {
   /** 回合开始时间。保留给调用方语义，不再用于「按耗时升级」。 */
@@ -18,6 +19,8 @@ interface StreamingIndicatorProps {
   onForceStop?: () => void;
   /** 正文已自带内联光标时（正在流式输出文字），状态槽隐去光标避免重复。 */
   showCaret?: boolean;
+  /** 当前正在接收思考/推理增量（尚无可见正文、也不是在等工具）。 */
+  isThinking?: boolean;
 }
 
 // 工具真正连续运行到这个时长，才是唯一值得提示的条件。
@@ -61,7 +64,9 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   runningToolStartTime,
   onForceStop,
   showCaret = true,
+  isThinking = false,
 }) => {
+  const { t } = useI18n();
   const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(undefined);
 
   useEffect(() => {
@@ -103,6 +108,17 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
 
   // active：仅一个呼吸光标 = 「还活着」，别无他物。正文正在流式时由正文自带光标，此处隐去。
   if (!showCaret) return null;
+
+  // 正在接收思考增量：扫光文字替代光标，思考阶段一结束（isThinking 转 false 或
+  // showCaret 转 false）这个分支就不再命中，不留残影。
+  if (isThinking) {
+    return (
+      <div className="py-1" aria-label={t.chat.thinking}>
+        <span className="streaming-thinking-shimmer text-xs font-medium">{t.chat.thinking}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="py-1" aria-label="生成中">
       <span className="streaming-caret text-sm leading-none">▎</span>

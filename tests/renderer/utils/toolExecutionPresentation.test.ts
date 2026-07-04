@@ -8,6 +8,7 @@ import {
   getToolRecoveryHint,
   humanizeToolError,
   isAutoLoadedRetry,
+  isEscalatedToolError,
   summarizeToolLoopDecision,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
@@ -221,6 +222,61 @@ describe('toolExecutionPresentation', () => {
     expect(humanizeToolError('TypeError: cannot read property foo of undefined')).toBeNull();
     expect(humanizeToolError('')).toBeNull();
     expect(humanizeToolError(undefined)).toBeNull();
+  });
+});
+
+describe('isEscalatedToolError（P0 失败去噪：区分需用户介入 vs agent 探索性失败）', () => {
+  it('鉴权失效需要用户介入，应升级', () => {
+    const tc = makeToolCall({
+      name: 'WebSearch',
+      result: { toolCallId: 'tc', success: false, error: '401 Unauthorized: invalid api key' },
+    });
+    expect(isEscalatedToolError(tc)).toBe(true);
+  });
+
+  it('额度/余额耗尽需要用户介入，应升级', () => {
+    const tc = makeToolCall({
+      name: 'image_generate',
+      result: { toolCallId: 'tc', success: false, error: '402 Payment Required: insufficient balance 余额不足' },
+    });
+    expect(isEscalatedToolError(tc)).toBe(true);
+  });
+
+  it('Playwright 未安装等未分类错误是探索性失败，不升级', () => {
+    const tc = makeToolCall({
+      name: 'browser_action',
+      result: { toolCallId: 'tc', success: false, error: 'Executable doesn\'t exist, please run playwright install' },
+    });
+    expect(isEscalatedToolError(tc)).toBe(false);
+  });
+
+  it('Bash 非零退出码等未分类错误是探索性失败，不升级', () => {
+    const tc = makeToolCall({
+      name: 'Bash',
+      result: { toolCallId: 'tc', success: false, error: 'command failed with exit code 1' },
+    });
+    expect(isEscalatedToolError(tc)).toBe(false);
+  });
+
+  it('超时/网络抖动是瞬态可自动重试的失败，不升级', () => {
+    const tc = makeToolCall({
+      name: 'WebFetch',
+      result: { toolCallId: 'tc', success: false, error: 'Request timed out after 90000ms' },
+    });
+    expect(isEscalatedToolError(tc)).toBe(false);
+  });
+
+  it('成功的工具调用不算失败', () => {
+    const tc = makeToolCall({
+      name: 'Bash',
+      result: { toolCallId: 'tc', success: true, output: 'ok' },
+    });
+    expect(isEscalatedToolError(tc)).toBe(false);
+  });
+
+  it('没有 result（尚未执行）不算失败', () => {
+    const tc = makeToolCall({ name: 'Bash' });
+    expect(isEscalatedToolError(tc)).toBe(false);
   });
 });
 

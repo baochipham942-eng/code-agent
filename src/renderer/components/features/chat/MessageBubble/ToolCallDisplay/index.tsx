@@ -19,6 +19,7 @@ import {
 import {
   getToolPermissionView,
   getToolRecoveryHint,
+  isEscalatedToolError,
   type ToolPermissionView,
 } from '../../../../../utils/toolExecutionPresentation';
 import { computeBashPreviewLines } from './bashOutputPreview';
@@ -30,7 +31,9 @@ import { computeBashPreviewLines } from './bashOutputPreview';
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_FRAME_INTERVAL_MS = 240;
 
-function StatusIndicator({ status }: { status: ToolStatus }) {
+// quietError: 探索性失败（agent 试错，非用户需介入的错误）——用中性、非加粗样式，
+// 与成功行视觉权重接近，别让每一次试错都喊得像出了大事。
+function StatusIndicator({ status, quietError }: { status: ToolStatus; quietError?: boolean }) {
   const [frame, setFrame] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -67,8 +70,10 @@ function StatusIndicator({ status }: { status: ToolStatus }) {
       );
     case 'error':
       return (
-        <span className={`w-4 flex-shrink-0 text-center font-bold ${statusColor.dot}`}>
-          ✗
+        <span
+          className={`w-4 flex-shrink-0 text-center ${quietError ? 'text-[var(--cc-muted)]' : `font-bold ${statusColor.dot}`}`}
+        >
+          {quietError ? '●' : '✗'}
         </span>
       );
     case 'interrupted':
@@ -106,6 +111,11 @@ export function ToolCallDisplay({
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
   }, [toolCall, currentSessionId, processingSessionIds]);
 
+  // 探索性失败（工具未安装、非零退出码、超时等未分类错误）是 agent 试错的正常一部分，
+  // 不是需要用户关注的错误——安静展示，跟成功行视觉权重接近。真正需要用户介入的错误
+  // （鉴权失效/额度耗尽/限流）保留醒目红色样式。
+  const quietError = status === 'error' && !isEscalatedToolError(toolCall);
+
   // 工具行默认折叠（含 error）：失败回合常常一连十几条同样的报错，全展开会糊成
   // 一面墙（2026-06-25 dogfood：工件修复死锁 trace 不可读）。折叠态仍保留红左边框 +
   // 恢复提示行 + hover 结果摘要，安全信息不丢；用户点击可展开看详情。
@@ -140,7 +150,9 @@ export function ToolCallDisplay({
   return (
     <div
       className={`group font-mono text-sm ${
-        status === 'error' ? 'border-l-2 border-[var(--cc-error)] pl-2' : ''
+        status === 'error'
+          ? `border-l-2 pl-2 ${quietError ? 'border-[var(--cc-muted)]/40' : 'border-[var(--cc-error)]'}`
+          : ''
       }`}
       style={{ animationDelay: `${index * 30}ms` }}
     >
@@ -153,7 +165,7 @@ export function ToolCallDisplay({
           setUserToggled(true);
         }}
       >
-        <StatusIndicator status={status} />
+        <StatusIndicator status={status} quietError={quietError} />
         <ToolHeader toolCall={toolCall} status={status} />
       </div>
 
@@ -161,8 +173,8 @@ export function ToolCallDisplay({
         <BrowserComputerActionPreviewLine preview={actionPreview} />
       )}
 
-      {!compact && (expanded || status !== 'success') && (
-        <ToolExecutionMetaRow toolCall={toolCall} status={status} />
+      {!compact && (expanded || (status !== 'success' && !quietError)) && (
+        <ToolExecutionMetaRow toolCall={toolCall} status={status} quietError={quietError} />
       )}
 
       {workflowStagePreview && (
@@ -171,7 +183,7 @@ export function ToolCallDisplay({
 
       {/* Bash inline output - when collapsed, show command output preview */}
       {!expanded && isBashTool(toolCall) && toolCall.result && (
-        <BashOutputPreview toolCall={toolCall} status={status} />
+        <BashOutputPreview toolCall={toolCall} status={status} quietError={quietError} />
       )}
 
       {/* Result summary line - hidden by default, show on hover or when expanded */}
@@ -410,7 +422,7 @@ function getVisibleRecoveryHint(toolCall: ToolCall, status: ToolStatus): string 
   return getToolRecoveryHint(toolCall, status);
 }
 
-const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus }> = ({ toolCall, status }) => {
+const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus; quietError?: boolean }> = ({ toolCall, status, quietError }) => {
   const permission = getToolPermissionView(toolCall.name);
   const permissionLabel = getPermissionRiskLabel(permission);
   const recoveryHint = getVisibleRecoveryHint(toolCall, status);
@@ -425,7 +437,7 @@ const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus }>
         <span className={getPermissionToneClass(permission)}>{permissionLabel}</span>
       )}
       {recoveryHint && (
-        <span className={status === 'error' ? 'text-red-300' : 'text-zinc-600'}>{recoveryHint}</span>
+        <span className={status === 'error' && !quietError ? 'text-red-300' : 'text-zinc-600'}>{recoveryHint}</span>
       )}
     </div>
   );
@@ -480,7 +492,7 @@ function stripAnsi(str: string): string {
   return str.replace(ANSI_ESCAPE_PATTERN, '');
 }
 
-function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: ToolStatus }) {
+function BashOutputPreview({ toolCall, status, quietError }: { toolCall: ToolCall; status: ToolStatus; quietError?: boolean }) {
   const output = toolCall.result?.output;
   if (!output || typeof output !== 'string') return null;
 
@@ -489,7 +501,7 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
 
   const isPending = status === 'pending';
   const { displayLines } = computeBashPreviewLines(cleaned, isPending);
-  const isError = toolCall.result && !toolCall.result.success;
+  const isError = toolCall.result && !toolCall.result.success && !quietError;
 
   return (
     <div className="ml-6 mt-0.5 mb-0.5">

@@ -216,6 +216,19 @@ export function humanizeToolError(error?: string, _toolName?: string): Humanized
   return null;
 }
 
+/**
+ * 判断一次工具失败是否需要用户介入（额度耗尽 / 鉴权失效 / 限流），而非 agent
+ * 探索过程中的良性试错（工具未安装、非零退出码、超时、网络抖动等）。
+ * 未被 humanizeToolError 分类的错误一律按探索性失败处理——宁可保守安静，因为
+ * agent 最终会在回复里说清楚结果，不需要每次试错都喊给用户看。
+ */
+export function isEscalatedToolError(toolCall: Pick<ToolCall, 'result'>): boolean {
+  const result = toolCall.result;
+  if (result?.success !== false) return false;
+  const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
+  return humanizeToolError(errorText)?.escalate === true;
+}
+
 /** API/额度类错误升级成全局 banner 的数据（P0 #3）。 */
 export interface ApiErrorBannerData {
   summary: string;
@@ -240,7 +253,7 @@ export function deriveApiErrorBanner(
   const lastTurn = turns[turns.length - 1];
   for (let i = lastTurn.nodes.length - 1; i >= 0; i -= 1) {
     const toolCall = lastTurn.nodes[i].toolCall;
-    if (!toolCall || toolCall.success !== false || toolCall.recovered) continue;
+    if (toolCall?.success !== false || toolCall.recovered) continue;
     const humanized = humanizeToolError(toolCall.result, toolCall.name);
     if (humanized?.escalate && humanized.kind) {
       return {

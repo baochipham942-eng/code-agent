@@ -11,6 +11,7 @@ import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useAppStore } from '../../../../../stores/appStore';
+import { UI } from '@shared/constants';
 
 interface Props {
   toolCall: ToolCall;
@@ -111,8 +112,8 @@ export function ToolHeader({ toolCall, status }: Props) {
         <span className="text-zinc-500 truncate">{params}</span>
       )}
 
-      {/* Duration - right aligned */}
-      {duration !== undefined && status !== 'pending' && (
+      {/* Duration - right aligned. 毫秒级耗时对非程序员是噪音，只在有感知意义时才显示 */}
+      {duration !== undefined && status !== 'pending' && duration >= UI.TOOL_DURATION_MIN_VISIBLE_MS && (
         <span className="ml-auto text-zinc-600 text-xs flex-shrink-0">
           {formatDuration(duration)}
         </span>

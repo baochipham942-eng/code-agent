@@ -10,6 +10,7 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import {
   Anchor,
   AlertTriangle,
+  Brain,
   ChevronRight,
   ChevronDown,
   CheckCircle2,
@@ -30,6 +31,7 @@ import {
   groupAdjacentToolCalls,
   formatTurnDuration,
 } from '../../../utils/toolStepGrouping';
+import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   buildStreamingUiState,
   hasCancelledRunMarker,
@@ -38,6 +40,7 @@ import {
   type StreamingUiState,
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -120,13 +123,23 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
   // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
   const lastIndex = displayNodes.length - 1;
-  // 末个展示节点是否「正在流式输出文字」—— 若是，正文自带内联光标，状态槽不再重复渲染光标
   const lastDisplay = displayNodes[lastIndex];
+  const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
+  // 末个展示节点是否「正在流式输出可见正文」——若是，正文自带内联光标，状态槽不再重复渲染光标。
+  // 必须看 content 是否非空：思考中的合成节点也是 assistant_text 类型但 content 为空，
+  // 不能算「正文正在流式」，否则状态槽会误判着落而整个隐去，思考阶段变得完全没有信号。
   const lastNodeIsStreamingText =
     isStreaming &&
-    !!lastDisplay &&
-    lastDisplay.kind !== 'tool_group' &&
-    lastDisplay.node.type === 'assistant_text';
+    !!lastDisplayNode &&
+    lastDisplayNode.type === 'assistant_text' &&
+    Boolean(lastDisplayNode.content?.trim());
+  // 末个展示节点正在接收思考增量：assistant_text 类型、正文还是空、但已经有思考内容在流入。
+  const isThinkingPhase =
+    isStreaming &&
+    !!lastDisplayNode &&
+    lastDisplayNode.type === 'assistant_text' &&
+    !lastDisplayNode.content?.trim() &&
+    Boolean((lastDisplayNode.thinking || lastDisplayNode.reasoning)?.trim());
   const runningToolStartTime = useMemo(
     () => getRunningToolStartTime(turn.nodes),
     [turn.nodes],
@@ -144,6 +157,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   );
   const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
   const skillActivity = useMemo(() => getTurnSkillActivity(turn), [turn]);
+  const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
 
   return (
     <div
@@ -207,6 +221,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
+            {/* 一个回合内所有思考段合并成一行「思考」，不再按节点单列（产品拍板）。 */}
+            <ThinkingDigestBanner segments={thinkingSegments} />
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
                 return (
@@ -265,6 +281,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 startTime={turn.startTime}
                 runningToolStartTime={runningToolStartTime}
                 showCaret={!lastNodeIsStreamingText}
+                isThinking={isThinkingPhase}
               />
             )}
           </>
@@ -344,20 +361,9 @@ function getHookStatusText(activity: TurnHookActivity): string {
   return '已放行';
 }
 
-function getHookSourceLabel(sources: Array<'global' | 'project'>): string {
-  const sourceSet = new Set(sources);
-  const labels = (['global', 'project'] as const)
-    .filter((source) => sourceSet.has(source))
-    .map((source) => source === 'global' ? '全局' : '项目');
-  return labels.length > 0 ? Array.from(new Set(labels)).join('+') : '未标注来源';
-}
-
-function getHookTypeLabel(hookType: 'decision' | 'observer'): string {
-  return hookType === 'decision' ? '可干预' : '仅观察';
-}
-
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
-  const [expanded, setExpanded] = useState(false);
+  // 默认展开：非程序员用户不需要多点一次才能看到钩子做了什么。
+  const [expanded, setExpanded] = useState(true);
   const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
   const durationMs = activity.items.reduce((sum, item) => sum + item.durationMs, 0);
   const tone = getHookActivityTone(activity);
@@ -390,15 +396,11 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
-            const source = getHookSourceLabel(item.sources);
-            const hookType = getHookTypeLabel(item.hookType);
-            const hookTypeDetail = item.hookType === 'decision'
-              ? '可干预·能拦截或改写'
-              : '仅观察·不改动';
+            // 钩子实际注入/触发的内容类型：优先用钩子自己的输出消息（最贴近"注入了什么"），
+            // 没有消息时退回工具名或 matcher，作为能推出的最有用信息。
+            // 来源(全局/项目)、可干预/仅观察对非程序员是噪音，连 hover tooltip 也不放。
+            const injectedContentLabel = item.message || item.toolName || item.matcher || undefined;
             const title = [
-              item.toolName,
-              source,
-              hookType,
               item.matcher ? `matcher: ${item.matcher}` : undefined,
               `${item.hookCount} 个 hook`,
               `${item.durationMs}ms`,
@@ -412,10 +414,8 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
                 title={title || undefined}
               >
                 <span className="shrink-0">{label}</span>
-                <span className="shrink-0 text-zinc-600">{source}</span>
-                <span className="shrink-0 text-zinc-600">{hookTypeDetail}</span>
-                {item.matcher && (
-                  <span className="min-w-0 truncate text-zinc-600">{item.matcher}</span>
+                {injectedContentLabel && (
+                  <span className="min-w-0 truncate text-zinc-600">{injectedContentLabel}</span>
                 )}
                 {itemStatus && (
                   <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(itemStatus.tone)}`}>
@@ -482,6 +482,65 @@ const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activi
               <span className="min-w-0 truncate text-zinc-400">{item.label}</span>
               <span className="shrink-0">{getSkillActionLabel(item.action)}</span>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface TurnThinkingSegment {
+  id: string;
+  text: string;
+}
+
+/**
+ * 一个回合内所有思考段合并展示的数据源：按时序收集每个 assistant_text 节点上
+ * 的 thinking/reasoning，过滤掉清洗后为空的。产品拍板：主流视野里一回合最多
+ * 一行「思考」，不再按节点单列——这里只负责收集，展示在 ThinkingDigestBanner。
+ */
+function getTurnThinkingSegments(turn: TraceTurn): TurnThinkingSegment[] {
+  const segments: TurnThinkingSegment[] = [];
+  for (const node of turn.nodes) {
+    if (node.type !== 'assistant_text') continue;
+    const text = sanitizeThinkingForDisplay(node.thinking || node.reasoning)?.trim();
+    if (text) segments.push({ id: node.id, text });
+  }
+  return segments;
+}
+
+const ThinkingDigestBanner: React.FC<{ segments: TurnThinkingSegment[] }> = ({ segments }) => {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  if (segments.length === 0) return null;
+
+  const digestLabel = t.chat.thinkingDigest
+    + (segments.length > 1 ? t.chat.thinkingSegments.replace('{count}', String(segments.length)) : '');
+
+  return (
+    <div className="py-0.5 text-sm text-zinc-500">
+      <button
+        type="button"
+        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        title={expanded ? t.chat.collapseThinking : t.chat.expandThinking}
+      >
+        <Brain className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 truncate font-medium">{digestLabel}</span>
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        )}
+      </button>
+      {expanded && (
+        <div className="ml-7 mt-1 space-y-2 text-[13px] leading-5 text-zinc-500">
+          {segments.map((segment, index) => (
+            <p key={segment.id} className="whitespace-pre-line font-mono">
+              {segments.length > 1 ? `${index + 1}. ` : ''}
+              {segment.text}
+            </p>
           ))}
         </div>
       )}

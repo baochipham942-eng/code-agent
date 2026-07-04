@@ -16,11 +16,6 @@ import { FileArtifactCard } from './MessageBubble/FileArtifactCard';
 import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
-import {
-  extractAssistantProgressSummary,
-  removePromotedAssistantProgressFromThinking,
-  sanitizeThinkingForDisplay,
-} from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
@@ -333,9 +328,6 @@ const AssistantTextNode: React.FC<{
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
 }> = ({ node, sessionId, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const [showReasoning, setShowReasoning] = useState(false);
-  const reasoningRef = useRef<HTMLDivElement>(null);
-  const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasReportingStreamingDisplayRef = useRef(false);
@@ -352,29 +344,10 @@ const AssistantTextNode: React.FC<{
     node.content?.trim(),
   );
 
-  const rawReasoningContent = sanitizeThinkingForDisplay(node.thinking || node.reasoning);
-  const progressSummary = useMemo(
-    () => node.content?.trim() ? null : extractAssistantProgressSummary(rawReasoningContent),
-    [node.content, rawReasoningContent],
-  );
-  const reasoningContent = useMemo(
-    () => removePromotedAssistantProgressFromThinking(rawReasoningContent, progressSummary),
-    [progressSummary, rawReasoningContent],
-  );
   const { displayContent, isAnimating } = useSmoothStreamingText({
     content: node.content || '',
     isStreaming: Boolean(turnStreaming),
   });
-
-  useEffect(() => {
-    if (!showReasoning) {
-      setReasoningHeight(null);
-      return;
-    }
-    if (reasoningRef.current) {
-      setReasoningHeight(reasoningRef.current.scrollHeight);
-    }
-  }, [showReasoning, reasoningContent]);
 
   useEffect(() => {
     const isDisplayingStream = Boolean(turnStreaming || isAnimating);
@@ -437,12 +410,12 @@ const AssistantTextNode: React.FC<{
     }
   }, [currentSessionId, feedbackSubmitting, messageId, node.content]);
 
-  // 空壳守卫：空正文 + 清洗后无思考 + 无路由/质量信号 = 没有任何可渲染内容，
-  // 整节点跳过，避免线性 trace 里出现无法解释的空白行（思考去吸收后这条独立路径更常走）。
+  // 空壳守卫：空正文 + 无路由/质量信号 = 没有任何可渲染内容，整节点跳过，避免线性
+  // trace 里出现无法解释的空白行。思考不在这里渲染——一个回合内所有思考段已经在
+  // TurnCard 合并成一个「思考」折叠块（ThinkingDigestBanner），纯思考节点因此
+  // 在这条独立路径上正确地渲染成"无"，不是遗漏。
   const hasRenderableContent = Boolean(
     node.content
-    || reasoningContent?.trim()
-    || progressSummary
     || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
     || node.metadata?.turnQuality,
   );
@@ -474,10 +447,6 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {progressSummary && (
-        <div className="mb-2 text-xs leading-relaxed text-zinc-400">{progressSummary}</div>
-      )}
-
       {node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision) && (
         <div className="mb-2 flex min-w-0">
           <RouteTraceChip
@@ -489,39 +458,6 @@ const AssistantTextNode: React.FC<{
 
       {node.metadata?.turnQuality && (
         <TurnQualityStrip summary={node.metadata.turnQuality} />
-      )}
-
-      {/* Thinking/Reasoning fold */}
-      {reasoningContent?.trim() && (
-        <div className="mb-2">
-          <button
-            type="button"
-            onClick={() => setShowReasoning(!showReasoning)}
-            aria-expanded={showReasoning}
-            title={showReasoning ? '收起思考' : '展开思考'}
-            className="flex w-full cursor-pointer items-center gap-1.5 rounded-sm py-0.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-400"
-          >
-            <span className="font-mono">{showReasoning ? '▼' : '▶'}</span>
-            <span>思考</span>
-          </button>
-          <div
-            ref={reasoningRef}
-            aria-hidden={!showReasoning}
-            className="overflow-hidden transition-all duration-300 ease-out"
-            style={{
-              maxHeight: showReasoning ? (reasoningHeight ? `${reasoningHeight}px` : '500px') : '0px',
-              opacity: showReasoning ? 1 : 0,
-            }}
-          >
-            {showReasoning && (
-              <div className="mt-1.5 rounded-md border border-white/[0.04] bg-black/10 px-3 py-2">
-                <p className="text-xs text-zinc-500 leading-5 whitespace-pre-line font-mono">
-                  {reasoningContent}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
       )}
 
       {/* Text content */}

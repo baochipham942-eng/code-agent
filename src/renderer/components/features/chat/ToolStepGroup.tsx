@@ -16,9 +16,6 @@ import {
   isEscalatedToolError,
 } from '../../../utils/toolExecutionPresentation';
 
-// 网络抓取类工具：失败多为反爬墙/限流瞬态噪音（与浏览器/电脑/文件操作的 actionable 失败不同）。
-const NETWORK_FETCH_TOOLS = new Set(['WebSearch', 'WebFetch', 'web_search', 'web_fetch']);
-
 interface ToolStepGroupProps {
   nodes: TraceNode[];
   sessionId?: string;
@@ -99,21 +96,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   }, [nodes]);
 
   // 组里是否存在需要用户介入的失败（鉴权失效/额度耗尽/限流），而非 agent 试错的
-  // 探索性失败（工具未安装、非零退出码等未分类错误）。只有前者才值得顶红——
-  // 注意：是否强制展开是另一件事，不由这个判断决定（见下方 forceExpandOnFailure 注释）。
+  // 探索性失败（工具未安装、非零退出码、反爬墙/限流类瞬态噪音等未分类错误）。
+  // 产品拍板（正式推翻旧的"除纯网络抓取组外一律强制展开"设计）：只有需要用户介入
+  // 的失败才默认展开+醒目；探索性失败一律默认折叠成一行，跟成功行视觉权重接近——
+  // 折叠态下点开仍能看到完整的脱敏恢复步骤/成败明细，信息不丢，只是不强制摊开。
   const hasEscalatedError = useMemo(
     () => toolCalls.some((tc) => isEscalatedToolError(tc)),
     [toolCalls],
   );
-  // 纯网络抓取组（WebSearch/WebFetch）的失败多是反爬墙/限流类瞬态噪音，撑开成报错墙
-  // 反而干扰——这类组失败不强制展开，组头状态徽标已传达，需要细节再点开。
-  // 浏览器/电脑操作/文件查找等组即便是未分类的探索性失败，也仍保持强制展开——
-  // 这是既有、被测试锁定的设计：失败的浏览器/电脑操作组要展开才能看到脱敏后的
-  // 恢复步骤，部分失败的搜索类组要展开才能看到"哪些找到了/哪些没找到"的透明度信息，
-  // 折叠会让这些信息完全消失（不只是变安静）。本批改动只把颜色降噪，不动这个展开策略。
-  const isNetworkFetchGroup = nodes.length > 0
-    && nodes.every((n) => NETWORK_FETCH_TOOLS.has(n.toolCall?.name ?? ''));
-  const forceExpandOnFailure = (status === 'error' || status === 'partial') && !isNetworkFetchGroup;
+  const forceExpandOnFailure = (status === 'error' || status === 'partial') && hasEscalatedError;
   const [expanded, setExpanded] = useState(defaultExpanded || forceExpandOnFailure);
   useEffect(() => {
     if (forceExpandOnFailure) {

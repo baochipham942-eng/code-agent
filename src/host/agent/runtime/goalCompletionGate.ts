@@ -87,6 +87,14 @@ export async function handleGoalCompletionGate(
     data: {
       gate: 0,
       pass: evidenceVerdict.verdict !== 'bounce',
+      // 三态映射到闸1/闸2 既有 verdict 词汇表（eval/UI 可区分「核验通过」与
+      // 「打回预算耗尽放行」——两者 pass 同为 true）：
+      // pass → allow_finalize / bounce → repair_prompt / exhausted_release → 原样
+      verdict: evidenceVerdict.verdict === 'pass'
+        ? 'allow_finalize'
+        : evidenceVerdict.verdict === 'bounce'
+          ? 'repair_prompt'
+          : 'exhausted_release',
       reason: evidenceVerdict.reason,
       evidenceRefs: evidenceVerdict.evidenceRefs,
     },

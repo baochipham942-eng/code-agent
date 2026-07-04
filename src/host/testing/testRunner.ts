@@ -17,9 +17,12 @@ import type {
   TestEvent,
   TestEventListener,
   UserSimulation,
+  EvalGoalContract,
+  GoalRunRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
+import { validateGoalContract } from './goalContractEval';
 import { withTimeout } from '../services/infra/timeoutController';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
@@ -76,6 +79,13 @@ export interface AgentInterface {
    * runner 每个 case 都会调用（无模拟时传 undefined 清除上个 case 的配置）。
    */
   configureUserSimulation?(sim: UserSimulation | undefined): void;
+  /**
+   * B6b-①：接收当前 case 的 goal 契约（case 以 /goal 自治模式跑）。
+   * runner 每个 case 都会调用（无契约时传 undefined 清除上个 case 的配置）。
+   */
+  configureGoalContract?(contract: EvalGoalContract | undefined): void;
+  /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  getGoalRunRecord?(): GoalRunRecord | undefined;
 }
 
 /**
@@ -428,6 +438,19 @@ export class TestRunner {
         result.simTurns = [];
       }
 
+      // B6b-① fail-loud：goal_contract 配置错误（无完成判据 / 与 user_simulation·
+      // follow_up_prompts 互斥）同样在花任何 agent 调用之前显式失败。
+      if (testCase.goal_contract) {
+        const goalConfigError = validateGoalContract(testCase);
+        if (goalConfigError) {
+          result.status = 'failed';
+          result.failureReason = goalConfigError;
+          result.errors.push(goalConfigError);
+          this.emit({ type: 'error', testId: testCase.id, error: goalConfigError });
+          return result;
+        }
+      }
+
       // Run setup commands
       if (testCase.setup && testCase.setup.length > 0) {
         await this.runCommands(testCase.setup, 'setup');
@@ -438,6 +461,9 @@ export class TestRunner {
 
       // 批 6：审批门策略注入（无模拟的 case 传 undefined，清掉上个 case 的配置）
       this.agent.configureUserSimulation?.(testCase.user_simulation);
+
+      // B6b-①：goal 契约注入（无契约的 case 传 undefined，清掉上个 case 的配置）
+      this.agent.configureGoalContract?.(testCase.goal_contract);
 
       // Set up timeout — CODE_AGENT_FORCE_TIMEOUT overrides per-case timeout (for slow local models)
       const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
@@ -464,6 +490,12 @@ export class TestRunner {
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
       result.sessionId = this.agent.getSessionId?.();
+
+      // B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据）。
+      // adapter 不支持 goal 注入（如 Mock 态）时为 undefined —— 断言侧 fail-loud 显式红。
+      if (testCase.goal_contract) {
+        result.goalRun = this.agent.getGoalRunRecord?.();
+      }
 
       // 批 6：条件应答多轮（follow_up_prompts 的升级形态，两者互斥已在入口校验）。
       // 每轮只对 agent 上一轮的输出求值；命中 respond 则把脚本文本作为下一轮

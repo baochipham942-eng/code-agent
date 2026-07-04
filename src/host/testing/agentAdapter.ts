@@ -3,8 +3,9 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord } from './types';
 import { buildPermissionDecider } from './userSimulator';
+import { applyGoalEvent, buildLoopGoalContract, createGoalRunRecord } from './goalContractEval';
 import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
@@ -286,6 +287,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
   // 只影响 requestPermission 应答；未配置时保持写死 auto-approve 的存量行为。
   private simConfig?: UserSimulation;
 
+  // 批 6 · B6b-①：当前 case 的 goal 契约（testRunner 每 case 注入，reset() 清除）。
+  // 配置后 case 以 /goal 自治模式跑（AgentLoop 建 GoalModeController）；未配置时
+  // config.goalContract 为 undefined，存量行为零变化。
+  private goalContract?: EvalGoalContract;
+  // goal 观测事件（goal_gate / goal_complete）的行为落账，断言锚点数据
+  private goalRun?: GoalRunRecord;
+
   constructor(config: {
     workingDirectory: string;
     modelConfig: {
@@ -408,6 +416,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
         this.telemetrySessionActive = true;
       }
       const telemetryAdapter = telemetryCollector.createAdapter(this.currentSessionId, 'main');
+      // B6b-①：goal 契约 case → 构建产线同款 GoalContract（goal 缺省回落 case prompt）。
+      // goalRun 每次 run 重建 —— goal case 是单 prompt，多次 sendMessage 属异常路径，
+      // 以最后一次 run 的落账为准。
+      const loopGoalContract = this.goalContract
+        ? buildLoopGoalContract(this.goalContract, prompt)
+        : undefined;
+      if (loopGoalContract) {
+        this.goalRun = createGoalRunRecord();
+      }
       const loop = new AgentLoop({
         sessionId: this.currentSessionId,
         workingDirectory: this.workingDirectory,
@@ -429,9 +446,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
         enableToolDeferredLoading: this.toolMode === 'deferred',
         autoApprovePlan: true,
         telemetryAdapter,
+        goalContract: loopGoalContract,
         onEvent: (event) => {
           if (this.currentSessionId) {
             telemetryCollector.handleEvent(this.currentSessionId, event);
+          }
+          if (this.goalRun) {
+            applyGoalEvent(this.goalRun, event);
           }
           switch (event.type) {
             case 'message':
@@ -508,6 +529,17 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.simConfig = sim;
   }
 
+  /** B6b-①：testRunner 每 case 注入 goal 契约（无契约的 case 传 undefined 清除） */
+  configureGoalContract(contract: EvalGoalContract | undefined): void {
+    this.goalContract = contract;
+    this.goalRun = undefined;
+  }
+
+  /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  getGoalRunRecord(): GoalRunRecord | undefined {
+    return this.goalRun;
+  }
+
   async reset(): Promise<void> {
     // Clear conversation history and session id between cases so each case starts fresh.
     // Within a case, sendMessage() reuses this.messages so follow-ups share history.
@@ -516,6 +548,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.currentSessionId = undefined;
     this.sessionRecordEnsured = false;
     this.simConfig = undefined;
+    this.goalContract = undefined;
+    this.goalRun = undefined;
   }
 
   async finalizeSession(): Promise<void> {

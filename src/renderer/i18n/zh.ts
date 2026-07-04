@@ -793,6 +793,10 @@ export const zh = {
   // 聊天转录（TurnCard / StreamingIndicator 等）
   chat: {
     thinking: '正在思考…',
+    thinkingDigest: '思考',
+    thinkingSegments: ' · {count} 段',
+    expandThinking: '展开思考',
+    collapseThinking: '收起思考',
   },
 
   workbenchTabs: {

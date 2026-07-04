@@ -40,6 +40,7 @@ import {
   type StreamingUiState,
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -509,8 +510,12 @@ function getTurnThinkingSegments(turn: TraceTurn): TurnThinkingSegment[] {
 }
 
 const ThinkingDigestBanner: React.FC<{ segments: TurnThinkingSegment[] }> = ({ segments }) => {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   if (segments.length === 0) return null;
+
+  const digestLabel = t.chat.thinkingDigest
+    + (segments.length > 1 ? t.chat.thinkingSegments.replace('{count}', String(segments.length)) : '');
 
   return (
     <div className="py-0.5 text-sm text-zinc-500">
@@ -519,12 +524,10 @@ const ThinkingDigestBanner: React.FC<{ segments: TurnThinkingSegment[] }> = ({ s
         className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
-        title={expanded ? '收起思考' : '展开思考'}
+        title={expanded ? t.chat.collapseThinking : t.chat.expandThinking}
       >
         <Brain className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 truncate font-medium">
-          思考{segments.length > 1 ? ` · ${segments.length} 段` : ''}
-        </span>
+        <span className="min-w-0 truncate font-medium">{digestLabel}</span>
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
         ) : (

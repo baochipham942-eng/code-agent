@@ -804,6 +804,10 @@ export const en: Translations = {
   // Chat transcript (TurnCard / StreamingIndicator, etc.)
   chat: {
     thinking: 'Thinking…',
+    thinkingDigest: 'Thinking',
+    thinkingSegments: ' · {count} segments',
+    expandThinking: 'Expand thinking',
+    collapseThinking: 'Collapse thinking',
   },
 
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）

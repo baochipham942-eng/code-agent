@@ -4,14 +4,22 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { ToolCall } from '../../../src/shared/contract';
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      processingSessionIds: new Set<string>(),
-      openPreview: vi.fn(),
-      workingDirectory: '/repo/app',
-    }),
-}));
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  // useI18n 不带 selector 直接解构整个 store（language/setLanguage/cloudUIStrings），
+  // 其余调用方都走 selector 形式——mock 必须两种调用方式都支持。
+  const state = {
+    processingSessionIds: new Set<string>(),
+    openPreview: vi.fn(),
+    workingDirectory: '/repo/app',
+    language: 'zh' as const,
+    setLanguage: vi.fn(),
+    cloudUIStrings: undefined,
+  };
+  return {
+    useAppStore: (selector?: (state: typeof state) => unknown) =>
+      (selector ? selector(state) : state),
+  };
+});
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: unknown) => unknown) =>

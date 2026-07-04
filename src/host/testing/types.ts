@@ -4,6 +4,7 @@
 
 import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
+import type { GoalGateVerdict } from '../../shared/contract/agent';
 
 export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
@@ -150,6 +151,47 @@ export interface UserSimulation {
   permission_reject_tools?: string[];
 }
 
+// === 批 6 · B6b-①：goal 契约接入 eval（goal 三闸行为回归） ===
+
+/**
+ * eval case 侧的 goal 契约声明（YAML snake_case，loader 鸭子类型直通）。
+ * 与产品侧 GoalContract 的映射见 goalContractEval.buildLoopGoalContract：
+ * eval 无人值守，allowSwarm 强制 false，不在此暴露。
+ */
+export interface EvalGoalContract {
+  /** 自然语言目标；缺省 = 用 case 的 prompt 作为目标文本 */
+  goal?: string;
+  /** 闸1：退出码 0 即硬达成的 shell 命令（与 review_condition 至少给一个） */
+  verify_command?: string;
+  /** 闸2：交给 Reviewer 子代理评的软条件 */
+  review_condition?: string;
+  /** 闸3：token 预算上限（缺省用产品默认） */
+  token_budget?: number;
+  /** 闸3：轮次上限（缺省用产品默认） */
+  max_turns?: number;
+  /** 闸3：墙钟时间预算上限（ms，缺省不限时） */
+  wall_clock_budget_ms?: number;
+}
+
+/** goal_gate 事件的行为落账（只记闸号/极性/verdict 枚举，不记文案） */
+interface GoalGateEventRecord {
+  gate: number;
+  pass: boolean;
+  verdict?: GoalGateVerdict;
+}
+
+/**
+ * goal run 的行为落账（goal_gate / goal_complete 事件 → 断言锚点数据）。
+ * status 缺失 = run 结束时终态事件没发——goal_status 断言据此 fail-loud。
+ */
+export interface GoalRunRecord {
+  status?: 'met' | 'aborted';
+  degraded?: boolean;
+  degradedReason?: string;
+  abortReason?: string;
+  gateEvents: GoalGateEventRecord[];
+}
+
 /** 单次模拟应答的落账记录（transcript 证据；快照取自发送应答之前） */
 export interface SimTurnRecord {
   ruleId: string;
@@ -210,6 +252,12 @@ export interface TestCase {
    * 与 follow_up_prompts 互斥 —— 同时给出视为配置错误，fail-loud。
    */
   user_simulation?: UserSimulation;
+  /**
+   * 批 6 · B6b-①：goal 契约（case 以 /goal 自治模式跑，三闸行为可回归）。
+   * goal 三闸全自动无用户节点 —— 与 user_simulation / follow_up_prompts 互斥，
+   * 同时给出视为配置错误，fail-loud。
+   */
+  goal_contract?: EvalGoalContract;
 }
 
 /**
@@ -272,6 +320,8 @@ export interface TestResult {
   followUpPrompts?: string[];
   /** 批 6：user simulator 的应答落账（每次规则命中一条，含快照边界） */
   simTurns?: SimTurnRecord[];
+  /** 批 6 · B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  goalRun?: GoalRunRecord;
   /** Status */
   status: TestStatus;
   /** Duration in ms */
@@ -580,7 +630,16 @@ export type ExpectationType =
   // 批 6 · 审计 R1-H3：先问后做语义（sim_stop_respected 的镜像窗口）。
   // params: before_rule（必填）、forbidden_tools（同上）。断言 = before_rule 命中
   // 之前的 toolExecutions 零写效应调用（agent 没有先斩后奏）。同 fail-loud 口径。
-  | 'sim_no_write_before_rule';
+  | 'sim_no_write_before_rule'
+  // 批 6 · B6b-①：goal 三闸行为断言（需 case 配 goal_contract）。
+  // goal_status —— params: expected（'met'|'aborted' 必填）、degraded（可选布尔 pin，
+  // 区分「验证全过的 met」与「修复预算耗尽的降级放行」）。
+  // goal_evidence_gate —— params: expected_verdict（闸0 末次 verdict：
+  // 'allow_finalize'|'repair_prompt'|'exhausted_release' 必填）、min_bounces
+  // （可选，闸0 打回次数下限）。两者 deterministic 桶；fail-loud：缺参 / case 没配
+  // goal_contract / 终态事件没发 / 证据闸从未求值，一律显式 fail。
+  | 'goal_status'
+  | 'goal_evidence_gate';
 
 export interface Expectation {
   type: ExpectationType;

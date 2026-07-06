@@ -7,6 +7,155 @@ import { loadSharedServiceKeysFromStore } from './controlPlaneSharedServiceKeys.
 import { loadSharedProvidersFromStore } from './controlPlaneSharedProviders.js';
 import { readJsonPayloadFromEnv } from './controlPlaneEnvelope.js';
 
+const DEFAULT_RENDERER_BUNDLE_BASE_URL = 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle';
+const DEFAULT_RENDERER_BUNDLE_MANIFEST_TIMEOUT_MS = 3000;
+const DEFAULT_RENDERER_BUNDLE_MANIFEST_CACHE_MS = 60_000;
+
+let rendererBundleManifestCache: {
+  url: string;
+  expiresAtMs: number;
+  payload: Record<string, unknown>;
+} | null = null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readEnvValue(env: NodeJS.ProcessEnv, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = normalizeNonEmptyString(env[name]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function readPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  names: string[],
+  fallback: number,
+): number {
+  const value = readEnvValue(env, names);
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function readBooleanEnv(
+  env: NodeJS.ProcessEnv,
+  names: string[],
+  fallback: boolean,
+): boolean {
+  const value = readEnvValue(env, names);
+  if (!value) return fallback;
+  if (/^(1|true|yes|on)$/i.test(value)) return true;
+  if (/^(0|false|no|off)$/i.test(value)) return false;
+  return fallback;
+}
+
+function resolveRendererBundleManifestUrl(
+  policy: RendererBundleRolloutPolicyPayload,
+  env: NodeJS.ProcessEnv,
+): string {
+  const policyManifestUrl = normalizeNonEmptyString(policy.manifestUrl);
+  if (policyManifestUrl) return policyManifestUrl;
+
+  const envManifestUrl = readEnvValue(env, [
+    'CONTROL_PLANE_RENDERER_BUNDLE_MANIFEST_URL',
+    'CODE_AGENT_RENDERER_BUNDLE_MANIFEST_URL',
+  ]);
+  if (envManifestUrl) return envManifestUrl;
+
+  const baseUrl = (readEnvValue(env, [
+    'CONTROL_PLANE_RENDERER_BUNDLE_BASE_URL',
+    'CODE_AGENT_RENDERER_BUNDLE_BASE_URL',
+  ]) ?? DEFAULT_RENDERER_BUNDLE_BASE_URL).replace(/\/+$/, '');
+  const channel = normalizeNonEmptyString(policy.channel) ?? 'latest';
+  const path = channel === 'latest'
+    ? 'latest'
+    : `channels/${encodeURIComponent(channel)}`;
+  return `${baseUrl}/${path}/manifest.json`;
+}
+
+async function fetchRendererBundleManifestPayload(
+  url: string,
+  env: NodeJS.ProcessEnv,
+  fetchImpl: typeof globalThis.fetch | undefined = globalThis.fetch,
+): Promise<Record<string, unknown> | null> {
+  if (typeof fetchImpl !== 'function') return null;
+
+  const now = Date.now();
+  if (rendererBundleManifestCache?.url === url && rendererBundleManifestCache.expiresAtMs > now) {
+    return rendererBundleManifestCache.payload;
+  }
+
+  const timeoutMs = readPositiveIntegerEnv(env, [
+    'CONTROL_PLANE_RENDERER_BUNDLE_MANIFEST_TIMEOUT_MS',
+    'CODE_AGENT_RENDERER_BUNDLE_MANIFEST_TIMEOUT_MS',
+  ], DEFAULT_RENDERER_BUNDLE_MANIFEST_TIMEOUT_MS);
+  const cacheMs = readPositiveIntegerEnv(env, [
+    'CONTROL_PLANE_RENDERER_BUNDLE_MANIFEST_CACHE_MS',
+    'CODE_AGENT_RENDERER_BUNDLE_MANIFEST_CACHE_MS',
+  ], DEFAULT_RENDERER_BUNDLE_MANIFEST_CACHE_MS);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const body = await response.json().catch(() => null) as unknown;
+    if (!isRecord(body) || body.kind !== 'renderer_bundle' || !isRecord(body.payload)) {
+      return null;
+    }
+    rendererBundleManifestCache = {
+      url,
+      expiresAtMs: now + cacheMs,
+      payload: body.payload,
+    };
+    return body.payload;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function hydrateRendererBundleRolloutPolicyFromManifest(
+  policy: RendererBundleRolloutPolicyPayload,
+  env: NodeJS.ProcessEnv,
+): Promise<RendererBundleRolloutPolicyPayload> {
+  if (!readBooleanEnv(env, [
+    'CONTROL_PLANE_RENDERER_BUNDLE_MANIFEST_HYDRATE_ENABLED',
+    'CODE_AGENT_RENDERER_BUNDLE_MANIFEST_HYDRATE_ENABLED',
+  ], true)) {
+    return policy;
+  }
+  if (policy.rollbackToBuiltin === true) return policy;
+
+  const manifestUrl = resolveRendererBundleManifestUrl(policy, env);
+  const payload = await fetchRendererBundleManifestPayload(manifestUrl, env);
+  const version = normalizeNonEmptyString(payload?.version);
+  if (!version) return policy;
+
+  return {
+    ...policy,
+    version,
+    manifestUrl,
+    ...(normalizeNonEmptyString(policy.manifestContentHash)
+      ? {}
+      : { manifestContentHash: normalizeNonEmptyString(payload?.contentHash) }),
+    ...(normalizeNonEmptyString(policy.minShellVersion)
+      ? {}
+      : { minShellVersion: normalizeNonEmptyString(payload?.minShellVersion) }),
+  };
+}
+
 /**
  * 团队共享 provider（中转站）下发配置。
  * 让管理员把一把中转站 key 通过控制面下发给被授权的用户，用户零配置即可在模型选择器里
@@ -288,7 +437,8 @@ export async function readRendererBundleRolloutPolicyPayloadAsync(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RendererBundleRolloutPolicyPayload> {
   const policy = readRendererBundleRolloutPolicyPayload(env);
-  return applyRendererBundleAutoRollbackGuard(policy, { env });
+  const hydratedPolicy = await hydrateRendererBundleRolloutPolicyFromManifest(policy, env);
+  return applyRendererBundleAutoRollbackGuard(hydratedPolicy, { env });
 }
 
 export function readPayloadForKind(

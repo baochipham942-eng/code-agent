@@ -196,11 +196,13 @@ async function withRendererRolloutEnv(options: {
   autoRollbackAction?: 'pause' | 'rollback';
   minAttempts?: number;
   failureRate?: number;
+  manifestHydrateEnabled?: boolean;
 }, fn: () => void | Promise<void>): Promise<void> {
   const keys = [
     'CONTROL_PLANE_PRIVATE_KEY',
     'CONTROL_PLANE_KEY_ID',
     'CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON',
+    'CONTROL_PLANE_RENDERER_BUNDLE_MANIFEST_HYDRATE_ENABLED',
     'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ENABLED',
     'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ACTION',
     'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_MIN_ATTEMPTS',
@@ -221,6 +223,10 @@ async function withRendererRolloutEnv(options: {
       channel: 'beta',
       rolloutPercent: 25,
     });
+    if (options.manifestHydrateEnabled !== undefined) {
+      process.env.CONTROL_PLANE_RENDERER_BUNDLE_MANIFEST_HYDRATE_ENABLED =
+        options.manifestHydrateEnabled ? 'true' : 'false';
+    }
     if (options.autoRollback !== undefined) {
       process.env.CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ENABLED = options.autoRollback ? 'true' : 'false';
     }
@@ -324,7 +330,26 @@ describe('vercel control-plane artifacts', () => {
   });
 
   it('serves renderer bundle rollout policy through the unified control-plane route', async () => {
-    await withRendererRolloutEnv({}, async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        kind: 'renderer_bundle',
+        payload: {
+          version: '0.24.1',
+          contentHash: 'sha256:current-renderer',
+          minShellVersion: '0.24.1',
+        },
+      }),
+    } as Response));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await withRendererRolloutEnv({
+      policy: {
+        version: 'rollout-policy-test',
+        channel: 'latest',
+        rolloutPercent: 25,
+      },
+    }, async () => {
       const response = makeResponse();
 
       await controlPlaneHandler({
@@ -339,11 +364,52 @@ describe('vercel control-plane artifacts', () => {
         kind: 'renderer_bundle_rollout',
         keyId: 'rollout-test-key',
         payload: {
-          version: 'rollout-policy-test',
-          channel: 'beta',
+          version: '0.24.1',
+          channel: 'latest',
           rolloutPercent: 25,
+          manifestUrl: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/latest/manifest.json',
+          manifestContentHash: 'sha256:current-renderer',
+          minShellVersion: '0.24.1',
         },
       });
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/latest/manifest.json',
+        expect.objectContaining({ headers: { Accept: 'application/json' } }),
+      );
+    });
+  });
+
+  it('keeps renderer rollback policy pinned without manifest hydration', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await withRendererRolloutEnv({
+      policy: {
+        version: 'rollback-policy-test',
+        channel: 'latest',
+        rolloutPercent: 0,
+        rollbackToBuiltin: true,
+        rollbackReason: 'manual rollback',
+      },
+    }, async () => {
+      const response = makeResponse();
+
+      await controlPlaneHandler({
+        method: 'GET',
+        query: { artifact: 'renderer_bundle_rollout' },
+        headers: {},
+      }, response);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toMatchObject({
+        kind: 'renderer_bundle_rollout',
+        payload: {
+          version: 'rollback-policy-test',
+          rollbackToBuiltin: true,
+          rollbackReason: 'manual rollback',
+        },
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
@@ -391,6 +457,7 @@ describe('vercel control-plane artifacts', () => {
       autoRollbackAction: 'rollback',
       minAttempts: 3,
       failureRate: 0.5,
+      manifestHydrateEnabled: false,
       supabase: {
         url: 'https://supabase.example',
         key: 'service-key',

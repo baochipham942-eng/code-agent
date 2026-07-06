@@ -19,9 +19,16 @@ if [[ ! -d "${APP_PATH}" ]]; then
   exit 1
 fi
 
-RESOURCES_ROOT="${APP_PATH}/Contents/Resources/_up_"
-if [[ ! -d "${RESOURCES_ROOT}" ]]; then
-  echo "[verify-macos-release] missing bundled resources: ${RESOURCES_ROOT}" >&2
+APP_RESOURCES_DIR="${APP_PATH}/Contents/Resources"
+LEGACY_RESOURCES_ROOT="${APP_RESOURCES_DIR}/_up_"
+if [[ -d "${LEGACY_RESOURCES_ROOT}" ]]; then
+  RESOURCES_ROOT="${LEGACY_RESOURCES_ROOT}"
+elif [[ -d "${APP_RESOURCES_DIR}/dist" || -d "${APP_RESOURCES_DIR}/node_modules" || -d "${APP_RESOURCES_DIR}/scripts" ]]; then
+  RESOURCES_ROOT="${APP_RESOURCES_DIR}"
+else
+  echo "[verify-macos-release] missing bundled resources; checked:" >&2
+  echo "  - ${LEGACY_RESOURCES_ROOT}" >&2
+  echo "  - ${APP_RESOURCES_DIR}" >&2
   exit 1
 fi
 
@@ -44,6 +51,7 @@ find_first_existing_file() {
 }
 
 echo "[verify-macos-release] scanning bundled resources"
+echo "[verify-macos-release] resources root: ${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/tauri-resource-inventory.mjs" --root "${RESOURCES_ROOT}"
 

@@ -13,8 +13,9 @@
 //   cargo tauri build --config /tmp/tauri.x64.json
 //
 // 说明：
-//   - Tauri 的 --config 对数组是「替换」语义，故覆盖里必须给全量 resources，
-//     从 base 派生（而非另存一份 x64 配置）避免两边漂移。
+//   - Tauri --config 走 JSON merge patch；bundle.resources 是 object 时会深合并，
+//     所以 x64 source 改名必须为 arm64 旧 key 写 null deletion marker。
+//     覆盖仍从 base 派生（而非另存一份 x64 配置）避免两边漂移。
 //   - 只改 arch 相关路径；rtk/uv/swift/better-sqlite3/keytar 等路径与架构无关
 //     （文件内容由各自 x64 构建步骤产出，路径不变）。
 //   - rtk 在 x64 照常打包（已决策带上 x64），路径不变，无需特殊处理。
@@ -46,9 +47,16 @@ function mapResources(value) {
     return value.map(mapPath);
   }
   if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([source, target]) => [mapPath(source), mapPath(String(target))]),
-    );
+    const mapped = {};
+    for (const [source, target] of Object.entries(value)) {
+      const mappedSource = mapPath(source);
+      const mappedTarget = mapPath(String(target));
+      if (mappedSource !== source) {
+        mapped[source] = null;
+      }
+      mapped[mappedSource] = mappedTarget;
+    }
+    return mapped;
   }
   return value;
 }

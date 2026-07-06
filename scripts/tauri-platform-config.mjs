@@ -15,8 +15,9 @@
 //   cargo tauri build --config <path>
 //
 // 说明：
-//   - Tauri --config 对数组是「替换」语义，覆盖给全量 resources，从 base 派生
-//     避免两份配置漂移（同 tauri-arch-config.mjs 先例）。
+//   - Tauri --config 走 JSON merge patch；bundle.resources 是 object 时会深合并，
+//     所以 source 改名/删减必须为旧 key 写 null deletion marker。
+//     覆盖仍从 base 派生，避免两份配置漂移（同 tauri-arch-config.mjs 先例）。
 //   - darwin 双架构走 scripts/tauri-arch-config.mjs（不动现有 CI）。
 // ============================================================================
 
@@ -67,11 +68,21 @@ function mapResources(value) {
     return value.filter(shouldKeepResource).map(mapPath);
   }
   if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([source]) => shouldKeepResource(source))
-        .map(([source, target]) => [mapPath(source), mapPath(String(target))]),
-    );
+    const mapped = {};
+    for (const [source, target] of Object.entries(value)) {
+      if (!shouldKeepResource(source)) {
+        mapped[source] = null;
+        continue;
+      }
+
+      const mappedSource = mapPath(source);
+      const mappedTarget = mapPath(String(target));
+      if (mappedSource !== source) {
+        mapped[source] = null;
+      }
+      mapped[mappedSource] = mappedTarget;
+    }
+    return mapped;
   }
   return value;
 }

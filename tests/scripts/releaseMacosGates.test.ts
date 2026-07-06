@@ -34,7 +34,7 @@ function readWorkflow(path: string): WorkflowFile {
   return loadYaml(readRepoFile(path)) as WorkflowFile;
 }
 
-type TauriResources = string[] | Record<string, string>;
+type TauriResources = string[] | Record<string, string | null>;
 
 function readTauriResources(): { sources: string[]; targets: string[]; map: Record<string, string> } {
   const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
@@ -43,13 +43,30 @@ function readTauriResources(): { sources: string[]; targets: string[]; map: Reco
   const resources = tauriConfig.bundle?.resources ?? [];
   const map = Array.isArray(resources)
     ? Object.fromEntries(resources.map((resource) => [resource, resource]))
-    : resources;
+    : Object.fromEntries(
+      Object.entries(resources).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
 
   return {
     sources: Object.keys(map),
     targets: Object.values(map),
     map,
   };
+}
+
+function applyResourceMergePatch(
+  base: Record<string, string>,
+  patch: Record<string, string | null>,
+): Record<string, string> {
+  const merged = { ...base };
+  for (const [source, target] of Object.entries(patch)) {
+    if (target === null) {
+      delete merged[source];
+    } else {
+      merged[source] = target;
+    }
+  }
+  return merged;
 }
 
 function readWorkflowTriggers(path: string): Record<string, { paths?: string[]; tags?: string[] }> {
@@ -133,6 +150,8 @@ describe('macOS release fail-closed gates', () => {
   it('keeps notarization, Gatekeeper, TeamIdentifier, and control-plane checks in verify script', () => {
     const verifyScript = readRepoFile('scripts/verify-macos-release.sh');
 
+    expect(verifyScript).toContain('LEGACY_RESOURCES_ROOT="${APP_RESOURCES_DIR}/_up_"');
+    expect(verifyScript).toContain('RESOURCES_ROOT="${APP_RESOURCES_DIR}"');
     expect(verifyScript).toContain('dist/bundled-node/bin/node');
     expect(verifyScript).toContain('dist/native/better-sqlite3/build/Release/better_sqlite3.node');
     expect(verifyScript).toContain('better-sqlite3 native loads with bundled Node ABI');
@@ -599,13 +618,50 @@ describe('macOS release fail-closed gates', () => {
     expect(result.status).toBe(0);
     const overlay = JSON.parse(result.stdout) as { bundle?: { resources?: TauriResources } };
     const resources = overlay.bundle?.resources ?? {};
-    const sources = Array.isArray(resources) ? resources : Object.keys(resources);
-    const targets = Array.isArray(resources) ? resources : Object.values(resources);
+    expect(Array.isArray(resources)).toBe(false);
+    const resourcePatch = resources as Record<string, string | null>;
+    const baseResources = readTauriResources().map;
+    const merged = applyResourceMergePatch(baseResources, resourcePatch);
+    const sources = Object.keys(merged);
+    const targets = Object.values(merged);
 
+    expect(resourcePatch['../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app']).toBeNull();
+    expect(resourcePatch['../node_modules/@img/sharp-darwin-arm64/package.json']).toBeNull();
+    expect(resourcePatch['../node_modules/@img/sharp-libvips-darwin-arm64/package.json']).toBeNull();
     expect(sources.some((resource) => resource.includes('Agent Neo Computer Use.app'))).toBe(false);
     expect(targets.some((resource) => resource.includes('Agent Neo Computer Use.app'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('sharp-darwin-arm64'))).toBe(false);
+    expect(sources.some((resource) => resource.includes('sharp-libvips-darwin-arm64'))).toBe(false);
+    expect(sources).toContain('../node_modules/@img/sharp-win32-x64/package.json');
+    expect(sources).toContain('../node_modules/@img/sharp-win32-x64/lib');
     expect(sources).toContain('../scripts/rtk.exe');
     expect(targets).toContain('scripts/rtk.exe');
+  });
+
+  it('replaces arm64 native resources in the macOS x64 Tauri resource overlay', () => {
+    const result = spawnSync('node', ['scripts/tauri-arch-config.mjs', 'x64'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    const overlay = JSON.parse(result.stdout) as { bundle?: { resources?: TauriResources } };
+    const resources = overlay.bundle?.resources ?? {};
+    expect(Array.isArray(resources)).toBe(false);
+    const resourcePatch = resources as Record<string, string | null>;
+    const merged = applyResourceMergePatch(readTauriResources().map, resourcePatch);
+    const sources = Object.keys(merged);
+    const targets = Object.values(merged);
+
+    expect(resourcePatch['../node_modules/@img/sharp-darwin-arm64/package.json']).toBeNull();
+    expect(resourcePatch['../node_modules/@img/sharp-libvips-darwin-arm64/package.json']).toBeNull();
+    expect(sources.some((resource) => resource.includes('darwin-arm64'))).toBe(false);
+    expect(targets.some((resource) => resource.includes('darwin-arm64'))).toBe(false);
+    expect(sources).toContain('../node_modules/node-pty/prebuilds/darwin-x64');
+    expect(sources).toContain('../node_modules/@img/sharp-darwin-x64/package.json');
+    expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-x64/package.json');
+    expect(merged['../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app'])
+      .toBe('scripts/Agent Neo Computer Use.app');
   });
 
   it('keeps default runtime asset downloads limited to optional browser and audio components', () => {

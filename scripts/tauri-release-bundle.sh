@@ -102,7 +102,8 @@ node "${ROOT_DIR}/scripts/prepare-bundled-node.mjs"
 # Run cargo tauri build in a subshell with Apple notarization env vars unset.
 # Tauri auto-triggers notarytool inside `cargo tauri build` when it sees these
 # variables, but we must sign nested Mach-O binaries (.node/.dylib + helper
-# executables that ship under Contents/Resources/_up_/) BEFORE notarization,
+# executables that ship under Contents/Resources or Contents/Resources/_up_/)
+# BEFORE notarization,
 # otherwise Apple rejects the submission. The unset is inside a subshell so the
 # parent env stays intact for the downstream `release:notarize-macos` step.
 (
@@ -132,6 +133,17 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
     exit 1
   fi
 
+  release_resource_root() {
+    local app_path="$1"
+    local resources_dir="${app_path}/Contents/Resources"
+    local legacy_root="${resources_dir}/_up_"
+    if [[ -d "${legacy_root}" ]]; then
+      printf '%s\n' "${legacy_root}"
+    else
+      printf '%s\n' "${resources_dir}"
+    fi
+  }
+
   sign_nested_binary() {
     local target="$1"
     local use_entitlements="$2"
@@ -157,7 +169,8 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
 
   for app_path in "${ROOT_DIR}"/src-tauri/target/release/bundle/macos/*.app; do
     [[ -d "${app_path}" ]] || continue
-    node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${app_path}/Contents/Resources/_up_"
+    resource_scan_root="$(release_resource_root "${app_path}")"
+    node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${resource_scan_root}"
 
     echo "[tauri-release-bundle] signing nested Mach-O binaries inside ${app_path}"
 
@@ -215,6 +228,12 @@ else
   # release security scan without touching signatures.
   for app_path in "${ROOT_DIR}"/src-tauri/target/release/bundle/macos/*.app; do
     [[ -d "${app_path}" ]] || continue
-    node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${app_path}/Contents/Resources/_up_"
+    resources_dir="${app_path}/Contents/Resources"
+    legacy_root="${resources_dir}/_up_"
+    if [[ -d "${legacy_root}" ]]; then
+      node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${legacy_root}"
+    else
+      node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${resources_dir}"
+    fi
   done
 fi

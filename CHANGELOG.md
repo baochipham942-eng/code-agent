@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-07-06
+
+### Fixed
+
+- **Release packaging for platform-specific Tauri resources**: Windows release builds now delete inherited macOS-only resource keys when deriving the win32 overlay, macOS x64 overlays delete inherited arm64 native resource keys, and macOS release verification accepts both legacy `Contents/Resources/_up_` and current direct `Contents/Resources` layouts.
+- Supersedes the failed `v0.24.0` CI tag; no `v0.24.0` GitHub Release was published.
+
 ## [0.24.0] - 2026-07-06
 
 ### Added

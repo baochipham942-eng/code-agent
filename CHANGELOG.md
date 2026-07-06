@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-06
+
+### Added
+
+- **@Neo lightweight redesign + cross-session topic continuation**: Neo Tag now uses a lighter work-card flow and can continue project/topic work across sessions with a clearer handoff surface.
+- **Evaluation flywheel expansion**: GAIA external anchors, artifact-runnable assertions, trajectory-to-case regression drafts, deterministic approval/clarification simulators, and richer static HTML triage metrics are now part of the eval path.
+- **Goal and verification gates**: Goal contracts are injected into eval, verifier snapshots can prove workspace side effects, and failed gates can take a bounded repair path before deciding whether to stop or continue.
+- **Cost/context accounting**: cache-aware accounting, prefix hash attribution, compression savings gates, stable request prefixes, and active tool-result pruning improve token-cost visibility.
+- **Design/system gates**: token-reference integrity, source-scan self-checks, design bare-radius/z-index/important rules, and brand contrast assertions are wired into the gate suite.
+
+### Changed
+
+- **Settings and command UX**: Settings IA is condensed into fewer first-screen groups; `/agent` routing and `/goal` entry move toward calmer conversational confirmation; settings/navigation i18n debt is reduced.
+- **Renderer/desktop startup**: renderer-ready is routed through direct invoke paths, the window waits for first-frame readiness, and startup flashes are reduced.
+- **Sidebar and project chrome**: project group badges, hover actions, and Neo badge placement were simplified to avoid overlap and visual noise.
+- **Internal maintainability**: collaboration rows, telemetry schema, workspace archive IPC, and Neo Tag tool guards were split out from larger files without changing behavior.
+
+### Fixed
+
+- **Verifier and reviewer infrastructure errors** no longer masquerade as product verification failures; infra failures now degrade explicitly.
+- **Transcription rendering** is quieter, with hook cards, failed-state folding, a single thinking block, shimmer behavior, and duration thresholds tuned down.
+- **Session/runtime correctness** fixes include persisted working directories across restarts, assistant message metadata round-tripping, terminal assistant persistence checks, export transcript cache wiring, and agent badge routing.
+- **Desktop packaging** now stages the `cua-driver` helper outside Spotlight/Launchpad indexing paths.
+
 ## [0.23.0] - 2026-07-01
 
 ### Added

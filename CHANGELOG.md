@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-07-08
+
+### Fixed
+
+- **Claude Code 登录态继承**: Claude Code engine now launches in safe mode while preserving the user's existing Claude CLI auth/session environment, so an already logged-in local CLI is no longer misreported as needing `/login`.
+- **Model parameter compatibility**: `gpt-5.5` / `gpt-5.5-pro` requests now use the only supported default temperature `1` across AI SDK and OpenAI-compatible fallback paths. The model settings temperature control is locked with an explanatory hint for these models.
+- **Model routing error readability**: raw Azure/LiteLLM temperature and missing-fallback messages are classified as model configuration failures with actionable guidance, while full provider internals stay in logs.
+
 ### Changed
 
 - **macOS DMG Finder polish**: future release DMGs keep the standard drag-to-Applications install layout while also setting a cleaner Finder icon-view window, icon size, and app/Applications icon positions.

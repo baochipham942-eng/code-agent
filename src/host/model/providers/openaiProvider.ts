@@ -9,6 +9,7 @@ import { convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { getModelMaxOutputTokens } from '../../../shared/constants';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { createLogger } from '../../services/infra/logger';
+import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 
 const logger = createLogger('OpenAIProvider');
 
@@ -33,7 +34,7 @@ export class OpenAIProvider extends BaseOpenAIProvider {
     const body: Record<string, unknown> = {
       model: config.model || 'gpt-4o',
       messages: convertToOpenAIMessages(messages),
-      temperature: config.temperature ?? 0.7,
+      temperature: resolveModelRequestTemperature(config.model, config.temperature ?? 0.7),
       max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'gpt-4o'),
       stream: true,
       stream_options: { include_usage: true },

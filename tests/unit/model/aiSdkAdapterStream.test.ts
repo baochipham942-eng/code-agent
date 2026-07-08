@@ -104,6 +104,48 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
     expect(res.finishReason).toBe('tool-calls');
   });
 
+  it('流式 streamText 对默认温度模型强制使用 temperature=1', async () => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+    ]));
+    const col = makeCollector();
+
+    await inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], {
+      ...CONFIG,
+      provider: 'openai',
+      model: 'openai/gpt-5.5',
+      temperature: 0.7,
+    } as ModelConfig, col.onStream);
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledWith(expect.objectContaining({
+      temperature: 1,
+    }));
+  });
+
+  it('流式错误事件会把模型配置错误转成可读消息', async () => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      {
+        type: 'error',
+        error: new Error(
+          "litellm.BadRequestError: AzureException BadRequestError - Unsupported value: 'temperature' does not support 0.7 with this model. Only the default (1) value is supported.No fallback model group found for original model_group=gpt-5.5.",
+        ),
+      },
+    ]));
+    const col = makeCollector();
+
+    await expect(inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], {
+      ...CONFIG,
+      provider: 'openai',
+      model: 'gpt-5.5',
+      temperature: 0.7,
+    } as ModelConfig, col.onStream)).rejects.toThrow('Unsupported value');
+
+    const errorChunk = col.byType('error')[0];
+    expect(errorChunk.error).toContain('模型参数不兼容');
+    expect(errorChunk.error).toContain('默认温度 1');
+    expect(errorChunk.error).not.toContain('litellm.BadRequestError');
+  });
+
   it('终态 tool-call input 为空时保留已流式累积的参数', async () => {
     vi.mocked(streamText).mockReturnValue(fakeStream([
       { type: 'tool-input-start', id: 'call_write', toolName: 'Write' },

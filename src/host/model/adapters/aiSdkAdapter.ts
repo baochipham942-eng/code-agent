@@ -53,6 +53,8 @@ import { withTransientRetry, isTransientError, abortableSleep } from '../provide
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
 import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
+import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
+import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -692,6 +694,7 @@ async function generateViaAiSdk(params: {
 }): Promise<ModelResponse> {
   const { model, aiPrompt, aiTools, config, signal, options, messages } = params;
   const requestTimeoutMs = options?.requestTimeoutMs ?? PROVIDER_TIMEOUT;
+  const requestTemperature = resolveModelRequestTemperature(config.model, config.temperature);
   let result;
   try {
     // maxRetries:0 关掉 SDK 自带重试，统一走项目的 withTransientRetry——后者除 HTTP 瞬态
@@ -708,7 +711,7 @@ async function generateViaAiSdk(params: {
             ...aiPrompt,
             tools: aiTools,
             abortSignal: guard.signal,
-            temperature: config.temperature,
+            temperature: requestTemperature,
             ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
             ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
               ? { maxOutputTokens: config.maxTokens } : {}),
@@ -895,6 +898,7 @@ async function streamViaAiSdk(params: {
     // 命中后 catch 据 timedOutKind 改成 retryStrategy 认得的瞬态文案（首字节前才重试，emittedOutput 兜底）。
     const firstByteMs = options?.firstByteTimeoutMs ?? SSE_FIRST_BYTE_TIMEOUT;
     const inactivityMs = options?.inactivityTimeoutMs ?? SSE_INACTIVITY_TIMEOUT;
+    const requestTemperature = resolveModelRequestTemperature(config.model, config.temperature);
     const watchdog = new AbortController();
     let timedOutKind: 'first-byte' | 'stream inactivity' | null = null;
     let activityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -914,7 +918,7 @@ async function streamViaAiSdk(params: {
         ...aiPrompt,
         tools: aiTools,
         abortSignal: streamSignal,
-        temperature: config.temperature,
+        temperature: requestTemperature,
         ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
         // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；
         // 未设时交给 provider 默认（与旧 SSE 路径 buildRequestBody 的 max_tokens 行为对齐）。
@@ -1036,7 +1040,7 @@ async function streamViaAiSdk(params: {
       }
       healthMonitor.recordFailure(config.provider);
       if (!signal?.aborted) {
-        onStream({ type: 'error', error: msg, ...(code ? { errorCode: code } : {}) });
+        onStream({ type: 'error', error: summarizeModelErrorForUser(msg), ...(code ? { errorCode: code } : {}) });
       }
       const finalErr = watchdogTimedOut ? new Error(msg, { cause: err }) : err;
       logInferenceFailure(finalErr, 'streamText', config, messages);

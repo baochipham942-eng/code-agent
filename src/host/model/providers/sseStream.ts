@@ -11,6 +11,7 @@ import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumu
 import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';
 import { normalizeOpenAIUsage } from './wrappers/usageNormalization';
 import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
+import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 
 /**
  * 规范化工具名称
@@ -359,7 +360,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           if (onStream) {
             onStream({
               type: 'error',
-              error: errorMessage,
+              error: summarizeModelErrorForUser(errorMessage),
               errorCode: String(res.statusCode),
             });
           }
@@ -667,7 +668,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         if (onStream) {
           onStream({
             type: 'error',
-            error: err.message,
+            error: summarizeModelErrorForUser(err.message),
           });
         }
         reject(err);
@@ -681,7 +682,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       if (onStream) {
         onStream({
           type: 'error',
-          error: err.message,
+          error: summarizeModelErrorForUser(err.message),
           errorCode: errCode,
         });
       }

@@ -212,6 +212,7 @@ const AGENT_ENGINE_FAILURE_CATEGORIES = new Set<AgentEngineFailureCategory>([
   'network',
   'permission',
   'missing_cli',
+  'model_config',
   'runtime',
   'unknown',
 ]);

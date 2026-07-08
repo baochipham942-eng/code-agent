@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   queueNotification: vi.fn(),
   enqueueSession: vi.fn(),
   registryGet: vi.fn(),
+  shellEnv: {} as Record<string, string | undefined>,
 }));
 
 vi.mock('child_process', () => ({
@@ -68,6 +69,11 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
   }),
 }));
 
+vi.mock('../../../src/host/services/infra/shellEnvironment', () => ({
+  getShellPath: () => '/usr/local/bin:/usr/bin:/bin',
+  getShellEnvironmentValue: (key: string) => mocks.shellEnv[key],
+}));
+
 import {
   buildClaudeCodeArgs,
   ClaudeCodeAdapter,
@@ -82,8 +88,8 @@ describe('Claude Code adapter helpers', () => {
     expect(args).toContain('--verbose');
     expect(args).toContain('--model');
     expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
-    expect(args).toContain('--setting-sources');
-    expect(args).toContain('local');
+    expect(args).toContain('--safe-mode');
+    expect(args).not.toContain('--setting-sources');
     expect(args).toContain('--disable-slash-commands');
     expect(args).toContain('stream-json');
     expect(args).toContain('plan');
@@ -157,6 +163,9 @@ describe('ClaudeCodeAdapter.run', () => {
   let tempDir: string;
   let workspaceRoot: string;
   const oldAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const oldAnthropicAuthToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  const oldClaudeCodeOAuthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  const oldClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
   const oldOpenAiKey = process.env.OPENAI_API_KEY;
   const oldGithubToken = process.env.GITHUB_TOKEN;
 
@@ -175,6 +184,7 @@ describe('ClaudeCodeAdapter.run', () => {
     });
     mocks.addMessageToSession.mockResolvedValue(undefined);
     mocks.updateSession.mockResolvedValue(undefined);
+    mocks.shellEnv = {};
   });
 
   afterEach(async () => {
@@ -182,6 +192,21 @@ describe('ClaudeCodeAdapter.run', () => {
       delete process.env.ANTHROPIC_API_KEY;
     } else {
       process.env.ANTHROPIC_API_KEY = oldAnthropicKey;
+    }
+    if (oldAnthropicAuthToken === undefined) {
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+    } else {
+      process.env.ANTHROPIC_AUTH_TOKEN = oldAnthropicAuthToken;
+    }
+    if (oldClaudeCodeOAuthToken === undefined) {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    } else {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = oldClaudeCodeOAuthToken;
+    }
+    if (oldClaudeConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = oldClaudeConfigDir;
     }
     if (oldOpenAiKey === undefined) {
       delete process.env.OPENAI_API_KEY;
@@ -196,8 +221,11 @@ describe('ClaudeCodeAdapter.run', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it('runs Claude Code through stdin, writes logs, and keeps sensitive env values out of child env and ledger', async () => {
+  it('runs Claude Code through stdin, writes logs, and inherits Claude auth without leaking values to the ledger', async () => {
     process.env.ANTHROPIC_API_KEY = 'super-secret-value';
+    process.env.ANTHROPIC_AUTH_TOKEN = 'anthropic-auth-secret-value';
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'claude-oauth-secret-value';
+    process.env.CLAUDE_CONFIG_DIR = path.join(tempDir, 'claude-config');
     process.env.OPENAI_API_KEY = 'openai-super-secret-value';
     process.env.GITHUB_TOKEN = 'github-super-secret-value';
     let child: ReturnType<typeof createMockChild>;
@@ -249,8 +277,7 @@ describe('ClaudeCodeAdapter.run', () => {
         '--verbose',
         '--model',
         'sonnet',
-        '--setting-sources',
-        'local',
+        '--safe-mode',
         '--disable-slash-commands',
         '--output-format',
         'stream-json',
@@ -265,27 +292,45 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(child!.stdin.end).toHaveBeenCalledWith('inspect only');
 
     const spawnOptions = mocks.spawn.mock.calls[0][2] as { env: NodeJS.ProcessEnv };
-    expect(spawnOptions.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(spawnOptions.env.ANTHROPIC_API_KEY).toBe('super-secret-value');
+    expect(spawnOptions.env.ANTHROPIC_AUTH_TOKEN).toBe('anthropic-auth-secret-value');
+    expect(spawnOptions.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('claude-oauth-secret-value');
+    expect(spawnOptions.env.CLAUDE_CONFIG_DIR).toBe(path.join(tempDir, 'claude-config'));
     expect(spawnOptions.env.OPENAI_API_KEY).toBeUndefined();
     expect(spawnOptions.env.GITHUB_TOKEN).toBeUndefined();
-    expect(JSON.stringify(spawnOptions.env)).not.toContain('super-secret-value');
 
     const firstTask = mocks.upsertTask.mock.calls[0][0];
     expect(firstTask.command).toContain('<prompt:redacted>');
     expect(firstTask.command).toContain('--verbose');
     expect(firstTask.command).toContain('--model sonnet');
-    expect(firstTask.command).toContain('--setting-sources local');
+    expect(firstTask.command).toContain('--safe-mode');
+    expect(firstTask.command).not.toContain('--setting-sources local');
     expect(firstTask.command).toContain('--disable-slash-commands');
     expect(firstTask.command).toContain('--tools Read,Glob,Grep,LS');
     expect(firstTask.command).toContain('--strict-mcp-config');
     expect(firstTask.command).toContain('--include-partial-messages');
     expect(firstTask.metadata.model).toBe('sonnet');
-    expect(firstTask.metadata.env.redacted).toEqual(expect.arrayContaining([
+    expect(firstTask.metadata.env.keys).toEqual(expect.arrayContaining([
       'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+      'CLAUDE_CODE_OAUTH_TOKEN',
+      'CLAUDE_CONFIG_DIR',
+    ]));
+    expect(firstTask.metadata.env.redacted).toEqual(expect.arrayContaining([
       'GITHUB_TOKEN',
       'OPENAI_API_KEY',
     ]));
+    expect(firstTask.metadata.env.redacted).not.toEqual(expect.arrayContaining([
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+      'CLAUDE_CODE_OAUTH_TOKEN',
+      'CLAUDE_CONFIG_DIR',
+    ]));
     expect(JSON.stringify(firstTask)).not.toContain('super-secret-value');
+    expect(JSON.stringify(firstTask)).not.toContain('anthropic-auth-secret-value');
+    expect(JSON.stringify(firstTask)).not.toContain('claude-oauth-secret-value');
+    expect(JSON.stringify(firstTask)).not.toContain('openai-super-secret-value');
+    expect(JSON.stringify(firstTask)).not.toContain('github-super-secret-value');
 
     const textDeltas = mocks.webContentsSend.mock.calls
       .map((call) => call[1])
@@ -313,6 +358,35 @@ describe('ClaudeCodeAdapter.run', () => {
         runtimeState: 'ready',
       },
     });
+  });
+
+  it('inherits Claude auth from the captured login shell when the desktop process env is missing it', async () => {
+    mocks.shellEnv.ANTHROPIC_AUTH_TOKEN = 'shell-auth-secret-value';
+    mocks.shellEnv.CLAUDE_CODE_OAUTH_TOKEN = 'shell-oauth-secret-value';
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'ok' }),
+    ], 0));
+
+    await new ClaudeCodeAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    const spawnOptions = mocks.spawn.mock.calls[0][2] as { env: NodeJS.ProcessEnv };
+    expect(spawnOptions.env.ANTHROPIC_AUTH_TOKEN).toBe('shell-auth-secret-value');
+    expect(spawnOptions.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('shell-oauth-secret-value');
+
+    const firstTask = mocks.upsertTask.mock.calls[0][0];
+    expect(firstTask.metadata.env.keys).toEqual(expect.arrayContaining([
+      'ANTHROPIC_AUTH_TOKEN',
+      'CLAUDE_CODE_OAUTH_TOKEN',
+    ]));
+    expect(JSON.stringify(firstTask)).not.toContain('shell-auth-secret-value');
+    expect(JSON.stringify(firstTask)).not.toContain('shell-oauth-secret-value');
   });
 
   it('reconstructs partial stream-json text without duplicating assistant snapshots or terminal clutter', async () => {

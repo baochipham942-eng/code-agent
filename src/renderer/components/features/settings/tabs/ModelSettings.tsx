@@ -26,6 +26,7 @@ import {
 import { createLogger } from '../../../../utils/logger';
 import { toast } from '../../../../hooks/useToast';
 import { saveProviderIconAssetFromDataUrl, useProviderIconImageSource } from '../../../../utils/providerIconAssets';
+import { getModelTemperatureControl } from '@shared/modelSampling';
 
 const logger = createLogger('ModelSettings');
 
@@ -88,6 +89,7 @@ interface DefaultModelSelection {
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
   const { t } = useI18n();
   const modelText = t.settings.model;
+  const temperatureControl = useMemo(() => getModelTemperatureControl(config.model), [config.model]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isTesting, setIsTesting] = useState(false);
@@ -923,7 +925,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   maxConcurrent={currentProviderConfig?.maxConcurrent}
                   defaultMaxConcurrent={defaultMaxConcurrent}
                   proxyMode={currentProviderConfig?.proxyMode}
-                  temperature={config.temperature ?? MODEL.DEFAULT_TEMPERATURE}
+                  temperature={temperatureControl.temperature ?? config.temperature ?? MODEL.DEFAULT_TEMPERATURE}
+                  temperatureLocked={temperatureControl.locked}
                   onMaxConcurrentChange={handleMaxConcurrentChange}
                   onProxyModeChange={handleProxyModeChange}
                   onTemperatureChange={(temperature) => {

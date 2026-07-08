@@ -106,6 +106,28 @@ describe('Agent Engine contract', () => {
     });
   });
 
+  it('preserves model_config engine failure diagnostics', () => {
+    expect(normalizeAgentEngineSession({
+      kind: 'claude_code',
+      failure: {
+        category: 'model_config',
+        reason: 'unsupported_temperature',
+        message: '模型参数不兼容：当前模型只支持默认温度 1。',
+        suggestion: '重试会使用默认温度 1。',
+        retryable: true,
+      },
+    })).toMatchObject({
+      kind: 'claude_code',
+      failure: {
+        category: 'model_config',
+        reason: 'unsupported_temperature',
+        message: '模型参数不兼容：当前模型只支持默认温度 1。',
+        suggestion: '重试会使用默认温度 1。',
+        retryable: true,
+      },
+    });
+  });
+
   it('drops malformed external engine failure diagnostics', () => {
     expect(normalizeAgentEngineSession({
       kind: 'codex_cli',

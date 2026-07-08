@@ -84,7 +84,7 @@ describe('shellEnvironment', () => {
     process.env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
     execSyncMock.mockReturnValue('PATH=/opt/homebrew/bin:/usr/bin:/bin\nHOME=/Users/test\nSECRET_TOKEN=hidden\n');
 
-    const { loadShellEnvironment, getShellPathDiagnostics } = await loadModule();
+    const { loadShellEnvironment, getShellEnvironmentValue, getShellPathDiagnostics } = await loadModule();
     loadShellEnvironment();
     const diagnostics = getShellPathDiagnostics();
 
@@ -92,6 +92,7 @@ describe('shellEnvironment', () => {
     expect(diagnostics.source).toBe('captured');
     expect(diagnostics.path).toBe('/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin');
     expect(diagnostics.degraded).toBe(false);
+    expect(getShellEnvironmentValue('SECRET_TOKEN')).toBe('hidden');
     expect(JSON.stringify(diagnostics)).not.toContain('SECRET_TOKEN');
     expect(JSON.stringify(diagnostics)).not.toContain('hidden');
   });

@@ -338,6 +338,7 @@ const ENGINE_FAILURE_LABELS: Record<AgentEngineFailureDiagnostics['category'], s
   network: '网络异常',
   permission: '权限不足',
   missing_cli: 'CLI 不可用',
+  model_config: '模型配置错误',
   runtime: '运行失败',
   unknown: '运行失败',
 };

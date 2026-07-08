@@ -139,6 +139,10 @@ export function getShellPath(): string {
   return getShellPathDiagnostics().path;
 }
 
+export function getShellEnvironmentValue(key: string): string | undefined {
+  return shellEnv?.[key];
+}
+
 /**
  * Resolve shell PATH with lightweight diagnostics for tool metadata.
  * Does not expose environment variables beyond fallback directory names.

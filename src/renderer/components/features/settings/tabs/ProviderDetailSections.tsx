@@ -188,6 +188,7 @@ interface ProviderAdvancedSectionProps {
   defaultMaxConcurrent?: number;
   proxyMode?: ProxyMode;
   temperature: number;
+  temperatureLocked?: boolean;
   onMaxConcurrentChange: (value: number | undefined) => void;
   onProxyModeChange: (mode: ProxyMode) => void;
   onTemperatureChange: (temperature: number) => void;
@@ -198,6 +199,7 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
   defaultMaxConcurrent,
   proxyMode,
   temperature,
+  temperatureLocked = false,
   onMaxConcurrentChange,
   onProxyModeChange,
   onTemperatureChange,
@@ -276,12 +278,18 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
               step="0.1"
               value={temperature}
               onChange={(event) => onTemperatureChange(parseFloat(event.target.value))}
-              className="w-full"
+              disabled={temperatureLocked}
+              className={`w-full ${temperatureLocked ? 'cursor-not-allowed opacity-60' : ''}`}
             />
             <div className="flex justify-between text-xs text-zinc-500">
               <span>{advancedText.temperaturePrecise}</span>
               <span>{advancedText.temperatureCreative}</span>
             </div>
+            {temperatureLocked ? (
+              <p className="mt-2 text-xs text-amber-300">
+                {advancedText.temperatureDefaultOnlyHint}
+              </p>
+            ) : null}
           </div>
         </div>
       )}

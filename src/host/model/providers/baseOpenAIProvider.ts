@@ -13,6 +13,7 @@ import { withTransientRetry } from './retryStrategy';
 import { MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { createLogger } from '../../services/infra/logger';
+import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 
 const logger = createLogger('BaseOpenAIProvider');
 
@@ -95,7 +96,7 @@ export abstract class BaseOpenAIProvider implements Provider {
     const body: Record<string, unknown> = {
       model: config.model || DEFAULT_MODEL,
       messages: convertToOpenAIMessages(messages, { thinkingMode: this.isThinkingMode(config) }),
-      temperature: config.temperature ?? 0.7,
+      temperature: resolveModelRequestTemperature(config.model, config.temperature ?? 0.7),
       max_tokens: config.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
       stream: true,
       stream_options: { include_usage: true },

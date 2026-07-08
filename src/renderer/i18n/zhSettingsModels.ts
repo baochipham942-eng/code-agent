@@ -168,6 +168,7 @@ export const zhSettingsModels = {
         temperature: '温度',
         temperaturePrecise: '精确',
         temperatureCreative: '创意',
+        temperatureDefaultOnlyHint: '当前模型只支持默认温度 1，运行时会自动使用该值。',
       },
       toast: {
         officialEndpointRestored: '已恢复官方地址',

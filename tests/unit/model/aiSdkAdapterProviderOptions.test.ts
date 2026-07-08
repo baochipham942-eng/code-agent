@@ -183,6 +183,18 @@ describe('inferenceViaAiSdk provider options', () => {
     }));
   });
 
+  it('非流式 generateText 对默认温度模型强制使用 temperature=1', async () => {
+    await runNonStreaming({
+      provider: 'openai',
+      model: 'openai/gpt-5.5',
+      temperature: 0.7,
+    } as ModelConfig);
+
+    expect(vi.mocked(generateText)).toHaveBeenCalledWith(expect.objectContaining({
+      temperature: 1,
+    }));
+  });
+
   it('AI SDK 工具 schema 复用旧 OpenAI 路径的 _meta 注入', async () => {
     const readTool: ToolDefinition = {
       name: 'Read',

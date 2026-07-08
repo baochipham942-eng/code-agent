@@ -49,6 +49,7 @@ export type AgentEngineFailureCategory =
   | 'network'
   | 'permission'
   | 'missing_cli'
+  | 'model_config'
   | 'runtime'
   | 'unknown';
 
@@ -221,6 +222,7 @@ const AGENT_ENGINE_FAILURE_CATEGORIES: AgentEngineFailureCategory[] = [
   'network',
   'permission',
   'missing_cli',
+  'model_config',
   'runtime',
   'unknown',
 ];

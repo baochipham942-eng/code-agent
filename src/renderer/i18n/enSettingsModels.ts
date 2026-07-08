@@ -168,6 +168,7 @@ export const enSettingsModels = {
         temperature: 'Temperature',
         temperaturePrecise: 'Precise',
         temperatureCreative: 'Creative',
+        temperatureDefaultOnlyHint: 'This model only supports the default temperature 1. Runtime requests will use that value automatically.',
       },
       toast: {
         officialEndpointRestored: 'Official endpoint restored',

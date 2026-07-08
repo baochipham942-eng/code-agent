@@ -2,6 +2,7 @@ import type {
   AgentEngineFailureDiagnostics,
   AgentEngineKind,
 } from '../../../shared/contract/agentEngine';
+import { classifyModelErrorMessage } from '../../../shared/modelErrorDiagnostics';
 
 function firstStatusCode(message: string): number | undefined {
   const match = message.match(/\b(401|403|404|408|409|423|429|500|502|503|504)\b/);
@@ -31,6 +32,18 @@ export function classifyAgentEngineFailure(args: {
     ...(typeof statusCode === 'number' ? { statusCode } : {}),
     ...(args.exitCode !== undefined ? { exitCode: args.exitCode } : {}),
   };
+
+  const modelDiagnostic = classifyModelErrorMessage(message);
+  if (modelDiagnostic) {
+    return {
+      ...base,
+      category: 'model_config',
+      reason: modelDiagnostic.code,
+      message: modelDiagnostic.message,
+      suggestion: modelDiagnostic.suggestion,
+      retryable: modelDiagnostic.retryable,
+    };
+  }
 
   if (args.timeout || normalized.includes('timed out') || normalized.includes('timeout')) {
     return {
@@ -158,10 +171,13 @@ export function formatAgentEngineFailureContent(
   failure: AgentEngineFailureDiagnostics,
   logPath?: string,
 ): string {
+  const failureMessage = failure.message.length > 700
+    ? `${failure.message.slice(0, 700)}...`
+    : failure.message;
   return [
     `**${engineLabel} 运行失败**`,
     '',
-    failure.message,
+    failureMessage,
     '',
     `建议：${failure.suggestion}`,
     logPath ? `日志：${logPath}` : null,

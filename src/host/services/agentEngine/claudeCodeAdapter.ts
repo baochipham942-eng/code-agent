@@ -7,6 +7,7 @@ import { createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { homedir } from 'os';
 import { AppWindow, getLogsPath } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
@@ -19,7 +20,7 @@ import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngin
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
-import { getShellPath } from '../infra/shellEnvironment';
+import { getShellEnvironmentValue, getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
@@ -84,7 +85,7 @@ export class ClaudeCodeAdapter {
       '--output-format stream-json',
       '--input-format text',
       `--permission-mode ${permissionMode}`,
-      '--setting-sources local',
+      '--safe-mode',
       '--disable-slash-commands',
       '--tools Read,Glob,Grep,LS',
       '--allowedTools Read,Glob,Grep,LS',
@@ -512,8 +513,7 @@ export function buildClaudeCodeArgs(
     '-p',
     '--verbose',
     ...(model?.trim() ? ['--model', model.trim()] : []),
-    '--setting-sources',
-    'local',
+    '--safe-mode',
     '--disable-slash-commands',
     '--output-format',
     'stream-json',
@@ -549,6 +549,63 @@ export function parseClaudeCodeJsonLine(line: string): ClaudeParsedEvent | null 
   return extractClaudeEvent(event as Record<string, unknown>);
 }
 
+const ANTHROPIC_AUTH_ENV_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_AWS_API_KEY',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_FEDERATION_RULE_ID',
+  'ANTHROPIC_FOUNDRY_API_KEY',
+  'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
+  'ANTHROPIC_ORGANIZATION_ID',
+  'ANTHROPIC_PROFILE',
+]);
+
+const CLAUDE_AUTH_ENV_KEYS = new Set([
+  'CCR_OAUTH_TOKEN_FILE',
+  'CLAUDE_AI_INFERENCE_SCOPE',
+  'CLAUDE_AI_OAUTH_SCOPES',
+  'CLAUDE_AI_PROFILE_SCOPE',
+  'CLAUDE_CODE_ACCOUNT_TAGGED_ID',
+  'CLAUDE_CODE_ACCOUNT_UUID',
+  'CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR',
+  'CLAUDE_CODE_CUSTOM_OAUTH_URL',
+  'CLAUDE_CODE_DESIGN_OAUTH_CLIENT_ID',
+  'CLAUDE_CODE_ENABLE_PROXY_AUTH_HELPER',
+  'CLAUDE_CODE_HFI_BEARER_TOKEN',
+  'CLAUDE_CODE_HOST_AUTH_ENV_VAR',
+  'CLAUDE_CODE_HOST_CREDS_FILE',
+  'CLAUDE_CODE_OAUTH_CLIENT_ID',
+  'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+  'CLAUDE_CODE_OAUTH_SCOPES',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR',
+  'CLAUDE_CODE_ORGANIZATION_UUID',
+  'CLAUDE_CODE_PROXY_AUTH_HELPER_TTL_MS',
+  'CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH',
+  'CLAUDE_CODE_SESSION_ACCESS_TOKEN',
+  'CLAUDE_CODE_USE_GATEWAY',
+  'CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR',
+  'CLAUDE_LOCAL_OAUTH_API_BASE',
+  'CLAUDE_LOCAL_OAUTH_APPS_BASE',
+  'CLAUDE_LOCAL_OAUTH_CONSOLE_BASE',
+  'CLAUDE_SESSION_INGRESS_TOKEN_FILE',
+  'CLAUDE_TRUSTED_DEVICE_TOKEN',
+]);
+
+const CLAUDE_AUTH_SHELL_ENV_KEYS = new Set([
+  ...ANTHROPIC_AUTH_ENV_KEYS,
+  ...CLAUDE_AUTH_ENV_KEYS,
+  'CLAUDE_CONFIG_DIR',
+]);
+
+function isClaudeAuthEnvKey(key: string): boolean {
+  return key.startsWith('ANTHROPIC_')
+    || key.startsWith('CLAUDE_CODE_OAUTH_')
+    || key.startsWith('CLAUDE_AI_')
+    || CLAUDE_AUTH_ENV_KEYS.has(key);
+}
+
 function buildSafeEnv(): NodeJS.ProcessEnv {
   const allowExact = new Set([
     'HOME',
@@ -564,9 +621,18 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!value) continue;
-    if (allowExact.has(key) || key.startsWith('LC_') || key.startsWith('XDG_')) {
+    if (allowExact.has(key) || isClaudeAuthEnvKey(key) || key.startsWith('LC_') || key.startsWith('XDG_')) {
       env[key] = value;
     }
+  }
+  for (const key of CLAUDE_AUTH_SHELL_ENV_KEYS) {
+    if (env[key]) continue;
+    const value = getShellEnvironmentValue(key);
+    if (value) env[key] = value;
+  }
+  if (!env.HOME) {
+    const home = homedir();
+    if (home) env.HOME = home;
   }
   // PATH 用 login shell 捕获的完整 PATH（与 registry 探测同源），否则打包 app 下
   // claude 的 node shebang 找不到 node（同 codexCliAdapter）。

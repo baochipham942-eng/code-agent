@@ -75,6 +75,11 @@ fi
 REPOSITORY="${GITHUB_REPOSITORY:-baochipham942-eng/code-agent}"
 UPDATER_ENDPOINT="${TAURI_UPDATER_ENDPOINT:-https://github.com/${REPOSITORY}/releases/latest/download/latest.json}"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"
+DMG_FINDER_STYLE="${DMG_FINDER_STYLE:-1}"
+DMG_WINDOW_BOUNDS="${DMG_WINDOW_BOUNDS:-{140, 90, 1060, 660}}"
+DMG_ICON_SIZE="${DMG_ICON_SIZE:-128}"
+DMG_APP_ICON_POSITION="${DMG_APP_ICON_POSITION:-{220, 260}}"
+DMG_APPLICATIONS_ICON_POSITION="${DMG_APPLICATIONS_ICON_POSITION:-{655, 260}}"
 
 mkdir -p "${CONFIG_DIR}"
 
@@ -100,18 +105,64 @@ cd "${ROOT_DIR}"
 
 node "${ROOT_DIR}/scripts/prepare-bundled-node.mjs"
 
+style_installer_dmg() {
+  local app_name="$1"
+
+  if [[ "${DMG_FINDER_STYLE}" != "1" && "${DMG_FINDER_STYLE}" != "true" ]]; then
+    return 0
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    echo "[tauri-release-bundle] osascript not available; skipping dmg Finder style" >&2
+    return 0
+  fi
+
+  osascript <<APPLESCRIPT
+tell application "Finder"
+  tell disk "${DMG_VOLUME_NAME}"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to ${DMG_WINDOW_BOUNDS}
+    set viewOptions to the icon view options of container window
+    set arrangement of viewOptions to not arranged
+    set icon size of viewOptions to ${DMG_ICON_SIZE}
+    set position of item "${app_name}" of container window to ${DMG_APP_ICON_POSITION}
+    set position of item "Applications" of container window to ${DMG_APPLICATIONS_ICON_POSITION}
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
+}
+
 create_installer_dmg() {
   local app_bundle="$1"
   local dmg_path="$2"
   local signing_identity="$3"
   local app_name
+  local mountpoint
+  local mounted=0
+  local rw_dmg_path
   local stage_root
 
   app_name="$(basename "${app_bundle}")"
+  mountpoint="$(mktemp -d "${TMPDIR:-/tmp}/agent-neo-dmg-mount.XXXXXX")"
+  rw_dmg_path="$(mktemp "${TMPDIR:-/tmp}/agent-neo-dmg.XXXXXX").dmg"
   stage_root="$(mktemp -d "${TMPDIR:-/tmp}/agent-neo-dmg.XXXXXX")"
 
   (
-    trap 'rm -rf "${stage_root}"' EXIT
+    cleanup_installer_dmg() {
+      if [[ "${mounted}" == "1" ]]; then
+        hdiutil detach "${mountpoint}" -quiet >/dev/null 2>&1 \
+          || hdiutil detach "${mountpoint}" -force -quiet >/dev/null 2>&1 \
+          || true
+      fi
+      rm -rf "${mountpoint}" "${stage_root}"
+      rm -f "${rw_dmg_path}"
+    }
+    trap cleanup_installer_dmg EXIT
 
     mkdir -p "${stage_root}"
     ditto "${app_bundle}" "${stage_root}/${app_name}"
@@ -121,8 +172,28 @@ create_installer_dmg() {
       -volname "${DMG_VOLUME_NAME}" \
       -srcfolder "${stage_root}" \
       -ov \
+      -format UDRW \
+      "${rw_dmg_path}"
+
+    hdiutil attach "${rw_dmg_path}" \
+      -readwrite \
+      -nobrowse \
+      -noautoopen \
+      -mountpoint "${mountpoint}" \
+      >/dev/null
+    mounted=1
+
+    style_installer_dmg "${app_name}" || echo "[tauri-release-bundle] failed to apply dmg Finder style; continuing with install layout" >&2
+    sync
+
+    hdiutil detach "${mountpoint}" -quiet >/dev/null \
+      || hdiutil detach "${mountpoint}" -force -quiet >/dev/null
+    mounted=0
+
+    hdiutil convert "${rw_dmg_path}" \
       -format UDZO \
-      "${dmg_path}"
+      -o "${dmg_path}" \
+      >/dev/null
   )
 
   if [[ -n "${signing_identity}" ]]; then

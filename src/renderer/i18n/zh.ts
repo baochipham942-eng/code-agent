@@ -402,12 +402,31 @@ export const zh = {
     // 设置页「执行引擎」section（引擎 ⟂ 模型 的 IA 落地）
     engineSection: {
       title: '执行引擎',
-      description: '引擎是「谁来跑这一轮」的运行内核，与模型 provider 正交。原生引擎按所选 provider 用量计费；外部 CLI 引擎经各自登录吃订阅额度。',
+      description: '选择这一轮由 Neo 原生能力运行，还是交给 Codex / Claude / Kimi 等外部 CLI 引擎运行。',
+      guide: {
+        title: '引擎决定谁来执行任务，模型决定用哪颗大脑',
+        body: '普通对话和大多数文件任务用 Neo 原生引擎即可；当你想借用 Codex、Claude Code、Kimi Code 这类已登录 CLI 的订阅额度、会话能力或专属工具链时，再切换到对应外部引擎。',
+        items: [
+          { title: 'Neo 原生引擎', description: '走本页「通用模型」里的 Provider 和 API Key，适合日常对话、代码修改、图片输入和工具任务。' },
+          { title: '外部 CLI 引擎', description: '走各自命令行登录状态和订阅额度，适合复用 Codex / Claude / Kimi 已有账号能力。' },
+          { title: '先配置再切换', description: '先检测安装状态、完成 CLI 登录，再在下方为外部引擎选择默认模型。' },
+        ],
+        switchHint: '下方按钮会切换当前会话的执行引擎；模型选择弹窗只保留当前状态和模型选择，详细配置都放在这里。',
+      },
       detectButton: '检测引擎',
       detecting: '检测中…',
       detectFailed: '引擎检测失败，请稍后重试',
       loading: '正在检测引擎…',
       empty: '未检测到任何引擎',
+      switchToEngine: '当前会话使用',
+      switchingEngine: '切换中…',
+      currentEngine: '当前会话',
+      currentEngineTitle: '当前会话正在使用此引擎',
+      noSessionHint: '请先打开或创建一个会话，再切换执行引擎。',
+      unavailableHint: '该引擎当前不可用',
+      engineSelected: '当前会话已切换到 {engine}',
+      engineSelectFailed: '切换执行引擎失败：{error}',
+      unknownError: '未知错误',
       // 安装状态徽标
       installState: {
         builtin: '内置',
@@ -417,7 +436,7 @@ export const zh = {
       versionLabel: '版本',
       binaryPathLabel: '路径',
       defaultModelLabel: '默认模型',
-      defaultModelHint: '在「Agent Engine 模型目录」中为该引擎选择默认模型。',
+      defaultModelHint: '在「外部引擎默认模型」中为该引擎选择默认模型。',
       defaultModelNative: '随会话所选 provider 模型，无需在此配置。',
       defaultModelCliResolved: '模型由 CLI 自身解析，引擎层不预设。',
       // 未安装时的获取指引（仅文案说明，不执行任何命令）
@@ -439,13 +458,14 @@ export const zh = {
     },
     // 设置页「Agent Engine 模型目录」section（签名目录发布 + 本机默认选择）
     catalogSection: {
-      title: 'Agent Engine 模型目录',
-      description: 'Codex / Claude 模型由服务端签名目录发布，本机只保存默认选择。',
+      title: '外部引擎默认模型',
+      description: '为 Codex / Claude 等外部 CLI 引擎选择默认模型；优先读取本机 CLI 可用模型，发现失败时回退到签名目录或内置目录。',
       // 顶部目录元信息卡片
       versionLabel: '目录版本',
-      versionCaption: '服务端发布版本',
+      versionCaption: '发现或发布版本',
       sourceLabel: '来源',
-      sourceCaption: '验签失败会回退',
+      sourceCaption: '本机优先，失败回退',
+      sourceLocalDiscovery: '本机发现',
       sourceRemote: '远程签名',
       sourceBundled: '内置兜底',
       updatedAtLabel: '更新时间',

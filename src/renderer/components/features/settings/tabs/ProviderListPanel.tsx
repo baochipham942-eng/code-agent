@@ -3,11 +3,11 @@
 //
 //   已可用（有 Key 或无需 Key）：完整行（名称 + Key 状态 + 模型数 + 当前徽章）
 //   待添加 Key：折叠分组，精简行（点击 = 选中进入连接配置）
-//   顶部：搜索 + 新增 Provider/中转站 + 运行诊断
+//   顶部：搜索 + 运行诊断；新增 Provider 是 section 级主操作，不放进列表工具条
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Plus, Search, Stethoscope } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Stethoscope } from 'lucide-react';
 import type { ModelProvider } from '@shared/contract';
 import { isProviderImageIcon } from '@shared/modelRuntime';
 import { Button, Input } from '../../../primitives';
@@ -26,7 +26,6 @@ interface ProviderListPanelProps {
   defaultProviderId?: string;
   isAddingProvider: boolean;
   onSelect: (providerId: ModelProvider) => void;
-  onStartAddProvider: () => void;
   onOpenDoctor: () => void;
 }
 
@@ -153,7 +152,6 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   defaultProviderId,
   isAddingProvider,
   onSelect,
-  onStartAddProvider,
   onOpenDoctor,
 }) => {
   const { t } = useI18n();
@@ -185,27 +183,16 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
           inputSize="sm"
           leftIcon={<Search className="h-3.5 w-3.5" />}
         />
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant={isAddingProvider ? 'primary' : 'secondary'}
-            onClick={onStartAddProvider}
-            disabled={isWebMode()}
-            leftIcon={<Plus className="h-3 w-3" />}
-            className="flex-1"
-          >
-            {listText.addProvider}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onOpenDoctor}
-            disabled={isWebMode()}
-            leftIcon={<Stethoscope className="h-3 w-3" />}
-          >
-            {listText.doctor}
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onOpenDoctor}
+          disabled={isWebMode()}
+          leftIcon={<Stethoscope className="h-3 w-3" />}
+          fullWidth
+        >
+          {listText.doctor}
+        </Button>
       </div>
 
       <div className="max-h-[560px] space-y-0.5 overflow-y-auto p-2">

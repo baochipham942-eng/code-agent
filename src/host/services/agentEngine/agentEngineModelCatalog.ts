@@ -1,7 +1,9 @@
 // ============================================================================
-// Remote signed Agent Engine model catalog reader
+// Agent Engine model catalog reader
 // ============================================================================
 
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { ModelCapability } from '../../../shared/contract/model';
 import type {
   AgentEngineModelCatalog,
@@ -20,8 +22,10 @@ import {
   type ControlPlanePublicKeys,
 } from '../cloud/controlPlaneTrust';
 import { createLogger } from '../infra/logger';
+import { getShellPath } from '../infra/shellEnvironment';
 
 const logger = createLogger('AgentEngineModelCatalog');
+const execFileAsync = promisify(execFile);
 
 const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ExternalAgentEngineKind>(['codex_cli', 'claude_code', 'mimo_code', 'kimi_code']);
 const MODEL_CAPABILITIES = new Set<ModelCapability>([
@@ -37,12 +41,19 @@ const MODEL_CAPABILITIES = new Set<ModelCapability>([
   'longContext',
   'unlimited',
 ]);
+const LOCAL_DISCOVERY_TIMEOUT_MS = 8000;
+const LOCAL_DISCOVERY_CACHE_TTL_MS = 60_000;
+const CLAUDE_ALIAS_ORDER = ['sonnet', 'fable', 'opus', 'haiku'];
+const CODEX_DEBUG_MODELS_MAX_BUFFER = 64 * 1024 * 1024;
 
 export interface RemoteAgentEngineModelCatalogServiceOptions {
   controlPlanePublicKeys?: ControlPlanePublicKeys;
   endpoint?: string;
   fetchImpl?: typeof fetch;
   now?: number;
+  localDiscoveryProvider?: AgentEngineModelDiscoveryProvider;
+  disableLocalDiscovery?: boolean;
+  localDiscoveryCacheTtlMs?: number;
 }
 
 interface ParseAgentEngineModelCatalogOptions {
@@ -53,6 +64,18 @@ interface ParseAgentEngineModelCatalogResult {
   catalog: AgentEngineModelCatalog;
   diagnostics: AgentEngineModelCatalogDiagnostic[];
 }
+
+interface ExecProbeResult {
+  stdout: string;
+  stderr: string;
+}
+
+export interface AgentEngineModelDiscoveryResult {
+  engines: AgentEngineModelCatalogEngine[];
+  diagnostics: AgentEngineModelCatalogDiagnostic[];
+}
+
+export type AgentEngineModelDiscoveryProvider = () => Promise<AgentEngineModelDiscoveryResult>;
 
 function diagnostic(
   code: string,
@@ -106,6 +129,325 @@ function defaultAgentEngineModelCatalogEndpoint(): string {
 
 function cloneCatalog(catalog: AgentEngineModelCatalog): AgentEngineModelCatalog {
   return JSON.parse(JSON.stringify(catalog)) as AgentEngineModelCatalog;
+}
+
+function catalogUpdatedAtMs(catalog: AgentEngineModelCatalog): number {
+  const updatedAtMs = Date.parse(catalog.updatedAt);
+  return Number.isFinite(updatedAtMs) ? updatedAtMs : 0;
+}
+
+function isOlderThanBundledCatalog(catalog: AgentEngineModelCatalog): boolean {
+  return catalogUpdatedAtMs(catalog) < catalogUpdatedAtMs(BUILTIN_AGENT_ENGINE_MODEL_CATALOG);
+}
+
+function getNowIso(now?: number): string {
+  return new Date(now ?? Date.now()).toISOString();
+}
+
+function getProbeEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: getShellPath(),
+  };
+}
+
+async function resolveBinary(command: string): Promise<string | undefined> {
+  const locator = process.platform === 'win32' ? 'where' : 'which';
+  try {
+    const result = await execFileAsync(locator, [command], {
+      env: getProbeEnv(),
+      timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+      maxBuffer: 128 * 1024,
+    }) as ExecProbeResult;
+    return result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+  } catch {
+    return undefined;
+  }
+}
+
+function formatDiscoveredModelLabel(kind: ExternalAgentEngineKind, id: string): string {
+  if (kind === 'claude_code') {
+    const name = id
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    return name ? `Claude ${name} (latest alias)` : id;
+  }
+
+  return id
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+      if (lower === 'gpt') return 'GPT';
+      if (lower === 'codex') return 'Codex';
+      if (lower === 'mimo') return 'MiMo';
+      if (lower === 'kimi') return 'Kimi';
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(' ');
+}
+
+function inferAgentEngineModelCapabilities(
+  kind: ExternalAgentEngineKind,
+  modelId: string,
+): ModelCapability[] {
+  const id = modelId.toLowerCase();
+  const capabilities = new Set<ModelCapability>(['code']);
+  const fast = /mini|haiku|flash|spark|fast|lite|nano/.test(id);
+  const reasoning = kind !== 'claude_code' || id !== 'haiku';
+
+  if (reasoning) capabilities.add('reasoning');
+  if (fast) capabilities.add('fast');
+  if (
+    kind === 'codex_cli'
+    || kind === 'claude_code'
+    || /long|1m|128k|200k|256k|sonnet|opus|fable|gpt|kimi/.test(id)
+  ) {
+    capabilities.add('longContext');
+  }
+
+  return Array.from(capabilities);
+}
+
+function normalizeDiscoveredModels(
+  kind: ExternalAgentEngineKind,
+  rawModels: Array<{ id: string; label?: string | null }>,
+  updatedAt: string,
+  preferredDefault?: string,
+): AgentEngineModelCatalogEngine | null {
+  const seen = new Set<string>();
+  const models = rawModels
+    .map((model) => ({
+      id: model.id.trim(),
+      label: model.label?.trim() || formatDiscoveredModelLabel(kind, model.id.trim()),
+    }))
+    .filter((model) => {
+      if (!model.id || seen.has(model.id)) {
+        return false;
+      }
+      seen.add(model.id);
+      return true;
+    })
+    .map<AgentEngineModelCatalogModel>((model, index) => ({
+      id: model.id,
+      label: model.label,
+      capabilities: inferAgentEngineModelCapabilities(kind, model.id),
+      ...(index === 0 ? { recommended: true } : {}),
+      updatedAt,
+    }));
+
+  if (models.length === 0) {
+    return null;
+  }
+
+  const defaultModel = preferredDefault && models.some((model) => model.id === preferredDefault)
+    ? preferredDefault
+    : models[0].id;
+
+  return {
+    kind,
+    defaultModel,
+    models,
+    updatedAt,
+  };
+}
+
+function isVisibleCodexModel(value: Record<string, unknown>): boolean {
+  const visibility = readString(value.visibility)?.toLowerCase();
+  return visibility !== 'hide' && visibility !== 'hidden';
+}
+
+export function parseCodexDebugModelsCatalog(
+  output: string,
+  updatedAt = getNowIso(),
+): AgentEngineModelCatalogEngine | null {
+  const parsed: unknown = JSON.parse(output);
+  if (!isRecord(parsed) || !Array.isArray(parsed.models)) {
+    return null;
+  }
+
+  const models = parsed.models
+    .filter(isRecord)
+    .filter(isVisibleCodexModel)
+    .map((model) => ({
+      id: readString(model.slug) ?? readString(model.id) ?? '',
+      label: readString(model.display_name) ?? readString(model.name),
+    }))
+    .filter((model) => model.id);
+
+  return normalizeDiscoveredModels('codex_cli', models, updatedAt);
+}
+
+function extractClaudeModelHelpSection(helpText: string): string {
+  const lines = helpText.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.includes('--model <model>'));
+  if (start < 0) return '';
+
+  const section: string[] = [];
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (index > start && /^\s{0,4}(?:-[\w-]|--[\w-])/.test(line)) {
+      break;
+    }
+    section.push(line);
+  }
+  return section.join(' ');
+}
+
+function sortClaudeAliases(aliases: string[]): string[] {
+  return aliases.sort((left, right) => {
+    const leftIndex = CLAUDE_ALIAS_ORDER.indexOf(left);
+    const rightIndex = CLAUDE_ALIAS_ORDER.indexOf(right);
+    if (leftIndex >= 0 || rightIndex >= 0) {
+      return (leftIndex >= 0 ? leftIndex : Number.MAX_SAFE_INTEGER)
+        - (rightIndex >= 0 ? rightIndex : Number.MAX_SAFE_INTEGER);
+    }
+    return left.localeCompare(right);
+  });
+}
+
+export function parseClaudeHelpModelCatalog(
+  helpText: string,
+  updatedAt = getNowIso(),
+): AgentEngineModelCatalogEngine | null {
+  const section = extractClaudeModelHelpSection(helpText);
+  const aliasExample = section.match(/alias[\s\S]*?\((?:e\.g\.)?([\s\S]*?)\)/i)?.[1] ?? section;
+  const aliases = Array.from(aliasExample.matchAll(/'([a-z][a-z0-9_-]*)'/gi))
+    .map((match) => match[1].toLowerCase())
+    .filter((id) => !id.startsWith('claude-'));
+  const sortedAliases = sortClaudeAliases(Array.from(new Set(aliases)));
+
+  return normalizeDiscoveredModels(
+    'claude_code',
+    sortedAliases.map((id) => ({ id })),
+    updatedAt,
+    sortedAliases.includes('sonnet') ? 'sonnet' : undefined,
+  );
+}
+
+function mergeDiscoveredEngine(
+  baseEngine: AgentEngineModelCatalogEngine | undefined,
+  discoveredEngine: AgentEngineModelCatalogEngine,
+): AgentEngineModelCatalogEngine {
+  const baseModels = baseEngine?.models ?? [];
+  const discoveredIds = new Set(discoveredEngine.models.map((model) => model.id));
+  const models = [
+    ...discoveredEngine.models.map((model) => {
+      const existing = baseModels.find((entry) => entry.id === model.id);
+      return {
+        ...existing,
+        ...model,
+        capabilities: model.capabilities.length > 0
+          ? model.capabilities
+          : existing?.capabilities ?? ['code'],
+        disabledReason: undefined,
+      };
+    }),
+    ...baseModels.filter((model) => !discoveredIds.has(model.id)),
+  ].map((model, index) => ({
+    ...model,
+    recommended: index === 0 ? true : model.recommended === true ? true : undefined,
+  }));
+
+  return {
+    kind: discoveredEngine.kind,
+    defaultModel: discoveredEngine.defaultModel || baseEngine?.defaultModel || models[0]?.id || '',
+    models,
+    updatedAt: discoveredEngine.updatedAt ?? baseEngine?.updatedAt,
+  };
+}
+
+export function mergeAgentEngineModelCatalogWithDiscovery(
+  base: AgentEngineModelCatalog,
+  discovery: AgentEngineModelDiscoveryResult,
+  updatedAt = getNowIso(),
+): AgentEngineModelCatalog {
+  if (discovery.engines.length === 0) {
+    return cloneCatalog(base);
+  }
+
+  const discoveredByKind = new Map(discovery.engines.map((engine) => [engine.kind, engine]));
+  const mergedKinds = new Set<ExternalAgentEngineKind>();
+  const engines = base.engines.map((baseEngine) => {
+    const discoveredEngine = discoveredByKind.get(baseEngine.kind);
+    if (!discoveredEngine) {
+      return baseEngine;
+    }
+    mergedKinds.add(baseEngine.kind);
+    return mergeDiscoveredEngine(baseEngine, discoveredEngine);
+  });
+
+  for (const discoveredEngine of discovery.engines) {
+    if (!mergedKinds.has(discoveredEngine.kind)) {
+      engines.push(mergeDiscoveredEngine(undefined, discoveredEngine));
+    }
+  }
+
+  return {
+    version: `local-discovery-${updatedAt.slice(0, 10)}`,
+    updatedAt,
+    engines,
+  };
+}
+
+export async function discoverLocalAgentEngineModels(now?: number): Promise<AgentEngineModelDiscoveryResult> {
+  const updatedAt = getNowIso(now);
+  const diagnostics: AgentEngineModelCatalogDiagnostic[] = [];
+  const engines: AgentEngineModelCatalogEngine[] = [];
+
+  const [codexBinary, claudeBinary] = await Promise.all([
+    resolveBinary('codex'),
+    resolveBinary('claude'),
+  ]);
+
+  if (codexBinary) {
+    try {
+      const result = await execFileAsync(codexBinary, ['debug', 'models'], {
+        env: getProbeEnv(),
+        timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+        maxBuffer: CODEX_DEBUG_MODELS_MAX_BUFFER,
+      }) as ExecProbeResult;
+      const engine = parseCodexDebugModelsCatalog(result.stdout || result.stderr, updatedAt);
+      if (engine) {
+        engines.push(engine);
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic(
+        'local_codex_model_discovery_failed',
+        'Skipped local Codex model discovery because `codex debug models` failed.',
+        { severity: 'warning', path: codexBinary },
+      ));
+      logger.warn('Failed to discover Codex CLI models', { error: String(error) });
+    }
+  }
+
+  if (claudeBinary) {
+    try {
+      const result = await execFileAsync(claudeBinary, ['--help'], {
+        env: getProbeEnv(),
+        timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+      }) as ExecProbeResult;
+      const engine = parseClaudeHelpModelCatalog(`${result.stdout}\n${result.stderr}`, updatedAt);
+      if (engine) {
+        engines.push(engine);
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic(
+        'local_claude_model_discovery_failed',
+        'Skipped local Claude model discovery because `claude --help` failed.',
+        { severity: 'warning', path: claudeBinary },
+      ));
+      logger.warn('Failed to discover Claude Code models', { error: String(error) });
+    }
+  }
+
+  return { engines, diagnostics };
 }
 
 function parseModel(
@@ -338,7 +680,7 @@ export function resolveAgentEngineCatalogModel(
 
 export class RemoteAgentEngineModelCatalogService {
   private options: RemoteAgentEngineModelCatalogServiceOptions;
-  private cache: AgentEngineModelCatalogResult | null = null;
+  private cache: { result: AgentEngineModelCatalogResult; expiresAtMs: number } | null = null;
 
   constructor(options: RemoteAgentEngineModelCatalogServiceOptions = {}) {
     this.options = options;
@@ -352,11 +694,25 @@ export class RemoteAgentEngineModelCatalogService {
     this.cache = null;
   }
 
+  invalidate(): void {
+    this.cache = null;
+  }
+
   async readCatalog(): Promise<AgentEngineModelCatalogResult> {
-    if (this.cache && this.isCacheFresh(this.cache)) {
-      return this.cache;
+    if (this.cache && this.cache.expiresAtMs > (this.options.now ?? Date.now())) {
+      return this.cache.result;
     }
 
+    const base = await this.readTrustedOrBundledCatalog();
+    const result = await this.applyLocalDiscovery(base);
+    this.cache = {
+      result,
+      expiresAtMs: this.resolveCacheExpiresAtMs(result),
+    };
+    return result;
+  }
+
+  private async readTrustedOrBundledCatalog(): Promise<AgentEngineModelCatalogResult> {
     const publicKeys = this.options.controlPlanePublicKeys || getControlPlanePublicKeysFromEnv();
     if (!hasPublicKeys(publicKeys)) {
       return this.bundledResult([
@@ -369,12 +725,37 @@ export class RemoteAgentEngineModelCatalogService {
     }
 
     const endpoint = this.options.endpoint ?? defaultAgentEngineModelCatalogEndpoint();
-    const remote = await this.fetchTrustedCatalog(endpoint, publicKeys);
-    if (remote.source === 'remote') {
-      this.cache = remote;
-      return remote;
+    return this.fetchTrustedCatalog(endpoint, publicKeys);
+  }
+
+  private async applyLocalDiscovery(
+    base: AgentEngineModelCatalogResult,
+  ): Promise<AgentEngineModelCatalogResult> {
+    if (this.options.disableLocalDiscovery) {
+      return base;
     }
-    return remote;
+
+    const discover = this.options.localDiscoveryProvider
+      ?? (() => discoverLocalAgentEngineModels(this.options.now));
+    const discovery = await discover();
+    if (discovery.engines.length === 0) {
+      return {
+        ...base,
+        diagnostics: [...discovery.diagnostics, ...base.diagnostics],
+      };
+    }
+
+    return {
+      catalog: mergeAgentEngineModelCatalogWithDiscovery(base.catalog, discovery, getNowIso(this.options.now)),
+      source: 'local_discovery',
+      diagnostics: [
+        ...discovery.diagnostics,
+        ...base.diagnostics.filter((entry) => entry.severity === 'error'),
+      ],
+      ...(base.contentHash ? { contentHash: base.contentHash } : {}),
+      ...(base.keyId ? { keyId: base.keyId } : {}),
+      ...(base.expiresAt ? { expiresAt: base.expiresAt } : {}),
+    };
   }
 
   async resolveModelId(
@@ -386,12 +767,15 @@ export class RemoteAgentEngineModelCatalogService {
     return resolveAgentEngineCatalogModel(result.catalog, kind, requestedModel, options)?.id;
   }
 
-  private isCacheFresh(result: AgentEngineModelCatalogResult): boolean {
+  private resolveCacheExpiresAtMs(result: AgentEngineModelCatalogResult): number {
+    const now = this.options.now ?? Date.now();
+    const localTtl = this.options.localDiscoveryCacheTtlMs ?? LOCAL_DISCOVERY_CACHE_TTL_MS;
+    const localExpiresAtMs = now + localTtl;
     if (result.source !== 'remote' || !result.expiresAt) {
-      return false;
+      return localExpiresAtMs;
     }
     const expiresAtMs = Date.parse(result.expiresAt);
-    return Number.isFinite(expiresAtMs) && expiresAtMs > (this.options.now ?? Date.now());
+    return Number.isFinite(expiresAtMs) ? Math.min(expiresAtMs, localExpiresAtMs) : localExpiresAtMs;
   }
 
   private async fetchTrustedCatalog(
@@ -445,6 +829,15 @@ export class RemoteAgentEngineModelCatalogService {
       const parsed = parseAgentEngineModelCatalogPayload(trust.payload, { sourcePath: endpoint });
       if (parsed.diagnostics.some((entry) => entry.severity === 'error')) {
         return this.bundledResult(parsed.diagnostics);
+      }
+      if (isOlderThanBundledCatalog(parsed.catalog)) {
+        return this.bundledResult([
+          diagnostic(
+            'remote_catalog_older_than_bundled',
+            'Skipped remote Agent Engine model catalog because it is older than the bundled catalog.',
+            { path: endpoint, severity: 'warning' },
+          ),
+        ]);
       }
 
       return {

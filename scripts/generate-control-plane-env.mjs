@@ -141,9 +141,21 @@ function buildPayloads(version, now = new Date()) {
               updatedAt,
             },
             {
+              id: 'fable',
+              label: 'Claude Fable (latest alias)',
+              capabilities: ['code', 'reasoning', 'longContext'],
+              updatedAt,
+            },
+            {
               id: 'opus',
               label: 'Claude Opus (latest alias)',
               capabilities: ['code', 'reasoning', 'longContext'],
+              updatedAt,
+            },
+            {
+              id: 'haiku',
+              label: 'Claude Haiku (latest alias)',
+              capabilities: ['code', 'fast'],
               updatedAt,
             },
           ],

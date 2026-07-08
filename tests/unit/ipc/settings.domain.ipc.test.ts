@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import type { AppSettings } from '../../../src/shared/contract';
 
 // settings.ipc.ts 的 SETTINGS / WINDOW domain dispatch 覆盖（文档解析 handler 是外部
 // 工具壳，低价值不测）。重点：admin 门控（admin-only action 拦截 + 非 admin 读取脱敏
@@ -62,7 +63,7 @@ vi.mock('../../../src/host/platform', () => ({
   AppWindow: { getFocusedWindow: () => null },
 }));
 
-import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
+import { applyLocalProviderDiscoverySnapshot, registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
@@ -148,6 +149,97 @@ describe('get + 脱敏', () => {
     expect(perms.devModeAutoApprove).toBe(false);
     expect(perms.blockedCommands).toEqual([]);
     expect((perms as Record<string, unknown>).deny).toBeUndefined();
+  });
+});
+
+describe('Local provider discovery snapshot', () => {
+  it('marks local unavailable and removes stale local models from returned settings', () => {
+    const settings = {
+      models: {
+        default: 'local',
+        defaultProvider: 'local',
+        providers: {
+          local: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'qwen3:8b': { enabled: true, label: 'Old Qwen' },
+              'gemma4:12b': { enabled: true, label: 'Old Gemma' },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const next = applyLocalProviderDiscoverySnapshot(settings, {
+      success: false,
+      models: [],
+      latencyMs: 3,
+      error: { code: 'NETWORK_ERROR', message: 'connect ECONNREFUSED', suggestion: 'start Ollama' },
+    }, 123);
+
+    expect(next.models.providers.local.apiKeyConfigured).toBe(false);
+    expect(next.models.providers.local.models).toEqual({});
+    expect(settings.models.providers.local.models).toEqual(expect.objectContaining({
+      'qwen3:8b': expect.any(Object),
+    }));
+  });
+
+  it('keeps only currently discovered local models in returned settings', () => {
+    const settings = {
+      models: {
+        default: 'local',
+        defaultProvider: 'local',
+        providers: {
+          local: {
+            enabled: true,
+            apiKeyConfigured: false,
+            model: 'old-local',
+            models: {
+              'old-local': { enabled: true, label: 'Old Local' },
+              'qwen3:8b': { enabled: false, label: 'Custom Qwen Label' },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const next = applyLocalProviderDiscoverySnapshot(settings, {
+      success: true,
+      latencyMs: 8,
+      models: [
+        {
+          id: 'qwen3:8b',
+          label: 'Qwen3 8B',
+          capabilities: ['general', 'code'],
+          supportsTool: true,
+          supportsVision: false,
+          supportsStreaming: true,
+        },
+        {
+          id: 'llama3.2',
+          label: 'Llama 3.2',
+          capabilities: ['general'],
+          supportsTool: true,
+          supportsVision: false,
+          supportsStreaming: true,
+        },
+      ],
+    }, 456);
+
+    expect(next.models.providers.local.apiKeyConfigured).toBe(true);
+    expect(Object.keys(next.models.providers.local.models ?? {})).toEqual(['qwen3:8b', 'llama3.2']);
+    expect(next.models.providers.local.models?.['qwen3:8b']).toMatchObject({
+      enabled: false,
+      label: 'Custom Qwen Label',
+      discoveredAt: 456,
+    });
+    expect(next.models.providers.local.models?.['llama3.2']).toMatchObject({
+      enabled: true,
+      label: 'Llama 3.2',
+      discoveredAt: 456,
+    });
+    expect(next.models.providers.local.model).toBe('qwen3:8b');
   });
 });
 

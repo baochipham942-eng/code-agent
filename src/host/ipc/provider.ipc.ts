@@ -35,6 +35,7 @@ export interface DiscoverModelsPayload {
   baseUrl?: string;
   apiKey?: string;
   protocol?: ModelProviderProtocol;
+  timeoutMs?: number;
 }
 
 export interface DiscoveredProviderModel {
@@ -338,15 +339,20 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
   }
 
   const startTime = Date.now();
+  const timeoutMs = typeof payload.timeoutMs === 'number' && Number.isFinite(payload.timeoutMs) && payload.timeoutMs > 0
+    ? Math.min(Math.max(payload.timeoutMs, 250), MCP.CONNECT_TIMEOUT)
+    : MCP.CONNECT_TIMEOUT;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), MCP.CONNECT_TIMEOUT);
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const response = await fetch(discovery.url, {
       method: 'GET',
       headers: discovery.headers,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+    timeoutId = undefined;
     const latencyMs = Date.now() - startTime;
 
     if (!response.ok) {
@@ -375,7 +381,7 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
         latencyMs,
         error: {
           code: 'TIMEOUT',
-          message: `发现模型超时 (${MCP.CONNECT_TIMEOUT / 1000}s)`,
+          message: `发现模型超时 (${timeoutMs / 1000}s)`,
           suggestion: '请检查 Base URL、网络和代理设置',
         },
       };
@@ -392,6 +398,8 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
         suggestion: '请检查 Base URL 是否指向所选协议的模型 API 端点',
       },
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 

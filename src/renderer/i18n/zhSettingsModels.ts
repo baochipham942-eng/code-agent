@@ -81,7 +81,7 @@ export const zhSettingsModels = {
         description: '接入 Provider、选默认模型；勾选哪些模型进对话的模型选择。',
       },
       addProvider: {
-        title: '新增',
+        title: '新增 Provider',
         displayName: '显示名称',
         apiKeyLabel: 'API Key',
         baseUrlHint: '填到 /v1 为止，不要带 /chat/completions。',
@@ -95,7 +95,7 @@ export const zhSettingsModels = {
         ollamaUnavailableHint: '启动 Ollama 后可用',
         addKey: '添加 Key',
         searchPlaceholder: '搜索 Provider 或模型...',
-        addProvider: '新增',
+        addProvider: '新增 Provider',
         doctor: '诊断',
         configuredPrefix: '已可用 · ',
         noMatch: '没有匹配的 Provider',

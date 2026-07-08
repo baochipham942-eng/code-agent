@@ -176,7 +176,7 @@ export interface AgentEngineModelCatalog {
   engines: AgentEngineModelCatalogEngine[];
 }
 
-export type AgentEngineModelCatalogSource = 'remote' | 'bundled';
+export type AgentEngineModelCatalogSource = 'local_discovery' | 'remote' | 'bundled';
 
 export interface AgentEngineModelCatalogDiagnostic {
   severity: 'info' | 'warning' | 'error';

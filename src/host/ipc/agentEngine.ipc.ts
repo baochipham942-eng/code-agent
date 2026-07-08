@@ -44,6 +44,7 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
         case 'detect':
           // 「检测引擎」按钮：强制重探（绕过 5s 探测缓存），覆盖"刚装好引擎"的场景。
           registry.invalidate();
+          getRemoteAgentEngineModelCatalogService().invalidate();
           data = await registry.list();
           break;
         case 'list':

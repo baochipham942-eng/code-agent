@@ -1,7 +1,10 @@
 import * as crypto from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
+  mergeAgentEngineModelCatalogWithDiscovery,
+  parseClaudeHelpModelCatalog,
   parseAgentEngineModelCatalogPayload,
+  parseCodexDebugModelsCatalog,
   RemoteAgentEngineModelCatalogService,
   resolveAgentEngineCatalogModel,
 } from '../../../src/host/services/agentEngine/agentEngineModelCatalog';
@@ -19,17 +22,17 @@ function createKeyPair() {
 function makeCatalog(overrides: Record<string, unknown> = {}) {
   return {
     version: 'agent-engine-models-test',
-    updatedAt: '2026-05-22T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
     engines: [{
       kind: 'codex_cli',
       defaultModel: 'gpt-5',
-      updatedAt: '2026-05-22T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
       models: [{
         id: 'gpt-5',
         label: 'GPT-5',
         capabilities: ['code', 'reasoning'],
         recommended: true,
-        updatedAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
       }],
     }],
     ...overrides,
@@ -52,7 +55,7 @@ describe('Agent Engine model catalog parser', () => {
     expect(parsed.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'duplicate_model', severity: 'error' }),
     ]));
-    expect(parsed.catalog.version).toBe('builtin-2026-05-25');
+    expect(parsed.catalog.version).toBe('builtin-2026-07-08');
   });
 
   it('rejects engines whose default model is not listed', () => {
@@ -67,7 +70,7 @@ describe('Agent Engine model catalog parser', () => {
     expect(parsed.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'default_model_not_found', severity: 'error' }),
     ]));
-    expect(parsed.catalog.version).toBe('builtin-2026-05-25');
+    expect(parsed.catalog.version).toBe('builtin-2026-07-08');
   });
 
   it('keeps disabled models visible but resolves execution to an enabled fallback', () => {
@@ -108,6 +111,72 @@ describe('Agent Engine model catalog parser', () => {
   });
 });
 
+describe('local Agent Engine model discovery parsing', () => {
+  it('parses Codex CLI debug model JSON into a catalog engine', () => {
+    const engine = parseCodexDebugModelsCatalog(JSON.stringify({
+      models: [
+        { slug: 'gpt-5.5', display_name: 'GPT-5.5', visibility: 'list' },
+        { slug: 'gpt-5.4-mini', display_name: 'GPT-5.4-Mini', visibility: 'list' },
+        { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide' },
+      ],
+    }), '2026-07-08T00:00:00.000Z');
+
+    expect(engine).toMatchObject({
+      kind: 'codex_cli',
+      defaultModel: 'gpt-5.5',
+      models: [
+        expect.objectContaining({ id: 'gpt-5.5', label: 'GPT-5.5', recommended: true }),
+        expect.objectContaining({ id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' }),
+      ],
+    });
+    expect(engine?.models.map((model) => model.id)).not.toContain('codex-auto-review');
+  });
+
+  it('parses Claude Code model aliases from the installed CLI help text', () => {
+    const engine = parseClaudeHelpModelCatalog(`
+      --model <model>                       Model for the current session. Provide
+                                            an alias for the latest model (e.g.
+                                            'fable', 'opus', or 'sonnet') or a
+                                            model's full name (e.g.
+                                            'claude-fable-5').
+      --name <name>                         Set a display name
+    `, '2026-07-08T00:00:00.000Z');
+
+    expect(engine?.kind).toBe('claude_code');
+    expect(engine?.defaultModel).toBe('sonnet');
+    expect(engine?.models.map((model) => model.id)).toEqual(['sonnet', 'fable', 'opus']);
+    expect(engine?.models.find((model) => model.id === 'fable')?.label).toBe('Claude Fable (latest alias)');
+  });
+
+  it('merges discovered models before bundled fallback models', () => {
+    const merged = mergeAgentEngineModelCatalogWithDiscovery(
+      BUILTIN_AGENT_ENGINE_MODEL_CATALOG,
+      {
+        engines: [{
+          kind: 'claude_code',
+          defaultModel: 'fable',
+          updatedAt: '2026-07-08T00:00:00.000Z',
+          models: [{
+            id: 'fable',
+            label: 'Claude Fable (latest alias)',
+            capabilities: ['code', 'reasoning', 'longContext'],
+            recommended: true,
+            updatedAt: '2026-07-08T00:00:00.000Z',
+          }],
+        }],
+        diagnostics: [],
+      },
+      '2026-07-08T00:00:00.000Z',
+    );
+    const claude = merged.engines.find((engine) => engine.kind === 'claude_code');
+
+    expect(merged.version).toBe('local-discovery-2026-07-08');
+    expect(claude?.defaultModel).toBe('fable');
+    expect(claude?.models[0].id).toBe('fable');
+    expect(claude?.models.map((model) => model.id)).toEqual(expect.arrayContaining(['sonnet', 'fable', 'opus', 'haiku']));
+  });
+});
+
 describe('bundled Agent Engine model catalog', () => {
   it('registers mimo_code and kimi_code with resolvable default models', () => {
     const parsed = parseAgentEngineModelCatalogPayload(BUILTIN_AGENT_ENGINE_MODEL_CATALOG, { sourcePath: 'bundled' });
@@ -121,6 +190,19 @@ describe('bundled Agent Engine model catalog', () => {
     expect(resolveAgentEngineCatalogModel(parsed.catalog, 'mimo_code', 'mimo-coder')?.id).toBe('mimo-coder');
     expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', null)?.id).toBe('kimi-k2.5');
     expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', 'kimi-k2.5')?.id).toBe('kimi-k2.5');
+  });
+
+  it('keeps Claude Code current aliases available in the bundled fallback', () => {
+    const parsed = parseAgentEngineModelCatalogPayload(BUILTIN_AGENT_ENGINE_MODEL_CATALOG, { sourcePath: 'bundled' });
+    const claude = parsed.catalog.engines.find((engine) => engine.kind === 'claude_code');
+
+    expect(claude?.models.map((model) => model.id)).toEqual(expect.arrayContaining([
+      'sonnet',
+      'fable',
+      'opus',
+      'haiku',
+    ]));
+    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'claude_code', 'fable')?.id).toBe('fable');
   });
 });
 
@@ -144,6 +226,7 @@ describe('RemoteAgentEngineModelCatalogService', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
+      disableLocalDiscovery: true,
     });
 
     const result = await service.readCatalog();
@@ -156,6 +239,51 @@ describe('RemoteAgentEngineModelCatalogService', () => {
       },
     });
     expect(result.contentHash).toMatch(/^sha256:/);
+  });
+
+  it('overlays locally discovered engine models on top of the trusted catalog', async () => {
+    const keys = createKeyPair();
+    const payload = makeCatalog();
+    const envelope = createControlPlaneEnvelope({
+      kind: 'agent_engine_model_catalog',
+      payload,
+      keyId: 'agent-engine-test-key',
+      privateKey: keys.privateKeyPem,
+      issuedAt: '2026-07-08T00:00:00.000Z',
+      expiresAt: '2099-12-31T23:59:59.000Z',
+    });
+    const service = new RemoteAgentEngineModelCatalogService({
+      controlPlanePublicKeys: { 'agent-engine-test-key': keys.publicKeyPem },
+      endpoint: 'https://control-plane.test/api/v1/control-plane?artifact=agent_engine_models',
+      now: Date.parse('2026-07-08T00:00:00.000Z'),
+      fetchImpl: async () => new Response(JSON.stringify(envelope), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+      localDiscoveryProvider: async () => ({
+        engines: [{
+          kind: 'claude_code',
+          defaultModel: 'fable',
+          updatedAt: '2026-07-08T00:00:00.000Z',
+          models: [{
+            id: 'fable',
+            label: 'Claude Fable (latest alias)',
+            capabilities: ['code', 'reasoning', 'longContext'],
+            recommended: true,
+            updatedAt: '2026-07-08T00:00:00.000Z',
+          }],
+        }],
+        diagnostics: [],
+      }),
+    });
+
+    const result = await service.readCatalog();
+    const claude = result.catalog.engines.find((engine) => engine.kind === 'claude_code');
+
+    expect(result.source).toBe('local_discovery');
+    expect(result.keyId).toBe('agent-engine-test-key');
+    expect(claude?.defaultModel).toBe('fable');
+    expect(claude?.models.map((model) => model.id)).toContain('fable');
   });
 
   it('falls back to the bundled catalog when the signed envelope is expired', async () => {
@@ -176,14 +304,45 @@ describe('RemoteAgentEngineModelCatalogService', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
+      disableLocalDiscovery: true,
     });
 
     const result = await service.readCatalog();
 
     expect(result.source).toBe('bundled');
-    expect(result.catalog.version).toBe('builtin-2026-05-25');
+    expect(result.catalog.version).toBe('builtin-2026-07-08');
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'remote_expired_envelope' }),
+    ]));
+  });
+
+  it('falls back to the bundled catalog when the signed remote catalog is older than bundled', async () => {
+    const keys = createKeyPair();
+    const envelope = createControlPlaneEnvelope({
+      kind: 'agent_engine_model_catalog',
+      payload: makeCatalog({ updatedAt: '2026-06-10T00:00:00.000Z' }),
+      keyId: 'agent-engine-test-key',
+      privateKey: keys.privateKeyPem,
+      issuedAt: '2026-07-08T00:00:00.000Z',
+      expiresAt: '2099-12-31T23:59:59.000Z',
+    });
+    const service = new RemoteAgentEngineModelCatalogService({
+      controlPlanePublicKeys: { 'agent-engine-test-key': keys.publicKeyPem },
+      endpoint: 'https://control-plane.test/api/v1/control-plane?artifact=agent_engine_models',
+      now: Date.parse('2026-07-08T00:00:00.000Z'),
+      fetchImpl: async () => new Response(JSON.stringify(envelope), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+      disableLocalDiscovery: true,
+    });
+
+    const result = await service.readCatalog();
+
+    expect(result.source).toBe('bundled');
+    expect(result.catalog.version).toBe('builtin-2026-07-08');
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'remote_catalog_older_than_bundled', severity: 'warning' }),
     ]));
   });
 });

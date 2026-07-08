@@ -1,9 +1,9 @@
 import type { AgentEngineModelCatalog } from './contract/agentEngine';
 
-const UPDATED_AT = '2026-05-25T00:00:00.000Z';
+const UPDATED_AT = '2026-07-08T00:00:00.000Z';
 
 export const BUILTIN_AGENT_ENGINE_MODEL_CATALOG: AgentEngineModelCatalog = {
-  version: 'builtin-2026-05-25',
+  version: 'builtin-2026-07-08',
   updatedAt: UPDATED_AT,
   engines: [
     {
@@ -63,9 +63,21 @@ export const BUILTIN_AGENT_ENGINE_MODEL_CATALOG: AgentEngineModelCatalog = {
           updatedAt: UPDATED_AT,
         },
         {
+          id: 'fable',
+          label: 'Claude Fable (latest alias)',
+          capabilities: ['code', 'reasoning', 'longContext'],
+          updatedAt: UPDATED_AT,
+        },
+        {
           id: 'opus',
           label: 'Claude Opus (latest alias)',
           capabilities: ['code', 'reasoning', 'longContext'],
+          updatedAt: UPDATED_AT,
+        },
+        {
+          id: 'haiku',
+          label: 'Claude Haiku (latest alias)',
+          capabilities: ['code', 'fast'],
           updatedAt: UPDATED_AT,
         },
       ],

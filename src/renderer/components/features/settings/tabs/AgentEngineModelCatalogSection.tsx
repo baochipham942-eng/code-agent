@@ -46,10 +46,10 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
     ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
       .then((settings) => {
         if (!cancelled) {
-          setDefaults({
-            codex_cli: settings?.models?.agentEngines?.codex_cli?.defaultModel,
-            claude_code: settings?.models?.agentEngines?.claude_code?.defaultModel,
-          });
+          setDefaults(Object.fromEntries(
+            Object.entries(settings?.models?.agentEngines ?? {})
+              .map(([kind, value]) => [kind, value?.defaultModel]),
+          ) as Partial<Record<ExternalAgentEngineKind, string>>);
         }
       })
       .catch((error: unknown) => {
@@ -114,7 +114,17 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
         <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
           {[
             [section.versionLabel, catalogResult?.catalog.version ?? '-', section.versionCaption],
-            [section.sourceLabel, catalogResult?.source === 'remote' ? section.sourceRemote : catalogResult?.source === 'bundled' ? section.sourceBundled : '-', section.sourceCaption],
+            [
+              section.sourceLabel,
+              catalogResult?.source === 'local_discovery'
+                ? section.sourceLocalDiscovery
+                : catalogResult?.source === 'remote'
+                  ? section.sourceRemote
+                  : catalogResult?.source === 'bundled'
+                    ? section.sourceBundled
+                    : '-',
+              section.sourceCaption,
+            ],
             [section.updatedAtLabel, formatCatalogDate(catalogResult?.catalog.updatedAt), section.updatedAtCaption],
             [section.engineCountLabel, String(catalogResult?.catalog.engines.length ?? 0), section.engineCountCaption],
           ].map(([label, value, caption]) => (

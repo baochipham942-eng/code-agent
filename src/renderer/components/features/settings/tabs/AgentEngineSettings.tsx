@@ -21,6 +21,23 @@ export const AgentEngineSettings: React.FC = () => {
       description={t.engineCompat.engineSection.description}
     >
       <WebModeBanner />
+      <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-4 py-3">
+        <div className="text-sm font-medium text-zinc-100">{t.engineCompat.engineSection.guide.title}</div>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          {t.engineCompat.engineSection.guide.body}
+        </p>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {t.engineCompat.engineSection.guide.items.map((item) => (
+            <div key={item.title} className="rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+              <div className="text-xs font-medium text-zinc-200">{item.title}</div>
+              <div className="mt-1 text-[11px] leading-4 text-zinc-500">{item.description}</div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] leading-4 text-zinc-500">
+          {t.engineCompat.engineSection.guide.switchHint}
+        </p>
+      </div>
       <AgentEngineListSection />
       <AgentEngineModelCatalogSection />
     </SettingsPage>

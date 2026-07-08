@@ -8,13 +8,7 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
-import type {
-  AgentEngineDescriptor,
-  AgentEngineKind,
-  AgentEngineModelCatalogModel,
-  AgentEngineModelCatalogResult,
-  AgentEngineSessionMetadata,
-} from '@shared/contract/agentEngine';
+import type { AgentEngineKind } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
 import {
@@ -25,34 +19,22 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Brain, Sparkles, Zap, Cpu, Code2, Settings, Star } from 'lucide-react';
+import { Brain, Sparkles, Zap, Code2, Settings, Star } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
-import { useI18n } from '../../hooks/useI18n';
 import { trackRenderer } from '../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import {
-  buildEngineBillingSummary,
-  buildEngineModelCompatContext,
-  buildEngineReliabilitySummary,
   buildProviderBillingSummary,
   buildProviderHealthSummary,
-  EngineBillingBadge,
-  EngineReliabilityPanel,
-  getEngineModelCompatReasonText,
   buildProviderMetaTitle,
-  buildModelSwitcherEngineSelection,
   CAPABILITY_CONFIG,
-  ENGINE_ICON,
   ENGINE_SHORT_LABEL,
   formatExternalModelSwitcherTooltip,
-  formatEngineTooltip,
   formatNativeModelSwitcherTooltip,
   getEngineEffortOptions,
-  getEngineUnavailableReason,
   getProviderEffortOptions,
   getSelectedEffortOption,
-  isExternalEngineKind,
   type ProviderHealthSnapshot,
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
@@ -95,7 +77,6 @@ function trackModelSelected(properties: Record<string, unknown>): void {
 }
 
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
-  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
   const [overrideProvider, setOverrideProvider] = useState<ModelProvider | null>(null);
@@ -104,7 +85,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
-  const [engineCatalogResult, setEngineCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -115,28 +95,15 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ? s.sessions.find((item) => item.id === s.currentSessionId) ?? null
       : null
   );
-  const updateSessionEngine = useSessionStore((s) => s.updateSessionEngine);
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
-  const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
   const thinkingEnabled = useModeStore((s) => s.thinkingEnabled);
   const setThinkingEnabled = useModeStore((s) => s.setThinkingEnabled);
-  // Engine adapter（Native/Codex/Claude）— 从 AgentEngineSelector 合并进来，
-  // 让"Engine · 主任务模型 · Effort"在一个 trigger 里统一展示和切换。
+  // 状态栏仍展示当前执行引擎；弹窗本身只负责 Neo provider 模型，不再承载外部引擎模型配置。
   const engine = normalizeAgentEngineSession(session?.engine);
-  const effectiveWorkingDirectory = session?.workingDirectory || appWorkingDirectory || null;
-  const [engineDescriptors, setEngineDescriptors] = useState<AgentEngineDescriptor[]>([]);
-  const selectedEngineDescriptor = useMemo(
-    () => engineDescriptors.find((descriptor) => descriptor.kind === engine.kind) ?? null,
-    [engine.kind, engineDescriptors],
-  );
-  const selectedEngineCatalog = useMemo(() => {
-    if (!engineCatalogResult || !isExternalEngineKind(engine.kind)) return null;
-    return engineCatalogResult.catalog.engines.find((item) => item.kind === engine.kind) ?? null;
-  }, [engine.kind, engineCatalogResult]);
   const modelProviderInclusions = useMemo(
     () => Array.from(new Set([
       defaultProvider,
@@ -196,36 +163,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }));
   }, [filteredOptions, healthMap]);
 
-  const filteredEngineModels = useMemo(() => {
-    if (!selectedEngineCatalog) return [];
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return selectedEngineCatalog.models;
-    return selectedEngineCatalog.models.filter((model) =>
-      model.id.toLowerCase().includes(query) ||
-      model.label.toLowerCase().includes(query) ||
-      model.capabilities.some((capability) => capability.toLowerCase().includes(query))
-    );
-  }, [searchQuery, selectedEngineCatalog]);
-
-  // 兼容矩阵上下文：codex/claude 走"不在目录/已停用"判定、mimo/kimi 走"由 CLI 解析"注解。
-  const engineModelCompatContext = useMemo(
-    () => buildEngineModelCompatContext(selectedEngineCatalog?.models),
-    [selectedEngineCatalog],
-  );
-
-  const getPreferredEngineModel = useCallback(
-    (kind: AgentEngineKind): string | undefined => {
-      if (!isExternalEngineKind(kind)) return undefined;
-      const catalogEngine = engineCatalogResult?.catalog.engines.find((item) => item.kind === kind);
-      const localDefault = modelSettings?.models?.agentEngines?.[kind]?.defaultModel;
-      const enabledModels = catalogEngine?.models.filter((model) => !model.disabledReason) ?? [];
-      return enabledModels.find((model) => model.id === localDefault)?.id
-        ?? enabledModels.find((model) => model.id === catalogEngine?.defaultModel)?.id
-        ?? enabledModels[0]?.id;
-    },
-    [engineCatalogResult, modelSettings],
-  );
-
   // 打开时自动聚焦搜索框 + 重置搜索
   useEffect(() => {
     if (open) {
@@ -236,6 +173,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
     }
   }, [open]);
+
+  useEffect(() => {
+    if (engine.kind !== 'native' && open) {
+      setOpen(false);
+    }
+  }, [engine.kind, open]);
 
   // 打开时读取模型设置，保证输入框模型列表和 Settings 的启用状态一致
   useEffect(() => {
@@ -261,55 +204,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         .catch(() => { /* 静默失败，健康点不显示即可 */ });
     }
   }, [open]);
-
-  // 打开时拉取 agent engine 描述符（Native/Codex/Claude 可用性）
-  useEffect(() => {
-    if (!open) return;
-    window.domainAPI?.invoke<AgentEngineDescriptor[]>(IPC_DOMAINS.AGENT_ENGINE, 'list', {})
-      .then((res) => { if (res?.success && res.data) setEngineDescriptors(res.data); })
-      .catch(() => { /* engine 检测失败时只显示当前 engine 标签 */ });
-  }, [open]);
-
-  // 打开时拉取服务端签名模型目录；主进程已做验签和 bundled fallback。
-  useEffect(() => {
-    if (!open) return;
-    window.domainAPI?.invoke<AgentEngineModelCatalogResult>(IPC_DOMAINS.AGENT_ENGINE, 'listModels', {})
-      .then((res) => { if (res?.success && res.data) setEngineCatalogResult(res.data); })
-      .catch(() => {
-        setEngineCatalogResult(null);
-      });
-  }, [open]);
-
-  const selectEngine = useCallback(
-    async (descriptor: AgentEngineDescriptor) => {
-      if (!sessionId) return;
-      if (descriptor.kind !== 'native' && !effectiveWorkingDirectory) {
-        toast.error(`${descriptor.label} 需要先选择工作目录`);
-        return;
-      }
-      if (!descriptor.executable) {
-        toast.info(`${descriptor.label} 当前只开放检测和历史导入`);
-        return;
-      }
-      if (
-        descriptor.installState === 'missing'
-        || descriptor.runtimeState === 'error'
-        || descriptor.runtimeState === 'blocked'
-      ) {
-        toast.error(`${descriptor.label} 不可用`);
-        return;
-      }
-      await updateSessionEngine(
-        sessionId,
-        buildModelSwitcherEngineSelection(
-          descriptor,
-          effectiveWorkingDirectory,
-          getPreferredEngineModel(descriptor.kind),
-        ),
-      );
-    },
-    [effectiveWorkingDirectory, getPreferredEngineModel, sessionId, updateSessionEngine]
-  );
 
   // 点击外部关闭（portal 让菜单脱离 ref，需要同时检查 triggerRef + menuRef）
   useEffect(() => {
@@ -410,56 +304,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     openSettingsTab('model');
   }, [openSettingsTab]);
 
-  const handleSelectEngineModel = useCallback(
-    async (model: AgentEngineModelCatalogModel) => {
-      if (!sessionId || !isExternalEngineKind(engine.kind)) return;
-      const needsWorkspace = !effectiveWorkingDirectory;
-      const unavailableReason = selectedEngineDescriptor
-        ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
-        : null;
-      if (unavailableReason) {
-        toast.info(unavailableReason);
-        return;
-      }
-      if (model.disabledReason) {
-        toast.info(model.disabledReason);
-        return;
-      }
-      try {
-        const res = await window.domainAPI?.invoke<AgentEngineSessionMetadata>(
-          IPC_DOMAINS.AGENT_ENGINE,
-          'selectModel',
-          {
-            sessionId,
-            kind: engine.kind,
-            model: model.id,
-          },
-        );
-        if (!res?.success || !res.data) {
-          toast.error('模型切换失败: ' + (res?.error?.message ?? '未知错误'));
-          return;
-        }
-        useSessionStore.setState((state) => ({
-          sessions: state.sessions.map((item) =>
-            item.id === sessionId
-              ? { ...item, engine: normalizeAgentEngineSession(res.data), updatedAt: Date.now() }
-              : item
-          ),
-        }));
-        trackModelSelected({
-          sessionId,
-          engine: engine.kind,
-          model: model.id,
-          mode: 'engine_model',
-        });
-        setOpen(false);
-      } catch (err) {
-        toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误'));
-      }
-    },
-    [effectiveWorkingDirectory, engine.kind, selectedEngineDescriptor, sessionId],
-  );
-
   const handleSelectAuto = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -523,14 +367,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [sessionId, defaultProvider, currentModel]);
 
-  const selectableOptionCount = engine.kind === 'native'
-    ? showModelSettingsPrompt ? 0 : 1 + filteredOptions.length
-    : filteredEngineModels.length;
+  const selectableOptionCount = showModelSettingsPrompt ? 0 : 1 + filteredOptions.length;
 
   useEffect(() => {
     if (!open) return;
     setActiveOptionIndex(0);
-  }, [engine.kind, open, searchQuery]);
+  }, [open, searchQuery]);
 
   useEffect(() => {
     if (!open || selectableOptionCount <= 0) return;
@@ -560,17 +402,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     if (event.key === 'Enter') {
       if (selectableOptionCount <= 0) return;
       event.preventDefault();
-      if (engine.kind === 'native') {
-        if (activeOptionIndex === 0) {
-          void handleSelectAuto();
-          return;
-        }
-        const option = filteredOptions[activeOptionIndex - 1];
-        if (option) void handleSelect(option);
+      if (activeOptionIndex === 0) {
+        void handleSelectAuto();
         return;
       }
-      const model = filteredEngineModels[activeOptionIndex];
-      if (model) void handleSelectEngineModel(model);
+      const option = filteredOptions[activeOptionIndex - 1];
+      if (option) void handleSelect(option);
       return;
     }
 
@@ -580,12 +417,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [
     activeOptionIndex,
-    engine.kind,
-    filteredEngineModels,
     filteredOptions,
     handleSelect,
     handleSelectAuto,
-    handleSelectEngineModel,
     selectableOptionCount,
   ]);
 
@@ -597,31 +431,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
   );
-  const selectedCatalogModel = selectedEngineCatalog?.models.find((model) => model.id === engine.model);
-  const selectedEngineReliability = useMemo(() => buildEngineReliabilitySummary({
-    descriptor: selectedEngineDescriptor,
-    needsWorkspace: engine.kind !== 'native' && !effectiveWorkingDirectory,
-    selectedModel: selectedCatalogModel,
-    sessionFailure: engine.failure,
-  }), [effectiveWorkingDirectory, engine.failure, engine.kind, selectedCatalogModel, selectedEngineDescriptor]);
-  // 引擎级计费模式（订阅/按量/免费/未知）— 选定引擎的计费语义，标签随 i18n。
-  const selectedEngineBilling = buildEngineBillingSummary(engine.kind, t);
-  const externalModelUnavailable = Boolean(
-    isExternalEngineKind(engine.kind) &&
-    selectedEngineCatalog &&
-    engine.model &&
-    (!selectedCatalogModel || selectedCatalogModel.disabledReason),
-  );
-  const externalDisplayLabel = externalModelUnavailable
-    ? t.engineCompat.modelUnavailable
-    : selectedCatalogModel?.label
-      ?? selectedEngineCatalog?.models.find((model) => model.id === selectedEngineCatalog.defaultModel)?.label
-      ?? engine.model
-      ?? selectedEngineCatalog?.defaultModel
-      ?? '主任务模型';
   const displayLabel = engine.kind === 'native'
     ? showModelSettingsPrompt ? '配置模型' : nativeDisplayLabel
-    : externalDisplayLabel;
+    : engine.model ?? '默认模型';
 
   const effortOptions = useMemo(
     () => engine.kind === 'native'
@@ -647,9 +459,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const triggerTitle = engine.kind !== 'native'
     ? formatExternalModelSwitcherTooltip({
       engineLabel: ENGINE_SHORT_LABEL[engine.kind],
-      model: engine.model ?? selectedEngineCatalog?.defaultModel ?? '主任务模型',
+      model: engine.model ?? '默认模型',
       effort: selectedEffort,
-      reliabilityLabel: selectedEngineReliability?.label,
     })
     : showModelSettingsPrompt
       ? '还没有可用模型'
@@ -665,6 +476,15 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         effort: selectedEffort,
         thinkingLabel: thinkingShortLabel,
       });
+
+  const handleTriggerClick = useCallback(() => {
+    if (engine.kind !== 'native') {
+      setOpen(false);
+      openSettingsTab('agentEngine');
+      return;
+    }
+    setOpen((value) => !value);
+  }, [engine.kind, openSettingsTab]);
 
   useEffect(() => {
     if (effortOptions.some((option) => option.value === effortLevel)) return;
@@ -686,57 +506,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: 9999,
       }}
     >
-          {/* Engine adapter 行 — 三层选择的第一层 */}
-          {engineDescriptors.length > 0 && (
-            <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
-              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-                <span className="text-[9px] text-zinc-600">1</span>
-                <Cpu className="w-3 h-3" />
-                <span>Engine</span>
-                <span className="ml-auto text-[9px]">
-                  <EngineBillingBadge summary={selectedEngineBilling} />
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-1">
-                {engineDescriptors.map((descriptor) => {
-                  const selected = descriptor.kind === engine.kind;
-                  const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
-                  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace);
-                  const disabled =
-                    Boolean(unavailableReason);
-                  const shortLabel = ENGINE_SHORT_LABEL[descriptor.kind] ?? descriptor.label;
-                  return (
-                    <button
-                      key={descriptor.kind}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => void selectEngine(descriptor)}
-                      title={formatEngineTooltip(descriptor, needsWorkspace)}
-                      className={`
-                        inline-flex items-center justify-center gap-1 px-1.5 py-1 text-[10px] rounded transition-colors
-                        ${selected
-                          ? 'text-emerald-300 bg-zinc-700 font-medium'
-                          : disabled
-                            ? 'text-zinc-600 cursor-not-allowed'
-                            : 'text-zinc-400 hover:bg-zinc-700/50'}
-                      `}
-                    >
-                      {ENGINE_ICON[descriptor.kind]}
-                      <span>{shortLabel}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {selectedEngineReliability && (
-            <EngineReliabilityPanel summary={selectedEngineReliability} />
-          )}
-
-          <div className="border-b border-zinc-700/50">
-            <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
-              <span className="text-[9px] text-zinc-600">2</span>
+            <div className="border-b border-zinc-700/50">
+              <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
               <Code2 className="w-3 h-3" />
               <span>主任务模型</span>
             </div>
@@ -758,8 +529,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               />
             </div>
             <div className="max-h-64 overflow-y-auto pb-1">
-              {engine.kind === 'native' ? (
-                showModelSettingsPrompt ? (
+              {showModelSettingsPrompt ? (
                   <div className="px-3 py-4 text-center">
                     <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded bg-zinc-700/60 text-zinc-300">
                       <Settings className="h-4 w-4" />
@@ -871,70 +641,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                           );
                         })}
                       </div>
-                      );
-                    })
-                  )}
-                  </>
-                )
-              ) : !selectedEngineCatalog ? (
-                <div className="px-3 py-3 text-xs text-gray-500 text-center">
-                  模型目录暂不可用
-                </div>
-              ) : filteredEngineModels.length === 0 ? (
-                <div className="px-3 py-3 text-xs text-gray-500 text-center">
-                  无匹配模型
-                </div>
-              ) : (
-                filteredEngineModels.map((model, index) => {
-                  const needsWorkspace = engine.kind !== 'native' && !effectiveWorkingDirectory;
-                  const unavailableReason = selectedEngineDescriptor
-                    ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
-                    : null;
-                  const disabled = Boolean(model.disabledReason || unavailableReason);
-                  // 兼容矩阵判定：disabledReason 优先，否则回落 reasonCode 的 i18n 文案。
-                  const compatReason = getEngineModelCompatReasonText(engine.kind, model, engineModelCompatContext, t);
-                  const selected = engine.model === model.id
-                    || (!engine.model && model.id === selectedEngineCatalog.defaultModel);
-                  return (
-                    <button
-                      key={model.id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => void handleSelectEngineModel(model)}
-                      data-model-option-index={index}
-                      title={compatReason || unavailableReason || model.id}
-                      className={`
-                        w-full text-left px-3 py-1.5 text-xs transition-colors
-                        ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
-                        ${selected ? 'text-purple-400' : disabled ? 'text-zinc-600 cursor-not-allowed' : 'text-gray-300 hover:bg-zinc-700'}
-                      `}
-                    >
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className="font-medium">{model.label}</span>
-                        {model.disabledReason ? (
-                          <span className="rounded bg-zinc-700/70 px-1 py-0.5 text-[10px] text-zinc-400">不可用</span>
-                        ) : null}
-                        {model.capabilities.map((cap) => {
-                          const cfg = CAPABILITY_CONFIG[cap];
-                          if (!cfg) return null;
-                          return (
-                            <span
-                              key={cap}
-                              className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                              title={cap}
-                            >
-                              {cfg.icon}
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <span className="text-gray-500 text-[10px]">
-                        {model.id}
-                        {compatReason ? ` · ${compatReason}` : ''}
-                      </span>
-                    </button>
-                  );
-                })
+	                      );
+	                    })
+	                  )}
+	                  </>
               )}
             </div>
           </div>
@@ -942,7 +652,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           {!showModelSettingsPrompt && supportsThinkingControls && (
             <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-                <span className="text-[9px] text-zinc-600">3</span>
                 <Brain className="w-3 h-3" />
                 <span>Thinking</span>
               </div>
@@ -973,7 +682,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           {!showModelSettingsPrompt && (
           <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-              <span className="text-[9px] text-zinc-600">{supportsThinkingControls ? '4' : '3'}</span>
               <Zap className="w-3 h-3" />
               <span>Effort</span>
             </div>
@@ -1017,9 +725,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={handleTriggerClick}
         aria-label="切换模型"
-        aria-expanded={open}
+        aria-expanded={engine.kind === 'native' ? open : undefined}
         className={`
           font-medium cursor-pointer truncate max-w-[260px]
           hover:text-white transition-colors

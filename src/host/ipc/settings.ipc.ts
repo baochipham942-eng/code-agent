@@ -5,7 +5,7 @@
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { AppSettings, ModelProvider } from '../../shared/contract';
+import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '../../shared/contract';
 import type { ServiceApiKey } from '../../shared/contract/configService';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
@@ -13,19 +13,158 @@ import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from '.
 import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
+import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
 
+const LOCAL_PROVIDER_DISCOVERY_TTL_MS = 10_000;
+const LOCAL_PROVIDER_DISCOVERY_TIMEOUT_MS = 1_200;
+
+let localProviderDiscoveryCache: {
+  baseUrl: string;
+  protocol: ModelProviderSettings['protocol'];
+  expiresAt: number;
+  result?: DiscoverModelsResult;
+  promise?: Promise<DiscoverModelsResult>;
+} | null = null;
+
 async function handleGet(getConfigService: () => ConfigService | null): Promise<AppSettings> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
-  return configService.getSettings();
+  const settings = configService.getSettings();
+  return decorateSettingsWithLocalProviderDiscovery(settings);
 }
 
 function cloneSettings(settings: AppSettings): AppSettings {
   return JSON.parse(JSON.stringify(settings)) as AppSettings;
+}
+
+function buildLocalDiscoveryUnavailableResult(message = '本地 Ollama 服务不可达'): DiscoverModelsResult {
+  return {
+    success: false,
+    models: [],
+    latencyMs: 0,
+    error: {
+      code: 'LOCAL_PROVIDER_UNAVAILABLE',
+      message,
+      suggestion: '启动 Ollama 后重新打开模型选择器或进入设置页发现模型',
+    },
+  };
+}
+
+function getLocalProviderDiscoveryBaseUrl(providerConfig?: Partial<ModelProviderSettings> | null): string {
+  return providerConfig?.baseUrl || MODEL_API_ENDPOINTS.ollama;
+}
+
+function mergeLocalDiscoveredModelEntry(
+  existing: ModelEntrySettings | undefined,
+  discovered: DiscoveredProviderModel,
+  shouldEnable: boolean,
+  discoveredAt: number,
+): ModelEntrySettings {
+  return {
+    ...existing,
+    label: existing?.label || discovered.label,
+    enabled: shouldEnable,
+    capabilities: existing?.capabilities || discovered.capabilities,
+    maxTokens: existing?.maxTokens ?? discovered.maxTokens,
+    contextWindow: existing?.contextWindow ?? discovered.contextWindow,
+    supportsTool: existing?.supportsTool ?? discovered.supportsTool,
+    supportsVision: existing?.supportsVision ?? discovered.supportsVision,
+    supportsStreaming: existing?.supportsStreaming ?? discovered.supportsStreaming,
+    discoveredAt,
+  };
+}
+
+export function applyLocalProviderDiscoverySnapshot(
+  settings: AppSettings,
+  discovery: DiscoverModelsResult | null | undefined,
+  discoveredAt = Date.now(),
+): AppSettings {
+  const next = cloneSettings(settings);
+  const local = next.models?.providers?.local;
+  if (!local || local.enabled === false) return next;
+
+  if (!discovery?.success || discovery.models.length === 0) {
+    local.apiKeyConfigured = false;
+    local.models = {};
+    return next;
+  }
+
+  const existingModels = local.models ?? {};
+  const nextModels: Record<string, ModelEntrySettings> = {};
+  for (const discovered of discovery.models) {
+    const existing = existingModels[discovered.id];
+    nextModels[discovered.id] = mergeLocalDiscoveredModelEntry(
+      existing,
+      discovered,
+      existing?.enabled ?? true,
+      discoveredAt,
+    );
+  }
+
+  local.enabled = true;
+  local.apiKeyConfigured = true;
+  local.baseUrl = getLocalProviderDiscoveryBaseUrl(local);
+  local.protocol = local.protocol ?? 'openai';
+  local.models = nextModels;
+  if (!local.model || !nextModels[local.model]) {
+    local.model = discovery.models[0]?.id;
+  }
+
+  return next;
+}
+
+async function getLocalProviderDiscoverySnapshot(
+  providerConfig: Partial<ModelProviderSettings>,
+): Promise<DiscoverModelsResult> {
+  const baseUrl = getLocalProviderDiscoveryBaseUrl(providerConfig);
+  const protocol = providerConfig.protocol ?? 'openai';
+  const now = Date.now();
+
+  if (
+    localProviderDiscoveryCache?.baseUrl === baseUrl
+    && localProviderDiscoveryCache.protocol === protocol
+    && localProviderDiscoveryCache.expiresAt > now
+  ) {
+    if (localProviderDiscoveryCache.result) return localProviderDiscoveryCache.result;
+    if (localProviderDiscoveryCache.promise) return localProviderDiscoveryCache.promise;
+  }
+
+  const promise = handleDiscoverModels({
+    provider: 'local',
+    baseUrl,
+    apiKey: '',
+    protocol,
+    timeoutMs: LOCAL_PROVIDER_DISCOVERY_TIMEOUT_MS,
+  }).catch((error: unknown) => buildLocalDiscoveryUnavailableResult(
+    error instanceof Error ? error.message : String(error),
+  ));
+
+  localProviderDiscoveryCache = {
+    baseUrl,
+    protocol,
+    expiresAt: now + LOCAL_PROVIDER_DISCOVERY_TTL_MS,
+    promise,
+  };
+
+  const result = await promise;
+  localProviderDiscoveryCache = {
+    baseUrl,
+    protocol,
+    expiresAt: Date.now() + LOCAL_PROVIDER_DISCOVERY_TTL_MS,
+    result,
+  };
+  return result;
+}
+
+async function decorateSettingsWithLocalProviderDiscovery(settings: AppSettings): Promise<AppSettings> {
+  const local = settings.models?.providers?.local;
+  if (!local || local.enabled === false) return settings;
+  const discovery = await getLocalProviderDiscoverySnapshot(local);
+  return applyLocalProviderDiscoverySnapshot(settings, discovery);
 }
 
 function sanitizeSettingsForUser(settings: AppSettings): AppSettings {
@@ -169,7 +308,7 @@ async function handleSetDevMode(
 
 async function handleCheckApiKeyConfigured(getConfigService: () => ConfigService | null): Promise<boolean> {
   const configService = getConfigService();
-  const settings = configService?.getSettings();
+  const settings = configService ? await handleGet(getConfigService) : undefined;
   if (settings?.models?.providers) {
     for (const [provider, providerConfig] of Object.entries(settings.models.providers)) {
       if (providerConfig?.enabled !== false && isRuntimeProviderConfigured(provider as ModelProvider, providerConfig)) {

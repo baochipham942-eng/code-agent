@@ -7,6 +7,7 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Toggle } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -801,7 +802,21 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
-      <SettingsSection title={modelText.providerSection.title} description={modelText.providerSection.description}>
+      <SettingsSection
+        title={modelText.providerSection.title}
+        description={modelText.providerSection.description}
+        actions={
+          <Button
+            size="sm"
+            variant={isAddingProvider ? 'secondary' : 'primary'}
+            onClick={() => setIsAddingProvider(true)}
+            disabled={isWebMode()}
+            leftIcon={<Plus className="h-3.5 w-3.5" />}
+          >
+            {modelText.list.addProvider}
+          </Button>
+        }
+      >
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}
@@ -811,7 +826,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           defaultProviderId={defaultSelection.provider}
           isAddingProvider={isAddingProvider}
           onSelect={handleSelectProvider}
-          onStartAddProvider={() => setIsAddingProvider(true)}
           onOpenDoctor={() => setIsDoctorOpen(true)}
         />
 

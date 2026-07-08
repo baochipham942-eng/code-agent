@@ -98,7 +98,7 @@ describe('modelRuntime', () => {
     expect(new Set(withInclusion.map((option) => option.provider))).toEqual(new Set(['deepseek', 'moonshot']));
   });
 
-  it('keeps local provider in switcher options without an API key', () => {
+  it('hides local provider when local discovery is unavailable', () => {
     const settings = {
       models: {
         default: 'local',
@@ -106,6 +106,7 @@ describe('modelRuntime', () => {
         providers: {
           local: {
             enabled: true,
+            apiKeyConfigured: false,
             models: {
               'llama3.2': { enabled: true, label: 'Llama 3.2' },
             },
@@ -114,8 +115,34 @@ describe('modelRuntime', () => {
       },
     } as AppSettings;
 
+    expect(buildRuntimeModelOptions(settings, ['local'], {
+      includeDisabledProviders: ['local'],
+    })).toEqual([]);
+    expect(hasConfiguredRuntimeModels(settings)).toBe(false);
+  });
+
+  it('shows only locally discovered Ollama models when local discovery succeeds', () => {
+    const settings = {
+      models: {
+        default: 'local',
+        defaultProvider: 'local',
+        providers: {
+          local: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'qwen3:8b': { enabled: true, label: 'Qwen3 8B', discoveredAt: 123 },
+              'llama3.2': { enabled: true, label: 'Llama 3.2', discoveredAt: 123 },
+              'stale-local': { enabled: true, label: 'Stale Local' },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
     const options = buildRuntimeModelOptions(settings, ['local']);
-    expect(options.length).toBeGreaterThan(0);
+    expect(options.map((option) => option.model)).toEqual(expect.arrayContaining(['qwen3:8b', 'llama3.2']));
+    expect(options.map((option) => option.model)).not.toContain('stale-local');
     expect(new Set(options.map((option) => option.provider))).toEqual(new Set(['local']));
   });
 
@@ -162,7 +189,7 @@ describe('modelRuntime', () => {
     }).length).toBeGreaterThan(0);
   });
 
-  it('accepts stored API keys and enabled local models as configured runtime models', () => {
+  it('accepts stored API keys and discovered local models as configured runtime models', () => {
     const keyedSettings = {
       models: {
         default: 'xiaomi',
@@ -177,7 +204,13 @@ describe('modelRuntime', () => {
         default: 'local',
         defaultProvider: 'local',
         providers: {
-          local: { enabled: true },
+          local: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'llama3.2': { enabled: true, label: 'Llama 3.2', discoveredAt: 123 },
+            },
+          },
         },
       },
     } as AppSettings;

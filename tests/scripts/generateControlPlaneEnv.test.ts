@@ -37,7 +37,7 @@ describe('control-plane env bundle generator', () => {
 
     const agentEngineCatalog = JSON.parse(readFileSync(join(outDir, 'agent-engine-model-catalog.json'), 'utf8')) as {
       version: string;
-      engines: Array<{ kind: string; defaultModel: string }>;
+      engines: Array<{ kind: string; defaultModel: string; models: Array<{ id: string }> }>;
     };
     expect(agentEngineCatalog).toMatchObject({
       version: 'test-version',
@@ -46,6 +46,9 @@ describe('control-plane env bundle generator', () => {
         { kind: 'claude_code', defaultModel: 'sonnet' },
       ],
     });
+    expect(
+      agentEngineCatalog.engines.find((engine) => engine.kind === 'claude_code')?.models.map((model) => model.id),
+    ).toEqual(expect.arrayContaining(['sonnet', 'fable', 'opus', 'haiku']));
 
     const rendererRollout = JSON.parse(readFileSync(join(outDir, 'renderer-bundle-rollout.json'), 'utf8')) as {
       version: string;

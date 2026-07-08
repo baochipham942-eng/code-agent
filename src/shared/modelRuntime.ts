@@ -186,7 +186,7 @@ export function isRuntimeProviderConfigured(
   providerId: ModelProvider,
   providerConfig?: Partial<ModelProviderSettings> | null,
 ): boolean {
-  if (providerId === 'local') return true;
+  if (providerId === 'local') return providerConfig?.apiKeyConfigured === true;
   return Boolean(
     providerConfig?.managedByCloud
     || providerConfig?.apiKeyConfigured
@@ -704,26 +704,35 @@ export function buildRuntimeModelOptions(
 
     if (settings && providerConfig?.enabled === false && !includedDisabledProviders.has(providerId)) return;
 
-    // 没配置 API Key 的 provider 不进聊天切换面板（local/Ollama 无需 key 除外）。
+    // 没配置 API Key / 本机可用信号的 provider 不进聊天切换面板。
     // apiKeyConfigured 由 configService.getSettings() 动态注入：SecureStorage / env 任一有 key 即 true，
     // 因此老配置（key 存在但 settings 文件里没该字段）也能被正确识别。
     // 当前会话 / 默认 provider 走 includeDisabledProviders 豁免，避免选中项凭空消失。
     const missingApiKey = !isRuntimeProviderConfigured(providerId, providerConfig);
-    if (settings && missingApiKey && !includedDisabledProviders.has(providerId)) return;
+    const canUseInclusionFallback = providerId !== 'local' && includedDisabledProviders.has(providerId);
+    if (settings && missingApiKey && !canUseInclusionFallback) return;
 
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
     const protocol = resolveProviderProtocol(providerId, providerConfig);
     const runtimeModels = getProviderRuntimeModels(provider, providerConfig);
-    const enabledModels = runtimeModels.filter((model) => model.enabled);
+    const localDiscoveredModelIds = providerId === 'local'
+      ? new Set(Object.entries(providerConfig?.models ?? {})
+        .filter(([, modelConfig]) => typeof modelConfig.discoveredAt === 'number')
+        .map(([modelId]) => modelId))
+      : undefined;
+    const selectableRuntimeModels = providerId === 'local'
+      ? runtimeModels.filter((model) => localDiscoveredModelIds?.has(model.id))
+      : runtimeModels;
+    const enabledModels = selectableRuntimeModels.filter((model) => model.enabled);
     const providerGroup = resolveProviderGroup({
       providerId,
       providerConfig,
       protocol,
-      models: runtimeModels,
+      models: selectableRuntimeModels,
     });
     const isCustomProvider = providerId === 'custom' || isDynamicCustomProviderId(providerId);
     const models = isCustomProvider && providerGroup !== providerId
-      ? runtimeModels.filter((model) => modelBelongsToProviderGroup(model.id, providerGroup))
+      ? selectableRuntimeModels.filter((model) => modelBelongsToProviderGroup(model.id, providerGroup))
       : enabledModels;
     if (models.length === 0) return;
     const canonicalGroupLabel = getProviderDisplayName(providerGroup) || providerGroup;

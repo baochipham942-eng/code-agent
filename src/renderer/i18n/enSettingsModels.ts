@@ -81,7 +81,7 @@ export const enSettingsModels = {
         description: 'Connect Providers, choose the default model, and select which models appear in the chat model picker.',
       },
       addProvider: {
-        title: 'Add',
+        title: 'Add Provider',
         displayName: 'Display name',
         apiKeyLabel: 'API Key',
         baseUrlHint: 'Stop at /v1; do not include /chat/completions.',
@@ -95,7 +95,7 @@ export const enSettingsModels = {
         ollamaUnavailableHint: 'Available after starting Ollama',
         addKey: 'Add Key',
         searchPlaceholder: 'Search Provider or model...',
-        addProvider: 'Add',
+        addProvider: 'Add Provider',
         doctor: 'Doctor',
         configuredPrefix: 'Available · ',
         noMatch: 'No matching Provider',

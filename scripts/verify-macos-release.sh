@@ -50,6 +50,56 @@ find_first_existing_file() {
   return 1
 }
 
+detach_dmg_mountpoint() {
+  local mountpoint="$1"
+
+  hdiutil detach "${mountpoint}" -quiet >/dev/null 2>&1 \
+    || hdiutil detach "${mountpoint}" -force -quiet >/dev/null 2>&1 \
+    || true
+}
+
+fail_dmg_install_layout() {
+  local mountpoint="$1"
+  local message="$2"
+
+  echo "${message}" >&2
+  echo "[verify-macos-release] dmg root contents:" >&2
+  ls -la "${mountpoint}" >&2 || true
+  detach_dmg_mountpoint "${mountpoint}"
+  rm -rf "${mountpoint}"
+  exit 1
+}
+
+verify_dmg_install_layout() {
+  local dmg_path="$1"
+  local mountpoint
+  local applications_target
+
+  mountpoint="$(mktemp -d "${TMPDIR:-/tmp}/agent-neo-dmg-verify.XXXXXX")"
+
+  if ! hdiutil attach "${dmg_path}" -readonly -nobrowse -noautoopen -mountpoint "${mountpoint}" >/dev/null; then
+    rm -rf "${mountpoint}"
+    echo "[verify-macos-release] failed to mount dmg for layout verification: ${dmg_path}" >&2
+    exit 1
+  fi
+
+  if [[ ! -d "${mountpoint}/${APP_NAME}.app" ]]; then
+    fail_dmg_install_layout "${mountpoint}" "[verify-macos-release] dmg missing ${APP_NAME}.app at root: ${dmg_path}"
+  fi
+
+  if [[ ! -L "${mountpoint}/Applications" ]]; then
+    fail_dmg_install_layout "${mountpoint}" "[verify-macos-release] dmg missing Applications symlink: ${dmg_path}"
+  fi
+
+  applications_target="$(readlink "${mountpoint}/Applications")"
+  if [[ "${applications_target}" != "/Applications" ]]; then
+    fail_dmg_install_layout "${mountpoint}" "[verify-macos-release] dmg Applications symlink points to ${applications_target}, expected /Applications: ${dmg_path}"
+  fi
+
+  detach_dmg_mountpoint "${mountpoint}"
+  rm -rf "${mountpoint}"
+}
+
 echo "[verify-macos-release] scanning bundled resources"
 echo "[verify-macos-release] resources root: ${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
@@ -150,6 +200,8 @@ if (( ${#dmg_files[@]} == 0 )); then
 fi
 
 for dmg_path in "${dmg_files[@]}"; do
+  echo "[verify-macos-release] verifying dmg install layout: ${dmg_path}"
+  verify_dmg_install_layout "${dmg_path}"
   echo "[verify-macos-release] verifying dmg signature: ${dmg_path}"
   codesign --verify --verbose=2 "${dmg_path}"
   if [[ "${REQUIRE_DEVELOPER_ID}" == "1" || "${REQUIRE_DEVELOPER_ID}" == "true" ]]; then

@@ -7,6 +7,7 @@ TARGET_DIR="${ROOT_DIR}/src-tauri/target"
 APP_NAME="${APP_NAME:-Agent Neo}"
 LEGACY_APP_NAME="${LEGACY_APP_NAME:-Code Agent}"
 HELPER_APP_NAME="${HELPER_APP_NAME:-Agent Neo Computer Use}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"
 INSTALLED_APP_PATH="${INSTALLED_APP_PATH:-/Applications/${APP_NAME}.app}"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
@@ -49,7 +50,7 @@ detach_bundle_volumes() {
   local mounted_name
   shopt -s nullglob
 
-  for mounted_name in "${APP_NAME}" "${LEGACY_APP_NAME}"; do
+  for mounted_name in "${DMG_VOLUME_NAME}" "${APP_NAME}" "${LEGACY_APP_NAME}"; do
     for vol in /Volumes/"${mounted_name}"*; do
       [[ -d "${vol}" ]] && hdiutil detach "${vol}" >/dev/null 2>&1 || true
     done

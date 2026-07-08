@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-07-08
+
+### Fixed
+
+- **macOS DMG install flow**: the release DMG now opens as an installer-style volume named `Install Agent Neo`, with `Agent Neo.app` and an `/Applications` shortcut at the root so users drag the app into Applications instead of running it from the mounted disk image. The macOS release verifier now mounts every DMG and fails if that install layout is missing.
+- **Packaged relaunch after force-quit**: packaged launches clear stale `webServer` processes holding the desktop port before spawning the bundled server, and the Node server also clears the port before service initialization. This prevents a killed shell from leaving an old backend that makes the next launch look broken.
+
 ## [0.24.1] - 2026-07-06
 
 ### Fixed

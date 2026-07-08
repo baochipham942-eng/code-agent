@@ -74,6 +74,7 @@ fi
 
 REPOSITORY="${GITHUB_REPOSITORY:-baochipham942-eng/code-agent}"
 UPDATER_ENDPOINT="${TAURI_UPDATER_ENDPOINT:-https://github.com/${REPOSITORY}/releases/latest/download/latest.json}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"
 
 mkdir -p "${CONFIG_DIR}"
 
@@ -98,6 +99,37 @@ fs.writeFileSync(configFile, JSON.stringify({
 cd "${ROOT_DIR}"
 
 node "${ROOT_DIR}/scripts/prepare-bundled-node.mjs"
+
+create_installer_dmg() {
+  local app_bundle="$1"
+  local dmg_path="$2"
+  local signing_identity="$3"
+  local app_name
+  local stage_root
+
+  app_name="$(basename "${app_bundle}")"
+  stage_root="$(mktemp -d "${TMPDIR:-/tmp}/agent-neo-dmg.XXXXXX")"
+
+  (
+    trap 'rm -rf "${stage_root}"' EXIT
+
+    mkdir -p "${stage_root}"
+    ditto "${app_bundle}" "${stage_root}/${app_name}"
+    ln -s /Applications "${stage_root}/Applications"
+
+    hdiutil create \
+      -volname "${DMG_VOLUME_NAME}" \
+      -srcfolder "${stage_root}" \
+      -ov \
+      -format UDZO \
+      "${dmg_path}"
+  )
+
+  if [[ -n "${signing_identity}" ]]; then
+    echo "[tauri-release-bundle] signing dmg: ${dmg_path}"
+    codesign --force --timestamp --sign "${signing_identity}" "${dmg_path}"
+  fi
+}
 
 # Run cargo tauri build in a subshell with Apple notarization env vars unset.
 # Tauri auto-triggers notarytool inside `cargo tauri build` when it sees these
@@ -217,9 +249,7 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
       fi
       DMG_PATH="${DMG_DIR}/${DMG_BASENAME}"
       echo "[tauri-release-bundle] rebuilding dmg: ${DMG_PATH}"
-      hdiutil create -volname "${VOLNAME}" -srcfolder "${APP_BUNDLE}" -ov -format UDZO "${DMG_PATH}"
-      echo "[tauri-release-bundle] signing dmg: ${DMG_PATH}"
-      codesign --force --timestamp --sign "${SIGNING_IDENTITY}" "${DMG_PATH}"
+      create_installer_dmg "${APP_BUNDLE}" "${DMG_PATH}" "${SIGNING_IDENTITY}"
     fi
     shopt -u nullglob
   fi

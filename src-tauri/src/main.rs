@@ -404,6 +404,70 @@ fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
+fn parse_port_holder_pids(output: &str, current_pid: u32) -> Vec<u32> {
+    let mut seen = HashSet::new();
+    output
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .filter(|pid| *pid != current_pid)
+        .filter(|pid| seen.insert(*pid))
+        .collect()
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn stale_web_server_port_holders(port: u16) -> Result<Vec<u32>, String> {
+    let output = Command::new("lsof")
+        .args(["-ti", &format!("tcp:{port}")])
+        .output()
+        .map_err(|error| format!("Failed to inspect localhost:{port}: {error}"))?;
+
+    if !output.status.success() && output.stdout.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_port_holder_pids(&stdout, std::process::id()))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn stale_web_server_port_holders(_port: u16) -> Result<Vec<u32>, String> {
+    Ok(Vec::new())
+}
+
+fn clear_stale_web_server_port(port: u16) -> Result<Vec<u32>, String> {
+    let pids = stale_web_server_port_holders(port)?;
+    if pids.is_empty() {
+        return Ok(pids);
+    }
+
+    for pid in &pids {
+        #[cfg(target_os = "windows")]
+        let status = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+
+        #[cfg(not(target_os = "windows"))]
+        let status = Command::new("kill").args(["-9", &pid.to_string()]).status();
+
+        match status {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                return Err(format!(
+                    "Failed to clear stale webServer process {pid}: exit status {status}"
+                ));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Failed to clear stale webServer process {pid}: {error}"
+                ));
+            }
+        }
+    }
+
+    thread::sleep(Duration::from_millis(300));
+    Ok(pids)
+}
+
 fn boot_diagnostics_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     web_server_log_dir(app).map(|dir| dir.join(BOOT_DIAGNOSTICS_FILE))
 }
@@ -1051,6 +1115,37 @@ fn spawn_web_server_recording(
     app: &tauri::AppHandle,
     diagnostics: &mut DesktopShellBootDiagnostics,
 ) -> Result<(Child, String), String> {
+    if !cfg!(debug_assertions) {
+        match clear_stale_web_server_port(web_port()) {
+            Ok(pids) if !pids.is_empty() => {
+                write_shell_event(
+                    app,
+                    diagnostics,
+                    "warning",
+                    "desktop-shell-stale-port-cleaned",
+                    "cleared stale webServer process(es) before packaged launch",
+                    Some(serde_json::json!({
+                        "port": web_port(),
+                        "pids": pids,
+                    })),
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                write_shell_event(
+                    app,
+                    diagnostics,
+                    "warning",
+                    "desktop-shell-stale-port-cleanup-failed",
+                    &error,
+                    Some(serde_json::json!({
+                        "port": web_port(),
+                    })),
+                );
+            }
+        }
+    }
+
     let (script_path, working_dir) = resolve_server_script(app)?;
     diagnostics.script_path = Some(path_to_string(&script_path));
     diagnostics.server_root = Some(path_to_string(&working_dir));
@@ -2073,6 +2168,14 @@ mod runtime_env_tests {
         });
 
         assert!(previous_boot_failure_from_value(&value).is_none());
+    }
+
+    #[test]
+    fn parse_port_holder_pids_filters_current_invalid_and_duplicates() {
+        let current_pid = 42;
+        let pids = parse_port_holder_pids("41\n42\nnot-a-pid\n41\n43\n", current_pid);
+
+        assert_eq!(pids, vec![41, 43]);
     }
 }
 

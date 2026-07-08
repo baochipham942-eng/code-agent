@@ -1152,6 +1152,10 @@ async function main(): Promise<void> {
   console.log('╚══════════════════════════════════════════╝');
   console.log();
 
+  // 启动前先清理：用户强杀 Tauri 主进程后，旧 webServer 可能残留占住端口。
+  // 这一步必须早于服务初始化，否则新壳进程 healthcheck 会先撞到旧 boot token。
+  await killPortHolder(port);
+
   // 1. 初始化后端服务
   console.log('[1/3] Initializing backend services...');
   await initializeServices();
@@ -1162,9 +1166,6 @@ async function main(): Promise<void> {
 
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
-
-  // 启动前清理：kill 占用目标端口的僵尸进程
-  await killPortHolder(port);
 
   const app = createApp();
 

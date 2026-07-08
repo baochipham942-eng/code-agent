@@ -9,6 +9,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUNDLE_DIR="$PROJECT_ROOT/src-tauri/target/release/bundle"
 APP_NAME="${APP_NAME:-Agent Neo}"
 LEGACY_APP_NAME="${LEGACY_APP_NAME:-Code Agent}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-Code Agent Dev}"
 ENTITLEMENTS="$PROJECT_ROOT/src-tauri/Entitlements.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -112,7 +113,7 @@ rm -rf "$SOURCE_APP.tar.gz"
 rm -rf "$PROJECT_ROOT/release/"*"/$APP_NAME.app"
 
 # 弹出所有挂载的 DMG 卷（包括重复构建产生的 "Code Agent 1", "Code Agent 2" 等）
-for mounted_name in "$APP_NAME" "$LEGACY_APP_NAME"; do
+for mounted_name in "$DMG_VOLUME_NAME" "$APP_NAME" "$LEGACY_APP_NAME"; do
   for vol in /Volumes/"$mounted_name"*; do
     [ -d "$vol" ] && hdiutil detach "$vol" 2>/dev/null || true
   done

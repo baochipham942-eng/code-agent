@@ -163,6 +163,11 @@ describe('macOS release fail-closed gates', () => {
     expect(verifyScript).toContain('spctl --assess --type execute');
     expect(verifyScript).toContain('spctl --assess --type open');
     expect(verifyScript).toContain('control-plane public keys file has no keys');
+    expect(verifyScript).toContain('verify_dmg_install_layout "${dmg_path}"');
+    expect(verifyScript).toContain('hdiutil attach "${dmg_path}" -readonly -nobrowse -noautoopen');
+    expect(verifyScript).toContain('"${mountpoint}/${APP_NAME}.app"');
+    expect(verifyScript).toContain('"${mountpoint}/Applications"');
+    expect(verifyScript).toContain('expected /Applications');
   });
 
   it('verifies the updater pubkey is injected into the built binary (no placeholder ships)', () => {
@@ -525,6 +530,8 @@ describe('macOS release fail-closed gates', () => {
     const releaseBundle = readRepoFile('scripts/tauri-release-bundle.sh');
     const releaseNeo = readRepoFile('scripts/release-neo.sh');
     const prepareBundledNode = readRepoFile('scripts/prepare-bundled-node.mjs');
+    const cleanBundleApps = readRepoFile('scripts/tauri-clean-bundle-apps.sh');
+    const tauriInstall = readRepoFile('scripts/tauri-install.sh');
 
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages?.['']?.version).toBe(packageJson.version);
@@ -558,6 +565,14 @@ describe('macOS release fail-closed gates', () => {
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');
+    expect(releaseBundle).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
+    expect(releaseBundle).toContain('create_installer_dmg()');
+    expect(releaseBundle).toContain('ditto "${app_bundle}" "${stage_root}/${app_name}"');
+    expect(releaseBundle).toContain('ln -s /Applications "${stage_root}/Applications"');
+    expect(releaseBundle).toContain('-volname "${DMG_VOLUME_NAME}"');
+    expect(releaseBundle).toContain('-srcfolder "${stage_root}"');
+    expect(cleanBundleApps).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
+    expect(tauriInstall).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
     expect(prepareBundledNode).toContain("execFileSync('xattr', ['-cr', outputRoot]");
     expect(prepareBundledNode).toContain('rewriteFileWithoutExtendedAttributes(outputBin, 0o755)');
   });

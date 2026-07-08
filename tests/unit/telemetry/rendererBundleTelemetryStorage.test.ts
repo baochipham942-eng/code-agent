@@ -119,4 +119,30 @@ describe('TelemetryStorage renderer bundle attempts', () => {
     storage.markRendererBundleAttemptsSynced([unsynced[0].id], 200);
     expect(storage.getUnsyncedRendererBundleAttempts(10)).toEqual([]);
   });
+
+  it('persists renderer hot-update disabled reason diagnostics', () => {
+    const storage = new TelemetryStorage();
+    const baseStatus = createRendererBundleStatus();
+    const recorded = storage.recordRendererBundleAttempt(createRendererBundleStatus({
+      disabled: true,
+      disabledReason: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE',
+      activeBundle: null,
+      lastAttempt: {
+        ...baseStatus.lastAttempt!,
+        outcome: 'skipped',
+        reason: 'disabled',
+        diagnostics: [],
+      },
+    }));
+
+    expect(recorded?.id).toBeTruthy();
+    const unsynced = storage.getUnsyncedRendererBundleAttempts(10);
+    expect(unsynced).toHaveLength(1);
+    expect(unsynced[0]).toMatchObject({
+      activeVersion: null,
+      outcome: 'skipped',
+      reason: 'disabled',
+      diagnostics: ['disabledReason:CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE'],
+    });
+  });
 });

@@ -154,6 +154,7 @@
     "release:notarize-macos": "bash scripts/tauri-notarize.sh",
     "control-plane:release-bundle": "node scripts/control-plane-release-bundle.mjs",
     "control-plane:apply-governance-migration": "node scripts/apply-control-plane-governance-migration.mjs",
+    "ops:neo-errors": "node scripts/inspect-neo-logs.mjs",
     "tauri:package": "npm run rebuild-native:system && npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup && npm run release:security-scan && cargo tauri build",
     "tauri:bundle": "npm run tauri:package && npm run release:verify-macos && bash scripts/tauri-clean-bundle-apps.sh",
     "tauri:build": "npm run tauri:package && npm run release:verify-macos && bash scripts/tauri-install.sh",

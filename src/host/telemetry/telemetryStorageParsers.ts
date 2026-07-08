@@ -330,6 +330,11 @@ export function buildRendererBundleAttemptRecord(
   const manifest = attempt.manifest;
   const source = status.source;
   const active = status.activeBundle;
+  const diagnostics = [
+    ...(attempt.diagnostics ?? []),
+    ...(status.disabledReason ? [`disabledReason:${status.disabledReason}`] : []),
+  ];
+
   return {
     id: randomUUID(),
     checkedAt: parseTelemetryTimestamp(attempt.checkedAt),
@@ -354,7 +359,7 @@ export function buildRendererBundleAttemptRecord(
     missingShellCapabilities: attempt.missingShellCapabilities ?? [],
     missingRuntimeAssets: attempt.missingRuntimeAssets ?? [],
     missingResources: attempt.missingResources ?? [],
-    diagnostics: attempt.diagnostics ?? [],
+    diagnostics,
     errorMessage: attempt.errorMessage ?? null,
     syncedAt: null,
   };

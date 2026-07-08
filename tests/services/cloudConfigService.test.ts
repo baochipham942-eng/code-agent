@@ -261,6 +261,39 @@ describe('CloudConfigService', () => {
       });
     });
 
+    it('coalesces stale getConfig background refreshes', async () => {
+      const initialConfig = {
+        ...getBuiltinConfig(),
+        version: 'initial-cloud-config',
+      };
+      const refreshedConfig = {
+        ...getBuiltinConfig(),
+        version: 'refreshed-cloud-config',
+      };
+      let resolveRefresh!: (value: ReturnType<typeof mockJsonResponse>) => void;
+      const refreshResponse = new Promise<ReturnType<typeof mockJsonResponse>>((resolve) => {
+        resolveRefresh = resolve;
+      });
+      mockFetch
+        .mockResolvedValueOnce(mockJsonResponse(initialConfig))
+        .mockReturnValueOnce(refreshResponse);
+      const service = new CloudConfigService({
+        allowUnsignedCloudConfig: true,
+      });
+
+      await service.initialize();
+      (service as unknown as { cacheExpiry: number }).cacheExpiry = Date.now() - 1;
+
+      expect(service.getConfig().version).toBe('initial-cloud-config');
+      expect(service.getConfig().version).toBe('initial-cloud-config');
+      expect(service.getConfig().version).toBe('initial-cloud-config');
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+
+      resolveRefresh(mockJsonResponse(refreshedConfig));
+
+      await vi.waitFor(() => expect(service.getConfig().version).toBe('refreshed-cloud-config'));
+    });
+
     it('applies signed entitlement and kill switch policy to feature flags', async () => {
       const signedConfig = {
         ...getBuiltinConfig(),

@@ -58,6 +58,7 @@ const CLOUD_MCP_KILL_SWITCH_FEATURES = [
   'enableCloudAgent',
 ] as const;
 const CLOUD_CONFIG_ACCESS_TOKEN_TIMEOUT_MS = 1000;
+const CLOUD_CONFIG_STALE_REFRESH_COOLDOWN_MS = 30_000;
 
 export interface CloudConfigServiceOptions {
   getAccessToken?: () => Promise<string | null>;
@@ -107,6 +108,8 @@ export class CloudConfigService {
   private etag: string | null = null;
   private isInitialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+  private fetchPromise: Promise<void> | null = null;
+  private lastStaleRefreshStartedAt: number = 0;
   private lastError: string | null = null;
   private lastTrustDiagnostics: ControlPlaneDiagnostic[] = [];
   private lastTrust: { trusted: boolean; keyId?: string; expiresAt?: string } = { trusted: false };
@@ -139,7 +142,7 @@ export class CloudConfigService {
   private async doInitialize(): Promise<void> {
     try {
       logger.info(' Initializing...');
-      await this.fetchConfig();
+      await this.fetchConfigOnce();
       this.isInitialized = true;
       logger.info(`Initialized with cloud config v${this.cache?.version}`);
     } catch (error) {
@@ -159,7 +162,7 @@ export class CloudConfigService {
    */
   async refresh(): Promise<{ success: boolean; version: string; error?: string }> {
     try {
-      await this.fetchConfig();
+      await this.fetchConfigOnce();
       this.lastError = null;
       return {
         success: true,
@@ -187,7 +190,7 @@ export class CloudConfigService {
 
     // 缓存过期但有数据，返回旧数据并异步刷新
     if (this.cache) {
-      this.fetchConfig().catch((err) => logger.warn('Failed to refresh config:', err));
+      this.refreshStaleCacheInBackground();
       return this.cache;
     }
 
@@ -454,6 +457,30 @@ export class CloudConfigService {
       });
       return null;
     }
+  }
+
+  private fetchConfigOnce(): Promise<void> {
+    if (this.fetchPromise) {
+      return this.fetchPromise;
+    }
+
+    this.fetchPromise = this.fetchConfig().finally(() => {
+      this.fetchPromise = null;
+    });
+
+    return this.fetchPromise;
+  }
+
+  private refreshStaleCacheInBackground(): void {
+    if (this.fetchPromise) return;
+
+    const now = Date.now();
+    if (now - this.lastStaleRefreshStartedAt < CLOUD_CONFIG_STALE_REFRESH_COOLDOWN_MS) {
+      return;
+    }
+
+    this.lastStaleRefreshStartedAt = now;
+    this.fetchConfigOnce().catch((err) => logger.warn('Failed to refresh config:', err));
   }
 
   private acceptFetchedConfig(value: unknown): CloudConfig {

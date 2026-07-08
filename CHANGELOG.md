@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.4] - 2026-07-09
+
+### Added
+
+- **Agent engine model discovery**: Codex and Claude engine model catalogs can now be refreshed from local CLI discovery before falling back to bundled catalog data, including newer Claude aliases such as Fable and Haiku.
+
+### Changed
+
+- **Model settings UX**: the model provider settings page now gives the add-provider action a clearer place, explains execution-engine defaults in settings, and removes execution-engine model configuration from the main model switcher.
+
+### Fixed
+
+- **Local/Ollama ghost models**: Local models are no longer shown in the chat model switcher just because the provider entry is enabled. The switcher now requires a current local discovery signal, so uninstalling Ollama or its models hides the stale Local group.
+- **Cloud config refresh coalescing**: concurrent cloud configuration refreshes are coalesced to avoid duplicate work and noisy renderer bundle telemetry parsing.
+
 ## [0.24.3] - 2026-07-08
 
 ### Fixed

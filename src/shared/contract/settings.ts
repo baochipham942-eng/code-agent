@@ -30,7 +30,13 @@ export type ProxyMode = 'auto' | 'direct' | 'proxy';
 export interface ModelProviderSettings {
   apiKey?: string;
   apiKeyConfigured?: boolean;
+  /** 用户是否启用该 Provider 入口。仅表示入口开关，不代表当前运行时可用。 */
   enabled: boolean;
+  /** 当前运行时是否可用；Local/Ollama 由本机发现刷新，不由 enabled 推导。 */
+  available?: boolean;
+  /** 最近一次 Provider 级发现时间；模型级发现时间仍记录在 models[*].discoveredAt。 */
+  discoveredAt?: number;
+  unavailableReason?: string;
   protocol?: ModelProviderProtocol;
   model?: string;
   baseUrl?: string;

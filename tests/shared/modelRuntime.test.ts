@@ -15,6 +15,7 @@ import {
   inferModelCapabilities,
   isProviderIconAssetRef,
   isProviderImageIcon,
+  isRuntimeProviderAvailable,
   normalizeProviderIcon,
   resolveRuntimeProviderBillingMode,
   validateProviderIcon,
@@ -106,7 +107,8 @@ describe('modelRuntime', () => {
         providers: {
           local: {
             enabled: true,
-            apiKeyConfigured: false,
+            available: false,
+            apiKeyConfigured: true,
             models: {
               'llama3.2': { enabled: true, label: 'Llama 3.2' },
             },
@@ -119,6 +121,27 @@ describe('modelRuntime', () => {
       includeDisabledProviders: ['local'],
     })).toEqual([]);
     expect(hasConfiguredRuntimeModels(settings)).toBe(false);
+    expect(isRuntimeProviderAvailable('local', settings.models.providers.local)).toBe(false);
+  });
+
+  it('keeps local enabled separate from runtime availability', () => {
+    const localProvider = {
+      enabled: false,
+      available: true,
+      apiKeyConfigured: false,
+      models: {
+        'llama3.2': { enabled: true, label: 'Llama 3.2', discoveredAt: 123 },
+      },
+    };
+
+    expect(isRuntimeProviderAvailable('local', localProvider)).toBe(true);
+    expect(buildRuntimeModelOptions({
+      models: {
+        default: 'local',
+        defaultProvider: 'local',
+        providers: { local: localProvider },
+      },
+    } as AppSettings, ['local'])).toEqual([]);
   });
 
   it('shows only locally discovered Ollama models when local discovery succeeds', () => {
@@ -129,7 +152,8 @@ describe('modelRuntime', () => {
         providers: {
           local: {
             enabled: true,
-            apiKeyConfigured: true,
+            available: true,
+            apiKeyConfigured: false,
             models: {
               'qwen3:8b': { enabled: true, label: 'Qwen3 8B', discoveredAt: 123 },
               'llama3.2': { enabled: true, label: 'Llama 3.2', discoveredAt: 123 },
@@ -206,7 +230,8 @@ describe('modelRuntime', () => {
         providers: {
           local: {
             enabled: true,
-            apiKeyConfigured: true,
+            available: true,
+            apiKeyConfigured: false,
             models: {
               'llama3.2': { enabled: true, label: 'Llama 3.2', discoveredAt: 123 },
             },

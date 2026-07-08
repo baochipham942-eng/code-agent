@@ -433,6 +433,9 @@ export class ConfigService implements IReadConfigService {
       || local.protocol
       || local.updatedAt
       || local.apiKeyConfigured
+      || local.available
+      || local.discoveredAt
+      || local.unavailableReason
       || local.maxConcurrent
       || local.proxyMode
       || local.temperature

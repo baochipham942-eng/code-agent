@@ -88,6 +88,9 @@ export function applyLocalProviderDiscoverySnapshot(
   if (!local || local.enabled === false) return next;
 
   if (!discovery?.success || discovery.models.length === 0) {
+    local.available = false;
+    local.discoveredAt = discoveredAt;
+    local.unavailableReason = discovery?.error?.message || '本地 Ollama 服务不可达';
     local.apiKeyConfigured = false;
     local.models = {};
     return next;
@@ -106,7 +109,10 @@ export function applyLocalProviderDiscoverySnapshot(
   }
 
   local.enabled = true;
-  local.apiKeyConfigured = true;
+  local.available = true;
+  local.discoveredAt = discoveredAt;
+  delete local.unavailableReason;
+  local.apiKeyConfigured = Boolean(local.apiKey);
   local.baseUrl = getLocalProviderDiscoveryBaseUrl(local);
   local.protocol = local.protocol ?? 'openai';
   local.models = nextModels;

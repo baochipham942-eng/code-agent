@@ -18,7 +18,7 @@ import {
   inferSupportsTool,
   isDynamicCustomProviderId,
   isPureGenerationModel,
-  isRuntimeProviderConfigured,
+  isRuntimeProviderAvailable,
   normalizeProviderIcon,
   type ProviderIconValidationResult,
   type RuntimeProviderModel,
@@ -175,7 +175,7 @@ export function shouldPromoteProviderToDefault(
   settings: AppSettings | null | undefined,
 ): boolean {
   if (providerConfig.enabled === false) return false;
-  if (!isRuntimeProviderConfigured(provider, providerConfig)) return false;
+  if (!isRuntimeProviderAvailable(provider, providerConfig)) return false;
   return !hasConfiguredDefaultRuntimeModel(settings);
 }
 

@@ -179,6 +179,9 @@ describe('Local provider discovery snapshot', () => {
     }, 123);
 
     expect(next.models.providers.local.apiKeyConfigured).toBe(false);
+    expect(next.models.providers.local.available).toBe(false);
+    expect(next.models.providers.local.discoveredAt).toBe(123);
+    expect(next.models.providers.local.unavailableReason).toBe('connect ECONNREFUSED');
     expect(next.models.providers.local.models).toEqual({});
     expect(settings.models.providers.local.models).toEqual(expect.objectContaining({
       'qwen3:8b': expect.any(Object),
@@ -227,7 +230,10 @@ describe('Local provider discovery snapshot', () => {
       ],
     }, 456);
 
-    expect(next.models.providers.local.apiKeyConfigured).toBe(true);
+    expect(next.models.providers.local.apiKeyConfigured).toBe(false);
+    expect(next.models.providers.local.available).toBe(true);
+    expect(next.models.providers.local.discoveredAt).toBe(456);
+    expect(next.models.providers.local.unavailableReason).toBeUndefined();
     expect(Object.keys(next.models.providers.local.models ?? {})).toEqual(['qwen3:8b', 'llama3.2']);
     expect(next.models.providers.local.models?.['qwen3:8b']).toMatchObject({
       enabled: false,

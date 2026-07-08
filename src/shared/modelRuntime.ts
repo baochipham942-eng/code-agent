@@ -186,7 +186,22 @@ export function isRuntimeProviderConfigured(
   providerId: ModelProvider,
   providerConfig?: Partial<ModelProviderSettings> | null,
 ): boolean {
-  if (providerId === 'local') return providerConfig?.apiKeyConfigured === true;
+  return isRuntimeProviderAvailable(providerId, providerConfig);
+}
+
+function hasDiscoveredRuntimeModels(providerConfig?: Partial<ModelProviderSettings> | null): boolean {
+  return Object.values(providerConfig?.models ?? {}).some(
+    (modelConfig) => modelConfig.enabled !== false && typeof modelConfig.discoveredAt === 'number',
+  );
+}
+
+export function isRuntimeProviderAvailable(
+  providerId: ModelProvider,
+  providerConfig?: Partial<ModelProviderSettings> | null,
+): boolean {
+  if (providerId === 'local') {
+    return providerConfig?.available === true && hasDiscoveredRuntimeModels(providerConfig);
+  }
   return Boolean(
     providerConfig?.managedByCloud
     || providerConfig?.apiKeyConfigured
@@ -708,9 +723,9 @@ export function buildRuntimeModelOptions(
     // apiKeyConfigured 由 configService.getSettings() 动态注入：SecureStorage / env 任一有 key 即 true，
     // 因此老配置（key 存在但 settings 文件里没该字段）也能被正确识别。
     // 当前会话 / 默认 provider 走 includeDisabledProviders 豁免，避免选中项凭空消失。
-    const missingApiKey = !isRuntimeProviderConfigured(providerId, providerConfig);
+    const missingRuntimeAvailability = !isRuntimeProviderAvailable(providerId, providerConfig);
     const canUseInclusionFallback = providerId !== 'local' && includedDisabledProviders.has(providerId);
-    if (settings && missingApiKey && !canUseInclusionFallback) return;
+    if (settings && missingRuntimeAvailability && !canUseInclusionFallback) return;
 
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
     const protocol = resolveProviderProtocol(providerId, providerConfig);
@@ -828,7 +843,7 @@ export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null):
   if (!providerId) return false;
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
-  return isRuntimeProviderConfigured(providerId, providerConfig);
+  return isRuntimeProviderAvailable(providerId, providerConfig);
 }
 
 function compareProviderOptionSource(

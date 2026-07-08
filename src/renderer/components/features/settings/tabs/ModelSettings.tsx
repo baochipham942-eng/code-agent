@@ -579,6 +579,24 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       }
 
       if (!result?.success) {
+        if (!providerRequiresApiKey(config.provider)) {
+          const discoveredAt = Date.now();
+          setProviderConfigs((prev) => {
+            const providerConfig = prev[config.provider] ?? { enabled: true };
+            return {
+              ...prev,
+              [config.provider]: {
+                ...providerConfig,
+                enabled: true,
+                available: false,
+                discoveredAt,
+                unavailableReason: result?.error?.message || modelText.toast.modelDiscoveryFailed,
+                apiKeyConfigured: Boolean(providerConfig.apiKey),
+                models: {},
+              },
+            };
+          });
+        }
         if (!silent) {
           const detail = result?.error?.suggestion ? `\n${result.error.suggestion}` : '';
           toast.error(`${result?.error?.message || modelText.toast.modelDiscoveryFailed}${detail}`);
@@ -587,6 +605,24 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       }
 
       if (!result.models.length) {
+        if (!providerRequiresApiKey(config.provider)) {
+          const discoveredAt = Date.now();
+          setProviderConfigs((prev) => {
+            const providerConfig = prev[config.provider] ?? { enabled: true };
+            return {
+              ...prev,
+              [config.provider]: {
+                ...providerConfig,
+                enabled: true,
+                available: false,
+                discoveredAt,
+                unavailableReason: modelText.toast.noModelsReturned,
+                apiKeyConfigured: Boolean(providerConfig.apiKey),
+                models: {},
+              },
+            };
+          });
+        }
         if (!silent) toast.warning(modelText.toast.noModelsReturned);
         return;
       }
@@ -608,7 +644,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           [config.provider]: {
             ...providerConfig,
             enabled: true,
-            ...(config.apiKey?.trim()
+            ...(!providerRequiresApiKey(config.provider)
+              ? {
+                  available: true,
+                  discoveredAt,
+                  unavailableReason: undefined,
+                  apiKeyConfigured: Boolean(providerConfig.apiKey),
+                }
+              : config.apiKey?.trim()
               ? { apiKey: config.apiKey.trim(), apiKeyConfigured: true }
               : { apiKeyConfigured: hasStoredApiKey }),
             baseUrl: effectiveBaseUrl,

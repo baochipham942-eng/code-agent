@@ -63,6 +63,7 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
+import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import {
   buildNeoTagContinuationMessage,
   buildNeoTagSourceMessage,
@@ -414,6 +415,7 @@ export const ChatView: React.FC = () => {
 
   // Global drop zone state
   const chatInputRef = useRef<ChatInputHandle>(null);
+  const globalDropZoneRef = useRef<HTMLDivElement>(null);
   const [isGlobalDragOver, setIsGlobalDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const { processFile, processFolderEntry } = useFileUpload();
@@ -421,42 +423,77 @@ export const ChatView: React.FC = () => {
     dragCounterRef.current = 0;
     setIsGlobalDragOver(false);
   }, []);
+  const isDragInsideGlobalDropZone = useCallback((event: { clientX: number; clientY: number }) => {
+    const rect = globalDropZoneRef.current?.getBoundingClientRect();
+    if (!rect) return false;
+    return isDragPointInsideVisibleRect(event, rect, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+  }, []);
 
   useEffect(() => {
     if (!isGlobalDragOver) return;
+    const handleWindowDragOver = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      if (!isDragInsideGlobalDropZone(event)) {
+        clearGlobalDragState();
+      }
+    };
+    const handleWindowDragLeave = (event: DragEvent) => {
+      if (!isDragInsideGlobalDropZone(event)) {
+        clearGlobalDragState();
+      }
+    };
     window.addEventListener('dragend', clearGlobalDragState);
     window.addEventListener('drop', clearGlobalDragState);
     window.addEventListener('blur', clearGlobalDragState);
+    window.addEventListener('dragover', handleWindowDragOver, true);
+    window.addEventListener('dragleave', handleWindowDragLeave, true);
     return () => {
       window.removeEventListener('dragend', clearGlobalDragState);
       window.removeEventListener('drop', clearGlobalDragState);
       window.removeEventListener('blur', clearGlobalDragState);
+      window.removeEventListener('dragover', handleWindowDragOver, true);
+      window.removeEventListener('dragleave', handleWindowDragLeave, true);
     };
-  }, [clearGlobalDragState, isGlobalDragOver]);
+  }, [clearGlobalDragState, isDragInsideGlobalDropZone, isGlobalDragOver]);
 
   const handleGlobalDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!e.dataTransfer.types.includes('Files')) return;
     dragCounterRef.current++;
-    if (e.dataTransfer.types.includes('Files')) {
+    if (isDragInsideGlobalDropZone(e)) {
       setIsGlobalDragOver(true);
     }
-  }, []);
+  }, [isDragInsideGlobalDropZone]);
 
   const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  }, []);
+    if (!e.dataTransfer.types.includes('Files')) return;
+    if (!isDragInsideGlobalDropZone(e)) {
+      clearGlobalDragState();
+      return;
+    }
+    e.dataTransfer.dropEffect = 'copy';
+    setIsGlobalDragOver(true);
+  }, [clearGlobalDragState, isDragInsideGlobalDropZone]);
 
   const handleGlobalDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isDragInsideGlobalDropZone(e)) {
+      clearGlobalDragState();
+      return;
+    }
     dragCounterRef.current--;
     if (dragCounterRef.current <= 0) {
       dragCounterRef.current = 0;
       setIsGlobalDragOver(false);
     }
-  }, []);
+  }, [clearGlobalDragState, isDragInsideGlobalDropZone]);
 
   const handleGlobalDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -635,6 +672,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div
+        ref={globalDropZoneRef}
         className="flex-1 min-h-0 flex overflow-hidden relative"
         onDragEnter={handleGlobalDragEnter}
         onDragOver={handleGlobalDragOver}
@@ -645,15 +683,8 @@ export const ChatView: React.FC = () => {
       {isGlobalDragOver && (
         <div
           className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-primary-500 rounded-xl"
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            // Only hide when leaving the overlay itself (not entering a child)
-            if (e.currentTarget === e.target) {
-              clearGlobalDragState();
-            }
-          }}
+          onDragOver={handleGlobalDragOver}
+          onDragLeave={handleGlobalDragLeave}
           onDrop={handleGlobalDrop}
         >
           <div className="flex flex-col items-center gap-3 text-primary-400 pointer-events-none">

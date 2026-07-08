@@ -3,7 +3,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { AppSettings } from '../../../src/shared/contract';
 import type { AgentEngineDescriptor } from '../../../src/shared/contract/agentEngine';
-import { buildModelSwitcherEngineSelection, shouldShowModelSettingsPrompt } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
+import {
+  buildModelSwitcherEngineSelection,
+  computeModelSwitcherMenuPosition,
+  shouldShowModelSettingsPrompt,
+} from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import {
   buildEngineReliabilitySummary,
   buildProviderBillingSummary,
@@ -52,6 +56,37 @@ const emptyModelSettings = {
 } as AppSettings;
 
 describe('ModelSwitcher Agent Engine selection', () => {
+  it('keeps the model menu inside the viewport with an edge margin', () => {
+    const pos = computeModelSwitcherMenuPosition({
+      triggerRect: { left: 612, top: 760 },
+      viewportWidth: 928,
+      viewportHeight: 900,
+      menuWidth: 352,
+      menuHeight: 520,
+      margin: 12,
+    });
+
+    expect(pos.left).toBe(564);
+    expect(pos.left + pos.width).toBeLessThanOrEqual(916);
+    expect(pos.bottom).toBe(144);
+    expect(pos.maxHeight).toBe(876);
+  });
+
+  it('shrinks the model menu on narrow viewports instead of overflowing horizontally', () => {
+    const pos = computeModelSwitcherMenuPosition({
+      triggerRect: { left: 260, top: 620 },
+      viewportWidth: 320,
+      viewportHeight: 700,
+      menuWidth: 352,
+      menuHeight: 420,
+      margin: 12,
+    });
+
+    expect(pos.left).toBe(12);
+    expect(pos.width).toBe(296);
+    expect(pos.left + pos.width).toBe(308);
+  });
+
   it('uses Neo as the native engine short label', () => {
     expect(ENGINE_SHORT_LABEL.native).toBe('Neo');
   });

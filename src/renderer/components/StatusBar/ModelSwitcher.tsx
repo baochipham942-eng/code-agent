@@ -58,6 +58,46 @@ export interface ModelOverrideChangeDetail {
   } | null;
 }
 
+export interface ModelSwitcherMenuPosition {
+  left: number;
+  bottom: number;
+  width: number;
+  maxHeight: number;
+}
+
+const MODEL_SWITCHER_MENU_WIDTH = 352;
+const MODEL_SWITCHER_MENU_ESTIMATED_HEIGHT = 520;
+const MODEL_SWITCHER_VIEWPORT_MARGIN = 12;
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+export function computeModelSwitcherMenuPosition(args: {
+  triggerRect: Pick<DOMRect, 'left' | 'top'>;
+  viewportWidth: number;
+  viewportHeight: number;
+  menuWidth?: number;
+  menuHeight?: number;
+  margin?: number;
+}): ModelSwitcherMenuPosition {
+  const margin = args.margin ?? MODEL_SWITCHER_VIEWPORT_MARGIN;
+  const maxWidth = Math.max(1, args.viewportWidth - margin * 2);
+  const width = Math.min(args.menuWidth ?? MODEL_SWITCHER_MENU_WIDTH, maxWidth);
+  const maxHeight = Math.max(1, args.viewportHeight - margin * 2);
+  const effectiveHeight = Math.min(args.menuHeight ?? MODEL_SWITCHER_MENU_ESTIMATED_HEIGHT, maxHeight);
+  const maxLeft = Math.max(margin, args.viewportWidth - width - margin);
+  const preferredBottom = args.viewportHeight - args.triggerRect.top + 4;
+  const maxBottom = Math.max(margin, args.viewportHeight - effectiveHeight - margin);
+
+  return {
+    left: clampNumber(args.triggerRect.left, margin, maxLeft),
+    bottom: clampNumber(preferredBottom, margin, maxBottom),
+    width,
+    maxHeight,
+  };
+}
+
 export function shouldShowModelSettingsPrompt(
   engineKind: AgentEngineKind,
   modelSettings: AppSettings | null,
@@ -88,7 +128,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<ModelSwitcherMenuPosition | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const session = useSessionStore((s) =>
     s.currentSessionId
@@ -228,15 +268,19 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     const updatePos = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setMenuPos({
-        left: rect.left,
-        bottom: window.innerHeight - rect.top + 4,
-      });
+      setMenuPos(computeModelSwitcherMenuPosition({
+        triggerRect: rect,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        menuHeight: menuRef.current?.offsetHeight,
+      }));
     };
     updatePos();
+    const frame = window.requestAnimationFrame(updatePos);
     window.addEventListener('resize', updatePos);
     window.addEventListener('scroll', updatePos, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', updatePos);
       window.removeEventListener('scroll', updatePos, true);
     };
@@ -495,7 +539,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     <div
       ref={menuRef}
       className="
-        w-[22rem] py-1
+        py-1 overflow-y-auto
         bg-zinc-800 border border-zinc-700 rounded-lg
         shadow-xl
       "
@@ -503,6 +547,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         position: 'fixed',
         left: menuPos.left,
         bottom: menuPos.bottom,
+        width: menuPos.width,
+        maxHeight: menuPos.maxHeight,
         zIndex: 9999,
       }}
     >

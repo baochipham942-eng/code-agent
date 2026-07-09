@@ -44,6 +44,8 @@ vi.mock('../../../src/host/services/infra/toolCache', () => ({
     isCacheable: () => false,
     get: () => null,
     set: vi.fn(),
+    invalidateForPath: vi.fn(),
+    invalidateForWorkspace: vi.fn(),
   }),
 }));
 

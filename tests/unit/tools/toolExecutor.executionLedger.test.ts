@@ -124,4 +124,54 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     const result = await executor.execute('Read', { file_path: 'a' }, { sessionId: 's1' });
     expect(result.success).toBe(true);
   });
+
+  it('begin 账本递归脱敏敏感字段，同时保留崩溃恢复需要的非敏感参数', async () => {
+    resolverState.getDefinition.mockReturnValue(readDef());
+    const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });
+    const params = {
+      file_path: 'README.md',
+      offset: 20,
+      command: 'deploy --token command-secret',
+      headers: {
+        Authorization: 'Bearer header-secret',
+        Accept: 'application/json',
+        'X-Api-Key': 'nested-api-key',
+      },
+      env: {
+        NORMAL_MODE: 'safe-value',
+        SERVICE_TOKEN: 'env-token',
+      },
+      apiKey: 'top-level-api-key',
+      nested: {
+        secret: 'deep-secret',
+        attempts: 2,
+        items: [{ TOKEN: 'array-token', safe: true }],
+      },
+    };
+    const originalParams = structuredClone(params);
+
+    await executor.execute('Read', params, { sessionId: 's1' });
+
+    const begin = ledgerState.appendToolExecutionBegin.mock.calls[0][0];
+    expect(begin.params).toMatchObject({
+      file_path: 'README.md',
+      offset: 20,
+      nested: { attempts: 2, items: [{ TOKEN: '***REDACTED***', safe: true }] },
+    });
+    expect(begin.params.headers).toBe('***REDACTED***');
+    expect(begin.params.env).toBe('***REDACTED***');
+    expect(begin.params.apiKey).toBe('***REDACTED***');
+    expect(begin.params.nested.secret).toBe('***REDACTED***');
+    expect(begin.params.command).toBe('deploy --token ***REDACTED***');
+    expect(begin.summary).not.toContain('command-secret');
+    expect(JSON.stringify(begin.params)).not.toContain('header-secret');
+    expect(JSON.stringify(begin.params)).not.toContain('nested-api-key');
+    expect(JSON.stringify(begin.params)).not.toContain('env-token');
+    expect(JSON.stringify(begin.params)).not.toContain('top-level-api-key');
+    expect(JSON.stringify(begin.params)).not.toContain('deep-secret');
+    expect(JSON.stringify(begin.params)).not.toContain('array-token');
+    expect(JSON.stringify(begin.params)).not.toContain('command-secret');
+    expect(resolverState.execute.mock.calls[0][1]).toBe(params);
+    expect(params).toEqual(originalParams);
+  });
 });

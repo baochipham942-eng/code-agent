@@ -1023,13 +1023,17 @@ export class DatabaseService {
     this.ensureDb();
     return this.configRepo.getAuditLog(options);
   }
-  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, ttlMs?: number): void {
+  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, cacheNamespace: string, ttlMs?: number): void {
     this.ensureDb();
-    this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, ttlMs);
+    this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, cacheNamespace, ttlMs);
   }
-  getCachedToolResult(toolName: string, args: Record<string, unknown>): ToolResult | null {
+  getCachedToolResult(sessionId: string, cacheNamespace: string, toolName: string, args: Record<string, unknown>): ToolResult | null {
     this.ensureDb();
-    return this.configRepo.getCachedToolResult(toolName, args);
+    return this.configRepo.getCachedToolResult(sessionId, cacheNamespace, toolName, args);
+  }
+  invalidateCachedToolResults(sessionId: string): number {
+    this.ensureDb();
+    return this.configRepo.invalidateCachedToolResults(sessionId);
   }
   cleanExpiredCache(): number {
     this.ensureDb();

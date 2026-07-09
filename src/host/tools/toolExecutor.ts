@@ -16,6 +16,7 @@ import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
   getAuditLogger,
+  getLogMasker,
   maskSensitiveData,
   isKnownSafeCommand,
   validateCommand,
@@ -26,6 +27,7 @@ import {
   type PolicyCheckResult,
   type ValidationResult,
 } from '../security';
+import { isSensitiveLogKey } from '../security/secretRedaction';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
@@ -790,15 +792,16 @@ export class ToolExecutor {
       } // end needsUserApproval
     }
 
-    // The existing cache is process-global and its key has no run/workspace
-    // namespace. Run-scoped executors therefore bypass it fail-closed; otherwise
-    // identical relative paths can return another run's persisted result.
     const toolCache = getToolCache();
-    const canUseToolCache = !this.runContext && toolCache.isCacheable(executionToolName);
+    const toolCacheScope = {
+      sessionId: effectiveSessionId,
+      workingDirectory: this.workspaceRoot,
+    };
+    const canUseToolCache = toolCache.isCacheable(executionToolName);
 
     // Check cache for cacheable tools
     if (canUseToolCache) {
-      const cached = toolCache.get(executionToolName, params);
+      const cached = toolCache.get(executionToolName, params, toolCacheScope);
       if (cached) {
         logger.debug('Cache HIT', { toolName: executionToolName });
         return {
@@ -824,7 +827,14 @@ export class ToolExecutor {
     // ADR-022 第二期 · 崩溃重放：工具放行后即将真正执行，落 begin 生命周期事件；
     // 执行返回/抛错时落 complete。崩溃发生在两者之间 → 留下未闭合 begin = 现场。全程 fail-safe。
     const executionId = randomUUID();
-    const execSummary = String(params.command || params.file_path || params.path || params.pattern || executionToolName).substring(0, 80);
+    const ledgerParams = this.sanitizeParams(params);
+    const execSummary = String(
+      ledgerParams.command
+      || ledgerParams.file_path
+      || ledgerParams.path
+      || ledgerParams.pattern
+      || executionToolName,
+    ).substring(0, 80);
     let execCompleteRecorded = false;
     const recordExecComplete = (status: string, error?: string): void => {
       if (execCompleteRecorded) return;
@@ -865,7 +875,7 @@ export class ToolExecutor {
       try {
         getDatabase().appendToolExecutionBegin({
           executionId, sessionId: effectiveSessionId, toolName: executionToolName,
-          summary: execSummary, params, recordedAt: startTime,
+          summary: execSummary, params: ledgerParams, recordedAt: startTime,
         });
       } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
       const delegatedResult = this.dispatchTool
@@ -891,12 +901,21 @@ export class ToolExecutor {
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });
 
+      if (result.success && writeIsolationScope) {
+        if (writeIsolationScope.kind === 'file') {
+          toolCache.invalidateForPath(writeIsolationScope.targetPath, toolCacheScope);
+        } else {
+          toolCache.invalidateForWorkspace(toolCacheScope);
+        }
+      }
+
       // Cache successful results for cacheable tools
       if (result.success && canUseToolCache && result.result !== undefined) {
         toolCache.set(
           executionToolName,
           params,
           result.result as import('../../shared/contract').ToolResult,
+          toolCacheScope,
         );
         logger.debug('Cached result', { toolName: executionToolName });
       }
@@ -952,15 +971,43 @@ export class ToolExecutor {
    * Sanitize parameters for logging (mask sensitive data)
    */
   private sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(params)) {
-      if (typeof value === 'string') {
-        sanitized[key] = maskSensitiveData(value);
-      } else {
-        sanitized[key] = value;
+    const redacted = '***REDACTED***';
+    const sensitiveContainers = new Set(['header', 'headers', 'env', 'environment']);
+    const seen = new WeakSet<object>();
+
+    const sanitizeValue = (value: unknown, key?: string): unknown => {
+      const normalizedKey = key?.toLowerCase().replace(/[-_\s]/g, '');
+      if (
+        key
+        && (sensitiveContainers.has(normalizedKey || '') || isSensitiveLogKey(key))
+      ) {
+        return redacted;
       }
-    }
-    return sanitized;
+      if (typeof value === 'string') {
+        return normalizedKey === 'command'
+          ? getLogMasker().maskCommand(value)
+          : maskSensitiveData(value);
+      }
+      if (value === null || value === undefined || typeof value !== 'object') {
+        return value;
+      }
+      if (value instanceof Date) return value.toISOString();
+      if (seen.has(value)) return '[Circular]';
+      seen.add(value);
+      if (Array.isArray(value)) {
+        const sanitized = value.map((item) => sanitizeValue(item));
+        seen.delete(value);
+        return sanitized;
+      }
+      const sanitized = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .map(([childKey, childValue]) => [childKey, sanitizeValue(childValue, childKey)]),
+      );
+      seen.delete(value);
+      return sanitized;
+    };
+
+    return sanitizeValue(params) as Record<string, unknown>;
   }
 
   /**

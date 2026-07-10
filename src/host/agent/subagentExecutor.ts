@@ -40,7 +40,8 @@ import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
-import { getPermissionModeManager } from '../permissions/modes';
+import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { generateMessageId } from '../../shared/utils/id';
 import { getSubagentContextStore } from '../context/subagentContextStore';
@@ -350,13 +351,19 @@ export class SubagentExecutor {
     // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
     const subagentToolExecutor = new ToolExecutor({
       workingDirectory: context.toolContext.workingDirectory,
+      // 子 agent 判定链用收缩后的 effectiveMode，禁止回读父会话档
+      // （父会话开 bypass 时被收缩的子 agent 不能借会话档扩权）。
+      permissionModeOverride: subagentEffectiveMode as PermissionMode,
       // subagent 非交互：这是 classifier 'ask' 的兜底。硬阻断（validateCommand /
       // classifier-deny / exec-policy / subagentPolicy deny）已在 ToolExecutor 管道内生效，
       // 高风险走下方 loop 内的 plan-approval gate。
-      // P0(G18): 只有收缩后的有效 mode 本身免确认（bypassPermissions / acceptEdits）才自动放行；
-      // 否则保守拒绝 —— 父 agent 此时会弹用户确认，子 agent 不能替用户做主、不能越父权限。
-      requestPermission: async () =>
-        subagentEffectiveMode === 'bypassPermissions' || subagentEffectiveMode === 'acceptEdits',
+      // P0(G18): 只有收缩后的有效 mode 本身免确认才自动放行；否则保守拒绝 ——
+      // 父 agent 此时会弹用户确认，子 agent 不能替用户做主、不能越父权限。
+      // 审出 MED：acceptEdits 不再与 bypass 同为全放行 —— 只免确认写入档，
+      // 执行/网络档没有真人可问一律拒绝；否则 cron 钳制（bypass→acceptEdits）空转。
+      requestPermission: async (request) =>
+        subagentEffectiveMode === 'bypassPermissions'
+        || permissionModeAutoApproves(subagentEffectiveMode, getPermissionLevel(request.type)),
     });
     const subagentPolicy = {
       allowedTools: allowedNames,

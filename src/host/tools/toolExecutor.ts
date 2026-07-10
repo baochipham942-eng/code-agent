@@ -48,7 +48,7 @@ import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard, commandMatchesScopedPrefix } from './neoTagToolGuard';
-import { getPermissionModeManager } from '../permissions/modes';
+import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import { randomUUID } from 'node:crypto';
 
 const logger = createLogger('ToolExecutor');
@@ -65,6 +65,11 @@ const logger = createLogger('ToolExecutor');
 export interface ToolExecutorConfig {
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
+  /**
+   * 权限档覆盖：subagent 传父子收缩后的 effectiveMode，禁止回读父会话档
+   * （否则父会话开 bypass 时被收缩的子 agent 会借会话档扩权）。主 agent 不传。
+   */
+  permissionModeOverride?: PermissionMode;
 }
 
 /**
@@ -173,10 +178,12 @@ export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private auditEnabled = true;
+  private permissionModeOverride?: PermissionMode;
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
     this.workingDirectory = config.workingDirectory;
+    this.permissionModeOverride = config.permissionModeOverride;
   }
 
   /**
@@ -451,10 +458,13 @@ export class ToolExecutor {
     // B1 第 4 档「只读探索」（readOnly）：读/列/搜类工具直通，写文件和执行命令
     // 一律走用户确认——预授权 / 安全命令白名单 / lenient / classifier 自动放行全部失效，
     // 但 classifier 的 deny（危险命令）语义保留（只降级 approve→ask，不放宽 deny）。
+    // 会话有效权限档：subagent 走收缩后的 override，主 agent 走会话档单一真源。
+    const sessionPermissionMode = this.permissionModeOverride
+      ?? getPermissionModeManager().getModeForSession(options.sessionId);
     const readOnlyForcesConfirmation =
       toolDef.requiresPermission
       && (toolDef.permissionLevel === 'write' || toolDef.permissionLevel === 'execute')
-      && getPermissionModeManager().getModeForSession(options.sessionId) === 'readOnly';
+      && sessionPermissionMode === 'readOnly';
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
@@ -561,6 +571,21 @@ export class ToolExecutor {
               traceStep: createTraceStep('permission_classifier', 'readonly_explore_mode', 'ask', reason, permStartTime),
             };
           }
+          // B1 档位免确认（审出 MED：bypass/acceptEdits 曾在主判定链零消费、纯虚标）：
+          // bypassPermissions=写入+执行免确认，acceptEdits=仅写入免确认。
+          // 只把 classifier 的 ask 升级为 approve —— deny / exec-policy forbidden /
+          // policy always_confirm / skill 边界 / 前置 validateCommand 硬毙全部照常生效。
+          if (classification.decision === 'ask'
+            && permissionModeAutoApproves(sessionPermissionMode, toolDef.permissionLevel)) {
+            const reason = `权限档 ${sessionPermissionMode}：${toolDef.permissionLevel === 'write' ? '写入' : '执行'}操作免确认`;
+            classification = {
+              decision: 'approve',
+              reason,
+              confidence: 1,
+              cached: false,
+              traceStep: createTraceStep('permission_classifier', 'permission_mode_auto_approve', 'allow', reason, permStartTime),
+            };
+          }
         }
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
@@ -623,6 +648,14 @@ export class ToolExecutor {
       if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(toolDef, params);
       permissionRequest.sessionId = options.sessionId;
+
+      // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的
+      // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
+      // always/session 权限记忆）全部对 forceConfirm 让路——只读探索档下
+      // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
+      if (readOnlyForcesConfirmation) {
+        permissionRequest.forceConfirm = true;
+      }
 
       // Attach decision trace to permission request
       permissionRequest.decisionTrace = traceBuilder.build('ask');

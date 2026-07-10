@@ -6,8 +6,23 @@
 // - 会话内切换：写 PermissionModeManager（唯一真源）并广播，无 pending 中转 state
 // - 设置页默认档：直接写 settings 并广播
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as nodePath from 'path';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+
+// 会话档持久化（B1 审出 MED 修复）落 CODE_AGENT_DATA_DIR：测试指到临时目录，
+// 不污染真实用户目录；每个用例前清掉持久化文件，避免跨用例泄漏。
+const tmpDataDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'b1-session-modes-'));
+process.env.CODE_AGENT_DATA_DIR = tmpDataDir;
+beforeEach(() => {
+  fs.rmSync(nodePath.join(tmpDataDir, 'session-permission-modes.json'), { force: true });
+});
+afterAll(() => {
+  delete process.env.CODE_AGENT_DATA_DIR;
+  fs.rmSync(tmpDataDir, { recursive: true, force: true });
+});
 
 const env = vi.hoisted(() => ({
   broadcasts: [] as Array<{ channel: string; data: unknown }>,
@@ -95,6 +110,24 @@ describe('PermissionModeManager 会话档语义', () => {
     expect(manager.setSessionMode('s1', 'readOnly')).toBe(true);
     expect(manager.getModeForSession('s1')).toBe('readOnly');
     expect(manager.getModeForSession('unknown-session')).toBe('default');
+  });
+
+  it('会话内显式切档跨重启持久：重启后不再静默回退全局默认档（审出 MED）', () => {
+    const manager = getPermissionModeManager();
+    manager.setMode('acceptEdits'); // 全局默认档 ≠ 会话选档，回退时会被拆穿
+    manager.initSessionMode('s1');
+    manager.setSessionMode('s1', 'readOnly');
+    resetPermissionModeManager(); // 模拟应用重启：进程内存清空，从磁盘装载
+    const reborn = getPermissionModeManager();
+    expect(reborn.getModeForSession('s1')).toBe('readOnly');
+  });
+
+  it('未显式切档的会话重启后回退全局默认档（快照不落盘的已知上限）', () => {
+    const manager = getPermissionModeManager();
+    manager.setMode('acceptEdits');
+    manager.initSessionMode('s1'); // 只有创建期快照，无显式选择
+    resetPermissionModeManager();
+    expect(getPermissionModeManager().getModeForSession('s1')).toBe('default');
   });
 
   it('bypassPermissions 会话档未审批时拒绝', () => {

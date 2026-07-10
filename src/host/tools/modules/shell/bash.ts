@@ -489,12 +489,16 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const waitForCompletion = args.wait_for_completion as boolean | undefined;
 
     // -------------------------------------------------------------------------
-    // OS 沙箱（仅 bypassPermissions / YOLO 档）
+    // OS 沙箱（bypassPermissions / YOLO 档 + 无人值守会话）
     // 把命令包装成带沙箱前缀的 shell 命令，前台/PTY/后台三条路径统一使用，
     // 复用各自执行器已有的流式 / abort / 错误语义。沙箱不可用时硬报错，绝不静默裸跑。
+    // 审出 MED：无人值守钳制（bypass→acceptEdits）不能顺带撤掉唯一的 OS 级围栏——
+    // unattended 会话不论钳后档位，命令一律带沙箱跑。
     // -------------------------------------------------------------------------
-    const shouldSandbox =
-      OS_SANDBOX.ENABLED && getPermissionModeManager().getModeForSession(ctx.sessionId) === 'bypassPermissions';
+    const permissionModeManager = getPermissionModeManager();
+    const shouldSandbox = OS_SANDBOX.ENABLED
+      && (permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
+        || permissionModeManager.isUnattendedSession(ctx.sessionId));
     let sandboxCleanup: (() => void) | undefined;
     /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {

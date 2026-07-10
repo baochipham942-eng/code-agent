@@ -3,8 +3,19 @@
 // ============================================================================
 // 覆盖：读直通 / 写确认 / 执行确认 / classifier deny 不降级 / 会话级档解析。
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as nodePath from 'path';
 import type { ToolDefinition } from '../../../src/shared/contract';
+
+// 会话档持久化落 CODE_AGENT_DATA_DIR：测试指到临时目录，不污染真实用户目录。
+const tmpDataDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'b1-readonly-'));
+process.env.CODE_AGENT_DATA_DIR = tmpDataDir;
+afterAll(() => {
+  delete process.env.CODE_AGENT_DATA_DIR;
+  fs.rmSync(tmpDataDir, { recursive: true, force: true });
+});
 
 // Mock logger
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -63,6 +74,7 @@ describe('readOnly 只读探索档', () => {
 
   beforeEach(() => {
     resetPermissionModeManager();
+    fs.rmSync(nodePath.join(tmpDataDir, 'session-permission-modes.json'), { force: true });
     mockToolDef = undefined;
     mockClassification = { decision: 'approve', reason: 'test auto-approve', confidence: 1, cached: false };
     permissionCalls = [];
@@ -151,5 +163,103 @@ describe('readOnly 只读探索档', () => {
     const resultB = await executor.execute('write_file', { file_path: '/test/directory/b.txt', content: 'x' }, { sessionId: 'session-b' });
     expect(resultB.success).toBe(true);
     expect(permissionCalls.length).toBe(1); // session B 走 classifier 自动放行，没有新增确认
+  });
+
+  it('readOnly 下权限请求带 forceConfirm：终审层自动放行捷径（autoApprove/权限记忆）全部失效（审出 HIGH）', async () => {
+    getPermissionModeManager().setMode('readOnly');
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(1);
+    // forceConfirm=true 是终审层承诺兑现的锚点：
+    // agentOrchestrator 的 devModeAutoApprove/autoApprove[level] 与
+    // renderer PermissionCard 的 always/session 权限记忆都以 !forceConfirm 为前提。
+    expect(permissionCalls[0].forceConfirm).toBe(true);
+  });
+
+  it('对照组：default 档下用户确认请求不带 forceConfirm（自动放行捷径照常可用）', async () => {
+    mockClassification = { decision: 'ask', reason: 'needs user', confidence: 1, cached: false };
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(1);
+    expect(permissionCalls[0].forceConfirm).not.toBe(true);
+  });
+});
+
+describe('acceptEdits / bypassPermissions 档位判定链（审出 MED：曾是虚标档）', () => {
+  let executor: ToolExecutor;
+  let permissionCalls: Array<Record<string, unknown>> = [];
+
+  beforeEach(() => {
+    resetPermissionModeManager();
+    fs.rmSync(nodePath.join(tmpDataDir, 'session-permission-modes.json'), { force: true });
+    mockToolDef = undefined;
+    // classifier 判 ask：默认档下会走用户确认，免确认档应升级为自动放行
+    mockClassification = { decision: 'ask', reason: 'needs user', confidence: 1, cached: false };
+    permissionCalls = [];
+    executor = new ToolExecutor({
+      requestPermission: async (req) => {
+        permissionCalls.push(req as unknown as Record<string, unknown>);
+        return true;
+      },
+      workingDirectory: '/test/directory',
+    });
+  });
+
+  afterEach(() => {
+    resetPermissionModeManager();
+    vi.clearAllMocks();
+  });
+
+  it('acceptEdits：写入免确认（classifier ask 升级为自动放行）', async () => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
+  });
+
+  it('acceptEdits：执行档不免确认，照走用户确认', async () => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: 'run_thing', requiresPermission: true, permissionLevel: 'execute' });
+    const result = await executor.execute('run_thing', {}, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(1);
+  });
+
+  it('bypassPermissions：写入与执行都免确认', async () => {
+    getPermissionModeManager().setMode('bypassPermissions', true);
+    setMockTool({ name: 'run_thing', requiresPermission: true, permissionLevel: 'execute' });
+    expect((await executor.execute('run_thing', {}, {})).success).toBe(true);
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    expect((await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {})).success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
+  });
+
+  it('bypassPermissions：classifier deny 不放宽，硬毙照常', async () => {
+    getPermissionModeManager().setMode('bypassPermissions', true);
+    mockClassification = { decision: 'deny', reason: 'dangerous', confidence: 1, cached: false };
+    setMockTool({ name: 'run_thing', requiresPermission: true, permissionLevel: 'execute' });
+    const result = await executor.execute('run_thing', {}, {});
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Denied');
+    expect(permissionCalls.length).toBe(0);
+  });
+
+  it('permissionModeOverride：父会话 bypass 时被收缩的 subagent 不能借会话档扩权', async () => {
+    getPermissionModeManager().setMode('bypassPermissions', true); // 父会话档 = bypass
+    const narrowedExecutor = new ToolExecutor({
+      requestPermission: async (req) => {
+        permissionCalls.push(req as unknown as Record<string, unknown>);
+        return false; // subagent 非交互：保守拒绝
+      },
+      workingDirectory: '/test/directory',
+      permissionModeOverride: 'default', // 父子收缩后的 effectiveMode
+    });
+    setMockTool({ name: 'run_thing', requiresPermission: true, permissionLevel: 'execute' });
+    const result = await narrowedExecutor.execute('run_thing', {}, {});
+    expect(result.success).toBe(false); // 不因会话档 bypass 而自动放行
+    expect(permissionCalls.length).toBe(1);
   });
 });

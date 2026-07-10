@@ -2,9 +2,17 @@
 // Permission Modes - Define different permission handling behaviors
 // ============================================================================
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('PermissionModes');
+
+// 会话档持久化文件（审出 MED：纯内存跨重启会静默回退全局默认档）。
+const SESSION_MODES_FILE = 'session-permission-modes.json';
+// ponytail: 全量覆写小 JSON + 超上限丢最旧（Map 保插入序）；量级/并发成问题再换 DB。
+const SESSION_MODES_MAX_ENTRIES = 500;
 
 // ----------------------------------------------------------------------------
 // Types
@@ -216,8 +224,11 @@ export class PermissionModeManager {
   private modeHistory: Array<{ mode: PermissionMode; timestamp: number }> = [];
   private customOverrides: Map<string, PermissionAction> = new Map();
   // 会话级权限档（B1 收口）：key=sessionId。无条目的会话回退全局 currentMode。
-  // ponytail: 进程内 Map 不做淘汰，条目是短字符串，重启即清；量级成问题再挂会话销毁钩子。
+  // 显式切换（setSessionMode）写穿到 SESSION_MODES_FILE，跨重启不回退；
+  // ponytail: initSessionMode 的创建期快照不落盘（重启后回退当时的全局默认档），
+  // 只持久化用户显式选的档——要完整快照语义再把 init 也写穿。
   private sessionModes: Map<string, PermissionMode> = new Map();
+  private sessionModesLoaded = false;
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
 
@@ -276,6 +287,7 @@ export class PermissionModeManager {
    * 杜绝「用户开着 bypass 时定时任务也 bypass 跑」。
    */
   getModeForSession(sessionId?: string): PermissionMode {
+    this.ensureSessionModesLoaded();
     const base = (sessionId && this.sessionModes.get(sessionId)) || this.currentMode;
     if (sessionId && this.unattendedSessions.has(sessionId)) {
       return clampUnattendedPermissionMode(base);
@@ -291,11 +303,19 @@ export class PermissionModeManager {
   }
 
   /**
+   * 是否无人值守会话（bash OS 沙箱等下游围栏用：钳制档位不等于撤围栏）。
+   */
+  isUnattendedSession(sessionId?: string): boolean {
+    return !!sessionId && this.unattendedSessions.has(sessionId);
+  }
+
+  /**
    * 会话创建收口（B1 ②）：新会话按「新会话默认权限档」（全局 currentMode，
    * 由 settings.permissions.permissionMode 持久化）快照建档。之后修改默认档
    * 只影响新会话；当前会话档由会话内切换器（setSessionMode）管理。
    */
   initSessionMode(sessionId: string): void {
+    this.ensureSessionModesLoaded();
     if (this.sessionModes.has(sessionId)) return;
     this.sessionModes.set(sessionId, this.currentMode);
   }
@@ -310,9 +330,50 @@ export class PermissionModeManager {
       logger.warn('Session mode requires user approval', { sessionId, mode });
       return false;
     }
+    this.ensureSessionModesLoaded();
     this.sessionModes.set(sessionId, mode);
+    this.persistSessionModes();
     logger.info('Session permission mode changed', { sessionId, mode, riskLevel: config.riskLevel });
     return true;
+  }
+
+  /**
+   * 从磁盘装载已持久化的会话档（惰性，一次）。内存中已有的条目优先（内存更新）。
+   */
+  private ensureSessionModesLoaded(): void {
+    if (this.sessionModesLoaded) return;
+    this.sessionModesLoaded = true;
+    try {
+      const filePath = this.sessionModesFilePath();
+      if (!fs.existsSync(filePath)) return;
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, PermissionMode>;
+      for (const [sessionId, mode] of Object.entries(raw)) {
+        if (!this.sessionModes.has(sessionId) && MODE_CONFIGS[mode]) {
+          this.sessionModes.set(sessionId, mode);
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to load persisted session permission modes, starting fresh', error);
+    }
+  }
+
+  private persistSessionModes(): void {
+    try {
+      while (this.sessionModes.size > SESSION_MODES_MAX_ENTRIES) {
+        const oldest = this.sessionModes.keys().next().value;
+        if (oldest === undefined) break;
+        this.sessionModes.delete(oldest);
+      }
+      const filePath = this.sessionModesFilePath();
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify(Object.fromEntries(this.sessionModes)), 'utf-8');
+    } catch (error) {
+      logger.warn('Failed to persist session permission modes', error);
+    }
+  }
+
+  private sessionModesFilePath(): string {
+    return path.join(getUserConfigDir(), SESSION_MODES_FILE);
   }
 
   /**
@@ -527,4 +588,15 @@ export function setPermissionMode(mode: PermissionMode, approved = false): boole
  */
 export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionMode {
   return mode === 'bypassPermissions' ? 'acceptEdits' : mode;
+}
+
+/**
+ * 档位免确认语义（单一真源，主 agent 判定链与 subagent requestPermission 共用）：
+ * bypassPermissions = 写入 + 执行免确认；acceptEdits = 仅写入免确认；其余档一律不免。
+ * 只覆盖「本来要问用户」的 ask —— deny / 硬毙 / 策略强确认不经此放宽。
+ */
+export function permissionModeAutoApproves(mode: string, level: string): boolean {
+  if (mode === 'bypassPermissions') return level === 'write' || level === 'execute';
+  if (mode === 'acceptEdits') return level === 'write';
+  return false;
 }

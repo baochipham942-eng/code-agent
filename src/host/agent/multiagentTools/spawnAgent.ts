@@ -12,6 +12,7 @@
 // ============================================================================
 
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
+import { randomUUID } from 'crypto';
 import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../subagentExecutor';
@@ -20,6 +21,10 @@ import {
   getParallelAgentCoordinator,
   type AgentTask,
 } from '../parallelAgentCoordinator';
+import {
+  createScopedSwarmAgentId,
+  type SwarmRunScope,
+} from '../../../shared/contract/swarm';
 import {
   getPredefinedAgent,
   listPredefinedAgents,
@@ -39,7 +44,7 @@ import { getSwarmEventEmitter } from '../swarmEventPublisher';
 import { checkReadonlyParentRule, buildParentContextFromToolContext, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
-import { routeFailureCode } from '../../../shared/contract/cancellation';
+import { normalizeCancellationReason, routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   AgentFailureCode,
   agentFailureCodeFromCancellationReason,
@@ -117,7 +122,7 @@ export async function executeSpawnAgent(
         },
       };
     }
-    const treeId = context.spawnTreeId || context.sessionId || 'default';
+    const treeId = context.swarmRunScope?.treeId || context.spawnTreeId || context.sessionId || 'default';
 
     // Handle parallel execution mode
     if (parallel && agents && agents.length > 0) {
@@ -126,6 +131,7 @@ export async function executeSpawnAgent(
         spawnDepth: childDepth,
         spawnMaxDepth: context.spawnMaxDepth,
         spawnTreeId: treeId,
+        swarmRunScope: context.swarmRunScope,
         spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
         spawnParentStartedAt: context.spawnParentStartedAt,
         spawnParentTimeoutMs: context.spawnParentTimeoutMs,
@@ -247,7 +253,10 @@ export async function executeSpawnAgent(
     }
 
     // Generate agent ID
-    const agentId = `agent_${role || 'dynamic'}_${Date.now()}`;
+    const localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
+    const agentId = context.swarmRunScope
+      ? createScopedSwarmAgentId(context.swarmRunScope, localAgentId)
+      : localAgentId;
 
     // Defensive check: ensure sessionId is available for task tool sharing
     if (!context.sessionId) {
@@ -292,12 +301,37 @@ export async function executeSpawnAgent(
 
     let slotLease: { release: () => void } | undefined;
     let registeredWithGuard = false;
+    let startedExecution: Promise<unknown> | undefined;
+    let worktreeInfo: { worktreePath: string; branchName: string } | undefined;
+    const abortController = new AbortController();
+    const parentAbortSignal = context.abortSignal;
+    const abortFromParent = () => {
+      if (!abortController.signal.aborted) {
+        abortController.abort(parentAbortSignal?.reason ?? 'parent-cancel');
+      }
+    };
+    if (parentAbortSignal?.aborted) {
+      abortFromParent();
+    } else {
+      parentAbortSignal?.addEventListener('abort', abortFromParent, { once: true });
+    }
+    const throwIfSpawnCancelled = (): void => {
+      if (!abortController.signal.aborted) return;
+      throw new Error(
+        `Spawn cancelled before agent registration (${String(abortController.signal.reason ?? 'parent-cancel')})`,
+      );
+    };
 
     try {
       slotLease = await guard.acquireSlot({
         treeId,
+        scope: context.swarmRunScope,
         timeoutMs: context.spawnQueueTimeoutMs,
+        signal: abortController.signal,
       });
+      // A slot may be handed off in the same turn that its parent run is
+      // cancelled. Recheck before any executor/worktree side effect.
+      throwIfSpawnCancelled();
       const executor = getSubagentExecutor();
 
       // Determine permission preset based on agent config
@@ -318,7 +352,6 @@ export async function executeSpawnAgent(
       const effectiveIsolation = (params.isolation as string | undefined)
         ?? DEFAULT_ISOLATION[role || '']
         ?? 'none';
-      let worktreeInfo: { worktreePath: string; branchName: string } | undefined;
       if (effectiveIsolation === 'worktree') {
         try {
           worktreeInfo = await createAgentWorktree(agentId, cwd);
@@ -338,30 +371,6 @@ export async function executeSpawnAgent(
       }
 
       const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
-
-      // Create AbortController for this agent
-      const abortController = new AbortController();
-
-      // Bridge parent abortSignal to this child controller.
-      // 没有这个 bridge 的话单 spawn 路径下，主 agent ESC 后 child 还会跑完当前 LLM call。
-      // Cascade 透传 reason（'user-cancel' / 'session-switch' / 'parent-cancel'）
-      // 供 subagentExecutor 的 abort 检测块区分。
-      if (context.abortSignal) {
-        if (context.abortSignal.aborted) {
-          abortController.abort(context.abortSignal.reason ?? 'parent-cancel');
-        } else {
-          const parentSignal = context.abortSignal;
-          parentSignal.addEventListener(
-            'abort',
-            () => {
-              if (!abortController.signal.aborted) {
-                abortController.abort(parentSignal.reason ?? 'parent-cancel');
-              }
-            },
-            { once: true },
-          );
-        }
-      }
 
       // Build executor context.
       // 注入 agentId 到 toolContext —— 让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
@@ -405,6 +414,7 @@ export async function executeSpawnAgent(
           spawnDepth: childDepth,
           spawnMaxDepth: context.spawnMaxDepth,
           spawnTreeId: treeId,
+          swarmRunScope: context.swarmRunScope,
           spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
           spawnParentStartedAt: context.spawnParentStartedAt,
           spawnParentTimeoutMs: context.spawnParentTimeoutMs,
@@ -437,15 +447,21 @@ export async function executeSpawnAgent(
         maxBudget: effectiveMaxBudget,
       };
 
+      // Covers cancellation during async worktree/context preparation. Once
+      // this check passes, execute()+register() run in one synchronous turn.
+      throwIfSpawnCancelled();
+
       if (waitForCompletion) {
         // Execute and wait for result
         const promise = executor.execute(enrichedTask, executorConfig, executorContext);
+        startedExecution = promise;
 
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
+          scope: context.swarmRunScope,
         });
         registeredWithGuard = true;
         slotLease = undefined;
@@ -483,6 +499,7 @@ Stats:
               agentId,
               cost: result.cost,
               tokensUsed: result.tokensUsed,
+              ...(context.swarmRunScope ?? {}),
             },
           };
         } else {
@@ -494,6 +511,7 @@ Stats:
               agentId,
               cost: result.cost,
               tokensUsed: result.tokensUsed,
+              ...(context.swarmRunScope ?? {}),
               cancellationReason: result.cancellationReason,
               failureCode: result.failureCode
                 ?? agentFailureCodeFromCancellationReason(result.cancellationReason)
@@ -504,12 +522,14 @@ Stats:
       } else {
         // Start agent in background
         const promise = executor.execute(enrichedTask, executorConfig, executorContext);
+        startedExecution = promise;
 
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
+          scope: context.swarmRunScope,
         });
         registeredWithGuard = true;
         slotLease = undefined;
@@ -536,14 +556,24 @@ Stats:
 - Task: ${task}
 - Status: running
 - Mode: ${isDynamicMode ? 'dynamic' : 'declarative'}
-- Running agents: ${guard.getRunningCount()}${isolationNote}
+- Running agents: ${guard.getRunningCount(
+          context.swarmRunScope ?? (context.sessionId ? { sessionId: context.sessionId } : undefined),
+        )}${isolationNote}
 
 Use wait_agent to block until done, or close_agent to cancel.`,
         };
       }
     } catch (error) {
       if (!registeredWithGuard) {
+        if (startedExecution) {
+          abortController.abort('registration-failed');
+          void startedExecution.catch(() => undefined);
+        }
         slotLease?.release();
+        if (worktreeInfo) {
+          const repoPath = context.workingDirectory || process.cwd();
+          await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath).catch(() => {});
+        }
       }
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       return {
@@ -569,9 +599,12 @@ export interface SpawnedAgent {
 }
 
 // Export function to get agent status (used by agent_message tool)
-export function getSpawnedAgent(agentId: string): SpawnedAgent | undefined {
+export function getSpawnedAgent(
+  agentId: string,
+  scope?: import('../spawnGuard').SpawnGuardScopeFilter,
+): SpawnedAgent | undefined {
   const guard = getSpawnGuard();
-  const managed = guard.get(agentId);
+  const managed = guard.get(agentId, scope);
   if (!managed) return undefined;
   return {
     id: managed.id,
@@ -584,9 +617,11 @@ export function getSpawnedAgent(agentId: string): SpawnedAgent | undefined {
 }
 
 // Export function to list all agents
-export function listSpawnedAgents(): SpawnedAgent[] {
+export function listSpawnedAgents(
+  scope?: import('../spawnGuard').SpawnGuardScopeFilter,
+): SpawnedAgent[] {
   const guard = getSpawnGuard();
-  return guard.list().map(managed => ({
+  return guard.list(scope).map(managed => ({
     id: managed.id,
     role: managed.role,
     status: managed.status === 'cancelled' ? 'killed' as const : managed.status,
@@ -615,8 +650,46 @@ async function executeParallelAgents(
     const normalized = errorMessage.toLowerCase();
     return normalized.includes('cancel') || normalized.includes('abort') || errorMessage.includes('取消');
   };
+  const getParallelCancellationResult = (): ToolExecutionResult | null => {
+    if (!context.abortSignal?.aborted) return null;
+    const cancellationReason = normalizeCancellationReason(
+      context.abortSignal.reason,
+      'parent-cancel',
+    );
+    return {
+      success: false,
+      error: `Parallel launch cancelled (${String(context.abortSignal.reason ?? 'parent-cancel')})`,
+      metadata: {
+        cancellationReason,
+        failureRouting: routeFailureCode(cancellationReason),
+        failureCode: agentFailureCodeFromCancellationReason(cancellationReason)
+          ?? AgentFailureCode.CancelledByParent,
+      },
+    };
+  };
 
-  const coordinator = getParallelAgentCoordinator();
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error: 'Parallel Agent Team requires a sessionId for run isolation.',
+      metadata: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
+
+  if (context.swarmRunScope && context.swarmRunScope.sessionId !== context.sessionId) {
+    return {
+      success: false,
+      error: 'Inherited Agent Team scope does not match the active session.',
+      metadata: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
+  const newRunId = randomUUID();
+  const runScope: SwarmRunScope = {
+    sessionId: context.sessionId,
+    runId: newRunId,
+    treeId: context.swarmRunScope?.treeId ?? newRunId,
+  };
+  const coordinator = getParallelAgentCoordinator(runScope);
   const emitter = getSwarmEventEmitter();
   const guard = getSpawnGuard();
 
@@ -630,13 +703,15 @@ async function executeParallelAgents(
     const depMap = new Map<string, Set<string>>();
     for (let i = 0; i < agents.length; i++) {
       const agent = agents[i];
-      const taskId = `agent_${agent.role}_${i}`;
+      const taskId = createScopedSwarmAgentId(runScope, `agent_${agent.role}_${i}`);
       const blockers = new Set<string>();
       if (agent.dependsOn) {
         for (const dep of agent.dependsOn) {
           // 尝试将 role 名解析为 taskId（与下方 Phase 2 解析逻辑一致）
           const resolvedIdx = agents.findIndex(a => a.role === dep);
-          const resolvedId = resolvedIdx >= 0 ? `agent_${dep}_${resolvedIdx}` : dep;
+          const resolvedId = resolvedIdx >= 0
+            ? createScopedSwarmAgentId(runScope, `agent_${dep}_${resolvedIdx}`)
+            : dep;
           blockers.add(resolvedId);
         }
       }
@@ -657,7 +732,16 @@ async function executeParallelAgents(
   coordinator.initialize({
     modelConfig: context.modelConfig as ModelConfig,
     toolResolver: context.resolver as ToolResolver,
-    toolContext: context,
+    toolContext: {
+      ...context,
+      spawnTreeId: runScope.treeId,
+      swarmRunScope: runScope,
+      // A nested parallel Team is a new run root. Parent cancellation is bridged
+      // through abortSignal; carrying the parent run's agent id would create a
+      // cross-run SpawnGuard edge.
+      spawnParentAgentId: undefined,
+    },
+    scope: runScope,
   });
 
   // Convert to AgentTask format
@@ -680,7 +764,7 @@ async function executeParallelAgents(
     }
 
     // 使用 role_index 作为稳定 ID，避免 Date.now() 导致 dependsOn 无法匹配
-    const taskId = `agent_${agent.role}_${index}`;
+    const taskId = createScopedSwarmAgentId(runScope, `agent_${agent.role}_${index}`);
     roleToId.set(agent.role, taskId);
     // 也支持 "role-index" 格式引用
     roleToId.set(`${agent.role}-${index}`, taskId);
@@ -757,18 +841,33 @@ async function executeParallelAgents(
   }
 
   const launchGate = getSwarmLaunchApprovalGate();
-  const launchApproval = await launchGate.requestApproval({
-    sessionId: context.sessionId,
-    summary: `准备并行启动 ${tasks.length} 个 agent`,
-    tasks: tasks.map((task) => ({
-      id: task.id,
-      role: task.role,
-      task: task.task.replace(/^\[工作目录:[^\]]+\]\s*所有文件路径基于此目录。\n\n/, ''),
-      dependsOn: task.dependsOn,
-      tools: [...task.tools],
-      writeAccess: !READONLY_ROLES.includes(task.role.toLowerCase()),
-    })),
-  });
+  const cancelledBeforeApproval = getParallelCancellationResult();
+  if (cancelledBeforeApproval) return cancelledBeforeApproval;
+  const cancelPendingLaunch = () => {
+    const reason = normalizeCancellationReason(context.abortSignal?.reason, 'parent-cancel');
+    launchGate.cancelRun(runScope, reason);
+  };
+  context.abortSignal?.addEventListener('abort', cancelPendingLaunch, { once: true });
+  let launchApproval;
+  try {
+    launchApproval = await launchGate.requestApproval({
+      scope: runScope,
+      summary: `准备并行启动 ${tasks.length} 个 agent`,
+      tasks: tasks.map((task) => ({
+        id: task.id,
+        role: task.role,
+        task: task.task.replace(/^\[工作目录:[^\]]+\]\s*所有文件路径基于此目录。\n\n/, ''),
+        dependsOn: task.dependsOn,
+        tools: [...task.tools],
+        writeAccess: !READONLY_ROLES.includes(task.role.toLowerCase()),
+      })),
+    });
+  } finally {
+    context.abortSignal?.removeEventListener('abort', cancelPendingLaunch);
+  }
+
+  const cancelledAfterApproval = getParallelCancellationResult();
+  if (cancelledAfterApproval) return cancelledAfterApproval;
 
   if (!launchApproval.approved) {
     const reason = launchApproval.feedback?.trim();
@@ -805,14 +904,14 @@ async function executeParallelAgents(
   }
 
   // Emit swarm:started
-  emitter.started(tasks.length, context.sessionId);
+  emitter.started(runScope, tasks.length);
   for (const task of tasks) {
-    emitter.agentAdded({ id: task.id, name: task.role, role: task.role });
+    emitter.agentAdded(runScope, { id: task.id, name: task.role, role: task.role });
   }
 
   // Bridge coordinator events to swarm events + coordinator session tracking
   const onTaskStart = (evt: { taskId: string; role: string }) => {
-    emitter.agentUpdated(evt.taskId, { status: 'running', startTime: Date.now() });
+    emitter.agentUpdated(runScope, evt.taskId, { status: 'running', startTime: Date.now() });
     // Coordinator mode: 标记任务分配
     if (coordSession) {
       const coordTask = coordSession.getTask(evt.taskId);
@@ -826,7 +925,7 @@ async function executeParallelAgents(
     role: string;
     snapshot: import('../../../shared/contract/swarm').SwarmAgentContextSnapshot;
   }) => {
-    emitter.agentUpdated(evt.taskId, {
+    emitter.agentUpdated(runScope, evt.taskId, {
       status: 'running',
       contextSnapshot: evt.snapshot,
       toolCalls: evt.snapshot.tools.length,
@@ -834,41 +933,41 @@ async function executeParallelAgents(
   };
   const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string } }) => {
     if (evt.result.success) {
-      emitter.agentCompleted(evt.taskId, evt.result.output);
+      emitter.agentCompleted(runScope, evt.taskId, evt.result.output);
       coordSession?.complete(evt.taskId, evt.result.output ?? '');
       // 协作可见性（P1-3）：解析子代理自报的人话状态 / 决策 → 讨论流
       const report = parseStatusReport(evt.result.output ?? '');
       const reportRole = tasks.find((t) => t.id === evt.taskId)?.role;
       const reportAt = Date.now();
       if (report.status) {
-        emitter.contextUpdate({ kind: 'status', agentId: evt.taskId, role: reportRole, content: report.status, at: reportAt });
+        emitter.contextUpdate(runScope, { kind: 'status', agentId: evt.taskId, role: reportRole, content: report.status, at: reportAt });
       }
       if (report.decision) {
-        emitter.contextUpdate({ kind: 'decision', agentId: evt.taskId, role: reportRole, content: report.decision, at: reportAt });
+        emitter.contextUpdate(runScope, { kind: 'decision', agentId: evt.taskId, role: reportRole, content: report.decision, at: reportAt });
       }
     } else {
       const errorMessage = evt.result.error || 'Unknown error';
       if (isCancelledTaskError(errorMessage)) {
-        emitter.agentUpdated(evt.taskId, {
+        emitter.agentUpdated(runScope, evt.taskId, {
           status: 'cancelled',
           endTime: Date.now(),
           error: 'Cancelled',
         });
       } else {
-        emitter.agentFailed(evt.taskId, errorMessage);
+        emitter.agentFailed(runScope, evt.taskId, errorMessage);
       }
       coordSession?.fail(evt.taskId, errorMessage);
     }
   };
   const onTaskError = (evt: { taskId: string; error: string }) => {
     if (isCancelledTaskError(evt.error)) {
-      emitter.agentUpdated(evt.taskId, {
+      emitter.agentUpdated(runScope, evt.taskId, {
         status: 'cancelled',
         endTime: Date.now(),
         error: 'Cancelled',
       });
     } else {
-      emitter.agentFailed(evt.taskId, evt.error);
+      emitter.agentFailed(runScope, evt.taskId, evt.error);
     }
     coordSession?.fail(evt.taskId, evt.error);
   };
@@ -877,7 +976,7 @@ async function executeParallelAgents(
   const onDiscovery = (evt: { taskId?: string; role?: string; finding?: string; key?: string; value?: unknown; at?: number }) => {
     const content = evt.finding ?? (typeof evt.value === 'string' ? evt.value : evt.key);
     if (!content) return;
-    emitter.contextUpdate({
+    emitter.contextUpdate(runScope, {
       kind: 'finding',
       agentId: evt.taskId,
       role: evt.role ?? (evt.taskId ? tasks.find((t) => t.id === evt.taskId)?.role : undefined),
@@ -914,7 +1013,7 @@ async function executeParallelAgents(
     // Emit per-agent completion with aggregation data (cost, files, preview)
     for (const entry of aggregation.agentResults) {
       const taskResult = resultByTaskId.get(entry.agentId);
-      emitter.agentUpdated(entry.agentId, {
+      emitter.agentUpdated(runScope, entry.agentId, {
         status: entry.status === 'completed'
           ? 'completed'
           : taskResult?.cancelled || isCancelledTaskError(taskResult?.error)
@@ -924,7 +1023,7 @@ async function executeParallelAgents(
     }
 
     if (wasCancelled) {
-      emitter.cancelled();
+      emitter.cancelled(runScope);
       return {
         success: false,
         error: `Parallel execution cancelled: ${result.errors.length} tasks did not complete.`,
@@ -938,12 +1037,13 @@ async function executeParallelAgents(
         metadata: {
           cost: aggregation.totalCost,
           tokensUsed: totalTokensUsed,
+          ...runScope,
         },
       };
     }
 
     // Emit swarm:completed with aggregation
-    emitter.completedWithAggregation({
+    emitter.completedWithAggregation(runScope, {
       total: tasks.length,
       completed: result.results.filter(r => r.success).length,
       failed: result.results.filter(r => !r.success).length,
@@ -996,6 +1096,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
         metadata: {
           cost: aggregation.totalCost,
           tokensUsed: totalTokensUsed,
+          ...runScope,
         },
       };
     } else {
@@ -1037,11 +1138,12 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
         metadata: {
           cost: aggregation.totalCost,
           tokensUsed: totalTokensUsed,
+          ...runScope,
         },
       };
     }
   } catch (error) {
-    emitter.cancelled();
+    emitter.cancelled(runScope);
     return {
       success: false,
       error: `Parallel execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

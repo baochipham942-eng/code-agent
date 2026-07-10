@@ -7,7 +7,7 @@
 // 3. 底部：用户可输入消息直接发给选中 agent
 // ============================================================================
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
   Users,
@@ -22,11 +22,12 @@ import {
   ShieldX,
   ListTodo,
 } from 'lucide-react';
-import { useSwarmStore } from '../../../stores/swarmStore';
+import { getSwarmMessageKey, useSwarmStore } from '../../../stores/swarmStore';
 import { useAppStore } from '../../../stores/appStore';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { generateMessageId } from '@shared/utils/id';
 
 // ============================================================================
 // Types
@@ -42,8 +43,27 @@ interface TeammateMessageDisplay {
 }
 
 interface AgentTeamPanelProps {
+  sessionId: string;
+  runId: string;
   initialAgentId?: string;
   onClose?: () => void;
+}
+
+function toDisplayMessageType(
+  messageType: string | undefined,
+  from: string,
+): TeammateMessageDisplay['type'] {
+  if (from === 'user') return 'user';
+  if (
+    messageType === 'handoff'
+    || messageType === 'query'
+    || messageType === 'response'
+    || messageType === 'broadcast'
+    || messageType === 'user'
+  ) {
+    return messageType;
+  }
+  return 'coordination';
 }
 
 // ============================================================================
@@ -198,14 +218,40 @@ const TaskAssignments: React.FC<{ agents: SwarmAgentState[] }> = ({ agents }) =>
 // Main Component
 // ============================================================================
 
-export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, onClose }) => {
-  const { agents, isRunning } = useSwarmStore();
+export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
+  sessionId,
+  runId,
+  initialAgentId,
+  onClose,
+}) => {
+  const { agents, isRunning, messages: liveMessages, activeTreeId } = useSwarmStore();
   const selectedAgentId = useAppStore((state) => state.selectedSwarmAgentId);
   const setSelectedAgentId = useAppStore((state) => state.setSelectedSwarmAgentId);
   const [inputValue, setInputValue] = useState('');
-  const [messages, setMessages] = useState<TeammateMessageDisplay[]>([]);
+  const [historyMessages, setHistoryMessages] = useState<TeammateMessageDisplay[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const treeId = activeTreeId ?? '__unbound__';
+  const scopeKey = `${sessionId}:${runId}:${treeId}`;
+  const activeScopeTokenRef = useRef(scopeKey);
+  activeScopeTokenRef.current = scopeKey;
+  const messages = useMemo(() => {
+    const byId = new Map<string, TeammateMessageDisplay>();
+    for (const message of historyMessages) byId.set(message.id, message);
+    for (const message of liveMessages) {
+      byId.set(message.id, {
+        id: message.id,
+        from: message.from,
+        to: message.to,
+        content: message.content,
+        timestamp: message.timestamp,
+        type: toDisplayMessageType(message.messageType, message.from),
+      });
+    }
+    return [...byId.values()].sort((left, right) => left.timestamp - right.timestamp);
+  }, [historyMessages, liveMessages]);
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -217,40 +263,48 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, 
   }, [messages, scrollToBottom]);
 
   useEffect(() => {
-    if (initialAgentId && initialAgentId !== selectedAgentId) {
+    setHistoryMessages([]);
+    setInputValue('');
+    setSendError(null);
+    setSending(false);
+  }, [scopeKey]);
+
+  useEffect(() => {
+    const initialExists = initialAgentId && agents.some((agent) => agent.id === initialAgentId);
+    if (initialExists && initialAgentId !== selectedAgentId) {
       setSelectedAgentId(initialAgentId);
       return;
     }
 
-    if (!selectedAgentId && agents.length > 0) {
+    if ((!selectedAgentId || !agents.some((agent) => agent.id === selectedAgentId)) && agents.length > 0) {
       setSelectedAgentId(agents[0].id);
     }
   }, [agents, initialAgentId, selectedAgentId, setSelectedAgentId]);
 
   useEffect(() => {
+    setHistoryMessages([]);
+    setSendError(null);
     if (!selectedAgentId) return;
 
     let cancelled = false;
     ipcService
-      .invoke(IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES, selectedAgentId)
+      .invoke(IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES, {
+        sessionId,
+        runId,
+        agentId: selectedAgentId,
+      })
       .then((history) => {
         if (cancelled || !history) return;
-        setMessages((prev) => {
-          const dynamicMessages = prev.filter(
-            (msg) => msg.from !== selectedAgentId && msg.to !== selectedAgentId
-          );
-
-          const loaded = history.map((msg, index) => ({
-            id: `history_${selectedAgentId}_${msg.timestamp}_${index}`,
+        setHistoryMessages(
+          history.map((msg) => ({
+            id: getSwarmMessageKey(sessionId, runId, treeId, msg.id),
             from: msg.from,
             to: msg.to,
             content: msg.content,
             timestamp: msg.timestamp,
-            type: 'coordination' as const,
-          }));
-
-          return [...dynamicMessages, ...loaded].sort((a, b) => a.timestamp - b.timestamp);
-        });
+            type: toDisplayMessageType(msg.messageType, msg.from),
+          })),
+        );
       })
       .catch((error) => {
         console.error('Failed to load agent messages:', error);
@@ -259,56 +313,53 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, 
     return () => {
       cancelled = true;
     };
-  }, [selectedAgentId]);
-
-  // 监听 swarm 事件中的消息
-  useEffect(() => {
-    if (!ipcService.isAvailable()) return;
-    const unsubscribe = ipcService.on(IPC_CHANNELS.SWARM_EVENT, (event) => {
-      // 处理 Agent Teams 消息事件
-      if (event.type === 'swarm:agent:message' || event.type === 'swarm:user:message') {
-        const msgData = event.data?.message;
-        if (msgData) {
-          setMessages(prev => [...prev, {
-            id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            from: msgData.from,
-            to: msgData.to,
-            content: msgData.content,
-            timestamp: Date.now(),
-            type: (msgData.messageType || 'coordination') as TeammateMessageDisplay['type'],
-          }]);
-        }
-      }
-    });
-    return () => unsubscribe?.();
-  }, []);
+  }, [runId, selectedAgentId, sessionId, treeId]);
 
   // 发送消息给选中的 agent
   const handleSend = useCallback(async () => {
-    if (!inputValue.trim() || !selectedAgentId) return;
+    const content = inputValue.trim();
+    if (!content || !selectedAgentId || sending) return;
+    const requestScopeToken = scopeKey;
 
-    const message: TeammateMessageDisplay = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      from: 'user',
-      to: selectedAgentId,
-      content: inputValue.trim(),
-      timestamp: Date.now(),
-      type: 'user',
-    };
-
-    setMessages(prev => [...prev, message]);
-    setInputValue('');
-
-    // 通过 IPC 发送给主进程
+    setSending(true);
+    setSendError(null);
     try {
-      await ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
+      const timestamp = Date.now();
+      const result = await ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
+        sessionId,
+        runId,
         agentId: selectedAgentId,
-        message: inputValue.trim(),
+        message: content,
+        messageId: generateMessageId(),
+        timestamp,
       });
+      if (activeScopeTokenRef.current !== requestScopeToken) return;
+      if (!result?.delivered) {
+        setSendError('消息未送达，目标 Agent 可能已结束。');
+        return;
+      }
+
+      // delivered:true means the agent and live Team ledger already received
+      // the instruction. Clear the draft even if durable session persistence
+      // failed, otherwise a retry would execute the same instruction twice.
+      setInputValue('');
+      if (!result.persisted) {
+        setSendError('消息已送达，但未写入持久 Team 记录；请勿重复发送。');
+        return;
+      }
+
+      // 成功消息由 Host ledger 的 scoped swarm:user:message 回放进入 store，
+      // 不在 Renderer 乐观插入，避免 delivered:false 仍显示假成功。
     } catch (error) {
+      if (activeScopeTokenRef.current !== requestScopeToken) return;
       console.error('Failed to send message:', error);
+      setSendError('发送失败，请重试。');
+    } finally {
+      if (activeScopeTokenRef.current === requestScopeToken) {
+        setSending(false);
+      }
     }
-  }, [inputValue, selectedAgentId]);
+  }, [inputValue, runId, scopeKey, selectedAgentId, sending, sessionId]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const filteredMessages = selectedAgentId
@@ -424,16 +475,23 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, 
                 }
               }}
               placeholder={`发消息给 ${selectedAgent?.name || 'Agent'}...`}
+              disabled={sending}
               className="flex-1 bg-zinc-800 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-hidden focus:border-cyan-500/40"
             />
             <button
               onClick={handleSend}
-              disabled={!inputValue.trim()}
+              disabled={!inputValue.trim() || sending}
+              aria-label="发送消息"
               className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
           </div>
+          {sendError && (
+            <div role="alert" className="mt-1.5 text-[11px] text-red-400">
+              {sendError}
+            </div>
+          )}
         </div>
       )}
     </div>

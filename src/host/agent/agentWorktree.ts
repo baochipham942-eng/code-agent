@@ -12,6 +12,7 @@ import { promisify } from 'util';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { createHash } from 'crypto';
 import { createLogger } from '../services/infra/logger';
 import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 import {
@@ -30,6 +31,7 @@ const logger = createLogger('AgentWorktree');
 const WORKTREE_TIMEOUT = 30_000;
 const WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees');
 const MAX_WORKTREE_DIFF_CHARS = 20_000;
+const MAX_AGENT_REF_COMPONENT_BYTES = 120;
 
 export interface WorktreeInfo {
   worktreePath: string;
@@ -47,6 +49,19 @@ const worktreeArtifacts = new Map<string, AgentWorktreeArtifact>();
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/** Keep git ref/path components bounded even when the logical Team identity is composite. */
+export function getAgentWorktreeKey(agentId: string): string {
+  if (Buffer.byteLength(agentId, 'utf8') <= MAX_AGENT_REF_COMPONENT_BYTES) {
+    return agentId;
+  }
+  const readableTail = agentId
+    .slice(-32)
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/^_+|_+$/g, '') || 'agent';
+  const digest = createHash('sha256').update(agentId).digest('hex').slice(0, 24);
+  return `${readableTail.slice(0, 32)}_${digest}`;
 }
 
 function cloneChangedFiles(files?: AgentTreeChangedFile[]): AgentTreeChangedFile[] | undefined {
@@ -222,8 +237,9 @@ export async function createAgentWorktree(
   repoPath: string,
   baseBranch?: string
 ): Promise<WorktreeInfo> {
-  const branchName = `agent/${agentId}`;
-  const safeName = agentId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const physicalAgentId = getAgentWorktreeKey(agentId);
+  const branchName = `agent/${physicalAgentId}`;
+  const safeName = physicalAgentId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const worktreePath = path.join(WORKTREE_BASE_DIR, safeName);
 
   // Determine base: explicit param or current HEAD
@@ -335,7 +351,7 @@ export async function cleanupAgentWorktree(
   worktreePath: string,
   repoPath: string
 ): Promise<WorktreeCleanupResult> {
-  const branchName = `agent/${agentId}`;
+  const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
 
   try {
     // Check for uncommitted changes in worktree

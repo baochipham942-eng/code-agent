@@ -86,6 +86,7 @@ export function buildLegacyCtxFromProtocol(
     spawnDepth: ctx.spawnDepth,
     spawnMaxDepth: ctx.spawnMaxDepth,
     spawnTreeId: ctx.spawnTreeId,
+    swarmRunScope: ctx.swarmRunScope,
     spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
     spawnParentStartedAt: ctx.spawnParentStartedAt,
     spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,

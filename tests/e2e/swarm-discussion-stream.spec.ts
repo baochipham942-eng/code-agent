@@ -36,6 +36,21 @@ async function emitSwarmEvent(
   ).toBe(true);
 }
 
+async function createCleanSession(page: Page): Promise<string> {
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+  await newSessionBtn.click();
+
+  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  await expect(activeSession).toBeVisible({ timeout: 10_000 });
+
+  const sessionId = await activeSession.getAttribute('data-session-id');
+  expect(sessionId, 'active session id missing after creating a clean E2E session').toBeTruthy();
+  await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
+
+  return sessionId!;
+}
+
 test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page, request }) => {
   const ssePromise = page.waitForResponse(
     (resp) => resp.url().includes('/api/events'),
@@ -47,11 +62,18 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
   await ssePromise;
 
   const token = await getAuthToken(page);
+  const sessionId = await createCleanSession(page);
   const base = Date.now();
+  const runId = `e2e-discussion-run-${base}`;
+  const treeId = `e2e-discussion-tree-${base}`;
+  const agentId = `agent-researcher-${base}`;
 
   // 1. swarm 启动 + 一个运行中 agent —— SwarmInlineMonitor 浮层才会渲染
   await emitSwarmEvent(request, token, {
     type: 'swarm:started',
+    sessionId,
+    runId,
+    treeId,
     timestamp: base,
     data: {
       statistics: { total: 1, completed: 0, failed: 0, running: 1, pending: 0, parallelPeak: 1, totalTokens: 0, totalToolCalls: 0 },
@@ -59,9 +81,12 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
   });
   await emitSwarmEvent(request, token, {
     type: 'swarm:agent:added',
+    sessionId,
+    runId,
+    treeId,
     timestamp: base + 1,
     data: {
-      agentState: { id: 'agent_researcher_0', name: '研究员', role: 'researcher', status: 'running', iterations: 0, startTime: base + 1 },
+      agentState: { id: agentId, name: '研究员', role: 'researcher', status: 'running', iterations: 0, startTime: base + 1 },
     },
   });
 
@@ -75,26 +100,35 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
 
   await emitSwarmEvent(request, token, {
     type: 'swarm:context:update',
+    sessionId,
+    runId,
+    treeId,
     timestamp: base + 100,
     data: {
-      agentId: 'agent_researcher_0',
-      contextUpdate: { kind: 'finding', agentId: 'agent_researcher_0', role: '研究员', content: findingMark, at: base + 100 },
+      agentId,
+      contextUpdate: { kind: 'finding', agentId, role: '研究员', content: findingMark, at: base + 100 },
     },
   });
   await emitSwarmEvent(request, token, {
     type: 'swarm:context:update',
+    sessionId,
+    runId,
+    treeId,
     timestamp: base + 200,
     data: {
-      agentId: 'agent_researcher_0',
-      contextUpdate: { kind: 'decision', agentId: 'agent_researcher_0', role: '研究员', content: decisionMark, at: base + 200 },
+      agentId,
+      contextUpdate: { kind: 'decision', agentId, role: '研究员', content: decisionMark, at: base + 200 },
     },
   });
   await emitSwarmEvent(request, token, {
     type: 'swarm:context:update',
+    sessionId,
+    runId,
+    treeId,
     timestamp: base + 300,
     data: {
-      agentId: 'agent_researcher_0',
-      contextUpdate: { kind: 'status', agentId: 'agent_researcher_0', role: '研究员', content: statusMark, at: base + 300 },
+      agentId,
+      contextUpdate: { kind: 'status', agentId, role: '研究员', content: statusMark, at: base + 300 },
     },
   });
 

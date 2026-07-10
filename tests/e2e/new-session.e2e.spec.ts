@@ -44,6 +44,19 @@ async function getAuthToken(page: Page): Promise<string> {
   return token!;
 }
 
+async function createCleanSession(page: Page): Promise<string> {
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+  await newSessionBtn.click();
+
+  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  await expect(activeSession).toBeVisible({ timeout: 10_000 });
+  const sessionId = await activeSession.getAttribute('data-session-id');
+  expect(sessionId, 'active session id missing after creating probe session').toBeTruthy();
+  await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
+  return sessionId!;
+}
+
 // ----------------------------------------------------------------------------
 // Test 1: 点击「新会话」按钮 → 出现 active session + chat 输入框可见
 // 验证: click → domain:session create → SessionManager → renderer store → DOM
@@ -91,12 +104,19 @@ test('PoC: 应用 ready 后 token 已注入, SSE 通道接收 dev 事件', async
   await waitForAppReady(page);
 
   const token = await getAuthToken(page);
+  const sessionId = await createCleanSession(page);
+  const base = Date.now();
+  const runId = `e2e-probe-run-${base}`;
+  const treeId = `e2e-probe-tree-${base}`;
 
   // 用合法 token 发 dev hook, 期望 200 (说明 SSE 通道 + auth middleware 工作)
   const probeResp = await request.post('/api/dev/emit-swarm-event', {
     data: {
       type: 'swarm:started',
-      timestamp: Date.now(),
+      sessionId,
+      runId,
+      treeId,
+      timestamp: base,
       data: {
         statistics: {
           total: 0,
@@ -121,7 +141,10 @@ test('PoC: 应用 ready 后 token 已注入, SSE 通道接收 dev 事件', async
   const badResp = await request.post('/api/dev/emit-swarm-event', {
     data: {
       type: 'swarm:started',
-      timestamp: Date.now(),
+      sessionId,
+      runId,
+      treeId,
+      timestamp: base + 1,
       data: {
         statistics: {
           total: 0,

@@ -8,6 +8,7 @@ import {
   persistAgentLoopMessageToSession,
 } from '../../../src/cli/bootstrap';
 import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
+import { createSwarmTraceStorageId } from '../../../src/shared/contract/swarm';
 import {
   getSwarmTraceWriter,
   resetSwarmTraceWriter,
@@ -101,17 +102,21 @@ describe('installCLISwarmTraceWriterIfNeeded', () => {
 
     expect(installCLISwarmTraceWriterIfNeeded()).toBe(true);
     const emitter = new SwarmEventEmitter();
-    emitter.started(1, 'cli-session-1');
-    const runId = emitter.getCurrentRunId();
-    expect(runId).not.toBeNull();
-    emitter.agentAdded({ id: 'agent_coder_0', name: 'coder', role: 'coder' });
-    emitter.agentUpdated('agent_coder_0', {
+    const scope = {
+      sessionId: 'cli-session-1',
+      runId: 'cli-run-1',
+      treeId: 'cli-tree-1',
+    };
+    const storageRunId = createSwarmTraceStorageId(scope);
+    emitter.started(scope, 1);
+    emitter.agentAdded(scope, { id: 'agent_coder_0', name: 'coder', role: 'coder' });
+    emitter.agentUpdated(scope, 'agent_coder_0', {
       status: 'running',
       startTime: 10,
       toolCalls: 1,
     });
-    emitter.agentCompleted('agent_coder_0', 'done');
-    emitter.completed({
+    emitter.agentCompleted(scope, 'agent_coder_0', 'done');
+    emitter.completed(scope, {
       total: 1,
       completed: 1,
       failed: 0,
@@ -122,7 +127,7 @@ describe('installCLISwarmTraceWriterIfNeeded', () => {
     await getSwarmTraceWriter()?.drain();
 
     const storageDir = path.join(tmpDir, SWARM_TRACE.STORAGE_DIR);
-    const files = fs.readdirSync(storageDir).filter((f) => f.endsWith(`__${runId}.jsonl`));
+    const files = fs.readdirSync(storageDir).filter((f) => f.endsWith(`__${storageRunId}.jsonl`));
     expect(files).toHaveLength(1);
 
     const entries = fs

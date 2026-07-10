@@ -79,11 +79,18 @@ test('swarm event 从 EventBus 一路传到 DOM', async ({ page, request }) => {
   await ssePromise;
 
   const token = await getAuthToken(page);
+  const sessionId = await createCleanSession(page);
+  const base = Date.now();
+  const runId = `e2e-run-${base}`;
+  const treeId = `e2e-tree-${base}`;
 
   // 2. 注入 swarm:started —— 会触发 setShowTaskPanel(true) + setTaskPanelTab('orchestration')
   await emitSwarmEvent(request, token, {
     type: 'swarm:started',
-    timestamp: Date.now(),
+    sessionId,
+    runId,
+    treeId,
+    timestamp: base,
     data: {
       statistics: {
         total: 1,
@@ -99,13 +106,16 @@ test('swarm event 从 EventBus 一路传到 DOM', async ({ page, request }) => {
   });
 
   // 3. 注入一个独特名字的 agent，用它在 DOM 里当 probe
-  const uniqueAgentName = `e2e-scout-${Date.now()}`;
+  const uniqueAgentName = `e2e-scout-${base}`;
   await emitSwarmEvent(request, token, {
     type: 'swarm:agent:added',
-    timestamp: Date.now(),
+    sessionId,
+    runId,
+    treeId,
+    timestamp: base + 1,
     data: {
       agentState: {
-        id: 'e2e-agent-1',
+        id: `e2e-agent-${base}`,
         name: uniqueAgentName,
         role: 'scout',
         status: 'running',
@@ -144,18 +154,25 @@ test('pending launch request 会以内联卡片出现在聊天区', async ({ pag
 
   const token = await getAuthToken(page);
   const sessionId = await createCleanSession(page);
+  const base = Date.now();
+  const runId = `e2e-launch-run-${base}`;
+  const treeId = `e2e-launch-tree-${base}`;
 
-  const launchRequestId = `e2e-launch-${Date.now()}`;
+  const launchRequestId = `e2e-launch-${base}`;
   await emitSwarmEvent(request, token, {
     type: 'swarm:launch:requested',
     sessionId,
-    timestamp: Date.now(),
+    runId,
+    treeId,
+    timestamp: base,
     data: {
       launchRequest: {
         id: launchRequestId,
         sessionId,
+        runId,
+        treeId,
         status: 'pending',
-        requestedAt: Date.now(),
+        requestedAt: base,
         summary: '等待启动审批',
         agentCount: 2,
         dependencyCount: 1,

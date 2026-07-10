@@ -315,7 +315,8 @@ function buildDirectRoutingEvidence(
 
   const deliveredTargetIds = event?.kind === 'direct'
     ? event.deliveredTargetIds
-    : metadata.directRoutingDelivery?.deliveredTargetIds || metadata.targetAgentIds || [];
+    : metadata.directRoutingDelivery?.deliveredTargetIds
+      || (metadata.routingMode === 'direct' ? [] : metadata.targetAgentIds || []);
   const deliveredNames = event?.kind === 'direct'
     ? (event.targetAgentNames.length > 0 ? event.targetAgentNames : event.targetAgentIds)
     : metadata.directRoutingDelivery?.deliveredTargetNames?.length

@@ -24,6 +24,7 @@ import type {
 } from '../../../protocol/tools';
 import { getTeammateService } from '../../../agent/teammate';
 import type { TeammateMessageType } from '../../../agent/teammate';
+import { parseScopedSwarmAgentId } from '../../../../shared/contract/swarm';
 import { teammateSchema as schema } from './teammate.schema';
 import { withMultiagentMeta } from './resultMeta';
 
@@ -71,8 +72,18 @@ export async function executeTeammate(
   const currentAgentId = ctx.agentId || ctx.sessionId || 'orchestrator';
   const currentAgentName = ctx.subagent?.agentName || 'Orchestrator';
   const currentAgentRole = ctx.subagent?.agentRole || 'orchestrator';
+  const scope = ctx.swarmRunScope ?? parseScopedSwarmAgentId(currentAgentId)?.scope;
+  const discoveryScope = scope ?? { sessionId: ctx.sessionId };
 
-  if (!service.getAgent(currentAgentId)) {
+  if (scope && !parseScopedSwarmAgentId(currentAgentId)) {
+    return {
+      ok: false,
+      error: 'Scoped teammate actions require a composite current agent id',
+      code: 'INVALID_ARGS',
+    };
+  }
+
+  if (!service.getAgent(currentAgentId, scope)) {
     service.register(currentAgentId, currentAgentName, currentAgentRole);
   }
 
@@ -84,10 +95,17 @@ export async function executeTeammate(
       case 'query': {
         if (!to) return { ok: false, error: `'to' parameter required for ${action} action`, code: 'INVALID_ARGS' };
         if (!message) return { ok: false, error: `'message' parameter required for ${action} action`, code: 'INVALID_ARGS' };
+        if (!scope && parseScopedSwarmAgentId(to)) {
+          return {
+            ok: false,
+            error: `Agent not found: ${to}. Scoped teammate actions require a run scope.`,
+            code: 'NOT_FOUND',
+          };
+        }
 
-        const targetAgent = service.getAgent(to);
+        const targetAgent = service.getAgent(to, scope);
         if (!targetAgent) {
-          const available = service.listAgents().map((a) => `${a.id} (${a.name})`);
+          const available = service.listAgents(discoveryScope).map((a) => `${a.id} (${a.name})`);
           return {
             ok: false,
             error: `Agent not found: ${to}. Available agents: ${available.join(', ') || 'none'}`,
@@ -109,6 +127,7 @@ export async function executeTeammate(
           content: message,
           taskId,
           requiresResponse: action === 'query',
+          ...(scope ? { scope } : {}),
         });
 
         return withMultiagentMeta({
@@ -131,7 +150,18 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
         if (!to) return { ok: false, error: "'to' parameter required for respond action", code: 'INVALID_ARGS' };
         if (!message) return { ok: false, error: "'message' parameter required for respond action", code: 'INVALID_ARGS' };
         if (!responseTo) return { ok: false, error: "'responseTo' parameter required for respond action", code: 'INVALID_ARGS' };
-        const msg = service.respond(currentAgentId, to, message, responseTo);
+        if (!scope && parseScopedSwarmAgentId(to)) {
+          return {
+            ok: false,
+            error: `Agent not found: ${to}. Scoped teammate actions require a run scope.`,
+            code: 'NOT_FOUND',
+          };
+        }
+        const targetAgent = service.getAgent(to, scope);
+        if (!targetAgent) {
+          return { ok: false, error: `Agent not found in current run: ${to}`, code: 'NOT_FOUND' };
+        }
+        const msg = service.respond(currentAgentId, to, message, responseTo, scope);
         return withMultiagentMeta({
           ok: true,
           output: `Response sent to ${to}
@@ -155,8 +185,9 @@ Message ID: ${msg.id}`,
           type: 'broadcast',
           content: message,
           taskId,
+          ...(scope ? { scope } : {}),
         });
-        const agentCount = service.listAgents().length - 1;
+        const agentCount = Math.max(0, service.listAgents(discoveryScope).length - 1);
         return withMultiagentMeta({
           ok: true,
           output: `Broadcast sent to ${agentCount} agents
@@ -173,7 +204,7 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
       }
 
       case 'inbox': {
-        const messages = service.getInbox(currentAgentId);
+        const messages = service.getInbox(currentAgentId, scope);
         if (messages.length === 0) {
           return withMultiagentMeta(
             { ok: true, output: 'No messages in inbox.' },
@@ -217,7 +248,7 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
       }
 
       case 'agents': {
-        const agents = service.listAgents();
+        const agents = service.listAgents(discoveryScope);
         if (agents.length === 0) {
           return withMultiagentMeta(
             { ok: true, output: 'No agents registered.' },
@@ -255,7 +286,7 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
 
       case 'history': {
         if (!to) {
-          const history = service.getHistory(20);
+          const history = scope ? service.getHistory(scope, 20) : service.getHistory(20);
           if (history.length === 0) {
             return withMultiagentMeta(
               { ok: true, output: 'No message history.' },
@@ -287,7 +318,7 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
             'Teammate history',
           );
         }
-        const conversation = service.getConversation(currentAgentId, to, 20);
+        const conversation = service.getConversation(currentAgentId, to, 20, scope);
         if (conversation.length === 0) {
           return withMultiagentMeta(
             { ok: true, output: `No conversation history with ${to}.` },

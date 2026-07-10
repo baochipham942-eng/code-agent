@@ -11,7 +11,14 @@
 // 不做：搜索、对比、全文检索、LLM 自动归因。这些是后续条目。
 // ============================================================================
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -32,6 +39,7 @@ import type {
   SwarmRunStatus,
 } from '@shared/contract/swarmTrace';
 import { formatDuration } from '../../../../shared/utils/format';
+import { parseSwarmTraceStorageId } from '../../../../shared/contract/swarm';
 
 const STATUS_META: Record<
   SwarmRunStatus,
@@ -72,44 +80,101 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function displayRunId(storageId: string): string {
+  return parseSwarmTraceStorageId(storageId)?.runId ?? storageId;
+}
+
 interface Props {
+  /** 当前会话；历史与详情查询都必须绑定此 scope。 */
+  sessionId: string | null;
   /** 默认显示的 run 数量，对应 SWARM_TRACE.DEFAULT_LIST_LIMIT */
   limit?: number;
   /** 紧凑模式：用于嵌入侧边栏 */
   compact?: boolean;
 }
 
-export const SwarmTraceHistory: React.FC<Props> = ({ limit = 20, compact = false }) => {
+export const SwarmTraceHistory: React.FC<Props> = ({ sessionId, limit = 20, compact = false }) => {
   const [runs, setRuns] = useState<SwarmRunListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SwarmRunDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const activeSessionRef = useRef(sessionId);
+  const listRequestRef = useRef(0);
+  const detailRequestRef = useRef(0);
+  activeSessionRef.current = sessionId;
 
   const loadList = useCallback(async () => {
+    const requestId = ++listRequestRef.current;
+    const requestSessionId = sessionId;
+    if (!requestSessionId) {
+      setRuns([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const result = await invoke(IPC_CHANNELS.SWARM_LIST_TRACE_RUNS, { limit });
+      const result = await invoke(IPC_CHANNELS.SWARM_LIST_TRACE_RUNS, {
+        sessionId: requestSessionId,
+        limit,
+      });
+      if (listRequestRef.current !== requestId || activeSessionRef.current !== requestSessionId) {
+        return;
+      }
       setRuns(Array.isArray(result) ? result : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (listRequestRef.current === requestId && activeSessionRef.current === requestSessionId) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      setLoading(false);
+      if (listRequestRef.current === requestId && activeSessionRef.current === requestSessionId) {
+        setLoading(false);
+      }
     }
-  }, [limit]);
+  }, [limit, sessionId]);
 
   const loadDetail = useCallback(async (runId: string) => {
+    const requestId = ++detailRequestRef.current;
+    const requestSessionId = sessionId;
+    if (!requestSessionId) {
+      setDetail(null);
+      setDetailLoading(false);
+      return;
+    }
     setDetailLoading(true);
     setDetail(null);
     try {
-      const result = await invoke(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, { runId });
+      const result = await invoke(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, {
+        sessionId: requestSessionId,
+        runId,
+      });
+      if (detailRequestRef.current !== requestId || activeSessionRef.current !== requestSessionId) {
+        return;
+      }
       setDetail(result ?? null);
+    } catch {
+      if (detailRequestRef.current === requestId && activeSessionRef.current === requestSessionId) {
+        setDetail(null);
+      }
     } finally {
-      setDetailLoading(false);
+      if (detailRequestRef.current === requestId && activeSessionRef.current === requestSessionId) {
+        setDetailLoading(false);
+      }
     }
-  }, []);
+  }, [sessionId]);
+
+  useLayoutEffect(() => {
+    listRequestRef.current += 1;
+    detailRequestRef.current += 1;
+    setRuns([]);
+    setLoading(false);
+    setError(null);
+    setSelectedRunId(null);
+    setDetail(null);
+    setDetailLoading(false);
+  }, [sessionId]);
 
   useEffect(() => {
     void loadList();
@@ -191,7 +256,7 @@ const RunListRow: React.FC<{ run: SwarmRunListItem; onClick: () => void }> = ({ 
           {meta.icon}
           {meta.label}
         </span>
-        <span className="text-[11px] text-zinc-500 font-mono truncate">{run.id.slice(0, 8)}</span>
+        <span className="text-[11px] text-zinc-500 font-mono truncate">{displayRunId(run.id).slice(0, 8)}</span>
         <span className="ml-auto text-[11px] text-zinc-500">{formatTime(run.startedAt)}</span>
       </div>
       <div className="grid grid-cols-4 gap-2 text-[11px]">
@@ -244,7 +309,7 @@ const SwarmRunDetailView: React.FC<{
               {meta.label}
             </span>
           )}
-          <span className="text-[11px] text-zinc-500 font-mono">{runId.slice(0, 12)}</span>
+          <span className="text-[11px] text-zinc-500 font-mono">{displayRunId(runId).slice(0, 12)}</span>
         </div>
       </div>
 

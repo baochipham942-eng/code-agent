@@ -603,15 +603,30 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     }
 
     const event = req.body as SwarmEvent | undefined;
-    if (!event || typeof event !== 'object' || typeof event.type !== 'string') {
-      res.status(400).json({ error: 'Body must be a SwarmEvent with a string type' });
+    if (
+      !event
+      || typeof event !== 'object'
+      || typeof event.type !== 'string'
+      || typeof event.sessionId !== 'string'
+      || !event.sessionId
+      || typeof event.runId !== 'string'
+      || !event.runId
+      || typeof event.treeId !== 'string'
+      || !event.treeId
+    ) {
+      res.status(400).json({
+        error: 'Body must be a SwarmEvent with non-empty sessionId, runId, treeId, and type',
+      });
       return;
     }
 
     // swarm.ipc 的 bridge 在 webServer.setupAllIpcHandlers 中已装好。
     // busType 去掉 'swarm:' 前缀避免双重命名（与 swarmEventPublisher.publish 一致）。
     const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-    getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+    getEventBus().publish('swarm', busType, event, {
+      bridgeToRenderer: false,
+      sessionId: event.sessionId,
+    });
     res.json({ ok: true });
   });
 

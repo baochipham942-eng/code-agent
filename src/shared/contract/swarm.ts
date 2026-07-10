@@ -5,6 +5,183 @@
 import type { ContextHealthWarningLevel } from './contextHealth';
 
 /**
+ * Agent Team 的稳定运行身份。
+ *
+ * sessionId 绑定对话，runId 绑定一次 Team 执行，treeId 绑定 spawn 配额/父子树。
+ * runId 在同一 session 内唯一；treeId 允许同一 Team 的嵌套 spawn 共享配额池。
+ */
+export interface SwarmRunRef {
+  sessionId: string;
+  runId: string;
+}
+
+export interface SwarmRunScope extends SwarmRunRef {
+  treeId: string;
+}
+
+export interface SwarmAgentRef extends SwarmRunRef {
+  agentId: string;
+}
+
+const SCOPED_SWARM_AGENT_PREFIX = 'swarm-agent';
+const SCOPED_SWARM_MESSAGE_PREFIX = 'swarm-message';
+const SWARM_TRACE_STORAGE_PREFIX = 'swarm-trace';
+const SCOPED_SWARM_AGENT_VERSION = 'v1';
+const SCOPED_SWARM_SEPARATOR = '.';
+
+function encodeScopePart(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodeScopePart(value: string): string {
+  if (!value || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error('Invalid base64url-encoded swarm scope part');
+  }
+  const padding = '='.repeat((4 - (value.length % 4)) % 4);
+  const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/') + padding);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+/** Stable key for Host run-scoped registries and checkpoints. */
+export function getSwarmRunScopeKey(scope: SwarmRunScope): string {
+  return [scope.sessionId, scope.runId, scope.treeId].map(encodeScopePart).join(SCOPED_SWARM_SEPARATOR);
+}
+
+/**
+ * Stable spawn quota identity. Nested runs in one spawn tree intentionally
+ * share capacity, while equal tree labels in different sessions do not.
+ */
+export function getSwarmTreeScopeKey(
+  scope: Pick<SwarmRunScope, 'sessionId' | 'treeId'>,
+): string {
+  return [scope.sessionId, scope.treeId].map(encodeScopePart).join(SCOPED_SWARM_SEPARATOR);
+}
+
+/** Opaque persistence identity for trace/ledger repositories with a single id key. */
+export function createSwarmTraceStorageId(scope: SwarmRunScope): string {
+  return [
+    SWARM_TRACE_STORAGE_PREFIX,
+    SCOPED_SWARM_AGENT_VERSION,
+    encodeScopePart(scope.sessionId),
+    encodeScopePart(scope.runId),
+    encodeScopePart(scope.treeId),
+  ].join(SCOPED_SWARM_SEPARATOR);
+}
+
+export function parseSwarmTraceStorageId(storageId: string): SwarmRunScope | null {
+  const parts = storageId.split(SCOPED_SWARM_SEPARATOR);
+  if (parts.length !== 5) return null;
+  try {
+    const [prefix, version, encodedSessionId, encodedRunId, encodedTreeId] = parts;
+    if (prefix !== SWARM_TRACE_STORAGE_PREFIX || version !== SCOPED_SWARM_AGENT_VERSION) {
+      return null;
+    }
+    const sessionId = decodeScopePart(encodedSessionId);
+    const runId = decodeScopePart(encodedRunId);
+    const treeId = decodeScopePart(encodedTreeId);
+    if (!sessionId || !runId || !treeId) return null;
+    return { sessionId, runId, treeId };
+  } catch {
+    return null;
+  }
+}
+
+/** Stable composite identity; the same local role/index can safely exist in concurrent Teams. */
+export function createScopedSwarmAgentId(scope: SwarmRunScope, localAgentId: string): string {
+  return [
+    SCOPED_SWARM_AGENT_PREFIX,
+    SCOPED_SWARM_AGENT_VERSION,
+    encodeScopePart(scope.sessionId),
+    encodeScopePart(scope.runId),
+    encodeScopePart(scope.treeId),
+    encodeScopePart(localAgentId),
+  ].join(SCOPED_SWARM_SEPARATOR);
+}
+
+/** Stable conversation/ledger identity bound to the complete Team scope. */
+export function createScopedSwarmMessageId(
+  scope: SwarmRunScope,
+  localMessageId: string,
+): string {
+  if (!localMessageId) throw new Error('Scoped swarm message id requires a local identity');
+  return [
+    SCOPED_SWARM_MESSAGE_PREFIX,
+    SCOPED_SWARM_AGENT_VERSION,
+    encodeScopePart(scope.sessionId),
+    encodeScopePart(scope.runId),
+    encodeScopePart(scope.treeId),
+    encodeScopePart(localMessageId),
+  ].join(SCOPED_SWARM_SEPARATOR);
+}
+
+export function parseScopedSwarmMessageId(
+  messageId: string,
+): { scope: SwarmRunScope; localMessageId: string } | null {
+  const parts = messageId.split(SCOPED_SWARM_SEPARATOR);
+  if (parts.length !== 6) return null;
+
+  try {
+    const [prefix, version, encodedSessionId, encodedRunId, encodedTreeId, encodedLocalMessageId] = parts;
+    if (prefix !== SCOPED_SWARM_MESSAGE_PREFIX || version !== SCOPED_SWARM_AGENT_VERSION) {
+      return null;
+    }
+    const sessionId = decodeScopePart(encodedSessionId);
+    const runId = decodeScopePart(encodedRunId);
+    const treeId = decodeScopePart(encodedTreeId);
+    const localMessageId = decodeScopePart(encodedLocalMessageId);
+    if (!sessionId || !runId || !treeId || !localMessageId) return null;
+    return {
+      scope: { sessionId, runId, treeId },
+      localMessageId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseScopedSwarmAgentId(
+  agentId: string,
+): { scope: SwarmRunScope; localAgentId: string } | null {
+  const parts = agentId.split(SCOPED_SWARM_SEPARATOR);
+  if (parts.length !== 6) return null;
+
+  try {
+    const [prefix, version, encodedSessionId, encodedRunId, encodedTreeId, encodedLocalAgentId] = parts;
+    if (
+      prefix !== SCOPED_SWARM_AGENT_PREFIX
+      || version !== SCOPED_SWARM_AGENT_VERSION
+    ) {
+      return null;
+    }
+    const sessionId = decodeScopePart(encodedSessionId);
+    const runId = decodeScopePart(encodedRunId);
+    const treeId = decodeScopePart(encodedTreeId);
+    const localAgentId = decodeScopePart(encodedLocalAgentId);
+    if (!sessionId || !runId || !treeId || !localAgentId) return null;
+    return {
+      scope: { sessionId, runId, treeId },
+      localAgentId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function isSameSwarmRun(
+  left: SwarmRunRef,
+  right: SwarmRunRef,
+): boolean {
+  return left.sessionId === right.sessionId && left.runId === right.runId;
+}
+
+/**
  * Agent 执行状态（复制自 agentSwarm.ts 避免循环依赖）
  */
 export type AgentStatus =
@@ -107,7 +284,9 @@ export interface SwarmLaunchTaskPreview {
 
 export interface SwarmLaunchRequest {
   id: string;
-  sessionId?: string;
+  sessionId: string;
+  runId: string;
+  treeId: string;
   status: 'pending' | 'approved' | 'rejected';
   requestedAt: number;
   resolvedAt?: number;
@@ -190,16 +369,15 @@ export interface SwarmVerificationResult {
 /**
  * Swarm 事件载荷
  *
- * runId 用于关联同一次 swarm 执行内的所有事件。由 SwarmEventEmitter 在
- * `started` 时生成、其余事件统一打戳、`completed`/`cancelled` 时清空。
- * 对齐 OpenTelemetry / W3C Trace Context 把 trace id 写进消息契约的实践
- * （ADR-010 #5）。Renderer 端可不依赖此字段，仅 SwarmTraceWriter 需要。
+ * sessionId/runId/treeId 由调用方显式提供。Emitter 不保存“当前 run”单槽，
+ * 因此两个 Team 的重叠事件不会互相改写身份。
  */
 export interface SwarmEvent {
   type: SwarmEventType;
   timestamp: number;
-  runId?: string;
-  sessionId?: string;
+  runId: string;
+  sessionId: string;
+  treeId: string;
   data: {
     agentId?: string;
     agentState?: SwarmAgentState;
@@ -213,6 +391,7 @@ export interface SwarmEvent {
     };
     // Agent Teams 扩展数据
     message?: {
+      id: string;
       from: string;
       to: string;
       content: string;

@@ -390,7 +390,11 @@ export class SubagentExecutor {
     }
 
     const subagentContextStore = getSubagentContextStore();
-    const observabilityAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    // Parallel/Team callers provide a stable composite execution identity.
+    // Keep the pipeline's internal random id private to the pipeline registry;
+    // user-facing events, tool calls, approvals and results must stay in the
+    // caller's run scope.
+    const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
     const telemetryCollector = getTelemetryCollector();
     let telemetryTurnNumber = 0;
 
@@ -416,10 +420,10 @@ export class SubagentExecutor {
         context.attachments,
       );
       context.onContextSnapshot?.(latestContextSnapshot);
-      const annotations = buildSnapshotAnnotations(effectiveMessages, observabilityAgentId);
+      const annotations = buildSnapshotAnnotations(effectiveMessages, executionAgentId);
       subagentContextStore.upsert({
         sessionId,
-        agentId: observabilityAgentId,
+        agentId: executionAgentId,
         messages: materializeObservedMessages(effectiveMessages),
         snapshot: latestContextSnapshot,
         annotations,
@@ -437,7 +441,7 @@ export class SubagentExecutor {
     if (parentToolUseId && context.toolContext.emit) {
       context.toolContext.emit('agent_thinking', {
         message: `Subagent [${config.name}] starting...`,
-        agentId: pipelineContext.agentId,
+        agentId: executionAgentId,
         parentToolUseId,
       });
     }
@@ -460,7 +464,7 @@ export class SubagentExecutor {
           iterations: 0,
           tokensUsed: getTotalTokens(),
           cost: getTotalCost(),
-          agentId: agentTask.id,
+          agentId: executionAgentId,
           contextSnapshot: latestContextSnapshot,
           // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
           // 编排层 routeFailureCode 据此降级（'degrade'）而非 parse error 字符串。
@@ -574,7 +578,7 @@ export class SubagentExecutor {
             iterations,
             tokensUsed: getTotalTokens(),
             cost: getTotalCost(),
-            agentId: agentTask.id,
+            agentId: executionAgentId,
             contextSnapshot: latestContextSnapshot,
             cancellationReason,
             failureCode: agentFailureCodeFromCancellationReason(cancellationReason)
@@ -625,7 +629,7 @@ export class SubagentExecutor {
         // Call model
         const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
           sessionId,
-          observabilityAgentId,
+          executionAgentId,
         );
         const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
         const providerMessages = buildInferenceMessages(inferenceMessages);
@@ -688,7 +692,7 @@ export class SubagentExecutor {
             prompt,
             assistantResponse,
             thinking,
-            agentId: observabilityAgentId,
+            agentId: executionAgentId,
             parentTurnId: context.parentToolUseId,
             startTime: telemetryTurnStartedAt,
             modelCall,
@@ -843,12 +847,19 @@ export class SubagentExecutor {
               const risk = gate.assessRisk(toolRequest, context.toolContext.workingDirectory);
               if (risk.level !== 'low') {
                 const approval = await gate.submitForApproval({
-                  agentId: pipelineContext.agentId,
+                  agentId: executionAgentId,
                   agentName: config.name,
                   coordinatorId: config.coordinatorId || 'coordinator',
                   plan: `Tool: ${toolCall.name}\nArgs: ${JSON.stringify(toolCall.arguments)}\nRisk: ${risk.reasons.join(', ')}`,
                   risk,
+                  scope: context.toolContext.swarmRunScope,
+                  signal: effectiveSignal,
                 });
+                if (effectiveSignal.aborted) {
+                  throw new Error(
+                    `Task cancelled after plan approval (${String(effectiveSignal.reason ?? 'parent-cancel')})`,
+                  );
+                }
                 if (!approval.approved) {
                   const error = `Blocked by plan approval: ${approval.feedback || 'rejected'}`;
                   toolResults.push(`Tool ${toolCall.name}: ${error}`);
@@ -901,10 +912,11 @@ export class SubagentExecutor {
                 toolCall.arguments,
                 {
                   sessionId: (context.toolContext as { sessionId?: string }).sessionId,
-                  agentId: pipelineContext.agentId,
+                  agentId: executionAgentId,
                   spawnDepth: context.toolContext.spawnDepth,
                   spawnMaxDepth: context.toolContext.spawnMaxDepth,
                   spawnTreeId: context.toolContext.spawnTreeId,
+                  swarmRunScope: context.toolContext.swarmRunScope,
                   spawnQueueTimeoutMs: context.toolContext.spawnQueueTimeoutMs,
                   spawnParentStartedAt: startTime,
                   spawnParentTimeoutMs: timeout,
@@ -1119,7 +1131,7 @@ export class SubagentExecutor {
         iterations,
         tokensUsed: getTotalTokens(),
         cost: getTotalCost(),
-        agentId: agentTask.id,
+          agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
       };
     } catch (error) {

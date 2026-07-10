@@ -33,6 +33,7 @@ import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
+import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
 import {
   getWriteIsolationManager,
@@ -108,6 +109,8 @@ export interface ExecuteOptions {
   spawnMaxDepth?: number;
   // 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。
   spawnTreeId?: string;
+  // Agent Team 的不可变 run/tree scope；嵌套工具调用必须原样透传。
+  swarmRunScope?: SwarmRunScope;
   // 超额 spawn 等待 tree 槽位的超时时间。
   spawnQueueTimeoutMs?: number;
   // 父 agent 启动时间，用于按父剩余时间收紧子 agent 执行窗口。
@@ -372,6 +375,7 @@ export class ToolExecutor {
       spawnDepth: options.spawnDepth,
       spawnMaxDepth: options.spawnMaxDepth,
       spawnTreeId: options.spawnTreeId,
+      swarmRunScope: options.swarmRunScope,
       spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,
       spawnParentStartedAt: options.spawnParentStartedAt,
       spawnParentTimeoutMs: options.spawnParentTimeoutMs,

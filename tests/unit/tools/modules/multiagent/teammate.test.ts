@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
+import { createScopedSwarmAgentId, type SwarmRunScope } from '../../../../../src/shared/contract/swarm';
 
 const getServiceMock = vi.fn();
 
@@ -76,6 +77,72 @@ describe('teammate schema', () => {
 });
 
 describe('teammate behavior', () => {
+  it('scoped agent discovery and send stay inside ctx.swarmRunScope', async () => {
+    const scope: SwarmRunScope = { sessionId: 'session-a', runId: 'run-a', treeId: 'tree-a' };
+    const from = createScopedSwarmAgentId(scope, 'agent-reviewer-0');
+    const to = createScopedSwarmAgentId(scope, 'agent-coder-0');
+    const service = makeMockService({
+      getAgent: vi.fn((id: string) => ({ id, name: id === to ? 'Coder' : 'Reviewer' })),
+      listAgents: vi.fn().mockReturnValue([{ id: from }, { id: to }]),
+    });
+    getServiceMock.mockReturnValue(service);
+    const handler = await teammateModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'send', to, message: 'scoped' },
+      makeCtx({ agentId: from, swarmRunScope: scope }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(service.getAgent).toHaveBeenCalledWith(to, scope);
+    expect(service.send).toHaveBeenCalledWith(expect.objectContaining({ from, to, scope }));
+
+    await handler.execute(
+      { action: 'agents' },
+      makeCtx({ agentId: from, swarmRunScope: scope }),
+      allowAll,
+    );
+    expect(service.listAgents).toHaveBeenCalledWith(scope);
+  });
+
+  it('root agent discovery is limited to ctx.sessionId', async () => {
+    const service = makeMockService({
+      listAgents: vi.fn().mockReturnValue([]),
+    });
+    getServiceMock.mockReturnValue(service);
+    const handler = await teammateModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'agents' },
+      makeCtx({ sessionId: 'session-a' }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(service.listAgents).toHaveBeenCalledWith({ sessionId: 'session-a' });
+  });
+
+  it('root agent cannot address a scoped Team without a run scope', async () => {
+    const targetScope: SwarmRunScope = {
+      sessionId: 'session-a',
+      runId: 'run-a',
+      treeId: 'tree-a',
+    };
+    const target = createScopedSwarmAgentId(targetScope, 'agent-coder-0');
+    const service = makeMockService();
+    getServiceMock.mockReturnValue(service);
+
+    const result = await (await teammateModule.createHandler()).execute(
+      { action: 'send', to: target, message: 'no scope' },
+      makeCtx({ sessionId: targetScope.sessionId }),
+      allowAll,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(service.send).not.toHaveBeenCalled();
+  });
+
   it('未知 action → INVALID_ARGS', async () => {
     const handler = await teammateModule.createHandler();
     const result = await handler.execute({ action: 'foo' }, makeCtx(), allowAll);

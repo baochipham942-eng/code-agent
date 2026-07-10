@@ -18,6 +18,13 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { PlanApprovalGate } from '../../../src/host/agent/planApproval';
 import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
+
+const LAUNCH_SCOPE: SwarmRunScope = {
+  sessionId: 'approval-persistence-session',
+  runId: 'approval-persistence-run',
+  treeId: 'approval-persistence-tree',
+};
 
 vi.mock('../../../src/host/agent/teammate/teammateService', () => ({
   getTeammateService: () => ({
@@ -229,6 +236,7 @@ describe('SwarmLaunchApprovalGate persistence', () => {
 
   it('persists pending row when launch requested', async () => {
     const reqPromise = gate.requestApproval({
+      scope: LAUNCH_SCOPE,
       tasks: [
         { id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: true },
         { id: 'a2', role: 'A2', task: 't2', tools: [], writeAccess: false },
@@ -256,6 +264,7 @@ describe('SwarmLaunchApprovalGate persistence', () => {
 
   it('persists rejection on reject()', async () => {
     const reqPromise = gate.requestApproval({
+      scope: LAUNCH_SCOPE,
       tasks: [{ id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: true }],
     });
     await new Promise((r) => setImmediate(r));
@@ -272,6 +281,7 @@ describe('SwarmLaunchApprovalGate persistence', () => {
 
   it('persists cancellation on cancelAll()', async () => {
     const reqPromise = gate.requestApproval({
+      scope: LAUNCH_SCOPE,
       tasks: [{ id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: false }],
     });
     await new Promise((r) => setImmediate(r));
@@ -288,6 +298,7 @@ describe('SwarmLaunchApprovalGate persistence', () => {
 
   it('hydrates orphaned launches from previous process', async () => {
     const reqPromise = gate.requestApproval({
+      scope: LAUNCH_SCOPE,
       tasks: [{ id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: true }],
     });
     await new Promise((r) => setImmediate(r));

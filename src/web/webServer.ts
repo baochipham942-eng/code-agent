@@ -662,7 +662,7 @@ function registerHandlers(): void {
     const { registerSwarmServices } = require('../host/agent/swarmServices') as typeof import('../host/agent/swarmServices');
     const { getPlanApprovalGate } = require('../host/agent/planApproval') as typeof import('../host/agent/planApproval');
     const { getSwarmLaunchApprovalGate } = require('../host/agent/swarmLaunchApproval') as typeof import('../host/agent/swarmLaunchApproval');
-    const { getParallelAgentCoordinator } = require('../host/agent/parallelAgentCoordinator') as typeof import('../host/agent/parallelAgentCoordinator');
+    const { getParallelAgentCoordinatorRegistry } = require('../host/agent/parallelAgentCoordinator') as typeof import('../host/agent/parallelAgentCoordinator');
     const { getSpawnGuard } = require('../host/agent/spawnGuard') as typeof import('../host/agent/spawnGuard');
     const { getTeammateService } = require('../host/agent/teammate/teammateService') as typeof import('../host/agent/teammate/teammateService');
     const { persistAgentRun, getRecentAgentHistory } = require('../host/session/agentHistoryPersistence') as typeof import('../host/session/agentHistoryPersistence');
@@ -702,7 +702,7 @@ function registerHandlers(): void {
     registerSwarmServices({
       planApproval: planApprovalGate,
       launchApproval: launchApprovalGate,
-      parallelCoordinator: getParallelAgentCoordinator(),
+      parallelCoordinators: getParallelAgentCoordinatorRegistry(),
       spawnGuard: getSpawnGuard(),
       teammateService: getTeammateService(),
       agentHistory: { persistAgentRun, getRecentAgentHistory },

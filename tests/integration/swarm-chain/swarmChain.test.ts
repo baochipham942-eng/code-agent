@@ -26,6 +26,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -64,6 +70,11 @@ const platformState = vi.hoisted(() => {
 });
 
 vi.mock('../../../src/host/platform', () => ({
+  app: {
+    getPath: () => '/tmp/code-agent-swarm-chain',
+    getVersion: () => '0.0.0-test',
+    isPackaged: false,
+  },
   AppWindow: {
     getAllWindows: () => [platformState.mockWindow],
   },
@@ -116,7 +127,10 @@ vi.mock('../../../src/host/scheduler', () => {
   }
   return {
     TaskDAG: MockTaskDAG,
-    getDAGScheduler: () => ({ execute: vi.fn() }),
+    createRunDAGScheduler: () => ({
+      execute: vi.fn(),
+      setSubagentExecutor: vi.fn(),
+    }),
   };
 });
 
@@ -142,7 +156,10 @@ vi.mock('../../../src/host/agent/teammate/teammateService', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { ParallelAgentCoordinator } from '../../../src/host/agent/parallelAgentCoordinator';
+import {
+  ParallelAgentCoordinator,
+  ParallelAgentCoordinatorRegistry,
+} from '../../../src/host/agent/parallelAgentCoordinator';
 import { PlanApprovalGate } from '../../../src/host/agent/planApproval';
 import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
 import {
@@ -150,8 +167,13 @@ import {
   resetSwarmServices,
   type SpawnGuardLike,
 } from '../../../src/host/agent/swarmServices';
+import { resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import { registerSwarmHandlers } from '../../../src/host/ipc/swarm.ipc';
-import type { SwarmEvent } from '../../../src/shared/contract/swarm';
+import {
+  createScopedSwarmAgentId,
+  type SwarmEvent,
+  type SwarmRunScope,
+} from '../../../src/shared/contract/swarm';
 import type { CompletedAgentRun } from '../../../src/shared/contract/agentHistory';
 
 // ---------------------------------------------------------------------------
@@ -159,10 +181,20 @@ import type { CompletedAgentRun } from '../../../src/shared/contract/agentHistor
 // ---------------------------------------------------------------------------
 
 interface ChainHarness {
+  scope: SwarmRunScope;
+  secondaryScope: SwarmRunScope;
+  agentId: string;
+  coordinatorAgentId: string;
   coordinator: ParallelAgentCoordinator;
+  secondaryCoordinator: ParallelAgentCoordinator;
+  coordinators: ParallelAgentCoordinatorRegistry;
   planGate: PlanApprovalGate;
   launchGate: SwarmLaunchApprovalGate;
-  spawnGuard: { cancel: ReturnType<typeof vi.fn> };
+  spawnGuard: {
+    cancel: ReturnType<typeof vi.fn>;
+    cancelRun: ReturnType<typeof vi.fn>;
+    cancelSession: ReturnType<typeof vi.fn>;
+  };
   agentHistory: {
     persistAgentRun: ReturnType<typeof vi.fn>;
     getRecentAgentHistory: ReturnType<typeof vi.fn>;
@@ -173,22 +205,59 @@ interface ChainHarness {
 }
 
 function setupChain(): ChainHarness {
-  const coordinator = new ParallelAgentCoordinator({
-    maxParallelTasks: 4,
-    taskTimeout: 5_000,
-    enableSharedContext: true,
-    aggregateResults: false,
-  });
-  coordinator.initialize({
-    modelConfig: { provider: 'mock', model: 'mock' } as never,
-    toolResolver: {} as never,
-    toolContext: { currentToolCallId: 'cc-1' } as never,
-  });
+  const scope: SwarmRunScope = {
+    sessionId: 'integration-session',
+    runId: 'team-run-a',
+    treeId: 'team-tree-a',
+  };
+  const secondaryScope: SwarmRunScope = {
+    sessionId: scope.sessionId,
+    runId: 'team-run-b',
+    treeId: 'team-tree-b',
+  };
+  const agentId = createScopedSwarmAgentId(scope, 'agent_coder_0');
+  const coordinatorAgentId = createScopedSwarmAgentId(scope, 'coordinator');
+  const coordinators = new ParallelAgentCoordinatorRegistry();
+  const createCoordinator = (runScope: SwarmRunScope): ParallelAgentCoordinator => {
+    const coordinator = coordinators.getOrCreate(runScope, {
+      maxParallelTasks: 4,
+      taskTimeout: 5_000,
+      enableSharedContext: true,
+      aggregateResults: false,
+    });
+    coordinator.initialize({
+      modelConfig: { provider: 'mock', model: 'mock' } as never,
+      toolResolver: {} as never,
+      toolContext: {
+        currentToolCallId: `cc-${runScope.runId}`,
+        sessionId: runScope.sessionId,
+        spawnTreeId: runScope.treeId,
+        swarmRunScope: runScope,
+      } as never,
+      subagentExecutor: {
+        execute: (...args: Parameters<typeof executorState.executeMock>) => (
+          executorState.executeMock(...args)
+        ),
+      },
+      scope: runScope,
+    });
+    // Checkpoint path behavior has dedicated filesystem tests. Keep this IPC
+    // chain deterministic and focused on concurrent run/result routing.
+    vi.spyOn(coordinator, 'persistCheckpoint').mockResolvedValue(undefined);
+    vi.spyOn(coordinator, 'deleteCheckpoint').mockResolvedValue(undefined);
+    return coordinator;
+  };
+  const coordinator = createCoordinator(scope);
+  const secondaryCoordinator = createCoordinator(secondaryScope);
 
   const planGate = new PlanApprovalGate({ approvalTimeoutMs: 60_000 });
   const launchGate = new SwarmLaunchApprovalGate({ approvalTimeoutMs: 60_000 });
 
-  const spawnGuard = { cancel: vi.fn().mockReturnValue(false) };
+  const spawnGuard = {
+    cancel: vi.fn().mockReturnValue(false),
+    cancelRun: vi.fn().mockReturnValue(0),
+    cancelSession: vi.fn().mockReturnValue(0),
+  };
   const agentHistory = {
     persistAgentRun: vi.fn().mockResolvedValue(undefined),
     getRecentAgentHistory: vi.fn().mockResolvedValue([]),
@@ -197,7 +266,7 @@ function setupChain(): ChainHarness {
   registerSwarmServices({
     planApproval: planGate,
     launchApproval: launchGate,
-    parallelCoordinator: coordinator,
+    parallelCoordinators: coordinators,
     spawnGuard: spawnGuard as SpawnGuardLike,
     teammateService: {
       approvePlan: teammateState.approvePlanMock,
@@ -233,7 +302,13 @@ function setupChain(): ChainHarness {
     swarmEvents().filter((e) => e.type === type);
 
   return {
+    scope,
+    secondaryScope,
+    agentId,
+    coordinatorAgentId,
     coordinator,
+    secondaryCoordinator,
+    coordinators,
     planGate,
     launchGate,
     spawnGuard,
@@ -242,6 +317,26 @@ function setupChain(): ChainHarness {
     swarmEvents,
     eventsByType,
   };
+}
+
+function runRef(scope: SwarmRunScope): { sessionId: string; runId: string } {
+  return { sessionId: scope.sessionId, runId: scope.runId };
+}
+
+function agentRef(scope: SwarmRunScope, agentId: string): {
+  sessionId: string;
+  runId: string;
+  agentId: string;
+} {
+  return { ...runRef(scope), agentId };
+}
+
+function expectEventScope(event: SwarmEvent, scope: SwarmRunScope): void {
+  expect(event).toMatchObject({
+    sessionId: scope.sessionId,
+    runId: scope.runId,
+    treeId: scope.treeId,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +354,7 @@ describe('Swarm Chain Integration', () => {
     teammateState.onUserMessageMock.mockReset();
     teammateState.sendPlanReviewMock.mockReset();
     resetSwarmServices();
+    resetSpawnGuard();
 
     // Default executor: success with role-based output
     executorState.executeMock.mockImplementation(
@@ -275,6 +371,10 @@ describe('Swarm Chain Integration', () => {
   });
 
   afterEach(() => {
+    chain.planGate.cancelAll('test_cleanup');
+    chain.launchGate.cancelAll('test_cleanup');
+    chain.coordinators.clear();
+    resetSpawnGuard();
     resetSwarmServices();
     vi.useRealTimers();
   });
@@ -289,7 +389,7 @@ describe('Swarm Chain Integration', () => {
       void chain.launchGate.requestApproval({
         tasks: [
           {
-            id: 't1',
+            id: chain.agentId,
             role: 'coder',
             task: 'do work',
             tools: ['Read'],
@@ -297,11 +397,13 @@ describe('Swarm Chain Integration', () => {
           },
         ],
         summary: 'integration test',
+        scope: chain.scope,
       });
 
       // EventBus 是同步分发，事件应该立刻在 sentEvents 里
       const requested = chain.eventsByType('swarm:launch:requested');
       expect(requested).toHaveLength(1);
+      expectEventScope(requested[0], chain.scope);
       expect((requested[0].data as { launchRequest: { agentCount: number } }).launchRequest.agentCount).toBe(1);
     });
   });
@@ -314,12 +416,14 @@ describe('Swarm Chain Integration', () => {
     it('IPC approve-launch 触发 gate 状态转 approved 并 emit launch:approved', async () => {
       // 先制造一个 pending request
       void chain.launchGate.requestApproval({
-        tasks: [{ id: 't1', role: 'coder', task: 'x', tools: ['Read'], writeAccess: false }],
+        tasks: [{ id: chain.agentId, role: 'coder', task: 'x', tools: ['Read'], writeAccess: false }],
+        scope: chain.scope,
       });
 
-      const reqId = chain.launchGate.getPendingRequests()[0].id;
+      const reqId = chain.launchGate.getPendingRequests(runRef(chain.scope))[0].id;
 
       const ok = await chain.invokeIPC<boolean>('swarm:approve-launch', {
+        ...runRef(chain.scope),
         requestId: reqId,
         feedback: 'go',
       });
@@ -327,16 +431,22 @@ describe('Swarm Chain Integration', () => {
 
       const approved = chain.eventsByType('swarm:launch:approved');
       expect(approved).toHaveLength(1);
-      expect(chain.launchGate.getRequest(reqId)?.status).toBe('approved');
+      expectEventScope(approved[0], chain.scope);
+      expect(chain.launchGate.getRequest(reqId, runRef(chain.scope))?.status).toBe('approved');
     });
 
     it('IPC reject-launch 使等待中的 requestApproval promise 立即结算', async () => {
       const pending = chain.launchGate.requestApproval({
-        tasks: [{ id: 't1', role: 'coder', task: 'x', tools: ['Read'], writeAccess: true }],
+        tasks: [{ id: chain.agentId, role: 'coder', task: 'x', tools: ['Read'], writeAccess: true }],
+        scope: chain.scope,
       });
 
-      const reqId = chain.launchGate.getPendingRequests()[0].id;
-      await chain.invokeIPC('swarm:reject-launch', { requestId: reqId, feedback: 'unsafe' });
+      const reqId = chain.launchGate.getPendingRequests(runRef(chain.scope))[0].id;
+      await chain.invokeIPC('swarm:reject-launch', {
+        ...runRef(chain.scope),
+        requestId: reqId,
+        feedback: 'unsafe',
+      });
 
       const result = await pending;
       expect(result.approved).toBe(false);
@@ -344,6 +454,7 @@ describe('Swarm Chain Integration', () => {
 
       const rejected = chain.eventsByType('swarm:launch:rejected');
       expect(rejected).toHaveLength(1);
+      expectEventScope(rejected[0], chain.scope);
     });
   });
 
@@ -355,59 +466,69 @@ describe('Swarm Chain Integration', () => {
     it('IPC approve-plan 触发 gate.approve + teammate sync + plan_approved 事件', async () => {
       // 制造一个 medium risk plan（绕过 fast-path）
       void chain.planGate.submitForApproval({
-        agentId: 'agent-1',
+        agentId: chain.agentId,
         agentName: 'Coder',
-        coordinatorId: 'coord-1',
+        coordinatorId: chain.coordinatorAgentId,
         plan: 'rm old build',
         risk: { level: 'medium', reasons: ['dangerous cmd'] },
+        scope: chain.scope,
       });
 
       // submitForApproval 走 approvalQueue（异步），等一拍让 plan 进入 pending 表
       await Promise.resolve();
       await Promise.resolve();
 
-      const planId = chain.planGate.getPendingPlans()[0].id;
+      const planId = chain.planGate.getPendingPlans(runRef(chain.scope))[0].id;
 
       const ok = await chain.invokeIPC<boolean>('swarm:approve-plan', {
+        ...agentRef(chain.scope, chain.agentId),
         planId,
         feedback: 'looks safe',
       });
 
       expect(ok).toBe(true);
       expect(teammateState.approvePlanMock).toHaveBeenCalledWith(
-        'coord-1',
-        'agent-1',
+        chain.coordinatorAgentId,
+        chain.agentId,
         planId,
-        'looks safe'
+        'looks safe',
+        chain.scope,
       );
-      expect(chain.eventsByType('swarm:agent:plan_approved')).toHaveLength(1);
-      expect(chain.planGate.getPlan(planId)?.status).toBe('approved');
+      const approved = chain.eventsByType('swarm:agent:plan_approved');
+      expect(approved).toHaveLength(1);
+      expectEventScope(approved[0], chain.scope);
+      expect(chain.planGate.getPlan(planId, agentRef(chain.scope, chain.agentId))?.status).toBe('approved');
     });
 
     it('IPC reject-plan 同样触发 teammate sync + plan_rejected 事件', async () => {
       void chain.planGate.submitForApproval({
-        agentId: 'agent-1',
+        agentId: chain.agentId,
         agentName: 'Coder',
-        coordinatorId: 'coord-1',
+        coordinatorId: chain.coordinatorAgentId,
         plan: 'sudo rm -rf /',
         risk: { level: 'high', reasons: ['dangerous', 'rm -rf'] },
+        scope: chain.scope,
       });
       await Promise.resolve();
       await Promise.resolve();
 
-      const planId = chain.planGate.getPendingPlans()[0].id;
+      const planId = chain.planGate.getPendingPlans(runRef(chain.scope))[0].id;
       const ok = await chain.invokeIPC<boolean>('swarm:reject-plan', {
+        ...agentRef(chain.scope, chain.agentId),
         planId,
         feedback: 'destructive',
       });
 
       expect(ok).toBe(true);
       expect(teammateState.rejectPlanMock).toHaveBeenCalled();
-      expect(chain.eventsByType('swarm:agent:plan_rejected')).toHaveLength(1);
+      const rejected = chain.eventsByType('swarm:agent:plan_rejected');
+      expect(rejected).toHaveLength(1);
+      expectEventScope(rejected[0], chain.scope);
     });
 
     it('IPC approve-plan 对未知 planId 返回 false 且不发事件', async () => {
       const ok = await chain.invokeIPC<boolean>('swarm:approve-plan', {
+        ...agentRef(chain.scope, chain.agentId),
         planId: 'plan_does_not_exist',
       });
       expect(ok).toBe(false);
@@ -421,35 +542,88 @@ describe('Swarm Chain Integration', () => {
   // ==========================================================================
 
   describe('cancel-agent 链路', () => {
-    it('spawnGuard.cancel 命中时不再调 coordinator.abortTask', async () => {
+    it('spawnGuard.cancel 命中时仍排干 coordinator 和 plan waiter', async () => {
       chain.spawnGuard.cancel.mockReturnValueOnce(true);
       const abortSpy = vi.spyOn(chain.coordinator, 'abortTask');
 
       const result = await chain.invokeIPC<boolean>('swarm:cancel-agent', {
-        agentId: 'a1',
+        ...agentRef(chain.scope, chain.agentId),
       });
 
       expect(result).toBe(true);
-      expect(chain.spawnGuard.cancel).toHaveBeenCalledWith('a1');
-      expect(abortSpy).not.toHaveBeenCalled();
+      expect(chain.spawnGuard.cancel).toHaveBeenCalledWith(
+        chain.agentId,
+        agentRef(chain.scope, chain.agentId),
+      );
+      expect(abortSpy).toHaveBeenCalledWith(chain.agentId);
 
       const failed = chain.eventsByType('swarm:agent:failed');
       expect(failed.some((e) =>
         (e.data as { agentState: { status: string } }).agentState.status === 'cancelled'
       )).toBe(true);
+      expectEventScope(failed[0], chain.scope);
     });
 
-    it('spawnGuard.cancel miss 时 fallback 到 coordinator.abortTask', async () => {
-      chain.spawnGuard.cancel.mockReturnValueOnce(false);
-      const abortSpy = vi.spyOn(chain.coordinator, 'abortTask').mockReturnValueOnce(true);
+    it('同 session 两个 run 使用相同本地 agent id 时，cancel 只路由到目标 run', async () => {
+      const secondaryAgentId = createScopedSwarmAgentId(
+        chain.secondaryScope,
+        'agent_coder_0',
+      );
+      executorState.executeMock.mockImplementation(
+        async (task: string) => ({
+          success: true,
+          output: `result:${task}`,
+          iterations: 1,
+          toolsUsed: [],
+          cost: 0,
+        }),
+      );
+      const [primaryRun, secondaryRun] = await Promise.all([
+        chain.coordinator.executeParallel([
+          { id: chain.agentId, role: 'coder', task: 'primary run', tools: ['Read'] },
+        ]),
+        chain.secondaryCoordinator.executeParallel([
+          { id: secondaryAgentId, role: 'coder', task: 'secondary run', tools: ['Read'] },
+        ]),
+      ]);
+      expect(primaryRun.results).toEqual([
+        expect.objectContaining({ taskId: chain.agentId, output: 'result:primary run' }),
+      ]);
+      expect(secondaryRun.results).toEqual([
+        expect.objectContaining({ taskId: secondaryAgentId, output: 'result:secondary run' }),
+      ]);
+      chain.spawnGuard.cancel.mockReturnValue(false);
+      const abortPrimary = vi.spyOn(chain.coordinator, 'abortTask').mockReturnValue(true);
+      const abortSecondary = vi.spyOn(chain.secondaryCoordinator, 'abortTask').mockReturnValue(true);
 
-      const result = await chain.invokeIPC<boolean>('swarm:cancel-agent', {
-        agentId: 'a1',
+      const primaryResult = await chain.invokeIPC<boolean>('swarm:cancel-agent', {
+        ...agentRef(chain.scope, chain.agentId),
       });
 
-      expect(result).toBe(true);
-      expect(abortSpy).toHaveBeenCalledWith('a1');
-      expect(chain.eventsByType('swarm:agent:failed')).toHaveLength(1);
+      expect(primaryResult).toBe(true);
+      expect(abortPrimary).toHaveBeenCalledWith(chain.agentId);
+      expect(abortSecondary).not.toHaveBeenCalled();
+
+      const mixedScopeResult = await chain.invokeIPC<boolean>('swarm:cancel-agent', {
+        ...agentRef(chain.scope, secondaryAgentId),
+      });
+      expect(mixedScopeResult).toBe(false);
+      expect(abortPrimary).toHaveBeenCalledTimes(1);
+      expect(abortSecondary).not.toHaveBeenCalled();
+
+      const secondaryResult = await chain.invokeIPC<boolean>('swarm:cancel-agent', {
+        ...agentRef(chain.secondaryScope, secondaryAgentId),
+      });
+      expect(secondaryResult).toBe(true);
+      expect(abortPrimary).toHaveBeenCalledTimes(1);
+      expect(abortSecondary).toHaveBeenCalledWith(secondaryAgentId);
+
+      const failed = chain.eventsByType('swarm:agent:failed');
+      expect(failed).toHaveLength(2);
+      expectEventScope(failed[0], chain.scope);
+      expectEventScope(failed[1], chain.secondaryScope);
+      expect((failed[0].data as { agentId: string }).agentId).toBe(chain.agentId);
+      expect((failed[1].data as { agentId: string }).agentId).toBe(secondaryAgentId);
     });
 
     it('两个源都 miss 时返回 false 且不发事件', async () => {
@@ -457,7 +631,7 @@ describe('Swarm Chain Integration', () => {
       vi.spyOn(chain.coordinator, 'abortTask').mockReturnValueOnce(false);
 
       const result = await chain.invokeIPC<boolean>('swarm:cancel-agent', {
-        agentId: 'a1',
+        ...agentRef(chain.scope, chain.agentId),
       });
 
       expect(result).toBe(false);
@@ -474,7 +648,7 @@ describe('Swarm Chain Integration', () => {
       // 第一次 executeParallel 注册 task 定义
       await chain.coordinator.executeParallel([
         {
-          id: 'task-a',
+          id: chain.agentId,
           role: 'coder',
           task: 'initial',
           tools: ['Read'],
@@ -493,7 +667,7 @@ describe('Swarm Chain Integration', () => {
       });
 
       const ok = await chain.invokeIPC<boolean>('swarm:retry-agent', {
-        agentId: 'task-a',
+        ...agentRef(chain.scope, chain.agentId),
       });
       expect(ok).toBe(true);
 
@@ -506,14 +680,17 @@ describe('Swarm Chain Integration', () => {
       expect(updates.some((e) =>
         (e.data as { agentState: { status: string } }).agentState.status === 'running'
       )).toBe(true);
+      expectEventScope(updates[0], chain.scope);
 
       const completed = chain.eventsByType('swarm:agent:completed');
       expect(completed).toHaveLength(1);
+      expectEventScope(completed[0], chain.scope);
     });
 
     it('未知 agentId 立即返回 false，无副作用', async () => {
+      const missingAgentId = createScopedSwarmAgentId(chain.scope, 'never-existed');
       const ok = await chain.invokeIPC<boolean>('swarm:retry-agent', {
-        agentId: 'never-existed',
+        ...agentRef(chain.scope, missingAgentId),
       });
       expect(ok).toBe(false);
       expect(chain.eventsByType('swarm:agent:updated')).toHaveLength(0);
@@ -521,7 +698,7 @@ describe('Swarm Chain Integration', () => {
 
     it('retry 任务失败时 emit agent:failed', async () => {
       await chain.coordinator.executeParallel([
-        { id: 'task-b', role: 'coder', task: 'init', tools: ['Read'] },
+        { id: chain.agentId, role: 'coder', task: 'init', tools: ['Read'] },
       ]);
       platformState.sentEvents.length = 0;
 
@@ -534,12 +711,15 @@ describe('Swarm Chain Integration', () => {
         cost: 0,
       });
 
-      await chain.invokeIPC('swarm:retry-agent', { agentId: 'task-b' });
+      await chain.invokeIPC('swarm:retry-agent', {
+        ...agentRef(chain.scope, chain.agentId),
+      });
       await new Promise((r) => setImmediate(r));
       await new Promise((r) => setImmediate(r));
 
       const failed = chain.eventsByType('swarm:agent:failed');
       expect(failed).toHaveLength(1);
+      expectEventScope(failed[0], chain.scope);
       expect((failed[0].data as { agentState: { error: string } }).agentState.error).toBe(
         'tool crash'
       );
@@ -596,7 +776,7 @@ describe('Swarm Chain Integration', () => {
         cost: 0,
       });
       await chain.coordinator.executeParallel([
-        { id: 'task-d', role: 'coder', task: 'review', tools: ['Read'] },
+        { id: chain.agentId, role: 'coder', task: 'review', tools: ['Read'] },
       ]);
 
       const ctx = chain.coordinator.getSharedContext();

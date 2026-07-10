@@ -11,6 +11,7 @@
 import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import { createLogger } from '../services/infra/logger';
 import { SPAWN_GUARD } from '../../shared/constants/agent';
 import { READONLY_TOOL_DENYLIST } from './routingToolPolicy';
@@ -19,6 +20,13 @@ import {
   collectDescendantAgentIds,
   collectRunningOrphanAgentIds,
 } from './orphanLiveness';
+import {
+  getSwarmRunScopeKey,
+  getSwarmTreeScopeKey,
+  parseScopedSwarmAgentId,
+  type SwarmRunRef,
+  type SwarmRunScope,
+} from '../../shared/contract/swarm';
 
 const logger = createLogger('SpawnGuard');
 
@@ -63,6 +71,9 @@ export interface ManagedAgent {
   id: string;
   role: string;
   treeId: string;
+  sessionId?: string;
+  runId?: string;
+  scope?: SwarmRunScope;
   parentId?: string;
   status: ManagedAgentStatus;
   task: string;
@@ -117,14 +128,31 @@ interface RegisterOptions {
   treeId?: string;
   parentId?: string;
   slotAcquired?: boolean;
+  scope?: SwarmRunScope;
+}
+
+export interface SpawnGuardScopeFilter {
+  sessionId: string;
+  runId?: string;
+  treeId?: string;
+}
+
+interface PendingAgentNotification {
+  sessionId?: string;
+  runId?: string;
+  treeId: string;
+  content: string;
 }
 
 /** Serializable snapshot of SpawnGuard state for crash recovery */
 interface PersistedSpawnGuardState {
+  scope?: SwarmRunScope;
   agents: Array<{
     id: string;
     role: string;
     treeId?: string;
+    sessionId?: string;
+    runId?: string;
     parentId?: string;
     status: ManagedAgentStatus;
     task: string;
@@ -135,19 +163,24 @@ interface PersistedSpawnGuardState {
     error?: string;
     recoveryPlan?: ManagedAgentRecoveryPlan;
   }>;
-  pendingNotifications: string[];
+  pendingNotifications: Array<string | PendingAgentNotification>;
   persistedAt: number;
 }
 
 export interface SpawnSlotLease {
   treeId: string;
+  scope?: SwarmRunScope;
   release: () => void;
 }
 
 interface SlotWaiter {
+  treeId: string;
+  scope?: SwarmRunScope;
+  signal?: AbortSignal;
   resolve: (lease: SpawnSlotLease) => void;
   reject: (err: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
+  onAbort?: () => void;
 }
 
 // ============================================================================
@@ -159,6 +192,40 @@ const DEFAULT_MAX_DEPTH = SPAWN_GUARD.DEFAULT_SPAWN_DEPTH;
 const HARD_MAX_DEPTH = SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH;
 const DEFAULT_QUEUE_TIMEOUT_MS = SPAWN_GUARD.QUEUE_WAIT_TIMEOUT_MS;
 const DEFAULT_TREE_ID = 'default';
+const LEGACY_SLOT_PREFIX = 'legacy:';
+const LEGACY_STATE_FILE = 'spawn-guard-state.json';
+
+function cloneRunScope(scope: SwarmRunScope): SwarmRunScope {
+  return { sessionId: scope.sessionId, runId: scope.runId, treeId: scope.treeId };
+}
+
+function isSameRunScope(left: SwarmRunScope, right: SwarmRunScope): boolean {
+  return getSwarmRunScopeKey(left) === getSwarmRunScopeKey(right);
+}
+
+function getCancellationReason(reason: unknown, fallback: string): string {
+  if (reason instanceof Error && reason.message) return reason.message;
+  if (typeof reason === 'string' && reason.trim()) return reason;
+  return fallback;
+}
+
+function createSlotCancellationError(treeId: string, reason: unknown): Error {
+  return new Error(
+    `Spawn slot wait cancelled for tree ${treeId}: ${getCancellationReason(reason, 'cancelled')}`,
+  );
+}
+
+function getScopedStateFileName(scope: SwarmRunScope): string {
+  const digest = createHash('sha256')
+    .update(getSwarmRunScopeKey(scope))
+    .digest('hex')
+    .slice(0, 32);
+  return `spawn-guard-run-${digest}.json`;
+}
+
+function getSpawnGuardStatePath(sessionDir: string, scope?: SwarmRunScope): string {
+  return join(sessionDir, scope ? getScopedStateFileName(scope) : LEGACY_STATE_FILE);
+}
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 
@@ -221,7 +288,7 @@ class SpawnGuard {
   private maxDepth: number;
   private onCompleteCallbacks: OnAgentCompleteCallback[] = [];
   /** Pending completion notifications for parent agent to drain each turn */
-  private pendingNotifications: string[] = [];
+  private pendingNotifications: PendingAgentNotification[] = [];
 
   constructor(config: SpawnGuardConfig = {}) {
     this.maxAgents = config.maxAgents ?? DEFAULT_MAX_AGENTS;
@@ -232,8 +299,8 @@ class SpawnGuard {
    * Try to reserve a slot for a new agent.
    * Returns false if at capacity.
    */
-  canSpawn(treeId: string = DEFAULT_TREE_ID): boolean {
-    return this.getReservedCount(treeId) < this.maxAgents;
+  canSpawn(identity: string | SwarmRunScope = DEFAULT_TREE_ID): boolean {
+    return this.getReservedCount(identity) < this.maxAgents;
   }
 
   /**
@@ -241,31 +308,56 @@ class SpawnGuard {
    */
   async acquireSlot(options: {
     treeId?: string;
+    scope?: SwarmRunScope;
     timeoutMs?: number;
+    signal?: AbortSignal;
   } = {}): Promise<SpawnSlotLease> {
-    const treeId = this.normalizeTreeId(options.treeId);
-    if (this.canSpawn(treeId)) {
-      this.incrementSlot(treeId);
-      return this.createLease(treeId);
+    const slot = this.resolveSlotIdentity(options.scope ?? options.treeId);
+    if (options.scope && options.treeId && this.normalizeTreeId(options.treeId) !== options.scope.treeId) {
+      throw new Error('Spawn slot treeId does not match run scope.');
+    }
+    if (options.signal?.aborted) {
+      throw createSlotCancellationError(slot.treeId, options.signal.reason);
+    }
+    if (this.getReservedCountByKey(slot.key) < this.maxAgents) {
+      this.incrementSlot(slot.key);
+      return this.createLease(slot.treeId, slot.key, slot.scope);
     }
 
     const timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS));
     return new Promise<SpawnSlotLease>((resolve, reject) => {
       const waiter: SlotWaiter = {
+        treeId: slot.treeId,
+        scope: slot.scope,
+        signal: options.signal,
         resolve,
         reject,
-        timer: setTimeout(() => {
-          this.removeWaiter(treeId, waiter);
-          reject(new Error(`Spawn slot wait timed out for tree ${treeId} after ${timeoutMs}ms (running ${this.getReservedCount(treeId)}, max ${this.maxAgents})`));
-        }, timeoutMs),
       };
-      this.getQueue(treeId).push(waiter);
-      logger.info(`[${treeId}] Spawn queued (${this.getReservedCount(treeId)}/${this.maxAgents}, queue: ${this.getQueue(treeId).length})`);
+      waiter.timer = setTimeout(() => {
+        if (!this.removeWaiter(slot.key, waiter)) return;
+        this.cleanupWaiter(waiter);
+        reject(new Error(`Spawn slot wait timed out for tree ${slot.treeId} after ${timeoutMs}ms (running ${this.getReservedCountByKey(slot.key)}, max ${this.maxAgents})`));
+      }, timeoutMs);
+      const queue = this.getQueue(slot.key);
+      queue.push(waiter);
+      if (options.signal) {
+        waiter.onAbort = () => {
+          if (!this.removeWaiter(slot.key, waiter)) return;
+          this.cleanupWaiter(waiter);
+          reject(createSlotCancellationError(slot.treeId, options.signal?.reason));
+        };
+        options.signal.addEventListener('abort', waiter.onAbort, { once: true });
+        if (options.signal.aborted) {
+          waiter.onAbort();
+          return;
+        }
+      }
+      logger.info(`[${slot.treeId}] Spawn queued (${this.getReservedCountByKey(slot.key)}/${this.maxAgents}, queue: ${queue.length})`);
     });
   }
 
-  getReservedCount(treeId: string = DEFAULT_TREE_ID): number {
-    return this.treeSlotCounts.get(this.normalizeTreeId(treeId)) ?? 0;
+  getReservedCount(identity: string | SwarmRunScope = DEFAULT_TREE_ID): number {
+    return this.getReservedCountByKey(this.resolveSlotIdentity(identity).key);
   }
 
   /**
@@ -291,67 +383,143 @@ class SpawnGuard {
     return treeId?.trim() || DEFAULT_TREE_ID;
   }
 
-  private incrementSlot(treeId: string): void {
-    this.treeSlotCounts.set(treeId, this.getReservedCount(treeId) + 1);
-  }
-
-  private decrementSlot(treeId: string): void {
-    const current = this.getReservedCount(treeId);
-    if (current <= 1) {
-      this.treeSlotCounts.delete(treeId);
-    } else {
-      this.treeSlotCounts.set(treeId, current - 1);
+  private assertValidScope(scope: SwarmRunScope): void {
+    if (!scope.sessionId.trim() || !scope.runId.trim() || !scope.treeId.trim()) {
+      throw new Error('SpawnGuard run scope requires non-empty sessionId, runId and treeId.');
     }
-    this.drainQueue(treeId);
   }
 
-  private createLease(treeId: string): SpawnSlotLease {
+  private resolveSlotIdentity(identity?: string | SwarmRunScope): {
+    treeId: string;
+    scope?: SwarmRunScope;
+    key: string;
+  } {
+    if (typeof identity === 'object') {
+      this.assertValidScope(identity);
+      const scope = cloneRunScope(identity);
+      return { treeId: scope.treeId, scope, key: getSwarmTreeScopeKey(scope) };
+    }
+    const treeId = this.normalizeTreeId(identity);
+    return { treeId, key: `${LEGACY_SLOT_PREFIX}${treeId}` };
+  }
+
+  private matchesScope(agent: ManagedAgent, scope?: SpawnGuardScopeFilter): boolean {
+    if (!scope) return true;
+    // Legacy single-spawn records predate explicit run scope; their treeId is
+    // the session id. Keep them visible to session-level callers only.
+    if (!agent.sessionId) {
+      return !scope.runId && agent.treeId === scope.sessionId;
+    }
+    if (agent.sessionId !== scope.sessionId) return false;
+    if (scope.runId && agent.runId !== scope.runId) return false;
+    return !scope.treeId || agent.treeId === scope.treeId;
+  }
+
+  private getReservedCountByKey(slotKey: string): number {
+    return this.treeSlotCounts.get(slotKey) ?? 0;
+  }
+
+  private incrementSlot(slotKey: string): void {
+    this.treeSlotCounts.set(slotKey, this.getReservedCountByKey(slotKey) + 1);
+  }
+
+  private decrementSlot(slotKey: string): void {
+    const current = this.getReservedCountByKey(slotKey);
+    if (current <= 0) return;
+    if (current <= 1) {
+      this.treeSlotCounts.delete(slotKey);
+    } else {
+      this.treeSlotCounts.set(slotKey, current - 1);
+    }
+    this.drainQueue(slotKey);
+  }
+
+  private createLease(treeId: string, slotKey: string, scope?: SwarmRunScope): SpawnSlotLease {
     let released = false;
     return {
       treeId,
+      scope: scope ? cloneRunScope(scope) : undefined,
       release: () => {
         if (released) return;
         released = true;
-        this.decrementSlot(treeId);
+        this.decrementSlot(slotKey);
       },
     };
   }
 
-  private getQueue(treeId: string): SlotWaiter[] {
-    let queue = this.slotQueues.get(treeId);
+  private getQueue(slotKey: string): SlotWaiter[] {
+    let queue = this.slotQueues.get(slotKey);
     if (!queue) {
       queue = [];
-      this.slotQueues.set(treeId, queue);
+      this.slotQueues.set(slotKey, queue);
     }
     return queue;
   }
 
-  private removeWaiter(treeId: string, waiter: SlotWaiter): void {
-    const queue = this.slotQueues.get(treeId);
-    if (!queue) return;
+  private removeWaiter(slotKey: string, waiter: SlotWaiter): boolean {
+    const queue = this.slotQueues.get(slotKey);
+    if (!queue) return false;
     const index = queue.indexOf(waiter);
-    if (index >= 0) queue.splice(index, 1);
-    if (queue.length === 0) this.slotQueues.delete(treeId);
+    if (index < 0) return false;
+    queue.splice(index, 1);
+    if (queue.length === 0) this.slotQueues.delete(slotKey);
+    return true;
   }
 
-  private drainQueue(treeId: string): void {
-    const queue = this.slotQueues.get(treeId);
+  private cleanupWaiter(waiter: SlotWaiter): void {
+    if (waiter.timer) clearTimeout(waiter.timer);
+    if (waiter.signal && waiter.onAbort) {
+      waiter.signal.removeEventListener('abort', waiter.onAbort);
+    }
+  }
+
+  private rejectQueuedWaiters(
+    matches: (waiter: SlotWaiter) => boolean,
+    reason: string,
+  ): number {
+    let rejected = 0;
+    for (const [slotKey, queue] of this.slotQueues) {
+      const retained: SlotWaiter[] = [];
+      for (const waiter of queue) {
+        if (!matches(waiter)) {
+          retained.push(waiter);
+          continue;
+        }
+        this.cleanupWaiter(waiter);
+        waiter.reject(createSlotCancellationError(waiter.treeId, reason));
+        rejected += 1;
+      }
+      if (retained.length === 0) {
+        this.slotQueues.delete(slotKey);
+      } else if (retained.length !== queue.length) {
+        this.slotQueues.set(slotKey, retained);
+      }
+    }
+    return rejected;
+  }
+
+  private drainQueue(slotKey: string): void {
+    const queue = this.slotQueues.get(slotKey);
     if (!queue || queue.length === 0) return;
 
-    while (queue.length > 0 && this.canSpawn(treeId)) {
+    while (queue.length > 0 && this.getReservedCountByKey(slotKey) < this.maxAgents) {
       const waiter = queue.shift()!;
-      clearTimeout(waiter.timer);
-      this.incrementSlot(treeId);
-      waiter.resolve(this.createLease(treeId));
+      this.cleanupWaiter(waiter);
+      if (waiter.signal?.aborted) {
+        waiter.reject(createSlotCancellationError(waiter.treeId, waiter.signal.reason));
+        continue;
+      }
+      this.incrementSlot(slotKey);
+      waiter.resolve(this.createLease(waiter.treeId, slotKey, waiter.scope));
     }
 
-    if (queue.length === 0) this.slotQueues.delete(treeId);
+    if (queue.length === 0) this.slotQueues.delete(slotKey);
   }
 
   private releaseAgentSlot(agent: ManagedAgent): void {
     if (agent.slotReleased) return;
     agent.slotReleased = true;
-    this.decrementSlot(agent.treeId);
+    this.decrementSlot(this.resolveSlotIdentity(agent.scope ?? agent.treeId).key);
   }
 
   /**
@@ -365,16 +533,49 @@ class SpawnGuard {
     abortController: AbortController,
     options: RegisterOptions = {},
   ): void {
-    const treeId = this.normalizeTreeId(options.treeId);
+    const parsedIdentity = parseScopedSwarmAgentId(id);
+    const scope = options.scope ?? parsedIdentity?.scope;
+    if (parsedIdentity && !options.scope && options.slotAcquired) {
+      throw new Error('Scoped SpawnGuard registration with a pre-acquired slot requires an explicit run scope.');
+    }
+    if (scope) {
+      this.assertValidScope(scope);
+      if (!parsedIdentity || !isSameRunScope(parsedIdentity.scope, scope)) {
+        throw new Error('Scoped SpawnGuard agent id does not match the supplied run scope.');
+      }
+      if (options.treeId && this.normalizeTreeId(options.treeId) !== scope.treeId) {
+        throw new Error('SpawnGuard register treeId does not match run scope.');
+      }
+    }
+    const existing = this.agents.get(id);
+    if (existing && isLiveRunningStatus(existing.status)) {
+      throw new Error(`SpawnGuard agent already registered and running: ${id}`);
+    }
+    if (existing) {
+      this.agents.delete(id);
+    }
+
+    const treeId = scope?.treeId ?? this.normalizeTreeId(options.treeId);
     const parentId = options.parentId?.trim() || undefined;
+    const parsedParent = parentId ? parseScopedSwarmAgentId(parentId) : null;
+    if (
+      scope
+      && parentId
+      && (!parsedParent || !isSameRunScope(parsedParent.scope, scope))
+    ) {
+      throw new Error('Scoped SpawnGuard parent agent id must belong to the same run scope.');
+    }
     if (!options.slotAcquired) {
-      this.incrementSlot(treeId);
+      this.incrementSlot(this.resolveSlotIdentity(scope ?? treeId).key);
     }
 
     const agent: ManagedAgent = {
       id,
       role,
       treeId,
+      sessionId: scope?.sessionId,
+      runId: scope?.runId,
+      scope: scope ? cloneRunScope(scope) : undefined,
       parentId,
       status: 'running',
       task,
@@ -413,21 +614,22 @@ class SpawnGuard {
       }
     );
 
-    logger.info(`[${id}] Registered (${role}), tree: ${treeId}, parent: ${parentId ?? 'none'}, running: ${this.getRunningCount()}/${this.maxAgents}`);
+    logger.info(`[${id}] Registered (${role}), tree: ${treeId}, parent: ${parentId ?? 'none'}, running: ${this.getRunningCount(scope)}/${this.maxAgents}`);
   }
 
   /**
    * Get a managed agent by ID.
    */
-  get(id: string): ManagedAgent | undefined {
-    return this.agents.get(id);
+  get(id: string, scope?: SpawnGuardScopeFilter): ManagedAgent | undefined {
+    const agent = this.agents.get(id);
+    return agent && this.matchesScope(agent, scope) ? agent : undefined;
   }
 
   /**
    * List all managed agents.
    */
-  list(): ManagedAgent[] {
-    return Array.from(this.agents.values());
+  list(scope?: SpawnGuardScopeFilter): ManagedAgent[] {
+    return Array.from(this.agents.values()).filter((agent) => this.matchesScope(agent, scope));
   }
 
   /**
@@ -440,9 +642,10 @@ class SpawnGuard {
   /**
    * Get count of currently running agents.
    */
-  getRunningCount(): number {
+  getRunningCount(scope?: SpawnGuardScopeFilter): number {
     let count = 0;
     for (const agent of this.agents.values()) {
+      if (!this.matchesScope(agent, scope)) continue;
       if (isLiveRunningStatus(agent.status)) count++;
     }
     return count;
@@ -451,18 +654,22 @@ class SpawnGuard {
   /**
    * Cancel a running agent via its AbortController.
    */
-  cancel(id: string): boolean {
-    const agent = this.agents.get(id);
+  cancel(id: string, scope?: SpawnGuardScopeFilter): boolean {
+    const agent = this.get(id, scope);
     if (!agent || !isLiveRunningStatus(agent.status)) return false;
 
     this.cancelAgent(agent, 'cancelled');
-    this.cancelDescendants(id, 'parent-cancel');
+    this.cancelDescendants(id, 'parent-cancel', scope);
     logger.info(`[${id}] Cancelled with descendants`);
     return true;
   }
 
-  cancelDescendants(parentId: string, reason: string = 'parent-cancel'): number {
-    const descendantIds = collectDescendantAgentIds(this.list(), parentId);
+  cancelDescendants(
+    parentId: string,
+    reason: string = 'parent-cancel',
+    scope?: SpawnGuardScopeFilter,
+  ): number {
+    const descendantIds = collectDescendantAgentIds(this.list(scope), parentId);
     let cancelled = 0;
     for (const descendantId of descendantIds) {
       const agent = this.agents.get(descendantId);
@@ -476,8 +683,11 @@ class SpawnGuard {
     return cancelled;
   }
 
-  reapOrphanedDescendants(reason: string = 'parent-gone'): number {
-    const orphanIds = collectRunningOrphanAgentIds(this.list());
+  reapOrphanedDescendants(
+    reason: string = 'parent-gone',
+    scope?: SpawnGuardScopeFilter,
+  ): number {
+    const orphanIds = collectRunningOrphanAgentIds(this.list(scope));
     let cancelled = 0;
     for (const orphanId of orphanIds) {
       const agent = this.agents.get(orphanId);
@@ -492,13 +702,13 @@ class SpawnGuard {
   }
 
   /**
-   * Cancel all running agents and release their slots.
-   * ADR-010 #6：swarm 整体取消时调用，保证 spawnGuard 配额立即释放、
-   * 在途 LLM 流的 AbortController 被触发。
+   * Process-wide shutdown only: cancel every running agent and release slots.
+   * User/run/session cancellation must call cancelRun/cancelSession instead.
    *
    * 返回被取消的 agent 数量。
    */
-  cancelAll(reason: string = 'cancelled'): number {
+  cancelAll(reason: string = 'app_shutdown'): number {
+    this.rejectQueuedWaiters(() => true, reason);
     let cancelled = 0;
     for (const [id, agent] of this.agents) {
       if (isLiveRunningStatus(agent.status)) {
@@ -508,6 +718,44 @@ class SpawnGuard {
     }
     if (cancelled > 0) {
       logger.info(`cancelAll: cancelled ${cancelled} running agents (${reason})`);
+    }
+    return cancelled;
+  }
+
+  /** Cancel one Team run. This is the normal user-facing swarm cancellation API. */
+  cancelRun(scope: SwarmRunRef, reason: string = 'run_cancelled'): number {
+    this.rejectQueuedWaiters(
+      (waiter) => Boolean(
+        waiter.scope
+        && waiter.scope.sessionId === scope.sessionId
+        && waiter.scope.runId === scope.runId,
+      ),
+      reason,
+    );
+    let cancelled = 0;
+    for (const agent of this.list(scope)) {
+      if (!isLiveRunningStatus(agent.status)) continue;
+      this.cancelAgent(agent, reason);
+      cancelled += 1;
+    }
+    if (cancelled > 0) {
+      logger.info(`cancelRun: cancelled ${cancelled} running agents`, scope);
+    }
+    return cancelled;
+  }
+
+  /** Session teardown may span multiple Team runs; still narrower than global cancelAll. */
+  cancelSession(sessionId: string, reason: string = 'session_cancelled'): number {
+    this.rejectQueuedWaiters(
+      (waiter) => waiter.scope?.sessionId === sessionId
+        || (!waiter.scope && waiter.treeId === this.normalizeTreeId(sessionId)),
+      reason,
+    );
+    let cancelled = 0;
+    for (const agent of this.list({ sessionId })) {
+      if (!isLiveRunningStatus(agent.status)) continue;
+      this.cancelAgent(agent, reason);
+      cancelled += 1;
     }
     return cancelled;
   }
@@ -530,13 +778,14 @@ class SpawnGuard {
    */
   async waitFor(
     ids: string[],
-    timeoutMs = 30_000
+    timeoutMs = 30_000,
+    scope?: SpawnGuardScopeFilter,
   ): Promise<Map<string, ManagedAgent>> {
     const results = new Map<string, ManagedAgent>();
     const promises: Promise<void>[] = [];
 
     for (const id of ids) {
-      const agent = this.agents.get(id);
+      const agent = this.get(id, scope);
       if (!agent) continue;
 
       if (!isLiveRunningStatus(agent.status)) {
@@ -546,8 +795,14 @@ class SpawnGuard {
 
       promises.push(
         agent.promise
-          .then(() => { results.set(id, this.agents.get(id)!); })
-          .catch(() => { results.set(id, this.agents.get(id)!); })
+          .then(() => {
+            const current = this.get(id, scope);
+            if (current) results.set(id, current);
+          })
+          .catch(() => {
+            const current = this.get(id, scope);
+            if (current) results.set(id, current);
+          })
       );
     }
 
@@ -567,7 +822,7 @@ class SpawnGuard {
     // Fill in any agents that didn't complete before timeout
     for (const id of ids) {
       if (!results.has(id)) {
-        const agent = this.agents.get(id);
+        const agent = this.get(id, scope);
         if (agent) results.set(id, agent);
       }
     }
@@ -600,8 +855,8 @@ class SpawnGuard {
    * Send a structured message to a running agent's queue.
    * Supports both string (backward compat) and AgentMessage.
    */
-  sendMessage(id: string, message: string | AgentMessage): boolean {
-    const agent = this.agents.get(id);
+  sendMessage(id: string, message: string | AgentMessage, scope?: SpawnGuardScopeFilter): boolean {
+    const agent = this.get(id, scope);
     if (!agent || !isLiveRunningStatus(agent.status)) return false;
 
     const structured: AgentMessage = typeof message === 'string'
@@ -619,25 +874,26 @@ class SpawnGuard {
     id: string,
     type: AgentMessageType,
     from: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    scope?: SpawnGuardScopeFilter,
   ): boolean {
-    return this.sendMessage(id, createAgentMessage(type, from, payload));
+    return this.sendMessage(id, createAgentMessage(type, from, payload), scope);
   }
 
   /**
    * 非破坏性查看某 agent 的待办消息（swarm 护栏 P1-2 #4 桥接用）。
    * 返回队列副本——不消费，drainMessages 仍能取到，便于统一 inbox 门面只读聚合。
    */
-  peekMessages(id: string): AgentMessage[] {
-    const agent = this.agents.get(id);
+  peekMessages(id: string, scope?: SpawnGuardScopeFilter): AgentMessage[] {
+    const agent = this.get(id, scope);
     return agent ? [...agent.messageQueue] : [];
   }
 
   /**
    * Drain all pending messages for an agent (called by executor).
    */
-  drainMessages(id: string): AgentMessage[] {
-    const agent = this.agents.get(id);
+  drainMessages(id: string, scope?: SpawnGuardScopeFilter): AgentMessage[] {
+    const agent = this.get(id, scope);
     if (!agent || agent.messageQueue.length === 0) return [];
     const messages = [...agent.messageQueue];
     agent.messageQueue.length = 0;
@@ -647,8 +903,12 @@ class SpawnGuard {
   /**
    * Drain only messages of a specific type (e.g., shutdown_request).
    */
-  drainMessagesByType(id: string, type: AgentMessageType): AgentMessage[] {
-    const agent = this.agents.get(id);
+  drainMessagesByType(
+    id: string,
+    type: AgentMessageType,
+    scope?: SpawnGuardScopeFilter,
+  ): AgentMessage[] {
+    const agent = this.get(id, scope);
     if (!agent) return [];
     const matching = agent.messageQueue.filter(m => m.type === type);
     agent.messageQueue = agent.messageQueue.filter(m => m.type !== type);
@@ -669,7 +929,12 @@ class SpawnGuard {
    */
   private fireOnComplete(agent: ManagedAgent): void {
     // Auto-queue notification for parent agent (Codex-style async notification)
-    this.pendingNotifications.push(this.formatNotification(agent));
+    this.pendingNotifications.push({
+      sessionId: agent.sessionId,
+      runId: agent.runId,
+      treeId: agent.treeId,
+      content: this.formatNotification(agent),
+    });
 
     for (const cb of this.onCompleteCallbacks) {
       try {
@@ -684,19 +949,37 @@ class SpawnGuard {
    * Drain all pending completion notifications.
    * Called by contextAssembly each inference turn to inject into parent agent.
    */
-  drainNotifications(): string[] {
+  drainNotifications(scope?: SpawnGuardScopeFilter): string[] {
     if (this.pendingNotifications.length === 0) return [];
-    const notifications = [...this.pendingNotifications];
-    this.pendingNotifications.length = 0;
-    return notifications;
+    if (!scope) {
+      const notifications = this.pendingNotifications.map((entry) => entry.content);
+      this.pendingNotifications.length = 0;
+      return notifications;
+    }
+
+    const matched: string[] = [];
+    const remaining: PendingAgentNotification[] = [];
+    for (const entry of this.pendingNotifications) {
+      if (this.matchesNotificationScope(entry, scope)) {
+        matched.push(entry.content);
+      } else {
+        remaining.push(entry);
+      }
+    }
+    this.pendingNotifications = remaining;
+    return matched;
   }
 
   /**
    * Check if all blockers for a given task are completed.
    */
-  isTaskReady(taskId: string, blockedBy: Set<string>): boolean {
+  isTaskReady(
+    taskId: string,
+    blockedBy: Set<string>,
+    scope?: SpawnGuardScopeFilter,
+  ): boolean {
     for (const blockerId of blockedBy) {
-      const blocker = this.agents.get(blockerId);
+      const blocker = this.get(blockerId, scope);
       if (!blocker || isLiveRunningStatus(blocker.status)) return false;
     }
     return true;
@@ -705,10 +988,11 @@ class SpawnGuard {
   /**
    * Cleanup completed/failed agents older than maxAge.
    */
-  cleanup(maxAgeMs = 300_000): number {
+  cleanup(maxAgeMs = 300_000, scope?: SpawnGuardScopeFilter): number {
     const now = Date.now();
     let removed = 0;
     for (const [id, agent] of this.agents) {
+      if (!this.matchesScope(agent, scope)) continue;
       if (!isLiveRunningStatus(agent.status) && now - agent.createdAt > maxAgeMs) {
         this.agents.delete(id);
         removed++;
@@ -718,6 +1002,18 @@ class SpawnGuard {
       logger.info(`Cleaned up ${removed} stale agents`);
     }
     return removed;
+  }
+
+  private matchesNotificationScope(
+    entry: PendingAgentNotification,
+    scope: SpawnGuardScopeFilter,
+  ): boolean {
+    if (!entry.sessionId) {
+      return !scope.runId && entry.treeId === scope.sessionId;
+    }
+    if (entry.sessionId !== scope.sessionId) return false;
+    if (scope.runId && entry.runId !== scope.runId) return false;
+    return !scope.treeId || entry.treeId === scope.treeId;
   }
 
   /**
@@ -743,12 +1039,17 @@ class SpawnGuard {
    * Persist SpawnGuard state to disk for crash recovery.
    * Stores agent metadata, message queues, and pending notifications.
    */
-  async persistState(sessionDir: string): Promise<void> {
+  async persistState(sessionDir: string, scope?: SwarmRunScope): Promise<void> {
+    if (scope) this.assertValidScope(scope);
+    const persistedScope = scope ? cloneRunScope(scope) : undefined;
     const state: PersistedSpawnGuardState = {
-      agents: Array.from(this.agents.entries()).map(([id, agent]) => ({
-        id,
+      scope: persistedScope,
+      agents: this.list(persistedScope).map((agent) => ({
+        id: agent.id,
         role: agent.role,
         treeId: agent.treeId,
+        sessionId: agent.sessionId,
+        runId: agent.runId,
         parentId: agent.parentId,
         status: agent.status,
         task: agent.task,
@@ -760,11 +1061,13 @@ class SpawnGuard {
         error: agent.error,
         recoveryPlan: agent.recoveryPlan,
       })),
-      pendingNotifications: [...this.pendingNotifications],
+      pendingNotifications: persistedScope
+        ? this.pendingNotifications.filter((entry) => this.matchesNotificationScope(entry, persistedScope))
+        : [...this.pendingNotifications],
       persistedAt: Date.now(),
     };
 
-    const filePath = join(sessionDir, 'spawn-guard-state.json');
+    const filePath = getSpawnGuardStatePath(sessionDir, persistedScope);
     await writeFile(filePath, JSON.stringify(state, null, 2));
     logger.info(`State persisted to ${filePath} (${state.agents.length} agents)`);
   }
@@ -776,8 +1079,15 @@ class SpawnGuard {
    * exists.
    * Message queues and pending notifications are restored.
    */
-  static async restoreState(sessionDir: string): Promise<SpawnGuard | null> {
-    const filePath = join(sessionDir, 'spawn-guard-state.json');
+  static async restoreState(
+    sessionDir: string,
+    scope?: SwarmRunScope,
+  ): Promise<SpawnGuard | null> {
+    if (scope && (!scope.sessionId.trim() || !scope.runId.trim() || !scope.treeId.trim())) {
+      return null;
+    }
+    const expectedScope = scope ? cloneRunScope(scope) : undefined;
+    const filePath = getSpawnGuardStatePath(sessionDir, expectedScope);
     if (!existsSync(filePath)) {
       return null;
     }
@@ -786,10 +1096,44 @@ class SpawnGuard {
       const raw = await readFile(filePath, 'utf-8');
       const state = JSON.parse(raw) as PersistedSpawnGuardState;
 
+      if (
+        expectedScope
+        && (!state.scope || !isSameRunScope(state.scope, expectedScope))
+      ) {
+        logger.warn('SpawnGuard persisted scope mismatch, ignoring', {
+          expected: expectedScope,
+          actual: state.scope,
+        });
+        return null;
+      }
+
       const guard = new SpawnGuard();
 
       for (const entry of state.agents) {
-        const wasRunning = entry.status === 'running';
+        const entryScope = entry.sessionId && entry.runId && entry.treeId
+          ? { sessionId: entry.sessionId, runId: entry.runId, treeId: entry.treeId }
+          : undefined;
+        const parsedIdentity = parseScopedSwarmAgentId(entry.id);
+        const requiredScope = expectedScope ?? state.scope;
+        if (
+          requiredScope
+          && (
+            !entryScope
+            || !parsedIdentity
+            || !isSameRunScope(entryScope, requiredScope)
+            || !isSameRunScope(parsedIdentity.scope, requiredScope)
+          )
+        ) {
+          throw new Error(`Persisted SpawnGuard agent scope mismatch: ${entry.id}`);
+        }
+        if (
+          parsedIdentity
+          && (!entryScope || !isSameRunScope(parsedIdentity.scope, entryScope))
+        ) {
+          throw new Error(`Persisted scoped agent identity is inconsistent: ${entry.id}`);
+        }
+
+        const wasRunning = isLiveRunningStatus(entry.status);
         const status: ManagedAgentStatus = wasRunning ? 'dead-log-only' : entry.status;
         const recoveredAt = Date.now();
         const recoveryPlan = entry.recoveryPlan ?? buildManagedAgentRecoveryPlan(entry.status, wasRunning);
@@ -797,6 +1141,9 @@ class SpawnGuard {
           id: entry.id,
           role: entry.role,
           treeId: entry.treeId ?? DEFAULT_TREE_ID,
+          sessionId: entryScope?.sessionId,
+          runId: entryScope?.runId,
+          scope: entryScope ? cloneRunScope(entryScope) : undefined,
           parentId: entry.parentId,
           status,
           task: entry.task,
@@ -821,7 +1168,18 @@ class SpawnGuard {
       }
 
       // Restore pending notifications
-      guard.pendingNotifications = state.pendingNotifications || [];
+      guard.pendingNotifications = (state.pendingNotifications || []).map((entry) => {
+        if (typeof entry === 'string') {
+          if (expectedScope) {
+            throw new Error('Scoped SpawnGuard snapshot contains an unscoped notification.');
+          }
+          return { treeId: DEFAULT_TREE_ID, content: entry };
+        }
+        if (expectedScope && !guard.matchesNotificationScope(entry, expectedScope)) {
+          throw new Error('Persisted SpawnGuard notification scope mismatch.');
+        }
+        return entry;
+      });
 
       logger.info(`State restored from ${filePath}: ${state.agents.length} agents, ${guard.pendingNotifications.length} pending notifications`);
       return guard;

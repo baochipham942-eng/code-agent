@@ -5,6 +5,7 @@ import type { AgentTask, AgentTaskResult, ParallelExecutionResult } from '../../
 import { getSwarmServices } from '../../host/agent/swarmServices';
 import type { ToolResolver } from '../../host/tools/dispatch/toolResolver';
 import type { ToolContext } from '../../host/tools/types';
+import { createScopedSwarmAgentId, type SwarmRunScope } from '../../shared/contract/swarm';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
 
@@ -73,26 +74,37 @@ function makeToolResolver(): ToolResolver {
   } as unknown as ToolResolver;
 }
 
-function makeToolContext(sessionId: string, signal?: AbortSignal): ToolContext {
+function makeToolContext(scope: SwarmRunScope, signal?: AbortSignal): ToolContext {
   const resolver = makeToolResolver();
   return {
     workingDirectory: process.cwd(),
     requestPermission: async () => true,
     abortSignal: signal,
-    currentToolCallId: `${sessionId}-agent-team-smoke`,
-    sessionId,
+    currentToolCallId: `${scope.runId}-agent-team-smoke`,
+    sessionId: scope.sessionId,
+    spawnTreeId: scope.treeId,
+    swarmRunScope: scope,
     resolver,
   };
 }
 
-function initializeCoordinator(sessionId: string, signal?: AbortSignal): void {
-  const coordinator = getSwarmServices().parallelCoordinator;
-  coordinator.reset();
+function initializeCoordinator(scope: SwarmRunScope, signal?: AbortSignal) {
+  const coordinator = getSwarmServices().parallelCoordinators.getOrCreate(scope);
   coordinator.initialize({
     modelConfig: { provider: 'acceptance', model: 'e2e-local-subagent' } as ModelConfig,
     toolResolver: makeToolResolver(),
-    toolContext: makeToolContext(sessionId, signal),
+    toolContext: makeToolContext(scope, signal),
+    scope,
   });
+  return coordinator;
+}
+
+function makeSmokeScope(sessionId: string, scenario: string): SwarmRunScope {
+  return {
+    sessionId,
+    runId: `${sessionId}-${scenario}`,
+    treeId: `${sessionId}-${scenario}`,
+  };
 }
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
@@ -105,52 +117,60 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<v
 }
 
 async function runDependencySmoke(sessionId: string): Promise<SmokeScenarioSummary> {
-  const coordinator = getSwarmServices().parallelCoordinator;
-  initializeCoordinator(`${sessionId}-dependency`);
+  const scope = makeSmokeScope(sessionId, 'dependency');
+  const coordinator = initializeCoordinator(scope);
+  const rootId = createScopedSwarmAgentId(scope, 'dep-root');
+  const childId = createScopedSwarmAgentId(scope, 'dep-child');
   const result = await coordinator.executeParallel([
-    { id: 'dep-root', role: 'scout', task: 'E2E_FAIL upstream dependency', tools: [] },
-    { id: 'dep-child', role: 'editor', task: 'must not start after upstream failure', tools: [], dependsOn: ['dep-root'] },
+    { id: rootId, role: 'scout', task: 'E2E_FAIL upstream dependency', tools: [] },
+    { id: childId, role: 'editor', task: 'must not start after upstream failure', tools: [], dependsOn: [rootId] },
   ]);
-  const root = getTask(result, 'dep-root');
-  const child = getTask(result, 'dep-child');
+  const root = getTask(result, rootId);
+  const child = getTask(result, childId);
   if (root.success || !child.blocked || !child.error?.includes('failed dependencies')) {
     throw new Error(`Dependency gate smoke failed: ${JSON.stringify(summarizeResult(result))}`);
   }
+  getSwarmServices().parallelCoordinators.delete(scope, true);
   return summarizeResult(result);
 }
 
 async function runMessageSmoke(sessionId: string): Promise<SmokeScenarioSummary & { sent: boolean; deliveredMessage: string }> {
-  const coordinator = getSwarmServices().parallelCoordinator;
+  const scope = makeSmokeScope(sessionId, 'message');
+  const coordinator = initializeCoordinator(scope);
+  const agentId = createScopedSwarmAgentId(scope, 'message-agent');
   const deliveredMessage = 'hello from parent during app-host smoke';
-  initializeCoordinator(`${sessionId}-message`);
   const run = coordinator.executeParallel([
-    { id: 'message-agent', role: 'scout', task: 'wait for a queued parent message', tools: [] },
+    { id: agentId, role: 'scout', task: 'wait for a queued parent message', tools: [] },
   ]);
-  await waitUntil(() => coordinator.canReceiveMessage('message-agent'));
-  const sent = coordinator.sendMessage('message-agent', deliveredMessage);
+  await waitUntil(() => coordinator.canReceiveMessage(agentId));
+  const sent = coordinator.sendMessage(agentId, deliveredMessage);
   const result = await run;
-  const task = getTask(result, 'message-agent');
+  const task = getTask(result, agentId);
   if (!sent || !task.success || !task.output.includes(deliveredMessage)) {
     throw new Error(`Message queue smoke failed: ${JSON.stringify({ sent, result: summarizeResult(result) })}`);
   }
+  getSwarmServices().parallelCoordinators.delete(scope, true);
   return { ...summarizeResult(result), sent, deliveredMessage };
 }
 
 async function runCancelSmoke(sessionId: string): Promise<SmokeScenarioSummary> {
-  const coordinator = getSwarmServices().parallelCoordinator;
-  initializeCoordinator(`${sessionId}-cancel`);
+  const scope = makeSmokeScope(sessionId, 'cancel');
+  const coordinator = initializeCoordinator(scope);
+  const runningId = createScopedSwarmAgentId(scope, 'cancel-running');
+  const pendingId = createScopedSwarmAgentId(scope, 'cancel-pending');
   const run = coordinator.executeParallel([
-    { id: 'cancel-running', role: 'scout', task: 'slow task that should be cancelled', tools: [] },
-    { id: 'cancel-pending', role: 'editor', task: 'pending task that must not start', tools: [], dependsOn: ['cancel-running'] },
+    { id: runningId, role: 'scout', task: 'slow task that should be cancelled', tools: [] },
+    { id: pendingId, role: 'editor', task: 'pending task that must not start', tools: [], dependsOn: [runningId] },
   ]);
-  await waitUntil(() => coordinator.getRunningTasks().includes('cancel-running'));
-  coordinator.abortAllRunning('swarm_cancelled');
+  await waitUntil(() => coordinator.getRunningTasks().includes(runningId));
+  getSwarmServices().parallelCoordinators.abortRun(scope, 'swarm_cancelled');
   const result = await run;
-  const running = getTask(result, 'cancel-running');
-  const pending = getTask(result, 'cancel-pending');
+  const running = getTask(result, runningId);
+  const pending = getTask(result, pendingId);
   if (!running.cancelled || !pending.cancelled) {
     throw new Error(`Run-level cancel smoke failed: ${JSON.stringify(summarizeResult(result))}`);
   }
+  getSwarmServices().parallelCoordinators.delete(scope, true);
   return summarizeResult(result);
 }
 
@@ -165,7 +185,6 @@ async function runAgentTeamSmoke(): Promise<{
   const dependency = await runDependencySmoke(sessionId);
   const message = await runMessageSmoke(sessionId);
   const cancel = await runCancelSmoke(sessionId);
-  getSwarmServices().parallelCoordinator.reset();
   return {
     ok: true,
     sessionId,
@@ -192,11 +211,6 @@ export function createDevAgentTeamSmokeRouter(deps: DevAgentTeamSmokeDeps): Rout
       res.json(await runAgentTeamSmoke());
     } catch (error) {
       deps.logger.error('Dev Agent Team smoke failed', error);
-      try {
-        getSwarmServices().parallelCoordinator.reset();
-      } catch {
-        // Ignore cleanup errors after a failed dev-only smoke.
-      }
       res.status(500).json({
         ok: false,
         error: formatError(error),

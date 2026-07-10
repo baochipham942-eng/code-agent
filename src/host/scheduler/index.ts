@@ -9,6 +9,7 @@ export { TaskDAG } from './TaskDAG';
 // Scheduler
 export {
   DAGScheduler,
+  createRunDAGScheduler,
   getDAGScheduler,
   initDAGScheduler,
   resetDAGScheduler,

@@ -131,6 +131,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     spawnDepth: legacy?.spawnDepth as number | undefined,
     spawnMaxDepth: legacy?.spawnMaxDepth as number | undefined,
     spawnTreeId: legacy?.spawnTreeId as string | undefined,
+    swarmRunScope: legacy?.swarmRunScope as ProtocolToolContext['swarmRunScope'],
     spawnQueueTimeoutMs: legacy?.spawnQueueTimeoutMs as number | undefined,
     spawnParentStartedAt: legacy?.spawnParentStartedAt as number | undefined,
     spawnParentTimeoutMs: legacy?.spawnParentTimeoutMs as number | undefined,

@@ -825,7 +825,11 @@ export function buildToolCallFromAccumulator(tc: {
   name: string;
   arguments: string;
 }): ToolCall {
-  const parsed = safeJsonParse(tc.arguments);
+  // 空 arguments 是无参工具（task_list / list_directory / enter_plan_mode 等）的正常形态，
+  // 直接给 {}。若走 safeJsonParse('') 会拿到 {__parseError:true,...} 脏对象，被
+  // toolExecutionEngine 当解析错误软失败。真正的截断是**非空**坏 JSON，仍由上游
+  // getIncompleteToolCallIds 的严格 JSON.parse 拦住，安全性不丢。
+  const parsed = tc.arguments.trim() === '' ? {} : safeJsonParse(tc.arguments);
   let args: Record<string, unknown> = {};
   let shortDescription: string | undefined;
   let targetContext: ToolCallTargetContext | undefined;

@@ -80,6 +80,31 @@ describe('assertCompareArmsDistinct（跑前：对照臂必须有区分特征）
     expect(() => assertCompareArmsDistinct(BASELINE, candidate)).not.toThrow();
   });
 
+  it('candidate 仅 harness 不同 → 作为真实执行差异放行', () => {
+    const candidate: CompareConfiguration = {
+      name: 'candidate',
+      harness: { compressionPipeline: false },
+    };
+    expect(() => assertCompareArmsDistinct(BASELINE, candidate)).not.toThrow();
+  });
+
+  it('两侧 harness 相同且其他字段回落后一致 → 仍拒绝', () => {
+    const baseline: CompareConfiguration = {
+      ...BASELINE,
+      harness: { scaffoldProfile: true },
+    };
+    const candidate: CompareConfiguration = {
+      name: 'candidate',
+      harness: { scaffoldProfile: true },
+    };
+    expect(() => assertCompareArmsDistinct(baseline, candidate)).toThrow(/compare-arm-activation/);
+  });
+
+  it('两侧 harness 均 undefined 且其他字段回落后一致 → 仍拒绝', () => {
+    const candidate: CompareConfiguration = { name: 'candidate' };
+    expect(() => assertCompareArmsDistinct(BASELINE, candidate)).toThrow(/compare-arm-activation/);
+  });
+
   it('candidate 只写了执行链路不消费的字段（temperature）→ 拒绝而非当作有效差异放行', () => {
     // maka #623 病型本尊：YAML 写 temperature: 0.2，makeAgent 从未消费该字段，
     // 放行 = 烧满预算跑出 X vs X 报告。
@@ -204,6 +229,9 @@ describe('接线契约：eval-ci --compare 路径真的调用了两道断言', (
       .replace(/^[ \t]*\/\/.*$/gm, '');
     // 跑前断言调用点（非 import 行——必须是真调用）
     expect(activeSrc).toMatch(/assertCompareArmsDistinct\(baseline, candidate\)/);
+    // compare 专属 case-dir 接线：CLI 解析值传入 runCompareCommand，并用于 suite 加载。
+    expect(activeSrc).toMatch(/runCompareCommand\(workingDir, compare, \{[^}]*caseDir[^}]*\}\)/);
+    expect(activeSrc).toMatch(/loadAllTestSuites\(opts\.caseDir \?\? defaultConfig\.testCaseDir\)/);
     // 跑后断言调用点，且必须出现在报数（generateComparisonConsole）之前
     const activatedAt = activeSrc.indexOf('assertCompareArmsActivated(result)');
     const reportAt = activeSrc.indexOf('generateComparisonConsole(result)');

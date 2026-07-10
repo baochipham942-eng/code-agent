@@ -8,7 +8,10 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { CompressionPipeline } from '../../../src/host/context/compressionPipeline';
+import {
+  CompressionPipeline,
+  setCompressionPipelineOverride,
+} from '../../../src/host/context/compressionPipeline';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import {
   createCheckpointTemplate,
@@ -501,6 +504,7 @@ beforeEach(() => {
   // GAP-023: 预算已动态化（按模型窗口比例）。本文件存量测试都按固定 6000 预算设计，
   // 用 env 覆盖钉住 6000，动态化行为由专项测试单独验证（临时删掉 env）。
   process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS = '6000';
+  setCompressionPipelineOverride(undefined);
   clearMemoryInjectionTracesForTest();
   serviceMocks.sessionManager.addMessage.mockClear();
   serviceMocks.sessionManager.addMessageToSession.mockClear();
@@ -1584,6 +1588,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
   });
 
   it('reuses heavy prompt blocks within a user turn and invalidates compression on transcript change', async () => {
+    setCompressionPipelineOverride(false);
     const runtimeSessionId = `session-cache-${Date.now()}`;
     const messages: Message[] = [
       buildMessage('user-1', 'user', '继续优化 repo code performance，记得看 previous context'),
@@ -1734,6 +1739,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
     const assembly = new ContextAssembly(ctx as never);
     await assembly.buildModelMessages();
+
+    expect(evaluate.mock.calls[0][2]).toMatchObject({
+      enableSnip: false,
+      enableMicrocompact: false,
+      enableContextCollapse: false,
+      toolResultBudget: 2000,
+      activeToolResultPrune: { enabled: false },
+    });
 
     expect((evaluate.mock.calls[0][1] as CompressionState).getCommitLog()).toEqual(
       expect.arrayContaining([

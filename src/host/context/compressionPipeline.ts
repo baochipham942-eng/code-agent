@@ -25,6 +25,19 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('CompressionPipeline');
 
+let compressionPipelineOverride: boolean | undefined;
+
+export function setCompressionPipelineOverride(value: boolean | undefined): void {
+  compressionPipelineOverride = value;
+  if (value !== undefined) {
+    logger.info(`[compression-pipeline] arm override active: ${value ? 'on' : 'off'}`);
+  }
+}
+
+export function getCompressionPipelineOverride(): boolean | undefined {
+  return compressionPipelineOverride;
+}
+
 export interface PipelineConfig {
   maxTokens: number;
   currentTurnIndex: number;

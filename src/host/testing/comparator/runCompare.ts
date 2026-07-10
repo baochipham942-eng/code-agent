@@ -33,11 +33,11 @@ export interface RunCompareOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * eval-ci 的 makeAgent（StandaloneAgentAdapter 工厂）只消费这 3 个字段；
+ * eval-ci 的 makeAgent（StandaloneAgentAdapter 工厂）只消费这 4 个字段；
  * YAML 里能写但执行链路收不到的字段（enabledTools/temperature/agentConfig）
  * 是假区分特征——写了 temperature: 0.2 也照样跑出 X vs X。
  */
-const CONSUMED_COMPARE_FIELDS = ['model', 'provider', 'systemPrompt'] as const;
+const CONSUMED_COMPARE_FIELDS = ['model', 'provider', 'systemPrompt', 'harness'] as const;
 const UNCONSUMED_COMPARE_FIELDS = ['enabledTools', 'temperature', 'agentConfig'] as const;
 
 /**
@@ -50,10 +50,17 @@ function effectiveArmSignature(
   config: CompareConfiguration,
   baseline: CompareConfiguration,
 ): string {
+  const harness = config.harness ?? baseline.harness;
   return JSON.stringify({
     model: config.model ?? baseline.model ?? null,
     provider: config.provider ?? baseline.provider ?? null,
     systemPrompt: config.systemPrompt ?? baseline.systemPrompt ?? null,
+    harness: harness
+      ? {
+          compressionPipeline: harness.compressionPipeline ?? null,
+          scaffoldProfile: harness.scaffoldProfile ?? null,
+        }
+      : null,
   });
 }
 

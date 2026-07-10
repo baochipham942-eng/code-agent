@@ -8,6 +8,18 @@
 
 import { SCAFFOLD_PROFILE } from '../../../shared/constants/agent';
 import { getModelScaffoldTier, type ScaffoldTier } from '../../../shared/constants/models';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('ScaffoldProfile');
+let scaffoldProfileOverride: boolean | undefined;
+
+export function setScaffoldProfileOverride(value: boolean | undefined): void {
+  scaffoldProfileOverride = value;
+}
+
+export function getScaffoldProfileOverride(): boolean | undefined {
+  return scaffoldProfileOverride;
+}
 
 export type RepairInstructionStyle = 'full' | 'compact';
 
@@ -46,6 +58,12 @@ export function resolveScaffoldProfile(tier: ScaffoldTier): ScaffoldProfile {
  * 消费方只读 profile 字段，禁止各处自查 tier（单一真源，防多处判定漂移）。
  */
 export function resolveScaffoldProfileForModel(modelId: string): ScaffoldProfile {
-  if (!SCAFFOLD_PROFILE.ENABLED) return STANDARD_PROFILE;
-  return resolveScaffoldProfile(getModelScaffoldTier(modelId));
+  const override = getScaffoldProfileOverride();
+  const enabled = override ?? SCAFFOLD_PROFILE.ENABLED;
+  if (!enabled) return STANDARD_PROFILE;
+  const tier = getModelScaffoldTier(modelId);
+  if (override === true) {
+    logger.info(`[scaffold-profile] arm override active: on tier=${tier}`);
+  }
+  return resolveScaffoldProfile(tier);
 }

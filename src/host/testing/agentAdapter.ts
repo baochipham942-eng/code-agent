@@ -13,6 +13,8 @@ import type { InferenceOptions } from '../model/types';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
+import { setCompressionPipelineOverride } from '../context/compressionPipeline';
+import { setScaffoldProfileOverride } from '../agent/runtime/scaffoldProfile';
 
 const logger = createLogger('AgentAdapter');
 
@@ -429,97 +431,112 @@ export class StandaloneAgentAdapter implements AgentInterface {
       if (goalRunForThisRun) {
         this.goalRun = goalRunForThisRun;
       }
-      const loop = new AgentLoop({
-        sessionId: this.currentSessionId,
-        workingDirectory: this.workingDirectory,
-        systemPrompt: this.systemPromptOverride ?? SYSTEM_PROMPT,
-        modelConfig: {
-          ...this.modelConfig,
-          provider: this.modelConfig.provider as ModelProvider,
-          model: this.modelConfig.model,
-          apiKey: this.modelConfig.apiKey || '',
-          temperature: this.modelConfig.temperature ?? 0.3,
-          maxTokens: this.modelConfig.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
-        },
-        inferenceOptions: this.inferenceOptions,
-        maxIterations: this.maxIterations,
-        toolExecutor,
-        messages,
-        // GAP-017: hooks 是 harness 对照实验维度之一（评测默认关闭）
-        enableHooks: this.harness?.hooksEnabled ?? false,
-        enableToolDeferredLoading: this.toolMode === 'deferred',
-        autoApprovePlan: true,
-        telemetryAdapter,
-        goalContract: loopGoalContract,
-        onEvent: (event) => {
-          if (this.currentSessionId) {
-            telemetryCollector.handleEvent(this.currentSessionId, event);
-          }
-          if (goalRunForThisRun) {
-            applyGoalEvent(goalRunForThisRun, event);
-          }
-          switch (event.type) {
-            case 'message':
-              if (event.data?.role === 'assistant' && event.data?.content) {
-                responses.push(event.data.content);
-                turnCount++;
-              }
-              break;
-            case 'tool_call_start':
-              pendingToolCalls.set(event.data.id, {
-                name: event.data.name,
-                args: event.data.arguments || {},
-                startTime: Date.now(),
-              });
-              break;
-            case 'tool_call_end': {
-              const pending = pendingToolCalls.get(event.data.toolCallId);
-              if (pending) {
-                toolExecutions.push({
-                  tool: pending.name,
-                  input: pending.args,
-                  output: event.data.output || '',
-                  success: event.data.success,
-                  error: event.data.error,
-                  duration: event.data.duration || (Date.now() - pending.startTime),
-                  timestamp: Date.now(),
-                });
-                pendingToolCalls.delete(event.data.toolCallId);
-              }
-              break;
-            }
-            case 'error':
-              errors.push(event.data?.message || 'Unknown error');
-              break;
-          }
-        },
-      });
-
-      // Add user message to messages array before run() -
-      // orchestrator does this but test adapter was missing it
-      messages.push({
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: prompt,
-        timestamp: Date.now(),
-      } as import('../../shared/contract').Message);
-
-      // GAP-017: context 压缩是 harness 对照实验维度之一。
-      // autoCompressor 是全局单例，run 期间临时覆盖、结束后恢复，避免污染同进程其他会话。
-      if (this.harness?.contextCompression !== undefined) {
-        const { getAutoCompressor } = await import('../context/autoCompressor');
-        const compressor = getAutoCompressor();
-        const originalEnabled = compressor.getConfig().enabled;
-        compressor.updateConfig({ enabled: this.harness.contextCompression });
-        try {
-          await loop.run(prompt);
-        } finally {
-          compressor.updateConfig({ enabled: originalEnabled });
-        }
-      } else {
-        await loop.run(prompt);
+      if (this.harness?.compressionPipeline !== undefined) {
+        setCompressionPipelineOverride(this.harness.compressionPipeline);
+      }
+      if (this.harness?.scaffoldProfile !== undefined) {
+        setScaffoldProfileOverride(this.harness.scaffoldProfile);
       }
 
+      try {
+        const loop = new AgentLoop({
+          sessionId: this.currentSessionId,
+          workingDirectory: this.workingDirectory,
+          systemPrompt: this.systemPromptOverride ?? SYSTEM_PROMPT,
+          modelConfig: {
+            ...this.modelConfig,
+            provider: this.modelConfig.provider as ModelProvider,
+            model: this.modelConfig.model,
+            apiKey: this.modelConfig.apiKey || '',
+            temperature: this.modelConfig.temperature ?? 0.3,
+            maxTokens: this.modelConfig.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
+          },
+          inferenceOptions: this.inferenceOptions,
+          maxIterations: this.maxIterations,
+          toolExecutor,
+          messages,
+          // GAP-017: hooks 是 harness 对照实验维度之一（评测默认关闭）
+          enableHooks: this.harness?.hooksEnabled ?? false,
+          enableToolDeferredLoading: this.toolMode === 'deferred',
+          autoApprovePlan: true,
+          telemetryAdapter,
+          goalContract: loopGoalContract,
+          onEvent: (event) => {
+            if (this.currentSessionId) {
+              telemetryCollector.handleEvent(this.currentSessionId, event);
+            }
+            if (goalRunForThisRun) {
+              applyGoalEvent(goalRunForThisRun, event);
+            }
+            switch (event.type) {
+              case 'message':
+                if (event.data?.role === 'assistant' && event.data?.content) {
+                  responses.push(event.data.content);
+                  turnCount++;
+                }
+                break;
+              case 'tool_call_start':
+                pendingToolCalls.set(event.data.id, {
+                  name: event.data.name,
+                  args: event.data.arguments || {},
+                  startTime: Date.now(),
+                });
+                break;
+              case 'tool_call_end': {
+                const pending = pendingToolCalls.get(event.data.toolCallId);
+                if (pending) {
+                  toolExecutions.push({
+                    tool: pending.name,
+                    input: pending.args,
+                    output: event.data.output || '',
+                    success: event.data.success,
+                    error: event.data.error,
+                    duration: event.data.duration || (Date.now() - pending.startTime),
+                    timestamp: Date.now(),
+                  });
+                  pendingToolCalls.delete(event.data.toolCallId);
+                }
+                break;
+              }
+              case 'error':
+                errors.push(event.data?.message || 'Unknown error');
+                break;
+            }
+          },
+        });
+
+        // Add user message to messages array before run() -
+        // orchestrator does this but test adapter was missing it
+        messages.push({
+          id: `user-${Date.now()}`,
+          role: 'user',
+          content: prompt,
+          timestamp: Date.now(),
+        } as import('../../shared/contract').Message);
+
+        // GAP-017: context 压缩是 harness 对照实验维度之一。
+        // autoCompressor 是全局单例，run 期间临时覆盖、结束后恢复，避免污染同进程其他会话。
+        if (this.harness?.contextCompression !== undefined) {
+          const { getAutoCompressor } = await import('../context/autoCompressor');
+          const compressor = getAutoCompressor();
+          const originalEnabled = compressor.getConfig().enabled;
+          compressor.updateConfig({ enabled: this.harness.contextCompression });
+          try {
+            await loop.run(prompt);
+          } finally {
+            compressor.updateConfig({ enabled: originalEnabled });
+          }
+        } else {
+          await loop.run(prompt);
+        }
+      } finally {
+        if (this.harness?.compressionPipeline !== undefined) {
+          setCompressionPipelineOverride(undefined);
+        }
+        if (this.harness?.scaffoldProfile !== undefined) {
+          setScaffoldProfileOverride(undefined);
+        }
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(message || String(error));

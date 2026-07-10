@@ -477,6 +477,10 @@ export interface HarnessVariantConfig {
   name: string;
   /** context 自动压缩开/关（undefined = 跟随全局配置） */
   contextCompression?: boolean;
+  /** messageBuild 六层压缩管线的 L0 + L2-L4 开/关；L1 保持常开，与 contextCompression(autoCompressor) 不同 */
+  compressionPipeline?: boolean;
+  /** 模型 scaffold profile 开/关（undefined = 跟随生产 flag） */
+  scaffoldProfile?: boolean;
   /** hooks 开/关（undefined = 评测默认关闭） */
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
@@ -680,6 +684,10 @@ export interface CompareConfiguration {
   model?: string;
   provider?: string;
   systemPrompt?: string;
+  harness?: {
+    compressionPipeline?: boolean;
+    scaffoldProfile?: boolean;
+  };
   enabledTools?: string[];
   temperature?: number;
   agentConfig?: Record<string, unknown>;

@@ -3,7 +3,12 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CompressionPipeline, type PipelineConfig } from '../../../src/host/context/compressionPipeline';
+import {
+  CompressionPipeline,
+  getCompressionPipelineOverride,
+  setCompressionPipelineOverride,
+  type PipelineConfig,
+} from '../../../src/host/context/compressionPipeline';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import { type ProjectableMessage } from '../../../src/host/context/projectionEngine';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
@@ -318,5 +323,16 @@ describe('CompressionPipeline', () => {
 
       expect(transcript).toHaveLength(originalLength);
     });
+  });
+});
+
+describe('compression pipeline runtime override', () => {
+  it('supports set/get/clear', () => {
+    setCompressionPipelineOverride(false);
+    expect(getCompressionPipelineOverride()).toBe(false);
+    setCompressionPipelineOverride(true);
+    expect(getCompressionPipelineOverride()).toBe(true);
+    setCompressionPipelineOverride(undefined);
+    expect(getCompressionPipelineOverride()).toBeUndefined();
   });
 });

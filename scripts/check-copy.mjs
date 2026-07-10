@@ -53,6 +53,13 @@ const ELLIPSIS_RE = /\.{3}/;
 // 否则会打开幻影字符串，把后续代码当文案捕获——实测 modelStrategyRecommendation.ts 中招）。
 // ponytail: 启发式覆盖不了除法 vs regex 的全部歧义，剩余误判只会漏/多捕一段
 // 垃圾串，垃圾串几乎不可能同时含中文+违规词；真解析需完整 lexer。
+// 已知盲区（超出上述 regex 歧义，显式声明）：
+// ① JSX 文本裸反引号会打开幻影模板串（如快捷键文案 Cmd+反引号，实测 VoicePasteIndicator）：
+//    闭合前的真文案被并进模板串内容一起扫（仍可检出）；吞到文件尾的由 EOF 兜底 flush
+//    保证不静默漏检——见 extractStrings 尾部。
+// ② JSX 插值把同一句文案切块：`中文 {expr} ...` 的 ` ...` 块无 CJK 不入 scope，
+//    省略号检查对该形态系统性漏检（实测 LivePreviewFrame）。写文案时把省略号
+//    紧贴中文段（`中文… {expr}`）即可规避；根治需 JSX 感知 lexer，暂不做。
 // ---------------------------------------------------------------------------
 // regex 字面量可出现的上文尾字符（运算符/分隔符/关键字尾），其余按除法处理。
 // `<` 故意不在类里：TSX 中 `</tag>` 的 `/` 前一字符正是 `<`，进类会把闭合标签
@@ -181,6 +188,11 @@ export function extractStrings(source) {
     continue;
   }
   if (state === 'code') flushCodeChunk();
+  // EOF 仍处串态 = 幻影串吞到文件尾（JSX 文本裸反引号可触发，见头注盲区①）：
+  // 兜底把已累积内容按模板串扫掉，false negative 转为可检出；buf 保留换行，行号仍精确。
+  else if ((state === 'squote' || state === 'dquote' || state === 'template') && buf) {
+    out.push({ value: buf, line: bufLine });
+  }
   return out;
 }
 

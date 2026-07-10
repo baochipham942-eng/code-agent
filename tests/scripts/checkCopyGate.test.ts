@@ -114,6 +114,26 @@ describe('copy gate（check-copy.mjs）', () => {
     expect(r.violations['pressure-word'][0]).toContain(':5');
   });
 
+  it('JSX 文本裸反引号打开幻影模板串吞到文件尾：EOF 兜底 flush，其后违规仍检出且行号准确（VoicePasteIndicator 盲区回归）', () => {
+    const src = [
+      `export function V() {`,
+      `  return (`,
+      `    <div>`,
+      `      <span>录音中… (Cmd+${BT} 停止)</span>`, // 裸反引号：此处起 lexer 进入幻影模板态直到 EOF
+      `      <span>转写中${DOTS}</span>`, // 违例：反引号之后的 JSX 文本三点，修复前静默漏检
+      `    </div>`,
+      `  );`,
+      `}`,
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'backtick.tsx'), src);
+    const r = scanCopy(join(dir, 'backtick.tsx')) as ScanResult;
+
+    expect(r.violations.ellipsis).toHaveLength(1);
+    expect(r.violations.ellipsis[0]).toContain(':5');
+    expect(r.violations['pressure-word']).toHaveLength(0);
+  });
+
   it('扫描面为空时 fail loud（门空转自检）', () => {
     expect(() => scanCopy(join(dir, 'no-such-dir'))).toThrow(/自检失败/);
   });

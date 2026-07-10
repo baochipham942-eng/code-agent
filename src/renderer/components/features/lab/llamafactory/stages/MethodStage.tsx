@@ -371,7 +371,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
             <div className="text-xs text-amber-400">
               💡 实用建议：对于 {currentModel.name} 模型，
               {calculateVram('qlora') <= 24
-                ? `QLoRA 只需 ${calculateVram('qlora')} GB 显存，RTX 3090/4090 (24GB) 就能跑！`
+                ? `QLoRA 仅需 ${calculateVram('qlora')} GB 显存，RTX 3090/4090 (24GB) 就能跑！`
                 : `QLoRA 需要 ${calculateVram('qlora')} GB 显存，建议使用多卡或云服务。`
               }
             </div>

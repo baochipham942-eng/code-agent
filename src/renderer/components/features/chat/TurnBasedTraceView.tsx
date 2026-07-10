@@ -682,7 +682,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!hasOlderMessages) return null;
     return (
       <div className="flex justify-center py-3 text-zinc-500 text-sm">
-        {isLoadingOlder ? '加载更早的消息...' : '↑ 滚动加载更多'}
+        {isLoadingOlder ? '加载更早的消息…' : '↑ 滚动加载更多'}
       </div>
     );
   }, [hasOlderMessages, isLoadingOlder]);

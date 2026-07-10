@@ -31,7 +31,7 @@ const getSimulatedResponse = (input: string, temperature: number): string => {
   }
   // 默认回复
   const defaults = [
-    '这是个有趣的问题，让我想想...',
+    '这是个有趣的问题，让我想想…',
     '我理解你的意思，不过作为一个小模型，我的知识有限。',
     '嗯，这个话题很有意思！你能告诉我更多吗？',
   ];
@@ -304,7 +304,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="输入消息..."
+                placeholder="输入消息…"
                 disabled={isGenerating}
                 className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-500 disabled:opacity-50"
               />

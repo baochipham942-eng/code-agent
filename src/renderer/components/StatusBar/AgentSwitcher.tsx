@@ -211,7 +211,7 @@ export function AgentSwitcher() {
             type="text"
             value={search}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-            placeholder="搜索 agent..."
+            placeholder="搜索 agent…"
             className="
               w-full px-2 py-1 text-xs
               bg-zinc-900 border border-zinc-700 rounded

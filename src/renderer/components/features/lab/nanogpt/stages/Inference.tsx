@@ -40,11 +40,11 @@ const generateText = (prompt: string, config: SamplingConfig): string => {
     const randomOutputs = [
       `${prompt} 在星光闪烁的梦境深处，
 月亮与蝴蝶跳着奇异的舞蹈，
-时间化作流水，流向未知的彼岸......
+时间化作流水，流向未知的彼岸……
 （创意爆棚但有点跳跃！）`,
       `${prompt} 当彩虹学会了唱歌，
 云朵变成了棉花糖的海洋，
-所有的故事都开始倒着讲......
+所有的故事都开始倒着讲……
 （天马行空，充满想象！）`,
     ];
     return randomOutputs[Math.floor(Math.random() * randomOutputs.length)];
@@ -272,7 +272,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="输入一个开头..."
+                placeholder="输入一个开头…"
                 className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-blue-500/50"
               />
               <button
@@ -285,7 +285,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 }`}
               >
                 <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                {isGenerating ? '思考中...' : '✨ 开始写'}
+                {isGenerating ? '思考中…' : '✨ 开始写'}
               </button>
             </div>
           </div>

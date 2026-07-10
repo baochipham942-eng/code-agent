@@ -185,7 +185,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={tab === 'current' ? '搜索当前会话...' : '搜索所有会话...'}
+          placeholder={tab === 'current' ? '搜索当前会话…' : '搜索所有会话…'}
           className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-hidden"
         />
 

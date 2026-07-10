@@ -211,7 +211,7 @@ export function NetworkStatusEnhanced({
     return (
       <div
         className={`flex items-center gap-1.5 text-amber-400 ${className}`}
-        title={`正在重连... (尝试 ${state.reconnectAttempts}/${maxReconnectAttempts})`}
+        title={`正在重连… (尝试 ${state.reconnectAttempts}/${maxReconnectAttempts})`}
       >
         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
         {showLabel && <span className="text-xs">重连中...</span>}

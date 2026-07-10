@@ -25,10 +25,10 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 
-// 基线上限（2026-07-10 实测存量，见各规则命中清单）。清理后请调小（棘轮只降不升）。
-export const PRESSURE_BASELINE_MAX = 13;
-// 92 → 99：修正模板串插值行号占位后，同行插值两侧 segment 合并计数更真实（此前非中文半段被拆开漏计）
-export const ELLIPSIS_BASELINE_MAX = 99;
+// 基线上限。2026-07-10 存量（压力词 13 / 省略号 99）已全部清零，棘轮转硬闸：
+// 任何新增违规直接拦，豁免走行内 // copy-allow: <理由>。
+export const PRESSURE_BASELINE_MAX = 0;
+export const ELLIPSIS_BASELINE_MAX = 0;
 
 export const ALLOW_COMMENT = 'copy-allow:';
 

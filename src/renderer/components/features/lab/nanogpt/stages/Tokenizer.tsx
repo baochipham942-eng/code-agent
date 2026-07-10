@@ -81,7 +81,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-blue-500/50"
-          placeholder="输入一句话试试..."
+          placeholder="输入一句话试试…"
         />
       </div>
 

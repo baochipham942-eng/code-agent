@@ -275,7 +275,7 @@ export const SkillsPanel: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索 skill..."
+              placeholder="搜索 skill…"
               className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-700 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600"
             />
           </div>
@@ -283,7 +283,7 @@ export const SkillsPanel: React.FC = () => {
           {/* 可用 Skills 列表 */}
           {availableSkills.length === 0 ? (
             <div className="text-xs text-zinc-500 py-2">
-              {loading ? '加载中...' : '暂无可用 Skills'}
+              {loading ? '加载中…' : '暂无可用 Skills'}
             </div>
           ) : filteredSkills.length === 0 ? (
             <div className="text-xs text-zinc-500 py-2">

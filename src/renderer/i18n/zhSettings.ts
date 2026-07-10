@@ -10,7 +10,7 @@ import { zhSettingsSystem } from './zhSettingsSystem';
 export const zhSettings = {
     title: '设置',
     backToApp: '返回应用',
-    searchPlaceholder: '搜索设置...',
+    searchPlaceholder: '搜索设置…',
     searchNoResults: '未找到匹配的设置项',
   ...zhSettingsCore,
   ...zhSettingsModels,

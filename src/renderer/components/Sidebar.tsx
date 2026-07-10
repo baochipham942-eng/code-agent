@@ -653,7 +653,7 @@ export const Sidebar: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索会话..."
+            placeholder="搜索会话…"
             className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600 transition-colors"
           />
           {searchQuery && (
@@ -714,7 +714,7 @@ export const Sidebar: React.FC = () => {
             <Search className="w-6 h-6 text-zinc-600 mb-2" />
             <p className="text-sm text-zinc-500">
               {messageSearchLoading
-                ? '搜索消息内容中...'
+                ? '搜索消息内容中…'
                 : !searchQuery && sessionStatusFilter !== 'all'
                   ? `当前没有${activeStatusFilterLabel}会话`
                   : '未找到匹配的会话'}

@@ -81,7 +81,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     }
 
     setStatus('testing');
-    setMessage('正在测试连接...');
+    setMessage('正在测试连接…');
     setDiscoveredCount(null);
 
     try {
@@ -98,7 +98,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       }
 
       setStatus('discovering');
-      setMessage(`连接成功，延迟 ${testResult.latencyMs}ms，正在读取可用模型...`);
+      setMessage(`连接成功，延迟 ${testResult.latencyMs}ms，正在读取可用模型…`);
 
       let discoveredModels: OnboardingDiscoveredModel[] = [];
       const discoverResult = await ipcService.invokeDomain<DiscoverModelsResult>(
@@ -121,7 +121,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       }
 
       setStatus('saving');
-      setMessage(discoveredModels.length > 0 ? '正在保存主任务模型...' : '正在保存内置推荐模型...');
+      setMessage(discoveredModels.length > 0 ? '正在保存主任务模型…' : '正在保存内置推荐模型…');
 
       const selection = buildOnboardingModelSelection({
         provider: selectedProvider,

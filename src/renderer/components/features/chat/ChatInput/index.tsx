@@ -501,7 +501,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return '引导对话，本轮结束后发送...';
+    return '引导对话，本轮结束后发送…';
   }, [inputPlaceholder, isProcessing]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）

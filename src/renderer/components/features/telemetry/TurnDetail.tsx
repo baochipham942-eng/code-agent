@@ -64,7 +64,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       if (result) {
         setSystemPrompt(result.content);
       } else {
-        setSystemPrompt(`系统提示词不可用 (hash: ${turn.systemPromptHash.substring(0, 16)}...)`);
+        setSystemPrompt(`系统提示词不可用 (hash: ${turn.systemPromptHash.substring(0, 16)}…)`);
       }
     } catch {
       setSystemPrompt('加载失败');
@@ -79,7 +79,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       {turn.systemPromptHash && (
         <CollapsibleSection
           title="系统提示词"
-          badge={systemPromptLoading ? '加载中...' : `hash: ${turn.systemPromptHash.substring(0, 8)}...`}
+          badge={systemPromptLoading ? '加载中…' : `hash: ${turn.systemPromptHash.substring(0, 8)}…`}
           onToggle={loadSystemPrompt}
         >
           {systemPrompt ? (
@@ -88,7 +88,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
             </pre>
           ) : (
             <div className="text-xs text-zinc-500 text-center py-2">
-              {systemPromptLoading ? '加载中...' : '点击展开加载系统提示词'}
+              {systemPromptLoading ? '加载中…' : '点击展开加载系统提示词'}
             </div>
           )}
         </CollapsibleSection>

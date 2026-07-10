@@ -839,7 +839,7 @@ export const ChatView: React.FC = () => {
           </div>
         }
         variant="warning"
-        confirmText={isPromptRewinding ? '回退中...' : '确认回退'}
+        confirmText={isPromptRewinding ? '回退中…' : '确认回退'}
         cancelText="取消"
         confirmDisabled={isPromptRewinding}
         onConfirm={handleConfirmPromptRewind}
@@ -869,7 +869,7 @@ export const defaultSuggestions: SuggestionItem[] = [
     icon: Gamepad2,
     title: '做个能玩的小游戏',
     description: '霓虹贪吃蛇，键盘直接开玩',
-    prompt: '用单个 HTML 文件做一个能直接玩的霓虹风《贪吃蛇》：方向键控制、实时计分与最高分、随长度逐渐加速、撞墙或咬到自己结束并可一键重开；深色背景、霓虹描边、流畅动画。直接给出完整可运行的单文件，不要问我任何问题。',
+    prompt: '用单个 HTML 文件做一个能直接玩的霓虹风《贪吃蛇》：方向键控制、实时计分与最高分、随长度逐渐加速、撞墙或咬到自己结束并可按键重开；深色背景、霓虹描边、流畅动画。直接给出完整可运行的单文件，不要问我任何问题。',
     accent: 'bg-amber-500/10 border-amber-500/20',
     iconColor: 'text-amber-400',
   },

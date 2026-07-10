@@ -190,9 +190,9 @@ describe('summarizeToolCall', () => {
 // ============================================================================
 
 describe('getToolStatusText', () => {
-  it('should show "执行中..." for pending tool', () => {
+  it('should show "执行中…" for pending tool', () => {
     const tc = makeToolCall({ name: 'Bash' });
-    expect(getToolStatusText(tc)).toBe('执行中...');
+    expect(getToolStatusText(tc)).toBe('执行中…');
   });
 
   it('should show "完成" for successful tool without duration', () => {

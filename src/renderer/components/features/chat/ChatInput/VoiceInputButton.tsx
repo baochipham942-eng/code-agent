@@ -117,7 +117,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 
   const getTitle = () => {
     if (error) return `错误: ${error}`;
-    if (isTranscribing) return '正在识别...';
+    if (isTranscribing) return '正在识别…';
     if (isRecording && silenceWarning) return '未检测到明显语音，请检查麦克风输入';
     if (isRecording) return `录音中 ${formatDuration(duration)}，点击停止`;
     return '开始语音输入，首次使用会请求麦克风';

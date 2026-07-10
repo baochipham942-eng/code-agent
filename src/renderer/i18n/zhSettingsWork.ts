@@ -5,7 +5,7 @@
 export const zhSettingsWork = {
     workspace: {
       description: '管理当前工作目录、最近打开的目录、本地桥状态，以及浏览器工具的默认行为。',
-      loading: '加载中...',
+      loading: '加载中…',
       saving: '保存中…',
       actions: {
         chooseDirectory: '选择目录',
@@ -13,7 +13,7 @@ export const zhSettingsWork = {
         change: '更换',
         clear: '清除',
         refresh: '刷新',
-        processing: '处理中...',
+        processing: '处理中…',
         open: '打开',
         switch: '切换',
         remove: '移除',
@@ -138,7 +138,7 @@ export const zhSettingsWork = {
     },
     automation: {
       description: '定时任务（Cron）：列出已注册的任务、查看运行状态，并通过编辑器新建/修改任务。',
-      loading: '加载中...',
+      loading: '加载中…',
       empty: '还没有定时任务，点右上「新建任务」开始。',
       filterLabel: '筛选：',
       deleteConfirmPrefix: '确认删除任务「',
@@ -500,7 +500,7 @@ export const zhSettingsWork = {
           active7Days: '7日活跃',
           recentSessionsSuffix: ' 条最近会话',
         },
-        searchPlaceholder: '搜索记忆文件、描述或内容...',
+        searchPlaceholder: '搜索记忆文件、描述或内容…',
         table: {
           file: '文件',
           type: '类型',
@@ -555,7 +555,7 @@ export const zhSettingsWork = {
           governance: '待治理',
           governanceCaption: '待确认 / 过期',
         },
-        searchPlaceholder: '搜索标题、摘要或正文...',
+        searchPlaceholder: '搜索标题、摘要或正文…',
         filters: {
           allStatus: '全部状态',
           allKind: '全部类型',
@@ -735,7 +735,7 @@ export const zhSettingsWork = {
       },
       actions: {
         title: '操作',
-        description: '一键启用流程：准备 Python 3.12 运行环境 → 安装本地识别依赖 → 下载约 190MB 量化模型 → 写 ~/.code-agent/.env',
+        description: '启用流程：准备 Python 3.12 运行环境 → 安装本地识别依赖 → 下载约 190MB 量化模型 → 写 ~/.code-agent/.env',
         cancel: '取消',
         reinstall: '重新装',
         enable: '启用本地 PII 防线',

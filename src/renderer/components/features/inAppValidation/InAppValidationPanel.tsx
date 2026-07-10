@@ -222,7 +222,7 @@ export function InAppValidationPanel(): React.ReactElement {
             disabled={running}
             className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
           >
-            <Play className="h-3 w-3" /> {running ? '运行中...' : '运行脚本'}
+            <Play className="h-3 w-3" /> {running ? '运行中…' : '运行脚本'}
           </button>
           </>
         )}

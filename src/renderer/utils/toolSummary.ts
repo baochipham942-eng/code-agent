@@ -204,7 +204,7 @@ export function summarizeToolCall(toolCall: ToolCall): string {
         const urlObj = new URL(url);
         return `获取网页: ${urlObj.hostname}`;
       } catch {
-        return `获取网页: ${url.slice(0, 30)}...`;
+        return `获取网页: ${url.slice(0, 30)}…`;
       }
     }
 
@@ -350,7 +350,7 @@ export function summarizeToolCall(toolCall: ToolCall): string {
  */
 export function getToolStatusText(toolCall: ToolCall): string {
   if (!toolCall.result) {
-    return '执行中...';
+    return '执行中…';
   }
 
   if (toolCall.result.success) {

@@ -31,7 +31,7 @@ const getSimulatedResponse = (input: string, temperature: number): string => {
   }
   // 默认回复
   const defaults = [
-    '这是个有趣的问题，让我想想...',
+    '这是个有趣的问题，让我想想…',
     '我理解你的意思，不过作为一个小模型，我的知识有限。',
     '嗯，这个话题很有意思！你能告诉我更多吗？',
   ];
@@ -116,7 +116,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">🤔</span>
-                  <span>想：下一个字应该是什么？可能是「你」「我」「很」...</span>
+                  <span>想：下一个字应该是什么？可能是「你」「我」「很」…</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">🎯</span>
@@ -221,14 +221,14 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
               </div>
               <div className="text-center text-zinc-600">↓ AI 开始想</div>
               <div className="p-2 rounded-lg bg-zinc-800">
-                <div className="text-zinc-400">想：下一个字...</div>
+                <div className="text-zinc-400">想：下一个字…</div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  「你」30% | 「我」25% | 「很」20% | ...
+                  「你」30% | 「我」25% | 「很」20% | …
                 </div>
               </div>
               <div className="text-center text-zinc-600">↓ 选概率最高的</div>
               <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="text-emerald-300">AI 说：「你」→「你好」→「你好！」→ ...</div>
+                <div className="text-emerald-300">AI 说：「你」→「你好」→「你好！」→ …</div>
               </div>
             </div>
           </div>
@@ -304,7 +304,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="输入消息..."
+                placeholder="输入消息…"
                 disabled={isGenerating}
                 className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-500 disabled:opacity-50"
               />

@@ -377,7 +377,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
           />
           {!frameLoaded && !frameError && (
             <div className="absolute inset-0 flex items-center justify-center bg-white text-zinc-400 text-sm">
-              正在加载 {devServerUrl} ...
+              正在加载中… {devServerUrl}
             </div>
           )}
         </div>

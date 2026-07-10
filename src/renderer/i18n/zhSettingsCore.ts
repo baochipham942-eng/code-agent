@@ -236,7 +236,7 @@ export const zhSettingsCore = {
         },
         controlPlane: {
           title: '权限控制面',
-          description: '日常只需要看当前模式、风险级别、继承策略和用户规则数量。',
+          description: '日常看当前模式、风险级别、继承策略和用户规则数量就够了。',
           summaryCurrentMode: '新会话默认档',
           summaryRiskLevel: '风险级别',
           summarySubAgent: '子 Agent',
@@ -343,12 +343,12 @@ export const zhSettingsCore = {
       conflictBadge: '冲突',
       systemWarningBadge: '系统占用',
       defaultPrefix: '默认：',
-      recording: '按下组合键...',
+      recording: '按下组合键…',
       disableShortcut: '停用快捷键',
       enableShortcut: '启用快捷键',
       clearShortcut: '清空快捷键',
       resetShortcut: '恢复该项默认',
-      saving: '正在保存...',
+      saving: '正在保存…',
       autosaveHint: '修改会自动保存。系统级热键会在桌面运行时重新注册，失败项会保留在配置中并记录诊断日志。',
       categories: {
         global: '全局唤起',

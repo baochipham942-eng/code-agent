@@ -182,7 +182,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">🚀 「站在巨人肩膀上」的学习方法</h3>
             <p className="text-sm text-zinc-400">
               与其从零开始学，不如先「借用」别人已经学好的知识！
-              这就像一个英语高手来学莎士比亚戏剧——他已经会英语了，只需要学习莎士比亚的风格就行。
+              这就像一个英语高手来学莎士比亚戏剧——他已经会英语了，再学莎士比亚的风格就行。
             </p>
           </div>
         </div>
@@ -248,7 +248,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
           </div>
         </div>
         <p className="text-xs text-center text-amber-400">
-          💡 借用知识后，只需 1/10 的练习量，就能达到更好的效果！
+          💡 借用知识后，用 1/10 的练习量，就能达到更好的效果！
         </p>
       </div>
 
@@ -462,7 +462,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
           </div>
           <div className="flex items-start gap-2">
             <span>⚡</span>
-            <span><strong className="text-zinc-400">学得更快</strong>：有基础后，只需少量练习就能学会</span>
+            <span><strong className="text-zinc-400">学得更快</strong>：有基础后，少量练习就能学会</span>
           </div>
           <div className="flex items-start gap-2">
             <span>👀</span>

@@ -111,7 +111,7 @@ export const CapturePanel: React.FC = () => {
               title="导入本地文件"
             >
               <Upload className="w-3.5 h-3.5" />
-              <span>{isImporting ? '导入中...' : '导入'}</span>
+              <span>{isImporting ? '导入中…' : '导入'}</span>
             </button>
             <button
               onClick={() => setShowCapturePanel(false)}
@@ -130,7 +130,7 @@ export const CapturePanel: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索采集内容..."
+              placeholder="搜索采集内容…"
               className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600"
             />
           </div>

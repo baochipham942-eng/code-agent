@@ -429,7 +429,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   </div>
                 ))
               ) : (
-                <div className="text-zinc-600 text-center py-4">等待开始训练...</div>
+                <div className="text-zinc-600 text-center py-4">等待开始训练…</div>
               )}
             </div>
           </div>

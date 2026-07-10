@@ -92,6 +92,48 @@ describe('copy gate（check-copy.mjs）', () => {
     expect(r.violations.ellipsis[0]).toContain(':6');
   });
 
+  it('JSX 文本节点同样受门约束：可见文案命中，闭合标签不当 regex 吞文本，spread/英文文本不误报', () => {
+    const src = [
+      `export function C(props: object) {`,
+      `  return (`,
+      `    <div title={'正在重连…'}>`,
+      `      <span {${DOTS}props}>重连中${DOTS}</span>`, // 违例：JSX 文本三点（同块 spread 不误报）
+      `      <span><strong>要点</strong>：${PRESSURE}导出即可</span>`, // 违例：闭合标签后的同行 JSX 文本压力词
+      `      <em>Loading${DOTS}</em>`, // 英文 JSX 文本，不在中文文案口径内
+      `    </div>`,
+      `  );`,
+      `}`,
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'jsx.tsx'), src);
+    const r = scanCopy(join(dir, 'jsx.tsx')) as ScanResult;
+
+    expect(r.violations.ellipsis).toHaveLength(1);
+    expect(r.violations.ellipsis[0]).toContain(':4');
+    expect(r.violations['pressure-word']).toHaveLength(1);
+    expect(r.violations['pressure-word'][0]).toContain(':5');
+  });
+
+  it('JSX 文本裸反引号打开幻影模板串吞到文件尾：EOF 兜底 flush，其后违规仍检出且行号准确（VoicePasteIndicator 盲区回归）', () => {
+    const src = [
+      `export function V() {`,
+      `  return (`,
+      `    <div>`,
+      `      <span>录音中… (Cmd+${BT} 停止)</span>`, // 裸反引号：此处起 lexer 进入幻影模板态直到 EOF
+      `      <span>转写中${DOTS}</span>`, // 违例：反引号之后的 JSX 文本三点，修复前静默漏检
+      `    </div>`,
+      `  );`,
+      `}`,
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'backtick.tsx'), src);
+    const r = scanCopy(join(dir, 'backtick.tsx')) as ScanResult;
+
+    expect(r.violations.ellipsis).toHaveLength(1);
+    expect(r.violations.ellipsis[0]).toContain(':5');
+    expect(r.violations['pressure-word']).toHaveLength(0);
+  });
+
   it('扫描面为空时 fail loud（门空转自检）', () => {
     expect(() => scanCopy(join(dir, 'no-such-dir'))).toThrow(/自检失败/);
   });

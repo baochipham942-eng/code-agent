@@ -77,7 +77,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         <div className="min-w-0">
           {isLoading && jobs.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-              正在加载定时任务...
+              正在加载定时任务…
             </div>
           ) : (
             <CronJobDetail job={selectedJob} />

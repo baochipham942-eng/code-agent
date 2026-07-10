@@ -315,7 +315,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                 isTraining ? 'text-amber-400' :
                 trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'
               }`}>
-                {isTraining ? '优化中...' : trainingStep >= 100 ? '收敛' : '就绪'}
+                {isTraining ? '优化中…' : trainingStep >= 100 ? '收敛' : '就绪'}
               </div>
             </div>
           </div>

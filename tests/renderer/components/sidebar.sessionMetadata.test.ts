@@ -251,7 +251,7 @@ describe('Sidebar session metadata', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
     // 普通用户只留搜索框，连筛选图标都不渲染。
     expect(html).not.toContain('按状态筛选会话');
-    expect(html).toContain('搜索会话...'); // 搜索框仍在
+    expect(html).toContain('搜索会话…'); // 搜索框仍在
   });
 
   it('supports the background-only quick filter', () => {

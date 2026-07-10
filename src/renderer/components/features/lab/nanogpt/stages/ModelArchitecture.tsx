@@ -170,7 +170,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
           </div>
           <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <div className="text-xs text-amber-400">
-              💡 就像你读书时，可以同时注意故事情节、人物性格、写作手法... 关注点越多，理解越全面！
+              💡 就像你读书时，可以同时注意故事情节、人物性格、写作手法… 关注点越多，理解越全面！
             </div>
           </div>
         </div>

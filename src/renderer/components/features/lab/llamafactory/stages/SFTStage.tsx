@@ -40,9 +40,9 @@ const dataFormats = [
     example: `{
   "conversations": [
     {"from": "human", "value": "什么是 AI?"},
-    {"from": "gpt", "value": "AI 是人工智能..."},
+    {"from": "gpt", "value": "AI 是人工智能…"},
     {"from": "human", "value": "有什么应用?"},
-    {"from": "gpt", "value": "广泛用于..."}
+    {"from": "gpt", "value": "广泛用于…"}
   ]
 }`,
   },
@@ -389,7 +389,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                 isTraining ? 'text-amber-400' :
                 trainingProgress >= 100 ? 'text-emerald-400' : 'text-zinc-400'
               }`}>
-                {isTraining ? '训练中...' : trainingProgress >= 100 ? '完成' : '就绪'}
+                {isTraining ? '训练中…' : trainingProgress >= 100 ? '完成' : '就绪'}
               </div>
             </div>
           </div>

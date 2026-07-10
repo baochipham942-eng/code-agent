@@ -137,7 +137,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
             className="inline-flex max-w-full items-center gap-1 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-100 hover:border-emerald-400/40 disabled:opacity-60"
             title={recommendation.reason}
           >
-            <span>{installingSkillName === recommendation.skillName ? '安装中...' : '安装并选用'}</span>
+            <span>{installingSkillName === recommendation.skillName ? '安装中…' : '安装并选用'}</span>
             <span className="truncate">{recommendation.displayName || recommendation.skillName}</span>
           </button>
         ) : (

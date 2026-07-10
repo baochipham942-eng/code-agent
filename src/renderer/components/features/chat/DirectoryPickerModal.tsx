@@ -246,7 +246,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
             <span className="ml-2 text-sm text-zinc-400">
-              正在连接桥接服务...
+              正在连接桥接服务…
             </span>
           </div>
         ) : tree.length === 0 ? (

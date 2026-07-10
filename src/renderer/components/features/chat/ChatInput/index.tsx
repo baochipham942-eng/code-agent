@@ -501,7 +501,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return '引导对话，本轮结束后发送...';
+    return '引导对话，本轮结束后发送…';
   }, [inputPlaceholder, isProcessing]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
@@ -614,7 +614,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {isUploading && (
           <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-amber-400">文件处理中...</span>
+            <span className="text-sm text-amber-400">文件处理中…</span>
           </div>
         )}
 

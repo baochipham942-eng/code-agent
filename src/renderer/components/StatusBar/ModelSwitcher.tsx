@@ -564,7 +564,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleMenuKeyDown}
-                placeholder="搜索主任务模型..."
+                placeholder="搜索主任务模型…"
                 data-model-search-input
                 className="
                   w-full px-2 py-1 text-xs

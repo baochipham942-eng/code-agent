@@ -76,7 +76,7 @@ export const RealModePanel: React.FC = () => {
   // 下载项目
   const downloadProject = useCallback(async () => {
     setIsDownloading(true);
-    setTrainingLogs((prev) => [...prev, '📦 开始下载 nanoGPT 项目...']);
+    setTrainingLogs((prev) => [...prev, '📦 开始下载 nanoGPT 项目…']);
 
     const result = await ipcService.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
       projectType: 'nanogpt',
@@ -95,7 +95,7 @@ export const RealModePanel: React.FC = () => {
   // 开始训练
   const startTraining = useCallback(async () => {
     setIsTraining(true);
-    setTrainingLogs((prev) => [...prev, `🚀 开始${config.mode === 'finetune' ? '微调' : '预训练'}...`]);
+    setTrainingLogs((prev) => [...prev, `🚀 开始${config.mode === 'finetune' ? '微调' : '预训练'}…`]);
     setCurrentStep(0);
     setCurrentLoss(null);
 
@@ -123,7 +123,7 @@ export const RealModePanel: React.FC = () => {
 
   // 停止训练
   const stopTraining = useCallback(async () => {
-    setTrainingLogs((prev) => [...prev, '⏹️ 正在停止训练...']);
+    setTrainingLogs((prev) => [...prev, '⏹️ 正在停止训练…']);
     await ipcService.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'nanogpt');
     setIsTraining(false);
     setTrainingLogs((prev) => [...prev, '✅ 训练已停止']);
@@ -216,7 +216,7 @@ export const RealModePanel: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                检测中...
+                检测中…
               </div>
             )}
           </div>
@@ -259,7 +259,7 @@ export const RealModePanel: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                检测中...
+                检测中…
               </div>
             )}
           </div>
@@ -279,7 +279,7 @@ export const RealModePanel: React.FC = () => {
             {isDownloading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                下载中...
+                下载中…
               </>
             ) : (
               <>

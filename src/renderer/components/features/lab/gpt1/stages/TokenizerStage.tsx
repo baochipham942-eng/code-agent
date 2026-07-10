@@ -75,12 +75,12 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
               为什么要教 AI 认字？
             </h3>
             <p className="text-sm text-zinc-400 leading-relaxed mb-3">
-              电脑只认识数字（0、1、2...），不认识汉字。所以我们需要给每个字
+              电脑只认识数字（0、1、2…），不认识汉字。所以我们需要给每个字
               <span className="text-emerald-400">「编个号」</span>，
               就像给学生分配学号一样。
             </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
-              「你」= 42号，「好」= 18号... 这样 AI 就能用数字来「认字」了！
+              「你」= 42号，「好」= 18号… 这样 AI 就能用数字来「认字」了！
             </p>
           </div>
 
@@ -157,7 +157,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="输入任意中文文本..."
+                placeholder="输入任意中文文本…"
                 className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
               />
             </div>

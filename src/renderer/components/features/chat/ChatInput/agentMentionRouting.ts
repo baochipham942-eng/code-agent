@@ -99,7 +99,7 @@ export function buildDirectRoutingHint(
   if (selectedAgents.length > 0) {
     if (selectedAgents.length === 1) {
       const target = selectedAgents[0]!;
-      return `这条消息会发给 ${target.name}，也可以直接输入 @${getPreferredAgentMentionToken(target)} ...`;
+      return `这条消息会发给 ${target.name}，也可以直接输入 @${getPreferredAgentMentionToken(target)} …`;
     }
     return `这条消息会发给 ${formatAgentList(selectedAgents)}，也可以继续输入 @agent 调整目标。`;
   }
@@ -119,9 +119,9 @@ export function buildDirectRoutingPlaceholder(
   if (selectedAgents.length > 0) {
     if (selectedAgents.length === 1) {
       const target = selectedAgents[0]!;
-      return `发给 ${target.name}，或直接写 @${getPreferredAgentMentionToken(target)} ...`;
+      return `发给 ${target.name}，或直接写 @${getPreferredAgentMentionToken(target)} …`;
     }
-    return `发给 ${selectedAgents.length} 个 agent，或继续写 @agent ...`;
+    return `发给 ${selectedAgents.length} 个 agent，或继续写 @agent …`;
   }
 
   const sampleAgent = availableAgents[0];

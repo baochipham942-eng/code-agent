@@ -78,7 +78,7 @@ describe('AgentTeamPanel run scope', () => {
     const view = render(
       <AgentTeamPanel sessionId="session-a" runId="run-a" />,
     );
-    const input = view.getByPlaceholderText('发消息给 Reviewer session-a...') as HTMLInputElement;
+    const input = view.getByPlaceholderText('发消息给 Reviewer session-a…') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '请复核实现' } });
     fireEvent.click(view.getByRole('button', { name: '发送消息' }));
 
@@ -110,7 +110,7 @@ describe('AgentTeamPanel run scope', () => {
     });
 
     const view = render(<AgentTeamPanel sessionId="session-a" runId="run-a" />);
-    const input = view.getByPlaceholderText('发消息给 Reviewer session-a...') as HTMLInputElement;
+    const input = view.getByPlaceholderText('发消息给 Reviewer session-a…') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '只执行一次' } });
     fireEvent.click(view.getByRole('button', { name: '发送消息' }));
 
@@ -226,7 +226,7 @@ describe('AgentTeamPanel run scope', () => {
     });
 
     const view = render(<AgentTeamPanel sessionId="session-a" runId="run-a" />);
-    const oldInput = view.getByPlaceholderText('发消息给 Reviewer session-a...') as HTMLInputElement;
+    const oldInput = view.getByPlaceholderText('发消息给 Reviewer session-a…') as HTMLInputElement;
     fireEvent.change(oldInput, { target: { value: 'A draft' } });
     fireEvent.click(view.getByRole('button', { name: '发送消息' }));
 
@@ -235,7 +235,7 @@ describe('AgentTeamPanel run scope', () => {
     useAppStore.setState({ selectedSwarmAgentId: AGENT_ID });
     view.rerender(<AgentTeamPanel sessionId="session-b" runId="run-b" />);
 
-    const newInput = await view.findByPlaceholderText('发消息给 Reviewer session-b...') as HTMLInputElement;
+    const newInput = await view.findByPlaceholderText('发消息给 Reviewer session-b…') as HTMLInputElement;
     await waitFor(() => expect(newInput.value).toBe(''));
     fireEvent.change(newInput, { target: { value: 'B draft' } });
 

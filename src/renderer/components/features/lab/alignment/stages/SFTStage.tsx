@@ -48,7 +48,7 @@ const instructionExamples = [
 const beforeAfterExamples = [
   {
     question: '今天天气怎么样？',
-    before: '天气是大气状态的表现，包括温度、湿度、气压等因素。气象学是研究天气的科学。在中国，中央气象台负责天气预报...',
+    before: '天气是大气状态的表现，包括温度、湿度、气压等因素。气象学是研究天气的科学。在中国，中央气象台负责天气预报…',
     after: '我没有实时查看天气的能力，不过你可以打开手机的天气 App 看看！如果你告诉我你在哪个城市，我可以给你一些穿衣建议哦～',
     beforeComment: '像在背百科全书，没回答问题',
     afterComment: '承认不能做的事，还给了实用建议',
@@ -242,7 +242,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
             <div>
               <div className="text-xs text-zinc-500 mb-1">状态</div>
               <div className={`text-lg font-medium ${isTraining ? 'text-amber-400' : trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                {isTraining ? '努力学习中...' : trainingStep >= 100 ? '学完啦！' : '准备好了'}
+                {isTraining ? '努力学习中…' : trainingStep >= 100 ? '学完啦！' : '准备好了'}
               </div>
             </div>
           </div>

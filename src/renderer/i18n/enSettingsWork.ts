@@ -735,7 +735,7 @@ export const enSettingsWork = {
       },
       actions: {
         title: 'Actions',
-        description: 'One-click setup: prepare a Python 3.12 runtime → install local recognition dependencies → download the roughly 190 MB quantized model → write ~/.code-agent/.env',
+        description: 'Setup flow: prepare a Python 3.12 runtime → install local recognition dependencies → download the roughly 190 MB quantized model → write ~/.code-agent/.env',
         cancel: 'Cancel',
         reinstall: 'Reinstall',
         enable: 'Enable local PII guard',

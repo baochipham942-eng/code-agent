@@ -38,7 +38,7 @@ const preferenceMethods = [
     name: 'KTO',
     fullName: 'Kahneman-Tversky Optimization',
     zh: '卡尼曼-特沃斯基优化',
-    description: '只需要单个好或坏的回答，数据更容易获取',
+    description: '仅需单个好或坏的回答，数据更容易获取',
     dataFormat: 'prompt + response + label',
     pros: ['数据要求低', '易于收集', '效果接近 DPO'],
     cons: ['相对较新', '调参经验少'],
@@ -367,7 +367,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">KTO 数据要求低</strong>：只需要标注好/坏，不需要配对</span>
+            <span><strong className="text-zinc-400">KTO 数据要求低</strong>：只要标注好/坏，不需要配对</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
@@ -385,7 +385,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {[
             { en: 'DPO', zh: '直接偏好优化', desc: 'Direct Preference Optimization，直接从偏好数据学习' },
-            { en: 'KTO', zh: '卡尼曼-特沃斯基优化', desc: '只需单个标签的偏好学习方法' },
+            { en: 'KTO', zh: '卡尼曼-特沃斯基优化', desc: '仅需单个标签的偏好学习方法' },
             { en: 'Chosen', zh: '优选回答', desc: '偏好数据中被标注为更好的回答' },
             { en: 'Rejected', zh: '劣选回答', desc: '偏好数据中被标注为较差的回答' },
           ].map((term) => (

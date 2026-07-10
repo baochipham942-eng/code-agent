@@ -266,7 +266,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
             <p className="text-sm text-zinc-400">
               <span className="text-blue-400 font-medium">核心思想</span>：权重的变化量 ΔW 可以用两个小矩阵 B×A 近似。
-              原本更新 d×d 个参数，现在只需更新 2×d×r 个参数（r 远小于 d）。
+              原本更新 d×d 个参数，现在只更新 2×d×r 个参数（r 远小于 d）。
             </p>
             <div className="mt-2 text-xs text-zinc-500">
               公式：W = W<sub>0</sub> + ΔW ≈ W<sub>0</sub> + B × A
@@ -371,7 +371,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
             <div className="text-xs text-amber-400">
               💡 实用建议：对于 {currentModel.name} 模型，
               {calculateVram('qlora') <= 24
-                ? `QLoRA 只需 ${calculateVram('qlora')} GB 显存，RTX 3090/4090 (24GB) 就能跑！`
+                ? `QLoRA 仅需 ${calculateVram('qlora')} GB 显存，RTX 3090/4090 (24GB) 就能跑！`
                 : `QLoRA 需要 ${calculateVram('qlora')} GB 显存，建议使用多卡或云服务。`
               }
             </div>

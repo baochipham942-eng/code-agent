@@ -79,7 +79,7 @@ export const CaptureAddDialog: React.FC = () => {
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="输入内容..."
+              placeholder="输入内容…"
               rows={6}
               className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-cyan-600 resize-none"
             />
@@ -91,7 +91,7 @@ export const CaptureAddDialog: React.FC = () => {
               type="text"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              placeholder="标签1, 标签2, ..."
+              placeholder="标签1, 标签2, …"
               className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-cyan-600"
             />
           </div>

@@ -266,7 +266,7 @@ export function useSidebarSessionActions(
     workingDirectory?: string,
   ) => {
     const directory = workingDirectory?.trim() || null;
-    const title = goal.title.length > 42 ? `目标：${goal.title.slice(0, 39)}...` : `目标：${goal.title}`;
+    const title = goal.title.length > 42 ? `目标：${goal.title.slice(0, 39)}…` : `目标：${goal.title}`;
     const session = await createSession(title, { workingDirectory: directory });
     if (!session) {
       return;

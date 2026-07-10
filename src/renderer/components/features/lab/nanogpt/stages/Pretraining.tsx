@@ -332,7 +332,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
             </div>
             <p className="text-sm text-zinc-400">
               刚开始学习时改正力度大，后来慢慢减小。
-              就像学骑车，一开始大幅调整，熟练后只需微调。
+              就像学骑车，一开始大幅调整，熟练后微调即可。
             </p>
           </div>
 

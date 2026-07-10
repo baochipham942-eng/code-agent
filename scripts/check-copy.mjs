@@ -3,14 +3,16 @@
 // check-copy — 文案 lint 门（maka check-copy 同款，A2 借鉴项）
 // ============================================================================
 //
-// 规则（只作用于「字符串字面量里的中文文案」，注释先剥掉再匹配——
-// maka #663 教训：纯文本 ban 不剥注释，上线 3 分钟被自己的解释注释绊倒崩 main）：
+// 规则（作用于「字符串字面量 + JSX 文本节点里的中文文案」，注释先剥掉再匹配——
+// maka #663 教训：纯文本 ban 不剥注释，上线 3 分钟被自己的解释注释绊倒崩 main。
+// JSX 文本按启发式收集：code 态里含 CJK 的连续文本块即视为用户可见文案，
+// 合法 TS/TSX 中非字符串非注释位置出现中文只可能是 JSX 文本——CJK 标识符本仓不用）：
 //   1. pressure-word : 营销压力词禁用（轻松/一键/只需/立即体验）。棘轮基线，只拦新增。
 //   2. ellipsis      : 中文串里的 "..." 必须写省略号 "…"。棘轮基线，只拦新增。
 //   3. jargon        : 工程黑话裸露给用户 —— 只报 warning 列清单，不拦（判断类留人工）。
 //
 // 豁免：违规所在行带 `// copy-allow: <理由>` 注释。
-// 扫描面：src/renderer/**/*.{ts,tsx}（i18n locale 文件 + 组件内联中文串都在内），
+// 扫描面：src/renderer/**/*.{ts,tsx}（i18n locale 文件 + 组件内联中文串 + JSX 文本都在内），
 //         排除 tests/**、*.test.*、*.d.ts。
 //
 // 棘轮（与 console-scan / knip-ratchet 同构）：命中数 <= 基线通过；清理后手动调小（只降不升）。
@@ -25,10 +27,12 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 
-// 基线上限（2026-07-10 实测存量，见各规则命中清单）。清理后请调小（棘轮只降不升）。
-export const PRESSURE_BASELINE_MAX = 13;
-// 92 → 99：修正模板串插值行号占位后，同行插值两侧 segment 合并计数更真实（此前非中文半段被拆开漏计）
-export const ELLIPSIS_BASELINE_MAX = 99;
+// 基线上限。2026-07-10 存量（压力词 13 / 省略号 99）已全部清零，棘轮转硬闸：
+// 任何新增违规直接拦，豁免走行内 // copy-allow: <理由>。
+// 同日二轮：口径补上 JSX 文本节点（原先只扫字符串字面量是盲区），
+// 补扫出的存量（压力词 6 / 省略号 39）已一并清零，基线仍为 0。
+export const PRESSURE_BASELINE_MAX = 0;
+export const ELLIPSIS_BASELINE_MAX = 0;
 
 export const ALLOW_COMMENT = 'copy-allow:';
 
@@ -43,14 +47,29 @@ const CJK_RE = /[一-鿿]/;
 const ELLIPSIS_RE = /\.{3}/;
 
 // ---------------------------------------------------------------------------
-// 迷你词法器：剥注释 + 提取字符串字面量（' " ` 三种，含模板串 ${} 嵌套）。
+// 迷你词法器：剥注释 + 提取字符串字面量（' " ` 三种，含模板串 ${} 嵌套）
+// + code 态含 CJK 的文本块（= JSX 文本节点，见头注启发式说明）。
 // 正则字面量按「前一个有效字符」启发式识别并整体跳过（regex 里的引号/斜杠
 // 否则会打开幻影字符串，把后续代码当文案捕获——实测 modelStrategyRecommendation.ts 中招）。
 // ponytail: 启发式覆盖不了除法 vs regex 的全部歧义，剩余误判只会漏/多捕一段
 // 垃圾串，垃圾串几乎不可能同时含中文+违规词；真解析需完整 lexer。
+// 已知盲区（超出上述 regex 歧义，显式声明）：
+// ① JSX 文本裸反引号会打开幻影模板串（如快捷键文案 Cmd+反引号，实测 VoicePasteIndicator）：
+//    闭合前的真文案被并进模板串内容一起扫（仍可检出）；吞到文件尾的由 EOF 兜底 flush
+//    保证不静默漏检——见 extractStrings 尾部。
+// ② JSX 插值把同一句文案切块：`中文 {expr} ...` 的 ` ...` 块无 CJK 不入 scope，
+//    省略号检查对该形态系统性漏检（实测 LivePreviewFrame）。写文案时把省略号
+//    紧贴中文段（`中文… {expr}`）即可规避；根治需 JSX 感知 lexer，暂不做。
 // ---------------------------------------------------------------------------
-// regex 字面量可出现的上文尾字符（运算符/分隔符/关键字尾），其余按除法处理
-const REGEX_PRECEDER_RE = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn|\btypeof|\bcase|\bin|\bof|\bnew|\bdo|\belse|\bvoid|\bdelete|\byield|\bawait)\s*$/;
+// regex 字面量可出现的上文尾字符（运算符/分隔符/关键字尾），其余按除法处理。
+// `<` 故意不在类里：TSX 中 `</tag>` 的 `/` 前一字符正是 `<`，进类会把闭合标签
+// 当 regex 开头、吞掉同行后续 JSX 文本（实测 PreferenceStage.tsx 漏检）；
+// `x < /re/.test()` 这种真 regex 场景罕见到可忽略。
+const REGEX_PRECEDER_RE = /(?:^|[(,=:[!&|?{};+\-*%>~^]|\breturn|\btypeof|\bcase|\bin|\bof|\bnew|\bdo|\belse|\bvoid|\bdelete|\byield|\bawait)\s*$/;
+
+// code 态文本块的切分符：JSX 表达式/标签边界 + spread(... 必跟在 ( , [ { 后)的前导符。
+// 切分越细，含 CJK 的块越贴近纯文案，`{...props}`/`[...xs]` 等 spread 永远落在无 CJK 块里不误报。
+const CODE_CHUNK_DELIM_RE = /[<>{}()[\],;\n]/;
 
 export function extractStrings(source) {
   const out = [];
@@ -61,14 +80,21 @@ export function extractStrings(source) {
   let buf = '';
   let bufLine = 0;
   let codeTail = ''; // code 态最近的非空白字符尾巴（regex 启发式用，保留 8 个字符够判关键字）
+  let codeChunk = ''; // code 态当前文本块（JSX 文本捕获用）
+  let codeChunkLine = 0;
+  const flushCodeChunk = () => {
+    if (CJK_RE.test(codeChunk)) out.push({ value: codeChunk, line: codeChunkLine });
+    codeChunk = '';
+  };
   while (i < source.length) {
     const ch = source[i];
     const next = source[i + 1];
     if (ch === '\n') line++;
     if (state === 'code') {
-      if (ch === '/' && next === '/') { state = 'lineComment'; i += 2; continue; }
-      if (ch === '/' && next === '*') { state = 'blockComment'; i += 2; continue; }
+      if (ch === '/' && next === '/') { flushCodeChunk(); state = 'lineComment'; i += 2; continue; }
+      if (ch === '/' && next === '*') { flushCodeChunk(); state = 'blockComment'; i += 2; continue; }
       if (ch === '/' && REGEX_PRECEDER_RE.test(codeTail)) {
+        flushCodeChunk();
         // regex 字面量：跳到未转义的闭合 /（字符类 [...] 内的 / 不算闭合），换行止损
         let j = i + 1;
         let inClass = false;
@@ -85,14 +111,15 @@ export function extractStrings(source) {
         codeTail = '';
         continue;
       }
-      if (ch === "'") { state = 'squote'; buf = ''; bufLine = line; i++; continue; }
-      if (ch === '"') { state = 'dquote'; buf = ''; bufLine = line; i++; continue; }
-      if (ch === '`') { state = 'template'; buf = ''; bufLine = line; i++; continue; }
+      if (ch === "'") { flushCodeChunk(); state = 'squote'; buf = ''; bufLine = line; i++; continue; }
+      if (ch === '"') { flushCodeChunk(); state = 'dquote'; buf = ''; bufLine = line; i++; continue; }
+      if (ch === '`') { flushCodeChunk(); state = 'template'; buf = ''; bufLine = line; i++; continue; }
       if (stack.length > 0) {
         const top = stack[stack.length - 1];
         if (ch === '{') top.braceDepth++;
         else if (ch === '}') {
           if (top.braceDepth === 0) {
+            flushCodeChunk();
             stack.pop();
             state = 'template';
             // 按插值实际消费的换行数补占位，保持后续 segment 行号精确
@@ -105,6 +132,12 @@ export function extractStrings(source) {
           }
           top.braceDepth--;
         }
+      }
+      if (CODE_CHUNK_DELIM_RE.test(ch)) {
+        flushCodeChunk();
+      } else {
+        if (codeChunk === '') codeChunkLine = line;
+        codeChunk += ch;
       }
       codeTail = (codeTail + (ch === '\n' ? ' ' : ch)).slice(-12);
       i++;
@@ -153,6 +186,12 @@ export function extractStrings(source) {
     buf += ch;
     i++;
     continue;
+  }
+  if (state === 'code') flushCodeChunk();
+  // EOF 仍处串态 = 幻影串吞到文件尾（JSX 文本裸反引号可触发，见头注盲区①）：
+  // 兜底把已累积内容按模板串扫掉，false negative 转为可检出；buf 保留换行，行号仍精确。
+  else if ((state === 'squote' || state === 'dquote' || state === 'template') && buf) {
+    out.push({ value: buf, line: bufLine });
   }
   return out;
 }

@@ -166,7 +166,7 @@ export const RealModePanel: React.FC = () => {
   // 下载项目
   const handleDownloadProject = async () => {
     setProjectUIStatus('downloading');
-    addLog('info', '正在克隆 minimal-gpt1-pytorch 项目...');
+    addLog('info', '正在克隆 minimal-gpt1-pytorch 项目…');
 
     try {
       const result = await ipcService.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
@@ -254,7 +254,7 @@ export const RealModePanel: React.FC = () => {
     setTrainingProgress(0);
     setCurrentIteration(0);
     setCurrentLoss(0);
-    addLog('info', '准备训练环境...');
+    addLog('info', '准备训练环境…');
 
     try {
       const result = await ipcService.invoke(IPC_CHANNELS.LAB_START_TRAINING, {
@@ -345,7 +345,7 @@ export const RealModePanel: React.FC = () => {
                 checkingEnv ? 'text-zinc-200' :
                 envReady ? 'text-emerald-200' : 'text-amber-200'
               }`}>
-                {checkingEnv ? '检查环境中...' :
+                {checkingEnv ? '检查环境中…' :
                  envReady ? 'Python 环境就绪' : '环境配置不完整'}
               </h3>
 
@@ -449,7 +449,7 @@ export const RealModePanel: React.FC = () => {
                       ) : (
                         <Download className="w-4 h-4" />
                       )}
-                      {projectUIStatus === 'downloading' ? '下载中...' : '自动下载'}
+                      {projectUIStatus === 'downloading' ? '下载中…' : '自动下载'}
                     </button>
 {isWebMode() ? (
                       <WebProjectPathInput onSubmit={(p) => handleSelectProject(p)} disabled={!envReady} />
@@ -532,7 +532,7 @@ export const RealModePanel: React.FC = () => {
                       disabled={projectUIStatus !== 'downloaded' || uploadingData}
                       className="w-full py-2 rounded-lg border border-dashed border-zinc-700 text-zinc-400 text-sm hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50 transition-colors"
                     >
-                      {uploadingData ? '上传中...' : '点击选择文件'}
+                      {uploadingData ? '上传中…' : '点击选择文件'}
                     </button>
                   </div>
                 )}
@@ -591,7 +591,7 @@ export const RealModePanel: React.FC = () => {
                     ) : (
                       <Play className="w-4 h-4" />
                     )}
-                    {trainingUIStatus === 'preparing' ? '准备中...' : '开始训练'}
+                    {trainingUIStatus === 'preparing' ? '准备中…' : '开始训练'}
                   </button>
                 )}
 
@@ -639,7 +639,7 @@ export const RealModePanel: React.FC = () => {
                     </div>
                   ))
                 ) : (
-                  <div className="text-zinc-600">等待操作...</div>
+                  <div className="text-zinc-600">等待操作…</div>
                 )}
                 <div ref={logsEndRef} />
               </div>
@@ -658,7 +658,7 @@ export const RealModePanel: React.FC = () => {
                     type="text"
                     value={inferenceInput}
                     onChange={(e) => setInferenceInput(e.target.value)}
-                    placeholder="输入测试文本..."
+                    placeholder="输入测试文本…"
                     disabled={!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed'}
                     className="flex-1 px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-500 disabled:opacity-50"
                   />

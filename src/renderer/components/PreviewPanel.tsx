@@ -609,7 +609,7 @@ export const PreviewPanel: React.FC = () => {
           isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
         }`}
       >
-        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">加载 Live Preview...</div>}>
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">加载 Live Preview…</div>}>
           <LivePreviewFrame
             key={`${activeTab.id}:${activeTab.devServerUrl}`}
             tabId={activeTab.id}
@@ -703,7 +703,7 @@ export const PreviewPanel: React.FC = () => {
           <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3">
               <RefreshCw className="w-8 h-8 text-zinc-400 animate-spin" />
-              <span className="text-sm text-zinc-400">加载中...</span>
+              <span className="text-sm text-zinc-400">加载中…</span>
             </div>
           </div>
         ) : error ? (
@@ -761,7 +761,7 @@ export const PreviewPanel: React.FC = () => {
             <Suspense
               fallback={
                 <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                  加载文档...
+                  加载文档…
                 </div>
               }
             >
@@ -773,7 +773,7 @@ export const PreviewPanel: React.FC = () => {
             <Suspense
               fallback={
                 <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                  加载表格...
+                  加载表格…
                 </div>
               }
             >
@@ -784,7 +784,7 @@ export const PreviewPanel: React.FC = () => {
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                加载编辑器...
+                加载编辑器…
               </div>
             }
           >
@@ -801,7 +801,7 @@ export const PreviewPanel: React.FC = () => {
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                加载编辑器...
+                加载编辑器…
               </div>
             }
           >
@@ -826,7 +826,7 @@ export const PreviewPanel: React.FC = () => {
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                加载表格...
+                加载表格…
               </div>
             }
           >

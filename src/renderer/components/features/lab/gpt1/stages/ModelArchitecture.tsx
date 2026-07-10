@@ -261,7 +261,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 <span className="text-2xl">🧠</span>
                 <div>
                   <div className="text-sm text-purple-300 font-medium">第 3 步：深度思考</div>
-                  <div className="text-xs text-zinc-400">根据对话习惯，应该回一句问候...</div>
+                  <div className="text-xs text-zinc-400">根据对话习惯，应该回一句问候…</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">

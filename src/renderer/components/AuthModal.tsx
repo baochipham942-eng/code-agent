@@ -310,7 +310,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
               {mode === 'signin' ? '登录' : '注册'}
-              {isLoading && '中...'}
+              {isLoading && '中…'}
             </button>
 
             {/* Forgot password link - only show in signin mode */}

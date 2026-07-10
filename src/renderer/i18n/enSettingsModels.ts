@@ -410,7 +410,7 @@ export const enSettingsModels = {
         almaTitle: 'Alma bundled skills comparison',
         almaDescription: 'Alma does not rank bundled skills by featured order; this maps its 33 bundled skills to the current code-agent capability surfaces.',
         roleBundlesTitle: 'Role bundles',
-        roleBundlesDescription: 'Install the common Skills for your role in one click',
+        roleBundlesDescription: 'Quickly set up the common Skills for your role',
         browseTitle: 'Browse by scenario',
         browseDescription: 'Popular community and official Skills, grouped by the job you need done',
         searchTitle: 'Search community Skills',

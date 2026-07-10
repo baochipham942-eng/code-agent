@@ -154,7 +154,7 @@ export const MemoFloater: React.FC = () => {
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
-            placeholder="输入消息或粘贴内容..."
+            placeholder="输入消息或粘贴内容…"
             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-hidden focus:border-zinc-600 resize-none"
             autoFocus
           />

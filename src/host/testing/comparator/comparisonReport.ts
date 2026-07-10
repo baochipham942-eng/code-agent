@@ -48,6 +48,22 @@ export function generateComparisonMarkdown(result: ComparisonResult): string {
   if (summary.excludedPairs) {
     lines.push(`| 排除 Pair（一侧没跑成） | ${summary.excludedPairs} 🔌 |`);
   }
+  {
+    // 成功率（断言判定，passed 计 1 / partial 计 0.5）——非劣判定主指标
+    const valid = cases.filter((c) => !c.excludedReason && c.statusA && c.statusB);
+    if (valid.length > 0) {
+      const passScore = (s?: string) => (s === 'passed' ? 1 : s === 'partial' ? 0.5 : 0);
+      const armRate = (role: 'baseline' | 'candidate') => {
+        const sum = valid.reduce(
+          (acc, c) => acc + passScore(c.assignment.A === role ? c.statusA : c.statusB),
+          0,
+        );
+        return sum / valid.length;
+      };
+      lines.push(`| Baseline 成功率（断言） | ${(armRate('baseline') * 100).toFixed(1)}% (n=${valid.length}) |`);
+      lines.push(`| Candidate 成功率（断言） | ${(armRate('candidate') * 100).toFixed(1)}% (n=${valid.length}) |`);
+    }
+  }
   lines.push('');
   lines.push(`> ${summary.verdict}`);
   lines.push('');
@@ -66,12 +82,12 @@ export function generateComparisonMarkdown(result: ComparisonResult): string {
   // Per-case results
   lines.push(`## Per-Case Results`);
   lines.push('');
-  lines.push(`| Test | A (role) | B (role) | Score A | Score B | Winner | Real Winner | Duration A | Duration B |`);
-  lines.push(`|---|---|---|---|---|---|---|---|---|`);
+  lines.push(`| Test | A (role) | B (role) | Status A | Status B | Score A | Score B | Winner | Real Winner | Duration A | Duration B |`);
+  lines.push(`|---|---|---|---|---|---|---|---|---|---|---|`);
 
   for (const c of cases.filter((x) => !x.excludedReason)) {
     lines.push(
-      `| ${c.testId} | ${c.assignment.A} | ${c.assignment.B} | ${c.scoreA.combined.toFixed(2)} | ${c.scoreB.combined.toFixed(2)} | ${c.winner} | ${c.realWinner} | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
+      `| ${c.testId} | ${c.assignment.A} | ${c.assignment.B} | ${c.statusA ?? '-'} | ${c.statusB ?? '-'} | ${c.scoreA.combined.toFixed(2)} | ${c.scoreB.combined.toFixed(2)} | ${c.winner} | ${c.realWinner} | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
     );
   }
   lines.push('');

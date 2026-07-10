@@ -708,6 +708,9 @@ export interface CaseComparison {
   winner: 'A' | 'B' | 'tie';
   realWinner: 'baseline' | 'candidate' | 'tie';
   reasoning: string;
+  /** 每臂断言判定终态（非劣判定主指标=成功率；rubric 分只作参考） */
+  statusA?: TestStatus;
+  statusB?: TestStatus;
   durationA: number;
   durationB: number;
   /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */

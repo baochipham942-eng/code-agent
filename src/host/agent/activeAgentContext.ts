@@ -7,14 +7,31 @@
 // ============================================================================
 
 import { getSpawnGuard } from './spawnGuard';
+import type { SpawnGuardScopeFilter } from './spawnGuard';
+import { parseScopedSwarmAgentId } from '../../shared/contract/swarm';
+
+/**
+ * Main conversation runs can filter at session level. A scoped subagent id
+ * carries the exact Team run/tree and narrows the view further.
+ */
+export function resolveActiveAgentScopeFilter(
+  sessionId: string,
+  agentId?: string,
+): SpawnGuardScopeFilter {
+  const parsed = agentId ? parseScopedSwarmAgentId(agentId) : null;
+  if (parsed?.scope.sessionId === sessionId) {
+    return parsed.scope;
+  }
+  return { sessionId };
+}
 
 /**
  * 构建活跃子代理的上下文块。
  * 如果没有活跃 agent，返回空字符串（不占用 token）。
  */
-export function buildActiveAgentContext(): string {
+export function buildActiveAgentContext(scope?: SpawnGuardScopeFilter): string {
   const guard = getSpawnGuard();
-  const agents = guard.list();
+  const agents = guard.list(scope);
 
   if (agents.length === 0) return '';
 
@@ -56,6 +73,6 @@ ${lines.join('\n')}
  * Called by contextAssembly each inference turn to inform parent agent
  * about background agents that finished since last turn (Codex-style async notifications).
  */
-export function drainCompletionNotifications(): string[] {
-  return getSpawnGuard().drainNotifications();
+export function drainCompletionNotifications(scope?: SpawnGuardScopeFilter): string[] {
+  return getSpawnGuard().drainNotifications(scope);
 }

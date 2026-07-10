@@ -17,10 +17,11 @@
 
 import type { PlanApprovalGate } from './planApproval';
 import type { SwarmLaunchApprovalGate } from './swarmLaunchApproval';
-import type { ParallelAgentCoordinator } from './parallelAgentCoordinator';
+import type { ParallelAgentCoordinatorRegistry } from './parallelAgentCoordinator';
 import type { TeammateService } from './teammate/teammateService';
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 import type { SwarmTraceRepo } from '../../shared/contract/swarmTrace';
+import type { SwarmRunRef } from '../../shared/contract/swarm';
 
 // ============================================================================
 // Structural Interfaces — 只暴露 IPC 实际用到的方法子集
@@ -31,10 +32,12 @@ import type { SwarmTraceRepo } from '../../shared/contract/swarmTrace';
  * 完整 SpawnGuard 类不导出，这里用结构类型避免暴露内部细节。
  */
 export interface SpawnGuardLike {
-  cancel(agentId: string): boolean;
+  cancel(agentId: string, scope?: SwarmRunRef): boolean;
+  cancelRun(scope: SwarmRunRef, reason?: string): number;
+  cancelSession(sessionId: string, reason?: string): number;
   cancelAll?(reason?: string): number;
-  get?(agentId: string): { status?: string } | undefined;
-  sendMessage?(agentId: string, message: string): boolean;
+  get?(agentId: string, scope?: SwarmRunRef): { status?: string } | undefined;
+  sendMessage?(agentId: string, message: string, scope?: SwarmRunRef): boolean;
 }
 
 /**
@@ -51,7 +54,7 @@ export interface AgentHistoryPort {
 export interface SwarmServices {
   planApproval: PlanApprovalGate;
   launchApproval: SwarmLaunchApprovalGate;
-  parallelCoordinator: ParallelAgentCoordinator;
+  parallelCoordinators: ParallelAgentCoordinatorRegistry;
   spawnGuard: SpawnGuardLike;
   teammateService: TeammateService;
   agentHistory: AgentHistoryPort;

@@ -20,6 +20,8 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 import { cancelSwarmRunOrFallback } from '../../../src/renderer/components/features/swarm/SwarmInlineMonitor';
 
 describe('SwarmInlineMonitor stop all', () => {
+  const scope = { sessionId: 'session-1', runId: 'run-1' };
+
   beforeEach(() => {
     invokeMock.mockReset();
   });
@@ -27,10 +29,10 @@ describe('SwarmInlineMonitor stop all', () => {
   it('uses run-level swarm cancellation before per-agent fallback', async () => {
     invokeMock.mockResolvedValueOnce(true);
 
-    await cancelSwarmRunOrFallback([{ id: 'a1' }, { id: 'a2' }]);
+    await cancelSwarmRunOrFallback(scope, [{ id: 'a1' }, { id: 'a2' }]);
 
     expect(invokeMock).toHaveBeenCalledTimes(1);
-    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_CANCEL_RUN);
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_CANCEL_RUN, scope);
   });
 
   it('falls back to cancelling active agents when run-level cancellation fails', async () => {
@@ -38,10 +40,10 @@ describe('SwarmInlineMonitor stop all', () => {
       .mockRejectedValueOnce(new Error('run cancel unavailable'))
       .mockResolvedValue(undefined);
 
-    await cancelSwarmRunOrFallback([{ id: 'a1' }, { id: 'a2' }]);
+    await cancelSwarmRunOrFallback(scope, [{ id: 'a1' }, { id: 'a2' }]);
 
-    expect(invokeMock).toHaveBeenNthCalledWith(1, IPC_CHANNELS.SWARM_CANCEL_RUN);
-    expect(invokeMock).toHaveBeenNthCalledWith(2, IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: 'a1' });
-    expect(invokeMock).toHaveBeenNthCalledWith(3, IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: 'a2' });
+    expect(invokeMock).toHaveBeenNthCalledWith(1, IPC_CHANNELS.SWARM_CANCEL_RUN, scope);
+    expect(invokeMock).toHaveBeenNthCalledWith(2, IPC_CHANNELS.SWARM_CANCEL_AGENT, { ...scope, agentId: 'a1' });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, IPC_CHANNELS.SWARM_CANCEL_AGENT, { ...scope, agentId: 'a2' });
   });
 });

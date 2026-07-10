@@ -20,9 +20,13 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
-import { getParallelAgentCoordinator } from '../../../agent/parallelAgentCoordinator';
+import {
+  getParallelAgentCoordinator,
+  getParallelAgentCoordinatorRegistry,
+} from '../../../agent/parallelAgentCoordinator';
 import { sendInputSchema as schema } from './sendInput.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { resolveAgentTargetScope } from './agentRunScope';
 
 export async function executeSendInput(
   args: Record<string, unknown>,
@@ -50,11 +54,16 @@ export async function executeSendInput(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
+  const target = resolveAgentTargetScope(ctx, agentId);
+  if (target.error) return { ok: false, error: target.error, code: 'NOT_FOUND' };
   const guard = getSpawnGuard();
-  const agent = guard.get(agentId);
+  const agent = target.scope ? guard.get(agentId, target.scope) : guard.get(agentId);
 
   if (!agent) {
-    const sentToParallelAgent = getParallelAgentCoordinator().sendMessage(agentId, message);
+    const coordinator = target.scope
+      ? getParallelAgentCoordinatorRegistry().get(target.scope)
+      : getParallelAgentCoordinator();
+    const sentToParallelAgent = coordinator?.sendMessage(agentId, message) ?? false;
     if (sentToParallelAgent) {
       onProgress?.({ stage: 'completing', percent: 100 });
       return withMultiagentMeta({
@@ -80,7 +89,9 @@ export async function executeSendInput(
     };
   }
 
-  const sent = guard.sendMessage(agentId, message);
+  const sent = target.scope
+    ? guard.sendMessage(agentId, message, target.scope)
+    : guard.sendMessage(agentId, message);
   onProgress?.({ stage: 'completing', percent: 100 });
   if (sent) {
     ctx.logger.debug('send_input done', { agentId, role: agent.role });

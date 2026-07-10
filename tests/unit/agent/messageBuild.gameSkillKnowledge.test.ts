@@ -88,6 +88,7 @@ vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
 vi.mock('../../../src/host/agent/activeAgentContext', () => ({
   buildActiveAgentContext: vi.fn(() => ''),
   drainCompletionNotifications: vi.fn(() => []),
+  resolveActiveAgentScopeFilter: vi.fn((sessionId: string) => ({ sessionId })),
 }));
 
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({

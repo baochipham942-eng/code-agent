@@ -121,7 +121,6 @@ async function startSessionsApi(deps: {
     logger,
     tryGetSessionManager: deps.tryGetSessionManager,
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
-    activeAgentLoops: new Map(),
   }));
 
   server = await new Promise<http.Server>((resolve) => {

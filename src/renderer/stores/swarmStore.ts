@@ -12,6 +12,7 @@ import type {
   SwarmLaunchRequest,
   SwarmContextUpdateKind,
 } from '@shared/contract/swarm';
+import { createScopedSwarmMessageId } from '@shared/contract/swarm';
 import type { CompletedAgentRun } from '@shared/contract/agentHistory';
 
 export type SwarmExecutionPhase =
@@ -60,14 +61,22 @@ export interface SwarmTimelineEvent {
 
 export interface SwarmRunSnapshot {
   key: string;
-  sessionId?: string;
-  runId?: string;
+  sessionId: string;
+  runId: string;
+  treeId: string;
+  parentNativeRunId?: string;
+  /** A launch/started root event has authoritatively bound this run to treeId. */
+  rootEventSeen: boolean;
   updatedAt?: number;
+  lastAccessedAt: number;
+  startTime?: number;
   statistics: SwarmExecutionState['statistics'];
   isRunning: boolean;
   executionPhase: SwarmExecutionPhase;
   verification?: SwarmVerificationResult;
   aggregation?: SwarmAggregation;
+  launchRequests: SwarmLaunchRequest[];
+  planReviews: SwarmPlanReview[];
   agents: SwarmAgentState[];
   messages: SwarmConversationMessage[];
   eventLog: SwarmTimelineEvent[];
@@ -86,17 +95,22 @@ export interface SwarmStore extends SwarmExecutionState {
   runSnapshots: Record<string, SwarmRunSnapshot>;
   activeSessionId?: string;
   activeRunId?: string;
+  activeTreeId?: string;
+  activeParentNativeRunId?: string;
   lastEventAt?: number;
+  activateScope: (sessionId?: string | null, runId?: string) => void;
   handleEvent: (event: SwarmEvent) => void;
   reset: () => void;
 }
 
-type SwarmStateSnapshot = Omit<SwarmStore, 'handleEvent' | 'reset'>;
+type SwarmStateSnapshot = Omit<SwarmStore, 'activateScope' | 'handleEvent' | 'reset'>;
 
 const MAX_MESSAGES = 40;
 const MAX_EVENT_LOG = 80;
 
 const MAX_COMPLETED_RUNS = 10;
+export const MAX_RUN_SNAPSHOTS_PER_SESSION = 8;
+export const MAX_RUN_SNAPSHOTS = 32;
 
 const initialState: Pick<
   SwarmStore,
@@ -114,6 +128,8 @@ const initialState: Pick<
   | 'runSnapshots'
   | 'activeSessionId'
   | 'activeRunId'
+  | 'activeTreeId'
+  | 'activeParentNativeRunId'
   | 'startTime'
   | 'lastEventAt'
 > = {
@@ -142,6 +158,8 @@ const initialState: Pick<
   runSnapshots: {},
   activeSessionId: undefined,
   activeRunId: undefined,
+  activeTreeId: undefined,
+  activeParentNativeRunId: undefined,
 };
 
 function mergeAgentState(
@@ -269,183 +287,245 @@ function getCompletedRunStatus(
   return agentStatus === 'cancelled' ? 'cancelled' : 'failed';
 }
 
-function getEventSessionId(event: SwarmEvent): string | undefined {
-  return event.sessionId ?? event.data.launchRequest?.sessionId;
+export function getSwarmRunSnapshotKey(sessionId: string, runId: string): string {
+  return `${sessionId}::${runId}`;
 }
 
-function getRunSnapshotKey(sessionId?: string, runId?: string): string | undefined {
-  if (!sessionId && !runId) return undefined;
-  return `${sessionId ?? 'unknown-session'}::${runId ?? 'unknown-run'}`;
+export function getSwarmMessageKey(
+  sessionId: string,
+  runId: string,
+  treeId: string,
+  messageId: string,
+): string {
+  return createScopedSwarmMessageId({ sessionId, runId, treeId }, messageId);
 }
 
-function findRunSnapshotKey(
-  snapshots: Record<string, SwarmRunSnapshot>,
-  sessionId?: string,
-  runId?: string,
-): string | undefined {
-  const exact = getRunSnapshotKey(sessionId, runId);
-  if (exact && snapshots[exact]) return exact;
-
-  const entries = Object.entries(snapshots);
-  if (sessionId && runId) {
-    const match = entries.find(([, snapshot]) => snapshot.sessionId === sessionId && snapshot.runId === runId);
-    if (match) return match[0];
-  }
-  if (runId) {
-    const match = entries.find(([, snapshot]) => snapshot.runId === runId);
-    if (match) return match[0];
-  }
-  if (sessionId) {
-    const match = entries.find(([, snapshot]) => snapshot.sessionId === sessionId);
-    if (match) return match[0];
-  }
-  return undefined;
+function isSwarmRootEvent(event: SwarmEvent): boolean {
+  return event.type === 'swarm:launch:requested' || event.type === 'swarm:started';
 }
 
-function upsertRunSnapshot(
-  snapshots: Record<string, SwarmRunSnapshot>,
-  state: SwarmStateSnapshot,
-): Record<string, SwarmRunSnapshot> {
-  const key = getRunSnapshotKey(state.activeSessionId, state.activeRunId);
-  if (!key) return snapshots;
-
+function createEmptyRunSnapshot(event: SwarmEvent): SwarmRunSnapshot {
   return {
-    ...snapshots,
-    [key]: {
-      key,
-      sessionId: state.activeSessionId,
-      runId: state.activeRunId,
-      updatedAt: state.lastEventAt,
-      statistics: state.statistics,
-      isRunning: state.isRunning,
-      executionPhase: state.executionPhase,
-      verification: state.verification,
-      aggregation: state.aggregation,
-      agents: state.agents,
-      messages: state.messages,
-      eventLog: state.eventLog,
-      completedRuns: state.completedRuns,
-    },
+    key: getSwarmRunSnapshotKey(event.sessionId, event.runId),
+    sessionId: event.sessionId,
+    runId: event.runId,
+    treeId: event.treeId,
+    parentNativeRunId: event.parentNativeRunId,
+    rootEventSeen: isSwarmRootEvent(event),
+    updatedAt: event.timestamp,
+    lastAccessedAt: event.timestamp,
+    startTime: undefined,
+    statistics: { ...initialState.statistics },
+    isRunning: false,
+    executionPhase: 'idle',
+    verification: undefined,
+    aggregation: undefined,
+    launchRequests: [],
+    planReviews: [],
+    agents: [],
+    messages: [],
+    eventLog: [],
+    completedRuns: [],
   };
 }
 
-function updateForeignRunSnapshot(
+function findLatestRunSnapshot(
   snapshots: Record<string, SwarmRunSnapshot>,
-  event: SwarmEvent,
-): Record<string, SwarmRunSnapshot> {
-  const eventSessionId = getEventSessionId(event);
-  const key = findRunSnapshotKey(snapshots, eventSessionId, event.runId);
-  if (!key) return snapshots;
+  sessionId: string,
+): SwarmRunSnapshot | undefined {
+  return Object.values(snapshots)
+    .filter((snapshot) => snapshot.sessionId === sessionId)
+    .sort((left, right) => {
+      if (left.isRunning !== right.isRunning) return left.isRunning ? -1 : 1;
+      return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
+    })[0];
+}
 
-  const snapshot = snapshots[key];
-  let agents = snapshot.agents;
-  let completedRuns = snapshot.completedRuns;
-  let messages = snapshot.messages;
-  let statistics = snapshot.statistics;
-  let isRunning = snapshot.isRunning;
-  let verification = snapshot.verification;
-  let aggregation = snapshot.aggregation;
+function pruneRunSnapshots(
+  snapshots: Record<string, SwarmRunSnapshot>,
+  activeSessionId?: string,
+  activeRunId?: string,
+  incomingKey?: string,
+): Record<string, SwarmRunSnapshot> {
+  const protectedKeys = new Set<string>();
+  if (activeSessionId && activeRunId) {
+    protectedKeys.add(getSwarmRunSnapshotKey(activeSessionId, activeRunId));
+  }
+  if (incomingKey) protectedKeys.add(incomingKey);
+  for (const snapshot of Object.values(snapshots)) {
+    if (snapshot.isRunning) protectedKeys.add(snapshot.key);
+  }
+
+  const next = { ...snapshots };
+  const oldestFirst = (left: SwarmRunSnapshot, right: SwarmRunSnapshot) => {
+    const leftRecency = Math.max(left.updatedAt ?? 0, left.lastAccessedAt);
+    const rightRecency = Math.max(right.updatedAt ?? 0, right.lastAccessedAt);
+    return leftRecency - rightRecency || left.key.localeCompare(right.key);
+  };
+
+  const sessions = new Set(Object.values(next).map((snapshot) => snapshot.sessionId));
+  for (const sessionId of sessions) {
+    let sessionSnapshots = Object.values(next)
+      .filter((snapshot) => snapshot.sessionId === sessionId)
+      .sort(oldestFirst);
+    while (sessionSnapshots.length > MAX_RUN_SNAPSHOTS_PER_SESSION) {
+      const eviction = sessionSnapshots.find((snapshot) => !protectedKeys.has(snapshot.key));
+      if (!eviction) break;
+      delete next[eviction.key];
+      sessionSnapshots = sessionSnapshots.filter((snapshot) => snapshot.key !== eviction.key);
+    }
+  }
+
+  let allSnapshots = Object.values(next).sort(oldestFirst);
+  while (allSnapshots.length > MAX_RUN_SNAPSHOTS) {
+    const eviction = allSnapshots.find((snapshot) => !protectedKeys.has(snapshot.key));
+    if (!eviction) break;
+    delete next[eviction.key];
+    allSnapshots = allSnapshots.filter((snapshot) => snapshot.key !== eviction.key);
+  }
+  return next;
+}
+
+function projectRunSnapshot(
+  snapshot: SwarmRunSnapshot,
+  runSnapshots: Record<string, SwarmRunSnapshot>,
+): SwarmStateSnapshot {
+  return {
+    ...initialState,
+    runSnapshots,
+    activeSessionId: snapshot.sessionId,
+    activeRunId: snapshot.runId,
+    activeTreeId: snapshot.treeId,
+    activeParentNativeRunId: snapshot.parentNativeRunId,
+    startTime: snapshot.startTime,
+    lastEventAt: snapshot.updatedAt,
+    isRunning: snapshot.isRunning,
+    statistics: snapshot.statistics,
+    verification: snapshot.verification,
+    aggregation: snapshot.aggregation,
+    executionPhase: snapshot.executionPhase,
+    launchRequests: snapshot.launchRequests,
+    planReviews: snapshot.planReviews,
+    agents: snapshot.agents,
+    messages: snapshot.messages,
+    eventLog: snapshot.eventLog,
+    completedRuns: snapshot.completedRuns,
+  };
+}
+
+function reduceRunSnapshot(
+  current: SwarmRunSnapshot,
+  event: SwarmEvent,
+): { snapshot: SwarmRunSnapshot; completedRun: CompletedAgentRun | null } {
+  let snapshot: SwarmRunSnapshot = {
+    ...current,
+    treeId: event.treeId,
+    parentNativeRunId: event.parentNativeRunId ?? current.parentNativeRunId,
+    updatedAt: Math.max(current.updatedAt ?? 0, event.timestamp),
+    lastAccessedAt: Math.max(current.lastAccessedAt, event.timestamp),
+  };
+  let completedRun: CompletedAgentRun | null = null;
 
   switch (event.type) {
+    case 'swarm:launch:requested':
+    case 'swarm:launch:approved':
+    case 'swarm:launch:rejected':
+      snapshot = {
+        ...snapshot,
+        launchRequests: upsertLaunchRequest(snapshot.launchRequests, event),
+      };
+      break;
+
+    case 'swarm:started':
+      snapshot = {
+        ...snapshot,
+        isRunning: true,
+        startTime: snapshot.startTime ?? event.timestamp,
+        statistics: calculateStatistics(
+          snapshot.agents,
+          snapshot.statistics,
+          event.data.statistics || undefined,
+        ),
+      };
+      break;
+
     case 'swarm:agent:added':
     case 'swarm:agent:updated':
     case 'swarm:agent:completed':
-    case 'swarm:agent:failed':
-      if (event.data.agentState) {
-        agents = updateAgentCollection(snapshot.agents, event.data.agentState);
-        if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
-          const mergedAgent = agents.find((agent) => agent.id === event.data.agentState!.id);
-          if (mergedAgent && !completedRuns.some((run) => run.id === mergedAgent.id)) {
-            completedRuns = [
-              ...completedRuns,
-              buildCompletedRun(
-                mergedAgent,
-                getCompletedRunStatus(event.type, mergedAgent.status),
-                eventSessionId ?? snapshot.sessionId,
-              ),
-            ].slice(-MAX_COMPLETED_RUNS);
-          }
+    case 'swarm:agent:failed': {
+      if (!event.data.agentState) break;
+      const agents = updateAgentCollection(snapshot.agents, event.data.agentState);
+      let completedRuns = snapshot.completedRuns;
+
+      if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
+        const mergedAgent = agents.find((agent) => agent.id === event.data.agentState!.id);
+        if (mergedAgent && !completedRuns.some((run) => run.id === mergedAgent.id)) {
+          completedRun = buildCompletedRun(
+            mergedAgent,
+            getCompletedRunStatus(event.type, mergedAgent.status),
+            event.sessionId,
+          );
+          completedRuns = [...completedRuns, completedRun].slice(-MAX_COMPLETED_RUNS);
         }
-        statistics = calculateStatistics(agents, snapshot.statistics, event.data.statistics || undefined);
       }
+
+      snapshot = {
+        ...snapshot,
+        agents,
+        completedRuns,
+        statistics: calculateStatistics(
+          agents,
+          snapshot.statistics,
+          event.data.statistics || undefined,
+        ),
+      };
       break;
+    }
+
+    case 'swarm:agent:plan_review':
+    case 'swarm:agent:plan_approved':
+    case 'swarm:agent:plan_rejected':
+      snapshot = {
+        ...snapshot,
+        planReviews: upsertPlanReview(snapshot.planReviews, event),
+      };
+      break;
+
     case 'swarm:agent:message':
     case 'swarm:user:message':
-      messages = appendMessage(snapshot.messages, event);
+      snapshot = {
+        ...snapshot,
+        messages: appendMessage(snapshot.messages, event),
+      };
       break;
+
     case 'swarm:completed':
     case 'swarm:cancelled':
-      isRunning = false;
-      verification = event.data.result?.verification || snapshot.verification;
-      aggregation = event.data.result?.aggregation || snapshot.aggregation;
-      statistics = calculateStatistics(agents, snapshot.statistics, event.data.statistics || undefined);
+      snapshot = {
+        ...snapshot,
+        isRunning: false,
+        verification: event.data.result?.verification || snapshot.verification,
+        aggregation: event.data.result?.aggregation || snapshot.aggregation,
+        statistics: calculateStatistics(
+          snapshot.agents,
+          snapshot.statistics,
+          event.data.statistics || undefined,
+        ),
+      };
       break;
+
     default:
       break;
   }
 
-  const executionPhase = deriveExecutionPhase({
-    isRunning,
-    agents,
-    statistics,
-    planReviews: [],
-    launchRequests: [],
-  });
-  const eventLog = appendEventLog(
-    snapshot.eventLog,
-    buildTimelineEntry(event, agents),
-  );
-
-  return {
-    ...snapshots,
-    [key]: {
-      ...snapshot,
-      updatedAt: event.timestamp,
-      statistics,
-      isRunning,
-      executionPhase,
-      verification,
-      aggregation,
-      agents,
-      messages,
-      eventLog,
-      completedRuns,
-    },
+  const eventLog = appendEventLog(snapshot.eventLog, buildTimelineEntry(event, snapshot.agents));
+  snapshot = {
+    ...snapshot,
+    eventLog,
+    executionPhase: deriveExecutionPhase(snapshot),
   };
-}
 
-function isRootEvent(event: SwarmEvent): boolean {
-  return event.type === 'swarm:launch:requested' || event.type === 'swarm:started';
-}
-
-function shouldIgnoreForeignEvent(state: SwarmStateSnapshot, event: SwarmEvent): boolean {
-  if (isRootEvent(event)) return false;
-
-  const eventSessionId = getEventSessionId(event);
-  if (eventSessionId && state.activeSessionId && eventSessionId !== state.activeSessionId) {
-    return true;
-  }
-
-  if (event.runId && state.activeRunId && event.runId !== state.activeRunId) {
-    return true;
-  }
-
-  return false;
-}
-
-function startsNewIdentity(state: SwarmStateSnapshot, event: SwarmEvent): boolean {
-  if (!isRootEvent(event)) return false;
-
-  const eventSessionId = getEventSessionId(event);
-  if (eventSessionId && state.activeSessionId && eventSessionId !== state.activeSessionId) {
-    return true;
-  }
-
-  if (event.runId && state.activeRunId && event.runId !== state.activeRunId) {
-    return true;
-  }
-
-  return false;
+  return { snapshot, completedRun };
 }
 
 function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): SwarmTimelineEvent | null {
@@ -457,7 +537,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
   const agentName = agentId
     ? agents.find((agent) => agent.id === agentId)?.name ?? agentId
     : undefined;
-  const sessionId = getEventSessionId(event);
+  const sessionId = event.sessionId;
   const runId = event.runId;
 
   switch (event.type) {
@@ -592,7 +672,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:message':
     case 'swarm:user:message':
       return {
-        id: `evt-${event.timestamp}-${event.type}-${agentId ?? 'msg'}`,
+        id: `evt-${event.timestamp}-${event.type}-${event.data.message?.id ?? agentId ?? 'msg'}`,
         sessionId,
         runId,
         type: event.type,
@@ -773,7 +853,12 @@ function appendMessage(
     return messages;
   }
 
-  const id = `msg-${event.timestamp}-${event.data.message.from}-${event.data.message.to}`;
+  const id = getSwarmMessageKey(
+    event.sessionId,
+    event.runId,
+    event.treeId,
+    event.data.message.id,
+  );
   // 幂等：EventBus 重放同一条消息时按 id 去重，避免 UI 出现两条重复条目。
   // 见 ADR-010 #6。
   if (messages.some((m) => m.id === id)) {
@@ -835,173 +920,81 @@ function persistRunViaIPC(_run: CompletedAgentRun): void {
 export const useSwarmStore = create<SwarmStore>((set) => ({
   ...initialState,
 
-	handleEvent: (event: SwarmEvent) => {
-    // 跟踪本次事件是否新增了 completedRun；仅当新增时才触发 IPC 持久化，
-    // 避免重放同一个 agent:completed 时调用两次 persist。见 ADR-010 #6。
-	    let newlyAddedRun: CompletedAgentRun | null = null;
-	    set((state) => {
-	      if (shouldIgnoreForeignEvent(state, event)) {
-	        return {
-	          ...state,
-	          runSnapshots: updateForeignRunSnapshot(state.runSnapshots, event),
-	        };
-	      }
-
-      const baseState = startsNewIdentity(state, event)
-        ? { ...initialState, runSnapshots: state.runSnapshots }
-        : state;
-      const eventSessionId = getEventSessionId(event);
-      const eventRunId = event.runId;
-      let nextState: SwarmStateSnapshot = {
-        ...baseState,
-        lastEventAt: event.timestamp,
-      };
-
-      switch (event.type) {
-        case 'swarm:launch:requested':
-          nextState = {
-            ...initialState,
-            runSnapshots: baseState.runSnapshots,
-            lastEventAt: event.timestamp,
-            launchRequests: upsertLaunchRequest([], event),
-          };
-          break;
-
-        case 'swarm:launch:approved':
-        case 'swarm:launch:rejected':
-          nextState = {
-            ...baseState,
-            lastEventAt: event.timestamp,
-            launchRequests: upsertLaunchRequest(baseState.launchRequests, event),
-          };
-          break;
-
-        case 'swarm:started': {
-          // 乱序保护：如果 agent/plan/completedRun 事件因为 EventBus 调度抖动先于
-          // swarm:started 到达，reducer 不能用 initialState 把它们抹掉。仅当当前
-          // state 没有任何活动数据时才做全量 reset（新 run 的首次 started）。
-          // 见 ADR-010 item #6。
-          const hasActivity =
-            baseState.agents.length > 0
-            || baseState.completedRuns.length > 0
-            || baseState.planReviews.length > 0
-            || baseState.messages.length > 0;
-          if (hasActivity) {
-            nextState = {
-              ...baseState,
-              isRunning: true,
-              startTime: baseState.startTime ?? event.timestamp,
-              lastEventAt: event.timestamp,
-              statistics: calculateStatistics(
-                baseState.agents,
-                baseState.statistics,
-                event.data.statistics || undefined,
-              ),
-            };
-          } else {
-            nextState = {
-              ...state,
-              ...initialState,
-              runSnapshots: baseState.runSnapshots,
-              isRunning: true,
-              startTime: event.timestamp,
-              lastEventAt: event.timestamp,
-              statistics: {
-                ...initialState.statistics,
-                ...(event.data.statistics || {}),
-              },
-            };
-          }
-          break;
-        }
-
-        case 'swarm:agent:added':
-        case 'swarm:agent:updated':
-        case 'swarm:agent:completed':
-        case 'swarm:agent:failed': {
-          if (event.data.agentState) {
-            const agents = updateAgentCollection(baseState.agents, event.data.agentState);
-            let { completedRuns } = baseState;
-
-            // 在 completed/failed 事件时构建 run 记录并追加到本地列表。
-            // 幂等：如果同 id 的 run 已存在，不再重复 push，也不标记需要 persist。
-            // 见 ADR-010 #6。
-            if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
-              const mergedAgent = agents.find((a) => a.id === event.data.agentState!.id);
-              if (mergedAgent && !completedRuns.some((r) => r.id === mergedAgent.id)) {
-                const run = buildCompletedRun(
-                  mergedAgent,
-                  getCompletedRunStatus(event.type, mergedAgent.status),
-                  eventSessionId ?? baseState.activeSessionId,
-                );
-                completedRuns = [...completedRuns, run].slice(-MAX_COMPLETED_RUNS);
-                newlyAddedRun = run;
-              }
-            }
-
-            nextState = {
-              ...baseState,
-              agents,
-              completedRuns,
-              lastEventAt: event.timestamp,
-              statistics: calculateStatistics(agents, baseState.statistics),
-            };
-          }
-          break;
-        }
-
-        case 'swarm:agent:plan_review':
-        case 'swarm:agent:plan_approved':
-        case 'swarm:agent:plan_rejected':
-          nextState = {
-            ...baseState,
-            lastEventAt: event.timestamp,
-            planReviews: upsertPlanReview(baseState.planReviews, event),
-          };
-          break;
-
-        case 'swarm:agent:message':
-        case 'swarm:user:message':
-          nextState = {
-            ...baseState,
-            lastEventAt: event.timestamp,
-            messages: appendMessage(baseState.messages, event),
-          };
-          break;
-
-        case 'swarm:completed':
-        case 'swarm:cancelled':
-          nextState = {
-            ...baseState,
-            isRunning: false,
-            lastEventAt: event.timestamp,
-            verification: event.data.result?.verification || baseState.verification,
-            aggregation: event.data.result?.aggregation || baseState.aggregation,
-            statistics: calculateStatistics(
-              baseState.agents,
-              baseState.statistics,
-              event.data.statistics || undefined,
-            ),
-          };
-          break;
+  activateScope: (sessionId?: string | null, runId?: string) => {
+    set((state) => {
+      if (!sessionId) {
+        return {
+          ...initialState,
+          runSnapshots: state.runSnapshots,
+        };
       }
 
-      const executionPhase = deriveExecutionPhase(nextState);
-      const eventLog = appendEventLog(
-        nextState.eventLog,
-        buildTimelineEntry(event, nextState.agents),
-      );
-      const snapshotState: SwarmStateSnapshot = {
-        ...nextState,
-        activeSessionId: eventSessionId ?? nextState.activeSessionId,
-        activeRunId: eventRunId ?? nextState.activeRunId,
-        executionPhase,
-        eventLog,
-      };
+      const snapshot = runId
+        ? state.runSnapshots[getSwarmRunSnapshotKey(sessionId, runId)]
+        : findLatestRunSnapshot(state.runSnapshots, sessionId);
+
+      if (snapshot) {
+        const touched = {
+          ...snapshot,
+          lastAccessedAt: Math.max(snapshot.lastAccessedAt, Date.now()),
+        };
+        const runSnapshots = pruneRunSnapshots(
+          { ...state.runSnapshots, [touched.key]: touched },
+          touched.sessionId,
+          touched.runId,
+          touched.key,
+        );
+        return projectRunSnapshot(touched, runSnapshots);
+      }
 
       return {
-        ...snapshotState,
-        runSnapshots: upsertRunSnapshot(nextState.runSnapshots, snapshotState),
+        ...initialState,
+        runSnapshots: state.runSnapshots,
+        activeSessionId: sessionId,
+        activeRunId: runId,
+      };
+    });
+  },
+
+  handleEvent: (event: SwarmEvent) => {
+    // 所有事件先归档到自己的 run snapshot。只有命中 active scope 的快照才投影
+    // 到顶层视图，后台 Team 的 root/late event 不再改写用户当前看到的 Team。
+    let newlyAddedRun: CompletedAgentRun | null = null;
+    set((state) => {
+      const key = getSwarmRunSnapshotKey(event.sessionId, event.runId);
+      const existing = state.runSnapshots[key];
+      if (existing && existing.treeId !== event.treeId) {
+        // Events may race the authoritative launch/started root. A provisional
+        // snapshot can be replaced by that root, but once bound, every foreign
+        // tree event fails closed for the lifetime of this run snapshot.
+        if (!isSwarmRootEvent(event) || existing.rootEventSeen) return state;
+      }
+      const current = existing?.treeId === event.treeId
+        ? existing
+        : createEmptyRunSnapshot(event);
+      const reduced = reduceRunSnapshot(current, event);
+      if (isSwarmRootEvent(event) && !reduced.snapshot.rootEventSeen) {
+        reduced.snapshot = { ...reduced.snapshot, rootEventSeen: true };
+      }
+      newlyAddedRun = reduced.completedRun;
+      const runSnapshots = pruneRunSnapshots({
+        ...state.runSnapshots,
+        [key]: reduced.snapshot,
+      }, state.activeSessionId, state.activeRunId, key);
+
+      const matchesActiveScope =
+        state.activeSessionId === event.sessionId
+        && state.activeRunId === event.runId;
+      const establishesActiveRun =
+        state.activeSessionId === event.sessionId
+        && !state.activeRunId;
+      if (matchesActiveScope || establishesActiveRun) {
+        return projectRunSnapshot(reduced.snapshot, runSnapshots);
+      }
+
+      return {
+        ...state,
+        runSnapshots,
       };
     });
 

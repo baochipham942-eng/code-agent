@@ -43,6 +43,13 @@ import {
   PlanApprovalGate,
   type RiskAssessment,
 } from '../../../src/host/agent/planApproval';
+import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
+
+const TEST_SCOPE: SwarmRunScope = {
+  sessionId: 'session-plan-test',
+  runId: 'run-plan-test',
+  treeId: 'tree-plan-test',
+};
 
 type ToolRequest = {
   tool?: string;
@@ -61,6 +68,7 @@ function makeSubmission(
     agentName: string;
     coordinatorId: string;
     plan: string;
+    scope: SwarmRunScope;
   }> = {}
 ) {
   return {
@@ -69,6 +77,7 @@ function makeSubmission(
     coordinatorId: overrides.coordinatorId ?? 'coord',
     plan: overrides.plan ?? 'rm old build artifacts',
     risk,
+    scope: overrides.scope,
   };
 }
 
@@ -218,7 +227,7 @@ describe('PlanApprovalGate', () => {
       vi.useFakeTimers();
 
       const pending = gate.submitForApproval(
-        makeSubmission({ level: 'high', reasons: ['r1', 'r2'] })
+        makeSubmission({ level: 'high', reasons: ['r1', 'r2'] }, { scope: TEST_SCOPE })
       );
       await vi.advanceTimersByTimeAsync(0);
 

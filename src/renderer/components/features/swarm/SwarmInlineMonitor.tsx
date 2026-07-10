@@ -14,7 +14,7 @@ import { Bot, ChevronUp, ChevronDown, Square, ExternalLink } from 'lucide-react'
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useAppStore } from '../../../stores/appStore';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { AgentStatus, SwarmAgentState } from '@shared/contract/swarm';
+import type { AgentStatus, SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { DiscussionStream } from './DiscussionStream';
 
@@ -55,16 +55,19 @@ function isActive(s: AgentStatus): boolean {
   return s === 'pending' || s === 'ready' || s === 'running';
 }
 
-export async function cancelSwarmRunOrFallback(activeAgents: Array<Pick<SwarmAgentState, 'id'>>): Promise<void> {
+export async function cancelSwarmRunOrFallback(
+  scope: SwarmRunRef,
+  activeAgents: Array<Pick<SwarmAgentState, 'id'>>,
+): Promise<void> {
   const cancelledRun = await ipcService
-    .invoke(IPC_CHANNELS.SWARM_CANCEL_RUN)
+    .invoke(IPC_CHANNELS.SWARM_CANCEL_RUN, scope)
     .catch(() => false);
 
   if (cancelledRun) return;
 
   await Promise.all(
     activeAgents.map((agent) =>
-      ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: agent.id }).catch(() => {
+      ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { ...scope, agentId: agent.id }).catch(() => {
         // 单个 cancel 失败不阻塞其他 agent，swarm event 会让 UI 自动收敛。
       }),
     ),
@@ -74,6 +77,8 @@ export async function cancelSwarmRunOrFallback(activeAgents: Array<Pick<SwarmAge
 export function SwarmInlineMonitor() {
   const agents = useSwarmStore((s) => s.agents ?? []);
   const isRunning = useSwarmStore((s) => s.isRunning ?? false);
+  const activeSessionId = useSwarmStore((s) => s.activeSessionId);
+  const activeRunId = useSwarmStore((s) => s.activeRunId);
   const [collapsed, setCollapsed] = useState(false);
   const [stopping, setStopping] = useState(false);
 
@@ -83,10 +88,13 @@ export function SwarmInlineMonitor() {
   if (agents.length === 0) return null;
 
   const handleStopAll = async () => {
-    if (stopping || activeAgents.length === 0) return;
+    if (stopping || activeAgents.length === 0 || !activeSessionId || !activeRunId) return;
     setStopping(true);
     try {
-      await cancelSwarmRunOrFallback(activeAgents);
+      await cancelSwarmRunOrFallback(
+        { sessionId: activeSessionId, runId: activeRunId },
+        activeAgents,
+      );
     } finally {
       setStopping(false);
     }
@@ -105,7 +113,7 @@ export function SwarmInlineMonitor() {
             <button
               type="button"
               onClick={handleStopAll}
-              disabled={stopping || activeAgents.length === 0}
+              disabled={stopping || activeAgents.length === 0 || !activeSessionId || !activeRunId}
               className={`transition-colors ${
                 stopping
                   ? 'text-zinc-600 cursor-wait'

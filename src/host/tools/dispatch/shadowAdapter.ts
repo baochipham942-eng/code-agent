@@ -57,7 +57,9 @@ function isSameTopLevelInput(left: Record<string, unknown>, right: Record<string
 // ----------------------------------------------------------------------------
 
 export interface ProtocolContextInput {
+  runId?: string;
   sessionId?: string;
+  workspace?: string;
   workingDirectory: string;
   abortSignal?: AbortSignal;
   legacyCtx: LegacyToolContext;
@@ -111,7 +113,9 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
   };
 
   return {
+    runId: input.runId,
     sessionId: input.sessionId ?? 'protocol-unknown',
+    workspace: input.workspace,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     logger: {
@@ -127,6 +131,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     spawnDepth: legacy?.spawnDepth as number | undefined,
     spawnMaxDepth: legacy?.spawnMaxDepth as number | undefined,
     spawnTreeId: legacy?.spawnTreeId as string | undefined,
+    swarmRunScope: legacy?.swarmRunScope as ProtocolToolContext['swarmRunScope'],
     spawnQueueTimeoutMs: legacy?.spawnQueueTimeoutMs as number | undefined,
     spawnParentStartedAt: legacy?.spawnParentStartedAt as number | undefined,
     spawnParentTimeoutMs: legacy?.spawnParentTimeoutMs as number | undefined,

@@ -421,6 +421,32 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const promise = (async () => {
       try {
+        // Release run-scoped waiters before awaiting the primary task shutdown.
+        // A subagent can be blocked on plan/launch approval while the primary
+        // orchestrator waits for that subagent to exit, so reversing this order
+        // would deadlock session cancellation.
+        if (
+          hasSwarmServices() &&
+          (normalizedReason === 'user-cancel' ||
+            normalizedReason === 'session-switch' ||
+            normalizedReason === 'parent-cancel')
+        ) {
+          try {
+            const services = getSwarmServices();
+            services.planApproval.cancelSession(resolvedSessionId, normalizedReason);
+            services.launchApproval.cancelSession(resolvedSessionId, normalizedReason);
+            const cancelled = services.spawnGuard.cancelSession(resolvedSessionId, normalizedReason);
+            if (cancelled > 0) {
+              logger.info(
+                `[appService.cancel] spawnGuard cancelled ${cancelled} subagents reason=${normalizedReason}`,
+              );
+            }
+            services.parallelCoordinators.abortSession(resolvedSessionId, normalizedReason);
+          } catch (err) {
+            logger.warn('[appService.cancel] subagent cascade fan-out failed', err);
+          }
+        }
+
         const state = tm.getSessionState(resolvedSessionId);
         if (isTaskManagerOwnedRunState(state.status)) {
           await tm.cancelTask(resolvedSessionId);
@@ -432,31 +458,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
             ? 'session-switch'
             : 'user';
           await orchestrator.cancel(legacyReason);
-        }
-
-        // Subagent-level cascade — independent of orchestrator path because
-        // single-spawn AbortController is not reachable from agentLoop.cancel().
-        // Only cascade reasons trigger this fan-out; non-cascade reasons
-        // (child-error/timeout/idle-timeout/budget-exceeded) intentionally
-        // skip it to preserve sibling autonomy.
-        if (
-          hasSwarmServices() &&
-          (normalizedReason === 'user-cancel' ||
-            normalizedReason === 'session-switch' ||
-            normalizedReason === 'parent-cancel')
-        ) {
-          try {
-            const services = getSwarmServices();
-            const cancelled = services.spawnGuard.cancelAll?.(normalizedReason) ?? 0;
-            if (cancelled > 0) {
-              logger.info(
-                `[appService.cancel] spawnGuard cancelled ${cancelled} subagents reason=${normalizedReason}`,
-              );
-            }
-            services.parallelCoordinator.abortAllRunning(normalizedReason);
-          } catch (err) {
-            logger.warn('[appService.cancel] subagent cascade fan-out failed', err);
-          }
         }
       } finally {
         this.cancelInFlight.delete(resolvedSessionId);

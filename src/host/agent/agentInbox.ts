@@ -17,8 +17,12 @@
 import type { AgentMessage } from './spawnGuard';
 import { getSpawnGuard } from './spawnGuard';
 import type { TeammateMessage } from './teammate/types';
-import { getParallelAgentCoordinator } from './parallelAgentCoordinator';
+import {
+  getParallelAgentCoordinator,
+  getParallelAgentCoordinatorRegistry,
+} from './parallelAgentCoordinator';
 import { getTeammateService } from './teammate/teammateService';
+import { parseScopedSwarmAgentId } from '../../shared/contract/swarm';
 
 /** 统一 inbox 消息来源标签。 */
 export type UnifiedInboxSource = 'spawn-guard' | 'coordinator' | 'teammate';
@@ -107,9 +111,17 @@ export function peekUnifiedInbox(
  * 作为源聚合某 agentId 的统一 inbox。生产消费入口；测试用 peekUnifiedInbox 注入 fake。
  */
 export function peekAgentInbox(agentId: string): UnifiedInboxMessage[] {
+  const scopedAgent = parseScopedSwarmAgentId(agentId);
+  const scope = scopedAgent?.scope;
+  const coordinator = scope
+    ? getParallelAgentCoordinatorRegistry().get(scope)
+    : getParallelAgentCoordinator();
+
   return peekUnifiedInbox(agentId, {
-    spawnGuard: getSpawnGuard(),
-    coordinator: getParallelAgentCoordinator(),
+    spawnGuard: {
+      peekMessages: id => getSpawnGuard().peekMessages(id, scope),
+    },
+    coordinator,
     teammateService: getTeammateService(),
   });
 }

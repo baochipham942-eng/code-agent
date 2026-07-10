@@ -5,22 +5,14 @@
 import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import type {
-  SwarmEvent,
   SwarmLaunchRequest,
   SwarmLaunchTaskPreview,
+  SwarmRunRef,
+  SwarmRunScope,
 } from '../../shared/contract/swarm';
-import { getEventBus } from '../services/eventing/bus';
+import { getSwarmRunScopeKey } from '../../shared/contract/swarm';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
-
-/**
- * ADR-008 Phase 2: 通过 EventBus 发布 swarm launch 事件
- * 替代原 `import { emitSwarmEvent } from '../ipc/swarm.ipc'`，断开 Cycle 4 的反向边。
- * swarm.ipc 的 bridge 订阅器（ensureSwarmBusBridge）会把事件投递给渲染进程 + CLI listeners。
- */
-function publishSwarmEvent(event: SwarmEvent): void {
-  const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
-}
+import { getSwarmEventEmitter } from './swarmEventPublisher';
 
 const logger = createLogger('SwarmLaunchApprovalGate');
 
@@ -112,9 +104,9 @@ export class SwarmLaunchApprovalGate {
   async requestApproval(params: {
     tasks: SwarmLaunchTaskPreview[];
     summary?: string;
-    sessionId?: string;
+    scope: SwarmRunScope;
   }): Promise<SwarmLaunchApprovalResult> {
-    const request = this.createRequest(params.tasks, params.summary, params.sessionId);
+    const request = this.createRequest(params.tasks, params.scope, params.summary);
 
     if (AppWindow.getAllWindows().length === 0) {
       logger.info(`No renderer available, auto-approving launch ${request.id}`);
@@ -131,31 +123,22 @@ export class SwarmLaunchApprovalGate {
 
     this.requests.set(request.id, request);
     this.safePersistInsert(request);
-    publishSwarmEvent({
-      type: 'swarm:launch:requested',
-      sessionId: request.sessionId,
-      timestamp: request.requestedAt,
-      data: { launchRequest: request },
-    });
+    getSwarmEventEmitter().launchRequested(request);
 
     logger.info(`Swarm launch requested: ${request.id} (${request.agentCount} agents)`);
     return this.waitForDecision(request.id);
   }
 
-  approve(requestId: string, feedback?: string): boolean {
+  approve(requestId: string, feedback?: string, expectedScope?: SwarmRunRef): boolean {
     const request = this.requests.get(requestId);
     if (request?.status !== 'pending') return false;
+    if (expectedScope && (request.sessionId !== expectedScope.sessionId || request.runId !== expectedScope.runId)) return false;
 
     request.status = 'approved';
     request.feedback = feedback;
     request.resolvedAt = Date.now();
     this.safePersistResolve(requestId, 'approved', feedback ?? null, request.resolvedAt);
-    publishSwarmEvent({
-      type: 'swarm:launch:approved',
-      sessionId: request.sessionId,
-      timestamp: request.resolvedAt,
-      data: { launchRequest: { ...request } },
-    });
+    getSwarmEventEmitter().launchApproved({ ...request });
     logger.info(`Swarm launch approved: ${requestId}`);
 
     // Event-driven wake-up
@@ -172,20 +155,16 @@ export class SwarmLaunchApprovalGate {
     return true;
   }
 
-  reject(requestId: string, feedback: string): boolean {
+  reject(requestId: string, feedback: string, expectedScope?: SwarmRunRef): boolean {
     const request = this.requests.get(requestId);
     if (request?.status !== 'pending') return false;
+    if (expectedScope && (request.sessionId !== expectedScope.sessionId || request.runId !== expectedScope.runId)) return false;
 
     request.status = 'rejected';
     request.feedback = feedback;
     request.resolvedAt = Date.now();
     this.safePersistResolve(requestId, 'rejected', feedback, request.resolvedAt);
-    publishSwarmEvent({
-      type: 'swarm:launch:rejected',
-      sessionId: request.sessionId,
-      timestamp: request.resolvedAt,
-      data: { launchRequest: { ...request } },
-    });
+    getSwarmEventEmitter().launchRejected({ ...request });
     logger.info(`Swarm launch rejected: ${requestId}`);
 
     const resolver = this.pendingResolvers.get(requestId);
@@ -219,6 +198,7 @@ export class SwarmLaunchApprovalGate {
         request.status = 'rejected';
         request.feedback = feedback;
         request.resolvedAt = now;
+        getSwarmEventEmitter().launchRejected({ ...request });
       }
       this.safePersistResolve(requestId, 'rejected', feedback, now);
       try {
@@ -230,6 +210,9 @@ export class SwarmLaunchApprovalGate {
             ? { ...request, tasks: request.tasks.map((task) => ({ ...task })) }
             : {
                 id: requestId,
+                sessionId: '__unknown__',
+                runId: '__unknown__',
+                treeId: '__unknown__',
                 status: 'rejected',
                 requestedAt: 0,
                 summary: '',
@@ -248,18 +231,75 @@ export class SwarmLaunchApprovalGate {
     return cancelled;
   }
 
+  cancelRun(scope: SwarmRunRef, reason: string): number {
+    const feedback = `Cancelled: ${reason}`;
+    const now = Date.now();
+    let cancelled = 0;
+
+    for (const [requestId, resolver] of Array.from(this.pendingResolvers.entries())) {
+      const request = this.requests.get(requestId);
+      if (!request || request.sessionId !== scope.sessionId || request.runId !== scope.runId) continue;
+
+      this.pendingResolvers.delete(requestId);
+      request.status = 'rejected';
+      request.feedback = feedback;
+      request.resolvedAt = now;
+      this.safePersistResolve(requestId, 'rejected', feedback, now);
+      getSwarmEventEmitter().launchRejected({ ...request });
+      resolver({
+        approved: false,
+        feedback,
+        autoApproved: true,
+        request: { ...request, tasks: request.tasks.map((task) => ({ ...task })) },
+      });
+      cancelled += 1;
+    }
+
+    return cancelled;
+  }
+
+  /** Session cancellation drains current launches without poisoning future runs. */
+  cancelSession(sessionId: string, reason: string): number {
+    const feedback = `Cancelled: ${reason}`;
+    const now = Date.now();
+    let cancelled = 0;
+
+    for (const [requestId, resolver] of Array.from(this.pendingResolvers.entries())) {
+      const request = this.requests.get(requestId);
+      if (!request || request.sessionId !== sessionId) continue;
+
+      this.pendingResolvers.delete(requestId);
+      request.status = 'rejected';
+      request.feedback = feedback;
+      request.resolvedAt = now;
+      this.safePersistResolve(requestId, 'rejected', feedback, now);
+      getSwarmEventEmitter().launchRejected({ ...request });
+      resolver({
+        approved: false,
+        feedback,
+        autoApproved: true,
+        request: { ...request, tasks: request.tasks.map((task) => ({ ...task })) },
+      });
+      cancelled += 1;
+    }
+
+    return cancelled;
+  }
+
   getPendingResolverCount(): number {
     return this.pendingResolvers.size;
   }
 
-  getRequest(requestId: string): SwarmLaunchRequest | undefined {
+  getRequest(requestId: string, expectedScope?: SwarmRunRef): SwarmLaunchRequest | undefined {
     const request = this.requests.get(requestId);
+    if (request && expectedScope && !this.matchesScope(request, expectedScope)) return undefined;
     return request ? { ...request, tasks: request.tasks.map((task) => ({ ...task })) } : undefined;
   }
 
-  getPendingRequests(): SwarmLaunchRequest[] {
+  getPendingRequests(scope?: SwarmRunRef): SwarmLaunchRequest[] {
     return Array.from(this.requests.values())
       .filter((request) => request.status === 'pending')
+      .filter((request) => !scope || this.matchesScope(request, scope))
       .map((request) => ({
         ...request,
         tasks: request.tasks.map((task) => ({ ...task })),
@@ -268,13 +308,13 @@ export class SwarmLaunchApprovalGate {
 
   private createRequest(
     tasks: SwarmLaunchTaskPreview[],
+    scope: SwarmRunScope,
     summary?: string,
-    sessionId?: string,
   ): SwarmLaunchRequest {
     const requestedAt = Date.now();
     return {
-      id: `launch_${++this.counter}_${requestedAt}`,
-      sessionId,
+      id: `launch_${getSwarmRunScopeKey(scope)}_${++this.counter}_${requestedAt}`,
+      ...scope,
       status: 'pending',
       requestedAt,
       summary: summary || `准备并行启动 ${tasks.length} 个 agent`,
@@ -283,6 +323,10 @@ export class SwarmLaunchApprovalGate {
       writeAgentCount: tasks.filter((task) => task.writeAccess).length,
       tasks: tasks.map((task) => ({ ...task })),
     };
+  }
+
+  private matchesScope(request: SwarmLaunchRequest, scope: SwarmRunRef): boolean {
+    return request.sessionId === scope.sessionId && request.runId === scope.runId;
   }
 
   private waitForDecision(requestId: string): Promise<SwarmLaunchApprovalResult> {
@@ -304,6 +348,9 @@ export class SwarmLaunchApprovalGate {
             autoApproved: true,
             request: {
               id: requestId,
+              sessionId: '__unknown__',
+              runId: '__unknown__',
+              treeId: '__unknown__',
               status: 'rejected',
               requestedAt: 0,
               summary: '',

@@ -21,7 +21,7 @@ import { createDevAgentLoopStubSmokeRouter } from './devAgentLoopStubSmoke';
 import { createDevAgentTeamSmokeRouter } from './devAgentTeamSmoke';
 import { registerDevTelemetrySeedRoutes } from './devTelemetrySeedRoutes';
 import { DevApiError } from './devSeedHelpers';
-import type { ActiveAgentLoop } from './agent';
+import type { RunRegistry } from '../../host/runtime/runRegistry';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { notificationService } from '../../host/services/infra/notificationService';
 
@@ -423,20 +423,20 @@ function normalizeDevAgentEvents(body: unknown): RendererAgentEvent[] | null {
 
 interface DevRouterDeps {
   pendingDevPermissions: Map<string, PendingDevPermissionRequest>;
-  activeAgentLoops: Map<string, ActiveAgentLoop>;
+  runRegistry: RunRegistry;
   logger: WebRouteLogger;
 }
 
 export function createDevRouter(deps: DevRouterDeps): Router {
   const router = Router();
-  const { pendingDevPermissions, activeAgentLoops, logger } = deps;
+  const { pendingDevPermissions, runRegistry, logger } = deps;
 
   router.use('/dev/cancellable-tool', createDevCancellableToolSmokeRouter({
     isEnabled: isDevApiEnabled,
     logger,
   }));
   router.use('/dev/agent-loop-stub', createDevAgentLoopStubSmokeRouter({
-    activeAgentLoops,
+    runRegistry,
     isEnabled: isDevApiEnabled,
     logger,
   }));
@@ -603,15 +603,30 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     }
 
     const event = req.body as SwarmEvent | undefined;
-    if (!event || typeof event !== 'object' || typeof event.type !== 'string') {
-      res.status(400).json({ error: 'Body must be a SwarmEvent with a string type' });
+    if (
+      !event
+      || typeof event !== 'object'
+      || typeof event.type !== 'string'
+      || typeof event.sessionId !== 'string'
+      || !event.sessionId
+      || typeof event.runId !== 'string'
+      || !event.runId
+      || typeof event.treeId !== 'string'
+      || !event.treeId
+    ) {
+      res.status(400).json({
+        error: 'Body must be a SwarmEvent with non-empty sessionId, runId, treeId, and type',
+      });
       return;
     }
 
     // swarm.ipc 的 bridge 在 webServer.setupAllIpcHandlers 中已装好。
     // busType 去掉 'swarm:' 前缀避免双重命名（与 swarmEventPublisher.publish 一致）。
     const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-    getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+    getEventBus().publish('swarm', busType, event, {
+      bridgeToRenderer: false,
+      sessionId: event.sessionId,
+    });
     res.json({ ok: true });
   });
 

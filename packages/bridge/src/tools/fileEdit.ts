@@ -7,7 +7,11 @@ export const fileEditTool: ToolDefinition = {
   permissionLevel: 'L2_WRITE',
   description: 'Perform string replacement inside a file.',
   async run(params, context) {
-    const filePath = resolveSandboxPath(String(params.path ?? ''), context.config.workingDirectories);
+    const filePath = resolveSandboxPath(
+      String(params.path ?? ''),
+      context.config.workingDirectories,
+      String(params.cwd ?? context.cwd),
+    );
     const oldString = String(params.old_string ?? '');
     const newString = String(params.new_string ?? '');
     const replaceAll = params.replace_all === true;

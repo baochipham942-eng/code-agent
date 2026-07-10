@@ -1,12 +1,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ensureSandboxDir } from '../security/sandbox';
+import { ensureSandboxDir, resolveSandboxPath } from '../security/sandbox';
 import type { DirectoryTreeNode, ToolDefinition } from '../types';
 
 const DEFAULT_MAX_DEPTH = 3;
 const IGNORED = new Set(['node_modules', '.git', 'dist', 'build']);
 
-async function walk(dir: string, maxDepth: number, currentDepth: number): Promise<DirectoryTreeNode> {
+async function walk(
+  dir: string,
+  maxDepth: number,
+  currentDepth: number,
+  workingDirectories: string[],
+): Promise<DirectoryTreeNode> {
   const stats = await fs.stat(dir);
   const node: DirectoryTreeNode = {
     name: path.basename(dir),
@@ -25,9 +30,14 @@ async function walk(dir: string, maxDepth: number, currentDepth: number): Promis
     if (IGNORED.has(entry.name)) {
       continue;
     }
-    const fullPath = path.join(dir, entry.name);
+    let fullPath: string;
+    try {
+      fullPath = resolveSandboxPath(path.join(dir, entry.name), workingDirectories, dir);
+    } catch {
+      continue;
+    }
     if (entry.isDirectory()) {
-      node.children?.push(await walk(fullPath, maxDepth, currentDepth + 1));
+      node.children?.push(await walk(fullPath, maxDepth, currentDepth + 1, workingDirectories));
       continue;
     }
     const childStats = await fs.stat(fullPath);
@@ -49,10 +59,11 @@ export const directoryListTool: ToolDefinition = {
   async run(params, context) {
     const root = await ensureSandboxDir(
       String(params.path ?? context.config.workingDirectories[0]),
-      context.config.workingDirectories
+      context.config.workingDirectories,
+      String(params.cwd ?? context.cwd),
     );
     const maxDepth = Number(params.maxDepth ?? DEFAULT_MAX_DEPTH);
-    const tree = await walk(root, maxDepth, 0);
+    const tree = await walk(root, maxDepth, 0, context.config.workingDirectories);
     return JSON.stringify(tree, null, 2);
   },
 };

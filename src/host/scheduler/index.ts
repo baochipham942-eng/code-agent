@@ -6,54 +6,11 @@
 // Core DAG
 export { TaskDAG } from './TaskDAG';
 
-// Scheduler
+// Only expose the scheduler surface consumed through this barrel. Other
+// scheduler internals stay available from their defining modules.
 export {
-  DAGScheduler,
+  createRunDAGScheduler,
   getDAGScheduler,
-  initDAGScheduler,
-  resetDAGScheduler,
-  type DAGSchedulerConfig,
-  type SchedulerContext,
   type SchedulerResult,
-  type TaskExecutor,
 } from './DAGScheduler';
-
-// Event Bridge (DAG events → Renderer)
-export { initDAGEventBridge, sendDAGInitEvent } from './dagEventBridge';
-
-// Re-export types from shared
-export type {
-  DAGTask,
-  DAGTaskType,
-  TaskStatus,
-  TaskPriority,
-  TaskConfig,
-  TaskMetadata,
-  TaskOutput,
-  TaskFailure,
-  TaskExecutionContext,
-  TaskDAGDefinition,
-  TaskDAGState,
-  DAGStatus,
-  DAGStatistics,
-  DAGOptions,
-  DAGEvent,
-  DAGEventType,
-  AgentTaskConfig,
-  ShellTaskConfig,
-  WorkflowTaskConfig,
-  FunctionTaskConfig,
-  ParallelTaskConfig,
-  ConditionalTaskConfig,
-  CheckpointTaskConfig,
-} from '../../shared/contract/taskDAG';
-
-export {
-  DEFAULT_DAG_OPTIONS,
-  createDefaultMetadata,
-  createEmptyOutput,
-  isTaskTerminal,
-  isTaskExecutable,
-  getNextTaskStatus,
-  getPriorityValue,
-} from '../../shared/contract/taskDAG';
+export { initDAGEventBridge } from './dagEventBridge';

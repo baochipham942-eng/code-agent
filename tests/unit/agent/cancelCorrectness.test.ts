@@ -51,6 +51,13 @@ import { PlanApprovalGate } from '../../../src/host/agent/planApproval';
 import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import { createChildAbortController } from '../../../src/host/agent/shutdownProtocol';
+import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
+
+const LAUNCH_SCOPE: SwarmRunScope = {
+  sessionId: 'cancel-correctness-session',
+  runId: 'cancel-correctness-run',
+  treeId: 'cancel-correctness-tree',
+};
 
 // ---------------------------------------------------------------------------
 // PlanApprovalGate.cancelAll
@@ -108,19 +115,11 @@ describe('PlanApprovalGate.cancelAll — ADR-010 #6', () => {
     await Promise.resolve();
     expect(gate.getPendingResolverCount()).toBe(1);
 
-    // 第一次 cancel：排干第一条
+    // Global shutdown cancellation also marks queued work, so it cannot enter
+    // a new pending state after the active resolver drains.
     gate.cancelAll('swarm_cancelled');
     const r1 = await p1;
     expect(r1.approved).toBe(false);
-
-    // 第一条 settle 后 approvalQueue 解锁，第二条入 pendingResolvers
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(gate.getPendingResolverCount()).toBe(1);
-
-    // 第二次 cancel：排干第二条
-    gate.cancelAll('swarm_cancelled');
     const r2 = await p2;
     expect(r2.approved).toBe(false);
     expect(r2.feedback).toContain('swarm_cancelled');
@@ -174,6 +173,7 @@ describe('SwarmLaunchApprovalGate.cancelAll — ADR-010 #6', () => {
     const gate = new SwarmLaunchApprovalGate({ approvalTimeoutMs: 60_000 });
 
     const pending = gate.requestApproval({
+      scope: LAUNCH_SCOPE,
       tasks: [
         { id: 't1', role: 'worker', task: 'do it', tools: ['Read'], writeAccess: true, dependsOn: [] },
       ],

@@ -71,6 +71,8 @@ export const Orchestration: React.FC = () => {
     planReviews,
     eventLog,
     lastEventAt,
+    activeSessionId,
+    activeRunId,
   } = useSwarmStore();
   const [delegateMode, setDelegateMode] = useState(false);
   const [delegateModeLoading, setDelegateModeLoading] = useState(true);
@@ -125,23 +127,9 @@ export const Orchestration: React.FC = () => {
     [contextView],
   );
   const provenanceEntries = useMemo(() => buildProvenanceEntries(contextView), [contextView]);
-
-  if (!isRunning && agents.length === 0 && launchRequests.length === 0 && planReviews.length === 0 && !aggregation) {
-    return (
-      <div className="space-y-3">
-        <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-          <div className="flex items-center gap-2 text-zinc-300">
-            <GitBranch className="w-4 h-4 text-primary-400" />
-            <span className="text-sm font-medium">编排视图</span>
-          </div>
-          <div className="mt-3 text-xs leading-6 text-zinc-500">
-            当前没有活跃的多 agent 编排。触发并行执行后，这里会显示 agent 泳道、审批队列、协作动态和最终汇总。
-          </div>
-        </div>
-        <SwarmTraceHistory />
-      </div>
-    );
-  }
+  const activeScope = activeSessionId && activeRunId
+    ? { sessionId: activeSessionId, runId: activeRunId }
+    : null;
 
   const displayAgentCount = statistics.total || activeLaunchRequest?.agentCount || agents.length;
   const progressPercent = statistics.total > 0
@@ -229,6 +217,26 @@ export const Orchestration: React.FC = () => {
     }
   }, [agents, selectedContextAgentId]);
 
+  if (!isRunning && agents.length === 0 && launchRequests.length === 0 && planReviews.length === 0 && !aggregation) {
+    return (
+      <div className="space-y-3">
+        <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+          <div className="flex items-center gap-2 text-zinc-300">
+            <GitBranch className="w-4 h-4 text-primary-400" />
+            <span className="text-sm font-medium">编排视图</span>
+          </div>
+          <div className="mt-3 text-xs leading-6 text-zinc-500">
+            当前没有活跃的多 agent 编排。触发并行执行后，这里会显示 agent 泳道、审批队列、协作动态和最终汇总。
+          </div>
+        </div>
+        <SwarmTraceHistory
+          key={currentSessionId ?? 'no-active-session'}
+          sessionId={currentSessionId}
+        />
+      </div>
+    );
+  }
+
   const openAgentTeam = (agentId: string) => {
     setSelectedSwarmAgentId(agentId);
     setShowAgentTeamPanel(true);
@@ -246,18 +254,20 @@ export const Orchestration: React.FC = () => {
   };
 
   const cancelAgent = async (agentId: string) => {
+    if (!activeScope) return;
     setCancelingAgentId(agentId);
     try {
-      await ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId });
+      await ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { ...activeScope, agentId });
     } finally {
       setCancelingAgentId((current) => (current === agentId ? null : current));
     }
   };
 
   const retryAgent = async (agentId: string) => {
+    if (!activeScope) return;
     setRetryingAgentId(agentId);
     try {
-      await ipcService.invoke(IPC_CHANNELS.SWARM_RETRY_AGENT, { agentId });
+      await ipcService.invoke(IPC_CHANNELS.SWARM_RETRY_AGENT, { ...activeScope, agentId });
     } finally {
       setRetryingAgentId((current) => (current === agentId ? null : current));
     }
@@ -387,10 +397,16 @@ export const Orchestration: React.FC = () => {
         >
           <div className="space-y-2">
             {pendingLaunches.map((request) => (
-              <LaunchRequestCard key={request.id} request={request} />
+              <LaunchRequestCard
+                key={`${request.sessionId}:${request.runId}:${request.id}`}
+                request={request}
+              />
             ))}
             {pendingLaunches.length === 0 && resolvedLaunches.map((request) => (
-              <LaunchRequestCard key={request.id} request={request} />
+              <LaunchRequestCard
+                key={`${request.sessionId}:${request.runId}:${request.id}`}
+                request={request}
+              />
             ))}
           </div>
         </Section>
@@ -661,7 +677,7 @@ export const Orchestration: React.FC = () => {
         </Section>
       )}
 
-      {(pendingReviews.length > 0 || resolvedReviews.length > 0) && (
+      {activeScope && (pendingReviews.length > 0 || resolvedReviews.length > 0) && (
         <Section
           title="审批队列"
           extra={
@@ -674,10 +690,18 @@ export const Orchestration: React.FC = () => {
         >
           <div className="space-y-2">
             {pendingReviews.map((review) => (
-              <ApprovalCard key={review.id} review={review} />
+              <ApprovalCard
+                key={`${activeScope.sessionId}:${activeScope.runId}:${review.id}`}
+                review={review}
+                scope={activeScope}
+              />
             ))}
             {pendingReviews.length === 0 && resolvedReviews.map((review) => (
-              <ApprovalCard key={review.id} review={review} />
+              <ApprovalCard
+                key={`${activeScope.sessionId}:${activeScope.runId}:${review.id}`}
+                review={review}
+                scope={activeScope}
+              />
             ))}
           </div>
         </Section>
@@ -757,7 +781,10 @@ export const Orchestration: React.FC = () => {
         </Section>
       )}
       {/* ADR-010 #5: 历史 swarm runs 回看面板，跟随主视图滚动 */}
-      <SwarmTraceHistory />
+      <SwarmTraceHistory
+        key={currentSessionId ?? 'no-active-session'}
+        sessionId={currentSessionId}
+      />
     </div>
   );
 };

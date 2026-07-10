@@ -18,6 +18,10 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getPlanApprovalGate } from '../../../agent/planApproval';
+import {
+  getSwarmRunScopeKey,
+  type SwarmAgentRef,
+} from '../../../../shared/contract/swarm';
 import { planReviewSchema as schema } from './planReview.schema';
 
 export async function executePlanReview(
@@ -49,7 +53,16 @@ export async function executePlanReview(
   onProgress?.({ stage: 'starting', detail: schema.name });
 
   const gate = getPlanApprovalGate();
-  const plan = gate.getPlan(planId);
+  const candidate = ctx.swarmRunScope
+    ? gate.getPendingPlans(ctx.swarmRunScope).find((plan) => plan.id === planId)
+    : gate.getPlan(planId);
+  const plan = candidate && candidate.scope && (
+    ctx.swarmRunScope
+      ? getSwarmRunScopeKey(candidate.scope) === getSwarmRunScopeKey(ctx.swarmRunScope)
+      : candidate.scope.sessionId === ctx.sessionId
+  )
+    ? candidate
+    : undefined;
 
   if (!plan) {
     return {
@@ -66,9 +79,27 @@ export async function executePlanReview(
       code: 'DOMAIN_ERROR',
     };
   }
+  const planScope = plan.scope;
+  if (!planScope) {
+    return {
+      ok: false,
+      error: `Plan not found: ${planId}. Use plan_review to list pending plans.`,
+      code: 'NOT_FOUND',
+    };
+  }
+
+  // The gate is process-wide, so even a root caller without a run scope must
+  // carry its session boundary into the final mutation check. Scoped callers
+  // were already matched against the complete session/run/tree key above.
+  const expected: SwarmAgentRef = {
+    sessionId: planScope.sessionId,
+    runId: planScope.runId,
+    agentId: plan.agentId,
+  };
 
   if (action === 'approve') {
-    gate.approve(planId, feedback);
+    const approved = gate.approve(planId, feedback, expected);
+    if (!approved) return { ok: false, error: `Plan scope mismatch: ${planId}`, code: 'NOT_FOUND' };
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('plan_review done', { planId, action });
     return {
@@ -85,7 +116,8 @@ export async function executePlanReview(
         code: 'INVALID_ARGS',
       };
     }
-    gate.reject(planId, feedback);
+    const rejected = gate.reject(planId, feedback, expected);
+    if (!rejected) return { ok: false, error: `Plan scope mismatch: ${planId}`, code: 'NOT_FOUND' };
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('plan_review done', { planId, action });
     return {

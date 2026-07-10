@@ -119,6 +119,7 @@ import {
   createAgentWorktree,
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
+  getAgentWorktreeKey,
   getAgentWorktreeReview,
   listAgentWorktreeArtifacts,
   parseGitStatusPorcelain,
@@ -185,6 +186,19 @@ describe('AgentWorktree', () => {
       expect(info.worktreePath).toBe(`${WORKTREE_BASE}/task_xyz_1`);
       // 注意：branchName 使用原始 id（未 sanitize），这是源码当前行为
       expect(info.branchName).toBe('agent/task/xyz:1');
+    });
+
+    it('bounds a long composite Team identity for real git ref and path components', async () => {
+      execState.when(/git worktree add/, () => ({ stdout: '' }));
+      const logicalId = `swarm-agent.v1.${'a'.repeat(280)}`;
+
+      const info = await createAgentWorktree(logicalId, '/repo');
+      const physicalKey = getAgentWorktreeKey(logicalId);
+
+      expect(Buffer.byteLength(physicalKey, 'utf8')).toBeLessThanOrEqual(120);
+      expect(info.branchName).toBe(`agent/${physicalKey}`);
+      expect(path.basename(info.worktreePath)).toBe(physicalKey.replace(/[^a-zA-Z0-9_-]/g, '_'));
+      expect(info.branchName).not.toContain(logicalId);
     });
 
     it('git worktree add 失败时向上抛出', async () => {

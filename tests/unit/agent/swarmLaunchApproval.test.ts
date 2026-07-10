@@ -43,7 +43,13 @@ vi.mock('../../../src/host/services/eventing/bus', () => ({
 }));
 
 import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
-import type { SwarmLaunchTaskPreview } from '../../../src/shared/contract/swarm';
+import type { SwarmLaunchTaskPreview, SwarmRunScope } from '../../../src/shared/contract/swarm';
+
+const TEST_SCOPE: SwarmRunScope = {
+  sessionId: 'session-launch-test',
+  runId: 'run-launch-test',
+  treeId: 'tree-launch-test',
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,6 +95,7 @@ describe('SwarmLaunchApprovalGate', () => {
       windowState.count = 0;
 
       const result = await gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [makeTask({ id: 't1', writeAccess: true })],
       });
 
@@ -110,6 +117,7 @@ describe('SwarmLaunchApprovalGate', () => {
       vi.useFakeTimers();
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [
           makeTask({ id: 't1', writeAccess: true }),
           makeTask({ id: 't2', writeAccess: false, dependsOn: ['t1'] }),
@@ -138,6 +146,7 @@ describe('SwarmLaunchApprovalGate', () => {
       vi.useFakeTimers();
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [makeTask({ id: 't1' }), makeTask({ id: 't2' })],
       });
       await vi.advanceTimersByTimeAsync(0);
@@ -160,7 +169,7 @@ describe('SwarmLaunchApprovalGate', () => {
     it('外部 approve 把 request 转为 approved 并结算 promise', async () => {
       vi.useFakeTimers();
 
-      const pending = gate.requestApproval({ tasks: [makeTask({ id: 't1' })] });
+      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
       await vi.advanceTimersByTimeAsync(0);
 
       const reqId = gate.getPendingRequests()[0].id;
@@ -184,6 +193,7 @@ describe('SwarmLaunchApprovalGate', () => {
       vi.useFakeTimers();
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [makeTask({ id: 't1', writeAccess: true })],
       });
       await vi.advanceTimersByTimeAsync(0);
@@ -202,7 +212,7 @@ describe('SwarmLaunchApprovalGate', () => {
     it('重复 approve / 未知 id 返回 false', async () => {
       vi.useFakeTimers();
 
-      const pending = gate.requestApproval({ tasks: [makeTask({ id: 't1' })] });
+      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
       await vi.advanceTimersByTimeAsync(0);
 
       const reqId = gate.getPendingRequests()[0].id;
@@ -220,7 +230,7 @@ describe('SwarmLaunchApprovalGate', () => {
     it('提交后发布 launch:requested 事件', async () => {
       vi.useFakeTimers();
 
-      const pending = gate.requestApproval({ tasks: [makeTask({ id: 't1' })] });
+      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
       await vi.advanceTimersByTimeAsync(0);
 
       const call = busState.publishMock.mock.calls.find(
@@ -246,6 +256,7 @@ describe('SwarmLaunchApprovalGate', () => {
       gate = makeGate(500);
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [
           makeTask({ id: 't1', writeAccess: true }),
           makeTask({ id: 't2', writeAccess: false }),
@@ -266,6 +277,7 @@ describe('SwarmLaunchApprovalGate', () => {
       gate = makeGate(500);
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [
           makeTask({ id: 't1', writeAccess: false }),
           makeTask({ id: 't2', writeAccess: false }),
@@ -286,6 +298,7 @@ describe('SwarmLaunchApprovalGate', () => {
       gate = makeGate(500);
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [makeTask({ id: 't1', writeAccess: true })],
       });
       await vi.advanceTimersByTimeAsync(0);
@@ -308,7 +321,7 @@ describe('SwarmLaunchApprovalGate', () => {
     it('getPendingRequests 只返回 pending 状态', async () => {
       vi.useFakeTimers();
 
-      const pending = gate.requestApproval({ tasks: [makeTask({ id: 't1' })] });
+      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
       await vi.advanceTimersByTimeAsync(0);
 
       expect(gate.getPendingRequests()).toHaveLength(1);
@@ -324,6 +337,7 @@ describe('SwarmLaunchApprovalGate', () => {
       vi.useFakeTimers();
 
       const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
         tasks: [makeTask({ id: 't1' })],
       });
       await vi.advanceTimersByTimeAsync(0);

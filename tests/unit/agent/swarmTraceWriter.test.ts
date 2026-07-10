@@ -20,7 +20,19 @@ import { SwarmTraceRepository } from '../../../src/host/services/core/repositori
 import { SwarmTraceWriter } from '../../../src/host/agent/swarmTraceWriter';
 import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
-import type { SwarmAgentState, SwarmEvent, SwarmExecutionState } from '../../../src/shared/contract/swarm';
+import {
+  createSwarmTraceStorageId,
+  type SwarmAgentState,
+  type SwarmEvent,
+  type SwarmExecutionState,
+  type SwarmRunScope,
+} from '../../../src/shared/contract/swarm';
+
+let scopeCounter = 0;
+function makeScope(sessionId = 'sess-test'): SwarmRunScope {
+  const id = ++scopeCounter;
+  return { sessionId, runId: `run-${id}`, treeId: `tree-${id}` };
+}
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -105,7 +117,10 @@ function makeAgent(id: string, status: SwarmAgentState['status']): SwarmAgentSta
 
 function publishSwarm(event: SwarmEvent): void {
   const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+  getEventBus().publish('swarm', busType, event, {
+    sessionId: event.sessionId,
+    bridgeToRenderer: false,
+  });
 }
 
 describe('SwarmTraceWriter', () => {
@@ -133,14 +148,12 @@ describe('SwarmTraceWriter', () => {
     shutdownEventBus();
   });
 
-  it('SwarmEventEmitter.started 生成 runId 并打戳后续事件', async () => {
-    expect(emitter.getCurrentRunId()).toBeNull();
-    emitter.started(2);
-    const runId = emitter.getCurrentRunId();
-    expect(runId).not.toBeNull();
+  it('SwarmEventEmitter 使用调用方提供的完整 scope', async () => {
+    const scope = makeScope();
+    emitter.started(scope, 2);
     await writer.drain();
 
-    const detail = repo.getRunDetail(runId!);
+    const detail = repo.getRunDetail(createSwarmTraceStorageId(scope));
     expect(detail).not.toBeNull();
     expect(detail!.run.totalAgents).toBe(2);
     expect(detail!.run.sessionId).toBe('sess-test');
@@ -149,35 +162,35 @@ describe('SwarmTraceWriter', () => {
   });
 
   it('uses sessionId from swarm:started event when present', async () => {
-    emitter.started(1, 'sess-event');
-    const runId = emitter.getCurrentRunId();
+    const scope = makeScope('sess-event');
+    emitter.started(scope, 1);
     await writer.drain();
 
-    const detail = repo.getRunDetail(runId!);
+    const detail = repo.getRunDetail(createSwarmTraceStorageId(scope));
     expect(detail?.run.sessionId).toBe('sess-event');
   });
 
   it('agent lifecycle 写入 rollup', async () => {
-    emitter.started(1);
-    const runId = emitter.getCurrentRunId()!;
+    const scope = makeScope();
+    emitter.started(scope, 1);
 
-    emitter.agentAdded({ id: 'a1', name: 'Coder', role: 'coder' });
-    emitter.agentUpdated('a1', {
+    emitter.agentAdded(scope, { id: 'a1', name: 'Coder', role: 'coder' });
+    emitter.agentUpdated(scope, 'a1', {
       status: 'running',
       startTime: 100,
       iterations: 1,
       tokenUsage: { input: 10, output: 5 },
       toolCalls: 1,
     });
-    emitter.agentUpdated('a1', {
+    emitter.agentUpdated(scope, 'a1', {
       status: 'running',
       startTime: 100,
       iterations: 2,
       tokenUsage: { input: 30, output: 15 },
       toolCalls: 3,
     });
-    emitter.agentCompleted('a1', 'done');
-    emitter.completed({
+    emitter.agentCompleted(scope, 'a1', 'done');
+    emitter.completed(scope, {
       total: 1,
       completed: 1,
       failed: 0,
@@ -187,7 +200,8 @@ describe('SwarmTraceWriter', () => {
 
     await writer.drain();
 
-    const detail = repo.getRunDetail(runId)!;
+    const storageRunId = createSwarmTraceStorageId(scope);
+    const detail = repo.getRunDetail(storageRunId)!;
     expect(detail.run.status).toBe('completed');
     expect(detail.run.endedAt).not.toBeNull();
     expect(detail.run.totalTokensIn).toBe(30);
@@ -197,59 +211,59 @@ describe('SwarmTraceWriter', () => {
     // timeline 至少包含 started / added / updated / completed
     expect(detail.events.length).toBeGreaterThanOrEqual(4);
     expect(detail.events.map((event) => event.eventType)).toContain('swarm:completed');
-    expect(detail.events.every((e) => e.runId === runId)).toBe(true);
+    expect(detail.events.every((e) => e.runId === storageRunId)).toBe(true);
   });
 
   it('failed agent 记录 error 与 failure_category', async () => {
-    emitter.started(1);
-    const runId = emitter.getCurrentRunId()!;
-    emitter.agentAdded({ id: 'a1', name: 'A', role: 'a' });
-    emitter.agentUpdated('a1', { status: 'running', startTime: 0 });
-    emitter.agentFailed('a1', 'request timeout after 30000ms');
-    emitter.completed({ total: 1, completed: 0, failed: 1, parallelPeak: 1, totalTime: 100 });
+    const scope = makeScope();
+    emitter.started(scope, 1);
+    emitter.agentAdded(scope, { id: 'a1', name: 'A', role: 'a' });
+    emitter.agentUpdated(scope, 'a1', { status: 'running', startTime: 0 });
+    emitter.agentFailed(scope, 'a1', 'request timeout after 30000ms');
+    emitter.completed(scope, { total: 1, completed: 0, failed: 1, parallelPeak: 1, totalTime: 100 });
 
     await writer.drain();
 
-    const detail = repo.getRunDetail(runId)!;
+    const detail = repo.getRunDetail(createSwarmTraceStorageId(scope))!;
     expect(detail.run.status).toBe('failed');
     expect(detail.agents[0].error).toContain('timeout');
     expect(detail.agents[0].failureCategory).toBe('timeout');
     expect(detail.run.errorSummary).toContain('timeout');
   });
 
-  it('cancelled 在事件之后清空 currentRunId 并标记 status', async () => {
-    emitter.started(2);
-    const runId = emitter.getCurrentRunId()!;
-    emitter.agentAdded({ id: 'a1', name: 'A', role: 'a' });
-    emitter.cancelled();
-    expect(emitter.getCurrentRunId()).toBeNull();
+  it('cancelled 只关闭显式目标 scope', async () => {
+    const scope = makeScope();
+    emitter.started(scope, 2);
+    emitter.agentAdded(scope, { id: 'a1', name: 'A', role: 'a' });
+    emitter.cancelled(scope);
     await writer.drain();
 
-    const detail = repo.getRunDetail(runId)!;
+    const detail = repo.getRunDetail(createSwarmTraceStorageId(scope))!;
     expect(detail.run.status).toBe('cancelled');
     expect(detail.run.endedAt).not.toBeNull();
     expect(detail.events.map((event) => event.eventType)).toContain('swarm:cancelled');
   });
 
   it('两次 started 产生两个独立 run', async () => {
-    emitter.started(1);
-    const r1 = emitter.getCurrentRunId()!;
-    emitter.completed({ total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 10 });
-    emitter.started(2);
-    const r2 = emitter.getCurrentRunId()!;
-    emitter.completed({ total: 2, completed: 2, failed: 0, parallelPeak: 2, totalTime: 20 });
+    const scope1 = makeScope();
+    const scope2 = makeScope();
+    emitter.started(scope1, 1);
+    emitter.completed(scope1, { total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 10 });
+    emitter.started(scope2, 2);
+    emitter.completed(scope2, { total: 2, completed: 2, failed: 0, parallelPeak: 2, totalTime: 20 });
     await writer.drain();
 
-    expect(r1).not.toBe(r2);
-    expect(repo.getRunDetail(r1)?.run.totalAgents).toBe(1);
-    expect(repo.getRunDetail(r2)?.run.totalAgents).toBe(2);
+    expect(repo.getRunDetail(createSwarmTraceStorageId(scope1))?.run.totalAgents).toBe(1);
+    expect(repo.getRunDetail(createSwarmTraceStorageId(scope2))?.run.totalAgents).toBe(2);
   });
 
   it('listRuns 按 started_at desc 包含两次 run', async () => {
-    emitter.started(1);
-    emitter.completed({ total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 10 });
-    emitter.started(2);
-    emitter.completed({ total: 2, completed: 2, failed: 0, parallelPeak: 2, totalTime: 20 });
+    const scope1 = makeScope();
+    const scope2 = makeScope();
+    emitter.started(scope1, 1);
+    emitter.completed(scope1, { total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 10 });
+    emitter.started(scope2, 2);
+    emitter.completed(scope2, { total: 2, completed: 2, failed: 0, parallelPeak: 2, totalTime: 20 });
     await writer.drain();
 
     const list = repo.listRuns(10);
@@ -257,56 +271,59 @@ describe('SwarmTraceWriter', () => {
     expect(list[0].startedAt).toBeGreaterThanOrEqual(list[1].startedAt);
   });
 
-  it('keeps explicitly stamped overlapping runIds isolated', async () => {
+  it('persists the same logical runId in different sessions without collision', async () => {
     const base = Date.now();
+    const scopeA: SwarmRunScope = { sessionId: 'sess-a', runId: 'same-run', treeId: 'tree-a' };
+    const scopeB: SwarmRunScope = { sessionId: 'sess-b', runId: 'same-run', treeId: 'tree-b' };
     publishSwarm({
       type: 'swarm:started',
-      runId: 'run-a',
-      sessionId: 'sess-a',
+      ...scopeA,
       timestamp: base,
       data: { statistics: makeStats(1) },
     });
     publishSwarm({
       type: 'swarm:started',
-      runId: 'run-b',
-      sessionId: 'sess-b',
+      ...scopeB,
       timestamp: base + 1,
       data: { statistics: makeStats(1) },
     });
     publishSwarm({
       type: 'swarm:agent:added',
-      runId: 'run-a',
+      ...scopeA,
       timestamp: base + 2,
       data: { agentId: 'a1', agentState: makeAgent('a1', 'running') },
     });
     publishSwarm({
       type: 'swarm:agent:added',
-      runId: 'run-b',
+      ...scopeB,
       timestamp: base + 3,
       data: { agentId: 'b1', agentState: makeAgent('b1', 'running') },
     });
     publishSwarm({
       type: 'swarm:completed',
-      runId: 'run-a',
+      ...scopeA,
       timestamp: base + 4,
       data: { statistics: makeStats(1, { completed: 1, pending: 0, parallelPeak: 1 }) },
     });
     publishSwarm({
       type: 'swarm:completed',
-      runId: 'run-b',
+      ...scopeB,
       timestamp: base + 5,
       data: { statistics: makeStats(1, { completed: 1, pending: 0, parallelPeak: 1 }) },
     });
 
     await writer.drain();
 
-    const runA = repo.getRunDetail('run-a');
-    const runB = repo.getRunDetail('run-b');
+    const storageA = createSwarmTraceStorageId(scopeA);
+    const storageB = createSwarmTraceStorageId(scopeB);
+    expect(storageA).not.toBe(storageB);
+    const runA = repo.getRunDetail(storageA);
+    const runB = repo.getRunDetail(storageB);
     expect(runA?.run.sessionId).toBe('sess-a');
     expect(runB?.run.sessionId).toBe('sess-b');
     expect(runA?.agents.map((agent) => agent.agentId)).toEqual(['a1']);
     expect(runB?.agents.map((agent) => agent.agentId)).toEqual(['b1']);
-    expect(runA?.events.every((event) => event.runId === 'run-a')).toBe(true);
-    expect(runB?.events.every((event) => event.runId === 'run-b')).toBe(true);
+    expect(runA?.events.every((event) => event.runId === storageA)).toBe(true);
+    expect(runB?.events.every((event) => event.runId === storageB)).toBe(true);
   });
 });

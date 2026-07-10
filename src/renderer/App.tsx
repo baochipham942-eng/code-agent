@@ -3,7 +3,7 @@
 // Linear-style UI refactor: Clean layout with task panel
 // ============================================================================
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
 import { useWorkspaceModeStore } from './stores/workspaceModeStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
@@ -70,6 +70,10 @@ import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
 import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rendererReady';
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
+import {
+  shouldActivateSwarmScopeFromRoot,
+  shouldOpenSwarmWorkbench,
+} from './utils/swarmEventRouting';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -218,6 +222,8 @@ export const App: React.FC = () => {
   const swarmExecutionPhase = useSwarmStore((state) => state.executionPhase);
   const swarmLaunchRequests = useSwarmStore((state) => state.launchRequests);
   const swarmPlanReviews = useSwarmStore((state) => state.planReviews);
+  const swarmActiveSessionId = useSwarmStore((state) => state.activeSessionId);
+  const swarmActiveRunId = useSwarmStore((state) => state.activeRunId);
   const workflowSnapshot = useWorkflowStore((state) => state.activeSnapshot(currentSessionId ?? undefined));
   const workflowPendingLaunchRequest = useWorkflowStore((state) => (
     state.pendingLaunchRequest(currentSessionId ?? undefined)
@@ -299,6 +305,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     setSentryRendererContext({ sessionId: currentSessionId, userId: sentryUserId });
   }, [currentSessionId, sentryUserId]);
+
+  useLayoutEffect(() => {
+    // Swarm events are process-wide broadcasts, while the visible Team is session-bound.
+    // Activating the selected session either restores its latest run snapshot or clears the
+    // projection immediately, so the previous session's agents/messages cannot linger.
+    useSwarmStore.getState().activateScope(currentSessionId);
+    useAppStore.getState().setSelectedSwarmAgentId(null);
+  }, [currentSessionId]);
 
   // Initialize agent registry store (custom .md agents 列表 + 热加载推送订阅)
   useEffect(() => {
@@ -633,11 +647,21 @@ export const App: React.FC = () => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.SWARM_EVENT,
       (event) => {
-        if (event.type === 'swarm:launch:requested' || event.type === 'swarm:started') {
+        const selectedSessionId = useSessionStore.getState().currentSessionId;
+        const swarmState = useSwarmStore.getState();
+        const shouldActivateScope = shouldActivateSwarmScopeFromRoot(
+          event,
+          selectedSessionId,
+          swarmState,
+        );
+        if (shouldOpenSwarmWorkbench(event, selectedSessionId)) {
           openWorkbenchTab('task', { source: 'auto' });
           setTaskPanelTab('monitor');
         }
-        useSwarmStore.getState().handleEvent(event);
+        swarmState.handleEvent(event);
+        if (shouldActivateScope) {
+          useSwarmStore.getState().activateScope(event.sessionId, event.runId);
+        }
       }
     );
 
@@ -971,7 +995,7 @@ export const App: React.FC = () => {
         </React.Suspense>
       )}
 
-      {showAgentTeamPanel && (
+      {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (
         <div className="fixed inset-0 z-50 flex items-center justify-end">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -980,6 +1004,9 @@ export const App: React.FC = () => {
           <div className="relative h-full">
             <React.Suspense fallback={null}>
               <AgentTeamPanel
+                key={`${currentSessionId}:${swarmActiveRunId}`}
+                sessionId={currentSessionId}
+                runId={swarmActiveRunId}
                 initialAgentId={selectedSwarmAgentId ?? undefined}
                 onClose={() => setShowAgentTeamPanel(false)}
               />

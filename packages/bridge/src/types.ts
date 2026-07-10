@@ -4,6 +4,10 @@ export interface BridgeToolRequest {
   tool: string;
   params: Record<string, unknown>;
   requestId: string;
+  runId?: string;
+  sessionId?: string;
+  workspace?: string;
+  cwd?: string;
 }
 
 export interface BridgeToolResponse {
@@ -44,6 +48,11 @@ export interface DirectoryTreeNode {
 
 export interface ToolContext {
   config: BridgeConfig;
+  runId: string;
+  sessionId: string;
+  workspace: string;
+  cwd: string;
+  abortSignal?: AbortSignal;
   wsBroadcast: (event: string, payload: Record<string, unknown>) => void;
 }
 

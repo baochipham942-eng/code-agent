@@ -9,7 +9,7 @@
     "code-agent-bridge": "../../dist/bridge/code-agent-bridge.cjs"
   },
   "scripts": {
-    "build": "npm run build:bridge --workspace-root",
+    "build": "npm --prefix ../.. run build:bridge",
     "start": "node ../../dist/bridge/code-agent-bridge.cjs"
   },
   "dependencies": {

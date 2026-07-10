@@ -6,8 +6,8 @@
 // 状态，串行写入 SwarmTraceRepo。所有写入 fire-and-forget，不阻塞
 // 事件发布者；run 收尾时由外部调用 drain() 等待最后一笔落盘。
 //
-// Writer 以 runId 为隔离键维护 active run。SwarmEventEmitter 仍负责给常规
-// 单 run 场景自动打戳；显式携带 runId 的重叠 run 事件不会互相覆盖。
+// Writer 以 sessionId + runId 为隔离键维护 active run。所有 live 事件必须
+// 显式携带完整 scope；缺字段或 tree 不匹配时 fail closed，不猜测当前 run。
 // ============================================================================
 
 import type { BusEvent } from '../protocol/events/busTypes';
@@ -15,6 +15,10 @@ import type {
   SwarmEvent,
   SwarmAgentState,
   SwarmAggregation,
+} from '../../shared/contract/swarm';
+import {
+  createSwarmTraceStorageId,
+  getSwarmRunScopeKey,
 } from '../../shared/contract/swarm';
 import type {
   SwarmRunCoordinator,
@@ -45,7 +49,10 @@ interface AgentRollup {
 
 interface RunState {
   runId: string;
-  sessionId: string | null;
+  storageRunId: string;
+  sessionId: string;
+  treeId: string;
+  key: string;
   startedAt: number;
   totalAgents: number;
   parallelPeak: number;
@@ -58,7 +65,7 @@ interface RunState {
 }
 
 export interface SwarmTraceWriterOptions {
-  /** 当前 sessionId 解析器（每次 startedRun 时调用一次取值并缓存到 run） */
+  /** @deprecated Live SwarmEvent 必须显式携带 sessionId；仅保留构造兼容。 */
   getSessionId?: () => string | null;
   /** 默认 trigger，未来可由 ipc 入口在 launch 时改写（v1 默认 unknown） */
   defaultTrigger?: SwarmRunTrigger;
@@ -121,6 +128,14 @@ export class SwarmTraceWriter {
   private handle(busEvt: BusEvent<SwarmEvent>): void {
     const event = busEvt.data;
     if (!event || typeof event !== 'object') return;
+    if (!this.hasValidScope(event)) {
+      logger.warn(`Ignoring ${event.type ?? 'swarm event'} without a complete run scope`);
+      return;
+    }
+    if (busEvt.sessionId && busEvt.sessionId !== event.sessionId) {
+      logger.warn(`Ignoring ${event.type}: EventBus/session scope mismatch`);
+      return;
+    }
 
     switch (event.type) {
       case 'swarm:started':
@@ -155,17 +170,21 @@ export class SwarmTraceWriter {
 
   private onStarted(event: SwarmEvent): void {
     const runId = event.runId;
-    if (!runId) {
-      logger.warn('swarm:started without runId, skip persistence');
+    const totalAgents = event.data.statistics?.total ?? 0;
+    const sessionId = event.sessionId;
+    const key = this.getRunKey(event);
+    const existing = this.runs.get(key);
+    if (existing) {
+      logger.warn(`Ignoring duplicate swarm:started for ${sessionId}/${runId}`);
       return;
     }
 
-    const totalAgents = event.data.statistics?.total ?? 0;
-    const sessionId = event.sessionId ?? this.options.getSessionId();
-
     const state: RunState = {
       runId,
+      storageRunId: createSwarmTraceStorageId(event),
       sessionId,
+      treeId: event.treeId,
+      key,
       startedAt: event.timestamp,
       totalAgents,
       parallelPeak: 0,
@@ -175,11 +194,11 @@ export class SwarmTraceWriter {
       trigger: this.options.defaultTrigger,
       coordinator: this.options.defaultCoordinator,
     };
-    this.runs.set(runId, state);
+    this.runs.set(key, state);
 
     this.schedulePersist(() => {
       this.repo.startRun({
-        id: runId,
+        id: state.storageRunId,
         sessionId,
         coordinator: this.options.defaultCoordinator,
         startedAt: event.timestamp,
@@ -212,7 +231,7 @@ export class SwarmTraceWriter {
       run.parallelPeak = runningCount;
     }
 
-    const runId = run.runId;
+    const runId = run.storageRunId;
     const durationMs =
       rollup.startTime != null && rollup.endTime != null
         ? rollup.endTime - rollup.startTime
@@ -265,7 +284,7 @@ export class SwarmTraceWriter {
     const totals = this.aggregateAgentTotals(run);
 
     const closed = {
-      id: run.runId,
+      id: run.storageRunId,
       status: (stats && stats.failed > 0 ? 'failed' : 'completed') as 'failed' | 'completed',
       endedAt: event.timestamp,
       completedCount: stats?.completed ?? 0,
@@ -295,7 +314,7 @@ export class SwarmTraceWriter {
       aggregation: closed.aggregation,
       tags: [],
     }, event.timestamp);
-    this.runs.delete(run.runId);
+    this.runs.delete(run.key);
   }
 
   private onCancelled(event: SwarmEvent): void {
@@ -303,7 +322,7 @@ export class SwarmTraceWriter {
     if (!run) return;
     const totals = this.aggregateAgentTotals(run);
     const closed = {
-      id: run.runId,
+      id: run.storageRunId,
       status: 'cancelled' as const,
       endedAt: event.timestamp,
       completedCount: totals.completedCount,
@@ -331,7 +350,7 @@ export class SwarmTraceWriter {
       aggregation: closed.aggregation,
       tags: [],
     }, event.timestamp);
-    this.runs.delete(run.runId);
+    this.runs.delete(run.key);
   }
 
   // --------------------------------------------------------------------------
@@ -342,7 +361,7 @@ export class SwarmTraceWriter {
     const run = this.getRunForEvent(event);
     if (!run) return;
     const seq = run.seq++;
-    const runId = run.runId;
+    const runId = run.storageRunId;
 
     const level: SwarmEventLevel =
       event.type === 'swarm:agent:failed' || event.type === 'swarm:cancelled'
@@ -460,13 +479,25 @@ export class SwarmTraceWriter {
   }
 
   private getRunForEvent(event: SwarmEvent): RunState | undefined {
-    if (event.runId) {
-      return this.runs.get(event.runId);
-    }
-    if (this.runs.size === 1) {
-      return Array.from(this.runs.values())[0];
-    }
-    return undefined;
+    if (!this.hasValidScope(event)) return undefined;
+    const run = this.runs.get(this.getRunKey(event));
+    if (!run || run.treeId !== event.treeId) return undefined;
+    return run;
+  }
+
+  private hasValidScope(event: SwarmEvent): boolean {
+    return Boolean(
+      typeof event.sessionId === 'string'
+      && event.sessionId.trim()
+      && typeof event.runId === 'string'
+      && event.runId.trim()
+      && typeof event.treeId === 'string'
+      && event.treeId.trim(),
+    );
+  }
+
+  private getRunKey(scope: Pick<SwarmEvent, 'sessionId' | 'runId' | 'treeId'>): string {
+    return getSwarmRunScopeKey(scope);
   }
 
   /**
@@ -484,7 +515,7 @@ export class SwarmTraceWriter {
     if (!this.appendLedger) return;
     const seq = run.ledgerSeq++;
     const input: SwarmLedgerAppendInput = {
-      runId: run.runId,
+      runId: run.storageRunId,
       sessionId: run.sessionId,
       seq,
       kind,

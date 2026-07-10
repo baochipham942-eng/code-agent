@@ -82,13 +82,14 @@ vi.mock('../../../src/host/scheduler', () => ({
       return { metadata: meta };
     }
   },
-  getDAGScheduler: () => ({
+  createRunDAGScheduler: () => ({
     execute: async () => ({
       success: true,
       dag: { getAllTasks: () => [] },
       totalDuration: 0,
       maxParallelism: 0,
     }),
+    setSubagentExecutor: vi.fn(),
   }),
 }));
 
@@ -98,6 +99,7 @@ import {
   type AgentTaskResult,
 } from '../../../src/host/agent/parallelAgentCoordinator';
 import { COORDINATION_CHECKPOINTS } from '../../../src/shared/constants';
+import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 
 function makeContext(sessionId: string) {
   return {
@@ -282,6 +284,59 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
       );
       expect(second.completedTasks).toHaveLength(1);
       expect(second.completedTasks[0][0]).toBe('t1');
+    });
+
+    it('同一 session 的两个 run 使用默认 scope 写入独立短文件并拒绝串读', async () => {
+      const scopeA: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-a',
+        treeId: 'same-tree-label',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-b',
+        treeId: 'same-tree-label',
+      };
+      const coordinatorA = new ParallelAgentCoordinator({}, scopeA);
+      const coordinatorB = new ParallelAgentCoordinator({}, scopeB);
+      coordinatorA.initialize({ ...makeContext(scopeA.sessionId), scope: scopeA });
+      coordinatorB.initialize({ ...makeContext(scopeB.sessionId), scope: scopeB });
+      coordinatorA.shareDiscovery('owner', 'A');
+      coordinatorB.shareDiscovery('owner', 'B');
+
+      await Promise.all([
+        coordinatorA.persistCheckpoint(),
+        coordinatorB.persistCheckpoint(),
+      ]);
+
+      const parallelDir = path.join(
+        configDirState.dir,
+        COORDINATION_CHECKPOINTS.PARALLEL_DIR,
+      );
+      const files = (await fsPromises.readdir(parallelDir)).filter((file) => file.endsWith('.json'));
+      expect(files).toHaveLength(2);
+      expect(new Set(files).size).toBe(2);
+      expect(files.every((file) => /^run-[a-f0-9]{32}\.json$/.test(file))).toBe(true);
+
+      const restoredA = new ParallelAgentCoordinator({}, scopeA);
+      const restoredB = new ParallelAgentCoordinator({}, scopeB);
+      restoredA.initialize({ ...makeContext(scopeA.sessionId), scope: scopeA });
+      restoredB.initialize({ ...makeContext(scopeB.sessionId), scope: scopeB });
+
+      expect(await restoredA.restoreCheckpoint()).toBe(true);
+      expect(await restoredB.restoreCheckpoint()).toBe(true);
+      expect(restoredA.exportSharedContext().findings.owner).toBe('A');
+      expect(restoredB.exportSharedContext().findings.owner).toBe('B');
+      expect(await restoredA.restoreCheckpoint(scopeB)).toBe(false);
+
+      await Promise.all([
+        coordinatorA.deleteCheckpoint(),
+        coordinatorB.deleteCheckpoint(),
+      ]);
+      coordinatorA.reset();
+      coordinatorB.reset();
+      restoredA.reset();
+      restoredB.reset();
     });
   });
 

@@ -65,7 +65,7 @@ async function writeTempHtml(content: string, fileName: string): Promise<string>
   return filePath;
 }
 
-function makeCtx(): RuntimeContext {
+function makeCtx(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
   return {
     workingDirectory: '/tmp',
     artifactRepairGuard: undefined,
@@ -73,6 +73,7 @@ function makeCtx(): RuntimeContext {
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
     onEvent: vi.fn(),
+    ...overrides,
   } as unknown as RuntimeContext;
 }
 
@@ -112,6 +113,45 @@ describe('lifecycle light contract + playability smoke wiring', () => {
     expect(ctx.artifactRepairGuard).toMatchObject({ targetFile: filePath, attempts: 1 });
     expect((runFinalizer as unknown as { emitTaskProgress: ReturnType<typeof vi.fn> }).emitTaskProgress)
       .toHaveBeenCalledWith('tool_running', expect.stringContaining('第 1/4 次修复'));
+  });
+
+  // B7 P1 接线契约：ctx.scaffoldProfile.repairInstructionStyle 必须真传进
+  // buildArtifactRepairInstruction——摘掉 lifecycle 的 style 实参本测必红。
+  it('injects the compact repair instruction when ctx.scaffoldProfile says compact', async () => {
+    const filePath = await writeTempHtml(CRASH_GAME, 'crash-compact.html');
+    const ctx = makeCtx({
+      scaffoldProfile: {
+        tier: 'strong',
+        thinkingInjection: false,
+        auditNudgeIntervalMultiplier: 2,
+        repairInstructionStyle: 'compact',
+      },
+    } as Partial<RuntimeContext>);
+    const { contextAssembly, runFinalizer, toolCall, toolResult } = makeHarness(filePath, CRASH_GAME);
+
+    await handleModifiedArtifactValidation({
+      ctx,
+      contextAssembly,
+      runFinalizer: runFinalizer as RunFinalizer,
+      toolCall,
+      normalizedSuccess: true,
+      toolResult,
+      artifactRepairRollbackSnapshot: null,
+    });
+
+    const metadata = toolResult.metadata as { artifactValidation?: { playabilitySmoke?: { skipped?: boolean } } } | undefined;
+    if (metadata?.artifactValidation?.playabilitySmoke?.skipped) return; // Playwright 不可用环境按 skipped 放过
+
+    expect(toolResult.success).toBe(false);
+    const inject = (contextAssembly as unknown as { injectSystemMessage: ReturnType<typeof vi.fn> }).injectSystemMessage;
+    expect(inject).toHaveBeenCalled();
+    const injected = inject.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(injected).toContain('直接对目标文件做最小修复');
+    // full 版首轮尾部话术不得出现（出现 = style 没接进去，走了 full 模板）
+    expect(injected).not.toContain('优先依据失败摘要直接修改目标文件');
+    // 机器可读 spec 不内联进 compact 注入，但仍随 toolResult.error 返回，模型不丢 spec
+    expect(injected).not.toContain('<artifact_repair_spec>');
+    expect(String(toolResult.error)).toContain('artifact_repair_spec');
   });
 
   it('passes a healthy game on the light path and records the pass marker', async () => {

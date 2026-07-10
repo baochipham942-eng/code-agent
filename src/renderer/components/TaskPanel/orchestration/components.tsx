@@ -9,7 +9,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { SwarmAgentState } from '@shared/contract/swarm';
+import type { SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import { formatDuration } from '../../../../shared/utils/format';
 import type { SwarmPlanReview } from '../../../stores/swarmStore';
 import ipcService from '../../../services/ipcService';
@@ -312,7 +312,10 @@ export const AgentContextCard: React.FC<{
   );
 };
 
-export const ApprovalCard: React.FC<{ review: SwarmPlanReview }> = ({ review }) => {
+export const ApprovalCard: React.FC<{
+  review: SwarmPlanReview;
+  scope: SwarmRunRef;
+}> = ({ review, scope }) => {
   const [feedback, setFeedback] = useState(review.feedback || '');
   const [submitting, setSubmitting] = useState<'approve' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -329,6 +332,8 @@ export const ApprovalCard: React.FC<{ review: SwarmPlanReview }> = ({ review }) 
     setError(null);
     try {
       const success = await ipcService.invoke(IPC_CHANNELS.SWARM_APPROVE_PLAN, {
+        ...scope,
+        agentId: review.agentId,
         planId: review.id,
         feedback: feedback.trim() || undefined,
       });
@@ -353,6 +358,8 @@ export const ApprovalCard: React.FC<{ review: SwarmPlanReview }> = ({ review }) 
     setError(null);
     try {
       const success = await ipcService.invoke(IPC_CHANNELS.SWARM_REJECT_PLAN, {
+        ...scope,
+        agentId: review.agentId,
         planId: review.id,
         feedback: trimmed,
       });

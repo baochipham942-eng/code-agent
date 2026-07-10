@@ -18,6 +18,7 @@ import { createTraceStep } from '../security/decisionTraceBuilder';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
+import { resolveCanonicalRunPath } from '../runtime/runContext';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -46,7 +47,10 @@ export interface ClassifierConfig {
 }
 
 interface ClassificationContext {
+  /** Base directory for resolving relative tool paths. */
   workingDirectory: string;
+  /** Authorization boundary; defaults to workingDirectory for legacy callers. */
+  workspaceRoot?: string;
   permissionLevel?: string;
 }
 
@@ -213,7 +217,7 @@ export class PermissionClassifier {
     const startTime = Date.now();
 
     // 1. 检查缓存
-    const cacheKey = this.buildCacheKey(toolName, args);
+    const cacheKey = this.buildCacheKey(toolName, args, context);
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       return { ...cached, cached: true };
@@ -540,11 +544,13 @@ export class PermissionClassifier {
       };
     }
 
-    const resolved = path.resolve(context.workingDirectory, filePath);
-    const cwd = path.resolve(context.workingDirectory);
+    const resolved = resolveCanonicalRunPath(path.resolve(context.workingDirectory, filePath));
+    const workspace = resolveCanonicalRunPath(
+      path.resolve(context.workspaceRoot ?? context.workingDirectory),
+    );
 
     // W1: 写入项目目录内 → approve (no traceStep)
-    if (resolved.startsWith(cwd + path.sep) || resolved === cwd) {
+    if (resolved.startsWith(workspace + path.sep) || resolved === workspace) {
       return {
         decision: 'approve',
         reason: '写入项目目录内',
@@ -554,7 +560,7 @@ export class PermissionClassifier {
     }
 
     // W2: 写入临时目录 → approve (no traceStep)
-    const tmpRoot = os.tmpdir();
+    const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
     if (
       resolved === tmpRoot ||
       resolved.startsWith(tmpRoot + path.sep) ||
@@ -616,18 +622,28 @@ export class PermissionClassifier {
   // Cache
   // --------------------------------------------------------------------------
 
-  private buildCacheKey(toolName: string, args: Record<string, unknown>): string {
+  private buildCacheKey(
+    toolName: string,
+    args: Record<string, unknown>,
+    context: ClassificationContext,
+  ): string {
+    const namespace = [
+      resolveCanonicalRunPath(path.resolve(context.workspaceRoot ?? context.workingDirectory)),
+      resolveCanonicalRunPath(path.resolve(context.workingDirectory)),
+    ].join('\u0000');
     if (isBashToolName(toolName)) {
       // Bash 命令：使用完整归一化命令。只取前缀会把 `npm run test` 和 `npm run postinstall`
       // 合并成一个缓存项，进而复用错误的权限判断。
       const command = (args.command as string) || '';
       const normalized = command.trim().replace(/\s+/g, ' ');
-      return crypto.createHash('md5').update(`bash:${normalized}`).digest('hex');
+      return crypto.createHash('md5').update(`${namespace}:bash:${normalized}`).digest('hex');
     }
 
     // 其他工具：标准化参数后 hash
     const argsPattern = this.normalizeArgs(args);
-    return crypto.createHash('md5').update(`${normalizeToolName(toolName)}:${JSON.stringify(argsPattern)}`).digest('hex');
+    return crypto.createHash('md5').update(
+      `${namespace}:${normalizeToolName(toolName)}:${JSON.stringify(argsPattern)}`,
+    ).digest('hex');
   }
 
   /**
@@ -724,7 +740,7 @@ export function getPermissionClassifier(config?: ClassifierConfig): PermissionCl
 export async function classifyPermission(
   toolName: string,
   args: Record<string, unknown>,
-  context: { workingDirectory: string; permissionLevel?: string }
+  context: ClassificationContext,
 ): Promise<ClassificationResult> {
   return getPermissionClassifier().classify(toolName, args, context);
 }

@@ -25,6 +25,10 @@ import {
 } from '../../../src/host/agent/spawnGuard';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
 import { SPAWN_GUARD } from '../../../src/shared/constants/agent';
+import {
+  createScopedSwarmAgentId,
+  type SwarmRunScope,
+} from '../../../src/shared/contract/swarm';
 
 type Guard = ReturnType<typeof getSpawnGuard>;
 
@@ -147,6 +151,174 @@ describe('SpawnGuard', () => {
       expect(treeGuard.canSpawn('root-a')).toBe(true);
     });
 
+    it('同 session/tree 的两个 run 共享配额，但 agent、inbox 和取消域保持隔离', async () => {
+      resetSpawnGuard();
+      const quotaGuard = getSpawnGuard({ maxAgents: 2 });
+      const scopeA: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-a',
+        treeId: 'same-tree-label',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-b',
+        treeId: 'same-tree-label',
+      };
+      const independentScope: SwarmRunScope = {
+        sessionId: scopeA.sessionId,
+        runId: 'run-independent',
+        treeId: 'independent-tree',
+      };
+      const agentA = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
+      const agentB = createScopedSwarmAgentId(scopeB, 'agent_coder_0');
+      const leaseA = await quotaGuard.acquireSlot({ scope: scopeA });
+      const leaseB = await quotaGuard.acquireSlot({ scope: scopeB });
+      let queuedRunAGranted = false;
+      const queuedRunA = quotaGuard.acquireSlot({ scope: scopeA, timeoutMs: 1_000 }).then(
+        (lease) => {
+          queuedRunAGranted = true;
+          lease.release();
+          return null;
+        },
+        (error: Error) => error,
+      );
+      const controllerA = new AbortController();
+      const controllerB = new AbortController();
+      const pending = new Promise<SubagentResult>(() => {});
+      quotaGuard.register(agentA, 'coder', 'Team A', pending, controllerA, {
+        scope: scopeA,
+        slotAcquired: true,
+      });
+      quotaGuard.register(agentB, 'coder', 'Team B', pending, controllerB, {
+        scope: scopeB,
+        slotAcquired: true,
+      });
+
+      expect(leaseA.scope).toEqual(scopeA);
+      expect(leaseB.scope).toEqual(scopeB);
+      expect(quotaGuard.getReservedCount(scopeA)).toBe(2);
+      expect(quotaGuard.getReservedCount(scopeB)).toBe(2);
+      expect(quotaGuard.canSpawn(scopeA)).toBe(false);
+      expect(quotaGuard.canSpawn(scopeB)).toBe(false);
+      const independentLease = await quotaGuard.acquireSlot({ scope: independentScope });
+      expect(quotaGuard.getReservedCount(independentScope)).toBe(1);
+      independentLease.release();
+      expect(quotaGuard.sendMessage(agentA, 'only A', scopeA)).toBe(true);
+      expect(quotaGuard.peekMessages(agentA, scopeA)).toHaveLength(1);
+      expect(quotaGuard.peekMessages(agentB, scopeB)).toEqual([]);
+      expect(quotaGuard.get(agentA, scopeB)).toBeUndefined();
+
+      expect(quotaGuard.cancelRun(scopeA, 'run-a-cancelled')).toBe(1);
+      await expect(queuedRunA).resolves.toMatchObject({ message: expect.stringMatching(/cancelled.*run-a-cancelled/i) });
+      expect(queuedRunAGranted).toBe(false);
+      expect(controllerA.signal.aborted).toBe(true);
+      expect(controllerB.signal.aborted).toBe(false);
+      expect(quotaGuard.get(agentA, scopeA)?.status).toBe('cancelled');
+      expect(quotaGuard.get(agentB, scopeB)?.status).toBe('running');
+      expect(quotaGuard.getReservedCount(scopeA)).toBe(1);
+      expect(quotaGuard.getReservedCount(scopeB)).toBe(1);
+
+      expect(quotaGuard.cancelRun(scopeB, 'test-cleanup')).toBe(1);
+    });
+
+    it('rejects a scoped agent identity registered under another run', () => {
+      const scopeA: SwarmRunScope = {
+        sessionId: 'session',
+        runId: 'run-a',
+        treeId: 'tree-a',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: 'session',
+        runId: 'run-b',
+        treeId: 'tree-b',
+      };
+      const agentA = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
+
+      expect(() => guard.register(
+        agentA,
+        'coder',
+        'wrong run',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: scopeB },
+      )).toThrow(/does not match/i);
+      expect(guard.getRunningCount()).toBe(0);
+
+      const childA = createScopedSwarmAgentId(scopeA, 'agent_coder_1');
+      expect(() => guard.register(
+        childA,
+        'coder',
+        'unscoped parent',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: scopeA, parentId: 'legacy-parent' },
+      )).toThrow(/parent agent id must belong to the same run scope/i);
+
+      const sameRunAgent = createScopedSwarmAgentId(scopeA, 'agent_coder_2');
+      expect(() => guard.register(
+        sameRunAgent,
+        'coder',
+        'same-run child',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: scopeA, parentId: agentA },
+      )).not.toThrow();
+      expect(guard.get(sameRunAgent, scopeA)?.parentId).toBe(agentA);
+
+      const nestedScope: SwarmRunScope = {
+        sessionId: scopeA.sessionId,
+        runId: 'nested-run',
+        treeId: scopeA.treeId,
+      };
+      const nestedAgent = createScopedSwarmAgentId(nestedScope, 'agent_coder_3');
+      expect(() => guard.register(
+        nestedAgent,
+        'coder',
+        'nested Team root',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: nestedScope, parentId: agentA },
+      )).toThrow(/same run scope/i);
+
+      expect(() => guard.register(
+        nestedAgent,
+        'coder',
+        'nested Team run root',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: nestedScope },
+      )).not.toThrow();
+      expect(guard.get(nestedAgent, nestedScope)?.parentId).toBeUndefined();
+
+      const foreignTreeParent = createScopedSwarmAgentId(scopeB, 'agent_coder_9');
+      const secondNestedAgent = createScopedSwarmAgentId(nestedScope, 'agent_coder_4');
+      expect(() => guard.register(
+        secondNestedAgent,
+        'coder',
+        'foreign tree parent',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: nestedScope, parentId: foreignTreeParent },
+      )).toThrow(/same run scope/i);
+
+      const foreignSessionParent = createScopedSwarmAgentId({
+        sessionId: 'foreign-session',
+        runId: nestedScope.runId,
+        treeId: nestedScope.treeId,
+      }, 'agent_coder_9');
+      expect(() => guard.register(
+        secondNestedAgent,
+        'coder',
+        'foreign session parent',
+        new Promise<SubagentResult>(() => {}),
+        new AbortController(),
+        { scope: nestedScope, parentId: foreignSessionParent },
+      )).toThrow(/same run scope/i);
+
+      guard.cancelRun(scopeA, 'test-cleanup');
+      guard.cancelRun(nestedScope, 'test-cleanup');
+    });
+
     it('超额 spawn 请求 FIFO 排队，释放槽位后按顺序获批', async () => {
       resetSpawnGuard();
       const queueGuard = getSpawnGuard({ maxAgents: 1 });
@@ -177,6 +349,190 @@ describe('SpawnGuard', () => {
       thirdLease?.release();
       await Promise.all([second, third]);
       expect(queueGuard.getReservedCount('root')).toBe(0);
+    });
+
+    it('run A 的排队请求被取消后不会获 lease，run B 的同 tree 请求继续执行', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const scopeA: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-a',
+        treeId: 'shared-tree',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: scopeA.sessionId,
+        runId: 'run-b',
+        treeId: scopeA.treeId,
+      };
+      const holder = await queueGuard.acquireSlot({ scope: scopeB, timeoutMs: 1_000 });
+      let runAGranted = false;
+      let runBLease: { release: () => void } | undefined;
+      const queuedA = queueGuard.acquireSlot({ scope: scopeA, timeoutMs: 1_000 }).then(
+        (lease) => {
+          runAGranted = true;
+          lease.release();
+          return null;
+        },
+        (error: Error) => error,
+      );
+      const queuedB = queueGuard.acquireSlot({ scope: scopeB, timeoutMs: 1_000 }).then((lease) => {
+        runBLease = lease;
+      });
+
+      expect(queueGuard.cancelRun(scopeA, 'run-a-cancelled')).toBe(0);
+      await expect(queuedA).resolves.toMatchObject({
+        message: expect.stringMatching(/cancelled.*run-a-cancelled/i),
+      });
+      expect(runAGranted).toBe(false);
+      expect(queueGuard.getReservedCount(scopeB)).toBe(1);
+
+      holder.release();
+      await queuedB;
+      expect(runBLease).toBeDefined();
+      expect(runAGranted).toBe(false);
+      runBLease?.release();
+      expect(queueGuard.getReservedCount(scopeA)).toBe(0);
+    });
+
+    it('acquireSlot abort signal 会移除 waiter，释放容量后不会幽灵获批', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const holder = await queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 1_000 });
+      const abortController = new AbortController();
+      let cancelledWaiterGranted = false;
+      const cancelledWaiter = queueGuard.acquireSlot({
+        treeId: 'root',
+        timeoutMs: 1_000,
+        signal: abortController.signal,
+      }).then(
+        (lease) => {
+          cancelledWaiterGranted = true;
+          lease.release();
+          return null;
+        },
+        (error: Error) => error,
+      );
+
+      abortController.abort('parent_cancelled');
+      await expect(cancelledWaiter).resolves.toMatchObject({
+        message: expect.stringMatching(/cancelled.*parent_cancelled/i),
+      });
+      holder.release();
+
+      const nextLease = await queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 1_000 });
+      expect(cancelledWaiterGranted).toBe(false);
+      nextLease.release();
+      expect(queueGuard.getReservedCount('root')).toBe(0);
+    });
+
+    it('acquireSlot 收到已 aborted signal 时立即拒绝且不占槽', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const abortController = new AbortController();
+      abortController.abort('already_cancelled');
+
+      await expect(queueGuard.acquireSlot({
+        treeId: 'root',
+        signal: abortController.signal,
+      })).rejects.toThrow(/cancelled.*already_cancelled/i);
+      expect(queueGuard.getReservedCount('root')).toBe(0);
+      expect(queueGuard.canSpawn('root')).toBe(true);
+    });
+
+    it('cancelSession 只剔除目标 session 的 scoped 与 legacy queued waiters', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const scopeA: SwarmRunScope = {
+        sessionId: 'session-a',
+        runId: 'run-a',
+        treeId: 'same-tree-label',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: 'session-b',
+        runId: 'run-b',
+        treeId: 'same-tree-label',
+      };
+      const activeAId = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
+      const activeAController = new AbortController();
+      queueGuard.register(
+        activeAId,
+        'coder',
+        'active session A agent',
+        new Promise<SubagentResult>(() => {}),
+        activeAController,
+        { scope: scopeA },
+      );
+      const holderB = await queueGuard.acquireSlot({ scope: scopeB });
+      const legacyHolder = await queueGuard.acquireSlot({ treeId: scopeA.sessionId });
+      const waiterA = queueGuard.acquireSlot({ scope: scopeA }).catch((error: Error) => error);
+      const legacyWaiter = queueGuard.acquireSlot({ treeId: scopeA.sessionId }).catch((error: Error) => error);
+      let waiterBLease: { release: () => void } | undefined;
+      const waiterB = queueGuard.acquireSlot({ scope: scopeB }).then((lease) => {
+        waiterBLease = lease;
+      });
+
+      expect(queueGuard.cancelSession(scopeA.sessionId, 'session-a-cancelled')).toBe(1);
+      await expect(waiterA).resolves.toMatchObject({
+        message: expect.stringMatching(/cancelled.*session-a-cancelled/i),
+      });
+      await expect(legacyWaiter).resolves.toMatchObject({
+        message: expect.stringMatching(/cancelled.*session-a-cancelled/i),
+      });
+      expect(activeAController.signal.aborted).toBe(true);
+      expect(queueGuard.getReservedCount(scopeA)).toBe(0);
+      expect(queueGuard.getReservedCount(scopeB)).toBe(1);
+
+      holderB.release();
+      await waiterB;
+      expect(waiterBLease).toBeDefined();
+      waiterBLease?.release();
+      legacyHolder.release();
+      expect(queueGuard.getReservedCount(scopeA)).toBe(0);
+      expect(queueGuard.getReservedCount(scopeB)).toBe(0);
+      expect(queueGuard.getReservedCount(scopeA.sessionId)).toBe(0);
+    });
+
+    it('cancelAll 会剔除 scoped 与 legacy queued waiters', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const scope: SwarmRunScope = {
+        sessionId: 'session-a',
+        runId: 'run-a',
+        treeId: 'tree-a',
+      };
+      const scopedController = new AbortController();
+      const legacyController = new AbortController();
+      queueGuard.register(
+        createScopedSwarmAgentId(scope, 'agent_coder_0'),
+        'coder',
+        'scoped active agent',
+        new Promise<SubagentResult>(() => {}),
+        scopedController,
+        { scope },
+      );
+      queueGuard.register(
+        'legacy-agent',
+        'coder',
+        'legacy active agent',
+        new Promise<SubagentResult>(() => {}),
+        legacyController,
+        { treeId: 'legacy-tree' },
+      );
+      const scopedWaiter = queueGuard.acquireSlot({ scope }).catch((error: Error) => error);
+      const legacyWaiter = queueGuard.acquireSlot({ treeId: 'legacy-tree' }).catch((error: Error) => error);
+
+      expect(queueGuard.cancelAll('app_shutdown')).toBe(2);
+      await expect(scopedWaiter).resolves.toMatchObject({
+        message: expect.stringMatching(/cancelled.*app_shutdown/i),
+      });
+      await expect(legacyWaiter).resolves.toMatchObject({
+        message: expect.stringMatching(/cancelled.*app_shutdown/i),
+      });
+      expect(scopedController.signal.aborted).toBe(true);
+      expect(legacyController.signal.aborted).toBe(true);
+
+      expect(queueGuard.getReservedCount(scope)).toBe(0);
+      expect(queueGuard.getReservedCount('legacy-tree')).toBe(0);
     });
 
     it('排队等待超时后返回明确错误', async () => {
@@ -480,13 +836,55 @@ describe('SpawnGuard', () => {
     // SpawnGuard class is not exported; reach the static restoreState through
     // the constructor of a live instance.
     const getSpawnGuardCtor = (): {
-      restoreState: (dir: string) => Promise<Guard | null>;
+      restoreState: (dir: string, scope?: SwarmRunScope) => Promise<Guard | null>;
     } => {
       const instance = getSpawnGuard();
       return instance.constructor as unknown as {
-        restoreState: (dir: string) => Promise<Guard | null>;
+        restoreState: (dir: string, scope?: SwarmRunScope) => Promise<Guard | null>;
       };
     };
+
+    it('persists and restores two same-role runs without overwriting inbox or records', async () => {
+      const scopeA: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-a',
+        treeId: 'same-tree-label',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-b',
+        treeId: 'same-tree-label',
+      };
+      const agentA = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
+      const agentB = createScopedSwarmAgentId(scopeB, 'agent_coder_0');
+      const pending = new Promise<SubagentResult>(() => {});
+      guard.register(agentA, 'coder', 'Team A', pending, new AbortController(), { scope: scopeA });
+      guard.register(agentB, 'coder', 'Team B', pending, new AbortController(), { scope: scopeB });
+      guard.sendMessage(agentA, 'inbox-a', scopeA);
+      guard.sendMessage(agentB, 'inbox-b', scopeB);
+
+      await Promise.all([
+        guard.persistState(tmpDir, scopeA),
+        guard.persistState(tmpDir, scopeB),
+      ]);
+
+      const files = fs.readdirSync(tmpDir).filter((file) => file.endsWith('.json'));
+      expect(files).toHaveLength(2);
+      expect(files.every((file) => /^spawn-guard-run-[a-f0-9]{32}\.json$/.test(file))).toBe(true);
+
+      const SpawnGuardClass = getSpawnGuardCtor();
+      const restoredA = await SpawnGuardClass.restoreState(tmpDir, scopeA);
+      const restoredB = await SpawnGuardClass.restoreState(tmpDir, scopeB);
+      expect(restoredA?.get(agentA, scopeA)?.status).toBe('dead-log-only');
+      expect(restoredB?.get(agentB, scopeB)?.status).toBe('dead-log-only');
+      expect(restoredA?.peekMessages(agentA, scopeA)[0]?.payload).toBe('inbox-a');
+      expect(restoredB?.peekMessages(agentB, scopeB)[0]?.payload).toBe('inbox-b');
+      expect(restoredA?.get(agentB, scopeB)).toBeUndefined();
+      expect(restoredB?.get(agentA, scopeA)).toBeUndefined();
+
+      guard.cancelRun(scopeA, 'test-cleanup');
+      guard.cancelRun(scopeB, 'test-cleanup');
+    });
 
     it('restoreState 将 running agent 标为 dead-log-only（进程重启中断但保留恢复态）', async () => {
       const pending = new Promise<SubagentResult>(() => {});

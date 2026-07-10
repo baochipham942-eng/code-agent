@@ -12,6 +12,7 @@ function ctrl(opts?: {
   verifyCommand?: string;
   reviewCondition?: string;
   maxTurns?: number;
+  auditIntervalMultiplier?: number;
 }): GoalModeController {
   return new GoalModeController(
     buildGoalContract({
@@ -22,6 +23,9 @@ function ctrl(opts?: {
       maxTurns: opts?.maxTurns ?? 100,
       wallClockBudgetMs: opts?.wallClockBudgetMs,
     }),
+    opts?.auditIntervalMultiplier !== undefined
+      ? { auditIntervalMultiplier: opts.auditIntervalMultiplier }
+      : undefined,
   );
 }
 
@@ -108,5 +112,24 @@ describe('② audit 自适应 — shouldInjectAudit', () => {
     const c = ctrl({ reviewCondition: '文案口吻更亲切', maxTurns: 10 });
     const interval = GOAL_MODE.SIMPLE_CHECKPOINT_INTERVAL;
     expect(c.shouldInjectAudit(interval)).toBe(true);
+  });
+});
+
+describe('B7 audit 间隔倍率 — scaffold profile 接线', () => {
+  it('倍率 2 → 基础间隔轮不注入，双倍间隔轮才注入', () => {
+    const c = ctrl({ verifyCommand: 'npm test', auditIntervalMultiplier: 2 });
+    const base = GOAL_MODE.CHECKPOINT_INTERVAL;
+    expect(c.shouldInjectAudit(base)).toBe(false);
+    expect(c.shouldInjectAudit(base * 2)).toBe(true);
+  });
+
+  it('不传倍率 → 现状行为逐字不变（flag 关闭的身份保证）', () => {
+    const c = ctrl({ verifyCommand: 'npm test' });
+    expect(c.shouldInjectAudit(GOAL_MODE.CHECKPOINT_INTERVAL)).toBe(true);
+  });
+
+  it('非法倍率（0/负数）被钳到 1，不会让 audit 永不触发', () => {
+    const c = ctrl({ verifyCommand: 'npm test', auditIntervalMultiplier: 0 });
+    expect(c.shouldInjectAudit(GOAL_MODE.CHECKPOINT_INTERVAL)).toBe(true);
   });
 });

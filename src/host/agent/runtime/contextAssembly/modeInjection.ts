@@ -92,6 +92,12 @@ export async function buildPlanContextMessage(ctx: ContextAssemblyCtx): Promise<
 export function shouldThink(ctx: ContextAssemblyCtx, hasErrors: boolean): boolean {
   ctx.runtime.thinkingStepCount++;
 
+  // B7：strong 档模型自带 reasoning，per-turn <thinking> 注入是重复税，整体关闭。
+  // 计数器仍照常自增（上面），保证 flag 关闭时行为与现状逐字一致。
+  if (ctx.runtime.scaffoldProfile?.thinkingInjection === false) {
+    return false;
+  }
+
   switch (normalizeAgentEffortLevel(ctx.runtime.effortLevel)) {
     case 'ultra_code':
     case 'max':

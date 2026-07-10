@@ -60,6 +60,7 @@ import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
 import { GoalModeController } from './goalModeController';
+import { resolveScaffoldProfileForModel } from './runtime/scaffoldProfile';
 import { NudgeManager } from './nudgeManager';
 import { getSessionRecoveryService } from './sessionRecovery';
 import { getIncompleteTasks } from '../services/planning/taskStore';
@@ -135,6 +136,12 @@ export class AgentLoop {
   constructor(config: AgentLoopConfig) {
     const contextWindow = getContextWindow(config.modelConfig.model);
     const lightCompressionThreshold = Math.max(8000, Math.round(contextWindow * 0.50));
+    // B7：按模型能力档解析脚手架厚度（flag 关 / 未标注模型 = standard = 现状行为）
+    const scaffoldProfile = resolveScaffoldProfileForModel(config.modelConfig.model);
+    if (scaffoldProfile.tier !== 'standard') {
+      // 臂激活记号：profile 真生效时必须留痕（A3 疫苗——防"开关开了接线没走到"）
+      logger.info(`[AgentLoop] scaffold-profile-active tier=${scaffoldProfile.tier} model=${config.modelConfig.model}`);
+    }
     const resolvedSessionId = config.sessionId || `session-${Date.now()}`;
     const persistedRuntimeState = loadPersistedRuntimeState(resolvedSessionId);
     let compressionState = new CompressionState();
@@ -175,7 +182,11 @@ export class AgentLoop {
       antiPatternDetector: new AntiPatternDetector(),
       goalTracker: new GoalTracker(),
       // Goal 模式控制器：契约存在才激活（opt-in），否则 undefined（普通 run 不走 goal 分支）
-      goalMode: config.goalContract ? new GoalModeController(config.goalContract) : undefined,
+      goalMode: config.goalContract
+        ? new GoalModeController(config.goalContract, {
+            auditIntervalMultiplier: scaffoldProfile.auditNudgeIntervalMultiplier,
+          })
+        : undefined,
       nudgeManager: new NudgeManager(),
       hookManager: config.hookManager,
       planningService: config.planningService,
@@ -281,6 +292,7 @@ export class AgentLoop {
       effortLevel: 'high',
       thinkingEnabled: true,
       thinkingStepCount: 0,
+      scaffoldProfile,
 
       // Interaction mode
       interactionMode: 'code',

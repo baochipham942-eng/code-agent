@@ -48,6 +48,13 @@ export const AGENT_DEFAULT_MODEL = {
   model: DEFAULT_MODELS.compact,
 } as const;
 
+/**
+ * 模型能力档（B7 scaffold profile 数据源）：决定脚手架注入厚度。与
+ * ModelDomainCapability（能力种类）和 hybrid ModelTier（子代理角色派发）语义不同，勿混用。
+ * 未标注 = standard = 现状行为不变（fail-safe 默认）。
+ */
+export type ScaffoldTier = 'strong' | 'standard' | 'lite';
+
 export interface ProviderModelEntry {
   id: string;
   label: string;
@@ -55,6 +62,8 @@ export interface ProviderModelEntry {
   desc?: string;
   /** 是否进入评测候选（默认 true）。false：搜索特化 / legacy / 视觉 / 中转重复等不该跑代码评测的模型 */
   evalEligible?: boolean;
+  /** 模型能力档（缺省 = standard）。strong：旗舰 reasoning 档；lite：弱档（P0 仅数据标注） */
+  scaffoldTier?: ScaffoldTier;
 }
 
 export interface ProviderInfo {
@@ -92,6 +101,7 @@ export const PROVIDER_MODELS: ProviderInfo[] = catalog.providers
       ...('desc' in m && m.desc ? { desc: m.desc } : {}),
       ...('group' in m && m.group ? { group: m.group } : {}),
       ...('evalEligible' in m && m.evalEligible === false ? { evalEligible: false as const } : {}),
+      ...('scaffoldTier' in m && m.scaffoldTier ? { scaffoldTier: m.scaffoldTier as ScaffoldTier } : {}),
     })),
   }));
 
@@ -108,6 +118,19 @@ export const MODEL_LABELS: Record<string, string> = Object.fromEntries(
 
 export function getModelDisplayLabel(modelId: string): string {
   return MODEL_LABELS[modelId] ?? modelId;
+}
+
+/** 模型 id → 能力档（catalog 标注的唯一消费入口，未标注 = standard） */
+const MODEL_SCAFFOLD_TIERS: Record<string, ScaffoldTier> = Object.fromEntries(
+  PROVIDER_MODELS.flatMap((provider) =>
+    provider.models
+      .filter((model) => model.scaffoldTier)
+      .map((model) => [model.id, model.scaffoldTier as ScaffoldTier] as const)
+  )
+);
+
+export function getModelScaffoldTier(modelId: string): ScaffoldTier {
+  return MODEL_SCAFFOLD_TIERS[modelId] ?? 'standard';
 }
 
 /** 视觉模型能力详情 */

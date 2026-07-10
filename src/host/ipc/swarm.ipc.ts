@@ -46,13 +46,12 @@ interface SwarmSendUserMessagePayload {
 function buildPersistedUserMessage(
   payload: SwarmSendUserMessagePayload,
   scope: SwarmRunScope,
+  targetAgentIds: string[],
 ): Message {
   const sourceId = payload.messageId || randomUUID();
-  const targetAgentIds = Array.from(new Set(
-    payload.metadata?.workbench?.targetAgentIds?.length
-      ? payload.metadata.workbench.targetAgentIds
-      : [payload.agentId],
-  ));
+  const workbench = payload.metadata?.workbench
+    ? { ...payload.metadata.workbench, targetAgentIds: [...targetAgentIds] }
+    : undefined;
   return {
     // One conversation turn has one durable session identity even when Direct
     // routing fans it out to several agents. Delivery identities remain scoped
@@ -63,6 +62,7 @@ function buildPersistedUserMessage(
     timestamp: payload.timestamp ?? Date.now(),
     metadata: {
       ...payload.metadata,
+      ...(workbench ? { workbench } : {}),
       agentTeam: {
         sessionId: payload.sessionId,
         runId: payload.runId,
@@ -97,8 +97,7 @@ function resolveAgentScope(ref: SwarmAgentRef): SwarmRunScope | null {
   const parsed = parseScopedSwarmAgentId(ref.agentId);
   if (
     !scope
-    || !parsed
-    || parsed.scope.sessionId !== scope.sessionId
+    || parsed?.scope.sessionId !== scope.sessionId
     || parsed.scope.runId !== scope.runId
     || parsed.scope.treeId !== scope.treeId
   ) {
@@ -199,7 +198,23 @@ export function registerSwarmHandlers(
         };
       }
 
-      const sessionMessage = buildPersistedUserMessage(payload, scope);
+      const requestedTargetIds = Array.from(new Set([
+        payload.agentId,
+        ...(payload.metadata?.workbench?.targetAgentIds ?? []),
+      ]));
+      const validatedTargetIds = requestedTargetIds.filter((agentId) => {
+        const parsed = parseScopedSwarmAgentId(agentId);
+        if (
+          parsed?.scope.sessionId !== scope.sessionId
+          || parsed.scope.runId !== scope.runId
+          || parsed.scope.treeId !== scope.treeId
+        ) {
+          return false;
+        }
+        if (coordinator.canReceiveMessage(agentId)) return true;
+        return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
+      });
+      const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
       const delivered =
         coordinator.sendMessage(payload.agentId, payload.message) ||
         Boolean(services.spawnGuard.sendMessage?.(payload.agentId, payload.message, ref));
@@ -308,8 +323,12 @@ export function registerSwarmHandlers(
 
   ipcHost.handle('swarm:reject-launch', async (_, payload: SwarmRunRef & { requestId: string; feedback: string }) => {
     try {
-      if (!resolveRunScope(payload)) return false;
-      return getSwarmServices().launchApproval.reject(payload.requestId, payload.feedback, payload);
+      const scope = resolveRunScope(payload);
+      if (!scope) return false;
+      const services = getSwarmServices();
+      const rejected = services.launchApproval.reject(payload.requestId, payload.feedback, payload);
+      if (rejected) services.parallelCoordinators.finalize(scope, 'cancelled');
+      return rejected;
     } catch (error) {
       logger.error('swarm:reject-launch failed', { error: String(error) });
       return false;
@@ -326,6 +345,7 @@ export function registerSwarmHandlers(
       services.spawnGuard.cancelRun(scope, 'swarm_cancelled');
       services.parallelCoordinators.abortRun(scope, 'swarm_cancelled');
       getSwarmEventEmitter().cancelled(scope);
+      services.parallelCoordinators.finalize(scope, 'cancelled');
       return true;
     } catch (error) {
       logger.error('swarm:cancel-run failed', { error: String(error) });

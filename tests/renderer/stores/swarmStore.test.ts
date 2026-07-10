@@ -11,7 +11,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   off: vi.fn(),
 }));
 
-import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
+import {
+  MAX_RUN_SNAPSHOTS,
+  MAX_RUN_SNAPSHOTS_PER_SESSION,
+  useSwarmStore,
+} from '../../../src/renderer/stores/swarmStore';
 
 function agent(id: string, overrides: Partial<SwarmAgentState> = {}): SwarmAgentState {
   return {
@@ -584,6 +588,51 @@ describe('swarmStore', () => {
       expect(state.completedRuns).toHaveLength(0);
       expect(oldSnapshot.agents[0]?.status).toBe('cancelled');
       expect(oldSnapshot.completedRuns[0]?.status).toBe('cancelled');
+    });
+
+    it('bounds run snapshots with LRU while preserving the active run and newest session history', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1, 'session-1', 'run-1'));
+
+      for (let index = 0; index < MAX_RUN_SNAPSHOTS_PER_SESSION + 4; index += 1) {
+        const runId = `history-${index}`;
+        store.handleEvent(evt('swarm:started', {}, 100 + index * 2, 'session-1', runId));
+        store.handleEvent(evt('swarm:completed', {}, 101 + index * 2, 'session-1', runId));
+      }
+
+      const state = useSwarmStore.getState();
+      const sessionSnapshots = Object.values(state.runSnapshots)
+        .filter((snapshot) => snapshot.sessionId === 'session-1');
+      expect(sessionSnapshots.length).toBeLessThanOrEqual(MAX_RUN_SNAPSHOTS_PER_SESSION);
+      expect(state.runSnapshots['session-1::run-1']).toBeDefined();
+      expect(state.runSnapshots[`session-1::history-${MAX_RUN_SNAPSHOTS_PER_SESSION + 3}`]).toBeDefined();
+      expect(state.runSnapshots['session-1::history-0']).toBeUndefined();
+    });
+
+    it('keeps global snapshots bounded and isolates a late event that recreates evicted history', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1, 'session-1', 'run-1'));
+
+      for (let index = 0; index < MAX_RUN_SNAPSHOTS + 6; index += 1) {
+        const sessionId = `foreign-${index}`;
+        const runId = `run-${index}`;
+        store.handleEvent(evt('swarm:started', {}, 100 + index * 2, sessionId, runId));
+        store.handleEvent(evt('swarm:completed', {}, 101 + index * 2, sessionId, runId));
+      }
+
+      expect(Object.keys(useSwarmStore.getState().runSnapshots).length)
+        .toBeLessThanOrEqual(MAX_RUN_SNAPSHOTS);
+
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('late-agent', { status: 'completed' }),
+      }, 10_000, 'foreign-0', 'run-0'));
+
+      const state = useSwarmStore.getState();
+      expect(Object.keys(state.runSnapshots).length).toBeLessThanOrEqual(MAX_RUN_SNAPSHOTS);
+      expect(state.activeSessionId).toBe('session-1');
+      expect(state.activeRunId).toBe('run-1');
+      expect(state.agents).toEqual([]);
+      expect(state.runSnapshots['foreign-0::run-0']?.agents[0]?.id).toBe('late-agent');
     });
   });
 

@@ -67,6 +67,7 @@ export interface SwarmRunSnapshot {
   /** A launch/started root event has authoritatively bound this run to treeId. */
   rootEventSeen: boolean;
   updatedAt?: number;
+  lastAccessedAt: number;
   startTime?: number;
   statistics: SwarmExecutionState['statistics'];
   isRunning: boolean;
@@ -106,6 +107,8 @@ const MAX_MESSAGES = 40;
 const MAX_EVENT_LOG = 80;
 
 const MAX_COMPLETED_RUNS = 10;
+export const MAX_RUN_SNAPSHOTS_PER_SESSION = 8;
+export const MAX_RUN_SNAPSHOTS = 32;
 
 const initialState: Pick<
   SwarmStore,
@@ -305,6 +308,7 @@ function createEmptyRunSnapshot(event: SwarmEvent): SwarmRunSnapshot {
     treeId: event.treeId,
     rootEventSeen: isSwarmRootEvent(event),
     updatedAt: event.timestamp,
+    lastAccessedAt: event.timestamp,
     startTime: undefined,
     statistics: { ...initialState.statistics },
     isRunning: false,
@@ -330,6 +334,51 @@ function findLatestRunSnapshot(
       if (left.isRunning !== right.isRunning) return left.isRunning ? -1 : 1;
       return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
     })[0];
+}
+
+function pruneRunSnapshots(
+  snapshots: Record<string, SwarmRunSnapshot>,
+  activeSessionId?: string,
+  activeRunId?: string,
+  incomingKey?: string,
+): Record<string, SwarmRunSnapshot> {
+  const protectedKeys = new Set<string>();
+  if (activeSessionId && activeRunId) {
+    protectedKeys.add(getSwarmRunSnapshotKey(activeSessionId, activeRunId));
+  }
+  if (incomingKey) protectedKeys.add(incomingKey);
+  for (const snapshot of Object.values(snapshots)) {
+    if (snapshot.isRunning) protectedKeys.add(snapshot.key);
+  }
+
+  const next = { ...snapshots };
+  const oldestFirst = (left: SwarmRunSnapshot, right: SwarmRunSnapshot) => {
+    const leftRecency = Math.max(left.updatedAt ?? 0, left.lastAccessedAt);
+    const rightRecency = Math.max(right.updatedAt ?? 0, right.lastAccessedAt);
+    return leftRecency - rightRecency || left.key.localeCompare(right.key);
+  };
+
+  const sessions = new Set(Object.values(next).map((snapshot) => snapshot.sessionId));
+  for (const sessionId of sessions) {
+    let sessionSnapshots = Object.values(next)
+      .filter((snapshot) => snapshot.sessionId === sessionId)
+      .sort(oldestFirst);
+    while (sessionSnapshots.length > MAX_RUN_SNAPSHOTS_PER_SESSION) {
+      const eviction = sessionSnapshots.find((snapshot) => !protectedKeys.has(snapshot.key));
+      if (!eviction) break;
+      delete next[eviction.key];
+      sessionSnapshots = sessionSnapshots.filter((snapshot) => snapshot.key !== eviction.key);
+    }
+  }
+
+  let allSnapshots = Object.values(next).sort(oldestFirst);
+  while (allSnapshots.length > MAX_RUN_SNAPSHOTS) {
+    const eviction = allSnapshots.find((snapshot) => !protectedKeys.has(snapshot.key));
+    if (!eviction) break;
+    delete next[eviction.key];
+    allSnapshots = allSnapshots.filter((snapshot) => snapshot.key !== eviction.key);
+  }
+  return next;
 }
 
 function projectRunSnapshot(
@@ -366,6 +415,7 @@ function reduceRunSnapshot(
     ...current,
     treeId: event.treeId,
     updatedAt: Math.max(current.updatedAt ?? 0, event.timestamp),
+    lastAccessedAt: Math.max(current.lastAccessedAt, event.timestamp),
   };
   let completedRun: CompletedAgentRun | null = null;
 
@@ -877,7 +927,17 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         : findLatestRunSnapshot(state.runSnapshots, sessionId);
 
       if (snapshot) {
-        return projectRunSnapshot(snapshot, state.runSnapshots);
+        const touched = {
+          ...snapshot,
+          lastAccessedAt: Math.max(snapshot.lastAccessedAt, Date.now()),
+        };
+        const runSnapshots = pruneRunSnapshots(
+          { ...state.runSnapshots, [touched.key]: touched },
+          touched.sessionId,
+          touched.runId,
+          touched.key,
+        );
+        return projectRunSnapshot(touched, runSnapshots);
       }
 
       return {
@@ -902,7 +962,7 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         // tree event fails closed for the lifetime of this run snapshot.
         if (!isSwarmRootEvent(event) || existing.rootEventSeen) return state;
       }
-      const current = existing && existing.treeId === event.treeId
+      const current = existing?.treeId === event.treeId
         ? existing
         : createEmptyRunSnapshot(event);
       const reduced = reduceRunSnapshot(current, event);
@@ -910,10 +970,10 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         reduced.snapshot = { ...reduced.snapshot, rootEventSeen: true };
       }
       newlyAddedRun = reduced.completedRun;
-      const runSnapshots = {
+      const runSnapshots = pruneRunSnapshots({
         ...state.runSnapshots,
         [key]: reduced.snapshot,
-      };
+      }, state.activeSessionId, state.activeRunId, key);
 
       const matchesActiveScope =
         state.activeSessionId === event.sessionId

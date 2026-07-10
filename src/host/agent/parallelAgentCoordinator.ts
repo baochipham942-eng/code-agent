@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 // ============================================================================
 // ParallelAgentCoordinator - DAG-based explicit parallel agent execution
 // ============================================================================
@@ -120,6 +121,26 @@ export interface ParallelAgentTaskSnapshot {
   startedAt?: number;
   completedAt?: number;
   duration?: number;
+}
+
+export type ParallelCoordinatorTerminalStatus = 'completed' | 'failed' | 'cancelled';
+
+export interface CompletedParallelCoordinatorTaskSnapshot {
+  taskId: string;
+  role: string;
+  status: ParallelAgentTaskSnapshotStatus;
+  error?: string;
+  failureCode?: AgentFailureCode;
+  startedAt?: number;
+  completedAt?: number;
+  duration?: number;
+}
+
+export interface CompletedParallelCoordinatorSnapshot {
+  scope: SwarmRunScope;
+  status: ParallelCoordinatorTerminalStatus;
+  completedAt: number;
+  tasks: readonly CompletedParallelCoordinatorTaskSnapshot[];
 }
 
 export interface SharedContext {
@@ -1510,7 +1531,9 @@ function isLegacyCoordinatorScope(scope: SwarmRunScope): boolean {
 
 /** Explicit scope container. The container is process-wide; mutable run state is not. */
 export class ParallelAgentCoordinatorRegistry {
+  private static readonly MAX_COMPLETED_SNAPSHOTS = 100;
   private coordinators = new Map<string, ParallelAgentCoordinator>();
+  private completedSnapshots = new Map<string, CompletedParallelCoordinatorSnapshot>();
 
   private assertRunTreeInvariant(scope: SwarmRunScope): void {
     for (const coordinator of this.coordinators.values()) {
@@ -1522,6 +1545,17 @@ export class ParallelAgentCoordinatorRegistry {
       ) {
         throw new Error(
           `Coordinator run ${scope.sessionId}/${scope.runId} is already bound to tree ${existing.treeId}.`,
+        );
+      }
+    }
+    for (const snapshot of this.completedSnapshots.values()) {
+      if (
+        snapshot.scope.sessionId === scope.sessionId
+        && snapshot.scope.runId === scope.runId
+        && snapshot.scope.treeId !== scope.treeId
+      ) {
+        throw new Error(
+          `Coordinator run ${scope.sessionId}/${scope.runId} is already terminal on tree ${snapshot.scope.treeId}.`,
         );
       }
     }
@@ -1547,6 +1581,9 @@ export class ParallelAgentCoordinatorRegistry {
   ): ParallelAgentCoordinator {
     this.assertRunTreeInvariant(scope);
     const key = getSwarmRunScopeKey(scope);
+    if (this.completedSnapshots.has(key)) {
+      throw new Error(`Coordinator run ${scope.sessionId}/${scope.runId} is already terminal.`);
+    }
     let coordinator = this.coordinators.get(key);
     if (!coordinator) {
       coordinator = new ParallelAgentCoordinator(config, scope);
@@ -1561,6 +1598,9 @@ export class ParallelAgentCoordinatorRegistry {
   ): ParallelAgentCoordinator {
     this.assertRunTreeInvariant(scope);
     const key = getSwarmRunScopeKey(scope);
+    if (this.completedSnapshots.has(key)) {
+      throw new Error(`Coordinator run ${scope.sessionId}/${scope.runId} is already terminal.`);
+    }
     const previous = this.coordinators.get(key);
     previous?.reset();
     const coordinator = new ParallelAgentCoordinator(config, scope);
@@ -1589,6 +1629,57 @@ export class ParallelAgentCoordinatorRegistry {
     return aborted;
   }
 
+  finalize(
+    scope: SwarmRunScope,
+    status: ParallelCoordinatorTerminalStatus,
+    completedAt = Date.now(),
+  ): CompletedParallelCoordinatorSnapshot | undefined {
+    const key = getSwarmRunScopeKey(scope);
+    const existing = this.completedSnapshots.get(key);
+    if (existing) return existing;
+
+    const coordinator = this.coordinators.get(key);
+    if (!coordinator) return undefined;
+
+    const tasks = coordinator.getTaskSnapshots().map((task) => Object.freeze({
+      taskId: task.taskId,
+      role: task.role,
+      status: task.status,
+      ...(task.error ? { error: task.error } : {}),
+      ...(task.failureCode ? { failureCode: task.failureCode } : {}),
+      ...(task.startedAt ? { startedAt: task.startedAt } : {}),
+      ...(task.completedAt ? { completedAt: task.completedAt } : {}),
+      ...(typeof task.duration === 'number' ? { duration: task.duration } : {}),
+    }));
+    const snapshot = Object.freeze({
+      scope: Object.freeze({ ...scope }),
+      status,
+      completedAt,
+      tasks: Object.freeze(tasks),
+    });
+
+    // Remove the mutable execution object before exposing terminal history.
+    // In-flight code may still hold its local reference until its promise
+    // settles, but no new control-plane lookup can reach it.
+    this.coordinators.delete(key);
+    this.completedSnapshots.set(key, snapshot);
+    while (this.completedSnapshots.size > ParallelAgentCoordinatorRegistry.MAX_COMPLETED_SNAPSHOTS) {
+      const oldestKey = this.completedSnapshots.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      this.completedSnapshots.delete(oldestKey);
+    }
+    return snapshot;
+  }
+
+  getCompleted(ref: SwarmRunRef): CompletedParallelCoordinatorSnapshot | undefined {
+    for (const snapshot of this.completedSnapshots.values()) {
+      if (snapshot.scope.sessionId === ref.sessionId && snapshot.scope.runId === ref.runId) {
+        return snapshot;
+      }
+    }
+    return undefined;
+  }
+
   /** Global shutdown only. Run/user cancellation must use abortRun/abortSession. */
   abortAll(reason = 'app_shutdown'): number {
     let aborted = 0;
@@ -1612,6 +1703,7 @@ export class ParallelAgentCoordinatorRegistry {
       coordinator.reset();
     }
     this.coordinators.clear();
+    this.completedSnapshots.clear();
   }
 
   size(): number {

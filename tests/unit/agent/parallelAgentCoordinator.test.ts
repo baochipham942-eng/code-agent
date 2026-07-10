@@ -375,6 +375,40 @@ describe('ParallelAgentCoordinator', () => {
       })).toThrow(/already bound to tree tree-a/i);
       expect(registry.size()).toBe(1);
     });
+
+    it('moves terminal runs to an immutable lightweight snapshot and releases the live coordinator', () => {
+      const registry = new ParallelAgentCoordinatorRegistry();
+      const scope: SwarmRunScope = {
+        sessionId: 'terminal-session',
+        runId: 'terminal-run',
+        treeId: 'terminal-tree',
+      };
+      const live = registry.getOrCreate(scope);
+      live.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scope.sessionId, swarmRunScope: scope } as never,
+        scope,
+      });
+
+      const terminal = registry.finalize(scope, 'completed', 1234);
+
+      expect(registry.get(scope)).toBeUndefined();
+      expect(registry.getByRun(scope)).toBeUndefined();
+      expect(registry.size()).toBe(0);
+      expect(registry.getCompleted(scope)).toEqual({
+        scope,
+        status: 'completed',
+        completedAt: 1234,
+        tasks: [],
+      });
+      expect(terminal).toEqual(registry.getCompleted(scope));
+      expect(Object.isFrozen(terminal)).toBe(true);
+      expect(Object.isFrozen(terminal?.scope)).toBe(true);
+      expect(Object.isFrozen(terminal?.tasks)).toBe(true);
+      expect(() => registry.getOrCreate(scope)).toThrow(/already terminal/i);
+      expect(() => registry.getOrCreate({ ...scope, treeId: 'foreign-tree' }))
+        .toThrow(/already terminal on tree terminal-tree/i);
+    });
   });
 
   // ==========================================================================

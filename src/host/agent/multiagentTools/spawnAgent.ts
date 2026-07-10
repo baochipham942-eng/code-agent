@@ -19,7 +19,9 @@ import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../tools/dispatch/toolResolver';
 import {
   getParallelAgentCoordinator,
+  getParallelAgentCoordinatorRegistry,
   type AgentTask,
+  type ParallelCoordinatorTerminalStatus,
 } from '../parallelAgentCoordinator';
 import {
   createScopedSwarmAgentId,
@@ -689,7 +691,6 @@ async function executeParallelAgents(
     runId: newRunId,
     treeId: context.swarmRunScope?.treeId ?? newRunId,
   };
-  const coordinator = getParallelAgentCoordinator(runScope);
   const emitter = getSwarmEventEmitter();
   const guard = getSpawnGuard();
 
@@ -727,22 +728,6 @@ async function executeParallelAgents(
       };
     }
   }
-
-  // Initialize coordinator with context
-  coordinator.initialize({
-    modelConfig: context.modelConfig as ModelConfig,
-    toolResolver: context.resolver as ToolResolver,
-    toolContext: {
-      ...context,
-      spawnTreeId: runScope.treeId,
-      swarmRunScope: runScope,
-      // A nested parallel Team is a new run root. Parent cancellation is bridged
-      // through abortSignal; carrying the parent run's agent id would create a
-      // cross-run SpawnGuard edge.
-      spawnParentAgentId: undefined,
-    },
-    scope: runScope,
-  });
 
   // Convert to AgentTask format
   // Phase 1: 生成稳定的 ID 并建立 role→id 映射（用于解析 dependsOn）
@@ -843,6 +828,27 @@ async function executeParallelAgents(
   const launchGate = getSwarmLaunchApprovalGate();
   const cancelledBeforeApproval = getParallelCancellationResult();
   if (cancelledBeforeApproval) return cancelledBeforeApproval;
+  const coordinatorRegistry = getParallelAgentCoordinatorRegistry();
+  const coordinator = getParallelAgentCoordinator(runScope);
+  try {
+    coordinator.initialize({
+      modelConfig: context.modelConfig as ModelConfig,
+      toolResolver: context.resolver as ToolResolver,
+      toolContext: {
+        ...context,
+        spawnTreeId: runScope.treeId,
+        swarmRunScope: runScope,
+        // A nested parallel Team is a new run root. Parent cancellation is bridged
+        // through abortSignal; carrying the parent run's agent id would create a
+        // cross-run SpawnGuard edge.
+        spawnParentAgentId: undefined,
+      },
+      scope: runScope,
+    });
+  } catch (error) {
+    coordinatorRegistry.finalize(runScope, 'failed');
+    throw error;
+  }
   const cancelPendingLaunch = () => {
     const reason = normalizeCancellationReason(context.abortSignal?.reason, 'parent-cancel');
     launchGate.cancelRun(runScope, reason);
@@ -862,15 +868,22 @@ async function executeParallelAgents(
         writeAccess: !READONLY_ROLES.includes(task.role.toLowerCase()),
       })),
     });
+  } catch (error) {
+    coordinatorRegistry.finalize(runScope, 'failed');
+    throw error;
   } finally {
     context.abortSignal?.removeEventListener('abort', cancelPendingLaunch);
   }
 
   const cancelledAfterApproval = getParallelCancellationResult();
-  if (cancelledAfterApproval) return cancelledAfterApproval;
+  if (cancelledAfterApproval) {
+    coordinatorRegistry.finalize(runScope, 'cancelled');
+    return cancelledAfterApproval;
+  }
 
   if (!launchApproval.approved) {
     const reason = launchApproval.feedback?.trim();
+    coordinatorRegistry.finalize(runScope, 'cancelled');
     return {
       success: false,
       error: reason ? `Parallel launch rejected: ${reason}` : 'Parallel launch rejected by user',
@@ -999,6 +1012,7 @@ async function executeParallelAgents(
     context.abortSignal?.addEventListener('abort', onRunAbort, { once: true });
   }
 
+  let terminalStatus: ParallelCoordinatorTerminalStatus;
   try {
     const result = await coordinator.executeParallel(tasks);
 
@@ -1023,6 +1037,7 @@ async function executeParallelAgents(
     }
 
     if (wasCancelled) {
+      terminalStatus = 'cancelled';
       emitter.cancelled(runScope);
       return {
         success: false,
@@ -1058,6 +1073,7 @@ async function executeParallelAgents(
       successRate: aggregation.successRate,
       totalIterations: aggregation.totalIterations,
     });
+    terminalStatus = result.success ? 'completed' : 'failed';
 
     // Format output for main agent (richer than before)
     const agentSummaries = aggregation.agentResults.map((entry) => {
@@ -1143,6 +1159,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
       };
     }
   } catch (error) {
+    terminalStatus = context.abortSignal?.aborted ? 'cancelled' : 'failed';
     emitter.cancelled(runScope);
     return {
       success: false,
@@ -1156,5 +1173,6 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     coordinator.off('task:error', onTaskError);
     coordinator.off('discovery', onDiscovery);
     context.abortSignal?.removeEventListener('abort', onRunAbort);
+    coordinatorRegistry.finalize(runScope, terminalStatus);
   }
 }

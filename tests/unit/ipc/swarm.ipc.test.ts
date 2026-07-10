@@ -47,6 +47,7 @@ const coordinatorRegistryState = vi.hoisted(() => ({
   getByRun: vi.fn(),
   get: vi.fn(),
   abortRun: vi.fn(),
+  finalize: vi.fn(),
   abortSession: vi.fn(),
 }));
 const spawnGuardState = vi.hoisted(() => ({
@@ -185,6 +186,12 @@ describe('swarm.ipc run-scoped control plane', () => {
       scope.sessionId === scopeA.sessionId && scope.runId === scopeA.runId ? coordinatorA : coordinatorB
     ));
     coordinatorRegistryState.abortRun.mockReturnValue(true);
+    coordinatorRegistryState.finalize.mockReturnValue({
+      scope: scopeA,
+      status: 'cancelled',
+      completedAt: 1,
+      tasks: [],
+    });
     spawnGuardState.get.mockReturnValue(undefined);
     spawnGuardState.sendMessage.mockReturnValue(false);
     spawnGuardState.cancel.mockReturnValue(false);
@@ -342,6 +349,43 @@ describe('swarm.ipc run-scoped control plane', () => {
     expect(coordinatorB.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('sanitizes persisted targetAgentIds against the live session/run/tree and recipient set', async () => {
+    const fabricatedAgent = createScopedSwarmAgentId(scopeA, 'fabricated');
+    coordinatorA.canReceiveMessage.mockImplementation((agentId: string) => (
+      agentId === agentA || agentId === writerA
+    ));
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: 'sanitize targets',
+      messageId: 'sanitize-targets',
+      metadata: {
+        workbench: {
+          routingMode: 'direct',
+          targetAgentIds: [agentA, writerA, agentB, foreignTreeAgent, fabricatedAgent],
+        },
+      },
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(
+      scopeA.sessionId,
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          workbench: expect.objectContaining({
+            targetAgentIds: [agentA, writerA],
+          }),
+          agentTeam: expect.objectContaining({
+            agentId: agentA,
+            targetAgentIds: [agentA, writerA],
+          }),
+        }),
+      }),
+    );
+  });
+
   it('does not display/persist a phantom success for an unavailable target', async () => {
     coordinatorA.canReceiveMessage.mockReturnValue(false);
     const result = await handler('swarm:send-user-message')({}, {
@@ -395,8 +439,75 @@ describe('swarm.ipc run-scoped control plane', () => {
     expect(launchApprovalState.cancelRun).toHaveBeenCalledWith(scopeA, 'swarm_cancelled');
     expect(spawnGuardState.cancelRun).toHaveBeenCalledWith(scopeA, 'swarm_cancelled');
     expect(coordinatorRegistryState.abortRun).toHaveBeenCalledWith(scopeA, 'swarm_cancelled');
+    expect(coordinatorRegistryState.finalize).toHaveBeenCalledWith(scopeA, 'cancelled');
     expect(swarmEmitterState.cancelled).toHaveBeenCalledWith(scopeA);
     expect(coordinatorB.abortTask).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when terminal-run mutations are replayed after live cleanup', async () => {
+    const first = await handler('swarm:cancel-run')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+    } as never);
+    expect(first).toBe(true);
+
+    coordinatorRegistryState.getByRun.mockReturnValue(undefined);
+    coordinatorRegistryState.get.mockReturnValue(undefined);
+
+    await expect(handler('swarm:cancel-run')({}, scopeA as never)).resolves.toBe(false);
+    await expect(handler('swarm:retry-agent')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+    } as never)).resolves.toBe(false);
+    await expect(handler('swarm:approve-plan')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      planId: 'stale-plan',
+    } as never)).resolves.toBe(false);
+    await expect(handler('swarm:reject-plan')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      planId: 'stale-plan',
+      feedback: 'stale',
+    } as never)).resolves.toBe(false);
+    await expect(handler('swarm:approve-launch')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      requestId: 'stale-launch',
+    } as never)).resolves.toBe(false);
+    await expect(handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: 'stale',
+    } as never)).resolves.toEqual({ delivered: false, persisted: false });
+
+    expect(swarmEmitterState.cancelled).toHaveBeenCalledTimes(1);
+    expect(planApprovalState.approve).not.toHaveBeenCalled();
+    expect(planApprovalState.reject).not.toHaveBeenCalled();
+    expect(launchApprovalState.approve).not.toHaveBeenCalled();
+    expect(coordinatorA.retryTask).not.toHaveBeenCalled();
+  });
+
+  it('releases a rejected pending launch before any later mutation can reach the run', async () => {
+    launchApprovalState.reject.mockReturnValueOnce(true);
+
+    const rejected = await handler('swarm:reject-launch')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      requestId: 'pending-launch',
+      feedback: 'stop',
+    } as never);
+
+    expect(rejected).toBe(true);
+    expect(coordinatorRegistryState.finalize).toHaveBeenCalledWith(scopeA, 'cancelled');
+
+    coordinatorRegistryState.getByRun.mockReturnValue(undefined);
+    await expect(handler('swarm:cancel-run')({}, scopeA as never)).resolves.toBe(false);
+    expect(swarmEmitterState.cancelled).not.toHaveBeenCalled();
   });
 
   it('cancels one scoped agent without touching the same role in Team B', async () => {

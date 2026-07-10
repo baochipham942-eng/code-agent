@@ -34,6 +34,7 @@ on:
       - 'scripts/design-system-baseline.json'
       - 'scripts/design-system-zindex-allowlist.json'
       - 'scripts/check-token-integrity.mjs'
+      - 'scripts/check-copy.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
       - 'knip.json'
@@ -101,14 +102,16 @@ jobs:
           npm ci --prefix vercel-api --ignore-scripts
           npm --prefix vercel-api run typecheck
 
-      - name: Static gates (console / a11y / stale-dist / design-system / token-integrity)
-        # 五个轻量静态门（纯 node 脚本，无额外依赖，秒级），fast-fail 在跑测试套件之前：
+      - name: Static gates (console / a11y / stale-dist / design-system / token-integrity / copy)
+        # 六个轻量静态门（纯 node 脚本，无额外依赖，秒级），fast-fail 在跑测试套件之前：
         #   console-scan:          限制裸 console.log/debug 蔓延（基线棘轮 318）
         #   a11y-scan:             轻量可访问性规则（基线棘轮 48）
         #   stale-dist-scan:       禁止构建产物入库
         #   check-design-system:   设计系统棘轮门（此前只有 vitest 版且未进任何 CI 套件，
         #                          bare-button 在 main 上静默漂移 736→758 后接入，基线已如实重置）
         #   check-token-integrity: var(--*) 引用逐主题核对，未定义即红（首跑抓出 DiffView 4 个死 token）
+        #   check-copy:            文案棘轮门（营销压力词 13 / 中文串三点省略号 92 只拦新增；
+        #                          工程黑话只 warning；注释先剥再匹配，见脚本头注错题本）
         # 均为 hard gate（接入前已确认当前 main 绿、只对"超基线/新增"才红）。
         run: |
           node scripts/console-scan.mjs
@@ -116,6 +119,7 @@ jobs:
           node scripts/stale-dist-scan.mjs
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
+          node scripts/check-copy.mjs
 
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /

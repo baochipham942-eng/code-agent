@@ -33,9 +33,18 @@ export interface RunCompareOptions {
 // ---------------------------------------------------------------------------
 
 /**
+ * eval-ci 的 makeAgent（StandaloneAgentAdapter 工厂）只消费这 3 个字段；
+ * YAML 里能写但执行链路收不到的字段（enabledTools/temperature/agentConfig）
+ * 是假区分特征——写了 temperature: 0.2 也照样跑出 X vs X。
+ */
+const CONSUMED_COMPARE_FIELDS = ['model', 'provider', 'systemPrompt'] as const;
+const UNCONSUMED_COMPARE_FIELDS = ['enabledTools', 'temperature', 'agentConfig'] as const;
+
+/**
  * candidate 未写的字段在 makeAgent 时会回落到 baseline 值（config.model ||
  * resolvedModel 语义），所以判等必须按「回落后的有效配置」算，否则一个只有
  * name 的 candidate YAML 会以「字段是 undefined」为由被误判为有差异。
+ * 签名只含 makeAgent 真消费的字段——未消费字段进签名 = 给假区分特征放行。
  */
 function effectiveArmSignature(
   config: CompareConfiguration,
@@ -45,21 +54,30 @@ function effectiveArmSignature(
     model: config.model ?? baseline.model ?? null,
     provider: config.provider ?? baseline.provider ?? null,
     systemPrompt: config.systemPrompt ?? baseline.systemPrompt ?? null,
-    enabledTools: config.enabledTools ?? baseline.enabledTools ?? null,
-    temperature: config.temperature ?? baseline.temperature ?? null,
-    agentConfig: config.agentConfig ?? baseline.agentConfig ?? null,
   });
 }
 
-/** 跑前断言：对照臂必须与 baseline 至少有一个真实差异，否则 A/B 无意义。 */
+/** 跑前断言：对照臂必须与 baseline 至少有一个「执行链路真消费」的差异，否则 A/B 无意义。 */
 export function assertCompareArmsDistinct(
   baseline: CompareConfiguration,
   candidate: CompareConfiguration,
 ): void {
+  // 先拦假区分特征：candidate 设置了执行链路不消费的字段，会让人误以为
+  // 对照臂有差异，实际 agent 从未收到该配置——烧满预算跑出 X vs X 报告。
+  const phantomFields = UNCONSUMED_COMPARE_FIELDS.filter(
+    (field) => candidate[field] !== undefined,
+  );
+  if (phantomFields.length > 0) {
+    throw new Error(
+      `[compare-arm-activation] candidate 设置了执行链路不消费的字段：${phantomFields.join(', ')}。` +
+      `当前 --compare 的 agent 工厂只消费 ${CONSUMED_COMPARE_FIELDS.join('/')}，` +
+      '这些字段不会传给 agent，写了也是假区分特征——删掉它们，或改用被消费的字段表达差异。',
+    );
+  }
   if (effectiveArmSignature(candidate, baseline) === effectiveArmSignature(baseline, baseline)) {
     throw new Error(
       '[compare-arm-activation] candidate 的有效配置与 baseline 完全相同' +
-      '（model/provider/systemPrompt/enabledTools/temperature/agentConfig 回落后均一致）。' +
+      `（${CONSUMED_COMPARE_FIELDS.join('/')} 回落后均一致）。` +
       '对照臂没有区分特征，A/B 对比是 X vs X——先给 candidate 配置一个真实差异再发车。',
     );
   }

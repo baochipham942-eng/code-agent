@@ -21,6 +21,7 @@ import { getSpawnedAgent, listSpawnedAgents } from '../../../agent/multiagentToo
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { agentMessageSchema as schema } from './agentMessage.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { resolveAgentTargetScope } from './agentRunScope';
 
 type MessageAction = 'status' | 'list' | 'result' | 'cancel';
 const VALID_ACTIONS: readonly MessageAction[] = ['status', 'list', 'result', 'cancel'];
@@ -50,11 +51,13 @@ export async function executeAgentMessage(
   }
 
   onProgress?.({ stage: 'starting', detail: schema.name });
+  const target = agentId ? resolveAgentTargetScope(ctx, agentId) : undefined;
+  if (target?.error) return { ok: false, error: target.error, code: 'NOT_FOUND' };
 
   const result = ((): ToolResult<string> => {
     switch (action as MessageAction) {
       case 'list': {
-        const agents = listSpawnedAgents();
+        const agents = listSpawnedAgents(ctx.swarmRunScope ?? { sessionId: ctx.sessionId });
         if (agents.length === 0) {
           const output = 'No agents have been spawned in this session.';
           return withMultiagentMeta(
@@ -104,7 +107,7 @@ export async function executeAgentMessage(
 
       case 'status': {
         if (!agentId) return { ok: false, error: 'agentId required for status action', code: 'INVALID_ARGS' };
-        const agent = getSpawnedAgent(agentId);
+        const agent = getSpawnedAgent(agentId, target?.scope);
         if (!agent) return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
         return withMultiagentMeta({
           ok: true,
@@ -131,7 +134,7 @@ ${agent.result ? `- Has Result: Yes (use action='result' to retrieve)` : ''}`,
 
       case 'result': {
         if (!agentId) return { ok: false, error: 'agentId required for result action', code: 'INVALID_ARGS' };
-        const agent = getSpawnedAgent(agentId);
+        const agent = getSpawnedAgent(agentId, target?.scope);
         if (!agent) return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
         if (agent.status === 'running') {
           return withMultiagentMeta(
@@ -168,7 +171,9 @@ ${agent.result || '(no output)'}`,
       case 'cancel': {
         if (!agentId) return { ok: false, error: 'agentId required for cancel action', code: 'INVALID_ARGS' };
         const guard = getSpawnGuard();
-        const managed = guard.get(agentId);
+        const managed = target?.scope
+          ? guard.get(agentId, target.scope)
+          : guard.get(agentId);
         if (!managed) return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
         if (managed.status !== 'running') {
           return withMultiagentMeta({
@@ -182,7 +187,8 @@ ${agent.result || '(no output)'}`,
             result: { cancelled: false },
           }, `Agent cancel: ${agentId}`);
         }
-        guard.cancel(agentId);
+        if (target?.scope) guard.cancel(agentId, target.scope);
+        else guard.cancel(agentId);
         return withMultiagentMeta(
           { ok: true, output: `Agent [${agentId}] cancelled via abort signal.` },
           ctx,

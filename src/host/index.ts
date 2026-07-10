@@ -24,7 +24,7 @@ import { setupAllIpcHandlers } from './ipc';
 import { registerSwarmServices } from './agent/swarmServices';
 import { getPlanApprovalGate } from './agent/planApproval';
 import { getSwarmLaunchApprovalGate } from './agent/swarmLaunchApproval';
-import { getParallelAgentCoordinator } from './agent/parallelAgentCoordinator';
+import { getParallelAgentCoordinatorRegistry } from './agent/parallelAgentCoordinator';
 import { getSpawnGuard } from './agent/spawnGuard';
 import { getTeammateService } from './agent/teammate/teammateService';
 import {
@@ -197,7 +197,7 @@ app.whenReady().then(async () => {
     registerSwarmServices({
       planApproval: planApprovalGate,
       launchApproval: launchApprovalGate,
-      parallelCoordinator: getParallelAgentCoordinator(),
+      parallelCoordinators: getParallelAgentCoordinatorRegistry(),
       spawnGuard: getSpawnGuard(),
       teammateService: getTeammateService(),
       agentHistory: { persistAgentRun, getRecentAgentHistory },

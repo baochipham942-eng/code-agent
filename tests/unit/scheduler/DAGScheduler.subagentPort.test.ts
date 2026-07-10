@@ -57,4 +57,77 @@ describe('DAGScheduler subagent executor port', () => {
       maxIterations: 3,
     });
   });
+
+  it('forks independent mutable state for concurrent runs with the same task id', async () => {
+    const template = new DAGScheduler({
+      maxParallelism: 1,
+      scheduleInterval: 1,
+      defaultTimeout: 5000,
+    });
+    const resolvers = new Map<string, (value: {
+      success: boolean;
+      output: string;
+      toolsUsed: string[];
+      iterations: number;
+    }) => void>();
+    const execute = vi.fn((prompt: string) => new Promise<{
+      success: boolean;
+      output: string;
+      toolsUsed: string[];
+      iterations: number;
+    }>((resolve) => {
+      resolvers.set(prompt, resolve);
+    }));
+    template.setSubagentExecutor({ execute });
+    template.setAgentResolver({
+      resolve: () => ({
+        systemPrompt: 'system prompt',
+        tools: ['Read'],
+        maxIterations: 3,
+      }),
+    });
+
+    const runA = template.createRunScheduler();
+    const runB = template.createRunScheduler();
+    const dagA = new TaskDAG('dag-a', 'Team A');
+    const dagB = new TaskDAG('dag-b', 'Team B');
+    dagA.addAgentTask('agent_coder_0', { role: 'coder', prompt: 'team-a' });
+    dagB.addAgentTask('agent_coder_0', { role: 'coder', prompt: 'team-b' });
+
+    const resultA = runA.execute(dagA, {
+      modelConfig: { provider: 'mock', model: 'mock-model' } as never,
+      toolResolver: {} as never,
+      toolContext: { sessionId: 'session-a' } as never,
+      workingDirectory: process.cwd(),
+    });
+    const resultB = runB.execute(dagB, {
+      modelConfig: { provider: 'mock', model: 'mock-model' } as never,
+      toolResolver: {} as never,
+      toolContext: { sessionId: 'session-b' } as never,
+      workingDirectory: process.cwd(),
+    });
+
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(template.isExecuting()).toBe(false);
+    expect(runA.getCurrentDAG()).toBe(dagA);
+    expect(runB.getCurrentDAG()).toBe(dagB);
+
+    resolvers.get('team-b')?.({
+      success: true,
+      output: 'B done',
+      toolsUsed: [],
+      iterations: 1,
+    });
+    await expect(resultB).resolves.toMatchObject({ success: true, dag: dagB });
+    expect(runA.isExecuting()).toBe(true);
+    expect(dagA.getTask('agent_coder_0')?.status).toBe('running');
+
+    resolvers.get('team-a')?.({
+      success: true,
+      output: 'A done',
+      toolsUsed: [],
+      iterations: 1,
+    });
+    await expect(resultA).resolves.toMatchObject({ success: true, dag: dagA });
+  });
 });

@@ -125,6 +125,7 @@ vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
 vi.mock('../../../src/host/agent/activeAgentContext', () => ({
   buildActiveAgentContext: vi.fn().mockReturnValue(''),
   drainCompletionNotifications: vi.fn().mockReturnValue([]),
+  resolveActiveAgentScopeFilter: vi.fn((sessionId: string) => ({ sessionId })),
 }));
 
 vi.mock('../../../src/host/telemetry/systemPromptCache', () => ({

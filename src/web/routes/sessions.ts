@@ -9,7 +9,6 @@ import {
   sessionMessages,
   inMemorySessions,
 } from '../helpers/sessionCache';
-import type { ActiveAgentLoop } from './agent';
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
@@ -69,7 +68,6 @@ interface SessionsRouterDeps {
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<SessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseSessionBinding | null>;
-  activeAgentLoops: Map<string, ActiveAgentLoop>;
 }
 
 function mapSupabaseMessage(row: SupabaseMessageRow): Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'toolCalls' | 'artifacts'> {

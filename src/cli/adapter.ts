@@ -2,7 +2,7 @@
 // CLI Adapter - 适配 AgentLoop 到 CLI
 // ============================================================================
 
-import { createAgentLoop, buildCLIConfig, initializeCLIServices, getSessionManager, syncCLIWorkingDirectory, getConfigService } from './bootstrap';
+import { createAgentLoop, buildCLIConfig, initializeCLIServices, getSessionManager, getConfigService } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../host/ipc/swarm.ipc';
 import fs from 'fs';
@@ -15,6 +15,7 @@ import { getSessionSkillService } from '../host/services/skills/sessionSkillServ
 import { MetricsCollector } from '../host/agent/metricsCollector';
 import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
+import { createRunContext, type RunContext } from '../host/runtime/runContext';
 
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 
@@ -62,6 +63,8 @@ export class CLIAgent {
   private realOutputTokens: number = 0;
   /** Last run-level error event, used to keep agent_complete from masking failures. */
   private runErrorMessage: string | null = null;
+  /** Most recently started turn; a new context is created for every run(). */
+  private lastRunContext: RunContext | null = null;
 
   private systemPrompt: string | undefined;
 
@@ -148,6 +151,14 @@ export class CLIAgent {
     if (!this.sessionId) {
       await this.initSession();
     }
+    if (!this.sessionId) {
+      throw new Error('CLI session initialization did not produce a sessionId');
+    }
+    const runContext = createRunContext({
+      sessionId: this.sessionId,
+      workspace: this.config.workingDirectory,
+    });
+    this.lastRunContext = runContext;
 
     // Inject system prompt if provided (before user message)
     if (this.systemPrompt && this.messages.length === 0) {
@@ -201,7 +212,9 @@ export class CLIAgent {
       this.handleEvent.bind(this),
       this.messages,
       this.sessionId || undefined,
-      this.metricsCollector || undefined
+      this.metricsCollector || undefined,
+      undefined,
+      runContext,
     );
     this.currentAgentLoop = agentLoop;
     this.lastHookManager = agentLoop.getHookManager?.() ?? this.lastHookManager;
@@ -477,6 +490,10 @@ export class CLIAgent {
     return this.sessionId;
   }
 
+  getLastRunContext(): RunContext | null {
+    return this.lastRunContext;
+  }
+
   /**
    * 恢复会话
    */
@@ -554,7 +571,5 @@ export class CLIAgent {
  */
 export async function createCLIAgent(options: Partial<CLIGlobalOptions> = {}): Promise<CLIAgent> {
   await initializeCLIServices();
-  const agent = new CLIAgent(options);
-  await syncCLIWorkingDirectory(agent.getConfig().workingDirectory);
-  return agent;
+  return new CLIAgent(options);
 }

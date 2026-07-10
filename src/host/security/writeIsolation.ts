@@ -1,4 +1,5 @@
 import path from 'path';
+import { resolveCanonicalRunPath } from '../runtime/runContext';
 
 export type WriteIsolationKind = 'file' | 'workspace';
 
@@ -86,9 +87,10 @@ function firstStringParam(params: Record<string, unknown>, keys: string[]): stri
 }
 
 function normalizeTargetPath(workingDirectory: string, candidate: string): string {
-  return path.normalize(path.isAbsolute(candidate)
+  const resolved = path.normalize(path.isAbsolute(candidate)
     ? candidate
     : path.resolve(workingDirectory, candidate));
+  return resolveCanonicalRunPath(resolved);
 }
 
 function isSameOrChild(candidate: string, parent: string): boolean {
@@ -107,10 +109,11 @@ function scopeConflicts(left: WriteIsolationScope, right: WriteIsolationScope): 
 export function getWriteIsolationScope(
   toolName: string,
   params: Record<string, unknown>,
-  workingDirectory: string,
+  workspace: string,
   permissionLevel?: string,
+  cwd: string = workspace,
 ): WriteIsolationScope | null {
-  const root = normalizeTargetPath(workingDirectory, '.');
+  const root = normalizeTargetPath(workspace, '.');
 
   // Delegation itself does not mutate the workspace. Child agents still acquire
   // write isolation for their own file writes and command execution.
@@ -143,7 +146,7 @@ export function getWriteIsolationScope(
     };
   }
 
-  const targetPath = normalizeTargetPath(workingDirectory, filePath);
+  const targetPath = normalizeTargetPath(cwd, filePath);
   return {
     kind: 'file',
     root,

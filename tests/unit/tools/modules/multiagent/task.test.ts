@@ -56,6 +56,8 @@ vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
 }));
 
 import { taskModule } from '../../../../../src/host/tools/modules/multiagent/task';
+import { getSwarmRunScopeKey, type SwarmRunScope } from '../../../../../src/shared/contract/swarm';
+import { getSpawnGuard, resetSpawnGuard } from '../../../../../src/host/agent/spawnGuard';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -80,6 +82,7 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetSpawnGuard();
   taskDedupMock.isDuplicate.mockReturnValue({ isDuplicate: false });
   taskDedupMock.registerTask.mockReturnValue('hash-1');
 });
@@ -148,6 +151,100 @@ describe('Task validation', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+  });
+});
+
+describe('Task Team scope', () => {
+  it('namespaces deduplication with the exact session/run/tree scope', async () => {
+    const scope: SwarmRunScope = {
+      sessionId: 'session-team',
+      runId: 'run-team',
+      treeId: 'tree-team',
+    };
+    executorExecuteMock.mockResolvedValue({
+      success: true,
+      output: 'scoped result',
+      iterations: 1,
+      toolsUsed: [],
+    });
+    const handler = await taskModule.createHandler();
+
+    const result = await handler.execute(
+      { prompt: 'same prompt', subagent_type: 'reviewer' },
+      makeCtx({ sessionId: scope.sessionId, swarmRunScope: scope }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    const namespace = getSwarmRunScopeKey(scope);
+    expect(taskDedupMock.isDuplicate).toHaveBeenCalledWith('reviewer', 'same prompt', namespace);
+    expect(taskDedupMock.registerTask).toHaveBeenCalledWith('reviewer', 'same prompt', namespace);
+  });
+
+  it('does not start an executor when cancelRun rejects its queued slot', async () => {
+    const scopeA: SwarmRunScope = {
+      sessionId: 'shared-session',
+      runId: 'run-a',
+      treeId: 'shared-tree',
+    };
+    const scopeB: SwarmRunScope = {
+      sessionId: scopeA.sessionId,
+      runId: 'run-b',
+      treeId: scopeA.treeId,
+    };
+    const guard = getSpawnGuard({ maxAgents: 1 });
+    const holder = await guard.acquireSlot({ scope: scopeB, timeoutMs: 1_000 });
+    const handler = await taskModule.createHandler();
+
+    const pending = handler.execute(
+      { prompt: 'queued task', subagent_type: 'reviewer' },
+      makeCtx({ sessionId: scopeA.sessionId, swarmRunScope: scopeA }),
+      allowAll,
+    );
+    await Promise.resolve();
+    expect(executorExecuteMock).not.toHaveBeenCalled();
+
+    expect(guard.cancelRun(scopeA, 'run-a-cancelled')).toBe(0);
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/cancelled.*run-a-cancelled/i);
+    expect(executorExecuteMock).not.toHaveBeenCalled();
+
+    holder.release();
+    expect(guard.getReservedCount(scopeB)).toBe(0);
+  });
+
+  it('aborts a started executor when SpawnGuard registration fails', async () => {
+    const guard = getSpawnGuard();
+    const registerSpy = vi.spyOn(guard, 'register').mockImplementation(() => {
+      throw new Error('duplicate registration');
+    });
+    let childSignal: AbortSignal | undefined;
+    executorExecuteMock.mockImplementation((...args: unknown[]) => {
+      childSignal = (args[2] as { abortSignal: AbortSignal }).abortSignal;
+      return new Promise((resolve) => {
+        childSignal!.addEventListener('abort', () => resolve({
+          success: false,
+          error: 'cancelled',
+          output: '',
+          iterations: 0,
+          toolsUsed: [],
+        }), { once: true });
+      });
+    });
+    const handler = await taskModule.createHandler();
+
+    const result = await handler.execute(
+      { prompt: 'registration race', subagent_type: 'reviewer' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(childSignal?.aborted).toBe(true);
+    expect(childSignal?.reason).toBe('registration-failed');
+    expect(guard.getReservedCount('sess-1')).toBe(0);
+    registerSpy.mockRestore();
   });
 });
 

@@ -83,6 +83,23 @@ const DEFAULT_CONFIG: DAGSchedulerConfig = {
   defaultTimeout: DAG_SCHEDULER.DEFAULT_TIMEOUT,
 };
 
+const DAG_EVENT_TYPES: DAGEventType[] = [
+  'dag:start',
+  'dag:complete',
+  'dag:failed',
+  'dag:cancelled',
+  'dag:paused',
+  'dag:resumed',
+  'task:ready',
+  'task:start',
+  'task:complete',
+  'task:failed',
+  'task:retry',
+  'task:cancelled',
+  'task:skipped',
+  'progress:update',
+];
+
 /**
  * 调度器执行上下文
  */
@@ -219,6 +236,27 @@ export class DAGScheduler extends EventEmitter {
    */
   registerExecutor(type: string, executor: TaskExecutor): void {
     this.customExecutors.set(type, executor);
+  }
+
+  /**
+   * Fork an execution-local scheduler while retaining the process-level
+   * resolver, custom executors and visualization bridge installed at app init.
+   * Mutable DAG state is deliberately not copied.
+   */
+  createRunScheduler(config: Partial<DAGSchedulerConfig> = {}): DAGScheduler {
+    const scheduler = new DAGScheduler({ ...this.config, ...config });
+    scheduler.agentResolver = this.agentResolver;
+    scheduler.subagentExecutor = this.subagentExecutor;
+    scheduler.customExecutors = new Map(this.customExecutors);
+    scheduler.onDAGInit = this.onDAGInit;
+
+    // Existing consumers subscribe to the process-level scheduler. Relay only
+    // immutable events; execution state remains owned by the run-local fork.
+    for (const eventType of DAG_EVENT_TYPES) {
+      scheduler.on(eventType, (event: DAGEvent) => this.emit(eventType, event));
+    }
+
+    return scheduler;
   }
 
   // ============================================================================
@@ -694,24 +732,7 @@ export class DAGScheduler extends EventEmitter {
    * 转发 DAG 事件
    */
   private forwardDAGEvents(dag: TaskDAG): void {
-    const eventTypes: DAGEventType[] = [
-      'dag:start',
-      'dag:complete',
-      'dag:failed',
-      'dag:cancelled',
-      'dag:paused',
-      'dag:resumed',
-      'task:ready',
-      'task:start',
-      'task:complete',
-      'task:failed',
-      'task:retry',
-      'task:cancelled',
-      'task:skipped',
-      'progress:update',
-    ];
-
-    for (const eventType of eventTypes) {
+    for (const eventType of DAG_EVENT_TYPES) {
       dag.on(eventType, (event: DAGEvent) => {
         this.emit(eventType, event);
       });
@@ -765,6 +786,13 @@ export function getDAGScheduler(): DAGScheduler {
     schedulerInstance = new DAGScheduler();
   }
   return schedulerInstance;
+}
+
+/** Create a scheduler whose mutable execution state belongs to one run only. */
+export function createRunDAGScheduler(
+  config: Partial<DAGSchedulerConfig> = {},
+): DAGScheduler {
+  return getDAGScheduler().createRunScheduler(config);
 }
 
 /**

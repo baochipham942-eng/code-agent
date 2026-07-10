@@ -324,7 +324,8 @@ import { resolveRendererServeDecision } from '../host/services/renderer/renderer
 import { getAppVersion } from '../host/platform';
 import { createAgentRouter } from './routes/agent';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
-import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
+import type { PendingLocalToolCall } from './routes/agent';
+import { RunRegistry } from '../host/runtime/runRegistry';
 import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
 import { createSessionsRouter } from './routes/sessions';
 import type { SupabaseSessionBinding } from './routes/sessions';
@@ -343,8 +344,8 @@ onRendererPush((channel, data) => {
   broadcastSSE(channel, data);
 });
 
-// 活跃 AgentLoop 实例追踪（用于 cancel / interrupt）
-const activeAgentLoops = new Map<string, ActiveAgentLoop>();
+// Native run lifecycle ownership. Primary key is runId; sessionId is unique while active.
+const runRegistry = new RunRegistry();
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
@@ -661,7 +662,7 @@ function registerHandlers(): void {
     const { registerSwarmServices } = require('../host/agent/swarmServices') as typeof import('../host/agent/swarmServices');
     const { getPlanApprovalGate } = require('../host/agent/planApproval') as typeof import('../host/agent/planApproval');
     const { getSwarmLaunchApprovalGate } = require('../host/agent/swarmLaunchApproval') as typeof import('../host/agent/swarmLaunchApproval');
-    const { getParallelAgentCoordinator } = require('../host/agent/parallelAgentCoordinator') as typeof import('../host/agent/parallelAgentCoordinator');
+    const { getParallelAgentCoordinatorRegistry } = require('../host/agent/parallelAgentCoordinator') as typeof import('../host/agent/parallelAgentCoordinator');
     const { getSpawnGuard } = require('../host/agent/spawnGuard') as typeof import('../host/agent/spawnGuard');
     const { getTeammateService } = require('../host/agent/teammate/teammateService') as typeof import('../host/agent/teammate/teammateService');
     const { persistAgentRun, getRecentAgentHistory } = require('../host/session/agentHistoryPersistence') as typeof import('../host/session/agentHistoryPersistence');
@@ -701,7 +702,7 @@ function registerHandlers(): void {
     registerSwarmServices({
       planApproval: planApprovalGate,
       launchApproval: launchApprovalGate,
-      parallelCoordinator: getParallelAgentCoordinator(),
+      parallelCoordinators: getParallelAgentCoordinatorRegistry(),
       spawnGuard: getSpawnGuard(),
       teammateService: getTeammateService(),
       agentHistory: { persistAgentRun, getRecentAgentHistory },
@@ -904,7 +905,7 @@ function registerHandlers(): void {
               },
             };
           }
-          if (activeAgentLoops.has(sessionId)) {
+          if (runRegistry.hasSession(sessionId)) {
             throw new Error('Cannot rewind while the session is running');
           }
 
@@ -1034,7 +1035,7 @@ function createApp(): express.Express {
   app.get('/api/screenshot', handleScreenshot);
 
   // ── Dev routes (workspace/file, dev/exec-tool, dev/smoke/office) ────
-  app.use('/api', createDevRouter({ pendingDevPermissions, activeAgentLoops, logger }));
+  app.use('/api', createDevRouter({ pendingDevPermissions, runRegistry, logger }));
 
   // ── Shared helpers for agent & session routes ──────────────────────
 
@@ -1072,7 +1073,7 @@ function createApp(): express.Express {
 
   // ── Agent routes (extracted to routes/agent.ts) ─────────────────────
   app.use('/api', createAgentRouter({
-    activeAgentLoops,
+    runRegistry,
     pendingLocalToolCalls,
     logger,
     tryGetSessionManager,
@@ -1087,7 +1088,6 @@ function createApp(): express.Express {
     logger,
     tryGetSessionManager,
     getSupabaseForSession,
-    activeAgentLoops,
   }));
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────

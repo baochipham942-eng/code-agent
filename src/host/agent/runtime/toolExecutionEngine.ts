@@ -728,6 +728,7 @@ export class ToolExecutionEngine {
         toolCall.name,
         toolCall.arguments,
         {
+          runId: this.ctx.runId,
           planningService: this.ctx.planningService,
           modelConfig: this.ctx.modelConfig,
           setPlanMode: this.runtimeControl.setPlanMode.bind(this.runtimeControl),

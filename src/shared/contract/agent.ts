@@ -117,9 +117,19 @@ export interface TaskUpdateEventData {
 export interface LocalToolCallData {
   toolCallId: string;
   tool: string;
+  originalTool?: string;
   params: Record<string, unknown>;
   permissionLevel: 'L1' | 'L2' | 'L3';
-  sessionId?: string;
+  runId: string;
+  sessionId: string;
+  workspace: string;
+  cwd: string;
+}
+
+export interface LocalToolCancelData {
+  toolCallId: string;
+  runId: string;
+  sessionId: string;
 }
 
 // Memory 学习完成事件数据
@@ -458,6 +468,7 @@ export type AgentEvent =
   | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
   // Web Bridge: 本地工具调用请求（webServer → 前端 → Bridge）
   | { type: 'tool_call_local'; data: LocalToolCallData }
+  | { type: 'tool_cancel_local'; data: LocalToolCancelData }
   // Context-aware follow-up suggestions
   | { type: 'suggestions_update'; data: Array<{ id: string; text: string; source: string }> };
 

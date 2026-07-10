@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { glob } from 'glob';
-import { ensureSandboxDir } from '../security/sandbox';
+import { ensureSandboxDir, resolveSandboxPath } from '../security/sandbox';
 import type { ToolDefinition } from '../types';
 
 export const fileGrepTool: ToolDefinition = {
@@ -25,7 +25,13 @@ export const fileGrepTool: ToolDefinition = {
     });
 
     const results: Array<{ path: string; line: number; text: string }> = [];
-    for (const file of files.slice(0, 500)) {
+    for (const candidate of files.slice(0, 500)) {
+      let file: string;
+      try {
+        file = resolveSandboxPath(candidate, context.config.workingDirectories, cwd);
+      } catch {
+        continue;
+      }
       const content = await fs.readFile(file, 'utf8').catch(() => '');
       if (!content) {
         continue;

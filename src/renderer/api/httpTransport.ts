@@ -18,6 +18,7 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { RENDERER_POLLING } from '../../shared/constants';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
+import { localToolAbortRegistry } from './localToolAbortRegistry';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -313,35 +314,50 @@ function getRecoverableAuthTokenError(status: number, errorMessage: string): Aut
  * 处理 tool_call_local 事件：调用本地 Bridge 执行工具，将结果 POST 回 webServer
  */
 async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown>): Promise<void> {
-  const bridgeStore = useLocalBridgeStore.getState();
-  if (bridgeStore.status !== 'connected') {
-    console.warn('[HttpTransport] Bridge not connected, cannot execute local tool:', data.tool);
-    // POST error result back
-    await fetch(`${baseUrl}/api/tool-result`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify({
-        toolCallId: data.toolCallId,
-        success: false,
-        error: 'Local Bridge is not connected. Please start the Bridge service on localhost:9527.',
-      }),
-    });
-    return;
-  }
+  const toolCallId = getStringField(data, 'toolCallId');
+  const runId = getStringField(data, 'runId');
+  if (!toolCallId || !runId) return;
+  const controller = new AbortController();
+  localToolAbortRegistry.register(toolCallId, runId, controller);
 
   try {
+    const bridgeStore = useLocalBridgeStore.getState();
+    if (bridgeStore.status !== 'connected') {
+      console.warn('[HttpTransport] Bridge not connected, cannot execute local tool:', data.tool);
+      await fetch(`${baseUrl}/api/tool-result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          toolCallId,
+          success: false,
+          error: 'Local Bridge is not connected. Please start the Bridge service on localhost:9527.',
+        }),
+      });
+      return;
+    }
+
+    const sessionId = getStringField(data, 'sessionId');
+    const workspace = getStringField(data, 'workspace');
+    const cwd = getStringField(data, 'cwd');
+    if (!sessionId || !workspace || !cwd) {
+      throw new Error('Local tool call is missing its immutable run context');
+    }
+
     const client = getLocalBridgeClient();
     const result = await client.invokeTool(
       data.tool as string,
-      data.params as Record<string, unknown>
+      data.params as Record<string, unknown>,
+      { requestId: toolCallId, runId, sessionId, workspace, cwd },
+      controller.signal,
     );
+    if (controller.signal.aborted) return;
 
     // POST result back to webServer
     await fetch(`${baseUrl}/api/tool-result`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({
-        toolCallId: data.toolCallId,
+        toolCallId,
         success: result.success,
         output: result.output,
         error: result.error,
@@ -349,17 +365,43 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
       }),
     });
   } catch (err) {
+    if (controller.signal.aborted) return;
     console.error('[HttpTransport] Local tool execution failed:', err);
     await fetch(`${baseUrl}/api/tool-result`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({
-        toolCallId: data.toolCallId,
+        toolCallId,
         success: false,
         error: `Bridge invocation failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
       }),
     });
+  } finally {
+    localToolAbortRegistry.delete(toolCallId, controller);
   }
+}
+
+function handleLocalToolCancel(data: Record<string, unknown>): void {
+  const toolCallId = getStringField(data, 'toolCallId');
+  if (!toolCallId) return;
+  localToolAbortRegistry.abortCall(toolCallId);
+}
+
+function interceptLocalBridgeEvent(
+  baseUrl: string,
+  event: string,
+  data: Record<string, unknown>,
+): string | undefined {
+  const runId = getStringField(data, 'runId');
+  if (event === 'tool_call_local') {
+    console.debug('[HttpTransport] Intercepted tool_call_local:', data.tool, data.toolCallId);
+    handleLocalToolCall(baseUrl, data).catch((error) => {
+      console.error('[HttpTransport] handleLocalToolCall error:', error);
+    });
+  } else if (event === 'tool_cancel_local') {
+    handleLocalToolCancel(data);
+  }
+  return runId;
 }
 
 /** Get auth headers for API requests. Token is injected into HTML by webServer. */
@@ -511,6 +553,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           const decoder = new TextDecoder();
           let buffer = '';
           let streamSessionId = sessionId;
+          let streamRunId: string | undefined;
 
           const processStream = async () => {
             let currentEvent = '';  // 移到 while 外面，防止跨 chunk 时 event/data 分属不同 read() 导致丢失
@@ -529,6 +572,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                         if (data !== undefined) {
                           const currentSessionId = getStringField(data, 'sessionId');
                           if (currentSessionId) streamSessionId = currentSessionId;
+                          if (isRecord(data)) {
+                            streamRunId = interceptLocalBridgeEvent(baseUrl, currentEvent, data)
+                              ?? streamRunId;
+                          }
                           const cbs = listeners.get('agent:event');
                           if (cbs) {
                             cbs.forEach((cb) => cb({
@@ -567,17 +614,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                       const currentSessionId = getStringField(data, 'sessionId');
                       if (currentSessionId) streamSessionId = currentSessionId;
 
-                      // ── Local Bridge 拦截: tool_call_local 事件 ──
-                      if (currentEvent === 'tool_call_local' && isRecord(data)) {
-                        console.debug(
-                          '[HttpTransport] Intercepted tool_call_local:',
-                          data.tool,
-                          data.toolCallId
-                        );
-                        handleLocalToolCall(baseUrl, data).catch((err) => {
-                          console.error('[HttpTransport] handleLocalToolCall error:', err);
-                        });
-                        // 仍然派发事件给 UI（用于显示工具执行状态）
+                      if (isRecord(data)) {
+                        streamRunId = interceptLocalBridgeEvent(baseUrl, currentEvent, data)
+                          ?? streamRunId;
                       }
 
                       // 将 SSE 事件转发到 agent:event listeners
@@ -607,6 +646,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                   data: { message: err instanceof Error ? err.message : 'Stream error' },
                   sessionId: streamSessionId,
                 }));
+              }
+            } finally {
+              if (streamRunId) {
+                localToolAbortRegistry.abortRun(streamRunId);
               }
             }
           };

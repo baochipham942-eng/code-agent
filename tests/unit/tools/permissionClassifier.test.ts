@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -16,6 +19,52 @@ describe('PermissionClassifier', () => {
   beforeEach(() => {
     getPermissionClassifier().clearCache();
     setCommandPolicyRulesForTest([]);
+  });
+
+  it('does not reuse a relative-path decision across run workspaces', async () => {
+    const first = await classifyPermission(
+      'Write',
+      { file_path: 'marker.txt', content: 'same' },
+      { workingDirectory: '/tmp/run-a/pkg', workspaceRoot: '/tmp/run-a' },
+    );
+    const second = await classifyPermission(
+      'Write',
+      { file_path: 'marker.txt', content: 'same' },
+      { workingDirectory: '/tmp/run-b/pkg', workspaceRoot: '/tmp/run-b' },
+    );
+    const secondAgain = await classifyPermission(
+      'Write',
+      { file_path: 'marker.txt', content: 'same' },
+      { workingDirectory: '/tmp/run-b/pkg', workspaceRoot: '/tmp/run-b' },
+    );
+
+    expect(first.cached).toBe(false);
+    expect(second.cached).toBe(false);
+    expect(secondAgain.cached).toBe(true);
+  });
+
+  it('classifies a symlinked write by its canonical target outside the workspace', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'permission-symlink-'));
+    const workspace = path.join(root, 'workspace');
+    await fs.mkdir(workspace, { recursive: true });
+    await fs.symlink(
+      os.homedir(),
+      path.join(workspace, 'external-home'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+
+    try {
+      const result = await classifyPermission(
+        'Write',
+        { file_path: 'external-home/code-agent-symlink-probe.txt', content: 'probe' },
+        { workingDirectory: workspace, workspaceRoot: workspace, permissionLevel: 'write' },
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('写入项目目录外');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('asks before reading Claude global memory files', async () => {

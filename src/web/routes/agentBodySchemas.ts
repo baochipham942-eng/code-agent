@@ -42,6 +42,7 @@ export const AgentRunBodySchema = z.object({
 }).passthrough();
 
 export const AgentCancelBodySchema = z.object({
+  runId: z.string().optional(),
   sessionId: z.string().optional(),
 }).passthrough();
 

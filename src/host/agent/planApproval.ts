@@ -14,18 +14,32 @@ import { createLogger } from '../services/infra/logger';
 import { isDangerousCommand } from '../services/core/permissionPresets';
 import { getTeammateService } from './teammate/teammateService';
 import { getEventBus } from '../services/eventing/bus';
-import type { SwarmEvent } from '../../shared/contract/swarm';
+import {
+  createScopedSwarmAgentId,
+  getSwarmRunScopeKey,
+  isSameSwarmRun,
+  parseScopedSwarmAgentId,
+  type SwarmAgentRef,
+  type SwarmEvent,
+  type SwarmRunRef,
+  type SwarmRunScope,
+} from '../../shared/contract/swarm';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 
 /**
  * ADR-008 Phase 3: 通过 EventBus 发布 plan review 事件
  * 替代原 `import { getSwarmEventEmitter } from '../ipc/swarm.ipc'`，断开 Cycle 2 的反向边。
  * swarm.ipc 的 bridge 订阅器（ensureSwarmBusBridge）会把事件投递给渲染进程 + CLI listeners。
  */
-function publishSwarmEvent(event: SwarmEvent): void {
+function publishSwarmEvent(scope: SwarmRunScope, event: Omit<SwarmEvent, keyof SwarmRunScope>): void {
+  const scopedEvent: SwarmEvent = { ...event, ...scope };
   const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+  getEventBus().publish('swarm', busType, scopedEvent, {
+    sessionId: scope.sessionId,
+    bridgeToRenderer: false,
+  });
 }
 
 const logger = createLogger('PlanApprovalGate');
@@ -52,6 +66,17 @@ export interface PlanSubmission {
   status: 'pending' | 'approved' | 'rejected';
   feedback?: string;
   resolvedAt?: number;
+  scope?: SwarmRunScope;
+}
+
+export interface PlanSubmissionInput {
+  agentId: string;
+  agentName: string;
+  coordinatorId: string;
+  plan: string;
+  risk: RiskAssessment;
+  scope?: SwarmRunScope;
+  signal?: AbortSignal;
 }
 
 export interface PlanApprovalResult {
@@ -67,8 +92,11 @@ export interface PlanApprovalResult {
 export class PlanApprovalGate {
   private pendingPlans: Map<string, PlanSubmission> = new Map();
   private planCounter = 0;
-  /** Serial queue to prevent concurrent approval conflicts */
-  private approvalQueue: Promise<void> = Promise.resolve();
+  /** Serial within one run, independent across concurrent Teams. */
+  private approvalQueues = new Map<string, Promise<void>>();
+  private approvalQueueScopes = new Map<string, SwarmRunScope>();
+  private cancelledRunReasons = new Map<string, string>();
+  private cancelAllReason: string | null = null;
   /** Resolvers for in-flight waitForApproval promises (event-driven wake-up) */
   private pendingResolvers: Map<string, (result: PlanApprovalResult) => void> = new Map();
   /** Default timeout for coordinator response (30 seconds) */
@@ -197,13 +225,7 @@ export class PlanApprovalGate {
    * Submit a plan for approval.
    * Low-risk plans are auto-approved. High-risk plans wait for coordinator response.
    */
-  async submitForApproval(params: {
-    agentId: string;
-    agentName: string;
-    coordinatorId: string;
-    plan: string;
-    risk: RiskAssessment;
-  }): Promise<PlanApprovalResult> {
+  async submitForApproval(params: PlanSubmissionInput): Promise<PlanApprovalResult> {
     // Low-risk: auto-approve
     if (params.risk.level === 'low') {
       logger.debug(`[${params.agentName}] Plan auto-approved (low risk)`);
@@ -217,15 +239,18 @@ export class PlanApprovalGate {
   /**
    * Approve a pending plan.
    */
-  approve(planId: string, feedback?: string): boolean {
+  approve(planId: string, feedback?: string, expected?: SwarmAgentRef): boolean {
     const plan = this.pendingPlans.get(planId);
     if (plan?.status !== 'pending') return false;
+    if (expected && !this.matchesTarget(plan, expected)) return false;
 
     plan.status = 'approved';
     plan.feedback = feedback;
     plan.resolvedAt = Date.now();
     logger.info(`Plan approved: ${planId} for ${plan.agentName}`);
     this.safePersistResolve(planId, 'approved', feedback ?? null, plan.resolvedAt);
+    this.publishPlanDecision(plan, 'approved', feedback);
+    this.notifyPlanDecision(plan, true, feedback);
 
     // Event-driven wake-up: resolve the pending waitForApproval immediately
     const resolver = this.pendingResolvers.get(planId);
@@ -239,15 +264,18 @@ export class PlanApprovalGate {
   /**
    * Reject a pending plan.
    */
-  reject(planId: string, reason: string): boolean {
+  reject(planId: string, reason: string, expected?: SwarmAgentRef): boolean {
     const plan = this.pendingPlans.get(planId);
     if (plan?.status !== 'pending') return false;
+    if (expected && !this.matchesTarget(plan, expected)) return false;
 
     plan.status = 'rejected';
     plan.feedback = reason;
     plan.resolvedAt = Date.now();
     logger.info(`Plan rejected: ${planId} for ${plan.agentName} — ${reason}`);
     this.safePersistResolve(planId, 'rejected', reason, plan.resolvedAt);
+    this.publishPlanDecision(plan, 'rejected', reason);
+    this.notifyPlanDecision(plan, false, reason);
 
     const resolver = this.pendingResolvers.get(planId);
     if (resolver) {
@@ -265,6 +293,7 @@ export class PlanApprovalGate {
    * 返回被取消的 plan 数量。
    */
   cancelAll(reason: string): number {
+    this.cancelAllReason = reason;
     if (this.pendingResolvers.size === 0) return 0;
     const feedback = `Cancelled: ${reason}`;
     let cancelled = 0;
@@ -278,6 +307,8 @@ export class PlanApprovalGate {
         plan.status = 'rejected';
         plan.feedback = feedback;
         plan.resolvedAt = now;
+        this.publishPlanDecision(plan, 'rejected', feedback);
+        this.notifyPlanDecision(plan, false, feedback);
       }
       this.safePersistResolve(planId, 'rejected', feedback, now);
       try {
@@ -291,91 +322,245 @@ export class PlanApprovalGate {
     return cancelled;
   }
 
+  cancelRun(scope: SwarmRunScope, reason: string): number {
+    // Record the tombstone even when the run has no current queue. A plan can
+    // arrive after cancellation while an agent is unwinding; it must not open
+    // a fresh approval queue for an already-cancelled Team.
+    this.cancelledRunReasons.set(getSwarmRunScopeKey(scope), reason);
+    const feedback = `Cancelled: ${reason}`;
+    const now = Date.now();
+    let cancelled = 0;
+
+    for (const [planId, resolver] of Array.from(this.pendingResolvers.entries())) {
+      const plan = this.pendingPlans.get(planId);
+      if (!plan?.scope || !isSameSwarmRun(plan.scope, scope)) continue;
+
+      this.pendingResolvers.delete(planId);
+      plan.status = 'rejected';
+      plan.feedback = feedback;
+      plan.resolvedAt = now;
+      this.safePersistResolve(planId, 'rejected', feedback, now);
+      this.publishPlanDecision(plan, 'rejected', feedback);
+      this.notifyPlanDecision(plan, false, feedback);
+      resolver({ approved: false, feedback, autoApproved: true });
+      cancelled += 1;
+    }
+
+    return cancelled;
+  }
+
+  /** Cancel only the pending plan owned by the exact scoped agent. */
+  cancelAgent(ref: SwarmAgentRef, reason: string): number {
+    const feedback = `Cancelled: ${reason}`;
+    const now = Date.now();
+    let cancelled = 0;
+
+    for (const [planId, resolver] of Array.from(this.pendingResolvers.entries())) {
+      const plan = this.pendingPlans.get(planId);
+      if (!plan || !this.matchesTarget(plan, ref)) continue;
+
+      this.pendingResolvers.delete(planId);
+      plan.status = 'rejected';
+      plan.feedback = feedback;
+      plan.resolvedAt = now;
+      this.safePersistResolve(planId, 'rejected', feedback, now);
+      this.publishPlanDecision(plan, 'rejected', feedback);
+      this.notifyPlanDecision(plan, false, feedback);
+      resolver({ approved: false, feedback, autoApproved: true });
+      cancelled += 1;
+    }
+
+    return cancelled;
+  }
+
+  /** Session cancellation drains the runs that exist now without poisoning future runs. */
+  cancelSession(sessionId: string, reason: string): number {
+    const feedback = `Cancelled: ${reason}`;
+    const now = Date.now();
+    let cancelled = 0;
+
+    for (const [queueKey, scope] of this.approvalQueueScopes) {
+      if (scope.sessionId === sessionId) this.cancelledRunReasons.set(queueKey, reason);
+    }
+
+    for (const [planId, resolver] of Array.from(this.pendingResolvers.entries())) {
+      const plan = this.pendingPlans.get(planId);
+      if (plan?.scope?.sessionId !== sessionId) continue;
+
+      this.cancelledRunReasons.set(getSwarmRunScopeKey(plan.scope), reason);
+
+      this.pendingResolvers.delete(planId);
+      plan.status = 'rejected';
+      plan.feedback = feedback;
+      plan.resolvedAt = now;
+      this.safePersistResolve(planId, 'rejected', feedback, now);
+      this.publishPlanDecision(plan, 'rejected', feedback);
+      this.notifyPlanDecision(plan, false, feedback);
+      resolver({ approved: false, feedback, autoApproved: true });
+      cancelled += 1;
+    }
+
+    return cancelled;
+  }
+
   // --------------------------------------------------------------------------
   // Query
   // --------------------------------------------------------------------------
 
-  getPendingPlans(): PlanSubmission[] {
+  getPendingPlans(scope?: SwarmRunRef): PlanSubmission[] {
     return Array.from(this.pendingPlans.values())
-      .filter(p => p.status === 'pending');
+      .filter((plan) => plan.status === 'pending')
+      .filter((plan) => !scope || Boolean(plan.scope && isSameSwarmRun(plan.scope, scope)));
   }
 
   getPendingResolverCount(): number {
     return this.pendingResolvers.size;
   }
 
-  getPlan(planId: string): PlanSubmission | undefined {
-    return this.pendingPlans.get(planId);
+  getPlan(planId: string, expected?: SwarmAgentRef): PlanSubmission | undefined {
+    const plan = this.pendingPlans.get(planId);
+    if (!plan || (expected && !this.matchesTarget(plan, expected))) return undefined;
+    return plan;
   }
 
   // --------------------------------------------------------------------------
   // Private
   // --------------------------------------------------------------------------
 
-  private async enqueueApproval(params: {
-    agentId: string;
-    agentName: string;
-    coordinatorId: string;
-    plan: string;
-    risk: RiskAssessment;
-  }): Promise<PlanApprovalResult> {
-    // Serial queue to avoid concurrent plan conflicts
-    return new Promise<PlanApprovalResult>((resolve) => {
-      this.approvalQueue = this.approvalQueue.then(async () => {
-        const planId = `plan_${++this.planCounter}_${Date.now()}`;
+  private async enqueueApproval(params: PlanSubmissionInput): Promise<PlanApprovalResult> {
+    const parsedAgent = parseScopedSwarmAgentId(params.agentId);
+    const scope = params.scope ?? parsedAgent?.scope;
+    if (scope && parsedAgent && getSwarmRunScopeKey(parsedAgent.scope) !== getSwarmRunScopeKey(scope)) {
+      throw new Error(`Plan agent ${params.agentId} does not belong to the requested run scope`);
+    }
+    const agentId = scope && !parsedAgent
+      ? createScopedSwarmAgentId(scope, params.agentId)
+      : params.agentId;
+    const queueKey = scope ? getSwarmRunScopeKey(scope) : '__legacy__';
+    if (scope) this.approvalQueueScopes.set(queueKey, scope);
+    const previous = this.approvalQueues.get(queueKey) ?? Promise.resolve();
+
+    const execution = previous.then(async () => {
+        const cancellationReason = this.cancelAllReason
+          ?? this.cancelledRunReasons.get(queueKey)
+          ?? (params.signal?.aborted
+            ? normalizeCancellationReason(params.signal.reason, 'parent-cancel')
+            : undefined);
+        if (cancellationReason) {
+          return {
+            approved: false,
+            feedback: `Cancelled: ${cancellationReason}`,
+            autoApproved: true,
+          } satisfies PlanApprovalResult;
+        }
+        const planId = `plan_${queueKey}_${++this.planCounter}_${Date.now()}`;
+        const parsedCoordinator = parseScopedSwarmAgentId(params.coordinatorId);
+        if (
+          scope
+          && parsedCoordinator
+          && getSwarmRunScopeKey(parsedCoordinator.scope) !== getSwarmRunScopeKey(scope)
+        ) {
+          throw new Error(`Plan coordinator ${params.coordinatorId} does not belong to the requested run scope`);
+        }
+        const coordinatorId = scope && !parsedCoordinator
+          ? createScopedSwarmAgentId(scope, params.coordinatorId)
+          : params.coordinatorId;
 
         const submission: PlanSubmission = {
           id: planId,
-          agentId: params.agentId,
+          agentId,
           agentName: params.agentName,
-          coordinatorId: params.coordinatorId,
+          coordinatorId,
           plan: params.plan,
           risk: params.risk,
           submittedAt: Date.now(),
           status: 'pending',
+          scope,
         };
 
         this.pendingPlans.set(planId, submission);
         this.safePersistInsert(submission);
 
+        const reviewContent = `Risk: ${params.risk.level} (${params.risk.reasons.join(', ')})\n\n${params.plan}`;
         // Notify coordinator via TeammateService
         try {
           const teammateService = getTeammateService();
-          const reviewContent = `Risk: ${params.risk.level} (${params.risk.reasons.join(', ')})\n\n${params.plan}`;
           teammateService.sendPlanReview(
-            params.agentId,
-            params.coordinatorId,
+            agentId,
+            coordinatorId,
             `[Plan ID: ${planId}]\n${reviewContent}`,
+            planId,
+            scope,
           );
-          publishSwarmEvent({
+        } catch (err) {
+          logger.warn('Failed to send plan review via TeammateService', err);
+        }
+        if (scope) {
+          publishSwarmEvent(scope, {
             type: 'swarm:agent:plan_review',
-            timestamp: Date.now(),
+            timestamp: submission.submittedAt,
             data: {
-              agentId: params.agentId,
+              agentId,
               plan: {
                 id: planId,
-                agentId: params.agentId,
+                agentId,
                 content: reviewContent,
                 status: 'pending',
               },
             },
           });
-        } catch (err) {
-          logger.warn('Failed to send plan review via TeammateService', err);
         }
 
         logger.info(`[${params.agentName}] Plan submitted for approval: ${planId} (risk: ${params.risk.level})`);
 
         // Wait for approval with timeout
-        const result = await this.waitForApproval(planId);
-        resolve(result);
-      });
+        return this.waitForApproval(planId, params.signal);
     });
+
+    const tail = execution.then(() => undefined, () => undefined);
+    this.approvalQueues.set(queueKey, tail);
+    void tail.finally(() => {
+      if (this.approvalQueues.get(queueKey) === tail) {
+        this.approvalQueues.delete(queueKey);
+        this.approvalQueueScopes.delete(queueKey);
+      }
+    });
+    return execution;
   }
 
-  private waitForApproval(planId: string): Promise<PlanApprovalResult> {
+  private waitForApproval(planId: string, signal?: AbortSignal): Promise<PlanApprovalResult> {
     return new Promise<PlanApprovalResult>((resolve) => {
-      this.pendingResolvers.set(planId, resolve);
+      let settled = false;
+      const finish = (result: PlanApprovalResult) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', rejectForAbort);
+        resolve(result);
+      };
+      const rejectForAbort = () => {
+        if (!this.pendingResolvers.has(planId)) return;
+        this.pendingResolvers.delete(planId);
+        const reason = normalizeCancellationReason(signal?.reason, 'parent-cancel');
+        const feedback = `Cancelled: ${reason}`;
+        const now = Date.now();
+        const plan = this.pendingPlans.get(planId);
+        if (plan?.status === 'pending') {
+          plan.status = 'rejected';
+          plan.feedback = feedback;
+          plan.resolvedAt = now;
+          this.safePersistResolve(planId, 'rejected', feedback, now);
+          this.publishPlanDecision(plan, 'rejected', feedback);
+          this.notifyPlanDecision(plan, false, feedback);
+        }
+        finish({ approved: false, feedback, autoApproved: true });
+      };
+
+      this.pendingResolvers.set(planId, finish);
+      if (signal?.aborted) {
+        rejectForAbort();
+        return;
+      }
+      signal?.addEventListener('abort', rejectForAbort, { once: true });
 
       // Fail-closed timeout：超时后若 resolver 仍未触发，则 auto-reject
       // medium/high risk 不应在无人值守时放行
@@ -392,16 +577,77 @@ export class PlanApprovalGate {
           plan.status = 'rejected';
           plan.feedback = rejectFeedback;
           plan.resolvedAt = now;
+          this.publishPlanDecision(plan, 'rejected', rejectFeedback);
+          this.notifyPlanDecision(plan, false, rejectFeedback);
         }
         this.safePersistResolve(planId, 'rejected', rejectFeedback, now);
 
-        resolve({
+        finish({
           approved: false,
           feedback: rejectFeedback,
           autoApproved: true,
         });
       }, this.approvalTimeoutMs);
     });
+  }
+
+  private matchesTarget(plan: PlanSubmission, expected: SwarmAgentRef): boolean {
+    return Boolean(
+      plan.scope
+      && isSameSwarmRun(plan.scope, expected)
+      && plan.agentId === expected.agentId,
+    );
+  }
+
+  private publishPlanDecision(
+    plan: PlanSubmission,
+    status: 'approved' | 'rejected',
+    feedback?: string,
+  ): void {
+    if (!plan.scope) return;
+    publishSwarmEvent(plan.scope, {
+      type: status === 'approved' ? 'swarm:agent:plan_approved' : 'swarm:agent:plan_rejected',
+      timestamp: plan.resolvedAt ?? Date.now(),
+      data: {
+        agentId: plan.agentId,
+        plan: {
+          id: plan.id,
+          agentId: plan.agentId,
+          content: plan.plan,
+          status,
+          feedback,
+        },
+      },
+    });
+  }
+
+  private notifyPlanDecision(
+    plan: PlanSubmission,
+    approved: boolean,
+    feedback?: string,
+  ): void {
+    try {
+      const teammateService = getTeammateService();
+      if (approved) {
+        teammateService.approvePlan(
+          plan.coordinatorId,
+          plan.agentId,
+          plan.id,
+          feedback,
+          plan.scope,
+        );
+      } else {
+        teammateService.rejectPlan(
+          plan.coordinatorId,
+          plan.agentId,
+          plan.id,
+          feedback ?? 'Rejected',
+          plan.scope,
+        );
+      }
+    } catch (err) {
+      logger.warn(`Failed to notify plan decision for ${plan.id}`, err);
+    }
   }
 }
 

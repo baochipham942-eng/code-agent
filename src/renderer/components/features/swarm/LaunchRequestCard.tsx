@@ -3,6 +3,8 @@ import { GitBranch, ChevronDown, ChevronRight } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmLaunchRequest, SwarmLaunchTaskPreview } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
+import { useSwarmStore } from '../../../stores/swarmStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 
 // 给每个 agent 分配一种稳定颜色（按 task.id hash），让用户像 Codex 截图里
 // "Heisenberg (绿) / Rawls (紫)" 那样一眼区分不同 worker。
@@ -58,15 +60,30 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
         : 'bg-red-500/15 text-red-300';
 
   const handleApprove = async () => {
+    const selectedSessionIdAtSubmit = useSessionStore.getState().currentSessionId;
+    const activeRunIdAtSubmit = useSwarmStore.getState().activeRunId;
     setSubmitting('approve');
     setError(null);
     try {
       const success = await ipcService.invoke(IPC_CHANNELS.SWARM_APPROVE_LAUNCH, {
+        sessionId: request.sessionId,
+        runId: request.runId,
         requestId: request.id,
         feedback: feedback.trim() || undefined,
       });
       if (!success) {
         setError('启动确认失败，当前请求可能已被处理。');
+      } else {
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        const swarmState = useSwarmStore.getState();
+        if (
+          selectedSessionIdAtSubmit === request.sessionId
+          && currentSessionId === request.sessionId
+          && swarmState.activeSessionId === request.sessionId
+          && swarmState.activeRunId === activeRunIdAtSubmit
+        ) {
+          swarmState.activateScope(request.sessionId, request.runId);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '启动确认失败');
@@ -86,6 +103,8 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     setError(null);
     try {
       const success = await ipcService.invoke(IPC_CHANNELS.SWARM_REJECT_LAUNCH, {
+        sessionId: request.sessionId,
+        runId: request.runId,
         requestId: request.id,
         feedback: trimmed,
       });

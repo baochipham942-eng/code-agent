@@ -11,7 +11,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   off: vi.fn(),
 }));
 
-import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
+import {
+  MAX_RUN_SNAPSHOTS,
+  MAX_RUN_SNAPSHOTS_PER_SESSION,
+  useSwarmStore,
+} from '../../../src/renderer/stores/swarmStore';
 
 function agent(id: string, overrides: Partial<SwarmAgentState> = {}): SwarmAgentState {
   return {
@@ -28,16 +32,31 @@ function evt<T extends SwarmEvent['type']>(
   type: T,
   data: SwarmEvent['data'],
   timestamp = Date.now(),
-  sessionId?: string,
-  runId?: string,
+  sessionId = 'session-1',
+  runId = 'run-1',
+  treeId = `tree-${runId}`,
+  parentNativeRunId = `native-${sessionId}`,
 ): SwarmEvent {
-  return { type, timestamp, data, sessionId, runId } as SwarmEvent;
+  const normalizedData = data.message && !data.message.id
+    ? { ...data, message: { ...data.message, id: `message-${timestamp}-${data.message.content}` } }
+    : data;
+  return {
+    type,
+    timestamp,
+    data: normalizedData,
+    sessionId,
+    runId,
+    treeId,
+    parentNativeRunId,
+  } as SwarmEvent;
 }
 
 function launchRequest(id: string): SwarmLaunchRequest {
   return {
     id,
     sessionId: 'session-1',
+    runId: 'run-1',
+    treeId: 'tree-run-1',
     status: 'pending',
     summary: 'test swarm',
     requestedAt: 1000,
@@ -53,6 +72,7 @@ function launchRequest(id: string): SwarmLaunchRequest {
 describe('swarmStore', () => {
   beforeEach(() => {
     useSwarmStore.getState().reset();
+    useSwarmStore.getState().activateScope('session-1', 'run-1');
   });
 
   describe('launch lifecycle', () => {
@@ -82,6 +102,25 @@ describe('swarmStore', () => {
       expect(state.eventLog[0]?.sessionId).toBe('session-1');
     });
 
+    it('preserves the Native Run parent through renderer snapshots and active projection', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt(
+        'swarm:started',
+        {},
+        1000,
+        'session-1',
+        'run-1',
+        'tree-run-1',
+        'native-run-parent',
+      ));
+
+      const state = useSwarmStore.getState();
+      expect(state.activeParentNativeRunId).toBe('native-run-parent');
+      expect(state.runSnapshots['session-1::run-1']?.parentNativeRunId).toBe(
+        'native-run-parent',
+      );
+    });
+
     it('launch:rejected 在新 requested 前会被旧记录覆盖（reset 语义）', () => {
       const store = useSwarmStore.getState();
       const req1 = { ...launchRequest('req-1'), status: 'rejected' as const };
@@ -97,7 +136,7 @@ describe('swarmStore', () => {
       expect(state.executionPhase).toBe('waiting_approval');
     });
 
-    it('started 将 isRunning 置 true 并 reset 其它字段', () => {
+    it('started 将 isRunning 置 true，并保留同 run 的启动审批记录', () => {
       const store = useSwarmStore.getState();
       store.handleEvent(evt('swarm:launch:requested', { launchRequest: launchRequest('req-1') }));
 
@@ -109,7 +148,7 @@ describe('swarmStore', () => {
       expect(state.isRunning).toBe(true);
       expect(state.startTime).toBe(2000);
       expect(state.statistics.total).toBe(3);
-      expect(state.launchRequests).toHaveLength(0);
+      expect(state.launchRequests).toHaveLength(1);
     });
   });
 
@@ -265,6 +304,60 @@ describe('swarmStore', () => {
       expect(state.messages[39].content).toBe('m44');
     });
 
+    it('同毫秒的两条消息使用 Host message id 保持独立 timeline identity', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:agent:message', {
+        message: { id: 'message-1', from: 'a1', to: 'a2', content: 'first' },
+      }, 1000));
+      store.handleEvent(evt('swarm:agent:message', {
+        message: { id: 'message-2', from: 'a1', to: 'a2', content: 'second' },
+      }, 1000));
+
+      const state = useSwarmStore.getState();
+      expect(state.messages.map((message) => message.content)).toEqual(['first', 'second']);
+      expect(state.eventLog.filter((entry) => entry.type === 'swarm:agent:message')).toHaveLength(2);
+    });
+
+    it('同 session+run 的 treeId 不一致时 fail-closed 忽略整条事件', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000));
+      const eventCount = useSwarmStore.getState().eventLog.length;
+
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('foreign-tree-agent', { status: 'running' }),
+      }, 1010, 'session-1', 'run-1', 'tree-mismatch'));
+
+      const state = useSwarmStore.getState();
+      expect(state.agents).toEqual([]);
+      expect(state.eventLog).toHaveLength(eventCount);
+      expect(state.runSnapshots['session-1::run-1']?.treeId).toBe('tree-run-1');
+    });
+
+    it('authoritative root replaces a foreign-tree provisional snapshot that arrived first', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('foreign-first', { status: 'running' }),
+      }, 900, 'session-1', 'run-1', 'tree-foreign'));
+
+      expect(useSwarmStore.getState().runSnapshots['session-1::run-1']).toMatchObject({
+        treeId: 'tree-foreign',
+        rootEventSeen: false,
+      });
+
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1', 'tree-run-1'));
+
+      const state = useSwarmStore.getState();
+      expect(state.activeTreeId).toBe('tree-run-1');
+      expect(state.agents).toEqual([]);
+      expect(state.runSnapshots['session-1::run-1']).toMatchObject({
+        treeId: 'tree-run-1',
+        rootEventSeen: true,
+      });
+
+      store.handleEvent(evt('swarm:started', {}, 1100, 'session-1', 'run-1', 'tree-foreign'));
+      expect(useSwarmStore.getState().activeTreeId).toBe('tree-run-1');
+    });
+
     it('eventLog 上限 80 条，先进先出', () => {
       const store = useSwarmStore.getState();
       store.handleEvent(evt('swarm:started', {}));
@@ -313,7 +406,7 @@ describe('swarmStore', () => {
       expect(state.eventLog.some((entry) => entry.sessionId === 'session-2')).toBe(false);
     });
 
-    it('新 root 事件切换身份时重置旧 session 状态，避免跨 session 拼接', () => {
+    it('foreign root 只建立自己的 snapshot，不抢当前 active scope', () => {
       const store = useSwarmStore.getState();
       store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
       store.handleEvent(evt('swarm:agent:added', { agentState: agent('a1') }, 1010, 'session-1', 'run-1'));
@@ -334,15 +427,96 @@ describe('swarmStore', () => {
       );
 
       const state = useSwarmStore.getState();
-      expect(state.activeSessionId).toBe('session-2');
-      expect(state.activeRunId).toBe('run-2');
-      expect(state.agents).toHaveLength(0);
-      expect(state.statistics.total).toBe(2);
-      expect(state.eventLog).toHaveLength(1);
-      expect(state.eventLog[0].sessionId).toBe('session-2');
+      expect(state.activeSessionId).toBe('session-1');
+      expect(state.activeRunId).toBe('run-1');
+      expect(state.agents.map((item) => item.id)).toEqual(['a1']);
+      expect(state.eventLog.every((entry) => entry.sessionId === 'session-1')).toBe(true);
+      expect(state.runSnapshots['session-2::run-2']?.statistics.total).toBe(2);
     });
 
-    it('切换 root 后保留旧 session/run 的 agents/messages/eventLog/completedRuns 快照', () => {
+    it('同 session 迟到的其他 run root 也不抢 active scope', () => {
+      const store = useSwarmStore.getState();
+      store.activateScope('session-1', 'run-current');
+      store.handleEvent(evt('swarm:started', {}, 2000, 'session-1', 'run-current'));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('current-agent', { status: 'running' }),
+      }, 2010, 'session-1', 'run-current'));
+
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-late'));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('late-agent', { status: 'running' }),
+      }, 1010, 'session-1', 'run-late'));
+
+      const state = useSwarmStore.getState();
+      expect(state.activeRunId).toBe('run-current');
+      expect(state.agents.map((item) => item.id)).toEqual(['current-agent']);
+      expect(state.runSnapshots['session-1::run-late']?.agents.map((item) => item.id)).toEqual(['late-agent']);
+
+      store.activateScope('session-1', 'run-late');
+      expect(useSwarmStore.getState().agents.map((item) => item.id)).toEqual(['late-agent']);
+    });
+
+    it('store 不因同 session 更新的 root 自行切 run，交给 App 显式激活', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
+      store.handleEvent(evt('swarm:started', {}, 2000, 'session-1', 'run-new'));
+
+      expect(useSwarmStore.getState().activeRunId).toBe('run-1');
+      expect(useSwarmStore.getState().runSnapshots['session-1::run-new']).toBeDefined();
+    });
+
+    it('两个 Team 使用相同 agent id 时 agents/messages 仍按 session+run 完全隔离', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('reviewer', { status: 'running', lastReport: 'A running' }),
+      }, 1010, 'session-1', 'run-1'));
+      store.handleEvent(evt('swarm:agent:message', {
+        message: { id: 'message-a', from: 'reviewer', to: 'user', content: 'A only' },
+      }, 1020, 'session-1', 'run-1'));
+
+      store.handleEvent(evt('swarm:started', {}, 2000, 'session-2', 'run-2'));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('reviewer', { status: 'running', lastReport: 'B running' }),
+      }, 2010, 'session-2', 'run-2'));
+      store.handleEvent(evt('swarm:agent:message', {
+        message: { id: 'message-b', from: 'reviewer', to: 'user', content: 'B only' },
+      }, 2020, 'session-2', 'run-2'));
+
+      expect(useSwarmStore.getState().agents[0]?.lastReport).toBe('A running');
+      expect(useSwarmStore.getState().messages.map((message) => message.content)).toEqual(['A only']);
+      expect(useSwarmStore.getState().runSnapshots['session-2::run-2']?.messages[0]?.content).toBe('B only');
+
+      store.activateScope('session-2', 'run-2');
+      expect(useSwarmStore.getState().agents[0]?.lastReport).toBe('B running');
+      expect(useSwarmStore.getState().messages.map((message) => message.content)).toEqual(['B only']);
+
+      store.activateScope('session-1', 'run-1');
+      expect(useSwarmStore.getState().agents[0]?.lastReport).toBe('A running');
+      expect(useSwarmStore.getState().messages.map((message) => message.content)).toEqual(['A only']);
+    });
+
+    it('切换到没有 run snapshot 的会话时立即清空旧 agents/messages', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('a1', { status: 'running' }),
+      }, 1010, 'session-1', 'run-1'));
+      store.handleEvent(evt('swarm:user:message', {
+        message: { id: 'message-a', from: 'user', to: 'a1', content: 'old message' },
+      }, 1020, 'session-1', 'run-1'));
+
+      store.activateScope('session-empty');
+
+      const state = useSwarmStore.getState();
+      expect(state.activeSessionId).toBe('session-empty');
+      expect(state.activeRunId).toBeUndefined();
+      expect(state.agents).toEqual([]);
+      expect(state.messages).toEqual([]);
+      expect(state.runSnapshots['session-1::run-1']?.agents).toHaveLength(1);
+    });
+
+    it('activateScope 切换 run 时保留并恢复 agents/messages/eventLog/completedRuns', () => {
       const store = useSwarmStore.getState();
 
       store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
@@ -363,6 +537,7 @@ describe('swarmStore', () => {
       }, 1030, 'session-1', 'run-1'));
 
       store.handleEvent(evt('swarm:started', {}, 2000, 'session-2', 'run-2'));
+      store.activateScope('session-2', 'run-2');
 
       const state = useSwarmStore.getState();
       const oldSnapshot = state.runSnapshots['session-1::run-1'];
@@ -377,6 +552,12 @@ describe('swarmStore', () => {
       expect(oldSnapshot.eventLog.some((entry) => entry.type === 'swarm:agent:completed')).toBe(true);
       expect(oldSnapshot.completedRuns[0]?.sessionId).toBe('session-1');
       expect(oldSnapshot.completedRuns[0]?.resultPreview).toBe('old result');
+
+      store.activateScope('session-1', 'run-1');
+      const restored = useSwarmStore.getState();
+      expect(restored.agents.map((agentState) => agentState.id)).toEqual(['a1']);
+      expect(restored.messages[0]?.content).toBe('check old run');
+      expect(restored.completedRuns[0]?.resultPreview).toBe('old result');
     });
 
     it('切换 root 后迟到的旧 run 事件只更新旧快照，不污染当前 run', () => {
@@ -387,6 +568,7 @@ describe('swarmStore', () => {
         agentState: agent('a1', { status: 'running', startTime: 1000 }),
       }, 1010, 'session-1', 'run-1'));
       store.handleEvent(evt('swarm:started', {}, 2000, 'session-2', 'run-2'));
+      store.activateScope('session-2', 'run-2');
 
       store.handleEvent(evt('swarm:agent:completed', {
         agentState: agent('a1', {
@@ -417,6 +599,7 @@ describe('swarmStore', () => {
         agentState: agent('a1', { status: 'running', startTime: 1000 }),
       }, 1010, 'session-1', 'run-1'));
       store.handleEvent(evt('swarm:started', {}, 2000, 'session-2', 'run-2'));
+      store.activateScope('session-2', 'run-2');
 
       store.handleEvent(evt('swarm:agent:failed', {
         agentState: agent('a1', {
@@ -433,6 +616,51 @@ describe('swarmStore', () => {
       expect(state.completedRuns).toHaveLength(0);
       expect(oldSnapshot.agents[0]?.status).toBe('cancelled');
       expect(oldSnapshot.completedRuns[0]?.status).toBe('cancelled');
+    });
+
+    it('bounds run snapshots with LRU while preserving the active run and newest session history', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1, 'session-1', 'run-1'));
+
+      for (let index = 0; index < MAX_RUN_SNAPSHOTS_PER_SESSION + 4; index += 1) {
+        const runId = `history-${index}`;
+        store.handleEvent(evt('swarm:started', {}, 100 + index * 2, 'session-1', runId));
+        store.handleEvent(evt('swarm:completed', {}, 101 + index * 2, 'session-1', runId));
+      }
+
+      const state = useSwarmStore.getState();
+      const sessionSnapshots = Object.values(state.runSnapshots)
+        .filter((snapshot) => snapshot.sessionId === 'session-1');
+      expect(sessionSnapshots.length).toBeLessThanOrEqual(MAX_RUN_SNAPSHOTS_PER_SESSION);
+      expect(state.runSnapshots['session-1::run-1']).toBeDefined();
+      expect(state.runSnapshots[`session-1::history-${MAX_RUN_SNAPSHOTS_PER_SESSION + 3}`]).toBeDefined();
+      expect(state.runSnapshots['session-1::history-0']).toBeUndefined();
+    });
+
+    it('keeps global snapshots bounded and isolates a late event that recreates evicted history', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1, 'session-1', 'run-1'));
+
+      for (let index = 0; index < MAX_RUN_SNAPSHOTS + 6; index += 1) {
+        const sessionId = `foreign-${index}`;
+        const runId = `run-${index}`;
+        store.handleEvent(evt('swarm:started', {}, 100 + index * 2, sessionId, runId));
+        store.handleEvent(evt('swarm:completed', {}, 101 + index * 2, sessionId, runId));
+      }
+
+      expect(Object.keys(useSwarmStore.getState().runSnapshots).length)
+        .toBeLessThanOrEqual(MAX_RUN_SNAPSHOTS);
+
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('late-agent', { status: 'completed' }),
+      }, 10_000, 'foreign-0', 'run-0'));
+
+      const state = useSwarmStore.getState();
+      expect(Object.keys(state.runSnapshots).length).toBeLessThanOrEqual(MAX_RUN_SNAPSHOTS);
+      expect(state.activeSessionId).toBe('session-1');
+      expect(state.activeRunId).toBe('run-1');
+      expect(state.agents).toEqual([]);
+      expect(state.runSnapshots['foreign-0::run-0']?.agents[0]?.id).toBe('late-agent');
     });
   });
 

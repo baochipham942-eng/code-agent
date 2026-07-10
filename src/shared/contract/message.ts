@@ -221,11 +221,23 @@ export interface NeoTagMessageMetadata {
   status?: 'queued' | 'working' | 'in_result_review' | 'failed';
 }
 
+export interface AgentTeamMessageMetadata {
+  sessionId: string;
+  runId: string;
+  treeId: string;
+  parentNativeRunId?: string;
+  /** Legacy primary target. Multi-target Direct turns use the first stable target. */
+  agentId: string;
+  /** Canonical conversation message targets; per-agent delivery uses a separate ledger identity. */
+  targetAgentIds?: string[];
+}
+
 export interface MessageMetadata {
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;
   neoTag?: NeoTagMessageMetadata;
+  agentTeam?: AgentTeamMessageMetadata;
   automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
 }

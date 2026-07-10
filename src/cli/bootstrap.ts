@@ -38,6 +38,12 @@ import { SWARM_TRACE } from '../shared/constants/storage';
 import { composeTelemetryAdapters } from '../host/agent/metricsCollector';
 import { FileSwarmTraceRepository } from '../host/services/core/repositories/FileSwarmTraceRepository';
 import { getSwarmTraceWriter, installSwarmTraceWriter } from '../host/agent/swarmTraceWriter';
+import {
+  createRunContext,
+  resolveCanonicalRunPath,
+  type RunContext,
+} from '../host/runtime/runContext';
+import type { ToolExecutionDelegate } from '../host/tools/toolExecutor';
 
 // CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
 // 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
@@ -269,9 +275,20 @@ export function getToolExecutor(): InstanceType<typeof ToolExecutor> | null {
   return toolExecutor;
 }
 
+/** Build an immutable ToolExecutor instance owned by exactly one run. */
+export function createRunToolExecutor(
+  runContext: RunContext,
+  dispatchTool?: ToolExecutionDelegate,
+): InstanceType<typeof ToolExecutor> {
+  if (!toolExecutor) {
+    throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
+  }
+  return toolExecutor.forRun(runContext, dispatchTool) as InstanceType<typeof ToolExecutor>;
+}
+
 /**
- * 对齐全局 CLI 服务到当前 Agent 的工作目录。
- * Web/Tauri 长进程会重复复用同一个单例，需要在每次创建 Agent 时刷新。
+ * Legacy direct-tool support only. Agent runs must use createRunToolExecutor so
+ * concurrent runs never mutate this process-level fallback executor.
  */
 export async function syncCLIWorkingDirectory(workingDirectory: string): Promise<void> {
   if (!initialized) {
@@ -361,7 +378,8 @@ export function createAgentLoop(
   messages: Message[] = [],
   sessionId?: string,
   extraTelemetryAdapter?: TelemetryAdapter,
-  toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../host/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> }
+  toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../host/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> },
+  runContext?: RunContext,
 ): InstanceType<typeof AgentLoop> {
   if (!toolExecutor || !AgentLoop) {
     throw new Error('CLI services not initialized');
@@ -386,7 +404,24 @@ export function createAgentLoop(
   const explicitSessionId = typeof sessionId === 'string' && sessionId.trim().length > 0
     ? sessionId.trim()
     : undefined;
-  const effectiveSessionId = explicitSessionId || `cli-${Date.now()}`;
+  if (runContext && explicitSessionId && explicitSessionId !== runContext.sessionId) {
+    throw new Error(
+      `Run/session mismatch: run ${runContext.runId} belongs to ${runContext.sessionId}, received ${explicitSessionId}`,
+    );
+  }
+  if (
+    runContext
+    && resolveCanonicalRunPath(config.workingDirectory) !== runContext.cwd
+  ) {
+    throw new Error(
+      `Run/cwd mismatch: run ${runContext.runId} owns ${runContext.cwd}, received ${config.workingDirectory}`,
+    );
+  }
+  const effectiveSessionId = runContext?.sessionId || explicitSessionId || `cli-${Date.now()}`;
+  const effectiveRunContext = runContext ?? createRunContext({
+    sessionId: effectiveSessionId,
+    workspace: config.workingDirectory,
+  });
   currentAgentLoopSessionId = effectiveSessionId;
 
   // 创建 PlanningService（如果启用规划模式）
@@ -437,11 +472,14 @@ export function createAgentLoop(
     } catch { /* evaluation module not available */ }
   }
 
+  const runToolExecutor = toolExecutorOverride
+    || createRunToolExecutor(effectiveRunContext);
+
   // 创建 AgentLoop
   const agentLoop = new AgentLoop({
     systemPrompt,
     modelConfig: config.modelConfig,
-    toolExecutor: (toolExecutorOverride || toolExecutor) as InstanceType<typeof ToolExecutor>,
+    toolExecutor: runToolExecutor as InstanceType<typeof ToolExecutor>,
     messages,
     onEvent: (event: AgentEvent) => {
       if (config.debug) {
@@ -466,7 +504,8 @@ export function createAgentLoop(
     enableHooks: config.enableHooks ?? true,
     planningService,
     sessionId: effectiveSessionId,
-    workingDirectory: config.workingDirectory,
+    runId: effectiveRunContext.runId,
+    workingDirectory: effectiveRunContext.cwd,
     isDefaultWorkingDirectory: false,
     autoApprovePlan: config.autoApprovePlan, // CLI 模式自动批准 plan mode
     enableToolDeferredLoading: true, // 延迟加载非核心工具，减少 tool overhead

@@ -43,7 +43,7 @@ class TaskDeduplicationManager {
    *
    * 使用 subagentType + prompt 前 200 字符计算 MD5 哈希
    */
-  private computeTaskHash(subagentType: string, prompt: string): string {
+  private computeTaskHash(subagentType: string, prompt: string, namespace = '__legacy__'): string {
     // 规范化：转小写、去除多余空白
     const normalizedPrompt = prompt
       .substring(0, 200)
@@ -51,15 +51,15 @@ class TaskDeduplicationManager {
       .replace(/\s+/g, ' ')
       .trim();
 
-    const normalized = `${subagentType}:${normalizedPrompt}`;
+    const normalized = `${namespace}:${subagentType}:${normalizedPrompt}`;
     return crypto.createHash('md5').update(normalized).digest('hex').substring(0, 12);
   }
 
   /**
    * 检查是否重复任务
    */
-  isDuplicate(subagentType: string, prompt: string): DuplicateCheckResult {
-    const hash = this.computeTaskHash(subagentType, prompt);
+  isDuplicate(subagentType: string, prompt: string, namespace?: string): DuplicateCheckResult {
+    const hash = this.computeTaskHash(subagentType, prompt, namespace);
     const existing = this.dispatchedTasks.get(hash);
 
     if (!existing) {
@@ -101,8 +101,8 @@ class TaskDeduplicationManager {
   /**
    * 注册新任务
    */
-  registerTask(subagentType: string, prompt: string): string {
-    const hash = this.computeTaskHash(subagentType, prompt);
+  registerTask(subagentType: string, prompt: string, namespace?: string): string {
+    const hash = this.computeTaskHash(subagentType, prompt, namespace);
 
     this.dispatchedTasks.set(hash, {
       hash,

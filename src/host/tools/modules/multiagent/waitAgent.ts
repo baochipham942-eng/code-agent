@@ -20,6 +20,7 @@ import type {
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { waitAgentSchema as schema } from './waitAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { resolveAgentTargetScope } from './agentRunScope';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -64,9 +65,22 @@ export async function executeWaitAgent(
 
   const guard = getSpawnGuard();
   const idsTyped = agentIds as string[];
+  const targets = idsTyped.map((id) => ({ id, ...resolveAgentTargetScope(ctx, id) }));
+  const invalid = targets.find((target) => target.error);
+  if (invalid) {
+    return { ok: false, error: `${invalid.id}: ${invalid.error}`, code: 'NOT_FOUND' };
+  }
+  const scope = targets[0]?.scope;
+  if (targets.some((target) => (
+    target.scope?.sessionId !== scope?.sessionId
+    || target.scope?.runId !== scope?.runId
+    || target.scope?.treeId !== scope?.treeId
+  ))) {
+    return { ok: false, error: 'wait_agent targets must belong to one Team run.', code: 'INVALID_ARGS' };
+  }
 
   // Validate all IDs exist
-  const missing = idsTyped.filter((id) => !guard.get(id));
+  const missing = idsTyped.filter((id) => !(scope ? guard.get(id, scope) : guard.get(id)));
   if (missing.length > 0) {
     return {
       ok: false,
@@ -76,7 +90,9 @@ export async function executeWaitAgent(
   }
 
   // Wait
-  const results = await guard.waitFor(idsTyped, timeoutMs);
+  const results = scope
+    ? await guard.waitFor(idsTyped, timeoutMs, scope)
+    : await guard.waitFor(idsTyped, timeoutMs);
 
   // Format output
   const lines: string[] = [];

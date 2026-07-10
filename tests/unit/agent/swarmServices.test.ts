@@ -16,9 +16,11 @@ function makeStubServices(): SwarmServices {
   return {
     planApproval: { _id: 'planApproval' } as never,
     launchApproval: { _id: 'launchApproval' } as never,
-    parallelCoordinator: { _id: 'parallelCoordinator' } as never,
+    parallelCoordinators: { _id: 'parallelCoordinators' } as never,
     spawnGuard: {
       cancel: () => true,
+      cancelRun: () => 0,
+      cancelSession: () => 0,
     },
     teammateService: { _id: 'teammateService' } as never,
     agentHistory: {
@@ -96,9 +98,13 @@ describe('SwarmServices Registry', () => {
   });
 
   describe('结构类型契约', () => {
-    it('SpawnGuardLike 只暴露 cancel 方法', () => {
+    it('SpawnGuardLike exposes scoped cancellation methods', () => {
       // 编译期断言：用最小接口注入，不需要完整 SpawnGuard 类
-      const minimalGuard = { cancel: (_id: string) => false };
+      const minimalGuard = {
+        cancel: (_id: string) => false,
+        cancelRun: () => 0,
+        cancelSession: () => 0,
+      };
       const services: SwarmServices = {
         ...makeStubServices(),
         spawnGuard: minimalGuard,

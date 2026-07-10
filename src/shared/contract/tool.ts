@@ -36,6 +36,13 @@ export interface ToolDefinition {
   requiresPermission: boolean;
   permissionLevel: PermissionLevel;
 
+  /**
+   * 只读工具标记（来自 protocol schema readOnly / MCP readOnlyHint）。
+   * readOnly 探索档判定用：network 档只读工具（webSearch/webFetch 类）直通，
+   * 非只读或未声明的 network 工具（httpRequest/jira/无 annotations 的 MCP 写操作）强制确认。
+   */
+  readOnly?: boolean;
+
   // ============================================================================
   // ToolSearch 延迟加载支持 (v0.17+)
   // ============================================================================

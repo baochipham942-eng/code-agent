@@ -188,6 +188,12 @@ export const zhSettingsCore = {
             operationScope: '写入 / 命令 / 网络前询问',
             riskLabel: '低风险',
           },
+          readOnly: {
+            title: '只读探索',
+            description: '读取、列目录、搜索、只读联网直接通过；写入、命令执行和网络变更都需要确认，白名单也不放行（无法弹出确认的环境会直接拒绝）。',
+            operationScope: '只读直通，写入 / 命令 / 网络变更必问',
+            riskLabel: '低风险',
+          },
           acceptEdits: {
             title: '自动编辑',
             description: '自动接受文件编辑，命令和外部访问仍保留确认。',
@@ -231,11 +237,11 @@ export const zhSettingsCore = {
         controlPlane: {
           title: '权限控制面',
           description: '日常只需要看当前模式、风险级别、继承策略和用户规则数量。',
-          summaryCurrentMode: '当前模式',
+          summaryCurrentMode: '新会话默认档',
           summaryRiskLevel: '风险级别',
           summarySubAgent: '子 Agent',
           summaryUserRules: '用户规则',
-          mainAgentMode: '主 Agent 权限模式',
+          mainAgentMode: '新会话默认权限档',
           status: '状态',
           permissionBehavior: '权限行为',
           risk: '风险',

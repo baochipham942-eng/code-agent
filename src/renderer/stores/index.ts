@@ -40,7 +40,6 @@ export { useDAGStore, useDAGList, useCurrentDAG, useDAGVisible, useActiveDAGCoun
 export { useModeStore, useIsCoworkMode, type AppMode } from './modeStore';
 export {
   usePermissionStore,
-  type PermissionMode,
   type PermissionType,
   type ApprovalLevel,
   type PermissionRequestForMemory,

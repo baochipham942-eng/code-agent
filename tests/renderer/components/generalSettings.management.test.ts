@@ -17,15 +17,22 @@ describe('GeneralSettings management helpers', () => {
   it('builds permission mode rows with selected state and risk labels', () => {
     const rows = buildPermissionModeRows('acceptEdits');
 
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expect(rows[1]).toMatchObject({
+      id: 'readOnly',
+      selected: false,
+      actionLabel: '切换',
+      riskLevel: 'low',
+      riskLabel: '低风险',
+    });
+    expect(rows[2]).toMatchObject({
       id: 'acceptEdits',
       selected: true,
       actionLabel: '当前模式',
       riskLevel: 'medium',
       riskLabel: '中风险',
     });
-    expect(rows[2]).toMatchObject({
+    expect(rows[3]).toMatchObject({
       id: 'bypassPermissions',
       selected: false,
       actionLabel: '切换',

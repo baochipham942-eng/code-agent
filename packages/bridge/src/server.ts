@@ -22,6 +22,99 @@ interface CreateServerOptions {
   onConfigUpdate: (config: Partial<BridgeConfig>) => Promise<BridgeConfig>;
 }
 
+interface BridgeRunBinding {
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly workspace: string;
+  readonly cwd: string;
+}
+
+interface BridgeRunContextBindingsOptions {
+  ttlMs?: number;
+  maxEntries?: number;
+  now?: () => number;
+}
+
+interface StoredBridgeRunBinding {
+  context: BridgeRunBinding;
+  expiresAt: number;
+}
+
+const DEFAULT_BRIDGE_RUN_BINDING_TTL_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_BRIDGE_RUN_BINDING_MAX_ENTRIES = 1_024;
+
+/**
+ * Pins canonical Bridge filesystem context to a run without creating an
+ * unbounded process-global registry. Entries use a sliding TTL, LRU capacity,
+ * and are cleared when their owning Bridge server closes.
+ */
+export class BridgeRunContextBindings {
+  private readonly bindings = new Map<string, StoredBridgeRunBinding>();
+  private readonly ttlMs: number;
+  private readonly maxEntries: number;
+  private readonly now: () => number;
+
+  constructor(options: BridgeRunContextBindingsOptions = {}) {
+    this.ttlMs = options.ttlMs ?? DEFAULT_BRIDGE_RUN_BINDING_TTL_MS;
+    this.maxEntries = options.maxEntries ?? DEFAULT_BRIDGE_RUN_BINDING_MAX_ENTRIES;
+    this.now = options.now ?? Date.now;
+    if (!Number.isFinite(this.ttlMs) || this.ttlMs <= 0) {
+      throw new Error('Bridge run binding ttlMs must be positive');
+    }
+    if (!Number.isInteger(this.maxEntries) || this.maxEntries <= 0) {
+      throw new Error('Bridge run binding maxEntries must be a positive integer');
+    }
+  }
+
+  get size(): number {
+    this.pruneExpired(this.now());
+    return this.bindings.size;
+  }
+
+  bind(context: BridgeRunBinding): BridgeRunBinding {
+    const now = this.now();
+    this.pruneExpired(now);
+    const existing = this.bindings.get(context.runId);
+    if (existing) {
+      const changedFields = (['sessionId', 'workspace', 'cwd'] as const)
+        .filter((field) => existing.context[field] !== context[field]);
+      if (changedFields.length > 0) {
+        throw new Error(
+          `Bridge run context mismatch for ${context.runId}: immutable ${changedFields.join(', ')} changed`,
+        );
+      }
+      this.bindings.delete(context.runId);
+      this.bindings.set(context.runId, {
+        context: existing.context,
+        expiresAt: now + this.ttlMs,
+      });
+      return existing.context;
+    }
+
+    while (this.bindings.size >= this.maxEntries) {
+      const leastRecentlyUsedRunId = this.bindings.keys().next().value as string | undefined;
+      if (!leastRecentlyUsedRunId) break;
+      this.bindings.delete(leastRecentlyUsedRunId);
+    }
+    const canonicalContext = Object.freeze({ ...context });
+    this.bindings.set(context.runId, {
+      context: canonicalContext,
+      expiresAt: now + this.ttlMs,
+    });
+    return canonicalContext;
+  }
+
+  clear(): void {
+    this.bindings.clear();
+  }
+
+  private pruneExpired(now: number): void {
+    for (const [runId, binding] of this.bindings) {
+      if (binding.expiresAt <= now) this.bindings.delete(runId);
+    }
+  }
+}
+
 function isAllowedOrigin(origin?: string): boolean {
   if (!origin) {
     return true;
@@ -46,6 +139,7 @@ export async function bindBridgeRunToolContext(
   config: BridgeConfig,
   wsBroadcast: ToolContext['wsBroadcast'],
   abortSignal: AbortSignal,
+  bindings?: BridgeRunContextBindings,
 ): Promise<{ params: Record<string, unknown>; context: ToolContext }> {
   const runFields = [request.runId, request.sessionId, request.workspace, request.cwd];
   const presentRunFields = runFields.filter(
@@ -101,15 +195,14 @@ export async function bindBridgeRunToolContext(
     [workspace],
     workspace,
   );
+  const canonicalContext = bindings?.bind({ runId, sessionId, workspace, cwd })
+    ?? { runId, sessionId, workspace, cwd };
 
   return {
-    params: { ...(request.params ?? {}), cwd },
+    params: { ...(request.params ?? {}), cwd: canonicalContext.cwd },
     context: {
-      config: { ...config, workingDirectories: [workspace] },
-      runId,
-      sessionId,
-      workspace,
-      cwd,
+      config: { ...config, workingDirectories: [canonicalContext.workspace] },
+      ...canonicalContext,
       abortSignal,
       wsBroadcast,
     },
@@ -139,6 +232,7 @@ function createRequestAbortController(req: express.Request, res: express.Respons
 export async function createBridgeServer(options: CreateServerOptions) {
   let config = options.config;
   const permissionManager = new PermissionManager(config);
+  const runContextBindings = new BridgeRunContextBindings();
   const updater = new Updater(options.version);
   await updater.checkForUpdates(true);
   setInterval(() => void updater.checkForUpdates(), 24 * 60 * 60 * 1000).unref();
@@ -238,7 +332,13 @@ export async function createBridgeServer(options: CreateServerOptions) {
 
     const requestAbort = createRequestAbortController(req, res);
     try {
-      const bound = await bindBridgeRunToolContext(body, config, broadcast, requestAbort.controller.signal);
+      const bound = await bindBridgeRunToolContext(
+        body,
+        config,
+        broadcast,
+        requestAbort.controller.signal,
+        runContextBindings,
+      );
       if (permissionManager.needsConfirmation(tool)) {
         const pending = permissionManager.createPending(body, tool);
         broadcast('confirmation_required', { ...pending });
@@ -290,6 +390,7 @@ export async function createBridgeServer(options: CreateServerOptions) {
         config,
         broadcast,
         requestAbort.controller.signal,
+        runContextBindings,
       );
       const output = await tool.run(bound.params, bound.context);
       if (!requestAbort.controller.signal.aborted && !res.destroyed) {
@@ -325,6 +426,7 @@ export async function createBridgeServer(options: CreateServerOptions) {
       }),
     close: () =>
       new Promise<void>((resolve, reject) => {
+        runContextBindings.clear();
         wsServer.close();
         server.close((error) => (error ? reject(error) : resolve()));
       }),

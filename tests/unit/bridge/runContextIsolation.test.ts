@@ -6,7 +6,10 @@ import {
   resolveCanonicalSandboxPath,
   resolveSandboxPath,
 } from '../../../packages/bridge/src/security/sandbox';
-import { bindBridgeRunToolContext } from '../../../packages/bridge/src/server';
+import {
+  BridgeRunContextBindings,
+  bindBridgeRunToolContext,
+} from '../../../packages/bridge/src/server';
 import { fileGrepTool } from '../../../packages/bridge/src/tools/fileGrep';
 import { fileWriteTool } from '../../../packages/bridge/src/tools/fileWrite';
 import { shellExecTool } from '../../../packages/bridge/src/tools/shellExec';
@@ -121,6 +124,129 @@ describe('Bridge run context isolation', () => {
     expect(legacy.context.config).toBe(legacyConfig);
     expect(legacy.context.workspace).toBe(path.resolve(missingLegacyWorkspace));
     expect(legacy.params).toEqual({ marker: 'preserved' });
+  });
+
+  it('rejects session, workspace, and cwd changes after a run is bound', async () => {
+    const workspaceA = path.join(tempRoot, 'repo-a');
+    const cwdA = path.join(workspaceA, 'package-a');
+    const cwdB = path.join(workspaceA, 'package-b');
+    const workspaceB = path.join(tempRoot, 'repo-b');
+    await Promise.all([
+      fs.mkdir(cwdA, { recursive: true }),
+      fs.mkdir(cwdB, { recursive: true }),
+      fs.mkdir(workspaceB),
+    ]);
+    const bindings = new BridgeRunContextBindings({ ttlMs: 60_000, maxEntries: 16 });
+    const bridgeConfig = config(tempRoot);
+    const signal = new AbortController().signal;
+    const wsBroadcast = vi.fn();
+    const request = {
+      tool: 'file_read',
+      params: { path: 'input.txt' },
+      requestId: 'request-first',
+      runId: 'run-pinned',
+      sessionId: 'session-a',
+      workspace: workspaceA,
+      cwd: cwdA,
+    };
+
+    await bindBridgeRunToolContext(request, bridgeConfig, wsBroadcast, signal, bindings);
+
+    await expect(bindBridgeRunToolContext({
+      ...request,
+      requestId: 'request-session-change',
+      sessionId: 'session-b',
+    }, bridgeConfig, wsBroadcast, signal, bindings)).rejects.toThrow('sessionId');
+    await expect(bindBridgeRunToolContext({
+      ...request,
+      requestId: 'request-workspace-change',
+      workspace: workspaceB,
+      cwd: workspaceB,
+    }, bridgeConfig, wsBroadcast, signal, bindings)).rejects.toThrow('workspace');
+    await expect(bindBridgeRunToolContext({
+      ...request,
+      requestId: 'request-cwd-change',
+      cwd: cwdB,
+    }, bridgeConfig, wsBroadcast, signal, bindings)).rejects.toThrow('cwd');
+  });
+
+  it('keeps different runs isolated when their first requests arrive concurrently', async () => {
+    const workspaceA = path.join(tempRoot, 'concurrent-a');
+    const workspaceB = path.join(tempRoot, 'concurrent-b');
+    await Promise.all([fs.mkdir(workspaceA), fs.mkdir(workspaceB)]);
+    const bindings = new BridgeRunContextBindings({ ttlMs: 60_000, maxEntries: 16 });
+    const bridgeConfig = config(tempRoot);
+    const signal = new AbortController().signal;
+    const wsBroadcast = vi.fn();
+
+    const [runA, runB] = await Promise.all([
+      bindBridgeRunToolContext({
+        tool: 'file_read',
+        params: {},
+        requestId: 'request-a',
+        runId: 'run-a',
+        sessionId: 'session-a',
+        workspace: workspaceA,
+        cwd: workspaceA,
+      }, bridgeConfig, wsBroadcast, signal, bindings),
+      bindBridgeRunToolContext({
+        tool: 'file_read',
+        params: {},
+        requestId: 'request-b',
+        runId: 'run-b',
+        sessionId: 'session-b',
+        workspace: workspaceB,
+        cwd: workspaceB,
+      }, bridgeConfig, wsBroadcast, signal, bindings),
+    ]);
+
+    expect(runA.context.workspace).toBe(resolveCanonicalSandboxPath(workspaceA));
+    expect(runB.context.workspace).toBe(resolveCanonicalSandboxPath(workspaceB));
+    expect(bindings.size).toBe(2);
+  });
+
+  it('reclaims expired and least-recently-used run bindings safely', async () => {
+    const workspaceA = path.join(tempRoot, 'lease-a');
+    const workspaceB = path.join(tempRoot, 'lease-b');
+    const workspaceC = path.join(tempRoot, 'lease-c');
+    await Promise.all([fs.mkdir(workspaceA), fs.mkdir(workspaceB), fs.mkdir(workspaceC)]);
+    let now = 1_000;
+    const bindings = new BridgeRunContextBindings({
+      ttlMs: 1_000,
+      maxEntries: 2,
+      now: () => now,
+    });
+    const bridgeConfig = config(tempRoot);
+    const signal = new AbortController().signal;
+    const wsBroadcast = vi.fn();
+    const bind = (runId: string, sessionId: string, workspace: string) => bindBridgeRunToolContext({
+      tool: 'file_read',
+      params: {},
+      requestId: `request-${runId}-${sessionId}`,
+      runId,
+      sessionId,
+      workspace,
+      cwd: workspace,
+    }, bridgeConfig, wsBroadcast, signal, bindings);
+
+    await bind('run-expiring', 'session-a', workspaceA);
+    now += 1_001;
+    const rebound = await bind('run-expiring', 'session-b', workspaceB);
+    expect(rebound.context).toMatchObject({
+      runId: 'run-expiring',
+      sessionId: 'session-b',
+      workspace: resolveCanonicalSandboxPath(workspaceB),
+    });
+
+    await bind('run-second', 'session-second', workspaceB);
+    await bind('run-third', 'session-third', workspaceC);
+    expect(bindings.size).toBe(2);
+    const reboundAfterEviction = await bind('run-expiring', 'session-after-eviction', workspaceA);
+    expect(reboundAfterEviction.context).toMatchObject({
+      sessionId: 'session-after-eviction',
+      workspace: resolveCanonicalSandboxPath(workspaceA),
+    });
+    expect(bindings.size).toBe(2);
   });
 
   it('rejects ordinary symlink escapes and a chain deeper than forty links', async () => {

@@ -461,10 +461,15 @@ export class ToolExecutor {
     // 会话有效权限档：subagent 走收缩后的 override，主 agent 走会话档单一真源。
     const sessionPermissionMode = this.permissionModeOverride
       ?? getPermissionModeManager().getModeForSession(options.sessionId);
+    // network 档（审出 HIGH）：只读联网（webSearch/webFetch、显式 readOnlyHint 的 MCP）
+    // 保持直通；未声明只读的 network 工具（httpRequest/jira、无 annotations 的 MCP 兜底）
+    // 视同变更类，readOnly 下与写入/执行同等强制确认。
     const readOnlyForcesConfirmation =
       toolDef.requiresPermission
-      && (toolDef.permissionLevel === 'write' || toolDef.permissionLevel === 'execute')
-      && sessionPermissionMode === 'readOnly';
+      && sessionPermissionMode === 'readOnly'
+      && (toolDef.permissionLevel === 'write'
+        || toolDef.permissionLevel === 'execute'
+        || (toolDef.permissionLevel === 'network' && toolDef.readOnly !== true));
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
@@ -562,7 +567,10 @@ export class ToolExecutor {
           // 只读探索档：classifier 的 approve 一律降级为用户确认；deny 保持原判
           //（危险命令在 readOnly 下不能弱化成"确认后可执行"以外的更宽结果）。
           if (readOnlyForcesConfirmation && classification.decision === 'approve') {
-            const reason = `只读探索模式：${toolDef.permissionLevel === 'write' ? '写入' : '执行'}操作需要用户确认`;
+            const opLabel = toolDef.permissionLevel === 'write' ? '写入'
+              : toolDef.permissionLevel === 'network' ? '网络变更'
+              : '执行';
+            const reason = `只读探索模式：${opLabel}操作需要用户确认`;
             classification = {
               decision: 'ask',
               reason,
@@ -763,9 +771,14 @@ export class ToolExecutor {
         ).catch(() => {});
         recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime);
 
+        // 只读探索档（审出 MED）：无审批 UI 的运行环境（web 聊天 /api/agent/run 走
+        // CLI 非交互 handler、CLI run/batch）对 forceConfirm 请求自动拒绝（fail-closed）。
+        // 泛用的 "Permission denied by user" 在该路径是误导——给模型可转述的真实原因与出路。
         return {
           success: false,
-          error: 'Permission denied by user',
+          error: readOnlyForcesConfirmation
+            ? `只读探索模式：${executionToolName} 未获用户确认而被拦截（无审批界面的运行环境会自动拒绝）。如需执行该操作，请切换会话权限档后重试。`
+            : 'Permission denied by user',
         };
       }
       } // end needsUserApproval

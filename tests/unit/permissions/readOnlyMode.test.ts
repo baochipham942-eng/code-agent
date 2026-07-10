@@ -49,6 +49,7 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
 }));
 
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
 import {
   getPermissionModeManager,
   resetPermissionModeManager,
@@ -132,13 +133,14 @@ describe('readOnly 只读探索档', () => {
     expect(permissionCalls.length).toBe(0);
   });
 
-  it('用户拒绝确认时写操作不执行', async () => {
+  it('用户拒绝确认时写操作不执行，错误说明 readOnly 拦截与出路（审出 MED）', async () => {
     getPermissionModeManager().setMode('readOnly');
     permissionReturn = false;
     setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
     const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Permission denied');
+    expect(result.error).toContain('只读探索模式');
+    expect(result.error).toContain('切换会话权限档');
   });
 
   it('classifier deny 在 readOnly 下保持 deny，不降级为确认', async () => {
@@ -184,6 +186,53 @@ describe('readOnly 只读探索档', () => {
     expect(result.success).toBe(true);
     expect(permissionCalls.length).toBe(1);
     expect(permissionCalls[0].forceConfirm).not.toBe(true);
+  });
+
+  it('network 档非只读工具（无 annotations 的 MCP 兜底）在 readOnly 下强制确认（审出 HIGH）', async () => {
+    getPermissionModeManager().setMode('readOnly');
+    mockClassification = { decision: 'ask', reason: 'mcp default ask', confidence: 1, cached: false };
+    // 模拟 mcpToolRegistry 兜底产物：requiresPermission=true, network, readOnly 未证明
+    setMockTool({ name: 'mcp__github__create_issue', requiresPermission: true, permissionLevel: 'network', readOnly: false });
+    const result = await executor.execute('mcp__github__create_issue', { title: 'x' }, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(1);
+    expect(permissionCalls[0].forceConfirm).toBe(true); // 终审层放行捷径全部失效
+  });
+
+  it('network 档只读工具（webSearch 类，readOnly=true）在 readOnly 下直通', async () => {
+    getPermissionModeManager().setMode('readOnly');
+    setMockTool({ name: 'web_search', requiresPermission: true, permissionLevel: 'network', readOnly: true });
+    const result = await executor.execute('web_search', { query: 'x' }, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0); // classifier approve 照常放行，不强制确认
+  });
+
+  it('生产 web 聊天路径（CLI 非交互 handler）：readOnly 下 MCP 网络变更工具被自动拒绝而非静默放行（审出 HIGH）', async () => {
+    getPermissionModeManager().setMode('readOnly');
+    mockClassification = { decision: 'ask', reason: 'mcp default ask', confidence: 1, cached: false };
+    const warnings: string[] = [];
+    const cliExecutor = new ToolExecutor({
+      requestPermission: createCLIPermissionHandler({ warn: (m) => warnings.push(m) }),
+      workingDirectory: '/test/directory',
+    });
+    setMockTool({ name: 'mcp__github__create_issue', requiresPermission: true, permissionLevel: 'network', readOnly: false });
+    const result = await cliExecutor.execute('mcp__github__create_issue', { title: 'x' }, {});
+    expect(result.success).toBe(false); // fail-closed：不是修复前的静默执行
+    expect(result.error).toContain('只读探索模式');
+    expect(warnings.length).toBe(1);
+  });
+
+  it('生产 web 聊天路径（CLI 非交互 handler）：readOnly 下写入自动拒绝且错误可转述（审出 MED）', async () => {
+    getPermissionModeManager().setMode('readOnly');
+    const cliExecutor = new ToolExecutor({
+      requestPermission: createCLIPermissionHandler({ warn: () => {} }),
+      workingDirectory: '/test/directory',
+    });
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    const result = await cliExecutor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('只读探索模式');
+    expect(result.error).toContain('切换会话权限档');
   });
 });
 

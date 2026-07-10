@@ -110,10 +110,46 @@ describe('MCPToolRegistry permission metadata', () => {
     expect(definitions.find((definition) => definition.name === 'mcp__docs__read_page')).toMatchObject({
       requiresPermission: false,
       permissionLevel: 'read',
+      readOnly: true,
     });
     expect(definitions.find((definition) => definition.name === 'mcp__github__delete_repo')).toMatchObject({
       requiresPermission: true,
       permissionLevel: 'execute',
+      readOnly: false,
+    });
+  });
+
+  it('无 annotations 的 MCP 工具兜底为 network 且 readOnly=false（readOnly 探索档强制确认锚点，审出 HIGH）', () => {
+    const registry = new MCPToolRegistry();
+    registry.tools = [
+      {
+        serverName: 'github',
+        name: 'create_issue',
+        description: 'Create issue (server 未声明 annotations)',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        serverName: 'search',
+        name: 'web_lookup',
+        description: 'Read-only open-world search',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+    ];
+
+    const definitions = registry.getToolDefinitions();
+
+    // 未声明 annotations：不能证明只读 → readOnly 档下强制确认
+    expect(definitions.find((definition) => definition.name === 'mcp__github__create_issue')).toMatchObject({
+      requiresPermission: true,
+      permissionLevel: 'network',
+      readOnly: false,
+    });
+    // 显式 readOnlyHint 的开放世界工具：network 档但 readOnly=true → readOnly 档下直通
+    expect(definitions.find((definition) => definition.name === 'mcp__search__web_lookup')).toMatchObject({
+      requiresPermission: true,
+      permissionLevel: 'network',
+      readOnly: true,
     });
   });
 

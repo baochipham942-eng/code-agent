@@ -190,8 +190,8 @@ export const enSettingsCore = {
           },
           readOnly: {
             title: 'Read-only explore',
-            description: 'Reads, listing, and search pass through; every write and command execution asks, allowlists included.',
-            operationScope: 'Reads pass, writes / commands always ask',
+            description: 'Reads, listing, search, and read-only web access pass through; every write, command execution, and mutating network call asks, allowlists included (environments without a confirmation UI deny instead).',
+            operationScope: 'Reads pass, writes / commands / mutating network always ask',
             riskLabel: 'Low risk',
           },
           acceptEdits: {

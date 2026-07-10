@@ -190,8 +190,8 @@ export const zhSettingsCore = {
           },
           readOnly: {
             title: '只读探索',
-            description: '读取、列目录、搜索直接通过；所有写入和命令执行都需要确认，白名单也不放行。',
-            operationScope: '只读直通，写入 / 命令必问',
+            description: '读取、列目录、搜索、只读联网直接通过；写入、命令执行和网络变更都需要确认，白名单也不放行（无法弹出确认的环境会直接拒绝）。',
+            operationScope: '只读直通，写入 / 命令 / 网络变更必问',
             riskLabel: '低风险',
           },
           acceptEdits: {

@@ -689,7 +689,7 @@ export const Sidebar: React.FC = () => {
           )}
           {/* 状态筛选已移到顶部「新会话」右侧的筛选图标下拉（仅管理员）。这里只保留搜索范围 + 搜索状态。 */}
           {messageSearchLoading && searchQuery.trim() && (
-            <span className="shrink-0 px-1 text-[11px] text-zinc-600">搜消息中...</span>
+            <span className="shrink-0 px-1 text-[11px] text-zinc-600">搜消息中…</span>
           )}
         </div>
       </div>
@@ -699,7 +699,7 @@ export const Sidebar: React.FC = () => {
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
-            <span className="text-xs text-zinc-500">加载中...</span>
+            <span className="text-xs text-zinc-500">加载中…</span>
           </div>
         ) : !hasAnySessions ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">

@@ -14,7 +14,7 @@ export const VoicePasteIndicator: React.FC = () => {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
             <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
           </span>
-          <span className="text-sm font-medium">录音中... (Cmd+` 停止)</span>
+          <span className="text-sm font-medium">录音中… (Cmd+` 停止)</span>
         </>
       )}
       {voicePasteStatus === 'transcribing' && (

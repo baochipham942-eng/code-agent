@@ -111,7 +111,7 @@ const Pill: React.FC<{ tone: ActivityTone; children: React.ReactNode }> = ({ ton
 
 const LoadingLine: React.FC = () => (
   <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-500">
-    正在读取 Activity 上下文...
+    正在读取 Activity 上下文…
   </div>
 );
 

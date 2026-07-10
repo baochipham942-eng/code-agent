@@ -307,14 +307,14 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/20">
-              <div className="text-lg mb-2">😰 如果只追求高分...</div>
+              <div className="text-lg mb-2">😰 如果只追求高分…</div>
               <p className="text-sm text-zinc-400">
                 AI 可能会「投机取巧」，只说一些讨好人的话，
                 变得很假、很无聊，忘了自己本来会的东西。
               </p>
             </div>
             <div className="p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-              <div className="text-lg mb-2">😊 所以要平衡...</div>
+              <div className="text-lg mb-2">😊 所以要平衡…</div>
               <p className="text-sm text-zinc-400">
                 既要追求高分，又不能变化太大。
                 就像学生要进步，但也要保持自己的特点，不能变成「考试机器」。

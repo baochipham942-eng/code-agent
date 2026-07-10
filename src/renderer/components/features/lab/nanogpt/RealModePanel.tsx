@@ -216,7 +216,7 @@ export const RealModePanel: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                检测中...
+                检测中…
               </div>
             )}
           </div>
@@ -259,7 +259,7 @@ export const RealModePanel: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                检测中...
+                检测中…
               </div>
             )}
           </div>
@@ -279,7 +279,7 @@ export const RealModePanel: React.FC = () => {
             {isDownloading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                下载中...
+                下载中…
               </>
             ) : (
               <>

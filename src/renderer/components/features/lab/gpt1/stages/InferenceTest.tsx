@@ -116,7 +116,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">🤔</span>
-                  <span>想：下一个字应该是什么？可能是「你」「我」「很」...</span>
+                  <span>想：下一个字应该是什么？可能是「你」「我」「很」…</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">🎯</span>
@@ -221,14 +221,14 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
               </div>
               <div className="text-center text-zinc-600">↓ AI 开始想</div>
               <div className="p-2 rounded-lg bg-zinc-800">
-                <div className="text-zinc-400">想：下一个字...</div>
+                <div className="text-zinc-400">想：下一个字…</div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  「你」30% | 「我」25% | 「很」20% | ...
+                  「你」30% | 「我」25% | 「很」20% | …
                 </div>
               </div>
               <div className="text-center text-zinc-600">↓ 选概率最高的</div>
               <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="text-emerald-300">AI 说：「你」→「你好」→「你好！」→ ...</div>
+                <div className="text-emerald-300">AI 说：「你」→「你好」→「你好！」→ …</div>
               </div>
             </div>
           </div>

@@ -246,7 +246,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
           </span>
         )}
         {tab === 'cross' && crossLoading && (
-          <span className="text-xs text-zinc-500 flex-shrink-0">搜索中...</span>
+          <span className="text-xs text-zinc-500 flex-shrink-0">搜索中…</span>
         )}
 
         <button

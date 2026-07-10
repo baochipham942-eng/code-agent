@@ -217,7 +217,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             </div>
             <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <div className="text-xs text-emerald-400">
-                💡 就像给班级同学编学号一样！「第」是24号，「一」是47号...
+                💡 就像给班级同学编学号一样！「第」是24号，「一」是47号…
               </div>
             </div>
           </div>

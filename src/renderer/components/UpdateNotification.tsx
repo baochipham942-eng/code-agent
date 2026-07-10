@@ -231,7 +231,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-500/60 text-zinc-950 rounded-full font-semibold"
             >
               <Loader2 className="w-4 h-4 animate-spin" />
-              更新中...
+              更新中…
             </button>
           )}
 

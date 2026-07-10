@@ -214,7 +214,7 @@ export function NetworkStatusEnhanced({
         title={`正在重连… (尝试 ${state.reconnectAttempts}/${maxReconnectAttempts})`}
       >
         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-        {showLabel && <span className="text-xs">重连中...</span>}
+        {showLabel && <span className="text-xs">重连中…</span>}
       </div>
     );
   }
@@ -291,7 +291,7 @@ export function NetworkBanner() {
     >
       <div className="flex items-center justify-center gap-2">
         <WifiOff className="w-4 h-4" />
-        <span>网络已断开，正在尝试重新连接...</span>
+        <span>网络已断开，正在尝试重新连接…</span>
       </div>
     </div>
   );

@@ -393,7 +393,7 @@ export const ReplayAuditPanelView: React.FC<ReplayAuditPanelViewProps> = ({
   if (loading && !replay) {
     return (
       <div className="flex h-full items-center justify-center bg-zinc-950 text-sm text-zinc-500">
-        加载 Replay/Audit...
+        加载 Replay/Audit…
       </div>
     );
   }

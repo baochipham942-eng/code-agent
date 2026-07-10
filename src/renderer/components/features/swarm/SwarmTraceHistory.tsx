@@ -250,7 +250,7 @@ const SwarmRunDetailView: React.FC<{
 
       {loading && (
         <div className="px-4 py-6 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载中...
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载中…
         </div>
       )}
 

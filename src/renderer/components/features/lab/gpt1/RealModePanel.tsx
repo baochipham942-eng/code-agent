@@ -639,7 +639,7 @@ export const RealModePanel: React.FC = () => {
                     </div>
                   ))
                 ) : (
-                  <div className="text-zinc-600">等待操作...</div>
+                  <div className="text-zinc-600">等待操作…</div>
                 )}
                 <div ref={logsEndRef} />
               </div>

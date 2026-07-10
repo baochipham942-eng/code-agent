@@ -614,7 +614,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {isUploading && (
           <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-amber-400">文件处理中...</span>
+            <span className="text-sm text-amber-400">文件处理中…</span>
           </div>
         )}
 

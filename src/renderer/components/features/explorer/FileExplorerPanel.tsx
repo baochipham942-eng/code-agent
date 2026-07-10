@@ -542,7 +542,7 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
         ) : rootFiles === undefined ? (
           <div className="flex items-center justify-center h-20 text-zinc-600">
             <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-            <span className="text-xs">加载中...</span>
+            <span className="text-xs">加载中…</span>
           </div>
         ) : rootFiles.length === 0 ? (
           <div className="flex items-center justify-center h-20 text-zinc-600 text-xs">

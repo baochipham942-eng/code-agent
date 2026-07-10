@@ -367,7 +367,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">KTO 数据要求低</strong>：只需要标注好/坏，不需要配对</span>
+            <span><strong className="text-zinc-400">KTO 数据要求低</strong>：只要标注好/坏，不需要配对</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>

@@ -294,7 +294,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="bg-zinc-950/50 rounded-lg p-4 min-h-[140px]">
             <div className="text-xs text-zinc-600 mb-2">AI 写的内容：</div>
             <div className="text-base text-zinc-400 whitespace-pre-wrap leading-relaxed">
-              {output || <span className="text-zinc-600">点击「开始写」让 AI 创作...</span>}
+              {output || <span className="text-zinc-600">点击「开始写」让 AI 创作…</span>}
               {isGenerating && <span className="animate-pulse text-emerald-400">|</span>}
             </div>
           </div>

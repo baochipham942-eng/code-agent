@@ -301,7 +301,7 @@ export const SkillsPanel: React.FC = () => {
               ))}
               {filteredSkills.length > 10 && (
                 <div className="text-xs text-zinc-500 py-1 text-center">
-                  还有 {filteredSkills.length - 10} 个...
+                  还有 {filteredSkills.length - 10} 个…
                 </div>
               )}
             </div>

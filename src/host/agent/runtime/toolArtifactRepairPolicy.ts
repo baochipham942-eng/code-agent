@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
+import type { RepairInstructionStyle } from './scaffoldProfile';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
 import type { ArtifactRepairIssueCode, createArtifactRepairSpec } from './artifactRepairSpec';
 import type { validateGameArtifact } from './gameArtifactValidator';
@@ -848,6 +849,7 @@ export function buildArtifactRepairInstruction(
   repairSpecBlock: string,
   browserVisualSmoke?: BrowserVisualSmokeSummary,
   issueCodes: readonly ArtifactRepairIssueCode[] = [],
+  style: RepairInstructionStyle = 'full',
 ): string {
   const issueSummary = failures
     .map((failure, index) => `${index + 1}. ${failure}`)
@@ -855,6 +857,36 @@ export function buildArtifactRepairInstruction(
   const phaseLine = `repair phase: ${phase}`;
   const attemptsLine = `attempts: ${attempts}`;
   const platformerStructuralRepair = isPlatformerStructuralGameplayRepair(issueCodes);
+
+  // compact 版（B7 scaffold profile，strong 档）：失败项清单 + 一行修复指令，
+  // 删长 XML 说教（repairSpecBlock 仍随 toolResult.error 返回，模型不丢机器可读 spec）。
+  // fresh_rewrite 优先分支必须先判，与下方 full 版同构——重写轮措辞与补丁阶梯相反，
+  // 否则和"不要重写整页"类指令自相矛盾（既有坑，见 full 版注释）。
+  if (style === 'compact') {
+    const header = [
+      '<artifact-validation-failed kind="interactive_artifact">',
+      attemptsLine,
+      phaseLine,
+      `target file: ${absolutePath}`,
+    ];
+    if (phase === 'fresh_rewrite') {
+      return [
+        ...header,
+        '补丁式修复已停用，本轮执行唯一一次干净重写。',
+        issueSummary,
+        ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
+        '先 Read 目标文件（磁盘上是历史最佳版本，作参照），再用一次完整 Write 输出全新实现，一次性修复上面全部失败项且不得回退已通过项；不要做局部 Edit/Append。',
+        '</artifact-validation-failed>',
+      ].join('\n');
+    }
+    return [
+      ...header,
+      issueSummary,
+      ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
+      '直接对目标文件做最小修复，逐项补齐上面失败项，修完运行 validator 验证。',
+      '</artifact-validation-failed>',
+    ].join('\n');
+  }
 
   // 干净重写轮：措辞必须与补丁阶梯相反（整文件 Write，禁局部 Edit），
   // 否则和 attempts>=3 的"不要重写整页"在同一条注入消息里自相矛盾。

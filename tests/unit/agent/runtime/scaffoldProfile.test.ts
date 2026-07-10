@@ -14,17 +14,19 @@ import { shouldThink } from '../../../../src/host/agent/runtime/contextAssembly/
 import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly/inference';
 
 describe('resolveScaffoldProfile 三档矩阵', () => {
-  it('strong → 关 thinking 注入 + audit 间隔 ×2', () => {
+  it('strong → 关 thinking 注入 + audit 间隔 ×2 + compact 修复指令（P1）', () => {
     const p = resolveScaffoldProfile('strong');
     expect(p.tier).toBe('strong');
     expect(p.thinkingInjection).toBe(false);
     expect(p.auditNudgeIntervalMultiplier).toBe(2);
+    expect(p.repairInstructionStyle).toBe('compact');
   });
 
-  it('standard → 现状（注入开 + 倍率 1）', () => {
+  it('standard → 现状（注入开 + 倍率 1 + full 修复指令）', () => {
     const p = resolveScaffoldProfile('standard');
     expect(p.thinkingInjection).toBe(true);
     expect(p.auditNudgeIntervalMultiplier).toBe(1);
+    expect(p.repairInstructionStyle).toBe('full');
   });
 
   it('lite → P0 与 standard 同行为，仅 tier 标注不同（加厚不在本期）', () => {
@@ -32,6 +34,7 @@ describe('resolveScaffoldProfile 三档矩阵', () => {
     expect(p.tier).toBe('lite');
     expect(p.thinkingInjection).toBe(true);
     expect(p.auditNudgeIntervalMultiplier).toBe(1);
+    expect(p.repairInstructionStyle).toBe('full');
   });
 });
 
@@ -65,6 +68,7 @@ describe('flag 关闭的身份保证', () => {
     expect(p.tier).toBe('standard');
     expect(p.thinkingInjection).toBe(true);
     expect(p.auditNudgeIntervalMultiplier).toBe(1);
+    expect(p.repairInstructionStyle).toBe('full');
   });
 });
 

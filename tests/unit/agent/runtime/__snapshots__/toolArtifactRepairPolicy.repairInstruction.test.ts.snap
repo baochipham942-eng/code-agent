@@ -1,0 +1,141 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`身份保证：默认 style 输出与改动前 byte-identical（基线 snapshot 取自 main 1db5986c7） > fresh_rewrite attempts=5（干净重写优先分支） 1`] = `
+"<artifact-validation-failed kind="interactive_artifact">
+attempts: 5
+repair phase: fresh_rewrite
+target file: /tmp/fixture/game/index.html
+补丁式修复已停用（停滞或补丁抗性失败码触发），本轮执行一次性干净重写。
+1. contract: __GAME_TEST__.start() missing
+2. metric: playable fps below threshold
+3. coverage: score change never observed after real input
+<artifact_repair_spec>
+{"issues":[{"code":"missing_gameplay_mechanics"}]}
+</artifact_repair_spec>
+Frontend browser validation evidence:
+- attempted=true, passed=false
+- canvas rendered non-blank
+- first keypress threw ReferenceError
+先 Read 一次目标文件——磁盘上保留的是历史最佳版本，作为重写参照。
+然后用一次完整 Write 输出全新实现：一次性满足上面全部失败项，且不得回退已通过的验收项。
+不要在旧代码上做局部 Edit/Append；这是唯一一次重写机会，之后将按最佳版本降级收尾。
+</artifact-validation-failed>"
+`;
+
+exports[`身份保证：默认 style 输出与改动前 byte-identical（基线 snapshot 取自 main 1db5986c7） > read_then_patch attempts=3（"不要重写整页"分支） 1`] = `
+"<artifact-validation-failed kind="interactive_artifact">
+attempts: 3
+repair phase: read_then_patch
+target file: /tmp/fixture/game/index.html
+同一个 artifact 文件已经连续多次 validation failed。
+1. contract: __GAME_TEST__.start() missing
+2. metric: playable fps below threshold
+3. coverage: score change never observed after real input
+<artifact_repair_spec>
+{"issues":[{"code":"missing_gameplay_mechanics"}]}
+</artifact_repair_spec>
+下一步最多只允许再 Read 一次这个目标文件，用来定位需要修改的片段。
+Repair 权限已经收窄到目标文件和验证命令；上面的失败摘要和 artifact_repair_spec 已经足够。
+Read 之后必须直接对这个文件做局部 Edit / Append，逐项补齐上面列出的 contract、metric 或 coverage 问题。
+如果需要确认修复结果，直接运行 validator；不要在修改前继续换只读工具兜圈子。
+不要把 __GAME_TEST__/__INTERACTIVE_TEST__ 改成脱离真实运行时的假 harness；start/reset/step/snapshot/runSmokeTest 必须驱动同一份游戏状态。
+coverage 只能在真实输入后的 before/after snapshot 变化分支里添加；enemy_present、spikes_present、ability exists、door reachable、mechanics registered 这类存在性兜底不能算通过证据。
+不要重写整页，不要改无关样式、文案或玩法；只有 HTML 结构已经损坏时才允许大段重写。
+修完后再验证，答案里不要把未修的问题包装成后续优化。
+</artifact-validation-failed>"
+`;
+
+exports[`身份保证：默认 style 输出与改动前 byte-identical（基线 snapshot 取自 main 1db5986c7） > read_then_patch attempts=4 + platformer + evidence 1`] = `
+"<artifact-validation-failed kind="interactive_artifact">
+attempts: 4
+repair phase: read_then_patch
+target file: /tmp/fixture/game/index.html
+同一个 artifact 文件已经连续多次 validation failed。
+1. contract: __GAME_TEST__.start() missing
+2. metric: playable fps below threshold
+3. coverage: score change never observed after real input
+<artifact_repair_spec>
+{"issues":[{"code":"missing_gameplay_mechanics"}]}
+</artifact_repair_spec>
+Frontend browser validation evidence:
+- attempted=true, passed=false
+- canvas rendered non-blank
+- first keypress threw ReferenceError
+下一步最多只允许再 Read 一次这个目标文件，用来定位需要修改的片段。
+Repair 权限已经收窄到目标文件和验证命令；上面的失败摘要和 artifact_repair_spec 已经足够。
+Read 之后必须直接对这个文件做局部 Edit / Append，逐项补齐上面列出的 contract、metric 或 coverage 问题。
+如果需要确认修复结果，直接运行 validator；不要在修改前继续换只读工具兜圈子。
+不要把 __GAME_TEST__/__INTERACTIVE_TEST__ 改成脱离真实运行时的假 harness；start/reset/step/snapshot/runSmokeTest 必须驱动同一份游戏状态。
+coverage 只能在真实输入后的 before/after snapshot 变化分支里添加；enemy_present、spikes_present、ability exists、door reachable、mechanics registered 这类存在性兜底不能算通过证据。
+这是平台玩法结构性失败；如果局部补丁会继续保留不可达的布局或碰撞路径，可以完整 Write 目标 HTML，但必须保留单文件游戏、真实玩法和测试合约。
+完整修复必须同时改 live level layout / collision / step / snapshot / runSmokeTest，让踩怪、顶砖、拿技能、解锁 gate 都由真实输入触发，并由 before/after snapshot 证明。
+修完后再验证，答案里不要把未修的问题包装成后续优化。
+</artifact-validation-failed>"
+`;
+
+exports[`身份保证：默认 style 输出与改动前 byte-identical（基线 snapshot 取自 main 1db5986c7） > targeted_repair attempts=2 + browser evidence 1`] = `
+"<artifact-validation-failed kind="interactive_artifact">
+attempts: 2
+repair phase: targeted_repair
+target file: /tmp/fixture/game/index.html
+这次只能修当前失败对应的范围，不要泛化成整页重做。
+1. contract: __GAME_TEST__.start() missing
+2. metric: playable fps below threshold
+3. coverage: score change never observed after real input
+<artifact_repair_spec>
+{"issues":[{"code":"missing_gameplay_mechanics"}]}
+</artifact_repair_spec>
+Frontend browser validation evidence:
+- attempted=true, passed=false
+- canvas rendered non-blank
+- first keypress threw ReferenceError
+下一步只允许改这个文件，并且只修上面列出的 contract、metric 或 coverage 缺口。
+Repair 权限已经收窄到目标文件和验证命令；优先依据失败摘要直接补丁式修改目标文件。
+下一步动作必须是 Edit / Append / Bash(validator) 之一，不要在只读工具里循环；需要锚点时只做一次 ranged Read。
+不要把 __GAME_TEST__/__INTERACTIVE_TEST__ 改成脱离真实运行时的假 harness；必须驱动同一份 live game state。
+coverage 只能来自真实状态变化：移动坐标改变、得分增加、能力从 false 变 true、生命减少、关卡或模式通过门/目标规则改变。
+不要把对象存在、关卡加载成功、敌人/尖刺/能力道具存在、门存在或机制注册写进 coverage 当作通过。
+保持现有页面结构、已通过的玩法和无关内容不动，直接在原文件上补丁式修复。
+</artifact-validation-failed>"
+`;
+
+exports[`身份保证：默认 style 输出与改动前 byte-identical（基线 snapshot 取自 main 1db5986c7） > targeted_repair attempts=2 + platformer 结构失败码 1`] = `
+"<artifact-validation-failed kind="interactive_artifact">
+attempts: 2
+repair phase: targeted_repair
+target file: /tmp/fixture/game/index.html
+这次只能修当前失败对应的范围，不要泛化成整页重做。
+1. contract: __GAME_TEST__.start() missing
+2. metric: playable fps below threshold
+3. coverage: score change never observed after real input
+<artifact_repair_spec>
+{"issues":[{"code":"missing_gameplay_mechanics"}]}
+</artifact_repair_spec>
+下一步只允许改这个文件，并且只修上面列出的 contract、metric 或 coverage 缺口。
+Repair 权限已经收窄到目标文件和验证命令；优先依据失败摘要直接补丁式修改目标文件。
+下一步动作必须是 Edit / Append / Bash(validator) 之一，不要在只读工具里循环；需要锚点时只做一次 ranged Read。
+平台玩法结构性失败可以用完整 Write 替换目标 HTML；不要只修 coverage 字段，必须让 live physics 路径和 runSmokeTest 走同一套状态。
+不要把 __GAME_TEST__/__INTERACTIVE_TEST__ 改成脱离真实运行时的假 harness；必须驱动同一份 live game state。
+coverage 只能来自真实状态变化：移动坐标改变、得分增加、能力从 false 变 true、生命减少、关卡或模式通过门/目标规则改变。
+不要把对象存在、关卡加载成功、敌人/尖刺/能力道具存在、门存在或机制注册写进 coverage 当作通过。
+保持现有页面结构、已通过的玩法和无关内容不动，直接在原文件上补丁式修复。
+</artifact-validation-failed>"
+`;
+
+exports[`身份保证：默认 style 输出与改动前 byte-identical（基线 snapshot 取自 main 1db5986c7） > 首轮 baseline_repair attempts=1 1`] = `
+"<artifact-validation-failed kind="interactive_artifact">
+attempts: 1
+repair phase: baseline_repair
+target file: /tmp/fixture/game/index.html
+你刚生成的是游戏或强交互 HTML，但当前交付还不满足真实可操作标准。
+1. contract: __GAME_TEST__.start() missing
+2. metric: playable fps below threshold
+3. coverage: score change never observed after real input
+<artifact_repair_spec>
+{"issues":[{"code":"missing_gameplay_mechanics"}]}
+</artifact_repair_spec>
+请直接修正现有文件，再继续验证；不要把这些缺口解释成未来优化项。
+runSmokeTest 的 coverage 只能记录由真实 step(input, frames) 触发的 before/after snapshot 变化，不能记录存在性或注册信息。
+优先依据失败摘要直接修改目标文件；如需确认结果，运行验证命令。
+</artifact-validation-failed>"
+`;

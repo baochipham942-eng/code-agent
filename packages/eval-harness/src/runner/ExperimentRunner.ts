@@ -201,7 +201,8 @@ export class ExperimentRunner extends EventEmitter {
           // Stage 2: Swiss Cheese LLM evaluation
           let swissResult;
           try {
-            swissResult = await runSwissCheese(evalCase.prompt, response);
+            // ADR-036 F6/F7：把 case 的参考答案喂给 judge，判"对没对"而非"像不像"。
+            swissResult = await runSwissCheese(evalCase.prompt, response, evalCase.expectedOutput);
           } catch (llmErr) {
             console.warn(`[eval-harness] LLM grader failed for case ${evalCase.id}:`, llmErr);
             const trial: TrialResult = {

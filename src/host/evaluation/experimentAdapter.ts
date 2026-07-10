@@ -117,7 +117,9 @@ export class ExperimentAdapter {
       partial,
       skipped,
       errored,
-      passRate: total > 0 ? passed / total : 0,
+      // F2（ADR-036）：pass-rate 分母与均分口径统一——都排除 skipped（基础设施故障
+      // 不进能力分母）。之前用 total（含 skipped）会让 skipped 稀释 pass-rate 而不进均分。
+      passRate: scored.length > 0 ? passed / scored.length : 0,
       averageScore,
     };
   }
@@ -418,6 +420,12 @@ export class ExperimentAdapter {
         telemetryCompleteness: traceTrial?.telemetryCompleteness,
         status,
         score,
+        // F1（ADR-036）：eval-harness 的 medianScore 由 LLM grader 产出（见
+        // ExperimentRunner「LLM grader failed」路径），此前 canonical 映射整个丢了
+        // scoreAuthority → 下游按 unknown 处理，LLM 分冒充确定性分进 headline。
+        // 如实标注：非 degraded = llm_judge（本路径无校准记录，默认未校准）；
+        // degraded 是确定性 replay gate 判失败，score 被强制归零，标 deterministic。
+        scoreAuthority: gateDegraded ? 'deterministic_assertion' : 'llm_judge',
         durationMs: c.trials.reduce((sum, trial) => sum + (trial.durationMs || 0), 0),
         failureReason,
         failureStage: gateDegraded ? 'telemetry_replay_gate' : undefined,

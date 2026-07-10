@@ -26,17 +26,25 @@ function makeClient(): Anthropic {
   return new Anthropic({ apiKey });
 }
 
-async function runTaskCompletion(client: Anthropic, prompt: string, response: string): Promise<ReviewerScore> {
+async function runTaskCompletion(client: Anthropic, prompt: string, response: string, expectedOutput?: string): Promise<ReviewerScore> {
+  // ADR-036 F6/F7：给了参考答案就按"是否匹配参考答案"判正确性，而不是让 judge
+  // 凭自己对 prompt 的理解判"看起来完成没"（后者只测合理性不测准确性）。
+  const referenceBlock = expectedOutput
+    ? `\n\nREFERENCE/EXPECTED ANSWER (ground truth — the response is correct only if it matches this):\n${expectedOutput}`
+    : '';
+  const gradingRule = expectedOutput
+    ? 'Grade correctness by whether the AI RESPONSE matches the REFERENCE/EXPECTED ANSWER above. A fluent but factually wrong answer must score low.'
+    : 'Evaluate if the AI response fully accomplishes what was asked.';
   const msg = await client.messages.create({
     model: 'claude-opus-4-6',
     max_tokens: 16000,
     thinking: { type: 'enabled', budget_tokens: 10000 },
     messages: [{
       role: 'user',
-      content: `You are an objective Task Completion Analyst. Evaluate if the AI response fully accomplishes what was asked.
+      content: `You are an objective Task Completion Analyst. ${gradingRule}
 
 TASK/PROMPT:
-${prompt}
+${prompt}${referenceBlock}
 
 AI RESPONSE:
 ${response}
@@ -164,12 +172,12 @@ Return JSON only:
   };
 }
 
-export async function runSwissCheese(prompt: string, response: string): Promise<SwissCheeseResult> {
+export async function runSwissCheese(prompt: string, response: string, expectedOutput?: string): Promise<SwissCheeseResult> {
   const client = makeClient();
 
   // Run all 4 reviewers in parallel
   const [taskScore, securityScore, codeScore, uxScore] = await Promise.all([
-    runTaskCompletion(client, prompt, response),
+    runTaskCompletion(client, prompt, response, expectedOutput),
     runSecurityAudit(client, response),
     runCodeReview(client, response),
     runUXExpert(client, prompt, response),

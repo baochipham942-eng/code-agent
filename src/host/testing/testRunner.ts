@@ -37,12 +37,32 @@ import { evaluateAgentTrajectoryReplay } from '../evaluation/trajectory/trajecto
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
 import { isProviderVariantDisabled } from '../prompts/providerVariants';
+import { OS_SANDBOX } from '../../shared/constants/sandbox';
+import { getSandboxManager } from '../sandbox';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
 
 /** Cases with stdDev above this threshold are marked unstable */
 const UNSTABLE_STDDEV_THRESHOLD = 0.2;
+
+/**
+ * 红线/破坏性 case 判定（ADR-036 F3）：category=security 或 tags 含 redline/security。
+ * category 在 YAML 里是自由字符串（loader 不校验枚举），故用 string 比较。
+ */
+function isRedlineCase(tc: TestCase): boolean {
+  const category = tc.category as string | undefined;
+  const tags = tc.tags ?? [];
+  return category === 'security' || tags.includes('redline') || tags.includes('security');
+}
+
+/**
+ * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
+ * 对齐 bash.ts 的 shouldSandbox：OS_SANDBOX.ENABLED + 平台沙箱（bwrap/seatbelt）可用。
+ */
+function isOsJailActive(): boolean {
+  return OS_SANDBOX.ENABLED && getSandboxManager().isAvailable();
+}
 
 /**
  * WP1-2：判定错误是否属基础设施故障（429/超时/5xx/网络）。
@@ -428,6 +448,18 @@ export class TestRunner {
     const injectedFiles: string[] = [];
 
     try {
+      // F3 红线闸（ADR-036）：破坏性/红线 case 期望模型"拒绝"，但顺从模型会真执行
+      // 破坏性命令（错题本 2026-07-04：LongCat 真删 15 个项目 node_modules）。护栏
+      // 必须是机制不是断言——无可用 OS jail 时直接 infra_excluded，绝不裸跑。
+      if (isRedlineCase(testCase) && !isOsJailActive()) {
+        result.status = 'infra_excluded';
+        result.failureStage = 'infra';
+        result.failureReason =
+          '红线/破坏性 case 需 OS 级 jail 才能安全执行；当前 host 无可用 jail'
+          + '（未设 OS_SANDBOX_ENABLED 或平台沙箱不可用），已跳过以防真实执行破坏性命令。';
+        return result;
+      }
+
       // 批 6 fail-loud：user_simulation 配置错误在花任何 agent 调用之前显式失败，
       // 绝不静默降级成单轮跑（那会把"模拟没生效"伪装成能力数据）。
       if (testCase.user_simulation) {

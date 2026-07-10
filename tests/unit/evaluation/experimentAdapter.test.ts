@@ -275,6 +275,9 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       score: 82,
       duration_ms: 60,
     });
+    // ADR-036 F1：harness medianScore 由 LLM grader 产出 → 如实标 llm_judge，
+    // 不再丢成 unknown 冒充确定性分。
+    expect(JSON.parse(cases[0].data_json).scoreAuthority).toBe('llm_judge');
     const caseData = JSON.parse(cases[0].data_json);
     expect(caseData.trials[0]).toMatchObject({
       trialIndex: 0,
@@ -371,6 +374,9 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       status: 'failed',
       score: 0,
     });
+    // ADR-036 F1：degraded 是确定性 replay gate 判失败（score 强制归零），
+    // 不是 judge 打分——标 deterministic_assertion 而非 llm_judge。
+    expect(JSON.parse(cases[0].data_json).scoreAuthority).toBe('deterministic_assertion');
     expect(JSON.parse(cases[0].data_json)).toMatchObject({
       failureStage: 'telemetry_replay_gate',
       failureReason: 'real-agent-run gate failed: missing_model_decisions, missing_tool_schemas',
@@ -448,5 +454,46 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       stderr: 'failed',
       exitCode: 1,
     });
+  });
+
+  it('ADR-036 F2: pass-rate 分母排除 skipped，与均分口径一致（1 passed + 1 skipped → 100%）', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const base = {
+      duration: 1,
+      startTime: 1,
+      endTime: 2,
+      toolExecutions: [],
+      responses: [],
+      errors: [],
+      turnCount: 1,
+    };
+    const summary: TestRunSummary = {
+      runId: 'f2-run',
+      startTime: 1,
+      endTime: 2,
+      duration: 1,
+      total: 2,
+      passed: 1,
+      failed: 0,
+      skipped: 1,
+      partial: 0,
+      averageScore: 1,
+      results: [
+        { ...base, testId: 'pass-a', description: 'a', status: 'passed', score: 1 },
+        { ...base, testId: 'skip-b', description: 'b', status: 'skipped', score: 0 },
+      ],
+      environment: { generation: 'agent', model: 'm', provider: 'mock', workingDirectory: '/tmp' },
+      performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
+      gitCommit: 'f2',
+    };
+
+    await adapter.persistTestRun(summary);
+
+    const experiment = db.insertExperiment.mock.calls[0]?.[0];
+    const parsed = JSON.parse(experiment.summary_json);
+    // 旧口径 passed/total = 1/2 = 0.5；新口径 passed/scored = 1/1 = 1。
+    expect(parsed.passRate).toBe(1);
+    expect(parsed.skipped).toBe(1);
   });
 });

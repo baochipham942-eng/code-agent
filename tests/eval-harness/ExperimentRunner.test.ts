@@ -137,6 +137,27 @@ describe('ExperimentRunner', () => {
     expect(result.cases[0].passed).toBe(true);
   });
 
+  it('ADR-036 F6/F7: 把 case 的 expectedOutput 喂给 judge（判对错而非判像不像）', async () => {
+    vi.mocked(runSwissCheese).mockResolvedValueOnce({
+      aggregateScore: 90,
+      passed: true,
+      consensusCount: 4,
+    });
+
+    const runner = new ExperimentRunner({
+      trialsPerCase: 1,
+      runAgent: async () => 'the capital is Paris',
+    });
+
+    await runner.run(
+      [{ id: 'qa-1', prompt: 'capital of France?', expectedOutput: 'Paris' }],
+      'exp-expected',
+    );
+
+    // 核心：runSwissCheese 必须收到第三参 expectedOutput，否则 judge 只能凭合理性打分。
+    expect(runSwissCheese).toHaveBeenCalledWith('capital of France?', 'the capital is Paris', 'Paris');
+  });
+
   it('keeps raw real-agent-run case results failed when any trial is degraded despite high median score', async () => {
     vi.mocked(runSwissCheese)
       .mockResolvedValueOnce({

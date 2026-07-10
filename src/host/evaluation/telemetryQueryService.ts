@@ -1023,11 +1023,14 @@ class TelemetryQueryService {
               durationMs: attribution.durationMs,
             };
           } catch (error) {
-            logger.debug('失败归因(FailureAttributor)计算失败，跳过', { error: String(error) });
+            // ADR-036 F4c：归因失败别静默吞（debug 在正常运行被过滤掉 = 隐形）。
+            // 升 warn 保证"跑了但没归因"在日志里可见，不与"无偏差故无归因"混淆。
+            logger.warn('失败归因(FailureAttributor)计算失败，跳过', { error: String(error) });
           }
         }
       } catch (error) {
-        logger.debug('失败归因外层处理异常，跳过', { error: String(error) });
+        // ADR-036 F4c：同上，外层异常升 warn 保证可见。
+        logger.warn('失败归因外层处理异常，跳过', { error: String(error) });
       }
 
       const selfRepair = this.calculateSelfRepairStats(data.toolCallRows);

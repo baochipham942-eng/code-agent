@@ -2,8 +2,6 @@
 // Evaluation Internal Types - 评测模块内部类型
 // ============================================================================
 
-import type { EvaluationMetric, EvaluationDimension } from '../../shared/contract/evaluation';
-
 // Re-export TranscriptMetrics from shared (canonical source) for backward compatibility
 export type { TranscriptMetrics } from '../../shared/contract/evaluation';
 
@@ -99,10 +97,5 @@ export interface ToolCallStats {
 // TranscriptMetrics moved to shared/contract/evaluation.ts (canonical source)
 // Re-exported above for backward compatibility
 
-/**
- * 维度评估器接口
- */
-export interface DimensionEvaluator {
-  dimension: EvaluationDimension;
-  evaluate(snapshot: SessionSnapshot): Promise<EvaluationMetric>;
-}
+// ADR-036 F4a：DimensionEvaluator 空接口（零 implements）已删除——单实现都没有的
+// 抽象是负债。未来真要维度评估器时，从需求反推接口，别留悬空定义。

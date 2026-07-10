@@ -17,19 +17,25 @@ on:
     paths:
       - 'src/host/testing/**'
       - 'src/host/evaluation/**'
+      - 'packages/eval-harness/**'
       - 'scripts/eval-ci.ts'
       - '.claude/test-cases/**'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
+      - 'tests/eval/**'
+      - 'tests/eval-harness/**'
       - '.github/workflows/eval-harness-gate.yml'
   push:
     branches: [main]
     paths:
       - 'src/host/testing/**'
       - 'src/host/evaluation/**'
+      - 'packages/eval-harness/**'
       - 'scripts/eval-ci.ts'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
+      - 'tests/eval/**'
+      - 'tests/eval-harness/**'
       - '.github/workflows/eval-harness-gate.yml'
   workflow_dispatch:
 
@@ -69,4 +75,6 @@ jobs:
 
       - name: Eval harness 单测
         # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate
-        run: npx vitest run tests/unit/testing tests/unit/evaluation
+        # ADR-036 F5a：tests/eval + tests/eval-harness 全 hermetic（40 测试 <0.5s，
+        # 无真网/无 API key），纳入门禁堵住"grader/harness 改动无 CI 兜底"的缺口。
+        run: npx vitest run tests/unit/testing tests/unit/evaluation tests/eval tests/eval-harness

@@ -570,8 +570,10 @@ async function runCompareCommand(
     judge: 'rules' | 'llm';
   },
 ): Promise<void> {
-  const { loadCompareConfig, runCompare, generateComparisonConsole, generateComparisonMarkdown } =
-    await import('../src/host/testing/comparator');
+  const {
+    loadCompareConfig, runCompare, generateComparisonConsole, generateComparisonMarkdown,
+    assertCompareArmsDistinct, assertCompareArmsActivated,
+  } = await import('../src/host/testing/comparator');
 
   const candidate = await loadCompareConfig(candidatePath);
   const resolvedProvider = opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
@@ -581,6 +583,10 @@ async function runCompareCommand(
     model: resolvedModel,
     provider: resolvedProvider,
   };
+
+  // A3 臂激活断言（跑前，零成本）：candidate 与 baseline 有效配置相同 = 对照臂空跑，
+  // 在烧任何 API 预算前直接拒绝发车。
+  assertCompareArmsDistinct(baseline, candidate);
 
   // Load & filter cases
   const defaultConfig = createDefaultConfig(workingDir);
@@ -659,6 +665,10 @@ async function runCompareCommand(
       llmCall,
     });
 
+    // A3 臂激活断言（跑后，报数前准入）：没有任何有效配对数据（零 case 或全部
+    // pair 被排除）时抛错拒绝报数——不写报告、退出码非 0。
+    assertCompareArmsActivated(result);
+
     console.log(generateComparisonConsole(result));
 
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
@@ -720,7 +730,13 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       console.error(chalk.red('  Error: --compare 需要 --real（或 --model <name>）。mock 两侧输出恒等，对比无意义。'));
       process.exit(1);
     }
-    await runCompareCommand(workingDir, compare, { model, provider, tags, ids, maxCases, force, judge });
+    try {
+      await runCompareCommand(workingDir, compare, { model, provider, tags, ids, maxCases, force, judge });
+    } catch (error) {
+      // A3 臂激活断言等准入失败：干净的红色报错 + 非零退出，不产出对比报告
+      console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
+      process.exit(1);
+    }
     return;
   }
 

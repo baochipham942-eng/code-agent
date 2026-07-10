@@ -29,11 +29,11 @@ import {
 import { redactSecrets } from '../security/secretRedaction';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
-import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { type ClassificationResult } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import {
   getWriteIsolationManager,
   getWriteIsolationScope,
@@ -50,7 +50,13 @@ import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
-import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import { type PermissionMode } from '../permissions/modes';
+import {
+  readOnlyDenialError,
+  readOnlyForcesConfirmationFor,
+  resolveSessionPermissionMode,
+  resolveToolPermissionClassification,
+} from './toolPermissionClassification';
 import { randomUUID } from 'node:crypto';
 import {
   isRunPathInsideWorkspace,
@@ -548,21 +554,9 @@ export class ToolExecutor {
       ? options.skillToolBoundary
       : undefined;
 
-    // B1 第 4 档「只读探索」（readOnly）：读/列/搜类工具直通，写文件和执行命令
-    // 一律走用户确认——预授权 / 安全命令白名单 / lenient / classifier 自动放行全部失效，
-    // 但 classifier 的 deny（危险命令）语义保留（只降级 approve→ask，不放宽 deny）。
-    // 会话有效权限档：subagent 走收缩后的 override，主 agent 走会话档单一真源。
-    const sessionPermissionMode = this.permissionModeOverride
-      ?? getPermissionModeManager().getModeForSession(options.sessionId);
-    // network 档（审出 HIGH）：只读联网（webSearch/webFetch、显式 readOnlyHint 的 MCP）
-    // 保持直通；未声明只读的 network 工具（httpRequest/jira、无 annotations 的 MCP 兜底）
-    // 视同变更类，readOnly 下与写入/执行同等强制确认。
-    const readOnlyForcesConfirmation =
-      toolDef.requiresPermission
-      && sessionPermissionMode === 'readOnly'
-      && (toolDef.permissionLevel === 'write'
-        || toolDef.permissionLevel === 'execute'
-        || (toolDef.permissionLevel === 'network' && toolDef.readOnly !== true));
+    // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
+    const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
+    const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
@@ -624,73 +618,20 @@ export class ToolExecutor {
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       try {
-        // Policy always_confirm / skill 边界违规命中时跳过 classifier，直接进用户审批
-        let classification: ClassificationResult;
-        if (policyForcesConfirmation) {
-          classification = {
-            decision: 'ask',
-            reason: `Tool "${executionToolName}" requires confirmation by policy (tools.always_confirm)`,
-            confidence: 1,
-            cached: false,
-            traceStep: createTraceStep(
-              'policy_enforcer',
-              'tools.always_confirm',
-              'ask',
-              'Tool requires confirmation by policy',
-              permStartTime,
-            ),
-          };
-        } else if (boundaryViolation) {
-          classification = {
-            decision: 'ask',
-            reason: `Tool "${executionToolName}" is outside skill "${boundaryViolation.skillName}" allowed-tools boundary (${boundaryViolation.allowedTools.join(', ')})`,
-            confidence: 1,
-            cached: false,
-            traceStep: createTraceStep(
-              'permission_classifier',
-              'skill.allowed-tools-boundary',
-              'ask',
-              `Outside skill "${boundaryViolation.skillName}" tool boundary`,
-              permStartTime,
-            ),
-          };
-        } else {
-          classification = await classifyPermission(policyToolName, params, {
-            workingDirectory: resolveCanonicalRunPath(this.executionCwd),
-            workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
-            permissionLevel: toolDef.permissionLevel,
-          });
-          // 只读探索档：classifier 的 approve 一律降级为用户确认；deny 保持原判
-          //（危险命令在 readOnly 下不能弱化成"确认后可执行"以外的更宽结果）。
-          if (readOnlyForcesConfirmation && classification.decision === 'approve') {
-            const opLabel = toolDef.permissionLevel === 'write' ? '写入'
-              : toolDef.permissionLevel === 'network' ? '网络变更'
-              : '执行';
-            const reason = `只读探索模式：${opLabel}操作需要用户确认`;
-            classification = {
-              decision: 'ask',
-              reason,
-              confidence: 1,
-              cached: false,
-              traceStep: createTraceStep('permission_classifier', 'readonly_explore_mode', 'ask', reason, permStartTime),
-            };
-          }
-          // B1 档位免确认（审出 MED：bypass/acceptEdits 曾在主判定链零消费、纯虚标）：
-          // bypassPermissions=写入+执行免确认，acceptEdits=仅写入免确认。
-          // 只把 classifier 的 ask 升级为 approve —— deny / exec-policy forbidden /
-          // policy always_confirm / skill 边界 / 前置 validateCommand 硬毙全部照常生效。
-          if (classification.decision === 'ask'
-            && permissionModeAutoApproves(sessionPermissionMode, toolDef.permissionLevel)) {
-            const reason = `权限档 ${sessionPermissionMode}：${toolDef.permissionLevel === 'write' ? '写入' : '执行'}操作免确认`;
-            classification = {
-              decision: 'approve',
-              reason,
-              confidence: 1,
-              cached: false,
-              traceStep: createTraceStep('permission_classifier', 'permission_mode_auto_approve', 'allow', reason, permStartTime),
-            };
-          }
-        }
+        // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
+        const classification: ClassificationResult = await resolveToolPermissionClassification({
+          executionToolName,
+          policyToolName,
+          params,
+          policyForcesConfirmation,
+          boundaryViolation,
+          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+          workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
+          permissionLevel: toolDef.permissionLevel,
+          permStartTime,
+          readOnlyForcesConfirmation,
+          sessionPermissionMode,
+        });
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
             tool: executionToolName,
@@ -872,9 +813,7 @@ export class ToolExecutor {
         // 泛用的 "Permission denied by user" 在该路径是误导——给模型可转述的真实原因与出路。
         return {
           success: false,
-          error: readOnlyForcesConfirmation
-            ? `只读探索模式：${executionToolName} 未获用户确认而被拦截（无审批界面的运行环境会自动拒绝）。如需执行该操作，请切换会话权限档后重试。`
-            : 'Permission denied by user',
+          error: readOnlyForcesConfirmation ? readOnlyDenialError(executionToolName) : 'Permission denied by user',
         };
       }
       } // end needsUserApproval

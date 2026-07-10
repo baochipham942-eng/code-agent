@@ -367,8 +367,7 @@ export class SubagentExecutor {
       // 父 agent 此时会弹用户确认，子 agent 不能替用户做主、不能越父权限。
       // 审出 MED：acceptEdits 不再与 bypass 同为全放行 —— 只免确认写入档，
       // 执行/网络档没有真人可问一律拒绝；否则 cron 钳制（bypass→acceptEdits）空转。
-      requestPermission: async (request) =>
-        subagentEffectiveMode === 'bypassPermissions'
+      requestPermission: async (request) => subagentEffectiveMode === 'bypassPermissions'
         || permissionModeAutoApproves(subagentEffectiveMode, getPermissionLevel(request.type)),
     });
     const subagentPolicy = {

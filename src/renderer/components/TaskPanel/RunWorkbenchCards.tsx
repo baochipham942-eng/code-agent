@@ -11,7 +11,7 @@ import {
   Radio,
   XCircle,
 } from 'lucide-react';
-import { CardEmptyState as EmptyState } from './Card';
+import { EmptyState } from '../primitives';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import type {
   LoopDecisionView,
@@ -218,7 +218,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
         </div>
       );
     }
-    return <EmptyState text="暂无任务" />;
+    return <EmptyState variant="inline" text="暂无任务" />;
   }
 
   const sessionTask = tasks.find((task) => task.scope === 'session') || null;
@@ -257,7 +257,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
 };
 
 export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] }) => {
-  if (subagents.length === 0) return <EmptyState text="暂无子代理" />;
+  if (subagents.length === 0) return <EmptyState variant="inline" text="暂无子代理" />;
 
   return (
     <div className="space-y-1.5">
@@ -479,7 +479,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
 };
 
 export const RunTimeline = ({ decisions }: { decisions: LoopDecisionView[] }) => {
-  if (decisions.length === 0) return <EmptyState text="暂无运行事件" />;
+  if (decisions.length === 0) return <EmptyState variant="inline" text="暂无运行事件" />;
 
   return (
     <div className="space-y-1.5">
@@ -513,7 +513,7 @@ function sourceTone(source: ToolCapabilityView['source']): 'skill' | 'connector'
 }
 
 export const ToolDiscoverySummary = ({ tools }: { tools: ToolCapabilityView[] }) => {
-  if (tools.length === 0) return <EmptyState text="本轮还没有工具活动" />;
+  if (tools.length === 0) return <EmptyState variant="inline" text="本轮还没有工具活动" />;
 
   return (
     <div className="space-y-1.5">
@@ -555,7 +555,7 @@ interface MemoryActivitySummaryProps {
 }
 
 export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActivitySummaryProps) => {
-  if (activities.length === 0) return <EmptyState text="本轮还没有记忆活动" />;
+  if (activities.length === 0) return <EmptyState variant="inline" text="本轮还没有记忆活动" />;
 
   return (
     <div className="space-y-1.5">

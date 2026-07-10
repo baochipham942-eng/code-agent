@@ -44,3 +44,11 @@ export type { ToggleProps, ToggleSize } from './Toggle';
 // UndoToast
 export { UndoToast } from './UndoToast';
 export type { UndoToastProps } from './UndoToast';
+
+// Badge
+export { Badge } from './Badge';
+export type { BadgeProps } from './Badge';
+
+// EmptyState
+export { EmptyState } from './EmptyState';
+export type { EmptyStateProps, EmptyStateVariant } from './EmptyState';

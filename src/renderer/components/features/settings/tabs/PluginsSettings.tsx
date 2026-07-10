@@ -41,7 +41,7 @@ import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 import ipcService from '../../../../services/ipcService';
-import { Button } from '../../../primitives';
+import { Button, EmptyState } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { AlmaRegistryAuditPanel } from './AlmaRegistryAuditPanel';
 
@@ -157,12 +157,6 @@ const AlmaFeaturedPluginCard: React.FC<{
     </div>
   );
 };
-
-const EmptyState: React.FC<{ text: string }> = ({ text }) => (
-  <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/35 px-4 py-6 text-center text-sm text-zinc-500">
-    {text}
-  </div>
-);
 
 export const PluginsSettings: React.FC = () => {
   const { t } = useI18n();

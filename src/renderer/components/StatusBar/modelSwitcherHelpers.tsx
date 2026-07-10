@@ -21,6 +21,7 @@ import type { Translations } from '../../i18n';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import { getProviderLogoBadge, getProviderLogoMark } from './providerLogoCatalog';
 import { useProviderIconImageSource } from '../../utils/providerIconAssets';
+import { Badge } from '../primitives';
 
 export const QUICK_SWITCH_PROVIDERS = [
   'moonshot',
@@ -400,13 +401,13 @@ export function buildProviderBillingSummary(mode?: BillingMode | null): Provider
 
 export function ProviderBillingBadge({ summary }: { summary: ProviderBillingSummary }) {
   return (
-    <span
-      className={`inline-flex items-center rounded border px-1.5 py-0.5 ${summary.badgeClass}`}
+    <Badge
+      className={summary.badgeClass}
       title={summary.detail}
       data-provider-billing-mode={summary.mode}
     >
       {summary.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -524,27 +525,27 @@ export function EngineReliabilityPanel({ summary }: { summary: EngineReliability
 
 export function EngineBillingBadge({ summary }: { summary: EngineBillingSummary }) {
   return (
-    <span
-      className={`inline-flex items-center rounded border px-1.5 py-0.5 ${summary.badgeClass}`}
+    <Badge
+      className={summary.badgeClass}
       title={summary.detail}
       data-engine-billing-mode={summary.mode}
     >
       {summary.label}
-    </span>
+    </Badge>
   );
 }
 
 export function ProviderHealthBadge({ summary }: { summary: ProviderHealthSummary }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 ${summary.badgeClass}`}
+    <Badge
+      className={summary.badgeClass}
+      dot={summary.dotClass}
       title={summary.detail}
       aria-label={`Provider 状态: ${summary.label}`}
       data-provider-health-state={summary.state}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${summary.dotClass}`} />
       {summary.label}
-    </span>
+    </Badge>
   );
 }
 

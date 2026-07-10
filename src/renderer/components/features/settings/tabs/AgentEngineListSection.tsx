@@ -21,7 +21,7 @@ import { useSessionStore } from '../../../../stores/sessionStore';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
-import { Button } from '../../../primitives';
+import { Badge, Button } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
 import {
   buildModelSwitcherEngineSelection,
@@ -184,12 +184,12 @@ export const AgentEngineListSection: React.FC = () => {
                       <Terminal className="h-4 w-4 shrink-0 text-zinc-400" />
                     )}
                     <span className="text-sm font-medium text-zinc-100">{row.label}</span>
-                    <span
-                      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] ${row.installStateBadgeClass}`}
+                    <Badge
+                      className={`text-[11px] ${row.installStateBadgeClass}`}
                       data-engine-install-state={row.installState}
                     >
                       {row.installStateLabel}
-                    </span>
+                    </Badge>
                     <EngineBillingBadge summary={row.billing} />
                     <Button
                       size="sm"

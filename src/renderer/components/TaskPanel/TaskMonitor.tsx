@@ -32,7 +32,8 @@ import { useI18n } from '../../hooks/useI18n';
 import { formatElapsed } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
 import { ApprovalSyncCard } from './ApprovalSyncCard';
-import { Card, CardEmptyState as EmptyState } from './Card';
+import { Card } from './Card';
+import { EmptyState } from '../primitives';
 import {
   CurrentTurnArtifactOwnershipCard,
   OutputFileRows,
@@ -333,7 +334,7 @@ export const TaskMonitor: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                <EmptyState text={t.taskPanel.skillsMcpEmpty} />
+                <EmptyState variant="inline" text={t.taskPanel.skillsMcpEmpty} />
               )}
             </SourceSubsection>
           </div>

@@ -20,10 +20,10 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import {
   AuditRow,
-  EmptyState,
   KnowledgeInboxList,
   LoadingRows,
 } from './KnowledgeMemoryPanel.parts';
+import { EmptyState } from '../../primitives';
 
 interface LightMemoryFile {
   filename: string;
@@ -716,6 +716,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
                 <LoadingRows />
               ) : inboxItems.length === 0 ? (
                 <EmptyState
+                  variant="panel"
                   icon={Inbox}
                   title="暂无待确认知识"
                   text="没有发现可直接复用的候选链路；刷新会重新读取 Light Memory 和最近会话。"
@@ -779,6 +780,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
               <LoadingRows />
             ) : filteredAuditItems.length === 0 ? (
               <EmptyState
+                variant="panel"
                 icon={Database}
                 title={query.trim() ? '没有匹配的记忆' : '暂无可审计记忆'}
                 text={query.trim() ? '换个关键词再查。' : '当前没有 Light Memory 文件、DB 记忆或最近会话摘要。'}

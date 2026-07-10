@@ -13,6 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { AuditItem, InboxItem, InboxStatus } from './KnowledgeMemoryPanel';
+import { Badge } from '../../primitives';
 
 function formatTime(value: number | null): string {
   if (!value) return '未知时间';
@@ -237,10 +238,10 @@ function InjectionBadge({ value }: { value: AuditItem['injection'] }) {
   };
   const config = labels[value];
   return (
-    <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${config.className}`}>
+    <Badge className={`text-[11px] ${config.className}`}>
       <config.Icon className="h-3 w-3" />
       {config.text}
-    </span>
+    </Badge>
   );
 }
 
@@ -250,16 +251,6 @@ export function LoadingRows() {
       {Array.from({ length: 4 }).map((_, index) => (
         <div key={index} className="h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
       ))}
-    </div>
-  );
-}
-
-export function EmptyState({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
-  return (
-    <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 px-6 text-center">
-      <Icon className="h-8 w-8 text-zinc-600" />
-      <h4 className="mt-3 text-sm font-medium text-zinc-300">{title}</h4>
-      <p className="mt-1 max-w-sm text-xs leading-5 text-zinc-500">{text}</p>
     </div>
   );
 }

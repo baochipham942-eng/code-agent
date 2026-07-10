@@ -115,7 +115,3 @@ export function Card({
     </div>
   );
 }
-
-export function CardEmptyState({ text }: { text: string }) {
-  return <div className="text-xs text-zinc-600 py-1">{text}</div>;
-}

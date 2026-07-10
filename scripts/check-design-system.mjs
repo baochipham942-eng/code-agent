@@ -13,6 +13,8 @@
 //                             （design-system-zindex-allowlist.json）：用法不在表内即红，表项在代码中
 //                             找不到也红（防 allowlist 积压）；`ds-allow:z` 豁免
 //   6. important-unjustified: 禁无注册的 !important；`ds-allow:important <理由>` 登记后豁免
+//   7. local-display-primitive: 禁在 primitives/ 之外新增本地 EmptyState/Badge 定义
+//                             （A1 展示类 primitive 收敛，基线 0）；`ds-allow:primitive` 豁免
 //
 // 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题 --brand-primary 按各自
 // 真实用法场景核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深
@@ -55,6 +57,9 @@ const BARE_RADIUS_CSS_RE = /border-radius:\s*\d+px/;
 const BARE_Z_TSX_RE = /z-\[(\d+)\]|zIndex:\s*(\d+)/;
 const BARE_Z_CSS_RE = /z-index:\s*(\d+)/;
 const IMPORTANT_RE = /!important/;
+// 本地展示 primitive 定义（const/function EmptyState|Badge）——共享件在 components/primitives/，
+// 别再各自手搓。导出供契约测试对故意违例样本做红绿验证。
+export const LOCAL_DISPLAY_PRIMITIVE_RE = /\b(?:const|function)\s+(?:EmptyState|Badge)\b/;
 
 const ZINDEX_ALLOWLIST_PATH = join(__dirname, 'design-system-zindex-allowlist.json');
 
@@ -95,6 +100,7 @@ export function scan() {
     'bare-px-radius': [],
     'bare-z-index': [],
     'important-unjustified': [],
+    'local-display-primitive': [],
     'stale-zindex-allowlist': [],
   };
   // 裸 z-index 用法先收集（file+value），扫完后与 allowlist 双向核对
@@ -144,6 +150,9 @@ export function scan() {
       }
       if (IMPORTANT_RE.test(line) && !isAllowed(line, ['important'])) {
         violations['important-unjustified'].push(loc);
+      }
+      if (LOCAL_DISPLAY_PRIMITIVE_RE.test(line) && !inPrimitives && !isAllowed(line, ['primitive'])) {
+        violations['local-display-primitive'].push(loc);
       }
     });
   }

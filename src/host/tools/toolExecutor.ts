@@ -49,6 +49,11 @@ import { getDatabase } from '../services/core/databaseService';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard, commandMatchesScopedPrefix } from './neoTagToolGuard';
 import { randomUUID } from 'node:crypto';
+import {
+  isRunPathInsideWorkspace,
+  resolveCanonicalRunPath,
+  type RunContext,
+} from '../runtime/runContext';
 
 const logger = createLogger('ToolExecutor');
 
@@ -64,13 +69,26 @@ const logger = createLogger('ToolExecutor');
 export interface ToolExecutorConfig {
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
+  /** Present only for immutable per-run executors. */
+  runContext?: RunContext;
+  /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
+  dispatchTool?: ToolExecutionDelegate;
 }
+
+export type ToolExecutionDelegate = (
+  toolName: string,
+  params: Record<string, unknown>,
+  context: ToolContext,
+  options: ExecuteOptions,
+) => Promise<ToolExecutionResult | null>;
 
 /**
  * 工具执行选项
  * @internal
  */
 export interface ExecuteOptions {
+  /** Distinct execution identity. Never substitute sessionId for this value. */
+  runId?: string;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
   // Plan Mode support (borrowed from Claude Code v2.0)
@@ -171,11 +189,36 @@ export interface ExecuteOptions {
 export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
+  private readonly runContext?: RunContext;
+  private readonly dispatchTool?: ToolExecutionDelegate;
   private auditEnabled = true;
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
-    this.workingDirectory = config.workingDirectory;
+    this.workingDirectory = nodePath.resolve(config.workingDirectory);
+    this.runContext = config.runContext;
+    this.dispatchTool = config.dispatchTool;
+    if (this.runContext && this.workingDirectory !== this.runContext.cwd) {
+      throw new Error(
+        `Run-scoped ToolExecutor cwd mismatch for ${this.runContext.runId}: ${this.workingDirectory}`,
+      );
+    }
+  }
+
+  /** Create an executor whose workspace/cwd cannot be changed after construction. */
+  forRun(runContext: RunContext, dispatchTool?: ToolExecutionDelegate): ToolExecutor {
+    const executor = new ToolExecutor({
+      requestPermission: this.requestPermission,
+      workingDirectory: runContext.cwd,
+      runContext,
+      dispatchTool: dispatchTool ?? this.dispatchTool,
+    });
+    executor.setAuditEnabled(this.auditEnabled);
+    return executor;
+  }
+
+  getRunContext(): RunContext | undefined {
+    return this.runContext;
   }
 
   /**
@@ -191,7 +234,10 @@ export class ToolExecutor {
    * @param path - 新的工作目录路径
    */
   setWorkingDirectory(path: string): void {
-    this.workingDirectory = path;
+    if (this.runContext) {
+      throw new Error(`Run-scoped ToolExecutor workspace is immutable: ${this.runContext.runId}`);
+    }
+    this.workingDirectory = nodePath.resolve(path);
   }
 
   /**
@@ -211,11 +257,36 @@ export class ToolExecutor {
    */
   async execute(
     toolName: string,
-    params: Record<string, unknown>,
+    rawParams: Record<string, unknown>,
     options: ExecuteOptions
   ): Promise<ToolExecutionResult> {
+    if (this.runContext && options.runId && options.runId !== this.runContext.runId) {
+      return {
+        success: false,
+        error: `Run context mismatch: expected ${this.runContext.runId}, received ${options.runId}`,
+        metadata: { code: 'RUN_CONTEXT_MISMATCH' },
+      };
+    }
+    if (this.runContext && options.sessionId && options.sessionId !== this.runContext.sessionId) {
+      return {
+        success: false,
+        error: `Run session mismatch: expected ${this.runContext.sessionId}, received ${options.sessionId}`,
+        metadata: { code: 'RUN_CONTEXT_MISMATCH' },
+      };
+    }
+    const effectiveRunId = this.runContext?.runId ?? options.runId;
+    const effectiveSessionId = this.runContext?.sessionId ?? options.sessionId;
     const requestedToolName = toolName;
     const normalizedRequestedToolName = normalizeToolName(requestedToolName);
+    const boundParams = this.bindRunScopedParams(normalizedRequestedToolName, rawParams);
+    if ('error' in boundParams) {
+      return {
+        success: false,
+        error: boundParams.error,
+        metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
+      };
+    }
+    const params = boundParams.params;
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
@@ -280,7 +351,10 @@ export class ToolExecutor {
 
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
-      workingDirectory: this.workingDirectory,
+      runId: effectiveRunId,
+      sessionId: effectiveSessionId,
+      workspace: this.workspaceRoot,
+      workingDirectory: this.executionCwd,
       requestPermission: this.requestPermission,
       abortSignal: options.abortSignal,
       planningService: options.planningService,
@@ -291,8 +365,6 @@ export class ToolExecutor {
       emitEvent: options.emitEvent,
       // Also set emit as alias for emitEvent (tools use context.emit)
       emit: options.emitEvent,
-      // Session ID for cross-session isolation (fixes todo pollution)
-      sessionId: options.sessionId,
       // Per-agent BrowserPool / ComputerSurface isolation
       agentId: options.agentId,
       spawnDepth: options.spawnDepth,
@@ -352,7 +424,7 @@ export class ToolExecutor {
         if (this.auditEnabled) {
           const auditLogger = getAuditLogger();
           auditLogger.logSecurityIncident({
-            sessionId: options.sessionId || 'unknown',
+            sessionId: effectiveSessionId || 'unknown',
             toolName: executionToolName,
             incident: `Blocked command: ${commandValidation.reason}`,
             details: {
@@ -366,7 +438,7 @@ export class ToolExecutor {
         // Fire-and-forget: emit PermissionDenied hook
         options.hookManager?.triggerPermissionDenied(
           executionToolName, commandValidation.reason || 'security policy', 'policy',
-          options.sessionId || 'unknown',
+          effectiveSessionId || 'unknown',
         ).catch(() => {});
         recordDecision(executionToolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime);
 
@@ -388,7 +460,7 @@ export class ToolExecutor {
     // P0: Policy Enforcer — code-agent-policy.toml 硬规则（system/user/project 三层合并）。
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
-    const policyEnforcer = getPolicyEnforcer(this.workingDirectory);
+    const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.workspaceRoot));
     if (policyEnforcer?.isActive) {
       const policyCheck = this.checkAgainstPolicy(policyEnforcer, executionToolName, policyToolName, params, toolDef);
       if (!policyCheck.allowed) {
@@ -401,7 +473,7 @@ export class ToolExecutor {
 
         if (this.auditEnabled) {
           getAuditLogger().logSecurityIncident({
-            sessionId: options.sessionId || 'unknown',
+            sessionId: effectiveSessionId || 'unknown',
             toolName: executionToolName,
             incident: `Blocked by policy: ${policyCheck.reason}`,
             details: { section: policyCheck.section },
@@ -412,7 +484,7 @@ export class ToolExecutor {
         // Fire-and-forget: emit PermissionDenied hook
         options.hookManager?.triggerPermissionDenied(
           executionToolName, policyCheck.reason || 'security policy', 'policy',
-          options.sessionId || 'unknown',
+          effectiveSessionId || 'unknown',
         ).catch(() => {});
 
         const trace = policyCheck.traceStep
@@ -537,7 +609,8 @@ export class ToolExecutor {
           };
         } else {
           classification = await classifyPermission(policyToolName, params, {
-            workingDirectory: this.workingDirectory,
+            workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+            workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
             permissionLevel: toolDef.permissionLevel,
           });
         }
@@ -577,7 +650,7 @@ export class ToolExecutor {
           // Fire-and-forget: emit PermissionDenied hook
           options.hookManager?.triggerPermissionDenied(
             executionToolName, classification.reason || 'classifier deny', 'classifier',
-            options.sessionId || 'unknown',
+            effectiveSessionId || 'unknown',
           ).catch(() => {});
           recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime, traceBuilder.build('deny'));
           return {
@@ -601,7 +674,7 @@ export class ToolExecutor {
 
       if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(toolDef, params);
-      permissionRequest.sessionId = options.sessionId;
+      permissionRequest.sessionId = effectiveSessionId;
 
       // Attach decision trace to permission request
       permissionRequest.decisionTrace = traceBuilder.build('ask');
@@ -618,7 +691,7 @@ export class ToolExecutor {
             preview,
             riskLevel,
           },
-          options.sessionId || 'global'
+          effectiveSessionId || 'global'
         );
 
         if (preview) {
@@ -653,14 +726,14 @@ export class ToolExecutor {
             permType,
             resource,
             executionToolName,
-            options.sessionId || 'unknown',
+            effectiveSessionId || 'unknown',
             permissionRequest.reason,
           );
           if (!hookResult.shouldProceed) {
             // Fire-and-forget: emit PermissionDenied hook
             options.hookManager?.triggerPermissionDenied(
               executionToolName, hookResult.message || 'blocked', 'hook',
-              options.sessionId || 'unknown',
+              effectiveSessionId || 'unknown',
             ).catch(() => {});
             recordDecision(executionToolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime);
             return {
@@ -694,7 +767,7 @@ export class ToolExecutor {
           const auditLogger = getAuditLogger();
           auditLogger.log({
             eventType: 'permission_check',
-            sessionId: options.sessionId || 'unknown',
+            sessionId: effectiveSessionId || 'unknown',
             toolName: executionToolName,
             input: this.sanitizeParams(params),
             duration: 0,
@@ -705,7 +778,7 @@ export class ToolExecutor {
         // Fire-and-forget: emit PermissionDenied hook
         options.hookManager?.triggerPermissionDenied(
           executionToolName, 'Permission denied by user', 'user',
-          options.sessionId || 'unknown',
+          effectiveSessionId || 'unknown',
         ).catch(() => {});
         recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime);
 
@@ -717,11 +790,14 @@ export class ToolExecutor {
       } // end needsUserApproval
     }
 
-    // Get tool cache
+    // The existing cache is process-global and its key has no run/workspace
+    // namespace. Run-scoped executors therefore bypass it fail-closed; otherwise
+    // identical relative paths can return another run's persisted result.
     const toolCache = getToolCache();
+    const canUseToolCache = !this.runContext && toolCache.isCacheable(executionToolName);
 
     // Check cache for cacheable tools
-    if (toolCache.isCacheable(executionToolName)) {
+    if (canUseToolCache) {
       const cached = toolCache.get(executionToolName, params);
       if (cached) {
         logger.debug('Cache HIT', { toolName: executionToolName });
@@ -737,8 +813,9 @@ export class ToolExecutor {
     const writeIsolationScope = getWriteIsolationScope(
       executionToolName,
       params,
-      this.workingDirectory,
+      this.workspaceRoot,
       toolDef.permissionLevel,
+      this.executionCwd,
     );
     let releaseWriteIsolation: (() => void) | undefined;
     let writeIsolationMetadata: WriteIsolationMetadata | undefined;
@@ -755,7 +832,7 @@ export class ToolExecutor {
       try {
         getDatabase().appendToolExecutionComplete({
           executionId, toolName: executionToolName, status, error,
-          sessionId: options.sessionId, recordedAt: Date.now(),
+          sessionId: effectiveSessionId, recordedAt: Date.now(),
         });
       } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
     };
@@ -773,11 +850,11 @@ export class ToolExecutor {
 
       // 文件检查点：写隔离锁拿到后再保存原文件，避免并行 worker 竞争同一目标。
       await createFileCheckpointIfNeeded(executionToolName, params, () => {
-        if (!options.sessionId) return null;
+        if (!effectiveSessionId) return null;
         // messageId 从 context 中获取，如果没有则使用工具调用 ID
         const messageId = options.currentToolCallId || `msg_${Date.now()}`;
-        return { sessionId: options.sessionId, messageId };
-      });
+        return { sessionId: effectiveSessionId, messageId };
+      }, this.executionCwd);
 
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
@@ -787,15 +864,19 @@ export class ToolExecutor {
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       try {
         getDatabase().appendToolExecutionBegin({
-          executionId, sessionId: options.sessionId, toolName: executionToolName,
+          executionId, sessionId: effectiveSessionId, toolName: executionToolName,
           summary: execSummary, params, recordedAt: startTime,
         });
       } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
-      const rawResult = await resolver.execute(executionToolName, params, context);
+      const delegatedResult = this.dispatchTool
+        ? await this.dispatchTool(executionToolName, params, context, options)
+        : null;
+      const rawResult = delegatedResult
+        ?? await resolver.execute(executionToolName, params, context);
       const resultWithArtifacts = await persistBase64ImageMetadata(rawResult, {
         sourceTool: executionToolName,
-        workingDirectory: this.workingDirectory,
-        sessionId: options.sessionId,
+        workingDirectory: this.workspaceRoot,
+        sessionId: effectiveSessionId,
       });
       const result = writeIsolationMetadata
         ? {
@@ -811,8 +892,12 @@ export class ToolExecutor {
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });
 
       // Cache successful results for cacheable tools
-      if (result.success && toolCache.isCacheable(executionToolName) && result.result !== undefined) {
-        toolCache.set(executionToolName, params, result.result as import('../../shared/contract').ToolResult);
+      if (result.success && canUseToolCache && result.result !== undefined) {
+        toolCache.set(
+          executionToolName,
+          params,
+          result.result as import('../../shared/contract').ToolResult,
+        );
         logger.debug('Cached result', { toolName: executionToolName });
       }
 
@@ -820,7 +905,7 @@ export class ToolExecutor {
       if (this.auditEnabled) {
         const auditLogger = getAuditLogger();
         auditLogger.logToolUsage({
-          sessionId: options.sessionId || 'unknown',
+          sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
           input: this.sanitizeParams(params),
           output: result.result ? this.truncateOutput(String(result.result)) : undefined,
@@ -843,7 +928,7 @@ export class ToolExecutor {
       if (this.auditEnabled) {
         const auditLogger = getAuditLogger();
         auditLogger.logToolUsage({
-          sessionId: options.sessionId || 'unknown',
+          sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
           input: this.sanitizeParams(params),
           duration,
@@ -1043,14 +1128,52 @@ export class ToolExecutor {
     const filePath = typeof rawPath === 'string' ? rawPath : '';
     if (!filePath) return isWrite ? 'file.project_write' : 'file.project_read';
 
-    const workingDirectory = nodePath.resolve(this.workingDirectory);
+    const workspace = this.workspaceRoot;
     const resolvedPath = nodePath.isAbsolute(filePath)
       ? nodePath.resolve(filePath)
-      : nodePath.resolve(workingDirectory, filePath);
-    const inWorkspace = resolvedPath === workingDirectory || resolvedPath.startsWith(`${workingDirectory}${nodePath.sep}`);
+      : nodePath.resolve(this.executionCwd, filePath);
+    const inWorkspace = isRunPathInsideWorkspace(resolvedPath, workspace);
 
     if (inWorkspace) return isWrite ? 'file.project_write' : 'file.project_read';
     return isWrite ? 'file.external_write' : 'file.external_read';
+  }
+
+  private get executionCwd(): string {
+    return this.runContext?.cwd ?? this.workingDirectory;
+  }
+
+  private get workspaceRoot(): string {
+    return this.runContext?.workspace ?? this.workingDirectory;
+  }
+
+  private bindRunScopedParams(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): { params: Record<string, unknown> } | { error: string } {
+    if (!this.runContext || !isBashToolName(toolName)) {
+      return { params };
+    }
+
+    const requestedDirectory = params.working_directory;
+    if (typeof requestedDirectory !== 'string' || !requestedDirectory.trim()) {
+      return { params };
+    }
+
+    const candidate = nodePath.isAbsolute(requestedDirectory)
+      ? nodePath.resolve(requestedDirectory)
+      : nodePath.resolve(this.executionCwd, requestedDirectory);
+    if (!isRunPathInsideWorkspace(candidate, this.workspaceRoot)) {
+      return {
+        error: `Run ${this.runContext.runId} cannot execute outside workspace: ${candidate}`,
+      };
+    }
+
+    return {
+      params: {
+        ...params,
+        working_directory: candidate,
+      },
+    };
   }
 
   private getBoundaryIdForRequestType(type: PermissionRequestData['type']): PermissionBoundaryId {
@@ -1127,7 +1250,13 @@ export class ToolExecutor {
         ? params.path
         : undefined;
     if (filePath && (toolDef.permissionLevel === 'read' || toolDef.permissionLevel === 'write')) {
-      const fileCheck = enforcer.checkFilePath(filePath, toolDef.permissionLevel);
+      const unresolvedPolicyPath = nodePath.isAbsolute(filePath) || filePath === '~' || filePath.startsWith('~/')
+        ? filePath
+        : nodePath.resolve(this.executionCwd, filePath);
+      const policyPath = filePath === '~' || filePath.startsWith('~/')
+        ? filePath
+        : resolveCanonicalRunPath(unresolvedPolicyPath);
+      const fileCheck = enforcer.checkFilePath(policyPath, toolDef.permissionLevel);
       if (!fileCheck.allowed) return fileCheck;
     }
 

@@ -21,7 +21,7 @@ import { createDevAgentLoopStubSmokeRouter } from './devAgentLoopStubSmoke';
 import { createDevAgentTeamSmokeRouter } from './devAgentTeamSmoke';
 import { registerDevTelemetrySeedRoutes } from './devTelemetrySeedRoutes';
 import { DevApiError } from './devSeedHelpers';
-import type { ActiveAgentLoop } from './agent';
+import type { RunRegistry } from '../../host/runtime/runRegistry';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { notificationService } from '../../host/services/infra/notificationService';
 
@@ -423,20 +423,20 @@ function normalizeDevAgentEvents(body: unknown): RendererAgentEvent[] | null {
 
 interface DevRouterDeps {
   pendingDevPermissions: Map<string, PendingDevPermissionRequest>;
-  activeAgentLoops: Map<string, ActiveAgentLoop>;
+  runRegistry: RunRegistry;
   logger: WebRouteLogger;
 }
 
 export function createDevRouter(deps: DevRouterDeps): Router {
   const router = Router();
-  const { pendingDevPermissions, activeAgentLoops, logger } = deps;
+  const { pendingDevPermissions, runRegistry, logger } = deps;
 
   router.use('/dev/cancellable-tool', createDevCancellableToolSmokeRouter({
     isEnabled: isDevApiEnabled,
     logger,
   }));
   router.use('/dev/agent-loop-stub', createDevAgentLoopStubSmokeRouter({
-    activeAgentLoops,
+    runRegistry,
     isEnabled: isDevApiEnabled,
     logger,
   }));

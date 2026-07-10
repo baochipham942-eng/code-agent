@@ -29,6 +29,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { resetWriteIsolationForTests } from '../../../src/host/security/writeIsolation';
+import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 function deferred<T>() {
@@ -53,6 +54,8 @@ function createExecutor(): ToolExecutor {
   executor.setAuditEnabled(false);
   return executor;
 }
+
+const canonicalWorkspace = resolveCanonicalRunPath('/tmp/code-agent-write-isolation');
 
 function writeToolDefinition(name = 'Write') {
   return {
@@ -102,11 +105,11 @@ describe('ToolExecutor write isolation', () => {
 
     expect(firstResult.metadata?.writeIsolation).toMatchObject({
       kind: 'file',
-      lockKey: 'file:/tmp/code-agent-write-isolation/notes.md',
+      lockKey: `file:${canonicalWorkspace}/notes.md`,
     });
     expect(secondResult.metadata?.writeIsolation).toMatchObject({
       kind: 'file',
-      lockKey: 'file:/tmp/code-agent-write-isolation/notes.md',
+      lockKey: `file:${canonicalWorkspace}/notes.md`,
     });
   });
 
@@ -203,7 +206,7 @@ describe('ToolExecutor write isolation', () => {
     expect(delegationResult.metadata?.writeIsolation).toBeUndefined();
     expect(writeResult.metadata?.writeIsolation).toMatchObject({
       kind: 'file',
-      lockKey: 'file:/tmp/code-agent-write-isolation/a.md',
+      lockKey: `file:${canonicalWorkspace}/a.md`,
     });
   });
 });

@@ -89,7 +89,10 @@ export interface ToolModule<Args = Record<string, unknown>, Output = unknown> {
 // ----------------------------------------------------------------------------
 
 export interface ToolContext {
+  readonly runId?: string;
   readonly sessionId: string;
+  /** Immutable authorization/artifact boundary for this run. */
+  readonly workspace?: string;
   readonly workingDir: string;
   readonly abortSignal: AbortSignal;
 

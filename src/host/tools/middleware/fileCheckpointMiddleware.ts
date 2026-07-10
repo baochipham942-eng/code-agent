@@ -2,6 +2,7 @@
 
 import { getFileCheckpointService } from '../../services/checkpoint';
 import { createLogger } from '../../services/infra/logger';
+import path from 'node:path';
 
 const logger = createLogger('FileCheckpointMiddleware');
 
@@ -24,7 +25,8 @@ export type CheckpointContextProvider = () => CheckpointContext | null;
 export async function createFileCheckpointIfNeeded(
   toolName: string,
   params: Record<string, unknown>,
-  getContext: CheckpointContextProvider
+  getContext: CheckpointContextProvider,
+  workingDirectory?: string,
 ): Promise<void> {
   // 只对文件写入工具创建检查点
   if (!FILE_WRITE_TOOLS.includes(toolName)) {
@@ -37,11 +39,14 @@ export async function createFileCheckpointIfNeeded(
     return;
   }
 
-  const filePath = (params.file_path || params.path) as string | undefined;
-  if (!filePath) {
+  const rawFilePath = (params.file_path || params.path) as string | undefined;
+  if (!rawFilePath) {
     logger.debug('No file path in params', { toolName });
     return;
   }
+  const filePath = workingDirectory && !path.isAbsolute(rawFilePath)
+    ? path.resolve(workingDirectory, rawFilePath)
+    : rawFilePath;
 
   try {
     const service = getFileCheckpointService();

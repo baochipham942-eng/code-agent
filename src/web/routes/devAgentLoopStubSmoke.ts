@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { ActiveAgentLoop } from './agent';
+import type { RunHandle } from '../../host/runtime/runContext';
+import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
 import type { WebRouteLogger } from './routeTypes';
 
 interface DevAgentLoopStubEntry {
   id: string;
   sessionId: string;
+  runHandle: RunHandle;
   loop: ActiveAgentLoop;
   createdAt: number;
   cancelledAt?: number;
@@ -18,7 +21,7 @@ interface DevAgentLoopStubEntry {
 }
 
 interface DevAgentLoopStubSmokeDeps {
-  activeAgentLoops: Map<string, ActiveAgentLoop>;
+  runRegistry: RunRegistry;
   isEnabled: () => boolean;
   logger: WebRouteLogger;
 }
@@ -47,13 +50,15 @@ function readParamString(value: string | string[] | undefined, fieldName: string
 function describeEntry(
   sessionId: string,
   entry: DevAgentLoopStubEntry | undefined,
-  activeAgentLoops: Map<string, ActiveAgentLoop>,
+  runRegistry: RunRegistry,
 ): Record<string, unknown> {
+  const activeHandle = runRegistry.getBySessionId(sessionId);
   return {
     id: entry?.id ?? null,
+    runId: entry?.runHandle.context.runId ?? activeHandle?.context.runId ?? null,
     sessionId,
     exists: Boolean(entry),
-    active: entry ? activeAgentLoops.get(sessionId) === entry.loop : activeAgentLoops.has(sessionId),
+    active: entry ? activeHandle === entry.runHandle : Boolean(activeHandle),
     createdAt: entry?.createdAt ?? null,
     cancelledAt: entry?.cancelledAt ?? null,
     cancelCount: entry?.cancelCount ?? 0,
@@ -67,7 +72,7 @@ function describeEntry(
 
 export function createDevAgentLoopStubSmokeRouter(deps: DevAgentLoopStubSmokeDeps): Router {
   const router = Router();
-  const { activeAgentLoops, isEnabled, logger } = deps;
+  const { runRegistry, isEnabled, logger } = deps;
 
   router.use((req: Request, res: Response, next) => {
     if (!isEnabled()) {
@@ -77,23 +82,24 @@ export function createDevAgentLoopStubSmokeRouter(deps: DevAgentLoopStubSmokeDep
     next();
   });
 
-  router.post('/', (req: Request, res: Response) => {
+  router.post('/', async (req: Request, res: Response) => {
     try {
       const sessionId = readSessionId(req.body);
-      const existingLoop = activeAgentLoops.get(sessionId);
-      const existingStub = stubLoops.get(sessionId);
-      if (existingLoop && existingLoop !== existingStub?.loop) {
-        res.status(409).json({ ok: false, error: 'Session already has a non-stub active agent loop.' });
+      const existingHandle = runRegistry.getBySessionId(sessionId);
+      if (existingHandle) {
+        res.status(409).json({
+          ok: false,
+          error: 'Session already has an active run.',
+          activeRunId: existingHandle.context.runId,
+        });
         return;
       }
 
-      if (existingStub && activeAgentLoops.get(sessionId) === existingStub.loop) {
-        activeAgentLoops.delete(sessionId);
-      }
-
+      const id = `dev-agent-loop-stub-${nextStubLoopId++}`;
       const entry: DevAgentLoopStubEntry = {
-        id: `dev-agent-loop-stub-${nextStubLoopId++}`,
+        id,
         sessionId,
+        runHandle: runRegistry.start({ runId: id, sessionId, workspace: process.cwd() }),
         createdAt: Date.now(),
         cancelCount: 0,
         paused: false,
@@ -117,26 +123,26 @@ export function createDevAgentLoopStubSmokeRouter(deps: DevAgentLoopStubSmokeDep
         },
       };
 
+      await entry.runHandle.attach(entry.loop);
       stubLoops.set(sessionId, entry);
-      activeAgentLoops.set(sessionId, entry.loop);
-      res.json({ ok: true, ...describeEntry(sessionId, entry, activeAgentLoops) });
+      res.json({ ok: true, ...describeEntry(sessionId, entry, runRegistry) });
     } catch (error) {
       logger.warn('Dev agent loop stub creation failed', error);
       const message = error instanceof Error ? error.message : 'Invalid dev agent loop stub request.';
-      res.status(400).json({ ok: false, error: message });
+      res.status(error instanceof RunSessionConflictError ? 409 : 400).json({ ok: false, error: message });
     }
   });
 
   router.get('/:sessionId', (req: Request, res: Response) => {
     const sessionId = readParamString(req.params.sessionId, 'sessionId');
-    res.json({ ok: true, ...describeEntry(sessionId, stubLoops.get(sessionId), activeAgentLoops) });
+    res.json({ ok: true, ...describeEntry(sessionId, stubLoops.get(sessionId), runRegistry) });
   });
 
   router.delete('/:sessionId', (req: Request, res: Response) => {
     const sessionId = readParamString(req.params.sessionId, 'sessionId');
     const entry = stubLoops.get(sessionId);
-    if (entry && activeAgentLoops.get(sessionId) === entry.loop) {
-      activeAgentLoops.delete(sessionId);
+    if (entry) {
+      runRegistry.unregister(entry.runHandle.context.runId, entry.runHandle);
     }
     stubLoops.delete(sessionId);
     res.json({ ok: true, sessionId });

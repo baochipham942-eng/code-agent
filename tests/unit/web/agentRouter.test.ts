@@ -5,8 +5,9 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCLIAgent } from '../../../src/cli/adapter';
-import { createAgentRouter, type ActiveAgentLoop } from '../../../src/web/routes/agent';
+import { createAgentRouter } from '../../../src/web/routes/agent';
 import { inMemorySessions, sessionMessages, setDbAvailable } from '../../../src/web/helpers/sessionCache';
+import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
@@ -50,6 +51,7 @@ vi.mock('../../../src/cli/adapter', () => ({
 
 vi.mock('../../../src/cli/bootstrap', () => ({
   createAgentLoop: (...args: unknown[]) => mockCreateAgentLoop(...args),
+  createRunToolExecutor: vi.fn(() => ({ execute: vi.fn() })),
   getToolExecutor: vi.fn(() => undefined),
 }));
 
@@ -122,7 +124,7 @@ vi.mock('../../../src/host/telemetry', () => ({
 
 let server: http.Server | undefined;
 let baseUrl = '';
-const activeAgentLoops = new Map<string, ActiveAgentLoop>();
+const runRegistry = new RunRegistry();
 const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;
 let tempDataDir: string | undefined;
 
@@ -138,7 +140,7 @@ async function startAgentApi(deps: {
   const app = express();
   app.use(express.json());
   app.use('/api', createAgentRouter({
-    activeAgentLoops,
+    runRegistry,
     pendingLocalToolCalls: new Map(),
     logger,
     tryGetSessionManager: deps.tryGetSessionManager ?? (async () => null),
@@ -179,10 +181,31 @@ async function waitForAssertion(assertion: () => void, timeoutMs = 1000): Promis
   throw lastError;
 }
 
+async function readSSEUntilWithoutClosing(response: globalThis.Response, marker: string): Promise<string> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (!buffer.includes(marker)) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+  }
+  reader.releaseLock();
+  return buffer;
+}
+
+function parseSSEData(raw: string, eventName: string): Record<string, unknown> | null {
+  const lines = raw.split('\n');
+  const eventIndex = lines.findIndex((line) => line.trim() === `event: ${eventName}`);
+  if (eventIndex < 0) return null;
+  const dataLine = lines.slice(eventIndex + 1).find((line) => line.trim().startsWith('data:'));
+  return dataLine ? JSON.parse(dataLine.trim().slice(5).trim()) as Record<string, unknown> : null;
+}
+
 describe('createAgentRouter', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    activeAgentLoops.clear();
+    runRegistry.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
@@ -231,7 +254,7 @@ describe('createAgentRouter', () => {
     } else {
       process.env.CODE_AGENT_DATA_DIR = originalCodeAgentDataDir;
     }
-    activeAgentLoops.clear();
+    runRegistry.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
@@ -423,7 +446,7 @@ describe('createAgentRouter', () => {
 
     expect(response.ok).toBe(true);
     await waitForAssertion(() => {
-      expect(activeAgentLoops.has('session-disconnect')).toBe(true);
+      expect(runRegistry.hasSession('session-disconnect')).toBe(true);
     });
 
     controller.abort();
@@ -433,10 +456,273 @@ describe('createAgentRouter', () => {
     });
   });
 
+  describe('S2 Native Run lifecycle isolation', () => {
+    function createPendingLoop() {
+      let release: (() => void) | undefined;
+      const run = vi.fn(() => new Promise<void>((resolve) => {
+        release = resolve;
+      }));
+      const cancel = vi.fn(() => {
+        release?.();
+      });
+      return {
+        run,
+        cancel,
+        steer: vi.fn(),
+        release: () => release?.(),
+      };
+    }
+
+    async function waitForAttached(sessionId: string): Promise<void> {
+      await waitForAssertion(() => {
+        expect(runRegistry.getBySessionId(sessionId)?.isAttached).toBe(true);
+      }, 3000);
+    }
+
+    it('returns an independent runId and rejects a concurrent start for the same session before SSE 200', async () => {
+      const controller = new AbortController();
+      const first = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'first', sessionId: 'session-s2-conflict' }),
+        signal: controller.signal,
+      });
+      expect(first.status).toBe(200);
+
+      const taskStartRaw = await readSSEUntilWithoutClosing(first, 'event: task_start');
+      const taskStart = parseSSEData(taskStartRaw, 'task_start');
+      expect(taskStart?.sessionId).toBe('session-s2-conflict');
+      expect(taskStart?.runId).toEqual(expect.any(String));
+      expect(taskStart?.runId).not.toBe('session-s2-conflict');
+
+      const second = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'second', sessionId: 'session-s2-conflict' }),
+      });
+      expect(second.status).toBe(409);
+      expect(second.headers.get('content-type')).toContain('application/json');
+      await expect(second.json()).resolves.toMatchObject({
+        code: 'RUN_SESSION_CONFLICT',
+        sessionId: 'session-s2-conflict',
+        activeRunId: taskStart?.runId,
+      });
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1));
+
+      controller.abort();
+      await waitForAssertion(() => expect(runRegistry.hasSession('session-s2-conflict')).toBe(false), 3000);
+    });
+
+    it('allocates distinct temporary sessions for same-millisecond concurrent starts', async () => {
+      const loopA = createPendingLoop();
+      const loopB = createPendingLoop();
+      mockCreateAgentLoop
+        .mockImplementationOnce(() => loopA)
+        .mockImplementationOnce(() => loopB);
+      const controllerA = new AbortController();
+      const controllerB = new AbortController();
+      const dateNow = vi.spyOn(Date, 'now').mockReturnValue(1_234_567_890);
+
+      const responses = await Promise.all([
+        fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'temporary A' }),
+          signal: controllerA.signal,
+        }),
+        fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'temporary B' }),
+          signal: controllerB.signal,
+        }),
+      ]).finally(() => {
+        dateNow.mockRestore();
+      });
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      expect(runRegistry.size).toBe(2);
+      const handles = runRegistry.list();
+      expect(new Set(handles.map((handle) => handle.context.sessionId)).size).toBe(2);
+      expect(handles.every((handle) => handle.context.sessionId.startsWith('web-session-'))).toBe(true);
+
+      controllerA.abort();
+      controllerB.abort();
+      loopA.release();
+      loopB.release();
+      await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);
+    });
+
+    it('keeps selector-less cancel compatible for exactly one run when POST has no body', async () => {
+      const loop = createPendingLoop();
+      mockCreateAgentLoop.mockImplementationOnce(() => loop);
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'single', sessionId: 'session-s2-single' }),
+      });
+      expect(response.status).toBe(200);
+      await waitForAttached('session-s2-single');
+
+      const cancelled = await fetch(`${baseUrl}/api/cancel`, { method: 'POST' });
+
+      expect(cancelled.status).toBe(200);
+      await expect(cancelled.json()).resolves.toMatchObject({
+        message: 'Cancelled',
+        sessionId: 'session-s2-single',
+      });
+      expect(loop.cancel).toHaveBeenCalledOnce();
+      await response.text();
+      await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);
+    });
+
+    it('requires a selector with multiple runs and cancels only the selected runId', async () => {
+      const loopA = createPendingLoop();
+      const loopB = createPendingLoop();
+      mockCreateAgentLoop.mockImplementation((...args: unknown[]) => (
+        args[3] === 'session-s2-a' ? loopA : loopB
+      ));
+
+      const controllerA = new AbortController();
+      const controllerB = new AbortController();
+      const [responseA, responseB] = await Promise.all([
+        fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'A', sessionId: 'session-s2-a' }),
+          signal: controllerA.signal,
+        }),
+        fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'B', sessionId: 'session-s2-b' }),
+          signal: controllerB.signal,
+        }),
+      ]);
+      expect([responseA.status, responseB.status]).toEqual([200, 200]);
+      await Promise.all([waitForAttached('session-s2-a'), waitForAttached('session-s2-b')]);
+
+      const ambiguous = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+      });
+      expect(ambiguous.status).toBe(409);
+      await expect(ambiguous.json()).resolves.toMatchObject({ code: 'RUN_TARGET_REQUIRED' });
+      expect(loopA.cancel).not.toHaveBeenCalled();
+      expect(loopB.cancel).not.toHaveBeenCalled();
+
+      const runA = runRegistry.getBySessionId('session-s2-a')!;
+      const cancelA = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ runId: runA.context.runId }),
+      });
+      expect(cancelA.status).toBe(200);
+      await expect(cancelA.json()).resolves.toMatchObject({
+        runId: runA.context.runId,
+        sessionId: 'session-s2-a',
+      });
+      expect(loopA.cancel).toHaveBeenCalledOnce();
+      expect(loopB.cancel).not.toHaveBeenCalled();
+      await waitForAssertion(() => expect(runRegistry.hasSession('session-s2-a')).toBe(false), 3000);
+      expect(runRegistry.hasSession('session-s2-b')).toBe(true);
+
+      controllerA.abort();
+      controllerB.abort();
+      loopA.release();
+      loopB.release();
+      await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);
+    });
+
+    it('disconnecting one concurrent response cancels only its captured RunHandle', async () => {
+      const loopA = createPendingLoop();
+      const loopB = createPendingLoop();
+      mockCreateAgentLoop.mockImplementation((...args: unknown[]) => (
+        args[3] === 'session-s2-disconnect-a' ? loopA : loopB
+      ));
+      const controllerA = new AbortController();
+      const controllerB = new AbortController();
+
+      await Promise.all([
+        fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'A', sessionId: 'session-s2-disconnect-a' }),
+          signal: controllerA.signal,
+        }),
+        fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'B', sessionId: 'session-s2-disconnect-b' }),
+          signal: controllerB.signal,
+        }),
+      ]);
+      await Promise.all([
+        waitForAttached('session-s2-disconnect-a'),
+        waitForAttached('session-s2-disconnect-b'),
+      ]);
+
+      controllerA.abort();
+      await waitForAssertion(() => expect(loopA.cancel).toHaveBeenCalledOnce(), 3000);
+      expect(loopB.cancel).not.toHaveBeenCalled();
+      expect(runRegistry.hasSession('session-s2-disconnect-b')).toBe(true);
+
+      loopA.release();
+      loopB.release();
+      await waitForAssertion(() => expect(runRegistry.size).toBe(0), 3000);
+      expect(loopB.cancel).not.toHaveBeenCalled();
+    });
+
+    it('remembers cancellation before loop attachment and keeps the session reserved until settlement', async () => {
+      type Agent = Awaited<ReturnType<typeof createCLIAgent>>;
+      let releaseAgent!: (agent: Agent) => void;
+      const delayedAgent = new Promise<Agent>((resolve) => {
+        releaseAgent = resolve;
+      });
+      vi.mocked(createCLIAgent).mockReturnValueOnce(delayedAgent);
+      const loop = createPendingLoop();
+      mockCreateAgentLoop.mockImplementationOnce(() => loop);
+
+      const responsePromise = fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'delayed', sessionId: 'session-s2-pre-attach' }),
+      });
+      await waitForAssertion(() => expect(runRegistry.hasSession('session-s2-pre-attach')).toBe(true), 3000);
+      const runId = runRegistry.getBySessionId('session-s2-pre-attach')!.context.runId;
+
+      const cancelled = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ runId }),
+      });
+      expect(cancelled.status).toBe(200);
+      expect(loop.cancel).not.toHaveBeenCalled();
+
+      const conflict = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'must reject', sessionId: 'session-s2-pre-attach' }),
+      });
+      expect(conflict.status).toBe(409);
+
+      releaseAgent({
+        getConfig: () => ({
+          modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'mock-key' },
+          systemPrompt: '',
+        }),
+      } as Agent);
+      const response = await responsePromise;
+      await response.text();
+      await waitForAssertion(() => expect(loop.cancel).toHaveBeenCalledOnce(), 3000);
+      expect(loop.run).not.toHaveBeenCalled();
+      expect(runRegistry.hasSession('session-s2-pre-attach')).toBe(false);
+    });
+  });
+
   describe('/api/run SSE per-token 并发上限（WP3-4）', () => {
     // 外层 beforeEach 的 releaseRun 是单值会被并发 run 覆盖（只能释放最后一个），
     // 本组测试开 N 条并发流，改用 per-loop 释放器（cancel 只放行自己的 run）；
-    // 每个测试收尾必须排空（放行全部悬挂 run + 等 activeAgentLoops 清零），
+    // 每个测试收尾必须排空（放行全部悬挂 run + 等 RunRegistry 清零），
     // 否则悬挂 handler 泄漏进下一个测试。
     const pendingReleases: Array<() => void> = [];
     beforeEach(() => {
@@ -464,12 +750,12 @@ describe('createAgentRouter', () => {
       // 反复排空：run promise 可能在 abort 之后才被 handler 创建（异步 setup 竞态），
       // 单次 splice 会漏掉迟到的 release。
       const deadline = Date.now() + 3000;
-      while (Date.now() < deadline && activeAgentLoops.size > 0) {
+      while (Date.now() < deadline && runRegistry.size > 0) {
         pendingReleases.splice(0).forEach((release) => release());
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       pendingReleases.splice(0).forEach((release) => release());
-      expect(activeAgentLoops.size).toBe(0);
+      expect(runRegistry.size).toBe(0);
     };
 
     const openRun = (sessionId: string, token: string) => {
@@ -772,7 +1058,12 @@ describe('createAgentRouter', () => {
   });
 
   it('routes /api/interrupt to the active loop steer method', async () => {
-    activeAgentLoops.set('session-steer', {
+    const handle = runRegistry.start({
+      runId: 'run-steer',
+      sessionId: 'session-steer',
+      workspace: process.cwd(),
+    });
+    await handle.attach({
       cancel: mockCancel,
       steer: mockSteer,
     });

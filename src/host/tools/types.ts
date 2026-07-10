@@ -20,6 +20,10 @@ export interface Tool extends ToolDefinition {
 }
 
 export interface ToolContext {
+  /** Distinct execution identity; sessionId remains the conversation identity. */
+  runId?: string;
+  /** Immutable authorization/artifact boundary for a run-scoped executor. */
+  workspace?: string;
   workingDirectory: string;
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;

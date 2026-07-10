@@ -54,6 +54,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'hook_trigger',
   'tool_call_start',
   'tool_call_end',
+  'tool_cancel_local',
   'budget_exceeded',
 ]);
 
@@ -84,7 +85,8 @@ export function isToolEvent(type: AgentEventType): boolean {
     type === 'tool_progress' ||
     type === 'tool_timeout' ||
     type === 'tool_output_delta' ||
-    type === 'tool_call_local'
+    type === 'tool_call_local' ||
+    type === 'tool_cancel_local'
   );
 }
 

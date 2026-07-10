@@ -52,6 +52,7 @@ export interface RuntimeContext {
   maxIterations: number;
   workingDirectory: string;
   isDefaultWorkingDirectory: boolean;
+  runId?: string;
   sessionId: string;
   agentId?: string;
   agentName?: string;

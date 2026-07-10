@@ -57,7 +57,9 @@ function isSameTopLevelInput(left: Record<string, unknown>, right: Record<string
 // ----------------------------------------------------------------------------
 
 export interface ProtocolContextInput {
+  runId?: string;
   sessionId?: string;
+  workspace?: string;
   workingDirectory: string;
   abortSignal?: AbortSignal;
   legacyCtx: LegacyToolContext;
@@ -111,7 +113,9 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
   };
 
   return {
+    runId: input.runId,
     sessionId: input.sessionId ?? 'protocol-unknown',
+    workspace: input.workspace,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     logger: {

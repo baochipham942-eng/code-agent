@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
 import type { Message, MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
@@ -10,9 +11,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
-import type { ExecuteOptions } from '../../host/tools/toolExecutor';
 import type { DatabaseService } from '../../host/services/core/databaseService';
-import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
@@ -54,36 +53,28 @@ import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { AgentRunEventCollector } from './agentRunEventCollector';
+import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
+import {
+  type RunControlTarget,
+  type RunContext,
+  type RunHandle,
+} from '../../host/runtime/runContext';
+import {
+  createBridgeToolDispatch,
+  type PendingLocalToolCall,
+} from './agentBridgeToolDispatch';
 
-// ── Local Tool Bridge: 待处理的本地工具调用 ──
-// key = toolCallId, value = { resolve, reject, timer }
-export interface PendingLocalToolCall {
-  resolve: (result: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }) => void;
-  reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
+export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
 
 interface AgentRouterDeps {
-  activeAgentLoops: Map<string, ActiveAgentLoop>;
+  runRegistry: RunRegistry;
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
 }
 
-const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
-
-export interface ActiveAgentLoop {
-  cancel(reason?: string): void | Promise<void>;
-  pause?(): void | Promise<void>;
-  resume?(): void | Promise<void>;
-  steer?(
-    newMessage: string,
-    clientMessageId?: string,
-    attachments?: MessageAttachment[],
-    metadata?: MessageMetadata,
-  ): void | Promise<void>;
-}
+export type ActiveAgentLoop = RunControlTarget;
 
 function extractWorkingDirectory(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -268,7 +259,7 @@ async function hasPersistedFinalLoopAssistantMessage(
 export function createAgentRouter(deps: AgentRouterDeps): Router {
   const router = Router();
   const {
-    activeAgentLoops,
+    runRegistry,
     pendingLocalToolCalls,
     logger,
     tryGetSessionManager,
@@ -277,8 +268,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   router.post('/run', async (req: Request, res: Response) => {
-    const rawBody: unknown = req.body;
-    const parsedBody = AgentRunBodySchema.safeParse(rawBody);
+    const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
       res.status(400).json({ error: 'Missing prompt' });
       return;
@@ -295,14 +285,97 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return;
     }
 
-    // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒——
-    // text/event-stream 头一旦写出就无法再回 429。释放走 res 'close' + finally 双保险（release 幂等）。
+    // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
+    const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
+    let preflightDisconnected = res.destroyed;
+    const markPreflightDisconnected = (): void => {
+      preflightDisconnected = true;
+    };
+    res.once('close', markPreflightDisconnected);
+
+    // Preflight must finish before writeHead so a same-session race can be
+    // rejected with an HTTP 409 instead of a misleading 200 SSE stream.
+    let persistedSession: Session | null = null;
+    let sessionManagerForRun: AgentSessionManagerLike | null = null;
+    try {
+      const sm = await tryGetSessionManager();
+      sessionManagerForRun = sm ?? null;
+      if (sm?.getSession) {
+        persistedSession = await sm.getSession(sessionId, 1);
+      }
+    } catch (err) {
+      logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+    }
+
+    let resolvedProject: string | undefined =
+      typeof project === 'string' && project.trim().length > 0
+        ? project.trim()
+        : typeof sessionDir === 'string' && sessionDir.trim().length > 0
+          ? sessionDir.trim()
+          : extractWorkingDirectory(body.context);
+    if (!resolvedProject) {
+      const fromSession = persistedSession?.workingDirectory?.trim();
+      if (fromSession) resolvedProject = fromSession;
+    }
+    if (!resolvedProject) {
+      try {
+        resolvedProject = await ensureDefaultWebWorkingDirectory();
+        logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
+      } catch (error) {
+        res.status(500).json({ error: formatError(error), code: 'RUN_WORKSPACE_UNAVAILABLE' });
+        return;
+      }
+    }
+
+    const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
+
+    // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒。
     const releaseSseSlot = agentRunSseLimiter.tryAcquire(extractRequestToken(req));
     if (!releaseSseSlot) {
       res.status(429).json({ error: 'Too many concurrent runs for this token', code: 'TOO_MANY_CONNECTIONS' });
       return;
     }
+
+    let runContext: RunContext | undefined;
+    let runHandle: RunHandle | undefined;
+    let runCorrelationId = `external-run-${randomUUID()}`;
+    if (isExternalAgentEngine(selectedEngine.kind)) {
+      // Engine adapter lifecycle remains frozen in S2. The controller keeps only
+      // an internal correlation id; external runs do not enter the Native
+      // RunContext/RunRegistry contract or publish a Native runId.
+    } else {
+      try {
+        runHandle = runRegistry.start({ sessionId, workspace: resolvedProject });
+        runContext = runHandle.context;
+        runCorrelationId = runContext.runId;
+      } catch (error) {
+        releaseSseSlot();
+        if (error instanceof RunSessionConflictError) {
+          res.status(409).json({
+            error: error.message,
+            code: error.code,
+            sessionId,
+            activeRunId: error.existingRunId,
+          });
+          return;
+        }
+        if (!preflightDisconnected && !res.destroyed) {
+          res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
+        }
+        return;
+      }
+    }
+
     res.once('close', releaseSseSlot);
+    if (preflightDisconnected || res.destroyed) {
+      if (runHandle) {
+        await runHandle.cancel('user');
+        runRegistry.unregister(runHandle.context.runId, runHandle);
+      }
+      res.off('close', markPreflightDisconnected);
+      releaseSseSlot();
+      return;
+    }
 
     // SSE response
     res.writeHead(200, {
@@ -312,23 +385,35 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     });
 
     const taskId = `task-${Date.now()}`;
-    // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
-    const sessionId = body.sessionId || `web-session-${Date.now()}`;
     const runController = new AgentRunController({
       res,
+      runId: runCorrelationId,
       sessionId,
-      activeAgentLoops,
+      runHandle,
       logger,
       tryGetSessionManager,
     });
 
     res.once('close', runController.cancelForDisconnect);
-    runController.emitSSE('task_start', { taskId, prompt, sessionId });
+    res.off('close', markPreflightDisconnected);
+    if (preflightDisconnected || res.destroyed) {
+      runController.cancelForDisconnect();
+    }
+    runController.emitSSE('task_start', {
+      taskId,
+      prompt,
+      sessionId,
+      ...(runHandle ? { runId: runHandle.context.runId } : {}),
+    });
     await runController.updateSessionStatus('running');
 
     let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
 
     try {
+      if (runController.disconnected) {
+        await runController.updateSessionStatus('interrupted');
+        return;
+      }
       // 解析有效的 model/provider:body 显式参数 > session override > 默认。
       // 切换 UI 把模型写进 modelSessionState 后,/api/run 必须从这里读,
       // 否则 UI 切换看似生效但推理仍走 default(实测:UI 选 deepseek,日志仍 xiaomi)。
@@ -338,19 +423,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 但必须把 adaptive 标志透传进 agent loop 的 modelConfig，
       // 否则 adaptiveRouter 简单任务路由 / vision capability fallback 全部失效
       //（实测 0.16.89：UI 选"自动"后日志仍报"显式模型 ... 不启用 vision fallback"）。
-      // persistedSession 先取：模型 override 回灌与 workingDirectory 解析都依赖它
-      let persistedSession: Session | null = null;
-      let sessionManagerForRun: AgentSessionManagerLike | null = null;
-      try {
-        const sm = await tryGetSessionManager();
-        sessionManagerForRun = sm ?? null;
-        if (sm?.getSession) {
-          persistedSession = await sm.getSession(sessionId, 1);
-        }
-      } catch (err) {
-        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
-      }
-
       let sessionAdaptive = false;
       // 只有 model 和 provider 都未显式给出才读 session override（audit R1-MED2：
       // 半显式 body（只传 model）不能拿 override 的 provider 拼成杂交配置，
@@ -371,28 +443,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       const { createCLIAgent } = await import('../../cli/adapter');
-      const { createAgentLoop } = await import('../../cli/bootstrap');
-
-      // workingDirectory 解析顺序：
-      // 1. body.project / body.sessionDir 显式传值
-      // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
-      // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
-      // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
-
-      let resolvedProject: string | undefined =
-        typeof project === 'string' && project.trim().length > 0
-          ? project.trim()
-          : typeof sessionDir === 'string' && sessionDir.trim().length > 0
-            ? sessionDir.trim()
-            : extractWorkingDirectory(body.context);
-      if (!resolvedProject) {
-        const fromSession = persistedSession?.workingDirectory?.trim();
-        if (fromSession) resolvedProject = fromSession;
-      }
-      if (!resolvedProject) {
-        resolvedProject = await ensureDefaultWebWorkingDirectory();
-        logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
-      }
+      const { createAgentLoop, createRunToolExecutor } = await import('../../cli/bootstrap');
 
       // 首轮生效值补写（只补空）：working_directory 为空的会话每次重开都按
       // 上面的解析链重解析，而 context.workingDirectory 来自 renderer 全局
@@ -414,7 +465,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
       }
 
-      const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
       if (isExternalAgentEngine(selectedEngine.kind)) {
         // 外部引擎分支在 preferredAgentId 路由真相块之前 return——显式 agent 选择
         // 在引擎会话不适用，此前完全静默（chip 继续谎报）。发降级事件让 renderer
@@ -483,6 +533,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         runController.flush();
         await runController.updateSessionStatus(result.status === 'failed' ? 'error' : 'completed');
         return;
+      }
+
+      if (!runContext || !runHandle) {
+        throw new Error('Native run is missing its RunContext or RunHandle');
       }
 
       const agent = await createCLIAgent({
@@ -622,65 +676,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
 
       // ── Tool Executor 选择 ──
-      // webServer 本身是 Node.js 进程，默认直接用 originalExecutor 执行本地工具。
+      // webServer 本身是 Node.js 进程，默认用当前 run 独占的 executor 执行本地工具。
       // 仅当 BRIDGE_MODE=true（远程部署）时才走 Bridge 代理路径。
       const useBridge = process.env.BRIDGE_MODE === 'true';
-      const { getToolExecutor } = await import('../../cli/bootstrap');
-      const originalExecutor = getToolExecutor();
-
-      let bridgeToolExecutor = originalExecutor ? {
-        execute: originalExecutor.execute.bind(originalExecutor),
-        setWorkingDirectory: originalExecutor.setWorkingDirectory?.bind(originalExecutor),
-        setAuditEnabled: originalExecutor.setAuditEnabled?.bind(originalExecutor),
-      } : undefined;
-
-      if (useBridge && originalExecutor) {
-        // 远程部署模式：本地工具通过 Bridge 代理到用户机器执行
-        const localToolProxy = {
-          execute: async (toolName: string, params: Record<string, unknown>, _options: ExecuteOptions) => {
-            if (!isLocalTool(toolName)) return null;
-
-            const bridgeTool = mapToolName(toolName);
-            const toolCallId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-            runController.emitSSE('tool_call_local', {
-              toolCallId,
-              tool: bridgeTool,
-              originalTool: toolName,
-              params,
-              permissionLevel: 'L1',
-              sessionId,
-            });
-
-            return new Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }>((resolve) => {
-              const timer = setTimeout(() => {
-                pendingLocalToolCalls.delete(toolCallId);
-                resolve({
-                  success: false,
-                  error: `Local tool '${toolName}' timed out after ${LOCAL_TOOL_TIMEOUT_MS / 1000}s waiting for Bridge response`,
-                });
-              }, LOCAL_TOOL_TIMEOUT_MS);
-
-              pendingLocalToolCalls.set(toolCallId, { resolve, reject: () => { clearTimeout(timer); }, timer });
-            });
-          },
-        };
-
-        bridgeToolExecutor = {
-          execute: async (toolName: string, params: Record<string, unknown>, options: ExecuteOptions) => {
-            const proxyResult = await localToolProxy.execute(toolName, params, options);
-            if (proxyResult === null) return originalExecutor.execute(toolName, params, options);
-            // Bridge 连接失败时降级到本地执行
-            if (!proxyResult.success && proxyResult.error?.includes('Bridge is not connected')) {
-              logger.warn(`[BridgeProxy] Bridge down, falling back to local executor for: ${toolName}`);
-              return originalExecutor.execute(toolName, params, options);
-            }
-            return proxyResult;
-          },
-          setWorkingDirectory: originalExecutor.setWorkingDirectory?.bind(originalExecutor),
-          setAuditEnabled: originalExecutor.setAuditEnabled?.bind(originalExecutor),
-        };
-      }
+      const bridgeDispatch = useBridge
+        ? createBridgeToolDispatch({
+          runContext,
+          pendingLocalToolCalls,
+          emitSSE: (event, data) => runController.emitSSE(event, data),
+          logger,
+        })
+        : undefined;
+      const runToolExecutor = createRunToolExecutor(runContext, bridgeDispatch);
 
       const runEventCollector = new AgentRunEventCollector({
         sessionId,
@@ -690,13 +697,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
-      }, messages, sessionId, undefined, bridgeToolExecutor);
+      }, messages, sessionId, undefined, runToolExecutor, runContext);
 
-      // 存储当前 agentLoop 引用，供 cancel 使用
-      activeAgentLoops.set(sessionId, agentLoop);
+      await runHandle.attach(agentLoop);
       if (runController.disconnected) {
-        logger.warn(`[AgentRouter] Client already disconnected before run started; cancelling ${sessionId}`);
-        await Promise.resolve(agentLoop.cancel('user'));
+        logger.warn(`[AgentRouter] Client disconnected before run ${runContext.runId} attached`);
       }
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
@@ -763,7 +768,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn('Pre-persist user message to Supabase failed (continuing run):', (err as Error).message);
       }
 
-      await agentLoop.run(visiblePrompt);
+      if (runHandle.cancellationRequested) {
+        const cancelledEvent: import('../../shared/contract').AgentEvent = {
+          type: 'agent_cancelled',
+          data: null,
+        };
+        runEventCollector.observe(cancelledEvent, runController.emitAgentEvent(cancelledEvent));
+      } else {
+        await agentLoop.run(visiblePrompt);
+      }
 
       // ── 缓存会话消息（维持多轮上下文）──
       // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
@@ -979,7 +992,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     } finally {
       runController.markSettled();
       res.off('close', runController.cancelForDisconnect);
-      activeAgentLoops.delete(sessionId);
+      if (runHandle) {
+        runRegistry.unregister(runHandle.context.runId, runHandle);
+      }
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
@@ -994,31 +1009,32 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Cancel ─────────────────────────────────────────────────────────
   router.post('/cancel', async (req: Request, res: Response) => {
-    const rawBody: unknown = req.body;
-    const parsedBody = AgentCancelBodySchema.safeParse(rawBody);
-    const sessionId = parsedBody.success ? parsedBody.data.sessionId : undefined;
-    const requestedLoop = sessionId ? activeAgentLoops.get(sessionId) : undefined;
-    if (sessionId && requestedLoop) {
-      await Promise.resolve(requestedLoop.cancel());
-      activeAgentLoops.delete(sessionId);
-      res.json({ message: 'Cancelled', sessionId });
-    } else if (activeAgentLoops.size > 0) {
-      // 没指定 sessionId 时取消最后一个
-      const lastEntry = [...activeAgentLoops.entries()].at(-1);
-      if (!lastEntry) {
-        res.json({ message: 'No active agent to cancel' });
-        return;
-      }
-      const [lastKey, lastLoop] = lastEntry;
-      await Promise.resolve(lastLoop.cancel());
-      activeAgentLoops.delete(lastKey);
-      res.json({ message: 'Cancelled', sessionId: lastKey });
-    } else {
-      res.json({ message: 'No active agent to cancel' });
+    const parsedBody = AgentCancelBodySchema.safeParse(req.body ?? {});
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Invalid cancel target', code: 'INVALID_PAYLOAD' });
+      return;
     }
+    const { runId, sessionId } = parsedBody.data;
+    const target = runRegistry.resolve({ runId, sessionId });
+    if (!target) {
+      const ambiguous = !runId && !sessionId && runRegistry.size > 1;
+      res.status(ambiguous ? 409 : 200).json({
+        message: ambiguous ? 'runId or sessionId is required when multiple runs are active' : 'No active agent to cancel',
+        ...(ambiguous ? { code: 'RUN_TARGET_REQUIRED' } : {}),
+      });
+      return;
+    }
+
+    await target.cancel('user');
+    // Registry ownership remains with /run finally until the loop has settled.
+    res.json({
+      message: 'Cancelled',
+      runId: target.context.runId,
+      sessionId: target.context.sessionId,
+    });
   });
 
-  registerAgentLifecycleControlRoutes(router, activeAgentLoops);
+  registerAgentLifecycleControlRoutes(router, runRegistry);
 
   router.post('/interrupt', async (req: Request, res: Response) => {
     const rawBody: unknown = req.body;
@@ -1030,6 +1046,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       : typeof body.prompt === 'string'
         ? body.prompt
         : '');
+    const runId = typeof body.runId === 'string' ? body.runId : undefined;
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined;
     const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined;
     const attachments = Array.isArray(body.attachments)
@@ -1044,13 +1061,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return;
     }
 
-    const activeLoopEntry = sessionId
-      ? [sessionId, activeAgentLoops.get(sessionId)] as const
-      : [...activeAgentLoops.entries()].at(-1);
-    const targetSessionId = activeLoopEntry?.[0];
-    const activeLoop = activeLoopEntry?.[1];
+    const activeLoop = runRegistry.resolve({ runId, sessionId });
+    const targetSessionId = activeLoop?.context.sessionId;
+    const targetRunId = activeLoop?.context.runId;
 
-    if (!targetSessionId || !activeLoop || typeof activeLoop.steer !== 'function') {
+    if (
+      !targetSessionId
+      || !targetRunId
+      || !activeLoop?.isAttached
+      || activeLoop.cancellationRequested
+    ) {
       res.status(409).json({
         success: false,
         error: {
@@ -1063,7 +1083,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     broadcastSSE('agent:event', {
       type: 'interrupt_start',
-      data: { message: '正在调整方向...', newUserMessage: content },
+      data: { message: '正在调整方向...', newUserMessage: content, runId: targetRunId },
       sessionId: targetSessionId,
     });
 
@@ -1076,7 +1096,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       ));
       broadcastSSE('agent:event', {
         type: 'interrupt_complete',
-        data: { message: '已调整方向', newUserMessage: content },
+        data: { message: '已调整方向', newUserMessage: content, runId: targetRunId },
         sessionId: targetSessionId,
       });
       res.json({ success: true, data: null });
@@ -1094,8 +1114,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Tool Result (Local Bridge 前端回传工具执行结果) ────────────────
   router.post('/tool-result', (req: Request, res: Response) => {
-    const rawBody: unknown = req.body;
-    const parsedBody = AgentToolResultBodySchema.safeParse(rawBody);
+    const parsedBody = AgentToolResultBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
       res.status(400).json({ error: 'Missing toolCallId' });
       return;

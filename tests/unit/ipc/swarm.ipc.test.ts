@@ -116,8 +116,18 @@ import type {
 } from '../../../src/shared/contract/swarmTrace';
 import { registerSwarmHandlers } from '../../../src/host/ipc/swarm.ipc';
 
-const scopeA: SwarmRunScope = { sessionId: 'session-a', runId: 'run-a', treeId: 'tree-a' };
-const scopeB: SwarmRunScope = { sessionId: 'session-b', runId: 'run-b', treeId: 'tree-b' };
+const scopeA: SwarmRunScope = {
+  sessionId: 'session-a',
+  runId: 'run-a',
+  treeId: 'tree-a',
+  parentNativeRunId: 'native-run-a',
+};
+const scopeB: SwarmRunScope = {
+  sessionId: 'session-b',
+  runId: 'run-b',
+  treeId: 'tree-b',
+  parentNativeRunId: 'native-run-b',
+};
 const foreignTreeScope: SwarmRunScope = { ...scopeA, treeId: 'tree-foreign' };
 const agentA = createScopedSwarmAgentId(scopeA, 'reviewer');
 const writerA = createScopedSwarmAgentId(scopeA, 'writer');
@@ -232,6 +242,7 @@ describe('swarm.ipc run-scoped control plane', () => {
           sessionId: scopeA.sessionId,
           runId: scopeA.runId,
           treeId: scopeA.treeId,
+          parentNativeRunId: scopeA.parentNativeRunId,
           agentId: agentA,
           targetAgentIds: [agentA],
         },
@@ -288,6 +299,7 @@ describe('swarm.ipc run-scoped control plane', () => {
             sessionId: scopeA.sessionId,
             runId: scopeA.runId,
             treeId: scopeA.treeId,
+            parentNativeRunId: scopeA.parentNativeRunId,
             agentId: agentA,
             targetAgentIds: [agentA, writerA],
           },

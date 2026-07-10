@@ -196,7 +196,12 @@ const LEGACY_SLOT_PREFIX = 'legacy:';
 const LEGACY_STATE_FILE = 'spawn-guard-state.json';
 
 function cloneRunScope(scope: SwarmRunScope): SwarmRunScope {
-  return { sessionId: scope.sessionId, runId: scope.runId, treeId: scope.treeId };
+  return {
+    sessionId: scope.sessionId,
+    runId: scope.runId,
+    treeId: scope.treeId,
+    parentNativeRunId: scope.parentNativeRunId,
+  };
 }
 
 function isSameRunScope(left: SwarmRunScope, right: SwarmRunScope): boolean {
@@ -726,8 +731,7 @@ class SpawnGuard {
   cancelRun(scope: SwarmRunRef, reason: string = 'run_cancelled'): number {
     this.rejectQueuedWaiters(
       (waiter) => Boolean(
-        waiter.scope
-        && waiter.scope.sessionId === scope.sessionId
+        waiter.scope?.sessionId === scope.sessionId
         && waiter.scope.runId === scope.runId,
       ),
       reason,

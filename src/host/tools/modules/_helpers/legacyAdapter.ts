@@ -67,6 +67,8 @@ export function buildLegacyCtxFromProtocol(
   };
 
   return {
+    runId: ctx.runId,
+    workspace: ctx.workspace,
     workingDirectory: ctx.workingDir,
     requestPermission: (request) => forwardLegacyPermissionRequest(request, canUseTool),
     abortSignal: ctx.abortSignal,

@@ -685,11 +685,27 @@ async function executeParallelAgents(
       metadata: { failureCode: AgentFailureCode.ModelError },
     };
   }
+  const parentNativeRunId = context.swarmRunScope?.parentNativeRunId ?? context.runId;
+  if (!parentNativeRunId) {
+    return {
+      success: false,
+      error: 'Parallel Agent Team requires a Native Run identity.',
+      metadata: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
+  if (context.runId && context.runId !== parentNativeRunId) {
+    return {
+      success: false,
+      error: 'Inherited Agent Team scope does not match the active Native Run.',
+      metadata: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
   const newRunId = randomUUID();
   const runScope: SwarmRunScope = {
     sessionId: context.sessionId,
     runId: newRunId,
     treeId: context.swarmRunScope?.treeId ?? newRunId,
+    parentNativeRunId,
   };
   const emitter = getSwarmEventEmitter();
   const guard = getSpawnGuard();
@@ -1012,7 +1028,7 @@ async function executeParallelAgents(
     context.abortSignal?.addEventListener('abort', onRunAbort, { once: true });
   }
 
-  let terminalStatus: ParallelCoordinatorTerminalStatus;
+  let terminalStatus: ParallelCoordinatorTerminalStatus | undefined;
   try {
     const result = await coordinator.executeParallel(tasks);
 
@@ -1173,6 +1189,6 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     coordinator.off('task:error', onTaskError);
     coordinator.off('discovery', onDiscovery);
     context.abortSignal?.removeEventListener('abort', onRunAbort);
-    coordinatorRegistry.finalize(runScope, terminalStatus);
+    coordinatorRegistry.finalize(runScope, terminalStatus ?? 'failed');
   }
 }

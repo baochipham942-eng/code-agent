@@ -67,6 +67,7 @@ function buildPersistedUserMessage(
         sessionId: payload.sessionId,
         runId: payload.runId,
         treeId: scope.treeId,
+        parentNativeRunId: scope.parentNativeRunId,
         agentId: targetAgentIds[0] ?? payload.agentId,
         targetAgentIds,
       },
@@ -82,6 +83,8 @@ function hasExplicitSwarmScope(event: unknown): event is SwarmEvent {
     && typeof candidate.sessionId === 'string' && candidate.sessionId
     && typeof candidate.runId === 'string' && candidate.runId
     && typeof candidate.treeId === 'string' && candidate.treeId
+    && (candidate.parentNativeRunId === undefined
+      || (typeof candidate.parentNativeRunId === 'string' && candidate.parentNativeRunId))
   );
 }
 

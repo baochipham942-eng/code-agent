@@ -225,6 +225,7 @@ export interface AgentTeamMessageMetadata {
   sessionId: string;
   runId: string;
   treeId: string;
+  parentNativeRunId?: string;
   /** Legacy primary target. Multi-target Direct turns use the first stable target. */
   agentId: string;
   /** Canonical conversation message targets; per-agent delivery uses a separate ledger identity. */

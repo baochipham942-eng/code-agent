@@ -89,6 +89,14 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(source).toMatch(/spawnDepth:\s*childDepth/);
   });
 
+  it('Team run scope 显式绑定 Native Run，且 Team runId 不覆盖 ToolContext.runId', () => {
+    expect(source).toMatch(
+      /parentNativeRunId\s*=\s*context\.swarmRunScope\?\.parentNativeRunId\s*\?\?\s*context\.runId/,
+    );
+    expect(source).toMatch(/const runScope:\s*SwarmRunScope\s*=\s*\{[\s\S]*?parentNativeRunId,/);
+    expect(source).not.toMatch(/runId:\s*runScope\.runId/);
+  });
+
   it('子执行器收到父时间窗与父剩余预算', () => {
     expect(source).toMatch(/parentRemainingBudget:\s*context\.parentRemainingBudget/);
     expect(source).toMatch(/spawnParentStartedAt:\s*context\.spawnParentStartedAt/);

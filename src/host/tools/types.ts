@@ -21,7 +21,7 @@ export interface Tool extends ToolDefinition {
 }
 
 export interface ToolContext {
-  /** Distinct execution identity; sessionId remains the conversation identity. */
+  /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   runId?: string;
   /** Immutable authorization/artifact boundary for a run-scoped executor. */
   workspace?: string;
@@ -86,7 +86,7 @@ export interface ToolContext {
   spawnMaxDepth?: number;
   /** 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。 */
   spawnTreeId?: string;
-  /** Agent Team 的不可变 run/tree scope；嵌套 spawn 必须原样透传。 */
+  /** Agent Team 的不可变 run/tree scope；不得覆盖 Native runId，嵌套 spawn 必须原样透传。 */
   swarmRunScope?: SwarmRunScope;
   /** 超额 spawn 等待 tree 槽位的超时时间。 */
   spawnQueueTimeoutMs?: number;

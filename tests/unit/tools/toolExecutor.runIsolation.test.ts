@@ -21,6 +21,7 @@ import { registerProtocolTool, unregisterProtocolTool } from '../../../src/host/
 import { ToolExecutor, type ExecuteOptions } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData, ToolExecutionResult } from '../../../src/host/tools/types';
 import type { ToolContext as ProtocolToolContext, ToolSchema } from '../../../src/host/protocol/tools';
+import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 
 const preApprovedRunTools = new Set(['Bash', 'Write']);
 
@@ -350,6 +351,79 @@ describe('ToolExecutor per-run workspace isolation', () => {
       expect(result.outputPath).toContain(path.join(run.workspace, '.code-agent', 'artifacts', 'images'));
       expect((await fs.stat(result.outputPath!)).isFile()).toBe(true);
       expect(result.outputPath?.startsWith(run.cwd + path.sep)).toBe(false);
+    } finally {
+      unregisterProtocolTool(toolName);
+    }
+  });
+
+  it('keeps Native Run identity separate from concurrent Agent Team child scopes', async () => {
+    const toolName = 'RunIdentityProbe';
+    const schema: ToolSchema = {
+      name: toolName,
+      description: 'Observe Native Run and Agent Team identities',
+      inputSchema: { type: 'object', properties: {} },
+      category: 'other',
+      permissionLevel: 'read',
+      readOnly: true,
+    };
+    const observed: ProtocolToolContext[] = [];
+    registerProtocolTool(schema, async () => ({
+      schema,
+      createHandler: () => ({
+        schema,
+        execute: async (_args, context) => {
+          observed.push(context);
+          return { ok: true as const, output: context.swarmRunScope?.runId };
+        },
+      }),
+    }));
+
+    try {
+      const workspace = path.join(tempRoot, 'identity-repo');
+      await fs.mkdir(workspace, { recursive: true });
+      const nativeRun = createRunContext({
+        runId: 'native-run-identity',
+        sessionId: 'session-identity',
+        workspace,
+      });
+      const executor = baseExecutor.forRun(nativeRun);
+      const teamA: SwarmRunScope = {
+        sessionId: nativeRun.sessionId,
+        runId: 'team-run-a',
+        treeId: 'team-tree-a',
+        parentNativeRunId: nativeRun.runId,
+      };
+      const teamB: SwarmRunScope = {
+        sessionId: nativeRun.sessionId,
+        runId: 'team-run-b',
+        treeId: 'team-tree-b',
+        parentNativeRunId: nativeRun.runId,
+      };
+
+      await Promise.all([
+        executor.execute(toolName, {}, { ...executionOptions(nativeRun), swarmRunScope: teamA }),
+        executor.execute(toolName, {}, { ...executionOptions(nativeRun), swarmRunScope: teamB }),
+      ]);
+
+      expect(observed).toHaveLength(2);
+      expect(observed.map((context) => context.runId)).toEqual([
+        nativeRun.runId,
+        nativeRun.runId,
+      ]);
+      expect(new Set(observed.map((context) => context.swarmRunScope?.runId))).toEqual(
+        new Set([teamA.runId, teamB.runId]),
+      );
+      expect(observed.every((context) => context.sessionId === nativeRun.sessionId)).toBe(true);
+
+      const mismatch = await executor.execute(toolName, {}, {
+        ...executionOptions(nativeRun),
+        swarmRunScope: { ...teamA, parentNativeRunId: 'different-native-run' },
+      });
+      expect(mismatch).toMatchObject({
+        success: false,
+        metadata: { code: 'RUN_CONTEXT_MISMATCH' },
+      });
+      expect(observed).toHaveLength(2);
     } finally {
       unregisterProtocolTool(toolName);
     }

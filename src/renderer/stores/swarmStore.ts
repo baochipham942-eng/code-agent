@@ -64,6 +64,7 @@ export interface SwarmRunSnapshot {
   sessionId: string;
   runId: string;
   treeId: string;
+  parentNativeRunId?: string;
   /** A launch/started root event has authoritatively bound this run to treeId. */
   rootEventSeen: boolean;
   updatedAt?: number;
@@ -95,6 +96,7 @@ export interface SwarmStore extends SwarmExecutionState {
   activeSessionId?: string;
   activeRunId?: string;
   activeTreeId?: string;
+  activeParentNativeRunId?: string;
   lastEventAt?: number;
   activateScope: (sessionId?: string | null, runId?: string) => void;
   handleEvent: (event: SwarmEvent) => void;
@@ -127,6 +129,7 @@ const initialState: Pick<
   | 'activeSessionId'
   | 'activeRunId'
   | 'activeTreeId'
+  | 'activeParentNativeRunId'
   | 'startTime'
   | 'lastEventAt'
 > = {
@@ -156,6 +159,7 @@ const initialState: Pick<
   activeSessionId: undefined,
   activeRunId: undefined,
   activeTreeId: undefined,
+  activeParentNativeRunId: undefined,
 };
 
 function mergeAgentState(
@@ -306,6 +310,7 @@ function createEmptyRunSnapshot(event: SwarmEvent): SwarmRunSnapshot {
     sessionId: event.sessionId,
     runId: event.runId,
     treeId: event.treeId,
+    parentNativeRunId: event.parentNativeRunId,
     rootEventSeen: isSwarmRootEvent(event),
     updatedAt: event.timestamp,
     lastAccessedAt: event.timestamp,
@@ -391,6 +396,7 @@ function projectRunSnapshot(
     activeSessionId: snapshot.sessionId,
     activeRunId: snapshot.runId,
     activeTreeId: snapshot.treeId,
+    activeParentNativeRunId: snapshot.parentNativeRunId,
     startTime: snapshot.startTime,
     lastEventAt: snapshot.updatedAt,
     isRunning: snapshot.isRunning,
@@ -414,6 +420,7 @@ function reduceRunSnapshot(
   let snapshot: SwarmRunSnapshot = {
     ...current,
     treeId: event.treeId,
+    parentNativeRunId: event.parentNativeRunId ?? current.parentNativeRunId,
     updatedAt: Math.max(current.updatedAt ?? 0, event.timestamp),
     lastAccessedAt: Math.max(current.lastAccessedAt, event.timestamp),
   };

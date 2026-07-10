@@ -48,13 +48,14 @@ export class SwarmEventEmitter {
 
   private publish(
     scope: SwarmRunScope,
-    event: Omit<SwarmEvent, 'sessionId' | 'runId' | 'treeId'>,
+    event: Omit<SwarmEvent, keyof SwarmRunScope>,
   ): void {
     const stamped: SwarmEvent = {
       ...event,
       sessionId: scope.sessionId,
       runId: scope.runId,
       treeId: scope.treeId,
+      parentNativeRunId: scope.parentNativeRunId,
     };
     const busType = stamped.type.startsWith('swarm:') ? stamped.type.slice(6) : stamped.type;
     getEventBus().publish('swarm', busType, stamped, {

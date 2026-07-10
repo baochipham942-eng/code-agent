@@ -77,6 +77,8 @@ function makeToolResolver(): ToolResolver {
 function makeToolContext(scope: SwarmRunScope, signal?: AbortSignal): ToolContext {
   const resolver = makeToolResolver();
   return {
+    runId: scope.parentNativeRunId,
+    workspace: process.cwd(),
     workingDirectory: process.cwd(),
     requestPermission: async () => true,
     abortSignal: signal,
@@ -104,6 +106,7 @@ function makeSmokeScope(sessionId: string, scenario: string): SwarmRunScope {
     sessionId,
     runId: `${sessionId}-${scenario}`,
     treeId: `${sessionId}-${scenario}`,
+    parentNativeRunId: `${sessionId}-native`,
   };
 }
 

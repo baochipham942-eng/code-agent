@@ -17,6 +17,8 @@ export interface SwarmRunRef {
 
 export interface SwarmRunScope extends SwarmRunRef {
   treeId: string;
+  /** Native Run that created this Team. Omitted only for legacy persisted scopes. */
+  parentNativeRunId?: string;
 }
 
 export interface SwarmAgentRef extends SwarmRunRef {
@@ -287,6 +289,7 @@ export interface SwarmLaunchRequest {
   sessionId: string;
   runId: string;
   treeId: string;
+  parentNativeRunId?: string;
   status: 'pending' | 'approved' | 'rejected';
   requestedAt: number;
   resolvedAt?: number;
@@ -369,7 +372,7 @@ export interface SwarmVerificationResult {
 /**
  * Swarm 事件载荷
  *
- * sessionId/runId/treeId 由调用方显式提供。Emitter 不保存“当前 run”单槽，
+ * sessionId/runId/treeId/parentNativeRunId 由调用方显式提供。Emitter 不保存“当前 run”单槽，
  * 因此两个 Team 的重叠事件不会互相改写身份。
  */
 export interface SwarmEvent {
@@ -378,6 +381,8 @@ export interface SwarmEvent {
   runId: string;
   sessionId: string;
   treeId: string;
+  /** Native Run parent; Team runId must never be written into ToolContext.runId. */
+  parentNativeRunId?: string;
   data: {
     agentId?: string;
     agentState?: SwarmAgentState;

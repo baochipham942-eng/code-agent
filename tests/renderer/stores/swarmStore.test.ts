@@ -35,11 +35,20 @@ function evt<T extends SwarmEvent['type']>(
   sessionId = 'session-1',
   runId = 'run-1',
   treeId = `tree-${runId}`,
+  parentNativeRunId = `native-${sessionId}`,
 ): SwarmEvent {
   const normalizedData = data.message && !data.message.id
     ? { ...data, message: { ...data.message, id: `message-${timestamp}-${data.message.content}` } }
     : data;
-  return { type, timestamp, data: normalizedData, sessionId, runId, treeId } as SwarmEvent;
+  return {
+    type,
+    timestamp,
+    data: normalizedData,
+    sessionId,
+    runId,
+    treeId,
+    parentNativeRunId,
+  } as SwarmEvent;
 }
 
 function launchRequest(id: string): SwarmLaunchRequest {
@@ -91,6 +100,25 @@ describe('swarmStore', () => {
       const state = useSwarmStore.getState();
       expect(state.launchRequests[0]?.sessionId).toBe('session-1');
       expect(state.eventLog[0]?.sessionId).toBe('session-1');
+    });
+
+    it('preserves the Native Run parent through renderer snapshots and active projection', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt(
+        'swarm:started',
+        {},
+        1000,
+        'session-1',
+        'run-1',
+        'tree-run-1',
+        'native-run-parent',
+      ));
+
+      const state = useSwarmStore.getState();
+      expect(state.activeParentNativeRunId).toBe('native-run-parent');
+      expect(state.runSnapshots['session-1::run-1']?.parentNativeRunId).toBe(
+        'native-run-parent',
+      );
     });
 
     it('launch:rejected 在新 requested 前会被旧记录覆盖（reset 语义）', () => {

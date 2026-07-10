@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const resolverState = vi.hoisted(() => ({
@@ -38,6 +40,7 @@ vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
 
 import { initToolCache } from '../../../src/host/services/infra/toolCache';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { createRunContext } from '../../../src/host/runtime/runContext';
 
 const SIDE_EFFECT_TOOLS = [
   'Bash',
@@ -158,5 +161,61 @@ describe('ToolExecutor cache safety', () => {
       sessionId: 'session-a',
       workingDirectory: '/tmp/tool-cache-safety',
     });
+  });
+
+  it('uses the Native Run effective session and workspace for Team child cache and ledger scope', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'tool-cache-native-run-'));
+    try {
+      const cache = initToolCache({ persistentCache: false });
+      vi.spyOn(cache, 'isCacheable').mockReturnValue(true);
+      const get = vi.spyOn(cache, 'get').mockReturnValue(null);
+      const set = vi.spyOn(cache, 'set').mockImplementation(() => {});
+      resolverState.definition = {
+        name: 'PureReadFixture',
+        description: 'test-only pure read fixture',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        requiresPermission: false,
+        permissionLevel: 'read',
+      };
+      const nativeRun = createRunContext({
+        runId: 'native-run-cache',
+        sessionId: 'native-session-cache',
+        workspace,
+      });
+      const executor = new ToolExecutor({
+        requestPermission: vi.fn().mockResolvedValue(true),
+        workingDirectory: nativeRun.cwd,
+        runContext: nativeRun,
+      });
+      const params = { value: 'team-child-input' };
+      const swarmRunScope = {
+        sessionId: nativeRun.sessionId,
+        runId: 'team-run-cache',
+        treeId: 'team-tree-cache',
+        parentNativeRunId: nativeRun.runId,
+      };
+
+      await executor.execute('PureReadFixture', params, {
+        runId: nativeRun.runId,
+        swarmRunScope,
+      });
+
+      const scope = { sessionId: nativeRun.sessionId, workingDirectory: nativeRun.workspace };
+      expect(get).toHaveBeenCalledWith('PureReadFixture', params, scope);
+      expect(set).toHaveBeenCalledWith(
+        'PureReadFixture',
+        params,
+        { toolCallId: 'result', success: true, output: 'executed' },
+        scope,
+      );
+      expect(ledgerState.appendToolExecutionBegin).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: nativeRun.sessionId }),
+      );
+      expect(ledgerState.appendToolExecutionComplete).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: nativeRun.sessionId }),
+      );
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });

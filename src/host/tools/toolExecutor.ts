@@ -90,7 +90,7 @@ export type ToolExecutionDelegate = (
  * @internal
  */
 export interface ExecuteOptions {
-  /** Distinct execution identity. Never substitute sessionId for this value. */
+  /** Native Run identity only. Never substitute sessionId or Team runId. */
   runId?: string;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
@@ -281,6 +281,14 @@ export class ToolExecutor {
     }
     const effectiveRunId = this.runContext?.runId ?? options.runId;
     const effectiveSessionId = this.runContext?.sessionId ?? options.sessionId;
+    const parentNativeRunId = options.swarmRunScope?.parentNativeRunId;
+    if (parentNativeRunId && parentNativeRunId !== effectiveRunId) {
+      return {
+        success: false,
+        error: `Agent Team parent run mismatch: expected ${parentNativeRunId}, received ${effectiveRunId ?? 'none'}`,
+        metadata: { code: 'RUN_CONTEXT_MISMATCH' },
+      };
+    }
     const requestedToolName = toolName;
     const normalizedRequestedToolName = normalizeToolName(requestedToolName);
     const boundParams = this.bindRunScopedParams(normalizedRequestedToolName, rawParams);

@@ -12,8 +12,18 @@ import {
   type SwarmRunScope,
 } from '../../../src/shared/contract/swarm';
 
-const scopeA: SwarmRunScope = { sessionId: 'session-a', runId: 'run-a', treeId: 'tree-a' };
-const scopeB: SwarmRunScope = { sessionId: 'session-b', runId: 'run-b', treeId: 'tree-b' };
+const scopeA: SwarmRunScope = {
+  sessionId: 'session-a',
+  runId: 'run-a',
+  treeId: 'tree-a',
+  parentNativeRunId: 'native-run-a',
+};
+const scopeB: SwarmRunScope = {
+  sessionId: 'session-b',
+  runId: 'run-b',
+  treeId: 'tree-b',
+  parentNativeRunId: 'native-run-b',
+};
 
 describe('SwarmEventEmitter', () => {
   beforeEach(() => eventBusState.publish.mockReset());

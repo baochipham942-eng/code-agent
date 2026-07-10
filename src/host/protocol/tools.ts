@@ -90,6 +90,7 @@ export interface ToolModule<Args = Record<string, unknown>, Output = unknown> {
 // ----------------------------------------------------------------------------
 
 export interface ToolContext {
+  /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   readonly runId?: string;
   readonly sessionId: string;
   /** Immutable authorization/artifact boundary for this run. */
@@ -109,7 +110,7 @@ export interface ToolContext {
   readonly spawnMaxDepth?: number;
   /** 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。 */
   readonly spawnTreeId?: string;
-  /** Agent Team 的不可变 run/tree scope；嵌套 spawn 必须原样透传。 */
+  /** Agent Team 的不可变 run/tree scope；不得覆盖 Native runId，嵌套 spawn 必须原样透传。 */
   readonly swarmRunScope?: SwarmRunScope;
   /** 超额 spawn 等待 tree 槽位的超时时间。 */
   readonly spawnQueueTimeoutMs?: number;

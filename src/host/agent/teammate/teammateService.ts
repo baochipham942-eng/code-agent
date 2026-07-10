@@ -591,6 +591,7 @@ export class TeammateService {
       sessionId: scope.sessionId,
       runId: scope.runId,
       treeId: scope.treeId,
+      parentNativeRunId: scope.parentNativeRunId,
       timestamp: message.timestamp,
       data: {
         agentId: isUserMessage ? message.to : message.from,

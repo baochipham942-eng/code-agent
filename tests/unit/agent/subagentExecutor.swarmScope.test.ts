@@ -20,6 +20,12 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
     expect(source).toMatch(
       /subagentToolExecutor\.execute\([\s\S]*?agentId:\s*executionAgentId,[\s\S]*?swarmRunScope:\s*context\.toolContext\.swarmRunScope/,
     );
+    expect(source).toMatch(
+      /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.toolContext\.runId,[\s\S]*?swarmRunScope:\s*context\.toolContext\.swarmRunScope/,
+    );
+    expect(source).toMatch(
+      /const \{ runId: nativeRunId, workspace, workingDirectory \} = context\.toolContext;[\s\S]*?createRunContext\(\{ runId: nativeRunId, sessionId, workspace, cwd: workingDirectory \}\)/,
+    );
   });
 
   it('submits high-risk plans with the same scoped identity and run scope', () => {

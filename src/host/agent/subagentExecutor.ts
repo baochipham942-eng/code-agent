@@ -6,6 +6,7 @@
 import type { ToolCall } from '../../shared/contract';
 import type { ToolContext } from '../tools/types';
 import { ToolExecutor } from '../tools/toolExecutor';
+import { createRunContext } from '../runtime/runContext';
 import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
@@ -346,8 +347,13 @@ export class SubagentExecutor {
     // P0(G5): subagent 工具调用统一收口到 ToolExecutor —— 与主 agent 同一条
     // 权限/校验/审计/缓存管道，不再走 ProtocolToolResolver.execute 旁路。
     // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
+    const { runId: nativeRunId, workspace, workingDirectory } = context.toolContext;
+    const nativeRunContext = nativeRunId && sessionId && workspace
+      ? createRunContext({ runId: nativeRunId, sessionId, workspace, cwd: workingDirectory })
+      : undefined;
     const subagentToolExecutor = new ToolExecutor({
-      workingDirectory: context.toolContext.workingDirectory,
+      workingDirectory: nativeRunContext?.cwd ?? context.toolContext.workingDirectory,
+      runContext: nativeRunContext,
       // subagent 非交互：这是 classifier 'ask' 的兜底。硬阻断（validateCommand /
       // classifier-deny / exec-policy / subagentPolicy deny）已在 ToolExecutor 管道内生效，
       // 高风险走下方 loop 内的 plan-approval gate。
@@ -911,6 +917,7 @@ export class SubagentExecutor {
                 toolCall.name,
                 toolCall.arguments,
                 {
+                  runId: context.toolContext.runId,
                   sessionId: (context.toolContext as { sessionId?: string }).sessionId,
                   agentId: executionAgentId,
                   spawnDepth: context.toolContext.spawnDepth,

@@ -18,6 +18,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+mod agent_halo;
 mod appshots;
 mod native_app_icon;
 mod native_desktop;
@@ -35,6 +36,7 @@ use native_desktop::{
     desktop_start_collector, desktop_stop_audio_rec, desktop_stop_collector,
     desktop_update_analyze_text, NativeDesktopState,
 };
+use agent_halo::{agent_halo_hide, agent_halo_mode, agent_halo_show};
 use pip::{pip_frame, pip_hide, pip_show};
 
 /// 生产通道 webServer 端口；测试包用 DEV_WEB_PORT 以便与生产包同时运行。
@@ -2626,6 +2628,9 @@ fn main() {
             pip_show,
             pip_frame,
             pip_hide,
+            agent_halo_show,
+            agent_halo_mode,
+            agent_halo_hide,
             keybindings_set_global_hotkeys,
             renderer_ready
         ])

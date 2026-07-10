@@ -55,6 +55,7 @@ import { FileExplorerPanel } from './components/features/explorer/FileExplorerPa
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
 import { useComputerUsePip } from './hooks/useComputerUsePip';
+import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
@@ -139,6 +140,7 @@ function useWindowWidth(): number {
 export const App: React.FC = () => {
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useComputerUsePip(); // computer-use 实时 PiP 窗（自主操作时悬浮显示截图）
+  useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
   const {
     showSettings,
     setTaskPanelTab,

@@ -70,13 +70,40 @@ export interface SSEStreamOptions {
   snapshotIntervalMs?: number;
 }
 
+function isTruncatedFinishReason(finishReason: string | undefined): boolean {
+  return finishReason === 'length' || finishReason === 'max_tokens';
+}
+
+/**
+ * 统一的截断判定（[DONE] 与 res.on('end') 两条收尾路径、工具路径与文本路径共用，防漂移）。
+ * - finishReason 缺失（没等到 finish_reason chunk）→ 保守判截断 true。
+ * - length / max_tokens 都算真截断（下游 messageProcessor 两者都当截断注入 continuation；
+ *   claudeProvider 也用 max_tokens），只判 'length' 会漏掉 max_tokens 语义的 provider。
+ * - 其他明确结束（'stop' / 'tool_calls' 等）→ false，避免把干净收尾误判成截断触发重复续写。
+ */
+function computeTruncated(finishReason: string | undefined): boolean {
+  return finishReason == null ? true : isTruncatedFinishReason(finishReason);
+}
+
 function getIncompleteToolCallIds(
   toolCalls: Iterable<{ id: string; name: string; arguments: string }>,
+  finishReason: string | undefined,
 ): string[] {
+  // 空 arguments 只在**明确的正常结束信号**（finish_reason:'stop'/'tool_calls' 等）下才当合法无参
+  // 调用放行（task_list / list_directory 等发 '' 或 '{}'），避免误拒成硬失败。反之——length/max_tokens
+  // 截断，**以及压根没等到 finish_reason**（连接中断/异常收尾）——都视为不可信结束，空串判不完整拒掉：
+  // 与 computeTruncated 用同一把尺子，堵住"发了工具名、参数一字未发就断且无 finish_reason"这类真截断
+  // 被当零参工具带 {} 静默执行（enter_plan_mode 等无 required 字段工具会真跑，跨越执行安全边界）。
+  // 非空的坏 JSON（如 `{"file_path":"/tmp`）无论 finish_reason 如何都由下面的 JSON.parse 拦。
+  const untrustedFinish = computeTruncated(finishReason);
   const incompleteIds: string[] = [];
   for (const toolCall of toolCalls) {
-    if (!toolCall.name || !toolCall.arguments) {
+    if (!toolCall.name) {
       incompleteIds.push(toolCall.id);
+      continue;
+    }
+    if (!toolCall.arguments) {
+      if (untrustedFinish) incompleteIds.push(toolCall.id);
       continue;
     }
     try {
@@ -430,7 +457,28 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
             ({ content, reasoning } = extractThinkTagsFromContent(content, reasoning));
             content = stripChatMLToolCallResidue(content, providerName);
 
-            const truncated = finishReason === 'length';
+            const truncated = computeTruncated(finishReason);
+
+            // [DONE] 到达 ≠ 工具参数完整：finish_reason:length 会把 arguments 截成半截 JSON。
+            // 危险点不是“变成 {}”，而是 buildToolCallFromAccumulator 的 safeJsonParse 会**repair**
+            // 半截 JSON——`{"file_path":"/tmp/pwned` 会被补成 `{"file_path":"/tmp/pwned"}` 这种带值的
+            // 貌似合法对象，agent 拿着**猜出来的参数**真执行工具，跨越执行安全边界。这里与 res.on('end')
+            // 路径用同一把尺子(getIncompleteToolCallIds，严格 JSON.parse，在 repair 之前拦住)守门：
+            // 有不完整工具就拒（可重试文案），否则才构造 tool_use。
+            const incompleteToolCallIds = getIncompleteToolCallIds(toolCalls.values(), finishReason);
+            if (incompleteToolCallIds.length > 0) {
+              clearInactivityTimer();
+              logger.warn(
+                `[${providerName}] [DONE] received but ${incompleteToolCallIds.length} tool call(s) have incomplete arguments`,
+                { finishReason: finishReason ?? 'unknown', ids: incompleteToolCallIds },
+              );
+              reject(new Error(
+                `[${providerName}] [DONE] received but tool arguments are truncated; refusing to execute incomplete tool arguments`
+                + ` (${incompleteToolCallIds.join(', ')})`,
+              ));
+              return;
+            }
+
             const result: ModelResponse = {
               type: toolCalls.size > 0 ? 'tool_use' : 'text',
               content: content || undefined,
@@ -637,23 +685,36 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         // 也是一次有效响应（只是没写出正文），不该被判成"无内容"拒绝掉。
         if (content || reasoning || toolCalls.size > 0) {
           emitSnapshot(false);
-          const incompleteToolCallIds = getIncompleteToolCallIds(toolCalls.values());
-          if (toolCalls.size > 0) {
+          // 只在存在“不完整”工具调用时才拒（可重试文案）；完整的工具调用即便没等到 [DONE]
+          // （连接干净关闭）也是有效响应，应照常构造 tool_use，而不是一刀拒掉。
+          const incompleteToolCallIds = getIncompleteToolCallIds(toolCalls.values(), finishReason);
+          if (incompleteToolCallIds.length > 0) {
             reject(new Error(
               `[${providerName}] stream ended before [DONE] with tool calls; refusing to execute incomplete tool arguments`
-              + (incompleteToolCallIds.length > 0 ? ` (${incompleteToolCallIds.join(', ')})` : ''),
+              + ` (${incompleteToolCallIds.join(', ')})`,
             ));
             return;
           }
 
           const result: ModelResponse = {
-            type: 'text',
+            type: toolCalls.size > 0 ? 'tool_use' : 'text',
             content: content || undefined,
-            truncated: true,
+            // 与 [DONE] 路径共用 computeTruncated：finish_reason 缺失才保守判截断，明确 'stop' 收尾
+            // （只是没等到 [DONE]）不算截断，避免下游 messageProcessor 重复注入 continuation；
+            // length / max_tokens 才是真截断。工具路径与文本路径同一把尺子。
+            truncated: computeTruncated(finishReason),
             finishReason,
             thinking: reasoning || undefined,
             usage: usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) },
           };
+
+          if (toolCalls.size > 0) {
+            result.toolCalls = Array.from(toolCalls.values()).map(buildToolCallFromAccumulator);
+            // 与 [DONE] 分支一致：仅在文本/工具交错时才附带 contentParts
+            if (contentParts.length > 1 || (contentParts.length === 1 && content)) {
+              result.contentParts = contentParts;
+            }
+          }
 
           resolve(result);
         } else {

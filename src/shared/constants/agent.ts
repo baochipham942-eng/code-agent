@@ -117,6 +117,15 @@ export const ACTIVE_TOOL_RESULT_PRUNE = {
 } as const;
 
 /**
+ * B7 scaffold profile 总开关：模型能力档 → 脚手架注入厚度映射。
+ * 默认关——eval 非劣证据（--compare 配对 + 10pp 边界）出来前不 default-on。
+ * 关闭时 resolveScaffoldProfileForModel 恒返 standard，全量行为与现状逐字一致。
+ */
+export const SCAFFOLD_PROFILE = {
+  ENABLED: false,
+} as const;
+
+/**
  * 上下文压缩经济学闸（WP2-3）：省下 tokens − 压缩调用成本×权重 ≥ 阈值才提交。
  * 只闸自动触发源（auto_threshold）；手动压缩与溢出恢复不受限。
  */

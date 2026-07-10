@@ -105,8 +105,12 @@ export class GoalModeController {
   private verificationDegraded = false;
   private degradedReason?: string;
 
-  constructor(contract: GoalContract) {
+  /** B7：审计 nudge 间隔倍率（strong 档拉长注入间隔，1 = 现状） */
+  private readonly auditIntervalMultiplier: number;
+
+  constructor(contract: GoalContract, options?: { auditIntervalMultiplier?: number }) {
     this.contract = contract;
+    this.auditIntervalMultiplier = Math.max(1, options?.auditIntervalMultiplier ?? 1);
   }
 
   getGoal(): string { return this.contract.goal; }
@@ -300,9 +304,10 @@ export class GoalModeController {
   shouldInjectAudit(turn: number): boolean {
     // 自适应（②）：纯软目标（无 verify 命令）多为轻任务，拉长自检间隔省 token；
     // 有 verify 命令的工程任务维持基础间隔，保持高频证据自检。
-    const interval = this.contract.verifyCommand
+    // B7：再乘模型档倍率——strong 档自带 reasoning，nudge 过频只会脱敏（倍率 1 = 现状）。
+    const interval = (this.contract.verifyCommand
       ? GOAL_MODE.CHECKPOINT_INTERVAL
-      : GOAL_MODE.SIMPLE_CHECKPOINT_INTERVAL;
+      : GOAL_MODE.SIMPLE_CHECKPOINT_INTERVAL) * this.auditIntervalMultiplier;
     return turn > 1 && turn % interval === 0;
   }
 

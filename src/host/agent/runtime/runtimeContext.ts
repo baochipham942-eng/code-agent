@@ -17,6 +17,7 @@ import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
 import type { AntiPatternDetector } from '../antiPattern/detector';
 import type { GoalTracker } from '../goalTracker';
 import type { GoalModeController } from '../goalModeController';
+import type { ScaffoldProfile } from './scaffoldProfile';
 import type { NudgeManager } from '../nudgeManager';
 import type { HookManager } from '../../hooks/hookManager';
 import type { PlanningService } from '../../planning/planningService';
@@ -238,6 +239,8 @@ export interface RuntimeContext {
   effortLevel: EffortLevel;
   thinkingEnabled: boolean;
   thinkingStepCount: number;
+  /** B7：模型能力档 → 脚手架注入厚度（单一真源，消费方只读字段不自查 tier；缺省视同 standard） */
+  scaffoldProfile?: ScaffoldProfile;
 
   // --- Interaction mode ---
   interactionMode: InteractionMode;

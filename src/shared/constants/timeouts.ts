@@ -328,3 +328,11 @@ export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
   spawn_agent: 300_000,     // 5 min（子代理）
   mcp: 60_000,              // 1 min
 } as const;
+
+/** 定时任务护栏（maka A5 automation 自查补丁，2026-07-10） */
+export const CRON_GUARDRAILS = {
+  /** 循环任务触发前的随机 jitter 上限 (ms)，防同刻多任务惊群 */
+  FIRE_JITTER_MAX_MS: 2_000,
+  /** 循环任务连续失败达到此次数后自动停用（防静默烧钱死循环） */
+  MAX_CONSECUTIVE_FAILURES: 5,
+} as const;

@@ -6,7 +6,7 @@ import { Cron } from 'croner';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { CRON_GUARDRAILS, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -41,6 +41,24 @@ import {
 } from './cronNormalizers';
 
 const execAsync = promisify(exec);
+
+/**
+ * 循环任务触发抖动（防惊群，maka automation 护栏自查 A5-③）：
+ * 同刻到点的多个 every/cron 任务错开 0..FIRE_JITTER_MAX_MS 再执行，
+ * 避免同一 tick 同时拉起多个 agent 会话 / API 突发。一次性 at 任务不抖动。
+ */
+export function computeCronFireJitterMs(
+  scheduleType: CronScheduleType,
+  rand: () => number = Math.random,
+): number {
+  if (scheduleType === 'at') return 0;
+  return Math.floor(rand() * CRON_GUARDRAILS.FIRE_JITTER_MAX_MS);
+}
+
+/** 契约里的 startAt/endAt（string|number）转 Date，供 croner 原生窗口选项使用。 */
+function scheduleBoundToDate(value: string | number): Date {
+  return new Date(typeof value === 'number' ? value : Date.parse(value));
+}
 
 // ============================================================================
 // Types
@@ -436,7 +454,17 @@ export class CronService implements Disposable {
     const { schedule, id } = definition;
 
     const callback = async () => {
+      const jitter = computeCronFireJitterMs(schedule.type);
+      if (jitter > 0) {
+        await new Promise((resolve) => setTimeout(resolve, jitter));
+      }
       await this.executeJob(definition);
+    };
+
+    // 上一次执行还没结束时跳过本次 tick（croner 原生 protect），
+    // 防止执行时长超过间隔的循环 agent 任务堆叠并发会话。
+    const protect = () => {
+      console.error(`[CronService] Job ${id} tick skipped: previous run still in progress`);
     };
 
     try {
@@ -453,13 +481,19 @@ export class CronService implements Disposable {
         case 'every': {
           // Convert interval to cron expression
           const cronExpr = this.intervalToCron(schedule.interval, schedule.unit);
-          return new Cron(cronExpr, callback);
+          // startAt/endAt 是契约既有字段，此前被静默忽略（到期后任务照跑不误）。
+          // 交给 croner 原生窗口控制：startAt 前不触发，stopAt 后永久停。
+          return new Cron(cronExpr, {
+            protect,
+            ...(schedule.startAt != null ? { startAt: scheduleBoundToDate(schedule.startAt) } : {}),
+            ...(schedule.endAt != null ? { stopAt: scheduleBoundToDate(schedule.endAt) } : {}),
+          }, callback);
         }
 
         case 'cron': {
           return new Cron(
             schedule.expression,
-            { timezone: schedule.timezone },
+            { timezone: schedule.timezone, protect },
             callback
           );
         }
@@ -542,11 +576,37 @@ export class CronService implements Disposable {
 
       await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
 
+      // 连续失败自动停用（maka 护栏自查 A5-⑤）：循环任务连续失败达到阈值后停掉，
+      // 防止坏配置/坏凭据的定时 agent 任务无人值守空转烧钱。
+      // ponytail: 用内存内 trailing 历史计数，重启后归零；要跨重启严格计数再改查 DB。
+      if (
+        execution.status === 'failed'
+        && definition.scheduleType !== 'at'
+        && this.countTrailingFailures(definition.id) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES
+      ) {
+        console.error(
+          `[CronService] Job ${definition.id} auto-disabled after `
+          + `${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} consecutive failures`,
+        );
+        await this.updateJob(definition.id, { enabled: false });
+      }
+
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session
       this.notifyAgentExecution(definition, execution);
     }
 
     return execution;
+  }
+
+  /** 末尾连续失败次数（内存历史，最新在最后）。 */
+  private countTrailingFailures(jobId: string): number {
+    const history = this.executions.get(jobId) ?? [];
+    let count = 0;
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].status !== 'failed') break;
+      count++;
+    }
+    return count;
   }
 
   /**
@@ -807,6 +867,23 @@ export class CronService implements Disposable {
         if (!job) {
           console.error('[CronService] Skipping invalid cron job row');
           continue;
+        }
+
+        // 过期的一次性任务停用而不是静默挂起（maka 护栏自查 A5-⑥）：
+        // datetime 已过（app 关闭期间错过触发窗）时 croner 永远不会再触发，
+        // 旧行为是任务留在 enabled 状态装作还会跑。停用并落库，让状态与事实一致。
+        if (job.enabled && job.schedule.type === 'at') {
+          const ts = typeof job.schedule.datetime === 'number'
+            ? job.schedule.datetime
+            : Date.parse(String(job.schedule.datetime));
+          if (!Number.isFinite(ts) || ts <= Date.now()) {
+            const disabled = { ...job, enabled: false, updatedAt: Date.now() };
+            this.jobs.set(disabled.id, { definition: disabled });
+            await this.saveJobToDatabase(disabled);
+            console.error(`[CronService] One-time job ${job.id} missed its schedule while app was offline; disabled`);
+            loadedCount += 1;
+            continue;
+          }
         }
 
         if (job.enabled) {

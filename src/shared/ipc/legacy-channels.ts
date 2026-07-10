@@ -174,6 +174,8 @@ export const IPC_CHANNELS = {
   // Permission mode channels
   PERMISSION_GET_MODE: 'permission:get-mode',
   PERMISSION_SET_MODE: 'permission:set-mode',
+  // 权限档变更广播（默认档或会话档）：{ scope: 'default' | 'session', sessionId?, mode }
+  PERMISSION_MODE_CHANGED: 'permission:mode-changed',
 
   // Notification channels
   NOTIFICATION_CLICKED: 'notification:clicked',

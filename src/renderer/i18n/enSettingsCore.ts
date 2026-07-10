@@ -237,11 +237,11 @@ export const enSettingsCore = {
         controlPlane: {
           title: 'Permission control plane',
           description: 'Most daily checks only need the current mode, risk level, inheritance policy, and user rule count.',
-          summaryCurrentMode: 'Current mode',
+          summaryCurrentMode: 'New-session default',
           summaryRiskLevel: 'Risk level',
           summarySubAgent: 'Sub-agent',
           summaryUserRules: 'User rules',
-          mainAgentMode: 'Main Agent permission mode',
+          mainAgentMode: 'Default tier for new sessions',
           status: 'Status',
           permissionBehavior: 'Permission behavior',
           risk: 'Risk',

@@ -291,6 +291,14 @@ export class SessionManager implements Disposable {
 
     db.createSession(session);
 
+    // B1 权限档收口（单点）：新会话按「新会话默认权限档」快照建档。
+    try {
+      const { getPermissionModeManager } = await import('../../permissions/modes');
+      getPermissionModeManager().initSessionMode(session.id);
+    } catch (err) {
+      logger.warn('[SessionManager] 初始化会话权限档失败（不阻塞）:', err instanceof Error ? err.message : String(err));
+    }
+
     // P0-2：按 workspace 隐式归桶到 project（拿/建 project + 写 project_id）。
     // 失败不阻塞会话创建（项目空间是增量能力）。
     try {

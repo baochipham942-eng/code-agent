@@ -23,9 +23,11 @@ import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import { getAgentWorktreeReview } from '../agent/agentWorktree';
 import {
   MODE_CONFIGS,
+  getPermissionModeManager,
   setPermissionMode,
   type PermissionMode,
 } from '../permissions/modes';
+import { broadcastToRenderer } from '../platform';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -164,6 +166,35 @@ export function registerAgentHandlers(
           }
           const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved));
           return { success: true, data: { changed, mode } };
+        }
+        case 'getSessionPermissionMode': {
+          const sessionId = (payload as { sessionId?: string } | undefined)?.sessionId;
+          return {
+            success: true,
+            data: { mode: getPermissionModeManager().getModeForSession(sessionId) },
+          };
+        }
+        case 'setSessionPermissionMode': {
+          const req = (payload ?? {}) as { sessionId?: string; mode?: unknown; approved?: boolean };
+          const mode = normalizePermissionMode(req.mode);
+          if (!mode || !req.sessionId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_PERMISSION_MODE', message: 'sessionId and a valid mode are required' },
+            };
+          }
+          const manager = getPermissionModeManager();
+          const changed = manager.setSessionMode(req.sessionId, mode, Boolean(req.approved));
+          if (changed) {
+            // 单一真源：档位状态只存在于 PermissionModeManager，变更即广播，
+            // 所有消费方（会话内切换器/设置页）从广播同步，不留 pending 中转 state。
+            broadcastToRenderer(IPC_CHANNELS.PERMISSION_MODE_CHANGED, {
+              scope: 'session',
+              sessionId: req.sessionId,
+              mode: manager.getModeForSession(req.sessionId),
+            });
+          }
+          return { success: true, data: { changed, mode: manager.getModeForSession(req.sessionId) } };
         }
         case 'pause': {
           const appService = getAppService();

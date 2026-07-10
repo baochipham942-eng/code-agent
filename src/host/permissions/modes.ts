@@ -280,6 +280,16 @@ export class PermissionModeManager {
   }
 
   /**
+   * 会话创建收口（B1 ②）：新会话按「新会话默认权限档」（全局 currentMode，
+   * 由 settings.permissions.permissionMode 持久化）快照建档。之后修改默认档
+   * 只影响新会话；当前会话档由会话内切换器（setSessionMode）管理。
+   */
+  initSessionMode(sessionId: string): void {
+    if (this.sessionModes.has(sessionId)) return;
+    this.sessionModes.set(sessionId, this.currentMode);
+  }
+
+  /**
    * 设置会话级权限档（会话内切换器入口）。与全局 setMode 同一审批语义。
    */
   setSessionMode(sessionId: string, mode: PermissionMode, approved = false): boolean {

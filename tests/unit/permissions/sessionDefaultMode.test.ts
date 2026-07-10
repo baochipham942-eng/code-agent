@@ -1,0 +1,190 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// ============================================================================
+// B1 ②「新会话默认权限档」+ 会话档切换（单一真源 + 广播）测试
+// ============================================================================
+// - 新会话按默认档快照建档，改默认档不影响已有会话
+// - 会话内切换：写 PermissionModeManager（唯一真源）并广播，无 pending 中转 state
+// - 设置页默认档：直接写 settings 并广播
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+
+const env = vi.hoisted(() => ({
+  broadcasts: [] as Array<{ channel: string; data: unknown }>,
+  updateSettings: vi.fn(async () => {}),
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: vi.fn(() => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() })),
+  LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
+}));
+
+vi.mock('../../../src/host/platform', () => ({
+  app: { getVersion: () => '0.0.0-test' },
+  AppWindow: { getFocusedWindow: () => null },
+  broadcastToRenderer: (channel: string, data: unknown) => {
+    env.broadcasts.push({ channel, data });
+  },
+}));
+
+// settings.ipc 模块级依赖
+vi.mock('../../../src/host/ipc/adminGuard', () => ({
+  isCurrentUserAdmin: () => true,
+  getAdminAccessIpcError: () => null,
+  assertAdminAccess: vi.fn(),
+}));
+vi.mock('../../../src/host/model/providerConnectionTest', () => ({
+  resolveConnectionTestModel: () => 'test-model',
+}));
+vi.mock('../../../src/host/services/providerIconAssets', () => ({
+  saveProviderIconAsset: vi.fn(),
+  resolveProviderIconAsset: vi.fn(),
+}));
+vi.mock('../../../src/shared/modelRuntime', () => ({
+  isRuntimeProviderConfigured: () => false,
+}));
+vi.mock('../../../src/host/services/core/secureStorage', () => ({
+  getSecureStorage: () => ({
+    get: vi.fn(),
+    set: vi.fn(),
+    getStoredApiKeyProviders: () => [],
+  }),
+}));
+vi.mock('../../../src/host/services/core/budgetService', () => ({
+  getBudgetService: () => ({}),
+  syncBudgetServiceFromConfig: vi.fn(),
+}));
+
+import {
+  getPermissionModeManager,
+  resetPermissionModeManager,
+} from '../../../src/host/permissions/modes';
+import { registerAgentHandlers } from '../../../src/host/ipc/agent.ipc';
+import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
+
+type DomainHandler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
+type ChannelHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
+
+function captureHandlers() {
+  const handlers = new Map<string, ChannelHandler>();
+  const ipcMain = {
+    handle: (channel: string, fn: ChannelHandler) => handlers.set(channel, fn),
+    on: vi.fn(),
+    removeHandler: vi.fn(),
+  } as never;
+  return { handlers, ipcMain };
+}
+
+describe('PermissionModeManager 会话档语义', () => {
+  beforeEach(() => resetPermissionModeManager());
+  afterEach(() => resetPermissionModeManager());
+
+  it('新会话按当前默认档快照，之后改默认档不影响已有会话', () => {
+    const manager = getPermissionModeManager();
+    manager.setMode('acceptEdits');
+    manager.initSessionMode('s1');
+    manager.setMode('default'); // 改「新会话默认档」
+    expect(manager.getModeForSession('s1')).toBe('acceptEdits'); // 已有会话不漂移
+    manager.initSessionMode('s2');
+    expect(manager.getModeForSession('s2')).toBe('default'); // 新会话吃到新默认档
+  });
+
+  it('会话内切换覆盖会话档；无档会话回退全局默认', () => {
+    const manager = getPermissionModeManager();
+    manager.initSessionMode('s1');
+    expect(manager.setSessionMode('s1', 'readOnly')).toBe(true);
+    expect(manager.getModeForSession('s1')).toBe('readOnly');
+    expect(manager.getModeForSession('unknown-session')).toBe('default');
+  });
+
+  it('bypassPermissions 会话档未审批时拒绝', () => {
+    const manager = getPermissionModeManager();
+    expect(manager.setSessionMode('s1', 'bypassPermissions', false)).toBe(false);
+    expect(manager.getModeForSession('s1')).toBe('default');
+    expect(manager.setSessionMode('s1', 'bypassPermissions', true)).toBe(true);
+    expect(manager.getModeForSession('s1')).toBe('bypassPermissions');
+  });
+});
+
+describe('agent.ipc 会话档读写 + 广播（单一真源）', () => {
+  let handlers: Map<string, ChannelHandler>;
+
+  beforeEach(() => {
+    resetPermissionModeManager();
+    env.broadcasts.length = 0;
+    const cap = captureHandlers();
+    handlers = cap.handlers;
+    registerAgentHandlers(cap.ipcMain, () => null);
+  });
+
+  afterEach(() => resetPermissionModeManager());
+
+  const callAgent = (action: string, payload?: unknown) =>
+    (handlers.get(IPC_DOMAINS.AGENT) as DomainHandler)(null, { action, payload } as IPCRequest);
+
+  it('setSessionPermissionMode 写入真源并广播，getSessionPermissionMode 读回同值', async () => {
+    const setRes = await callAgent('setSessionPermissionMode', { sessionId: 's1', mode: 'readOnly' });
+    expect(setRes.success).toBe(true);
+    expect((setRes.data as { mode: string }).mode).toBe('readOnly');
+
+    // 真源立即可读（无 pending 中转 state）
+    expect(getPermissionModeManager().getModeForSession('s1')).toBe('readOnly');
+    const getRes = await callAgent('getSessionPermissionMode', { sessionId: 's1' });
+    expect((getRes.data as { mode: string }).mode).toBe('readOnly');
+
+    // 广播同步给所有消费方
+    const broadcast = env.broadcasts.find((b) => b.channel === IPC_CHANNELS.PERMISSION_MODE_CHANGED);
+    expect(broadcast).toBeTruthy();
+    expect(broadcast!.data).toMatchObject({ scope: 'session', sessionId: 's1', mode: 'readOnly' });
+  });
+
+  it('非法 mode / 缺 sessionId 拒绝且不广播', async () => {
+    const bad = await callAgent('setSessionPermissionMode', { sessionId: 's1', mode: 'full_access' });
+    expect(bad.success).toBe(false);
+    const noSession = await callAgent('setSessionPermissionMode', { mode: 'readOnly' });
+    expect(noSession.success).toBe(false);
+    expect(env.broadcasts.filter((b) => b.channel === IPC_CHANNELS.PERMISSION_MODE_CHANGED)).toHaveLength(0);
+  });
+});
+
+describe('settings.ipc 默认档写入 + 广播', () => {
+  let handlers: Map<string, ChannelHandler>;
+
+  beforeEach(() => {
+    resetPermissionModeManager();
+    env.broadcasts.length = 0;
+    env.updateSettings.mockClear();
+    const cap = captureHandlers();
+    handlers = cap.handlers;
+    registerSettingsHandlers(cap.ipcMain, () => ({
+      getSettings: () => ({}),
+      updateSettings: env.updateSettings,
+    }) as never);
+  });
+
+  afterEach(() => resetPermissionModeManager());
+
+  it('PERMISSION_SET_MODE 直接写 settings 并广播 default 档变更', async () => {
+    const handler = handlers.get(IPC_CHANNELS.PERMISSION_SET_MODE)!;
+    const ok = await handler(null, 'readOnly');
+    expect(ok).toBe(true);
+
+    // 真源（manager）与持久化（settings）同步写入
+    expect(getPermissionModeManager().getMode()).toBe('readOnly');
+    expect(env.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ permissions: { permissionMode: 'readOnly' } }),
+    );
+
+    const broadcast = env.broadcasts.find((b) => b.channel === IPC_CHANNELS.PERMISSION_MODE_CHANGED);
+    expect(broadcast).toBeTruthy();
+    expect(broadcast!.data).toMatchObject({ scope: 'default', mode: 'readOnly' });
+  });
+
+  it('非法 mode 不写不广播', async () => {
+    const handler = handlers.get(IPC_CHANNELS.PERMISSION_SET_MODE)!;
+    const ok = await handler(null, 'full_access');
+    expect(ok).toBe(false);
+    expect(env.updateSettings).not.toHaveBeenCalled();
+    expect(env.broadcasts).toHaveLength(0);
+  });
+});

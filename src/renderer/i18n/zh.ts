@@ -819,6 +819,14 @@ export const zh = {
     collapseThinking: '收起思考',
   },
 
+  // 会话内权限档切换器（ChatInput）
+  permissionTier: {
+    buttonTitle: '当前会话权限档',
+    menuTitle: '会话权限档',
+    bypassConfirmText: '将自动批准文件写入和命令执行，只适合完全可信的工作区。',
+    enable: '开启',
+  },
+
   workbenchTabs: {
     openPanel: '打开面板',
     filesLabel: '文件',

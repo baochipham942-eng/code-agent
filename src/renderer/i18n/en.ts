@@ -830,6 +830,14 @@ export const en: Translations = {
     collapseThinking: 'Collapse thinking',
   },
 
+  // In-session permission tier switcher (ChatInput)
+  permissionTier: {
+    buttonTitle: 'Current session permission tier',
+    menuTitle: 'Session permission tier',
+    bypassConfirmText: 'File writes and command executions will be auto-approved. Only for fully trusted workspaces.',
+    enable: 'Enable',
+  },
+
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
   workbenchTabs: {
     openPanel: 'Open panel',

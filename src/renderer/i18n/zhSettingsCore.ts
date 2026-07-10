@@ -237,11 +237,11 @@ export const zhSettingsCore = {
         controlPlane: {
           title: '权限控制面',
           description: '日常只需要看当前模式、风险级别、继承策略和用户规则数量。',
-          summaryCurrentMode: '当前模式',
+          summaryCurrentMode: '新会话默认档',
           summaryRiskLevel: '风险级别',
           summarySubAgent: '子 Agent',
           summaryUserRules: '用户规则',
-          mainAgentMode: '主 Agent 权限模式',
+          mainAgentMode: '新会话默认权限档',
           status: '状态',
           permissionBehavior: '权限行为',
           risk: '风险',

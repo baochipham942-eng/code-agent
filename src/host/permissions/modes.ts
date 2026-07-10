@@ -218,6 +218,8 @@ export class PermissionModeManager {
   // 会话级权限档（B1 收口）：key=sessionId。无条目的会话回退全局 currentMode。
   // ponytail: 进程内 Map 不做淘汰，条目是短字符串，重启即清；量级成问题再挂会话销毁钩子。
   private sessionModes: Map<string, PermissionMode> = new Map();
+  // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
+  private unattendedSessions: Set<string> = new Set();
 
   constructor(initialMode: PermissionMode = 'default') {
     this.currentMode = initialMode;
@@ -270,13 +272,22 @@ export class PermissionModeManager {
   /**
    * 解析某个会话的有效权限档：会话级覆盖优先，无覆盖回退全局档。
    * 判定链（toolExecutor / subagent / bash 沙箱）统一走这里取档。
+   * 无人值守会话在此单点钳制（B1 ③）：bypassPermissions 强制降到 acceptEdits，
+   * 杜绝「用户开着 bypass 时定时任务也 bypass 跑」。
    */
   getModeForSession(sessionId?: string): PermissionMode {
-    if (sessionId) {
-      const sessionMode = this.sessionModes.get(sessionId);
-      if (sessionMode) return sessionMode;
+    const base = (sessionId && this.sessionModes.get(sessionId)) || this.currentMode;
+    if (sessionId && this.unattendedSessions.has(sessionId)) {
+      return clampUnattendedPermissionMode(base);
     }
-    return this.currentMode;
+    return base;
+  }
+
+  /**
+   * 标记无人值守会话（automation/cron 定时会话创建收口处调用）。
+   */
+  markUnattendedSession(sessionId: string): void {
+    this.unattendedSessions.add(sessionId);
   }
 
   /**
@@ -508,4 +519,12 @@ export function getCurrentMode(): PermissionMode {
  */
 export function setPermissionMode(mode: PermissionMode, approved = false): boolean {
   return getPermissionModeManager().setMode(mode, approved);
+}
+
+/**
+ * 无人值守权限档钳制：不得高于 acceptEdits。
+ * 目前只有 bypassPermissions 高于 acceptEdits，其余档位原样返回。
+ */
+export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionMode {
+  return mode === 'bypassPermissions' ? 'acceptEdits' : mode;
 }

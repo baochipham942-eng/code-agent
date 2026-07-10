@@ -494,7 +494,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // 复用各自执行器已有的流式 / abort / 错误语义。沙箱不可用时硬报错，绝不静默裸跑。
     // -------------------------------------------------------------------------
     const shouldSandbox =
-      OS_SANDBOX.ENABLED && getPermissionModeManager().getMode() === 'bypassPermissions';
+      OS_SANDBOX.ENABLED && getPermissionModeManager().getModeForSession(ctx.sessionId) === 'bypassPermissions';
     let sandboxCleanup: (() => void) | undefined;
     /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {

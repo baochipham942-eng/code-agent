@@ -369,7 +369,8 @@ export async function executeSpawnAgent(
       // P3: 注入 parentContext，让 subagentExecutor 走 buildChildContext 三档合并
       // 现阶段从 ToolContext 推导；后续 caller 在 P4 阶段补全父级 rules/memory/tools。
       const parentContext: ParentContext = buildParentContextFromToolContext(context, {
-        permissionMode: getPermissionModeManager().getMode() as string,
+        // 会话级取档：unattended（cron/heartbeat）会话在解析处被钳到不高于 acceptEdits
+        permissionMode: getPermissionModeManager().getModeForSession(context.sessionId) as string,
         availableTools: tools.slice(),
         role: context.agentRole,
       });

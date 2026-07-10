@@ -291,10 +291,15 @@ export class SessionManager implements Disposable {
 
     db.createSession(session);
 
-    // B1 权限档收口（单点）：新会话按「新会话默认权限档」快照建档。
+    // B1 权限档收口（单点）：新会话按「新会话默认权限档」快照建档；
+    // cron/heartbeat 等无人值守来源先标记 unattended，权限解析时强制钳到不高于 acceptEdits。
     try {
       const { getPermissionModeManager } = await import('../../permissions/modes');
-      getPermissionModeManager().initSessionMode(session.id);
+      const permissionManager = getPermissionModeManager();
+      if (session.origin?.kind === 'cron' || session.origin?.kind === 'heartbeat') {
+        permissionManager.markUnattendedSession(session.id);
+      }
+      permissionManager.initSessionMode(session.id);
     } catch (err) {
       logger.warn('[SessionManager] 初始化会话权限档失败（不阻塞）:', err instanceof Error ? err.message : String(err));
     }

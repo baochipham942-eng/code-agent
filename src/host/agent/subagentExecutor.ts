@@ -275,13 +275,15 @@ export class SubagentExecutor {
       const wideCtx = context.toolContext as ToolContext & {
         parentAvailableTools?: string[];
         parentPermissionMode?: string;
+        sessionId?: string;
       };
       effectiveParentContext = buildParentContextFromToolContext(context.toolContext, {
         // 顶层 agent 默认看到所有声明的工具；availableTools 为空时不会触发 narrowing
         // （toolPool = parent.allTools ∩ child.declared 会退化成 child.declared，
         //  也就是不变）。
         availableTools: wideCtx.parentAvailableTools ?? [],
-        permissionMode: wideCtx.parentPermissionMode ?? (getPermissionModeManager().getMode() as string),
+        // 会话级取档：unattended（cron/heartbeat）会话在解析处被钳到不高于 acceptEdits
+        permissionMode: wideCtx.parentPermissionMode ?? (getPermissionModeManager().getModeForSession(wideCtx.sessionId) as string),
       });
       logger.debug(`[${config.name}] parentContext auto-derived from ToolContext (caller did not provide explicit context)`);
     }

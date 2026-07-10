@@ -89,6 +89,14 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(source).toMatch(/spawnDepth:\s*childDepth/);
   });
 
+  it('Team run scope 显式绑定 Native Run，且 Team runId 不覆盖 ToolContext.runId', () => {
+    expect(source).toMatch(
+      /parentNativeRunId\s*=\s*context\.swarmRunScope\?\.parentNativeRunId\s*\?\?\s*context\.runId/,
+    );
+    expect(source).toMatch(/const runScope:\s*SwarmRunScope\s*=\s*\{[\s\S]*?parentNativeRunId,/);
+    expect(source).not.toMatch(/runId:\s*runScope\.runId/);
+  });
+
   it('子执行器收到父时间窗与父剩余预算', () => {
     expect(source).toMatch(/parentRemainingBudget:\s*context\.parentRemainingBudget/);
     expect(source).toMatch(/spawnParentStartedAt:\s*context\.spawnParentStartedAt/);
@@ -97,6 +105,32 @@ describe('executeSpawnAgent 深度截断接线', () => {
 
   it('注册到 SpawnGuard 时记录 parentId，供 N 层取消和孤儿回收 DFS 使用', () => {
     expect(source).toMatch(/parentId:\s*context\.spawnParentAgentId/);
+  });
+
+  it('排队 spawn 继承 parent abort signal，并在 lease handoff 后再次检查', () => {
+    expect(source).toMatch(
+      /guard\.acquireSlot\(\{[\s\S]*?signal:\s*abortController\.signal/,
+    );
+    const checks = source.match(/throwIfSpawnCancelled\(\)/g) ?? [];
+    expect(checks.length).toBeGreaterThanOrEqual(2);
+    expect(source).toMatch(/Spawn cancelled before agent registration/);
+    expect(source).toMatch(
+      /cancelledBeforeApproval\s*=\s*getParallelCancellationResult\(\)[\s\S]*?launchGate\.requestApproval\(/,
+    );
+    expect(source).toMatch(
+      /launchGate\.requestApproval\([\s\S]*?cancelledAfterApproval\s*=\s*getParallelCancellationResult\(\)/,
+    );
+    expect(source).toMatch(
+      /addEventListener\(['"]abort['"],\s*cancelPendingLaunch[\s\S]*?launchGate\.requestApproval/,
+    );
+    expect(source).toMatch(/launchGate\.cancelRun\(runScope,\s*reason\)/);
+  });
+
+  it('同角色并发 spawn 使用 UUID identity，register 失败会终止已启动 executor', () => {
+    expect(source).toMatch(/localAgentId\s*=\s*`agent_\$\{role \|\| 'dynamic'\}_\$\{randomUUID\(\)\}`/);
+    expect(source).not.toMatch(/localAgentId\s*=.*Date\.now\(\)/);
+    expect(source).toMatch(/startedExecution\s*=\s*promise/);
+    expect(source).toMatch(/abortController\.abort\(['"]registration-failed['"]\)/);
   });
 
   it('readonly 父拒启 writer 子 → child-refusal 失败码', () => {
@@ -139,6 +173,13 @@ describe('Task 深度截断接线', () => {
     expect(source).toMatch(/parentRemainingBudget:\s*ctx\.parentRemainingBudget/);
     expect(source).toMatch(/spawnParentStartedAt:\s*ctx\.spawnParentStartedAt/);
     expect(source).toMatch(/spawnParentTimeoutMs:\s*ctx\.spawnParentTimeoutMs/);
+  });
+
+  it('Task 排队请求继承 parent abort signal，并在 lease handoff 后 fail closed', () => {
+    expect(source).toMatch(
+      /guard\.acquireSlot\(\{[\s\S]*?signal:\s*abortController\.signal/,
+    );
+    expect(source).toMatch(/Task cancelled before agent registration/);
   });
 });
 

@@ -35,6 +35,7 @@ import { rebuildRunDetail } from './swarmRollupProjection';
 import { reconcileRun, type ReconcileResult } from './swarmReconcile';
 import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
+import { redactSecrets } from '../../security/secretRedaction';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -318,7 +319,7 @@ export class DatabaseService {
   appendToolExecutionComplete(input: ToolExecutionCompleteInput): void {
     try {
       if (!this.db || !this.toolExecutionEventRepo) return;
-      this.toolExecutionEventRepo.appendComplete(input);
+      this.toolExecutionEventRepo.appendComplete(input.error ? { ...input, error: redactSecrets(input.error) } : input);
     } catch (err) {
       logger.warn('[DatabaseService] appendToolExecutionComplete failed (ignored):', err);
     }
@@ -1023,13 +1024,17 @@ export class DatabaseService {
     this.ensureDb();
     return this.configRepo.getAuditLog(options);
   }
-  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, ttlMs?: number): void {
+  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, cacheNamespace: string, ttlMs?: number): void {
     this.ensureDb();
-    this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, ttlMs);
+    this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, cacheNamespace, ttlMs);
   }
-  getCachedToolResult(toolName: string, args: Record<string, unknown>): ToolResult | null {
+  getCachedToolResult(sessionId: string, cacheNamespace: string, toolName: string, args: Record<string, unknown>): ToolResult | null {
     this.ensureDb();
-    return this.configRepo.getCachedToolResult(toolName, args);
+    return this.configRepo.getCachedToolResult(sessionId, cacheNamespace, toolName, args);
+  }
+  invalidateCachedToolResults(sessionId: string): number {
+    this.ensureDb();
+    return this.configRepo.invalidateCachedToolResults(sessionId);
   }
   cleanExpiredCache(): number {
     this.ensureDb();

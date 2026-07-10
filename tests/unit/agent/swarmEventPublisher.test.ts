@@ -1,57 +1,90 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const eventBusState = vi.hoisted(() => ({
-  publish: vi.fn(),
-}));
+const eventBusState = vi.hoisted(() => ({ publish: vi.fn() }));
 
 vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => eventBusState,
 }));
 
 import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
+import {
+  createScopedSwarmMessageId,
+  type SwarmRunScope,
+} from '../../../src/shared/contract/swarm';
+
+const scopeA: SwarmRunScope = {
+  sessionId: 'session-a',
+  runId: 'run-a',
+  treeId: 'tree-a',
+  parentNativeRunId: 'native-run-a',
+};
+const scopeB: SwarmRunScope = {
+  sessionId: 'session-b',
+  runId: 'run-b',
+  treeId: 'tree-b',
+  parentNativeRunId: 'native-run-b',
+};
 
 describe('SwarmEventEmitter', () => {
-  beforeEach(() => {
-    eventBusState.publish.mockReset();
-  });
+  beforeEach(() => eventBusState.publish.mockReset());
 
-  it('stamps direct user messages with the active runId and provided sessionId', () => {
+  it('stamps every direct user message from the explicit immutable run scope', () => {
     const emitter = new SwarmEventEmitter();
-
-    emitter.started(1, 'session-1');
-    const runId = emitter.getCurrentRunId();
-    expect(runId).toBeTruthy();
-
-    eventBusState.publish.mockClear();
-    emitter.userMessage('agent-reviewer', '请看这段', { sessionId: 'session-1' });
+    emitter.userMessage(scopeA, 'agent-reviewer', '请看这段', 'message-a');
 
     expect(eventBusState.publish).toHaveBeenCalledWith(
       'swarm',
       'user:message',
       expect.objectContaining({
         type: 'swarm:user:message',
-        sessionId: 'session-1',
-        runId,
+        ...scopeA,
         data: expect.objectContaining({
           agentId: 'agent-reviewer',
           message: expect.objectContaining({
+            id: createScopedSwarmMessageId(scopeA, 'message-a'),
             from: 'user',
             to: 'agent-reviewer',
             content: '请看这段',
           }),
         }),
       }),
-      { bridgeToRenderer: false },
+      { bridgeToRenderer: false, sessionId: scopeA.sessionId },
     );
   });
 
-  it('publishes SharedContext updates as swarm:context:update with the update payload and at-derived timestamp', () => {
+  it('rejects a supplied message identity from another Team scope', () => {
     const emitter = new SwarmEventEmitter();
-    emitter.started(2, 'session-ctx');
-    const runId = emitter.getCurrentRunId();
-    eventBusState.publish.mockClear();
+    const foreignId = createScopedSwarmMessageId(scopeB, 'message-b');
+    expect(() => emitter.agentMessage(
+      scopeA,
+      'agent-a',
+      'agent-b',
+      'cross scope',
+      'coordination',
+      foreignId,
+    )).toThrow(/different Team run/);
+    expect(eventBusState.publish).not.toHaveBeenCalled();
+  });
 
-    emitter.contextUpdate({
+  it('keeps interleaved events from two Teams on their original scopes', () => {
+    const emitter = new SwarmEventEmitter();
+    emitter.started(scopeA, 1);
+    emitter.started(scopeB, 1);
+    emitter.agentCompleted(scopeA, 'same-role-a', 'A done');
+    emitter.agentCompleted(scopeB, 'same-role-b', 'B done');
+
+    const events = eventBusState.publish.mock.calls.map((call) => call[2]);
+    expect(events.map((event) => [event.sessionId, event.runId, event.treeId])).toEqual([
+      [scopeA.sessionId, scopeA.runId, scopeA.treeId],
+      [scopeB.sessionId, scopeB.runId, scopeB.treeId],
+      [scopeA.sessionId, scopeA.runId, scopeA.treeId],
+      [scopeB.sessionId, scopeB.runId, scopeB.treeId],
+    ]);
+  });
+
+  it('publishes SharedContext updates with the explicit scope and at-derived timestamp', () => {
+    const emitter = new SwarmEventEmitter();
+    emitter.contextUpdate(scopeA, {
       kind: 'decision',
       agentId: 'agent_researcher_0',
       role: 'researcher',
@@ -64,21 +97,17 @@ describe('SwarmEventEmitter', () => {
       'context:update',
       expect.objectContaining({
         type: 'swarm:context:update',
-        // timestamp 必须复用 update.at（SharedContext 版本戳），保证讨论流时序对齐数据新鲜度
         timestamp: 1700000000000,
-        runId,
-        sessionId: 'session-ctx',
+        ...scopeA,
         data: expect.objectContaining({
           agentId: 'agent_researcher_0',
           contextUpdate: expect.objectContaining({
             kind: 'decision',
-            role: 'researcher',
             content: '采用方案 A：服务端聚合',
-            at: 1700000000000,
           }),
         }),
       }),
-      { bridgeToRenderer: false },
+      { bridgeToRenderer: false, sessionId: scopeA.sessionId },
     );
   });
 });

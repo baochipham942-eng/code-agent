@@ -23,6 +23,7 @@ import type {
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { closeAgentSchema as schema } from './closeAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { getCallerAgentScope, resolveAgentTargetScope } from './agentRunScope';
 
 export async function executeCloseAgent(
   args: Record<string, unknown>,
@@ -45,8 +46,10 @@ export async function executeCloseAgent(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
+  const target = resolveAgentTargetScope(ctx, agentId);
+  if (target.error) return { ok: false, error: target.error, code: 'NOT_FOUND' };
   const guard = getSpawnGuard();
-  const agent = guard.get(agentId);
+  const agent = target.scope ? guard.get(agentId, target.scope) : guard.get(agentId);
 
   if (!agent) {
     return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
@@ -63,25 +66,27 @@ export async function executeCloseAgent(
       agentId,
       status: agent.status,
       targets: [agentId],
-      counts: { running: guard.getRunningCount() },
+      counts: { running: guard.getRunningCount(getCallerAgentScope(ctx)) },
       result: { cancelled: false },
     }, `Close agent: ${agentId}`);
   }
 
-  const cancelled = guard.cancel(agentId);
+  const cancelled = target.scope
+    ? guard.cancel(agentId, target.scope)
+    : guard.cancel(agentId);
   onProgress?.({ stage: 'completing', percent: 100 });
 
   if (cancelled) {
     ctx.logger.debug('close_agent done', { agentId, role: agent.role });
     return withMultiagentMeta({
       ok: true,
-      output: `Agent [${agentId}] (${agent.role}) cancelled. Running agents: ${guard.getRunningCount()}`,
+      output: `Agent [${agentId}] (${agent.role}) cancelled. Running agents: ${guard.getRunningCount(getCallerAgentScope(ctx))}`,
     }, ctx, schema.name, {
       action: 'close',
       agentId,
       status: 'cancelled',
       targets: [agentId],
-      counts: { running: guard.getRunningCount() },
+      counts: { running: guard.getRunningCount(getCallerAgentScope(ctx)) },
       result: { cancelled: true, role: agent.role },
     }, `Close agent: ${agentId}`);
   }

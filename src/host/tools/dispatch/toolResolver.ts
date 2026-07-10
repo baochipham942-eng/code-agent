@@ -116,7 +116,9 @@ class ProtocolToolResolver implements ToolResolver {
 
       const handler = await resolveProtocolTool(dispatchName);
       const protoCtx = buildProtocolContext({
+        runId: ctx.runId,
         sessionId: (ctx as { sessionId?: string }).sessionId,
+        workspace: ctx.workspace,
         workingDirectory: ctx.workingDirectory,
         legacyCtx: ctx,
         abortSignal: ctx.abortSignal,

@@ -307,25 +307,25 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 
   // Swarm (Agent Teams)
-  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string; sessionId?: string; messageId?: string; timestamp?: number; metadata?: Message['metadata'] }) => Promise<{ delivered: boolean; persisted: boolean }>;
-  [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
+  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { sessionId: string; runId: string; agentId: string; message: string; messageId?: string; timestamp?: number; metadata?: Message['metadata'] }) => Promise<{ delivered: boolean; persisted: boolean }>;
+  [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (payload: { sessionId: string; runId: string; agentId: string }) => Promise<Array<{ id: string; from: string; to: string; content: string; timestamp: number; messageType?: string }>>;
   [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_APPROVE_LAUNCH]: (payload: { sessionId: string; runId: string; requestId: string; feedback?: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_REJECT_LAUNCH]: (payload: { sessionId: string; runId: string; requestId: string; feedback: string }) => Promise<boolean>;
   // dynamic-workflow 启动审批回传（P3b）；sessionId 用于主进程会话授权校验（Codex R2 HIGH#1）
   [IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string; sessionId?: string }) => Promise<boolean>;
   [IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string; sessionId?: string }) => Promise<boolean>;
   [IPC_CHANNELS.WORKFLOW_CANCEL_RUN]: (payload: { runId: string; sessionId?: string }) => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_CANCEL_RUN]: (payload?: { sessionId?: string }) => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_CANCEL_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_APPROVE_PLAN]: (payload: { planId: string; feedback?: string }) => Promise<boolean>;
-  [IPC_CHANNELS.SWARM_REJECT_PLAN]: (payload: { planId: string; feedback: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_CANCEL_RUN]: (payload: { sessionId: string; runId: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_CANCEL_AGENT]: (payload: { sessionId: string; runId: string; agentId: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { sessionId: string; runId: string; agentId: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_APPROVE_PLAN]: (payload: { sessionId: string; runId: string; agentId: string; planId: string; feedback?: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_REJECT_PLAN]: (payload: { sessionId: string; runId: string; agentId: string; planId: string; feedback: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_PERSIST_AGENT_RUN]: (payload: { sessionId: string; run: CompletedAgentRun }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_GET_AGENT_HISTORY]: (payload?: { limit?: number }) => Promise<CompletedAgentRun[]>;
-  [IPC_CHANNELS.SWARM_LIST_TRACE_RUNS]: (payload?: { limit?: number }) => Promise<SwarmRunListItem[]>;
-  [IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL]: (payload: { runId: string }) => Promise<SwarmRunDetail | null>;
+  [IPC_CHANNELS.SWARM_LIST_TRACE_RUNS]: (payload: { sessionId: string; limit?: number }) => Promise<SwarmRunListItem[]>;
+  [IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL]: (payload: { sessionId: string; runId: string }) => Promise<SwarmRunDetail | null>;
 
   // TaskList (任务列表可视化)
   [IPC_CHANNELS.TASKLIST_GET_STATE]: () => Promise<TaskListStateIpc>;

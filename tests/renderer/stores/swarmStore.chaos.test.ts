@@ -50,7 +50,17 @@ function evt<T extends SwarmEvent['type']>(
   data: SwarmEvent['data'],
   timestamp: number,
 ): SwarmEvent {
-  return { type, timestamp, data } as SwarmEvent;
+  const normalizedData = data.message && !data.message.id
+    ? { ...data, message: { ...data.message, id: `message-${timestamp}-${data.message.content}` } }
+    : data;
+  return {
+    type,
+    timestamp,
+    data: normalizedData,
+    sessionId: 'session-chaos',
+    runId: 'run-chaos',
+    treeId: 'tree-chaos',
+  } as SwarmEvent;
 }
 
 /**
@@ -87,6 +97,7 @@ function coreSnapshot() {
 describe('swarmStore chaos — 重复事件幂等性', () => {
   beforeEach(() => {
     useSwarmStore.getState().reset();
+    useSwarmStore.getState().activateScope('session-chaos', 'run-chaos');
   });
 
   it('agent:added 投递两次，agents 数组与统计保持一致', () => {
@@ -261,6 +272,7 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
 describe('swarmStore chaos — 乱序事件收敛', () => {
   beforeEach(() => {
     useSwarmStore.getState().reset();
+    useSwarmStore.getState().activateScope('session-chaos', 'run-chaos');
   });
 
   it('agent:added 顺序 vs 反序投递，最终 agents 与 statistics 等价', () => {
@@ -272,12 +284,14 @@ describe('swarmStore chaos — 乱序事件收敛', () => {
 
     // 顺序投递
     useSwarmStore.getState().reset();
+    useSwarmStore.getState().activateScope('session-chaos', 'run-chaos');
     useSwarmStore.getState().handleEvent(evt('swarm:started', {}, 1));
     for (const e of added) useSwarmStore.getState().handleEvent(e);
     const forward = coreSnapshot();
 
     // 反序投递
     useSwarmStore.getState().reset();
+    useSwarmStore.getState().activateScope('session-chaos', 'run-chaos');
     useSwarmStore.getState().handleEvent(evt('swarm:started', {}, 1));
     for (const e of [...added].reverse()) useSwarmStore.getState().handleEvent(e);
     const reverse = coreSnapshot();

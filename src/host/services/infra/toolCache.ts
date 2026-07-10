@@ -2,6 +2,10 @@
 // Tool Cache - 工具结果缓存（短期记忆）
 // ============================================================================
 
+import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import * as nodePath from 'node:path';
 import { getDatabase } from '../core';
 import type { ToolResult } from '../../../shared/contract';
 import { createLogger } from './logger';
@@ -13,10 +17,24 @@ const logger = createLogger('ToolCache');
 // Types
 // ----------------------------------------------------------------------------
 
+export interface ToolCacheScope {
+  sessionId?: string;
+  workingDirectory?: string;
+}
+
+export interface NormalizedToolCacheScope {
+  sessionId: string;
+  workspaceIdentity: string;
+  cacheNamespace: string;
+  memoryScopeKey: string;
+}
+
 export interface CacheEntry {
   toolName: string;
   args: Record<string, unknown>;
   result: ToolResult;
+  scopeKey: string;
+  referencedPaths: string[];
   createdAt: number;
   expiresAt: number | null;
   hitCount: number;
@@ -29,48 +47,119 @@ export interface CacheStats {
   hitRate: number;
 }
 
-// 工具缓存策略配置
 export interface ToolCacheConfig {
-  // 默认 TTL（毫秒）
   defaultTTL: number;
-  // 最大内存缓存条目
   maxMemoryEntries: number;
-  // 是否启用持久化缓存
   persistentCache: boolean;
 }
 
-// 不同工具的缓存策略
-const TOOL_CACHE_POLICIES: Record<string, { ttl: number; cacheable: boolean }> = {
-  // 文件读取 - 缓存 5 分钟（文件可能被修改）
-  read_file: { ttl: 5 * 60 * 1000, cacheable: true },
+interface ToolCachePolicy {
+  ttl: number;
+  cacheable: boolean;
+}
 
-  // 目录列表 - 缓存 2 分钟
-  list_directory: { ttl: 2 * 60 * 1000, cacheable: true },
+const CACHE_NAMESPACE_VERSION = 'tool-cache:v2';
 
-  // Glob 搜索 - 缓存 2 分钟
-  glob: { ttl: 2 * 60 * 1000, cacheable: true },
+/**
+ * Cache admission is exact and fail-closed. No currently registered protocol
+ * tool is semantically pure enough to skip its handler lifecycle safely:
+ * even Read updates file-read evidence and context-health state. Additions must
+ * therefore be explicit and backed by lifecycle + invalidation tests.
+ */
+const TOOL_CACHE_POLICIES: Readonly<Record<string, ToolCachePolicy>> = Object.freeze({});
+const DEFAULT_CACHE_POLICY: ToolCachePolicy = Object.freeze({ ttl: 0, cacheable: false });
 
-  // Grep 搜索 - 缓存 2 分钟
-  grep: { ttl: 2 * 60 * 1000, cacheable: true },
+const PATH_ARGUMENT_KEYS = [
+  'file_path',
+  'path',
+  'directory',
+  'working_directory',
+  'target_path',
+  'targetPath',
+  'output_path',
+  'outputPath',
+];
 
-  // 文件写入 - 不缓存（有副作用）
-  write_file: { ttl: 0, cacheable: false },
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeJson);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonicalizeJson(child)]),
+    );
+  }
+  return value;
+}
 
-  // 文件编辑 - 不缓存（有副作用）
-  edit_file: { ttl: 0, cacheable: false },
+function stableStringify(value: unknown): string | null {
+  try {
+    return JSON.stringify(canonicalizeJson(value));
+  } catch {
+    return null;
+  }
+}
 
-  // Bash 命令 - 不缓存（可能有副作用）
-  bash: { ttl: 0, cacheable: false },
+export function normalizeToolCacheScope(
+  scope: ToolCacheScope | undefined,
+): NormalizedToolCacheScope | null {
+  const sessionId = scope?.sessionId?.trim();
+  const workingDirectory = scope?.workingDirectory?.trim();
+  if (!sessionId || !workingDirectory) return null;
 
-  // Web Fetch - 缓存 15 分钟
-  web_fetch: { ttl: 15 * 60 * 1000, cacheable: true },
+  try {
+    const workspaceIdentity = realpathSync.native(nodePath.resolve(workingDirectory));
+    const workspaceHash = createHash('sha256').update(workspaceIdentity).digest('hex');
+    const cacheNamespace = `${CACHE_NAMESPACE_VERSION}:${workspaceHash}`;
+    return {
+      sessionId,
+      workspaceIdentity,
+      cacheNamespace,
+      memoryScopeKey: `${sessionId}:${cacheNamespace}`,
+    };
+  } catch {
+    // A workspace that cannot be identified canonically must never share cache.
+    return null;
+  }
+}
 
-  // Task (子代理) - 不缓存
-  task: { ttl: 0, cacheable: false },
+function normalizeReferencedPath(
+  rawPath: string,
+  workspaceIdentity: string,
+): string {
+  const expanded = rawPath.startsWith('~/')
+    ? nodePath.join(homedir(), rawPath.slice(2))
+    : rawPath;
+  const absolute = nodePath.isAbsolute(expanded)
+    ? nodePath.normalize(expanded)
+    : nodePath.resolve(workspaceIdentity, expanded);
+  try {
+    return realpathSync.native(absolute);
+  } catch {
+    return absolute;
+  }
+}
 
-  // 默认策略
-  default: { ttl: 5 * 60 * 1000, cacheable: true },
-};
+function collectReferencedPaths(
+  args: Record<string, unknown>,
+  scope: NormalizedToolCacheScope,
+): string[] {
+  const paths = PATH_ARGUMENT_KEYS
+    .map((key) => args[key])
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => normalizeReferencedPath(value, scope.workspaceIdentity));
+  return [...new Set(paths)];
+}
+
+function pathsOverlap(left: string, right: string): boolean {
+  if (left === right) return true;
+  const leftRelative = nodePath.relative(left, right);
+  if (leftRelative && !leftRelative.startsWith('..') && !nodePath.isAbsolute(leftRelative)) return true;
+  const rightRelative = nodePath.relative(right, left);
+  return Boolean(rightRelative) && !rightRelative.startsWith('..') && !nodePath.isAbsolute(rightRelative);
+}
 
 // ----------------------------------------------------------------------------
 // Tool Cache Service
@@ -80,97 +169,89 @@ export class ToolCache implements Disposable {
   private config: ToolCacheConfig;
   private memoryCache: Map<string, CacheEntry> = new Map();
   private stats: { hits: number; misses: number } = { hits: 0, misses: 0 };
-  private sessionId: string | null = null;
   private _dbErrorLogged = false;
 
   constructor(config?: Partial<ToolCacheConfig>) {
     this.config = {
-      defaultTTL: 5 * 60 * 1000, // 5 分钟
+      defaultTTL: 5 * 60 * 1000,
       maxMemoryEntries: 100,
       persistentCache: true,
       ...config,
     };
   }
 
-  // --------------------------------------------------------------------------
-  // Configuration
-  // --------------------------------------------------------------------------
-
+  /**
+   * Kept for the existing session lifecycle caller. Cache identity no longer
+   * reads mutable singleton session state; every get/set receives its own scope.
+   */
   setSessionId(sessionId: string): void {
-    this.sessionId = sessionId;
+    void sessionId;
   }
 
-  // --------------------------------------------------------------------------
-  // Cache Operations
-  // --------------------------------------------------------------------------
-
-  /**
-   * 生成缓存键
-   */
-  private generateKey(toolName: string, args: Record<string, unknown>): string {
-    // 排序参数以确保相同参数生成相同的 key
-    const sortedArgs = Object.keys(args)
-      .sort()
-      .reduce((acc, key) => {
-        acc[key] = args[key];
-        return acc;
-      }, {} as Record<string, unknown>);
-
-    return `${toolName}:${JSON.stringify(sortedArgs)}`;
+  private generateKey(
+    toolName: string,
+    args: Record<string, unknown>,
+    scope: NormalizedToolCacheScope,
+  ): string | null {
+    const serializedArgs = stableStringify(args);
+    if (serializedArgs === null) return null;
+    return `${scope.memoryScopeKey}:${toolName}:${serializedArgs}`;
   }
 
-  /**
-   * 检查工具是否可缓存
-   */
   isCacheable(toolName: string): boolean {
-    const policy = TOOL_CACHE_POLICIES[toolName] || TOOL_CACHE_POLICIES['default'];
-    return policy.cacheable;
+    return (TOOL_CACHE_POLICIES[toolName] ?? DEFAULT_CACHE_POLICY).cacheable;
   }
 
-  /**
-   * 获取工具的 TTL
-   */
   getTTL(toolName: string): number {
-    const policy = TOOL_CACHE_POLICIES[toolName] || TOOL_CACHE_POLICIES['default'];
+    const policy = TOOL_CACHE_POLICIES[toolName];
+    if (!policy?.cacheable) return 0;
     return policy.ttl || this.config.defaultTTL;
   }
 
-  /**
-   * 从缓存获取结果
-   */
-  get(toolName: string, args: Record<string, unknown>): ToolResult | null {
-    // 检查是否可缓存
-    if (!this.isCacheable(toolName)) {
+  get(
+    toolName: string,
+    args: Record<string, unknown>,
+    rawScope?: ToolCacheScope,
+  ): ToolResult | null {
+    if (!this.isCacheable(toolName)) return null;
+
+    const scope = normalizeToolCacheScope(rawScope);
+    if (!scope) {
+      this.stats.misses++;
       return null;
     }
-
-    const key = this.generateKey(toolName, args);
+    const key = this.generateKey(toolName, args, scope);
+    if (!key) {
+      this.stats.misses++;
+      return null;
+    }
     const now = Date.now();
 
-    // 先检查内存缓存
     const memoryEntry = this.memoryCache.get(key);
     if (memoryEntry) {
       if (memoryEntry.expiresAt === null || memoryEntry.expiresAt > now) {
         memoryEntry.hitCount++;
         this.stats.hits++;
         return memoryEntry.result;
-      } else {
-        // 过期，删除
-        this.memoryCache.delete(key);
       }
+      this.memoryCache.delete(key);
     }
 
-    // 检查持久化缓存
     if (this.config.persistentCache) {
       try {
-        const db = getDatabase();
-        const dbResult = db.getCachedToolResult(toolName, args);
+        const dbResult = getDatabase().getCachedToolResult(
+          scope.sessionId,
+          scope.cacheNamespace,
+          toolName,
+          args,
+        );
         if (dbResult) {
-          // 添加到内存缓存
           this.setMemoryCache(key, {
             toolName,
             args,
             result: dbResult,
+            scopeKey: scope.memoryScopeKey,
+            referencedPaths: collectReferencedPaths(args, scope),
             createdAt: now,
             expiresAt: now + this.getTTL(toolName),
             hitCount: 1,
@@ -179,10 +260,7 @@ export class ToolCache implements Disposable {
           return dbResult;
         }
       } catch (error) {
-        if (!this._dbErrorLogged) {
-          this._dbErrorLogged = true;
-          logger.warn('DB cache unavailable, using memory-only cache:', (error as Error).message);
-        }
+        this.logDbError(error);
       }
     }
 
@@ -190,127 +268,133 @@ export class ToolCache implements Disposable {
     return null;
   }
 
-  /**
-   * 将结果存入缓存
-   */
   set(
     toolName: string,
     args: Record<string, unknown>,
     result: ToolResult,
-    customTTL?: number
+    rawScope?: ToolCacheScope,
+    customTTL?: number,
   ): void {
-    // 检查是否可缓存
-    if (!this.isCacheable(toolName)) {
-      return;
-    }
+    if (!this.isCacheable(toolName) || !result.success) return;
 
-    // 只缓存成功的结果
-    if (!result.success) {
-      return;
-    }
+    const scope = normalizeToolCacheScope(rawScope);
+    if (!scope) return;
+    const key = this.generateKey(toolName, args, scope);
+    if (!key) return;
 
-    const key = this.generateKey(toolName, args);
     const now = Date.now();
     const ttl = customTTL ?? this.getTTL(toolName);
     const expiresAt = ttl > 0 ? now + ttl : null;
-
-    // 存入内存缓存
     this.setMemoryCache(key, {
       toolName,
       args,
       result,
+      scopeKey: scope.memoryScopeKey,
+      referencedPaths: collectReferencedPaths(args, scope),
       createdAt: now,
       expiresAt,
       hitCount: 0,
     });
 
-    // 存入持久化缓存
-    if (this.config.persistentCache && this.sessionId) {
+    if (this.config.persistentCache) {
       try {
-        const db = getDatabase();
-        db.saveToolExecution(this.sessionId, null, toolName, args, result, ttl);
+        getDatabase().saveToolExecution(
+          scope.sessionId,
+          null,
+          toolName,
+          args,
+          result,
+          scope.cacheNamespace,
+          ttl,
+        );
       } catch (error) {
-        if (!this._dbErrorLogged) {
-          this._dbErrorLogged = true;
-          logger.warn('DB cache unavailable, using memory-only cache:', (error as Error).message);
-        }
+        this.logDbError(error);
       }
     }
   }
 
-  /**
-   * 设置内存缓存（带 LRU 淘汰）
-   */
   private setMemoryCache(key: string, entry: CacheEntry): void {
-    // 如果超过最大条目数，删除最少使用的
     if (this.memoryCache.size >= this.config.maxMemoryEntries) {
       let minHitKey: string | null = null;
       let minHitCount = Infinity;
-
-      for (const [k, v] of this.memoryCache.entries()) {
-        if (v.hitCount < minHitCount) {
-          minHitCount = v.hitCount;
-          minHitKey = k;
+      for (const [candidateKey, candidate] of this.memoryCache.entries()) {
+        if (candidate.hitCount < minHitCount) {
+          minHitCount = candidate.hitCount;
+          minHitKey = candidateKey;
         }
       }
-
-      if (minHitKey) {
-        this.memoryCache.delete(minHitKey);
-      }
+      if (minHitKey) this.memoryCache.delete(minHitKey);
     }
-
     this.memoryCache.set(key, entry);
   }
 
-  /**
-   * 使指定工具的缓存失效
-   */
-  invalidate(toolName: string, args?: Record<string, unknown>): void {
-    if (args) {
-      const key = this.generateKey(toolName, args);
-      this.memoryCache.delete(key);
-    } else {
-      // 删除该工具的所有缓存
-      for (const key of this.memoryCache.keys()) {
-        if (key.startsWith(`${toolName}:`)) {
-          this.memoryCache.delete(key);
-        }
-      }
-    }
-  }
+  invalidate(
+    toolName: string,
+    args?: Record<string, unknown>,
+    rawScope?: ToolCacheScope,
+  ): void {
+    const scope = normalizeToolCacheScope(rawScope);
+    if (!scope) return;
 
-  /**
-   * 文件修改时使相关缓存失效
-   */
-  invalidateForPath(filePath: string): void {
-    // 使与该文件相关的所有缓存失效
+    if (args) {
+      const key = this.generateKey(toolName, args, scope);
+      if (key) this.memoryCache.delete(key);
+      return;
+    }
     for (const [key, entry] of this.memoryCache.entries()) {
-      const args = entry.args;
-      if (
-        args.path === filePath ||
-        args.file_path === filePath ||
-        (typeof args.directory === 'string' && filePath.startsWith(args.directory))
-      ) {
+      if (entry.scopeKey === scope.memoryScopeKey && entry.toolName === toolName) {
         this.memoryCache.delete(key);
       }
     }
   }
 
-  /**
-   * 清空所有缓存
-   */
+  invalidateForPath(filePath: string, rawScope?: ToolCacheScope): void {
+    const scope = normalizeToolCacheScope(rawScope);
+    if (!scope) return;
+    const normalizedPath = normalizeReferencedPath(filePath, scope.workspaceIdentity);
+    for (const [key, entry] of this.memoryCache.entries()) {
+      if (
+        entry.scopeKey === scope.memoryScopeKey
+        && entry.referencedPaths.some((referencedPath) => pathsOverlap(referencedPath, normalizedPath))
+      ) {
+        this.memoryCache.delete(key);
+      }
+    }
+    this.invalidatePersistentSession(scope.sessionId);
+  }
+
+  invalidateForWorkspace(rawScope?: ToolCacheScope): void {
+    const scope = normalizeToolCacheScope(rawScope);
+    if (!scope) return;
+    for (const [key, entry] of this.memoryCache.entries()) {
+      if (entry.scopeKey === scope.memoryScopeKey) this.memoryCache.delete(key);
+    }
+    this.invalidatePersistentSession(scope.sessionId);
+  }
+
+  private invalidatePersistentSession(sessionId: string): void {
+    if (!this.config.persistentCache) return;
+    try {
+      getDatabase().invalidateCachedToolResults(sessionId);
+    } catch (error) {
+      this.logDbError(error);
+    }
+  }
+
+  private logDbError(error: unknown): void {
+    if (this._dbErrorLogged) return;
+    this._dbErrorLogged = true;
+    logger.warn('DB cache unavailable, using memory-only cache:', (error as Error).message);
+  }
+
   clear(): void {
     this.memoryCache.clear();
     this.stats = { hits: 0, misses: 0 };
   }
 
-  /**
-   * 清理过期缓存
-   */
   cleanExpired(): number {
     const now = Date.now();
     let cleaned = 0;
-
     for (const [key, entry] of this.memoryCache.entries()) {
       if (entry.expiresAt !== null && entry.expiresAt <= now) {
         this.memoryCache.delete(key);
@@ -318,22 +402,15 @@ export class ToolCache implements Disposable {
       }
     }
 
-    // 清理持久化缓存
     if (this.config.persistentCache) {
       try {
-        const db = getDatabase();
-        cleaned += db.cleanExpiredCache();
-      } catch (error) {
-        // DB 不可用时静默跳过清理
+        cleaned += getDatabase().cleanExpiredCache();
+      } catch {
+        // DB unavailable: memory cleanup still succeeded.
       }
     }
-
     return cleaned;
   }
-
-  // --------------------------------------------------------------------------
-  // Statistics
-  // --------------------------------------------------------------------------
 
   getStats(): CacheStats {
     const totalRequests = this.stats.hits + this.stats.misses;
@@ -355,16 +432,10 @@ export class ToolCache implements Disposable {
   }
 }
 
-// ----------------------------------------------------------------------------
-// Singleton Instance
-// ----------------------------------------------------------------------------
-
 let cacheInstance: ToolCache | null = null;
 
 export function getToolCache(): ToolCache {
-  if (!cacheInstance) {
-    cacheInstance = new ToolCache();
-  }
+  if (!cacheInstance) cacheInstance = new ToolCache();
   return cacheInstance;
 }
 

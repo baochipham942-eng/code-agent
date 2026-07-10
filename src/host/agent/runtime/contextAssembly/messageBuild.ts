@@ -39,7 +39,11 @@ import {
   GAME_SKILL_REPAIR_HINTS,
 } from '../game/generatedSkillContent';
 import { detectGameSubtypeFromMessage } from '../game/subtypeDetection';
-import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
+import {
+  buildActiveAgentContext,
+  drainCompletionNotifications,
+  resolveActiveAgentScopeFilter,
+} from '../../../agent/activeAgentContext';
 import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
 import { estimateModelMessageTokens, estimateTokens } from '../../../context/tokenOptimizer';
@@ -760,7 +764,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   }
 
   // 注入活跃子代理上下文（Phase 3: 让主 Agent 感知当前 team 状态）
-  const activeAgentBlock = buildActiveAgentContext();
+  const activeAgentScope = resolveActiveAgentScopeFilter(
+    ctx.runtime.sessionId,
+    ctx.runtime.agentId,
+  );
+  const activeAgentBlock = buildActiveAgentContext(activeAgentScope);
   if (activeAgentBlock) {
     const nextPrompt = appendPromptBlockWithinBudget(
       tailWorking,
@@ -775,7 +783,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   }
 
   // 注入后台 agent 完成通知（Codex-style async notifications）
-  const completionNotifications = drainCompletionNotifications();
+  const completionNotifications = drainCompletionNotifications(activeAgentScope);
   if (completionNotifications.length > 0) {
     const completionBlock = completionNotifications.join('\n');
     const nextPrompt = appendPromptBlockWithinBudget(

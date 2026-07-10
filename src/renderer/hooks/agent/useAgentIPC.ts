@@ -468,15 +468,9 @@ function toWorkbenchMetadata(
         metadata.targetAgentNames = directTargets.map((target) => target.name);
       }
     }
-    if (context.routing.mode === 'direct' && (directTargets.length > 0 || missingTargetIds.length > 0)) {
-      metadata.directRoutingDelivery = {
-        deliveredTargetIds: directTargets.map((target) => target.id),
-        ...(directTargets.length > 0
-          ? { deliveredTargetNames: directTargets.map((target) => target.name) }
-          : {}),
-        ...(missingTargetIds.length > 0 ? { missingTargetIds: [...missingTargetIds] } : {}),
-      };
-    }
+    // targetAgentIds are routing intent. Actual delivery evidence is recorded
+    // only after Host replies; preflight candidates must never be persisted as
+    // delivered because a target can finish between availability check and send.
   }
   if (context.selectedSkillIds?.length) {
     metadata.selectedSkillIds = [...context.selectedSkillIds];
@@ -576,7 +570,19 @@ export function useAgentIPC({
         }
       }
 
-      const swarmAgents = useSwarmStore.getState().agents;
+      const swarmState = useSwarmStore.getState();
+      const sessionSnapshot = swarmState.activeSessionId === effectiveSessionId && swarmState.activeRunId
+        ? {
+            runId: swarmState.activeRunId,
+            agents: swarmState.agents,
+          }
+        : Object.values(swarmState.runSnapshots)
+            .filter((snapshot) => snapshot.sessionId === effectiveSessionId)
+            .sort((left, right) => {
+              if (left.isRunning !== right.isRunning) return left.isRunning ? -1 : 1;
+              return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
+            })[0];
+      const swarmAgents = sessionSnapshot?.agents ?? [];
       const directRouting = resolveDirectRouting(envelope, swarmAgents);
 
       // 读取当前 session 锁定的 design brief（来自 question-form 提交，仅运行时内存态）。
@@ -612,6 +618,17 @@ export function useAgentIPC({
       }
 
       if (directRouting.kind === 'send') {
+        const directRunId = sessionSnapshot!.runId;
+        const isDirectScopeActive = () => {
+          const sessionState = useSessionStore.getState();
+          const currentSwarm = useSwarmStore.getState();
+          return sessionState.currentSessionId === effectiveSessionId
+            && currentSwarm.activeSessionId === effectiveSessionId
+            && currentSwarm.activeRunId === directRunId;
+        };
+        const addDirectMessage = (message: Message) => {
+          if (isDirectScopeActive()) useSessionStore.getState().addMessage(message);
+        };
         const userMessage: Message = {
           id: generateMessageId(),
           role: 'user',
@@ -619,9 +636,10 @@ export function useAgentIPC({
           timestamp: Date.now(),
           metadata: toMessageMetadata(contextWithDesignContext, directRouting.targets, directRouting.missingTargetIds),
         };
-        addMessage(userMessage);
+        addDirectMessage(userMessage);
 
         const rollbackDirectMessage = () => {
+          if (!isDirectScopeActive()) return;
           const sessionState = useSessionStore.getState();
           sessionState.setMessages(sessionState.messages.filter((message) => message.id !== userMessage.id));
         };
@@ -637,26 +655,49 @@ export function useAgentIPC({
             ),
             effectiveSessionId,
           );
-          const results = await Promise.all(
+          const results = await Promise.allSettled(
             directRouting.targets.map((target) =>
-              ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
+              Promise.resolve().then(() => ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
                 agentId: target.id,
                 message: directMessage,
-                sessionId: effectiveSessionId || undefined,
+                sessionId: effectiveSessionId!,
+                runId: directRunId,
                 messageId: userMessage.id,
                 timestamp: userMessage.timestamp,
                 metadata: userMessage.metadata,
-              }),
+              })),
             ),
           );
 
-          const delivered = results.some((result) => result?.delivered);
-          const persisted = effectiveSessionId
-            ? results.some((result) => result?.persisted)
-            : true;
+          const deliveredTargets = directRouting.targets.filter((_, index) => {
+            const result = results[index];
+            return result?.status === 'fulfilled' && Boolean(result.value?.delivered);
+          });
+          // Multi-target Direct uses one canonical session message. A single
+          // successful persistence makes that shared turn durable for every
+          // delivered target; duplicate inserts on later targets are idempotent.
+          const canonicalPersisted = results.some((result) => (
+            result.status === 'fulfilled' && Boolean(result.value?.persisted)
+          ));
+          const unpersistedTargetIds = canonicalPersisted
+            ? []
+            : deliveredTargets.map((target) => target.id);
+          const failedTargetIds = directRouting.targets
+            .filter((_, index) => {
+              const result = results[index];
+              return result?.status === 'rejected' || !result?.value?.delivered;
+            })
+            .map((target) => target.id);
 
-          if (!delivered || !persisted) {
-            throw new Error('Direct routing was not persisted to the current session');
+          if (deliveredTargets.length === 0) {
+            rollbackDirectMessage();
+            addDirectMessage({
+              id: generateMessageId(),
+              role: 'assistant',
+              content: 'Direct 路由发送失败，消息未送达，也没有写入当前 Team 记录。请重试，或切回 Auto / Parallel。',
+              timestamp: Date.now(),
+            });
+            return;
           }
 
           if (effectiveSessionId) {
@@ -667,27 +708,36 @@ export function useAgentIPC({
               turnMessageId: userMessage.id,
               targetAgentIds: directRouting.targetIds,
               targetAgentNames: directRouting.targets.map((target) => target.name),
-              deliveredTargetIds: directRouting.targets.map((target) => target.id),
-              missingTargetIds: directRouting.missingTargetIds,
+              deliveredTargetIds: deliveredTargets.map((target) => target.id),
+              missingTargetIds: [...directRouting.missingTargetIds, ...failedTargetIds],
             });
           }
 
-          useAppStore.getState().setSelectedSwarmAgentId(directRouting.targets[0]?.id || null);
+          if (isDirectScopeActive()) {
+            useAppStore.getState().setSelectedSwarmAgentId(deliveredTargets[0]?.id || null);
+          }
 
-          if (directRouting.missingTargetIds.length > 0) {
-            addMessage({
+          const undeliveredTargetIds = [...directRouting.missingTargetIds, ...failedTargetIds];
+          if (undeliveredTargetIds.length > 0 || unpersistedTargetIds.length > 0) {
+            const details = [
+              undeliveredTargetIds.length > 0 ? `未送达 ${undeliveredTargetIds.join('、')}` : '',
+              unpersistedTargetIds.length > 0
+                ? `已送达但未写入 Team 记录 ${unpersistedTargetIds.join('、')}`
+                : '',
+            ].filter(Boolean).join('；');
+            addDirectMessage({
               id: generateMessageId(),
               role: 'assistant',
-              content: `已发送给 ${directRouting.targets.map((target) => target.name).join('、')}。未命中 ${directRouting.missingTargetIds.join('、')}。`,
+              content: `已发送给 ${deliveredTargets.map((target) => target.name).join('、')}。${details}。`,
               timestamp: Date.now(),
             });
           }
         } catch (error) {
           rollbackDirectMessage();
-          addMessage({
+          addDirectMessage({
             id: generateMessageId(),
             role: 'assistant',
-            content: 'Direct 路由发送失败，当前消息没有写入会话。请重试，或切回 Auto / Parallel。',
+            content: 'Direct 路由发送失败，消息未送达，也没有写入当前 Team 记录。请重试，或切回 Auto / Parallel。',
             timestamp: Date.now(),
           });
           logger.error('direct routing send failed', error);

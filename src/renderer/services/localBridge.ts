@@ -33,6 +33,14 @@ export interface BridgeToolInfo {
   description?: string;
 }
 
+export interface BridgeInvocationContext {
+  requestId: string;
+  runId: string;
+  sessionId: string;
+  workspace: string;
+  cwd: string;
+}
+
 export interface BridgeConfirmation {
   requestId: string;
   tool: string;
@@ -88,12 +96,23 @@ export class LocalBridgeClient {
   /**
    * 调用本地工具
    */
-  async invokeTool(tool: string, params: Record<string, unknown>): Promise<BridgeToolResponse> {
+  async invokeTool(
+    tool: string,
+    params: Record<string, unknown>,
+    context?: BridgeInvocationContext,
+    signal?: AbortSignal,
+  ): Promise<BridgeToolResponse> {
     try {
       const res = await fetch(`${this.baseUrl}/tools/invoke`, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({ tool, params }),
+        body: JSON.stringify({
+          tool,
+          params,
+          requestId: context?.requestId ?? crypto.randomUUID(),
+          ...(context ?? {}),
+        }),
+        signal,
       });
 
       if (!res.ok) {
@@ -106,6 +125,9 @@ export class LocalBridgeClient {
 
       return await res.json() as BridgeToolResponse;
     } catch (err) {
+      if (signal?.aborted) {
+        return { success: false, error: 'Bridge invocation cancelled' };
+      }
       return {
         success: false,
         error: `Bridge connection failed: ${err instanceof Error ? err.message : 'Unknown error'}`,

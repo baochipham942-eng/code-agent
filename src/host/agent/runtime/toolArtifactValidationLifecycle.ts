@@ -284,6 +284,7 @@ export async function handleModifiedArtifactValidation({
             repairSpecBlock,
             validation.browserVisualSmoke,
             repairSpec.issues.map((issue) => issue.code),
+            ctx.scaffoldProfile?.repairInstructionStyle ?? 'full',
           ),
         ].join('\n')
       );

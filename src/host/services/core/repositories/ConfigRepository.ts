@@ -2,6 +2,7 @@
 // ConfigRepository - 配置/偏好/项目知识/审计日志
 // ============================================================================
 
+import { createHash } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { ToolResult } from '../../../../shared/contract';
 import type {
@@ -57,6 +58,24 @@ function parseToolResult(value: unknown): ToolResult {
         metadata: isRecord(parsed.metadata) ? parsed.metadata : undefined,
       }
     : { toolCallId: '', success: false };
+}
+
+function canonicalizeCacheValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeCacheValue);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonicalizeCacheValue(child)]),
+    );
+  }
+  return value;
+}
+
+function isVersionedCacheNamespace(value: string): boolean {
+  return value.startsWith('tool-cache:v2:');
 }
 
 export class ConfigRepository {
@@ -260,15 +279,20 @@ export class ConfigRepository {
   // Tool Execution Cache
   // --------------------------------------------------------------------------
 
-  private hashArguments(toolName: string, args: Record<string, unknown>): string {
-    const str = `${toolName}:${JSON.stringify(args)}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return hash.toString(16);
+  private hashArguments(
+    cacheNamespace: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): string {
+    const canonicalArguments = JSON.stringify(canonicalizeCacheValue(args));
+    const digest = createHash('sha256')
+      .update(cacheNamespace)
+      .update('\0')
+      .update(toolName)
+      .update('\0')
+      .update(canonicalArguments)
+      .digest('hex');
+    return `tool-cache:v2:${digest}`;
   }
 
   saveToolExecution(
@@ -277,8 +301,10 @@ export class ConfigRepository {
     toolName: string,
     args: Record<string, unknown>,
     result: ToolResult,
-    ttlMs?: number
+    cacheNamespace: string,
+    ttlMs?: number,
   ): void {
+    if (!sessionId || !isVersionedCacheNamespace(cacheNamespace)) return;
     const now = Date.now();
     const expiresAt = ttlMs ? now + ttlMs : null;
 
@@ -293,7 +319,7 @@ export class ConfigRepository {
       messageId,
       toolName,
       JSON.stringify(args),
-      this.hashArguments(toolName, args),
+      this.hashArguments(cacheNamespace, toolName, args),
       JSON.stringify(result),
       result.success ? 1 : 0,
       result.duration || 0,
@@ -303,24 +329,36 @@ export class ConfigRepository {
   }
 
   getCachedToolResult(
+    sessionId: string,
+    cacheNamespace: string,
     toolName: string,
     args: Record<string, unknown>
   ): ToolResult | null {
-    const hash = this.hashArguments(toolName, args);
+    if (!sessionId || !isVersionedCacheNamespace(cacheNamespace)) return null;
+    const hash = this.hashArguments(cacheNamespace, toolName, args);
     const now = Date.now();
 
     const stmt = this.db.prepare(`
       SELECT result FROM tool_executions
-      WHERE arguments_hash = ? AND tool_name = ?
+      WHERE session_id = ? AND arguments_hash = ? AND tool_name = ?
         AND (expires_at IS NULL OR expires_at > ?)
       ORDER BY created_at DESC
       LIMIT 1
     `);
 
-    const row = stmt.get(hash, toolName, now) as SQLiteRow | undefined;
+    const row = stmt.get(sessionId, hash, toolName, now) as SQLiteRow | undefined;
     if (!row) return null;
 
     return parseToolResult(row.result);
+  }
+
+  invalidateCachedToolResults(sessionId: string): number {
+    if (!sessionId) return 0;
+    const stmt = this.db.prepare(`
+      DELETE FROM tool_executions
+      WHERE session_id = ? AND arguments_hash LIKE 'tool-cache:v2:%'
+    `);
+    return stmt.run(sessionId).changes;
   }
 
   cleanExpiredCache(): number {

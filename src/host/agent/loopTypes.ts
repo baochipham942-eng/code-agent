@@ -41,6 +41,8 @@ export interface AgentLoopConfig {
   planningService?: PlanningService;
   enableHooks?: boolean;
   hookManager?: HookManager;
+  /** Distinct execution identity; never derived from sessionId. */
+  runId?: string;
   sessionId?: string;
   agentId?: string;
   agentName?: string;

@@ -5,17 +5,13 @@ import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
-
-interface ActiveLoopCancelPort {
-  cancel(reason?: string): void | Promise<void>;
-}
+import type { RunHandle } from '../../host/runtime/runContext';
 
 interface AgentRunControllerDeps {
   res: Response;
+  runId: string;
   sessionId: string;
-  activeAgentLoops: {
-    get(sessionId: string): ActiveLoopCancelPort | undefined;
-  };
+  runHandle?: RunHandle;
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
 }
@@ -41,11 +37,13 @@ export class AgentRunController {
   readonly cancelForDisconnect = (): void => {
     if (this.runSettled || this.clientDisconnected) return;
     this.clientDisconnected = true;
-    const activeLoop = this.deps.activeAgentLoops.get(this.deps.sessionId);
-    if (!activeLoop) return;
-    this.deps.logger.warn(`[AgentRouter] SSE client disconnected, cancelling active run for ${this.deps.sessionId}`);
-    void Promise.resolve(activeLoop.cancel('user')).catch((error) => {
-      this.deps.logger.warn(`[AgentRouter] Failed to cancel disconnected run for ${this.deps.sessionId}:`, error);
+    const runHandle = this.deps.runHandle;
+    if (!runHandle) return;
+    this.deps.logger.warn(
+      `[AgentRouter] SSE client disconnected, cancelling run ${this.deps.runId} for ${this.deps.sessionId}`,
+    );
+    void runHandle.cancel('user').catch((error) => {
+      this.deps.logger.warn(`[AgentRouter] Failed to cancel disconnected run ${this.deps.runId}:`, error);
     });
   };
 

@@ -10,6 +10,10 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
+import {
+  createScopedSwarmAgentId,
+  type SwarmRunScope,
+} from '../../../../../src/shared/contract/swarm';
 
 // -----------------------------------------------------------------------------
 // Mocks
@@ -45,9 +49,23 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
+const ROOT_SCOPE: SwarmRunScope = { sessionId: 'test', runId: 'run-root', treeId: 'tree-root' };
+const ROOT_AGENT = createScopedSwarmAgentId(ROOT_SCOPE, 'coder');
+
+function scopedPlan(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'p1',
+    agentId: ROOT_AGENT,
+    agentName: 'A',
+    status: 'pending',
+    scope: ROOT_SCOPE,
+    ...overrides,
+  };
+}
 
 interface MockGate {
   getPlan: ReturnType<typeof vi.fn>;
+  getPendingPlans: ReturnType<typeof vi.fn>;
   approve: ReturnType<typeof vi.fn>;
   reject: ReturnType<typeof vi.fn>;
 }
@@ -55,8 +73,9 @@ interface MockGate {
 function makeMockGate(overrides: Partial<MockGate> = {}): MockGate {
   return {
     getPlan: vi.fn(),
-    approve: vi.fn(),
-    reject: vi.fn(),
+    getPendingPlans: vi.fn().mockReturnValue([]),
+    approve: vi.fn().mockReturnValue(true),
+    reject: vi.fn().mockReturnValue(true),
     ...overrides,
   };
 }
@@ -149,7 +168,7 @@ describe('plan_review behavior', () => {
 
   it('plan 非 pending → DOMAIN_ERROR', async () => {
     const gate = makeMockGate({
-      getPlan: vi.fn().mockReturnValue({ id: 'p1', agentName: 'A', status: 'approved' }),
+      getPlan: vi.fn().mockReturnValue(scopedPlan({ status: 'approved' })),
     });
     getPlanApprovalGateMock.mockReturnValue(gate);
     const handler = await planReviewModule.createHandler();
@@ -167,7 +186,7 @@ describe('plan_review behavior', () => {
 
   it('reject 缺 feedback → INVALID_ARGS', async () => {
     const gate = makeMockGate({
-      getPlan: vi.fn().mockReturnValue({ id: 'p1', agentName: 'A', status: 'pending' }),
+      getPlan: vi.fn().mockReturnValue(scopedPlan()),
     });
     getPlanApprovalGateMock.mockReturnValue(gate);
     const handler = await planReviewModule.createHandler();
@@ -185,7 +204,7 @@ describe('plan_review behavior', () => {
 
   it('happy path approve（含 feedback）调用 gate.approve 并返回 1:1 文案', async () => {
     const gate = makeMockGate({
-      getPlan: vi.fn().mockReturnValue({ id: 'p1', agentName: 'Coder', status: 'pending' }),
+      getPlan: vi.fn().mockReturnValue(scopedPlan({ agentName: 'Coder' })),
     });
     getPlanApprovalGateMock.mockReturnValue(gate);
     const handler = await planReviewModule.createHandler();
@@ -200,14 +219,18 @@ describe('plan_review behavior', () => {
     if (result.ok) {
       expect(result.output).toBe('Plan p1 approved for Coder. Feedback: looks good');
     }
-    expect(gate.approve).toHaveBeenCalledWith('p1', 'looks good');
+    expect(gate.approve).toHaveBeenCalledWith('p1', 'looks good', {
+      sessionId: ROOT_SCOPE.sessionId,
+      runId: ROOT_SCOPE.runId,
+      agentId: ROOT_AGENT,
+    });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'plan_review' });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
   it('happy path reject 调用 gate.reject 并返回 1:1 文案', async () => {
     const gate = makeMockGate({
-      getPlan: vi.fn().mockReturnValue({ id: 'p2', agentName: 'Plan', status: 'pending' }),
+      getPlan: vi.fn().mockReturnValue(scopedPlan({ id: 'p2', agentName: 'Plan' })),
     });
     getPlanApprovalGateMock.mockReturnValue(gate);
     const handler = await planReviewModule.createHandler();
@@ -220,12 +243,82 @@ describe('plan_review behavior', () => {
     if (result.ok) {
       expect(result.output).toBe('Plan p2 rejected for Plan. Reason: too risky');
     }
-    expect(gate.reject).toHaveBeenCalledWith('p2', 'too risky');
+    expect(gate.reject).toHaveBeenCalledWith('p2', 'too risky', {
+      sessionId: ROOT_SCOPE.sessionId,
+      runId: ROOT_SCOPE.runId,
+      agentId: ROOT_AGENT,
+    });
+  });
+
+  it('root caller cannot approve a plan from another session', async () => {
+    const foreignScope: SwarmRunScope = {
+      sessionId: 'foreign-session',
+      runId: ROOT_SCOPE.runId,
+      treeId: ROOT_SCOPE.treeId,
+    };
+    const gate = makeMockGate({
+      getPlan: vi.fn().mockReturnValue(scopedPlan({
+        scope: foreignScope,
+        agentId: createScopedSwarmAgentId(foreignScope, 'coder'),
+      })),
+    });
+    getPlanApprovalGateMock.mockReturnValue(gate);
+
+    const result = await (await planReviewModule.createHandler()).execute(
+      { plan_id: 'p1', action: 'approve' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(gate.approve).not.toHaveBeenCalled();
+  });
+
+  it('root caller fails closed for a legacy plan without session scope', async () => {
+    const gate = makeMockGate({
+      getPlan: vi.fn().mockReturnValue({
+        id: 'legacy-plan',
+        agentId: 'legacy-agent',
+        agentName: 'Legacy',
+        status: 'pending',
+      }),
+    });
+    getPlanApprovalGateMock.mockReturnValue(gate);
+
+    const result = await (await planReviewModule.createHandler()).execute(
+      { plan_id: 'legacy-plan', action: 'approve' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(gate.approve).not.toHaveBeenCalled();
+  });
+
+  it('scoped caller cannot approve the same run id from a foreign tree', async () => {
+    const foreignTreeScope: SwarmRunScope = { ...ROOT_SCOPE, treeId: 'tree-foreign' };
+    const foreignPlan = scopedPlan({
+      scope: foreignTreeScope,
+      agentId: createScopedSwarmAgentId(foreignTreeScope, 'coder'),
+    });
+    const gate = makeMockGate({
+      getPendingPlans: vi.fn().mockReturnValue([foreignPlan]),
+    });
+    getPlanApprovalGateMock.mockReturnValue(gate);
+
+    const result = await (await planReviewModule.createHandler()).execute(
+      { plan_id: 'p1', action: 'approve' },
+      makeCtx({ swarmRunScope: ROOT_SCOPE }),
+      allowAll,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(gate.approve).not.toHaveBeenCalled();
   });
 
   it('未知 action → INVALID_ARGS', async () => {
     const gate = makeMockGate({
-      getPlan: vi.fn().mockReturnValue({ id: 'p1', agentName: 'A', status: 'pending' }),
+      getPlan: vi.fn().mockReturnValue(scopedPlan()),
     });
     getPlanApprovalGateMock.mockReturnValue(gate);
     const handler = await planReviewModule.createHandler();

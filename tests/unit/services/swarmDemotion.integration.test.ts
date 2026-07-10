@@ -16,6 +16,7 @@ import { SwarmLedgerRepository } from '../../../src/host/services/core/repositor
 import { SwarmTraceWriter } from '../../../src/host/agent/swarmTraceWriter';
 import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
 import { shutdownEventBus } from '../../../src/host/services/eventing/bus';
+import { createSwarmTraceStorageId, type SwarmRunScope } from '../../../src/shared/contract/swarm';
 
 function createLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -43,12 +44,13 @@ describe('getSwarmRunDetailPreferLedger（3b 切换降级）', () => {
     });
     writer.install();
     const em = new SwarmEventEmitter();
-    em.started(1);
-    const runId = em.getCurrentRunId()!;
-    em.agentAdded({ id: 'a1', name: 'Coder', role: 'coder' });
-    em.agentUpdated('a1', { status: 'running', startTime: 100, iterations: 1, tokenUsage: { input: 30, output: 15 }, toolCalls: 3 });
-    em.agentCompleted('a1', 'done');
-    em.completed({ total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 500 });
+    const scope: SwarmRunScope = { sessionId: 's1', runId: 'run-demotion', treeId: 'tree-1' };
+    const runId = createSwarmTraceStorageId(scope);
+    em.started(scope, 1);
+    em.agentAdded(scope, { id: 'a1', name: 'Coder', role: 'coder' });
+    em.agentUpdated(scope, 'a1', { status: 'running', startTime: 100, iterations: 1, tokenUsage: { input: 30, output: 15 }, toolCalls: 3 });
+    em.agentCompleted(scope, 'a1', 'done');
+    em.completed(scope, { total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 500 });
     await writer.drain();
     await writer.dispose();
     return runId;

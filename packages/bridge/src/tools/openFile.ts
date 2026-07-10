@@ -10,7 +10,11 @@ export const openFileTool: ToolDefinition = {
   permissionLevel: 'L2_WRITE',
   description: 'Open a file with the OS default application.',
   async run(params, context) {
-    const filePath = resolveSandboxPath(String(params.path ?? ''), context.config.workingDirectories);
+    const filePath = resolveSandboxPath(
+      String(params.path ?? ''),
+      context.config.workingDirectories,
+      String(params.cwd ?? context.cwd),
+    );
     if (process.platform === 'darwin') {
       await execFileAsync('open', [filePath]);
     } else if (process.platform === 'win32') {

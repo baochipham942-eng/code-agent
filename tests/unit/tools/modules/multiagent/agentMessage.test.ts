@@ -90,6 +90,15 @@ describe('agent_message behavior', () => {
     if (result.ok) {
       expect(result.output).toBe('No agents have been spawned in this session.');
     }
+    expect(listSpawnedAgentsMock).toHaveBeenCalledWith({ sessionId: 'test' });
+  });
+
+  it('list 在 Team 内使用完整 run scope', async () => {
+    listSpawnedAgentsMock.mockReturnValue([]);
+    const scope = { sessionId: 'test', runId: 'run-a', treeId: 'tree-a' };
+    const handler = await agentMessageModule.createHandler();
+    await handler.execute({ action: 'list' }, makeCtx({ swarmRunScope: scope }), allowAll);
+    expect(listSpawnedAgentsMock).toHaveBeenCalledWith(scope);
   });
 
   it('list 多个 agent → 含状态图标 + task 截断', async () => {

@@ -9,12 +9,16 @@
 import { SCAFFOLD_PROFILE } from '../../../shared/constants/agent';
 import { getModelScaffoldTier, type ScaffoldTier } from '../../../shared/constants/models';
 
+export type RepairInstructionStyle = 'full' | 'compact';
+
 export interface ScaffoldProfile {
   tier: ScaffoldTier;
   /** false = 关闭 per-turn <thinking> 提示注入（模型自带 reasoning 时为重复税） */
   thinkingInjection: boolean;
   /** goal 审计 nudge 间隔倍率（strong=2 拉长一倍，standard/lite=1 现状） */
   auditNudgeIntervalMultiplier: number;
+  /** 产物修复指令密度（strong=compact 失败项清单+一行指令，standard/lite=full 现状长版） */
+  repairInstructionStyle: RepairInstructionStyle;
 }
 
 /** standard 档 = 现状行为逐字不变（未标注模型、flag 关闭时的唯一出口） */
@@ -22,12 +26,13 @@ const STANDARD_PROFILE: ScaffoldProfile = {
   tier: 'standard',
   thinkingInjection: true,
   auditNudgeIntervalMultiplier: 1,
+  repairInstructionStyle: 'full',
 };
 
 export function resolveScaffoldProfile(tier: ScaffoldTier): ScaffoldProfile {
   switch (tier) {
     case 'strong':
-      return { tier, thinkingInjection: false, auditNudgeIntervalMultiplier: 2 };
+      return { tier, thinkingInjection: false, auditNudgeIntervalMultiplier: 2, repairInstructionStyle: 'compact' };
     // lite 档 P0 与 standard 同行为（加厚不在本期），仅数据标注先行
     case 'lite':
       return { ...STANDARD_PROFILE, tier };

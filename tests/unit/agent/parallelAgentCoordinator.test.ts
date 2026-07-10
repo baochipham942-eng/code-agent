@@ -59,11 +59,12 @@ vi.mock('../../../src/host/scheduler', () => {
   }
   return {
     TaskDAG: MockTaskDAG,
-    getDAGScheduler: () => ({
+    createRunDAGScheduler: () => ({
       execute: (dag: unknown, _ctx: unknown) => {
         schedulerState.capturedDAG = dag;
         return schedulerState.executeMock(dag);
       },
+      setSubagentExecutor: vi.fn(),
     }),
   };
 });
@@ -72,10 +73,17 @@ import {
   AgentFailureCode,
 } from '../../../src/shared/contract/agentFailure';
 import {
+  initParallelAgentCoordinator,
   ParallelAgentCoordinator,
+  ParallelAgentCoordinatorRegistry,
+  resetParallelAgentCoordinators,
   type AgentTask,
   type CoordinatorEvent,
 } from '../../../src/host/agent/parallelAgentCoordinator';
+import {
+  createScopedSwarmAgentId,
+  type SwarmRunScope,
+} from '../../../src/shared/contract/swarm';
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import { aggregateTeamResults } from '../../../src/host/agent/resultAggregator';
 
@@ -178,6 +186,229 @@ describe('ParallelAgentCoordinator', () => {
       expect(injectedExecute).toHaveBeenCalledTimes(1);
       expect(executorState.executeMock).not.toHaveBeenCalled();
     });
+
+    it('locks scoped dependencies after first initialization', () => {
+      const scope: SwarmRunScope = {
+        sessionId: 'session-scoped',
+        runId: 'run-a',
+        treeId: 'tree-a',
+      };
+      const scoped = new ParallelAgentCoordinator({}, scope);
+      const firstExecutor = { execute: vi.fn() };
+      scoped.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scope.sessionId } as never,
+        subagentExecutor: firstExecutor as never,
+        scope,
+      });
+      expect(scoped.isInitialized()).toBe(true);
+
+      expect(() => scoped.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scope.sessionId } as never,
+        subagentExecutor: { execute: vi.fn() } as never,
+        scope,
+      })).toThrow(/already initialized/i);
+      expect(() => scoped.setSubagentExecutor({ execute: vi.fn() } as never)).toThrow(
+        /cannot be replaced/i,
+      );
+    });
+
+    it('keeps the legacy registry bucket usable with an ordinary session context', () => {
+      const legacy = initParallelAgentCoordinator();
+      expect(() => legacy.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: 'legacy-session' } as never,
+      })).not.toThrow();
+      expect(legacy.isInitialized()).toBe(true);
+      resetParallelAgentCoordinators();
+    });
+
+    it('keeps two same-role Team scopes in distinct coordinator containers', () => {
+      const registry = new ParallelAgentCoordinatorRegistry();
+      const scopeA: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-a',
+        treeId: 'same-tree-label',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-b',
+        treeId: 'same-tree-label',
+      };
+      const coordinatorA = registry.getOrCreate(scopeA);
+      const coordinatorB = registry.getOrCreate(scopeB);
+
+      coordinatorA.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scopeA.sessionId } as never,
+        scope: scopeA,
+      });
+      coordinatorB.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scopeB.sessionId } as never,
+        scope: scopeB,
+      });
+      const agentA = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
+      const agentB = createScopedSwarmAgentId(scopeB, 'agent_coder_0');
+      coordinatorA.shareDiscovery('same-role', agentA);
+      coordinatorB.shareDiscovery('same-role', agentB);
+
+      expect(coordinatorA).not.toBe(coordinatorB);
+      expect(registry.size()).toBe(2);
+      expect(coordinatorA.exportSharedContext().findings['same-role']).toBe(agentA);
+      expect(coordinatorB.exportSharedContext().findings['same-role']).toBe(agentB);
+    });
+
+    it('cancels one running same-role Team while the concurrent Team keeps running', async () => {
+      const scopeA: SwarmRunScope = {
+        sessionId: 'session-a',
+        runId: 'run-a',
+        treeId: 'tree-a',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: scopeA.sessionId,
+        runId: 'run-b',
+        treeId: scopeA.treeId,
+      };
+      const registry = new ParallelAgentCoordinatorRegistry();
+      const coordinatorA = registry.getOrCreate(scopeA, {
+        maxParallelTasks: 1,
+        taskTimeout: 5_000,
+        aggregateResults: false,
+      });
+      const coordinatorB = registry.getOrCreate(scopeB, {
+        maxParallelTasks: 1,
+        taskTimeout: 5_000,
+        aggregateResults: false,
+      });
+      let signalA: AbortSignal | undefined;
+      let signalB: AbortSignal | undefined;
+      let resolveB!: (value: {
+        success: boolean;
+        output: string;
+        iterations: number;
+        toolsUsed: string[];
+        cost: number;
+      }) => void;
+      const executorA = {
+        execute: vi.fn((_task: string, _spec: unknown, ctx: { abortSignal: AbortSignal }) => {
+          signalA = ctx.abortSignal;
+          return new Promise((resolve) => {
+            ctx.abortSignal.addEventListener('abort', () => resolve({
+              success: false,
+              output: '',
+              error: 'cancelled-a',
+              iterations: 0,
+              toolsUsed: [],
+              cost: 0,
+            }), { once: true });
+          });
+        }),
+      };
+      const executorB = {
+        execute: vi.fn((_task: string, _spec: unknown, ctx: { abortSignal: AbortSignal }) => {
+          signalB = ctx.abortSignal;
+          return new Promise((resolve) => { resolveB = resolve; });
+        }),
+      };
+      coordinatorA.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scopeA.sessionId, swarmRunScope: scopeA } as never,
+        subagentExecutor: executorA as never,
+        scope: scopeA,
+      });
+      coordinatorB.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scopeB.sessionId, swarmRunScope: scopeB } as never,
+        subagentExecutor: executorB as never,
+        scope: scopeB,
+      });
+      vi.spyOn(coordinatorA, 'persistCheckpoint').mockResolvedValue(undefined);
+      vi.spyOn(coordinatorB, 'persistCheckpoint').mockResolvedValue(undefined);
+      const agentA = createScopedSwarmAgentId(scopeA, 'agent_reviewer_0');
+      const agentB = createScopedSwarmAgentId(scopeB, 'agent_reviewer_0');
+
+      const runA = coordinatorA.executeParallel([makeTask(agentA, { role: 'reviewer' })]);
+      const runB = coordinatorB.executeParallel([makeTask(agentB, { role: 'reviewer' })]);
+      await vi.waitFor(() => {
+        expect(signalA).toBeDefined();
+        expect(signalB).toBeDefined();
+      });
+      expect(getSpawnGuard().get(agentA, scopeA)?.status).toBe('running');
+      expect(getSpawnGuard().get(agentB, scopeB)?.status).toBe('running');
+
+      expect(getSpawnGuard().cancelRun(scopeA, 'user-cancel')).toBe(1);
+      expect(registry.abortRun(scopeA, 'user-cancel')).toBe(true);
+      const resultA = await runA;
+
+      expect(signalA?.aborted).toBe(true);
+      expect(signalB?.aborted).toBe(false);
+      expect(resultA.results[0]).toMatchObject({ taskId: agentA, cancelled: true });
+      expect(coordinatorB.isExecuting()).toBe(true);
+      expect(getSpawnGuard().get(agentB, scopeB)?.status).toBe('running');
+
+      resolveB({ success: true, output: 'completed-b', iterations: 1, toolsUsed: [], cost: 0 });
+      const resultB = await runB;
+      expect(resultB.success).toBe(true);
+      expect(resultB.results[0]).toMatchObject({ taskId: agentB, output: 'completed-b' });
+      expect(signalB?.aborted).toBe(false);
+    });
+
+    it('rejects binding one session/run identity to a second tree', () => {
+      const registry = new ParallelAgentCoordinatorRegistry();
+      registry.getOrCreate({
+        sessionId: 'session-a',
+        runId: 'run-a',
+        treeId: 'tree-a',
+      });
+
+      expect(() => registry.getOrCreate({
+        sessionId: 'session-a',
+        runId: 'run-a',
+        treeId: 'tree-b',
+      })).toThrow(/already bound to tree tree-a/i);
+      expect(() => registry.replace({
+        sessionId: 'session-a',
+        runId: 'run-a',
+        treeId: 'tree-b',
+      })).toThrow(/already bound to tree tree-a/i);
+      expect(registry.size()).toBe(1);
+    });
+
+    it('moves terminal runs to an immutable lightweight snapshot and releases the live coordinator', () => {
+      const registry = new ParallelAgentCoordinatorRegistry();
+      const scope: SwarmRunScope = {
+        sessionId: 'terminal-session',
+        runId: 'terminal-run',
+        treeId: 'terminal-tree',
+      };
+      const live = registry.getOrCreate(scope);
+      live.initialize({
+        ...makeFakeContext(),
+        toolContext: { sessionId: scope.sessionId, swarmRunScope: scope } as never,
+        scope,
+      });
+
+      const terminal = registry.finalize(scope, 'completed', 1234);
+
+      expect(registry.get(scope)).toBeUndefined();
+      expect(registry.getByRun(scope)).toBeUndefined();
+      expect(registry.size()).toBe(0);
+      expect(registry.getCompleted(scope)).toEqual({
+        scope,
+        status: 'completed',
+        completedAt: 1234,
+        tasks: [],
+      });
+      expect(terminal).toEqual(registry.getCompleted(scope));
+      expect(Object.isFrozen(terminal)).toBe(true);
+      expect(Object.isFrozen(terminal?.scope)).toBe(true);
+      expect(Object.isFrozen(terminal?.tasks)).toBe(true);
+      expect(() => registry.getOrCreate(scope)).toThrow(/already terminal/i);
+      expect(() => registry.getOrCreate({ ...scope, treeId: 'foreign-tree' }))
+        .toThrow(/already terminal on tree terminal-tree/i);
+    });
   });
 
   // ==========================================================================
@@ -185,6 +416,35 @@ describe('ParallelAgentCoordinator', () => {
   // ==========================================================================
 
   describe('executeParallel 依赖调度', () => {
+    it('fails fast on reentrant execution instead of clearing the active run state', async () => {
+      let resolveFirst!: (result: {
+        success: boolean;
+        output: string;
+        iterations: number;
+        toolsUsed: string[];
+        cost: number;
+      }) => void;
+      executorState.executeMock.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve;
+      }));
+
+      const first = coordinator.executeParallel([makeTask('same-role-a')]);
+      await vi.waitFor(() => expect(coordinator.isExecuting()).toBe(true));
+      await expect(
+        coordinator.executeParallel([makeTask('same-role-b')]),
+      ).rejects.toThrow(/not reentrant/i);
+
+      resolveFirst({
+        success: true,
+        output: 'done',
+        iterations: 1,
+        toolsUsed: [],
+        cost: 0,
+      });
+      await expect(first).resolves.toMatchObject({ success: true });
+      expect(coordinator.isExecuting()).toBe(false);
+    });
+
     it('无依赖的任务在一组内执行', async () => {
       const result = await coordinator.executeParallel([
         makeTask('a', { role: 'coder' }),
@@ -459,6 +719,125 @@ describe('ParallelAgentCoordinator', () => {
       expect(executorState.executeMock).toHaveBeenCalledTimes(4);
       expect(peak).toBeLessThanOrEqual(2);
       expect(getSpawnGuard().getReservedCount('root-session')).toBe(0);
+    });
+
+    it('slot handoff 后立即取消 run，executor 不启动且同 tree 的另一 run 可继续', async () => {
+      resetSpawnGuard();
+      const guard = getSpawnGuard({ maxAgents: 1 });
+      const scopeA: SwarmRunScope = {
+        sessionId: 'shared-session',
+        runId: 'run-a',
+        treeId: 'shared-tree',
+      };
+      const scopeB: SwarmRunScope = {
+        sessionId: scopeA.sessionId,
+        runId: 'run-b',
+        treeId: scopeA.treeId,
+      };
+      const registry = new ParallelAgentCoordinatorRegistry();
+      const queuedCoordinator = registry.getOrCreate(scopeA, {
+        maxParallelTasks: 1,
+        taskTimeout: 5_000,
+        aggregateResults: false,
+      });
+      queuedCoordinator.initialize({
+        ...makeFakeContext(),
+        toolContext: {
+          sessionId: scopeA.sessionId,
+          currentToolCallId: 'call-run-a',
+          spawnTreeId: scopeA.treeId,
+          swarmRunScope: scopeA,
+        } as never,
+        scope: scopeA,
+      });
+      vi.spyOn(queuedCoordinator, 'persistCheckpoint').mockResolvedValue(undefined);
+      const taskStarts = vi.fn();
+      queuedCoordinator.on('task:start', taskStarts);
+      const holder = await guard.acquireSlot({ scope: scopeB, timeoutMs: 1_000 });
+      const queuedAgentId = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
+
+      const runA = queuedCoordinator.executeParallel([
+        makeTask(queuedAgentId, { role: 'coder' }),
+      ]);
+      await Promise.resolve();
+      expect(executorState.executeMock).not.toHaveBeenCalled();
+      expect(guard.getReservedCount(scopeA)).toBe(1);
+
+      // Deliberately grant the queued lease first. Cancellation happens before
+      // its await continuation, so the coordinator post-lease check must stop it.
+      holder.release();
+      expect(guard.cancelRun(scopeA, 'run_cancelled')).toBe(0);
+      expect(registry.abortRun(scopeA, 'run_cancelled')).toBe(true);
+
+      const resultA = await runA;
+      expect(executorState.executeMock).not.toHaveBeenCalled();
+      expect(taskStarts).not.toHaveBeenCalled();
+      expect(resultA.success).toBe(false);
+      expect(resultA.results[0]).toMatchObject({
+        taskId: queuedAgentId,
+        cancelled: true,
+        failureCode: AgentFailureCode.CancelledByUser,
+      });
+
+      const runBLease = await guard.acquireSlot({ scope: scopeB, timeoutMs: 1_000 });
+      runBLease.release();
+      expect(guard.getReservedCount(scopeB)).toBe(0);
+    });
+
+    it('slot handoff 后 parent signal abort，executor 仍保持零启动', async () => {
+      resetSpawnGuard();
+      const guard = getSpawnGuard({ maxAgents: 1 });
+      const scope: SwarmRunScope = {
+        sessionId: 'parent-session',
+        runId: 'child-run',
+        treeId: 'shared-tree',
+      };
+      const holderScope: SwarmRunScope = {
+        sessionId: scope.sessionId,
+        runId: 'holder-run',
+        treeId: scope.treeId,
+      };
+      const parentAbortController = new AbortController();
+      const scopedCoordinator = new ParallelAgentCoordinator({
+        maxParallelTasks: 1,
+        taskTimeout: 5_000,
+        aggregateResults: false,
+      }, scope);
+      scopedCoordinator.initialize({
+        ...makeFakeContext(),
+        toolContext: {
+          sessionId: scope.sessionId,
+          currentToolCallId: 'call-child-run',
+          spawnTreeId: scope.treeId,
+          swarmRunScope: scope,
+          abortSignal: parentAbortController.signal,
+        } as never,
+        scope,
+      });
+      vi.spyOn(scopedCoordinator, 'persistCheckpoint').mockResolvedValue(undefined);
+      const taskStarts = vi.fn();
+      scopedCoordinator.on('task:start', taskStarts);
+      const holder = await guard.acquireSlot({ scope: holderScope, timeoutMs: 1_000 });
+      const childAgentId = createScopedSwarmAgentId(scope, 'agent_coder_0');
+
+      const childRun = scopedCoordinator.executeParallel([
+        makeTask(childAgentId, { role: 'coder' }),
+      ]);
+      await Promise.resolve();
+      expect(executorState.executeMock).not.toHaveBeenCalled();
+
+      holder.release();
+      parentAbortController.abort('parent_cancelled');
+
+      const result = await childRun;
+      expect(executorState.executeMock).not.toHaveBeenCalled();
+      expect(taskStarts).not.toHaveBeenCalled();
+      expect(result.results[0]).toMatchObject({
+        taskId: childAgentId,
+        cancelled: true,
+      });
+      expect(result.results[0].error).toContain('parent_cancelled');
+      expect(guard.getReservedCount(scope)).toBe(0);
     });
 
   });

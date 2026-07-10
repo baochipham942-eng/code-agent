@@ -26,6 +26,7 @@ import {
   type CloseRunInput,
 } from '../../../src/host/services/core/repositories/FileSwarmTraceRepository';
 import { SWARM_TRACE } from '../../../src/shared/constants/storage';
+import { createSwarmTraceStorageId } from '../../../src/shared/contract/swarm';
 
 // ============================================================================
 // Helpers
@@ -172,6 +173,22 @@ describe('FileSwarmTraceRepository', () => {
     expect(detail!.run.totalAgents).toBe(2);
     expect(detail!.run.status).toBe('running');
     expect(detail!.events.map((e) => e.summary)).toEqual(['new-event']);
+  });
+
+  it('opaque storage id keeps the same logical runId in two sessions as separate files', () => {
+    const scopeA = { sessionId: 'session-a', runId: 'same-run', treeId: 'tree-a' };
+    const scopeB = { sessionId: 'session-b', runId: 'same-run', treeId: 'tree-b' };
+    const storageA = createSwarmTraceStorageId(scopeA);
+    const storageB = createSwarmTraceStorageId(scopeB);
+    repo.startRun(startRun({ id: storageA, sessionId: scopeA.sessionId, startedAt: 1_000 }));
+    repo.startRun(startRun({ id: storageB, sessionId: scopeB.sessionId, startedAt: 2_000 }));
+    repo.appendEvent(appendEvent({ runId: storageA, seq: 0, timestamp: 1_100, agentId: 'agent-a' }));
+    repo.appendEvent(appendEvent({ runId: storageB, seq: 0, timestamp: 2_100, agentId: 'agent-b' }));
+
+    expect(repo.getRunDetail(storageA)?.events.map((event) => event.agentId)).toEqual(['agent-a']);
+    expect(repo.getRunDetail(storageB)?.events.map((event) => event.agentId)).toEqual(['agent-b']);
+    expect(repo.listRuns(10).map((run) => run.id).sort()).toEqual([storageA, storageB].sort());
+    expect(fs.readdirSync(dir).filter((file) => file.endsWith('.jsonl'))).toHaveLength(2);
   });
 
   it('listRuns 按 startedAt 倒序 + limit 截断', () => {

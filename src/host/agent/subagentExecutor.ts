@@ -6,6 +6,7 @@
 import type { ToolCall } from '../../shared/contract';
 import type { ToolContext } from '../tools/types';
 import { ToolExecutor } from '../tools/toolExecutor';
+import { createRunContext } from '../runtime/runContext';
 import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
@@ -349,8 +350,13 @@ export class SubagentExecutor {
     // P0(G5): subagent 工具调用统一收口到 ToolExecutor —— 与主 agent 同一条
     // 权限/校验/审计/缓存管道，不再走 ProtocolToolResolver.execute 旁路。
     // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
+    const { runId: nativeRunId, workspace, workingDirectory } = context.toolContext;
+    const nativeRunContext = nativeRunId && sessionId && workspace
+      ? createRunContext({ runId: nativeRunId, sessionId, workspace, cwd: workingDirectory })
+      : undefined;
     const subagentToolExecutor = new ToolExecutor({
-      workingDirectory: context.toolContext.workingDirectory,
+      workingDirectory: nativeRunContext?.cwd ?? context.toolContext.workingDirectory,
+      runContext: nativeRunContext,
       // 子 agent 判定链用收缩后的 effectiveMode，禁止回读父会话档
       // （父会话开 bypass 时被收缩的子 agent 不能借会话档扩权）。
       permissionModeOverride: subagentEffectiveMode as PermissionMode,
@@ -399,7 +405,11 @@ export class SubagentExecutor {
     }
 
     const subagentContextStore = getSubagentContextStore();
-    const observabilityAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    // Parallel/Team callers provide a stable composite execution identity.
+    // Keep the pipeline's internal random id private to the pipeline registry;
+    // user-facing events, tool calls, approvals and results must stay in the
+    // caller's run scope.
+    const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
     const telemetryCollector = getTelemetryCollector();
     let telemetryTurnNumber = 0;
 
@@ -425,10 +435,10 @@ export class SubagentExecutor {
         context.attachments,
       );
       context.onContextSnapshot?.(latestContextSnapshot);
-      const annotations = buildSnapshotAnnotations(effectiveMessages, observabilityAgentId);
+      const annotations = buildSnapshotAnnotations(effectiveMessages, executionAgentId);
       subagentContextStore.upsert({
         sessionId,
-        agentId: observabilityAgentId,
+        agentId: executionAgentId,
         messages: materializeObservedMessages(effectiveMessages),
         snapshot: latestContextSnapshot,
         annotations,
@@ -446,7 +456,7 @@ export class SubagentExecutor {
     if (parentToolUseId && context.toolContext.emit) {
       context.toolContext.emit('agent_thinking', {
         message: `Subagent [${config.name}] starting...`,
-        agentId: pipelineContext.agentId,
+        agentId: executionAgentId,
         parentToolUseId,
       });
     }
@@ -469,7 +479,7 @@ export class SubagentExecutor {
           iterations: 0,
           tokensUsed: getTotalTokens(),
           cost: getTotalCost(),
-          agentId: agentTask.id,
+          agentId: executionAgentId,
           contextSnapshot: latestContextSnapshot,
           // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
           // 编排层 routeFailureCode 据此降级（'degrade'）而非 parse error 字符串。
@@ -583,7 +593,7 @@ export class SubagentExecutor {
             iterations,
             tokensUsed: getTotalTokens(),
             cost: getTotalCost(),
-            agentId: agentTask.id,
+            agentId: executionAgentId,
             contextSnapshot: latestContextSnapshot,
             cancellationReason,
             failureCode: agentFailureCodeFromCancellationReason(cancellationReason)
@@ -634,7 +644,7 @@ export class SubagentExecutor {
         // Call model
         const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
           sessionId,
-          observabilityAgentId,
+          executionAgentId,
         );
         const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
         const providerMessages = buildInferenceMessages(inferenceMessages);
@@ -697,7 +707,7 @@ export class SubagentExecutor {
             prompt,
             assistantResponse,
             thinking,
-            agentId: observabilityAgentId,
+            agentId: executionAgentId,
             parentTurnId: context.parentToolUseId,
             startTime: telemetryTurnStartedAt,
             modelCall,
@@ -852,12 +862,19 @@ export class SubagentExecutor {
               const risk = gate.assessRisk(toolRequest, context.toolContext.workingDirectory);
               if (risk.level !== 'low') {
                 const approval = await gate.submitForApproval({
-                  agentId: pipelineContext.agentId,
+                  agentId: executionAgentId,
                   agentName: config.name,
                   coordinatorId: config.coordinatorId || 'coordinator',
                   plan: `Tool: ${toolCall.name}\nArgs: ${JSON.stringify(toolCall.arguments)}\nRisk: ${risk.reasons.join(', ')}`,
                   risk,
+                  scope: context.toolContext.swarmRunScope,
+                  signal: effectiveSignal,
                 });
+                if (effectiveSignal.aborted) {
+                  throw new Error(
+                    `Task cancelled after plan approval (${String(effectiveSignal.reason ?? 'parent-cancel')})`,
+                  );
+                }
                 if (!approval.approved) {
                   const error = `Blocked by plan approval: ${approval.feedback || 'rejected'}`;
                   toolResults.push(`Tool ${toolCall.name}: ${error}`);
@@ -909,11 +926,13 @@ export class SubagentExecutor {
                 toolCall.name,
                 toolCall.arguments,
                 {
+                  runId: context.toolContext.runId,
                   sessionId: (context.toolContext as { sessionId?: string }).sessionId,
-                  agentId: pipelineContext.agentId,
+                  agentId: executionAgentId,
                   spawnDepth: context.toolContext.spawnDepth,
                   spawnMaxDepth: context.toolContext.spawnMaxDepth,
                   spawnTreeId: context.toolContext.spawnTreeId,
+                  swarmRunScope: context.toolContext.swarmRunScope,
                   spawnQueueTimeoutMs: context.toolContext.spawnQueueTimeoutMs,
                   spawnParentStartedAt: startTime,
                   spawnParentTimeoutMs: timeout,
@@ -1128,7 +1147,7 @@ export class SubagentExecutor {
         iterations,
         tokensUsed: getTotalTokens(),
         cost: getTotalCost(),
-        agentId: agentTask.id,
+          agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
       };
     } catch (error) {

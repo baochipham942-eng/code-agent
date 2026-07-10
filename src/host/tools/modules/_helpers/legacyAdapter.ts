@@ -67,6 +67,8 @@ export function buildLegacyCtxFromProtocol(
   };
 
   return {
+    runId: ctx.runId,
+    workspace: ctx.workspace,
     workingDirectory: ctx.workingDir,
     requestPermission: (request) => forwardLegacyPermissionRequest(request, canUseTool),
     abortSignal: ctx.abortSignal,
@@ -86,6 +88,7 @@ export function buildLegacyCtxFromProtocol(
     spawnDepth: ctx.spawnDepth,
     spawnMaxDepth: ctx.spawnMaxDepth,
     spawnTreeId: ctx.spawnTreeId,
+    swarmRunScope: ctx.swarmRunScope,
     spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
     spawnParentStartedAt: ctx.spawnParentStartedAt,
     spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,

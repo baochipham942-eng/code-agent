@@ -164,6 +164,7 @@ export class AgentLoop {
       maxIterations: config.maxIterations ?? config.goalContract?.maxTurns ?? getMaxIterations(),
       workingDirectory: config.workingDirectory,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
+      runId: config.runId,
       sessionId: resolvedSessionId,
       agentId: config.agentId,
       agentName: config.agentName,

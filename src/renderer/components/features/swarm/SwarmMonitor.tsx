@@ -72,14 +72,21 @@ const AgentCard: React.FC<{
   onClick: () => void;
 }> = ({ agent, selected, onClick }) => {
   const colors = statusColors[agent.status] || statusColors.pending;
+  const activeSessionId = useSwarmStore((state) => state.activeSessionId);
+  const activeRunId = useSwarmStore((state) => state.activeRunId);
   const duration = agent.startTime
     ? (agent.endTime || Date.now()) - agent.startTime
     : 0;
 
   const handleStop = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!activeSessionId || !activeRunId) return;
     try {
-      await ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: agent.id });
+      await ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, {
+        sessionId: activeSessionId,
+        runId: activeRunId,
+        agentId: agent.id,
+      });
     } catch (err) {
       // eslint-disable-next-line no-console -- user-initiated cancel; surfacing via UI toast is follow-up
       console.warn('[SwarmMonitor] swarm:cancel-agent failed', err);

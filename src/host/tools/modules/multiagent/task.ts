@@ -61,6 +61,10 @@ import {
   AgentFailureCode,
   inferAgentFailureCode,
 } from '../../../../shared/contract/agentFailure';
+import {
+  createScopedSwarmAgentId,
+  getSwarmRunScopeKey,
+} from '../../../../shared/contract/swarm';
 
 // ----------------------------------------------------------------------------
 // 参数验证（与 legacy parseAndValidateTaskParams 对齐）
@@ -182,7 +186,7 @@ export async function executeTask(
   const parentDepth = ctx.spawnDepth ?? 0;
   const childDepth = parentDepth + 1;
   const maxDepth = guard.getMaxDepth(ctx.spawnMaxDepth);
-  const treeId = ctx.spawnTreeId || ctx.sessionId || 'default';
+  const treeId = ctx.swarmRunScope?.treeId || ctx.spawnTreeId || ctx.sessionId || 'default';
   if (!guard.checkDepth(childDepth, ctx.spawnMaxDepth)) {
     return {
       ok: false,
@@ -201,9 +205,12 @@ export async function executeTask(
   onProgress?.({ stage: 'starting', detail: schema.name });
 
   const { subagent_type: subagentType, prompt, description } = validation.params;
+  const dedupNamespace = ctx.swarmRunScope
+    ? getSwarmRunScopeKey(ctx.swarmRunScope)
+    : undefined;
 
   // P1: 任务去重
-  const dupCheck = taskDeduplication.isDuplicate(subagentType, prompt);
+  const dupCheck = taskDeduplication.isDuplicate(subagentType, prompt, dedupNamespace);
   if (dupCheck.isDuplicate) {
     if (dupCheck.cachedResult) {
       onProgress?.({ stage: 'completing', percent: 100 });
@@ -231,7 +238,7 @@ export async function executeTask(
     };
   }
 
-  const taskHash = taskDeduplication.registerTask(subagentType, prompt);
+  const taskHash = taskDeduplication.registerTask(subagentType, prompt, dedupNamespace);
 
   // Opaque service handle: ctx.modelConfig
   if (!ctx.modelConfig) {
@@ -301,24 +308,37 @@ export async function executeTask(
   });
 
   let slotLease: { release: () => void } | undefined;
+  let startedExecution: Promise<unknown> | undefined;
+  let registeredWithGuard = false;
+  const localAgentId = `task_${subagentType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const agentId = ctx.swarmRunScope
+    ? createScopedSwarmAgentId(ctx.swarmRunScope, localAgentId)
+    : localAgentId;
+  const abortController = new AbortController();
+  const abortFromParent = () => {
+    if (!abortController.signal.aborted) {
+      abortController.abort(ctx.abortSignal.reason ?? 'parent-cancel');
+    }
+  };
+  if (ctx.abortSignal.aborted) {
+    abortFromParent();
+  } else {
+    ctx.abortSignal.addEventListener('abort', abortFromParent, { once: true });
+  }
 
   try {
     slotLease = await guard.acquireSlot({
       treeId,
+      scope: ctx.swarmRunScope,
       timeoutMs: ctx.spawnQueueTimeoutMs,
+      signal: abortController.signal,
     });
-    const executor = getSubagentExecutor();
-    const agentId = `task_${subagentType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const abortController = new AbortController();
-    if (ctx.abortSignal.aborted) {
-      abortController.abort(ctx.abortSignal.reason ?? 'parent-cancel');
-    } else {
-      ctx.abortSignal.addEventListener('abort', () => {
-        if (!abortController.signal.aborted) {
-          abortController.abort(ctx.abortSignal.reason ?? 'parent-cancel');
-        }
-      }, { once: true });
+    if (abortController.signal.aborted) {
+      throw new Error(
+        `Task cancelled before agent registration (${String(abortController.signal.reason ?? 'parent-cancel')})`,
+      );
     }
+    const executor = getSubagentExecutor();
 
     // Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext，用 helper 桥
     // TODO Wave 4: SubagentExecutor 升 ProtocolToolContext 后移除 legacyAdapter
@@ -327,6 +347,7 @@ export async function executeTask(
       spawnDepth: childDepth,
       spawnMaxDepth: ctx.spawnMaxDepth,
       spawnTreeId: treeId,
+      swarmRunScope: ctx.swarmRunScope,
       spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
       spawnParentStartedAt: ctx.spawnParentStartedAt,
       spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,
@@ -361,11 +382,14 @@ export async function executeTask(
         executionAgentId: agentId,
       },
     );
+    startedExecution = executionPromise;
     guard.register(agentId, subagentType, prompt, executionPromise, abortController, {
       treeId,
       parentId: ctx.spawnParentAgentId,
       slotAcquired: true,
+      scope: ctx.swarmRunScope,
     });
+    registeredWithGuard = true;
     slotLease = undefined;
     const result = await executionPromise;
 
@@ -463,6 +487,10 @@ Stats:
       requestArgs: args,
     });
   } catch (error) {
+    if (startedExecution && !registeredWithGuard) {
+      abortController.abort('registration-failed');
+      void startedExecution.catch(() => undefined);
+    }
     taskDeduplication.failTask(taskHash);
     // 把完整 stack 落到 logger.error，便于定位 minified bundle 中的真实抛错点。
     // 直接拼到 error 字段会污染 UI；ctx.logger 已收口到结构化日志。
@@ -483,6 +511,7 @@ Stats:
       },
     };
   } finally {
+    ctx.abortSignal.removeEventListener('abort', abortFromParent);
     slotLease?.release();
   }
 }

@@ -27,7 +27,8 @@ const repoRoot = path.resolve(scriptDir, '..');
 
 // 基线上限（2026-07-10 实测存量，见各规则命中清单）。清理后请调小（棘轮只降不升）。
 export const PRESSURE_BASELINE_MAX = 13;
-export const ELLIPSIS_BASELINE_MAX = 92;
+// 92 → 99：修正模板串插值行号占位后，同行插值两侧 segment 合并计数更真实（此前非中文半段被拆开漏计）
+export const ELLIPSIS_BASELINE_MAX = 99;
 
 export const ALLOW_COMMENT = 'copy-allow:';
 
@@ -53,7 +54,7 @@ const REGEX_PRECEDER_RE = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn|\btypeof|\bcase
 
 export function extractStrings(source) {
   const out = [];
-  const stack = []; // 模板串 ${} 插值帧：{ braceDepth, buf, bufLine }
+  const stack = []; // 模板串 ${} 插值帧：{ braceDepth, buf, bufLine, startLine }
   let state = 'code';
   let i = 0;
   let line = 1;
@@ -94,7 +95,10 @@ export function extractStrings(source) {
           if (top.braceDepth === 0) {
             stack.pop();
             state = 'template';
-            buf = top.buf;
+            // 按插值实际消费的换行数补占位，保持后续 segment 行号精确
+            // （同行插值补 0 个换行，跨 N 行插值补 N 个——否则 copy-allow 豁免错行失效/误豁免）；
+            // 同行插值用空格占位，防止插值两侧文案拼接出幻影违规词
+            buf = top.buf + (line > top.startLine ? '\n'.repeat(line - top.startLine) : ' ');
             bufLine = top.bufLine;
             i++;
             continue;
@@ -139,7 +143,7 @@ export function extractStrings(source) {
     }
     if (ch === '`') { out.push({ value: buf, line: bufLine }); state = 'code'; codeTail = ')'; i++; continue; }
     if (ch === '$' && next === '{') {
-      stack.push({ braceDepth: 0, buf: buf + '\n', bufLine }); // \n 占位保持行号对齐近似
+      stack.push({ braceDepth: 0, buf, bufLine, startLine: line });
       buf = '';
       state = 'code';
       codeTail = '('; // 插值开头允许直接跟 regex 字面量

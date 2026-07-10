@@ -71,6 +71,27 @@ describe('copy gate（check-copy.mjs）', () => {
     expect(r.warnings.jargon).toHaveLength(0);
   });
 
+  it('模板串插值不再漂移行号：同行插值行号不 +1、跨行插值按实际换行数补齐、copy-allow 在真实行生效', () => {
+    const INTERP = '$' + '{name}'; // 拼接构造，避免 fixture 源里被本测试文件自身的模板插值吃掉
+    const src = [
+      `const name = 'x';`,
+      `const t1 = ${BT}点这里${INTERP}${PRESSURE}导出${BT};`, // 违例在第 2 行（旧实现误报第 3 行）
+      `// copy-allow: 相邻行的豁免不得误伤第 2 行`,
+      `const t2 = ${BT}跨${'$' + '{'}`,
+      `name`,
+      `}行加载中${DOTS}${BT};`, // 违例在第 6 行（旧实现少补 2 行报第 4 行）
+      `const ok = ${BT}豁免${INTERP}${PRESSURE}体验${BT}; // copy-allow: 同行插值豁免通道`,
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'interp.ts'), src);
+    const r = scanCopy(join(dir, 'interp.ts')) as ScanResult;
+
+    expect(r.violations['pressure-word']).toHaveLength(1);
+    expect(r.violations['pressure-word'][0]).toContain(':2');
+    expect(r.violations.ellipsis).toHaveLength(1);
+    expect(r.violations.ellipsis[0]).toContain(':6');
+  });
+
   it('扫描面为空时 fail loud（门空转自检）', () => {
     expect(() => scanCopy(join(dir, 'no-such-dir'))).toThrow(/自检失败/);
   });

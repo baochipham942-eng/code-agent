@@ -36,12 +36,13 @@ async function emitSwarmEvent(
   ).toBe(true);
 }
 
-async function createCleanSession(page: Page): Promise<string> {
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
-  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
-  await newSessionBtn.click();
-
+async function ensureActiveSession(page: Page): Promise<string> {
   const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  if (!(await activeSession.isVisible())) {
+    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+    await newSessionBtn.click();
+  }
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
 
   const sessionId = await activeSession.getAttribute('data-session-id');
@@ -62,7 +63,7 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
   await ssePromise;
 
   const token = await getAuthToken(page);
-  const sessionId = await createCleanSession(page);
+  const sessionId = await ensureActiveSession(page);
   const base = Date.now();
   const runId = `e2e-discussion-run-${base}`;
   const treeId = `e2e-discussion-tree-${base}`;

@@ -44,12 +44,13 @@ async function getAuthToken(page: Page): Promise<string> {
   return token!;
 }
 
-async function createCleanSession(page: Page): Promise<string> {
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
-  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
-  await newSessionBtn.click();
-
+async function ensureActiveSession(page: Page): Promise<string> {
   const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  if (!(await activeSession.isVisible())) {
+    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+    await newSessionBtn.click();
+  }
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
   const sessionId = await activeSession.getAttribute('data-session-id');
   expect(sessionId, 'active session id missing after creating probe session').toBeTruthy();
@@ -104,7 +105,7 @@ test('PoC: 应用 ready 后 token 已注入, SSE 通道接收 dev 事件', async
   await waitForAppReady(page);
 
   const token = await getAuthToken(page);
-  const sessionId = await createCleanSession(page);
+  const sessionId = await ensureActiveSession(page);
   const base = Date.now();
   const runId = `e2e-probe-run-${base}`;
   const treeId = `e2e-probe-tree-${base}`;

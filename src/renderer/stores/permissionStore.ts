@@ -5,10 +5,6 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { invokeDomain } from '../services/ipcService';
-
-// 全局权限模式
-export type PermissionMode = 'default' | 'full_access';
 
 // 权限类型
 export type PermissionType =
@@ -51,10 +47,6 @@ interface PermissionMemory {
 }
 
 interface PermissionState {
-  // 全局权限模式
-  globalMode: PermissionMode;
-  setGlobalMode: (mode: PermissionMode) => void;
-
   memory: PermissionMemory;
 
   // 检查是否有记忆的决定
@@ -115,15 +107,6 @@ function getMemoryKey(request: PermissionRequestForMemory): string {
 export const usePermissionStore = create<PermissionState>()(
   persist(
     (set, get) => ({
-      globalMode: 'default' as PermissionMode,
-
-      setGlobalMode: (mode: PermissionMode) => {
-        set({ globalMode: mode });
-        invokeDomain('domain:agent', 'setPermissionMode', { mode }).catch(() => {
-          // Silently ignore if agent not initialized yet
-        });
-      },
-
       memory: {
         session: new Map(),
         persistent: {},
@@ -195,9 +178,8 @@ export const usePermissionStore = create<PermissionState>()(
     }),
     {
       name: 'permission-memory',
-      // 持久化 persistent 部分和 globalMode
+      // 持久化 persistent 部分（权限档真源在 host PermissionModeManager，不在此 store）
       partialize: (state) => ({
-        globalMode: state.globalMode,
         memory: {
           session: new Map(), // 会话记忆不持久化
           persistent: state.memory.persistent,

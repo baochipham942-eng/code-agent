@@ -468,7 +468,7 @@ export class ConfigService implements IReadConfigService {
 
         // Restore permissionMode
         if (keychainSettings.permissionMode && typeof keychainSettings.permissionMode === 'string') {
-          const validModes = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
+          const validModes = ['default', 'readOnly', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
           if (validModes.includes(keychainSettings.permissionMode)) {
             this.settings.permissions.permissionMode = keychainSettings.permissionMode as AppSettings['permissions']['permissionMode'];
             logger.info('Restored permissionMode from Keychain:', keychainSettings.permissionMode);

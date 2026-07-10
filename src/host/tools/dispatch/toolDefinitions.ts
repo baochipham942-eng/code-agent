@@ -66,6 +66,8 @@ function schemaToDefinition(
     inputSchema: schema.inputSchema,
     requiresPermission: schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
+    // readOnly 探索档判定依赖：network 档只读工具直通，非只读强制确认
+    readOnly: schema.readOnly === true,
   };
 }
 

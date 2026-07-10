@@ -188,6 +188,12 @@ export const enSettingsCore = {
             operationScope: 'Ask before writes / commands / network',
             riskLabel: 'Low risk',
           },
+          readOnly: {
+            title: 'Read-only explore',
+            description: 'Reads, listing, search, and read-only web access pass through; every write, command execution, and mutating network call asks, allowlists included (environments without a confirmation UI deny instead).',
+            operationScope: 'Reads pass, writes / commands / mutating network always ask',
+            riskLabel: 'Low risk',
+          },
           acceptEdits: {
             title: 'Auto-edit',
             description: 'Accept file edits automatically while still confirming commands and external access.',
@@ -231,11 +237,11 @@ export const enSettingsCore = {
         controlPlane: {
           title: 'Permission control plane',
           description: 'Most daily checks only need the current mode, risk level, inheritance policy, and user rule count.',
-          summaryCurrentMode: 'Current mode',
+          summaryCurrentMode: 'New-session default',
           summaryRiskLevel: 'Risk level',
           summarySubAgent: 'Sub-agent',
           summaryUserRules: 'User rules',
-          mainAgentMode: 'Main Agent permission mode',
+          mainAgentMode: 'Default tier for new sessions',
           status: 'Status',
           permissionBehavior: 'Permission behavior',
           risk: 'Risk',

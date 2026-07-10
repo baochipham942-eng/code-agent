@@ -58,16 +58,23 @@ function mapSdkToolToMCPTool(serverName: string, tool: Tool): MCPTool {
 
 function mapMCPAnnotationsToPermission(
   annotations?: MCPToolAnnotations,
-): Pick<ToolDefinition, 'requiresPermission' | 'permissionLevel'> {
+): Pick<ToolDefinition, 'requiresPermission' | 'permissionLevel' | 'readOnly'> {
   if (annotations?.destructiveHint) {
-    return { requiresPermission: true, permissionLevel: 'execute' };
+    return { requiresPermission: true, permissionLevel: 'execute', readOnly: false };
   }
 
   if (annotations?.readOnlyHint && !annotations.openWorldHint) {
-    return { requiresPermission: false, permissionLevel: 'read' };
+    return { requiresPermission: false, permissionLevel: 'read', readOnly: true };
   }
 
-  return { requiresPermission: true, permissionLevel: 'network' };
+  // 兜底 network 档：多数 MCP server 不写 annotations，无法证明只读。
+  // readOnly 只在显式 readOnlyHint 时为真——readOnly 探索档据此区分
+  // 「只读联网（放行）」与「潜在变更类 MCP 工具（强制确认）」。
+  return {
+    requiresPermission: true,
+    permissionLevel: 'network',
+    readOnly: annotations?.readOnlyHint === true,
+  };
 }
 
 /**
@@ -95,12 +102,12 @@ const CUA_READONLY_TOOLS = new Set<string>([
 
 function mapCuaToolPermission(
   toolName: string,
-): Pick<ToolDefinition, 'requiresPermission' | 'permissionLevel'> {
+): Pick<ToolDefinition, 'requiresPermission' | 'permissionLevel' | 'readOnly'> {
   if (CUA_READONLY_TOOLS.has(toolName)) {
-    return { requiresPermission: false, permissionLevel: 'read' };
+    return { requiresPermission: false, permissionLevel: 'read', readOnly: true };
   }
   // 其余为桌面动作（click/type_text/set_value/launch_app/drag/hotkey/…）→ 需审批
-  return { requiresPermission: true, permissionLevel: 'execute' };
+  return { requiresPermission: true, permissionLevel: 'execute', readOnly: false };
 }
 
 function redactLogArgs(value: unknown): unknown {

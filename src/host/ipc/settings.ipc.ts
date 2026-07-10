@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { app } from '../platform';
+import { app, broadcastToRenderer } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '../../shared/contract';
 import type { ServiceApiKey } from '../../shared/contract/configService';
@@ -760,15 +760,16 @@ export function registerSettingsHandlers(
   ipcMain.handle(IPC_CHANNELS.PERMISSION_SET_MODE, async (_, mode: string) => {
     assertAdminAccess('Permission mode');
     const { getPermissionModeManager } = await import('../permissions/modes');
-    const validModes = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
+    const validModes = ['default', 'readOnly', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
     if (!validModes.includes(mode)) {
       return false;
     }
     // bypassPermissions 需要用户审批
     const approved = mode === 'bypassPermissions';
-    const result = getPermissionModeManager().setMode(mode as 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
+    const result = getPermissionModeManager().setMode(mode as 'default' | 'readOnly' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
 
-    // 持久化权限模式到 config（重启/重装后恢复）
+    // 持久化权限模式到 config（重启/重装后恢复）——直接写 settings 并广播，
+    // 不经任何 pending 中转 state（单一真源纪律）。
     if (result) {
       const configService = getConfigService();
       if (configService) {
@@ -776,6 +777,7 @@ export function registerSettingsHandlers(
           permissions: { permissionMode: mode as AppSettings['permissions']['permissionMode'] },
         } as Partial<AppSettings>);
       }
+      broadcastToRenderer(IPC_CHANNELS.PERMISSION_MODE_CHANGED, { scope: 'default', mode });
     }
 
     return result;

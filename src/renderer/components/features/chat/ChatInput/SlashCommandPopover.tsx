@@ -17,7 +17,6 @@ import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSkillStore } from '../../../../stores/skillStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useModeStore } from '../../../../stores/modeStore';
-import { usePermissionStore } from '../../../../stores/permissionStore';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
@@ -194,7 +193,14 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
   const setInteractionMode = useModeStore((s) => s.setInteractionMode);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
-  const setGlobalMode = usePermissionStore((s) => s.setGlobalMode);
+  // 会话权限档：真源在 host PermissionModeManager，通过 domain:agent 读写（无本地档位 state）
+  const setSessionPermissionTier = (mode: 'default' | 'bypassPermissions') => {
+    invokeDomain(IPC_DOMAINS.AGENT, 'setSessionPermissionMode', {
+      sessionId: useSessionStore.getState().currentSessionId,
+      mode,
+      approved: mode === 'bypassPermissions',
+    }).catch(() => { /* agent 未初始化时忽略 */ });
+  };
   const availableSkills = useSkillStore((s) => s.availableSkills);
   const mountedSkills = useSkillStore((s) => s.mountedSkills);
   const fetchAvailableSkills = useSkillStore((s) => s.fetchAvailableSkills);
@@ -464,14 +470,14 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sc.default.label,
       description: sc.default.description,
       icon: <Lock className="w-4 h-4" />,
-      action: () => setGlobalMode('default'),
+      action: () => setSessionPermissionTier('default'),
     },
     {
       id: 'fullaccess',
       label: sc.fullaccess.label,
       description: sc.fullaccess.description,
       icon: <LockOpen className="w-4 h-4" />,
-      action: () => setGlobalMode('full_access'),
+      action: () => setSessionPermissionTier('bypassPermissions'),
     },
     // --- 诊断命令（GUI 实现）---
     // 这些命令的 CLI handler 依赖 main 进程模块/agent 实例，在 renderer 跑会报错或吐兜底。
@@ -581,7 +587,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.permissions.description,
       icon: <Lock className="w-4 h-4" />,
       action: async () => {
-        const mode = usePermissionStore.getState().globalMode;
+        const mode = await invokeDomain<{ mode?: string }>(IPC_DOMAINS.AGENT, 'getSessionPermissionMode', {
+          sessionId: useSessionStore.getState().currentSessionId,
+        }).then((d) => d?.mode ?? 'default').catch(() => 'default');
         const lines: string[] = ['Permissions', `  Mode:     ${mode}`, ''];
         try {
           const ep = await invokeDomain<{ rules: Array<{ pattern: string[]; decision: string; source: string }> }>(IPC_DOMAINS.DIAGNOSTICS, 'execPolicy');
@@ -666,7 +674,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     getShortcutLabel, sc,
     setShowSettings, openSettingsTab, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
-    setInteractionMode, setEffortLevel, setGlobalMode,
+    setInteractionMode, setEffortLevel,
   ]);
 
   // Merge registry commands (gui surface) with GUI-only commands

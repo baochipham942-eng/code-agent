@@ -61,6 +61,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.AGENT]: [
     'cancel',
+    'getSessionPermissionMode',
     'getTree',
     'getWorktreeReview',
     'interrupt',
@@ -71,6 +72,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setEffortLevel',
     'setInteractionMode',
     'setPermissionMode',
+    'setSessionPermissionMode',
     'setThinkingEnabled',
   ],
   [IPC_DOMAINS.AGENT_ENGINE]: [

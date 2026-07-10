@@ -29,11 +29,11 @@ import {
 import { redactSecrets } from '../security/secretRedaction';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
-import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { type ClassificationResult } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import {
   getWriteIsolationManager,
   getWriteIsolationScope,
@@ -50,6 +50,13 @@ import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
+import { type PermissionMode } from '../permissions/modes';
+import {
+  readOnlyDenialError,
+  readOnlyForcesConfirmationFor,
+  resolveSessionPermissionMode,
+  resolveToolPermissionClassification,
+} from './toolPermissionClassification';
 import { randomUUID } from 'node:crypto';
 import {
   isRunPathInsideWorkspace,
@@ -77,6 +84,11 @@ const logger = createLogger('ToolExecutor');
 export interface ToolExecutorConfig {
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
+  /**
+   * 权限档覆盖：subagent 传父子收缩后的 effectiveMode，禁止回读父会话档
+   * （否则父会话开 bypass 时被收缩的子 agent 会借会话档扩权）。主 agent 不传。
+   */
+  permissionModeOverride?: PermissionMode;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
@@ -202,10 +214,12 @@ export class ToolExecutor {
   private readonly runContext?: RunContext;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private auditEnabled = true;
+  private permissionModeOverride?: PermissionMode;
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
     this.workingDirectory = nodePath.resolve(config.workingDirectory);
+    this.permissionModeOverride = config.permissionModeOverride;
     this.runContext = config.runContext;
     this.dispatchTool = config.dispatchTool;
     if (this.runContext && this.workingDirectory !== this.runContext.cwd) {
@@ -220,6 +234,8 @@ export class ToolExecutor {
     const executor = new ToolExecutor({
       requestPermission: this.requestPermission,
       workingDirectory: runContext.cwd,
+      // run-scoped 派生必须继承收缩档，否则子 agent 的 effectiveMode 在此丢失、扩权洞重开
+      permissionModeOverride: this.permissionModeOverride,
       runContext,
       dispatchTool: dispatchTool ?? this.dispatchTool,
     });
@@ -538,6 +554,10 @@ export class ToolExecutor {
       ? options.skillToolBoundary
       : undefined;
 
+    // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
+    const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
+    const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
+
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
@@ -592,49 +612,26 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (policyForcesConfirmation || boundaryViolation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       try {
-        // Policy always_confirm / skill 边界违规命中时跳过 classifier，直接进用户审批
-        let classification: ClassificationResult;
-        if (policyForcesConfirmation) {
-          classification = {
-            decision: 'ask',
-            reason: `Tool "${executionToolName}" requires confirmation by policy (tools.always_confirm)`,
-            confidence: 1,
-            cached: false,
-            traceStep: createTraceStep(
-              'policy_enforcer',
-              'tools.always_confirm',
-              'ask',
-              'Tool requires confirmation by policy',
-              permStartTime,
-            ),
-          };
-        } else if (boundaryViolation) {
-          classification = {
-            decision: 'ask',
-            reason: `Tool "${executionToolName}" is outside skill "${boundaryViolation.skillName}" allowed-tools boundary (${boundaryViolation.allowedTools.join(', ')})`,
-            confidence: 1,
-            cached: false,
-            traceStep: createTraceStep(
-              'permission_classifier',
-              'skill.allowed-tools-boundary',
-              'ask',
-              `Outside skill "${boundaryViolation.skillName}" tool boundary`,
-              permStartTime,
-            ),
-          };
-        } else {
-          classification = await classifyPermission(policyToolName, params, {
-            workingDirectory: resolveCanonicalRunPath(this.executionCwd),
-            workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
-            permissionLevel: toolDef.permissionLevel,
-          });
-        }
+        // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
+        const classification: ClassificationResult = await resolveToolPermissionClassification({
+          executionToolName,
+          policyToolName,
+          params,
+          policyForcesConfirmation,
+          boundaryViolation,
+          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+          workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
+          permissionLevel: toolDef.permissionLevel,
+          permStartTime,
+          readOnlyForcesConfirmation,
+          sessionPermissionMode,
+        });
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
             tool: executionToolName,
@@ -696,6 +693,14 @@ export class ToolExecutor {
       if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(toolDef, params);
       permissionRequest.sessionId = effectiveSessionId;
+
+      // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的
+      // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
+      // always/session 权限记忆）全部对 forceConfirm 让路——只读探索档下
+      // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
+      if (readOnlyForcesConfirmation) {
+        permissionRequest.forceConfirm = true;
+      }
 
       // Attach decision trace to permission request
       permissionRequest.decisionTrace = traceBuilder.build('ask');
@@ -803,9 +808,12 @@ export class ToolExecutor {
         ).catch(() => {});
         recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime);
 
+        // 只读探索档（审出 MED）：无审批 UI 的运行环境（web 聊天 /api/agent/run 走
+        // CLI 非交互 handler、CLI run/batch）对 forceConfirm 请求自动拒绝（fail-closed）。
+        // 泛用的 "Permission denied by user" 在该路径是误导——给模型可转述的真实原因与出路。
         return {
           success: false,
-          error: 'Permission denied by user',
+          error: readOnlyForcesConfirmation ? readOnlyDenialError(executionToolName) : 'Permission denied by user',
         };
       }
       } // end needsUserApproval

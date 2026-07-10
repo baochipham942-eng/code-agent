@@ -61,7 +61,22 @@
 **F5a（已完成）**：纠正了原判断——`tests/eval` + `tests/eval-harness` 共 6 文件 40 测试**全 hermetic、2.56s 跑完**（注入 fetch mock / 合成错误 / example.com fixture / mock 掉 grader），今天就能进门。已加进 `eval-harness-gate.yml` 的 vitest run + 触发路径（含 `packages/eval-harness/**`）。堵住"grader/harness 改动无 CI 兜底"的缺口。
 > 注：本地全量跑会看到 `artifactRunnableAdapter` / `assertionEngine.artifactRunnable` 两个**真浏览器**测试假红（好标本判 not_runnable=浏览器起不来），这俩**本就在门内、与本改动无关**，是已知本地浏览器争用问题。
 
-**F1 Part 2（判定：现在不必做）**：核实发现整条 harness 判分路径（`packages/eval-harness` → `toCanonicalEvalHarnessResult` → `persistEvalHarnessResult`）**是 dormant 的——零生产调用方、零 src 导入，只有测试碰它**。Part 1 已让"如实标 llm_judge"永久生效，故 harness 一旦被激活，LLM 分自动被正确标注+显示为未校准。Part 2 的 enforcement（gate 掉未校准 judge 分）只在 harness 真上线、且驱动 compare/promote 决策、且有校准数据时才有回报——三者现在都不成立（连 `CalibrationPair` producer 都没有）。故 **Part 2 与"把 harness 接进真实 eval 管线"一起做**，届时约 1 天工。现在做 = 给死代码建 enforcement 闸 = 过早。
+**F1 Part 2（判定：现在不必做）**：核实发现整条 harness 判分路径（`packages/eval-harness` → `toCanonicalEvalHarnessResult` → `persistEvalHarnessResult`）**当前零生产调用方、零 src 导入，只有测试碰它**。注意"dormant"≠"跑不了"——代码是好的，随时可接一行调用真跑；只是当下没人调。
+
+**触发口径（看的是"数字被当判决"，不是"能不能跑"）**：
+- harness 跑完，人**自己读**结果 → Part 1 已兜住：输出标 `llm_judge` 且无校准=处处显示"未校准"，读的人一眼知道别当能力铁证，不会被静默骗。
+- harness 的数字被**喂进自动决策 / 被没跑的人当权威引用**（发版闸 / promote / 看板"能力 82%"）→ 这才是 Part 2 该上的时刻。风险不用等"有人写 CI 集成"，**你手动跑一次、据此下"模型变强了"的结论那刻，数字就承重了**。
+- 但"现在"仍不做的硬理由：① 当下没人跑=潜在暴露非活跃暴露；② **今天想做也做不出有用的 Part 2——gate 需要"这裁判可信吗"的信号，而产生它要有金标数据，`CalibrationPair` producer + 金标桶全仓不存在**，硬建只会永远回答"0 可信 case"。真正成本是建金标，只在你决定要靠裁判分下判断时才值得付。
+
+**Part 2 施工包（激活那天连着做，≈1 天 + 金标内容成本）**：
+1. `CanonicalEvalRun` 契约加 `judgeCalibration?: CalibrationReport`
+2. **金标 producer（三档，按可信度从高到低取）**：
+   - **确定性断言 control 桶**（`sampleSplits.ts` 已设计但未接线）：断言结果直接当金标，**零人力、零模型、客观**——主力起点。
+   - **多模扩量（仅限有客观答案的题）**：GAIA / 编码 / 事实类，真值锚是客观答案，多模只做"提取/匹配答案"的打标加速器，**不是真值来源**。
+   - **人工抽检**：只花在主观 / 多模打架的少数难例。
+   - ⚠️ 铁律：**开放式/主观判分绝不能拿"多模共识"当金标**——那量的是模型间一致性不是准确性（两 judge 一起错也高一致），是把 F6/F7 的病换位置再犯。多模可用的唯一前提是锚在可验证真源上（同 model-arena "判分不靠自报靠核实真源"）。
+3. `computeCalibration(pairs)` → 挂 `run.judgeCalibration`
+4. **headline gate（A/B 决策）**：A=未校准 llm_judge 分不进 passRate/averageScore（破坏性，连累 promote 闸）；**B（推荐）=headline 照旧，另出并列 `trustedPassRate`（只算校准达标 judge 分+确定性分），非破坏**。
 
 **F5b（backlog）**：WebSearch 真答案 fixture 需带 ground-truth 的题库 + 非阻塞 nightly（真网必 flaky），内容工程单独排期。
 

@@ -188,6 +188,12 @@ export const zhSettingsCore = {
             operationScope: '写入 / 命令 / 网络前询问',
             riskLabel: '低风险',
           },
+          readOnly: {
+            title: '只读探索',
+            description: '读取、列目录、搜索直接通过；所有写入和命令执行都需要确认，白名单也不放行。',
+            operationScope: '只读直通，写入 / 命令必问',
+            riskLabel: '低风险',
+          },
           acceptEdits: {
             title: '自动编辑',
             description: '自动接受文件编辑，命令和外部访问仍保留确认。',

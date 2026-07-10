@@ -760,13 +760,13 @@ export function registerSettingsHandlers(
   ipcMain.handle(IPC_CHANNELS.PERMISSION_SET_MODE, async (_, mode: string) => {
     assertAdminAccess('Permission mode');
     const { getPermissionModeManager } = await import('../permissions/modes');
-    const validModes = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
+    const validModes = ['default', 'readOnly', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
     if (!validModes.includes(mode)) {
       return false;
     }
     // bypassPermissions 需要用户审批
     const approved = mode === 'bypassPermissions';
-    const result = getPermissionModeManager().setMode(mode as 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
+    const result = getPermissionModeManager().setMode(mode as 'default' | 'readOnly' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
 
     // 持久化权限模式到 config（重启/重装后恢复）
     if (result) {

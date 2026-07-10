@@ -48,6 +48,7 @@ import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard, commandMatchesScopedPrefix } from './neoTagToolGuard';
+import { getPermissionModeManager } from '../permissions/modes';
 import { randomUUID } from 'node:crypto';
 
 const logger = createLogger('ToolExecutor');
@@ -447,6 +448,14 @@ export class ToolExecutor {
       ? options.skillToolBoundary
       : undefined;
 
+    // B1 第 4 档「只读探索」（readOnly）：读/列/搜类工具直通，写文件和执行命令
+    // 一律走用户确认——预授权 / 安全命令白名单 / lenient / classifier 自动放行全部失效，
+    // 但 classifier 的 deny（危险命令）语义保留（只降级 approve→ask，不放宽 deny）。
+    const readOnlyForcesConfirmation =
+      toolDef.requiresPermission
+      && (toolDef.permissionLevel === 'write' || toolDef.permissionLevel === 'execute')
+      && getPermissionModeManager().getModeForSession(options.sessionId) === 'readOnly';
+
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
@@ -499,7 +508,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (policyForcesConfirmation || boundaryViolation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
@@ -540,6 +549,18 @@ export class ToolExecutor {
             workingDirectory: this.workingDirectory,
             permissionLevel: toolDef.permissionLevel,
           });
+          // 只读探索档：classifier 的 approve 一律降级为用户确认；deny 保持原判
+          //（危险命令在 readOnly 下不能弱化成"确认后可执行"以外的更宽结果）。
+          if (readOnlyForcesConfirmation && classification.decision === 'approve') {
+            const reason = `只读探索模式：${toolDef.permissionLevel === 'write' ? '写入' : '执行'}操作需要用户确认`;
+            classification = {
+              decision: 'ask',
+              reason,
+              confidence: 1,
+              cached: false,
+              traceStep: createTraceStep('permission_classifier', 'readonly_explore_mode', 'ask', reason, permStartTime),
+            };
+          }
         }
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {

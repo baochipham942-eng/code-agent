@@ -188,6 +188,12 @@ export const enSettingsCore = {
             operationScope: 'Ask before writes / commands / network',
             riskLabel: 'Low risk',
           },
+          readOnly: {
+            title: 'Read-only explore',
+            description: 'Reads, listing, and search pass through; every write and command execution asks, allowlists included.',
+            operationScope: 'Reads pass, writes / commands always ask',
+            riskLabel: 'Low risk',
+          },
           acceptEdits: {
             title: 'Auto-edit',
             description: 'Accept file edits automatically while still confirming commands and external access.',

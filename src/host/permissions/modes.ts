@@ -15,6 +15,7 @@ const logger = createLogger('PermissionModes');
  */
 export type PermissionMode =
   | 'default'           // Standard interactive prompting
+  | 'readOnly'          // Read-only explore - reads pass, every write/exec prompts (no auto-approve shortcuts)
   | 'acceptEdits'       // Auto-accept file edits, prompt for others
   | 'dontAsk'           // Auto-deny risky operations, allow safe ones
   | 'bypassPermissions' // Skip all permission checks (dangerous)
@@ -87,6 +88,23 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
       write: 'prompt',
       execute: 'prompt',
       network: 'prompt',
+      dangerous: 'prompt',
+      admin: 'deny',
+    },
+    allowsExecution: true,
+    allowsWrites: true,
+    requiresApproval: false,
+    riskLevel: 'low',
+  },
+
+  readOnly: {
+    name: 'readOnly',
+    description: 'Read-only explore - reads pass through, all writes and command executions prompt',
+    defaults: {
+      read: 'allow',
+      write: 'prompt',
+      execute: 'prompt',
+      network: 'allow',
       dangerous: 'prompt',
       admin: 'deny',
     },
@@ -197,6 +215,9 @@ export class PermissionModeManager {
   private parentMode: PermissionMode | null = null;
   private modeHistory: Array<{ mode: PermissionMode; timestamp: number }> = [];
   private customOverrides: Map<string, PermissionAction> = new Map();
+  // 会话级权限档（B1 收口）：key=sessionId。无条目的会话回退全局 currentMode。
+  // ponytail: 进程内 Map 不做淘汰，条目是短字符串，重启即清；量级成问题再挂会话销毁钩子。
+  private sessionModes: Map<string, PermissionMode> = new Map();
 
   constructor(initialMode: PermissionMode = 'default') {
     this.currentMode = initialMode;
@@ -243,6 +264,33 @@ export class PermissionModeManager {
       riskLevel: config.riskLevel,
     });
 
+    return true;
+  }
+
+  /**
+   * 解析某个会话的有效权限档：会话级覆盖优先，无覆盖回退全局档。
+   * 判定链（toolExecutor / subagent / bash 沙箱）统一走这里取档。
+   */
+  getModeForSession(sessionId?: string): PermissionMode {
+    if (sessionId) {
+      const sessionMode = this.sessionModes.get(sessionId);
+      if (sessionMode) return sessionMode;
+    }
+    return this.currentMode;
+  }
+
+  /**
+   * 设置会话级权限档（会话内切换器入口）。与全局 setMode 同一审批语义。
+   */
+  setSessionMode(sessionId: string, mode: PermissionMode, approved = false): boolean {
+    const config = MODE_CONFIGS[mode];
+    if (!config) return false;
+    if (config.requiresApproval && !approved) {
+      logger.warn('Session mode requires user approval', { sessionId, mode });
+      return false;
+    }
+    this.sessionModes.set(sessionId, mode);
+    logger.info('Session permission mode changed', { sessionId, mode, riskLevel: config.riskLevel });
     return true;
   }
 

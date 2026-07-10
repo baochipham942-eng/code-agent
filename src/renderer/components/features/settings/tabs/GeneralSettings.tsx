@@ -34,7 +34,7 @@ import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 
-export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
+export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
 
 export type PermissionRiskLevel = 'low' | 'medium' | 'high';
@@ -86,11 +86,12 @@ export interface PermissionRuleSummary {
   highestPriority: string;
 }
 
-const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions'];
+const PERMISSION_MODES: PermissionMode[] = ['default', 'readOnly', 'acceptEdits', 'bypassPermissions'];
 const INHERITANCE_MODES: InheritanceMode[] = ['strict-inherit', 'child-narrow', 'independent'];
 
 const PERMISSION_MODE_TEXT_KEYS: Record<PermissionMode, keyof GeneralSettingsText['permissionModes']> = {
   default: 'default',
+  readOnly: 'readOnly',
   acceptEdits: 'acceptEdits',
   bypassPermissions: 'bypassPermissions',
 };
@@ -104,6 +105,10 @@ const INHERITANCE_MODE_TEXT_KEYS: Record<InheritanceMode, keyof GeneralSettingsT
 const PERMISSION_MODE_METADATA: PermissionModeBaseMetadata[] = [
   {
     id: 'default',
+    riskLevel: 'low',
+  },
+  {
+    id: 'readOnly',
     riskLevel: 'low',
   },
   {
@@ -186,6 +191,7 @@ function isInheritanceMode(value: string): value is InheritanceMode {
 }
 
 function getPermissionIcon(mode: PermissionMode): React.ReactNode {
+  if (mode === 'readOnly') return <ShieldCheck className="h-4 w-4" />;
   if (mode === 'acceptEdits') return <ShieldAlert className="h-4 w-4" />;
   if (mode === 'bypassPermissions') return <ShieldOff className="h-4 w-4" />;
   return <Shield className="h-4 w-4" />;

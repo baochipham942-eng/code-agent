@@ -164,8 +164,8 @@ export interface AppSettings {
     autoApprove: Record<PermissionLevel, boolean>;
     blockedCommands: string[];
     devModeAutoApprove: boolean; // Development mode: auto-approve all permissions
-    /** 权限模式，持久化存储（重启/重装后恢复） */
-    permissionMode?: 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate';
+    /** 权限模式（新会话默认权限档），持久化存储（重启/重装后恢复） */
+    permissionMode?: 'default' | 'readOnly' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate';
     /**
      * 子 agent 权限继承策略（M2-Task 5 partial — childContext only）
      * - strict-inherit（默认）：子 = 父真子集；tools ∩、deny ∪、mode 取更严，永不扩张

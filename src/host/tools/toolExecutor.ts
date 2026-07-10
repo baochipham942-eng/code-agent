@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */
+ 
 // ============================================================================
 // Tool Executor - Executes tools with permission handling
 // ============================================================================
@@ -16,7 +16,6 @@ import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
   getAuditLogger,
-  getLogMasker,
   maskSensitiveData,
   isKnownSafeCommand,
   validateCommand,
@@ -27,7 +26,7 @@ import {
   type PolicyCheckResult,
   type ValidationResult,
 } from '../security';
-import { isSensitiveLogKey, redactSecrets } from '../security/secretRedaction';
+import { redactSecrets } from '../security/secretRedaction';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
@@ -46,17 +45,23 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
-import { isBashToolName, normalizeToolName, sameToolName } from './toolNames';
+import { isBashToolName, normalizeToolName } from './toolNames';
 import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
 import { recordDecision } from './toolExecutorDecisionTrace';
-import { checkNeoTagToolGuard, commandMatchesScopedPrefix } from './neoTagToolGuard';
+import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import { randomUUID } from 'node:crypto';
 import {
   isRunPathInsideWorkspace,
   resolveCanonicalRunPath,
   type RunContext,
 } from '../runtime/runContext';
+import {
+  isDangerousCommand,
+  sanitizeToolParams,
+  toolMatchesPatternSet,
+  truncateToolOutput,
+} from './toolExecutorHelpers';
 
 const logger = createLogger('ToolExecutor');
 
@@ -529,14 +534,16 @@ export class ToolExecutor {
     // 只约束 requiresPermission 的工具（只读工具不受限）。
     const boundaryViolation = options.skillToolBoundary
       && toolDef.requiresPermission
-      && !this.toolMatchesPatternSet(executionToolName, params, new Set(options.skillToolBoundary.allowedTools))
+      && !toolMatchesPatternSet(executionToolName, params, new Set(options.skillToolBoundary.allowedTools))
       ? options.skillToolBoundary
       : undefined;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
-      && this.isToolPreApproved(executionToolName, params, options.preApprovedTools);
+      && options.preApprovedTools !== undefined
+      && options.preApprovedTools.size > 0
+      && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
     if (isPreApproved) {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime);
@@ -783,7 +790,7 @@ export class ToolExecutor {
             eventType: 'permission_check',
             sessionId: effectiveSessionId || 'unknown',
             toolName: executionToolName,
-            input: this.sanitizeParams(params),
+            input: sanitizeToolParams(params),
             duration: 0,
             success: false,
             error: 'Permission denied by user',
@@ -839,7 +846,7 @@ export class ToolExecutor {
     // ADR-022 第二期 · 崩溃重放：工具放行后即将真正执行，落 begin 生命周期事件；
     // 执行返回/抛错时落 complete。崩溃发生在两者之间 → 留下未闭合 begin = 现场。全程 fail-safe。
     const executionId = randomUUID();
-    const ledgerParams = this.sanitizeParams(params);
+    const ledgerParams = sanitizeToolParams(params);
     const execSummary = String(
       ledgerParams.command
       || ledgerParams.file_path
@@ -942,8 +949,8 @@ export class ToolExecutor {
         auditLogger.logToolUsage({
           sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
-          input: this.sanitizeParams(params),
-          output: result.result ? this.truncateOutput(String(result.result)) : undefined,
+          input: sanitizeToolParams(params),
+          output: result.result ? truncateToolOutput(String(result.result)) : undefined,
           duration,
           success: result.success,
           error: result.error,
@@ -965,7 +972,7 @@ export class ToolExecutor {
         auditLogger.logToolUsage({
           sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
-          input: this.sanitizeParams(params),
+          input: sanitizeToolParams(params),
           duration,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -983,60 +990,6 @@ export class ToolExecutor {
     }
   }
 
-  /**
-   * Sanitize parameters for logging (mask sensitive data)
-   */
-  private sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {
-    const redacted = '***REDACTED***';
-    const sensitiveContainers = new Set(['header', 'headers', 'env', 'environment']);
-    const seen = new WeakSet<object>();
-
-    const sanitizeValue = (value: unknown, key?: string): unknown => {
-      const normalizedKey = key?.toLowerCase().replace(/[-_\s]/g, '');
-      if (
-        key
-        && (sensitiveContainers.has(normalizedKey || '') || isSensitiveLogKey(key))
-      ) {
-        return redacted;
-      }
-      if (typeof value === 'string') {
-        const masked = normalizedKey === 'command'
-          ? getLogMasker().maskCommand(value)
-          : maskSensitiveData(value);
-        return redactSecrets(masked);
-      }
-      if (value === null || value === undefined || typeof value !== 'object') {
-        return value;
-      }
-      if (value instanceof Date) return value.toISOString();
-      if (seen.has(value)) return '[Circular]';
-      seen.add(value);
-      if (Array.isArray(value)) {
-        const sanitized = value.map((item) => sanitizeValue(item));
-        seen.delete(value);
-        return sanitized;
-      }
-      const sanitized = Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .map(([childKey, childValue]) => [childKey, sanitizeValue(childValue, childKey)]),
-      );
-      seen.delete(value);
-      return sanitized;
-    };
-
-    return sanitizeValue(params) as Record<string, unknown>;
-  }
-
-  /**
-   * Truncate output for logging
-   */
-  private truncateOutput(output: string, maxLength = 1000): string {
-    if (output.length > maxLength) {
-      return output.substring(0, maxLength) + '...[truncated]';
-    }
-    return output;
-  }
-
   private buildPermissionRequest(
     tool: ToolDefinition,
     params: Record<string, unknown>
@@ -1045,7 +998,7 @@ export class ToolExecutor {
       case 'bash':
       case 'Bash':
         return {
-          type: this.isDangerousCommand(params.command as string)
+          type: isDangerousCommand(params.command as string)
             ? 'dangerous_command'
             : 'command',
           tool: tool.name,
@@ -1256,23 +1209,6 @@ export class ToolExecutor {
     }
   }
 
-  private isDangerousCommand(command: string): boolean {
-    const dangerousPatterns = [
-      /rm\s+(-r|-rf|-f)?\s*[\/~]/,
-      /rm\s+-rf?\s+\*/,
-      />\s*\/dev\/sd/,
-      /mkfs/,
-      /dd\s+if=/,
-      /:\(\)\{.*\}/,
-      /git\s+push\s+.*--force/,
-      /git\s+reset\s+--hard/,
-      /chmod\s+-R\s+777/,
-      /sudo\s+rm/,
-    ];
-
-    return dangerousPatterns.some((pattern) => pattern.test(command));
-  }
-
   /**
    * 检查工具是否预授权（Skill 系统支持）
    *
@@ -1333,58 +1269,4 @@ export class ToolExecutor {
     return { allowed: true };
   }
 
-  private isToolPreApproved(
-    toolName: string,
-    params: Record<string, unknown>,
-    preApprovedTools?: Set<string>
-  ): boolean {
-    if (!preApprovedTools || preApprovedTools.size === 0) {
-      return false;
-    }
-    return this.toolMatchesPatternSet(toolName, params, preApprovedTools);
-  }
-
-  /**
-   * 工具调用是否匹配模式集合（精确名 / Bash(prefix:*) 前缀模式）。
-   * 同时服务于：Skill 预授权（扩权）与 Skill allowed-tools 边界（限权，GAP-001）。
-   */
-  private toolMatchesPatternSet(
-    toolName: string,
-    params: Record<string, unknown>,
-    patterns: Set<string>
-  ): boolean {
-    if (patterns.size === 0) {
-      return false;
-    }
-
-    // 1. 精确匹配（Bash/bash 语义归一）
-    const normalizedToolName = normalizeToolName(toolName);
-    for (const candidate of patterns) {
-      if (sameToolName(candidate, normalizedToolName)) {
-        return true;
-      }
-    }
-
-    // 2. 通配符匹配（如 Bash(git:*)）
-    for (const pattern of patterns) {
-      // 匹配格式: ToolName(prefix:*)
-      const match = pattern.match(/^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/);
-      if (!match) continue;
-
-      const [, patternTool, prefix] = match;
-
-      // 检查工具名是否匹配
-      if (!sameToolName(patternTool, normalizedToolName)) continue;
-
-      // 对于 bash 命令，检查命令前缀
-      if (isBashToolName(normalizedToolName)) {
-        const command = (params.command as string) || '';
-        if (commandMatchesScopedPrefix(command, prefix)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
 }

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */
+ 
 // ============================================================================
 // ParallelAgentCoordinator - DAG-based explicit parallel agent execution
 // ============================================================================
@@ -38,19 +38,12 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { createHash } from 'crypto';
 import { promises as fsPromises } from 'fs';
 import * as path from 'path';
 import type { ModelConfig } from '../../shared/contract';
-import {
-  getSwarmRunScopeKey,
-  type SwarmAgentContextSnapshot,
-  type SwarmRunRef,
-  type SwarmRunScope,
-} from '../../shared/contract/swarm';
+import type { SwarmRunScope } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
-import type { SubagentResult } from './subagentExecutorTypes';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
 import {
   AgentFailureCode,
@@ -61,203 +54,53 @@ import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuar
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import { TaskDAG, createRunDAGScheduler, type SchedulerResult } from '../scheduler';
-import { AGENT_TIMEOUTS, COORDINATION_CHECKPOINTS } from '../../shared/constants';
-import { getUserConfigDir } from '../config/configPaths';
+import { COORDINATION_CHECKPOINTS } from '../../shared/constants';
+import {
+  DEFAULT_COORDINATOR_CONFIG,
+  getCheckpointIdentity,
+  getParallelCheckpointPath,
+  isLegacyCoordinatorScope,
+  isSameRunScope,
+  type AgentTask,
+  type AgentTaskResult,
+  type CoordinatorConfig,
+  type ParallelAgentTaskSnapshotStatus,
+  type ParallelAgentTaskSnapshot,
+  type ParallelCheckpoint,
+  type ParallelCheckpointIdentity,
+  type ParallelExecutionResult,
+  type SharedContext,
+  type TaskProgressEvent,
+} from './parallelAgentCoordinatorTypes';
+import {
+  aggregateAgentTaskResults,
+  createEmptySharedContext,
+  formatSharedContextForPrompt,
+} from './parallelAgentCoordinatorResults';
+
+export type {
+  AgentTask,
+  AgentTaskResult,
+  CompletedParallelCoordinatorSnapshot,
+  CompletedParallelCoordinatorTaskSnapshot,
+  CoordinatorConfig,
+  CoordinatorEvent,
+  CoordinatorEventType,
+  ParallelAgentTaskSnapshot,
+  ParallelAgentTaskSnapshotStatus,
+  ParallelCoordinatorTerminalStatus,
+  ParallelExecutionResult,
+  SharedContext,
+} from './parallelAgentCoordinatorTypes';
+export {
+  getParallelAgentCoordinator,
+  getParallelAgentCoordinatorRegistry,
+  initParallelAgentCoordinator,
+  ParallelAgentCoordinatorRegistry,
+  resetParallelAgentCoordinators,
+} from './parallelAgentCoordinatorRegistry';
 
 const logger = createLogger('ParallelAgentCoordinator');
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface AgentTask {
-  id: string;
-  role: string;
-  task: string;
-  systemPrompt?: string;
-  tools: string[];
-  maxIterations?: number;
-  dependsOn?: string[]; // IDs of tasks this task depends on
-  priority?: number; // Higher = more priority
-}
-
-export interface AgentTaskResult extends SubagentResult {
-  taskId: string;
-  role: string;
-  startTime: number;
-  endTime: number;
-  duration: number;
-  blocked?: boolean;
-  cancelled?: boolean;
-  failureCode?: AgentFailureCode;
-}
-
-export interface ParallelExecutionResult {
-  success: boolean;
-  results: AgentTaskResult[];
-  totalDuration: number;
-  parallelism: number; // How many tasks ran in parallel
-  errors: Array<{ taskId: string; error: string }>;
-}
-
-export type ParallelAgentTaskSnapshotStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'blocked';
-
-export interface ParallelAgentTaskSnapshot {
-  taskId: string;
-  role: string;
-  task: string;
-  tools: string[];
-  dependsOn?: string[];
-  status: ParallelAgentTaskSnapshotStatus;
-  result?: AgentTaskResult;
-  error?: string;
-  failureCode?: AgentFailureCode;
-  startedAt?: number;
-  completedAt?: number;
-  duration?: number;
-}
-
-export type ParallelCoordinatorTerminalStatus = 'completed' | 'failed' | 'cancelled';
-
-export interface CompletedParallelCoordinatorTaskSnapshot {
-  taskId: string;
-  role: string;
-  status: ParallelAgentTaskSnapshotStatus;
-  error?: string;
-  failureCode?: AgentFailureCode;
-  startedAt?: number;
-  completedAt?: number;
-  duration?: number;
-}
-
-export interface CompletedParallelCoordinatorSnapshot {
-  scope: SwarmRunScope;
-  status: ParallelCoordinatorTerminalStatus;
-  completedAt: number;
-  tasks: readonly CompletedParallelCoordinatorTaskSnapshot[];
-}
-
-export interface SharedContext {
-  findings: Map<string, unknown>;
-  files: Map<string, string>;
-  decisions: Map<string, string>;
-  errors: string[];
-  /**
-   * 每个 finding/file/decision key 的最后更新时间戳（ms epoch）。
-   * 子代理读队友共享数据时据此判断新鲜度（isStale），避免基于陈旧 draft 决策
-   * （swarm 护栏 P1-2 #5）。
-   */
-  lastUpdated: Map<string, number>;
-}
-
-export type CoordinatorEventType =
-  | 'task:start'
-  | 'task:progress'
-  | 'task:complete'
-  | 'task:error'
-  | 'discovery'
-  | 'all:complete';
-
-export interface CoordinatorEvent {
-  type: CoordinatorEventType;
-  taskId?: string;
-  data?: unknown;
-}
-
-interface TaskProgressEvent {
-  taskId: string;
-  role: string;
-  snapshot: SwarmAgentContextSnapshot;
-}
-
-export interface CoordinatorConfig {
-  maxParallelTasks: number;
-  taskTimeout: number;
-  enableSharedContext: boolean;
-  aggregateResults: boolean;
-}
-
-/**
- * Checkpoint schema for ParallelAgentCoordinator.
- *
- * Map 字段序列化为 [key, value] entries 数组，保持与 JSON round-trip 对齐。
- * 未知字段在 restore 时忽略（向前兼容），不认识的 version 视为 stale 丢弃。
- */
-interface ParallelCheckpoint {
-  version: number;
-  sessionId: string;
-  runId?: string;
-  treeId?: string;
-  createdAt: number;
-  updatedAt: number;
-  taskDefinitions: Array<[string, AgentTask]>;
-  completedTasks: Array<[string, AgentTaskResult]>;
-  runningTaskIds: string[];
-  sharedContext: {
-    findings: Record<string, unknown>;
-    files: Record<string, string>;
-    decisions: Record<string, string>;
-    errors: string[];
-    /** key → 最后更新时间戳；老 checkpoint 可能没有，restore 时按缺省空对象处理 */
-    lastUpdated?: Record<string, number>;
-  };
-}
-
-type ParallelCheckpointIdentity = string | SwarmRunScope;
-
-function getCheckpointDigest(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 32);
-}
-
-function isSameRunScope(left: SwarmRunScope, right: SwarmRunScope): boolean {
-  return getSwarmRunScopeKey(left) === getSwarmRunScopeKey(right);
-}
-
-function getCheckpointIdentity(identity: ParallelCheckpointIdentity): {
-  sessionId: string;
-  runId?: string;
-  treeId?: string;
-  fileName: string;
-} {
-  if (typeof identity === 'string') {
-    const safeLegacyName = (
-      identity !== '.'
-      && identity !== '..'
-      && /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(identity)
-    )
-      ? identity
-      : `legacy-${getCheckpointDigest(identity)}`;
-    return { sessionId: identity, fileName: safeLegacyName };
-  }
-  return {
-    ...identity,
-    // Fixed-length hash avoids path traversal, Windows-invalid characters and
-    // unbounded filenames when external session labels are unusually long.
-    fileName: `run-${getCheckpointDigest(getSwarmRunScopeKey(identity))}`,
-  };
-}
-
-function getParallelCheckpointPath(identity: ParallelCheckpointIdentity): string {
-  const checkpointIdentity = getCheckpointIdentity(identity);
-  return path.join(
-    getUserConfigDir(),
-    COORDINATION_CHECKPOINTS.PARALLEL_DIR,
-    `${checkpointIdentity.fileName}.json`
-  );
-}
-
-const DEFAULT_CONFIG: CoordinatorConfig = {
-  maxParallelTasks: 4,
-  taskTimeout: AGENT_TIMEOUTS.PARALLEL_TASK,
-  enableSharedContext: true,
-  aggregateResults: true,
-};
 
 // ============================================================================
 // ParallelAgentCoordinator
@@ -286,16 +129,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
   constructor(config: Partial<CoordinatorConfig> = {}, scope?: SwarmRunScope) {
     super();
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = { ...DEFAULT_COORDINATOR_CONFIG, ...config };
     this.scope = scope ? { ...scope } : undefined;
     this.legacyLifecycle = !scope || isLegacyCoordinatorScope(scope);
-    this.sharedContext = {
-      findings: new Map(),
-      files: new Map(),
-      decisions: new Map(),
-      errors: [],
-      lastUpdated: new Map(),
-    };
+    this.sharedContext = createEmptySharedContext();
   }
 
   /**
@@ -514,7 +351,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     // Aggregate results if enabled
     const aggregatedResults = this.config.aggregateResults
-      ? this.aggregateResults(results)
+      ? aggregateAgentTaskResults(results)
       : results;
 
     // 全部成功则清掉 checkpoint（对称 autoAgentCoordinator 的 deleteCheckpoint），
@@ -618,7 +455,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       // Inject shared context into system prompt if available
       let enhancedPrompt = task.systemPrompt || '';
       if (this.config.enableSharedContext && this.sharedContext.findings.size > 0) {
-        enhancedPrompt += this.formatSharedContextForPrompt();
+        enhancedPrompt += formatSharedContextForPrompt(this.sharedContext);
       }
 
       const executionPromise = executor.execute(
@@ -787,58 +624,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
   }
 
   /**
-   * Format shared context for injection into prompts
-   */
-  private formatSharedContextForPrompt(): string {
-    const parts: string[] = [];
-
-    if (this.sharedContext.findings.size > 0) {
-      parts.push('\n## Shared Discoveries from Other Agents:');
-      for (const [key, value] of this.sharedContext.findings) {
-        parts.push(`- [${key}]: ${value}`);
-      }
-    }
-
-    if (this.sharedContext.files.size > 0) {
-      parts.push('\n## Files Identified by Team:');
-      for (const [path, agent] of this.sharedContext.files) {
-        parts.push(`- ${path} (by ${agent})`);
-      }
-    }
-
-    if (this.sharedContext.errors.length > 0) {
-      parts.push('\n## Issues Encountered:');
-      for (const error of this.sharedContext.errors) {
-        parts.push(`- ${error}`);
-      }
-    }
-
-    return parts.join('\n');
-  }
-
-  /**
-   * Aggregate results from multiple agents
-   * Deduplicates and prioritizes findings
-   */
-  private aggregateResults(results: AgentTaskResult[]): AgentTaskResult[] {
-    // Simple aggregation - could be enhanced with smarter deduplication
-    return results.sort((a, b) => {
-      // Sort by success first, then by role priority
-      if (a.success !== b.success) return a.success ? -1 : 1;
-      // Architect > Coder > Reviewer > Tester > Others
-      const rolePriority: Record<string, number> = {
-        architect: 5,
-        coder: 4,
-        reviewer: 3,
-        tester: 2,
-        debugger: 2,
-        documenter: 1,
-      };
-      return (rolePriority[b.role] || 0) - (rolePriority[a.role] || 0);
-    });
-  }
-
-  /**
    * Share a finding with all agents
    * @param at 版本戳（ms epoch），未传时取 Date.now()。云端同步 / 回放场景应显式传入
    *           原始时间戳，保留真实新鲜度（与全局禁硬编码 Date.now() 的约定一致）。
@@ -933,13 +718,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Clear shared context
    */
   clearSharedContext(): void {
-    this.sharedContext = {
-      findings: new Map(),
-      files: new Map(),
-      decisions: new Map(),
-      errors: [],
-      lastUpdated: new Map(),
-    };
+    this.sharedContext = createEmptySharedContext();
   }
 
   /**
@@ -1297,7 +1076,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     // Aggregate results
     const aggregatedResults = this.config.aggregateResults
-      ? this.aggregateResults(results)
+      ? aggregateAgentTaskResults(results)
       : results;
 
     return {
@@ -1517,221 +1296,4 @@ export class ParallelAgentCoordinator extends EventEmitter {
     if (!this.scope || isLegacyCoordinatorScope(this.scope)) return true;
     return typeof identity !== 'string' && isSameRunScope(this.scope, identity);
   }
-}
-
-const LEGACY_COORDINATOR_SCOPE: SwarmRunScope = {
-  sessionId: '__legacy__',
-  runId: '__legacy__',
-  treeId: '__legacy__',
-};
-
-function isLegacyCoordinatorScope(scope: SwarmRunScope): boolean {
-  return isSameRunScope(scope, LEGACY_COORDINATOR_SCOPE);
-}
-
-/** Explicit scope container. The container is process-wide; mutable run state is not. */
-export class ParallelAgentCoordinatorRegistry {
-  private static readonly MAX_COMPLETED_SNAPSHOTS = 100;
-  private coordinators = new Map<string, ParallelAgentCoordinator>();
-  private completedSnapshots = new Map<string, CompletedParallelCoordinatorSnapshot>();
-
-  private assertRunTreeInvariant(scope: SwarmRunScope): void {
-    for (const coordinator of this.coordinators.values()) {
-      const existing = coordinator.getScope();
-      if (
-        existing?.sessionId === scope.sessionId
-        && existing.runId === scope.runId
-        && existing.treeId !== scope.treeId
-      ) {
-        throw new Error(
-          `Coordinator run ${scope.sessionId}/${scope.runId} is already bound to tree ${existing.treeId}.`,
-        );
-      }
-    }
-    for (const snapshot of this.completedSnapshots.values()) {
-      if (
-        snapshot.scope.sessionId === scope.sessionId
-        && snapshot.scope.runId === scope.runId
-        && snapshot.scope.treeId !== scope.treeId
-      ) {
-        throw new Error(
-          `Coordinator run ${scope.sessionId}/${scope.runId} is already terminal on tree ${snapshot.scope.treeId}.`,
-        );
-      }
-    }
-  }
-
-  get(scope: SwarmRunScope): ParallelAgentCoordinator | undefined {
-    return this.coordinators.get(getSwarmRunScopeKey(scope));
-  }
-
-  getByRun(ref: SwarmRunRef): ParallelAgentCoordinator | undefined {
-    for (const coordinator of this.coordinators.values()) {
-      const scope = coordinator.getScope();
-      if (scope?.sessionId === ref.sessionId && scope.runId === ref.runId) {
-        return coordinator;
-      }
-    }
-    return undefined;
-  }
-
-  getOrCreate(
-    scope: SwarmRunScope,
-    config: Partial<CoordinatorConfig> = {},
-  ): ParallelAgentCoordinator {
-    this.assertRunTreeInvariant(scope);
-    const key = getSwarmRunScopeKey(scope);
-    if (this.completedSnapshots.has(key)) {
-      throw new Error(`Coordinator run ${scope.sessionId}/${scope.runId} is already terminal.`);
-    }
-    let coordinator = this.coordinators.get(key);
-    if (!coordinator) {
-      coordinator = new ParallelAgentCoordinator(config, scope);
-      this.coordinators.set(key, coordinator);
-    }
-    return coordinator;
-  }
-
-  replace(
-    scope: SwarmRunScope,
-    config: Partial<CoordinatorConfig> = {},
-  ): ParallelAgentCoordinator {
-    this.assertRunTreeInvariant(scope);
-    const key = getSwarmRunScopeKey(scope);
-    if (this.completedSnapshots.has(key)) {
-      throw new Error(`Coordinator run ${scope.sessionId}/${scope.runId} is already terminal.`);
-    }
-    const previous = this.coordinators.get(key);
-    previous?.reset();
-    const coordinator = new ParallelAgentCoordinator(config, scope);
-    this.coordinators.set(key, coordinator);
-    return coordinator;
-  }
-
-  abortRun(ref: SwarmRunRef, reason = 'run_cancelled'): boolean {
-    let aborted = false;
-    for (const coordinator of this.coordinators.values()) {
-      const scope = coordinator.getScope();
-      if (scope?.sessionId !== ref.sessionId || scope.runId !== ref.runId) continue;
-      coordinator.abortAllRunning(reason);
-      aborted = true;
-    }
-    return aborted;
-  }
-
-  abortSession(sessionId: string, reason = 'session_cancelled'): number {
-    let aborted = 0;
-    for (const coordinator of this.coordinators.values()) {
-      if (coordinator.getScope()?.sessionId !== sessionId) continue;
-      coordinator.abortAllRunning(reason);
-      aborted += 1;
-    }
-    return aborted;
-  }
-
-  finalize(
-    scope: SwarmRunScope,
-    status: ParallelCoordinatorTerminalStatus,
-    completedAt = Date.now(),
-  ): CompletedParallelCoordinatorSnapshot | undefined {
-    const key = getSwarmRunScopeKey(scope);
-    const existing = this.completedSnapshots.get(key);
-    if (existing) return existing;
-
-    const coordinator = this.coordinators.get(key);
-    if (!coordinator) return undefined;
-
-    const tasks = coordinator.getTaskSnapshots().map((task) => Object.freeze({
-      taskId: task.taskId,
-      role: task.role,
-      status: task.status,
-      ...(task.error ? { error: task.error } : {}),
-      ...(task.failureCode ? { failureCode: task.failureCode } : {}),
-      ...(task.startedAt ? { startedAt: task.startedAt } : {}),
-      ...(task.completedAt ? { completedAt: task.completedAt } : {}),
-      ...(typeof task.duration === 'number' ? { duration: task.duration } : {}),
-    }));
-    const snapshot = Object.freeze({
-      scope: Object.freeze({ ...scope }),
-      status,
-      completedAt,
-      tasks: Object.freeze(tasks),
-    });
-
-    // Remove the mutable execution object before exposing terminal history.
-    // In-flight code may still hold its local reference until its promise
-    // settles, but no new control-plane lookup can reach it.
-    this.coordinators.delete(key);
-    this.completedSnapshots.set(key, snapshot);
-    while (this.completedSnapshots.size > ParallelAgentCoordinatorRegistry.MAX_COMPLETED_SNAPSHOTS) {
-      const oldestKey = this.completedSnapshots.keys().next().value as string | undefined;
-      if (!oldestKey) break;
-      this.completedSnapshots.delete(oldestKey);
-    }
-    return snapshot;
-  }
-
-  getCompleted(ref: SwarmRunRef): CompletedParallelCoordinatorSnapshot | undefined {
-    for (const snapshot of this.completedSnapshots.values()) {
-      if (snapshot.scope.sessionId === ref.sessionId && snapshot.scope.runId === ref.runId) {
-        return snapshot;
-      }
-    }
-    return undefined;
-  }
-
-  /** Global shutdown only. Run/user cancellation must use abortRun/abortSession. */
-  abortAll(reason = 'app_shutdown'): number {
-    let aborted = 0;
-    for (const coordinator of this.coordinators.values()) {
-      coordinator.abortAllRunning(reason);
-      aborted += 1;
-    }
-    return aborted;
-  }
-
-  delete(scope: SwarmRunScope, reset = false): boolean {
-    const key = getSwarmRunScopeKey(scope);
-    const coordinator = this.coordinators.get(key);
-    if (!coordinator) return false;
-    if (reset) coordinator.reset();
-    return this.coordinators.delete(key);
-  }
-
-  clear(): void {
-    for (const coordinator of this.coordinators.values()) {
-      coordinator.reset();
-    }
-    this.coordinators.clear();
-    this.completedSnapshots.clear();
-  }
-
-  size(): number {
-    return this.coordinators.size;
-  }
-}
-
-const coordinatorRegistry = new ParallelAgentCoordinatorRegistry();
-
-export function getParallelAgentCoordinatorRegistry(): ParallelAgentCoordinatorRegistry {
-  return coordinatorRegistry;
-}
-
-/** Legacy callers get an isolated legacy bucket; Agent Team callers must pass a scope. */
-export function getParallelAgentCoordinator(scope: SwarmRunScope = LEGACY_COORDINATOR_SCOPE): ParallelAgentCoordinator {
-  return coordinatorRegistry.getOrCreate(scope);
-}
-
-/**
- * Initialize with custom config
- */
-export function initParallelAgentCoordinator(
-  config: Partial<CoordinatorConfig> = {},
-  scope: SwarmRunScope = LEGACY_COORDINATOR_SCOPE,
-): ParallelAgentCoordinator {
-  return coordinatorRegistry.replace(scope, config);
-}
-
-export function resetParallelAgentCoordinators(): void {
-  coordinatorRegistry.clear();
 }

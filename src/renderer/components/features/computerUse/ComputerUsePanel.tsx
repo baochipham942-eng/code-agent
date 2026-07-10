@@ -418,6 +418,10 @@ export const ComputerUsePanel: React.FC = () => {
     if (livePointer.event) {
       return livePointer.event;
     }
+    // idle 态优先停留在最后一次动作的位置（变暗），而非跳回合成预览点
+    if (livePointer.lastEvent) {
+      return livePointer.lastEvent;
+    }
     if (actionSummary?.trace.agentPointerEvent) {
       return actionSummary.trace.agentPointerEvent;
     }
@@ -448,6 +452,7 @@ export const ComputerUsePanel: React.FC = () => {
     actionSummary?.trace.id,
     frontmost?.appName,
     livePointer.event,
+    livePointer.lastEvent,
     observation?.snapshot?.appName,
     selectedTargetApp,
     surface?.failureKind,
@@ -795,6 +800,7 @@ export const ComputerUsePanel: React.FC = () => {
                   event={pointerPreview}
                   title="Agent pointer"
                   detail="Desktop actions use the same visible pointer in trace rows, screenshots, and this Surface panel."
+                  live={livePointer.isLive || !livePointer.lastEvent}
                 />
                 <AgentPointerTimelineList entries={livePointer.timeline} />
 

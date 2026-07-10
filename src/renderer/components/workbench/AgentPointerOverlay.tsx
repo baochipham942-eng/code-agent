@@ -127,19 +127,26 @@ export function AgentPointerGlyph({
   );
 }
 
+// 弹簧感位移曲线：轻微过冲，模拟"手带着指针"的拖尾（borrow 自 Codex 桌面端光晕跟随）
+const POINTER_SPRING_TRANSITION =
+  'left 560ms cubic-bezier(0.3, 1.3, 0.4, 1), top 560ms cubic-bezier(0.3, 1.3, 0.4, 1), opacity 400ms ease';
+
 export function AgentPointerOverlay({
   event,
   showLabel = true,
   compact = false,
+  live = true,
 }: {
   event: AgentPointerEvent;
   showLabel?: boolean;
   compact?: boolean;
+  /** false = idle 态：光标停留在最后位置变暗，不显示标签和脉冲环 */
+  live?: boolean;
 }) {
   const colors = TONE_COLORS[event.tone];
   const label = getAgentPointerLabel(event);
   const size = compact ? 22 : 34;
-  const shouldRing = event.phase === 'click' || event.phase === 'failed' || event.phase === 'blocked';
+  const shouldRing = live && (event.phase === 'click' || event.phase === 'failed' || event.phase === 'blocked');
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden" aria-label={label}>
@@ -157,10 +164,12 @@ export function AgentPointerOverlay({
         style={{
           ...pointerPosition(event.point),
           transform: 'translate(-8px, -8px)',
+          transition: POINTER_SPRING_TRANSITION,
+          opacity: live ? 1 : 0.38,
         }}
       >
         <AgentPointerGlyph tone={event.tone} phase={event.phase} size={size} />
-        {showLabel && (
+        {showLabel && live && (
           <span className="mt-1 max-w-[240px] truncate rounded-md border border-white/[0.08] bg-zinc-950/85 px-2 py-1 text-[11px] font-medium text-zinc-100 shadow-lg backdrop-blur-xs">
             {phaseText(event.phase)}
             {event.targetLabel ? <span className="text-zinc-400"> · {event.targetLabel}</span> : null}
@@ -175,10 +184,12 @@ export function AgentPointerPreviewCard({
   event,
   title = 'Agent pointer',
   detail,
+  live = true,
 }: {
   event: AgentPointerEvent;
   title?: string;
   detail?: string;
+  live?: boolean;
 }) {
   return (
     <div className="relative min-h-[152px] overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950/70">
@@ -193,7 +204,7 @@ export function AgentPointerPreviewCard({
       {detail && (
         <div className="relative z-10 mt-1 px-3 text-[11px] text-zinc-500">{detail}</div>
       )}
-      <AgentPointerOverlay event={event} compact />
+      <AgentPointerOverlay event={event} compact live={live} />
     </div>
   );
 }

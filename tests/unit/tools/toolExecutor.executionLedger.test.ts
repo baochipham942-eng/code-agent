@@ -116,6 +116,53 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     expect(complete.status).toBe('error');
   });
 
+  it('工具返回 success=false → complete.error 落库前统一脱敏且保留恢复关联字段', async () => {
+    const token = `sk-${'r'.repeat(24)}`;
+    const urlUser = 'ledger-user';
+    const urlPassword = 'ledger-password';
+    const cookie = 'resolver-cookie-secret';
+    const rawError = `token=${token} url=https://${urlUser}:${urlPassword}@example.test Cookie: sid=${cookie}`;
+    resolverState.getDefinition.mockReturnValue(readDef());
+    resolverState.execute.mockResolvedValue({ success: false, error: rawError });
+    const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });
+
+    const result = await executor.execute('Read', { file_path: 'a', offset: 7 }, { sessionId: 's1' });
+
+    expect(result.error).toBe(rawError);
+    const begin = ledgerState.appendToolExecutionBegin.mock.calls[0][0];
+    const complete = ledgerState.appendToolExecutionComplete.mock.calls[0][0];
+    expect(complete).toMatchObject({
+      executionId: begin.executionId,
+      sessionId: 's1',
+      toolName: 'Read',
+      status: 'error',
+    });
+    expect(complete.error).not.toContain(token);
+    expect(complete.error).not.toContain(urlUser);
+    expect(complete.error).not.toContain(urlPassword);
+    expect(complete.error).not.toContain(cookie);
+  });
+
+  it('工具抛异常 → complete.error 落库前统一脱敏', async () => {
+    const token = `sk-${'t'.repeat(24)}`;
+    const urlUser = 'throw-user';
+    const urlPassword = 'throw-password';
+    const cookie = 'throw-cookie-secret';
+    const rawError = `token=${token} url=https://${urlUser}:${urlPassword}@example.test Set-Cookie: sid=${cookie}`;
+    resolverState.getDefinition.mockReturnValue(readDef());
+    resolverState.execute.mockRejectedValue(new Error(rawError));
+    const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });
+
+    const result = await executor.execute('Read', { file_path: 'a' }, { sessionId: 's1' });
+
+    expect(result.error).toBe(rawError);
+    const complete = ledgerState.appendToolExecutionComplete.mock.calls[0][0];
+    expect(complete.error).not.toContain(token);
+    expect(complete.error).not.toContain(urlUser);
+    expect(complete.error).not.toContain(urlPassword);
+    expect(complete.error).not.toContain(cookie);
+  });
+
   it('DB 不可用（getDatabase 抛错）→ 工具执行不受影响（fail-safe）', async () => {
     ledgerState.throwOnGet = true;
     resolverState.getDefinition.mockReturnValue(readDef());
@@ -132,8 +179,13 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
       file_path: 'README.md',
       offset: 20,
       command: 'deploy --token command-secret',
+      endpoint: 'https://begin-user:begin-password@example.test/private',
+      cookie: 'top-level-cookie',
+      sessionCookie: 'session-cookie',
       headers: {
         Authorization: 'Bearer header-secret',
+        Cookie: 'header-cookie',
+        'Set-Cookie': 'response-cookie',
         Accept: 'application/json',
         'X-Api-Key': 'nested-api-key',
       },
@@ -161,6 +213,8 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     expect(begin.params.headers).toBe('***REDACTED***');
     expect(begin.params.env).toBe('***REDACTED***');
     expect(begin.params.apiKey).toBe('***REDACTED***');
+    expect(begin.params.cookie).toBe('***REDACTED***');
+    expect(begin.params.sessionCookie).toBe('***REDACTED***');
     expect(begin.params.nested.secret).toBe('***REDACTED***');
     expect(begin.params.command).toBe('deploy --token ***REDACTED***');
     expect(begin.summary).not.toContain('command-secret');
@@ -171,6 +225,40 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     expect(JSON.stringify(begin.params)).not.toContain('deep-secret');
     expect(JSON.stringify(begin.params)).not.toContain('array-token');
     expect(JSON.stringify(begin.params)).not.toContain('command-secret');
+    expect(JSON.stringify(begin.params)).not.toContain('begin-user');
+    expect(JSON.stringify(begin.params)).not.toContain('begin-password');
+    expect(JSON.stringify(begin.params)).not.toContain('top-level-cookie');
+    expect(JSON.stringify(begin.params)).not.toContain('session-cookie');
+    expect(JSON.stringify(begin.params)).not.toContain('header-cookie');
+    expect(JSON.stringify(begin.params)).not.toContain('response-cookie');
+    expect(resolverState.execute.mock.calls[0][1]).toBe(params);
+    expect(params).toEqual(originalParams);
+  });
+
+  it('Bash/curl command 的 token、URL credential 与 Cookie 不进入 begin.params 或 summary', async () => {
+    const token = `sk-${'b'.repeat(24)}`;
+    const urlUser = 'curl-user';
+    const urlPassword = 'curl-password';
+    const cookie = 'curl-cookie-secret';
+    const command = `curl --token ${token} -H 'Cookie: sid=${cookie}' https://${urlUser}:${urlPassword}@example.test/private`;
+    const params = { command, timeout: 30 };
+    const originalParams = structuredClone(params);
+    resolverState.getDefinition.mockReturnValue({
+      ...readDef(),
+      name: 'Bash',
+      permissionLevel: 'write',
+    });
+    const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });
+
+    await executor.execute('Bash', params, { sessionId: 's1', preApprovedTools: new Set(['Bash']) });
+
+    const begin = ledgerState.appendToolExecutionBegin.mock.calls[0][0];
+    const persisted = JSON.stringify({ params: begin.params, summary: begin.summary });
+    expect(persisted).not.toContain(token);
+    expect(persisted).not.toContain(urlUser);
+    expect(persisted).not.toContain(urlPassword);
+    expect(persisted).not.toContain(cookie);
+    expect(begin.params.timeout).toBe(30);
     expect(resolverState.execute.mock.calls[0][1]).toBe(params);
     expect(params).toEqual(originalParams);
   });

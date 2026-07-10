@@ -35,6 +35,7 @@ import { rebuildRunDetail } from './swarmRollupProjection';
 import { reconcileRun, type ReconcileResult } from './swarmReconcile';
 import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
+import { redactSecrets } from '../../security/secretRedaction';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -318,7 +319,7 @@ export class DatabaseService {
   appendToolExecutionComplete(input: ToolExecutionCompleteInput): void {
     try {
       if (!this.db || !this.toolExecutionEventRepo) return;
-      this.toolExecutionEventRepo.appendComplete(input);
+      this.toolExecutionEventRepo.appendComplete(input.error ? { ...input, error: redactSecrets(input.error) } : input);
     } catch (err) {
       logger.warn('[DatabaseService] appendToolExecutionComplete failed (ignored):', err);
     }

@@ -27,7 +27,7 @@ import {
   type PolicyCheckResult,
   type ValidationResult,
 } from '../security';
-import { isSensitiveLogKey } from '../security/secretRedaction';
+import { isSensitiveLogKey, redactSecrets } from '../security/secretRedaction';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
@@ -841,8 +841,12 @@ export class ToolExecutor {
       execCompleteRecorded = true;
       try {
         getDatabase().appendToolExecutionComplete({
-          executionId, toolName: executionToolName, status, error,
-          sessionId: effectiveSessionId, recordedAt: Date.now(),
+          executionId,
+          toolName: executionToolName,
+          status,
+          error: error ? redactSecrets(error) : undefined,
+          sessionId: effectiveSessionId,
+          recordedAt: Date.now(),
         });
       } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
     };
@@ -984,9 +988,10 @@ export class ToolExecutor {
         return redacted;
       }
       if (typeof value === 'string') {
-        return normalizedKey === 'command'
+        const masked = normalizedKey === 'command'
           ? getLogMasker().maskCommand(value)
           : maskSensitiveData(value);
+        return redactSecrets(masked);
       }
       if (value === null || value === undefined || typeof value !== 'object') {
         return value;

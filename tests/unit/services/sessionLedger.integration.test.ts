@@ -85,6 +85,39 @@ afterEach(() => {
 });
 
 describe('DatabaseService.getSessionLedger（第三期 3a · 一本账招牌证据）', () => {
+  it('appendToolExecutionComplete 在 repository 落库前统一脱敏 error', () => {
+    const db = new Database(':memory:');
+    applySchema(db, createLogger() as never);
+    try {
+      const token = `sk-${'s'.repeat(24)}`;
+      const rawError = `token=${token} url=https://sink-user:sink-password@example.test Cookie: sid=sink-cookie`;
+      const svc = wire(db);
+
+      svc.appendToolExecutionComplete({
+        executionId: 'sink-redaction',
+        sessionId: SID,
+        toolName: 'Read',
+        status: 'error',
+        error: rawError,
+        recordedAt: 1,
+      });
+
+      const stored = new ToolExecutionEventRepository(db).getRecent(1)[0];
+      expect(stored).toMatchObject({
+        executionId: 'sink-redaction',
+        sessionId: SID,
+        toolName: 'Read',
+        status: 'error',
+      });
+      expect(stored.error).not.toContain(token);
+      expect(stored.error).not.toContain('sink-user');
+      expect(stored.error).not.toContain('sink-password');
+      expect(stored.error).not.toContain('sink-cookie');
+    } finally {
+      db.close();
+    }
+  });
+
   it('跨 6 lane 的真实会话 → 一个出口读回按时间排序的全链路时间线', () => {
     const db = new Database(':memory:');
     applySchema(db, createLogger() as never);

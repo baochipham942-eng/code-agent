@@ -27,6 +27,8 @@ afterAll(() => {
 const env = vi.hoisted(() => ({
   broadcasts: [] as Array<{ channel: string; data: unknown }>,
   updateSettings: vi.fn(async () => {}),
+  // 模拟 admin 门：null=admin 放行；非 null=非 admin，返回 FORBIDDEN IPC error
+  adminIpcError: null as { success: false; error: { code: string; message: string } } | null,
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -45,7 +47,7 @@ vi.mock('../../../src/host/platform', () => ({
 // settings.ipc 模块级依赖
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   isCurrentUserAdmin: () => true,
-  getAdminAccessIpcError: () => null,
+  getAdminAccessIpcError: () => env.adminIpcError,
   assertAdminAccess: vi.fn(),
 }));
 vi.mock('../../../src/host/model/providerConnectionTest', () => ({
@@ -145,12 +147,16 @@ describe('agent.ipc 会话档读写 + 广播（单一真源）', () => {
   beforeEach(() => {
     resetPermissionModeManager();
     env.broadcasts.length = 0;
+    env.adminIpcError = null;
     const cap = captureHandlers();
     handlers = cap.handlers;
     registerAgentHandlers(cap.ipcMain, () => null);
   });
 
-  afterEach(() => resetPermissionModeManager());
+  afterEach(() => {
+    env.adminIpcError = null;
+    resetPermissionModeManager();
+  });
 
   const callAgent = (action: string, payload?: unknown) =>
     (handlers.get(IPC_DOMAINS.AGENT) as DomainHandler)(null, { action, payload } as IPCRequest);
@@ -177,6 +183,33 @@ describe('agent.ipc 会话档读写 + 广播（单一真源）', () => {
     const noSession = await callAgent('setSessionPermissionMode', { mode: 'readOnly' });
     expect(noSession.success).toBe(false);
     expect(env.broadcasts.filter((b) => b.channel === IPC_CHANNELS.PERMISSION_MODE_CHANGED)).toHaveLength(0);
+  });
+
+  it('非 admin 提档到 bypassPermissions 被 FORBIDDEN，approved 自报不作数（审出 MED）', async () => {
+    env.adminIpcError = { success: false, error: { code: 'FORBIDDEN', message: 'Session permission mode: Admin permission required' } };
+    const res = await callAgent('setSessionPermissionMode', { sessionId: 's1', mode: 'bypassPermissions', approved: true });
+    expect(res.success).toBe(false);
+    expect((res.error as { code: string }).code).toBe('FORBIDDEN');
+    // 真源未被污染，也不广播
+    expect(getPermissionModeManager().getModeForSession('s1')).toBe('default');
+    expect(env.broadcasts.filter((b) => b.channel === IPC_CHANNELS.PERMISSION_MODE_CHANGED)).toHaveLength(0);
+    // 全局 setPermissionMode 同口径过门
+    const globalRes = await callAgent('setPermissionMode', { mode: 'bypassPermissions', approved: true });
+    expect(globalRes.success).toBe(false);
+    expect((globalRes.error as { code: string }).code).toBe('FORBIDDEN');
+    expect(getPermissionModeManager().getMode()).toBe('default');
+  });
+
+  it('非 admin 切普通档不受 admin 门影响；admin 提 bypass 照常成功', async () => {
+    env.adminIpcError = { success: false, error: { code: 'FORBIDDEN', message: 'nope' } };
+    const normal = await callAgent('setSessionPermissionMode', { sessionId: 's1', mode: 'acceptEdits' });
+    expect(normal.success).toBe(true);
+    expect(getPermissionModeManager().getModeForSession('s1')).toBe('acceptEdits');
+
+    env.adminIpcError = null; // admin
+    const bypass = await callAgent('setSessionPermissionMode', { sessionId: 's1', mode: 'bypassPermissions', approved: true });
+    expect(bypass.success).toBe(true);
+    expect(getPermissionModeManager().getModeForSession('s1')).toBe('bypassPermissions');
   });
 });
 

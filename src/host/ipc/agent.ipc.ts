@@ -28,6 +28,7 @@ import {
   type PermissionMode,
 } from '../permissions/modes';
 import { broadcastToRenderer } from '../platform';
+import { getAdminAccessIpcError } from './adminGuard';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -164,6 +165,13 @@ export function registerAgentHandlers(
               error: { code: 'INVALID_PERMISSION_MODE', message: 'Unknown permission mode' },
             };
           }
+          // 审出 MED：需审批档（bypassPermissions）的提档必须过 admin 门，
+          // 与 settings PERMISSION_SET_MODE 的 assertAdminAccess 同一口径——
+          // approved 由客户端自报，不能作为提权凭据。
+          if (MODE_CONFIGS[mode].requiresApproval) {
+            const adminError = getAdminAccessIpcError('Permission mode');
+            if (adminError) return adminError;
+          }
           const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved));
           return { success: true, data: { changed, mode } };
         }
@@ -182,6 +190,13 @@ export function registerAgentHandlers(
               success: false,
               error: { code: 'INVALID_PERMISSION_MODE', message: 'sessionId and a valid mode are required' },
             };
+          }
+          // 审出 MED：会话粒度提档到需审批档（bypassPermissions）同样过 admin 门，
+          // 否则 hosted/多用户部署下非 admin 客户端可借 approved 自报把任意会话提到 bypass，
+          // 绕开全局 PERMISSION_SET_MODE 的 assertAdminAccess。普通档位切换不受影响。
+          if (MODE_CONFIGS[mode].requiresApproval) {
+            const adminError = getAdminAccessIpcError('Session permission mode');
+            if (adminError) return adminError;
           }
           const manager = getPermissionModeManager();
           const changed = manager.setSessionMode(req.sessionId, mode, Boolean(req.approved));

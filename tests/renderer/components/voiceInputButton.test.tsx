@@ -94,7 +94,7 @@ describe('VoiceInputButton', () => {
 
     const html = renderButton();
 
-    expect(html).toContain('正在识别...');
+    expect(html).toContain('正在识别…');
     expect(html).toContain('cursor-not-allowed');
   });
 

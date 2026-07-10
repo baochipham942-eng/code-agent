@@ -21,6 +21,7 @@ import type {
   TaskStepStatus,
   TaskPhaseStatus,
 } from '@shared/contract';
+import { EmptyState } from './primitives';
 
 interface PlanningPanelProps {
   plan: TaskPlan | null;
@@ -149,17 +150,6 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
   );
 };
 
-// Empty state
-const EmptyState: React.FC = () => (
-  <div className="flex flex-col items-center justify-center h-full text-center p-4">
-    <FileText className="w-12 h-12 text-zinc-600 mb-3" />
-    <p className="text-sm text-zinc-400">No active plan</p>
-    <p className="text-xs text-zinc-500 mt-1">
-      Use todo_write with persist=true to create a plan
-    </p>
-  </div>
-);
-
 // Main component
 export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _onRefresh }) => {
   if (!plan) {
@@ -171,7 +161,12 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
             <span className="text-sm font-medium text-zinc-200">Task Plan</span>
           </div>
         </div>
-        <EmptyState />
+        <EmptyState
+          variant="plain"
+          icon={FileText}
+          title="No active plan"
+          text="Use todo_write with persist=true to create a plan"
+        />
       </div>
     );
   }

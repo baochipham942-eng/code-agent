@@ -727,7 +727,7 @@ export const ChatView: React.FC = () => {
             // 冷启动初始化（currentSessionId 尚为 null）或会话切换异步加载期间
             // 渲染空白占位，避免闪现"新会话"默认页（见 switchSession/initializeSessionStore）。
             currentSessionId && !isSessionLoading ? (
-              <EmptyState
+              <NewSessionWelcome
                 onSend={handleSendMessage}
                 workingDirectory={currentSessionWorkingDirectory}
                 workbenchSnapshot={currentSession?.workbenchSnapshot}
@@ -930,8 +930,8 @@ const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ 
   );
 };
 
-// Empty state component with enhanced design
-const EmptyState: React.FC<{
+// 新会话欢迎页（示例建议 + 工作区上下文标签）——不是通用空态，别并进 primitives/EmptyState
+const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;

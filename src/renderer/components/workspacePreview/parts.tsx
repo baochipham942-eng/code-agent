@@ -32,6 +32,7 @@ import {
   buildWorkspaceRevisionHistory,
 } from '../../utils/workspaceRevisions';
 import { DiffView } from '../DiffView';
+import { Badge } from '../primitives';
 import { LocalityFeedbackBar } from '../LivePreview/LocalityFeedbackBar';
 import { ChartBlock } from '../features/chat/MessageBubble/ChartBlock';
 import { DocumentBlock } from '../features/chat/MessageBubble/DocumentBlock';
@@ -166,9 +167,9 @@ export function PreviewListItem({
             </div>
           )}
         </div>
-        <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${statusClass(item.status)}`}>
+        <Badge className={`mt-0.5 shrink-0 text-[10px] ${statusClass(item.status)}`}>
           {item.status}
-        </span>
+        </Badge>
       </div>
     </button>
   );

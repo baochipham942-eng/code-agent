@@ -17,6 +17,7 @@ import {
   type NeoTopicRound,
 } from './projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
+import { Badge } from '../../primitives';
 
 // ============================================================================
 // Topic 详情（Neo Tag 轻量化重设计）
@@ -196,10 +197,10 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-6 text-zinc-100">{workCard.title}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-            <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium ${NEO_WORK_CARD_PHASE_CHIP_STYLE[phase]}`}>
+            <Badge className={`font-medium ${NEO_WORK_CARD_PHASE_CHIP_STYLE[phase]}`}>
               {phase === 'running' && <Loader2 className="h-3 w-3 animate-spin" />}
               {NEO_WORK_CARD_PHASE_LABEL[phase]}
-            </span>
+            </Badge>
             <span>发起人 {formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
             <span>更新于 {formatTime(workCard.updatedAt)}</span>
           </div>

@@ -212,7 +212,7 @@ describe('CompressionPipeline', () => {
       const recentMsgs = [{ ...makeMsg('u_recent', 'user', 'hello', 19), turnIndex: 19 }];
       const transcript = [...toolMsgs, ...recentMsgs];
 
-      await pipeline.evaluate(transcript, state, {
+      const result = await pipeline.evaluate(transcript, state, {
         ...BASE_CONFIG,
         maxTokens: 2000, // force high usage
         summarize,
@@ -220,9 +220,11 @@ describe('CompressionPipeline', () => {
         enableMicrocompact: false,
       });
 
-      // If context collapse was triggered and spans met threshold, summarize was called
-      // (may or may not trigger depending on savings ratio — just verify it doesn't throw)
-      expect(summarize).toBeDefined();
+      // A3 臂激活断言：此前这里是 expect(summarize).toBeDefined()——对 vi.fn()
+      // 恒真的空跑断言（正是 A3 要根治的病）。该 fixture 下触发是确定性的：
+      // 5×600 tokens 占用 150% ≥ 75% 阈值；span=5 ≥ 3；节省 2800 > 3×200。
+      expect(summarize).toHaveBeenCalled();
+      expect(result.layersTriggered).toContain('contextCollapse');
     });
   });
 

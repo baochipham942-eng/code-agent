@@ -3,7 +3,7 @@
 // Uses react-virtuoso for virtual scrolling to handle 100+ turn sessions
 // ============================================================================
 
-import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
@@ -207,6 +207,27 @@ export function getPrependedTurnCount(previousFirstTurnId: string | null, turns:
   return previousFirstIndex > 0 ? previousFirstIndex : 0;
 }
 
+interface PrependViewportAnchor {
+  sessionId: string;
+  turnId: string;
+  offsetTop: number;
+}
+
+export function getPrependAnchorScrollLocation(
+  anchor: PrependViewportAnchor | null,
+  sessionId: string,
+  turns: TraceTurn[],
+): { index: number; align: 'start'; behavior: 'auto'; offset: number } | null {
+  if (anchor?.sessionId !== sessionId) return null;
+  const index = turns.findIndex((turn) => turn.turnId === anchor.turnId);
+  if (index < 0) return null;
+  return { index, align: 'start', behavior: 'auto', offset: -anchor.offsetTop };
+}
+
+export function getPrependAnchorScrollCorrection(expectedOffsetTop: number, actualOffsetTop: number): number {
+  return actualOffsetTop - expectedOffsetTop;
+}
+
 export function getActiveAssistantTextAnchor(projection: TraceProjection): {
   turnIndex: number;
   nodeId: string;
@@ -257,6 +278,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const touchStartYRef = useRef<number | null>(null);
   const keepActiveOutputVisibleRef = useRef(false);
   const historyPrependInProgressRef = useRef(false);
+  const prependViewportAnchorRef = useRef<PrependViewportAnchor | null>(null);
   const followedOutputSessionIdRef = useRef<string | null>(null);
   const followedOutputTurnIdRef = useRef<string | null>(null);
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
@@ -306,6 +328,32 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     ? previousHistoryList.firstItemIndex - prependedTurnCount
     : 1_000_000;
   historyListRef.current = { sessionId: projection.sessionId, firstTurnId, firstItemIndex };
+
+  useLayoutEffect(() => {
+    if (prependedTurnCount <= 0) return;
+    const anchor = prependViewportAnchorRef.current;
+    const location = getPrependAnchorScrollLocation(
+      anchor,
+      projection.sessionId,
+      projection.turns,
+    );
+    if (!location || !anchor) return;
+    let cancelCorrection: (() => void) | null = null;
+    const cancelPosition = scheduleAfterLayout(() => {
+      virtuosoRef.current?.scrollToIndex(location);
+      cancelCorrection = scheduleAfterLayout(() => {
+        const scroller = scrollerElementRef.current;
+        const anchoredTurn = scroller?.querySelector<HTMLElement>(getTraceTurnSelector(anchor.turnId));
+        if (!scroller || !anchoredTurn) return;
+        const actualOffsetTop = anchoredTurn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        scroller.scrollTop += getPrependAnchorScrollCorrection(anchor.offsetTop, actualOffsetTop);
+      });
+    });
+    return () => {
+      cancelPosition();
+      cancelCorrection?.();
+    };
+  }, [firstItemIndex, prependedTurnCount, projection.sessionId, projection.turns]);
 
   useEffect(() => {
     if (!historyPrependInProgressRef.current) return;
@@ -373,6 +421,28 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     const scroller = scrollerElement;
     if (!scroller) return;
 
+    const capturePrependAnchor = () => {
+      const scrollerRect = scroller.getBoundingClientRect();
+      const visibleTurn = Array.from(scroller.querySelectorAll<HTMLElement>(TRACE_TURN_ANCHOR_SELECTOR))
+        .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.bottom >= scrollerRect.top && rect.top <= scrollerRect.bottom)
+        .sort((left, right) => left.rect.top - right.rect.top)[0];
+      if (!visibleTurn?.element.dataset.traceTurnId) return;
+      prependViewportAnchorRef.current = {
+        sessionId: projection.sessionId,
+        turnId: visibleTurn.element.dataset.traceTurnId,
+        offsetTop: visibleTurn.rect.top - scrollerRect.top,
+      };
+    };
+    let captureFrame: number | null = null;
+    const schedulePrependAnchorCapture = () => {
+      if (captureFrame !== null) cancelAnimationFrame(captureFrame);
+      captureFrame = requestAnimationFrame(() => {
+        captureFrame = null;
+        capturePrependAnchor();
+      });
+    };
+
     const stopFollowing = () => {
       keepActiveOutputVisibleRef.current = false;
     };
@@ -409,16 +479,20 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     scroller.addEventListener('touchend', handleTouchEnd, { passive: true });
     scroller.addEventListener('touchcancel', handleTouchEnd, { passive: true });
     scroller.addEventListener('keydown', handleKeyDown);
+    scroller.addEventListener('scroll', schedulePrependAnchorCapture, { passive: true });
+    schedulePrependAnchorCapture();
 
     return () => {
+      if (captureFrame !== null) cancelAnimationFrame(captureFrame);
       scroller.removeEventListener('wheel', handleWheel);
       scroller.removeEventListener('touchstart', handleTouchStart);
       scroller.removeEventListener('touchmove', handleTouchMove);
       scroller.removeEventListener('touchend', handleTouchEnd);
       scroller.removeEventListener('touchcancel', handleTouchEnd);
       scroller.removeEventListener('keydown', handleKeyDown);
+      scroller.removeEventListener('scroll', schedulePrependAnchorCapture);
     };
-  }, [markUserScrollInteraction, scrollerElement]);
+  }, [markUserScrollInteraction, projection.sessionId, scrollerElement]);
 
   useEffect(() => {
     const scroller = scrollerElement;

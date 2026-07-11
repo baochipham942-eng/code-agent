@@ -14,7 +14,6 @@ interface AgentPointerState {
 
 interface AgentPointerActions {
   recordEvent: (event: AgentPointerEvent) => void;
-  pruneExpired: (nowMs?: number) => void;
   clearSurface: (surface: AgentPointerSurface) => void;
   clearAll: () => void;
 }
@@ -88,20 +87,6 @@ export const useAgentPointerStore = create<AgentPointerStore>()((set) => ({
         },
         timeline: [...state.timeline, entry].slice(-TIMELINE_LIMIT),
       };
-    }),
-
-  pruneExpired: (nowMs = Date.now()) =>
-    set((state) => {
-      const nextLastBySurface = { ...state.lastBySurface };
-      let changed = false;
-      for (const surface of Object.keys(nextLastBySurface) as AgentPointerSurface[]) {
-        const entry = nextLastBySurface[surface];
-        if (entry && entry.visibleUntilMs <= nowMs) {
-          nextLastBySurface[surface] = null;
-          changed = true;
-        }
-      }
-      return changed ? { lastBySurface: nextLastBySurface } : state;
     }),
 
   clearSurface: (surface) =>

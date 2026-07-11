@@ -27,6 +27,7 @@ import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
+import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 
 const logger = createLogger('CodexCliAdapter');
 
@@ -37,12 +38,14 @@ export interface CodexCliRunRequest extends AgentEngineRunRequest {
   emitEvent?: (event: AgentEventEnvelope) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
+  durableLifecycle?: ExternalEngineDurableLifecycle;
 }
 
 interface CodexParsedEvent {
   textDelta?: string;
   toolName?: string;
   status?: string;
+  externalSessionId?: string;
 }
 
 export class CodexCliAdapter {
@@ -60,7 +63,7 @@ export class CodexCliAdapter {
     const sandbox = toCodexSandbox(permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
-    const runId = `codex_${startedAt}_${randomUUID().slice(0, 8)}`;
+    const runId = request.durableLifecycle?.runId ?? `codex_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
@@ -151,7 +154,16 @@ export class CodexCliAdapter {
     const child = spawn(descriptor.binaryPath || 'codex', args, {
       cwd,
       env,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    await request.durableLifecycle?.attachProcess(child, {
+      binary: descriptor.binaryPath || 'codex',
+      version: descriptor.version,
+      commandSummary,
+      logPath,
+      model,
+      permissionProfile,
     });
     child.stdin.end(request.prompt);
 
@@ -200,10 +212,12 @@ export class CodexCliAdapter {
         message: timeoutMessage,
         data: { runId, logPath },
       });
-      child.kill('SIGTERM');
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
-          child.kill('SIGKILL');
+          if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGKILL');
+          else child.kill('SIGKILL');
         }
       }, 2_000).unref?.();
     }, timing.timeoutMs);
@@ -211,13 +225,18 @@ export class CodexCliAdapter {
     child.stdout.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
       const text = chunk.toString('utf8');
+      request.durableLifecycle?.observeStdout(chunk.byteLength);
       logStream.write(text);
       stdoutBuffer += text;
       const parts = stdoutBuffer.split(/\r?\n/);
       stdoutBuffer = parts.pop() ?? '';
       for (const line of parts) {
         const parsed = parseCodexJsonLine(line);
+        const usage = extractExternalModelUsage(line);
+        if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
+        if (parsed?.externalSessionId) request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
         if (parsed?.textDelta) {
+          request.durableLifecycle?.observeNormalizedEvent('text_delta');
           streamedText += parsed.textDelta;
           emit({
             type: 'message_delta',
@@ -225,6 +244,7 @@ export class CodexCliAdapter {
           });
         }
         if (parsed?.toolName) {
+          request.durableLifecycle?.observeNormalizedEvent('tool_call', parsed.toolName);
           ledger.appendEvent({
             taskId,
             type: 'agent_engine.tool_call',
@@ -233,6 +253,7 @@ export class CodexCliAdapter {
           });
         }
         if (parsed?.status) {
+          request.durableLifecycle?.observeNormalizedEvent('status', parsed.status);
           ledger.appendEvent({
             taskId,
             type: 'agent_engine.status',
@@ -246,6 +267,7 @@ export class CodexCliAdapter {
     child.stderr.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
       const text = chunk.toString('utf8');
+      request.durableLifecycle?.observeStderr(chunk.byteLength);
       stderrText += text;
       logStream.write(text);
     });
@@ -262,6 +284,9 @@ export class CodexCliAdapter {
 
     if (stdoutBuffer.trim()) {
       const parsed = parseCodexJsonLine(stdoutBuffer);
+      const usage = extractExternalModelUsage(stdoutBuffer);
+      if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
+      if (parsed?.externalSessionId) request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
       if (parsed?.textDelta) {
         streamedText += parsed.textDelta;
         emit({
@@ -372,7 +397,7 @@ export class CodexCliAdapter {
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
       emit({ type: 'agent_complete', data: null });
-      return {
+      const result: AgentEngineRunResult = {
         runId,
         sessionId: request.sessionId,
         engine: 'codex_cli',
@@ -383,6 +408,8 @@ export class CodexCliAdapter {
         error: message,
         failure: failureDiagnostics,
       };
+      await request.durableLifecycle?.finish(result, Boolean(timeoutMessage || spawnErrorMessage || exitCode !== 0));
+      return result;
     }
 
     const assistantMessage: Message = {
@@ -449,7 +476,7 @@ export class CodexCliAdapter {
       updatedAt: completedAt,
     }, { allowEngineUpdate: true });
 
-    return {
+    const result: AgentEngineRunResult = {
       runId,
       sessionId: request.sessionId,
       engine: 'codex_cli',
@@ -458,6 +485,8 @@ export class CodexCliAdapter {
       logPath,
       exitCode,
     };
+    await request.durableLifecycle?.finish(result, Boolean(finalText));
+    return result;
   }
 }
 
@@ -553,6 +582,9 @@ function extractCodexEvent(event: Record<string, unknown>): CodexParsedEvent {
     ...(textDelta && isTextLikeType(type, event, msg) ? { textDelta } : {}),
     ...(toolName && isToolLikeType(type, item, msg) ? { toolName } : {}),
     ...(typeof type === 'string' && type.includes('status') ? { status: firstString(data?.status, msg?.status, type) } : {}),
+    ...(firstString(event.thread_id, event.threadId, event.session_id, event.sessionId, data?.thread_id, msg?.thread_id)
+      ? { externalSessionId: firstString(event.thread_id, event.threadId, event.session_id, event.sessionId, data?.thread_id, msg?.thread_id) }
+      : {}),
   };
 }
 

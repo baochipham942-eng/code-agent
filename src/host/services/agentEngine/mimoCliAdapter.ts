@@ -39,6 +39,7 @@ import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
+import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 
 const logger = createLogger('MimoCliAdapter');
 
@@ -53,6 +54,7 @@ export interface MimoCliRunRequest extends AgentEngineRunRequest {
   emitEvent?: (event: AgentEventEnvelope) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
+  durableLifecycle?: ExternalEngineDurableLifecycle;
 }
 
 interface MimoParsedEvent {
@@ -78,7 +80,7 @@ export class MimoCliAdapter {
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
-    const runId = `mimo_${startedAt}_${randomUUID().slice(0, 8)}`;
+    const runId = request.durableLifecycle?.runId ?? `mimo_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
@@ -166,7 +168,16 @@ export class MimoCliAdapter {
     const child = spawn(descriptor.binaryPath || 'mimo', args, {
       cwd,
       env,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await request.durableLifecycle?.attachProcess(child, {
+      binary: descriptor.binaryPath || 'mimo',
+      version: descriptor.version,
+      commandSummary,
+      logPath,
+      model,
+      permissionProfile,
     });
 
     let stdoutBuffer = '';
@@ -217,10 +228,12 @@ export class MimoCliAdapter {
         message: timeoutMessage,
         data: { runId, logPath },
       });
-      child.kill('SIGTERM');
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
-          child.kill('SIGKILL');
+          if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGKILL');
+          else child.kill('SIGKILL');
         }
       }, 2_000).unref?.();
     }, timing.timeoutMs);
@@ -228,7 +241,10 @@ export class MimoCliAdapter {
     const handleJsonLine = (line: string) => {
       const parsed = parseMimoJsonLine(line);
       if (!parsed) return;
+      const usage = extractExternalModelUsage(line);
+      if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
       if (parsed.textDelta) {
+        request.durableLifecycle?.observeNormalizedEvent('text_delta');
         streamedText += parsed.textDelta;
         emit({
           type: 'message_delta',
@@ -239,6 +255,7 @@ export class MimoCliAdapter {
         resultText = parsed.finalText;
       }
       if (parsed.toolName) {
+        request.durableLifecycle?.observeNormalizedEvent('tool_call', parsed.toolName);
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.tool_call',
@@ -247,6 +264,7 @@ export class MimoCliAdapter {
         });
       }
       if (parsed.status) {
+        request.durableLifecycle?.observeNormalizedEvent('status', parsed.status);
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.status',
@@ -270,6 +288,7 @@ export class MimoCliAdapter {
 
     child.stdout.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
+      request.durableLifecycle?.observeStdout(chunk.byteLength);
       const text = chunk.toString('utf8');
       logStream.write(text);
       stdoutBuffer += text;
@@ -282,6 +301,7 @@ export class MimoCliAdapter {
 
     child.stderr.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
+      request.durableLifecycle?.observeStderr(chunk.byteLength);
       const text = chunk.toString('utf8');
       stderrText += text;
       logStream.write(text);
@@ -421,7 +441,7 @@ export class MimoCliAdapter {
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
       emit({ type: 'agent_complete', data: null });
-      return {
+      const result: AgentEngineRunResult = {
         runId,
         sessionId: request.sessionId,
         engine: 'mimo_code',
@@ -432,6 +452,8 @@ export class MimoCliAdapter {
         error: message,
         failure: failureDiagnostics,
       };
+      await request.durableLifecycle?.finish(result, true);
+      return result;
     }
 
     const assistantMessage: Message = {
@@ -489,7 +511,7 @@ export class MimoCliAdapter {
       updatedAt: completedAt,
     }, { allowEngineUpdate: true });
 
-    return {
+    const result: AgentEngineRunResult = {
       runId,
       sessionId: request.sessionId,
       engine: 'mimo_code',
@@ -498,6 +520,8 @@ export class MimoCliAdapter {
       logPath,
       exitCode,
     };
+    await request.durableLifecycle?.finish(result, Boolean(finalText));
+    return result;
   }
 }
 

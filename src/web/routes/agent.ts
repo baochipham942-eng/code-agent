@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
@@ -29,6 +30,7 @@ import {
   CodexCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
+  ExternalEngineDurableLifecycle,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -338,12 +340,37 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
+    let externalDurableLifecycle: ExternalEngineDurableLifecycle | undefined;
     let nativeRunTerminal = false;
-    let runCorrelationId = `external-run-${randomUUID()}`;
+    let runCorrelationId: string;
     if (isExternalAgentEngine(selectedEngine.kind)) {
-      // Engine adapter lifecycle remains frozen in S2. The controller keeps only
-      // an internal correlation id; external runs do not enter the Native
-      // RunContext/RunRegistry contract or publish a Native runId.
+      try {
+        externalDurableLifecycle = await ExternalEngineDurableLifecycle.start({
+          registry: runRegistry,
+          engine: selectedEngine.kind,
+          sessionId,
+          workspace: resolvedProject,
+          cwd: resolvedProject,
+        });
+        runHandle = externalDurableLifecycle.handle;
+        runContext = runHandle.context;
+        runCorrelationId = runHandle.context.runId;
+      } catch (error) {
+        releaseSseSlot();
+        if (error instanceof RunSessionConflictError) {
+          res.status(409).json({
+            error: error.message,
+            code: error.code,
+            sessionId,
+            activeRunId: error.existingRunId,
+          });
+          return;
+        }
+        if (!preflightDisconnected && !res.destroyed) {
+          res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
+        }
+        return;
+      }
     } else {
       try {
         runHandle = await runRegistry.startDurable({ sessionId, workspace: resolvedProject });
@@ -377,7 +404,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           reason: 'client_disconnected_before_stream',
           event: { type: 'run_cancelled', payload: { sessionId }, recordedAt: Date.now() },
         }, runHandle);
-        nativeRunTerminal = true;
       }
       res.off('close', markPreflightDisconnected);
       releaseSseSlot();
@@ -536,7 +562,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           attachmentsCount: body.attachments?.length ?? 0,
           messageMetadata: toWorkbenchMetadata(body.context),
           emitEvent: (event) => runController.emitAgentEvent(event),
+          durableLifecycle: externalDurableLifecycle,
         });
+        await externalDurableLifecycle?.finish(
+          result,
+          result.status !== 'completed' || Boolean(result.outputText?.trim()),
+        );
+        nativeRunTerminal = true;
         runController.flush();
         await runController.updateSessionStatus(result.status === 'failed' ? 'error' : 'completed');
         return;
@@ -997,6 +1029,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           message,
           context: externalEngineFailureContext,
         }, logger);
+      }
+      if (externalDurableLifecycle && !nativeRunTerminal) {
+        try {
+          await externalDurableLifecycle.finish({
+            runId: externalDurableLifecycle.runId,
+            sessionId,
+            engine: externalDurableLifecycle.engine,
+            status: runController.disconnected ? 'cancelled' : 'failed',
+            error: message,
+          }, true);
+          nativeRunTerminal = true;
+        } catch (terminalError) {
+          logger.error('External Durable Run terminal commit failed:', terminalError);
+        }
       }
       await runController.updateSessionStatus('error');
       if (runHandle && !nativeRunTerminal) {

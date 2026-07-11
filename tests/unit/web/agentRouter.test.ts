@@ -67,7 +67,12 @@ vi.mock('../../../src/host/session/modelOverridePersistence', () => ({
   rehydrateModelOverrideFromSession: mockRehydrateOverride,
 }));
 
-vi.mock('../../../src/host/services/agentEngine', () => ({
+vi.mock('../../../src/host/services/agentEngine', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/services/agentEngine')>(
+    '../../../src/host/services/agentEngine',
+  );
+  return ({
+  ...actual,
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return {
       run: agentEngineMocks.codexRun,
@@ -94,7 +99,8 @@ vi.mock('../../../src/host/services/agentEngine', () => ({
   getRemoteAgentEngineModelCatalogService: () => ({
     resolveModelId: async (_kind: unknown, requested?: string | null) => requested ?? undefined,
   }),
-}));
+  });
+});
 
 vi.mock('../../../src/host/task/backgroundTaskLedger', () => ({
   getBackgroundTaskLedger: () => ({
@@ -126,7 +132,23 @@ let server: http.Server | undefined;
 let baseUrl = '';
 const runRegistry = new RunRegistry();
 const testRunKernel = {
-  createRun: vi.fn(),
+  createRun: vi.fn(async (input: { runId: string; sessionId: string; engine: unknown; now: number; initialEngineCursor?: unknown; initialPendingOperations?: unknown[] }) => {
+    const owner = { ownerId: 'test', processInstanceId: 'test-process', epoch: 1, leaseExpiresAt: input.now + 60_000 };
+    return {
+      owner,
+      attempt: {
+        runId: input.runId, attempt: 1, processInstanceId: 'test-process', ownerId: 'test',
+        ownerEpoch: 1, status: 'active' as const, startedAt: input.now,
+      },
+      envelope: {
+        schemaVersion: 1 as const, runId: input.runId, sessionId: input.sessionId,
+        engine: input.engine, status: 'running' as const, attempt: 1,
+        cursor: { nextEventSeq: 1, checkpointSeq: 0, engineCursor: input.initialEngineCursor }, owner,
+        pendingOperations: input.initialPendingOperations ?? [], childRuns: [],
+        createdAt: input.now, updatedAt: input.now,
+      },
+    };
+  }),
   createNativeRun: vi.fn(async (input: { runId: string; sessionId: string; now: number }) => {
     const owner = { ownerId: 'test', processInstanceId: 'test-process', epoch: 1, leaseExpiresAt: input.now + 60_000 };
     return {
@@ -148,7 +170,17 @@ const testRunKernel = {
   terminal: vi.fn(async () => ({} as never)),
   release: vi.fn(async () => true),
   recoverOnStartup: vi.fn(async () => []),
-  prepareOperation: vi.fn(),
+  prepareOperation: vi.fn((input: { runId: string; operationId: string; attempt: number; kind: 'external_engine'; now: number }) => ({
+    runId: input.runId,
+    operationId: input.operationId,
+    attempt: input.attempt,
+    kind: input.kind,
+    status: 'prepared' as const,
+    idempotencyKey: `stable:${input.runId}:${input.operationId}`,
+    sideEffect: true,
+    preparedAt: input.now,
+    updatedAt: input.now,
+  })),
   prepareToolOperation: vi.fn(),
 };
 const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;
@@ -1582,12 +1614,15 @@ describe('createAgentRouter', () => {
 
     expect(response.ok).toBe(true);
     expect(body).toContain('CODEX_ROUTED_OK');
+    const durableRunId = (testRunKernel.createRun.mock.calls.at(-1)?.[0] as { runId: string }).runId;
+    expect(body).toContain(durableRunId);
     expect(agentEngineMocks.codexRun).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'session-codex-engine',
       prompt: '只回复 CODEX_ROUTED_OK',
       cwd: '/tmp/codex-workspace',
       workspaceRoot: '/tmp/codex-workspace',
       permissionProfile: 'read_only',
+      durableLifecycle: expect.objectContaining({ runId: durableRunId }),
     }));
     expect(createCLIAgent).not.toHaveBeenCalled();
     expect(updateSession).toHaveBeenCalledWith(

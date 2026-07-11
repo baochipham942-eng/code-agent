@@ -1866,7 +1866,8 @@ mod runtime_env_tests {
     use super::{
         bundled_node_candidates, channel_web_port, desktop_shell_channel,
         desktop_shell_event_payload, desktop_shell_resource_preflight, dev_channel_data_dir,
-        previous_boot_failure_from_value, renderer_navigation_failure_message,
+        parse_port_holder_pids, previous_boot_failure_from_value,
+        renderer_navigation_failure_message,
         required_resource_failures, web_server_node_env, web_server_runtime_env,
         DesktopShellBootDiagnostics, DesktopShellBootStage, DesktopShellResourceStatus,
         BUNDLED_RUNTIME_ROOT_ENV, DEV_WEB_PORT, PROD_WEB_PORT, RESOURCE_DIR_ENV,

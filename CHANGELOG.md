@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-07-11
+
+### Changed
+
+- **生产控制面更抗瞬时故障**：Supabase 依赖增加超时、缓存、陈旧数据回退与断路保护；未认证请求不再为共享密钥额外访问数据库，继续保持 fail-closed。
+- **运行目录口径统一**：文档与运行时约定统一到 `~/.code-agent/code-agent.db`，避免排障时误查旧的 macOS Application Support 路径。
+
+### Fixed
+
+- **登录失败提示与会话信任**：认证错误可以从嵌套响应中提取可行动原因；本地退出窗口被显式识别，不会把正常退出误报成会话过期。
+- **控制面降级路径**：缓存、采样和断路状态在依赖失败时确定性收敛，避免瞬时 Supabase 故障放大为连续请求失败。
+
 ## [0.25.0] - 2026-07-11
 
 ### Added

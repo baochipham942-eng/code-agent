@@ -167,27 +167,51 @@ function coordSpaceFromValue(value: unknown, fallback: AgentPointerCoordSpace): 
   return fallback;
 }
 
-function nativeCursorCapabilityFromMetadata(metadata: Record<string, unknown>): AgentPointerNativeCursorCapability | null {
-  const raw = asRecord(metadata.agentPointerNativeCursor) || asRecord(metadata.nativeCursor);
+export function parseAgentPointerNativeCursorCapability(
+  value: unknown,
+): AgentPointerNativeCursorCapability | null {
+  const raw = asRecord(value);
   if (!raw) return null;
-  const status = asString(raw.status);
-  const provider = asString(raw.provider);
+  const status = raw.status;
+  const provider = raw.provider;
   if (
-    (status !== 'native' && status !== 'fallback' && status !== 'unavailable')
+    typeof raw.enabled !== 'boolean'
+    || typeof raw.supportsSystemOverlay !== 'boolean'
+    || (status !== 'native' && status !== 'fallback' && status !== 'unavailable')
     || (provider !== 'cua-driver' && provider !== 'renderer' && provider !== 'pip' && provider !== 'none')
   ) {
     return null;
   }
-  const fallbackSurface = asString(raw.fallbackSurface);
+  if (raw.reason !== undefined && raw.reason !== null && typeof raw.reason !== 'string') {
+    return null;
+  }
+  if (
+    raw.fallbackSurface !== undefined
+    && raw.fallbackSurface !== null
+    && raw.fallbackSurface !== 'renderer'
+    && raw.fallbackSurface !== 'pip'
+  ) {
+    return null;
+  }
+  if (raw.checkedAtMs !== undefined && raw.checkedAtMs !== null && asNumber(raw.checkedAtMs) === null) {
+    return null;
+  }
   return {
-    enabled: raw.enabled === true,
+    enabled: raw.enabled,
     status,
     provider,
-    supportsSystemOverlay: raw.supportsSystemOverlay === true,
-    reason: asString(raw.reason),
-    fallbackSurface: fallbackSurface === 'renderer' || fallbackSurface === 'pip' ? fallbackSurface : null,
+    supportsSystemOverlay: raw.supportsSystemOverlay,
+    reason: typeof raw.reason === 'string' ? raw.reason : null,
+    fallbackSurface: raw.fallbackSurface === 'renderer' || raw.fallbackSurface === 'pip'
+      ? raw.fallbackSurface
+      : null,
     checkedAtMs: asNumber(raw.checkedAtMs),
   };
+}
+
+function nativeCursorCapabilityFromMetadata(metadata: Record<string, unknown>): AgentPointerNativeCursorCapability | null {
+  return parseAgentPointerNativeCursorCapability(metadata.agentPointerNativeCursor)
+    || parseAgentPointerNativeCursorCapability(metadata.nativeCursor);
 }
 
 function fallbackPreviewPoint(surface: AgentPointerSurface, phase: AgentPointerPhase): AgentPointerPoint {

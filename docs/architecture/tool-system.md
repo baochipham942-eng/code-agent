@@ -2,6 +2,19 @@
 
 > ToolRegistry + ToolExecutor + Core/Deferred 双层 + 统一工具合并
 
+## 2026-07-11 Run-scoped 工具安全合同
+
+| 能力 | 当前合同 | 关键文件 / 测试 |
+|------|----------|----------------|
+| cache admission | 显式准入、默认 fail-closed；当前策略表为空，Read 也不缓存，避免跳过 file-read evidence 和 context-health 副作用 | `services/infra/toolCache.ts`、`toolCache.security.test.ts` |
+| cache identity | `tool-cache:v2 + SHA-256(workspace realpath) + sessionId`；canonical workspace 不可得时不读不写 | `toolCache.ts`、`ConfigRepository.ts` |
+| invalidation | 文件与 workspace 变化按同一 scope 失效；旧 namespace 自然失效，不清表 | `toolExecutor.ts`、`toolExecutor.cacheSafety.test.ts` |
+| execution ledger | begin 落账前递归脱敏 header/env/token/apiKey/secret/command，循环结构安全降级 | `toolExecutorHelpers.ts`、`toolExecutor.executionLedger.test.ts` |
+| Run isolation | 每个 Native run 使用独立 ToolExecutor，路径、shell、checkpoint、artifact 与 Bridge payload 消费冻结的 RunContext | [native-run-context.md](./native-run-context.md) |
+| SSE integrity | tool name/arguments 不完整或 arguments JSON 不可解析时拒绝执行，截断只作为错误证据 | `model/providers/sseStream.ts`、`sseStream.snapshot.test.ts` |
+
+会话权限入口同步收口为四档：`default / readOnly / acceptEdits / bypassPermissions`。显式会话选择持久化；readOnly 对读放行、写与执行确认；bypass 需用户批准；无人值守 session 的 effective mode 最高钳到 acceptEdits。所有 ToolExecutor、subagent 和 Bash sandbox 判定必须读取 session effective mode，不能直接读取进程级默认档。
+
 ## 工具定义格式
 
 **位置**: `src/host/tools/`

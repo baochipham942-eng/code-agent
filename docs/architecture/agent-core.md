@@ -2,6 +2,24 @@
 
 > 本文档详细描述 Agent 的核心组件：AgentOrchestrator、AgentLoop、运行时模块、平台抽象层、记忆系统、上下文压缩等
 
+## 2026-07-11 Native Run 与 Goal 完成合同
+
+Native Agent run 现在由独立 `runId` 拥有执行生命周期，`sessionId` 只承担会话与持久化身份。`RunContext` 冻结 workspace/cwd，`RunRegistry` 提供 session 唯一占用和 stale-owner-safe cleanup；控制、断线、本地工具与 Bridge 都绑定精确 RunHandle。完整链路见 [native-run-context.md](./native-run-context.md)。
+
+Goal 完成链路新增一层可核验合同：
+
+| 阶段 | 当前语义 | 关键文件 |
+|------|----------|----------|
+| deliverables 声明 | `declare_deliverables` 写入最终产物与 scratch 目录，允许显式覆盖并留下 trace | `runtime/declareDeliverablesGate.ts` |
+| 闸 0 证据自证 | 核验产物真实存在、命令在本会话真实执行；纯软目标无证据时有界打回 | `runtime/goalEvidenceGate.ts` |
+| 闸 1 verify | 验证失败与命令启动/终止基础设施失败分开；infra 问题进入降级链 | `goalVerifyGate.ts`、`runtime/goalCompletionGate.ts` |
+| 闸 2 review | auth/provider unavailable 等没有产生评审结论时标记 unverifiable，不伪装成 review FAIL | `goalReviewGate.ts` |
+| 修复止损 | gate repair 最多 2 次；artifact repair 达硬上限后中止 goal | `toolArtifactRepairPolicy.ts`、`shared/constants/agent.ts` |
+
+模型脚手架通过 `scaffoldProfile.ts` 单点解析。strong 档可关闭重复 thinking 注入、把 audit nudge 间隔拉长一倍并使用 compact repair instruction；总开关默认关闭，关闭时恒为 standard，程序化证据/verify/review gate 不裁剪。
+
+上下文组装同步做了 cache 经济性收口：会频繁变化的 advisory、git、active subagent、repair focus 等内容进入历史尾部 transient message，契约类 system 内容继续保留；工具表稳定排序。超过阈值的 active tool result 先完整 spill 到归档，再用无时间戳 placeholder 替换，归档失败时保留原文。决策与边界见 [ADR-032](./decisions/ADR-032-request-shape-prefix-stability.md)。
+
 ## 数据流概览
 
 ```

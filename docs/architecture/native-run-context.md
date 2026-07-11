@@ -1,6 +1,6 @@
 # Native Run execution contract (S2)
 
-Source baseline: `origin/main` at `8800672281b3bf4d2e7847431d8000b11b31375c`.
+As-built baseline: `origin/main` at `ef1ebe72a7f65a54e2f62c596a11a21cac2c7ee3`. The original S2 implementation started from `8800672281b3bf4d2e7847431d8000b11b31375c`.
 
 ## Previous ownership and call chain
 
@@ -72,12 +72,12 @@ flowchart TD
 | Explicit relative Bash `working_directory` | Resolve from `cwd`; reject when it leaves `workspace`. |
 | Policy ownership and permission boundary | `workspace`; path inputs are first resolved from `cwd`. |
 | Permission-classifier cache | Namespaced by `workspace` and `cwd`. |
-| Existing process-global tool-result cache | Bypassed by run-scoped executors because its legacy key has no Run/workspace namespace. |
+| Tool-result cache | 使用 `sessionId + tool-cache:v2 + SHA-256(workspace realpath)` namespace；当前策略表为空，没有工具被准入缓存。 |
 | Write isolation | Workspace lock root with cwd-resolved target path. |
 | Base64 artifact persistence | `<workspace>/.code-agent/artifacts/...`. |
 | Bridge local tools | Receive the same Run `workspace`/`cwd`; the global Bridge config is only the outer allowlist. |
 
-`RunContext` freezes the canonical workspace/cwd targets at creation. All later containment checks canonicalize symlink ancestors and fail closed on permission errors, loops, or excessive symlink depth. The legacy bootstrap executor and `syncCLIWorkingDirectory()` remain available only to direct-tool compatibility paths. Agent loops create a new immutable executor for every run. Legacy direct-tool cache behavior is unchanged; run-scoped executors bypass that process-global cache until a future contract gives it a Run-aware key.
+`RunContext` freezes the canonical workspace/cwd targets at creation. All later containment checks canonicalize symlink ancestors and fail closed on permission errors, loops, or excessive symlink depth. The legacy bootstrap executor and `syncCLIWorkingDirectory()` remain available only to direct-tool compatibility paths. Agent loops create a new immutable executor for every run. Tool cache lookups receive the run's session and canonical workspace scope; cache admission remains fail-closed.
 
 ## Web API behavior
 
@@ -93,7 +93,7 @@ flowchart TD
 
 - External Engine adapters are unchanged. External `task_start` does not publish the Native Host run identity; external runs do not enter the Native `RunRegistry`, do not receive Native `RunHandle` cancellation, and retain their existing same-session behavior.
 - Bridge adapter capability semantics are unchanged, but Native local-tool requests now pass through the Run-scoped `ToolExecutor` before dispatch and carry the immutable Run context to a request-local Bridge sandbox. Legacy non-Agent Bridge calls remain supported without pretending that `sessionId` is a `runId`.
-- `permission`, `memoryMode`, and `toolScope` entry alignment is reserved for S4. This S2 contract only fixes the execution identity and workspace authority consumed by those layers.
+- Session permission mode is resolved at execution time, and Agent Team scopes can carry `parentNativeRunId`; `ToolExecutor` rejects a Team parent/run mismatch. Memory-mode ownership is still outside this contract.
 - Role-proactivity and other direct `createAgentLoop()` callers receive a fresh run context/executor but do not enter the Web registry.
 - Skill discovery and session-level telemetry helpers remain process-scoped and are not advertised as run-aware. They must not be used as workspace or run identity by S4/S5.
 

@@ -2,6 +2,21 @@
 
 > 本文档提供 Agent Neo 的高层架构视图。Code Agent 仍是代码仓库与历史包名。
 
+## 2026-07-04~11 架构增量（Run Safety / Collaboration / Goal Trust）
+
+这一周把 Neo 的运行所有权、工具执行、Agent Team 作用域和完成证据收进同一套 fail-closed 合同。完整合同见 [Neo 运行安全与执行可信度 as-built spec](../plans/2026-07-11-neo-runtime-safety-as-built-spec.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Native Run ownership | `RunContext` 冻结 run/session/workspace/cwd；`RunRegistry` 拒绝同 session 双 run；控制和断线绑定精确 RunHandle | [native-run-context.md](./native-run-context.md)、[agent-core.md](./agent-core.md) |
+| Tool execution safety | cache 默认关闭并绑定 workspace+session v2 namespace；账本参数先脱敏；残缺 SSE tool call 不执行 | [tool-system.md](./tool-system.md) |
+| Agent Team scope | agent、任务、审批、trace、取消和 UI 事件按 `SwarmRunScope` 隔离；跨 run / tree / session target fail-closed | [multiagent-system.md](./multiagent-system.md) |
+| Goal completion trust | deliverables 声明、公开证据闸、verify/reviewer infra 故障降级和有界修复进入完成链路 | [agent-core.md](./agent-core.md) |
+| Permission profiles | 会话四档权限持久化；readOnly 读放行写/执行确认；无人值守最高钳到 acceptEdits | [tool-system.md](./tool-system.md) |
+| Model scaffold profile | strong 模型可减少重复 thinking/nudge/修复指令；当前 flag 默认关，standard 行为不变 | [agent-core.md](./agent-core.md) |
+| `@neo` collaboration | tag 直接开干、对话内清单与 topic 目录；topic 可跨会话显式续接，运行中同 topic 拒绝并发续接 | [ADR-034](./decisions/ADR-034-neo-tag-lightweight-conversational.md)、[ADR-035](./decisions/ADR-035-neo-tag-cross-session-topics.md) |
+| Context cache economics | 易变上下文进入 transient 尾巴、工具表稳定排序；大 tool result 完整归档后用确定性 placeholder 替换 | [ADR-032](./decisions/ADR-032-request-shape-prefix-stability.md)、[agent-core.md](./agent-core.md) |
+
 ## 整体架构图
 
 ```

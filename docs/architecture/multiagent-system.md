@@ -6,6 +6,20 @@
 > - `src/host/agent/taskDag.ts` — DAG 依赖调度
 > - `src/host/agent/multiagentTools/` — spawnAgent / sendInput / waitAgent 等工具
 
+## 2026-07-10 Agent Team 运行作用域
+
+Agent Team 的身份从“进程里最近一次 swarm”升级为 `SwarmRunScope(sessionId, runId, treeId)`。agent id、任务、inbox、plan/launch approval、trace、取消、结果聚合、IPC 和 renderer event 都必须携带并校验同一 scope。
+
+| 边界 | 当前合同 | 关键文件 / 测试 |
+|------|----------|----------------|
+| target validation | caller 不能操作不同 session、不同 Team run 或不同 tree 的 agent | `multiagentTools/agentRunScope.ts`、`agentRunScope.test.ts` |
+| coordinator ownership | coordinator 按 scope 注册和解析，不能用 singleton 或“最近一次 run”选择 | `parallelAgentCoordinatorRegistry.ts`、`parallelAgentCoordinator.test.ts` |
+| approval / cancel | plan、launch approval 与 cancel 都按目标 scope 收敛；旧 run 晚到操作不影响新 run | `planApproval.ts`、`swarmLaunchApproval.ts`、`swarm.ipc.ts` |
+| trace / ledger | writer 和 publisher 带 scope，写回前核 owner；跨 scope 事件拒绝 | `swarmTraceWriter.ts`、`swarmEventPublisher.ts` |
+| renderer isolation | store、monitor、history 与 mutations 只消费当前 scope 事件 | `swarmStore.ts`、`swarmEventRouting.ts`、`*.scope.test.tsx` |
+
+Native 外层 runId 与 Team 的 `SwarmRunScope.runId` 是两级身份，不能互相覆盖。当前 `SwarmRunScope`、launch request 和事件载荷已支持 `parentNativeRunId`，ToolExecutor 会校验父 run 一致性。Parallel `restoreCheckpoint()` 仍只有原语和单测，生产 Agent Team 入口尚未 rehydrate Native parent，不能宣称 crash recovery 已完成；见 [coordinator-checkpoint-symmetry.md](./coordinator-checkpoint-symmetry.md)。
+
 ## 0. 通信级别模型 (Communication Levels)
 
 借鉴 Hermes Agent 的 L0-L3 分级，对现有多 Agent 通信模式进行显式建模。

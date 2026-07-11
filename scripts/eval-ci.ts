@@ -740,7 +740,8 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
       process.exit(1);
     }
-    return;
+    // 显式退出：真跑后 DB/telemetry/限流器残留 handle 会让进程写完报告仍挂住不退
+    process.exit(0);
   }
 
   // --baseline-info

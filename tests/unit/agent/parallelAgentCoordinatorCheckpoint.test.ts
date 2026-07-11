@@ -103,12 +103,15 @@ import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 
 function makeContext(sessionId: string) {
   return {
-    modelConfig: { provider: 'mock', model: 'mock-model' } as never,
-    toolResolver: {} as never,
-    toolContext: {
-      currentToolCallId: 'call-1',
-      hookManager: undefined,
+    executionContext: {
       sessionId,
+      cwd: '/tmp',
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+      resolver: { getDefinition: vi.fn() },
+      permission: { request: async () => true },
+      events: { emit: vi.fn() },
+      abortSignal: new AbortController().signal,
+      currentToolCallId: 'call-1',
     } as never,
     subagentExecutor: {
       execute: executorState.executeMock,
@@ -162,9 +165,9 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
 
     executorState.executeMock.mockReset();
     executorState.executeMock.mockImplementation(
-      async (_task: string, spec: { name: string }) => ({
+      async (request: { config: { name: string } }) => ({
         success: true,
-        output: `ok:${spec.name}`,
+        output: `ok:${request.config.name}`,
         iterations: 1,
         toolsUsed: ['Read'],
         cost: 0,

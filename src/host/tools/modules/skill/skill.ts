@@ -32,6 +32,7 @@ import type { ToolResolver } from '../../dispatch/toolResolver';
 import { isSkillCommandAllowedByWorkbenchScope } from '../../workbenchToolScope';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { skillSchema as schema } from './skill.schema';
+import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 
 // ----------------------------------------------------------------------------
 // Helpers — 与 legacy skillMetaTool 行为保真
@@ -106,6 +107,7 @@ async function handleForkExecution(
   skill: ParsedSkill,
   args: string | undefined,
   ctx: ToolContext,
+  canUseTool: CanUseToolFn,
 ): Promise<ToolResult<string>> {
   if (!ctx.modelConfig) {
     return {
@@ -125,22 +127,19 @@ async function handleForkExecution(
 
   try {
     const executor = getSubagentExecutor();
-    const result = await executor.execute(
-      fullPrompt,
-      {
+    const result = await executor.execute({
+      prompt: fullPrompt,
+      config: {
         name: `Skill:${skill.name}`,
         systemPrompt: `You are executing the "${skill.name}" skill. ${skill.description}. Follow the instructions carefully.`,
         availableTools: skill.allowedTools,
         maxIterations: 15,
       },
-      {
+      context: createProtocolSubagentExecutionContext(ctx, canUseTool, {
         modelConfig: ctx.modelConfig as ModelConfig,
-        toolResolver: ctx.resolver as ToolResolver,
-        // 兼容 legacy 字段：subagentExecutor 期望旧 ToolContext，这里 cast 一层
-        // 由于 protocol 层只有 opaque service handle，把 ctx 直接透传，executor 内部按需取字段
-        toolContext: ctx as never,
-      },
-    );
+        resolver: ctx.resolver as ToolResolver,
+      }),
+    });
 
     if (result.success) {
       const output =
@@ -390,7 +389,7 @@ export async function executeSkill(
 
   // 根据执行模式分发
   if (skill.executionContext === 'fork') {
-    const result = await handleForkExecution(skill, skillArgs, ctx);
+    const result = await handleForkExecution(skill, skillArgs, ctx, canUseTool);
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('Skill done', { command, ok: result.ok });
     return result;

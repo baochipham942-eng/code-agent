@@ -15,9 +15,7 @@
 //   ctx.sessionId + ctx.currentToolCallId。这些都是 ProtocolToolContext 已结构化
 //   或 opaque 字段，protocol 层无需扩展。
 //
-// Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext，本工具用
-//   buildLegacyCtxFromProtocol 桥接。等 Wave 4 把 SubagentExecutor 升到
-//   ProtocolToolContext 后可移除 _helpers/legacyAdapter 依赖。
+// SubagentExecutor 通过显式 execution request 接收运行身份和端口。
 // ============================================================================
 
 import type {
@@ -50,7 +48,7 @@ import {
   getAgentContextLevel,
   type TodoItem,
 } from '../../../agent/subagentContextBuilder';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { taskSchema as schema } from './task.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { getContextHealthService } from '../../../context/contextHealthService';
@@ -340,24 +338,21 @@ export async function executeTask(
     }
     const executor = getSubagentExecutor();
 
-    // Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext，用 helper 桥
-    // TODO Wave 4: SubagentExecutor 升 ProtocolToolContext 后移除 legacyAdapter
-    const legacyCtx = {
-      ...buildLegacyCtxFromProtocol(ctx, canUseTool),
+    const executionContext = createProtocolSubagentExecutionContext(ctx, canUseTool, {
+      modelConfig: effectiveModelConfig,
+      resolver: ctx.resolver as ToolResolver,
+      abortSignal: abortController.signal,
       spawnDepth: childDepth,
       spawnMaxDepth: ctx.spawnMaxDepth,
       spawnTreeId: treeId,
-      swarmRunScope: ctx.swarmRunScope,
-      spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
-      spawnParentStartedAt: ctx.spawnParentStartedAt,
-      spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,
-      parentRemainingBudget: ctx.parentRemainingBudget,
       spawnParentAgentId: ctx.spawnParentAgentId,
-    };
+      parentRemainingBudget: ctx.parentRemainingBudget,
+      progress: (stage, detail, percent) => onProgress?.({ stage, detail, percent }),
+    });
 
-    const executionPromise = executor.execute(
+    const executionPromise = executor.execute({
       prompt,
-      {
+      config: {
         name: agentName,
         // 持久化角色资产绑定 key（roles/<roleId>/）：subagent_type 即 agent 注册 id。
         // spawn_agent 工具在 PR #204 已接线，Task 工具此前漏接 —— 导致 Task 派生的
@@ -370,18 +365,13 @@ export async function executeTask(
         permissionPreset,
         maxBudget,
       },
-      {
-        modelConfig: effectiveModelConfig,
-        toolResolver: ctx.resolver as ToolResolver,
-        toolContext: legacyCtx,
+      context: {
+        ...executionContext,
         parentToolUseId: ctx.currentToolCallId,
-        hookManager: ctx.hookManager as Parameters<typeof executor.execute>[2]['hookManager'],
-        parentRemainingBudget: ctx.parentRemainingBudget,
-        abortSignal: abortController.signal,
         spawnGuardId: agentId,
         executionAgentId: agentId,
       },
-    );
+    });
     startedExecution = executionPromise;
     guard.register(agentId, subagentType, prompt, executionPromise, abortController, {
       treeId,

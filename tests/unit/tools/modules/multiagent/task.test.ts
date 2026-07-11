@@ -1,8 +1,7 @@
 // ============================================================================
 // Task (native ToolModule) Tests — Wave 3 multiagent
 // 关键：opaque service handle (modelConfig/resolver/hookManager) 取自 ctx，
-// 不在 protocol 层引入业务类型；通过 buildLegacyCtxFromProtocol 桥接到
-// SubagentExecutor（cross-cat dispatch）。
+// 直接投影为 SubagentExecutionRequest。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -49,10 +48,6 @@ vi.mock('../../../../../src/host/agent/subagentContextBuilder', () => ({
     formatForSystemPrompt() { return ''; }
   },
   getAgentContextLevel: () => 'relevant',
-}));
-
-vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
-  buildLegacyCtxFromProtocol: (ctx: ToolContext) => ({ workingDirectory: ctx.workingDir }),
 }));
 
 import { taskModule } from '../../../../../src/host/tools/modules/multiagent/task';
@@ -220,8 +215,8 @@ describe('Task Team scope', () => {
       throw new Error('duplicate registration');
     });
     let childSignal: AbortSignal | undefined;
-    executorExecuteMock.mockImplementation((...args: unknown[]) => {
-      childSignal = (args[2] as { abortSignal: AbortSignal }).abortSignal;
+    executorExecuteMock.mockImplementation((request: { context: { abortSignal: AbortSignal } }) => {
+      childSignal = request.context.abortSignal;
       return new Promise((resolve) => {
         childSignal!.addEventListener('abort', () => resolve({
           success: false,
@@ -375,9 +370,9 @@ describe('Task happy / failure', () => {
     );
 
     expect(result.ok).toBe(true);
-    const executorCtx = executorExecuteMock.mock.calls[0][2];
+    const executorCtx = executorExecuteMock.mock.calls[0][0].context;
     expect(executorCtx.parentRemainingBudget).toBe(0.42);
-    expect(executorCtx.toolContext).toMatchObject({
+    expect(executorCtx).toMatchObject({
       spawnParentStartedAt: 1_000,
       spawnParentTimeoutMs: 10_000,
     });
@@ -478,7 +473,7 @@ describe('Task adaptive 泄漏修复（ADR-019 批 1）', () => {
     expect(result.ok).toBe(true);
     expect(executorExecuteMock).toHaveBeenCalled();
 
-    const executorOpts = executorExecuteMock.mock.calls[0][2];
+    const executorOpts = executorExecuteMock.mock.calls[0][0].context;
     // 泄漏修复：subagent 的 modelConfig 必须显式 adaptive=false
     expect(executorOpts.modelConfig.adaptive).toBe(false);
     // 角色分层结果不受影响（mock 的 getSubagentModelConfig 返回 kimi/kimi-k2.5）
@@ -496,7 +491,7 @@ describe('Task adaptive 泄漏修复（ADR-019 批 1）', () => {
     );
     expect(result.ok).toBe(true);
     expect(executorExecuteMock).toHaveBeenCalled();
-    const executorOpts = executorExecuteMock.mock.calls[0][2];
+    const executorOpts = executorExecuteMock.mock.calls[0][0].context;
     expect(executorOpts.modelConfig.adaptive).toBe(false);
   });
 });

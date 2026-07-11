@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext } from '../../../../src/host/tools/types';
+import type { SubagentExecutionContext } from '../../../../src/host/agent/subagentExecutorTypes';
 import { WORKFLOW_ANTI_LOOP } from '../../../../src/shared/constants';
 
 const { executeSubagentMock } = vi.hoisted(() => ({
@@ -13,23 +13,28 @@ const { executeSubagentMock } = vi.hoisted(() => ({
 
 vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
-    execute: executeSubagentMock,
+    execute: (request: { prompt: string; config: unknown; context: unknown }) =>
+      executeSubagentMock(request.prompt, request.config, request.context),
   }),
 }));
 
 import { executeWorkflowOrchestrate } from '../../../../src/host/agent/multiagentTools/workflowOrchestrate';
 
-function makeContext(overrides: Record<string, unknown> = {}): ToolContext {
+function makeContext(overrides: Record<string, unknown> = {}): SubagentExecutionContext {
   return {
-    workingDirectory: '/tmp/test',
-    requestPermission: vi.fn(async () => true),
+    sessionId: 'workflow-test',
+    cwd: '/tmp/test',
+    resolver: { getDefinition: vi.fn() },
+    permission: { request: vi.fn(async () => true) },
+    events: { emit: vi.fn() },
+    abortSignal: new AbortController().signal,
     modelConfig: {
       provider: 'zhipu',
       model: 'glm-5',
       temperature: 0.2,
     },
     ...overrides,
-  } as unknown as ToolContext;
+  } as unknown as SubagentExecutionContext;
 }
 
 /** 让 mock 按 stage 名返回不同结果序列 */
@@ -189,7 +194,7 @@ describe('workflow anti-loop (GAP-004)', () => {
           { name: 'Final', role: 'coder', prompt: 'Finalize.', dependsOn: ['VerifyA', 'VerifyB'] },
         ],
       },
-      makeContext({ emit }),
+      makeContext({ events: { emit } }),
     );
 
     // workflow 整体失败且带 breaker 标记

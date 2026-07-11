@@ -4,7 +4,6 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { ModelConfig } from '../../shared/contract';
 import type {
   DAGTask,
   TaskOutput,
@@ -19,9 +18,8 @@ import type {
 import { isTaskTerminal } from '../../shared/contract/taskDAG';
 import { TaskDAG } from './TaskDAG';
 import { withTimeout } from '../services/infra/timeoutController';
-import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { SubagentExecutorPort } from '../agent/subagentExecutorPort';
+import type { SubagentExecutionContext } from '../agent/subagentExecutorTypes';
 import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -104,10 +102,7 @@ const DAG_EVENT_TYPES: DAGEventType[] = [
  * 调度器执行上下文
  */
 export interface SchedulerContext {
-  modelConfig: ModelConfig;
-  toolResolver: ToolResolver;
-  toolContext: ToolContext;
-  workingDirectory: string;
+  executionContext: SubagentExecutionContext;
   remainingBudget?: number;
 }
 
@@ -414,7 +409,7 @@ export class DAGScheduler extends EventEmitter {
       const execContext: TaskExecutionContext = {
         dependencyOutputs: this.getDependencyOutputs(task),
         sharedData: dag.getAllSharedData(),
-        workingDirectory: context.workingDirectory,
+        workingDirectory: context.executionContext.cwd,
         remainingBudget: context.remainingBudget,
       };
 
@@ -511,23 +506,19 @@ export class DAGScheduler extends EventEmitter {
 
     // 执行 Agent
     const executor = await this.getSubagentExecutor();
-    const result = await executor.execute(
-      enhancedPrompt,
-      {
+    const result = await executor.execute({
+      prompt: enhancedPrompt,
+      config: {
         name: task.name,
         systemPrompt: config.systemPrompt || resolved.systemPrompt,
         availableTools: config.tools || resolved.tools,
         maxIterations: config.maxIterations || resolved.maxIterations,
       },
-      {
-        modelConfig: schedContext.modelConfig,
-        toolResolver: schedContext.toolResolver,
-        toolContext: schedContext.toolContext,
-        // 传递父工具调用 ID，用于 subagent 消息追踪
-        parentToolUseId: schedContext.toolContext.currentToolCallId,
-        hookManager: schedContext.toolContext.hookManager,
-      }
-    );
+      context: {
+        ...schedContext.executionContext,
+        parentToolUseId: schedContext.executionContext.currentToolCallId,
+      },
+    });
 
     return {
       text: result.output,

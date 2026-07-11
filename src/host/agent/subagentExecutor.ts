@@ -4,7 +4,6 @@
 // ============================================================================
 
 import type { ToolCall } from '../../shared/contract';
-import type { ToolContext } from '../tools/types';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { createRunContext } from '../runtime/runContext';
 import { ModelRouter } from '../model/modelRouter';
@@ -40,7 +39,7 @@ import { join as pathJoin } from 'path';
 import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
-import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
+import { buildChildContext, type ParentContext } from './childContext';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { AgentTask, type SidecarMetadata } from './agentTask';
@@ -53,7 +52,6 @@ import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import { getTelemetryService } from '../telemetry/telemetryService';
 import {
   createChildRunTraceContext,
-  getActiveRunTraceContext,
   withRunTraceContext,
 } from '../telemetry/runTraceContext';
 import {
@@ -85,14 +83,30 @@ import {
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
 import { buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import { resolveModelDecision } from '../model/modelDecision';
-import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
+import type {
+  SubagentConfig,
+  SubagentContext,
+  SubagentExecutionContext,
+  SubagentExecutionRequest,
+  SubagentResult,
+} from './subagentExecutorTypes';
+import {
+  projectLegacySubagentContext,
+  type LegacySubagentContextInput,
+} from './subagentExecutorLegacyAdapter';
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
 import {
   addSubagentUsage,
   type SubagentUsage,
 } from './subagentUsageAccounting';
 
-export type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
+export type {
+  SubagentConfig,
+  SubagentContext,
+  SubagentExecutionContext,
+  SubagentExecutionRequest,
+  SubagentResult,
+} from './subagentExecutorTypes';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -115,16 +129,31 @@ export class SubagentExecutor {
    * Execute a subagent with a specific prompt and limited tools
    * Now integrates with SubagentPipeline for permission/budget/audit
    */
+  async execute(request: SubagentExecutionRequest): Promise<SubagentResult>;
+  /** Compatibility overload for tests and non-production callers during migration. */
   async execute(
     prompt: string,
     config: SubagentConfig,
-    context: SubagentContext
+    context: LegacySubagentContextInput,
+  ): Promise<SubagentResult>;
+  async execute(
+    requestOrPrompt: SubagentExecutionRequest | string,
+    legacyConfig?: SubagentConfig,
+    legacyContext?: LegacySubagentContextInput,
   ): Promise<SubagentResult> {
-    const parentTraceContext = getActiveRunTraceContext();
+    const request = typeof requestOrPrompt === 'string'
+      ? {
+          prompt: requestOrPrompt,
+          config: legacyConfig as SubagentConfig,
+          context: projectLegacySubagentContext(legacyContext as LegacySubagentContextInput),
+        }
+      : requestOrPrompt;
+    const { prompt, config, context } = request;
+    const parentTraceContext = context.traceContext;
     if (!parentTraceContext) {
       return this.executeInternal(prompt, config, context);
     }
-    const teamScope = context.toolContext.swarmRunScope;
+    const teamScope = context.swarmRunScope;
     const executionAgentId = context.executionAgentId || context.spawnGuardId || config.name;
     const childTraceContext = createChildRunTraceContext(parentTraceContext, {
       runId: teamScope?.runId ?? parentTraceContext.runId,
@@ -135,10 +164,10 @@ export class SubagentExecutor {
     });
     let spanId: string | undefined;
     try {
-      const parentToolSpan = context.toolContext.currentToolCallId
+      const parentToolSpan = context.currentToolCallId
         ? getTelemetryService().findActiveSpanByAttribute(
             'tool.call_id',
-            context.toolContext.currentToolCallId,
+            context.currentToolCallId,
           )
         : undefined;
       spanId = getTelemetryService().startAgentSpan(
@@ -185,7 +214,7 @@ export class SubagentExecutor {
   private async executeInternal(
     prompt: string,
     config: SubagentConfig,
-    context: SubagentContext,
+    context: SubagentExecutionContext,
   ): Promise<SubagentResult> {
     // ADR-019 批 1：单一防御点——subagent 永不继承父会话的 adaptive 标志。
     // 所有 spawn 路径（Task 工具 / spawn_agent / parallel coordinator）都经过
@@ -207,7 +236,7 @@ export class SubagentExecutor {
     const taskMetadata: SidecarMetadata = {
       agentType: config.name,
       worktreePath: context.worktreePath,
-      parentSessionId: context.toolContext.sessionId || 'unknown',
+      parentSessionId: context.sessionId,
       spawnTime: Date.now(),
       model: context.modelConfig.model,
       toolPool: config.availableTools,
@@ -215,9 +244,9 @@ export class SubagentExecutor {
     const agentTask = new AgentTask(agentId, taskMetadata);
 
     // Wire TaskCreated/TaskCompleted hooks via AgentTask lifecycle callbacks
-    const sessionId = ((context.toolContext as ToolContext & { sessionId?: string }).sessionId || '').trim() || 'unknown';
-    if (context.hookManager) {
-      const hm = context.hookManager;
+    const sessionId = context.sessionId.trim() || 'unknown';
+    if (context.hooks) {
+      const hm = context.hooks;
       agentTask.onHook = (event, payload) => {
         if (event === 'TaskCreated') {
           hm.triggerTaskCreated(payload.taskId, payload.agentType, sessionId)
@@ -233,8 +262,8 @@ export class SubagentExecutor {
     agentTask.start();
 
     // Fire SubagentStart hook (fire-and-forget)
-    if (context.hookManager) {
-      context.hookManager.triggerSubagentStart(
+    if (context.hooks) {
+      context.hooks.triggerSubagentStart(
         config.name,
         agentId,
         prompt,
@@ -259,8 +288,8 @@ export class SubagentExecutor {
 
     // P3: 计算执行超时时间
     const timeout = getChildSubagentExecutionTimeout(config.name, config.maxExecutionTimeMs, {
-      parentStartedAt: context.toolContext.spawnParentStartedAt,
-      parentTimeoutMs: context.toolContext.spawnParentTimeoutMs,
+      parentStartedAt: context.spawnParentStartedAt,
+      parentTimeoutMs: context.spawnParentTimeoutMs,
     });
     const startTime = Date.now();
 
@@ -299,7 +328,7 @@ export class SubagentExecutor {
       try {
         const roleBlock = await buildRoleContextBlock(
           config.roleId,
-          context.toolContext.workingDirectory,
+          context.cwd,
         );
         if (roleBlock) {
           effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${roleBlock}`;
@@ -322,7 +351,7 @@ export class SubagentExecutor {
     };
     const pipelineContext = pipeline.createContext(
       dynamicConfig,
-      context.toolContext.workingDirectory,
+      context.cwd,
       undefined,
       { parentRemainingBudget: context.parentRemainingBudget },
     );
@@ -343,24 +372,26 @@ export class SubagentExecutor {
     let effectiveToolNames: string[];
 
     // M2-Task 5 partial: 走 buildChildContext 三档合并算法
-    // P4 收敛点：caller 没显式传 parentContext 时，自动从 ToolContext 推导，
-    // 而不是让 10+ caller 各自写一遍 parentContext 字面量（plan §3.4 / R4）。
+    // Compatibility callers may omit the already-projected parent context.
+    // Keep the fallback local and policy-free; production protocol callers
+    // pass the effective ports and identity explicitly.
     let effectiveParentContext: ParentContext | undefined = context.parentContext;
     if (!effectiveParentContext) {
-      const wideCtx = context.toolContext as ToolContext & {
-        parentAvailableTools?: string[];
-        parentPermissionMode?: string;
-        sessionId?: string;
+      effectiveParentContext = {
+        rules: [],
+        memory: [],
+        hooks: [],
+        skills: [],
+        mcpConnections: [],
+        permissionMode: getPermissionModeManager().getModeForSession(context.sessionId) as string,
+        availableTools: [],
+        deny: [],
+        ask: [],
+        allow: [],
+        blockedCommands: [],
+        role: context.agentRole,
       };
-      effectiveParentContext = buildParentContextFromToolContext(context.toolContext, {
-        // 顶层 agent 默认看到所有声明的工具；availableTools 为空时不会触发 narrowing
-        // （toolPool = parent.allTools ∩ child.declared 会退化成 child.declared，
-        //  也就是不变）。
-        availableTools: wideCtx.parentAvailableTools ?? [],
-        // 会话级取档：unattended（cron/heartbeat）会话在解析处被钳到不高于 acceptEdits
-        permissionMode: wideCtx.parentPermissionMode ?? (getPermissionModeManager().getModeForSession(wideCtx.sessionId) as string),
-      });
-      logger.debug(`[${config.name}] parentContext auto-derived from ToolContext (caller did not provide explicit context)`);
+      logger.debug(`[${config.name}] parentContext defaulted from explicit execution identity`);
     }
 
     // 从 settings 读 inheritance 配置（默认 strict-inherit）
@@ -401,7 +432,7 @@ export class SubagentExecutor {
       explicitParent: !!context.parentContext,
     });
 
-    const allowedToolDefs = filterSubagentToolDefs(effectiveToolNames, context.toolResolver);
+    const allowedToolDefs = filterSubagentToolDefs(effectiveToolNames, context.resolver);
     const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
 
     // P0(G18): 把 buildChildContext 算出的父→子收缩结果真正应用到 pipeline 的
@@ -423,12 +454,12 @@ export class SubagentExecutor {
     // P0(G5): subagent 工具调用统一收口到 ToolExecutor —— 与主 agent 同一条
     // 权限/校验/审计/缓存管道，不再走 ProtocolToolResolver.execute 旁路。
     // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
-    const { runId: nativeRunId, workspace, workingDirectory } = context.toolContext;
+    const { runId: nativeRunId, workspace, cwd } = context;
     const nativeRunContext = nativeRunId && sessionId && workspace
-      ? createRunContext({ runId: nativeRunId, sessionId, workspace, cwd: workingDirectory })
+      ? createRunContext({ runId: nativeRunId, sessionId, workspace, cwd })
       : undefined;
     const subagentToolExecutor = new ToolExecutor({
-      workingDirectory: nativeRunContext?.cwd ?? context.toolContext.workingDirectory,
+      workingDirectory: nativeRunContext?.cwd ?? context.cwd,
       runContext: nativeRunContext,
       // 子 agent 判定链用收缩后的 effectiveMode，禁止回读父会话档
       // （父会话开 bypass 时被收缩的子 agent 不能借会话档扩权）。
@@ -440,13 +471,20 @@ export class SubagentExecutor {
       // 父 agent 此时会弹用户确认，子 agent 不能替用户做主、不能越父权限。
       // 审出 MED：acceptEdits 不再与 bypass 同为全放行 —— 只免确认写入档，
       // 执行/网络档没有真人可问一律拒绝；否则 cron 钳制（bypass→acceptEdits）空转。
-      requestPermission: async (request) => subagentEffectiveMode === 'bypassPermissions'
-        || permissionModeAutoApproves(subagentEffectiveMode, getPermissionLevel(request.type)),
+      requestPermission: async (request) => {
+        if (
+          subagentEffectiveMode === 'bypassPermissions'
+          || permissionModeAutoApproves(subagentEffectiveMode, getPermissionLevel(request.type))
+        ) {
+          return true;
+        }
+        return context.permission.request(request);
+      },
     });
     const subagentPolicy = {
       allowedTools: allowedNames,
       check: (toolName: string, params: Record<string, unknown>): 'deny' | 'ask' => {
-        const def = context.toolResolver.getDefinition(toolName);
+        const def = context.resolver.getDefinition(toolName);
         const req: ToolExecutionRequest = {
           toolName,
           permissionLevel: def?.permissionLevel ?? 'read',
@@ -525,8 +563,8 @@ export class SubagentExecutor {
 
     // 发射 subagent 初始化事件
     const parentToolUseId = context.parentToolUseId;
-    if (parentToolUseId && context.toolContext.emit) {
-      context.toolContext.emit('agent_thinking', {
+    if (parentToolUseId) {
+      context.events.emit('agent_thinking', {
         message: `Subagent [${config.name}] starting...`,
         agentId: executionAgentId,
         parentToolUseId,
@@ -542,7 +580,7 @@ export class SubagentExecutor {
         // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
         adoptOrphanTasks(sessionId, pipelineContext.agentId);
         // Fire SubagentStop on early budget failure
-        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
+        context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
         return {
           success: false,
           output: '',
@@ -627,7 +665,7 @@ export class SubagentExecutor {
                 // 有 worktree 用 worktree 路径，否则用会话工作目录。best-effort 不阻塞取消。
                 try {
                   const patchDir =
-                    context.worktreePath || context.toolContext.workingDirectory;
+                    context.worktreePath || context.cwd;
                   if (patchDir) {
                     await captureWorkspacePatch(patchDir, agentTask.id, 'cancel');
                   }
@@ -656,7 +694,7 @@ export class SubagentExecutor {
             getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
           }
           // Fire SubagentStop on abort/timeout
-          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
+          context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
           return {
             success: false,
             output: finalOutput || '',
@@ -854,7 +892,7 @@ export class SubagentExecutor {
             toolCallsAttempted += 1;
 
             const toolDef = allowedNames.has(toolCall.name)
-              ? context.toolResolver.getDefinition(toolCall.name)
+              ? context.resolver.getDefinition(toolCall.name)
               : undefined;
             if (!toolDef) {
               const error = `Tool ${toolCall.name} not available`;
@@ -932,7 +970,7 @@ export class SubagentExecutor {
             // Plan approval gate for high-risk operations
             if (config.requirePlanApproval) {
               const gate = getPlanApprovalGate();
-              const risk = gate.assessRisk(toolRequest, context.toolContext.workingDirectory);
+              const risk = gate.assessRisk(toolRequest, context.cwd);
               if (risk.level !== 'low') {
                 const approval = await gate.submitForApproval({
                   agentId: executionAgentId,
@@ -940,7 +978,7 @@ export class SubagentExecutor {
                   coordinatorId: config.coordinatorId || 'coordinator',
                   plan: `Tool: ${toolCall.name}\nArgs: ${JSON.stringify(toolCall.arguments)}\nRisk: ${risk.reasons.join(', ')}`,
                   risk,
-                  scope: context.toolContext.swarmRunScope,
+                  scope: context.swarmRunScope,
                   signal: effectiveSignal,
                 });
                 if (effectiveSignal.aborted) {
@@ -984,8 +1022,8 @@ export class SubagentExecutor {
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
             // 发射 subagent 工具调用开始事件
-            if (parentToolUseId && context.toolContext.emit) {
-              context.toolContext.emit('tool_call_start', {
+            if (parentToolUseId) {
+              context.events.emit('tool_call_start', {
                 id: toolCall.id,
                 name: toolCall.name,
                 arguments: toolCall.arguments,
@@ -999,25 +1037,25 @@ export class SubagentExecutor {
                 toolCall.name,
                 toolCall.arguments,
                 {
-                  runId: context.toolContext.runId,
-                  sessionId: (context.toolContext as { sessionId?: string }).sessionId,
+                  runId: context.runId,
+                  sessionId: context.sessionId,
                   agentId: executionAgentId,
-                  spawnDepth: context.toolContext.spawnDepth,
-                  spawnMaxDepth: context.toolContext.spawnMaxDepth,
-                  spawnTreeId: context.toolContext.spawnTreeId,
-                  swarmRunScope: context.toolContext.swarmRunScope,
-                  spawnQueueTimeoutMs: context.toolContext.spawnQueueTimeoutMs,
+                  spawnDepth: context.spawnDepth,
+                  spawnMaxDepth: context.spawnMaxDepth,
+                  spawnTreeId: context.spawnTreeId,
+                  swarmRunScope: context.swarmRunScope,
+                  spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
                   spawnParentStartedAt: startTime,
                   spawnParentTimeoutMs: timeout,
                   parentRemainingBudget: getRemainingTreeBudget(),
                   spawnParentAgentId: context.spawnGuardId,
                   // 持久化角色 ID → 透传给工具层（MemoryWrite/Read scope='role' 路由用）
                   agentRole: config.roleId,
-                  hookManager: context.hookManager,
+                  hookManager: context.hooks as import('../hooks/hookManager').HookManager | undefined,
                   abortSignal: effectiveSignal,
                   currentToolCallId: toolCall.id,
-                  toolScope: context.toolContext.toolScope,
-                  emitEvent: context.toolContext.emit,
+                  toolScope: context.toolScope,
+                  emitEvent: context.events.emit,
                   modelConfig: context.modelConfig,
                   subagentPolicy,
                 },
@@ -1066,8 +1104,8 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用结束事件
-              if (parentToolUseId && context.toolContext.emit) {
-                context.toolContext.emit('tool_call_end', {
+              if (parentToolUseId) {
+                context.events.emit('tool_call_end', {
                   toolCallId: toolCall.id,
                   success: result.success,
                   output: result.output,
@@ -1106,8 +1144,8 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用错误事件
-              if (parentToolUseId && context.toolContext.emit) {
-                context.toolContext.emit('tool_call_end', {
+              if (parentToolUseId) {
+                context.events.emit('tool_call_end', {
                   toolCallId: toolCall.id,
                   success: false,
                   error: errorMessage,
@@ -1188,8 +1226,8 @@ export class SubagentExecutor {
 
       // Fire SubagentStop hook (fire-and-forget)
       // GAP-012: 带上 agentId 作为 swarm trace 查询入口
-      if (context.hookManager) {
-        context.hookManager.triggerSubagentStop(
+      if (context.hooks) {
+        context.hooks.triggerSubagentStop(
           config.name,
           finalOutput || undefined,
           sessionId,
@@ -1203,7 +1241,7 @@ export class SubagentExecutor {
       if (config.roleId && finalOutput) {
         runRoleWriteBack({
           roleId: config.roleId,
-          workspacePath: context.toolContext.workingDirectory,
+          workspacePath: context.cwd,
           taskPrompt: prompt,
           finalOutput,
           artifacts: instanceArtifacts,
@@ -1242,8 +1280,8 @@ export class SubagentExecutor {
 
       // Fire SubagentStop hook on failure (fire-and-forget)
       // GAP-012: 带上 agentId 作为 swarm trace 查询入口
-      if (context.hookManager) {
-        context.hookManager.triggerSubagentStop(
+      if (context.hooks) {
+        context.hooks.triggerSubagentStop(
           config.name,
           undefined,
           sessionId,
@@ -1285,7 +1323,7 @@ export class SubagentExecutor {
       maxBudget: getAgentMaxBudget(agentDef),
     };
 
-    return this.execute(prompt, config, context);
+    return this.execute({ prompt, config, context });
   }
 }
 

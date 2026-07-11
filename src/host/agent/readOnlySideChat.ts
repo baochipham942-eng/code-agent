@@ -17,19 +17,23 @@
 // ============================================================================
 
 import type { Message } from '../../shared/contract';
-import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
+import type {
+  SubagentExecutionContext,
+  SubagentExecutionRequest,
+  SubagentResult,
+} from './subagentExecutorTypes';
 
 /** 渲进侧聊系统提示的主会话最近消息条数（够感知进展，又不撑爆 token）。 */
 const RECENT_CONTEXT_MESSAGES = 12;
 
 export interface SideChatExecutor {
-  execute(prompt: string, config: SubagentConfig, context: SubagentContext): Promise<SubagentResult>;
+  execute(request: SubagentExecutionRequest): Promise<SubagentResult>;
 }
 
 export interface ReadOnlySideChatDeps {
   executor: SideChatExecutor;
-  /** 当前会话上下文（modelConfig / toolResolver / toolContext 等），侧聊由此继承。 */
-  baseContext: Pick<SubagentContext, 'modelConfig' | 'toolResolver' | 'toolContext'> & Partial<SubagentContext>;
+  /** 当前会话显式执行上下文，侧聊由此继承。 */
+  baseContext: SubagentExecutionContext;
   /** 父会话消息历史，供侧聊感知当前进展（只读，不回写主线）。 */
   parentMessages: Message[];
 }
@@ -64,13 +68,16 @@ export async function runReadOnlySideChat(
   deps: ReadOnlySideChatDeps,
   question: string,
 ): Promise<string> {
-  const config: SubagentConfig = {
+  const config = {
     name: 'side-chat',
     systemPrompt: buildInheritedSystemPrompt(deps.parentMessages),
     availableTools: [], // ← 全工具 deny = read-only
   };
 
-  const context = { ...deps.baseContext } as SubagentContext;
-  const result = await deps.executor.execute(question, config, context);
+  const result = await deps.executor.execute({
+    prompt: question,
+    config,
+    context: { ...deps.baseContext },
+  });
   return result.output ?? '';
 }

@@ -173,16 +173,15 @@ describe('workflow tool', () => {
     expect(resolved.model).toBe('mimo-v2.5-pro');
   });
 
-  // ── MED#2: 派生 SubagentContext 必须隔离会话历史，不随 legacyCtx 泄漏 ──
-  it('derived subagent toolContext carries no conversation history', async () => {
+  // ── MED#2: 派生 SubagentContext 必须隔离会话历史 ──
+  it('derived subagent context carries no conversation history', async () => {
     // ctx.subagent.messages 会经 buildLegacyCtxFromProtocol 进 legacyCtx.messages
     const ctx = makeCtx({ subagent: { messages: [{ role: 'user', content: 'secret history' }] } } as Partial<ToolContext>);
     await run({ script: 'return 1' }, ctx);
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
     const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal });
-    const tc = sub.toolContext as Record<string, unknown>;
-    expect(tc.messages).toBeUndefined();
-    expect(tc.agentId).toBe('a1');
+    expect(sub.messages).toBeUndefined();
+    expect(sub.agentId).toBe('a1');
   });
 
   it('pins a writer child to its isolated worktree workspace and cwd', async () => {
@@ -209,8 +208,8 @@ describe('workflow tool', () => {
       },
     });
     expect(sub.worktreePath).toBe('/tmp/writer-a1');
-    expect(sub.toolContext.workingDirectory).toBe('/tmp/writer-a1');
-    expect(sub.toolContext.workspace).toBe('/tmp/writer-a1');
+    expect(sub.cwd).toBe('/tmp/writer-a1');
+    expect(sub.workspace).toBe('/tmp/writer-a1');
     expect(sub.capabilityManifest).toMatchObject({ fileWrite: true, credential: false });
   });
 
@@ -297,24 +296,22 @@ describe('workflow tool', () => {
   });
 
   // R2 MED: 子上下文不得继承父 currentToolCallId（call-scoped id 串线）
-  it('derived subagent toolContext does not carry parent currentToolCallId', async () => {
+  it('derived subagent context does not carry parent currentToolCallId', async () => {
     const ctx = makeCtx({ currentToolCallId: 'parent-call-1' });
     await run({ script: 'return 1' }, ctx);
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
     const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal });
-    expect((sub.toolContext as Record<string, unknown>).currentToolCallId).toBeUndefined();
+    expect(sub.currentToolCallId).toBeUndefined();
   });
 
-  // R3 MED: child toolContext.abortSignal 必须 = 入参 signal（不能从 legacyCtx 带父级 signal，
-  // 否则下游工具读 toolContext.abortSignal 会绕过 child-scoped cancel/timeout）
-  it('derived subagent toolContext.abortSignal equals the per-call signal, not parent', async () => {
+  // R3 MED: child abortSignal 必须 = 入参 signal。
+  it('derived subagent abortSignal equals the per-call signal, not parent', async () => {
     const parentCtrl = new AbortController();
     const childCtrl = new AbortController();
     await run({ script: 'return 1' }, makeCtx({ abortSignal: parentCtrl.signal }));
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
     const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: childCtrl.signal });
     expect(sub.abortSignal).toBe(childCtrl.signal);
-    expect((sub.toolContext as { abortSignal?: AbortSignal }).abortSignal).toBe(childCtrl.signal);
   });
 
   // R2 MED: onProgress 抛错不得把成功 run 翻成失败（观测面 best-effort）

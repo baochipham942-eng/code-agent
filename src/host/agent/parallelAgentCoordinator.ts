@@ -40,11 +40,9 @@
 import { EventEmitter } from 'events';
 import { promises as fsPromises } from 'fs';
 import * as path from 'path';
-import type { ModelConfig } from '../../shared/contract';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
+import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import {
   AgentFailureCode,
   agentFailureCodeFromCancellationReason,
@@ -118,9 +116,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private cancelled = false;
   private cancelReason = 'cancelled';
   private sharedContext: SharedContext;
-  private modelConfig?: ModelConfig;
-  private toolResolver?: ToolResolver;
-  private toolContext?: ToolContext;
+  private executionContext?: SubagentExecutionContext;
   private subagentExecutor?: SubagentExecutorPort;
   private scope?: SwarmRunScope;
   private initialized = false;
@@ -143,9 +139,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Initialize coordinator with execution context
    */
   initialize(context: {
-    modelConfig: ModelConfig;
-    toolResolver: ToolResolver;
-    toolContext: ToolContext;
+    executionContext: SubagentExecutionContext;
     subagentExecutor?: SubagentExecutorPort;
     scope?: SwarmRunScope;
     durableController?: AgentTeamDurableController;
@@ -163,17 +157,14 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const resolvedScope = ownsExplicitScope ? this.scope : context.scope;
     if (
       resolvedScope
-      && context.toolContext.sessionId
-      && context.toolContext.sessionId !== resolvedScope.sessionId
+      && context.executionContext.sessionId !== resolvedScope.sessionId
     ) {
       throw new Error('Coordinator tool context sessionId does not match its run scope.');
     }
     if (!this.scope && context.scope) {
       this.scope = { ...context.scope };
     }
-    this.modelConfig = context.modelConfig;
-    this.toolResolver = context.toolResolver;
-    this.toolContext = context.toolContext;
+    this.executionContext = context.executionContext;
     this.subagentExecutor = context.subagentExecutor;
     this.durableController = context.durableController;
     this.durableOwnerEpoch = context.durableController?.ownerEpoch;
@@ -221,7 +212,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   }
 
   private async executeParallelInternal(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
-    if (!this.modelConfig || !this.toolResolver || !this.toolContext) {
+    if (!this.executionContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
@@ -233,10 +224,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const failedOrBlocked = new Set<string>();
     const remaining = new Map<string, AgentTask>();
 
-    if (this.toolContext.abortSignal?.aborted) {
+    if (this.executionContext.abortSignal.aborted) {
       this.cancelled = true;
-      this.cancelReason = typeof this.toolContext.abortSignal.reason === 'string'
-        ? this.toolContext.abortSignal.reason
+      this.cancelReason = typeof this.executionContext.abortSignal.reason === 'string'
+        ? this.executionContext.abortSignal.reason
         : 'run_cancelled';
     } else if (!this.cancelled) {
       this.cancelReason = 'cancelled';
@@ -393,11 +384,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Execute a single task with timeout
    */
   private async executeTask(task: AgentTask): Promise<AgentTaskResult> {
-    const modelConfig = this.modelConfig;
-    const toolResolver = this.toolResolver;
-    const toolContext = this.toolContext;
+    const executionContext = this.executionContext;
 
-    if (!modelConfig || !toolResolver || !toolContext) {
+    if (!executionContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
@@ -412,10 +401,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     const startTime = Date.now();
     let slotLease: { release: () => void } | undefined;
-    const treeId = this.scope?.treeId || toolContext.spawnTreeId || toolContext.sessionId || 'default';
+    const treeId = this.scope?.treeId || executionContext.spawnTreeId || executionContext.sessionId;
     const guard = getSpawnGuard();
     const taskAbortController = new AbortController();
-    const parentAbortSignal = toolContext.abortSignal;
+    const parentAbortSignal = executionContext.abortSignal;
     const abortFromParent = () => {
       if (!taskAbortController.signal.aborted) {
         taskAbortController.abort(parentAbortSignal?.reason ?? 'parent_cancelled');
@@ -449,7 +438,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       slotLease = await guard.acquireSlot({
         treeId,
         scope: this.scope,
-        timeoutMs: toolContext.spawnQueueTimeoutMs,
+        timeoutMs: executionContext.spawnQueueTimeoutMs,
         signal: taskAbortController.signal,
       });
 
@@ -466,9 +455,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
         enhancedPrompt += formatSharedContextForPrompt(this.sharedContext);
       }
 
-      const executionPromise = executor.execute(
-        task.task,
-        {
+      const executionPromise = executor.execute({
+        prompt: task.task,
+        config: {
           name: task.role,
           // 持久化角色资产绑定 key（并行路径下 role 即 agent 注册 id）
           roleId: task.role,
@@ -476,20 +465,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
           availableTools: task.tools,
           maxIterations: task.maxIterations || 20,
         },
-        {
-          modelConfig,
-          toolResolver,
-          // 注入 task.id 到 toolContext，让 BrowserPool / ComputerSurface 按 agentId 隔离。
-          // 共享 toolContext 不能直接 mutate（其他 task 也用），clone 后注入。
-          toolContext: {
-            ...toolContext,
-            agentId: task.id,
-            spawnParentStartedAt: toolContext.spawnParentStartedAt,
-            spawnParentTimeoutMs: toolContext.spawnParentTimeoutMs,
-            parentRemainingBudget: toolContext.parentRemainingBudget,
-            spawnParentAgentId: toolContext.spawnParentAgentId,
-          },
-          parentToolUseId: toolContext.currentToolCallId,
+        context: {
+          ...executionContext,
+          agentId: task.id,
+          parentToolUseId: executionContext.currentToolCallId,
           executionAgentId: task.id,
           spawnGuardId: task.id,
           abortSignal: taskAbortController.signal,
@@ -501,13 +480,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
               snapshot,
             } satisfies TaskProgressEvent);
           },
-          hookManager: toolContext.hookManager,
-          parentRemainingBudget: toolContext.parentRemainingBudget,
-        }
-      );
+          hooks: executionContext.hooks,
+        },
+      });
       guard.register(task.id, task.role, task.task, executionPromise, taskAbortController, {
         treeId,
-        parentId: toolContext.spawnParentAgentId,
+        parentId: executionContext.spawnParentAgentId,
         slotAcquired: true,
         scope: this.scope,
       });
@@ -1001,9 +979,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.removeAllListeners();
     this.executionActive = false;
     if (this.legacyLifecycle) {
-      this.modelConfig = undefined;
-      this.toolResolver = undefined;
-      this.toolContext = undefined;
+      this.executionContext = undefined;
       this.subagentExecutor = undefined;
       this.initialized = false;
     }
@@ -1018,7 +994,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Provides better dependency handling and parallel scheduling
    */
   async executeWithDAG(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
-    if (!this.modelConfig || !this.toolResolver || !this.toolContext) {
+    if (!this.executionContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
@@ -1095,10 +1071,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       scheduler.setSubagentExecutor(this.subagentExecutor);
     }
     const result = await scheduler.execute(dag, {
-      modelConfig: this.modelConfig,
-      toolResolver: this.toolResolver,
-      toolContext: this.toolContext,
-      workingDirectory: process.cwd(),
+      executionContext: this.executionContext,
     });
 
     // Convert scheduler result to coordinator result format
@@ -1182,7 +1155,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * 存储路径: ~/.code-agent/parallel-coordination-checkpoints/<sessionId>.json
    *
    * - Map 字段序列化成 entries 数组
-   * - Promise / AbortController / ToolContext 不入快照
+   * - Promise / AbortController / execution ports 不入快照
    * - 失败安静 warn（checkpoint 是 best-effort，不能拖累主流程）
    */
   async persistCheckpoint(identity?: ParallelCheckpointIdentity): Promise<void> {
@@ -1379,7 +1352,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   ): ParallelCheckpointIdentity | undefined {
     if (identity !== undefined) return identity;
     if (this.scope && !isLegacyCoordinatorScope(this.scope)) return this.scope;
-    return this.toolContext?.sessionId;
+    return this.executionContext?.sessionId;
   }
 
   private ownsCheckpointIdentity(identity: ParallelCheckpointIdentity): boolean {

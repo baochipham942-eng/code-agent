@@ -45,6 +45,10 @@ const TASK_PATH = path.resolve(
   __dirname,
   '../../../src/host/tools/modules/multiagent/task.ts',
 );
+const EXECUTION_CONTEXT_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/subagentExecutionContext.ts',
+);
 
 describe('executeSpawnAgent 深度截断接线', () => {
   const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
@@ -171,8 +175,9 @@ describe('Task 深度截断接线', () => {
 
   it('Task 子执行器收到父时间窗与父剩余预算', () => {
     expect(source).toMatch(/parentRemainingBudget:\s*ctx\.parentRemainingBudget/);
-    expect(source).toMatch(/spawnParentStartedAt:\s*ctx\.spawnParentStartedAt/);
-    expect(source).toMatch(/spawnParentTimeoutMs:\s*ctx\.spawnParentTimeoutMs/);
+    const executionContextSource = readFileSync(EXECUTION_CONTEXT_PATH, 'utf8');
+    expect(executionContextSource).toMatch(/spawnParentStartedAt:\s*ctx\.spawnParentStartedAt/);
+    expect(executionContextSource).toMatch(/spawnParentTimeoutMs:\s*ctx\.spawnParentTimeoutMs/);
   });
 
   it('Task 排队请求继承 parent abort signal，并在 lease handoff 后 fail closed', () => {

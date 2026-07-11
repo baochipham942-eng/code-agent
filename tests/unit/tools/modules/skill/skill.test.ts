@@ -58,7 +58,10 @@ vi.mock('../../../../../src/host/services/skills/skillRenderer', () => ({
 
 const subagentExecuteMock = vi.fn();
 vi.mock('../../../../../src/host/agent/subagentExecutor', () => ({
-  getSubagentExecutor: () => ({ execute: subagentExecuteMock }),
+  getSubagentExecutor: () => ({
+    execute: (request: { prompt: string; config: unknown; context: unknown }) =>
+      subagentExecuteMock(request.prompt, request.config, request.context),
+  }),
 }));
 
 vi.mock('../../../../../src/host/tools/workbenchToolScope', () => ({
@@ -89,6 +92,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
+    resolver: { getDefinition: vi.fn() },
     ...overrides,
   } as unknown as ToolContext;
 }

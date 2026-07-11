@@ -19,6 +19,7 @@ import type { AgentEvent } from '../../protocol/events';
 import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../types';
 import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { sameToolName } from '../toolNames';
+import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 
 // ----------------------------------------------------------------------------
 // FileReadCache — 进程级单例，避免每次构造 ctx 时重建缓存
@@ -145,6 +146,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     resolver: input.resolver ?? (legacy?.resolver as unknown),
     toolScope: legacy?.toolScope as ProtocolToolContext['toolScope'],
     executionIntent: legacy?.executionIntent as ProtocolToolContext['executionIntent'],
+    traceContext: getActiveRunTraceContext(),
   };
 }
 

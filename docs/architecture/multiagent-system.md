@@ -1,5 +1,10 @@
 # 多 Agent 编排系统架构设计
 
+> 2026-07-12：Task、`spawn_agent`、`workflow_orchestrate` 和 Parallel coordinator
+> 已迁移到 protocol-native `SubagentExecutionRequest` / `SubagentExecutorPort`。
+> Durable Team 身份、checkpoint 与恢复边界保持 S4 合同；详见
+> [multiagent-protocol-native.md](./multiagent-protocol-native.md)。
+
 > 核心代码：
 > - `src/host/agent/autoAgentCoordinator.ts` — 唯一的多 Agent 协调器
 > - `src/host/agent/parallelAgentCoordinator.ts` — 并行 Agent 协调器（含 SharedContext）

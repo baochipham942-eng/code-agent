@@ -268,11 +268,21 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       if (writeCapable) ctx.writeGuard.inFlight++;
       let workspaceOutcome: 'completed' | 'failed' | 'cancelled' = 'failed';
       try {
-        const sub = await executor.execute(
-          call.prompt,
-          { name: call.options?.agentType ?? 'workflow-agent', systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT, availableTools: tools },
-          ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal, capabilities, workspace }),
-        );
+        const sub = await executor.execute({
+          prompt: call.prompt,
+          config: {
+            name: call.options?.agentType ?? 'workflow-agent',
+            systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT,
+            availableTools: tools,
+          },
+          context: ctx.deriveSubagentContext({
+            agentId,
+            modelConfig,
+            signal: ctx.signal,
+            capabilities,
+            workspace,
+          }),
+        });
         actualTokens = sub.tokensUsed ?? 0; // 成功或失败（return-style）都已消耗，先记账
         if (!sub.success) {
           workspaceOutcome = ctx.signal.aborted ? 'cancelled' : 'failed';

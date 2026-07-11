@@ -36,6 +36,7 @@ import { extractScriptPreview } from '../../../agent/scriptRuntime/scriptPreview
 import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { getEventBus } from '../../../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
 import {
@@ -133,6 +134,10 @@ async function runWorkflow(
 
     // legacy ctx 提供 resolver / hookManager / workingDirectory / sessionId（与 spawnAgent 同源桥接）。
     const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+    const baseSubagentContext = createProtocolSubagentExecutionContext(ctx, canUseTool, {
+      modelConfig: baseModelConfig,
+      resolver: ctx.resolver as ToolResolver,
+    });
 
     // resumable journal 网关：DB 就绪才有（getWorkflowJournalRepository() 在未就绪时返 null）→
     // 无则不持久化、不重放，workflow 照常全 live 跑（优雅降级）。sessionId 经闭包带入 onRunStart。
@@ -187,32 +192,20 @@ async function runWorkflow(
         return resolved;
       },
       deriveSubagentContext: ({ agentId, modelConfig, signal, capabilities, workspace }): SubagentContext => ({
+        ...baseSubagentContext,
         modelConfig,
-        toolResolver: legacyCtx.resolver as ToolResolver,
-        // 干净 toolContext：注入 per-agent agentId + per-call modelConfig；显式清空会话/历史承载字段
-        // 与父级 call-scoped id（Codex MED#2 + R2：不靠"legacyCtx 恰好没 messages"，且 currentToolCallId
-        // 不清会让子 agent 下游按 tool-call id 归因时串到父 workflow 那个 call）。
-        toolContext: {
-          ...legacyCtx,
-          agentId,
-          modelConfig,
-          ...(workspace
-            ? { workingDirectory: workspace.cwd, workspace: workspace.workspace }
-            : {}),
-          // child-scoped signal 也要覆写到 toolContext（Codex R3）：否则下游工具读 toolContext.abortSignal
-          // 会拿到 legacyCtx 带下来的父级 signal，绕过 child-scoped cancel/timeout，与 SubagentContext.abortSignal 不一致。
-          abortSignal: signal,
-          messages: undefined,
-          todos: undefined,
-          modifiedFiles: undefined,
-          currentAttachments: undefined,
-          currentToolCallId: undefined,
-        } as SubagentContext['toolContext'],
+        cwd: workspace?.cwd ?? baseSubagentContext.cwd,
+        workspace: workspace?.workspace ?? baseSubagentContext.workspace,
         abortSignal: signal,
+        currentToolCallId: undefined,
+        agentId,
+        messages: undefined,
+        todos: undefined,
+        modifiedFiles: undefined,
+        attachments: undefined,
         executionAgentId: agentId,
         worktreePath: workspace?.cwd,
         capabilityManifest: capabilities,
-        hookManager: legacyCtx.hookManager,
       }),
       // 三档工具策略：readonly(默认) / edit / full，模型经 agent({tools}) 按 agent 选档。
       resolveAgentTools: (profile) => resolveToolProfile(profile),

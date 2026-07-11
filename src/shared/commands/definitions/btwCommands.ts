@@ -46,21 +46,18 @@ export const btwCommand: CommandDefinition = {
 
       const cfg = agent.getConfig();
       // read-only：禁用所有工具，故 requestPermission 永不被触发；emit 无副作用
-      const toolContext = {
-        workingDirectory: cfg.workingDirectory,
-        modelConfig: cfg.modelConfig,
-        requestPermission: async () => false,
-        emit: () => { /* side-chat 无需事件 */ },
-      };
-
       ctx.output.info('（侧聊·只读）思考中…');
       const answer = await runReadOnlySideChat(
         {
           executor: getSubagentExecutor(),
           baseContext: {
+            sessionId: 'btw-cli',
+            cwd: cfg.workingDirectory,
             modelConfig: cfg.modelConfig as never,
-            toolResolver: getToolResolver() as never,
-            toolContext: toolContext as never,
+            resolver: getToolResolver(),
+            permission: { request: async () => false },
+            events: { emit: () => { /* side-chat 无需事件 */ } },
+            abortSignal: new AbortController().signal,
           },
           parentMessages: agent.getHistory() as never,
         },

@@ -1,9 +1,5 @@
-import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
+import type { SubagentExecutionRequest, SubagentResult } from './subagentExecutorTypes';
 
 export interface SubagentExecutorPort {
-  execute(
-    prompt: string,
-    config: SubagentConfig,
-    context: SubagentContext,
-  ): Promise<SubagentResult>;
+  execute(request: SubagentExecutionRequest): Promise<SubagentResult>;
 }

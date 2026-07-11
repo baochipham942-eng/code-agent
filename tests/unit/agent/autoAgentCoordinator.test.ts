@@ -28,7 +28,8 @@ const executorState = vi.hoisted(() => ({
 
 vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
-    execute: executorState.executeMock,
+    execute: (request: { prompt: string; config: unknown; context: unknown }) =>
+      executorState.executeMock(request.prompt, request.config, request.context),
   }),
 }));
 

@@ -20,7 +20,6 @@ import { parseVerdict, resolveReviewModelConfig } from './goalReviewGate';
 import { DELIVERY_CRITIC } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig } from '../../shared/contract';
-import type { ToolContext } from '../tools/types';
 import type { HookManager } from '../hooks/hookManager';
 
 const logger = createLogger('DeliveryCritic');
@@ -120,33 +119,27 @@ export async function runDeliveryCritic(
 
   // critic 只给只读检索工具：审查不需要改文件/跑命令，且子代理权限策略默认拦
   // execute 级 bash。配合 requestPermission 自动放行——只读工具无副作用。
-  const toolContext: ToolContext = {
-    workingDirectory: deps.workingDirectory,
-    requestPermission: async () => true,
-    abortSignal: deps.abortSignal,
-    sessionId: deps.sessionId,
-    hookManager: deps.hookManager,
-    modelConfig,
-  };
-
   let result;
   try {
-    result = await getSubagentExecutor().execute(
-      buildCriticPrompt(modifiedFiles, userGoal, verification),
-      {
+    result = await getSubagentExecutor().execute({
+      prompt: buildCriticPrompt(modifiedFiles, userGoal, verification),
+      config: {
         name: 'delivery-critic',
         systemPrompt: CRITIC_SYSTEM_PROMPT,
         availableTools: ['read_file', 'grep', 'glob', 'list_directory'],
         maxIterations: DELIVERY_CRITIC.MAX_ITERATIONS,
       },
-      {
+      context: {
+        sessionId: deps.sessionId,
+        cwd: deps.workingDirectory,
         modelConfig,
-        toolResolver: getToolResolver(),
-        toolContext,
-        abortSignal: deps.abortSignal,
-        hookManager: deps.hookManager,
+        resolver: getToolResolver(),
+        permission: { request: async () => true },
+        events: { emit: () => undefined },
+        abortSignal: deps.abortSignal ?? new AbortController().signal,
+        hooks: deps.hookManager,
       },
-    );
+    });
   } catch (err) {
     // critic 自身出错。证据驱动：本次验证已失败时有客观坏证据 → 阻塞；否则保持 fail-open
     // （附加质量门，不能因为它故障卡死正常交付）

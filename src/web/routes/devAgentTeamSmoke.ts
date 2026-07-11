@@ -4,7 +4,7 @@ import type { ModelConfig, ToolDefinition } from '../../shared/contract';
 import type { AgentTask, AgentTaskResult, ParallelExecutionResult } from '../../host/agent/parallelAgentCoordinator';
 import { getSwarmServices } from '../../host/agent/swarmServices';
 import type { ToolResolver } from '../../host/tools/dispatch/toolResolver';
-import type { ToolContext } from '../../host/tools/types';
+import type { SubagentExecutionContext } from '../../host/agent/subagentExecutorTypes';
 import { createScopedSwarmAgentId, type SwarmRunScope } from '../../shared/contract/swarm';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
@@ -74,28 +74,28 @@ function makeToolResolver(): ToolResolver {
   } as unknown as ToolResolver;
 }
 
-function makeToolContext(scope: SwarmRunScope, signal?: AbortSignal): ToolContext {
+function makeExecutionContext(scope: SwarmRunScope, signal?: AbortSignal): SubagentExecutionContext {
   const resolver = makeToolResolver();
   return {
     runId: scope.parentNativeRunId,
     workspace: process.cwd(),
-    workingDirectory: process.cwd(),
-    requestPermission: async () => true,
-    abortSignal: signal,
+    cwd: process.cwd(),
+    modelConfig: { provider: 'acceptance', model: 'e2e-local-subagent' } as ModelConfig,
+    resolver,
+    permission: { request: async () => true },
+    events: { emit: () => undefined },
+    abortSignal: signal ?? new AbortController().signal,
     currentToolCallId: `${scope.runId}-agent-team-smoke`,
     sessionId: scope.sessionId,
     spawnTreeId: scope.treeId,
     swarmRunScope: scope,
-    resolver,
   };
 }
 
 function initializeCoordinator(scope: SwarmRunScope, signal?: AbortSignal) {
   const coordinator = getSwarmServices().parallelCoordinators.getOrCreate(scope);
   coordinator.initialize({
-    modelConfig: { provider: 'acceptance', model: 'e2e-local-subagent' } as ModelConfig,
-    toolResolver: makeToolResolver(),
-    toolContext: makeToolContext(scope, signal),
+    executionContext: makeExecutionContext(scope, signal),
     scope,
   });
   return coordinator;

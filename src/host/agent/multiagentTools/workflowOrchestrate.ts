@@ -10,7 +10,6 @@
 //   - 内部 helpers（executeStage / extractStructuredData / etc）
 // ============================================================================
 
-import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig } from '../../../shared/contract';
 import type {
   WorkflowStage,
@@ -43,6 +42,8 @@ import {
   AgentFailureCode,
   inferAgentFailureCode,
 } from '../../../shared/contract/agentFailure';
+import type { SubagentExecutionContext } from '../subagentExecutorTypes';
+import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 
 const logger = createLogger('WorkflowOrchestrate');
 export const DEFAULT_WORKFLOW_STAGE_TIMEOUT_MS = 240_000;
@@ -349,15 +350,15 @@ function extractGeneratedFiles(output: string): Array<{ path: string; type: 'ima
 }
 
 /**
- * workflow_orchestrate 的执行入口（接 legacy ToolContext）
+ * workflow_orchestrate protocol-native execution service.
  *
  * Schema 在 src/host/tools/modules/multiagent/workflowOrchestrate.schema.ts；
  * protocol 入口在同目录的 .ts native module。
  */
 export async function executeWorkflowOrchestrate(
   params: Record<string, unknown>,
-  context: ToolContext,
-): Promise<ToolExecutionResult> {
+  context: SubagentExecutionContext,
+): Promise<MultiagentExecutionResult> {
     const workflowName = params.workflow as string;
     const task = params.task as string;
     const customStages = params.stages as WorkflowStage[] | undefined;
@@ -608,12 +609,9 @@ interface WorkflowAntiLoopState {
 }
 
 /** 向用户发通知（cowork 产品的"人工介入"= 弹给用户）；emit 不可用时静默降级为日志 */
-function notifyWorkflowUser(context: ToolContext, message: string): void {
+function notifyWorkflowUser(context: SubagentExecutionContext, message: string): void {
   try {
-    (context.emit as unknown as ((event: string, payload: unknown) => void) | undefined)?.(
-      'notification',
-      { message },
-    );
+    context.events.emit('notification', { message });
   } catch {
     /* emit 信道不可用时仅日志兜底 */
   }
@@ -628,7 +626,7 @@ async function executeStageWithAntiLoop(
   task: string,
   stageContexts: Map<string, StageContext>,
   roles: Record<string, { name: string; systemPrompt: string; tools: string[] }>,
-  context: ToolContext,
+  context: SubagentExecutionContext,
   allStages: WorkflowStage[],
   antiLoop: WorkflowAntiLoopState,
 ): Promise<StageResult> {
@@ -809,7 +807,7 @@ async function executeStage(
   task: string,
   previousContexts: Map<string, StageContext>,
   roles: Record<string, { name: string; systemPrompt: string; tools: string[] }>,
-  context: ToolContext
+  context: SubagentExecutionContext,
 ): Promise<StageResult> {
   const startTime = Date.now();
 
@@ -948,7 +946,7 @@ async function executeStage(
     );
 
     // Pass attachments to subagent for multimodal processing (e.g., images for vision models)
-    const attachments = context.currentAttachments;
+    const attachments = context.attachments;
     if (attachments && attachments.length > 0) {
       logger.info('[Stage] Passing attachments to subagent', {
         stage: stage.name,
@@ -957,9 +955,9 @@ async function executeStage(
       });
     }
 
-    const result = await executor.execute(
-      fullPrompt,
-      {
+    const result = await executor.execute({
+      prompt: fullPrompt,
+      config: {
         name: `Stage:${stage.name}`,
         systemPrompt: agentConfig.systemPrompt,
         availableTools: stageToolPolicy.availableTools,
@@ -967,17 +965,13 @@ async function executeStage(
         maxToolCalls: stageToolPolicy.maxToolCalls,
         maxExecutionTimeMs: stageTimeoutResult.maxExecutionTimeMs,
       },
-      {
+      context: {
+        ...context,
         modelConfig: effectiveModelConfig,
-        toolResolver: context.resolver as ToolResolver,
-        toolContext: context,
         parentToolUseId: context.currentToolCallId,
-        abortSignal: context.abortSignal,
-        hookManager: context.hookManager,
-        // Pass attachments for multimodal support
-        attachments: attachments,
-      }
-    );
+        attachments,
+      },
+    });
 
     const duration = Date.now() - startTime;
 

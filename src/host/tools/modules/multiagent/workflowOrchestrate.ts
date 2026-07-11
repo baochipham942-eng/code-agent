@@ -1,21 +1,14 @@
 // ============================================================================
 // WorkflowOrchestrate (P1 Wave 3 — multiagent: native ToolModule rewrite)
 //
-// 旧版: src/host/agent/multiagentTools/workflowOrchestrate.ts
-//   - workflowOrchestrateTool: Tool / WorkflowOrchestrateTool: Tool 已删
-//   - executeWorkflowOrchestrate(params, legacyCtx) 保留作业务函数
+// 业务执行由 protocol-native workflow service 承担。
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：PERMISSION_DENIED / ABORTED / NOT_INITIALIZED / DOMAIN_ERROR
 // - schema 在 ./workflowOrchestrate.schema.ts，含 dynamicDescription（注入
 //   listBuiltInWorkflows() 的可用工作流列表）
 //
-// Opaque service handle 模式：
-//   workflow_orchestrate 用 ctx.modelConfig (cast ModelConfig) +
-//   ctx.resolver (cast ToolResolver) + ctx.subagent.attachments （多模态附件
-//   传给 stage subagent）+ ctx.sessionId。我们用 buildLegacyCtxFromProtocol 桥接
-//   （cross-cat dispatch），保持 545 行业务逻辑不动。TODO Wave 4 升 SubagentExecutor
-//   接 ProtocolToolContext 后可移除 _helpers/legacyAdapter 依赖。
+// Protocol context 在入口一次性投影为显式 execution ports。
 // ============================================================================
 
 import type {
@@ -26,8 +19,10 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { executeWorkflowOrchestrate as executeWorkflowOrchestrateLegacy } from '../../../agent/multiagentTools/workflowOrchestrate';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { executeWorkflowOrchestrate } from '../../../agent/multiagentTools/workflowOrchestrate';
+import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
+import type { SubagentExecutionContext } from '../../../agent/subagentExecutorTypes';
+import type { ToolResolver } from '../../dispatch/toolResolver';
 import { workflowOrchestrateSchema as schema } from './workflowOrchestrate.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { AgentFailureCode } from '../../../../shared/contract/agentFailure';
@@ -67,11 +62,26 @@ class WorkflowOrchestrateHandler implements ToolHandler<Record<string, unknown>,
     }
 
     onProgress?.({ stage: 'starting', detail: schema.name });
-    const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-    const legacyResult = await executeWorkflowOrchestrateLegacy(args, legacyCtx);
+    let executionContext: SubagentExecutionContext;
+    try {
+      executionContext = createProtocolSubagentExecutionContext(ctx, canUseTool, {
+        resolver: ctx.resolver as ToolResolver | undefined,
+        progress: (stage, detail, percent) => onProgress?.({ stage, detail, percent }),
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        code: 'NOT_INITIALIZED',
+        meta: { failureCode: AgentFailureCode.ModelError },
+      };
+    }
+    const serviceResult = await executeWorkflowOrchestrate(args, executionContext);
     onProgress?.({ stage: 'completing', percent: 100 });
-    ctx.logger.debug('workflow_orchestrate done', { ok: legacyResult.success });
-    const result = adaptLegacyResult(legacyResult);
+    ctx.logger.debug('workflow_orchestrate done', { ok: serviceResult.success });
+    const result: ToolResult<string> = serviceResult.success
+      ? { ok: true, output: serviceResult.output ?? '', meta: serviceResult.metadata }
+      : { ok: false, error: serviceResult.error ?? 'unknown error', meta: serviceResult.metadata };
     return withMultiagentMeta(result, ctx, schema.name, {
       action: 'workflow',
       status: result.ok ? 'completed' : 'failed',
@@ -86,11 +96,13 @@ class WorkflowOrchestrateHandler implements ToolHandler<Record<string, unknown>,
       counts: {
         stages: Array.isArray(args.stages) ? args.stages.length : undefined,
       },
-      result: legacyResult.metadata ?? {},
+      result: serviceResult.metadata ?? {},
     }, {
       artifactName: 'Workflow result',
       requestArgs: args,
-      legacyMetadata: legacyResult.metadata,
+      legacyMetadata: serviceResult.metadata,
+      // Public metadata compatibility: keep the historical bridge flag stable
+      // even though execution no longer traverses the legacy adapter.
       legacyContext: true,
     });
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext } from '../../../../src/host/tools/types';
+import type { SubagentExecutionContext } from '../../../../src/host/agent/subagentExecutorTypes';
 import { CORE_AGENT_IDS } from '../../../../src/host/agent/hybrid/coreAgents';
 import { getBuiltInWorkflow, listBuiltInWorkflowIds, validateWorkflowDependencies } from '../../../../src/shared/contract/workflow';
 
@@ -9,7 +9,8 @@ const { executeSubagentMock } = vi.hoisted(() => ({
 
 vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
-    execute: executeSubagentMock,
+    execute: (request: { prompt: string; config: unknown; context: unknown }) =>
+      executeSubagentMock(request.prompt, request.config, request.context),
   }),
 }));
 
@@ -18,17 +19,21 @@ import {
   executeWorkflowOrchestrate,
 } from '../../../../src/host/agent/multiagentTools/workflowOrchestrate';
 
-function makeContext(overrides: Record<string, unknown> = {}): ToolContext {
+function makeContext(overrides: Record<string, unknown> = {}): SubagentExecutionContext {
   return {
-    workingDirectory: '/tmp/test',
-    requestPermission: vi.fn(async () => true),
+    sessionId: 'workflow-test',
+    cwd: '/tmp/test',
+    resolver: { getDefinition: vi.fn() },
+    permission: { request: vi.fn(async () => true) },
+    events: { emit: vi.fn() },
+    abortSignal: new AbortController().signal,
     modelConfig: {
       provider: 'xiaomi',
       model: 'mimo-v2',
       temperature: 0.2,
     },
     ...overrides,
-  } as unknown as ToolContext;
+  } as unknown as SubagentExecutionContext;
 }
 
 beforeEach(() => {
@@ -166,7 +171,7 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
 
   it('passes parent tool identity and longer workflow timeout to stage subagents', async () => {
     const abort = new AbortController();
-    const hookManager = {} as ToolContext['hookManager'];
+    const hooks = {} as SubagentExecutionContext['hooks'];
     executeSubagentMock.mockResolvedValue({
       success: true,
       output: 'parent-trace-ok',
@@ -190,7 +195,7 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
       makeContext({
         currentToolCallId: 'tool-workflow-1',
         abortSignal: abort.signal,
-        hookManager,
+        hooks,
       }),
     );
 
@@ -204,7 +209,7 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
       expect.objectContaining({
         parentToolUseId: 'tool-workflow-1',
         abortSignal: abort.signal,
-        hookManager,
+        hooks,
       }),
     );
     expect(result.metadata).toMatchObject({

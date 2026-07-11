@@ -1,13 +1,15 @@
-import type { ModelConfig, PermissionPreset } from '../../shared/contract';
-import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
+import type { Message, ModelConfig, PermissionPreset, ToolDefinition } from '../../shared/contract';
+import type { SwarmAgentContextSnapshot, SwarmRunScope } from '../../shared/contract/swarm';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
-import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/dispatch/toolResolver';
-import type { HookManager } from '../hooks/hookManager';
+import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { AgentMessage } from './spawnGuard';
 import type { ParentContext } from './childContext';
 import type { CapabilityManifest } from '../../shared/contract/agentCapabilities';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../../shared/contract/conversationEnvelope';
 
 export interface SubagentConfig {
   name: string;
@@ -66,23 +68,98 @@ export interface SubagentResult {
   failureCode?: AgentFailureCode;
 }
 
-export interface SubagentContext {
+export interface SubagentToolResolverPort {
+  getDefinition(name: string): ToolDefinition | undefined;
+}
+
+export interface SubagentPermissionRequest {
+  sessionId?: string;
+  forceConfirm?: boolean;
+  type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command';
+  tool: string;
+  details: Record<string, unknown>;
+  reason?: string;
+  reasonCode?: string;
+  boundary?: unknown;
+  dangerLevel?: 'normal' | 'warning' | 'danger';
+  decisionTrace?: unknown;
+}
+
+export interface SubagentPermissionPort {
+  request(request: SubagentPermissionRequest): Promise<boolean>;
+}
+
+export interface SubagentHookPort {
+  triggerTaskCreated(taskId: string, agentType: string, sessionId: string): Promise<unknown>;
+  triggerTaskCompleted(taskId: string, agentType: string, success: boolean, sessionId: string): Promise<unknown>;
+  triggerSubagentStart(
+    agentType: string,
+    agentId: string,
+    prompt: string,
+    sessionId: string,
+    parentToolUseId?: string,
+  ): Promise<unknown>;
+  triggerSubagentStop(
+    agentType: string,
+    output: string | undefined,
+    sessionId: string,
+    agentId?: string,
+  ): Promise<unknown>;
+}
+
+export interface SubagentEventPort {
+  emit(event: string, data: unknown): void;
+  progress?(stage: 'starting' | 'running' | 'completing', detail?: string, percent?: number): void;
+}
+
+export interface SubagentAttachment {
+  type: string;
+  category?: string;
+  name?: string;
+  path?: string;
+  data?: string;
+  mimeType?: string;
+}
+
+export interface SubagentExecutionContext {
+  /** Native run identity; never inferred from a process singleton. */
+  runId?: string;
+  sessionId: string;
+  workspace?: string;
+  cwd: string;
   modelConfig: ModelConfig;
-  toolResolver: ToolResolver;
-  toolContext: ToolContext;
-  /** Attachments (images, files) to include in the first message */
-  attachments?: Array<{
-    type: string;
-    category?: string;
-    name?: string;
-    path?: string;
-    data?: string;
-    mimeType?: string;
+  resolver: SubagentToolResolverPort;
+  permission: SubagentPermissionPort;
+  hooks?: SubagentHookPort;
+  events: SubagentEventPort;
+  abortSignal: AbortSignal;
+  traceContext?: RunTraceContext;
+  currentToolCallId?: string;
+  agentId?: string;
+  agentName?: string;
+  agentRole?: string;
+  messages?: Message[];
+  modifiedFiles?: Set<string>;
+  todos?: Array<{
+    id: string;
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   }>;
+  spawnDepth?: number;
+  spawnMaxDepth?: number;
+  spawnTreeId?: string;
+  swarmRunScope?: SwarmRunScope;
+  parentNativeRunId?: string;
+  spawnQueueTimeoutMs?: number;
+  spawnParentStartedAt?: number;
+  spawnParentTimeoutMs?: number;
+  spawnParentAgentId?: string;
+  toolScope?: WorkbenchToolScope;
+  executionIntent?: ConversationExecutionIntent;
+  /** Attachments (images, files) to include in the first message */
+  attachments?: SubagentAttachment[];
   /** 父工具调用 ID，用于标识消息来自哪个 subagent */
   parentToolUseId?: string;
-  /** AbortSignal 用于取消任务执行 */
-  abortSignal?: AbortSignal;
   /** SpawnGuard agent ID — used to drain message queue for send_input */
   spawnGuardId?: string;
   /** Optional external message queue drain, used by parallel executor inboxes. */
@@ -99,8 +176,6 @@ export interface SubagentContext {
   capabilityManifest?: Readonly<CapabilityManifest>;
   /** Optional callback for lightweight context updates */
   onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
-  /** HookManager for firing SubagentStart/Stop and TaskCreated/Completed events */
-  hookManager?: HookManager;
   /**
    * 父探活回调（swarm 护栏 P1-2 #5）。仅后台 detached 子代理注入：返回 false 表示
    * 父 run 已结束/被新 run 取代，子代理应自我中止（parent-gone）避免成孤儿烧预算。
@@ -108,3 +183,12 @@ export interface SubagentContext {
    */
   isParentAlive?: () => boolean;
 }
+
+export interface SubagentExecutionRequest {
+  prompt: string;
+  config: SubagentConfig;
+  context: SubagentExecutionContext;
+}
+
+/** @deprecated Use SubagentExecutionContext. Kept as a source-compatible name only. */
+export type SubagentContext = SubagentExecutionContext;

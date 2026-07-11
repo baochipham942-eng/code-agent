@@ -1,9 +1,7 @@
 // ============================================================================
 // SpawnAgent / AgentSpawn (P1 Wave 3 — multiagent: native ToolModule rewrite)
 //
-// 旧版: src/host/agent/multiagentTools/spawnAgent.ts
-//   - spawnAgentTool: Tool / agentSpawnTool: Tool 已删
-//   - executeSpawnAgent(params, legacyCtx) 保留作业务函数（接 legacy ToolContext）
+// 业务执行由 protocol-native spawn service 承担。
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：INVALID_ARGS / PERMISSION_DENIED / ABORTED / NOT_INITIALIZED /
@@ -11,13 +9,7 @@
 // - schema 在 ./spawnAgent.schema.ts，spawn_agent 与 AgentSpawn 共享 inputSchema、
 //   description 不同
 //
-// Opaque service handle 模式（关键样板）：
-//   spawn_agent 是 multiagent 中最复杂的——需要 ctx.modelConfig + ctx.resolver +
-//   ctx.hookManager + ctx.subagent.* + ctx.workingDir + ctx.sessionId +
-//   ctx.currentToolCallId。我们用 buildLegacyCtxFromProtocol 桥接（cross-cat
-//   dispatch），保持 932 行 executeSpawnAgent 业务逻辑不动；TODO Wave 4 升
-//   SubagentExecutor / ParallelAgentCoordinator 接 ProtocolToolContext 后移除
-//   _helpers/legacyAdapter 依赖。
+// Protocol context 在入口一次性投影为显式 execution ports。
 // ============================================================================
 
 import type {
@@ -29,8 +21,10 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { executeSpawnAgent as executeSpawnAgentLegacy } from '../../../agent/multiagentTools/spawnAgent';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { executeSpawnAgent } from '../../../agent/multiagentTools/spawnAgent';
+import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
+import type { SubagentExecutionContext } from '../../../agent/subagentExecutorTypes';
+import type { ToolResolver } from '../../dispatch/toolResolver';
 import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { getContextHealthService } from '../../../context/contextHealthService';
@@ -110,28 +104,40 @@ async function runSpawnAgent(
 
   onProgress?.({ stage: 'starting', detail: schemaName });
   const normalizedArgs = normalizeSpawnArgs(args);
+  let executionContext: SubagentExecutionContext;
+  try {
+    executionContext = createProtocolSubagentExecutionContext(ctx, canUseTool, {
+      resolver: ctx.resolver as ToolResolver | undefined,
+      progress: (stage, detail, percent) => onProgress?.({ stage, detail, percent }),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      code: 'NOT_INITIALIZED',
+      meta: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
 
   // ADR-025 A1：后台执行——立即返回稳定 agent_id 不阻塞前台 turn。
   // 关键：后台子 agent 用**独立 AbortController**，否则父 turn 结束触发的
   // abort 会连带杀掉后台任务，"后台"语义就破了。进程内 only（不跨重启 resume）。
   if (args.run_in_background === true) {
     const bgController = new AbortController();
-    const bgLegacyCtx = buildLegacyCtxFromProtocol(
-      { ...ctx, abortSignal: bgController.signal },
-      canUseTool,
-    );
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
-      const bgResult = await executeSpawnAgentLegacy(normalizedArgs, bgLegacyCtx);
-      const adapted = adaptLegacyResult(bgResult);
-      const failureCode = adapted.ok ? undefined : inferAgentFailureCode({
+      const bgResult = await executeSpawnAgent(normalizedArgs, {
+        ...executionContext,
+        abortSignal: bgController.signal,
+      });
+      const failureCode = bgResult.success ? undefined : inferAgentFailureCode({
         failureCode: bgResult.metadata?.failureCode,
-        error: adapted.error,
+        error: bgResult.error,
         defaultCode: AgentFailureCode.ModelError,
       });
       return {
-        success: adapted.ok,
-        output: adapted.ok && typeof adapted.output === 'string' ? adapted.output : '',
-        error: adapted.ok ? undefined : adapted.error,
+        success: bgResult.success,
+        output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
+        error: bgResult.success ? undefined : bgResult.error,
         toolsUsed: [],
         iterations: 0,
         ...(failureCode ? { failureCode } : {}),
@@ -151,18 +157,19 @@ async function runSpawnAgent(
     );
   }
 
-  const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-  const legacyResult = await executeSpawnAgentLegacy(normalizedArgs, legacyCtx);
+  const serviceResult = await executeSpawnAgent(normalizedArgs, executionContext);
   onProgress?.({ stage: 'completing', percent: 100 });
-  ctx.logger.debug(`${schemaName} done`, { ok: legacyResult.success });
-  const result = adaptLegacyResult(legacyResult);
-  const legacyAgentId = legacyResult.metadata?.agentId;
+  ctx.logger.debug(`${schemaName} done`, { ok: serviceResult.success });
+  const result: ToolResult<string> = serviceResult.success
+    ? { ok: true, output: serviceResult.output ?? '', meta: serviceResult.metadata }
+    : { ok: false, error: serviceResult.error ?? 'unknown error', meta: serviceResult.metadata };
+  const serviceAgentId = serviceResult.metadata?.agentId;
 
   // 上报 subagent 维度 token 贡献（与 task.ts 路径对齐：仅 ok 时累加）
   if (result.ok && typeof result.output === 'string') {
     const subagentName =
       (typeof normalizedArgs.agentId === 'string' && normalizedArgs.agentId) ||
-      (typeof legacyAgentId === 'string' && legacyAgentId) ||
+      (typeof serviceAgentId === 'string' && serviceAgentId) ||
       (typeof normalizedArgs.role === 'string' && normalizedArgs.role) ||
       schemaName;
     try {
@@ -185,7 +192,7 @@ async function runSpawnAgent(
     status: result.ok ? 'completed' : 'failed',
     agentId: typeof normalizedArgs.agentId === 'string'
       ? normalizedArgs.agentId
-      : (typeof legacyAgentId === 'string' ? legacyAgentId : undefined),
+      : (typeof serviceAgentId === 'string' ? serviceAgentId : undefined),
     targets: [
       ...(typeof normalizedArgs.role === 'string' ? [normalizedArgs.role] : []),
       ...(Array.isArray(normalizedArgs.agents)
@@ -197,7 +204,7 @@ async function runSpawnAgent(
     counts: {
       agents: Array.isArray(normalizedArgs.agents) ? normalizedArgs.agents.length : (typeof normalizedArgs.role === 'string' ? 1 : undefined),
     },
-    result: legacyResult.metadata ?? {},
+    result: serviceResult.metadata ?? {},
   }, `${schemaName} result`);
 }
 

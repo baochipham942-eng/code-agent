@@ -11,12 +11,10 @@
 //   - DEFAULT_ISOLATION map
 // ============================================================================
 
-import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import { randomUUID } from 'crypto';
 import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../subagentExecutor';
-import type { ToolResolver } from '../../tools/dispatch/toolResolver';
 import {
   getParallelAgentCoordinator,
   getParallelAgentCoordinatorRegistry,
@@ -43,7 +41,7 @@ import {
   getAgentContextLevel,
 } from '../subagentContextBuilder';
 import { getSwarmEventEmitter } from '../swarmEventPublisher';
-import { checkReadonlyParentRule, buildParentContextFromToolContext, type ParentContext } from '../childContext';
+import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
 import { normalizeCancellationReason, routeFailureCode } from '../../../shared/contract/cancellation';
@@ -82,19 +80,16 @@ import {
 } from '../agentTeamDurableAdapter';
 import { withRunTraceContext } from '../../telemetry/runTraceContext';
 import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
+import type { SubagentExecutionContext } from '../subagentExecutorTypes';
+import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 
 /**
- * spawn_agent / AgentSpawn 的执行入口（接 legacy ToolContext）
- *
- * Schema 在 src/host/tools/modules/multiagent/spawnAgent.schema.ts，
- * protocol 入口在 src/host/tools/modules/multiagent/spawnAgent.ts。
- * 本函数签名保留 legacy ToolContext 以避免大规模 refactor 932 行业务逻辑；
- * native module 用 buildLegacyCtxFromProtocol 桥接 protocol → legacy ctx。
+ * spawn_agent / AgentSpawn protocol-native execution service.
  */
 export async function executeSpawnAgent(
   params: Record<string, unknown>,
-  context: ToolContext,
-): Promise<ToolExecutionResult> {
+  context: SubagentExecutionContext,
+): Promise<MultiagentExecutionResult> {
     const parallel = params.parallel as boolean | undefined;
     const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
 
@@ -231,7 +226,7 @@ export async function executeSpawnAgent(
       // forkContext=true 时强制使用 full 上下文级别
       const contextLevel = forkContext
         ? 'full' as const
-        : (context.contextLevel || (role ? getAgentContextLevel(role) : 'relevant'));
+        : (role ? getAgentContextLevel(role) : 'relevant');
 
       // 只有在有足够上下文信息时才注入
       if (context.messages && context.messages.length > 0) {
@@ -353,7 +348,7 @@ export async function executeSpawnAgent(
       const effectiveMaxBudget = maxBudget || (agentConfig ? getAgentMaxBudget(agentConfig) : undefined);
 
       // 注入工作目录到 task，避免子 Agent 使用相对路径
-      let cwd = context.workingDirectory || process.cwd();
+      let cwd = context.cwd;
 
       // Best-effort orphan cleanup before creating new worktrees
       cleanupOrphanedWorktrees(cwd).catch(() => {});
@@ -385,16 +380,18 @@ export async function executeSpawnAgent(
       const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
 
       // Build executor context.
-      // 注入 agentId 到 toolContext —— 让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
+      // 注入 agentId，让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
       // 共享 context 不能直接 mutate（父 agent 也用同一个），clone 后注入。
-      // P3: 注入 parentContext，让 subagentExecutor 走 buildChildContext 三档合并
-      // 现阶段从 ToolContext 推导；后续 caller 在 P4 阶段补全父级 rules/memory/tools。
-      const parentContext: ParentContext = buildParentContextFromToolContext(context, {
-        // 会话级取档：unattended（cron/heartbeat）会话在解析处被钳到不高于 acceptEdits
+      const parentContext: ParentContext = context.parentContext ?? {
+        rules: [],
+        memory: [],
+        hooks: [],
+        skills: [],
+        mcpConnections: [],
         permissionMode: getPermissionModeManager().getModeForSession(context.sessionId) as string,
         availableTools: tools.slice(),
         role: context.agentRole,
-      });
+      };
 
       // 孤儿回收（swarm 护栏 P1-2 #5）：仅后台 detached 子代理注入父探活。
       // 前台子代理被父 await，不会成孤儿，跳过（多余开销）。
@@ -417,32 +414,27 @@ export async function executeSpawnAgent(
         }
       }
 
-      const executorContext = {
-        modelConfig: context.modelConfig as ModelConfig,
-        toolResolver: context.resolver as ToolResolver,
-        // swarm 护栏 P1-2 #2：把递增后的深度注入子 toolContext，让深度沿 spawn 链路流转
-        toolContext: {
-          ...context,
-          agentId,
-          spawnDepth: childDepth,
-          spawnMaxDepth: context.spawnMaxDepth,
-          spawnTreeId: treeId,
-          swarmRunScope: context.swarmRunScope,
-          spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
-          spawnParentStartedAt: context.spawnParentStartedAt,
-          spawnParentTimeoutMs: context.spawnParentTimeoutMs,
-          parentRemainingBudget: context.parentRemainingBudget,
-          spawnParentAgentId: context.spawnParentAgentId,
-        },
+      const executorContext: SubagentExecutionContext = {
+        ...context,
+        // swarm 护栏 P1-2 #2：把递增后的深度沿 execution context 传递
+        agentId,
+        spawnDepth: childDepth,
+        spawnMaxDepth: context.spawnMaxDepth,
+        spawnTreeId: treeId,
+        swarmRunScope: context.swarmRunScope,
+        spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
+        spawnParentStartedAt: context.spawnParentStartedAt,
+        spawnParentTimeoutMs: context.spawnParentTimeoutMs,
+        parentRemainingBudget: context.parentRemainingBudget,
+        spawnParentAgentId: context.spawnParentAgentId,
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
         spawnGuardId: agentId,
         executionAgentId: agentId,
         worktreePath: worktreeInfo?.worktreePath,
         capabilityManifest: capabilityManifestForTools(tools),
-        hookManager: context.hookManager,
+        hooks: context.hooks,
         parentContext,
-        parentRemainingBudget: context.parentRemainingBudget,
         // 后台 detached 子代理的父探活（仅 !waitForCompletion 时非 undefined）
         isParentAlive,
       };
@@ -467,7 +459,11 @@ export async function executeSpawnAgent(
 
       if (waitForCompletion) {
         // Execute and wait for result
-        const promise = executor.execute(enrichedTask, executorConfig, executorContext);
+        const promise = executor.execute({
+          prompt: enrichedTask,
+          config: executorConfig,
+          context: executorContext,
+        });
         startedExecution = promise;
 
         // Register with SpawnGuard
@@ -485,7 +481,7 @@ export async function executeSpawnAgent(
         // Worktree cleanup: check for changes and cleanup or preserve
         let worktreeNote = '';
         if (worktreeInfo) {
-          const repoPath = context.workingDirectory || process.cwd();
+          const repoPath = context.cwd;
           if (result.cancellationReason || abortController.signal.aborted) {
             await discardAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath);
             worktreeFinalized = true;
@@ -542,7 +538,11 @@ Stats:
         }
       } else {
         // Start agent in background
-        const promise = executor.execute(enrichedTask, executorConfig, executorContext);
+        const promise = executor.execute({
+          prompt: enrichedTask,
+          config: executorConfig,
+          context: executorContext,
+        });
         startedExecution = promise;
 
         // Register with SpawnGuard (auto-tracks completion)
@@ -557,7 +557,7 @@ Stats:
 
         // Background worktree cleanup: register onComplete callback
         if (worktreeInfo) {
-          const repoPath = context.workingDirectory || process.cwd();
+          const repoPath = context.cwd;
           const wt = worktreeInfo;
           guard.onComplete(async (completedAgent) => {
             if (completedAgent.id === agentId) {
@@ -598,7 +598,7 @@ Use wait_agent to block until done, or close_agent to cancel.`,
         slotLease?.release();
       }
       if (worktreeInfo && !worktreeFinalized && !worktreeCleanupDelegated) {
-        const repoPath = context.workingDirectory || process.cwd();
+        const repoPath = context.cwd;
         if (abortController.signal.aborted) {
           await discardAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath).catch(() => {});
         } else {
@@ -673,14 +673,14 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
 async function executeParallelAgents(
   agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>,
-  context: ToolContext
-): Promise<ToolExecutionResult> {
+  context: SubagentExecutionContext,
+): Promise<MultiagentExecutionResult> {
   const isCancelledTaskError = (errorMessage?: string): boolean => {
     if (!errorMessage) return false;
     const normalized = errorMessage.toLowerCase();
     return normalized.includes('cancel') || normalized.includes('abort') || errorMessage.includes('取消');
   };
-  const getParallelCancellationResult = (): ToolExecutionResult | null => {
+  const getParallelCancellationResult = (): MultiagentExecutionResult | null => {
     if (!context.abortSignal?.aborted) return null;
     const cancellationReason = normalizeCancellationReason(
       context.abortSignal.reason,
@@ -784,7 +784,7 @@ async function executeParallelAgents(
   // Convert to AgentTask format
   // Phase 1: 生成稳定的 ID 并建立 role→id 映射（用于解析 dependsOn）
   const roleToId = new Map<string, string>();
-  const cwd = context.workingDirectory || process.cwd();
+  const cwd = context.cwd;
 
   // Disabled tools lists
   const disabledTools = guard.getDisabledTools();
@@ -909,9 +909,7 @@ async function executeParallelAgents(
   const coordinator = getParallelAgentCoordinator(runScope);
   try {
     coordinator.initialize({
-      modelConfig: context.modelConfig as ModelConfig,
-      toolResolver: context.resolver as ToolResolver,
-      toolContext: {
+      executionContext: {
         ...context,
         spawnTreeId: runScope.treeId,
         swarmRunScope: runScope,

@@ -13,7 +13,10 @@ const providerResolutionState = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/agent/subagentExecutor', () => ({
-  getSubagentExecutor: () => executorState,
+  getSubagentExecutor: () => ({
+    execute: (request: { prompt: string; config: unknown; context: unknown }) =>
+      executorState.execute(request.prompt, request.config, request.context),
+  }),
 }));
 
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({

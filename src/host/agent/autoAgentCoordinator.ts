@@ -53,6 +53,7 @@ import type { ModelConfig } from '../../shared/contract';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { getUserConfigDir } from '../config/configPaths';
+import { projectLegacySubagentContext } from './subagentExecutorLegacyAdapter';
 
 const logger = createLogger('AutoAgentCoordinator');
 
@@ -478,24 +479,24 @@ export class AutoAgentCoordinator {
       }
 
       // 执行
-      const result = await this.subagentExecutor.execute(
+      const result = await this.subagentExecutor.execute({
         prompt,
-        {
+        config: {
           name: agent.name,
           systemPrompt: agent.systemPrompt,
           availableTools: agent.tools,
           maxIterations: agent.maxIterations,
           maxBudget: agent.maxBudget,
         },
-        {
+        context: projectLegacySubagentContext({
           modelConfig: context.modelConfig,
           toolResolver: context.toolResolver,
           // 注入 agent.id 到 toolContext，让 BrowserPool / ComputerSurface 按 agentId 隔离。
           // 共享 toolContext 不能直接 mutate（其他 agent 也用），clone 后注入。
           toolContext: { ...context.toolContext, agentId: agent.id },
           executionAgentId: agent.id,
-        }
-      );
+        }),
+      });
 
       const completedAt = Date.now();
 

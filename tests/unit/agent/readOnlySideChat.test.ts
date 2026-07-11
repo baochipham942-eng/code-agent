@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runReadOnlySideChat } from '../../../src/host/agent/readOnlySideChat';
-import type { SubagentConfig, SubagentContext, SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
+import type { SubagentExecutionContext, SubagentExecutionRequest, SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import type { Message } from '../../../src/shared/contract';
 
 function fakeResult(output: string): SubagentResult {
@@ -8,10 +8,14 @@ function fakeResult(output: string): SubagentResult {
 }
 
 const baseContext = {
+  sessionId: 'side-chat-test',
+  cwd: '/tmp',
   modelConfig: { provider: 'openai', model: 'gpt-test' },
-  toolResolver: {},
-  toolContext: { workingDirectory: '/tmp' },
-} as unknown as Pick<SubagentContext, 'modelConfig' | 'toolResolver' | 'toolContext'>;
+  resolver: { getDefinition: vi.fn() },
+  permission: { request: vi.fn(async () => false) },
+  events: { emit: vi.fn() },
+  abortSignal: new AbortController().signal,
+} as unknown as SubagentExecutionContext;
 
 const parentMessages = [
   { role: 'user', content: '帮我重构 foo.ts' },
@@ -30,7 +34,7 @@ describe('runReadOnlySideChat', () => {
     expect(answer).toBe('今天是周四');
     expect(execute).toHaveBeenCalledTimes(1);
 
-    const [prompt, config] = execute.mock.calls[0] as [string, SubagentConfig, SubagentContext];
+    const { prompt, config } = execute.mock.calls[0][0] as SubagentExecutionRequest;
     // 用户的岔开问题作为 prompt
     expect(prompt).toBe('顺便问下，今天周几？');
     // read-only：禁用所有工具
@@ -40,12 +44,12 @@ describe('runReadOnlySideChat', () => {
     expect(config.systemPrompt).toContain('foo.ts');
   });
 
-  it('passes through modelConfig/toolContext from the base context', async () => {
+  it('passes through the explicit execution context', async () => {
     const execute = vi.fn(async () => fakeResult('ok'));
     await runReadOnlySideChat({ executor: { execute }, baseContext, parentMessages }, 'q');
-    const [, , ctx] = execute.mock.calls[0] as [string, SubagentConfig, SubagentContext];
+    const { context: ctx } = execute.mock.calls[0][0] as SubagentExecutionRequest;
     expect(ctx.modelConfig).toBe(baseContext.modelConfig);
-    expect(ctx.toolContext).toBe(baseContext.toolContext);
+    expect(ctx.cwd).toBe(baseContext.cwd);
   });
 
   it('works with no parent messages (empty context) and returns empty string when no output', async () => {
@@ -55,7 +59,7 @@ describe('runReadOnlySideChat', () => {
       'hi',
     );
     expect(answer).toBe('');
-    const [, config] = execute.mock.calls[0] as [string, SubagentConfig, SubagentContext];
+    const { config } = execute.mock.calls[0][0] as SubagentExecutionRequest;
     expect(config.availableTools).toEqual([]);
   });
 });

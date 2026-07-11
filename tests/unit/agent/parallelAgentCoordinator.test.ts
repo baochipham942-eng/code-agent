@@ -89,11 +89,15 @@ import { aggregateTeamResults } from '../../../src/host/agent/resultAggregator';
 
 function makeFakeContext() {
   return {
-    modelConfig: { provider: 'mock', model: 'mock-model' } as never,
-    toolResolver: {} as never,
-    toolContext: {
+    executionContext: {
+      sessionId: 'test-session',
+      cwd: '/tmp',
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+      resolver: { getDefinition: vi.fn() },
+      permission: { request: async () => true },
+      events: { emit: vi.fn() },
+      abortSignal: new AbortController().signal,
       currentToolCallId: 'call-1',
-      hookManager: undefined,
     } as never,
     subagentExecutor: {
       execute: executorState.executeMock,
@@ -133,9 +137,9 @@ describe('ParallelAgentCoordinator', () => {
 
     // Default executor: success with echoed task id
     executorState.executeMock.mockImplementation(
-      async (_task: string, spec: { name: string }) => ({
+      async (request: { config: { name: string } }) => ({
         success: true,
-        output: `ok:${spec.name}`,
+        output: `ok:${request.config.name}`,
         iterations: 1,
         toolsUsed: ['Read'],
         cost: 0,
@@ -163,9 +167,9 @@ describe('ParallelAgentCoordinator', () => {
     });
 
     it('uses an injected subagent executor port instead of the singleton executor', async () => {
-      const injectedExecute = vi.fn(async (_task: string, spec: { name: string }) => ({
+      const injectedExecute = vi.fn(async (request: { config: { name: string } }) => ({
         success: true,
-        output: `injected:${spec.name}`,
+        output: `injected:${request.config.name}`,
         iterations: 1,
         toolsUsed: ['Read'],
       }));
@@ -197,7 +201,7 @@ describe('ParallelAgentCoordinator', () => {
       const firstExecutor = { execute: vi.fn() };
       scoped.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scope.sessionId } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scope.sessionId } as never,
         subagentExecutor: firstExecutor as never,
         scope,
       });
@@ -205,7 +209,7 @@ describe('ParallelAgentCoordinator', () => {
 
       expect(() => scoped.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scope.sessionId } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scope.sessionId } as never,
         subagentExecutor: { execute: vi.fn() } as never,
         scope,
       })).toThrow(/already initialized/i);
@@ -218,7 +222,7 @@ describe('ParallelAgentCoordinator', () => {
       const legacy = initParallelAgentCoordinator();
       expect(() => legacy.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: 'legacy-session' } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: 'legacy-session' } as never,
       })).not.toThrow();
       expect(legacy.isInitialized()).toBe(true);
       resetParallelAgentCoordinators();
@@ -241,12 +245,12 @@ describe('ParallelAgentCoordinator', () => {
 
       coordinatorA.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scopeA.sessionId } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scopeA.sessionId } as never,
         scope: scopeA,
       });
       coordinatorB.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scopeB.sessionId } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scopeB.sessionId } as never,
         scope: scopeB,
       });
       const agentA = createScopedSwarmAgentId(scopeA, 'agent_coder_0');
@@ -292,10 +296,10 @@ describe('ParallelAgentCoordinator', () => {
         cost: number;
       }) => void;
       const executorA = {
-        execute: vi.fn((_task: string, _spec: unknown, ctx: { abortSignal: AbortSignal }) => {
-          signalA = ctx.abortSignal;
+        execute: vi.fn((request: { context: { abortSignal: AbortSignal } }) => {
+          signalA = request.context.abortSignal;
           return new Promise((resolve) => {
-            ctx.abortSignal.addEventListener('abort', () => resolve({
+            request.context.abortSignal.addEventListener('abort', () => resolve({
               success: false,
               output: '',
               error: 'cancelled-a',
@@ -307,20 +311,20 @@ describe('ParallelAgentCoordinator', () => {
         }),
       };
       const executorB = {
-        execute: vi.fn((_task: string, _spec: unknown, ctx: { abortSignal: AbortSignal }) => {
-          signalB = ctx.abortSignal;
+        execute: vi.fn((request: { context: { abortSignal: AbortSignal } }) => {
+          signalB = request.context.abortSignal;
           return new Promise((resolve) => { resolveB = resolve; });
         }),
       };
       coordinatorA.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scopeA.sessionId, swarmRunScope: scopeA } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scopeA.sessionId, swarmRunScope: scopeA } as never,
         subagentExecutor: executorA as never,
         scope: scopeA,
       });
       coordinatorB.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scopeB.sessionId, swarmRunScope: scopeB } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scopeB.sessionId, swarmRunScope: scopeB } as never,
         subagentExecutor: executorB as never,
         scope: scopeB,
       });
@@ -386,7 +390,7 @@ describe('ParallelAgentCoordinator', () => {
       const live = registry.getOrCreate(scope);
       live.initialize({
         ...makeFakeContext(),
-        toolContext: { sessionId: scope.sessionId, swarmRunScope: scope } as never,
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scope.sessionId, swarmRunScope: scope } as never,
         scope,
       });
 
@@ -460,11 +464,11 @@ describe('ParallelAgentCoordinator', () => {
     it('dependsOn 的任务排在依赖完成之后', async () => {
       const order: string[] = [];
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }) => {
-          order.push(spec.name);
+        async (request: { config: { name: string } }) => {
+          order.push(request.config.name);
           return {
             success: true,
-            output: `ok:${spec.name}`,
+            output: `ok:${request.config.name}`,
             iterations: 1,
             toolsUsed: [],
             cost: 0,
@@ -486,8 +490,8 @@ describe('ParallelAgentCoordinator', () => {
     it('同组内按 priority 降序排序', async () => {
       const order: string[] = [];
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }) => {
-          order.push(spec.name);
+        async (request: { config: { name: string } }) => {
+          order.push(request.config.name);
           return {
             success: true,
             output: '',
@@ -512,8 +516,8 @@ describe('ParallelAgentCoordinator', () => {
 
     it('任务失败时进入 errors 且 success=false', async () => {
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }) => {
-          if (spec.name === 'tester') {
+        async (request: { config: { name: string } }) => {
+          if (request.config.name === 'tester') {
             return {
               success: false,
               output: '',
@@ -547,8 +551,8 @@ describe('ParallelAgentCoordinator', () => {
 
     it('上游失败时 downstream 标记 blocked 且不会启动', async () => {
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }) => {
-          if (spec.name === 'coder') {
+        async (request: { config: { name: string } }) => {
+          if (request.config.name === 'coder') {
             return {
               success: false,
               output: '',
@@ -583,10 +587,10 @@ describe('ParallelAgentCoordinator', () => {
 
     it('aggregation 按总任务数计算 successRate，失败 agent 也进入结果结构', async () => {
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }) => ({
-          success: spec.name === 'coder',
-          output: spec.name === 'coder' ? 'ok' : '',
-          error: spec.name === 'coder' ? undefined : 'test failed',
+        async (request: { config: { name: string } }) => ({
+          success: request.config.name === 'coder',
+          output: request.config.name === 'coder' ? 'ok' : '',
+          error: request.config.name === 'coder' ? undefined : 'test failed',
           iterations: 1,
           toolsUsed: [],
           cost: 0,
@@ -609,8 +613,8 @@ describe('ParallelAgentCoordinator', () => {
       let drainMessages: (() => Promise<Array<{ payload: string }>>) | undefined;
 
       executorState.executeMock.mockImplementation(
-        async (_t: string, _spec: { name: string }, context: { messageDrain?: () => Promise<Array<{ payload: string }>> }) => {
-          drainMessages = context.messageDrain;
+        async (request: { context: { messageDrain?: () => Promise<Array<{ payload: string }>> } }) => {
+          drainMessages = request.context.messageDrain;
           await new Promise<void>((resolve) => {
             release = resolve;
           });
@@ -639,10 +643,10 @@ describe('ParallelAgentCoordinator', () => {
       const started: string[] = [];
 
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }, context: { abortSignal?: AbortSignal }) => {
-          started.push(spec.name);
+        async (request: { config: { name: string }; context: { abortSignal?: AbortSignal } }) => {
+          started.push(request.config.name);
           await new Promise<void>((resolve) => {
-            context.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+            request.context.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
           });
           return {
             success: false,
@@ -682,7 +686,8 @@ describe('ParallelAgentCoordinator', () => {
       });
       coordinator.initialize({
         ...makeFakeContext(),
-        toolContext: {
+        executionContext: {
+          ...makeFakeContext().executionContext,
           sessionId: 'root-session',
           currentToolCallId: 'call-1',
           spawnTreeId: 'root-session',
@@ -692,14 +697,14 @@ describe('ParallelAgentCoordinator', () => {
       let active = 0;
       let peak = 0;
       executorState.executeMock.mockImplementation(
-        async (_t: string, spec: { name: string }) => {
+        async (request: { config: { name: string } }) => {
           active++;
           peak = Math.max(peak, active);
           await new Promise((resolve) => setTimeout(resolve, 20));
           active--;
           return {
             success: true,
-            output: `ok:${spec.name}`,
+            output: `ok:${request.config.name}`,
             iterations: 1,
             toolsUsed: [],
             cost: 0,
@@ -742,7 +747,8 @@ describe('ParallelAgentCoordinator', () => {
       });
       queuedCoordinator.initialize({
         ...makeFakeContext(),
-        toolContext: {
+        executionContext: {
+          ...makeFakeContext().executionContext,
           sessionId: scopeA.sessionId,
           currentToolCallId: 'call-run-a',
           spawnTreeId: scopeA.treeId,
@@ -805,7 +811,8 @@ describe('ParallelAgentCoordinator', () => {
       }, scope);
       scopedCoordinator.initialize({
         ...makeFakeContext(),
-        toolContext: {
+        executionContext: {
+          ...makeFakeContext().executionContext,
           sessionId: scope.sessionId,
           currentToolCallId: 'call-child-run',
           spawnTreeId: scope.treeId,

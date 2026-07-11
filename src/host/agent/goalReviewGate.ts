@@ -15,7 +15,6 @@ import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 import { GOAL_MODE } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig } from '../../shared/contract';
-import type { ToolContext } from '../tools/types';
 import type { HookManager } from '../hooks/hookManager';
 
 const logger = createLogger('GoalReviewGate');
@@ -204,34 +203,27 @@ async function executeReviewAttempt(
   // 闸2 评的是"无法落退出码的软判断"，跑命令/测试是闸1 的活；且子代理权限策略
   // 默认就拦 execute 级 bash，给了也只会被拒、白费迭代还污染上下文（实测）。
   // 配合 requestPermission 自动放行——只读工具无副作用，自动放行安全。
-  const toolContext: ToolContext = {
-    workingDirectory: deps.workingDirectory,
-    // 自动放行：本闸只暴露只读工具，且整个 goal run 已是用户授权场景。
-    requestPermission: async () => true,
-    abortSignal: deps.abortSignal,
-    sessionId: deps.sessionId,
-    hookManager: deps.hookManager,
-    modelConfig,
-  };
-
   let result;
   try {
-    result = await getSubagentExecutor().execute(
-      buildReviewPrompt(reviewCondition, goal),
-      {
+    result = await getSubagentExecutor().execute({
+      prompt: buildReviewPrompt(reviewCondition, goal),
+      config: {
         name: 'goal-review',
         systemPrompt: REVIEW_SYSTEM_PROMPT,
         availableTools: ['read_file', 'grep', 'glob', 'list_directory'],
         maxIterations: GOAL_MODE.REVIEW_MAX_ITERATIONS,
       },
-      {
+      context: {
+        sessionId: deps.sessionId,
+        cwd: deps.workingDirectory,
         modelConfig,
-        toolResolver: getToolResolver(),
-        toolContext,
-        abortSignal: deps.abortSignal,
-        hookManager: deps.hookManager,
+        resolver: getToolResolver(),
+        permission: { request: async () => true },
+        events: { emit: () => undefined },
+        abortSignal: deps.abortSignal ?? new AbortController().signal,
+        hooks: deps.hookManager,
       },
-    );
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // 取消/中止不算 infra（对称 result.cancellationReason 的过滤，Gemini R1-M1）：

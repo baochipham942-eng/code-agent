@@ -18,7 +18,8 @@ vi.mock('../../../../src/host/model/adapters/aiSdkAdapter', () => ({
 const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
 vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
   SubagentExecutor: class {
-    execute = (...a: unknown[]) => executeMock(...a);
+    execute = (request: { prompt: string; config: unknown; context: unknown }) =>
+      executeMock(request.prompt, request.config, request.context);
   },
 }));
 
@@ -238,10 +239,8 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     ctx.prepareAgentWorkspace = prepareAgentWorkspace;
     ctx.finishAgentWorkspace = finishAgentWorkspace;
     ctx.deriveSubagentContext = ({ workspace }) => ({
-      toolContext: {
-        workingDirectory: workspace?.cwd,
-        workspace: workspace?.workspace,
-      },
+      cwd: workspace?.cwd,
+      workspace: workspace?.workspace,
       worktreePath: workspace?.cwd,
     }) as never;
     executeMock.mockResolvedValue({ success: true, output: 'ok' });
@@ -253,8 +252,8 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
 
     expect(prepareAgentWorkspace).toHaveBeenCalledTimes(2);
     const workdirs = executeMock.mock.calls.map((call) => (
-      call[2] as { toolContext: { workingDirectory: string } }
-    ).toolContext.workingDirectory);
+      call[2] as { cwd: string }
+    ).cwd);
     expect(new Set(workdirs).size).toBe(2);
     expect(workdirs.every((cwd) => cwd.startsWith('/tmp/worktrees/'))).toBe(true);
     expect(finishAgentWorkspace).toHaveBeenCalledTimes(2);

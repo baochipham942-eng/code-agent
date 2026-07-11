@@ -173,6 +173,8 @@ export interface ToolContext {
   readonly toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */
   readonly executionIntent?: ConversationExecutionIntent;
+  /** Run-scoped trace context, injected by the dispatch boundary. */
+  readonly traceContext?: unknown;
 }
 
 // ----------------------------------------------------------------------------

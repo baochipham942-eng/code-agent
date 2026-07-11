@@ -9,11 +9,7 @@
 //   run_in_background 占位 / 缺 modelConfig fallback /
 //   "✅ <Name> agent completed" + Iterations + Tools used + Result 1:1
 //
-// Cross-cat partial native (合理委托)：
-//   SubagentExecutor 当前接 legacy ToolContext，本工具用
-//   buildLegacyCtxFromProtocol 桥接 — 与 multiagent#104 的 task / spawn_agent /
-//   workflow_orchestrate 同模式。**Wave 4 把 SubagentExecutor 升 ProtocolToolContext
-//   后可彻底移除 _helpers/legacyAdapter 依赖**。
+// SubagentExecutor 通过显式 execution request 执行。
 // ============================================================================
 
 import type {
@@ -28,7 +24,7 @@ import type { ModelConfig } from '../../../../shared/contract';
 import type { ToolResolver } from '../../dispatch/toolResolver';
 import { getSubagentExecutor } from '../../../agent/subagentExecutor';
 import { createLogger } from '../../../services/infra/logger';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { exploreSchema as schema } from './explore.schema';
 
 const logger = createLogger('ExploreTool');
@@ -175,24 +171,19 @@ export async function executeExplore(
   try {
     const executor = getSubagentExecutor();
 
-    // Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext
-    // TODO Wave 4: SubagentExecutor 升 ProtocolToolContext 后移除 legacyAdapter
-    const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-
-    const result = await executor.execute(
+    const result = await executor.execute({
       prompt,
-      {
+      config: {
         name: subagentConfig.name,
         systemPrompt: subagentConfig.systemPrompt,
         availableTools: [...subagentConfig.availableTools],
         maxIterations: subagentConfig.maxIterations,
       },
-      {
+      context: createProtocolSubagentExecutionContext(ctx, canUseTool, {
         modelConfig: ctx.modelConfig as ModelConfig,
-        toolResolver: ctx.resolver as ToolResolver,
-        toolContext: legacyCtx,
-      },
-    );
+        resolver: ctx.resolver as ToolResolver,
+      }),
+    });
 
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('Explore done', { subagentType, ok: result.success });

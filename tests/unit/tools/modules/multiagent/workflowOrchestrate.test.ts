@@ -1,26 +1,17 @@
 // ============================================================================
 // WorkflowOrchestrate (native ToolModule) Tests — Wave 3 multiagent
-// Native shell only — execute body 在 legacy executeWorkflowOrchestrate
+// Protocol shell dispatches directly to the native workflow service.
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
-const { executeWorkflowMock, buildLegacyCtxMock } = vi.hoisted(() => ({
+const { executeWorkflowMock } = vi.hoisted(() => ({
   executeWorkflowMock: vi.fn(),
-  buildLegacyCtxMock: vi.fn(),
 }));
 
 vi.mock('../../../../../src/host/agent/multiagentTools/workflowOrchestrate', () => ({
   executeWorkflowOrchestrate: executeWorkflowMock,
-}));
-
-vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
-  buildLegacyCtxFromProtocol: (...args: unknown[]) => buildLegacyCtxMock(...args),
-  adaptLegacyResult: (r: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }) =>
-    r.success
-      ? { ok: true, output: r.output ?? '', meta: r.metadata }
-      : { ok: false, error: r.error ?? 'unknown', meta: r.metadata },
 }));
 
 import { workflowOrchestrateModule } from '../../../../../src/host/tools/modules/multiagent/workflowOrchestrate';
@@ -38,6 +29,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     logger: makeLogger(),
     emit: () => void 0,
     modelConfig: { provider: 'kimi', model: 'kimi-k2.5' },
+    resolver: { getDefinition: vi.fn() },
     ...overrides,
   } as unknown as ToolContext;
 }
@@ -47,7 +39,6 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'no' });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  buildLegacyCtxMock.mockImplementation((ctx: ToolContext) => ({ workingDirectory: ctx.workingDir }));
 });
 
 describe('workflow_orchestrate schema', () => {
@@ -165,13 +156,18 @@ describe('workflow_orchestrate behavior', () => {
     }
     expect(executeWorkflowMock).toHaveBeenCalledWith(
       { workflow: 'doc', task: 'process pdf', stages: [{ name: 'extract' }, { name: 'draft' }] },
-      expect.objectContaining({ workingDirectory: '/tmp/test' }),
+      expect.objectContaining({
+        sessionId: 'sess',
+        cwd: '/tmp/test',
+        resolver: expect.any(Object),
+        permission: expect.any(Object),
+      }),
     );
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'workflow_orchestrate' });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
-  it('legacy failure → ok=false', async () => {
+  it('service failure → ok=false', async () => {
     executeWorkflowMock.mockResolvedValue({
       success: false,
       error: 'unknown workflow',

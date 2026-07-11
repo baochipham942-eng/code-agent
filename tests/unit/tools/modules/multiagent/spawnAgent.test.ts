@@ -1,10 +1,10 @@
 // ============================================================================
 // SpawnAgent / AgentSpawn (native ToolModule) Tests — Wave 3 multiagent
 //
-// Native shell only — execute body 在 legacy executeSpawnAgent，单测覆盖：
+// Protocol shell + native service dispatch，单测覆盖：
 // - schema 字段对齐（spawn_agent 与 AgentSpawn 共享 inputSchema）
 // - 五链 gate（INVALID_ARGS / PERMISSION_DENIED / ABORTED / NOT_INITIALIZED）
-// - 透传 args + ctx 到 legacy executeSpawnAgent + 复制 success/error
+// - 透传 args + 显式 execution context + 复制 success/error
 // - onProgress 事件
 // 完整 spawn 业务逻辑（worktree / parallel / fork cache 等）由
 // tests/unit/agent/spawnGuard*.test.ts 等覆盖。
@@ -13,21 +13,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
-const { executeSpawnAgentMock, buildLegacyCtxMock } = vi.hoisted(() => ({
+const { executeSpawnAgentMock } = vi.hoisted(() => ({
   executeSpawnAgentMock: vi.fn(),
-  buildLegacyCtxMock: vi.fn(),
 }));
 
 vi.mock('../../../../../src/host/agent/multiagentTools/spawnAgent', () => ({
   executeSpawnAgent: executeSpawnAgentMock,
-}));
-
-vi.mock('../../../../../src/host/tools/modules/_helpers/legacyAdapter', () => ({
-  buildLegacyCtxFromProtocol: (...args: unknown[]) => buildLegacyCtxMock(...args),
-  adaptLegacyResult: (r: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }) =>
-    r.success
-      ? { ok: true, output: r.output ?? '', meta: r.metadata }
-      : { ok: false, error: r.error ?? 'unknown', meta: r.metadata },
 }));
 
 import {
@@ -48,6 +39,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     logger: makeLogger(),
     emit: () => void 0,
     modelConfig: { provider: 'kimi', model: 'kimi-k2.5' },
+    resolver: { getDefinition: vi.fn() },
     ...overrides,
   } as unknown as ToolContext;
 }
@@ -57,7 +49,6 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'no' });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  buildLegacyCtxMock.mockImplementation((ctx: ToolContext) => ({ workingDirectory: ctx.workingDir }));
 });
 
 describe('spawn_agent / AgentSpawn schemas', () => {
@@ -130,7 +121,7 @@ describe('spawn_agent five-link gates', () => {
   });
 });
 
-describe('spawn_agent dispatch to legacy execute', () => {
+describe('spawn_agent dispatch to protocol-native service', () => {
   it('happy path 透传 args + 桥接 ctx + adapt 结果', async () => {
     executeSpawnAgentMock.mockResolvedValue({
       success: true,
@@ -160,14 +151,19 @@ describe('spawn_agent dispatch to legacy execute', () => {
     }
     expect(executeSpawnAgentMock).toHaveBeenCalledWith(
       { role: 'coder', task: 'do thing' },
-      expect.objectContaining({ workingDirectory: '/tmp/test' }),
+      expect.objectContaining({
+        sessionId: 'sess',
+        cwd: '/tmp/test',
+        modelConfig: { provider: 'kimi', model: 'kimi-k2.5' },
+        resolver: expect.any(Object),
+        permission: expect.any(Object),
+      }),
     );
-    expect(buildLegacyCtxMock).toHaveBeenCalled();
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'spawn_agent' });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
-  it('normalizes public role aliases before dispatching to legacy spawn', async () => {
+  it('normalizes public role aliases before dispatching to native spawn', async () => {
     executeSpawnAgentMock.mockResolvedValue({
       success: true,
       output: 'spawned',
@@ -183,7 +179,7 @@ describe('spawn_agent dispatch to legacy execute', () => {
     expect(result.ok).toBe(true);
     expect(executeSpawnAgentMock).toHaveBeenCalledWith(
       { role: 'explore', task: 'inspect', agents: [{ role: 'plan', task: 'plan' }] },
-      expect.objectContaining({ workingDirectory: '/tmp/test' }),
+      expect.objectContaining({ cwd: '/tmp/test' }),
     );
     if (result.ok) {
       expect(result.meta).toMatchObject({
@@ -192,7 +188,7 @@ describe('spawn_agent dispatch to legacy execute', () => {
     }
   });
 
-  it('legacy failure → ok=false + error 透传', async () => {
+  it('service failure → ok=false + error 透传', async () => {
     executeSpawnAgentMock.mockResolvedValue({ success: false, error: 'capacity exceeded' });
     const handler = await spawnAgentModule.createHandler();
     const result = await handler.execute(
@@ -214,5 +210,26 @@ describe('spawn_agent dispatch to legacy execute', () => {
     );
     expect(result.ok).toBe(true);
     expect(executeSpawnAgentMock).toHaveBeenCalled();
+  });
+
+  it('run_in_background uses a child-owned abort signal', async () => {
+    const parent = new AbortController();
+    let childSignal: AbortSignal | undefined;
+    executeSpawnAgentMock.mockImplementation(async (_args, executionContext) => {
+      childSignal = executionContext.abortSignal;
+      return { success: true, output: 'background done' };
+    });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'background', run_in_background: true },
+      makeCtx({ abortSignal: parent.signal }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => expect(childSignal).toBeDefined());
+    expect(childSignal).not.toBe(parent.signal);
+    parent.abort('parent-finished');
+    expect(childSignal?.aborted).toBe(false);
   });
 });

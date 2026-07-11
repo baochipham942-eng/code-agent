@@ -4,7 +4,7 @@
 // 从 SubagentExecutor 抽出的纯工具定义过滤逻辑（不依赖实例状态）。
 
 import type { ToolDefinition } from '../../shared/contract';
-import type { ToolResolver } from '../tools/dispatch/toolResolver';
+import type { SubagentToolResolverPort } from './subagentExecutorTypes';
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
 import { createLogger } from '../services/infra/logger';
 
@@ -12,7 +12,7 @@ const logger = createLogger('SubagentExecutor');
 
 export function filterSubagentToolDefs(
   allowedToolNames: string[],
-  resolver: ToolResolver,
+  resolver: SubagentToolResolverPort,
 ): ToolDefinition[] {
   const defs: ToolDefinition[] = [];
   const missing: string[] = [];

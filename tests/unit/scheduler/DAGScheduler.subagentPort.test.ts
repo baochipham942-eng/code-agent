@@ -12,6 +12,17 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 describe('DAGScheduler subagent executor port', () => {
+  const executionContext = (sessionId: string) => ({
+    sessionId,
+    cwd: process.cwd(),
+    modelConfig: { provider: 'mock', model: 'mock-model' },
+    resolver: { getDefinition: vi.fn() },
+    permission: { request: vi.fn(async () => true) },
+    events: { emit: vi.fn() },
+    abortSignal: new AbortController().signal,
+    currentToolCallId: 'call-1',
+  });
+
   it('executes agent tasks through the injected executor port', async () => {
     const scheduler = new DAGScheduler({
       maxParallelism: 1,
@@ -40,17 +51,14 @@ describe('DAGScheduler subagent executor port', () => {
     });
 
     const result = await scheduler.execute(dag, {
-      modelConfig: { provider: 'mock', model: 'mock-model' } as never,
-      toolResolver: {} as never,
-      toolContext: { currentToolCallId: 'call-1' } as never,
-      workingDirectory: process.cwd(),
+      executionContext: executionContext('session-port') as never,
     });
 
     expect(result.success).toBe(true);
     expect(result.completedTasks).toBe(1);
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute.mock.calls[0][0]).toBe('do the task');
-    expect(execute.mock.calls[0][1]).toMatchObject({
+    expect(execute.mock.calls[0][0].prompt).toBe('do the task');
+    expect(execute.mock.calls[0][0].config).toMatchObject({
       name: 'agent-a',
       systemPrompt: 'system prompt',
       availableTools: ['Read'],
@@ -70,13 +78,13 @@ describe('DAGScheduler subagent executor port', () => {
       toolsUsed: string[];
       iterations: number;
     }) => void>();
-    const execute = vi.fn((prompt: string) => new Promise<{
+    const execute = vi.fn((request: { prompt: string }) => new Promise<{
       success: boolean;
       output: string;
       toolsUsed: string[];
       iterations: number;
     }>((resolve) => {
-      resolvers.set(prompt, resolve);
+      resolvers.set(request.prompt, resolve);
     }));
     template.setSubagentExecutor({ execute });
     template.setAgentResolver({
@@ -95,16 +103,10 @@ describe('DAGScheduler subagent executor port', () => {
     dagB.addAgentTask('agent_coder_0', { role: 'coder', prompt: 'team-b' });
 
     const resultA = runA.execute(dagA, {
-      modelConfig: { provider: 'mock', model: 'mock-model' } as never,
-      toolResolver: {} as never,
-      toolContext: { sessionId: 'session-a' } as never,
-      workingDirectory: process.cwd(),
+      executionContext: executionContext('session-a') as never,
     });
     const resultB = runB.execute(dagB, {
-      modelConfig: { provider: 'mock', model: 'mock-model' } as never,
-      toolResolver: {} as never,
-      toolContext: { sessionId: 'session-b' } as never,
-      workingDirectory: process.cwd(),
+      executionContext: executionContext('session-b') as never,
     });
 
     await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));

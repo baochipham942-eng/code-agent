@@ -18,19 +18,19 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
       /const executionAgentId\s*=\s*context\.executionAgentId\s*\|\|\s*context\.spawnGuardId\s*\|\|\s*pipelineContext\.agentId/,
     );
     expect(source).toMatch(
-      /subagentToolExecutor\.execute\([\s\S]*?agentId:\s*executionAgentId,[\s\S]*?swarmRunScope:\s*context\.toolContext\.swarmRunScope/,
+      /subagentToolExecutor\.execute\([\s\S]*?agentId:\s*executionAgentId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
     expect(source).toMatch(
-      /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.toolContext\.runId,[\s\S]*?swarmRunScope:\s*context\.toolContext\.swarmRunScope/,
+      /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.runId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
     expect(source).toMatch(
-      /const \{ runId: nativeRunId, workspace, workingDirectory \} = context\.toolContext;[\s\S]*?createRunContext\(\{ runId: nativeRunId, sessionId, workspace, cwd: workingDirectory \}\)/,
+      /const \{ runId: nativeRunId, workspace, cwd \} = context;[\s\S]*?createRunContext\(\{ runId: nativeRunId, sessionId, workspace, cwd \}\)/,
     );
   });
 
   it('submits high-risk plans with the same scoped identity and run scope', () => {
     expect(source).toMatch(
-      /gate\.submitForApproval\(\{[\s\S]*?agentId:\s*executionAgentId,[\s\S]*?scope:\s*context\.toolContext\.swarmRunScope/,
+      /gate\.submitForApproval\(\{[\s\S]*?agentId:\s*executionAgentId,[\s\S]*?scope:\s*context\.swarmRunScope/,
     );
     expect(source).toMatch(/if \(effectiveSignal\.aborted\)[\s\S]*?Task cancelled after plan approval/);
   });

@@ -237,6 +237,12 @@ function LongSessionHarness(): React.ReactElement {
       const scrollerRect = scroller.getBoundingClientRect();
       const searchVisible = Boolean(searchRect && searchRect.bottom >= scrollerRect.top && searchRect.top <= scrollerRect.bottom);
 
+      // Search navigation and history prepend have independent gates. Clear the
+      // active search before measuring prepend so its scroll effect cannot race
+      // Virtuoso's firstItemIndex anchor preservation.
+      setSearchMatches([]);
+      setActiveMatchIndex(0);
+      await nextFrame();
       const visibleAnchor = getVisibleAnchor(scroller);
       const anchorTurnId = visibleAnchor?.dataset.traceTurnId ?? '';
       const anchorBefore = visibleAnchor?.getBoundingClientRect().top ?? Number.NaN;

@@ -170,6 +170,32 @@ describe('inferenceViaAiSdk provider options', () => {
     await expect(response.text()).resolves.toBe('{"ok":true}');
   });
 
+  it('caller reasoningEffort reaches the final Xiaomi request body before dispatch', async () => {
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      data: Readable.from(['{}']),
+    });
+
+    await inferenceViaAiSdk([{ role: 'user', content: 'reason' }], [], {
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+      reasoningEffort: 'low',
+    } as ModelConfig, undefined, undefined, { reasoningEffort: 'high' });
+
+    const fetch = providerMocks.createOpenAICompatible.mock.calls[0][0].fetch as typeof globalThis.fetch;
+    await fetch('https://relay.example/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'mimo-v2.5-pro', messages: [] }),
+    });
+
+    const axiosRequest = vi.mocked(axios).mock.calls[0][0] as { data?: string };
+    expect(JSON.parse(axiosRequest.data ?? '{}')).toMatchObject({
+      thinking: { type: 'enabled' },
+    });
+  });
+
   it('非流式 generateText 透传 config.maxTokens 为 maxOutputTokens', async () => {
     await runNonStreaming({
       provider: 'qwen',
@@ -214,5 +240,49 @@ describe('inferenceViaAiSdk provider options', () => {
 
     const call = vi.mocked(generateText).mock.calls.at(-1)?.[0] as { tools?: Record<string, unknown> };
     expect(JSON.stringify(call.tools?.Read)).toContain('"_meta"');
+  });
+
+  it('rejects image input before provider construction when the selected model declares no vision support', async () => {
+    await expect(inferenceViaAiSdk([{
+      role: 'user',
+      content: [{
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: 'ZmFrZQ==' },
+      }],
+    }], [], {
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',
+    } as ModelConfig)).rejects.toMatchObject({
+      code: 'PROVIDER_RUNTIME_CAPABILITY_BLOCKED',
+      capability: 'image_input',
+      status: 'unsupported',
+    });
+
+    expect(providerMocks.createDeepSeek).not.toHaveBeenCalled();
+    expect(vi.mocked(generateText)).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown local endpoint tool_choice before provider construction', async () => {
+    const readTool: ToolDefinition = {
+      name: 'Read',
+      description: 'read a file',
+      inputSchema: { type: 'object', properties: {} },
+    } as ToolDefinition;
+
+    await expect(inferenceViaAiSdk(
+      [{ role: 'user', content: 'read' }],
+      [readTool],
+      { provider: 'local', model: 'qwen3:8b' } as ModelConfig,
+      undefined,
+      undefined,
+      { toolChoice: 'required' },
+    )).rejects.toMatchObject({
+      code: 'PROVIDER_RUNTIME_CAPABILITY_BLOCKED',
+      capability: 'tool_choice_required',
+      status: 'unknown',
+    });
+
+    expect(providerMocks.createOpenAICompatible).not.toHaveBeenCalled();
+    expect(vi.mocked(generateText)).not.toHaveBeenCalled();
   });
 });

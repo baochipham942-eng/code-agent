@@ -38,6 +38,7 @@ import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngine
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 
 const logger = createLogger('KimiCliAdapter');
 
@@ -70,9 +71,7 @@ interface KimiParsedEvent {
 
 export class KimiCliAdapter {
   async run(request: KimiCliRunRequest): Promise<AgentEngineRunResult> {
-    if (request.attachmentsCount && request.attachmentsCount > 0) {
-      throw new Error('Kimi Code engine only supports text prompts.');
-    }
+    assertExternalRuntimeAttachments('kimi_code', request.attachmentsCount, 'Kimi Code');
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();

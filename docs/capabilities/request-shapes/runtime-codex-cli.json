@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "runtime": "codex_cli",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "codex exec --json",
+  "syntheticRequest": {
+    "args": ["exec", "--json", "--model", "fixture-model", "--sandbox", "read-only", "--skip-git-repo-check", "-C", "<workspace>", "--output-last-message", "<last-message-path>", "-"],
+    "stdin": "<redacted-user-content>",
+    "credentials": "inherited-from-CODEX_HOME; values-not-recorded"
+  }
+}

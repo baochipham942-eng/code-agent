@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "runtime": "native",
+  "protocolFamily": "openai_responses",
+  "adapterBoundary": "no production adapter",
+  "syntheticRequest": null,
+  "expectedFailure": {
+    "capability": "text_streaming",
+    "status": "unsupported"
+  },
+  "redaction": { "credentials": "omitted", "userContent": "none" }
+}

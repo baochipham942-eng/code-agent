@@ -27,6 +27,7 @@ import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngine
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 
 const logger = createLogger('ClaudeCodeAdapter');
 
@@ -52,9 +53,7 @@ interface ClaudeParsedEvent {
 
 export class ClaudeCodeAdapter {
   async run(request: ClaudeCodeRunRequest): Promise<AgentEngineRunResult> {
-    if (request.attachmentsCount && request.attachmentsCount > 0) {
-      throw new Error('Claude Code engine P1 only supports text prompts.');
-    }
+    assertExternalRuntimeAttachments('claude_code', request.attachmentsCount, 'Claude Code P1');
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();

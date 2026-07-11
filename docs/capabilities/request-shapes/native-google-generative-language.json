@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "runtime": "native",
+  "protocolFamily": "google_generative_language",
+  "adapterBoundary": "@ai-sdk/google createGoogleGenerativeAI -> generateText/streamText",
+  "syntheticRequest": {
+    "provider": "gemini",
+    "model": "fixture-gemini-model",
+    "messages": ["user:text", "user:image-base64"],
+    "toolsPresent": true,
+    "toolChoice": "auto",
+    "streaming": true,
+    "abortSignal": true,
+    "timeouts": ["first-token", "stream-idle"]
+  },
+  "expectedRequestedCapabilities": [
+    "text_streaming",
+    "first_token_timeout",
+    "stream_idle_timeout",
+    "tool_choice_auto",
+    "image_input",
+    "stop_abort"
+  ],
+  "redaction": { "credentials": "omitted", "userContent": "synthetic-only" }
+}

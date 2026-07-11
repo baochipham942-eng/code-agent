@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "runtime": "native",
+  "protocolFamily": "openai_compatible_gateway",
+  "adapterBoundary": "@ai-sdk/openai-compatible with provider-specific body transform",
+  "syntheticRequest": {
+    "provider": "xiaomi",
+    "model": "fixture-gateway-model",
+    "messages": ["user:text"],
+    "toolsPresent": true,
+    "toolChoice": "auto",
+    "reasoningEffort": "high",
+    "streaming": false,
+    "abortSignal": false
+  },
+  "expectedRequestedCapabilities": [
+    "reasoning_effort",
+    "tool_choice_auto"
+  ],
+  "redaction": { "credentials": "omitted", "userContent": "synthetic-only" }
+}

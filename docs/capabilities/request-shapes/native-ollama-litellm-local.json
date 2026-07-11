@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "runtime": "native",
+  "protocolFamily": "ollama_litellm_local",
+  "adapterBoundary": "@ai-sdk/openai-compatible -> configured local endpoint",
+  "syntheticRequest": {
+    "provider": "local",
+    "model": "fixture-local-model",
+    "messages": ["user:text"],
+    "toolsPresent": true,
+    "toolChoice": "auto",
+    "streaming": true,
+    "abortSignal": true,
+    "timeouts": ["first-token", "stream-idle"]
+  },
+  "expectedRequestedCapabilities": [
+    "text_streaming",
+    "first_token_timeout",
+    "stream_idle_timeout",
+    "tool_choice_auto",
+    "stop_abort"
+  ],
+  "redaction": { "credentials": "omitted", "userContent": "synthetic-only" }
+}

@@ -26,6 +26,7 @@ import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngine
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 
 const logger = createLogger('CodexCliAdapter');
 
@@ -46,9 +47,7 @@ interface CodexParsedEvent {
 
 export class CodexCliAdapter {
   async run(request: CodexCliRunRequest): Promise<AgentEngineRunResult> {
-    if (request.attachmentsCount && request.attachmentsCount > 0) {
-      throw new Error('Codex CLI engine P0 only supports text prompts.');
-    }
+    assertExternalRuntimeAttachments('codex_cli', request.attachmentsCount, 'Codex CLI P0');
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
@@ -146,19 +145,7 @@ export class CodexCliAdapter {
       data: { turnId, iteration: 1 },
     });
 
-    const args = [
-      'exec',
-      '--json',
-      ...(model ? ['--model', model] : []),
-      '--sandbox',
-      sandbox,
-      '--skip-git-repo-check',
-      '-C',
-      cwd,
-      '--output-last-message',
-      lastMessagePath,
-      '-',
-    ];
+    const args = buildCodexCliArgs({ model, sandbox, cwd, lastMessagePath });
 
     const env = buildSafeEnv();
     const child = spawn(descriptor.binaryPath || 'codex', args, {
@@ -476,6 +463,27 @@ export class CodexCliAdapter {
 
 function toCodexSandbox(profile: AgentEnginePermissionProfile): 'read-only' | 'workspace-write' {
   return profile === 'workspace_write' ? 'workspace-write' : 'read-only';
+}
+
+export function buildCodexCliArgs(input: {
+  model?: string | null;
+  sandbox: 'read-only' | 'workspace-write';
+  cwd: string;
+  lastMessagePath: string;
+}): string[] {
+  return [
+    'exec',
+    '--json',
+    ...(input.model?.trim() ? ['--model', input.model.trim()] : []),
+    '--sandbox',
+    input.sandbox,
+    '--skip-git-repo-check',
+    '-C',
+    input.cwd,
+    '--output-last-message',
+    input.lastMessagePath,
+    '-',
+  ];
 }
 
 function buildSafeEnv(): NodeJS.ProcessEnv {

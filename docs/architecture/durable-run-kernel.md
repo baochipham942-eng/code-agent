@@ -37,6 +37,20 @@ The Host-only persistence ports live in `src/host/runtime/durableRunStores.ts`:
 
 These ports deliberately exclude SSE, IPC, CLI, and database row types. Adapters preserve current public protocols while the kernel rolls out behind them.
 
+The shared Host consumption boundary lives in `src/host/runtime/durableRunKernel.ts`:
+
+- `createRun(DurableRunCreateInput)` creates any supported engine envelope with the same first attempt,
+  owner epoch, lease, event cursor, and timestamps. `createNativeRun()` is the compatibility wrapper.
+- `prepareOperation(PrepareOperationInput)` creates `tool_call`, `approval`, `child_run`, and
+  `external_engine` projections with a key derived only from `runId`, operation kind, and stable logical
+  operation identity. `prepareToolOperation()` is the compatibility wrapper.
+- `createChildRunRef()`, `addChildRunRef()`, `assertChildRunProjection()`, and
+  `projectChildRunTerminal()` are pure construction/projection helpers. Child projections become durable
+  only when supplied to the existing fenced `checkpoint()` transaction.
+
+Engine adapters consume this boundary. They do not construct `RunEnvelope` directly and do not call
+`DurableRunRepository` directly.
+
 ## State machine
 
 ```mermaid
@@ -197,9 +211,29 @@ return to `prepared` only when a provider operation id proves deduplication/look
 persisted as `unknown`, the run remains `waiting`, and the operation appears in
 `requiresHumanConfirmation`. Resolved tool results are never reopened.
 
-`RunKernelAdapter` is the S4/S5 consumption boundary. Those slices can prepare tool operations and commit
-tool/approval checkpoints without changing SSE, IPC, CLI, or public `SessionEvent` fields. Agent Team,
-external engines, and coordinator recovery remain outside S1.
+`RunKernelAdapter` is the shared S4/S5/S6 consumption boundary. Tool, approval, child-run, and external
+engine slices can create or prepare their durable projections and commit checkpoints without changing SSE,
+IPC, CLI, or public `SessionEvent` fields. MCP long tasks remain `tool_call` operations and may retain a
+provider operation id; they do not introduce a second operation kind. Agent Team coordination, external
+engine launch, MCP dispatch, and child recovery remain outside the shared kernel.
+
+## S3.5 frozen shared kernel
+
+S3.5 generalizes S1's Native-only constructors without changing the six-table schema. `createRun()` accepts
+the existing `RunEngineRef` union (`native`, `agent_team`, `dynamic_workflow`, `external_cli`) plus optional
+initial status, versioned engine cursor, pending-operation projection, and child projection. It validates the
+S0 envelope contract, then passes the envelope and first attempt together to `RunStore.create()` so the
+repository retains one transaction.
+
+`prepareOperation()` keeps the idempotency key stable across recovery attempts and process owners. An
+uncertain side effect still requires human confirmation unless the caller supplies deduplication proof; the
+kernel does not claim exactly-once external effects. Parent/child helpers reject self-reference and
+conflicting duplicate identities, and terminal child projection leaves the parent run/session identity
+unchanged. Persistence remains the responsibility of the existing atomic checkpoint boundary.
+
+The result of `createRun()` exposes `runId`, `sessionId`, attempt, owner epoch, engine kind, parent run, and
+process instance required by S3 `createRunTraceContext()`. S3.5 adds no trace identity and changes no trace
+hierarchy, exporter, or production telemetry call site.
 
 ## S0 completion boundary
 

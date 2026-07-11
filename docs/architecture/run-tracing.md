@@ -92,6 +92,11 @@ The public integration surface is exported from `src/host/telemetry/index.ts`:
 - `serializeRunTraceContext()` and `restoreRunTraceContext()`
 - `withApprovalTrace()`
 
+S3.5 `DurableRunKernel.createRun()` returns the complete durable identity needed to call
+`createRunTraceContext()`: envelope run/session/engine/parent identity plus attempt and owner epoch/process
+identity. Consumers pass `created.envelope.engine.kind` as the existing trace engine label. No second trace
+adapter or identity is introduced for Agent Team, Dynamic Workflow, external CLI, or MCP long tasks.
+
 S4 tool idempotency can add its stable digest to the active tool span without serializing raw tool
 arguments. S5 approval recovery can wrap its existing persisted wait/resume operation with
 `withApprovalTrace()` and keep the same trace id while creating a new attempt span after recovery.

@@ -126,6 +126,7 @@ let server: http.Server | undefined;
 let baseUrl = '';
 const runRegistry = new RunRegistry();
 const testRunKernel = {
+  createRun: vi.fn(),
   createNativeRun: vi.fn(async (input: { runId: string; sessionId: string; now: number }) => {
     const owner = { ownerId: 'test', processInstanceId: 'test-process', epoch: 1, leaseExpiresAt: input.now + 60_000 };
     return {
@@ -147,6 +148,7 @@ const testRunKernel = {
   terminal: vi.fn(async () => ({} as never)),
   release: vi.fn(async () => true),
   recoverOnStartup: vi.fn(async () => []),
+  prepareOperation: vi.fn(),
   prepareToolOperation: vi.fn(),
 };
 const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;

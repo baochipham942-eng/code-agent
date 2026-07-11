@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DURABLE_RUN_SCHEMA_VERSION,
   RUN_STATUS_TRANSITIONS,
+  addChildRunRef,
   assertRunEnvelope,
   canTransitionRunStatus,
+  createChildRunRef,
   isTerminalRunStatus,
+  projectChildRunTerminal,
   type RunEnvelope,
 } from '../../../src/shared/contract/durableRun';
 
@@ -90,6 +93,13 @@ describe('Durable Run contract', () => {
       terminal: { status: 'completed', eventSeq: 4, at: 1_200 },
       cursor: { nextEventSeq: 4, checkpointSeq: 1 },
     }))).toThrow(/eventSeq/);
+    expect(() => assertRunEnvelope(validEnvelope({
+      attempt: 1,
+      pendingOperations: [{
+        runId: 'run-1', operationId: 'op-future', attempt: 2, kind: 'approval', status: 'waiting',
+        idempotencyKey: 'run-1:op-future', sideEffect: false, preparedAt: 1_050, updatedAt: 1_100,
+      }],
+    }))).toThrow(/newer than the envelope attempt/);
   });
 
   it('does not complete while an operation or child run is unresolved', () => {
@@ -108,5 +118,48 @@ describe('Durable Run contract', () => {
         parentRunId: 'run-1', childRunId: 'run-child', relation: 'agent', status: 'running', createdAt: 1_050,
       }],
     }))).toThrow(/active child/);
+  });
+
+  it('rejects a self-referencing child and validates parent identity', () => {
+    expect(() => createChildRunRef({
+      parentRunId: 'run-1', childRunId: 'run-1', relation: 'agent', now: 10,
+    })).toThrow(/itself|self/i);
+    expect(() => assertRunEnvelope(validEnvelope({
+      childRuns: [{
+        parentRunId: 'run-other', childRunId: 'run-child', relation: 'agent', status: 'running', createdAt: 10,
+      }],
+    }))).toThrow(/parentRunId/);
+  });
+
+  it('treats an identical child identity as idempotent and rejects conflicting duplicates', () => {
+    const child = createChildRunRef({
+      parentRunId: 'run-1', childRunId: 'run-child', relation: 'agent', now: 10,
+    });
+    const first = addChildRunRef([], child);
+
+    expect(addChildRunRef(first, child)).toBe(first);
+    expect(() => addChildRunRef(first, { ...child, relation: 'workflow' })).toThrow(/duplicate/i);
+    expect(() => assertRunEnvelope(validEnvelope({ childRuns: [child, child] }))).toThrow(/duplicate/i);
+  });
+
+  it('projects a child terminal state without changing parent logical identity', () => {
+    const parent = validEnvelope({
+      parentRunId: 'run-grandparent',
+      childRuns: [createChildRunRef({
+        parentRunId: 'run-1', childRunId: 'run-child', relation: 'agent', now: 10,
+      })],
+    });
+    const projected = projectChildRunTerminal(parent, {
+      childRunId: 'run-child', status: 'completed', terminalAt: 20,
+    });
+
+    expect(projected).toMatchObject({
+      runId: parent.runId,
+      sessionId: parent.sessionId,
+      parentRunId: parent.parentRunId,
+      childRuns: [{ childRunId: 'run-child', status: 'completed', terminalAt: 20 }],
+    });
+    expect(parent.childRuns?.[0].status).toBe('created');
+    expect(parent.childRuns?.[0].terminalAt).toBeUndefined();
   });
 });

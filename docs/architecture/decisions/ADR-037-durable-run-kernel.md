@@ -1,6 +1,6 @@
 # ADR-037 — Durable Run Kernel identity, ownership, and recovery semantics
 
-- Status: accepted for S0 contract; production activation deferred to S1–S9
+- Status: accepted; S3.5 shared constructor and projection boundary frozen
 - Date: 2026-07-11
 - Related: `native-run-context.md`, `coordinator-checkpoint-symmetry.md`, ADR-022 execution ledgers, ADR-023 Swarm ledger
 
@@ -18,6 +18,10 @@ Neo already has process-local Native `RunContext`/`RunRegistry`, session-level s
 6. Per-run events use a monotonic sequence that continues across attempts. Checkpoint commits atomically bind events, pending/child projections, checkpoint state, cursor advancement, and the run projection.
 7. Terminal states are immutable. Terminal event and terminal projection commit atomically under the current owner epoch.
 8. Existing SessionEvent, SSE, IPC, CLI, and database contracts remain compatible during dual-write migration. The new tables are additive and independently removable.
+9. Engine integrations use `RunKernelAdapter.createRun()` and `prepareOperation()` instead of constructing
+   envelopes or writing repositories directly. Native/tool-specific methods remain compatibility wrappers.
+10. Parent/child construction and terminal projection use shared pure helpers; durability is established only
+    by the existing fenced checkpoint transaction.
 
 The normative details, failure gold, migration schema, and S1–S9 file ownership are in [Durable Run Kernel contract](../durable-run-kernel.md).
 

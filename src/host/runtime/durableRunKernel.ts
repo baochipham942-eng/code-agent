@@ -3,9 +3,14 @@ import {
   DURABLE_RUN_SCHEMA_VERSION,
   type ChildRunRef,
   type PendingOperation,
+  type PendingOperationKind,
   type RunCheckpoint,
+  type RunEngineRef,
   type RunEnvelope,
   type RunOwnerLease,
+  type RunStatus,
+  assertChildRunProjection,
+  assertRunEnvelope,
 } from '../../shared/contract/durableRun';
 import type {
   DurableRunStores,
@@ -37,6 +42,43 @@ export interface NativeRunCreateInput {
   parentRunId?: string;
 }
 
+export interface DurableRunCreateInput {
+  runId: string;
+  sessionId: string;
+  engine: RunEngineRef;
+  now: number;
+  parentRunId?: string;
+  initialStatus?: Exclude<RunStatus, 'completed' | 'failed' | 'cancelled'>;
+  initialEngineCursor?: unknown;
+  initialPendingOperations?: PendingOperation[];
+  initialChildRuns?: ChildRunRef[];
+}
+
+export interface PrepareOperationInput {
+  runId: string;
+  operationId: string;
+  /** Stable logical identity. Defaults to operationId and remains unchanged across attempts. */
+  logicalOperationId?: string;
+  attempt: number;
+  kind: PendingOperationKind;
+  sideEffect: boolean;
+  canDeduplicate: boolean;
+  now: number;
+  inputDigest?: string;
+  providerOperationId?: string;
+  requiresHumanConfirmation?: boolean;
+}
+
+export interface PrepareToolOperationInput {
+  runId: string;
+  logicalCallId: string;
+  attempt: number;
+  sideEffect: boolean;
+  canDeduplicate: boolean;
+  now: number;
+  inputDigest?: string;
+}
+
 export interface DurableCheckpointInput {
   runId: string;
   attempt: number;
@@ -60,23 +102,17 @@ export interface DurableTerminalInput {
   event: RunEventAppend;
 }
 
-/** Narrow adapter consumed by Native now and by S4/S5 tool/approval wiring later. */
+/** Frozen narrow adapter shared by Native and S4/S5/S6 engine integrations. */
 export interface RunKernelAdapter {
+  createRun(input: DurableRunCreateInput): Promise<RunLeaseClaimResult>;
   createNativeRun(input: NativeRunCreateInput): Promise<RunLeaseClaimResult>;
   heartbeat(runId: string, owner: RunOwnerLease, now: number): Promise<RunOwnerLease>;
   checkpoint(input: DurableCheckpointInput): Promise<RunCheckpoint>;
   terminal(input: DurableTerminalInput): Promise<RunEnvelope>;
   release(runId: string, owner: RunOwnerLease, now: number): Promise<boolean>;
   recoverOnStartup(now: number, limit?: number): Promise<RunRehydrationPlan[]>;
-  prepareToolOperation(input: {
-    runId: string;
-    logicalCallId: string;
-    attempt: number;
-    sideEffect: boolean;
-    canDeduplicate: boolean;
-    now: number;
-    inputDigest?: string;
-  }): PendingOperation;
+  prepareOperation(input: PrepareOperationInput): PendingOperation;
+  prepareToolOperation(input: PrepareToolOperationInput): PendingOperation;
 }
 
 export class DurableRunKernel implements RunKernelAdapter {
@@ -92,7 +128,7 @@ export class DurableRunKernel implements RunKernelAdapter {
     this.leaseDurationMs = options.leaseDurationMs;
   }
 
-  async createNativeRun(input: NativeRunCreateInput): Promise<RunLeaseClaimResult> {
+  async createRun(input: DurableRunCreateInput): Promise<RunLeaseClaimResult> {
     const stores = this.requireStores();
     const owner: RunOwnerLease = {
       ownerId: this.ownerId,
@@ -104,17 +140,22 @@ export class DurableRunKernel implements RunKernelAdapter {
       schemaVersion: DURABLE_RUN_SCHEMA_VERSION,
       runId: input.runId,
       sessionId: input.sessionId,
-      engine: { kind: 'native' },
-      status: 'running',
+      engine: input.engine,
+      status: input.initialStatus ?? 'running',
       attempt: 1,
-      cursor: { nextEventSeq: 1, checkpointSeq: 0 },
+      cursor: {
+        nextEventSeq: 1,
+        checkpointSeq: 0,
+        ...(input.initialEngineCursor === undefined ? {} : { engineCursor: input.initialEngineCursor }),
+      },
       owner,
       parentRunId: input.parentRunId,
-      pendingOperations: [],
-      childRuns: [],
+      pendingOperations: input.initialPendingOperations ?? [],
+      childRuns: input.initialChildRuns ?? [],
       createdAt: input.now,
       updatedAt: input.now,
     };
+    assertRunEnvelope(envelope);
     const attempt = {
       runId: input.runId,
       attempt: 1,
@@ -126,6 +167,10 @@ export class DurableRunKernel implements RunKernelAdapter {
     };
     await stores.create(envelope, attempt);
     return { envelope, owner, attempt };
+  }
+
+  async createNativeRun(input: NativeRunCreateInput): Promise<RunLeaseClaimResult> {
+    return this.createRun({ ...input, engine: { kind: 'native' } });
   }
 
   async heartbeat(runId: string, owner: RunOwnerLease, now: number): Promise<RunOwnerLease> {
@@ -141,6 +186,7 @@ export class DurableRunKernel implements RunKernelAdapter {
     const stores = this.requireStores();
     const envelope = await stores.get(input.runId);
     if (!envelope) throw new Error(`Unknown durable run: ${input.runId}`);
+    assertChildRunProjection(input.runId, input.childRuns ?? envelope.childRuns ?? []);
     const nextEventSeq = envelope.cursor.nextEventSeq + input.events.length;
     const checkpoint: RunCheckpoint = {
       runId: input.runId,
@@ -242,29 +288,45 @@ export class DurableRunKernel implements RunKernelAdapter {
     return plans;
   }
 
-  prepareToolOperation(input: {
-    runId: string;
-    logicalCallId: string;
-    attempt: number;
-    sideEffect: boolean;
-    canDeduplicate: boolean;
-    now: number;
-    inputDigest?: string;
-  }): PendingOperation {
-    const idempotencyKey = checksum({ runId: input.runId, kind: 'tool_call', logicalCallId: input.logicalCallId });
+  prepareOperation(input: PrepareOperationInput): PendingOperation {
+    requireOperationIdentity(input.runId, 'runId');
+    requireOperationIdentity(input.operationId, 'operationId');
+    const logicalOperationId = requireOperationIdentity(
+      input.logicalOperationId ?? input.operationId,
+      'logicalOperationId',
+    );
+    if (!Number.isInteger(input.attempt) || input.attempt < 1) {
+      throw new Error('operation attempt must be a positive integer');
+    }
+    const idempotencyKey = checksum({
+      runId: input.runId,
+      kind: input.kind,
+      logicalOperationId,
+    });
     return {
       runId: input.runId,
-      operationId: input.logicalCallId,
+      operationId: input.operationId,
       attempt: input.attempt,
-      kind: 'tool_call',
+      kind: input.kind,
       status: 'prepared',
       idempotencyKey,
       sideEffect: input.sideEffect,
-      requiresHumanConfirmation: input.sideEffect && !input.canDeduplicate,
+      requiresHumanConfirmation: input.requiresHumanConfirmation === true
+        || (input.sideEffect && !input.canDeduplicate),
       inputDigest: input.inputDigest,
+      providerOperationId: input.providerOperationId,
       preparedAt: input.now,
       updatedAt: input.now,
     };
+  }
+
+  prepareToolOperation(input: PrepareToolOperationInput): PendingOperation {
+    return this.prepareOperation({
+      ...input,
+      operationId: input.logicalCallId,
+      logicalOperationId: input.logicalCallId,
+      kind: 'tool_call',
+    });
   }
 
   private requireStores(): DurableRunStores {
@@ -298,4 +360,9 @@ function classifyOperationForRecovery(
 
 function checksum(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function requireOperationIdentity(value: string, label: string): string {
+  if (!value.trim()) throw new Error(`${label} must be non-empty`);
+  return value;
 }

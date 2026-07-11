@@ -14,6 +14,8 @@ import { getToolSearchService } from '../services/toolSearch';
 import type {
   MCPTool,
   MCPToolAnnotations,
+  MCPToolExecution,
+  MCPServerTaskCapabilities,
   MCPResource,
   MCPPrompt,
   InProcessMCPServerInterface,
@@ -61,12 +63,14 @@ function activeMcpRequestMeta(): { traceparent: string; tracestate?: string } | 
 function mapSdkToolToMCPTool(serverName: string, tool: Tool): MCPTool {
   // SDK 返回的 annotations 包含 readOnlyHint/destructiveHint/openWorldHint/idempotentHint
   const annotations = (tool as { annotations?: MCPToolAnnotations }).annotations;
+  const execution = (tool as { execution?: MCPToolExecution }).execution;
   return {
     name: tool.name,
     description: tool.description || '',
     inputSchema: tool.inputSchema,
     serverName,
     ...(annotations ? { annotations } : {}),
+    ...(execution ? { execution } : {}),
   };
 }
 
@@ -170,6 +174,7 @@ export class MCPToolRegistry {
   tools: MCPTool[] = [];
   resources: MCPResource[] = [];
   prompts: MCPPrompt[] = [];
+  private serverTaskCapabilities = new Map<string, MCPServerTaskCapabilities>();
 
   // --------------------------------------------------------------------------
   // Capability Discovery
@@ -180,6 +185,12 @@ export class MCPToolRegistry {
    */
   async discoverCapabilities(serverName: string, client: Client): Promise<void> {
     const capabilities = client.getServerCapabilities();
+    const tasks = capabilities?.tasks;
+    this.serverTaskCapabilities.set(serverName, {
+      toolsCall: Boolean(tasks?.requests?.tools?.call),
+      list: Boolean(tasks?.list),
+      cancel: Boolean(tasks?.cancel),
+    });
     const shouldProbe = (capability: 'tools' | 'resources' | 'prompts') =>
       !capabilities || Boolean(capabilities[capability]);
 
@@ -322,6 +333,7 @@ export class MCPToolRegistry {
     this.tools = this.tools.filter((t) => t.serverName !== serverName);
     this.resources = this.resources.filter((r) => r.serverName !== serverName);
     this.prompts = this.prompts.filter((p) => p.serverName !== serverName);
+    this.serverTaskCapabilities.delete(serverName);
   }
 
   // --------------------------------------------------------------------------
@@ -394,14 +406,23 @@ export class MCPToolRegistry {
         tool.serverName === CUA_DRIVER_SERVER_NAME
           ? mapCuaToolPermission(tool.name)
           : mapMCPAnnotationsToPermission(tool.annotations);
-      const def: ToolDefinition & { metadata?: { annotations?: MCPToolAnnotations } } = {
+      const def: ToolDefinition & { metadata?: {
+        annotations?: MCPToolAnnotations;
+        execution?: MCPToolExecution;
+        serverTaskCapabilities?: MCPServerTaskCapabilities;
+      } } = {
         name: `mcp__${tool.serverName}__${tool.name}`,
         description: `[MCP:${tool.serverName}] ${tool.description}`,
         inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
         ...permission,
       };
-      if (tool.annotations) {
-        def.metadata = { annotations: tool.annotations };
+      const taskCapabilities = this.serverTaskCapabilities.get(tool.serverName);
+      if (tool.annotations || tool.execution || taskCapabilities) {
+        def.metadata = {
+          ...(tool.annotations ? { annotations: tool.annotations } : {}),
+          ...(tool.execution ? { execution: tool.execution } : {}),
+          ...(taskCapabilities ? { serverTaskCapabilities: taskCapabilities } : {}),
+        };
       }
       return def;
     });
@@ -420,6 +441,17 @@ export class MCPToolRegistry {
       }
     }
     return map;
+  }
+
+  getTaskCapabilityDeclaration(serverName: string, toolName: string): {
+    server: MCPServerTaskCapabilities;
+    toolTaskSupport?: MCPToolExecution['taskSupport'];
+  } | undefined {
+    const server = this.serverTaskCapabilities.get(serverName);
+    const tool = this.tools.find((candidate) =>
+      candidate.serverName === serverName && candidate.name === toolName);
+    if (!server || !tool) return undefined;
+    return { server, toolTaskSupport: tool.execution?.taskSupport };
   }
 
   /**

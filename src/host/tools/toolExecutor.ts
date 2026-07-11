@@ -899,6 +899,52 @@ export class ToolExecutor {
       const cached = toolCache.get(executionToolName, params, toolCacheScope);
       if (cached) {
         logger.debug('Cache HIT', { toolName: executionToolName });
+        // A replay-safe cache hit skips the handler lifecycle, but it is still a tool
+        // execution fact. Keep the append-only ledger and active tool span complete.
+        const cacheExecutionId = randomUUID();
+        const cachedParams = sanitizeToolParams(params);
+        const cachedSummary = String(
+          cachedParams.command
+          || cachedParams.file_path
+          || cachedParams.path
+          || cachedParams.pattern
+          || executionToolName,
+        ).substring(0, 80);
+        try {
+          getDatabase().appendToolExecutionBegin({
+            executionId: cacheExecutionId,
+            sessionId: effectiveSessionId,
+            toolName: executionToolName,
+            summary: cachedSummary,
+            params: cachedParams,
+            recordedAt: Date.now(),
+          });
+          getDatabase().appendToolExecutionComplete({
+            executionId: cacheExecutionId,
+            sessionId: effectiveSessionId,
+            toolName: executionToolName,
+            status: 'cached',
+            recordedAt: Date.now(),
+          });
+        } catch { /* cache replay remains available when the audit DB is unavailable */ }
+        try {
+          const toolSpan = options.currentToolCallId
+            ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
+            : undefined;
+          if (toolSpan) getTelemetryService().updateSpan(toolSpan.spanId, { 'tool.cache_hit': true });
+        } catch { /* trace storage is best-effort */ }
+        if (this.auditEnabled) {
+          try {
+            getAuditLogger().logToolUsage({
+              sessionId: effectiveSessionId || 'unknown',
+              toolName: executionToolName,
+              input: cachedParams,
+              output: cached.output ? truncateToolOutput(cached.output) : undefined,
+              duration: 0,
+              success: true,
+            });
+          } catch { /* audit backend failure cannot turn a proven replay into execution */ }
+        }
         return {
           success: true,
           result: cached,

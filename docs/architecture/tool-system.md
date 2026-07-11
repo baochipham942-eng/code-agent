@@ -7,9 +7,10 @@
 | 能力 | 当前合同 | 关键文件 / 测试 |
 |------|----------|----------------|
 | cache admission | 显式准入、默认 fail-closed；当前策略表为空，Read 也不缓存，避免跳过 file-read evidence 和 context-health 副作用 | `services/infra/toolCache.ts`、`toolCache.security.test.ts` |
-| cache identity | `tool-cache:v2 + SHA-256(workspace realpath) + sessionId`；canonical workspace 不可得时不读不写 | `toolCache.ts`、`ConfigRepository.ts` |
+| cache identity | `tool-cache:v3` 完整键包含 tool/policy version、normalized args、workspace realpath fingerprint、session、server identity、capability policy version、data fingerprint 或 TTL bucket；canonical workspace 不可得时不读不写 | `toolCache.ts`、[MCP Durable Task 与安全 ToolCache](./mcp-durable-task-and-tool-cache.md) |
 | invalidation | 文件与 workspace 变化按同一 scope 失效；旧 namespace 自然失效，不清表 | `toolExecutor.ts`、`toolExecutor.cacheSafety.test.ts` |
 | execution ledger | begin 落账前递归脱敏 header/env/token/apiKey/secret/command，循环结构安全降级 | `toolExecutorHelpers.ts`、`toolExecutor.executionLedger.test.ts` |
+| cache replay audit | cache hit 仍写 begin/complete execution ledger，并在活动 tool span 标记 `tool.cache_hit=true` | `toolExecutor.ts`、`toolExecutor.cacheSafety.test.ts` |
 | Run isolation | 每个 Native run 使用独立 ToolExecutor，路径、shell、checkpoint、artifact 与 Bridge payload 消费冻结的 RunContext | [native-run-context.md](./native-run-context.md) |
 | SSE integrity | tool name/arguments 不完整或 arguments JSON 不可解析时拒绝执行，截断只作为错误证据 | `model/providers/sseStream.ts`、`sseStream.snapshot.test.ts` |
 

@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
@@ -54,6 +55,8 @@ import {
   retryTransientRemoteMCPConnection,
 } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
+import { McpSdkTaskProtocol } from './mcpTaskProtocol';
+import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
@@ -695,6 +698,52 @@ export class MCPClient extends EventEmitter {
 
   getToolAnnotationsMap(): Map<string, MCPToolAnnotations> {
     return this.registry.getToolAnnotationsMap();
+  }
+
+  getTaskCapabilityDeclaration(serverName: string, toolName: string) {
+    return this.registry.getTaskCapabilityDeclaration(serverName, toolName);
+  }
+
+  /** Stable identity excludes headers/env values; only their absence from the digest is trusted. */
+  getServerIdentity(serverName: string): string | undefined {
+    const config = this.serverConfigs.get(serverName);
+    if (!config) return undefined;
+    const identityMaterial = isStdioConfig(config)
+      ? { name: config.name, type: 'stdio', command: config.command, args: config.args ?? [] }
+      : isInProcessConfig(config)
+        ? { name: config.name, type: 'in-process' }
+        : { name: config.name, type: config.type, serverUrl: config.serverUrl };
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify(identityMaterial))
+      .digest('hex')
+      .slice(0, 32);
+    return `${serverName}:${fingerprint}`;
+  }
+
+  createTaskProtocol(serverName: string, expectedServerIdentity: string): McpTaskProtocol | null {
+    const client = this.clients.get(serverName);
+    const actualIdentity = this.getServerIdentity(serverName);
+    if (!client || !actualIdentity || actualIdentity !== expectedServerIdentity) return null;
+    return new McpSdkTaskProtocol(client, actualIdentity);
+  }
+
+  buildTaskCapability(
+    serverName: string,
+    toolName: string,
+    trustedServerIdentities: ReadonlySet<string>,
+  ): McpTaskCapability | undefined {
+    const serverIdentity = this.getServerIdentity(serverName);
+    const declaration = this.registry.getTaskCapabilityDeclaration(serverName, toolName);
+    if (!serverIdentity || !declaration) return undefined;
+    return {
+      serverIdentity,
+      trusted: trustedServerIdentities.has(serverIdentity),
+      serverToolsCall: declaration.server.toolsCall,
+      // tasks/get and tasks/result are required by task-augmented tools/call. list is separate.
+      query: declaration.server.toolsCall,
+      cancel: declaration.server.cancel,
+      toolTaskSupport: declaration.toolTaskSupport,
+    };
   }
 
   /**

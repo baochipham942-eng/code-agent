@@ -20,6 +20,12 @@ const logger = createLogger('ToolCache');
 export interface ToolCacheScope {
   sessionId?: string;
   workingDirectory?: string;
+  /** Hash-bound MCP/local provider identity. Defaults to the explicit local sentinel. */
+  serverIdentity?: string;
+  /** Capability/trust policy revision used for this invocation. */
+  capabilityPolicyVersion?: string;
+  /** Version/fingerprint of external data not otherwise represented by normalized args. */
+  dataFingerprint?: string;
 }
 
 export interface NormalizedToolCacheScope {
@@ -51,14 +57,28 @@ export interface ToolCacheConfig {
   defaultTTL: number;
   maxMemoryEntries: number;
   persistentCache: boolean;
+  /** Explicit, proof-bearing allowlist. Production keeps this empty. */
+  policies: Readonly<Record<string, ToolCachePolicy>>;
+  now: () => number;
 }
 
-interface ToolCachePolicy {
-  ttl: number;
-  cacheable: boolean;
+export interface ToolCachePolicyEvidence {
+  pureRead: boolean;
+  noHiddenLifecycleSideEffects: boolean;
+  noContextEvidenceMutation: boolean;
+  externalChangesCoveredByKey: boolean;
+  replaySafe: boolean;
 }
 
-const CACHE_NAMESPACE_VERSION = 'tool-cache:v2';
+export interface ToolCachePolicy {
+  toolVersion: string;
+  policyVersion: string;
+  /** A positive TTL supplies the key's TTL bucket when no data fingerprint is present. */
+  ttlMs: number;
+  evidence: ToolCachePolicyEvidence;
+}
+
+const CACHE_NAMESPACE_VERSION = 'tool-cache:v3';
 
 /**
  * Cache admission is exact and fail-closed. No currently registered protocol
@@ -66,8 +86,7 @@ const CACHE_NAMESPACE_VERSION = 'tool-cache:v2';
  * even Read updates file-read evidence and context-health state. Additions must
  * therefore be explicit and backed by lifecycle + invalidation tests.
  */
-const TOOL_CACHE_POLICIES: Readonly<Record<string, ToolCachePolicy>> = Object.freeze({});
-const DEFAULT_CACHE_POLICY: ToolCachePolicy = Object.freeze({ ttl: 0, cacheable: false });
+export const TOOL_CACHE_ALLOWLIST: Readonly<Record<string, ToolCachePolicy>> = Object.freeze({});
 
 const PATH_ARGUMENT_KEYS = [
   'file_path',
@@ -161,6 +180,24 @@ function pathsOverlap(left: string, right: string): boolean {
   return Boolean(rightRelative) && !rightRelative.startsWith('..') && !nodePath.isAbsolute(rightRelative);
 }
 
+function isProvenPolicy(policy: ToolCachePolicy): boolean {
+  return Boolean(
+    policy.toolVersion.trim()
+    && policy.policyVersion.trim()
+    && Number.isFinite(policy.ttlMs)
+    && policy.ttlMs > 0
+    && policy.evidence.pureRead === true
+    && policy.evidence.noHiddenLifecycleSideEffects === true
+    && policy.evidence.noContextEvidenceMutation === true
+    && policy.evidence.externalChangesCoveredByKey === true
+    && policy.evidence.replaySafe === true,
+  );
+}
+
+function persistentNamespace(memoryKey: string): string {
+  return `${CACHE_NAMESPACE_VERSION}:${createHash('sha256').update(memoryKey).digest('hex')}`;
+}
+
 // ----------------------------------------------------------------------------
 // Tool Cache Service
 // ----------------------------------------------------------------------------
@@ -176,6 +213,8 @@ export class ToolCache implements Disposable {
       defaultTTL: 5 * 60 * 1000,
       maxMemoryEntries: 100,
       persistentCache: true,
+      policies: TOOL_CACHE_ALLOWLIST,
+      now: Date.now,
       ...config,
     };
   }
@@ -192,20 +231,45 @@ export class ToolCache implements Disposable {
     toolName: string,
     args: Record<string, unknown>,
     scope: NormalizedToolCacheScope,
+    rawScope: ToolCacheScope,
+    policy: ToolCachePolicy,
   ): string | null {
     const serializedArgs = stableStringify(args);
     if (serializedArgs === null) return null;
-    return `${scope.memoryScopeKey}:${toolName}:${serializedArgs}`;
+    if (
+      /^mcp(__|_)/i.test(toolName)
+      && (!rawScope.serverIdentity?.trim() || !rawScope.capabilityPolicyVersion?.trim())
+    ) return null;
+    const ttl = policy.ttlMs || this.config.defaultTTL;
+    const dataVersion = rawScope.dataFingerprint?.trim()
+      ? `fingerprint:${rawScope.dataFingerprint.trim()}`
+      : ttl > 0 ? `ttl-bucket:${Math.floor(this.config.now() / ttl)}` : null;
+    if (!dataVersion) return null;
+    const dimensions = stableStringify({
+      namespace: CACHE_NAMESPACE_VERSION,
+      toolName,
+      toolVersion: policy.toolVersion,
+      normalizedArgs: canonicalizeJson(args),
+      workspaceFingerprint: scope.cacheNamespace,
+      sessionScope: scope.sessionId,
+      serverIdentity: rawScope.serverIdentity?.trim() || 'local',
+      capabilityPolicyVersion: rawScope.capabilityPolicyVersion?.trim() || policy.policyVersion,
+      cachePolicyVersion: policy.policyVersion,
+      dataVersion,
+    });
+    if (dimensions === null) return null;
+    return `${scope.memoryScopeKey}:${createHash('sha256').update(dimensions).digest('hex')}`;
   }
 
-  isCacheable(toolName: string): boolean {
-    return (TOOL_CACHE_POLICIES[toolName] ?? DEFAULT_CACHE_POLICY).cacheable;
+  isCacheable(toolName: string, _untrustedHints?: unknown): boolean {
+    const policy = this.config.policies[toolName];
+    return policy !== undefined && isProvenPolicy(policy);
   }
 
   getTTL(toolName: string): number {
-    const policy = TOOL_CACHE_POLICIES[toolName];
-    if (!policy?.cacheable) return 0;
-    return policy.ttl || this.config.defaultTTL;
+    const policy = this.config.policies[toolName];
+    if (!policy || !isProvenPolicy(policy)) return 0;
+    return policy.ttlMs || this.config.defaultTTL;
   }
 
   get(
@@ -216,16 +280,18 @@ export class ToolCache implements Disposable {
     if (!this.isCacheable(toolName)) return null;
 
     const scope = normalizeToolCacheScope(rawScope);
+    const policy = this.config.policies[toolName];
     if (!scope) {
       this.stats.misses++;
       return null;
     }
-    const key = this.generateKey(toolName, args, scope);
+    if (!policy || !isProvenPolicy(policy)) return null;
+    const key = this.generateKey(toolName, args, scope, rawScope ?? {}, policy);
     if (!key) {
       this.stats.misses++;
       return null;
     }
-    const now = Date.now();
+    const now = this.config.now();
 
     const memoryEntry = this.memoryCache.get(key);
     if (memoryEntry) {
@@ -241,7 +307,7 @@ export class ToolCache implements Disposable {
       try {
         const dbResult = getDatabase().getCachedToolResult(
           scope.sessionId,
-          scope.cacheNamespace,
+          persistentNamespace(key),
           toolName,
           args,
         );
@@ -278,13 +344,16 @@ export class ToolCache implements Disposable {
     if (!this.isCacheable(toolName) || !result.success) return;
 
     const scope = normalizeToolCacheScope(rawScope);
+    const policy = this.config.policies[toolName];
     if (!scope) return;
-    const key = this.generateKey(toolName, args, scope);
+    if (!policy || !isProvenPolicy(policy)) return;
+    const key = this.generateKey(toolName, args, scope, rawScope ?? {}, policy);
     if (!key) return;
 
-    const now = Date.now();
+    const now = this.config.now();
     const ttl = customTTL ?? this.getTTL(toolName);
-    const expiresAt = ttl > 0 ? now + ttl : null;
+    if (!Number.isFinite(ttl) || ttl <= 0) return;
+    const expiresAt = now + ttl;
     this.setMemoryCache(key, {
       toolName,
       args,
@@ -304,7 +373,7 @@ export class ToolCache implements Disposable {
           toolName,
           args,
           result,
-          scope.cacheNamespace,
+          persistentNamespace(key),
           ttl,
         );
       } catch (error) {
@@ -337,7 +406,9 @@ export class ToolCache implements Disposable {
     if (!scope) return;
 
     if (args) {
-      const key = this.generateKey(toolName, args, scope);
+      const policy = this.config.policies[toolName];
+      if (!policy || !isProvenPolicy(policy)) return;
+      const key = this.generateKey(toolName, args, scope, rawScope ?? {}, policy);
       if (key) this.memoryCache.delete(key);
       return;
     }
@@ -393,7 +464,7 @@ export class ToolCache implements Disposable {
   }
 
   cleanExpired(): number {
-    const now = Date.now();
+    const now = this.config.now();
     let cleaned = 0;
     for (const [key, entry] of this.memoryCache.entries()) {
       if (entry.expiresAt !== null && entry.expiresAt <= now) {

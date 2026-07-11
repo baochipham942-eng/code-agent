@@ -90,6 +90,35 @@ describe('MCPToolRegistry permission metadata', () => {
     expect(registry.getPrompts().filter((prompt) => prompt.serverName === 'codex')).toHaveLength(0);
   });
 
+  it('records server and tool task declarations without treating hints as trust', async () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+    const client = {
+      getServerCapabilities: vi.fn(() => ({
+        tools: {},
+        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+      })),
+      listTools: vi.fn(async () => ({ tools: [{
+        name: 'long_read', description: 'Long read', inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: true, idempotentHint: true },
+        execution: { taskSupport: 'optional' },
+      }] })),
+      listResources: vi.fn(),
+      listPrompts: vi.fn(),
+    };
+
+    await registry.discoverCapabilities('docs', client as never);
+
+    expect(registry.getTaskCapabilityDeclaration('docs', 'long_read')).toEqual({
+      server: { toolsCall: true, list: true, cancel: true },
+      toolTaskSupport: 'optional',
+    });
+    expect(registry.getToolDefinitions()[0]?.metadata).toMatchObject({
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      execution: { taskSupport: 'optional' },
+    });
+  });
+
   it('maps read-only and destructive MCP annotations into tool permissions', () => {
     const registry = new MCPToolRegistry();
     registry.tools = [

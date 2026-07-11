@@ -253,6 +253,10 @@ export function createMCPSDKClient(listChangedHandlers?: ListChangedHandlers): C
         elicitation: {
           form: {},
         },
+        tasks: {
+          list: {},
+          cancel: {},
+        },
       },
       ...(listChangedHandlers ? { listChanged: listChangedHandlers } : {}),
     }

@@ -360,6 +360,8 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('release-record.md');
     expect(workflow).toContain('Verify production renderer rollout control plane');
     expect(workflow).toContain('npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000');
+    expect(workflow).toContain('--manifest-url "${SNAPSHOT_BASE_URL}/manifest.json${PUBLISH_QUERY}"');
+    expect(workflow).toContain('--release-record-url "${SNAPSHOT_BASE_URL}/release-record.json${PUBLISH_QUERY}"');
     expect(workflow).toContain('--release-record-url "${BUNDLE_BASE_URL}/release-record.json"');
     expect(workflow).toContain('--expected-release-channel "${RELEASE_CHANNEL}"');
     expect(workflow).toContain('--expected-cohort "${TARGET_COHORT}"');

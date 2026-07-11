@@ -424,9 +424,14 @@ jobs:
       - name: Verify published renderer bundle
         if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
         run: |
+          # Verify the immutable version snapshot first. Channel-level latest/
+          # objects are overwritten one by one and can briefly come from
+          # different CDN cache generations. The production-surface step below
+          # already retries latest/ until it converges.
+          PUBLISH_QUERY="?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           VERIFY_ARGS=(
-            --manifest-url "${BUNDLE_BASE_URL}/manifest.json"
-            --release-record-url "${BUNDLE_BASE_URL}/release-record.json"
+            --manifest-url "${SNAPSHOT_BASE_URL}/manifest.json${PUBLISH_QUERY}"
+            --release-record-url "${SNAPSHOT_BASE_URL}/release-record.json${PUBLISH_QUERY}"
             --expected-version "${VERSION}"
             --expected-release-channel "${RELEASE_CHANNEL}"
           )

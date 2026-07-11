@@ -6,6 +6,13 @@ import type {
 import type { ToolExecutionResult } from '../../host/tools/types';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import type { WebRouteLogger } from './routeTypes';
+import { getTelemetryService } from '../../host/telemetry/telemetryService';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+  serializeRunTraceContext,
+  type RunTraceContext,
+} from '../../host/telemetry/runTraceContext';
 
 export interface PendingLocalToolCall {
   resolve: (result: ToolExecutionResult) => void;
@@ -19,6 +26,7 @@ interface BridgeToolDispatchDeps {
   emitSSE: (event: string, data: unknown) => void;
   logger: WebRouteLogger;
   timeoutMs?: number;
+  traceContext?: RunTraceContext;
 }
 
 const DEFAULT_LOCAL_TOOL_TIMEOUT_MS = 120_000;
@@ -62,6 +70,29 @@ export function createBridgeToolDispatch(deps: BridgeToolDispatchDeps): ToolExec
 
     const bridgeTool = mapToolName(toolName);
     const toolCallId = `bridge-${randomUUID()}`;
+    const parentTraceContext = deps.traceContext ?? getActiveRunTraceContext();
+    const bridgeTraceContext = parentTraceContext
+      ? createChildRunTraceContext(parentTraceContext)
+      : undefined;
+    let bridgeSpanId: string | undefined;
+    try {
+      const parentToolSpan = options.currentToolCallId
+        ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
+        : undefined;
+      bridgeSpanId = getTelemetryService().startSpan(
+        `bridge:${bridgeTool}`,
+        'bridge',
+        {
+          'bridge.tool': bridgeTool,
+          'bridge.run_id': deps.runContext.runId,
+          'bridge.transport': 'renderer-http',
+        },
+        parentToolSpan?.spanId ?? parentTraceContext?.spanId,
+        bridgeTraceContext,
+      ).spanId;
+    } catch {
+      // Bridge execution is independent from tracing availability.
+    }
     const workspace = context.workspace ?? deps.runContext.workspace;
     const runCwd = context.workingDirectory || deps.runContext.cwd;
     const bound = toBridgeParams(toolName, params, runCwd);
@@ -76,6 +107,9 @@ export function createBridgeToolDispatch(deps: BridgeToolDispatchDeps): ToolExec
       sessionId: deps.runContext.sessionId,
       workspace,
       cwd: bound.cwd,
+      ...(bridgeTraceContext
+        ? { traceContext: serializeRunTraceContext(bridgeTraceContext) }
+        : {}),
     });
 
     const result = await new Promise<ToolExecutionResult>((resolve) => {
@@ -118,8 +152,30 @@ export function createBridgeToolDispatch(deps: BridgeToolDispatchDeps): ToolExec
     });
 
     if (isBridgeUnavailable(result)) {
+      try {
+        if (bridgeSpanId) {
+          getTelemetryService().endSpan(bridgeSpanId, 'error', { 'bridge.result_status': 'unavailable' });
+        }
+      } catch {
+        // Bridge fallback must not depend on tracing availability.
+      }
       deps.logger.warn(`[BridgeProxy] Bridge down, falling back to local executor for: ${toolName}`);
       return null;
+    }
+    try {
+      if (bridgeSpanId) {
+        const cancelled = /cancel|abort/i.test(result.error ?? '');
+        const timedOut = /timeout|timed out/i.test(result.error ?? '');
+        getTelemetryService().endSpan(
+          bridgeSpanId,
+          result.success ? 'ok' : cancelled ? 'cancelled' : 'error',
+          {
+            'bridge.result_status': result.success ? 'success' : timedOut ? 'timeout' : cancelled ? 'cancelled' : 'failed',
+          },
+        );
+      }
+    } catch {
+      // Bridge results are independent from tracing availability.
     }
     return result;
   };

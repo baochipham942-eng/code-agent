@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRunContext } from '../../../src/host/runtime/runContext';
 import type { ToolContext } from '../../../src/host/tools/types';
+import { createRunTraceContext } from '../../../src/host/telemetry/runTraceContext';
 import {
   createBridgeToolDispatch,
   type PendingLocalToolCall,
@@ -24,12 +25,22 @@ describe('createBridgeToolDispatch', () => {
       workspace: '/tmp/bridge-context',
     });
     const pending = new Map<string, PendingLocalToolCall>();
+    const traceContext = createRunTraceContext({
+      runId: runContext.runId,
+      sessionId: runContext.sessionId,
+      attempt: 1,
+      ownerEpoch: 1,
+      engine: 'native',
+      workspace: runContext.workspace,
+      processInstanceId: 'bridge-test-host',
+    });
     const events: Array<{ event: string; data: Record<string, unknown> }> = [];
     const dispatch = createBridgeToolDispatch({
       runContext,
       pendingLocalToolCalls: pending,
       emitSSE: (event, data) => events.push({ event, data: data as Record<string, unknown> }),
       logger: { warn: vi.fn() } as never,
+      traceContext,
     });
 
     const resultPromise = dispatch(
@@ -54,6 +65,11 @@ describe('createBridgeToolDispatch', () => {
           file_path: 'output.txt',
           path: 'output.txt',
           cwd: runContext.cwd,
+        },
+        traceContext: {
+          traceId: traceContext.traceId,
+          runId: runContext.runId,
+          traceparent: expect.stringMatching(/^00-/),
         },
       },
     });

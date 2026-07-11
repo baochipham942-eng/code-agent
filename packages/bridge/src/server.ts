@@ -159,6 +159,12 @@ export async function bindBridgeRunToolContext(
   if (runId === sessionId) {
     throw new Error('Bridge runId must be distinct from sessionId');
   }
+  if (request.traceContext && (
+    request.traceContext.runId !== runId
+    || request.traceContext.sessionId !== sessionId
+  )) {
+    throw new Error('Bridge trace context does not match the target run');
+  }
   if (!hasRunContext) {
     // Preserve pre-Run Bridge calls: non-filesystem tools (for example
     // system_info) must still work when a previously configured directory was
@@ -183,6 +189,7 @@ export async function bindBridgeRunToolContext(
         cwd,
         abortSignal,
         wsBroadcast,
+        traceContext: request.traceContext,
       },
     };
   }
@@ -205,6 +212,7 @@ export async function bindBridgeRunToolContext(
       ...canonicalContext,
       abortSignal,
       wsBroadcast,
+      traceContext: request.traceContext,
     },
   };
 }
@@ -249,7 +257,7 @@ export async function createBridgeServer(options: CreateServerOptions) {
     if (origin) {
       res.header('Access-Control-Allow-Origin', origin);
     }
-    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, traceparent, tracestate');
     res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
     if (req.method === 'OPTIONS') {
       res.sendStatus(204);
@@ -324,6 +332,15 @@ export async function createBridgeServer(options: CreateServerOptions) {
 
   app.post('/tools/invoke', async (req, res) => {
     const body = req.body as BridgeToolRequest;
+    const traceparent = req.header('traceparent');
+    const tracestate = req.header('tracestate');
+    if (body.traceContext && traceparent) {
+      body.traceContext = {
+        ...body.traceContext,
+        traceparent,
+        ...(tracestate ? { tracestate } : {}),
+      };
+    }
     const tool = options.tools.get(body.tool);
     if (!tool) {
       res.status(404).json({ requestId: body.requestId, success: false, error: `Unknown tool: ${body.tool}` });

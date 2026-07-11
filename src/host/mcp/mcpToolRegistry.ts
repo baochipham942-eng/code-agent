@@ -19,6 +19,10 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { CUA_DRIVER_SERVER_NAME } from './types';
+import {
+  getActiveRunTraceContext,
+  serializeRunTraceContext,
+} from '../telemetry/runTraceContext';
 
 const logger = createLogger('MCPToolRegistry');
 
@@ -38,6 +42,16 @@ function buildCancelledToolResult(toolCallId: string, startTime: number): ToolRe
     metadata: {
       cancelledByRun: true,
     },
+  };
+}
+
+function activeMcpRequestMeta(): { traceparent: string; tracestate?: string } | undefined {
+  const active = getActiveRunTraceContext();
+  if (!active) return undefined;
+  const serialized = serializeRunTraceContext(active);
+  return {
+    traceparent: serialized.traceparent,
+    ...(serialized.tracestate ? { tracestate: serialized.tracestate } : {}),
   };
 }
 
@@ -474,6 +488,7 @@ export class MCPToolRegistry {
         client.callTool({
           name: toolName,
           arguments: args,
+          _meta: activeMcpRequestMeta(),
         }, undefined, { timeout: timeoutMs, signal: abortSignal }),
         timeoutMs,
         `MCP tool call timed out after ${timeoutMs}ms`,
@@ -529,7 +544,7 @@ export class MCPToolRegistry {
       // withTimeout 自动清理 timer
       const retryResult = await withTimeout(
         client.callTool(
-          { name: toolName, arguments: args },
+          { name: toolName, arguments: args, _meta: activeMcpRequestMeta() },
           undefined,
           { timeout: MCP_TIMEOUTS.TOOL_RETRY, signal: abortSignal },
         ),

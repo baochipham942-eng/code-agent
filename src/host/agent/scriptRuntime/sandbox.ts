@@ -17,6 +17,12 @@ import { killProcessTree } from '../../tools/shell/platformShell';
 import type { RpcRequest, RpcResponse } from './types';
 import { runScriptInLegacyWorker } from './legacyWorkerSandbox';
 import { ORCHESTRATION_CAPABILITIES } from './capabilityManifest';
+import {
+  restoreRunTraceContext,
+  withRunTraceContext,
+  type SerializedRunTraceContext,
+} from '../../telemetry/runTraceContext';
+import { getTelemetryService } from '../../telemetry/telemetryService';
 
 const MAX_IPC_LINE_BYTES = 8 * 1024 * 1024;
 const STDERR_LIMIT = 16 * 1024;
@@ -31,15 +37,27 @@ const PROCESS_SOURCE = String.raw`
 const hostProcess = process;
 const hostRequire = require;
 const v8 = hostRequire('node:v8');
+const hostCrypto = hostRequire('node:crypto');
 const readline = hostRequire('node:readline');
 const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructor;
 const pending = new Map();
 let rpcSeq = 0;
 let spent = 0;
+let activeTraceContext;
 
 function encode(value) { return v8.serialize(value).toString('base64'); }
 function decode(value) { return v8.deserialize(Buffer.from(value, 'base64')); }
 function send(value, callback) { hostProcess.stdout.write(encode(value) + '\n', callback); }
+function childTraceContext() {
+  if (!activeTraceContext) return undefined;
+  const spanId = hostCrypto.randomBytes(8).toString('hex');
+  const flags = Number(activeTraceContext.traceFlags || 0).toString(16).padStart(2, '0');
+  return Object.freeze({
+    ...activeTraceContext,
+    spanId,
+    traceparent: '00-' + activeTraceContext.traceId + '-' + spanId + '-' + flags,
+  });
+}
 function hideAmbientAuthority() {
   const blocked = [
     'process', 'require', 'module', 'exports', '__dirname', '__filename', 'global',
@@ -56,7 +74,7 @@ function rpc(kind, payload) {
   return new Promise((resolve, reject) => {
     const id = ++rpcSeq;
     pending.set(id, { resolve, reject });
-    send({ type: 'rpc', request: { id, kind, payload } });
+    send({ type: 'rpc', request: { id, kind, payload, traceContext: childTraceContext() } });
   });
 }
 
@@ -65,6 +83,7 @@ async function execute(init) {
     throw new Error('orchestration capability manifest must deny ambient authority');
   }
   const budgetTotal = init.budgetTotal;
+  activeTraceContext = init.traceContext;
   const budget = Object.freeze({
     total: budgetTotal == null ? null : budgetTotal,
     spent: () => spent,
@@ -133,6 +152,8 @@ export interface RunSandboxOptions {
   useOsSandbox?: boolean;
   /** 短期兼容开关；只有显式 true 才允许回到旧 worker 路径。 */
   legacyWorkerFallback?: boolean;
+  /** Allowlisted run trace metadata propagated in the init frame. */
+  traceContext?: SerializedRunTraceContext;
 }
 
 export interface WorkerOutcome {
@@ -272,12 +293,52 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
             if (!['agent', 'phase', 'log'].includes(req.kind)) {
               child.stdin.write(`${encodeMessage({ type: 'rpc-response', response: { id: req.id, ok: false, error: 'unsupported primitive' } })}\n`);
             } else {
-              void opts.onRpc(req).then(
-                (response) => child.stdin.write(`${encodeMessage({ type: 'rpc-response', response })}\n`),
-                (error) => child.stdin.write(`${encodeMessage({
-                  type: 'rpc-response',
-                  response: { id: req.id, ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) },
-                })}\n`),
+              const invokeRpc = () => opts.onRpc(req);
+              let rpcPromise: Promise<RpcResponse>;
+              let rpcSpanId: string | undefined;
+              try {
+                const restoredTraceContext = req.traceContext
+                  ? restoreRunTraceContext(req.traceContext)
+                  : undefined;
+                if (restoredTraceContext) {
+                  try {
+                    rpcSpanId = getTelemetryService().startSpan(
+                      `workflow rpc:${req.kind}`,
+                      req.kind === 'agent' ? 'agent' : 'workflow',
+                      { 'workflow.rpc_kind': req.kind },
+                      opts.traceContext?.spanId,
+                      restoredTraceContext,
+                    ).spanId;
+                  } catch {
+                    // RPC execution is independent from tracing availability.
+                  }
+                }
+                rpcPromise = restoredTraceContext
+                  ? withRunTraceContext(restoredTraceContext, invokeRpc)
+                  : invokeRpc();
+              } catch (error) {
+                rpcPromise = Promise.reject(error);
+              }
+              void rpcPromise.then(
+                (response) => {
+                  try {
+                    if (rpcSpanId) getTelemetryService().endSpan(rpcSpanId, response.ok ? 'ok' : 'error');
+                  } catch {
+                    // RPC completion must not depend on tracing availability.
+                  }
+                  child.stdin.write(`${encodeMessage({ type: 'rpc-response', response })}\n`);
+                },
+                (error) => {
+                  try {
+                    if (rpcSpanId) getTelemetryService().endSpan(rpcSpanId, 'error');
+                  } catch {
+                    // Preserve the original RPC error.
+                  }
+                  child.stdin.write(`${encodeMessage({
+                    type: 'rpc-response',
+                    response: { id: req.id, ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) },
+                  })}\n`);
+                },
               );
             }
           } else if (message.type === 'done' && message.outcome) {
@@ -310,6 +371,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
       goal: opts.goal,
       budgetTotal: opts.budgetTotal ?? null,
       capabilities: ORCHESTRATION_CAPABILITIES,
+      traceContext: opts.traceContext,
     })}\n`);
   });
 }

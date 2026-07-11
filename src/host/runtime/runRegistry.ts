@@ -11,6 +11,11 @@ import type {
   RunKernelAdapter,
 } from './durableRunKernel';
 import type { RunRehydrationPlan } from './durableRunStores';
+import {
+  createRunTraceContext,
+  type RunTraceContext,
+} from '../telemetry/runTraceContext';
+import { getTelemetryService } from '../telemetry/telemetryService';
 
 export class RunSessionConflictError extends Error {
   readonly code = 'RUN_SESSION_CONFLICT';
@@ -33,6 +38,7 @@ export class RunRegistry {
   private readonly handlesByRunId = new Map<string, RunHandle>();
   private readonly runIdBySessionId = new Map<string, string>();
   private readonly durableOwners = new Map<string, { owner: RunOwnerLease; attempt: number }>();
+  private readonly durableTraceContexts = new Map<string, RunTraceContext>();
   private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
   private kernel: RunKernelAdapter | null = null;
 
@@ -55,14 +61,26 @@ export class RunRegistry {
     if (existingRunId && existingRunId !== context.runId) {
       throw new RunSessionConflictError(context.sessionId, existingRunId);
     }
-    const handle = createRunHandle(context);
     const created = await kernel.createNativeRun({
       runId: context.runId,
       sessionId: context.sessionId,
       now,
     });
+    const traceContext = createRunTraceContext({
+      runId: context.runId,
+      sessionId: context.sessionId,
+      attempt: created.attempt.attempt,
+      ownerEpoch: created.owner.epoch,
+      engine: created.envelope.engine.kind,
+      workspace: context.workspace,
+      parentRunId: created.envelope.parentRunId,
+      processInstanceId: created.owner.processInstanceId,
+    });
+    const handle = createRunHandle(context, traceContext);
     this.register(handle);
     this.durableOwners.set(context.runId, { owner: created.owner, attempt: created.attempt.attempt });
+    this.durableTraceContexts.set(context.runId, traceContext);
+    this.startAttemptSpan(traceContext);
     this.startHeartbeat(context.runId, created.owner, now);
     return handle;
   }
@@ -90,7 +108,11 @@ export class RunRegistry {
   async terminalDurable(
     runId: string,
     input: Omit<DurableTerminalInput, 'runId' | 'attempt' | 'owner'>,
+    expected?: RunHandle,
   ) {
+    if (expected && this.handlesByRunId.get(runId) !== expected) {
+      throw new Error(`Durable Run terminal fenced by stale handle: ${runId}`);
+    }
     const live = this.requireDurableOwner(runId);
     const envelope = await this.requireKernel().terminal({
       ...input,
@@ -100,7 +122,10 @@ export class RunRegistry {
     });
     this.durableOwners.delete(runId);
     this.stopHeartbeat(runId);
-    this.unregister(runId);
+    this.endAttemptSpan(runId, input.status === 'completed' ? 'ok' : input.status === 'cancelled' ? 'cancelled' : 'error', {
+      'terminal.status': input.status,
+    });
+    this.unregister(runId, expected);
     return envelope;
   }
 
@@ -112,6 +137,7 @@ export class RunRegistry {
       this.durableOwners.delete(runId);
       this.stopHeartbeat(runId);
       this.unregister(runId, expected);
+      this.endAttemptSpan(runId, 'cancelled', { 'terminal.status': 'released' });
     }
     return released;
   }
@@ -121,7 +147,32 @@ export class RunRegistry {
     for (const plan of plans) {
       const owner = plan.envelope.owner;
       if (owner) {
+        const previousTraceContext = this.durableTraceContexts.get(plan.envelope.runId);
+        if (previousTraceContext) {
+          this.endAttemptSpan(plan.envelope.runId, 'error', { 'terminal.status': 'recovering' });
+        }
+        const staleHandle = this.handlesByRunId.get(plan.envelope.runId);
+        if (staleHandle) this.unregister(plan.envelope.runId, staleHandle);
+        const traceContext = createRunTraceContext({
+          runId: plan.envelope.runId,
+          sessionId: plan.envelope.sessionId,
+          attempt: plan.envelope.attempt,
+          ownerEpoch: owner.epoch,
+          engine: plan.envelope.engine.kind,
+          workspaceFingerprint: previousTraceContext?.workspaceFingerprint,
+          parentRunId: plan.envelope.parentRunId,
+          processInstanceId: owner.processInstanceId,
+        });
         this.durableOwners.set(plan.envelope.runId, { owner, attempt: plan.envelope.attempt });
+        this.durableTraceContexts.set(plan.envelope.runId, traceContext);
+        this.startAttemptSpan(traceContext, {
+          'run.recovery': true,
+          'run.previous_attempt': plan.previousAttempt.attempt,
+          'run.checkpoint_seq': plan.checkpoint?.checkpointSeq ?? 0,
+          ...(plan.previousAttempt.recoveryReason
+            ? { 'run.recovery_reason': plan.previousAttempt.recoveryReason }
+            : {}),
+        });
         this.startHeartbeat(plan.envelope.runId, owner, now);
       }
     }
@@ -146,6 +197,10 @@ export class RunRegistry {
 
   get(runId: string): RunHandle | undefined {
     return this.handlesByRunId.get(runId);
+  }
+
+  getTraceContext(runId: string): RunTraceContext | undefined {
+    return this.durableTraceContexts.get(runId);
   }
 
   getBySessionId(sessionId: string): RunHandle | undefined {
@@ -187,9 +242,13 @@ export class RunRegistry {
   clear(): void {
     for (const timer of this.heartbeatTimers.values()) clearInterval(timer);
     this.heartbeatTimers.clear();
+    for (const runId of [...this.durableTraceContexts.keys()]) {
+      this.endAttemptSpan(runId, 'cancelled', { 'terminal.status': 'registry_cleared' });
+    }
     this.handlesByRunId.clear();
     this.runIdBySessionId.clear();
     this.durableOwners.clear();
+    this.durableTraceContexts.clear();
   }
 
   get size(): number {
@@ -218,6 +277,7 @@ export class RunRegistry {
       void this.heartbeatDurable(runId).catch(async () => {
         this.stopHeartbeat(runId);
         this.durableOwners.delete(runId);
+        this.endAttemptSpan(runId, 'error', { 'terminal.status': 'stale_owner' });
         const handle = this.handlesByRunId.get(runId);
         if (handle) await handle.cancel('session-switch').catch(() => undefined);
         this.unregister(runId, handle);
@@ -231,5 +291,33 @@ export class RunRegistry {
     const timer = this.heartbeatTimers.get(runId);
     if (timer) clearInterval(timer);
     this.heartbeatTimers.delete(runId);
+  }
+
+  private startAttemptSpan(
+    traceContext: RunTraceContext,
+    attributes: Record<string, string | number | boolean> = {},
+  ): void {
+    try {
+      getTelemetryService().startRunAttemptSpan(traceContext, attributes);
+    } catch {
+      // Tracing is diagnostic only and must never affect run ownership.
+    }
+  }
+
+  private endAttemptSpan(
+    runId: string,
+    status: 'ok' | 'error' | 'cancelled',
+    attributes: Record<string, string | number | boolean>,
+  ): void {
+    const traceContext = this.durableTraceContexts.get(runId);
+    if (!traceContext) return;
+    this.durableTraceContexts.delete(runId);
+    try {
+      const telemetry = getTelemetryService();
+      telemetry.endOpenSpansForTrace(traceContext.traceId, status, traceContext.spanId);
+      telemetry.endSpan(traceContext.spanId, status, attributes);
+    } catch {
+      // Tracing is diagnostic only and must never affect run ownership.
+    }
   }
 }

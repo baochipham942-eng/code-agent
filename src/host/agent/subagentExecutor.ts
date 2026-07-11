@@ -50,6 +50,12 @@ import { getConfigService } from '../services/core/configService';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
+import { getTelemetryService } from '../telemetry/telemetryService';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+  withRunTraceContext,
+} from '../telemetry/runTraceContext';
 import {
   buildContextSnapshot,
   buildInferenceMessages,
@@ -113,6 +119,73 @@ export class SubagentExecutor {
     prompt: string,
     config: SubagentConfig,
     context: SubagentContext
+  ): Promise<SubagentResult> {
+    const parentTraceContext = getActiveRunTraceContext();
+    if (!parentTraceContext) {
+      return this.executeInternal(prompt, config, context);
+    }
+    const teamScope = context.toolContext.swarmRunScope;
+    const executionAgentId = context.executionAgentId || context.spawnGuardId || config.name;
+    const childTraceContext = createChildRunTraceContext(parentTraceContext, {
+      runId: teamScope?.runId ?? parentTraceContext.runId,
+      sessionId: teamScope?.sessionId ?? parentTraceContext.sessionId,
+      engine: teamScope ? 'agent_team' : parentTraceContext.engine,
+      agentId: executionAgentId,
+      parentRunId: teamScope?.parentNativeRunId ?? parentTraceContext.runId,
+    });
+    let spanId: string | undefined;
+    try {
+      const parentToolSpan = context.toolContext.currentToolCallId
+        ? getTelemetryService().findActiveSpanByAttribute(
+            'tool.call_id',
+            context.toolContext.currentToolCallId,
+          )
+        : undefined;
+      spanId = getTelemetryService().startAgentSpan(
+        executionAgentId,
+        teamScope ? 'agent-team-child' : 'child-agent',
+        undefined,
+        parentToolSpan?.spanId ?? parentTraceContext.spanId,
+        childTraceContext,
+      ).spanId;
+      getTelemetryService().updateSpan(spanId, {
+        ...(teamScope?.treeId ? { 'agent.tree_id': teamScope.treeId } : {}),
+        ...(teamScope?.parentNativeRunId ? { 'run.parent_id': teamScope.parentNativeRunId } : {}),
+      });
+    } catch {
+      // Agent tracing must not prevent a child from starting.
+    }
+
+    return withRunTraceContext(childTraceContext, async () => {
+      try {
+        const result = await this.executeInternal(prompt, config, context);
+        try {
+          if (spanId) {
+            getTelemetryService().endSpan(
+              spanId,
+              result.success ? 'ok' : result.cancellationReason ? 'cancelled' : 'error',
+              { 'agent.result_status': result.success ? 'success' : result.cancellationReason ? 'cancelled' : 'failed' },
+            );
+          }
+        } catch {
+          // Agent completion must not depend on tracing availability.
+        }
+        return result;
+      } catch (error) {
+        try {
+          if (spanId) getTelemetryService().endSpan(spanId, 'error', { 'agent.result_status': 'failed' });
+        } catch {
+          // Preserve the original agent error.
+        }
+        throw error;
+      }
+    });
+  }
+
+  private async executeInternal(
+    prompt: string,
+    config: SubagentConfig,
+    context: SubagentContext,
   ): Promise<SubagentResult> {
     // ADR-019 批 1：单一防御点——subagent 永不继承父会话的 adaptive 标志。
     // 所有 spawn 路径（Task 工具 / spawn_agent / parallel coordinator）都经过

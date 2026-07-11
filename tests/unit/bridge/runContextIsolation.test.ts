@@ -205,6 +205,33 @@ describe('Bridge run context isolation', () => {
     expect(bindings.size).toBe(2);
   });
 
+  it('binds Bridge trace metadata to the exact target run and rejects mismatches', async () => {
+    const workspace = path.join(tempRoot, 'trace-bound');
+    await fs.mkdir(workspace);
+    const request = {
+      tool: 'file_read', params: {}, requestId: 'request-trace',
+      runId: 'run-trace', sessionId: 'session-trace', workspace, cwd: workspace,
+      traceContext: {
+        traceId: '1'.repeat(32), spanId: '2'.repeat(16), traceFlags: 1,
+        traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`,
+        runId: 'run-trace', sessionId: 'session-trace', attempt: 1, ownerEpoch: 1,
+        engine: 'native', workspaceFingerprint: 'workspace-fingerprint', processInstanceId: 'process-1',
+      },
+    };
+    const bound = await bindBridgeRunToolContext(
+      request,
+      config(tempRoot),
+      vi.fn(),
+      new AbortController().signal,
+    );
+    expect(bound.context.traceContext).toEqual(request.traceContext);
+
+    await expect(bindBridgeRunToolContext({
+      ...request,
+      traceContext: { ...request.traceContext, runId: 'run-other' },
+    }, config(tempRoot), vi.fn(), new AbortController().signal)).rejects.toThrow(/target run/);
+  });
+
   it('reclaims expired and least-recently-used run bindings safely', async () => {
     const workspaceA = path.join(tempRoot, 'lease-a');
     const workspaceB = path.join(tempRoot, 'lease-b');

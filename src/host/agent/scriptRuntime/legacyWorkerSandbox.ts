@@ -2,9 +2,16 @@
 import { Worker } from 'node:worker_threads';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { RpcRequest, RpcResponse } from './types';
+import {
+  restoreRunTraceContext,
+  withRunTraceContext,
+  type SerializedRunTraceContext,
+} from '../../telemetry/runTraceContext';
+import { getTelemetryService } from '../../telemetry/telemetryService';
 
 const LEGACY_SOURCE = String.raw`
 const { parentPort, workerData } = require('node:worker_threads');
+const crypto = require('node:crypto');
 let seq = 0;
 let spent = 0;
 const pending = new Map();
@@ -21,7 +28,17 @@ function rpc(kind, payload) {
   return new Promise((resolve, reject) => {
     const id = ++seq;
     pending.set(id, { resolve, reject });
-    parentPort.postMessage({ __rpcRequest: true, id, kind, payload });
+    let traceContext;
+    if (workerData.traceContext) {
+      const spanId = crypto.randomBytes(8).toString('hex');
+      const flags = Number(workerData.traceContext.traceFlags || 0).toString(16).padStart(2, '0');
+      traceContext = {
+        ...workerData.traceContext,
+        spanId,
+        traceparent: '00-' + workerData.traceContext.traceId + '-' + spanId + '-' + flags,
+      };
+    }
+    parentPort.postMessage({ __rpcRequest: true, id, kind, payload, traceContext });
   });
 }
 const agent = (prompt, options) => rpc('agent', { prompt, options });
@@ -63,13 +80,19 @@ export interface LegacyWorkerOptions {
   signal: AbortSignal;
   onRpc: (request: RpcRequest) => Promise<RpcResponse>;
   timeoutMs?: number;
+  traceContext?: SerializedRunTraceContext;
 }
 
 export function runScriptInLegacyWorker(opts: LegacyWorkerOptions): Promise<{ ok: boolean; result?: unknown; error?: string }> {
   return new Promise((resolve) => {
     const worker = new Worker(LEGACY_SOURCE, {
       eval: true,
-      workerData: { script: opts.script, goal: opts.goal, budgetTotal: opts.budgetTotal ?? null },
+      workerData: {
+        script: opts.script,
+        goal: opts.goal,
+        budgetTotal: opts.budgetTotal ?? null,
+        traceContext: opts.traceContext,
+      },
       resourceLimits: { maxOldGenerationSizeMb: SCRIPT_RUNTIME.WORKER_MAX_OLD_GEN_MB },
     });
     let settled = false;
@@ -90,8 +113,51 @@ export function runScriptInLegacyWorker(opts: LegacyWorkerOptions): Promise<{ ok
     opts.signal.addEventListener('abort', onAbort, { once: true });
     worker.on('message', (message) => {
       if (message?.__rpcRequest) {
-        void opts.onRpc(message as RpcRequest).then((response) => {
+        const request = message as RpcRequest;
+        let rpcPromise: Promise<RpcResponse>;
+        let rpcSpanId: string | undefined;
+        try {
+          const restoredTraceContext = request.traceContext
+            ? restoreRunTraceContext(request.traceContext)
+            : undefined;
+          if (restoredTraceContext) {
+            try {
+              rpcSpanId = getTelemetryService().startSpan(
+                `workflow rpc:${request.kind}`,
+                request.kind === 'agent' ? 'agent' : 'workflow',
+                { 'workflow.rpc_kind': request.kind },
+                opts.traceContext?.spanId,
+                restoredTraceContext,
+              ).spanId;
+            } catch {
+              // RPC execution is independent from tracing availability.
+            }
+          }
+          rpcPromise = restoredTraceContext
+            ? withRunTraceContext(restoredTraceContext, () => opts.onRpc(request))
+            : opts.onRpc(request);
+        } catch (error) {
+          rpcPromise = Promise.reject(error);
+        }
+        void rpcPromise.then((response) => {
+          try {
+            if (rpcSpanId) getTelemetryService().endSpan(rpcSpanId, response.ok ? 'ok' : 'error');
+          } catch {
+            // RPC completion must not depend on tracing availability.
+          }
           if (!settled) worker.postMessage({ __rpcResponse: true, ...response });
+        }, (error) => {
+          try {
+            if (rpcSpanId) getTelemetryService().endSpan(rpcSpanId, 'error');
+          } catch {
+            // Preserve the original RPC error.
+          }
+          if (!settled) worker.postMessage({
+            __rpcResponse: true,
+            id: request.id,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
         });
       } else if (message?.__workerDone) {
         finish({ ok: message.ok, result: message.result, error: message.error });

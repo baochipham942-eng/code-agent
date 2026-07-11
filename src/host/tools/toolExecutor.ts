@@ -57,7 +57,7 @@ import {
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   isRunPathInsideWorkspace,
   resolveCanonicalRunPath,
@@ -69,6 +69,7 @@ import {
   toolMatchesPatternSet,
   truncateToolOutput,
 } from './toolExecutorHelpers';
+import { getTelemetryService } from '../telemetry/telemetryService';
 
 const logger = createLogger('ToolExecutor');
 
@@ -343,6 +344,26 @@ export class ToolExecutor {
 
     const executionToolName = toolDef.name;
     const policyToolName = normalizeToolName(executionToolName);
+
+    try {
+      const toolSpan = options.currentToolCallId
+        ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
+        : undefined;
+      if (toolSpan) {
+        getTelemetryService().updateSpan(toolSpan.spanId, {
+          'tool.source': this.dispatchTool
+            ? 'bridge'
+            : /^mcp(__|_)/i.test(executionToolName) ? 'mcp' : 'protocol',
+          'tool.permission_class': toolDef.permissionLevel,
+          'tool.idempotency_key_digest': createHash('sha256')
+            .update(`${effectiveRunId ?? 'background'}:${options.currentToolCallId}`)
+            .digest('hex')
+            .slice(0, 24),
+        });
+      }
+    } catch {
+      // Trace annotation is best-effort and never changes tool execution.
+    }
 
     logger.debug('Tool found', { toolName: executionToolName, requestedToolName });
 
@@ -772,7 +793,54 @@ export class ToolExecutor {
         }
       }
 
-      const approved = await this.requestPermission(permissionRequest);
+      let approvalSpanId: string | undefined;
+      try {
+        const toolSpan = options.currentToolCallId
+          ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
+          : undefined;
+        const approvalSpan = getTelemetryService().startSpan(
+          'approval:tool',
+          'approval',
+          {
+            'approval.kind': permissionRequest.type,
+            'approval.state': 'waiting',
+          },
+          toolSpan?.spanId,
+        );
+        approvalSpanId = approvalSpan.spanId;
+        getTelemetryService().addSpanEvent(approvalSpan.spanId, 'approval.waiting');
+      } catch {
+        // Approval tracing is diagnostic only.
+      }
+
+      let approved: boolean;
+      try {
+        approved = await this.requestPermission(permissionRequest);
+      } catch (error) {
+        try {
+          if (approvalSpanId) {
+            getTelemetryService().endSpan(approvalSpanId, 'error', {
+              'approval.state': 'failed',
+            });
+          }
+        } catch {
+          // Approval tracing must not replace the permission error.
+        }
+        throw error;
+      }
+      try {
+        if (approvalSpanId) {
+          getTelemetryService().addSpanEvent(
+            approvalSpanId,
+            approved ? 'approval.resolved' : 'approval.rejected',
+          );
+          getTelemetryService().endSpan(approvalSpanId, approved ? 'ok' : 'cancelled', {
+            'approval.state': approved ? 'resolved' : 'rejected',
+          });
+        }
+      } catch {
+        // Approval tracing is diagnostic only.
+      }
 
       if (approved) {
         recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime);

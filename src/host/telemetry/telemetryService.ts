@@ -7,12 +7,19 @@
 
 import crypto from 'crypto';
 import { createLogger } from '../services/infra/logger';
+import { redactSecrets } from '../security/secretRedaction';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+  withRunTraceContext,
+  type RunTraceContext,
+} from './runTraceContext';
 
 const logger = createLogger('Telemetry');
 
 // ── Span 类型 ───────────────────────────────────────────────────────────
 
-export type SpanKind = 'internal' | 'tool' | 'agent' | 'hook' | 'mcp' | 'model';
+export type SpanKind = 'internal' | 'run' | 'turn' | 'tool' | 'agent' | 'approval' | 'hook' | 'mcp' | 'model' | 'workflow' | 'bridge';
 export type SpanStatus = 'ok' | 'error' | 'cancelled';
 
 export interface SpanEvent {
@@ -69,24 +76,47 @@ interface OTelExportSpan {
 
 // SpanKind -> OTel kind code mapping
 const SPAN_KIND_CODE: Record<SpanKind, number> = {
-  internal: 1,
-  tool: 2,
-  agent: 3,
-  hook: 4,
-  mcp: 5,
-  model: 6,
+  internal: 0,
+  run: 0,
+  turn: 0,
+  tool: 0,
+  agent: 0,
+  approval: 0,
+  hook: 0,
+  mcp: 2,
+  model: 2,
+  workflow: 0,
+  bridge: 2,
 };
 
 // SpanStatus -> OTel status code mapping
 const STATUS_CODE: Record<SpanStatus, number> = {
   ok: 1,
   error: 2,
-  cancelled: 3,
+  cancelled: 2,
 };
 
 // ── Ring Buffer ──────────────────────────────────────────────────────────
 
 const MAX_COMPLETED_SPANS = 500;
+
+const SENSITIVE_ATTRIBUTE_KEY = /(^|[._-])(authorization|cookie|api[-_]?key|token|secret|credential|password|prompt|argument|arguments|args|input|output|reasoning)$/i;
+
+function createTraceId(): string {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function createSpanId(): string {
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function sanitizeSpanAttributes(
+  attributes: Record<string, string | number | boolean>,
+): Record<string, string | number | boolean> {
+  return Object.fromEntries(Object.entries(attributes)
+    .filter(([key]) => !SENSITIVE_ATTRIBUTE_KEY.test(key))
+    .map(([key, value]) => [key, typeof value === 'string' ? redactSecrets(value) : value]));
+}
 
 // ── TelemetryService ─────────────────────────────────────────────────────
 
@@ -118,9 +148,6 @@ export class TelemetryService {
     totalOutputTokens: 0,
   };
 
-  // Current trace context (set per-session)
-  private currentTraceId: string = crypto.randomUUID();
-
   static getInstance(): TelemetryService {
     if (!this.instance) {
       this.instance = new TelemetryService();
@@ -132,40 +159,97 @@ export class TelemetryService {
   // Trace 管理
   // --------------------------------------------------------------------------
 
-  /** Start a new trace (typically per session) */
+  /** Legacy compatibility: returns an isolated trace id and never mutates run authority. */
   newTrace(): string {
-    this.currentTraceId = crypto.randomUUID();
-    return this.currentTraceId;
+    return createTraceId();
   }
 
   getTraceId(): string {
-    return this.currentTraceId;
+    return getActiveRunTraceContext()?.traceId ?? createTraceId();
   }
 
   // --------------------------------------------------------------------------
   // 通用 Span 操作
   // --------------------------------------------------------------------------
 
-  private createSpan(
+  startSpan(
     name: string,
     kind: SpanKind,
     attributes: Record<string, string | number | boolean> = {},
     parentSpanId?: string,
+    runTraceContext?: RunTraceContext,
   ): TelemetrySpan {
+    const activeRunContext = runTraceContext ?? getActiveRunTraceContext();
+    const parentSpan = parentSpanId ? this.activeSpans.get(parentSpanId) : undefined;
+    const spanId = runTraceContext && !this.activeSpans.has(runTraceContext.spanId)
+      ? runTraceContext.spanId
+      : createSpanId();
+    const resolvedParentSpanId = parentSpanId
+      ?? (activeRunContext?.spanId !== spanId ? activeRunContext?.spanId : undefined);
+    const runAttributes: Record<string, string | number | boolean> = activeRunContext
+      ? {
+          'run.id': activeRunContext.runId,
+          'session.id': activeRunContext.sessionId,
+          'run.attempt': activeRunContext.attempt,
+          'run.owner_epoch': activeRunContext.ownerEpoch,
+          'run.engine': activeRunContext.engine,
+          'run.process_instance_id': activeRunContext.processInstanceId,
+          'workspace.fingerprint': activeRunContext.workspaceFingerprint,
+          ...(activeRunContext.agentId ? { 'agent.id': activeRunContext.agentId } : {}),
+          ...(activeRunContext.parentRunId ? { 'run.parent_id': activeRunContext.parentRunId } : {}),
+        }
+      : {};
     const span: TelemetrySpan = {
-      traceId: this.currentTraceId,
-      spanId: crypto.randomUUID(),
-      parentSpanId,
+      traceId: parentSpan?.traceId ?? activeRunContext?.traceId ?? createTraceId(),
+      spanId,
+      parentSpanId: resolvedParentSpanId,
       name,
       kind,
       startTime: Date.now(),
       status: 'ok',
-      attributes,
+      attributes: sanitizeSpanAttributes({ ...runAttributes, ...attributes }),
       events: [],
     };
 
     this.activeSpans.set(span.spanId, span);
     return span;
+  }
+
+  startRunAttemptSpan(runTraceContext: RunTraceContext, attributes: Record<string, string | number | boolean> = {}): TelemetrySpan {
+    return this.startSpan(`run attempt ${runTraceContext.attempt}`, 'run', {
+      'run.id': runTraceContext.runId,
+      'session.id': runTraceContext.sessionId,
+      'run.attempt': runTraceContext.attempt,
+      'run.owner_epoch': runTraceContext.ownerEpoch,
+      'run.engine': runTraceContext.engine,
+      'run.process_instance_id': runTraceContext.processInstanceId,
+      'workspace.fingerprint': runTraceContext.workspaceFingerprint,
+      ...(runTraceContext.agentId ? { 'agent.id': runTraceContext.agentId } : {}),
+      ...(runTraceContext.parentRunId ? { 'run.parent_id': runTraceContext.parentRunId } : {}),
+      ...attributes,
+    }, undefined, runTraceContext);
+  }
+
+  updateSpan(spanId: string, attributes: Record<string, string | number | boolean>): void {
+    const span = this.activeSpans.get(spanId);
+    if (span) Object.assign(span.attributes, sanitizeSpanAttributes(attributes));
+  }
+
+  findActiveSpanByAttribute(key: string, value: string): TelemetrySpan | undefined {
+    return [...this.activeSpans.values()].find((span) => span.attributes[key] === value);
+  }
+
+  endOpenSpansForTrace(
+    traceId: string,
+    status: SpanStatus,
+    excludeSpanId?: string,
+  ): void {
+    const spanIds = [...this.activeSpans.values()]
+      .filter((span) => span.traceId === traceId && span.spanId !== excludeSpanId)
+      .map((span) => span.spanId);
+    for (const spanId of spanIds) {
+      this.endSpan(spanId, status, { 'terminal.status': 'run_ended' });
+    }
   }
 
   /** End a span, move it to the ring buffer, update metrics */
@@ -183,7 +267,7 @@ export class TelemetryService {
     span.endTime = Date.now();
     span.status = status;
     if (attributes) {
-      Object.assign(span.attributes, attributes);
+      Object.assign(span.attributes, sanitizeSpanAttributes(attributes));
     }
 
     this.activeSpans.delete(spanId);
@@ -205,7 +289,9 @@ export class TelemetryService {
     span.events.push({
       name: eventName,
       timestamp: Date.now(),
-      attributes,
+      attributes: attributes
+        ? sanitizeSpanAttributes(attributes) as Record<string, string | number>
+        : undefined,
     });
   }
 
@@ -215,19 +301,15 @@ export class TelemetryService {
 
   startToolSpan(
     toolName: string,
-    args?: Record<string, unknown>,
+    _args?: Record<string, unknown>,
     parentSpanId?: string,
+    runTraceContext?: RunTraceContext,
   ): TelemetrySpan {
     this.metrics.toolCallCount++;
     const attrs: Record<string, string | number | boolean> = {
       'tool.name': toolName,
     };
-    if (args) {
-      // Store truncated args summary
-      const argsStr = JSON.stringify(args);
-      attrs['tool.args'] = argsStr.length > 512 ? argsStr.substring(0, 512) + '...' : argsStr;
-    }
-    return this.createSpan(`tool:${toolName}`, 'tool', attrs, parentSpanId);
+    return this.startSpan(`tool:${toolName}`, 'tool', attrs, parentSpanId, runTraceContext);
   }
 
   // --------------------------------------------------------------------------
@@ -237,15 +319,15 @@ export class TelemetryService {
   startAgentSpan(
     agentId: string,
     agentType: string,
-    task: string,
+    _task?: string,
     parentSpanId?: string,
+    runTraceContext?: RunTraceContext,
   ): TelemetrySpan {
     this.metrics.agentSpawnCount++;
-    return this.createSpan(`agent:${agentType}`, 'agent', {
+    return this.startSpan(`agent:${agentType}`, agentType === 'turn' ? 'turn' : 'agent', {
       'agent.id': agentId,
       'agent.type': agentType,
-      'agent.task': task.length > 256 ? task.substring(0, 256) + '...' : task,
-    }, parentSpanId);
+    }, parentSpanId, runTraceContext);
   }
 
   // --------------------------------------------------------------------------
@@ -258,7 +340,7 @@ export class TelemetryService {
     parentSpanId?: string,
   ): TelemetrySpan {
     this.metrics.hookExecutionCount++;
-    return this.createSpan(`hook:${hookEvent}`, 'hook', {
+    return this.startSpan(`hook:${hookEvent}`, 'hook', {
       'hook.event': hookEvent,
       'hook.type': hookType,
     }, parentSpanId);
@@ -274,7 +356,7 @@ export class TelemetryService {
     parentSpanId?: string,
   ): TelemetrySpan {
     this.metrics.mcpCallCount++;
-    return this.createSpan(`mcp:${serverName}/${toolName}`, 'mcp', {
+    return this.startSpan(`mcp:${serverName}/${toolName}`, 'mcp', {
       'mcp.server': serverName,
       'mcp.tool': toolName,
     }, parentSpanId);
@@ -290,7 +372,7 @@ export class TelemetryService {
     parentSpanId?: string,
   ): TelemetrySpan {
     this.metrics.modelInferenceCount++;
-    return this.createSpan(`model:${provider}/${model}`, 'model', {
+    return this.startSpan(`model:${provider}/${model}`, 'model', {
       'model.name': model,
       'model.provider': provider,
     }, parentSpanId);
@@ -401,7 +483,6 @@ export class TelemetryService {
     this.completedSpans = [];
     this.ringIndex = 0;
     this.totalCompleted = 0;
-    this.currentTraceId = crypto.randomUUID();
     this.metrics = {
       toolCallCount: 0,
       toolCallErrors: 0,
@@ -483,4 +564,55 @@ export class TelemetryService {
 
 export function getTelemetryService(): TelemetryService {
   return TelemetryService.getInstance();
+}
+
+export async function withApprovalTrace<T>(
+  approvalKind: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const parent = getActiveRunTraceContext();
+  if (!parent) return callback();
+  const child = createChildRunTraceContext(parent);
+  let spanId: string | undefined;
+  try {
+    spanId = getTelemetryService().startSpan(
+      `approval:${approvalKind}`,
+      'approval',
+      { 'approval.kind': approvalKind, 'approval.state': 'waiting' },
+      parent.spanId,
+      child,
+    ).spanId;
+    getTelemetryService().addSpanEvent(spanId, 'approval.waiting');
+  } catch {
+    // Approval behavior is independent from tracing availability.
+  }
+
+  return withRunTraceContext(child, async () => {
+    try {
+      const result = await callback();
+      if (spanId) {
+        const approved = Boolean(result && typeof result === 'object' && 'approved' in result
+          ? (result as { approved?: unknown }).approved
+          : true);
+        try {
+          getTelemetryService().addSpanEvent(spanId, approved ? 'approval.resolved' : 'approval.rejected');
+          getTelemetryService().endSpan(spanId, approved ? 'ok' : 'cancelled', {
+            'approval.state': approved ? 'resolved' : 'rejected',
+          });
+        } catch {
+          // Approval behavior is independent from tracing availability.
+        }
+      }
+      return result;
+    } catch (error) {
+      if (spanId) {
+        try {
+          getTelemetryService().endSpan(spanId, 'error', { 'approval.state': 'failed' });
+        } catch {
+          // Approval behavior is independent from tracing availability.
+        }
+      }
+      throw error;
+    }
+  });
 }

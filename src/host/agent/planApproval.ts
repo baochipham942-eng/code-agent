@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { withApprovalTrace } from '../telemetry/telemetryService';
 import { isDangerousCommand } from '../services/core/permissionPresets';
 import { getTeammateService } from './teammate/teammateService';
 import { getEventBus } from '../services/eventing/bus';
@@ -226,6 +227,10 @@ export class PlanApprovalGate {
    * Low-risk plans are auto-approved. High-risk plans wait for coordinator response.
    */
   async submitForApproval(params: PlanSubmissionInput): Promise<PlanApprovalResult> {
+    return withApprovalTrace('plan', () => this.submitForApprovalInternal(params));
+  }
+
+  private async submitForApprovalInternal(params: PlanSubmissionInput): Promise<PlanApprovalResult> {
     // Low-risk: auto-approve
     if (params.risk.level === 'low') {
       logger.debug(`[${params.agentName}] Plan auto-approved (low risk)`);

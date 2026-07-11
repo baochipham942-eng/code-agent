@@ -2,6 +2,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import type { MessageAttachment, MessageMetadata } from '../../shared/contract';
+import type { RunTraceContext } from '../telemetry/runTraceContext';
 
 export interface RunContext {
   readonly runId: string;
@@ -37,6 +38,7 @@ export interface RunControlTarget {
 
 export interface RunHandle extends RunControlTarget {
   readonly context: RunContext;
+  readonly traceContext?: RunTraceContext;
   readonly isAttached: boolean;
   readonly cancellationRequested: boolean;
   cancel(reason?: RunCancelReason): Promise<void>;
@@ -151,7 +153,10 @@ class AttachedRunHandle implements RunHandle {
   private cancelReason: RunCancelReason | undefined;
   private cancellationPromise: Promise<void> | null = null;
 
-  constructor(readonly context: RunContext) {}
+  constructor(
+    readonly context: RunContext,
+    readonly traceContext?: RunTraceContext,
+  ) {}
 
   get isAttached(): boolean {
     return this.target !== null;
@@ -229,6 +234,6 @@ class AttachedRunHandle implements RunHandle {
   }
 }
 
-export function createRunHandle(context: RunContext): RunHandle {
-  return new AttachedRunHandle(context);
+export function createRunHandle(context: RunContext, traceContext?: RunTraceContext): RunHandle {
+  return new AttachedRunHandle(context, traceContext);
 }

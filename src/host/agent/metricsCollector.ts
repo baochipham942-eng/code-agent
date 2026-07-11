@@ -165,26 +165,33 @@ export function composeTelemetryAdapters(
   primary: TelemetryAdapter,
   secondary: TelemetryAdapter
 ): TelemetryAdapter {
+  const safely = (callback: () => void): void => {
+    try {
+      callback();
+    } catch {
+      // Telemetry/exporter failures never alter agent execution.
+    }
+  };
   return {
-    onTurnStart(turnId, turnNumber, userPrompt) {
-      primary.onTurnStart(turnId, turnNumber, userPrompt);
-      secondary.onTurnStart(turnId, turnNumber, userPrompt);
+    onTurnStart(turnId, turnNumber, userPrompt, parentTurnId) {
+      safely(() => primary.onTurnStart(turnId, turnNumber, userPrompt, parentTurnId));
+      safely(() => secondary.onTurnStart(turnId, turnNumber, userPrompt, parentTurnId));
     },
     onModelCall(turnId, call) {
-      primary.onModelCall(turnId, call);
-      secondary.onModelCall(turnId, call);
+      safely(() => primary.onModelCall(turnId, call));
+      safely(() => secondary.onModelCall(turnId, call));
     },
     onToolCallStart(turnId, toolCallId, name, args, index, parallel) {
-      primary.onToolCallStart(turnId, toolCallId, name, args, index, parallel);
-      secondary.onToolCallStart(turnId, toolCallId, name, args, index, parallel);
+      safely(() => primary.onToolCallStart(turnId, toolCallId, name, args, index, parallel));
+      safely(() => secondary.onToolCallStart(turnId, toolCallId, name, args, index, parallel));
     },
     onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata) {
-      primary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
-      secondary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
+      safely(() => primary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata));
+      safely(() => secondary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata));
     },
     onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash) {
-      primary.onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash);
-      secondary.onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash);
+      safely(() => primary.onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash));
+      safely(() => secondary.onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash));
     },
   };
 }

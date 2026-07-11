@@ -24,6 +24,7 @@ import type { ToolExecutor } from '../tools/toolExecutor';
 import type { PlanningService } from '../planning';
 import type { HookManager } from '../hooks';
 import type { InferenceOptions } from '../model/types';
+import type { RunTraceContext } from '../telemetry/runTraceContext';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -43,6 +44,8 @@ export interface AgentLoopConfig {
   hookManager?: HookManager;
   /** Distinct execution identity; never derived from sessionId. */
   runId?: string;
+  /** OpenTelemetry authority for this concrete run attempt. */
+  runTraceContext?: RunTraceContext;
   sessionId?: string;
   agentId?: string;
   agentName?: string;

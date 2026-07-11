@@ -123,6 +123,9 @@ import { RunFinalizer } from './runtime/runFinalizer';
 import { LearningPipeline } from './runtime/learningPipeline';
 import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
 import { TurnTraceRecorder } from './runtime/turnTrace';
+import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
+import { composeTelemetryAdapters } from './metricsCollector';
+import { withRunTraceContext } from '../telemetry/runTraceContext';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -167,6 +170,7 @@ export class AgentLoop {
       // Every loop needs a stable execution identity even on legacy desktop
       // entry points that have not adopted RunRegistry yet.
       runId: config.runId || `run-${generateMessageId()}`,
+      runTraceContext: config.runTraceContext,
       sessionId: resolvedSessionId,
       agentId: config.agentId,
       agentName: config.agentName,
@@ -206,7 +210,9 @@ export class AgentLoop {
       autoCompressor: getAutoCompressor(),
       compressionState,
       compressionPipeline: new CompressionPipeline(),
-      telemetryAdapter: config.telemetryAdapter,
+      telemetryAdapter: config.telemetryAdapter
+        ? composeTelemetryAdapters(config.telemetryAdapter, createTelemetryAdapter())
+        : createTelemetryAdapter(),
 
       // Mutable state
       lastStreamedContent: '',
@@ -257,6 +263,7 @@ export class AgentLoop {
       turnTrace: new TurnTraceRecorder(resolvedSessionId),
       turnQualityMemory: undefined,
       currentIterationSpanId: '',
+      lastModelTraceSpanId: undefined,
       currentTurnId: '',
       messageDeltaSeq: 0,
       pendingRuntimeDiagnostics: [],
@@ -364,6 +371,12 @@ export class AgentLoop {
   async run(userMessage: string): Promise<void> {
     // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
     this.toolEngine.resetRepairGate();
+    if (this.ctx.runTraceContext) {
+      return withRunTraceContext(
+        this.ctx.runTraceContext,
+        () => this.conversationRuntime.run(userMessage),
+      );
+    }
     return this.conversationRuntime.run(userMessage);
   }
 

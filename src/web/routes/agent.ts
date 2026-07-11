@@ -376,7 +376,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           status: 'cancelled',
           reason: 'client_disconnected_before_stream',
           event: { type: 'run_cancelled', payload: { sessionId }, recordedAt: Date.now() },
-        });
+        }, runHandle);
         nativeRunTerminal = true;
       }
       res.off('close', markPreflightDisconnected);
@@ -692,6 +692,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           pendingLocalToolCalls,
           emitSSE: (event, data) => runController.emitSSE(event, data),
           logger,
+          traceContext: runHandle.traceContext,
         })
         : undefined;
       const runToolExecutor = createRunToolExecutor(runContext, bridgeDispatch);
@@ -704,7 +705,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
-      }, messages, sessionId, undefined, runToolExecutor, runContext);
+      }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
 
       await runHandle.attach(agentLoop);
       if (runController.disconnected) {
@@ -980,7 +981,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           status: finalStatus === 'completed' ? 'completed' : finalStatus === 'interrupted' ? 'cancelled' : 'failed',
           reason: finalStatus,
           event: { type: `run_${finalStatus}`, payload: { sessionId }, recordedAt: Date.now() },
-        });
+        }, runHandle);
         nativeRunTerminal = true;
       }
 
@@ -1005,7 +1006,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             status: runController.disconnected ? 'cancelled' : 'failed',
             reason: message,
             event: { type: 'run_failed', payload: { message }, recordedAt: Date.now() },
-          });
+          }, runHandle);
           nativeRunTerminal = true;
         } catch (terminalError) {
           logger.error('Durable Run terminal commit failed:', terminalError);

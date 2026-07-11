@@ -29,6 +29,7 @@ import { createLogger } from '../../services/infra/logger';
 import { createHookManager } from '../../hooks';
 import { getDiagnosticVersions } from '../../telemetry/diagnosticVersions';
 import { getContextWindow } from '../../../shared/constants';
+import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
@@ -671,15 +672,19 @@ export class ConversationRuntime {
 
     // Langfuse: Start trace
     const langfuse = getLangfuseService();
-    this.ctx.traceId = `trace-${this.ctx.sessionId}-${Date.now()}`;
+    const runTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
+    this.ctx.traceId = runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`;
     this.ctx.currentTurnId = '';
     langfuse.startTrace(this.ctx.traceId, {
       sessionId: this.ctx.sessionId,
       userId: this.ctx.userId,
       modelProvider: this.ctx.modelConfig.provider,
       modelName: this.ctx.modelConfig.model,
+      runId: runTraceContext?.runId,
+      attempt: runTraceContext?.attempt,
+      ownerEpoch: runTraceContext?.ownerEpoch,
       ...getDiagnosticVersions(),
-    }, userMessage);
+    }, '');
 
     await this.initializeUserHooks();
 

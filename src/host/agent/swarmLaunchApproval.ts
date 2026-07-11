@@ -4,6 +4,7 @@
 
 import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
+import { withApprovalTrace } from '../telemetry/telemetryService';
 import type {
   SwarmLaunchRequest,
   SwarmLaunchTaskPreview,
@@ -102,6 +103,14 @@ export class SwarmLaunchApprovalGate {
   }
 
   async requestApproval(params: {
+    tasks: SwarmLaunchTaskPreview[];
+    summary?: string;
+    scope: SwarmRunScope;
+  }): Promise<SwarmLaunchApprovalResult> {
+    return withApprovalTrace('agent_team_launch', () => this.requestApprovalInternal(params));
+  }
+
+  private async requestApprovalInternal(params: {
     tasks: SwarmLaunchTaskPreview[];
     summary?: string;
     scope: SwarmRunScope;

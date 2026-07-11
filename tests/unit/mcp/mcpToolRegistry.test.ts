@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { MCPClient } from '../../../src/host/mcp/mcpClient';
 import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
 import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
+import {
+  createRunTraceContext,
+  withRunTraceContext,
+} from '../../../src/host/telemetry/runTraceContext';
 
 const loggerMocks = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -257,6 +261,27 @@ describe('MCPToolRegistry permission metadata', () => {
       undefined,
       { timeout: 1234, signal: controller.signal },
     );
+  });
+
+  it('propagates W3C trace context without prompt, token, or raw arguments in metadata', async () => {
+    const registry = new MCPToolRegistry();
+    const client = {
+      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }], isError: false })),
+    };
+    const traceContext = createRunTraceContext({
+      runId: 'run-mcp', sessionId: 'session-mcp', attempt: 1, ownerEpoch: 1,
+      engine: 'native', workspace: '/tmp/mcp', processInstanceId: 'process-mcp',
+    });
+
+    await withRunTraceContext(traceContext, () => registry.callExternalTool(
+      'call-traced', 'github', 'search_code', { query: 'secret query', apiKey: 'secret' }, client as never,
+    ));
+
+    const request = client.callTool.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request._meta).toEqual({
+      traceparent: `00-${traceContext.traceId}-${traceContext.spanId}-01`,
+    });
+    expect(JSON.stringify(request._meta)).not.toMatch(/secret|query|apiKey/i);
   });
 
   it('returns cancelled without calling external MCP client when already aborted', async () => {

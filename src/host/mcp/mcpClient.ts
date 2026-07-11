@@ -39,6 +39,12 @@ import { gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
 import { recordCuaFailure } from './cuaFailureStats';
 import { recordCuaResult } from './cuaNarration';
+import { getTelemetryService } from '../telemetry/telemetryService';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+  withRunTraceContext,
+} from '../telemetry/runTraceContext';
 
 // Import sub-modules
 import {
@@ -695,6 +701,62 @@ export class MCPClient extends EventEmitter {
    * 调用 MCP 工具
    */
   async callTool(
+    toolCallId: string,
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    options: MCPToolCallOptions | number = {},
+  ): Promise<ToolResult> {
+    const parentTraceContext = getActiveRunTraceContext();
+    const childTraceContext = parentTraceContext
+      ? createChildRunTraceContext(parentTraceContext)
+      : undefined;
+    let spanId: string | undefined;
+    try {
+      const parentToolSpan = getTelemetryService().findActiveSpanByAttribute('tool.call_id', toolCallId);
+      spanId = getTelemetryService().startSpan(
+        `mcp:${serverName}/${toolName}`,
+        'mcp',
+        {
+          'mcp.server': serverName,
+          'mcp.tool': toolName,
+          'mcp.transport': this.inProcessServers.has(serverName) ? 'in-process' : 'client',
+        },
+        parentToolSpan?.spanId ?? parentTraceContext?.spanId,
+        childTraceContext,
+      ).spanId;
+    } catch {
+      // MCP execution is independent from tracing availability.
+    }
+
+    const invoke = async (): Promise<ToolResult> => {
+      try {
+        const result = await this.callToolInternal(toolCallId, serverName, toolName, args, options);
+        try {
+          if (spanId) {
+            const cancelled = result.metadata?.cancelledByRun === true || /cancel|abort/i.test(result.error ?? '');
+            getTelemetryService().endSpan(spanId, result.success ? 'ok' : cancelled ? 'cancelled' : 'error', {
+              'mcp.result_status': result.success ? 'success' : cancelled ? 'cancelled' : 'failed',
+              ...(result.duration !== undefined ? { 'mcp.duration_ms': result.duration } : {}),
+            });
+          }
+        } catch {
+          // MCP results are independent from tracing availability.
+        }
+        return result;
+      } catch (error) {
+        try {
+          if (spanId) getTelemetryService().endSpan(spanId, 'error', { 'mcp.result_status': 'failed' });
+        } catch {
+          // Preserve the original MCP error.
+        }
+        throw error;
+      }
+    };
+    return childTraceContext ? withRunTraceContext(childTraceContext, invoke) : invoke();
+  }
+
+  private async callToolInternal(
     toolCallId: string,
     serverName: string,
     toolName: string,

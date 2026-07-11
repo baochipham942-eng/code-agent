@@ -14,6 +14,10 @@ import { createLogger } from '../../services/infra/logger';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+} from '../../telemetry/runTraceContext';
 
 const logger = createLogger('StreamHandler');
 
@@ -112,7 +116,10 @@ export class StreamHandler {
     this.ctx.currentTurnId = generateMessageId();
     this.ctx.messageDeltaSeq = 0;
 
-    this.ctx.currentIterationSpanId = `iteration-${this.ctx.traceId}-${iterations}`;
+    const activeRunTrace = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
+    this.ctx.currentIterationSpanId = activeRunTrace
+      ? createChildRunTraceContext(activeRunTrace, { agentId: this.ctx.agentId }).spanId
+      : `iteration-${this.ctx.traceId}-${iterations}`;
     langfuse.startSpan(this.ctx.traceId, this.ctx.currentIterationSpanId, {
       name: `Iteration ${iterations}`,
       metadata: { iteration: iterations, turnId: this.ctx.currentTurnId },

@@ -18,6 +18,13 @@ import { SerialWriteGate } from './writeGate';
 import type { ScriptRunContext } from './agentBridge';
 import type { RunStatus, ScriptRunCallRecord, ScriptRunSpec, ScriptRunState, ScriptRunEvent } from './types';
 import { isSensitiveLogKey, redactSecrets } from '../../security/secretRedaction';
+import { getTelemetryService } from '../../telemetry/telemetryService';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+  serializeRunTraceContext,
+  type RunTraceContext,
+} from '../../telemetry/runTraceContext';
 
 function sanitizeWorkflowValue(value: unknown, key?: string, seen = new WeakSet<object>()): unknown {
   if (key && isSensitiveLogKey(key)) return '***REDACTED***';
@@ -77,6 +84,8 @@ export interface ScriptRunHostDeps {
   journal?: ScriptRunJournal;
   /** 仅测试/受限宿主注入；生产缺省保持 OS sandbox 开启。 */
   useOsSandbox?: boolean;
+  /** Explicit parent trace for non-ambient callers. */
+  traceContext?: RunTraceContext;
 }
 
 interface ActiveRun {
@@ -117,6 +126,33 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     phases: [],
   };
   activeRuns.set(spec.runId, { controller, state, workingDir: spec.workingDir });
+
+  const parentTraceContext = deps.traceContext ?? getActiveRunTraceContext();
+  const workflowTraceContext = parentTraceContext
+    ? createChildRunTraceContext(parentTraceContext, {
+        runId: spec.runId,
+        sessionId: spec.sessionId ?? parentTraceContext.sessionId,
+        engine: 'dynamic_workflow',
+        parentRunId: parentTraceContext.runId,
+      })
+    : undefined;
+  let workflowSpanId: string | undefined;
+  if (workflowTraceContext) {
+    try {
+      workflowSpanId = getTelemetryService().startSpan(
+        'dynamic workflow',
+        'workflow',
+        {
+          'workflow.run_id': spec.runId,
+          'run.parent_id': parentTraceContext?.runId ?? '',
+        },
+        parentTraceContext?.spanId,
+        workflowTraceContext,
+      ).spanId;
+    } catch {
+      // Workflow execution is independent from tracing availability.
+    }
+  }
 
   const budget = new BudgetTracker(spec.budgetTokens ?? null);
 
@@ -239,6 +275,9 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       onRpc: (req) => handleRpc(req, ctx),
       useOsSandbox: deps.useOsSandbox,
       legacyWorkerFallback: process.env.CODE_AGENT_WORKFLOW_LEGACY_WORKER_FALLBACK === '1',
+      traceContext: workflowTraceContext
+        ? serializeRunTraceContext(workflowTraceContext)
+        : undefined,
     });
 
     state.finishedAt = Date.now();
@@ -294,6 +333,17 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       /* best-effort journal — 不抛 */
     }
     activeRuns.delete(spec.runId);
+    if (workflowSpanId) {
+      try {
+        getTelemetryService().endSpan(
+          workflowSpanId,
+          state.status === 'completed' ? 'ok' : state.status === 'cancelled' ? 'cancelled' : 'error',
+          { 'terminal.status': state.status },
+        );
+      } catch {
+        // Workflow execution is independent from tracing availability.
+      }
+    }
   }
 }
 

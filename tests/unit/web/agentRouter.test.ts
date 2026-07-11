@@ -533,6 +533,20 @@ describe('createAgentRouter', () => {
         activeRunId: taskStart?.runId,
       });
       await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1));
+      const loopTraceContext = mockCreateAgentLoop.mock.calls[0]?.[7] as {
+        traceId?: string;
+        spanId?: string;
+        runId?: string;
+        sessionId?: string;
+        attempt?: number;
+      };
+      expect(loopTraceContext).toMatchObject({
+        traceId: expect.stringMatching(/^[0-9a-f]{32}$/),
+        spanId: expect.stringMatching(/^[0-9a-f]{16}$/),
+        runId: taskStart?.runId,
+        sessionId: 'session-s2-conflict',
+        attempt: 1,
+      });
 
       controller.abort();
       await waitForAssertion(() => expect(runRegistry.hasSession('session-s2-conflict')).toBe(false), 3000);

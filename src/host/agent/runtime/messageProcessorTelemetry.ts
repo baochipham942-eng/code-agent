@@ -62,6 +62,10 @@ export function recordMessageProcessorModelCallTelemetry(
     responseType: response.type as 'text' | 'tool_use' | 'thinking',
     toolCallCount: response.toolCalls?.length ?? 0,
     truncated: !!response.truncated,
+    requestProtocol: 'agent-loop',
+    retryCount: Math.max(0, iterations - 1),
+    resultStatus: 'success',
+    traceSpanId: ctx.lastModelTraceSpanId,
     prompt: promptSummary.substring(0, maxPromptLength),
     completion: completionText.substring(0, maxCompletionLength),
   });

@@ -36,6 +36,7 @@ import type { SkillToolBoundary } from '../../../shared/contract/agentSkill';
 import type { TurnTraceRecorder } from './turnTrace';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { TurnQualityMemorySummary } from '../../../shared/contract/turnQuality';
+import type { RunTraceContext } from '../../telemetry/runTraceContext';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
@@ -53,6 +54,7 @@ export interface RuntimeContext {
   workingDirectory: string;
   isDefaultWorkingDirectory: boolean;
   runId?: string;
+  runTraceContext?: RunTraceContext;
   sessionId: string;
   agentId?: string;
   agentName?: string;
@@ -146,6 +148,7 @@ export interface RuntimeContext {
   // --- Tracing ---
   traceId: string;
   currentIterationSpanId: string;
+  lastModelTraceSpanId?: string;
   currentTurnId: string;
   messageDeltaSeq: number;
   currentSystemPromptHash?: string;

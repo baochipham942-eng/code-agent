@@ -9,6 +9,7 @@ import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import type { AgentEvent } from '../../shared/contract';
 import type Database from 'better-sqlite3';
+import { getActiveRunTraceContext } from '../telemetry/runTraceContext';
 
 const logger = createLogger('SessionEventService');
 
@@ -80,7 +81,25 @@ export class SessionEventService {
       }
 
       // 序列化事件数据
-      const eventData = event.data ? JSON.stringify(event.data) : null;
+      const activeRunTrace = getActiveRunTraceContext();
+      const correlation = activeRunTrace
+        ? {
+            traceId: activeRunTrace.traceId,
+            spanId: activeRunTrace.spanId,
+            runId: activeRunTrace.runId,
+            attempt: activeRunTrace.attempt,
+            ownerEpoch: activeRunTrace.ownerEpoch,
+          }
+        : undefined;
+      const rawData = event.data;
+      const correlatedData = correlation
+        ? rawData && typeof rawData === 'object' && !Array.isArray(rawData)
+          ? { ...(rawData as Record<string, unknown>), _runTrace: correlation }
+          : rawData
+        : rawData;
+      const eventData = correlatedData !== undefined && correlatedData !== null
+        ? JSON.stringify(correlatedData)
+        : null;
 
       const insertStmt = this.insertStmt;
       insertStmt.run(

@@ -8,6 +8,23 @@ export interface BridgeToolRequest {
   sessionId?: string;
   workspace?: string;
   cwd?: string;
+  traceContext?: {
+    traceId: string;
+    spanId: string;
+    traceFlags: number;
+    traceState?: string;
+    traceparent: string;
+    tracestate?: string;
+    runId: string;
+    sessionId: string;
+    attempt: number;
+    ownerEpoch: number;
+    engine: string;
+    workspaceFingerprint: string;
+    agentId?: string;
+    parentRunId?: string;
+    processInstanceId: string;
+  };
 }
 
 export interface BridgeToolResponse {
@@ -52,6 +69,7 @@ export interface ToolContext {
   sessionId: string;
   workspace: string;
   cwd: string;
+  traceContext?: BridgeToolRequest['traceContext'];
   abortSignal?: AbortSignal;
   wsBroadcast: (event: string, payload: Record<string, unknown>) => void;
 }

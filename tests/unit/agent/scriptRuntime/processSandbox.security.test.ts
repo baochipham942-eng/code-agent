@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runScriptInSandbox } from '../../../../src/host/agent/scriptRuntime/sandbox';
+import {
+  createRunTraceContext,
+  getActiveRunTraceContext,
+  serializeRunTraceContext,
+} from '../../../../src/host/telemetry/runTraceContext';
+import { getTelemetryService } from '../../../../src/host/telemetry/telemetryService';
 
 function run(script: string, signal = new AbortController().signal) {
   return runScriptInSandbox({
@@ -105,5 +111,40 @@ describe('process-level orchestration sandbox', () => {
     });
     expect(outcome).toEqual({ ok: true, result: 7, error: undefined });
     expect(onProcessSpawn).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('restores target trace context for child RPC (legacy=%s)', async (legacyWorkerFallback) => {
+    const parent = createRunTraceContext({
+      runId: `workflow-run-${legacyWorkerFallback ? 'legacy' : 'process'}`,
+      sessionId: 'session-workflow',
+      attempt: 1,
+      ownerEpoch: 1,
+      engine: 'dynamic_workflow',
+      workspace: '/tmp/workflow',
+      processInstanceId: 'host-process',
+    });
+    const seen: Array<{ traceId?: string; spanId?: string; kind: string }> = [];
+    const outcome = await runScriptInSandbox({
+      script: `await phase('node'); return await agent('task');`,
+      signal: new AbortController().signal,
+      useOsSandbox: false,
+      legacyWorkerFallback,
+      traceContext: serializeRunTraceContext(parent),
+      onRpc: async (request) => {
+        const active = getActiveRunTraceContext();
+        seen.push({ traceId: active?.traceId, spanId: active?.spanId, kind: request.kind });
+        return { id: request.id, ok: true, result: request.kind === 'agent' ? 'done' : null };
+      },
+    });
+
+    expect(outcome).toMatchObject({ ok: true, result: 'done' });
+    expect(seen.map((entry) => entry.kind)).toEqual(['phase', 'agent']);
+    expect(seen.every((entry) => entry.traceId === parent.traceId)).toBe(true);
+    expect(new Set(seen.map((entry) => entry.spanId)).size).toBe(2);
+    expect(seen.every((entry) => entry.spanId !== parent.spanId)).toBe(true);
+    const rpcSpans = getTelemetryService().getRecentSpans(20)
+      .filter((span) => span.traceId === parent.traceId && span.name.startsWith('workflow rpc:'));
+    expect(rpcSpans).toHaveLength(2);
+    expect(rpcSpans.every((span) => span.parentSpanId === parent.spanId)).toBe(true);
   });
 });

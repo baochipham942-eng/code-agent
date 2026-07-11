@@ -61,6 +61,12 @@ export interface TelemetryModelCall {
   truncated: boolean;
   error?: string;
   fallbackUsed?: { from: string; to: string; reason: string };
+  /** Transport/protocol label only; never contains request content. */
+  requestProtocol?: string;
+  retryCount?: number;
+  resultStatus?: 'success' | 'error' | 'cancelled' | 'timeout';
+  /** Internal correlation to an already-recorded runtime span. */
+  traceSpanId?: string;
   /** 截断后的输入 prompt（用于评测重放，最大 8000 字符） */
   prompt?: string;
   /** 截断后的模型输出（用于评测重放，最大 4000 字符） */

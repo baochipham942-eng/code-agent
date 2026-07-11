@@ -7,6 +7,8 @@ import { Langfuse, LangfuseTraceClient, LangfuseSpanClient, LangfuseGenerationCl
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
+import { redactSecrets } from '../../security/secretRedaction';
+import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 
 const logger = createLogger('Langfuse');
 
@@ -31,6 +33,9 @@ export interface TraceMetadata {
   agentVersion?: string;
   promptVersion?: string;
   toolSchemaVersion?: string;
+  runId?: string;
+  attempt?: number;
+  ownerEpoch?: number;
 }
 
 export interface LlmCallInput {
@@ -64,7 +69,7 @@ export interface SpanInput {
 // Langfuse Service
 // ----------------------------------------------------------------------------
 
-class LangfuseService implements Disposable {
+export class LangfuseService implements Disposable {
   private client: Langfuse | null = null;
   private enabled: boolean = false;
   private disposed = false;
@@ -158,25 +163,32 @@ class LangfuseService implements Disposable {
     if (!this.isEnabled()) return;
 
     try {
+      const activeRunTrace = getActiveRunTraceContext();
+      const effectiveTraceId = activeRunTrace?.traceId ?? traceId;
       const trace = this.client!.trace({
-        id: traceId,
+        id: effectiveTraceId,
         name: 'Agent Run',
         sessionId: metadata.sessionId,
         userId: metadata.userId,
-        input: userMessage,
+        input: userMessage ? { length: userMessage.length, redacted: true } : undefined,
         metadata: {
           modelProvider: metadata.modelProvider,
           modelName: metadata.modelName,
-          workingDirectory: metadata.workingDirectory,
+          workingDirectory: activeRunTrace ? undefined : metadata.workingDirectory,
           agentVersion: metadata.agentVersion,
           promptVersion: metadata.promptVersion,
           toolSchemaVersion: metadata.toolSchemaVersion,
+          runId: metadata.runId,
+          attempt: metadata.attempt,
+          ownerEpoch: metadata.ownerEpoch,
+          processInstanceId: activeRunTrace?.processInstanceId,
+          workspaceFingerprint: activeRunTrace?.workspaceFingerprint,
         },
         tags: [metadata.modelProvider],
       });
 
-      this.activeTraces.set(traceId, trace);
-      logger.debug(` Trace started: ${traceId}`);
+      this.activeTraces.set(effectiveTraceId, trace);
+      logger.debug(` Trace started: ${effectiveTraceId}`);
     } catch (error) {
       logger.error(' Failed to start trace:', error);
     }
@@ -193,7 +205,7 @@ class LangfuseService implements Disposable {
       try {
         // Note: level is not directly supported on trace.update()
         trace.update({
-          output,
+          output: this.toSafeObservation(output),
         });
         this.activeTraces.delete(traceId);
         logger.debug(` Trace ended: ${traceId}`);
@@ -226,7 +238,7 @@ class LangfuseService implements Disposable {
       const span = trace.span({
         id: spanId,
         name: input.name,
-        input: input.input,
+        input: this.toSafeObservation(input.input),
         startTime: input.startTime || new Date(),
         metadata: langfuseMetadata,
         level: input.level,
@@ -253,7 +265,7 @@ class LangfuseService implements Disposable {
           span.update({ level, statusMessage });
         }
         span.end({
-          output,
+          output: this.toSafeObservation(output),
           statusMessage,
         });
         this.activeSpans.delete(spanId);
@@ -283,7 +295,7 @@ class LangfuseService implements Disposable {
       const span = parentSpan.span({
         id: spanId,
         name: input.name,
-        input: input.input,
+        input: this.toSafeObservation(input.input),
         startTime: input.startTime || new Date(),
         metadata: langfuseMetadata,
         level: input.level,
@@ -326,7 +338,7 @@ class LangfuseService implements Disposable {
         name,
         model: input.model,
         modelParameters: langfuseModelParams,
-        input: input.input,
+        input: this.toSafeObservation(input.input),
         startTime: input.startTime || new Date(),
       });
 
@@ -361,7 +373,7 @@ class LangfuseService implements Disposable {
           generation.update({ level, statusMessage });
         }
         generation.end({
-          output,
+          output: this.toSafeObservation(output),
           usage: usage ? {
             input: usage.promptTokens,
             output: usage.completionTokens,
@@ -403,7 +415,7 @@ class LangfuseService implements Disposable {
         name,
         model: input.model,
         modelParameters: langfuseModelParams,
-        input: input.input,
+        input: this.toSafeObservation(input.input),
         startTime: input.startTime || new Date(),
       });
 
@@ -430,8 +442,8 @@ class LangfuseService implements Disposable {
     try {
       trace.event({
         name,
-        input,
-        output,
+        input: this.toSafeObservation(input),
+        output: this.toSafeObservation(output),
         level,
       });
     } catch (error) {
@@ -522,18 +534,44 @@ class LangfuseService implements Disposable {
   private toJsonRecord(obj: Record<string, unknown>): { [key: string]: string | number | boolean | string[] | null } {
     const result: { [key: string]: string | number | boolean | string[] | null } = {};
     for (const [key, value] of Object.entries(obj)) {
+      if (/(authorization|cookie|api[-_]?key|token|secret|credential|password)/i.test(key)) {
+        result[key] = '[REDACTED]';
+        continue;
+      }
       if (value === null || value === undefined) {
         result[key] = null;
       } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        result[key] = value;
+        result[key] = typeof value === 'string' ? redactSecrets(value) : value;
       } else if (Array.isArray(value) && value.every(v => typeof v === 'string')) {
-        result[key] = value as string[];
+        result[key] = (value as string[]).map((item) => redactSecrets(item));
       } else {
-        // Convert complex objects to JSON string
-        result[key] = JSON.stringify(value);
+        result[key] = '[REDACTED_COMPLEX_VALUE]';
       }
     }
     return result;
+  }
+
+  private toSafeObservation(value: unknown): unknown {
+    if (value === undefined || value === null) return value;
+    if (typeof value === 'string') {
+      return { type: 'string', length: value.length, redacted: true };
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') return value;
+    if (Array.isArray(value)) return { type: 'array', length: value.length, redacted: true };
+    if (typeof value !== 'object') return { type: typeof value, redacted: true };
+    const allowed = new Set([
+      'type', 'success', 'duration', 'durationMs', 'contentLength', 'outputLength',
+      'toolCallCount', 'messageCount', 'toolCount', 'synthetic', 'model', 'provider',
+    ]);
+    const safe: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (allowed.has(key) && ['string', 'number', 'boolean'].includes(typeof child)) {
+        safe[key] = typeof child === 'string' ? redactSecrets(child) : child;
+      } else if (key === 'error' && typeof child === 'string') {
+        safe.error = redactSecrets(child).slice(0, 256);
+      }
+    }
+    return { ...safe, redacted: true };
   }
 }
 

@@ -12,6 +12,7 @@
 
 import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
+import { withApprovalTrace } from '../telemetry/telemetryService';
 import { getEventBus } from '../services/eventing/bus';
 import { SCRIPT_RUNTIME } from '../../shared/constants';
 import type {
@@ -102,6 +103,10 @@ export class WorkflowLaunchApprovalGate {
   }
 
   async requestApproval(params: { request: WorkflowLaunchRequest }): Promise<WorkflowLaunchApprovalResult> {
+    return withApprovalTrace('workflow_launch', () => this.requestApprovalInternal(params));
+  }
+
+  private async requestApprovalInternal(params: { request: WorkflowLaunchRequest }): Promise<WorkflowLaunchApprovalResult> {
     const request = params.request;
 
     if (!this.hasRenderer()) {

@@ -30,7 +30,6 @@ export function createTelemetryAdapter(
   const turnSpans = new Map<string, string>();        // turnId -> spanId
   const toolCallSpans = new Map<string, string>();    // toolCallId -> spanId
   const toolCallContext = new Map<string, { name: string; args?: Record<string, unknown> }>();
-  const modelCallSpans = new Map<string, string>();   // turnId -> latest model spanId
 
   return {
     onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string): void {
@@ -45,6 +44,7 @@ export function createTelemetryAdapter(
     },
 
     onModelCall(turnId: string, call: TelemetryModelCall): void {
+      if (call.traceSpanId) return;
       const parentSpanId = turnSpans.get(turnId);
       const span = svc.startModelSpan(call.model, call.provider, parentSpanId);
 
@@ -54,6 +54,9 @@ export function createTelemetryAdapter(
       span.attributes['model.latency_ms'] = call.latencyMs;
       span.attributes['model.response_type'] = call.responseType;
       span.attributes['model.tool_call_count'] = call.toolCallCount;
+      span.attributes['model.request_protocol'] = call.requestProtocol ?? 'agent-loop';
+      span.attributes['model.retry_count'] = call.retryCount ?? 0;
+      span.attributes['model.result_status'] = call.resultStatus ?? (call.error ? 'error' : 'success');
       if (call.truncated) {
         span.attributes['model.truncated'] = true;
       }
@@ -65,8 +68,6 @@ export function createTelemetryAdapter(
         span.attributes['model.fallback_to'] = call.fallbackUsed.to;
         span.attributes['model.fallback_reason'] = call.fallbackUsed.reason;
       }
-
-      modelCallSpans.set(turnId, span.spanId);
 
       // End immediately — model call is reported after completion
       svc.endSpan(
@@ -118,7 +119,15 @@ export function createTelemetryAdapter(
         extraAttrs['tool.output_size'] = safeResult.output.length;
       }
 
-      svc.endSpan(spanId, success ? 'ok' : 'error', extraAttrs);
+      const terminalStatus = success
+        ? 'ok'
+        : /cancel|abort/i.test(safeResult.error ?? '')
+          ? 'cancelled'
+          : 'error';
+      if (!success && /timeout|timed out|超时/i.test(safeResult.error ?? '')) {
+        extraAttrs['terminal.status'] = 'timeout';
+      }
+      svc.endSpan(spanId, terminalStatus, extraAttrs);
     },
 
     onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void {

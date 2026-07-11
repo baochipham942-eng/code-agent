@@ -64,6 +64,8 @@ export interface RpcRequest {
   id: number;
   kind: RpcKind;
   payload: AgentCallPayload | { title: string } | { message: string };
+  /** Child-created W3C context for this RPC node. Contains no prompt or credential values. */
+  traceContext?: import('../../telemetry/runTraceContext').SerializedRunTraceContext;
 }
 
 export interface RpcResponse {

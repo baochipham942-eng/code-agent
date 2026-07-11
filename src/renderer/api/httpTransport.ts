@@ -339,6 +339,7 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
     const sessionId = getStringField(data, 'sessionId');
     const workspace = getStringField(data, 'workspace');
     const cwd = getStringField(data, 'cwd');
+    const traceContext = isRecord(data.traceContext) ? data.traceContext : undefined;
     if (!sessionId || !workspace || !cwd) {
       throw new Error('Local tool call is missing its immutable run context');
     }
@@ -347,7 +348,7 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
     const result = await client.invokeTool(
       data.tool as string,
       data.params as Record<string, unknown>,
-      { requestId: toolCallId, runId, sessionId, workspace, cwd },
+      { requestId: toolCallId, runId, sessionId, workspace, cwd, traceContext },
       controller.signal,
     );
     if (controller.signal.aborted) return;

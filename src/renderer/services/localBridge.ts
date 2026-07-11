@@ -39,6 +39,7 @@ export interface BridgeInvocationContext {
   sessionId: string;
   workspace: string;
   cwd: string;
+  traceContext?: Record<string, unknown>;
 }
 
 export interface BridgeConfirmation {
@@ -105,7 +106,15 @@ export class LocalBridgeClient {
     try {
       const res = await fetch(`${this.baseUrl}/tools/invoke`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: {
+          ...this.getHeaders(),
+          ...(typeof context?.traceContext?.traceparent === 'string'
+            ? { traceparent: context.traceContext.traceparent }
+            : {}),
+          ...(typeof context?.traceContext?.tracestate === 'string'
+            ? { tracestate: context.traceContext.tracestate }
+            : {}),
+        },
         body: JSON.stringify({
           tool,
           params,

@@ -44,6 +44,10 @@ import {
   type RunContext,
 } from '../host/runtime/runContext';
 import type { ToolExecutionDelegate } from '../host/tools/toolExecutor';
+import {
+  createRunTraceContext,
+  type RunTraceContext,
+} from '../host/telemetry/runTraceContext';
 
 // CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
 // 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
@@ -380,6 +384,7 @@ export function createAgentLoop(
   extraTelemetryAdapter?: TelemetryAdapter,
   toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../host/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> },
   runContext?: RunContext,
+  runTraceContext?: RunTraceContext,
 ): InstanceType<typeof AgentLoop> {
   if (!toolExecutor || !AgentLoop) {
     throw new Error('CLI services not initialized');
@@ -421,6 +426,15 @@ export function createAgentLoop(
   const effectiveRunContext = runContext ?? createRunContext({
     sessionId: effectiveSessionId,
     workspace: config.workingDirectory,
+  });
+  const effectiveRunTraceContext = runTraceContext ?? createRunTraceContext({
+    runId: effectiveRunContext.runId,
+    sessionId: effectiveRunContext.sessionId,
+    attempt: 1,
+    ownerEpoch: 0,
+    engine: 'native',
+    workspace: effectiveRunContext.workspace,
+    processInstanceId: `cli-${process.pid}`,
   });
   currentAgentLoopSessionId = effectiveSessionId;
 
@@ -505,6 +519,7 @@ export function createAgentLoop(
     planningService,
     sessionId: effectiveSessionId,
     runId: effectiveRunContext.runId,
+    runTraceContext: effectiveRunTraceContext,
     workingDirectory: effectiveRunContext.cwd,
     isDefaultWorkingDirectory: false,
     autoApprovePlan: config.autoApprovePlan, // CLI 模式自动批准 plan mode

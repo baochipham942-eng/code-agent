@@ -19,6 +19,9 @@ interface LongSessionBrowserResult {
       prependedTurns: number;
       anchorTurnId: string;
       anchorMounted: boolean;
+      visibleAfterTurnId: string;
+      scrollTopBefore: number;
+      scrollTopAfter: number;
       anchorDriftPx: number | null;
       firstItemIndex: number | null;
     };
@@ -252,6 +255,7 @@ function LongSessionHarness(): React.ReactElement {
       const visibleAnchor = getVisibleAnchor(scroller);
       const anchorTurnId = visibleAnchor?.dataset.traceTurnId ?? '';
       const anchorBefore = visibleAnchor?.getBoundingClientRect().top ?? Number.NaN;
+      const scrollTopBefore = scroller.scrollTop;
       const olderTurns = Array.from({ length: 30 }, (_, index) => makeTurn(index, 'older'));
       setProjection((current) => ({
         ...current,
@@ -266,6 +270,7 @@ function LongSessionHarness(): React.ReactElement {
       );
       await nextFrame();
       const anchoredTarget = document.querySelector<HTMLElement>(`[data-trace-turn-id="${anchorTurnId}"]`);
+      const visibleAfter = getVisibleAnchor(scroller);
       const anchorAfter = anchoredTarget?.getBoundingClientRect().top ?? Number.NaN;
       const anchorDriftPx = Number.isFinite(anchorBefore) && Number.isFinite(anchorAfter)
         ? round(Math.abs(anchorAfter - anchorBefore))
@@ -288,6 +293,9 @@ function LongSessionHarness(): React.ReactElement {
             prependedTurns: 30,
             anchorTurnId,
             anchorMounted: Boolean(anchoredTarget),
+            visibleAfterTurnId: visibleAfter?.dataset.traceTurnId ?? '',
+            scrollTopBefore: round(scrollTopBefore),
+            scrollTopAfter: round(scroller.scrollTop),
             anchorDriftPx,
             firstItemIndex: Number(document.querySelector('[data-virtuoso-first-item-index]')?.getAttribute('data-virtuoso-first-item-index')) || null,
           },

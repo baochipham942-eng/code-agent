@@ -606,10 +606,10 @@ describe('ParallelAgentCoordinator', () => {
 
     it('direct user messages queued on the parallel executor inbox can be drained by the executor', async () => {
       let release!: () => void;
-      let drainMessages: (() => Array<{ payload: string }>) | undefined;
+      let drainMessages: (() => Promise<Array<{ payload: string }>>) | undefined;
 
       executorState.executeMock.mockImplementation(
-        async (_t: string, _spec: { name: string }, context: { messageDrain?: () => Array<{ payload: string }> }) => {
+        async (_t: string, _spec: { name: string }, context: { messageDrain?: () => Promise<Array<{ payload: string }>> }) => {
           drainMessages = context.messageDrain;
           await new Promise<void>((resolve) => {
             release = resolve;
@@ -628,7 +628,7 @@ describe('ParallelAgentCoordinator', () => {
       await vi.waitFor(() => expect(drainMessages).toBeTypeOf('function'));
 
       expect(coordinator.sendMessage('a', 'hello from user')).toBe(true);
-      expect(drainMessages?.().map((message) => message.payload)).toEqual(['hello from user']);
+      expect((await drainMessages?.())?.map((message) => message.payload)).toEqual(['hello from user']);
 
       release();
       await run;

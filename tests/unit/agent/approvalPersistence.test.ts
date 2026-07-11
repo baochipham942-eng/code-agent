@@ -296,7 +296,7 @@ describe('SwarmLaunchApprovalGate persistence', () => {
     expect(row!.feedback).toContain('Cancelled: shutdown');
   });
 
-  it('hydrates orphaned launches from previous process', async () => {
+  it('hydrates the same waiting launch approval after process restart', async () => {
     const reqPromise = gate.requestApproval({
       scope: LAUNCH_SCOPE,
       tasks: [{ id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: true }],
@@ -309,9 +309,9 @@ describe('SwarmLaunchApprovalGate persistence', () => {
     const newGate = new SwarmLaunchApprovalGate({ approvalTimeoutMs: 60_000 });
     expect(newGate.attachPersistence(repo)).toBe(1);
 
-    const orphans = repo.listByKindAndStatus('launch', 'orphaned');
-    expect(orphans).toHaveLength(1);
-    expect(orphans[0].feedback).toBe('Orphaned by process restart');
+    const pending = repo.listByKindAndStatus('launch', 'pending');
+    expect(pending).toHaveLength(1);
+    expect(newGate.getRequest(pending[0].id)?.status).toBe('pending');
   });
 
   it('isolates plan and launch hydration to their own kinds', async () => {
@@ -348,9 +348,9 @@ describe('SwarmLaunchApprovalGate persistence', () => {
 
     const hydratedLaunch = launchGate.getRequest('cross_launch');
     expect(hydratedLaunch).toBeDefined();
-    expect(hydratedLaunch!.status).toBe('rejected');
-    expect(hydratedLaunch!.feedback).toContain('Orphaned by process restart');
-    expect(hydratedLaunch!.resolvedAt).toBeTruthy();
+    expect(hydratedLaunch!.status).toBe('pending');
+    expect(hydratedLaunch!.feedback).toBeUndefined();
+    expect(hydratedLaunch!.resolvedAt).toBeUndefined();
 
     expect(planGate.getPlan('cross_launch')).toBeUndefined();
     expect(launchGate.getRequest('cross_plan')).toBeUndefined();
@@ -359,8 +359,8 @@ describe('SwarmLaunchApprovalGate persistence', () => {
     expect(orphanedPlans).toHaveLength(1);
     expect(orphanedPlans[0].id).toBe('cross_plan');
 
-    const orphanedLaunches = repo.listByKindAndStatus('launch', 'orphaned');
-    expect(orphanedLaunches).toHaveLength(1);
-    expect(orphanedLaunches[0].id).toBe('cross_launch');
+    const pendingLaunches = repo.listByKindAndStatus('launch', 'pending');
+    expect(pendingLaunches).toHaveLength(1);
+    expect(pendingLaunches[0].id).toBe('cross_launch');
   });
 });

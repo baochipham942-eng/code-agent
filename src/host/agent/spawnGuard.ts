@@ -47,6 +47,10 @@ export type AgentMessageType =
   | 'status_update';          // 进度汇报
 
 export interface AgentMessage {
+  /** Stable delivery identity for durable at-least-once mailboxes. */
+  id?: string;
+  /** Monotonic sequence within one Agent Team tree. */
+  seq?: number;
   type: AgentMessageType;
   from: string;
   payload: string;

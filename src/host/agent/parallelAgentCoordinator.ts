@@ -77,6 +77,8 @@ import {
   createEmptySharedContext,
   formatSharedContextForPrompt,
 } from './parallelAgentCoordinatorResults';
+import type { AgentTeamDurableController, AgentTeamCheckpointState } from './agentTeamDurableTypes';
+import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
 
 export type {
   AgentTask,
@@ -123,6 +125,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private scope?: SwarmRunScope;
   private initialized = false;
   private executionActive = false;
+  private durableController?: AgentTeamDurableController;
+  private durableOwnerEpoch?: number;
   private readonly legacyLifecycle: boolean;
   /** Fire-and-forget persist 的串行链，保证 delete/drain 能排干所有 in-flight save */
   private pendingPersist: Promise<void> = Promise.resolve();
@@ -144,6 +148,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     toolContext: ToolContext;
     subagentExecutor?: SubagentExecutorPort;
     scope?: SwarmRunScope;
+    durableController?: AgentTeamDurableController;
   }): void {
     if (this.initialized) {
       throw new Error('Coordinator is already initialized; create a new run-scoped instance instead of replacing dependencies.');
@@ -170,6 +175,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.toolResolver = context.toolResolver;
     this.toolContext = context.toolContext;
     this.subagentExecutor = context.subagentExecutor;
+    this.durableController = context.durableController;
+    this.durableOwnerEpoch = context.durableController?.ownerEpoch;
     this.initialized = true;
   }
 
@@ -450,6 +457,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       // Execute task
       const executor = await this.getSubagentExecutor();
       throwIfCancelledBeforeExecutor();
+      await this.durableController?.markNodeDispatched(task);
       this.emit('task:start', { taskId: task.id, role: task.role });
 
       // Inject shared context into system prompt if available
@@ -540,6 +548,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
             }),
       };
 
+      await this.durableController?.markNodeTerminal(task, taskResult);
+
       this.emit('task:complete', { taskId: task.id, result: taskResult });
       this.completedTasks.set(task.id, taskResult);
       this.abortControllers.delete(task.id);
@@ -578,6 +588,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           defaultCode: AgentFailureCode.ModelError,
         }),
       };
+      await this.durableController?.markNodeTerminal(task, failedResult);
       this.completedTasks.set(task.id, failedResult);
 
       this.schedulePersist();
@@ -780,6 +791,59 @@ export class ParallelAgentCoordinator extends EventEmitter {
     });
   }
 
+  restoreDurableState(
+    state: AgentTeamCheckpointState,
+    decision: AgentTeamRecoveryDecision,
+    ownerEpoch?: number,
+  ): void {
+    const scope = this.scope;
+    if (!scope || !isSameRunScope(scope, state.scope)) {
+      throw new Error('Durable Agent Team checkpoint scope does not match coordinator scope');
+    }
+    this.taskDefinitions.clear();
+    this.completedTasks.clear();
+    this.messageQueues.clear();
+    for (const node of state.taskGraph) {
+      const task: AgentTask = {
+        id: node.id,
+        role: node.role,
+        task: node.task,
+        tools: [...node.tools],
+        dependsOn: [...node.dependsOn],
+      };
+      this.taskDefinitions.set(node.id, task);
+      const pendingMessages = state.mailbox.pending
+        .filter((message) => message.agentId === node.id && message.treeId === state.treeId)
+        .filter((message) => !state.mailbox.consumedMessageIds.includes(message.id))
+        .sort((left, right) => left.seq - right.seq);
+      this.messageQueues.set(node.id, pendingMessages.map((message) => ({
+        id: message.id,
+        seq: message.seq,
+        type: message.type as AgentMessage['type'],
+        from: message.from,
+        payload: message.body,
+        timestamp: message.createdAt,
+      })));
+      const nodeDecision = decision.nodes.find((candidate) => candidate.nodeId === node.id);
+      if (nodeDecision?.classification === 'reuse_completed' && node.result) {
+        this.completedTasks.set(node.id, { ...node.result, toolsUsed: [...node.result.toolsUsed] });
+      }
+    }
+    this.clearSharedContext();
+    this.importSharedContext({
+      findings: state.findings,
+      decisions: state.decisions,
+      errors: state.errors,
+    });
+    this.cancelled = state.cancelled;
+    this.cancelReason = state.cancelled ? 'parent-cancel' : 'cancelled';
+    if (ownerEpoch !== undefined) this.durableOwnerEpoch = ownerEpoch;
+  }
+
+  acceptsDurableOwnerEpoch(epoch: number): boolean {
+    return this.durableOwnerEpoch === undefined || this.durableOwnerEpoch === epoch;
+  }
+
   canReceiveMessage(taskId: string): boolean {
     return this.taskDefinitions.has(taskId) && !this.completedTasks.has(taskId);
   }
@@ -794,15 +858,35 @@ export class ParallelAgentCoordinator extends EventEmitter {
       return false;
     }
 
+    if (this.durableController) {
+      void this.durableController.enqueueMessage(taskId, message, 'user').then((persisted) => {
+        queue.push({
+          id: persisted.id,
+          seq: persisted.seq,
+          type: 'text',
+          from: persisted.from,
+          payload: persisted.body,
+          timestamp: persisted.createdAt,
+        });
+        logger.info(`[${taskId}] Durable parallel message queued (seq: ${persisted.seq}, queue size: ${queue.length})`);
+      }).catch((error) => {
+        logger.error(`[${taskId}] Durable parallel message rejected`, { error });
+      });
+      return true;
+    }
+
     queue.push(createTextMessage('user', message));
     logger.info(`[${taskId}] Parallel message queued (queue size: ${queue.length})`);
     return true;
   }
 
-  private drainMessages(taskId: string): AgentMessage[] {
+  private async drainMessages(taskId: string): Promise<AgentMessage[]> {
     const queue = this.messageQueues.get(taskId);
     if (!queue || queue.length === 0) return [];
     const messages = [...queue];
+    if (this.durableController) {
+      await this.durableController.consumeMessages(taskId);
+    }
     queue.length = 0;
     return messages;
   }
@@ -1102,6 +1186,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * - 失败安静 warn（checkpoint 是 best-effort，不能拖累主流程）
    */
   async persistCheckpoint(identity?: ParallelCheckpointIdentity): Promise<void> {
+    // Production Agent Team state is committed only through Durable Run.
+    // JSON remains a compatibility source for legacy coordinators/tests.
+    if (this.durableController) return;
     const resolvedIdentity = this.resolveCheckpointIdentity(identity);
     if (!resolvedIdentity) return;
     if (!this.ownsCheckpointIdentity(resolvedIdentity)) {
@@ -1148,6 +1235,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * - 文件不存在 / JSON 损坏 → 返回 false，不抛
    */
   async restoreCheckpoint(identity?: ParallelCheckpointIdentity): Promise<boolean> {
+    if (this.durableController) return false;
     const resolvedIdentity = this.resolveCheckpointIdentity(identity);
     if (!resolvedIdentity || !this.ownsCheckpointIdentity(resolvedIdentity)) {
       logger.warn('Parallel checkpoint identity does not match coordinator run scope, ignoring');
@@ -1234,6 +1322,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * 成功收尾后清掉 checkpoint 文件。缺失视为已清理，不告警。
    */
   async deleteCheckpoint(identity?: ParallelCheckpointIdentity): Promise<void> {
+    if (this.durableController) return;
     const resolvedIdentity = this.resolveCheckpointIdentity(identity);
     if (!resolvedIdentity) return;
     if (!this.ownsCheckpointIdentity(resolvedIdentity)) {
@@ -1261,6 +1350,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * 竞争导致"全部成功后 checkpoint 仍然存在"。
    */
   private schedulePersist(): void {
+    if (this.durableController) return;
     if (!this.resolveCheckpointIdentity()) {
       return;
     }

@@ -675,9 +675,10 @@ export class SubagentExecutor {
 
         // Drain structured message queue (mid-loop injection)
         {
+          const externalMessages = context.messageDrain ? await context.messageDrain() : [];
           const pendingMessages = [
             ...(context.spawnGuardId ? getSpawnGuard().drainMessages(context.spawnGuardId) : []),
-            ...(context.messageDrain ? context.messageDrain() : []),
+            ...externalMessages,
           ];
           const injected = drainSubagentMessages({
             agentName: config.name,

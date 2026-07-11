@@ -266,6 +266,11 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 
 ## 0.1 节点级 Checkpoint（断点恢复）
 
+> 2026-07-11：生产 `spawn_agent` / Agent Team 已改用 Durable Run checkpoint 作为唯一恢复事实源，
+> schema、决策矩阵和旧 JSON 迁移边界见
+> [agent-team-durable-recovery.md](./agent-team-durable-recovery.md)。本节 JSON 机制只保留给历史兼容与旧测试，
+> 不再决定生产节点复用、重试或审批等待。
+
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。
 Checkpoint 机制在每个节点成功后持久化结果，重新执行时自动跳过。
 

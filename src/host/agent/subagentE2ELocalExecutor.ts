@@ -25,14 +25,14 @@ export async function executeE2ELocalSubagent(
   context: SubagentContext,
 ): Promise<SubagentResult> {
   const received: AgentMessage[] = [];
-  const collectMessages = (): void => {
-    received.push(...(context.messageDrain?.() ?? []));
+  const collectMessages = async (): Promise<void> => {
+    received.push(...(context.messageDrain ? await context.messageDrain() : []));
   };
   const startedAt = Date.now();
   const delayMs = getE2ELocalSubagentDelayMs();
 
   while (Date.now() - startedAt < delayMs) {
-    collectMessages();
+    await collectMessages();
     if (context.abortSignal?.aborted) {
       const reason = normalizeCancellationReason(context.abortSignal.reason, 'parent-cancel');
       return {
@@ -48,7 +48,7 @@ export async function executeE2ELocalSubagent(
     }
     await delay(Math.min(25, Math.max(1, delayMs - (Date.now() - startedAt))));
   }
-  collectMessages();
+  await collectMessages();
 
   if (/E2E_FAIL/i.test(prompt)) {
     return {

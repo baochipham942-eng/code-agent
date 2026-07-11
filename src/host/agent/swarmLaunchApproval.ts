@@ -41,21 +41,20 @@ export class SwarmLaunchApprovalGate {
 
   /**
    * 注入持久化 repo，并 hydrate 上次进程崩溃残留的 launch pending 行。
-   * 残留行被打成 'orphaned' 状态写回内存 Map（不挂 resolver），方便
-   * coordinator / 监控 UI 看到上一进程未决的 launch 请求。
+   * Durable Agent Team 的 approval identity 跨 attempt 稳定；重启只能恢复
+   * 同一 pending request，不能把它改写成 rejected 或重新发起第二个 approval。
+   * resolver 由后续全局 recovery dispatch 注册，本层只恢复可见投影。
    */
-  attachPersistence(repo: PendingApprovalRepository, now: number = Date.now()): number {
+  attachPersistence(repo: PendingApprovalRepository, _now: number = Date.now()): number {
     this.persistRepo = repo;
     let hydrated = 0;
     try {
-      const orphans = repo.markPendingAsOrphaned('launch', now);
-      for (const row of orphans) {
+      const pending = repo.listByKindAndStatus('launch', 'pending');
+      for (const row of pending) {
         if (row.kind !== 'launch') continue;
         try {
           const request = JSON.parse(row.payloadJson) as SwarmLaunchRequest;
-          request.status = 'rejected';
-          request.feedback = row.feedback ?? 'Orphaned by process restart';
-          request.resolvedAt = row.resolvedAt ?? now;
+          request.status = 'pending';
           this.requests.set(request.id, request);
           hydrated += 1;
         } catch (err) {
@@ -63,7 +62,7 @@ export class SwarmLaunchApprovalGate {
         }
       }
       if (hydrated > 0) {
-        logger.warn(`Hydrated ${hydrated} orphaned swarm launch approval(s) from previous process`);
+        logger.warn(`Hydrated ${hydrated} waiting swarm launch approval(s) from previous process`);
       }
     } catch (err) {
       logger.error('attachPersistence: failed to hydrate orphaned launches', err);
@@ -106,6 +105,7 @@ export class SwarmLaunchApprovalGate {
     tasks: SwarmLaunchTaskPreview[];
     summary?: string;
     scope: SwarmRunScope;
+    requestId?: string;
   }): Promise<SwarmLaunchApprovalResult> {
     return withApprovalTrace('agent_team_launch', () => this.requestApprovalInternal(params));
   }
@@ -114,8 +114,9 @@ export class SwarmLaunchApprovalGate {
     tasks: SwarmLaunchTaskPreview[];
     summary?: string;
     scope: SwarmRunScope;
+    requestId?: string;
   }): Promise<SwarmLaunchApprovalResult> {
-    const request = this.createRequest(params.tasks, params.scope, params.summary);
+    const request = this.createRequest(params.tasks, params.scope, params.summary, params.requestId);
 
     if (AppWindow.getAllWindows().length === 0) {
       logger.info(`No renderer available, auto-approving launch ${request.id}`);
@@ -319,10 +320,11 @@ export class SwarmLaunchApprovalGate {
     tasks: SwarmLaunchTaskPreview[],
     scope: SwarmRunScope,
     summary?: string,
+    requestId?: string,
   ): SwarmLaunchRequest {
     const requestedAt = Date.now();
     return {
-      id: `launch_${getSwarmRunScopeKey(scope)}_${++this.counter}_${requestedAt}`,
+      id: requestId ?? `launch_${getSwarmRunScopeKey(scope)}_${++this.counter}_${requestedAt}`,
       ...scope,
       status: 'pending',
       requestedAt,

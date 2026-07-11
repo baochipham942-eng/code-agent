@@ -74,6 +74,14 @@ import {
   shouldActivateCoordinator,
   createCoordinatorSession,
 } from '../coordinatorMode';
+import {
+  getAgentTeamDurableRuntime,
+  agentTeamTaskPermissionProfile,
+  stableAgentTeamApprovalId,
+  stableAgentTeamRunId,
+} from '../agentTeamDurableAdapter';
+import { withRunTraceContext } from '../../telemetry/runTraceContext';
+import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
 
 /**
  * spawn_agent / AgentSpawn 的执行入口（接 legacy ToolContext）
@@ -720,7 +728,15 @@ async function executeParallelAgents(
       metadata: { failureCode: AgentFailureCode.ModelError },
     };
   }
-  const newRunId = randomUUID();
+  const logicalOperationId = context.currentToolCallId?.trim();
+  if (!logicalOperationId) {
+    return {
+      success: false,
+      error: 'Parallel Agent Team requires a stable logical tool call id for Durable Run recovery.',
+      metadata: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
+  const newRunId = stableAgentTeamRunId(parentNativeRunId, logicalOperationId);
   const runScope: SwarmRunScope = {
     sessionId: context.sessionId,
     runId: newRunId,
@@ -840,6 +856,27 @@ async function executeParallelAgents(
     }
   }
 
+  let durableController: AgentTeamDurableController;
+  try {
+    durableController = await getAgentTeamDurableRuntime().start({
+      scope: runScope,
+      parentRunId: parentNativeRunId,
+      logicalOperationId,
+      sideEffect: tasks.some((task) => agentTeamTaskPermissionProfile(task) !== 'readonly'),
+      tasks,
+      model: {
+        provider: String((context.modelConfig as ModelConfig).provider),
+        model: String((context.modelConfig as ModelConfig).model),
+      },
+    });
+  } catch (error) {
+    return {
+      success: false,
+      error: `Agent Team durable preparation failed: ${error instanceof Error ? error.message : String(error)}`,
+      metadata: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
+
   // ========================================================================
   // Coordinator Mode: 3+ agent 时自动激活任务编排
   // ========================================================================
@@ -863,7 +900,11 @@ async function executeParallelAgents(
 
   const launchGate = getSwarmLaunchApprovalGate();
   const cancelledBeforeApproval = getParallelCancellationResult();
-  if (cancelledBeforeApproval) return cancelledBeforeApproval;
+  if (cancelledBeforeApproval) {
+    await durableController.cancel('parent-cancel');
+    await durableController.terminal('cancelled', 'parent-cancel');
+    return cancelledBeforeApproval;
+  }
   const coordinatorRegistry = getParallelAgentCoordinatorRegistry();
   const coordinator = getParallelAgentCoordinator(runScope);
   try {
@@ -880,9 +921,11 @@ async function executeParallelAgents(
         spawnParentAgentId: undefined,
       },
       scope: runScope,
+      durableController,
     });
   } catch (error) {
     coordinatorRegistry.finalize(runScope, 'failed');
+    await durableController.terminal('failed', error instanceof Error ? error.message : String(error));
     throw error;
   }
   const cancelPendingLaunch = () => {
@@ -891,9 +934,12 @@ async function executeParallelAgents(
   };
   context.abortSignal?.addEventListener('abort', cancelPendingLaunch, { once: true });
   let launchApproval;
+  const approvalId = stableAgentTeamApprovalId(runScope.runId);
   try {
+    await durableController.markApprovalWaiting(approvalId);
     launchApproval = await launchGate.requestApproval({
       scope: runScope,
+      requestId: approvalId,
       summary: `准备并行启动 ${tasks.length} 个 agent`,
       tasks: tasks.map((task) => ({
         id: task.id,
@@ -904,8 +950,13 @@ async function executeParallelAgents(
         writeAccess: !READONLY_ROLES.includes(task.role.toLowerCase()),
       })),
     });
+    await durableController.resolveApproval(
+      approvalId,
+      launchApproval.approved ? 'approved' : 'rejected',
+    );
   } catch (error) {
     coordinatorRegistry.finalize(runScope, 'failed');
+    await durableController.terminal('failed', error instanceof Error ? error.message : String(error));
     throw error;
   } finally {
     context.abortSignal?.removeEventListener('abort', cancelPendingLaunch);
@@ -913,12 +964,16 @@ async function executeParallelAgents(
 
   const cancelledAfterApproval = getParallelCancellationResult();
   if (cancelledAfterApproval) {
+    await durableController.cancel('parent-cancel');
+    await durableController.terminal('cancelled', 'parent-cancel');
     coordinatorRegistry.finalize(runScope, 'cancelled');
     return cancelledAfterApproval;
   }
 
   if (!launchApproval.approved) {
     const reason = launchApproval.feedback?.trim();
+    await durableController.cancel(reason || 'launch-rejected');
+    await durableController.terminal('cancelled', reason || 'launch-rejected');
     coordinatorRegistry.finalize(runScope, 'cancelled');
     return {
       success: false,
@@ -1050,7 +1105,9 @@ async function executeParallelAgents(
 
   let terminalStatus: ParallelCoordinatorTerminalStatus | undefined;
   try {
-    const result = await coordinator.executeParallel(tasks);
+    const result = durableController.traceContext
+      ? await withRunTraceContext(durableController.traceContext, () => coordinator.executeParallel(tasks))
+      : await coordinator.executeParallel(tasks);
 
     // Aggregate results
     const aggregation = aggregateTeamResults(result.results, result.totalDuration);
@@ -1209,6 +1266,13 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     coordinator.off('task:error', onTaskError);
     coordinator.off('discovery', onDiscovery);
     context.abortSignal?.removeEventListener('abort', onRunAbort);
-    coordinatorRegistry.finalize(runScope, terminalStatus ?? 'failed');
+    if (terminalStatus === 'cancelled') {
+      await durableController.cancel('parent-cancel').catch(() => undefined);
+    }
+    try {
+      await durableController.terminal(terminalStatus ?? 'failed', terminalStatus ? undefined : 'Agent Team exited without terminal classification');
+    } finally {
+      coordinatorRegistry.finalize(runScope, terminalStatus ?? 'failed');
+    }
   }
 }

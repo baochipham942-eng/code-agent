@@ -86,7 +86,7 @@ export interface SubagentContext {
   /** SpawnGuard agent ID — used to drain message queue for send_input */
   spawnGuardId?: string;
   /** Optional external message queue drain, used by parallel executor inboxes. */
-  messageDrain?: () => AgentMessage[];
+  messageDrain?: () => AgentMessage[] | Promise<AgentMessage[]>;
   /** External task agent ID (e.g. DAG task ID) for context observability */
   executionAgentId?: string;
   /** Parent context for child context inheritance */

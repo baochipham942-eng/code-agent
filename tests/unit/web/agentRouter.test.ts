@@ -166,7 +166,10 @@ const testRunKernel = {
     };
   }),
   heartbeat: vi.fn(async (_runId: string, owner: { leaseExpiresAt: number }) => owner),
-  checkpoint: vi.fn(),
+  checkpoint: vi.fn(async (input: { engineCursor?: unknown }) => ({
+    checkpoint: {},
+    cursor: { nextEventSeq: 2, checkpointSeq: 1, engineCursor: input.engineCursor },
+  })),
   terminal: vi.fn(async () => ({} as never)),
   release: vi.fn(async () => true),
   recoverOnStartup: vi.fn(async () => []),

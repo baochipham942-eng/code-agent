@@ -59,7 +59,7 @@ export const CRON_TEMPLATES: CronTemplate[] = [
     emoji: '💾',
     description: 'SQLite / PostgreSQL 定期备份',
     fields: [
-      { key: 'dbPath', label: '数据库路径', placeholder: '~/Library/Application Support/code-agent/code-agent.db', required: true },
+      { key: 'dbPath', label: '数据库路径', placeholder: '~/.code-agent/code-agent.db', required: true },
       { key: 'backupDir', label: '备份目录', placeholder: '/tmp/db-backups', required: true },
       { key: 'schedule', label: '执行频率', placeholder: '每天/每小时' },
     ],

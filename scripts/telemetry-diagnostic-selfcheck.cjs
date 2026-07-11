@@ -20,7 +20,7 @@ const os = require('os');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 
-const DB_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'code-agent', 'code-agent.db');
+const DB_PATH = path.join(os.homedir(), '.code-agent', 'code-agent.db');
 const PROBE_PREFIX = 'selfcheck-';
 
 function openDb() {

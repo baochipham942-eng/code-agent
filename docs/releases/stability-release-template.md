@@ -1,6 +1,6 @@
 # Agent Neo Stability Release `<version>`
 
-> 构建 commit：`<full git SHA>`  
+> 构建 commit：`<full git SHA>`
 > 冻结证据 artifact：`stability-release-evidence-<full git SHA>`
 
 ## 用户问题与行为变化

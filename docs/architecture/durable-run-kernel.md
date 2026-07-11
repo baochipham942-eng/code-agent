@@ -179,6 +179,28 @@ Each slice owns only the listed files while active. Shared contract changes retu
 | S8 | Wrap Codex/Claude/MiMo/Kimi process attempts with the same envelope | `src/host/services/agentEngine/**`, `src/host/ipc/agentEngine.ipc.ts`, external-engine tests | Dynamic Workflow and Native loop internals |
 | S9 | Run real process kill/restart matrix, enable read preference, document rollback and release evidence | `tests/e2e/**durable*`, new acceptance scripts, `src/host/app/init*` rollout wiring, release/architecture docs | New engine features or schema redesign |
 
+## S1 as-built implementation
+
+S1 activates the six-table migration in `DatabaseService` and implements the three SQLite ports in
+`DurableRunRepository`. `DurableRunKernel` owns Native create, lease heartbeat/claim, atomic checkpoint,
+terminal commit, release, startup recovery, and stable tool-operation idempotency keys. `RunRegistry`
+keeps the existing `RunHandle` control API while treating durable owner/attempt records as the fact source
+for its live cache.
+
+The Web Native entry point commits run creation before SSE headers. A successful, failed, cancelled, or
+pre-stream-disconnected run commits one fenced terminal event with its terminal projection. Startup scans
+expired `running`, `waiting`, and `recovering` leases immediately and once more after the lease boundary;
+the second process claims a higher epoch and attempt before exposing a recovery plan.
+
+Recovery preserves approval waits and versioned engine cursors. An open side-effecting tool dispatch may
+return to `prepared` only when a provider operation id proves deduplication/lookup support. Otherwise it is
+persisted as `unknown`, the run remains `waiting`, and the operation appears in
+`requiresHumanConfirmation`. Resolved tool results are never reopened.
+
+`RunKernelAdapter` is the S4/S5 consumption boundary. Those slices can prepare tool operations and commit
+tool/approval checkpoints without changing SSE, IPC, CLI, or public `SessionEvent` fields. Agent Team,
+external engines, and coordinator recovery remain outside S1.
+
 ## S0 completion boundary
 
 S0 supplies compile-time contracts, state-machine validation, narrow ports, an idempotent up/down migration draft, failure gold, and this rollout map. It does not claim process restart recovery. Production recovery requires S1 persistence wiring plus at least one engine adoption slice and S9 kill/restart evidence.

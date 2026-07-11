@@ -338,6 +338,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
+    let nativeRunTerminal = false;
     let runCorrelationId = `external-run-${randomUUID()}`;
     if (isExternalAgentEngine(selectedEngine.kind)) {
       // Engine adapter lifecycle remains frozen in S2. The controller keeps only
@@ -345,7 +346,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // RunContext/RunRegistry contract or publish a Native runId.
     } else {
       try {
-        runHandle = runRegistry.start({ sessionId, workspace: resolvedProject });
+        runHandle = await runRegistry.startDurable({ sessionId, workspace: resolvedProject });
         runContext = runHandle.context;
         runCorrelationId = runContext.runId;
       } catch (error) {
@@ -370,7 +371,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     if (preflightDisconnected || res.destroyed) {
       if (runHandle) {
         await runHandle.cancel('user');
-        runRegistry.unregister(runHandle.context.runId, runHandle);
+        await runRegistry.terminalDurable(runHandle.context.runId, {
+          now: Date.now(),
+          status: 'cancelled',
+          reason: 'client_disconnected_before_stream',
+          event: { type: 'run_cancelled', payload: { sessionId }, recordedAt: Date.now() },
+        });
+        nativeRunTerminal = true;
       }
       res.off('close', markPreflightDisconnected);
       releaseSseSlot();
@@ -967,6 +974,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           : 'completed';
       await runController.updateSessionStatus(finalStatus);
 
+      if (runHandle) {
+        await runRegistry.terminalDurable(runHandle.context.runId, {
+          now: Date.now(),
+          status: finalStatus === 'completed' ? 'completed' : finalStatus === 'interrupted' ? 'cancelled' : 'failed',
+          reason: finalStatus,
+          event: { type: `run_${finalStatus}`, payload: { sessionId }, recordedAt: Date.now() },
+        });
+        nativeRunTerminal = true;
+      }
+
       // session:updated 和 session:list-updated 已按运行状态广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
@@ -981,6 +998,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }, logger);
       }
       await runController.updateSessionStatus('error');
+      if (runHandle && !nativeRunTerminal) {
+        try {
+          await runRegistry.terminalDurable(runHandle.context.runId, {
+            now: Date.now(),
+            status: runController.disconnected ? 'cancelled' : 'failed',
+            reason: message,
+            event: { type: 'run_failed', payload: { message }, recordedAt: Date.now() },
+          });
+          nativeRunTerminal = true;
+        } catch (terminalError) {
+          logger.error('Durable Run terminal commit failed:', terminalError);
+        }
+      }
       if (!runController.disconnected) {
         runController.emitAgentEvent({
           type: 'error',
@@ -993,7 +1023,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runController.markSettled();
       res.off('close', runController.cancelForDisconnect);
       if (runHandle) {
-        runRegistry.unregister(runHandle.context.runId, runHandle);
+        if (!nativeRunTerminal) {
+          await runRegistry.releaseDurable(runHandle.context.runId, runHandle);
+        } else {
+          runRegistry.unregister(runHandle.context.runId, runHandle);
+        }
       }
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）

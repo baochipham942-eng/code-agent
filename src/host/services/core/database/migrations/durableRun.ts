@@ -37,6 +37,9 @@ export function applyDurableRunMigrationDraft(db: BetterSqlite3.Database): void 
 
     CREATE INDEX IF NOT EXISTS idx_durable_runs_session ON durable_runs (session_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_durable_runs_recovery ON durable_runs (status, lease_expires_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_durable_runs_active_session
+      ON durable_runs (session_id)
+      WHERE status IN ('created','running','waiting','paused','recovering');
 
     CREATE TABLE IF NOT EXISTS durable_run_attempts (
       run_id TEXT NOT NULL,

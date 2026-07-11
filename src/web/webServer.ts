@@ -22,6 +22,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'child_process';
 import express from 'express';
 import type { Request, Response } from 'express';
@@ -326,6 +327,7 @@ import { createAgentRouter } from './routes/agent';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { PendingLocalToolCall } from './routes/agent';
 import { RunRegistry } from '../host/runtime/runRegistry';
+import { DurableRunKernel } from '../host/runtime/durableRunKernel';
 import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
 import { createSessionsRouter } from './routes/sessions';
 import type { SupabaseSessionBinding } from './routes/sessions';
@@ -461,7 +463,23 @@ async function initializeServices(): Promise<void> {
     onDatabaseRecovered(() => {
       setDbAvailable(true);
     });
-    await initDatabase();
+    const database = await initDatabase();
+    const durableRunLeaseDurationMs = 15_000;
+    runRegistry.configureDurableKernel(new DurableRunKernel({
+      stores: database.getDurableRunRepository(),
+      ownerId: 'web-native-host',
+      processInstanceId: `web-${process.pid}-${randomUUID()}`,
+      leaseDurationMs: durableRunLeaseDurationMs,
+    }));
+    await runRegistry.recoverDurable(Date.now());
+    // A fast restart may occur before the previous lease expires. One delayed
+    // scan covers that boundary without repeatedly reclaiming an unresumed run.
+    const delayedRecovery = setTimeout(() => {
+      void runRegistry.recoverDurable(Date.now()).catch((recoveryError) => {
+        logger.error('Durable Run delayed recovery failed:', recoveryError);
+      });
+    }, durableRunLeaseDurationMs + 100);
+    delayedRecovery.unref?.();
     setDbAvailable(true);
     logger.info('Database initialized');
   } catch (error) {

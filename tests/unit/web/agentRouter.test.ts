@@ -125,6 +125,30 @@ vi.mock('../../../src/host/telemetry', () => ({
 let server: http.Server | undefined;
 let baseUrl = '';
 const runRegistry = new RunRegistry();
+const testRunKernel = {
+  createNativeRun: vi.fn(async (input: { runId: string; sessionId: string; now: number }) => {
+    const owner = { ownerId: 'test', processInstanceId: 'test-process', epoch: 1, leaseExpiresAt: input.now + 60_000 };
+    return {
+      owner,
+      attempt: {
+        runId: input.runId, attempt: 1, processInstanceId: 'test-process', ownerId: 'test',
+        ownerEpoch: 1, status: 'active' as const, startedAt: input.now,
+      },
+      envelope: {
+        schemaVersion: 1 as const, runId: input.runId, sessionId: input.sessionId,
+        engine: { kind: 'native' as const }, status: 'running' as const, attempt: 1,
+        cursor: { nextEventSeq: 1, checkpointSeq: 0 }, owner,
+        createdAt: input.now, updatedAt: input.now,
+      },
+    };
+  }),
+  heartbeat: vi.fn(async (_runId: string, owner: { leaseExpiresAt: number }) => owner),
+  checkpoint: vi.fn(),
+  terminal: vi.fn(async () => ({} as never)),
+  release: vi.fn(async () => true),
+  recoverOnStartup: vi.fn(async () => []),
+  prepareToolOperation: vi.fn(),
+};
 const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;
 let tempDataDir: string | undefined;
 
@@ -206,6 +230,7 @@ describe('createAgentRouter', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     runRegistry.clear();
+    runRegistry.configureDurableKernel(testRunKernel);
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);

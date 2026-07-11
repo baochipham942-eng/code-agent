@@ -61,6 +61,11 @@ export interface RunStore {
   claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null>;
   renewLease(runId: string, owner: RunOwnerLease, leaseExpiresAt: number): Promise<boolean>;
   transition(input: RunTransition): Promise<RunEnvelope | null>;
+  releaseLease(runId: string, owner: RunOwnerLease, now: number): Promise<boolean>;
+  getAttempt(runId: string, attempt: number): Promise<RunAttempt | null>;
+  listPendingOperations(runId: string): Promise<PendingOperation[]>;
+  listChildRuns(runId: string): Promise<ChildRunRef[]>;
+  replaceRecoveryProjection(input: RecoveryProjectionReplace): Promise<RunEnvelope>;
 }
 
 export interface EventStore {
@@ -87,7 +92,30 @@ export interface CheckpointStore {
    * pending-operation/child projections. External side effects are deliberately outside this transaction.
    */
   commit(input: CheckpointCommit): Promise<RunCheckpoint>;
+  commitTerminal(input: TerminalCommit): Promise<RunEnvelope>;
 }
+
+export interface RecoveryProjectionReplace {
+  runId: string;
+  attempt: number;
+  expectedOwnerEpoch: number;
+  status: 'recovering' | 'waiting';
+  pendingOperations: PendingOperation[];
+  updatedAt: number;
+}
+
+export interface TerminalCommit {
+  runId: string;
+  attempt: number;
+  expectedOwnerEpoch: number;
+  expectedNextEventSeq: number;
+  status: 'completed' | 'failed' | 'cancelled';
+  reason?: string;
+  event: RunEventAppend;
+  terminalAt: number;
+}
+
+export type DurableRunStores = RunStore & EventStore & CheckpointStore;
 
 export interface RunRehydrationPlan {
   envelope: RunEnvelope;

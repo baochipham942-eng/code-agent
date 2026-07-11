@@ -4,6 +4,8 @@
 
 // Types
 export * from './types';
+export * from './mcpDurableTask';
+export { McpSdkTaskProtocol } from './mcpTaskProtocol';
 
 // Client
 export {

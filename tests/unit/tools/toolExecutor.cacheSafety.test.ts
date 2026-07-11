@@ -41,6 +41,7 @@ vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
 import { initToolCache } from '../../../src/host/services/infra/toolCache';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { createRunContext } from '../../../src/host/runtime/runContext';
+import { getTelemetryService } from '../../../src/host/telemetry/telemetryService';
 
 const SIDE_EFFECT_TOOLS = [
   'Bash',
@@ -121,6 +122,40 @@ describe('ToolExecutor cache safety', () => {
       { toolCallId: 'result', success: true, output: 'executed' },
       scope,
     );
+  });
+
+  it('keeps execution ledger and trace facts on a cache hit', async () => {
+    const cache = initToolCache({ persistentCache: false });
+    vi.spyOn(cache, 'isCacheable').mockReturnValue(true);
+    vi.spyOn(cache, 'get').mockReturnValue({
+      toolCallId: 'cached-result', success: true, output: 'cached',
+    });
+    resolverState.definition = {
+      name: 'PureReadFixture', description: 'fixture',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: false, permissionLevel: 'read',
+    };
+    const executor = new ToolExecutor({
+      requestPermission: vi.fn().mockResolvedValue(true),
+      workingDirectory: '/tmp/tool-cache-safety',
+    });
+
+    const telemetry = getTelemetryService();
+    const span = telemetry.startSpan('cache hit fixture', 'tool', { 'tool.call_id': 'call-cache-hit' });
+    const result = await executor.execute('PureReadFixture', { q: 'same' }, {
+      sessionId: 'session-a', currentToolCallId: 'call-cache-hit',
+    });
+
+    expect(result.fromCache).toBe(true);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(ledgerState.appendToolExecutionBegin).toHaveBeenCalledOnce();
+    expect(ledgerState.appendToolExecutionComplete).toHaveBeenCalledWith(expect.objectContaining({
+      executionId: ledgerState.appendToolExecutionBegin.mock.calls[0]?.[0].executionId,
+      status: 'cached',
+    }));
+    expect(telemetry.getActiveSpans().find((active) => active.spanId === span.spanId)?.attributes)
+      .toMatchObject({ 'tool.cache_hit': true });
+    telemetry.endSpan(span.spanId);
   });
 
   it('connects successful file and workspace mutations to cache invalidation', async () => {

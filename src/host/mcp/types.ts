@@ -126,12 +126,24 @@ export interface MCPToolAnnotations {
   idempotentHint?: boolean;
 }
 
+export interface MCPToolExecution {
+  /** Untrusted protocol declaration; local trust policy still decides durable-task admission. */
+  taskSupport?: 'optional' | 'required' | 'forbidden';
+}
+
+export interface MCPServerTaskCapabilities {
+  toolsCall: boolean;
+  list: boolean;
+  cancel: boolean;
+}
+
 export interface MCPTool {
   name: string;
   description: string;
   inputSchema: unknown;
   serverName: string;
   annotations?: MCPToolAnnotations;
+  execution?: MCPToolExecution;
 }
 
 export interface MCPResource {

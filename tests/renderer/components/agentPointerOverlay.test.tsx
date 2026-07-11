@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { describe, expect, it } from 'vitest';
+import { act } from '@testing-library/react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { AgentPointerEvent } from '../../../src/shared/contract';
 import {
@@ -62,6 +65,51 @@ describe('AgentPointerOverlay', () => {
     // aria-label 保留完整描述，但可见标签 span 和点击脉冲环隐藏
     expect(html).not.toContain('backdrop-blur-xs');
     expect(html).not.toContain('animate-ping');
+  });
+
+  it('retains the positioning div across move/click/move rerenders', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const renderEvent = (nextEvent: AgentPointerEvent) => {
+      act(() => {
+        root.render(React.createElement(AgentPointerOverlay, { event: nextEvent }));
+      });
+      const overlay = container.firstElementChild;
+      const positioningDiv = Array.from(overlay?.children ?? [])
+        .find((child) => child.tagName === 'DIV');
+      expect(positioningDiv).toBeInstanceOf(HTMLDivElement);
+      return positioningDiv as HTMLDivElement;
+    };
+
+    try {
+      const firstDiv = renderEvent({
+        ...event,
+        id: 'move-1',
+        phase: 'move',
+        point: { x: 10, y: 20, unit: 'percent' },
+      });
+      const clickDiv = renderEvent({
+        ...event,
+        id: 'click-1',
+        phase: 'click',
+        point: { x: 30, y: 40, unit: 'percent' },
+      });
+      const secondMoveDiv = renderEvent({
+        ...event,
+        id: 'move-2',
+        phase: 'move',
+        point: { x: 50, y: 60, unit: 'percent' },
+      });
+
+      expect(clickDiv).toBe(firstDiv);
+      expect(secondMoveDiv).toBe(firstDiv);
+      expect(secondMoveDiv.style.left).toBe('50%');
+      expect(secondMoveDiv.style.top).toBe('60%');
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 
   it('renders preview card chrome around the same pointer', () => {

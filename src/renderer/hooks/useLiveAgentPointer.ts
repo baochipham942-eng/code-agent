@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/shallow';
 import type { AgentPointerEvent, AgentPointerSurface } from '@shared/contract';
 import {
   selectAgentPointerTimelineForSurface,
@@ -17,14 +18,23 @@ export interface LiveAgentPointerState {
 
 export function useLiveAgentPointer(surface: AgentPointerSurface): LiveAgentPointerState {
   const entry = useAgentPointerStore((state) => state.lastBySurface[surface]);
-  const timeline = useAgentPointerStore((state) => selectAgentPointerTimelineForSurface(state, surface));
+  const timeline = useAgentPointerStore(useShallow(
+    (state) => selectAgentPointerTimelineForSurface(state, surface),
+  ));
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!entry || entry.visibleUntilMs <= Date.now()) return undefined;
-    // 不再 pruneExpired 清掉 lastBySurface——位置要保留给 idle 态光标
-    const interval = window.setInterval(() => setNowMs(Date.now()), 500);
-    return () => window.clearInterval(interval);
+    const currentNowMs = Date.now();
+    setNowMs(currentNowMs);
+
+    if (!entry || entry.visibleUntilMs <= currentNowMs) return undefined;
+
+    // 每条 entry 只负责自己的到期通知；替换 entry 时 effect cleanup 会取消旧通知。
+    // lastBySurface 不随 TTL 清理，位置仍保留给 idle 态光标。
+    const timeout = window.setTimeout(() => {
+      setNowMs((previousNowMs) => Math.max(previousNowMs, entry.visibleUntilMs, Date.now()));
+    }, entry.visibleUntilMs - currentNowMs);
+    return () => window.clearTimeout(timeout);
   }, [entry]);
 
   const isLive = Boolean(entry && entry.visibleUntilMs > nowMs);

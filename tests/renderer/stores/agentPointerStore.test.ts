@@ -43,22 +43,24 @@ describe('agentPointerStore', () => {
     ]);
   });
 
-  it('prunes expired surface pointers while keeping timeline history', () => {
-    useAgentPointerStore.getState().recordEvent({
-      ...browserEvent,
-      expiresAtMs: 10,
-    });
-
-    useAgentPointerStore.getState().pruneExpired(11);
-    const state = useAgentPointerStore.getState();
-
-    expect(state.lastBySurface.browser).toBeNull();
-    expect(state.timeline).toHaveLength(1);
-    expect(state.timeline[0].event.id).toBe('browser-pointer');
-  });
-
   it('guards runtime metadata before putting it in the live store', () => {
     expect(isAgentPointerEvent(browserEvent)).toBe(true);
     expect(isAgentPointerEvent({ ...browserEvent, point: { x: 'bad', y: 1, unit: 'px' } })).toBe(false);
+  });
+
+  it('uses explicit lifecycle resets without changing retained timeline semantics', () => {
+    useAgentPointerStore.getState().recordEvent(browserEvent);
+    useAgentPointerStore.getState().recordEvent(computerEvent);
+
+    useAgentPointerStore.getState().clearSurface('browser');
+    let state = useAgentPointerStore.getState();
+    expect(state.lastBySurface.browser).toBeNull();
+    expect(state.lastBySurface.computer?.event.id).toBe('computer-pointer');
+    expect(state.timeline).toHaveLength(2);
+
+    useAgentPointerStore.getState().clearAll();
+    state = useAgentPointerStore.getState();
+    expect(state.lastBySurface).toEqual({ browser: null, computer: null });
+    expect(state.timeline).toEqual([]);
   });
 });

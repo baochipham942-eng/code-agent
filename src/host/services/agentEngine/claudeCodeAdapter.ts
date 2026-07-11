@@ -28,6 +28,7 @@ import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
+import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 
 const logger = createLogger('ClaudeCodeAdapter');
 
@@ -38,6 +39,7 @@ export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   emitEvent?: (event: AgentEventEnvelope) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
+  durableLifecycle?: ExternalEngineDurableLifecycle;
 }
 
 interface ClaudeParsedEvent {
@@ -66,7 +68,7 @@ export class ClaudeCodeAdapter {
     const permissionMode = toClaudePermissionMode(permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
-    const runId = `claude_${startedAt}_${randomUUID().slice(0, 8)}`;
+    const runId = request.durableLifecycle?.runId ?? `claude_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
@@ -90,7 +92,6 @@ export class ClaudeCodeAdapter {
       '--allowedTools Read,Glob,Grep,LS',
       '--strict-mcp-config',
       '--include-partial-messages',
-      '--no-session-persistence',
       '<prompt:redacted>',
     ].join(' ');
     const timing = normalizeCodexCliRunTiming({
@@ -165,7 +166,16 @@ export class ClaudeCodeAdapter {
     const child = spawn(descriptor.binaryPath, args, {
       cwd,
       env,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    await request.durableLifecycle?.attachProcess(child, {
+      binary: descriptor.binaryPath,
+      version: descriptor.version,
+      commandSummary,
+      logPath,
+      model,
+      permissionProfile,
     });
     child.stdin.end(request.prompt);
 
@@ -218,10 +228,12 @@ export class ClaudeCodeAdapter {
         message: timeoutMessage,
         data: { runId, logPath },
       });
-      child.kill('SIGTERM');
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
-          child.kill('SIGKILL');
+          if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGKILL');
+          else child.kill('SIGKILL');
         }
       }, 2_000).unref?.();
     }, timing.timeoutMs);
@@ -229,10 +241,14 @@ export class ClaudeCodeAdapter {
     const handleJsonLine = (line: string) => {
       const parsed = parseClaudeCodeJsonLine(line);
       if (!parsed) return;
+      const usage = extractExternalModelUsage(line);
+      if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
       if (parsed.externalSessionId) {
         externalSessionId = parsed.externalSessionId;
+        request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
       }
       if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {
+        request.durableLifecycle?.observeNormalizedEvent('text_delta');
         streamedText += parsed.textDelta;
         emit({
           type: 'message_delta',
@@ -243,6 +259,7 @@ export class ClaudeCodeAdapter {
         resultText = parsed.finalText;
       }
       if (parsed.toolName) {
+        request.durableLifecycle?.observeNormalizedEvent('tool_call', parsed.toolName);
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.tool_call',
@@ -251,6 +268,7 @@ export class ClaudeCodeAdapter {
         });
       }
       if (parsed.status) {
+        request.durableLifecycle?.observeNormalizedEvent('status', parsed.status);
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.status',
@@ -274,6 +292,7 @@ export class ClaudeCodeAdapter {
 
     child.stdout.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
+      request.durableLifecycle?.observeStdout(chunk.byteLength);
       const text = chunk.toString('utf8');
       logStream.write(text);
       stdoutBuffer += text;
@@ -286,6 +305,7 @@ export class ClaudeCodeAdapter {
 
     child.stderr.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
+      request.durableLifecycle?.observeStderr(chunk.byteLength);
       const text = chunk.toString('utf8');
       stderrText += text;
       logStream.write(text);
@@ -423,7 +443,7 @@ export class ClaudeCodeAdapter {
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
       emit({ type: 'agent_complete', data: null });
-      return {
+      const result: AgentEngineRunResult = {
         runId,
         sessionId: request.sessionId,
         engine: 'claude_code',
@@ -434,6 +454,8 @@ export class ClaudeCodeAdapter {
         error: message,
         failure: failureDiagnostics,
       };
+      await request.durableLifecycle?.finish(result, true);
+      return result;
     }
 
     const assistantMessage: Message = {
@@ -491,7 +513,7 @@ export class ClaudeCodeAdapter {
       updatedAt: completedAt,
     }, { allowEngineUpdate: true });
 
-    return {
+    const result: AgentEngineRunResult = {
       runId,
       sessionId: request.sessionId,
       engine: 'claude_code',
@@ -500,6 +522,8 @@ export class ClaudeCodeAdapter {
       logPath,
       exitCode,
     };
+    await request.durableLifecycle?.finish(result, Boolean(finalText));
+    return result;
   }
 }
 
@@ -527,7 +551,6 @@ export function buildClaudeCodeArgs(
     '--no-chrome',
     '--strict-mcp-config',
     '--include-partial-messages',
-    '--no-session-persistence',
   ];
 }
 

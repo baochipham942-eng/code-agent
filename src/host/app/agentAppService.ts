@@ -65,10 +65,14 @@ import {
   CodexCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
+  ExternalEngineDurableLifecycle,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
 } from '../services/agentEngine';
+import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
+import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
+import type { RunRegistry } from '../runtime/runRegistry';
 import { listTasks } from '../services/planning/taskStore';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
@@ -101,7 +105,47 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     private getConfigService: () => ConfigService | null,
     private _getCurrentSessionId: () => string | null,
     private _setCurrentSessionId: (id: string) => void,
+    private readonly externalRunRegistry?: RunRegistry,
   ) {}
+
+  private async startExternalLifecycle(input: {
+    engine: ExternalAgentEngineKind;
+    sessionId: string;
+    workspace: string;
+    cwd: string;
+    externalSessionId?: string;
+  }): Promise<ExternalEngineDurableLifecycle | undefined> {
+    if (!this.externalRunRegistry) return undefined;
+    return ExternalEngineDurableLifecycle.start({ registry: this.externalRunRegistry, ...input });
+  }
+
+  private async executeExternalRun<T extends AgentEngineRunResult>(
+    lifecycle: ExternalEngineDurableLifecycle | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      const result = await run();
+      await lifecycle?.finish(
+        result,
+        result.status !== 'completed' || Boolean(result.outputText?.trim()),
+      );
+      return result;
+    } catch (error) {
+      if (lifecycle) {
+        const message = error instanceof Error ? error.message : String(error);
+        await lifecycle.finish({
+          runId: lifecycle.runId,
+          sessionId: lifecycle.sessionId,
+          engine: lifecycle.engine,
+          status: 'failed',
+          error: message,
+        }, true).catch((terminalError) => {
+          logger.error('External Durable Run terminal commit failed', terminalError);
+        });
+      }
+      throw error;
+    }
+  }
 
   // === Helper: get orchestrator or throw ===
   private resolveSessionId(sessionId?: string): string | null {
@@ -310,67 +354,79 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (engine.kind === 'codex_cli') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
-      await new CodexCliAdapter().run({
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
+      const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
+      await this.executeExternalRun(durableLifecycle, () => new CodexCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true }),
+        model: resolvedModel,
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
-      });
+        durableLifecycle,
+      }));
       return;
     }
     if (engine.kind === 'claude_code') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
-      await new ClaudeCodeAdapter().run({
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
+      const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
+      await this.executeExternalRun(durableLifecycle, () => new ClaudeCodeAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true }),
+        model: resolvedModel,
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
-      });
+        durableLifecycle,
+      }));
       return;
     }
     if (engine.kind === 'mimo_code') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
-      await new MimoCliAdapter().run({
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model);
+      const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
+      await this.executeExternalRun(durableLifecycle, () => new MimoCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model),
+        model: resolvedModel,
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
-      });
+        durableLifecycle,
+      }));
       return;
     }
     if (engine.kind === 'kimi_code') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code', launch.model);
+      const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
       // Kimi CLI 不读 env API key；per-user KIMI_CODE_HOME 凭据隔离目录由后续凭据接口派生后
       // 通过 KimiCliRunRequest.kimiCodeHome 注入（当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
-      await new KimiCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => new KimiCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
-        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code', launch.model),
+        model: resolvedModel,
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
-      });
+        durableLifecycle,
+      }));
       return;
     }
 
@@ -421,6 +477,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const promise = (async () => {
       try {
+        const externalHandle = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
+        if (externalHandle) {
+          await externalHandle.cancel(normalizedReason === 'session-switch' ? 'session-switch' : 'user');
+          return;
+        }
         // Release run-scoped waiters before awaiting the primary task shutdown.
         // A subagent can be blocked on plan/launch approval while the primary
         // orchestrator waits for that subagent to exit, so reversing this order

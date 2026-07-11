@@ -12,6 +12,7 @@ import {
   type RunEnvelope,
   type RunOwnerLease,
 } from '../../shared/contract/durableRun';
+import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
 import type {
   DurableCheckpointInput,
   DurableTerminalInput,
@@ -48,6 +49,11 @@ export class RunSessionConflictError extends Error {
 export interface RunSelector {
   runId?: string;
   sessionId?: string;
+}
+
+export interface ExternalDurableRunStart {
+  handle: RunHandle;
+  launchOperation: PendingOperation;
 }
 
 export class RunRegistry implements AgentTeamDurableParentHost {
@@ -103,6 +109,68 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     this.startAttemptSpan(traceContext);
     this.startHeartbeat(context.runId, created.owner, now);
     return handle;
+  }
+
+  async startExternalDurable(
+    input: CreateRunContextInput & {
+      engine: ExternalAgentEngineKind;
+      externalSessionId?: string;
+      resumeCapable?: boolean;
+    },
+    now = Date.now(),
+  ): Promise<ExternalDurableRunStart> {
+    const kernel = this.requireKernel();
+    const context = createRunContext(input);
+    const existingRunId = this.runIdBySessionId.get(context.sessionId);
+    if (existingRunId && existingRunId !== context.runId) {
+      throw new RunSessionConflictError(context.sessionId, existingRunId);
+    }
+    const launchOperation = kernel.prepareOperation({
+      runId: context.runId,
+      operationId: 'external-engine-launch',
+      logicalOperationId: 'external-engine-launch',
+      attempt: 1,
+      kind: 'external_engine',
+      sideEffect: true,
+      canDeduplicate: input.resumeCapable === true && Boolean(input.externalSessionId),
+      now,
+      providerOperationId: input.resumeCapable && input.externalSessionId
+        ? `external-session:${input.externalSessionId}`
+        : undefined,
+    });
+    const created = await kernel.createRun({
+      runId: context.runId,
+      sessionId: context.sessionId,
+      engine: {
+        kind: 'external_cli',
+        engine: input.engine,
+        ...(input.externalSessionId ? { externalSessionId: input.externalSessionId } : {}),
+      },
+      now,
+      initialEngineCursor: {
+        schemaVersion: 1,
+        engine: input.engine,
+        externalSessionId: input.externalSessionId,
+      },
+      initialPendingOperations: [launchOperation],
+    });
+    const traceContext = createRunTraceContext({
+      runId: context.runId,
+      sessionId: context.sessionId,
+      attempt: created.attempt.attempt,
+      ownerEpoch: created.owner.epoch,
+      engine: input.engine,
+      workspace: context.workspace,
+      processInstanceId: created.owner.processInstanceId,
+    });
+    const handle = createRunHandle(context, traceContext);
+    this.register(handle);
+    this.durableOwners.set(context.runId, { owner: created.owner, attempt: created.attempt.attempt });
+    this.durableEnvelopes.set(context.runId, created.envelope);
+    this.durableTraceContexts.set(context.runId, traceContext);
+    this.startAttemptSpan(traceContext, { 'run.external_engine': input.engine });
+    this.startHeartbeat(context.runId, created.owner, now);
+    return { handle, launchOperation };
   }
 
   async heartbeatDurable(runId: string, now = Date.now()): Promise<RunOwnerLease> {
@@ -257,6 +325,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   }
 
   async releaseDurable(runId: string, expected?: RunHandle, now = Date.now()): Promise<boolean> {
+    if (expected && this.handlesByRunId.get(runId) !== expected) return false;
     const live = this.durableOwners.get(runId);
     if (!live) return false;
     const released = await this.requireKernel().release(runId, live.owner, now);

@@ -98,7 +98,7 @@ describe('Claude Code adapter helpers', () => {
     expect(args).toContain('--no-chrome');
     expect(args).toContain('--strict-mcp-config');
     expect(args).toContain('--include-partial-messages');
-    expect(args).toContain('--no-session-persistence');
+    expect(args).not.toContain('--no-session-persistence');
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(args).not.toContain('--allow-dangerously-skip-permissions');
     expect(args).not.toContain('bypassPermissions');

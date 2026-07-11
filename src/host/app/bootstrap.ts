@@ -15,6 +15,10 @@ import { getTaskManager, type TaskManager } from '../task';
 import type { PlanningService } from '../planning';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import { AgentAppServiceImpl } from './agentAppService';
+import { randomUUID } from 'node:crypto';
+import { getDatabase } from '../services/core/databaseService';
+import { DurableRunKernel } from '../runtime/durableRunKernel';
+import { RunRegistry } from '../runtime/runRegistry';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
 import { initializeBackgroundInfra } from './initBackgroundServices';
@@ -131,11 +135,19 @@ export async function initializeBackgroundServices(): Promise<void> {
   createAgentRuntime(configService);
 
   // Phase 3b: Create AgentApplicationService (facade for IPC layer)
+  const externalRunRegistry = new RunRegistry();
+  externalRunRegistry.configureDurableKernel(new DurableRunKernel({
+    stores: getDatabase().getDurableRunRepository(),
+    ownerId: 'desktop-external-engine-host',
+    processInstanceId: `desktop-${process.pid}-${randomUUID()}`,
+    leaseDurationMs: 15_000,
+  }));
   appService = new AgentAppServiceImpl(
     () => getTaskManager(),
     () => configService,
     () => getTaskManager().getCurrentSessionId(),
     (id: string) => getTaskManager().setCurrentSessionId(id),
+    externalRunRegistry,
   );
 
   // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)

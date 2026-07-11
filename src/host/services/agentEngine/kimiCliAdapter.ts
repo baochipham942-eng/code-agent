@@ -39,6 +39,7 @@ import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
+import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 
 const logger = createLogger('KimiCliAdapter');
 
@@ -57,6 +58,7 @@ export interface KimiCliRunRequest extends AgentEngineRunRequest {
    * CLI 默认 ~/.kimi-code。per-user 自动派生留给地基②（detection/凭据隔离接口）。
    */
   kimiCodeHome?: string;
+  durableLifecycle?: ExternalEngineDurableLifecycle;
 }
 
 interface KimiParsedEvent {
@@ -83,7 +85,7 @@ export class KimiCliAdapter {
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
-    const runId = `kimi_${startedAt}_${randomUUID().slice(0, 8)}`;
+    const runId = request.durableLifecycle?.runId ?? `kimi_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
@@ -172,7 +174,16 @@ export class KimiCliAdapter {
     const child = spawn(descriptor.binaryPath || 'kimi', args, {
       cwd,
       env,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await request.durableLifecycle?.attachProcess(child, {
+      binary: descriptor.binaryPath || 'kimi',
+      version: descriptor.version,
+      commandSummary,
+      logPath,
+      model,
+      permissionProfile,
     });
 
     let stdoutBuffer = '';
@@ -224,10 +235,12 @@ export class KimiCliAdapter {
         message: timeoutMessage,
         data: { runId, logPath },
       });
-      child.kill('SIGTERM');
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
-          child.kill('SIGKILL');
+          if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGKILL');
+          else child.kill('SIGKILL');
         }
       }, 2_000).unref?.();
     }, timing.timeoutMs);
@@ -235,10 +248,14 @@ export class KimiCliAdapter {
     const handleJsonLine = (line: string) => {
       const parsed = parseKimiJsonLine(line);
       if (!parsed) return;
+      const usage = extractExternalModelUsage(line);
+      if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
       if (parsed.externalSessionId) {
         externalSessionId = parsed.externalSessionId;
+        request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
       }
       if (parsed.textDelta) {
+        request.durableLifecycle?.observeNormalizedEvent('text_delta');
         streamedText += parsed.textDelta;
         emit({
           type: 'message_delta',
@@ -249,6 +266,7 @@ export class KimiCliAdapter {
         resultText = parsed.finalText;
       }
       if (parsed.toolName) {
+        request.durableLifecycle?.observeNormalizedEvent('tool_call', parsed.toolName);
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.tool_call',
@@ -257,6 +275,7 @@ export class KimiCliAdapter {
         });
       }
       if (parsed.status) {
+        request.durableLifecycle?.observeNormalizedEvent('status', parsed.status);
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.status',
@@ -281,6 +300,7 @@ export class KimiCliAdapter {
     // 正文只读 stdout（thinking/进度走 stderr，不丢正文）
     child.stdout.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
+      request.durableLifecycle?.observeStdout(chunk.byteLength);
       const text = chunk.toString('utf8');
       logStream.write(text);
       stdoutBuffer += text;
@@ -293,6 +313,7 @@ export class KimiCliAdapter {
 
     child.stderr.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
+      request.durableLifecycle?.observeStderr(chunk.byteLength);
       const text = chunk.toString('utf8');
       stderrText += text;
       logStream.write(text);
@@ -434,7 +455,7 @@ export class KimiCliAdapter {
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
       emit({ type: 'agent_complete', data: null });
-      return {
+      const result: AgentEngineRunResult = {
         runId,
         sessionId: request.sessionId,
         engine: 'kimi_code',
@@ -445,6 +466,8 @@ export class KimiCliAdapter {
         error: message,
         failure: failureDiagnostics,
       };
+      await request.durableLifecycle?.finish(result, true);
+      return result;
     }
 
     const assistantMessage: Message = {
@@ -502,7 +525,7 @@ export class KimiCliAdapter {
       updatedAt: completedAt,
     }, { allowEngineUpdate: true });
 
-    return {
+    const result: AgentEngineRunResult = {
       runId,
       sessionId: request.sessionId,
       engine: 'kimi_code',
@@ -511,6 +534,8 @@ export class KimiCliAdapter {
       logPath,
       exitCode,
     };
+    await request.durableLifecycle?.finish(result, Boolean(finalText));
+    return result;
   }
 }
 

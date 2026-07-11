@@ -58,6 +58,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Block release without fresh Stability evidence
+        run: npm run check:provider-runtime-release-evidence -- --mode full
+
+      - name: Freeze Stability release evidence
+        if: matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stability-release-evidence-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            docs/perf/long-session-gold-latest.json
+            docs/stability/tool-cancel-smoke-latest.json
+            docs/stability/agent-runtime-app-host-smoke-latest.json
+            docs/capabilities/provider-runtime-live-smoke-ledger.json
+
       # 用预编译二进制装 tauri-cli，避免 `cargo install` 从源码编译（实测 ~9m40s）。
       # 版本与原来一致(2.10.1)；taiki-e/install-action 拉官方 release 预编译包，~20s。
       - name: Install Tauri CLI (arm64, prebuilt)
@@ -416,6 +432,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Block release without fresh Stability evidence
+        run: npm run check:provider-runtime-release-evidence -- --mode full
 
       - name: Install Tauri CLI (prebuilt)
         uses: taiki-e/install-action@v2

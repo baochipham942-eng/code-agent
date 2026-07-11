@@ -1,11 +1,12 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import { existsSync, mkdtempSync } from 'fs';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { chromium, type Browser, type Page } from 'playwright';
 import {
   finishWithError,
   getNumberOption,
+  getStringOption,
   hasFlag,
   parseArgs,
   printJson,
@@ -48,6 +49,11 @@ interface DevAgentLoopStubStatus {
 }
 
 const UI_CANCEL_PROMPT = 'agent-runtime-ui-cancel-smoke-hold-run';
+const DEFAULT_REPORT_PATH = 'docs/stability/agent-runtime-app-host-smoke-latest.json';
+
+function gitHead(): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).trim();
+}
 
 function usage(): void {
   console.log(`Agent Runtime app-host smoke
@@ -60,6 +66,7 @@ Options:
   --keep-browser  Keep the Chrome process open after the smoke.
   --keep-server   Keep the app-host server process open after the smoke.
   --port <port>   App-host port. Default: auto.
+  --out <path>    Structured evidence path. Default: ${DEFAULT_REPORT_PATH}.
   --json          Print JSON only.
   --help          Show this help.
 
@@ -544,6 +551,8 @@ async function main(): Promise<void> {
     return;
   }
 
+  const reportPath = resolve(process.cwd(), getStringOption(args, 'out') || DEFAULT_REPORT_PATH);
+
   await ensureBuild(hasFlag(args, 'skip-build'));
 
   const appPort = getNumberOption(args, 'port') || await getFreePort();
@@ -616,7 +625,25 @@ async function main(): Promise<void> {
     }
 
     const result = {
-      ok: failures.length === 0,
+      schemaVersion: 1,
+      smoke: 'agent-runtime-app-host',
+      generatedAt: new Date().toISOString(),
+      gitHead: gitHead(),
+      passed: failures.length === 0,
+      scenarios: {
+        RunRegistry: {
+          passed: uiCancel.stubCreated && uiCancel.stubCancelled && uiCancel.cancelToRunReleaseMs !== null
+            && uiCancel.cancelToRunReleaseMs <= 1_000,
+          durationMs: uiCancel.cancelToRunReleaseMs ?? -1,
+          terminalCleanup: uiCancel.stubCancelled && uiCancel.releasedAt !== null,
+        },
+        rendererStop: {
+          passed: uiCancel.runIntercepted && uiCancel.stopButtonVisible && uiCancel.stopButtonHiddenAfterCancel
+            && uiCancel.cancelToUiCleanupMs !== null && uiCancel.cancelToUiCleanupMs <= 1_000,
+          durationMs: uiCancel.cancelToUiCleanupMs ?? -1,
+          terminalCleanup: uiCancel.stopButtonHiddenAfterCancel,
+        },
+      },
       appHost: {
         baseUrl,
         serverRunning: appHost.child.exitCode === null,
@@ -645,6 +672,17 @@ async function main(): Promise<void> {
       consoleErrors,
       failures,
     };
+    result.passed = result.passed
+      && Object.values(result.scenarios).every((scenario) => scenario.passed && scenario.terminalCleanup);
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, `${JSON.stringify({
+      schemaVersion: result.schemaVersion,
+      smoke: result.smoke,
+      generatedAt: result.generatedAt,
+      gitHead: result.gitHead,
+      passed: result.passed,
+      scenarios: result.scenarios,
+    }, null, 2)}\n`);
 
     if (hasFlag(args, 'json')) {
       printJson(result);
@@ -679,7 +717,7 @@ async function main(): Promise<void> {
       }
     }
 
-    if (failures.length > 0) {
+    if (!result.passed) {
       process.exit(1);
     }
   } finally {

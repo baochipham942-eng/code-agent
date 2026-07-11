@@ -534,6 +534,7 @@ describe('macOS release fail-closed gates', () => {
     const prepareBundledNode = readRepoFile('scripts/prepare-bundled-node.mjs');
     const cleanBundleApps = readRepoFile('scripts/tauri-clean-bundle-apps.sh');
     const tauriInstall = readRepoFile('scripts/tauri-install.sh');
+    const tauriNotarize = readRepoFile('scripts/tauri-notarize.sh');
 
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages?.['']?.version).toBe(packageJson.version);
@@ -567,6 +568,8 @@ describe('macOS release fail-closed gates', () => {
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');
+    expect(releaseBundle).toContain('force_resign="${3:-0}"');
+    expect(releaseBundle).toContain('sign_nested_binary "${nested}" "1" "${force_resign}"');
     expect(releaseBundle).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
     expect(releaseBundle).toContain('DMG_FINDER_STYLE="${DMG_FINDER_STYLE:-1}"');
     expect(releaseBundle).toContain('create_installer_dmg()');
@@ -585,6 +588,12 @@ describe('macOS release fail-closed gates', () => {
     expect(tauriInstall).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
     expect(prepareBundledNode).toContain("execFileSync('xattr', ['-cr', outputRoot]");
     expect(prepareBundledNode).toContain('rewriteFileWithoutExtendedAttributes(outputBin, 0o755)');
+    expect(tauriNotarize).toContain('rebuild_dmg_with_stapled_app()');
+    expect(tauriNotarize).toContain('ditto "${app_path}" "${mountpoint}/${app_name}"');
+    expect(tauriNotarize).toContain('rebuild_dmg_with_stapled_app "${dmg_path}" "${APP_PATH}"');
+    expect(tauriNotarize.indexOf('xcrun stapler staple "${APP_PATH}"')).toBeLessThan(
+      tauriNotarize.lastIndexOf('submit_dmg "${dmg_path}"'),
+    );
   });
 
   it('bundles Sharp runtime while keeping optional browser and audio runtimes out of Tauri resources', () => {

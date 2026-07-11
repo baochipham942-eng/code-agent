@@ -250,6 +250,7 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
   sign_nested_binary() {
     local target="$1"
     local use_entitlements="$2"
+    local force_resign="${3:-0}"
 
     # Skip non-darwin .node files (PE32 win32 / ELF linux prebuilds also ship).
     if ! file "${target}" 2>/dev/null | grep -q "Mach-O"; then
@@ -258,7 +259,8 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
 
     # Skip files already signed with a Developer ID Application certificate
     # (avoids re-signing Tauri's own outputs and the Rust binary).
-    if codesign -dvv "${target}" 2>&1 | grep -q "Authority=Developer ID Application:"; then
+    if [[ "${force_resign}" != "1" ]] \
+      && codesign -dvv "${target}" 2>&1 | grep -q "Authority=Developer ID Application:"; then
       return 0
     fi
 
@@ -283,9 +285,17 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
     done < <(find "${app_path}" \( -name "*.node" -o -name "*.dylib" -o -name "*.so" \) -type f -print0)
 
     # Pass 2: standalone executable helpers (need entitlements + hardened runtime).
-    # Enumerated by basename - these are the helpers known to ship unsigned.
+    # Enumerated by basename. The bundled Node binary must always be re-signed
+    # with our app identity even though the upstream archive already carries a
+    # Node.js Foundation Developer ID signature. A fresh install otherwise has
+    # to validate a second team identity before dyld can start Node, which can
+    # stall the desktop health check when Gatekeeper ticket lookup is slow.
     while IFS= read -r -d '' nested; do
-      sign_nested_binary "${nested}" "1"
+      force_resign=0
+      if [[ "${nested}" == */dist/bundled-node/bin/node ]]; then
+        force_resign=1
+      fi
+      sign_nested_binary "${nested}" "1" "${force_resign}"
     done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" -o -name "vision-tagger" -o -name "vision-ocr" -o -name "rtk" -o -name "uv" -o -path "*/dist/bundled-node/bin/node" \) -print0)
 
     echo "[tauri-release-bundle] re-signing .app shell: ${app_path}"

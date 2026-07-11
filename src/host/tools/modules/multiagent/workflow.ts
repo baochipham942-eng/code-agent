@@ -2,7 +2,7 @@
 // workflow —— dynamic-workflow 命令式脚本运行时的命令层入口（P1 收尾 ②）
 //
 // 模型当场写的 JS 编排脚本经 script 参数到这里：本工具把 protocol ToolContext 桥接成
-// scriptRuntime 需要的宿主依赖（ScriptRunHostDeps），调 startRun 在受限 worker 沙箱跑脚本。
+// scriptRuntime 需要的宿主依赖（ScriptRunHostDeps），调 startRun 在独立受限子进程跑脚本。
 //
 // 关键接线（与 spawnAgent 同源）：
 //   - baseModelConfig      = ctx.modelConfig（主 agent 当前已解析的 ModelConfig，含 apiKey）
@@ -44,6 +44,11 @@ import {
   recordLongTaskRecoveryProposal,
 } from '../../../handoff/longTaskRecoveryProposal';
 import { workflowSchema } from './workflow.schema';
+import {
+  cleanupAgentWorktree,
+  createAgentWorktree,
+  discardAgentWorktree,
+} from '../../../agent/agentWorktree';
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
 function isAbort(ctx: ToolContext, err: unknown): boolean {
@@ -181,7 +186,7 @@ async function runWorkflow(
         }
         return resolved;
       },
-      deriveSubagentContext: ({ agentId, modelConfig, signal }): SubagentContext => ({
+      deriveSubagentContext: ({ agentId, modelConfig, signal, capabilities, workspace }): SubagentContext => ({
         modelConfig,
         toolResolver: legacyCtx.resolver as ToolResolver,
         // 干净 toolContext：注入 per-agent agentId + per-call modelConfig；显式清空会话/历史承载字段
@@ -191,6 +196,9 @@ async function runWorkflow(
           ...legacyCtx,
           agentId,
           modelConfig,
+          ...(workspace
+            ? { workingDirectory: workspace.cwd, workspace: workspace.workspace }
+            : {}),
           // child-scoped signal 也要覆写到 toolContext（Codex R3）：否则下游工具读 toolContext.abortSignal
           // 会拿到 legacyCtx 带下来的父级 signal，绕过 child-scoped cancel/timeout，与 SubagentContext.abortSignal 不一致。
           abortSignal: signal,
@@ -202,10 +210,49 @@ async function runWorkflow(
         } as SubagentContext['toolContext'],
         abortSignal: signal,
         executionAgentId: agentId,
+        worktreePath: workspace?.cwd,
+        capabilityManifest: capabilities,
         hookManager: legacyCtx.hookManager,
       }),
       // 三档工具策略：readonly(默认) / edit / full，模型经 agent({tools}) 按 agent 选档。
       resolveAgentTools: (profile) => resolveToolProfile(profile),
+      prepareAgentWorkspace: async ({ agentId, signal }) => {
+        if (signal.aborted) throw new Error('run aborted before worktree creation');
+        const repoPath = legacyCtx.workingDirectory;
+        const info = await createAgentWorktree(agentId, repoPath);
+        if (signal.aborted) {
+          await discardAgentWorktree(agentId, info.worktreePath, repoPath);
+          throw new Error('run aborted during worktree creation');
+        }
+        return {
+          cwd: info.worktreePath,
+          workspace: info.worktreePath,
+          repoPath,
+          branchName: info.branchName,
+          baseCommit: info.baseCommit,
+        };
+      },
+      finishAgentWorkspace: async ({ agentId, workspace, outcome }) => {
+        if (outcome === 'cancelled') {
+          await discardAgentWorktree(agentId, workspace.cwd, workspace.repoPath);
+          return { status: 'discarded', branchName: workspace.branchName };
+        }
+        const cleanup = await cleanupAgentWorktree(
+          agentId,
+          workspace.cwd,
+          workspace.repoPath,
+          workspace.baseCommit,
+        );
+        return cleanup.hasChanges
+          ? {
+              status: 'preserved',
+              cwd: cleanup.worktreePath,
+              branchName: cleanup.branchName,
+              changedFiles: cleanup.changedFiles?.map((file) => file.path),
+              diffSummary: cleanup.diffSummary,
+            }
+          : { status: 'cleaned', branchName: cleanup.branchName };
+      },
       signal: ctx.abortSignal,
       emit: (event: ScriptRunEvent) => {
         // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
@@ -258,6 +305,7 @@ async function runWorkflow(
         meta: {
           runId, status: state.status, agentCallCount: state.agentCallCount,
           tokensSpent: state.tokensSpent, cacheHits: state.cacheHits, phases: state.phases,
+          handoffs: state.handoffs,
           ...(resumeFromRunId ? { resumeFromRunId } : {}),
         },
       };
@@ -288,6 +336,7 @@ async function runWorkflow(
       meta: {
         runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent,
         cacheHits: state.cacheHits, phases: state.phases,
+        handoffs: state.handoffs,
         ...(resumeFromRunId ? { resumeFromRunId } : {}),
       },
     };

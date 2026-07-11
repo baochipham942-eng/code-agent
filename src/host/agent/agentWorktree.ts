@@ -32,10 +32,32 @@ const WORKTREE_TIMEOUT = 30_000;
 const WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees');
 const MAX_WORKTREE_DIFF_CHARS = 20_000;
 const MAX_AGENT_REF_COMPONENT_BYTES = 120;
+const ROLE_DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
+  coder: 'worktree',
+  explorer: 'none',
+  reviewer: 'none',
+  planner: 'none',
+  awaiter: 'none',
+};
+
+export function resolveAgentWorktreeIsolation(input: {
+  tools: string[];
+  role?: string;
+  explicit?: string;
+}): 'worktree' | 'none' {
+  if (input.explicit === 'worktree') return 'worktree';
+  if (input.tools.some((tool) => ['Write', 'Edit', 'Bash'].includes(tool))) {
+    return 'worktree';
+  }
+  const roleDefault = ROLE_DEFAULT_ISOLATION[input.role ?? ''];
+  if (roleDefault) return roleDefault;
+  return 'none';
+}
 
 export interface WorktreeInfo {
   worktreePath: string;
   branchName: string;
+  baseCommit: string;
 }
 
 export interface WorktreeCleanupResult {
@@ -43,6 +65,8 @@ export interface WorktreeCleanupResult {
   branchName: string;
   /** If changes exist, the worktree path is preserved */
   worktreePath?: string;
+  changedFiles?: AgentTreeChangedFile[];
+  diffSummary?: string;
 }
 
 const worktreeArtifacts = new Map<string, AgentWorktreeArtifact>();
@@ -245,7 +269,12 @@ export async function createAgentWorktree(
   // Determine base: explicit param or current HEAD
   const base = baseBranch || 'HEAD';
 
-  const cmd = `git worktree add -b '${branchName}' '${worktreePath}' '${base}'`;
+  const { stdout: baseCommitOutput } = await execAsync(
+    `git rev-parse ${shellQuote(base)}`,
+    { cwd: repoPath, timeout: WORKTREE_TIMEOUT },
+  );
+  const baseCommit = baseCommitOutput.trim();
+  const cmd = `git worktree add -b ${shellQuote(branchName)} ${shellQuote(worktreePath)} ${shellQuote(baseCommit)}`;
   logger.info(`[${agentId}] Creating worktree: ${cmd}`);
 
   try {
@@ -274,7 +303,7 @@ export async function createAgentWorktree(
   // 重新 npm install。best-effort：任一 symlink 失败只记 warning，不让 worktree 创建失败。
   await shareGitignoredDirs(agentId, repoPath, worktreePath);
 
-  return { worktreePath, branchName };
+  return { worktreePath, branchName, baseCommit };
 }
 
 /**
@@ -349,7 +378,8 @@ async function shareGitignoredDirs(
 export async function cleanupAgentWorktree(
   agentId: string,
   worktreePath: string,
-  repoPath: string
+  repoPath: string,
+  baseCommit?: string,
 ): Promise<WorktreeCleanupResult> {
   const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
 
@@ -361,12 +391,22 @@ export async function cleanupAgentWorktree(
     );
 
     // Check diff against the parent branch point
+    const diffBase = baseCommit ? shellQuote(baseCommit) : 'HEAD';
     const { stdout: diffOutput } = await execAsync(
-      `git -C '${worktreePath}' diff HEAD --stat 2>/dev/null || true`,
+      `git -C ${shellQuote(worktreePath)} diff ${diffBase} --stat 2>/dev/null || true`,
       { timeout: WORKTREE_TIMEOUT }
     );
 
-    const hasChanges = statusOutput.trim().length > 0 || diffOutput.trim().length > 0;
+    const { stdout: commitCountOutput } = baseCommit
+      ? await execAsync(
+        `git -C ${shellQuote(worktreePath)} rev-list --count ${shellQuote(baseCommit)}..HEAD`,
+        { timeout: WORKTREE_TIMEOUT },
+      )
+      : { stdout: '0' };
+
+    const hasChanges = statusOutput.trim().length > 0
+      || diffOutput.trim().length > 0
+      || Number.parseInt(commitCountOutput.trim(), 10) > 0;
 
     if (!hasChanges) {
       // No changes — clean up
@@ -388,7 +428,7 @@ export async function cleanupAgentWorktree(
         diffSummary: '',
       });
       logger.info(`[${agentId}] Worktree cleaned up (no changes)`);
-      return { hasChanges: false, branchName };
+      return { hasChanges: false, branchName, changedFiles: [], diffSummary: '' };
     }
 
     // Has changes — capture a patch safety net, then preserve worktree for
@@ -410,7 +450,13 @@ export async function cleanupAgentWorktree(
       evidenceRefs: [makeWorktreeEvidenceRef(agentId, worktreePath, 'diff')],
     });
     logger.info(`[${agentId}] Worktree preserved (has changes) at ${worktreePath}`);
-    return { hasChanges: true, branchName, worktreePath };
+    return {
+      hasChanges: true,
+      branchName,
+      worktreePath,
+      changedFiles: parseGitStatusPorcelain(statusOutput),
+      diffSummary: diffOutput.trim(),
+    };
   } catch (err) {
     logger.warn(`[${agentId}] Worktree cleanup error:`, err);
     // On error, try force removal to avoid leaked worktrees
@@ -435,6 +481,36 @@ export async function cleanupAgentWorktree(
     });
     return { hasChanges: false, branchName };
   }
+}
+
+/**
+ * Cancel 路径专用：不保留临时 worktree，也不生成可能携带凭据的 checkpoint patch。
+ * 只删除本 agent 的 worktree/branch，永不 merge 或触碰主工作区内容。
+ */
+export async function discardAgentWorktree(
+  agentId: string,
+  worktreePath: string,
+  repoPath: string,
+): Promise<void> {
+  const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
+  await execAsync(
+    `git worktree remove --force ${shellQuote(worktreePath)}`,
+    { cwd: repoPath, timeout: WORKTREE_TIMEOUT },
+  );
+  await execAsync(
+    `git branch -D ${shellQuote(branchName)}`,
+    { cwd: repoPath, timeout: WORKTREE_TIMEOUT },
+  ).catch(() => undefined);
+  if (fs.existsSync(worktreePath)) {
+    throw new Error(`Failed to remove cancelled agent worktree: ${worktreePath}`);
+  }
+  recordWorktreeArtifact(agentId, {
+    status: 'cleaned',
+    branch: branchName,
+    repoPath,
+    changedFiles: [],
+    diffSummary: '',
+  });
 }
 
 /**

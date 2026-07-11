@@ -9,7 +9,11 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createAgentWorktree } from '../../../src/host/agent/agentWorktree';
+import {
+  cleanupAgentWorktree,
+  createAgentWorktree,
+  discardAgentWorktree,
+} from '../../../src/host/agent/agentWorktree';
 
 function git(repo: string, args: string): void {
   execSync(`git ${args}`, {
@@ -122,5 +126,46 @@ describe('AgentWorktree symlink sharing (real git)', () => {
     const info = await createAgentWorktree(agentId, repo);
     createdWorktrees.push(info.worktreePath);
     expect(fs.existsSync(path.join(info.worktreePath, 'README.md'))).toBe(true);
+  });
+
+  it('two writers never receive the same worktree', async () => {
+    const first = await createAgentWorktree(`writer-a-${Date.now()}`, repo);
+    const second = await createAgentWorktree(`writer-b-${Date.now()}`, repo);
+    createdWorktrees.push(first.worktreePath, second.worktreePath);
+    expect(first.worktreePath).not.toBe(second.worktreePath);
+    expect(first.branchName).not.toBe(second.branchName);
+  });
+
+  it('cancel discards a dirty temporary worktree and branch', async () => {
+    const agentId = `cancel-writer-${Date.now()}`;
+    const info = await createAgentWorktree(agentId, repo);
+    createdWorktrees.push(info.worktreePath);
+    fs.writeFileSync(path.join(info.worktreePath, 'cancelled.txt'), 'discard me');
+
+    await discardAgentWorktree(agentId, info.worktreePath, repo);
+
+    expect(fs.existsSync(info.worktreePath)).toBe(false);
+    const list = execSync('git worktree list --porcelain', { cwd: repo, encoding: 'utf8' });
+    expect(list).not.toContain(info.worktreePath);
+  });
+
+  it('preserves committed writer changes for explicit handoff', async () => {
+    const agentId = `committed-writer-${Date.now()}`;
+    const info = await createAgentWorktree(agentId, repo);
+    createdWorktrees.push(info.worktreePath);
+    fs.writeFileSync(path.join(info.worktreePath, 'committed.txt'), 'handoff');
+    git(info.worktreePath, 'add committed.txt');
+    git(info.worktreePath, 'commit -q -m writer-change');
+
+    const cleanup = await cleanupAgentWorktree(
+      agentId,
+      info.worktreePath,
+      repo,
+      info.baseCommit,
+    );
+
+    expect(cleanup.hasChanges).toBe(true);
+    expect(cleanup.worktreePath).toBe(info.worktreePath);
+    expect(fs.existsSync(info.worktreePath)).toBe(true);
   });
 });

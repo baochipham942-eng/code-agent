@@ -27,6 +27,13 @@ import type { BudgetTracker } from './budget';
 import { validateForcedSchema } from './scriptValidator';
 import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunCallRecord, ScriptRunEvent } from './types';
 import type { WriteGate } from './writeGate';
+import {
+  capabilityManifestForToolProfile,
+  type CapabilityManifest,
+} from './capabilityManifest';
+import type { ToolProfile } from './toolProfiles';
+import type { AgentWorkspaceHandoff, AgentWorkspaceLease } from './types';
+import { redactSecrets } from '../../security/secretRedaction';
 
 const STRUCTURED_OUTPUT_TOOL = 'structured_output';
 
@@ -37,7 +44,7 @@ const RESULT_PREVIEW_CHARS = 200;
 /** 把任意原语结果压成短预览：字符串直接截断，对象 JSON 序列化后截断。 */
 function previewResult(result: PrimitiveResult): string {
   const text = typeof result === 'string' ? result : safeStringify(result);
-  return truncate(text, RESULT_PREVIEW_CHARS);
+  return truncate(redactSecrets(text), RESULT_PREVIEW_CHARS);
 }
 
 function safeStringify(value: unknown): string {
@@ -117,12 +124,31 @@ export interface ScriptRunContext {
   /** 解析 per-call model override → 完整 ModelConfig（含 apiKey/baseUrl）。命令层持有 configService/settings。 */
   resolveModelConfig: (override?: { provider: string; model: string }) => ModelConfig;
   /** 为一次 full-agent 调用派生隔离的干净 SubagentContext（不灌历史）。命令层持有 toolResolver/toolContext。 */
-  deriveSubagentContext: (args: { agentId: string; modelConfig: ModelConfig; signal: AbortSignal }) => SubagentContext;
+  deriveSubagentContext: (args: {
+    agentId: string;
+    modelConfig: ModelConfig;
+    signal: AbortSignal;
+    capabilities: Readonly<CapabilityManifest>;
+    workspace?: AgentWorkspaceLease;
+  }) => SubagentContext;
   /** 把 agent({tools}) 的档名解析成工具白名单 + 是否写能力（命令层注入分档策略）。 */
   resolveAgentTools: (profile?: string) => { tools: string[]; writeCapable: boolean };
-  /** 并行写护栏共享状态：在途写 agent 数 + 是否已告警（每 run 只告警一次）。 */
+  /** write-capable agent 的强制 worktree provisioner；缺失时 fail-closed。 */
+  prepareAgentWorkspace?: (input: {
+    agentId: string;
+    capabilities: Readonly<CapabilityManifest>;
+    signal: AbortSignal;
+  }) => Promise<AgentWorkspaceLease>;
+  /** completed 产出 handoff；cancel 必须 discard 临时 worktree。 */
+  finishAgentWorkspace?: (input: {
+    agentId: string;
+    workspace: AgentWorkspaceLease;
+    outcome: 'completed' | 'failed' | 'cancelled';
+  }) => Promise<Omit<AgentWorkspaceHandoff, 'agentId'>>;
+  handoffs: AgentWorkspaceHandoff[];
+  /** writer 并发观测兼容字段；实际隔离由 per-agent worktree 提供。 */
   writeGuard: { inFlight: number; warned: boolean };
-  /** 写能力 agent 共用同一工作树时必须串行，避免并行 Edit/Write/Bash 互相覆盖。 */
+  /** 旧路径兼容端口；process sandbox 默认 writer path 不再使用。 */
   writeGate: WriteGate;
   /** run 级取消信号。 */
   signal: AbortSignal;
@@ -174,7 +200,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       data: {
         agentId, label, provider, model: modelConfig.model,
         hasSchema: !!call.options?.schema, phase: call.options?.phase,
-        promptPreview: truncate(call.prompt, PROMPT_PREVIEW_CHARS),
+        promptPreview: truncate(redactSecrets(call.prompt), PROMPT_PREVIEW_CHARS),
         cached: true,
       },
     });
@@ -207,7 +233,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       hasSchema: !!call.options?.schema,
       // 进度树分组 + 显示「这个子 agent 在做什么」。phase 归属用 options.phase（脚本声明的所属阶段）。
       phase: call.options?.phase,
-      promptPreview: truncate(call.prompt, PROMPT_PREVIEW_CHARS),
+      promptPreview: truncate(redactSecrets(call.prompt), PROMPT_PREVIEW_CHARS),
     },
   });
 
@@ -231,42 +257,63 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       result = forced.value as PrimitiveResult;
     } else {
       const { tools, writeCapable } = ctx.resolveAgentTools(call.options?.tools);
-      // 写能力 agent 共享同一工作树时必须串行。检测到并发写仍告警一次，让进度树解释排队原因；
-      // 后续若做 per-agent worktree/subpath lock，可替换这个 gate。
-      if (writeCapable && ctx.writeGuard.inFlight >= 1 && !ctx.writeGuard.warned) {
-        ctx.writeGuard.warned = true;
-        ctx.emit({
-          runId: ctx.runId,
-          type: 'run:log',
-          ts: ctx.now(),
-          data: {
-            message:
-              '⚠️ 检测到多个写 agent 共享同一工作树，已串行执行以避免互相覆盖；需要真实并行写时请拆分子路径或启用 worktree 隔离',
-          },
-        });
+      const profile = (call.options?.tools ?? 'readonly') as ToolProfile;
+      const capabilities = capabilityManifestForToolProfile(profile);
+      if (writeCapable && (!ctx.prepareAgentWorkspace || !ctx.finishAgentWorkspace)) {
+        throw new Error('write-capable workflow agent requires an isolated worktree provider');
       }
-      const releaseWrite = writeCapable ? await ctx.writeGate.acquire(ctx.signal) : undefined;
+      const workspace = writeCapable
+        ? await ctx.prepareAgentWorkspace!({ agentId, capabilities, signal: ctx.signal })
+        : undefined;
       if (writeCapable) ctx.writeGuard.inFlight++;
+      let workspaceOutcome: 'completed' | 'failed' | 'cancelled' = 'failed';
       try {
         const sub = await executor.execute(
           call.prompt,
           { name: call.options?.agentType ?? 'workflow-agent', systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT, availableTools: tools },
-          ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal }),
+          ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal, capabilities, workspace }),
         );
         actualTokens = sub.tokensUsed ?? 0; // 成功或失败（return-style）都已消耗，先记账
         if (!sub.success) {
+          workspaceOutcome = ctx.signal.aborted ? 'cancelled' : 'failed';
           throw new Error(sub.error ?? `子 agent 执行失败（${sub.cancellationReason ?? 'unknown'}）`);
         }
+        workspaceOutcome = 'completed';
         result = sub.output;
       } catch (e) {
         // execute() 真抛异常（provider 产出部分 output 后崩）时也可能已消耗 token，从 error 上取回
         // （subagentExecutor 最外层 catch 把 outputTokensUsed 挂上）以免漏计（Codex R2 MED#4）。
         const carried = (e as { tokensUsed?: number } | null)?.tokensUsed;
         if (typeof carried === 'number') actualTokens = carried;
+        if (ctx.signal.aborted) workspaceOutcome = 'cancelled';
         throw e;
       } finally {
         if (writeCapable) ctx.writeGuard.inFlight--;
-        releaseWrite?.();
+        if (workspace) {
+          try {
+            const handoff = await ctx.finishAgentWorkspace!({ agentId, workspace, outcome: workspaceOutcome });
+            ctx.handoffs.push({ agentId, ...handoff });
+            if (handoff.status === 'preserved') {
+              ctx.emit({
+                runId: ctx.runId,
+                type: 'run:log',
+                ts: ctx.now(),
+                data: {
+                  message: `writer ${agentId} changes preserved for review on ${handoff.branchName}`,
+                  handoff: { agentId, ...handoff },
+                },
+              });
+            }
+          } catch (error) {
+            ctx.handoffs.push({
+              agentId,
+              status: 'error',
+              branchName: workspace.branchName,
+              cwd: workspace.cwd,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       }
     }
     ctx.emit({
@@ -283,7 +330,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       runId: ctx.runId,
       type: 'agent:error',
       ts: ctx.now(),
-      data: { agentId, label, error: err instanceof Error ? err.message : String(err) },
+      data: { agentId, label, error: redactSecrets(err instanceof Error ? err.message : String(err)) },
     });
     throw err;
   } finally {

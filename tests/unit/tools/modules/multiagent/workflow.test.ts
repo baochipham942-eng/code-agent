@@ -185,6 +185,35 @@ describe('workflow tool', () => {
     expect(tc.agentId).toBe('a1');
   });
 
+  it('pins a writer child to its isolated worktree workspace and cwd', async () => {
+    await run({ script: 'return 1' });
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    const signal = new AbortController().signal;
+    const sub = deps.deriveSubagentContext({
+      agentId: 'writer-a1',
+      modelConfig: { ...BASE_MODEL },
+      signal,
+      capabilities: {
+        fileRead: true,
+        fileWrite: true,
+        shell: false,
+        network: true,
+        credential: false,
+        childProcess: false,
+      },
+      workspace: {
+        cwd: '/tmp/writer-a1',
+        workspace: '/tmp/writer-a1',
+        repoPath: '/repo',
+        branchName: 'agent/writer-a1',
+      },
+    });
+    expect(sub.worktreePath).toBe('/tmp/writer-a1');
+    expect(sub.toolContext.workingDirectory).toBe('/tmp/writer-a1');
+    expect(sub.toolContext.workspace).toBe('/tmp/writer-a1');
+    expect(sub.capabilityManifest).toMatchObject({ fileWrite: true, credential: false });
+  });
+
   // ── LOW#3: 失败路径不发 completing 100% ──
   it('does not emit completing progress on failure', async () => {
     startRunMock.mockResolvedValue(completedState({ status: 'failed', error: 'bad', result: undefined }));

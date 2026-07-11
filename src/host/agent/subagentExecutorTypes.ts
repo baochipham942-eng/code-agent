@@ -7,6 +7,7 @@ import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { HookManager } from '../hooks/hookManager';
 import type { AgentMessage } from './spawnGuard';
 import type { ParentContext } from './childContext';
+import type { CapabilityManifest } from '../../shared/contract/agentCapabilities';
 
 export interface SubagentConfig {
   name: string;
@@ -94,6 +95,8 @@ export interface SubagentContext {
   parentRemainingBudget?: number;
   /** Worktree path if agent is running in an isolated git worktree */
   worktreePath?: string;
+  /** 该 child 实际获授的能力快照；只描述权限，不携带 credential 值。 */
+  capabilityManifest?: Readonly<CapabilityManifest>;
   /** Optional callback for lightweight context updates */
   onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
   /** HookManager for firing SubagentStart/Stop and TaskCreated/Completed events */

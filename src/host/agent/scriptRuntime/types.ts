@@ -2,7 +2,7 @@
 // scriptRuntime —— Claude Code 式 dynamic-workflow 命令式脚本运行时
 //
 // 模型当场写 JS 编排脚本（持有 loop/branch/中间变量）→ 受限沙箱后台执行 →
-// 扇出并行子 agent。本文件只放【可序列化纯数据类型】，worker 沙箱与主线程都可 import
+// 扇出并行子 agent。本文件只放【可序列化纯数据类型】，child sandbox 与 Host 都可 import
 // （类型在编译后擦除，不引入重运行时依赖）。带 ToolContext/Resolver 的运行期上下文
 // 放 agentBridge.ts / runService.ts，不在此处，避免污染 worker bundle。
 // ============================================================================
@@ -26,7 +26,7 @@ export interface AgentCallOptions {
   tools?: string;
 }
 
-/** worker 侧 agent() 调用 marshal 给主线程的载荷。 */
+/** child 侧 agent() 调用 marshal 给 Host 的载荷。 */
 export interface AgentCallPayload {
   prompt: string;
   options?: AgentCallOptions;
@@ -35,15 +35,32 @@ export interface AgentCallPayload {
 /** agent() 的返回：无 schema = 文本；有 schema = 校验过的对象。 */
 export type PrimitiveResult = string | Record<string, unknown>;
 
-// ── worker ⇄ main RPC 协议 ──────────────────────────────────────────────────
-// 不可信脚本跑在 worker；agent()/phase()/log() 是 RPC stub，序列化调用 → postMessage
-// → 主线程执行重活 → 回传。parallel()/pipeline() 不单独 RPC，由 worker 侧用
-// Promise 组合多个 agent RPC，真正的并发排队发生在主线程 concurrencyGate。
+export interface AgentWorkspaceLease {
+  cwd: string;
+  workspace: string;
+  repoPath: string;
+  branchName: string;
+  baseCommit?: string;
+}
+
+export interface AgentWorkspaceHandoff {
+  agentId: string;
+  status: 'cleaned' | 'preserved' | 'discarded' | 'error';
+  cwd?: string;
+  branchName: string;
+  changedFiles?: string[];
+  diffSummary?: string;
+  error?: string;
+}
+
+// ── child process ⇄ Host RPC 协议 ───────────────────────────────────────────
+// 不可信脚本跑在独立进程；agent()/phase()/log() 是 RPC stub。parallel()/pipeline()
+// 不单独 RPC，由 child 用 Promise 组合，真正的并发排队发生在 Host concurrencyGate。
 
 export type RpcKind = 'agent' | 'phase' | 'log';
 
 export interface RpcRequest {
-  /** worker 内自增调用 id，用于把响应配回对应的 pending promise。 */
+  /** child 内自增调用 id，用于把响应配回对应的 pending promise。 */
   id: number;
   kind: RpcKind;
   payload: AgentCallPayload | { title: string } | { message: string };
@@ -54,11 +71,11 @@ export interface RpcResponse {
   ok: boolean;
   result?: PrimitiveResult | null;
   error?: string;
-  /** agent 调用后回传的累计已花 outputTokens，worker 侧 budget.spent() 镜像据此更新。 */
+  /** agent 调用后回传的累计已花 outputTokens，child 侧 budget.spent() 镜像据此更新。 */
   spent?: number;
 }
 
-// 注：worker 的初始化/终态消息形状由 sandbox.ts 内联定义（workerData / WorkerDoneMessage）。
+// 注：child 的初始化/终态消息形状由 sandbox.ts 内联定义。
 // resumable（P4）的确定性 call-id 走「位置序 callCounter（声明序，单线程确定）+ prompt/opts 内容
 // hash」方案，不需要随机种子——故不再保留 WorkerInit.callIdSeed 这类前置空壳。
 
@@ -128,4 +145,6 @@ export interface ScriptRunState {
   /** resumable 命中缓存的 agent() 次数（0 = 未命中任何缓存 / 非 resume run）。供「resume 是否生效」观测。 */
   cacheHits: number;
   phases: string[];
+  /** writer worktree 的 merge/review 交接，不含自动 merge 动作。 */
+  handoffs?: AgentWorkspaceHandoff[];
 }

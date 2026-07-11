@@ -7,7 +7,7 @@
 //   - edit    ：readonly + Edit/Write（可改文件）
 //   - full    ：edit + Bash（可跑命令）
 // 模型脚本经 agent(prompt, { tools: 'edit' }) 按 agent 选档。写能力档（edit/full）会触发
-// 并行写护栏（多个写 agent 共享同一工作树时告警；真 worktree 隔离后续支持）。
+// write-capable profile 由 agentBridge 强制分配独立 worktree。
 // 工具名须与 protocol registry 注册名精确一致（PascalCase）。
 // ============================================================================
 

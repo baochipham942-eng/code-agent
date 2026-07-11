@@ -120,6 +120,7 @@ import {
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
   getAgentWorktreeKey,
+  resolveAgentWorktreeIsolation,
   getAgentWorktreeReview,
   listAgentWorktreeArtifacts,
   parseGitStatusPorcelain,
@@ -128,6 +129,20 @@ import {
 } from '../../../src/host/agent/agentWorktree';
 
 describe('AgentWorktree', () => {
+  describe('write-capable default isolation', () => {
+    it('defaults any Write/Edit/Bash-capable child to worktree', () => {
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'] })).toBe('worktree');
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Edit'] })).toBe('worktree');
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Bash'] })).toBe('worktree');
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Grep'] })).toBe('none');
+    });
+
+    it('keeps explicit readonly roles shared unless worktree is explicitly requested', () => {
+      expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'] })).toBe('none');
+      expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'], explicit: 'worktree' })).toBe('worktree');
+      expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read', 'Write'] })).toBe('worktree');
+    });
+  });
   beforeEach(() => {
     execState.reset();
     fsState.reset();

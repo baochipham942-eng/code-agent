@@ -54,7 +54,14 @@ import {
 } from '../../../shared/contract/agentFailure';
 import { isParentRunAlive } from '../orphanLiveness';
 import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
-import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../agentWorktree';
+import {
+  createAgentWorktree,
+  cleanupAgentWorktree,
+  cleanupOrphanedWorktrees,
+  discardAgentWorktree,
+  resolveAgentWorktreeIsolation,
+} from '../agentWorktree';
+import { capabilityManifestForTools } from '../scriptRuntime/capabilityManifest';
 import { aggregateTeamResults } from '../resultAggregator';
 import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../forkContext.js';
 import { validateNoCycles, detectCycles } from '../taskDag.js';
@@ -67,15 +74,6 @@ import {
   shouldActivateCoordinator,
   createCoordinatorSession,
 } from '../coordinatorMode';
-
-// Role-based default isolation: coder agents get worktree isolation by default
-const DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
-  coder: 'worktree',
-  explorer: 'none',
-  reviewer: 'none',
-  planner: 'none',
-  awaiter: 'none',
-};
 
 /**
  * spawn_agent / AgentSpawn 的执行入口（接 legacy ToolContext）
@@ -304,7 +302,9 @@ export async function executeSpawnAgent(
     let slotLease: { release: () => void } | undefined;
     let registeredWithGuard = false;
     let startedExecution: Promise<unknown> | undefined;
-    let worktreeInfo: { worktreePath: string; branchName: string } | undefined;
+    let worktreeInfo: { worktreePath: string; branchName: string; baseCommit: string } | undefined;
+    let worktreeFinalized = false;
+    let worktreeCleanupDelegated = false;
     const abortController = new AbortController();
     const parentAbortSignal = context.abortSignal;
     const abortFromParent = () => {
@@ -351,9 +351,11 @@ export async function executeSpawnAgent(
       cleanupOrphanedWorktrees(cwd).catch(() => {});
 
       // Worktree isolation: explicit param > role-based default > none
-      const effectiveIsolation = (params.isolation as string | undefined)
-        ?? DEFAULT_ISOLATION[role || '']
-        ?? 'none';
+      const effectiveIsolation = resolveAgentWorktreeIsolation({
+        tools,
+        role,
+        explicit: params.isolation as string | undefined,
+      });
       if (effectiveIsolation === 'worktree') {
         try {
           worktreeInfo = await createAgentWorktree(agentId, cwd);
@@ -429,6 +431,7 @@ export async function executeSpawnAgent(
         spawnGuardId: agentId,
         executionAgentId: agentId,
         worktreePath: worktreeInfo?.worktreePath,
+        capabilityManifest: capabilityManifestForTools(tools),
         hookManager: context.hookManager,
         parentContext,
         parentRemainingBudget: context.parentRemainingBudget,
@@ -475,11 +478,18 @@ export async function executeSpawnAgent(
         let worktreeNote = '';
         if (worktreeInfo) {
           const repoPath = context.workingDirectory || process.cwd();
-          const cleanup = await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath);
-          if (cleanup.hasChanges) {
-            worktreeNote = `\n- Worktree: preserved at ${cleanup.worktreePath} (branch: ${cleanup.branchName}) — review and merge changes`;
+          if (result.cancellationReason || abortController.signal.aborted) {
+            await discardAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath);
+            worktreeFinalized = true;
+            worktreeNote = '\n- Worktree: discarded after cancellation';
           } else {
-            worktreeNote = '\n- Worktree: auto-cleaned (no changes)';
+            const cleanup = await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath, worktreeInfo.baseCommit);
+            worktreeFinalized = true;
+            if (cleanup.hasChanges) {
+              worktreeNote = `\n- Worktree: preserved at ${cleanup.worktreePath} (branch: ${cleanup.branchName}) — review and merge changes`;
+            } else {
+              worktreeNote = '\n- Worktree: auto-cleaned (no changes)';
+            }
           }
         }
 
@@ -543,9 +553,14 @@ Stats:
           const wt = worktreeInfo;
           guard.onComplete(async (completedAgent) => {
             if (completedAgent.id === agentId) {
-              await cleanupAgentWorktree(agentId, wt.worktreePath, repoPath);
+              if (completedAgent.status === 'cancelled' || completedAgent.status === 'killed') {
+                await discardAgentWorktree(agentId, wt.worktreePath, repoPath);
+              } else {
+                await cleanupAgentWorktree(agentId, wt.worktreePath, repoPath, wt.baseCommit);
+              }
             }
           });
+          worktreeCleanupDelegated = true;
         }
 
         const isolationNote = worktreeInfo
@@ -570,12 +585,16 @@ Use wait_agent to block until done, or close_agent to cancel.`,
       if (!registeredWithGuard) {
         if (startedExecution) {
           abortController.abort('registration-failed');
-          void startedExecution.catch(() => undefined);
+          await startedExecution.catch(() => undefined);
         }
         slotLease?.release();
-        if (worktreeInfo) {
-          const repoPath = context.workingDirectory || process.cwd();
-          await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath).catch(() => {});
+      }
+      if (worktreeInfo && !worktreeFinalized && !worktreeCleanupDelegated) {
+        const repoPath = context.workingDirectory || process.cwd();
+        if (abortController.signal.aborted) {
+          await discardAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath).catch(() => {});
+        } else {
+          await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath, worktreeInfo.baseCommit).catch(() => {});
         }
       }
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';

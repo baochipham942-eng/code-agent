@@ -107,6 +107,18 @@ describe('worktree cleanup patch safety net (real git)', () => {
     expect(content).toContain('# reason: worktree-cleanup');
   });
 
+  it('does not persist a worktree checkpoint that contains credentials', async () => {
+    const agentId = `secret-${Date.now()}`;
+    const info = await createAgentWorktree(agentId, repo);
+    createdWorktrees.push(info.worktreePath);
+    fs.writeFileSync(path.join(info.worktreePath, '.env.example'), 'API_KEY=sk-secret-checkpoint-value\n');
+
+    const result = await cleanupAgentWorktree(agentId, info.worktreePath, repo);
+
+    expect(result.hasChanges).toBe(true);
+    expect(listPatches()).toEqual([]);
+  });
+
   it('cleanupOrphanedWorktrees：过期 worktree 有改动 → 导出 patch → worktree 被移除', async () => {
     const agentId = `orphan-${Date.now()}`;
     const info = await createAgentWorktree(agentId, repo);

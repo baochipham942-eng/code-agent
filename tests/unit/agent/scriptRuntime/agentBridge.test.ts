@@ -37,6 +37,17 @@ function makeCtx(budget: BudgetTracker = new BudgetTracker(null)): ScriptRunCont
     resolveModelConfig: () => modelConfig,
     deriveSubagentContext: () => ({}) as never,
     resolveAgentTools: (p?: string) => resolveToolProfile(p),
+    prepareAgentWorkspace: async ({ agentId }) => ({
+      cwd: `/tmp/worktrees/${agentId}`,
+      workspace: `/tmp/worktrees/${agentId}`,
+      repoPath: '/tmp/repo',
+      branchName: `agent/${agentId}`,
+    }),
+    finishAgentWorkspace: async ({ workspace }) => ({
+      status: 'cleaned',
+      branchName: workspace.branchName,
+    }),
+    handoffs: [],
     writeGuard: { inFlight: 0, warned: false },
     writeGate: new SerialWriteGate(),
     signal: new AbortController().signal,
@@ -210,6 +221,46 @@ describe('runAgentCall 进度事件 enrich（P3a 进度树）', () => {
 });
 
 describe('runAgentCall 工具分档 + 并行写护栏', () => {
+  it('places every write-capable call in a distinct worktree and returns handoff metadata', async () => {
+    const ctx = makeCtx();
+    const prepareAgentWorkspace = vi.fn(async ({ agentId }: { agentId: string }) => ({
+      cwd: `/tmp/worktrees/${agentId}`,
+      workspace: `/tmp/worktrees/${agentId}`,
+      repoPath: '/tmp/repo',
+      branchName: `agent/${agentId}`,
+    }));
+    const finishAgentWorkspace = vi.fn(async ({ agentId }: { agentId: string }) => ({
+      status: 'preserved' as const,
+      cwd: `/tmp/worktrees/${agentId}`,
+      branchName: `agent/${agentId}`,
+      changedFiles: ['src/change.ts'],
+    }));
+    ctx.prepareAgentWorkspace = prepareAgentWorkspace;
+    ctx.finishAgentWorkspace = finishAgentWorkspace;
+    ctx.deriveSubagentContext = ({ workspace }) => ({
+      toolContext: {
+        workingDirectory: workspace?.cwd,
+        workspace: workspace?.workspace,
+      },
+      worktreePath: workspace?.cwd,
+    }) as never;
+    executeMock.mockResolvedValue({ success: true, output: 'ok' });
+
+    await Promise.all([
+      runAgentCall({ prompt: 'writer one', options: { tools: 'edit' } }, ctx),
+      runAgentCall({ prompt: 'writer two', options: { tools: 'full' } }, ctx),
+    ]);
+
+    expect(prepareAgentWorkspace).toHaveBeenCalledTimes(2);
+    const workdirs = executeMock.mock.calls.map((call) => (
+      call[2] as { toolContext: { workingDirectory: string } }
+    ).toolContext.workingDirectory);
+    expect(new Set(workdirs).size).toBe(2);
+    expect(workdirs.every((cwd) => cwd.startsWith('/tmp/worktrees/'))).toBe(true);
+    expect(finishAgentWorkspace).toHaveBeenCalledTimes(2);
+    expect(ctx.handoffs).toHaveLength(2);
+  });
+
   it('defaults the full-agent path to readonly tools (no write tools)', async () => {
     const ctx = makeCtx();
     executeMock.mockResolvedValue({ success: true, output: 'ok' });
@@ -228,7 +279,7 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     expect(config.availableTools).not.toContain('Bash');
   });
 
-  it('warns once when a write-capable agent runs while another writer is in flight', async () => {
+  it('does not warn about shared writes because writers receive isolated worktrees', async () => {
     const ctx = makeCtx();
     ctx.writeGuard.inFlight = 1; // 模拟已有一个写 agent 在跑
     executeMock.mockResolvedValue({ success: true, output: 'ok' });
@@ -237,8 +288,8 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
       ([e]: [{ type: string; data?: { message?: string } }]) =>
         e.type === 'run:log' && /多个写 agent|串行执行|互相覆盖/.test(e.data?.message ?? ''),
     );
-    expect(warned).toBe(true);
-    expect(ctx.writeGuard.warned).toBe(true);
+    expect(warned).toBe(false);
+    expect(ctx.writeGuard.warned).toBe(false);
   });
 
   it('does not warn for readonly agents even when one is in flight', async () => {
@@ -249,7 +300,7 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     expect(ctx.writeGuard.warned).toBe(false);
   });
 
-  it('serializes write-capable agents that share the same worktree', async () => {
+  it('allows isolated write-capable agents to run concurrently', async () => {
     const ctx = makeCtx();
     const events: string[] = [];
     let releaseFirst: (() => void) | undefined;
@@ -271,22 +322,21 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     const first = runAgentCall({ prompt: 'first writer', options: { tools: 'edit' } }, ctx);
     await vi.waitFor(() => {
       expect(events).toEqual(['start:first writer']);
-      expect(ctx.writeGate.stats()).toMatchObject({ inFlight: 1 });
+      expect(ctx.writeGuard.inFlight).toBe(1);
     });
 
     const second = runAgentCall({ prompt: 'second writer', options: { tools: 'edit' } }, ctx);
-    await Promise.resolve();
-    expect(events).toEqual(['start:first writer']);
-    expect(ctx.writeGate.stats()).toMatchObject({ inFlight: 1, queued: 1 });
+    await vi.waitFor(() => expect(events).toContain('start:second writer'));
+    expect(ctx.writeGate.stats()).toMatchObject({ inFlight: 0, queued: 0 });
 
     releaseFirst?.();
     await expect(first).resolves.toBe('first done');
     await expect(second).resolves.toBe('second done');
     expect(events).toEqual([
       'start:first writer',
-      'finish:first writer',
       'start:second writer',
       'finish:second writer',
+      'finish:first writer',
     ]);
   });
 });

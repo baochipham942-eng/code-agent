@@ -25,6 +25,7 @@ const logger = createLogger('TaskPatchService');
 const GIT_TIMEOUT = NETWORK_TOOL_TIMEOUTS.GIT_OPERATION;
 // 单个 untracked 文件的 diff 缓冲上限；二进制大文件可能很大，给足空间避免 maxBuffer 抛错
 const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
+const PATCH_CREDENTIAL_PATTERN = /(?:\bsk-[A-Za-z0-9._-]{5,}|\bAIza[0-9A-Za-z_-]{20,}|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}|\b(?:api[-_]?key|token|secret|password|passwd|authorization|credential|private[-_]?key)\b\s*[=:]\s*\S+)/i;
 
 export type TaskPatchReason = 'cancel' | 'delete' | 'worktree-cleanup';
 
@@ -140,6 +141,13 @@ export async function captureWorkspacePatch(
     const patchBody = await collectWorkspacePatch(workingDir);
     if (!patchBody.trim()) {
       // 没有任何改动 — 不写空文件
+      return null;
+    }
+    if (PATCH_CREDENTIAL_PATTERN.test(patchBody)) {
+      logger.warn('Skipped workspace patch because it may contain credentials', {
+        taskId,
+        reason,
+      });
       return null;
     }
 

@@ -46,3 +46,11 @@ describe('handleRpc agent → spent', () => {
     expect(res.spent).toBe(21);
   });
 });
+
+describe('handleRpc credential redaction', () => {
+  it('redacts credentials before phase/log events leave the Host dispatcher', async () => {
+    const ctx = makeCtx(new BudgetTracker(1000));
+    await handleRpc({ id: 3, kind: 'log', payload: { message: 'Bearer abcdefghijklmnop' } }, ctx);
+    expect(JSON.stringify((ctx.emit as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('abcdefghijklmnop');
+  });
+});

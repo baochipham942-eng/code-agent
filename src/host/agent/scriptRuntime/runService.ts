@@ -1,7 +1,7 @@
 // ============================================================================
 // runService —— dynamic-workflow run 编排（主线程）
 //
-// 串起：宿主依赖 → ScriptRunContext → worker 沙箱 → RPC 泵送 → 事件/状态累积。
+// 串起：宿主依赖 → ScriptRunContext → process sandbox → RPC 泵送 → 事件/状态累积。
 // 多 run 隔离：每个 run 独立 AbortController + ConcurrencyGate + state，存于 activeRuns；
 // 不复用 swarm 的 SwarmEventEmitter（其单-active-run 假设会串 run，艾克斯审计）。
 // ============================================================================
@@ -13,10 +13,25 @@ import { captureWorkspacePatch } from '../../services/checkpoint/taskPatchServic
 import { ConcurrencyGate } from './concurrencyGate';
 import { BudgetTracker } from './budget';
 import { handleRpc } from './primitives';
-import { runScriptInWorker } from './sandbox';
+import { runScriptInSandbox } from './sandbox';
 import { SerialWriteGate } from './writeGate';
 import type { ScriptRunContext } from './agentBridge';
 import type { RunStatus, ScriptRunCallRecord, ScriptRunSpec, ScriptRunState, ScriptRunEvent } from './types';
+import { isSensitiveLogKey, redactSecrets } from '../../security/secretRedaction';
+
+function sanitizeWorkflowValue(value: unknown, key?: string, seen = new WeakSet<object>()): unknown {
+  if (key && isSensitiveLogKey(key)) return '***REDACTED***';
+  if (typeof value === 'string') return redactSecrets(value);
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+  const sanitized = Array.isArray(value)
+    ? value.map((item) => sanitizeWorkflowValue(item, undefined, seen))
+    : Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .map(([childKey, childValue]) => [childKey, sanitizeWorkflowValue(childValue, childKey, seen)]));
+  seen.delete(value);
+  return sanitized;
+}
 
 /**
  * resumable journal 网关（持久化解耦）：runService 只认这个接口，真实落地（SQLite）由命令层
@@ -54,10 +69,14 @@ export interface ScriptRunHostDeps {
   resolveModelConfig: ScriptRunContext['resolveModelConfig'];
   deriveSubagentContext: ScriptRunContext['deriveSubagentContext'];
   resolveAgentTools: ScriptRunContext['resolveAgentTools'];
+  prepareAgentWorkspace?: ScriptRunContext['prepareAgentWorkspace'];
+  finishAgentWorkspace?: ScriptRunContext['finishAgentWorkspace'];
   emit?: (event: ScriptRunEvent) => void;
   signal?: AbortSignal;
   /** resumable 持久化网关（缺省 = 不持久化、不重放）。 */
   journal?: ScriptRunJournal;
+  /** 仅测试/受限宿主注入；生产缺省保持 OS sandbox 开启。 */
+  useOsSandbox?: boolean;
 }
 
 interface ActiveRun {
@@ -139,7 +158,11 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
   const recordCall = journal
     ? (record: ScriptRunCallRecord): void => {
         try {
-          journal.onCallComplete({ runId: spec.runId, ...record });
+          journal.onCallComplete({
+            runId: spec.runId,
+            ...record,
+            result: sanitizeWorkflowValue(record.result) as ScriptRunCallRecord['result'],
+          });
         } catch {
           /* best-effort journal — 不抛 */
         }
@@ -155,6 +178,9 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     resolveModelConfig: deps.resolveModelConfig,
     deriveSubagentContext: deps.deriveSubagentContext,
     resolveAgentTools: deps.resolveAgentTools,
+    prepareAgentWorkspace: deps.prepareAgentWorkspace,
+    finishAgentWorkspace: deps.finishAgentWorkspace,
+    handoffs: [],
     writeGuard: { inFlight: 0, warned: false },
     writeGate: new SerialWriteGate(),
     signal: controller.signal,
@@ -205,32 +231,35 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       }
     }
 
-    const outcome = await runScriptInWorker({
+    const outcome = await runScriptInSandbox({
       script: spec.script,
       goal: spec.goal,
       budgetTotal: budget.total,
       signal: controller.signal,
       onRpc: (req) => handleRpc(req, ctx),
+      useOsSandbox: deps.useOsSandbox,
+      legacyWorkerFallback: process.env.CODE_AGENT_WORKFLOW_LEGACY_WORKER_FALLBACK === '1',
     });
 
     state.finishedAt = Date.now();
     state.agentCallCount = callCounter.count;
     state.tokensSpent = budget.spent();
     state.cacheHits = cacheHitCounter.count;
+    state.handoffs = ctx.handoffs.slice();
     // terminal emit 是观测层，且发生在权威结果已定之后——必须 best-effort（Codex round3 MED）：
     // run:done/run:error emit 抛错不得顶替 `return state`（否则成功 run 被 emit 错变成 reject、
     // 脚本真错被 emit 错盖掉）。run:start 的 fatal 合同保留不动（见 runService.test 既定契约）。
     if (outcome.ok) {
       state.status = 'completed';
-      state.result = outcome.result;
+      state.result = sanitizeWorkflowValue(outcome.result);
       try {
-        emit({ runId: spec.runId, type: 'run:done', ts: Date.now(), data: { result: outcome.result } });
+        emit({ runId: spec.runId, type: 'run:done', ts: Date.now(), data: { result: state.result } });
       } catch {
         /* 观测面非权威，不反噬权威结果 */
       }
     } else {
       state.status = controller.signal.aborted ? 'cancelled' : 'failed';
-      state.error = outcome.error;
+      state.error = outcome.error ? redactSecrets(outcome.error) : outcome.error;
       try {
         emit({
           runId: spec.runId,

@@ -64,6 +64,7 @@ function makeDeps(journal: ScriptRunJournal): ScriptRunHostDeps {
     resolveModelConfig: () => baseModel as never,
     deriveSubagentContext: () => ({}) as never,
     resolveAgentTools: () => ({ tools: [], writeCapable: false }),
+    useOsSandbox: false,
     journal,
   };
 }

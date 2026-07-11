@@ -9,17 +9,17 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 // worker 用 mock 隔离（不真起 worker_threads）
 vi.mock('../../../../src/host/agent/scriptRuntime/sandbox', () => ({
-  runScriptInWorker: vi.fn(async () => ({ ok: true, result: 'ok' })),
+  runScriptInSandbox: vi.fn(async () => ({ ok: true, result: 'ok' })),
 }));
 
-import { runScriptInWorker } from '../../../../src/host/agent/scriptRuntime/sandbox';
+import { runScriptInSandbox } from '../../../../src/host/agent/scriptRuntime/sandbox';
 import { startRun, cancelRun, getRunState, type ScriptRunHostDeps } from '../../../../src/host/agent/scriptRuntime';
 
 const baseModel = { provider: 'xiaomi', model: 'm', apiKey: 'k' };
 
 beforeEach(() => {
-  vi.mocked(runScriptInWorker).mockReset();
-  vi.mocked(runScriptInWorker).mockResolvedValue({ ok: true, result: 'ok' });
+  vi.mocked(runScriptInSandbox).mockReset();
+  vi.mocked(runScriptInSandbox).mockResolvedValue({ ok: true, result: 'ok' });
 });
 
 function makeDeps(over: Partial<ScriptRunHostDeps> = {}): ScriptRunHostDeps {
@@ -28,6 +28,7 @@ function makeDeps(over: Partial<ScriptRunHostDeps> = {}): ScriptRunHostDeps {
     resolveModelConfig: () => baseModel as never,
     deriveSubagentContext: () => ({}) as never,
     resolveAgentTools: () => ({ tools: [], writeCapable: false }),
+    useOsSandbox: false,
     ...over,
   };
 }
@@ -47,7 +48,7 @@ describe('runService activeRuns 异常安全', () => {
   it('emits run:cancelled and returns cancelled state when cancelRun aborts the workflow', async () => {
     const runId = 'wf-canceltest-1';
     const events: string[] = [];
-    vi.mocked(runScriptInWorker).mockImplementationOnce((opts) => new Promise((resolve) => {
+    vi.mocked(runScriptInSandbox).mockImplementationOnce((opts) => new Promise((resolve) => {
       opts.signal.addEventListener('abort', () => resolve({ ok: false, error: 'run aborted' }), { once: true });
     }));
 
@@ -64,5 +65,24 @@ describe('runService activeRuns 异常安全', () => {
     expect(events).toContain('run:cancelled');
     expect(events).not.toContain('run:error');
     expect(getRunState(runId)).toBeUndefined();
+  });
+
+  it('redacts credentials before final checkpoint persistence', async () => {
+    const journal = {
+      loadPriorCalls: vi.fn(() => null),
+      onRunStart: vi.fn(),
+      onRunFinish: vi.fn(),
+      onCallComplete: vi.fn(),
+    };
+    vi.mocked(runScriptInSandbox).mockResolvedValueOnce({
+      ok: true,
+      result: { apiKey: 'sk-super-secret-value', text: 'Bearer abcdefghijklmnop' },
+    });
+    const state = await startRun(
+      { runId: 'wf-redact', script: 'return 1', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      makeDeps({ journal }),
+    );
+    expect(JSON.stringify(state.result)).not.toContain('super-secret-value');
+    expect(JSON.stringify(journal.onRunFinish.mock.calls)).not.toContain('super-secret-value');
   });
 });

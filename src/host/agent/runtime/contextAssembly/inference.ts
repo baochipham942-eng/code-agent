@@ -803,11 +803,12 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     try {
       const engineOptions: InferenceOptions = {
         ...ctx.runtime.inferenceOptions,
-        onSnapshot: createSnapshotHandler(
-          ctx.runtime.sessionId,
-          ctx.runtime.currentTurnId,
-          ctx.runtime.workingDirectory,
-        ),
+        onSnapshot: createSnapshotHandler({
+          sessionId: ctx.runtime.sessionId,
+          runId: ctx.runtime.runId!,
+          turnId: ctx.runtime.currentTurnId,
+          workingDir: ctx.runtime.workingDirectory,
+        }),
         artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,

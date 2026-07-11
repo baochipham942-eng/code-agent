@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import { access, mkdtemp, rm } from 'fs/promises';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { constants } from 'fs';
 import http from 'http';
 import os from 'os';
@@ -21,12 +21,14 @@ type CancellableToolState = {
   cancelledAt?: number;
   settledAt?: number;
   elapsedMs: number;
+  cancelToSettledMs: number | null;
   startedPid: string | null;
   terminatedSignal: string | null;
   requestStarted: string | null;
   requestClosed: string | null;
   url?: string;
   settled: boolean;
+  toolExecutionBegins: number;
   result?: {
     success: boolean;
     output?: string;
@@ -41,6 +43,20 @@ type StartedServer = {
   child: ChildProcessWithoutNullStreams;
   output: () => string;
 };
+
+const DEFAULT_REPORT_PATH = 'docs/stability/tool-cancel-smoke-latest.json';
+
+function gitHead(): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).trim();
+}
+
+function outputPath(argv: string[]): string {
+  const index = argv.indexOf('--out');
+  if (index < 0) return path.resolve(DEFAULT_REPORT_PATH);
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) throw new Error('--out requires a file path.');
+  return path.resolve(value);
+}
 
 async function ensureBuiltWebServer(): Promise<void> {
   try {
@@ -245,6 +261,20 @@ async function runCancellableToolSmoke(
   if (cancelled.elapsedMs > 10_000) {
     throw new Error(`Cancellable ${request.tool} tool took too long to cancel: ${JSON.stringify(cancelled)}`);
   }
+  if (cancelled.cancelToSettledMs === null || cancelled.cancelToSettledMs > 1_000) {
+    throw new Error(`Cancellable ${request.tool} tool exceeded the 1s stop convergence gate: ${JSON.stringify(cancelled)}`);
+  }
+
+  const beginCountAtStop = cancelled.toolExecutionBegins;
+  await delay(250);
+  const afterStop = await postRaw<CancellableToolState>(
+    server,
+    `/api/dev/cancellable-tool/${encodeURIComponent(started.id)}/status`,
+    {},
+  );
+  if (afterStop.toolExecutionBegins !== beginCountAtStop) {
+    throw new Error(`Cancellable ${request.tool} started a new tool execution after stop: ${JSON.stringify(afterStop)}`);
+  }
   if (request.tool === 'Bash' && cancelled.terminatedSignal !== 'SIGTERM') {
     throw new Error(`Cancellable Bash process did not receive SIGTERM: ${JSON.stringify(cancelled)}`);
   }
@@ -258,6 +288,7 @@ async function runCancellableToolSmoke(
 }
 
 async function main(): Promise<void> {
+  const reportPath = outputPath(process.argv.slice(2));
   await ensureBuiltWebServer();
 
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-tool-cancel-'));
@@ -278,27 +309,34 @@ async function main(): Promise<void> {
       sessionId: httpSessionId,
     });
 
-    console.log(JSON.stringify({
-      ok: true,
-      dataDir,
-      bash: {
-        sessionId: bashSessionId,
-        runId: bashCancelled.id,
-        startedPid: bashCancelled.startedPid,
-        terminatedSignal: bashCancelled.terminatedSignal,
-        resultError: bashCancelled.result?.error,
-        elapsedMs: bashCancelled.elapsedMs,
+    const report = {
+      schemaVersion: 1,
+      smoke: 'tool-cancel',
+      generatedAt: new Date().toISOString(),
+      gitHead: gitHead(),
+      passed: true,
+      scenarios: {
+        Bash: {
+          passed: bashCancelled.result?.error === 'aborted'
+            && bashCancelled.terminatedSignal === 'SIGTERM'
+            && bashCancelled.toolExecutionBegins === 1,
+          durationMs: bashCancelled.cancelToSettledMs ?? bashCancelled.elapsedMs,
+          terminalCleanup: bashCancelled.settled && bashCancelled.result?.success === false,
+        },
+        http_request: {
+          passed: httpCancelled.result?.error === 'aborted'
+            && httpCancelled.requestClosed === 'client_closed'
+            && httpCancelled.toolExecutionBegins === 1,
+          durationMs: httpCancelled.cancelToSettledMs ?? httpCancelled.elapsedMs,
+          terminalCleanup: httpCancelled.settled && httpCancelled.result?.success === false,
+        },
       },
-      httpRequest: {
-        sessionId: httpSessionId,
-        runId: httpCancelled.id,
-        url: httpCancelled.url,
-        requestStarted: httpCancelled.requestStarted,
-        requestClosed: httpCancelled.requestClosed,
-        resultError: httpCancelled.result?.error,
-        elapsedMs: httpCancelled.elapsedMs,
-      },
-    }, null, 2));
+    };
+    report.passed = Object.values(report.scenarios).every((scenario) => scenario.passed && scenario.terminalCleanup);
+    await mkdir(path.dirname(reportPath), { recursive: true });
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.passed) process.exitCode = 1;
   } finally {
     if (server) {
       for (const runId of cleanupRunIds) {

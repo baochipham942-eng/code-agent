@@ -55,6 +55,12 @@ import { getProviderLimiter } from '../concurrencyLimiter';
 import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import {
+  assertNativeRequestCapabilities,
+  collectNativeRequestCapabilities,
+  ProviderRuntimeCapabilityError,
+  resolveNativeProtocolFamily,
+} from '../providerRuntimeCapabilities';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -76,6 +82,7 @@ interface ProviderRequest {
   baseURL: string | undefined;
   apiKey: string | undefined;
   supportsTool: boolean;
+  supportsVision: boolean;
 }
 
 function headersToRecord(headers: HeadersInit | undefined): Record<string, string> | undefined {
@@ -224,6 +231,7 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
     baseURL: resolveProviderBaseUrl(config) || undefined,
     apiKey: resolveProviderApiKey(config, { trustConfigKey: false }) || undefined,
     supportsTool: modelEntry?.supportsTool ?? true,
+    supportsVision: modelEntry?.supportsVision ?? false,
   };
 }
 
@@ -642,25 +650,53 @@ async function runInferenceViaAiSdk(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<ModelResponse> {
-  const req = resolveProviderRequest(config);
-  const model = resolveModel(config, req);
+  const requestConfig = options?.reasoningEffort
+    ? { ...config, reasoningEffort: options.reasoningEffort }
+    : config;
+  const req = resolveProviderRequest(requestConfig);
+  const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
+  const effectiveToolsPresent = tools.length > 0 && req.supportsTool;
+  const requestedCapabilities = collectNativeRequestCapabilities(
+    messages,
+    effectiveToolsPresent,
+    requestConfig,
+    streaming,
+    signal,
+    options,
+  );
+  assertNativeRequestCapabilities(
+    messages,
+    effectiveToolsPresent,
+    requestConfig,
+    streaming,
+    signal,
+    options,
+  );
+  if (requestedCapabilities.includes('image_input') && !req.supportsVision) {
+    throw new ProviderRuntimeCapabilityError(
+      'native',
+      resolveNativeProtocolFamily(requestConfig),
+      'image_input',
+      'unsupported',
+    );
+  }
+  const model = resolveModel(requestConfig, req);
   let aiTools: ToolSet | undefined;
   let aiPrompt: AiSdkPromptShape;
   try {
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
-    aiPrompt = buildAiSdkPrompt(messages, config.provider);
+    aiPrompt = buildAiSdkPrompt(messages, requestConfig.provider);
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
-    logInferenceFailure(err, stage, config, messages);
+    logInferenceFailure(err, stage, requestConfig, messages);
     throw err;
   }
 
-  const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
   if (streaming) {
-    return streamViaAiSdk({ model, aiPrompt, aiTools, config, onStream, signal, options, messages });
+    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, onStream, signal, options, messages });
   }
-  return generateViaAiSdk({ model, aiPrompt, aiTools, config, signal, options, messages });
+  return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages });
 }
 
 // 给一次 provider 调用套 per-request 超时：组合「外部 signal + 内部超时」成一个 abortSignal。

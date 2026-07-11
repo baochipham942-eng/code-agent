@@ -20,6 +20,7 @@ interface DevCancellableToolEntry {
   startedAt: number;
   cancelledAt?: number;
   settledAt?: number;
+  toolExecutionBegins: number;
   result?: ToolExecutionResult;
   error?: string;
   markerDir: string;
@@ -200,6 +201,7 @@ async function startCancellableTool(body: unknown): Promise<DevCancellableToolEn
     scriptPath,
     requestStartedMarkerPath,
     requestClosedMarkerPath,
+    toolExecutionBegins: 0,
     promise: Promise.resolve(),
   };
 
@@ -220,6 +222,7 @@ async function startCancellableTool(body: unknown): Promise<DevCancellableToolEn
         };
       })();
 
+  entry.toolExecutionBegins += 1;
   entry.promise = executor.execute(tool, params, {
     sessionId,
     abortSignal: controller.signal,
@@ -262,12 +265,16 @@ async function describeEntry(entry: DevCancellableToolEntry): Promise<Record<str
     cancelledAt: entry.cancelledAt,
     settledAt: entry.settledAt,
     elapsedMs: (entry.settledAt ?? Date.now()) - entry.startedAt,
+    cancelToSettledMs: entry.cancelledAt && entry.settledAt
+      ? entry.settledAt - entry.cancelledAt
+      : null,
     startedPid: startedPid?.trim() || null,
     terminatedSignal: terminatedSignal?.trim() || null,
     requestStarted: requestStarted?.trim() || null,
     requestClosed: requestClosed?.trim() || null,
     url: entry.url,
     settled: Boolean(entry.settledAt),
+    toolExecutionBegins: entry.toolExecutionBegins,
     result: entry.result,
     error: entry.error,
   };
@@ -320,6 +327,17 @@ export function createDevCancellableToolSmokeRouter(deps: DevCancellableToolSmok
   });
 
   router.get('/:id', async (req: Request, res: Response) => {
+    if (!ensureEnabled(res)) return;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const entry = activeCancellableTools.get(id);
+    if (!entry) {
+      res.status(404).json({ ok: false, error: 'Cancellable tool run not found.' });
+      return;
+    }
+    res.json({ ok: true, ...(await describeEntry(entry)) });
+  });
+
+  router.post('/:id/status', async (req: Request, res: Response) => {
     if (!ensureEnabled(res)) return;
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const entry = activeCancellableTools.get(id);

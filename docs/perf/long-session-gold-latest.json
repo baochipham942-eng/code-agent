@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-11T06:56:58.621Z",
+  "environment": {
+    "gitHead": "fd7c85e1c2eb02c499fee3257b1999b87b3f1e9a",
+    "node": "v24.15.0",
+    "platform": "darwin/arm64",
+    "cpu": "Apple M1",
+    "cpuCount": 8,
+    "totalMemoryBytes": 17179869184,
+    "browser": "149.0.7827.201",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "thresholds": {
+    "turns500InteractiveMs": 2000,
+    "anchorDriftPx": 16,
+    "mainThreadLongTaskMs": 500
+  },
+  "stopEvidence": {
+    "includedInThisReport": false,
+    "reason": "The browser harness only simulates renderer state. Real stop gates are tool-cancel and app-host smokes.",
+    "requiredSmokes": [
+      "scripts/acceptance/tool-cancel-smoke.ts",
+      "scripts/acceptance/agent-runtime-app-host-smoke.ts"
+    ]
+  },
+  "scenarios": {
+    "turns500": {
+      "interactiveMs": 49.2,
+      "renderedTurns": 500
+    },
+    "turns1000": {
+      "updateMs": 59.5,
+      "renderedTurns": 1000
+    },
+    "denseCodeStreaming": {
+      "codeBlocks": 100,
+      "updates": 20,
+      "durationMs": 940
+    },
+    "historyPrepend": {
+      "prependedTurns": 30,
+      "anchorTurnId": "turn-115",
+      "anchorMounted": true,
+      "visibleAfterTurnId": "turn-115",
+      "scrollTopBefore": 9129,
+      "scrollTopAfter": 11504,
+      "anchorDriftPx": 0.25,
+      "firstItemIndex": 999970
+    },
+    "userScroll": {
+      "retainedPosition": true,
+      "distanceFromBottomPx": 93196
+    },
+    "streamingFollow": {
+      "resumedAtBottom": true,
+      "distanceFromBottomPx": 8
+    },
+    "search": {
+      "targetTurnIndex": 120,
+      "targetMounted": true,
+      "targetVisible": true
+    },
+    "uiStateSimulation": {
+      "convergenceMs": 33.6,
+      "terminal": true
+    }
+  },
+  "mainThread": {
+    "longTaskCount": 3,
+    "longTaskMaxMs": 210,
+    "longTaskTotalMs": 597,
+    "over500ms": 0
+  },
+  "memory": {
+    "supported": true,
+    "baselineBytes": 37473881,
+    "peakBytes": 85828288,
+    "deltaBytes": 48354407
+  },
+  "gates": {
+    "turns500Interactive": true,
+    "anchorDrift": true,
+    "userScroll": true,
+    "streamingFollow": true,
+    "search": true,
+    "mainThread": true,
+    "memoryRecorded": true
+  },
+  "passed": true
+}

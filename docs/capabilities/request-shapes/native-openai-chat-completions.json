@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "runtime": "native",
+  "protocolFamily": "openai_chat_completions",
+  "adapterBoundary": "@ai-sdk/openai-compatible -> /chat/completions",
+  "syntheticRequest": {
+    "provider": "openai",
+    "model": "fixture-openai-model",
+    "messages": ["user:text"],
+    "toolsPresent": true,
+    "toolChoice": "required",
+    "streaming": true,
+    "abortSignal": true,
+    "timeouts": ["first-token", "stream-idle"]
+  },
+  "expectedRequestedCapabilities": [
+    "text_streaming",
+    "first_token_timeout",
+    "stream_idle_timeout",
+    "tool_choice_required",
+    "stop_abort"
+  ],
+  "redaction": { "credentials": "omitted", "userContent": "synthetic-only" }
+}

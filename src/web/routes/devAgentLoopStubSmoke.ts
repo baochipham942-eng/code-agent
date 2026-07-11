@@ -12,6 +12,7 @@ interface DevAgentLoopStubEntry {
   loop: ActiveAgentLoop;
   createdAt: number;
   cancelledAt?: number;
+  releasedAt?: number;
   cancelCount: number;
   cancelReason?: string | null;
   paused: boolean;
@@ -61,6 +62,7 @@ function describeEntry(
     active: entry ? activeHandle === entry.runHandle : Boolean(activeHandle),
     createdAt: entry?.createdAt ?? null,
     cancelledAt: entry?.cancelledAt ?? null,
+    releasedAt: entry?.releasedAt ?? null,
     cancelCount: entry?.cancelCount ?? 0,
     cancelReason: entry?.cancelReason ?? null,
     paused: entry?.paused ?? false,
@@ -110,6 +112,9 @@ export function createDevAgentLoopStubSmokeRouter(deps: DevAgentLoopStubSmokeDep
             entry.cancelledAt = Date.now();
             entry.cancelCount += 1;
             entry.cancelReason = reason ?? null;
+            if (runRegistry.unregister(entry.runHandle.context.runId, entry.runHandle)) {
+              entry.releasedAt = Date.now();
+            }
           },
           pause() {
             entry.paused = true;

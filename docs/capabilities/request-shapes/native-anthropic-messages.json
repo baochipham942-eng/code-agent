@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "runtime": "native",
+  "protocolFamily": "anthropic_messages",
+  "adapterBoundary": "@ai-sdk/anthropic createAnthropic -> generateText/streamText",
+  "syntheticRequest": {
+    "provider": "claude",
+    "model": "fixture-claude-model",
+    "messages": ["system:text", "user:text", "user:image-base64"],
+    "toolsPresent": true,
+    "toolChoice": "named",
+    "streaming": true,
+    "abortSignal": true,
+    "timeouts": ["first-token", "stream-idle"]
+  },
+  "expectedRequestedCapabilities": [
+    "text_streaming",
+    "first_token_timeout",
+    "stream_idle_timeout",
+    "tool_choice_named",
+    "image_input",
+    "stop_abort"
+  ],
+  "redaction": { "credentials": "omitted", "userContent": "synthetic-only" }
+}

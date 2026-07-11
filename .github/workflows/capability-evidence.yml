@@ -20,6 +20,12 @@ on:
       - 'tests/integration/distillRealRun.test.ts'
       - 'tests/unit/services/memory/dreamMemoryService.test.ts'
       - 'scripts/check-capability-evidence.ts'
+      - 'scripts/check-provider-runtime-release-evidence.ts'
+      - 'src/host/model/providerRuntimeCapabilities.ts'
+      - 'docs/capabilities/request-shapes/**'
+      - 'docs/capabilities/provider-runtime-live-smoke-ledger.json'
+      - 'docs/releases/stability-release-template.md'
+      - 'tests/scripts/checkProviderRuntimeReleaseEvidence.test.ts'
       - '.github/workflows/capability-evidence.yml'
   push:
     branches: [main]
@@ -34,6 +40,12 @@ on:
       - 'tests/integration/distillRealRun.test.ts'
       - 'tests/unit/services/memory/dreamMemoryService.test.ts'
       - 'scripts/check-capability-evidence.ts'
+      - 'scripts/check-provider-runtime-release-evidence.ts'
+      - 'src/host/model/providerRuntimeCapabilities.ts'
+      - 'docs/capabilities/request-shapes/**'
+      - 'docs/capabilities/provider-runtime-live-smoke-ledger.json'
+      - 'docs/releases/stability-release-template.md'
+      - 'tests/scripts/checkProviderRuntimeReleaseEvidence.test.ts'
       - '.github/workflows/capability-evidence.yml'
   workflow_dispatch:
 
@@ -59,3 +71,8 @@ jobs:
       # 用 npx tsx 直接跑，绕开沉重的 postinstall native 构建。
       - name: Run capability evidence gate
         run: npx --yes tsx scripts/check-capability-evidence.ts
+
+      # PR 只验证静态声明、fixture、ledger 引用和脱敏；不调用 Provider，
+      # 也不要求普通 PR 重跑真实 App 的性能与 Stop smoke。
+      - name: Run provider/runtime static release evidence gate
+        run: npx --yes tsx scripts/check-provider-runtime-release-evidence.ts --mode static

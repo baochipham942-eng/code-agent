@@ -409,7 +409,10 @@ describe('AgentAppService lifecycle routing', () => {
     const service = createService(taskManager);
     const session = await service.loadSession('session-1');
 
-    expect(loadStreamSnapshot).toHaveBeenCalledWith('/tmp/project');
+    expect(loadStreamSnapshot).toHaveBeenCalledWith({
+      workingDir: '/tmp/project',
+      sessionId: 'session-1',
+    });
     expect(session.streamSnapshot).toMatchObject({
       sessionId: 'session-1',
       turnId: 'turn-1',

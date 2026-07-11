@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "runtime": "mimo_code",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "mimo run --format json",
+  "syntheticRequest": {
+    "args": ["run", "<redacted-user-content>", "--format", "json", "--model", "fixture-model"],
+    "credentials": "MIMO_HOME-owned; values-not-recorded"
+  }
+}

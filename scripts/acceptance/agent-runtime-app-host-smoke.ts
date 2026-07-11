@@ -1,11 +1,12 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import { existsSync, mkdtempSync } from 'fs';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { chromium, type Browser, type Page } from 'playwright';
 import {
   finishWithError,
   getNumberOption,
+  getStringOption,
   hasFlag,
   parseArgs,
   printJson,
@@ -42,11 +43,17 @@ interface DevAgentLoopStubStatus {
   active?: boolean;
   cancelCount?: number;
   cancelledAt?: number | null;
+  releasedAt?: number | null;
   cancelReason?: string | null;
   error?: string;
 }
 
 const UI_CANCEL_PROMPT = 'agent-runtime-ui-cancel-smoke-hold-run';
+const DEFAULT_REPORT_PATH = 'docs/stability/agent-runtime-app-host-smoke-latest.json';
+
+function gitHead(): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).trim();
+}
 
 function usage(): void {
   console.log(`Agent Runtime app-host smoke
@@ -59,6 +66,7 @@ Options:
   --keep-browser  Keep the Chrome process open after the smoke.
   --keep-server   Keep the app-host server process open after the smoke.
   --port <port>   App-host port. Default: auto.
+  --out <path>    Structured evidence path. Default: ${DEFAULT_REPORT_PATH}.
   --json          Print JSON only.
   --help          Show this help.
 
@@ -426,6 +434,9 @@ async function verifyRendererCancelClick(
   stopButtonHiddenAfterCancel: boolean;
   cancelCount: number;
   cancelledAt: number | null;
+  releasedAt: number | null;
+  cancelToRunReleaseMs: number | null;
+  cancelToUiCleanupMs: number | null;
 }> {
   const input = page.locator('[data-chat-input]').first();
   await input.scrollIntoViewIfNeeded();
@@ -457,6 +468,9 @@ async function verifyRendererCancelClick(
       stopButtonHiddenAfterCancel: false,
       cancelCount: 0,
       cancelledAt: null,
+      releasedAt: null,
+      cancelToRunReleaseMs: null,
+      cancelToUiCleanupMs: null,
     };
   }
 
@@ -473,9 +487,11 @@ async function verifyRendererCancelClick(
   const stopButtonVisible = await stopButton.waitFor({ state: 'visible', timeout: 10_000 })
     .then(() => true)
     .catch(() => false);
+  let stopRequestedAt: number | null = null;
   if (!stopButtonVisible) {
     failures.push('renderer cancel smoke did not render the stop button while the run was held.');
   } else {
+    stopRequestedAt = Date.now();
     await stopButton.click();
   }
 
@@ -488,8 +504,22 @@ async function verifyRendererCancelClick(
   const stopButtonHiddenAfterCancel = await stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
+  const uiClearedAt = stopButtonHiddenAfterCancel ? Date.now() : null;
   if (!stopButtonHiddenAfterCancel) {
     failures.push('renderer cancel smoke did not clear the stop button after cancel completed.');
+  }
+
+  const cancelToRunReleaseMs = stopRequestedAt && stubAfterCancel?.releasedAt
+    ? stubAfterCancel.releasedAt - stopRequestedAt
+    : null;
+  const cancelToUiCleanupMs = stopRequestedAt && uiClearedAt
+    ? uiClearedAt - stopRequestedAt
+    : null;
+  if (cancelToRunReleaseMs === null || cancelToRunReleaseMs > 1_000) {
+    failures.push(`renderer cancel smoke exceeded the 1s RunRegistry release gate: ${String(cancelToRunReleaseMs)}ms`);
+  }
+  if (cancelToUiCleanupMs === null || cancelToUiCleanupMs > 1_000) {
+    failures.push(`renderer cancel smoke exceeded the 1s UI cleanup gate: ${String(cancelToUiCleanupMs)}ms`);
   }
 
   if (sessionId) {
@@ -508,6 +538,9 @@ async function verifyRendererCancelClick(
     stopButtonHiddenAfterCancel,
     cancelCount: stubAfterCancel?.cancelCount ?? 0,
     cancelledAt: stubAfterCancel?.cancelledAt ?? null,
+    releasedAt: stubAfterCancel?.releasedAt ?? null,
+    cancelToRunReleaseMs,
+    cancelToUiCleanupMs,
   };
 }
 
@@ -517,6 +550,8 @@ async function main(): Promise<void> {
     usage();
     return;
   }
+
+  const reportPath = resolve(process.cwd(), getStringOption(args, 'out') || DEFAULT_REPORT_PATH);
 
   await ensureBuild(hasFlag(args, 'skip-build'));
 
@@ -590,7 +625,25 @@ async function main(): Promise<void> {
     }
 
     const result = {
-      ok: failures.length === 0,
+      schemaVersion: 1,
+      smoke: 'agent-runtime-app-host',
+      generatedAt: new Date().toISOString(),
+      gitHead: gitHead(),
+      passed: failures.length === 0,
+      scenarios: {
+        RunRegistry: {
+          passed: uiCancel.stubCreated && uiCancel.stubCancelled && uiCancel.cancelToRunReleaseMs !== null
+            && uiCancel.cancelToRunReleaseMs <= 1_000,
+          durationMs: uiCancel.cancelToRunReleaseMs ?? -1,
+          terminalCleanup: uiCancel.stubCancelled && uiCancel.releasedAt !== null,
+        },
+        rendererStop: {
+          passed: uiCancel.runIntercepted && uiCancel.stopButtonVisible && uiCancel.stopButtonHiddenAfterCancel
+            && uiCancel.cancelToUiCleanupMs !== null && uiCancel.cancelToUiCleanupMs <= 1_000,
+          durationMs: uiCancel.cancelToUiCleanupMs ?? -1,
+          terminalCleanup: uiCancel.stopButtonHiddenAfterCancel,
+        },
+      },
       appHost: {
         baseUrl,
         serverRunning: appHost.child.exitCode === null,
@@ -619,6 +672,17 @@ async function main(): Promise<void> {
       consoleErrors,
       failures,
     };
+    result.passed = result.passed
+      && Object.values(result.scenarios).every((scenario) => scenario.passed && scenario.terminalCleanup);
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, `${JSON.stringify({
+      schemaVersion: result.schemaVersion,
+      smoke: result.smoke,
+      generatedAt: result.generatedAt,
+      gitHead: result.gitHead,
+      passed: result.passed,
+      scenarios: result.scenarios,
+    }, null, 2)}\n`);
 
     if (hasFlag(args, 'json')) {
       printJson(result);
@@ -638,6 +702,8 @@ async function main(): Promise<void> {
         ['uiCancelRunIntercepted', result.uiCancel.runIntercepted],
         ['uiCancelStubCancelled', result.uiCancel.stubCancelled],
         ['uiCancelStopHiddenAfterCancel', result.uiCancel.stopButtonHiddenAfterCancel],
+        ['uiCancelToRunReleaseMs', result.uiCancel.cancelToRunReleaseMs],
+        ['uiCancelToUiCleanupMs', result.uiCancel.cancelToUiCleanupMs],
         ['consoleErrors', consoleErrors.length],
       ]);
 
@@ -651,7 +717,7 @@ async function main(): Promise<void> {
       }
     }
 
-    if (failures.length > 0) {
+    if (!result.passed) {
       process.exit(1);
     }
   } finally {

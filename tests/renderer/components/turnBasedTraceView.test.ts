@@ -18,6 +18,9 @@ import {
   shouldStopFollowingForWheel,
   shouldFollowTurnOutput,
   shouldShowTurnTimeSeparator,
+  getPrependedTurnCount,
+  getPrependAnchorScrollLocation,
+  getPrependAnchorScrollCorrection,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
 
 function makeTurn(index: number): TraceTurn {
@@ -39,6 +42,30 @@ function makeProjection(activeTurnIndex: number, turnCount = 3): TraceProjection
 }
 
 describe('TurnBasedTraceView focus helpers', () => {
+  it('counts only leading history turns inserted before the previous first turn', () => {
+    expect(getPrependedTurnCount('turn-1', [makeTurn(-2), makeTurn(-1), makeTurn(0)]))
+      .toBe(2);
+    expect(getPrependedTurnCount('turn-1', [makeTurn(0), makeTurn(1)]))
+      .toBe(0);
+    expect(getPrependedTurnCount('missing', [makeTurn(0), makeTurn(1)]))
+      .toBe(0);
+  });
+
+  it('restores the same visible turn and pixel offset after history prepend', () => {
+    const turns = [makeTurn(-2), makeTurn(-1), ...Array.from({ length: 3 }, (_, index) => makeTurn(index))];
+    expect(getPrependAnchorScrollLocation(
+      { sessionId: 'session-1', turnId: 'turn-2', offsetTop: 11.5 },
+      'session-1',
+      turns,
+    )).toEqual({ index: 3, align: 'start', behavior: 'auto', offset: -11.5 });
+    expect(getPrependAnchorScrollLocation(
+      { sessionId: 'other-session', turnId: 'turn-2', offsetTop: 11.5 },
+      'session-1',
+      turns,
+    )).toBeNull();
+    expect(getPrependAnchorScrollCorrection(-24.25, 0)).toBe(24.25);
+  });
+
   it('focuses the active turn while a run is streaming', () => {
     expect(getFocusedTurnIndex(makeProjection(1))).toBe(1);
   });

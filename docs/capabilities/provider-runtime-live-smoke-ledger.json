@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-11",
+  "policy": {
+    "verificationStatus": ["verified", "unverified", "failed"],
+    "supportedRequiresVerifiedRecord": true,
+    "paidOrSubscriptionSmokeRequiresExplicitAuthorization": true,
+    "secretsAndUserContent": "must-not-be-recorded"
+  },
+  "localDiscovery": {
+    "configuredProviderNamesOnly": [
+      "anthropic",
+      "deepseek",
+      "groq",
+      "minimax",
+      "moonshot",
+      "openai",
+      "perplexity",
+      "qwen",
+      "xiaomi",
+      "zhipu"
+    ],
+    "externalRuntimeAvailability": {
+      "codex_cli": "installed",
+      "claude_code": "installed",
+      "mimo_code": "installed",
+      "kimi_code": "missing"
+    },
+    "credentialValuesRecorded": false
+  },
+  "records": [
+    {
+      "id": "native-anthropic-pending",
+      "date": "2026-07-11",
+      "runtime": "native",
+      "protocolFamily": "anthropic_messages",
+      "provider": "anthropic",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "Configured locally; paid or subscription-backed request awaits explicit authorization."
+    },
+    {
+      "id": "native-openai-chat-pending",
+      "date": "2026-07-11",
+      "runtime": "native",
+      "protocolFamily": "openai_chat_completions",
+      "provider": "openai",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "Configured locally; paid request awaits explicit authorization."
+    },
+    {
+      "id": "native-gateway-pending",
+      "date": "2026-07-11",
+      "runtime": "native",
+      "protocolFamily": "openai_compatible_gateway",
+      "provider": "configured-provider-set",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "Multiple configured providers exist; any live request may consume quota and awaits explicit authorization."
+    },
+    {
+      "id": "native-local-pending",
+      "date": "2026-07-11",
+      "runtime": "native",
+      "protocolFamily": "ollama_litellm_local",
+      "provider": "local",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "No ready local endpoint/model was established during static matrix work."
+    },
+    {
+      "id": "native-google-pending",
+      "date": "2026-07-11",
+      "runtime": "native",
+      "protocolFamily": "google_generative_language",
+      "provider": "gemini",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "No local Gemini provider credential was discovered; no live request was attempted."
+    },
+    {
+      "id": "codex-cli-pending",
+      "date": "2026-07-11",
+      "runtime": "codex_cli",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "CLI is installed; an authenticated run may consume subscription quota and awaits explicit authorization."
+    },
+    {
+      "id": "claude-code-pending",
+      "date": "2026-07-11",
+      "runtime": "claude_code",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "CLI is installed; an authenticated run may consume subscription quota and awaits explicit authorization."
+    },
+    {
+      "id": "mimo-code-pending",
+      "date": "2026-07-11",
+      "runtime": "mimo_code",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "CLI is installed; an authenticated run may consume subscription quota and awaits explicit authorization."
+    },
+    {
+      "id": "kimi-code-pending",
+      "date": "2026-07-11",
+      "runtime": "kimi_code",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "not-selected",
+      "verificationStatus": "unverified",
+      "result": "not_run",
+      "reason": "CLI is not installed, so no live smoke can run."
+    },
+    {
+      "id": "p0-local-stop-verified",
+      "date": "2026-07-11",
+      "runtime": "native",
+      "protocolFamily": "local-control-plane",
+      "provider": "none",
+      "model": "none",
+      "verificationStatus": "verified",
+      "result": "passed",
+      "scope": "Bash/http_request cancellation, RunRegistry release, renderer cleanup",
+      "evidence": [
+        "scripts/acceptance/tool-cancel-smoke.ts",
+        "scripts/acceptance/agent-runtime-app-host-smoke.ts"
+      ],
+      "reason": "Non-provider stop evidence only; it does not promote any provider stop_abort cell to supported."
+    }
+  ]
+}

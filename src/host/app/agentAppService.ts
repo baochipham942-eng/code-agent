@@ -593,7 +593,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // 会话级模型切换跨重启恢复：按持久化标记回灌内存 Map（未切换的会话无标记，不受影响）
     rehydrateModelOverrideFromSession(session);
 
-    const streamSnapshot = loadStreamSnapshot(session.workingDirectory);
+    const streamSnapshot = loadStreamSnapshot({
+      workingDir: session.workingDirectory,
+      sessionId: session.id,
+    });
     if (streamSnapshot?.sessionId === session.id) {
       return { ...session, streamSnapshot };
     }

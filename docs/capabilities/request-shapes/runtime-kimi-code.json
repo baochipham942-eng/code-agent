@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "runtime": "kimi_code",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "kimi -p --output-format stream-json",
+  "syntheticRequest": {
+    "args": ["-p", "<redacted-user-content>", "--output-format", "stream-json", "-m", "fixture-model"],
+    "credentials": "KIMI_CODE_HOME-owned; values-not-recorded"
+  }
+}

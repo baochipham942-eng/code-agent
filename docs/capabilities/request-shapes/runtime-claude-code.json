@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "runtime": "claude_code",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "claude -p --output-format stream-json",
+  "syntheticRequest": {
+    "args": ["-p", "--verbose", "--model", "fixture-model", "--safe-mode", "--disable-slash-commands", "--output-format", "stream-json", "--input-format", "text", "--permission-mode", "plan", "--tools", "Read,Glob,Grep,LS", "--allowedTools", "Read,Glob,Grep,LS", "--no-chrome", "--strict-mcp-config", "--include-partial-messages", "--no-session-persistence"],
+    "stdin": "<redacted-user-content>",
+    "credentials": "CLI-owned; values-not-recorded"
+  }
+}

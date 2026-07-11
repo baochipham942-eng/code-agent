@@ -38,6 +38,7 @@ import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngine
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 
 const logger = createLogger('MimoCliAdapter');
 
@@ -65,9 +66,7 @@ interface MimoParsedEvent {
 
 export class MimoCliAdapter {
   async run(request: MimoCliRunRequest): Promise<AgentEngineRunResult> {
-    if (request.attachmentsCount && request.attachmentsCount > 0) {
-      throw new Error('MiMo-Code engine only supports text prompts.');
-    }
+    assertExternalRuntimeAttachments('mimo_code', request.attachmentsCount, 'MiMo-Code');
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();

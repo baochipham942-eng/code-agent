@@ -14,7 +14,7 @@ import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
 import { setCompressionPipelineOverride } from '../context/compressionPipeline';
-import { setScaffoldProfileOverride } from '../agent/runtime/scaffoldProfile';
+import { setScaffoldProfileOverride, setThinkingInjectionOverride } from '../agent/runtime/scaffoldProfile';
 
 const logger = createLogger('AgentAdapter');
 
@@ -437,6 +437,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
       if (this.harness?.scaffoldProfile !== undefined) {
         setScaffoldProfileOverride(this.harness.scaffoldProfile);
       }
+      if (this.harness?.thinkingInjection !== undefined) {
+        setThinkingInjectionOverride(this.harness.thinkingInjection);
+      }
 
       try {
         const loop = new AgentLoop({
@@ -535,6 +538,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
         }
         if (this.harness?.scaffoldProfile !== undefined) {
           setScaffoldProfileOverride(undefined);
+        }
+        if (this.harness?.thinkingInjection !== undefined) {
+          setThinkingInjectionOverride(undefined);
         }
       }
     } catch (error: unknown) {

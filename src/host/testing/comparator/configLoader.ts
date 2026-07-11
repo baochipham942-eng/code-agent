@@ -31,6 +31,7 @@ export async function loadCompareConfig(filePath: string): Promise<CompareConfig
       ? {
           compressionPipeline: parsedHarness.compressionPipeline as boolean | undefined,
           scaffoldProfile: parsedHarness.scaffoldProfile as boolean | undefined,
+          thinkingInjection: parsedHarness.thinkingInjection as boolean | undefined,
         }
       : undefined,
     enabledTools: parsed.enabledTools as string[] | undefined,

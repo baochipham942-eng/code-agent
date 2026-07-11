@@ -481,6 +481,8 @@ export interface HarnessVariantConfig {
   compressionPipeline?: boolean;
   /** 模型 scaffold profile 开/关（undefined = 跟随生产 flag） */
   scaffoldProfile?: boolean;
+  /** 单维度：只覆盖 thinking 注入（B7 定位实验），nudge/修复指令不动 */
+  thinkingInjection?: boolean;
   /** hooks 开/关（undefined = 评测默认关闭） */
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
@@ -687,6 +689,7 @@ export interface CompareConfiguration {
   harness?: {
     compressionPipeline?: boolean;
     scaffoldProfile?: boolean;
+    thinkingInjection?: boolean;
   };
   enabledTools?: string[];
   temperature?: number;

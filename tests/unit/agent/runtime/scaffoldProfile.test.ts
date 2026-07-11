@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   setScaffoldProfileOverride,
+  setThinkingInjectionOverride,
   resolveScaffoldProfile,
   resolveScaffoldProfileForModel,
 } from '../../../../src/host/agent/runtime/scaffoldProfile';
@@ -16,6 +17,7 @@ import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/cont
 
 afterEach(() => {
   setScaffoldProfileOverride(undefined);
+  setThinkingInjectionOverride(undefined);
 });
 
 describe('resolveScaffoldProfile 三档矩阵', () => {
@@ -84,6 +86,17 @@ describe('运行时 override', () => {
 
     setScaffoldProfileOverride(undefined);
     expect(resolveScaffoldProfileForModel('glm-5').tier).toBe('standard');
+  });
+
+  it('thinkingInjection 单维度 override 只动注入位，nudge/修复指令保持现状', () => {
+    setThinkingInjectionOverride(false);
+    const p = resolveScaffoldProfileForModel('glm-5');
+    expect(p.thinkingInjection).toBe(false);
+    expect(p.auditNudgeIntervalMultiplier).toBe(1);
+    expect(p.repairInstructionStyle).toBe('full');
+
+    setThinkingInjectionOverride(undefined);
+    expect(resolveScaffoldProfileForModel('glm-5').thinkingInjection).toBe(true);
   });
 });
 

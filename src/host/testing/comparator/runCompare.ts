@@ -59,6 +59,7 @@ function effectiveArmSignature(
       ? {
           compressionPipeline: harness.compressionPipeline ?? null,
           scaffoldProfile: harness.scaffoldProfile ?? null,
+          thinkingInjection: harness.thinkingInjection ?? null,
         }
       : null,
   });

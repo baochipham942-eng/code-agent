@@ -251,20 +251,21 @@ function LongSessionHarness(): React.ReactElement {
         activeTurnIndex: -1,
       }));
       await waitFor(() => document.querySelector('[data-long-session-status]')?.textContent === '1030 turns' ? true : null);
-      const anchoredTarget = await waitFor(
+      await nextFrame();
+      await waitFor(
         () => document.querySelector<HTMLElement>(`[data-trace-turn-id="${anchorTurnId}"]`),
         3_000,
       );
       await nextFrame();
+      const anchoredTarget = document.querySelector<HTMLElement>(`[data-trace-turn-id="${anchorTurnId}"]`);
       const anchorAfter = anchoredTarget?.getBoundingClientRect().top ?? Number.NaN;
       const anchorDriftPx = Number.isFinite(anchorBefore) && Number.isFinite(anchorAfter)
         ? round(Math.abs(anchorAfter - anchorBefore))
         : Number.POSITIVE_INFINITY;
 
-      let terminal = false;
       const stopStartedAt = performance.now();
       await nextFrame();
-      terminal = true;
+      const terminal = true;
       const convergenceMs = round(performance.now() - stopStartedAt);
 
       const longTasks = window.__LONG_SESSION_LONG_TASKS__ ?? [];

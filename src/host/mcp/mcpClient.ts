@@ -41,7 +41,12 @@ import { recordCuaFailure } from './cuaFailureStats';
 import { recordCuaResult } from './cuaNarration';
 
 // Import sub-modules
-import { createTransport, createMCPSDKClient, connectWithTimeout } from './mcpTransport';
+import {
+  createTransport,
+  createMCPSDKClient,
+  connectWithTimeout,
+  retryTransientRemoteMCPConnection,
+} from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
 import { registerElicitationHandler } from './mcpElicitation';
 import {
@@ -365,20 +370,41 @@ export class MCPClient extends EventEmitter {
         return;
       }
 
-      // 外部服务器（Stdio/SSE/HTTP Streamable）
-      const { transport, connectTimeout } = createTransport(config);
-      const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
+      // 外部服务器（Stdio/SSE/HTTP Streamable）。远程服务首次连接偶发
+      // fetch failed 时重建 transport 做一次有界重试；认证错误不会重试。
+      const maxAttempts = isStdioConfig(config) ? 1 : undefined;
+      const connected = await retryTransientRemoteMCPConnection(async (attemptNumber) => {
+        // Prefer the native fetch path. If it hits a transient network failure,
+        // rebuild once through the configured proxy instead of forcing every MCP
+        // endpoint through a proxy that may not preserve streaming semantics.
+        const { transport, connectTimeout } = createTransport(config, {
+          useProxy: attemptNumber > 1,
+        });
+        const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
 
-      // Register elicitation handler before connecting (required by SDK)
-      registerElicitationHandler(client, config.name);
+        // Register elicitation handler before connecting (required by SDK)
+        registerElicitationHandler(client, config.name);
 
-      await connectWithTimeout(client, transport, config, connectTimeout);
+        try {
+          await connectWithTimeout(client, transport, config, connectTimeout);
+          await this.registry.discoverCapabilities(config.name, client);
+          return { client, transport };
+        } catch (error) {
+          await transport.close().catch(() => {});
+          throw error;
+        }
+      }, {
+        ...(maxAttempts ? { maxAttempts } : {}),
+        onRetry: (error, nextAttempt) => {
+          logger.warn(`Transient MCP connection failure for ${config.name}; retrying`, {
+            nextAttempt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      });
 
-      this.clients.set(config.name, client);
-      this.transports.set(config.name, transport);
-
-      // 发现服务器能力
-      await this.registry.discoverCapabilities(config.name, client);
+      this.clients.set(config.name, connected.client);
+      this.transports.set(config.name, connected.transport);
 
       // 更新状态
       if (state) {

@@ -9,6 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { createLogger } from '../services/infra/logger';
 import { sanitizeEnv } from '../utils/sanitizeEnv';
 import { MCP_TIMEOUTS } from '../../shared/constants';
@@ -24,6 +25,91 @@ const logger = createLogger('MCPTransport');
 export const SSE_CONNECT_TIMEOUT = MCP_TIMEOUTS.SSE_CONNECT;
 export const STDIO_CONNECT_TIMEOUT = MCP_TIMEOUTS.STDIO_CONNECT;
 export const STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
+export const REMOTE_MCP_CONNECT_MAX_ATTEMPTS = 2;
+export const REMOTE_MCP_CONNECT_RETRY_DELAY_MS = 400;
+const mcpProxyAgents = new Map<string, ProxyAgent>();
+
+function noProxyMatches(target: URL, rawNoProxy: string | undefined): boolean {
+  if (!rawNoProxy) return false;
+  const hostname = target.hostname.toLowerCase();
+  const hostWithPort = target.port ? `${hostname}:${target.port}` : hostname;
+  return rawNoProxy.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean).some((entry) => {
+    if (entry === '*') return true;
+    if (entry === hostWithPort || entry === hostname) return true;
+    const domain = entry.startsWith('.') ? entry.slice(1) : entry;
+    return hostname.endsWith(`.${domain}`);
+  });
+}
+
+export function resolveMCPProxyUrl(
+  target: URL,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (['localhost', '127.0.0.1', '::1'].includes(target.hostname.toLowerCase())) return undefined;
+  const noProxy = env.NO_PROXY || env.no_proxy;
+  if (noProxyMatches(target, noProxy)) return undefined;
+  return target.protocol === 'https:'
+    ? env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy
+    : env.HTTP_PROXY || env.http_proxy || env.HTTPS_PROXY || env.https_proxy;
+}
+
+function createRemoteMCPFetch(target: URL): typeof globalThis.fetch | undefined {
+  const proxyUrl = resolveMCPProxyUrl(target);
+  if (!proxyUrl) return undefined;
+  let agent = mcpProxyAgents.get(proxyUrl);
+  if (!agent) {
+    agent = new ProxyAgent(proxyUrl);
+    mcpProxyAgents.set(proxyUrl, agent);
+  }
+  return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
+    undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+      ...init,
+      dispatcher: agent,
+    } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>) as typeof globalThis.fetch;
+}
+
+export function isRetryableRemoteMCPConnectionError(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  const normalized = message.toLowerCase();
+  return [
+    'fetch failed',
+    'econnreset',
+    'etimedout',
+    'eai_again',
+    'enetunreach',
+    'socket hang up',
+    'other side closed',
+    'terminated',
+  ].some((marker) => normalized.includes(marker));
+}
+
+export async function retryTransientRemoteMCPConnection<T>(
+  attempt: (attemptNumber: number) => Promise<T>,
+  options: {
+    maxAttempts?: number;
+    retryDelayMs?: number;
+    onRetry?: (error: unknown, nextAttempt: number) => void;
+  } = {},
+): Promise<T> {
+  const maxAttempts = Math.max(1, options.maxAttempts ?? REMOTE_MCP_CONNECT_MAX_ATTEMPTS);
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? REMOTE_MCP_CONNECT_RETRY_DELAY_MS);
+
+  for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+    try {
+      return await attempt(attemptNumber);
+    } catch (error) {
+      if (attemptNumber >= maxAttempts || !isRetryableRemoteMCPConnectionError(error)) {
+        throw error;
+      }
+      options.onRetry?.(error, attemptNumber + 1);
+      if (retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+
+  throw new Error('Remote MCP connection retry exhausted unexpectedly');
+}
 
 export const MCP_STDIO_ENV_ALLOWLIST = [
   'ALL_PROXY',
@@ -91,12 +177,16 @@ export function createStdioMCPEnv(
 /**
  * 根据配置类型创建传输层和连接超时
  */
-export function createTransport(config: MCPServerConfig): { transport: Transport; connectTimeout: number } {
+export function createTransport(
+  config: MCPServerConfig,
+  options: { useProxy?: boolean } = {},
+): { transport: Transport; connectTimeout: number } {
   if (isHttpStreamableConfig(config)) {
     logger.info(`Using HTTP Streamable transport for ${config.name}: ${config.serverUrl}`);
 
     const url = new URL(config.serverUrl);
     const requestInit: RequestInit = {};
+    const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
 
     if (config.headers) {
       requestInit.headers = config.headers;
@@ -104,6 +194,7 @@ export function createTransport(config: MCPServerConfig): { transport: Transport
 
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit,
+      ...(proxyFetch ? { fetch: proxyFetch } : {}),
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
   } else if (isSSEConfig(config)) {
@@ -111,9 +202,11 @@ export function createTransport(config: MCPServerConfig): { transport: Transport
 
     const url = new URL(config.serverUrl);
     const eventSourceInit: EventSourceInit = {};
+    const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
 
     const transport = new SSEClientTransport(url, {
       eventSourceInit,
+      ...(proxyFetch ? { fetch: proxyFetch } : {}),
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
   } else {

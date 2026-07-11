@@ -122,6 +122,53 @@ describe('mcpDefaultServers', () => {
     });
   });
 
+  it('normalizes legacy Tavily x-api-key cloud config to Bearer auth', () => {
+    vi.stubEnv('TEST_TAVILY_KEY', 'tvly-test-key');
+
+    const result = convertCloudConfigToInternal({
+      id: 'tavily',
+      name: 'Tavily Search',
+      type: 'http-streamable',
+      enabled: true,
+      config: {
+        url: 'https://mcp.tavily.com/mcp/',
+        headers: {
+          'x-api-key': '${TEST_TAVILY_KEY}',
+        },
+      },
+      requiredEnvVars: ['TEST_TAVILY_KEY'],
+    } satisfies MCPServerCloudConfig);
+
+    expect(result).toMatchObject({
+      name: 'tavily',
+      type: 'http-streamable',
+      headers: {
+        Authorization: 'Bearer tvly-test-key',
+      },
+      enabled: true,
+    });
+    expect((result as { headers?: Record<string, string> }).headers).not.toHaveProperty('x-api-key');
+  });
+
+  it('normalizes legacy Exa endpoint to request the supported search tools', () => {
+    const result = convertCloudConfigToInternal({
+      id: 'exa',
+      name: 'Exa AI Search',
+      type: 'http-streamable',
+      enabled: true,
+      config: {
+        url: 'https://mcp.exa.ai/mcp',
+      },
+    } satisfies MCPServerCloudConfig);
+
+    expect(result).toMatchObject({
+      name: 'exa',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa',
+      enabled: true,
+    });
+  });
+
   it('blocks cloud MCP servers during init when policy denies them while preserving local MCP config', async () => {
     testState.cloudConfigService.getMCPServers.mockReturnValue([cloudServer()]);
     testState.cloudConfigService.isCloudMCPServersEnabledByPolicy.mockReturnValue(false);

@@ -476,7 +476,7 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     type: 'http-streamable',
     enabled: true,  // Enable if EXA_API_KEY is set
     config: {
-      url: 'https://mcp.exa.ai/mcp',
+      url: 'https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa',
       headers: {
         'x-api-key': '${EXA_API_KEY}',
       },
@@ -502,10 +502,10 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     type: 'http-streamable',
     enabled: true,  // Enable if TAVILY_API_KEY is set
     config: {
-      // Tavily uses API key in URL query parameter
+      // Tavily remote MCP accepts a Bearer API key (or URL query parameter).
       url: 'https://mcp.tavily.com/mcp/',
       headers: {
-        'x-api-key': '${TAVILY_API_KEY}',
+        'Authorization': 'Bearer ${TAVILY_API_KEY}',
       },
     },
     requiredEnvVars: ['TAVILY_API_KEY'],

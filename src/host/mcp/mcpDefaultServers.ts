@@ -60,6 +60,8 @@ function resolveCuaDriverPath(): string {
 
 const DEEPWIKI_LEGACY_SSE_URL = 'https://mcp.deepwiki.com/sse';
 const DEEPWIKI_STREAMABLE_HTTP_URL = 'https://mcp.deepwiki.com/mcp';
+const EXA_LEGACY_HTTP_URL = 'https://mcp.exa.ai/mcp';
+const EXA_SEARCH_HTTP_URL = 'https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa';
 
 // ----------------------------------------------------------------------------
 // Default MCP Server Configurations
@@ -263,12 +265,32 @@ export function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig):
     return result;
   };
 
+  const normalizeRemoteHeaders = (
+    headers: Record<string, string> | undefined,
+  ): Record<string, string> | undefined => {
+    const resolved = resolveEnvVars(headers);
+    const normalizedId = id.trim().toLowerCase();
+    const normalizedName = name.trim().toLowerCase();
+    const isTavily = normalizedId === 'tavily' || normalizedName.includes('tavily');
+    const legacyKey = resolved?.['x-api-key'];
+
+    // Tavily remote MCP no longer accepts the historical x-api-key shape.
+    // Normalize stale cloud payloads as well as the builtin fallback so an old
+    // control-plane config cannot keep production clients on a permanent 401.
+    if (isTavily && legacyKey && !resolved?.Authorization) {
+      const { ['x-api-key']: _legacy, ...rest } = resolved;
+      return { ...rest, Authorization: `Bearer ${legacyKey}` };
+    }
+
+    return resolved;
+  };
+
   if (serverType === 'http-streamable') {
     return {
       name: id,
       type: 'http-streamable',
       serverUrl: serverUrl!,
-      headers: resolveEnvVars(config.headers),
+      headers: normalizeRemoteHeaders(config.headers),
       enabled: shouldEnable,
       requiredEnvVars,
     } as MCPHttpStreamableServerConfig;
@@ -302,6 +324,13 @@ function normalizeCloudMcpServerUrl(id: string, name: string, url: string | unde
   ) {
     logger.warn('Rewriting deprecated DeepWiki MCP SSE endpoint to streamable HTTP');
     return DEEPWIKI_STREAMABLE_HTTP_URL;
+  }
+  if (
+    url === EXA_LEGACY_HTTP_URL
+    && (normalizedId === 'exa' || normalizedName.includes('exa'))
+  ) {
+    logger.warn('Rewriting legacy Exa MCP endpoint to request the supported search tools explicitly');
+    return EXA_SEARCH_HTTP_URL;
   }
   return url;
 }

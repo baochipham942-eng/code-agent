@@ -5,6 +5,13 @@
 
 import * as crypto from 'node:crypto';
 import type { SharedServiceKeyConfig, SharedServiceKeyName } from './controlPlanePayloads.js';
+import {
+  fetchControlPlaneResource,
+  isTransientControlPlaneStatus,
+  makeControlPlaneCacheKey,
+  readCachedControlPlaneValue,
+  writeControlPlaneCacheValue,
+} from './controlPlaneResilience.js';
 
 const SUPABASE_URL_ENV_NAMES = [
   'CONTROL_PLANE_SUPABASE_URL',
@@ -186,35 +193,49 @@ async function loadDisabledPoolKeyIds(
   serviceKey: string,
   service: SharedServiceKeyName,
   now: Date,
+  env: NodeJS.ProcessEnv,
 ): Promise<Set<string>> {
+  const cacheKey = makeControlPlaneCacheKey('shared-service-key-pool-state', [supabaseUrl, serviceKey, service]);
+  const cached = readCachedControlPlaneValue<string[]>(cacheKey, env);
+  if (cached.hit) {
+    return new Set(cached.value ?? []);
+  }
+
   try {
     const endpoint = new URL(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/${SHARED_SERVICE_KEY_POOL_STATE_TABLE}`);
     endpoint.searchParams.set('service', `eq.${service}`);
     endpoint.searchParams.set('select', 'key_id,disabled_reason,disabled_until');
 
-    const response = await fetch(endpoint.toString(), {
+    const response = await fetchControlPlaneResource(cacheKey, endpoint.toString(), {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${serviceKey}`,
         apikey: serviceKey,
         Accept: 'application/json',
       },
-    });
+    }, { env });
+    if (!response) {
+      return new Set(readCachedControlPlaneValue<string[]>(cacheKey, env, { allowStale: true }).value ?? []);
+    }
     if (!response.ok) {
+      if (isTransientControlPlaneStatus(response.status)) {
+        return new Set(readCachedControlPlaneValue<string[]>(cacheKey, env, { allowStale: true }).value ?? []);
+      }
       return new Set();
     }
     const rows = await response.json().catch(() => null);
     if (!Array.isArray(rows)) {
+      writeControlPlaneCacheValue(cacheKey, [], env);
       return new Set();
     }
-    return new Set(
-      rows
-        .filter((row) => isCurrentlyDisabled(row as SharedServiceKeyPoolStateRow, now))
-        .map((row) => asString((row as SharedServiceKeyPoolStateRow).key_id))
-        .filter((keyId): keyId is string => keyId !== null),
-    );
+    const disabledKeyIds = rows
+      .filter((row) => isCurrentlyDisabled(row as SharedServiceKeyPoolStateRow, now))
+      .map((row) => asString((row as SharedServiceKeyPoolStateRow).key_id))
+      .filter((keyId): keyId is string => keyId !== null);
+    writeControlPlaneCacheValue(cacheKey, disabledKeyIds, env);
+    return new Set(disabledKeyIds);
   } catch {
-    return new Set();
+    return new Set(readCachedControlPlaneValue<string[]>(cacheKey, env, { allowStale: true }).value ?? []);
   }
 }
 
@@ -236,7 +257,7 @@ async function rowToServiceKey(
     return null;
   }
 
-  const disabledKeyIds = await loadDisabledPoolKeyIds(supabaseUrl, serviceKey, service, options.now);
+  const disabledKeyIds = await loadDisabledPoolKeyIds(supabaseUrl, serviceKey, service, options.now, env);
   const resolved = resolvePooledServiceKey(service, rawEnvValues, disabledKeyIds, options);
   if (!resolved) {
     return null;
@@ -253,6 +274,52 @@ async function rowToServiceKey(
     ...(displayName ? { displayName } : {}),
     ...(requiredCapability ? { requiredCapability } : {}),
   };
+}
+
+async function loadSharedServiceKeyRows(
+  env: NodeJS.ProcessEnv,
+  url: string,
+  serviceKey: string,
+): Promise<SharedServiceKeyRow[] | null> {
+  const cacheKey = makeControlPlaneCacheKey('shared-service-key-rows', [url, serviceKey]);
+  const cached = readCachedControlPlaneValue<SharedServiceKeyRow[]>(cacheKey, env);
+  if (cached.hit) {
+    return cached.value ?? null;
+  }
+
+  try {
+    const endpoint = new URL(`${url.replace(/\/+$/, '')}/rest/v1/${SHARED_SERVICE_KEYS_TABLE}`);
+    endpoint.searchParams.set('enabled', 'eq.true');
+    endpoint.searchParams.set('select', 'service,display_name,base_url,required_capability,api_key_env');
+
+    const response = await fetchControlPlaneResource(cacheKey, endpoint.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        Accept: 'application/json',
+      },
+    }, { env });
+    if (!response) {
+      return readCachedControlPlaneValue<SharedServiceKeyRow[]>(cacheKey, env, { allowStale: true }).value ?? null;
+    }
+    if (!response.ok) {
+      if (isTransientControlPlaneStatus(response.status)) {
+        return readCachedControlPlaneValue<SharedServiceKeyRow[]>(cacheKey, env, { allowStale: true }).value ?? null;
+      }
+      return null;
+    }
+    const rows = await response.json().catch(() => null);
+    if (!Array.isArray(rows)) {
+      writeControlPlaneCacheValue(cacheKey, [], env);
+      return [];
+    }
+    const typedRows = rows as SharedServiceKeyRow[];
+    writeControlPlaneCacheValue(cacheKey, typedRows, env);
+    return typedRows;
+  } catch {
+    return readCachedControlPlaneValue<SharedServiceKeyRow[]>(cacheKey, env, { allowStale: true }).value ?? null;
+  }
 }
 
 /**
@@ -274,24 +341,9 @@ export async function loadSharedServiceKeysFromStore(
   }
 
   try {
-    const endpoint = new URL(`${url.replace(/\/+$/, '')}/rest/v1/${SHARED_SERVICE_KEYS_TABLE}`);
-    endpoint.searchParams.set('enabled', 'eq.true');
-    endpoint.searchParams.set('select', 'service,display_name,base_url,required_capability,api_key_env');
-
-    const response = await fetch(endpoint.toString(), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        Accept: 'application/json',
-      },
-    });
-    if (!response.ok) {
+    const rows = await loadSharedServiceKeyRows(env, url, serviceKey);
+    if (!rows) {
       return null;
-    }
-    const rows = await response.json().catch(() => null);
-    if (!Array.isArray(rows)) {
-      return [];
     }
     const resolvedOptions: Required<LoadSharedServiceKeysOptions> = {
       selectionSeed: options.selectionSeed?.trim() || 'default',

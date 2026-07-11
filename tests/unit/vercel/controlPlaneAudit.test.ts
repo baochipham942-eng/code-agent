@@ -3,6 +3,7 @@ import {
   recordControlPlaneAuditError,
   recordControlPlaneAuditEvent,
 } from '../../../vercel-api/lib/controlPlaneAudit';
+import { resetControlPlaneResilienceForTests } from '../../../vercel-api/lib/controlPlaneResilience';
 import type { ControlPlaneEnvelope } from '../../../vercel-api/lib/controlPlaneEnvelope';
 
 const postgresMocks = {
@@ -50,6 +51,7 @@ describe('control-plane audit ledger', () => {
       unsafe: postgresMocks.unsafe,
       end: postgresMocks.end,
     });
+    resetControlPlaneResilienceForTests();
   });
 
   it('skips writes unless audit is explicitly enabled', async () => {
@@ -202,5 +204,99 @@ describe('control-plane audit ledger', () => {
       status_code: 405,
     });
     expect(body.content_hash).toBeUndefined();
+  });
+
+  it('supports sampling out audit writes without calling Supabase', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const result = await recordControlPlaneAuditEvent(
+      { method: 'GET', headers: { 'x-vercel-id': 'iad1::sampled-out' } },
+      {
+        envelope: makeEnvelope(),
+        statusCode: 200,
+        outcome: 'served',
+        env: {
+          CONTROL_PLANE_AUDIT_ENABLED: 'true',
+          CONTROL_PLANE_AUDIT_SAMPLE_RATE: '0',
+          CONTROL_PLANE_AUDIT_SUPABASE_URL: 'https://project.supabase.co',
+          CONTROL_PLANE_AUDIT_SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        },
+        fetchImpl,
+      },
+    );
+
+    expect(result).toEqual({ ok: true, skippedReason: 'audit_sampled_out' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('records control-plane errors even when successful audit events are sampled out', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 201,
+    } as Response);
+
+    const result = await recordControlPlaneAuditError(
+      { method: 'POST', headers: { 'x-vercel-id': 'iad1::error-full-sample' } },
+      {
+        kind: 'cloud_config',
+        statusCode: 405,
+        errorCode: 'method_not_allowed',
+        env: {
+          CONTROL_PLANE_AUDIT_ENABLED: 'true',
+          CONTROL_PLANE_AUDIT_SAMPLE_RATE: '0',
+          CONTROL_PLANE_AUDIT_SUPABASE_URL: 'https://project.supabase.co',
+          CONTROL_PLANE_AUDIT_SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        },
+        fetchImpl,
+      },
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchImpl.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body).toMatchObject({
+      artifact_kind: 'cloud_config',
+      error_code: 'method_not_allowed',
+      outcome: 'error',
+      status_code: 405,
+    });
+  });
+
+  it('opens an audit circuit after transient Supabase failures', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 503,
+    } as Response);
+    const env = {
+      CONTROL_PLANE_AUDIT_ENABLED: 'true',
+      CONTROL_PLANE_AUDIT_SUPABASE_URL: 'https://project.supabase.co',
+      CONTROL_PLANE_AUDIT_SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+      CONTROL_PLANE_AUDIT_CIRCUIT_OPEN_MS: '60000',
+    };
+
+    const first = await recordControlPlaneAuditEvent(
+      { method: 'GET', headers: { 'x-vercel-id': 'iad1::audit-fail-1' } },
+      {
+        envelope: makeEnvelope(),
+        statusCode: 200,
+        outcome: 'served',
+        env,
+        fetchImpl,
+      },
+    );
+    const second = await recordControlPlaneAuditEvent(
+      { method: 'GET', headers: { 'x-vercel-id': 'iad1::audit-fail-2' } },
+      {
+        envelope: makeEnvelope(),
+        statusCode: 200,
+        outcome: 'served',
+        env,
+        fetchImpl,
+      },
+    );
+
+    expect(first).toEqual({ ok: false, error: 'audit_insert_failed:503' });
+    expect(second).toEqual({ ok: true, skippedReason: 'audit_circuit_open' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

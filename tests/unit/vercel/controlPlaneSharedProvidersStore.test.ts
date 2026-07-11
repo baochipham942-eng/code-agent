@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'crypto';
 import { loadSharedProvidersFromStore } from '../../../vercel-api/lib/controlPlaneSharedProviders';
 import { loadSharedServiceKeysFromStore } from '../../../vercel-api/lib/controlPlaneSharedServiceKeys';
+import { resetControlPlaneResilienceForTests } from '../../../vercel-api/lib/controlPlaneResilience';
 import controlPlaneHandler from '../../../vercel-api/api/v1/control-plane';
 import type { ControlPlaneResponseLike } from '../../../vercel-api/lib/controlPlaneEnvelope';
 
@@ -34,8 +35,15 @@ function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: 
   } as ControlPlaneResponseLike & { statusCode: number; body: unknown };
 }
 
+afterEach(() => {
+  resetControlPlaneResilienceForTests();
+});
+
 describe('loadSharedProvidersFromStore', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it('未配置 Supabase 时返回 null（调用方保留 env-JSON 兜底）', async () => {
     const result = await loadSharedProvidersFromStore({} as NodeJS.ProcessEnv);
@@ -90,6 +98,54 @@ describe('loadSharedProvidersFromStore', () => {
     expect(String(calledUrl)).toContain('control_plane_shared_providers');
     expect(String(calledUrl)).toContain('enabled=eq.true');
     expect((calledInit as { headers: Record<string, string> }).headers.apikey).toBe('service-role-key');
+  });
+
+  it('缓存成功读取；Supabase 短暂 5xx 时用 stale 缓存并打开熔断', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-09T00:00:00.000Z'));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{
+          id: 'custom-team-relay',
+          display_name: '团队共享',
+          base_url: 'https://tokenflux.dev/v1',
+          models: [{ id: 'gpt-5.5' }],
+          api_key_env: 'TEST_RELAY_KEY',
+        }],
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: 'database overloaded' }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const env = {
+      CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB: '1',
+      CONTROL_PLANE_SUPABASE_URL: 'https://proj.supabase.co',
+      CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+      CONTROL_PLANE_SUPABASE_CACHE_TTL_MS: '1000',
+      CONTROL_PLANE_SUPABASE_STALE_TTL_MS: '10000',
+      CONTROL_PLANE_SUPABASE_CIRCUIT_OPEN_MS: '5000',
+      TEST_RELAY_KEY: RELAY_KEY,
+    } as unknown as NodeJS.ProcessEnv;
+
+    await expect(loadSharedProvidersFromStore(env)).resolves.toHaveLength(1);
+    await expect(loadSharedProvidersFromStore(env)).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1001);
+    await expect(loadSharedProvidersFromStore(env)).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ apiKey: RELAY_KEY })]),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await expect(loadSharedProvidersFromStore(env)).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'custom-team-relay' })]),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -199,10 +255,107 @@ describe('loadSharedServiceKeysFromStore', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('control_plane_shared_service_key_pool_state');
     expect(String(fetchMock.mock.calls[1][0])).toContain('service=eq.tavily');
   });
+
+  it('缓存 key 表和 pool state，避免同一窗口重复打 Supabase', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{
+          service: 'tavily',
+          display_name: '团队 Tavily',
+          required_capability: 'shared_search',
+          api_key_env: 'TEST_TAVILY_KEY',
+        }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const env = {
+      CONTROL_PLANE_SHARED_SERVICE_KEYS_FROM_DB: '1',
+      CONTROL_PLANE_SUPABASE_URL: 'https://proj.supabase.co',
+      CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+      TEST_TAVILY_KEY: TAVILY_KEY,
+    } as unknown as NodeJS.ProcessEnv;
+
+    await expect(loadSharedServiceKeysFromStore(env, { selectionSeed: 'same-user' })).resolves.toHaveLength(1);
+    await expect(loadSharedServiceKeysFromStore(env, { selectionSeed: 'same-user' })).resolves.toHaveLength(1);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('control_plane_shared_service_keys');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('control_plane_shared_service_key_pool_state');
+  });
 });
 
 describe('cloud_config 全链路（DB 配置 + env key + entitlement 网关）', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('无 bearer token 时先跳过 DB-backed shared secrets，避免 fail-closed 请求仍打 Supabase 表', async () => {
+    const keys = [
+      'CONTROL_PLANE_PRIVATE_KEY',
+      'CONTROL_PLANE_KEY_ID',
+      'CONTROL_PLANE_CLOUD_CONFIG_JSON',
+      'CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB',
+      'CONTROL_PLANE_SHARED_SERVICE_KEYS_FROM_DB',
+      'CONTROL_PLANE_SUPABASE_URL',
+      'CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
+      'TEST_RELAY_KEY',
+      'TEST_TAVILY_KEY',
+    ];
+    const previous = new Map(keys.map((k) => [k, process.env[k]]));
+    try {
+      const { privateKey } = crypto.generateKeyPairSync('ed25519');
+      process.env.CONTROL_PLANE_PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      process.env.CONTROL_PLANE_KEY_ID = 'store-no-token-test-key';
+      process.env.CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB = '1';
+      process.env.CONTROL_PLANE_SHARED_SERVICE_KEYS_FROM_DB = '1';
+      process.env.CONTROL_PLANE_CLOUD_CONFIG_JSON = JSON.stringify({
+        version: 'store-no-token-test',
+        prompts: {},
+        skills: [],
+        toolMeta: {},
+        featureFlags: {},
+        uiStrings: { zh: {}, en: {} },
+        rules: {},
+        mcpServers: [],
+      });
+      process.env.CONTROL_PLANE_SUPABASE_URL = 'https://proj.supabase.co';
+      process.env.CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
+      process.env.TEST_RELAY_KEY = RELAY_KEY;
+      process.env.TEST_TAVILY_KEY = TAVILY_KEY;
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const res = makeResponse();
+      await controlPlaneHandler(
+        { method: 'GET', query: { artifact: 'cloud_config' }, headers: {} },
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+      const payload = (res.body as {
+        payload: {
+          entitlement?: { reason?: string };
+          sharedProviders?: unknown[];
+          sharedServiceKeys?: unknown[];
+        };
+      }).payload;
+      expect(payload.entitlement?.reason).toBe('missing_verified_subject');
+      expect(payload.sharedProviders).toBeUndefined();
+      expect(payload.sharedServiceKeys).toBeUndefined();
+    } finally {
+      for (const k of keys) {
+        const v = previous.get(k);
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
 
   it('命中 capability 的 subject：DB 来的共享 provider 连同 env 里的 key 下发', async () => {
     const keys = [

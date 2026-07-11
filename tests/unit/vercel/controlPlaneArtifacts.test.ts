@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import capabilitiesHandler from '../../../vercel-api/api/v1/capabilities';
 import configHandler from '../../../vercel-api/api/v1/config';
 import controlPlaneHandler from '../../../vercel-api/api/v1/control-plane';
+import { resetControlPlaneResilienceForTests } from '../../../vercel-api/lib/controlPlaneResilience';
 import type { ControlPlaneResponseLike } from '../../../vercel-api/lib/controlPlaneEnvelope';
 
 function createKeyPair() {
@@ -259,6 +260,7 @@ async function withRendererRolloutEnv(options: {
 describe('vercel control-plane artifacts', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    resetControlPlaneResilienceForTests();
   });
 
   it('serves capability registry through the unified control-plane route', async () => {
@@ -700,6 +702,29 @@ describe('vercel control-plane artifacts', () => {
       });
       expect(JSON.stringify(response.body)).not.toContain('static-admin');
       expect(JSON.stringify(response.body)).not.toContain('enterprise');
+
+      const secondResponse = makeResponse();
+      await controlPlaneHandler({
+        method: 'GET',
+        query: { artifact: 'cloud_config' },
+        headers: { authorization: 'Bearer supabase-access-token' },
+      }, secondResponse);
+
+      expect(secondResponse.statusCode).toBe(200);
+      expect(secondResponse.body).toMatchObject({
+        kind: 'cloud_config',
+        payload: {
+          subject: {
+            id: 'user_supabase',
+            source: 'supabase_auth',
+          },
+          entitlement: {
+            status: 'active',
+            plan: 'pro',
+          },
+        },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 

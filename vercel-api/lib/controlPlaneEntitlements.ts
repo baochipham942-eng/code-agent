@@ -1,5 +1,11 @@
 import type { CloudConfigPayload } from './controlPlanePayloads.js';
 import type { ControlPlaneRequestLike } from './controlPlaneEnvelope.js';
+import {
+  fetchControlPlaneResource,
+  makeControlPlaneCacheKey,
+  readCachedControlPlaneValue,
+  writeControlPlaneCacheValue,
+} from './controlPlaneResilience.js';
 
 type EntitlementPolicy = NonNullable<CloudConfigPayload['entitlement']>;
 type EntitlementStatus = EntitlementPolicy['status'];
@@ -364,23 +370,36 @@ function readSupabaseEntitlement(value: unknown): EntitlementPolicy | null {
 async function verifySupabaseAccessToken(
   token: string,
   config: SupabaseAuthConfig,
+  env: NodeJS.ProcessEnv,
 ): Promise<ControlPlaneSubject | null> {
   if (typeof fetch !== 'function') {
     return null;
   }
 
+  const cacheKey = makeControlPlaneCacheKey('supabase-auth-user', [config.url, config.key, token]);
+  const cached = readCachedControlPlaneValue<ControlPlaneSubject | null>(cacheKey, env);
+  if (cached.hit) {
+    return cached.value ?? null;
+  }
+
   try {
-    const response = await fetch(`${config.url.replace(/\/+$/, '')}/auth/v1/user`, {
+    const response = await fetchControlPlaneResource(cacheKey, `${config.url.replace(/\/+$/, '')}/auth/v1/user`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
         apikey: config.key,
       },
-    });
-    if (!response.ok) {
+    }, { env });
+    if (!response) {
       return null;
     }
-    return readSupabaseSubject(await response.json().catch(() => null));
+    if (!response.ok) {
+      writeControlPlaneCacheValue(cacheKey, null, env);
+      return null;
+    }
+    const subject = readSupabaseSubject(await response.json().catch(() => null));
+    writeControlPlaneCacheValue(cacheKey, subject, env);
+    return subject;
   } catch {
     return null;
   }
@@ -389,9 +408,22 @@ async function verifySupabaseAccessToken(
 async function readSupabaseSubjectEntitlement(
   subject: ControlPlaneSubject,
   config: SupabaseAuthConfig,
+  env: NodeJS.ProcessEnv,
 ): Promise<EntitlementPolicy | null> {
   if (typeof fetch !== 'function') {
     return null;
+  }
+
+  const cacheKey = makeControlPlaneCacheKey('supabase-entitlement', [
+    config.url,
+    config.key,
+    config.entitlementTable,
+    config.entitlementUserIdColumn,
+    subject.id,
+  ]);
+  const cached = readCachedControlPlaneValue<EntitlementPolicy | null>(cacheKey, env);
+  if (cached.hit) {
+    return cached.value ?? null;
   }
 
   try {
@@ -402,22 +434,29 @@ async function readSupabaseSubjectEntitlement(
     url.searchParams.set('select', 'status,plan,capabilities,expires_at,reason');
     url.searchParams.set('limit', '1');
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchControlPlaneResource(cacheKey, url.toString(), {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${config.key}`,
         apikey: config.key,
         Accept: 'application/json',
       },
-    });
+    }, { env });
+    if (!response) {
+      return null;
+    }
     if (!response.ok) {
+      writeControlPlaneCacheValue(cacheKey, null, env);
       return null;
     }
     const rows = await response.json().catch(() => null);
     if (!Array.isArray(rows)) {
+      writeControlPlaneCacheValue(cacheKey, null, env);
       return null;
     }
-    return readSupabaseEntitlement(rows[0]);
+    const entitlement = readSupabaseEntitlement(rows[0]);
+    writeControlPlaneCacheValue(cacheKey, entitlement, env);
+    return entitlement;
   } catch {
     return null;
   }
@@ -508,11 +547,11 @@ export async function applyServerEntitlementGateAsync(
     return applyFailClosedEntitlement(payload, 'supabase_auth_unconfigured');
   }
 
-  const subject = await verifySupabaseAccessToken(token, supabaseAuth.config);
+  const subject = await verifySupabaseAccessToken(token, supabaseAuth.config, env);
   if (!subject) {
     return applyFailClosedEntitlement(payload, 'invalid_verified_subject');
   }
-  const entitlement = await readSupabaseSubjectEntitlement(subject, supabaseAuth.config);
+  const entitlement = await readSupabaseSubjectEntitlement(subject, supabaseAuth.config, env);
   if (!entitlement) {
     return applyFailClosedEntitlement(payload, 'missing_supabase_entitlement');
   }

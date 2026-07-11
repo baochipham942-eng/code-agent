@@ -357,6 +357,37 @@ function getBearerToken(req: ControlPlaneRequestLike): string | null {
   return match?.[1]?.trim() || null;
 }
 
+function shouldHydrateSharedSecrets(req: ControlPlaneRequestLike, env: NodeJS.ProcessEnv): boolean {
+  if (getBearerToken(req)) {
+    return true;
+  }
+  const authRequired = readBooleanEnv(env, [
+    'CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+    'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+  ], false);
+  const tokenMap = readEnvValue(env, [
+    'CONTROL_PLANE_ENTITLEMENT_TOKEN_MAP_JSON',
+    'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_TOKEN_MAP_JSON',
+  ]);
+  const supabaseUrl = readEnvValue(env, [
+    'CONTROL_PLANE_SUPABASE_URL',
+    'CODE_AGENT_CONTROL_PLANE_SUPABASE_URL',
+    'SUPABASE_URL',
+  ]);
+  const supabaseKey = readEnvValue(env, [
+    'CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
+    'CODE_AGENT_CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
+    'CONTROL_PLANE_SUPABASE_KEY',
+    'CODE_AGENT_CONTROL_PLANE_SUPABASE_KEY',
+    'CONTROL_PLANE_SUPABASE_ANON_KEY',
+    'CODE_AGENT_CONTROL_PLANE_SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_KEY',
+    'SUPABASE_ANON_KEY',
+  ]);
+  return !(authRequired || tokenMap || (supabaseUrl && supabaseKey));
+}
+
 function digestSeed(kind: string, value: string): string {
   return `${kind}:${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
@@ -391,10 +422,15 @@ export async function readCloudConfigPayloadForRequestAsync(
   const base = readCloudConfigPayload(env);
   // 混合方案：已配 Supabase 时，共享配置以 DB 为唯一事实来源（key 仍从 env 取并已注入）；
   // 未配 Supabase 时 fromStore=null → 保留 env-JSON 里的配置（向后兼容）。
-  const providersFromStore = await loadSharedProvidersFromStore(env);
-  const serviceKeysFromStore = await loadSharedServiceKeysFromStore(env, {
-    selectionSeed: buildSharedServiceKeySelectionSeed(req),
-  });
+  const hydrateSharedSecrets = shouldHydrateSharedSecrets(req, env);
+  const providersFromStore = hydrateSharedSecrets
+    ? await loadSharedProvidersFromStore(env)
+    : null;
+  const serviceKeysFromStore = hydrateSharedSecrets
+    ? await loadSharedServiceKeysFromStore(env, {
+      selectionSeed: buildSharedServiceKeySelectionSeed(req),
+    })
+    : null;
   const payload = {
     ...base,
     ...(providersFromStore !== null ? { sharedProviders: providersFromStore } : {}),

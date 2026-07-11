@@ -1,8 +1,13 @@
+import * as crypto from 'node:crypto';
 import type {
   ControlPlaneArtifactKind,
   ControlPlaneEnvelope,
   ControlPlaneRequestLike,
 } from './controlPlaneEnvelope.js';
+import {
+  fetchControlPlaneResource,
+  makeControlPlaneCacheKey,
+} from './controlPlaneResilience.js';
 
 export interface ControlPlaneAuditResult {
   ok: boolean;
@@ -89,6 +94,26 @@ const AUDIT_DATABASE_URL_ENV_NAMES = [
   'DATABASE_URL',
 ];
 
+const AUDIT_SAMPLE_RATE_ENV_NAMES = [
+  'CONTROL_PLANE_AUDIT_SAMPLE_RATE',
+  'CODE_AGENT_CONTROL_PLANE_AUDIT_SAMPLE_RATE',
+];
+
+const AUDIT_ERROR_SAMPLE_RATE_ENV_NAMES = [
+  'CONTROL_PLANE_AUDIT_ERROR_SAMPLE_RATE',
+  'CODE_AGENT_CONTROL_PLANE_AUDIT_ERROR_SAMPLE_RATE',
+];
+
+const AUDIT_FETCH_TIMEOUT_MS_ENV_NAMES = [
+  'CONTROL_PLANE_AUDIT_FETCH_TIMEOUT_MS',
+  'CODE_AGENT_CONTROL_PLANE_AUDIT_FETCH_TIMEOUT_MS',
+];
+
+const AUDIT_CIRCUIT_OPEN_MS_ENV_NAMES = [
+  'CONTROL_PLANE_AUDIT_CIRCUIT_OPEN_MS',
+  'CODE_AGENT_CONTROL_PLANE_AUDIT_CIRCUIT_OPEN_MS',
+];
+
 const AUDIT_COLUMNS = [
   'artifact_kind',
   'content_hash',
@@ -122,6 +147,33 @@ function readEnv(env: NodeJS.ProcessEnv, names: string[]): string | null {
 function readBooleanEnv(env: NodeJS.ProcessEnv, names: string[]): boolean {
   const value = readEnv(env, names);
   return value ? /^(1|true|yes|enabled)$/i.test(value) : false;
+}
+
+function readNumberEnv(env: NodeJS.ProcessEnv, names: string[], fallback: number): number {
+  const value = readEnv(env, names);
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function readAuditSampleRate(env: NodeJS.ProcessEnv): number {
+  const parsed = readNumberEnv(env, AUDIT_SAMPLE_RATE_ENV_NAMES, 1);
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function readAuditErrorSampleRate(env: NodeJS.ProcessEnv): number {
+  const parsed = readNumberEnv(env, AUDIT_ERROR_SAMPLE_RATE_ENV_NAMES, 1);
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function readAuditFetchTimeoutMs(env: NodeJS.ProcessEnv): number {
+  return readNumberEnv(env, AUDIT_FETCH_TIMEOUT_MS_ENV_NAMES, 1_500);
+}
+
+function readAuditCircuitOpenMs(env: NodeJS.ProcessEnv): number {
+  return readNumberEnv(env, AUDIT_CIRCUIT_OPEN_MS_ENV_NAMES, 60_000);
 }
 
 function resolveAuditTable(env: NodeJS.ProcessEnv): string {
@@ -175,6 +227,24 @@ function getHeader(req: ControlPlaneRequestLike, name: string): string | null {
     return value[0] ?? null;
   }
   return value ?? null;
+}
+
+function shouldSampleAudit(req: ControlPlaneRequestLike, rate: number, seed: string): boolean {
+  if (rate >= 1) {
+    return true;
+  }
+  if (rate <= 0) {
+    return false;
+  }
+  const requestSeed = getHeader(req, 'x-vercel-id')
+    ?? getHeader(req, 'x-request-id')
+    ?? `${req.method ?? 'GET'}:${getHeader(req, 'user-agent') ?? 'unknown'}`;
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${requestSeed}:${seed}`)
+    .digest('hex');
+  const bucket = Number.parseInt(digest.slice(0, 12), 16) / 0xffffffffffff;
+  return bucket < rate;
 }
 
 function buildBaseRow(
@@ -234,8 +304,11 @@ async function postAuditRowToSupabase(
   config: ControlPlaneSupabaseAuditConfig,
   row: Record<string, unknown>,
   fetchImpl: typeof fetch,
+  env: NodeJS.ProcessEnv,
 ): Promise<ControlPlaneAuditResult> {
-  const response = await fetchImpl(
+  const cacheKey = makeControlPlaneCacheKey('audit-supabase', [config.url, config.key, config.table]);
+  const response = await fetchControlPlaneResource(
+    cacheKey,
     `${config.url}/rest/v1/${encodeURIComponent(config.table)}`,
     {
       method: 'POST',
@@ -247,7 +320,16 @@ async function postAuditRowToSupabase(
       },
       body: JSON.stringify(row),
     },
+    {
+      env,
+      fetchImpl,
+      timeoutMs: readAuditFetchTimeoutMs(env),
+      circuitOpenMs: readAuditCircuitOpenMs(env),
+    },
   );
+  if (!response) {
+    return { ok: true, skippedReason: 'audit_circuit_open' };
+  }
   if (!response.ok) {
     return {
       ok: false,
@@ -285,11 +367,12 @@ async function postAuditRowToPostgres(
 async function postAuditRow(
   config: ControlPlaneAuditConfig,
   row: Record<string, unknown>,
+  env: NodeJS.ProcessEnv,
   fetchImpl: typeof fetch,
   postgresFactory?: PostgresAuditFactory,
 ): Promise<ControlPlaneAuditResult> {
   if (config.mode === 'supabase') {
-    return postAuditRowToSupabase(config, row, fetchImpl);
+    return postAuditRowToSupabase(config, row, fetchImpl, env);
   }
   return postAuditRowToPostgres(config, row, postgresFactory);
 }
@@ -302,6 +385,9 @@ export async function recordControlPlaneAuditEvent<TPayload>(
   const config = resolveAuditConfig(env);
   if (!config) {
     return { ok: true, skippedReason: 'audit_not_configured' };
+  }
+  if (!shouldSampleAudit(req, readAuditSampleRate(env), options.envelope.contentHash)) {
+    return { ok: true, skippedReason: 'audit_sampled_out' };
   }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') {
@@ -318,6 +404,7 @@ export async function recordControlPlaneAuditEvent<TPayload>(
         options.outcome,
         options.now ?? new Date(),
       ),
+      env,
       fetchImpl,
       options.postgresFactory,
     );
@@ -338,6 +425,9 @@ export async function recordControlPlaneAuditError(
   if (!config) {
     return { ok: true, skippedReason: 'audit_not_configured' };
   }
+  if (!shouldSampleAudit(req, readAuditErrorSampleRate(env), `${options.kind}:${options.errorCode}:${options.statusCode}`)) {
+    return { ok: true, skippedReason: 'audit_sampled_out' };
+  }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') {
     return { ok: true, skippedReason: 'fetch_unavailable' };
@@ -353,6 +443,7 @@ export async function recordControlPlaneAuditError(
         errorCode: options.errorCode,
         now: options.now ?? new Date(),
       }),
+      env,
       fetchImpl,
       options.postgresFactory,
     );

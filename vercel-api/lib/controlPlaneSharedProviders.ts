@@ -5,6 +5,13 @@
 // ============================================================================
 
 import type { SharedProviderConfig } from './controlPlanePayloads.js';
+import {
+  fetchControlPlaneResource,
+  isTransientControlPlaneStatus,
+  makeControlPlaneCacheKey,
+  readCachedControlPlaneValue,
+  writeControlPlaneCacheValue,
+} from './controlPlaneResilience.js';
 
 const SUPABASE_URL_ENV_NAMES = [
   'CONTROL_PLANE_SUPABASE_URL',
@@ -118,6 +125,12 @@ export async function loadSharedProvidersFromStore(
     return null;
   }
 
+  const cacheKey = makeControlPlaneCacheKey('shared-providers', [url, serviceKey]);
+  const cached = readCachedControlPlaneValue<SharedProviderConfig[]>(cacheKey, env);
+  if (cached.hit) {
+    return cached.value ?? null;
+  }
+
   try {
     const endpoint = new URL(`${url.replace(/\/+$/, '')}/rest/v1/${SHARED_PROVIDERS_TABLE}`);
     endpoint.searchParams.set('enabled', 'eq.true');
@@ -126,26 +139,35 @@ export async function loadSharedProvidersFromStore(
       'id,display_name,base_url,protocol,billing_mode,models,required_capability,api_key_env',
     );
 
-    const response = await fetch(endpoint.toString(), {
+    const response = await fetchControlPlaneResource(cacheKey, endpoint.toString(), {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${serviceKey}`,
         apikey: serviceKey,
         Accept: 'application/json',
       },
-    });
+    }, { env });
+    if (!response) {
+      return readCachedControlPlaneValue<SharedProviderConfig[]>(cacheKey, env, { allowStale: true }).value ?? null;
+    }
     if (!response.ok) {
+      if (isTransientControlPlaneStatus(response.status)) {
+        return readCachedControlPlaneValue<SharedProviderConfig[]>(cacheKey, env, { allowStale: true }).value ?? null;
+      }
       return null;
     }
     const rows = await response.json().catch(() => null);
     if (!Array.isArray(rows)) {
+      writeControlPlaneCacheValue(cacheKey, [], env);
       return [];
     }
-    return rows
+    const providers = rows
       .map((row) => rowToProvider(row as SharedProviderRow, env))
       .filter((p): p is SharedProviderConfig => p !== null);
+    writeControlPlaneCacheValue(cacheKey, providers, env);
+    return providers;
   } catch {
     // 读 store 失败不应整体打挂 cloud_config；降级到 env-JSON 兜底。
-    return null;
+    return readCachedControlPlaneValue<SharedProviderConfig[]>(cacheKey, env, { allowStale: true }).value ?? null;
   }
 }

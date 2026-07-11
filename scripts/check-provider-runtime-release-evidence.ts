@@ -314,7 +314,9 @@ async function validateMatrix(options: GateOptions, ledger: Map<string, LedgerRe
         continue;
       }
       if (record.runtime !== entry.runtime || record.protocolFamily !== entry.protocolFamily) errors.push(`${cellLabel} ledger runtime/protocolFamily does not match matrix`);
-      if (entry.providerScope.length > 0 && !entry.providerScope.includes(record.provider)) errors.push(`${cellLabel} ledger provider does not match matrix providerScope`);
+      if (cell.status === 'supported' && entry.providerScope.length > 0 && !entry.providerScope.includes(record.provider)) {
+        errors.push(`${cellLabel} ledger provider does not match matrix providerScope`);
+      }
       if (cell.status === 'supported' && (record.verificationStatus !== 'verified' || record.result !== 'passed')) {
         errors.push(`${cellLabel} supported cell requires a verified passed live smoke`);
       }

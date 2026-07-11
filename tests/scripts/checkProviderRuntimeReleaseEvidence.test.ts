@@ -216,6 +216,7 @@ describe('provider runtime release evidence gate', () => {
     const ledger = readJson<{ records: Array<Record<string, unknown>> }>(root, 'docs/capabilities/provider-runtime-live-smoke-ledger.json');
     ledger.records[0].verificationStatus = 'unverified';
     ledger.records[0].result = 'not_run';
+    ledger.records[0].provider = 'configured-provider-set';
     delete ledger.records[0].evidence;
     writeJson(root, 'docs/capabilities/provider-runtime-live-smoke-ledger.json', ledger);
 

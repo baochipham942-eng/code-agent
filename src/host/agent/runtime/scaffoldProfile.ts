@@ -8,6 +8,30 @@
 
 import { SCAFFOLD_PROFILE } from '../../../shared/constants/agent';
 import { getModelScaffoldTier, type ScaffoldTier } from '../../../shared/constants/models';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('ScaffoldProfile');
+let scaffoldProfileOverride: boolean | undefined;
+
+export function setScaffoldProfileOverride(value: boolean | undefined): void {
+  scaffoldProfileOverride = value;
+}
+
+export function getScaffoldProfileOverride(): boolean | undefined {
+  return scaffoldProfileOverride;
+}
+
+// 单维度实验旋钮：只覆盖 thinkingInjection，nudge/修复指令不动。
+// 2026-07-11 非劣批 B7 整套 profile 两模型腿同向回退，需定位是三件里哪件在伤成功率。
+let thinkingInjectionOverride: boolean | undefined;
+
+export function setThinkingInjectionOverride(value: boolean | undefined): void {
+  thinkingInjectionOverride = value;
+}
+
+export function getThinkingInjectionOverride(): boolean | undefined {
+  return thinkingInjectionOverride;
+}
 
 export type RepairInstructionStyle = 'full' | 'compact';
 
@@ -46,6 +70,16 @@ export function resolveScaffoldProfile(tier: ScaffoldTier): ScaffoldProfile {
  * 消费方只读 profile 字段，禁止各处自查 tier（单一真源，防多处判定漂移）。
  */
 export function resolveScaffoldProfileForModel(modelId: string): ScaffoldProfile {
-  if (!SCAFFOLD_PROFILE.ENABLED) return STANDARD_PROFILE;
-  return resolveScaffoldProfile(getModelScaffoldTier(modelId));
+  const override = getScaffoldProfileOverride();
+  const enabled = override ?? SCAFFOLD_PROFILE.ENABLED;
+  const base = enabled ? resolveScaffoldProfile(getModelScaffoldTier(modelId)) : STANDARD_PROFILE;
+  if (override === true) {
+    logger.info(`[scaffold-profile] arm override active: on tier=${base.tier}`);
+  }
+  const thinkingOverride = getThinkingInjectionOverride();
+  if (thinkingOverride !== undefined) {
+    logger.info(`[scaffold-profile] thinking-injection override active: ${thinkingOverride ? 'on' : 'off'}`);
+    return { ...base, thinkingInjection: thinkingOverride };
+  }
+  return base;
 }

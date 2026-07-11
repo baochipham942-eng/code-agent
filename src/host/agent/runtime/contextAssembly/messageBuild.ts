@@ -14,6 +14,7 @@ import { loadMemoryIndex } from '../../../lightMemory/indexLoader';
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
 import { getRepoMap } from '../../../context/repoMap';
+import { getCompressionPipelineOverride } from '../../../context/compressionPipeline';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
 import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
 import {
@@ -908,6 +909,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         0,
       );
 
+      const armEnabled = getCompressionPipelineOverride() ?? true;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
         interventionAdjustedEntries.map((entry) => ({ ...entry })),
         nextCompressionState,
@@ -918,12 +920,12 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           cacheHot: idleMinutes < 2,
           idleMinutes,
           summarize: (messages) => ctx.summarizeCollapsedContext(messages),
-          enableSnip: true,
-          enableMicrocompact: true,
-          enableContextCollapse: true,
+          enableSnip: armEnabled,
+          enableMicrocompact: armEnabled,
+          enableContextCollapse: armEnabled,
           toolResultBudget: 2000,
           activeToolResultPrune: {
-            enabled: ACTIVE_TOOL_RESULT_PRUNE.ENABLED,
+            enabled: armEnabled && ACTIVE_TOOL_RESULT_PRUNE.ENABLED,
             maxTokensPerResult: ACTIVE_TOOL_RESULT_PRUNE.MAX_TOKENS_PER_RESULT,
             spillSessionId: ctx.runtime.sessionId,
           },

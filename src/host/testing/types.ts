@@ -477,6 +477,12 @@ export interface HarnessVariantConfig {
   name: string;
   /** context 自动压缩开/关（undefined = 跟随全局配置） */
   contextCompression?: boolean;
+  /** messageBuild 六层压缩管线的 L0 + L2-L4 开/关；L1 保持常开，与 contextCompression(autoCompressor) 不同 */
+  compressionPipeline?: boolean;
+  /** 模型 scaffold profile 开/关（undefined = 跟随生产 flag） */
+  scaffoldProfile?: boolean;
+  /** 单维度：只覆盖 thinking 注入（B7 定位实验），nudge/修复指令不动 */
+  thinkingInjection?: boolean;
   /** hooks 开/关（undefined = 评测默认关闭） */
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
@@ -680,6 +686,11 @@ export interface CompareConfiguration {
   model?: string;
   provider?: string;
   systemPrompt?: string;
+  harness?: {
+    compressionPipeline?: boolean;
+    scaffoldProfile?: boolean;
+    thinkingInjection?: boolean;
+  };
   enabledTools?: string[];
   temperature?: number;
   agentConfig?: Record<string, unknown>;
@@ -700,6 +711,9 @@ export interface CaseComparison {
   winner: 'A' | 'B' | 'tie';
   realWinner: 'baseline' | 'candidate' | 'tie';
   reasoning: string;
+  /** 每臂断言判定终态（非劣判定主指标=成功率；rubric 分只作参考） */
+  statusA?: TestStatus;
+  statusB?: TestStatus;
   durationA: number;
   durationB: number;
   /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */

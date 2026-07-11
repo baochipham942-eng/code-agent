@@ -18,11 +18,22 @@ export async function loadCompareConfig(filePath: string): Promise<CompareConfig
     throw new Error(`Invalid compare config in ${filePath}: missing required field "name"`);
   }
 
+  const parsedHarness = parsed.harness && typeof parsed.harness === 'object'
+    ? parsed.harness as Record<string, unknown>
+    : undefined;
+
   return {
     name: parsed.name as string,
     model: parsed.model as string | undefined,
     provider: parsed.provider as string | undefined,
     systemPrompt: parsed.systemPrompt as string | undefined,
+    harness: parsedHarness
+      ? {
+          compressionPipeline: parsedHarness.compressionPipeline as boolean | undefined,
+          scaffoldProfile: parsedHarness.scaffoldProfile as boolean | undefined,
+          thinkingInjection: parsedHarness.thinkingInjection as boolean | undefined,
+        }
+      : undefined,
     enabledTools: parsed.enabledTools as string[] | undefined,
     temperature: parsed.temperature as number | undefined,
     agentConfig: parsed.agentConfig as Record<string, unknown> | undefined,

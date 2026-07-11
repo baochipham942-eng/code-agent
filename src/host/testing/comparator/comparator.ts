@@ -134,6 +134,8 @@ export class ABComparator {
         winner: 'tie',
         realWinner: 'tie',
         reasoning: `pair 排除（未计入胜负）：${reasons}`,
+        statusA: resultA.status,
+        statusB: resultB.status,
         durationA,
         durationB,
         excludedReason: reasons,
@@ -173,6 +175,8 @@ export class ABComparator {
       winner: gradeResult.winner,
       realWinner,
       reasoning: gradeResult.reasoning,
+      statusA: resultA.status,
+      statusB: resultB.status,
       durationA,
       durationB,
     };

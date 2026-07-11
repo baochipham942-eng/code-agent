@@ -3,8 +3,10 @@
 // 覆盖：三档矩阵 / flag 关闭身份保证 / catalog 标注消费 / shouldThink 接线契约
 // ============================================================================
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  setScaffoldProfileOverride,
+  setThinkingInjectionOverride,
   resolveScaffoldProfile,
   resolveScaffoldProfileForModel,
 } from '../../../../src/host/agent/runtime/scaffoldProfile';
@@ -12,6 +14,11 @@ import { getModelScaffoldTier } from '../../../../src/shared/constants/models';
 import { SCAFFOLD_PROFILE } from '../../../../src/shared/constants/agent';
 import { shouldThink } from '../../../../src/host/agent/runtime/contextAssembly/modeInjection';
 import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly/inference';
+
+afterEach(() => {
+  setScaffoldProfileOverride(undefined);
+  setThinkingInjectionOverride(undefined);
+});
 
 describe('resolveScaffoldProfile 三档矩阵', () => {
   it('strong → 关 thinking 注入 + audit 间隔 ×2 + compact 修复指令（P1）', () => {
@@ -69,6 +76,27 @@ describe('flag 关闭的身份保证', () => {
     expect(p.thinkingInjection).toBe(true);
     expect(p.auditNudgeIntervalMultiplier).toBe(1);
     expect(p.repairInstructionStyle).toBe('full');
+  });
+});
+
+describe('运行时 override', () => {
+  it('override=true 时 strong 模型返回 strong profile，clear 后恢复 standard', () => {
+    setScaffoldProfileOverride(true);
+    expect(resolveScaffoldProfileForModel('glm-5').tier).toBe('strong');
+
+    setScaffoldProfileOverride(undefined);
+    expect(resolveScaffoldProfileForModel('glm-5').tier).toBe('standard');
+  });
+
+  it('thinkingInjection 单维度 override 只动注入位，nudge/修复指令保持现状', () => {
+    setThinkingInjectionOverride(false);
+    const p = resolveScaffoldProfileForModel('glm-5');
+    expect(p.thinkingInjection).toBe(false);
+    expect(p.auditNudgeIntervalMultiplier).toBe(1);
+    expect(p.repairInstructionStyle).toBe('full');
+
+    setThinkingInjectionOverride(undefined);
+    expect(resolveScaffoldProfileForModel('glm-5').thinkingInjection).toBe(true);
   });
 });
 

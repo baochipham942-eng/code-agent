@@ -35,7 +35,7 @@ import {
   saveReport,
 } from '../src/host/testing/index';
 import type { AgentInterface } from '../src/host/testing/testRunner';
-import type { TestRunSummary, TrendDataPoint } from '../src/host/testing/types';
+import type { CompareConfiguration, TestRunSummary, TrendDataPoint } from '../src/host/testing/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 
@@ -568,6 +568,7 @@ async function runCompareCommand(
     maxCases: number;
     force: boolean;
     judge: 'rules' | 'llm';
+    caseDir?: string;
   },
 ): Promise<void> {
   const {
@@ -590,7 +591,7 @@ async function runCompareCommand(
 
   // Load & filter cases
   const defaultConfig = createDefaultConfig(workingDir);
-  const suites = await loadAllTestSuites(defaultConfig.testCaseDir);
+  const suites = await loadAllTestSuites(opts.caseDir ?? defaultConfig.testCaseDir);
   const testCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
   const totalCases = testCases.length;
 
@@ -622,9 +623,10 @@ async function runCompareCommand(
       workingDirectory: agentWorkingDir,
     });
 
-    const makeAgent = (config: { name: string; model?: string; provider?: string; systemPrompt?: string }) => {
+    const makeAgent = (config: CompareConfiguration) => {
       const provider = config.provider || resolvedProvider;
       const model = config.model || resolvedModel;
+      const harness = config.harness ?? baseline.harness;
       const apiKey = process.env.AUTO_TEST_API_KEY || loadApiKey(provider, workingDir);
       if (!apiKey) {
         const candidates = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
@@ -634,6 +636,7 @@ async function runCompareCommand(
         workingDirectory: agentWorkingDir,
         modelConfig: { provider, model, apiKey },
         ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
+        ...(harness ? { harness: { name: config.name, ...harness } } : {}),
       });
     };
 
@@ -731,13 +734,14 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       process.exit(1);
     }
     try {
-      await runCompareCommand(workingDir, compare, { model, provider, tags, ids, maxCases, force, judge });
+      await runCompareCommand(workingDir, compare, { model, provider, tags, ids, maxCases, force, judge, caseDir });
     } catch (error) {
       // A3 臂激活断言等准入失败：干净的红色报错 + 非零退出，不产出对比报告
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
       process.exit(1);
     }
-    return;
+    // 显式退出：真跑后 DB/telemetry/限流器残留 handle 会让进程写完报告仍挂住不退
+    process.exit(0);
   }
 
   // --baseline-info

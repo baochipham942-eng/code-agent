@@ -65,7 +65,9 @@ async function main(): Promise<void> {
 
     const gates = {
       turns500Interactive: browserResult.scenarios.turns500.interactiveMs <= 2_000,
-      anchorDrift: browserResult.scenarios.historyPrepend.anchorDriftPx <= 16,
+      anchorDrift: typeof browserResult.scenarios.historyPrepend.anchorDriftPx === 'number'
+        && Number.isFinite(browserResult.scenarios.historyPrepend.anchorDriftPx)
+        && browserResult.scenarios.historyPrepend.anchorDriftPx <= 16,
       userScroll: browserResult.scenarios.userScroll.retainedPosition,
       streamingFollow: browserResult.scenarios.streamingFollow.resumedAtBottom,
       search: browserResult.scenarios.search.targetMounted && browserResult.scenarios.search.targetVisible,

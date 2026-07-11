@@ -15,7 +15,13 @@ interface LongSessionBrowserResult {
     turns500: { interactiveMs: number; renderedTurns: number };
     turns1000: { updateMs: number; renderedTurns: number };
     denseCodeStreaming: { codeBlocks: number; updates: number; durationMs: number };
-    historyPrepend: { prependedTurns: number; anchorTurnId: string; anchorDriftPx: number; firstItemIndex: number | null };
+    historyPrepend: {
+      prependedTurns: number;
+      anchorTurnId: string;
+      anchorMounted: boolean;
+      anchorDriftPx: number | null;
+      firstItemIndex: number | null;
+    };
     userScroll: { retainedPosition: boolean; distanceFromBottomPx: number };
     streamingFollow: { resumedAtBottom: boolean; distanceFromBottomPx: number };
     search: { targetTurnIndex: number; targetMounted: boolean; targetVisible: boolean };
@@ -247,10 +253,6 @@ function LongSessionHarness(): React.ReactElement {
       const anchorTurnId = visibleAnchor?.dataset.traceTurnId ?? '';
       const anchorBefore = visibleAnchor?.getBoundingClientRect().top ?? Number.NaN;
       const olderTurns = Array.from({ length: 30 }, (_, index) => makeTurn(index, 'older'));
-      setSearchMatches([
-        { turnIndex: 1_029, nodeIndex: 1, offset: 0 },
-        { turnIndex: targetIndex + 30, nodeIndex: 1, offset: 0 },
-      ]);
       setProjection((current) => ({
         ...current,
         turns: [...olderTurns, ...current.turns],
@@ -267,7 +269,7 @@ function LongSessionHarness(): React.ReactElement {
       const anchorAfter = anchoredTarget?.getBoundingClientRect().top ?? Number.NaN;
       const anchorDriftPx = Number.isFinite(anchorBefore) && Number.isFinite(anchorAfter)
         ? round(Math.abs(anchorAfter - anchorBefore))
-        : Number.POSITIVE_INFINITY;
+        : null;
 
       const stopStartedAt = performance.now();
       await nextFrame();
@@ -285,6 +287,7 @@ function LongSessionHarness(): React.ReactElement {
           historyPrepend: {
             prependedTurns: 30,
             anchorTurnId,
+            anchorMounted: Boolean(anchoredTarget),
             anchorDriftPx,
             firstItemIndex: Number(document.querySelector('[data-virtuoso-first-item-index]')?.getAttribute('data-virtuoso-first-item-index')) || null,
           },

@@ -42,6 +42,7 @@ interface DevAgentLoopStubStatus {
   active?: boolean;
   cancelCount?: number;
   cancelledAt?: number | null;
+  releasedAt?: number | null;
   cancelReason?: string | null;
   error?: string;
 }
@@ -426,6 +427,9 @@ async function verifyRendererCancelClick(
   stopButtonHiddenAfterCancel: boolean;
   cancelCount: number;
   cancelledAt: number | null;
+  releasedAt: number | null;
+  cancelToRunReleaseMs: number | null;
+  cancelToUiCleanupMs: number | null;
 }> {
   const input = page.locator('[data-chat-input]').first();
   await input.scrollIntoViewIfNeeded();
@@ -457,6 +461,9 @@ async function verifyRendererCancelClick(
       stopButtonHiddenAfterCancel: false,
       cancelCount: 0,
       cancelledAt: null,
+      releasedAt: null,
+      cancelToRunReleaseMs: null,
+      cancelToUiCleanupMs: null,
     };
   }
 
@@ -473,9 +480,11 @@ async function verifyRendererCancelClick(
   const stopButtonVisible = await stopButton.waitFor({ state: 'visible', timeout: 10_000 })
     .then(() => true)
     .catch(() => false);
+  let stopRequestedAt: number | null = null;
   if (!stopButtonVisible) {
     failures.push('renderer cancel smoke did not render the stop button while the run was held.');
   } else {
+    stopRequestedAt = Date.now();
     await stopButton.click();
   }
 
@@ -488,8 +497,22 @@ async function verifyRendererCancelClick(
   const stopButtonHiddenAfterCancel = await stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
+  const uiClearedAt = stopButtonHiddenAfterCancel ? Date.now() : null;
   if (!stopButtonHiddenAfterCancel) {
     failures.push('renderer cancel smoke did not clear the stop button after cancel completed.');
+  }
+
+  const cancelToRunReleaseMs = stopRequestedAt && stubAfterCancel?.releasedAt
+    ? stubAfterCancel.releasedAt - stopRequestedAt
+    : null;
+  const cancelToUiCleanupMs = stopRequestedAt && uiClearedAt
+    ? uiClearedAt - stopRequestedAt
+    : null;
+  if (cancelToRunReleaseMs === null || cancelToRunReleaseMs > 1_000) {
+    failures.push(`renderer cancel smoke exceeded the 1s RunRegistry release gate: ${String(cancelToRunReleaseMs)}ms`);
+  }
+  if (cancelToUiCleanupMs === null || cancelToUiCleanupMs > 1_000) {
+    failures.push(`renderer cancel smoke exceeded the 1s UI cleanup gate: ${String(cancelToUiCleanupMs)}ms`);
   }
 
   if (sessionId) {
@@ -508,6 +531,9 @@ async function verifyRendererCancelClick(
     stopButtonHiddenAfterCancel,
     cancelCount: stubAfterCancel?.cancelCount ?? 0,
     cancelledAt: stubAfterCancel?.cancelledAt ?? null,
+    releasedAt: stubAfterCancel?.releasedAt ?? null,
+    cancelToRunReleaseMs,
+    cancelToUiCleanupMs,
   };
 }
 
@@ -638,6 +664,8 @@ async function main(): Promise<void> {
         ['uiCancelRunIntercepted', result.uiCancel.runIntercepted],
         ['uiCancelStubCancelled', result.uiCancel.stubCancelled],
         ['uiCancelStopHiddenAfterCancel', result.uiCancel.stopButtonHiddenAfterCancel],
+        ['uiCancelToRunReleaseMs', result.uiCancel.cancelToRunReleaseMs],
+        ['uiCancelToUiCleanupMs', result.uiCancel.cancelToUiCleanupMs],
         ['consoleErrors', consoleErrors.length],
       ]);
 

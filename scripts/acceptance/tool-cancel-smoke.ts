@@ -21,12 +21,14 @@ type CancellableToolState = {
   cancelledAt?: number;
   settledAt?: number;
   elapsedMs: number;
+  cancelToSettledMs: number | null;
   startedPid: string | null;
   terminatedSignal: string | null;
   requestStarted: string | null;
   requestClosed: string | null;
   url?: string;
   settled: boolean;
+  toolExecutionBegins: number;
   result?: {
     success: boolean;
     output?: string;
@@ -245,6 +247,20 @@ async function runCancellableToolSmoke(
   if (cancelled.elapsedMs > 10_000) {
     throw new Error(`Cancellable ${request.tool} tool took too long to cancel: ${JSON.stringify(cancelled)}`);
   }
+  if (cancelled.cancelToSettledMs === null || cancelled.cancelToSettledMs > 1_000) {
+    throw new Error(`Cancellable ${request.tool} tool exceeded the 1s stop convergence gate: ${JSON.stringify(cancelled)}`);
+  }
+
+  const beginCountAtStop = cancelled.toolExecutionBegins;
+  await delay(250);
+  const afterStop = await postRaw<CancellableToolState>(
+    server,
+    `/api/dev/cancellable-tool/${encodeURIComponent(started.id)}/status`,
+    {},
+  );
+  if (afterStop.toolExecutionBegins !== beginCountAtStop) {
+    throw new Error(`Cancellable ${request.tool} started a new tool execution after stop: ${JSON.stringify(afterStop)}`);
+  }
   if (request.tool === 'Bash' && cancelled.terminatedSignal !== 'SIGTERM') {
     throw new Error(`Cancellable Bash process did not receive SIGTERM: ${JSON.stringify(cancelled)}`);
   }
@@ -288,6 +304,8 @@ async function main(): Promise<void> {
         terminatedSignal: bashCancelled.terminatedSignal,
         resultError: bashCancelled.result?.error,
         elapsedMs: bashCancelled.elapsedMs,
+        cancelToToolTerminationMs: bashCancelled.cancelToSettledMs,
+        toolBeginsAfterStop: 0,
       },
       httpRequest: {
         sessionId: httpSessionId,
@@ -297,6 +315,8 @@ async function main(): Promise<void> {
         requestClosed: httpCancelled.requestClosed,
         resultError: httpCancelled.result?.error,
         elapsedMs: httpCancelled.elapsedMs,
+        cancelToToolTerminationMs: httpCancelled.cancelToSettledMs,
+        toolBeginsAfterStop: 0,
       },
     }, null, 2));
   } finally {

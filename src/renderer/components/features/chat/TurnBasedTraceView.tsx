@@ -201,6 +201,12 @@ export function getTraceTurnSelector(turnId: string): string {
   return `[data-trace-turn-id="${escapeAttributeSelector(turnId)}"]`;
 }
 
+export function getPrependedTurnCount(previousFirstTurnId: string | null, turns: TraceTurn[]): number {
+  if (!previousFirstTurnId || turns[0]?.turnId === previousFirstTurnId) return 0;
+  const previousFirstIndex = turns.findIndex((turn) => turn.turnId === previousFirstTurnId);
+  return previousFirstIndex > 0 ? previousFirstIndex : 0;
+}
+
 export function getActiveAssistantTextAnchor(projection: TraceProjection): {
   turnIndex: number;
   nodeId: string;
@@ -240,11 +246,17 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
   const prevAssistantAnchorRef = useRef<string | null>(null);
+  const historyListRef = useRef<{ sessionId: string; firstTurnId: string | null; firstItemIndex: number }>({
+    sessionId: projection.sessionId,
+    firstTurnId: projection.turns[0]?.turnId ?? null,
+    firstItemIndex: 1_000_000,
+  });
   const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
   const activeDisplayScrollLastAtRef = useRef(0);
   const userScrollSuppressUntilRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
   const keepActiveOutputVisibleRef = useRef(false);
+  const historyPrependInProgressRef = useRef(false);
   const followedOutputSessionIdRef = useRef<string | null>(null);
   const followedOutputTurnIdRef = useRef<string | null>(null);
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
@@ -283,6 +295,31 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     [outputFollowTurn],
   );
   const hasOutputFollowTurnOutput = outputFollowTurnIndex >= 0 && Boolean(outputFollowRevision);
+
+  const firstTurnId = projection.turns[0]?.turnId ?? null;
+  const previousHistoryList = historyListRef.current;
+  const prependedTurnCount = previousHistoryList.sessionId === projection.sessionId
+    ? getPrependedTurnCount(previousHistoryList.firstTurnId, projection.turns)
+    : 0;
+  if (prependedTurnCount > 0) historyPrependInProgressRef.current = true;
+  const firstItemIndex = previousHistoryList.sessionId === projection.sessionId
+    ? previousHistoryList.firstItemIndex - prependedTurnCount
+    : 1_000_000;
+  historyListRef.current = { sessionId: projection.sessionId, firstTurnId, firstItemIndex };
+
+  useEffect(() => {
+    if (!historyPrependInProgressRef.current) return;
+    let cancelSecond: (() => void) | null = null;
+    const cancelFirst = scheduleAfterLayout(() => {
+      cancelSecond = scheduleAfterLayout(() => {
+        historyPrependInProgressRef.current = false;
+      });
+    });
+    return () => {
+      cancelFirst();
+      cancelSecond?.();
+    };
+  }, [firstItemIndex]);
 
   // 让滚动条在两侧各占一半空间：
   // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
@@ -413,11 +450,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!activeMatch) return;
     if (activeMatchIndex === prevActiveMatchRef.current) return;
     prevActiveMatchRef.current = activeMatchIndex;
+    keepActiveOutputVisibleRef.current = false;
+    activeDisplayScrollCancelRef.current?.();
+    activeDisplayScrollCancelRef.current = null;
 
     virtuosoRef.current?.scrollToIndex({
       index: activeMatch.turnIndex,
       align: 'center',
-      behavior: 'smooth',
+      // Search is exact navigation. Long virtualized jumps can be dropped or
+      // left unfinished when animated across hundreds of unmounted items.
+      behavior: 'auto',
     });
   }, [activeMatchIndex, searchMatches]);
 
@@ -618,6 +660,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // Keep bottom-follow opt-in; active/latest turns get their own top alignment.
   const followOutput = useCallback(
     (isAtBottom: boolean) => {
+      if (historyPrependInProgressRef.current) return false;
       return shouldFollowTurnOutput(
         isAtBottom,
         hasOutputFollowTurnOutput && keepActiveOutputVisibleRef.current,
@@ -637,8 +680,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 
   // Render individual turn card
   const itemContent = useCallback(
-    (index: number) => {
-      const turn = projection.turns[index];
+    (virtuosoIndex: number, turn: TraceTurn) => {
+      const index = virtuosoIndex - firstItemIndex;
       if (!turn) return null;
 
       const isLast = index === projection.turns.length - 1;
@@ -674,7 +717,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
+    [activeMatchIndex, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator
@@ -696,7 +739,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), []);
 
   return (
-    <div className="relative h-full min-h-0">
+    <div className="relative h-full min-h-0" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
         ref={virtuosoRef}
         role="log"
@@ -704,12 +747,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         aria-label="对话消息"
         className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
         scrollerRef={handleScrollerRef}
-        totalCount={projection.turns.length}
+        data={projection.turns}
+        firstItemIndex={firstItemIndex}
         itemContent={itemContent}
         followOutput={followOutput}
         atBottomStateChange={(atBottom) => {
           setIsAtBottom(atBottom);
-          if (atBottom && !isUserScrollSuppressed()) {
+          if (atBottom && !historyPrependInProgressRef.current && !isUserScrollSuppressed()) {
             keepActiveOutputVisibleRef.current = true;
             const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
             if (turnId) updateFollowedOutputTurnId(turnId);

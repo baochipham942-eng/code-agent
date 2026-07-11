@@ -49,7 +49,10 @@ export interface TokenUsage {
 }
 
 export interface StreamRecoverySnapshot {
+  schemaVersion?: 2;
+  workspace?: string;
   sessionId: string;
+  runId?: string;
   turnId: string;
   content: string;
   reasoning: string;
@@ -60,6 +63,8 @@ export interface StreamRecoverySnapshot {
   streamStatus: 'incomplete' | 'complete';
   stableForExecution: boolean;
   incompleteToolCallIds: string[];
+  /** Recovery snapshots are display-only and never repopulate a tool queue. */
+  executionToolCalls?: [];
 }
 
 /**

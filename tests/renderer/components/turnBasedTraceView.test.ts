@@ -18,6 +18,7 @@ import {
   shouldStopFollowingForWheel,
   shouldFollowTurnOutput,
   shouldShowTurnTimeSeparator,
+  getPrependedTurnCount,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
 
 function makeTurn(index: number): TraceTurn {
@@ -39,6 +40,15 @@ function makeProjection(activeTurnIndex: number, turnCount = 3): TraceProjection
 }
 
 describe('TurnBasedTraceView focus helpers', () => {
+  it('counts only leading history turns inserted before the previous first turn', () => {
+    expect(getPrependedTurnCount('turn-1', [makeTurn(-2), makeTurn(-1), makeTurn(0)]))
+      .toBe(2);
+    expect(getPrependedTurnCount('turn-1', [makeTurn(0), makeTurn(1)]))
+      .toBe(0);
+    expect(getPrependedTurnCount('missing', [makeTurn(0), makeTurn(1)]))
+      .toBe(0);
+  });
+
   it('focuses the active turn while a run is streaming', () => {
     expect(getFocusedTurnIndex(makeProjection(1))).toBe(1);
   });

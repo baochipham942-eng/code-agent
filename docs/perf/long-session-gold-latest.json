@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-11T04:12:55.518Z",
+  "environment": {
+    "gitHead": "14688f71824a0edfd3ae046229dbb570c5efe6b9",
+    "node": "v24.15.0",
+    "platform": "darwin/arm64",
+    "cpu": "Apple M1",
+    "cpuCount": 8,
+    "totalMemoryBytes": 17179869184,
+    "browser": "149.0.7827.201",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "thresholds": {
+    "turns500InteractiveMs": 2000,
+    "anchorDriftPx": 16,
+    "mainThreadLongTaskMs": 500
+  },
+  "stopEvidence": {
+    "includedInThisReport": false,
+    "reason": "The browser harness only simulates renderer state. Real stop gates are tool-cancel and app-host smokes.",
+    "requiredSmokes": [
+      "scripts/acceptance/tool-cancel-smoke.ts",
+      "scripts/acceptance/agent-runtime-app-host-smoke.ts"
+    ]
+  },
+  "scenarios": {
+    "turns500": {
+      "interactiveMs": 36.1,
+      "renderedTurns": 500
+    },
+    "turns1000": {
+      "updateMs": 33,
+      "renderedTurns": 1000
+    },
+    "denseCodeStreaming": {
+      "codeBlocks": 100,
+      "updates": 20,
+      "durationMs": 982.6
+    },
+    "historyPrepend": {
+      "prependedTurns": 30,
+      "anchorTurnId": "turn-115",
+      "anchorDriftPx": 11.5,
+      "firstItemIndex": 999970
+    },
+    "userScroll": {
+      "retainedPosition": true,
+      "distanceFromBottomPx": 93100
+    },
+    "streamingFollow": {
+      "resumedAtBottom": true,
+      "distanceFromBottomPx": 8
+    },
+    "search": {
+      "targetTurnIndex": 120,
+      "targetMounted": true,
+      "targetVisible": true
+    },
+    "uiStateSimulation": {
+      "convergenceMs": 20.7,
+      "terminal": true
+    }
+  },
+  "mainThread": {
+    "longTaskCount": 4,
+    "longTaskMaxMs": 229,
+    "longTaskTotalMs": 689,
+    "over500ms": 0
+  },
+  "memory": {
+    "supported": true,
+    "baselineBytes": 37577435,
+    "peakBytes": 71506426,
+    "deltaBytes": 33928991
+  },
+  "gates": {
+    "turns500Interactive": true,
+    "anchorDrift": true,
+    "userScroll": true,
+    "streamingFollow": true,
+    "search": true,
+    "mainThread": true,
+    "memoryRecorded": true
+  },
+  "passed": true
+}

@@ -164,7 +164,9 @@ export class AgentLoop {
       maxIterations: config.maxIterations ?? config.goalContract?.maxTurns ?? getMaxIterations(),
       workingDirectory: config.workingDirectory,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
-      runId: config.runId,
+      // Every loop needs a stable execution identity even on legacy desktop
+      // entry points that have not adopted RunRegistry yet.
+      runId: config.runId || `run-${generateMessageId()}`,
       sessionId: resolvedSessionId,
       agentId: config.agentId,
       agentName: config.agentName,

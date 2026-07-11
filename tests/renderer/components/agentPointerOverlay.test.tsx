@@ -45,6 +45,25 @@ describe('AgentPointerOverlay', () => {
     expect(html).toContain('Finder');
   });
 
+  it('applies spring transition for continuous movement between action points', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AgentPointerOverlay, { event }),
+    );
+
+    expect(html).toContain('transition:left 560ms');
+  });
+
+  it('dims pointer and hides label/ring when not live (idle retention)', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AgentPointerOverlay, { event, live: false }),
+    );
+
+    expect(html).toContain('opacity:0.38');
+    // aria-label 保留完整描述，但可见标签 span 和点击脉冲环隐藏
+    expect(html).not.toContain('backdrop-blur-xs');
+    expect(html).not.toContain('animate-ping');
+  });
+
   it('renders preview card chrome around the same pointer', () => {
     const html = renderToStaticMarkup(
       React.createElement(AgentPointerPreviewCard, {

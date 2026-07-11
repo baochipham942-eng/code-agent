@@ -164,7 +164,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   const browserReady = browserSession.managedSession.running;
   const lastTracePointer = browserSession.managedSession.lastTrace?.agentPointerEvent || null;
   const pointerPreview = useMemo<AgentPointerEvent>(() => ({
-    ...(livePointer.event || lastTracePointer || {
+    ...(livePointer.event || livePointer.lastEvent || lastTracePointer || {
     id: 'browser-surface-pointer-preview',
     surface: 'browser',
     tone: browserReady ? 'browser' : 'idle',
@@ -178,7 +178,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
     traceId: browserSession.managedSession.lastTrace?.id || null,
     success: browserReady,
     }),
-  }), [browserReady, browserSession.managedSession.activeTab?.title, browserSession.managedSession.activeTab?.url, browserSession.managedSession.lastTrace?.id, lastTracePointer, livePointer.event]);
+  }), [browserReady, browserSession.managedSession.activeTab?.title, browserSession.managedSession.activeTab?.url, browserSession.managedSession.lastTrace?.id, lastTracePointer, livePointer.event, livePointer.lastEvent]);
 
   return (
     <FullScreenPage testId="browser-surface-panel">
@@ -301,6 +301,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
                   event={pointerPreview}
                   title="Agent pointer"
                   detail="Browser actions use the same visible pointer in trace rows and screenshot previews."
+                  live={livePointer.isLive || !livePointer.lastEvent}
                 />
                 <AgentPointerTimelineList entries={livePointer.timeline} />
               </div>

@@ -48,6 +48,18 @@ export interface NativeCommandActionMap {
     payload: undefined;
     result: unknown;
   };
+  showAgentHalo: {
+    payload: undefined;
+    result: unknown;
+  };
+  setAgentHaloMode: {
+    payload: { mode: 'active' | 'idle' };
+    result: unknown;
+  };
+  hideAgentHalo: {
+    payload: undefined;
+    result: unknown;
+  };
   setGlobalHotkeys: {
     payload: { bindings: GlobalHotkeyBinding[] };
     result: GlobalHotkeyRegistrationResult[];
@@ -68,6 +80,9 @@ const NATIVE_COMMANDS: {
   showPip: 'pip_show',
   framePip: 'pip_frame',
   hidePip: 'pip_hide',
+  showAgentHalo: 'agent_halo_show',
+  setAgentHaloMode: 'agent_halo_mode',
+  hideAgentHalo: 'agent_halo_hide',
   setGlobalHotkeys: 'keybindings_set_global_hotkeys',
 };
 

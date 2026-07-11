@@ -51,6 +51,15 @@ describe('nativeCommandFacade', () => {
     await invokeNativeCommandAction('hidePip');
     expect(tauriInvoke).toHaveBeenLastCalledWith('pip_hide', undefined);
 
+    await invokeNativeCommandAction('showAgentHalo');
+    expect(tauriInvoke).toHaveBeenLastCalledWith('agent_halo_show', undefined);
+
+    await invokeNativeCommandAction('setAgentHaloMode', { mode: 'idle' });
+    expect(tauriInvoke).toHaveBeenLastCalledWith('agent_halo_mode', { mode: 'idle' });
+
+    await invokeNativeCommandAction('hideAgentHalo');
+    expect(tauriInvoke).toHaveBeenLastCalledWith('agent_halo_hide', undefined);
+
     await invokeNativeCommandAction('setGlobalHotkeys', {
       bindings: [{ actionId: 'app.quickAsk', accelerator: 'CmdOrCtrl+Shift+A' }],
     });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentPointerEvent, ToolCall } from '../../../src/shared/contract';
 import { buildAgentPointerEvent } from '../../../src/renderer/utils/agentPointer';
+import { parseAgentPointerNativeCursorCapability } from '../../../src/shared/utils/agentPointer';
 
 function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
   return {
@@ -12,6 +13,42 @@ function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
 }
 
 describe('buildAgentPointerEvent', () => {
+  it('strictly parses a production native cursor capability', () => {
+    expect(parseAgentPointerNativeCursorCapability({
+      enabled: true,
+      status: 'native',
+      provider: 'cua-driver',
+      supportsSystemOverlay: true,
+      reason: 'start_session_available',
+      fallbackSurface: null,
+      checkedAtMs: 123,
+    })).toEqual({
+      enabled: true,
+      status: 'native',
+      provider: 'cua-driver',
+      supportsSystemOverlay: true,
+      reason: 'start_session_available',
+      fallbackSurface: null,
+      checkedAtMs: 123,
+    });
+  });
+
+  it.each([
+    { status: 'native', provider: 'cua-driver', supportsSystemOverlay: true },
+    { enabled: true, status: 'native', provider: 'cua-driver' },
+    { enabled: 'true', status: 'native', provider: 'cua-driver', supportsSystemOverlay: true },
+    { enabled: true, status: 'unknown', provider: 'cua-driver', supportsSystemOverlay: true },
+    { enabled: true, status: ' native ', provider: 'cua-driver', supportsSystemOverlay: true },
+    { enabled: true, status: 'native', provider: 'unknown', supportsSystemOverlay: true },
+    { enabled: true, status: 'native', provider: ' cua-driver ', supportsSystemOverlay: true },
+    { enabled: true, status: 'native', provider: 'cua-driver', supportsSystemOverlay: 'true' },
+    { enabled: true, status: 'native', provider: 'cua-driver', supportsSystemOverlay: true, reason: 123 },
+    { enabled: true, status: 'native', provider: 'cua-driver', supportsSystemOverlay: true, fallbackSurface: 'web' },
+    { enabled: true, status: 'native', provider: 'cua-driver', supportsSystemOverlay: true, checkedAtMs: Number.NaN },
+  ])('rejects a malformed native cursor capability: %o', (value) => {
+    expect(parseAgentPointerNativeCursorCapability(value)).toBeNull();
+  });
+
   it('builds a browser click pointer from a targetRef bounding box', () => {
     const event = buildAgentPointerEvent(makeToolCall({
       id: 'browser-click-1',
@@ -117,6 +154,53 @@ describe('buildAgentPointerEvent', () => {
       success: true,
     });
     expect(event?.point).toEqual({ x: 60, y: 40, unit: 'px' });
+  });
+
+  it('reuses the strict native cursor parser in the pointer builder', () => {
+    const valid = buildAgentPointerEvent(makeToolCall({
+      id: 'computer-native-valid',
+      name: 'computer_use',
+      arguments: { action: 'click', x: 10, y: 20 },
+      result: {
+        toolCallId: 'computer-native-valid',
+        success: true,
+        metadata: {
+          agentPointerNativeCursor: {
+            enabled: true,
+            status: 'native',
+            provider: 'cua-driver',
+            supportsSystemOverlay: true,
+            reason: 'start_session_available',
+            fallbackSurface: null,
+            checkedAtMs: 123,
+          },
+        },
+      },
+    }));
+    const malformed = buildAgentPointerEvent(makeToolCall({
+      id: 'computer-native-malformed',
+      name: 'computer_use',
+      arguments: { action: 'click', x: 10, y: 20 },
+      result: {
+        toolCallId: 'computer-native-malformed',
+        success: true,
+        metadata: {
+          agentPointerNativeCursor: {
+            enabled: true,
+            status: 'native',
+            provider: 'cua-driver',
+          },
+        },
+      },
+    }));
+
+    expect(valid?.nativeCursor).toMatchObject({
+      enabled: true,
+      status: 'native',
+      provider: 'cua-driver',
+      supportsSystemOverlay: true,
+    });
+    expect(malformed?.nativeCursor).toBeNull();
   });
 
   it('builds a blocked computer pointer from screen coordinates', () => {

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
       onAuthStateChange: vi.fn(),
       getSession: vi.fn(),
       signInWithPassword: vi.fn(),
+      signOut: vi.fn(),
     },
     from: vi.fn(),
   },
@@ -64,6 +65,7 @@ describe('authService session trust', () => {
     });
     mocks.supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
     mocks.supabase.auth.signInWithPassword.mockResolvedValue({ data: { user: null }, error: null });
+    mocks.supabase.auth.signOut.mockResolvedValue({ error: null });
     mocks.supabase.from.mockReturnValue({
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
@@ -228,6 +230,30 @@ describe('authService session trust', () => {
     expect(authService.getSessionTrustState()).toBe('verified');
   });
 
+  it('logs sign-in auth failures without credentials', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.signInWithPassword.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'Invalid login credentials' },
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    const result = await authService.signInWithEmail('user@example.com', 'secret-password');
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Invalid login credentials',
+    });
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Email sign-in failed', {
+      error: 'Invalid login credentials',
+    });
+    const logged = JSON.stringify(mocks.logger.warn.mock.calls);
+    expect(logged).not.toContain('user@example.com');
+    expect(logged).not.toContain('secret-password');
+  });
+
   it('曾登录但 session 失效 → 标记 sessionExpired 并清用户（2c/ADR-030，非默默清零）', async () => {
     mocks.isSupabaseInitialized.mockReturnValue(true);
     // beforeEach 已设缓存 admin 用户；getSession 返回 null = session 失效/过期
@@ -285,7 +311,7 @@ describe('authService session trust', () => {
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
   });
 
-  it('onAuthStateChange: SIGNED_OUT（主动登出）→ 不标记 sessionExpired', async () => {
+  it('onAuthStateChange: SIGNED_OUT（非本机主动退出）→ sessionExpired', async () => {
     mocks.isSupabaseInitialized.mockReturnValue(true);
     mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
     let cb: ((event: string, session: unknown) => Promise<void>) | undefined;
@@ -300,6 +326,31 @@ describe('authService session trust', () => {
     await authService.initialize();
     await cb!('SIGNED_OUT', null);
 
+    await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
+  });
+
+  it('本机主动退出使用 local scope，SIGNED_OUT 回调不标记 sessionExpired', async () => {
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+    let cb: ((event: string, session: unknown) => Promise<void>) | undefined;
+    mocks.supabase.auth.onAuthStateChange.mockImplementation((fn: typeof cb) => {
+      cb = fn;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    mocks.supabase.auth.signOut.mockImplementation(async () => {
+      await cb!('SIGNED_OUT', null);
+      return { error: null };
+    });
+
+    const { getAuthService } = await import('../../../../src/host/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await authService.signOut();
+
+    expect(mocks.supabase.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: false });
+    expect(mocks.logger.info).toHaveBeenCalledWith(' Explicit sign-out requested');
+    expect(mocks.logger.info).toHaveBeenCalledWith(' Explicit sign-out confirmed by auth state change');
   });
 });

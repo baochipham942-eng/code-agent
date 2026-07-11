@@ -20,6 +20,7 @@ import { withTimeout } from '../infra/timeoutController';
 
 const logger = createLogger('AuthService');
 const AUTH_BACKEND_UNAVAILABLE_ERROR = 'AUTH_BACKEND_UNAVAILABLE';
+const EXPLICIT_SIGN_OUT_EVENT_WINDOW_MS = 10_000;
 
 export interface AuthResult {
   success: boolean;
@@ -73,6 +74,7 @@ class AuthService {
   private onAuthChangeCallbacks: AuthChangeCallback[] = [];
   private initialized: boolean = false;
   private sessionExpired: boolean = false; // 2c(ADR-030): 曾登录但 session 不可恢复
+  private explicitSignOutRequestedAt: number | null = null;
 
   constructor() {}
 
@@ -108,6 +110,14 @@ class AuthService {
       ...user,
       isAdmin: false,
     };
+  }
+
+  private isExplicitSignOutEvent(event: string): boolean {
+    return (
+      event === 'SIGNED_OUT' &&
+      this.explicitSignOutRequestedAt !== null &&
+      Date.now() - this.explicitSignOutRequestedAt <= EXPLICIT_SIGN_OUT_EVENT_WINDOW_MS
+    );
   }
 
   private ensureSupabaseReady(operation: string): boolean {
@@ -167,15 +177,27 @@ class AuthService {
       } else {
         // 2c(ADR-030): 真实 supabase 在启动时会以 INITIAL_SESSION + 空 session 触发本分支，
         // 这是"默默清零"的主路径（validateSessionInBackground 往往慢一步、那时 user 已被清）。
-        // 曾有登录身份却收到空 session（过期/失效，非主动 SIGNED_OUT）→ 标记过期以弹重连。
+        // 曾有登录身份却收到空 session（过期/失效，非本机主动 SIGNED_OUT）→ 标记过期以弹重连。
         const wasAuthenticated = this.currentUser !== null;
+        const explicitSignOut = this.isExplicitSignOutEvent(event);
         this.currentUser = null;
         this.sessionTrustState = 'none';
         this.clearCachedUser();
-        if (wasAuthenticated && event !== 'SIGNED_OUT') {
+        if (explicitSignOut) {
+          this.sessionExpired = false;
+        }
+        if (wasAuthenticated && !explicitSignOut) {
           this.sessionExpired = true;
           logger.info(` Session expired (empty session on ${event}, had cached identity) → 提示重连（非默默清零）`);
+        } else if (wasAuthenticated && explicitSignOut) {
+          logger.info(' Explicit sign-out confirmed by auth state change');
         }
+        logger.info(' Auth session cleared:', {
+          event,
+          hadCachedIdentity: wasAuthenticated,
+          explicitSignOut,
+          sessionExpired: this.sessionExpired,
+        });
         this.notifyAuthChange(null);
       }
     });
@@ -321,6 +343,7 @@ class AuthService {
     });
 
     if (error) {
+      logger.warn('Email sign-in failed', { error: error.message });
       return { success: false, error: error.message };
     }
 
@@ -332,6 +355,7 @@ class AuthService {
       return { success: true, user: this.currentUser };
     }
 
+    logger.warn('Email sign-in failed without a Supabase user');
     return { success: false, error: 'Unknown error' };
   }
 
@@ -510,9 +534,11 @@ class AuthService {
   }
 
   async signOut(): Promise<void> {
+    this.explicitSignOutRequestedAt = Date.now();
+    logger.info(' Explicit sign-out requested');
     try {
       if (isSupabaseInitialized()) {
-        await getSupabase().auth.signOut();
+        await getSupabase().auth.signOut({ scope: 'local' });
       }
     } finally {
       const storage = getSecureStorage();

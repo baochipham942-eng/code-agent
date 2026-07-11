@@ -7,10 +7,46 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import type { AuthUser, AuthStatus } from '../../shared/contract';
 import { getAuthService } from '../services';
 import { getSecureStorage } from '../services/core/secureStorage';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('AuthIPC');
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readAuthIpcErrorMessage(error: unknown, depth = 0): string | undefined {
+  if (depth > 2) return undefined;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error instanceof Error) {
+    return error.message || readAuthIpcErrorMessage((error as Error & { cause?: unknown }).cause, depth + 1);
+  }
+  if (!isRecord(error)) return undefined;
+
+  for (const key of ['message', 'error_description', 'error', 'details', 'hint', 'code']) {
+    const value = error[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+    const nested = readAuthIpcErrorMessage(value, depth + 1);
+    if (nested) return nested;
+  }
+
+  try {
+    const serialized = JSON.stringify(error);
+    return serialized && serialized !== '{}' ? serialized : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getAuthIpcErrorMessage(error: unknown): string {
+  return readAuthIpcErrorMessage(error) ?? 'AUTH_REQUEST_FAILED';
+}
 
 async function handleGetStatus(): Promise<AuthStatus> {
   return getAuthService().getStatus();
@@ -150,9 +186,11 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
 
       return { success: true, data };
     } catch (error) {
+      const message = getAuthIpcErrorMessage(error);
+      logger.warn('Auth IPC action failed', { action, error: message });
       return {
         success: false,
-        error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) },
+        error: { code: 'INTERNAL_ERROR', message },
       };
     }
   });

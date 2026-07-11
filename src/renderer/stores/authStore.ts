@@ -22,19 +22,66 @@ async function invokeDomain<T>(domain: string, action: string, payload?: unknown
 interface AuthActionResult {
   success: boolean;
   user?: AuthUser;
-  error?: string;
+  error?: unknown;
+}
+
+const AUTH_BACKEND_STARTUP_MESSAGE = '登录服务启动失败，请重启应用或检查网络后重试。';
+const AUTH_BACKEND_REACHABILITY_MESSAGE = '登录服务暂时连不上，请检查网络或代理设置后重试。';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readErrorLikeMessage(error: unknown, depth = 0): string | undefined {
+  if (depth > 2) return undefined;
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) {
+    return error.message || readErrorLikeMessage((error as Error & { cause?: unknown }).cause, depth + 1);
+  }
+  if (!isRecord(error)) return undefined;
+
+  for (const key of ['message', 'error_description', 'error', 'details', 'hint', 'code']) {
+    const value = error[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+    const nested = readErrorLikeMessage(value, depth + 1);
+    if (nested) return nested;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return undefined;
+  }
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return readErrorLikeMessage(error) ?? String(error);
 }
 
-export function formatAuthErrorMessage(message: string | null | undefined): string {
-  if (!message) return '操作失败';
-  if (/supabase not initialized|auth_backend_unavailable|invalid supabase url|missing supabase anon key/i.test(message)) {
-    return '登录服务启动失败，请重启应用或检查网络后重试。';
+export function formatAuthErrorMessage(message: unknown): string {
+  const rawMessage = getErrorMessage(message).trim();
+  if (!rawMessage) return '操作失败';
+  if (/^(?:\{\}|\[object Object\])$/i.test(rawMessage)) {
+    return AUTH_BACKEND_REACHABILITY_MESSAGE;
   }
-  return message;
+  if (/invalid login credentials/i.test(rawMessage)) {
+    return '邮箱或密码不正确，请检查后重试。';
+  }
+  if (/email not confirmed/i.test(rawMessage)) {
+    return '邮箱还没有完成验证，请先打开验证邮件。';
+  }
+  if (/user already registered|already been registered/i.test(rawMessage)) {
+    return '这个邮箱已经注册过了，请直接登录或找回密码。';
+  }
+  if (/auth_request_failed|fetch failed|failed to fetch|networkerror|network request failed|timeout|timed out|aborted|econn|enotfound|eai_again|epipe|socket hang up|proxy|tls handshake|service unavailable/i.test(rawMessage)) {
+    return AUTH_BACKEND_REACHABILITY_MESSAGE;
+  }
+  if (/supabase not initialized|auth_backend_unavailable|invalid supabase url|missing supabase anon key/i.test(rawMessage)) {
+    return AUTH_BACKEND_STARTUP_MESSAGE;
+  }
+  return rawMessage;
 }
 
 function getDisplayErrorMessage(error: unknown): string {

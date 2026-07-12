@@ -84,6 +84,17 @@ function parseZhipuImageUrl(value: unknown): string | null {
   return isRecord(first) && typeof first.url === 'string' ? first.url : null;
 }
 
+/** 解析 OpenAI 兼容生图响应（gpt-image-2 / 自定义端点）的 data[0]，容忍字段缺失/类型不符。 */
+function parseImageCompatFirstItem(value: unknown): { b64Json?: string; url?: string } {
+  if (!isRecord(value) || !isUnknownArray(value.data)) return {};
+  const [first] = value.data;
+  if (!isRecord(first)) return {};
+  return {
+    b64Json: typeof first.b64_json === 'string' ? first.b64_json : undefined,
+    url: typeof first.url === 'string' ? first.url : undefined,
+  };
+}
+
 function parseOpenRouterImageResponse(value: unknown): { choices?: Array<{ message?: OpenRouterImageMessage }> } {
   if (!isRecord(value) || !isUnknownArray(value.choices)) return {};
   const choices = value.choices
@@ -611,8 +622,8 @@ export async function generateImage(
       const errBody = await resp.text().catch(() => '');
       throw new Error(`gpt-image-2 生成失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
     }
-    const json = await resp.json();
-    const b64 = json?.data?.[0]?.b64_json;
+    const json: unknown = await resp.json();
+    const { b64Json: b64 } = parseImageCompatFirstItem(json);
     if (!b64) throw new Error('gpt-image-2 返回无 b64_json');
     return { imageData: `data:image/png;base64,${b64}`, actualModel: GPTIMAGE_MODEL };
   }
@@ -700,8 +711,8 @@ export async function editImageByAnnotation(input: {
     const errBody = await resp.text().catch(() => '');
     throw new Error(`gpt-image-2 标注重绘失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
   }
-  const json = await resp.json();
-  const b64 = json?.data?.[0]?.b64_json;
+  const json: unknown = await resp.json();
+  const { b64Json: b64 } = parseImageCompatFirstItem(json);
   if (!b64) throw new Error('gpt-image-2 标注重绘返回无 b64_json');
   return { imageData: `data:image/png;base64,${b64}`, actualModel: GPTIMAGE_MODEL };
 }
@@ -771,14 +782,12 @@ export async function generateImageOpenAICompat(input: {
     const errBody = await resp.text().catch(() => '');
     throw new Error(`自定义生图端点失败: ${resp.status}${errBody ? ` - ${errBody}` : ''}`);
   }
-  const json = await resp.json();
-  const first = json?.data?.[0];
-  const b64 = first?.b64_json;
-  if (typeof b64 === 'string' && b64) {
+  const json: unknown = await resp.json();
+  const { b64Json: b64, url } = parseImageCompatFirstItem(json);
+  if (b64) {
     return { imageData: `data:${sniffImageMimeFromBase64(b64)};base64,${b64}`, actualModel: input.modelName };
   }
-  const url = first?.url;
-  if (typeof url === 'string' && url) {
+  if (url) {
     return { imageData: url, actualModel: input.modelName };
   }
   throw new Error('自定义生图端点返回既无 b64_json 也无 url');

@@ -457,13 +457,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     );
   }
 
-  async cancel(
+  cancel(
     sessionId?: string,
     reason?: 'user' | 'session-switch' | CancellationReason,
   ): Promise<void> {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(sessionId);
-    if (!resolvedSessionId) throw new Error('No active session');
+    if (!resolvedSessionId) return Promise.reject(new Error('No active session'));
 
     // Normalize legacy 'user' alias to 'user-cancel' for the cascade contract.
     const normalizedReason: CancellationReason = reason === 'user'
@@ -479,14 +479,19 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const promise = (async () => {
       try {
-        const externalView = await this.durableRunReadService?.readExternalEngine(resolvedSessionId, () => {
-          const legacy = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
-          return {
-            runId: legacy?.context.runId,
-            status: legacy ? 'running' : 'idle',
-            engine: legacy ? { kind: 'external_cli' as const, engine: 'codex_cli' as const } : null,
-          };
-        });
+        // Keep the legacy path synchronous through fan-out and cancelTask().
+        // Awaiting an optional call still yields when the service is absent,
+        // which lets a second ESC arrive before cancelInFlight is registered.
+        const externalView = this.durableRunReadService
+          ? await this.durableRunReadService.readExternalEngine(resolvedSessionId, () => {
+            const legacy = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
+            return {
+              runId: legacy?.context.runId,
+              status: legacy ? 'running' : 'idle',
+              engine: legacy ? { kind: 'external_cli' as const, engine: 'codex_cli' as const } : null,
+            };
+          })
+          : undefined;
         const externalHandle = externalView?.terminal
           ? undefined
           : this.externalRunRegistry?.getBySessionId(resolvedSessionId);

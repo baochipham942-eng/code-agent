@@ -59,6 +59,16 @@ function buildTaskManagerMock(sessionId: string, opts?: { tmOwned?: boolean }) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('appService.cancel fan-out — AC-A (cascade) / AC-C (no cascade on child-error)', () => {
   beforeEach(() => {
     resetSwarmServices();
@@ -201,5 +211,131 @@ describe('appService.cancel fan-out — AC-A (cascade) / AC-C (no cascade on chi
     expect(swarm.parallelCoordinators.abortSession).toHaveBeenCalledTimes(1);
     expect(swarm.planApproval.cancelSession).toHaveBeenCalledTimes(1);
     expect(swarm.launchApproval.cancelSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps native cancel and swarm fan-out synchronous without DurableRunReadService', async () => {
+    const swarm = buildSwarmServicesMock();
+    registerSwarmServices(swarm as Parameters<typeof registerSwarmServices>[0]);
+    const sessionId = 'sess-sync-legacy';
+    const cancelTask = deferred<void>();
+    const tm = {
+      getSessionState: vi.fn().mockReturnValue({ status: 'running' }),
+      cancelTask: vi.fn(() => cancelTask.promise),
+      getOrCreateCurrentOrchestrator: vi.fn(),
+    };
+    const service = new AgentAppServiceImpl(
+      () => tm as never,
+      () => null,
+      () => sessionId,
+      () => {},
+    );
+
+    const cancellation = service.cancel(sessionId, 'user-cancel');
+
+    expect(tm.cancelTask).toHaveBeenCalledTimes(1);
+    expect(swarm.planApproval.cancelSession).toHaveBeenCalledTimes(1);
+    expect(swarm.launchApproval.cancelSession).toHaveBeenCalledTimes(1);
+    expect(swarm.spawnGuard.cancelSession).toHaveBeenCalledTimes(1);
+    expect(swarm.parallelCoordinators.abortSession).toHaveBeenCalledTimes(1);
+
+    cancelTask.resolve();
+    await cancellation;
+  });
+
+  it('dedupes an asynchronous Durable read and external cancel across double ESC', async () => {
+    const sessionId = 'sess-durable-external';
+    const read = deferred<any>();
+    const externalCancel = vi.fn().mockResolvedValue(undefined);
+    const durableRunReadService = {
+      readExternalEngine: vi.fn(() => read.promise),
+    };
+    const externalRunRegistry = {
+      getBySessionId: vi.fn(() => ({
+        context: { runId: 'run-external' },
+        cancel: externalCancel,
+      })),
+    };
+    const tm = buildTaskManagerMock(sessionId, { tmOwned: true });
+    const service = new AgentAppServiceImpl(
+      () => tm as never,
+      () => null,
+      () => sessionId,
+      () => {},
+      externalRunRegistry as never,
+      durableRunReadService as never,
+    );
+
+    const first = service.cancel(sessionId, 'user-cancel');
+    const second = service.cancel(sessionId, 'user-cancel');
+
+    expect(second).toBe(first);
+    expect(durableRunReadService.readExternalEngine).toHaveBeenCalledTimes(1);
+    expect(externalCancel).not.toHaveBeenCalled();
+
+    read.resolve({ terminal: false });
+    await Promise.all([first, second]);
+
+    expect(externalRunRegistry.getBySessionId).toHaveBeenCalledTimes(1);
+    expect(externalCancel).toHaveBeenCalledTimes(1);
+    expect(tm.cancelTask).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel a Durable terminal external handle', async () => {
+    const sessionId = 'sess-durable-terminal';
+    const externalCancel = vi.fn().mockResolvedValue(undefined);
+    const durableRunReadService = {
+      readExternalEngine: vi.fn().mockResolvedValue({ terminal: true }),
+    };
+    const externalRunRegistry = {
+      getBySessionId: vi.fn(() => ({
+        context: { runId: 'run-terminal' },
+        cancel: externalCancel,
+      })),
+    };
+    const tm = buildTaskManagerMock(sessionId, { tmOwned: true });
+    const service = new AgentAppServiceImpl(
+      () => tm as never,
+      () => null,
+      () => sessionId,
+      () => {},
+      externalRunRegistry as never,
+      durableRunReadService as never,
+    );
+
+    await service.cancel(sessionId, 'user-cancel');
+
+    expect(externalCancel).not.toHaveBeenCalled();
+    expect(tm.cancelTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates Durable read errors and clears cancelInFlight for retry', async () => {
+    const sessionId = 'sess-durable-read-error';
+    const firstRead = deferred<any>();
+    const durableRunReadService = {
+      readExternalEngine: vi.fn()
+        .mockImplementationOnce(() => firstRead.promise)
+        .mockResolvedValueOnce({ terminal: true }),
+    };
+    const tm = buildTaskManagerMock(sessionId, { tmOwned: true });
+    const service = new AgentAppServiceImpl(
+      () => tm as never,
+      () => null,
+      () => sessionId,
+      () => {},
+      undefined,
+      durableRunReadService as never,
+    );
+
+    const first = service.cancel(sessionId, 'user-cancel');
+    const duplicate = service.cancel(sessionId, 'user-cancel');
+    expect(duplicate).toBe(first);
+    firstRead.reject(new Error('durable read failed'));
+
+    await expect(first).rejects.toThrow('durable read failed');
+    await expect(duplicate).rejects.toThrow('durable read failed');
+
+    await service.cancel(sessionId, 'user-cancel');
+    expect(durableRunReadService.readExternalEngine).toHaveBeenCalledTimes(2);
+    expect(tm.cancelTask).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.2] - 2026-07-12
+
+### Changed
+
+- **更新 metadata 权威源收敛**：`/api/update` 只读 GitHub Release 与 OSS stable manifests，不再保留无持久化效果的 Cloud publish 兼容入口；发布后验证会拒绝非权威 metadata source。
+- **仓库结构与设计契约**：补齐 Agent、脚本、测试和 workflow 导航边界，增加自动 repository-structure gate，并建立根目录 `DESIGN.md` 作为 Agent Neo 产品设计契约。
+
+### Fixed
+
+- **fresh-profile 首次启动超时**：远程 plugin、skill 和 MCP capability 初始化移出 HTTP listener 与首窗导航关键路径；桌面壳可先完成健康检查和窗口导航，Durable recovery 在 capability 就绪后继续并保持 fail-closed。
+
 ## [0.26.1] - 2026-07-12
 
 ### Fixed

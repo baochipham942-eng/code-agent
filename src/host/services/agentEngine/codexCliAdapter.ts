@@ -28,6 +28,7 @@ import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
+import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 
 const logger = createLogger('CodexCliAdapter');
 
@@ -39,6 +40,7 @@ export interface CodexCliRunRequest extends AgentEngineRunRequest {
   timeoutMs?: number;
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
+  resumeLaunch?: ExternalEngineResumeLaunch;
 }
 
 interface CodexParsedEvent {
@@ -64,6 +66,7 @@ export class CodexCliAdapter {
     const model = request.model?.trim();
     const startedAt = Date.now();
     const runId = request.durableLifecycle?.runId ?? `codex_${startedAt}_${randomUUID().slice(0, 8)}`;
+    assertResumeLaunchBinding(request.resumeLaunch, request.durableLifecycle, runId, request.sessionId, cwd);
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
@@ -74,7 +77,7 @@ export class CodexCliAdapter {
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
 
-    const commandSummary = [
+    const commandSummary = request.resumeLaunch?.commandSummary ?? [
       'codex exec',
       '--json',
       ...(model ? [`--model ${model}`] : []),
@@ -87,14 +90,16 @@ export class CodexCliAdapter {
       stallWarningMs: request.stallWarningMs,
     });
 
-    const userMessage: Message = {
-      id: request.clientMessageId || generateMessageId(),
-      role: 'user',
-      content: request.prompt,
-      timestamp: startedAt,
-      metadata: request.messageMetadata,
-    };
-    await sessionManager.addMessageToSession(request.sessionId, userMessage);
+    if (!request.resumeLaunch || request.resumeLaunch.stdin !== undefined) {
+      const userMessage: Message = {
+        id: request.clientMessageId || generateMessageId(),
+        role: 'user',
+        content: request.resumeLaunch?.stdin ?? request.prompt,
+        timestamp: startedAt,
+        metadata: request.messageMetadata,
+      };
+      await sessionManager.addMessageToSession(request.sessionId, userMessage);
+    }
 
     await sessionManager.updateSession(request.sessionId, {
       status: 'running',
@@ -148,7 +153,7 @@ export class CodexCliAdapter {
       data: { turnId, iteration: 1 },
     });
 
-    const args = buildCodexCliArgs({ model, sandbox, cwd, lastMessagePath });
+    const args = request.resumeLaunch?.args ?? buildCodexCliArgs({ model, sandbox, cwd, lastMessagePath });
 
     const env = buildSafeEnv();
     const child = spawn(descriptor.binaryPath || 'codex', args, {
@@ -165,12 +170,14 @@ export class CodexCliAdapter {
       model,
       permissionProfile,
     });
-    child.stdin.end(request.prompt);
+    child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : request.prompt));
 
     let stdoutBuffer = '';
     let stderrText = '';
     let streamedText = '';
     let spawnErrorMessage: string | undefined;
+    let resumeIdentityError: string | undefined;
+    let observedExternalSessionId: string | undefined;
     let timeoutMessage: string | undefined;
     let stalled = false;
 
@@ -234,7 +241,15 @@ export class CodexCliAdapter {
         const parsed = parseCodexJsonLine(line);
         const usage = extractExternalModelUsage(line);
         if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
-        if (parsed?.externalSessionId) request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+        if (parsed?.externalSessionId) {
+          observedExternalSessionId = parsed.externalSessionId;
+          if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
+            resumeIdentityError = 'Codex resumed a different external session';
+            void request.durableLifecycle?.terminateProcess('SIGTERM');
+          } else {
+            request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+          }
+        }
         if (parsed?.textDelta) {
           request.durableLifecycle?.observeNormalizedEvent('text_delta');
           streamedText += parsed.textDelta;
@@ -286,7 +301,14 @@ export class CodexCliAdapter {
       const parsed = parseCodexJsonLine(stdoutBuffer);
       const usage = extractExternalModelUsage(stdoutBuffer);
       if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
-      if (parsed?.externalSessionId) request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+      if (parsed?.externalSessionId) {
+        observedExternalSessionId = parsed.externalSessionId;
+        if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
+          resumeIdentityError = 'Codex resumed a different external session';
+        } else {
+          request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+        }
+      }
       if (parsed?.textDelta) {
         streamedText += parsed.textDelta;
         emit({
@@ -300,7 +322,10 @@ export class CodexCliAdapter {
 
     const finalText = await readFileIfExists(lastMessagePath) || streamedText.trim();
     const completedAt = Date.now();
-    const failed = Boolean(timeoutMessage || spawnErrorMessage || exitCode !== 0);
+    if (request.resumeLaunch && !observedExternalSessionId && !resumeIdentityError) {
+      resumeIdentityError = 'Codex resume did not confirm the external session identity';
+    }
+    const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0);
 
     ledger.addOutputRef({
       taskId,
@@ -320,7 +345,7 @@ export class CodexCliAdapter {
     }
 
     if (failed) {
-      const message = timeoutMessage || spawnErrorMessage || stderrText.trim() || `Codex CLI exited with code ${exitCode}`;
+      const message = timeoutMessage || spawnErrorMessage || resumeIdentityError || stderrText.trim() || `Codex CLI exited with code ${exitCode}`;
       const failureDiagnostics = classifyAgentEngineFailure({
         engine: 'codex_cli',
         message,
@@ -487,6 +512,23 @@ export class CodexCliAdapter {
     };
     await request.durableLifecycle?.finish(result, Boolean(finalText));
     return result;
+  }
+}
+
+function assertResumeLaunchBinding(
+  launch: ExternalEngineResumeLaunch | undefined,
+  lifecycle: ExternalEngineDurableLifecycle | undefined,
+  runId: string,
+  sessionId: string,
+  cwd: string,
+): void {
+  if (!launch) return;
+  if (!lifecycle) throw new Error('Codex resume requires a durable recovery lifecycle');
+  if (launch.runId !== runId || launch.sessionId !== sessionId || launch.cwd !== cwd) {
+    throw new Error('Codex resume launch has a stale logical run, session, or cwd binding');
+  }
+  if (launch.attempt !== lifecycle.attempt || launch.ownerEpoch !== lifecycle.ownerEpoch) {
+    throw new Error('Codex resume launch has a stale attempt or owner epoch');
   }
 }
 

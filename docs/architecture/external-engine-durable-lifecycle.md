@@ -29,6 +29,15 @@ Prompts, raw stdout/stderr, API keys, tokens, cookies, authorization values, pas
 
 Audit date: 2026-07-11. The matrix describes the installed runtime and current adapter behavior, not a marketing capability.
 
+S7.5 re-audited the installed CLIs on 2026-07-12 with read-only commands:
+
+- `codex --version` -> `codex-cli 0.144.1`
+- `codex exec resume --help` -> `codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]`; `--json`, `--model`, config override, and optional prompt are supported.
+- `claude --version` -> `2.1.207 (Claude Code)`
+- `claude --help` -> print mode supports `--resume [value]`, `--output-format stream-json`, `--permission-mode plan`, and explicitly states that `--no-session-persistence` disables resume.
+
+The help output was captured without invoking a model and contains no prompt, credential, or provider response.
+
 | Engine | Audited runtime | Capability | Evidence and product behavior |
 | --- | --- | --- | --- |
 | Codex CLI | `codex-cli 0.144.1` | `resumable` | `codex exec resume [SESSION_ID] [PROMPT]` accepts a stable session UUID/thread name. JSON events expose the thread/session id, which is persisted in the versioned engine cursor. Recovery may resume only when that id exists. |
@@ -48,7 +57,15 @@ Audit date: 2026-07-11. The matrix describes the installed runtime and current a
 4. returns `requires_review` for non-resumable, unknown, or incomplete evidence;
 5. delegates the actual engine-specific resume launch through injected dependencies, preserving the logical `runId`, newly claimed attempt, owner lease, and stable launch idempotency key.
 
-The global startup recovery dispatcher is deliberately unchanged. A later integration slice must register this handler and supply engine-specific resume command builders without weakening the read-only permission policy.
+S5 exported this boundary without global startup registration. S7.5 now supplies the dispatcher and audited engine-specific resume builders while preserving the read-only permission policy.
+
+## S7.5 resume builders and dispatch
+
+S7.5 supplies two audited builders. Codex launches `exec resume --json`, applies the read-only sandbox through the supported config override, retains model selection, uses the recovered process cwd, and places an explicit continuation only on stdin via the `-` prompt marker. Claude launches print mode with `--resume <session>`, `stream-json`, `permission-mode=plan`, and the same read-only tool allowlist as a fresh external run. With no continuation input, both builders omit prompt input instead of replaying history.
+
+Both launch specs bind `runId`, `sessionId`, recovered `attempt`, owner epoch, external session id, cwd, and `read_only`. The adapters reject stale bindings before spawn. Parsed Codex thread ids and Claude session ids must equal the target recovery identity; absence or mismatch fails closed. Spawn or parameter failure never falls back to a fresh `exec`/`claude -p` session. Command summaries contain placeholders only.
+
+The unified dispatcher routes `codex_cli` and `claude_code` only after `buildExternalEngineRecoveryDecision()` returns `resume`. `mimo_code` remains `non_resumable`; `kimi_code` remains `unknown`. The external dispatch key is `runId + attempt + externalSessionId`, so repeated startup or delayed scans cannot start a second process for the same claimed attempt.
 
 ## Terminal and trace rules
 

@@ -29,6 +29,7 @@ import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
+import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 
 const logger = createLogger('ClaudeCodeAdapter');
 
@@ -40,6 +41,7 @@ export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   timeoutMs?: number;
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
+  resumeLaunch?: ExternalEngineResumeLaunch;
 }
 
 interface ClaudeParsedEvent {
@@ -69,6 +71,7 @@ export class ClaudeCodeAdapter {
     const model = request.model?.trim();
     const startedAt = Date.now();
     const runId = request.durableLifecycle?.runId ?? `claude_${startedAt}_${randomUUID().slice(0, 8)}`;
+    assertResumeLaunchBinding(request.resumeLaunch, request.durableLifecycle, runId, request.sessionId, cwd);
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
@@ -79,7 +82,7 @@ export class ClaudeCodeAdapter {
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
 
-    const commandSummary = [
+    const commandSummary = request.resumeLaunch?.commandSummary ?? [
       'claude -p',
       '--verbose',
       ...(model ? [`--model ${model}`] : []),
@@ -99,14 +102,16 @@ export class ClaudeCodeAdapter {
       stallWarningMs: request.stallWarningMs,
     });
 
-    const userMessage: Message = {
-      id: request.clientMessageId || generateMessageId(),
-      role: 'user',
-      content: request.prompt,
-      timestamp: startedAt,
-      metadata: request.messageMetadata,
-    };
-    await sessionManager.addMessageToSession(request.sessionId, userMessage);
+    if (!request.resumeLaunch || request.resumeLaunch.stdin !== undefined) {
+      const userMessage: Message = {
+        id: request.clientMessageId || generateMessageId(),
+        role: 'user',
+        content: request.resumeLaunch?.stdin ?? request.prompt,
+        timestamp: startedAt,
+        metadata: request.messageMetadata,
+      };
+      await sessionManager.addMessageToSession(request.sessionId, userMessage);
+    }
 
     await sessionManager.updateSession(request.sessionId, {
       status: 'running',
@@ -162,7 +167,7 @@ export class ClaudeCodeAdapter {
       data: { turnId, iteration: 1 },
     });
 
-    const args = buildClaudeCodeArgs(permissionProfile, model);
+    const args = request.resumeLaunch?.args ?? buildClaudeCodeArgs(permissionProfile, model);
     const child = spawn(descriptor.binaryPath, args, {
       cwd,
       env,
@@ -177,7 +182,7 @@ export class ClaudeCodeAdapter {
       model,
       permissionProfile,
     });
-    child.stdin.end(request.prompt);
+    child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : request.prompt));
 
     let stdoutBuffer = '';
     let stderrText = '';
@@ -188,6 +193,7 @@ export class ClaudeCodeAdapter {
     let externalSessionId: string | undefined;
     let spawnErrorMessage: string | undefined;
     let timeoutMessage: string | undefined;
+    let resumeIdentityError: string | undefined;
     let stalled = false;
 
     const markRunningAfterStall = () => {
@@ -245,7 +251,12 @@ export class ClaudeCodeAdapter {
       if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
       if (parsed.externalSessionId) {
         externalSessionId = parsed.externalSessionId;
-        request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+        if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
+          resumeIdentityError = 'Claude resumed a different external session';
+          void request.durableLifecycle?.terminateProcess('SIGTERM');
+        } else {
+          request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+        }
       }
       if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {
         request.durableLifecycle?.observeNormalizedEvent('text_delta');
@@ -333,7 +344,10 @@ export class ClaudeCodeAdapter {
     }
 
     const completedAt = Date.now();
-    const failed = Boolean(timeoutMessage || spawnErrorMessage || exitCode !== 0);
+    if (request.resumeLaunch && !externalSessionId && !resumeIdentityError) {
+      resumeIdentityError = 'Claude resume did not confirm the external session identity';
+    }
+    const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0);
 
     ledger.addOutputRef({
       taskId,
@@ -367,6 +381,7 @@ export class ClaudeCodeAdapter {
     if (failed) {
       const message = timeoutMessage
         || spawnErrorMessage
+        || resumeIdentityError
         || cliErrorText
         || stderrText.trim()
         || finalText
@@ -524,6 +539,23 @@ export class ClaudeCodeAdapter {
     };
     await request.durableLifecycle?.finish(result, Boolean(finalText));
     return result;
+  }
+}
+
+function assertResumeLaunchBinding(
+  launch: ExternalEngineResumeLaunch | undefined,
+  lifecycle: ExternalEngineDurableLifecycle | undefined,
+  runId: string,
+  sessionId: string,
+  cwd: string,
+): void {
+  if (!launch) return;
+  if (!lifecycle) throw new Error('Claude resume requires a durable recovery lifecycle');
+  if (launch.runId !== runId || launch.sessionId !== sessionId || launch.cwd !== cwd) {
+    throw new Error('Claude resume launch has a stale logical run, session, or cwd binding');
+  }
+  if (launch.attempt !== lifecycle.attempt || launch.ownerEpoch !== lifecycle.ownerEpoch) {
+    throw new Error('Claude resume launch has a stale attempt or owner epoch');
   }
 }
 

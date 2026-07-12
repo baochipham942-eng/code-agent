@@ -38,7 +38,7 @@ interface ExternalCheckpointState {
   engine: ExternalAgentEngineKind;
   cli: { binary: string; version?: string };
   process: { pid?: number; processGroupId?: number; platform: NodeJS.Platform };
-  workspace: { cwd: string; fingerprint: string };
+  workspace: { cwd: string; root?: string; fingerprint: string };
   commandSummary: string;
   externalSessionId?: string;
   cursors: { stdoutBytes: number; stderrBytes: number; logPath?: string };
@@ -59,9 +59,17 @@ export interface ExternalProcessMetadata {
   permissionProfile: AgentEnginePermissionProfile;
 }
 
+export interface ExternalEngineRecoveryLaunchContext {
+  cwd: string;
+  workspace: string;
+  permissionProfile: 'read_only';
+  model?: string;
+}
+
 export class ExternalEngineDurableLifecycle {
   readonly runId: string;
   readonly attempt: number;
+  readonly ownerEpoch: number;
   readonly handle: RunHandle;
   private operation: PendingOperation;
   private child: ChildProcess | null = null;
@@ -80,12 +88,16 @@ export class ExternalEngineDurableLifecycle {
     readonly engine: ExternalAgentEngineKind,
     readonly sessionId: string,
     readonly cwd: string,
+    private readonly workspaceRoot: string,
     started: { handle: RunHandle; launchOperation: PendingOperation },
     externalSessionId?: string,
+    recoveredAttempt?: number,
+    recoveredOwnerEpoch?: number,
   ) {
     this.handle = started.handle;
     this.runId = started.handle.context.runId;
-    this.attempt = started.launchOperation.attempt;
+    this.attempt = recoveredAttempt ?? started.launchOperation.attempt;
+    this.ownerEpoch = recoveredOwnerEpoch ?? started.handle.traceContext?.ownerEpoch ?? 0;
     this.operation = started.launchOperation;
     this.externalSessionId = externalSessionId;
   }
@@ -111,8 +123,41 @@ export class ExternalEngineDurableLifecycle {
       input.engine,
       input.sessionId,
       input.cwd,
+      input.workspace,
       started,
       input.externalSessionId,
+    );
+  }
+
+  static rehydrate(input: {
+    registry: RunRegistry;
+    plan: RunRehydrationPlan;
+    context: ExternalEngineRecoveryLaunchContext;
+    externalSessionId: string;
+  }): ExternalEngineDurableLifecycle {
+    if (input.plan.envelope.engine.kind !== 'external_cli' || !input.plan.envelope.owner) {
+      throw new Error('External recovery lifecycle requires a claimed external_cli plan');
+    }
+    const launchOperation = input.plan.pendingOperations.find((operation) => operation.kind === 'external_engine');
+    if (!launchOperation) throw new Error('External recovery lifecycle has no durable launch operation');
+    const handle = input.registry.bindRecoveredHandle(input.plan, input.context.workspace, input.context.cwd);
+    return new ExternalEngineDurableLifecycle(
+      input.registry,
+      input.plan.envelope.engine.engine,
+      input.plan.envelope.sessionId,
+      input.context.cwd,
+      input.context.workspace,
+      {
+        handle,
+        launchOperation: {
+          ...launchOperation,
+          attempt: input.plan.envelope.attempt,
+          updatedAt: input.plan.envelope.updatedAt,
+        },
+      },
+      input.externalSessionId,
+      input.plan.envelope.attempt,
+      input.plan.envelope.owner.epoch,
     );
   }
 
@@ -267,6 +312,7 @@ export class ExternalEngineDurableLifecycle {
       process: { pid: this.child?.pid, processGroupId: this.processGroupId, platform: process.platform },
       workspace: {
         cwd: this.cwd,
+        root: this.workspaceRoot,
         fingerprint: this.handle.traceContext?.workspaceFingerprint ?? 'unknown',
       },
       commandSummary: metadata?.commandSummary ?? '<pending>',
@@ -357,6 +403,23 @@ function readEngineCursor(plan: RunRehydrationPlan): { externalSessionId?: strin
   return typeof externalSessionId === 'string' && externalSessionId.trim()
     ? { externalSessionId: externalSessionId.trim() }
     : {};
+}
+
+export function readExternalEngineRecoveryLaunchContext(
+  plan: RunRehydrationPlan,
+): ExternalEngineRecoveryLaunchContext | null {
+  const state = plan.checkpoint?.state;
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
+  const value = state as Partial<ExternalCheckpointState>;
+  if (value.schemaVersion !== 1 || value.engineKind !== 'external_cli') return null;
+  const cwd = value.workspace?.cwd?.trim();
+  if (!cwd || value.permissionProfile !== 'read_only') return null;
+  return {
+    cwd,
+    workspace: value.workspace?.root?.trim() || cwd,
+    permissionProfile: 'read_only',
+    ...(value.model?.trim() ? { model: value.model.trim() } : {}),
+  };
 }
 
 export function redactCommandSummary(summary: string): string {

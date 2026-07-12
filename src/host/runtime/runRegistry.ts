@@ -403,6 +403,27 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return this.durableTraceContexts.get(runId);
   }
 
+  bindRecoveredHandle(plan: RunRehydrationPlan, workspace: string, cwd = workspace): RunHandle {
+    const runId = plan.envelope.runId;
+    const owner = plan.envelope.owner;
+    const live = this.requireDurableOwner(runId);
+    if (!owner || live.owner.epoch !== owner.epoch || live.attempt !== plan.envelope.attempt) {
+      throw new Error(`Durable Run ${runId} recovery handle has a stale owner or attempt`);
+    }
+    const existing = this.handlesByRunId.get(runId);
+    if (existing) return existing;
+    const context = createRunContext({
+      runId,
+      sessionId: plan.envelope.sessionId,
+      workspace,
+      cwd,
+      createdAt: plan.envelope.createdAt,
+    });
+    const handle = createRunHandle(context, this.durableTraceContexts.get(runId));
+    this.register(handle);
+    return handle;
+  }
+
   getBySessionId(sessionId: string): RunHandle | undefined {
     const runId = this.runIdBySessionId.get(sessionId);
     return runId ? this.handlesByRunId.get(runId) : undefined;

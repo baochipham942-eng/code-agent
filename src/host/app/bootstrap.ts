@@ -19,6 +19,11 @@ import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { DurableRunKernel } from '../runtime/durableRunKernel';
 import { RunRegistry } from '../runtime/runRegistry';
+import {
+  createDurableRecoveryRuntime,
+  type DurableRecoveryRuntime,
+} from '../runtime/durableRecoveryRuntime';
+import { getUserDataPath } from '../platform/appPaths';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
 import { initializeBackgroundInfra } from './initBackgroundServices';
@@ -31,6 +36,7 @@ const logger = createLogger('Bootstrap');
 let configService: ConfigService | null = null;
 let planningService: PlanningService | null = null;
 let appService: AgentApplicationService | null = null;
+let durableRecoveryRuntime: DurableRecoveryRuntime | null = null;
 
 // ── Getters / Setters (preserve existing export signatures) ─────────────
 
@@ -136,12 +142,25 @@ export async function initializeBackgroundServices(): Promise<void> {
 
   // Phase 3b: Create AgentApplicationService (facade for IPC layer)
   const externalRunRegistry = new RunRegistry();
-  externalRunRegistry.configureDurableKernel(new DurableRunKernel({
+  const durableRunLeaseDurationMs = 15_000;
+  const durableKernel = new DurableRunKernel({
     stores: getDatabase().getDurableRunRepository(),
     ownerId: 'desktop-external-engine-host',
     processInstanceId: `desktop-${process.pid}-${randomUUID()}`,
-    leaseDurationMs: 15_000,
-  }));
+    leaseDurationMs: durableRunLeaseDurationMs,
+  });
+  externalRunRegistry.configureDurableKernel(durableKernel);
+  durableRecoveryRuntime = createDurableRecoveryRuntime({
+    registry: externalRunRegistry,
+    kernel: durableKernel,
+    dataDir: getUserDataPath(),
+  });
+  const recoveryResults = await durableRecoveryRuntime.recoverAndDispatch(Date.now());
+  logger.info('Durable startup recovery dispatched', { results: recoveryResults });
+  durableRecoveryRuntime.scheduleDelayedScan(durableRunLeaseDurationMs + 100, {
+    onResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
+    onError: (error) => logger.error('Durable delayed recovery failed', error as Error),
+  });
   appService = new AgentAppServiceImpl(
     () => getTaskManager(),
     () => configService,
@@ -165,4 +184,10 @@ export async function initializeBackgroundServices(): Promise<void> {
   logger.info('Planning service initialized');
 
   logger.info('Background services initialization complete');
+}
+
+export async function shutdownDurableRecovery(): Promise<void> {
+  const runtime = durableRecoveryRuntime;
+  durableRecoveryRuntime = null;
+  await runtime?.shutdown();
 }

@@ -224,6 +224,7 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
 }
 
 async function initializeWebMcpServices(configService: ConfigServiceForBootstrap): Promise<void> {
+  if (webMcpInitialized) return;
   const workingDir = getWebBootstrapWorkingDirectory(configService);
 
   try {
@@ -269,6 +270,7 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
         data: [{ server: payload.serverName }],
       });
     });
+    webMcpInitialized = true;
   } catch (error) {
     logger.warn('MCP initialization failed (non-blocking):', (error as Error).message);
   }
@@ -328,6 +330,10 @@ import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { PendingLocalToolCall } from './routes/agent';
 import { RunRegistry } from '../host/runtime/runRegistry';
 import { DurableRunKernel } from '../host/runtime/durableRunKernel';
+import {
+  createDurableRecoveryRuntime,
+  type DurableRecoveryRuntime,
+} from '../host/runtime/durableRecoveryRuntime';
 import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
 import { createSessionsRouter } from './routes/sessions';
 import type { SupabaseSessionBinding } from './routes/sessions';
@@ -348,6 +354,8 @@ onRendererPush((channel, data) => {
 
 // Native run lifecycle ownership. Primary key is runId; sessionId is unique while active.
 const runRegistry = new RunRegistry();
+let durableRecoveryRuntime: DurableRecoveryRuntime | undefined;
+let webMcpInitialized = false;
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
@@ -465,21 +473,25 @@ async function initializeServices(): Promise<void> {
     });
     const database = await initDatabase();
     const durableRunLeaseDurationMs = 15_000;
-    runRegistry.configureDurableKernel(new DurableRunKernel({
+    await initializeWebMcpServices(configService);
+    const durableKernel = new DurableRunKernel({
       stores: database.getDurableRunRepository(),
       ownerId: 'web-native-host',
       processInstanceId: `web-${process.pid}-${randomUUID()}`,
       leaseDurationMs: durableRunLeaseDurationMs,
-    }));
-    await runRegistry.recoverDurable(Date.now());
-    // A fast restart may occur before the previous lease expires. One delayed
-    // scan covers that boundary without repeatedly reclaiming an unresumed run.
-    const delayedRecovery = setTimeout(() => {
-      void runRegistry.recoverDurable(Date.now()).catch((recoveryError) => {
-        logger.error('Durable Run delayed recovery failed:', recoveryError);
-      });
-    }, durableRunLeaseDurationMs + 100);
-    delayedRecovery.unref?.();
+    });
+    runRegistry.configureDurableKernel(durableKernel);
+    durableRecoveryRuntime = createDurableRecoveryRuntime({
+      registry: runRegistry,
+      kernel: durableKernel,
+      dataDir,
+    });
+    const recoveryResults = await durableRecoveryRuntime.recoverAndDispatch(Date.now());
+    logger.info('Durable startup recovery dispatched', { results: recoveryResults });
+    durableRecoveryRuntime.scheduleDelayedScan(durableRunLeaseDurationMs + 100, {
+      onResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
+      onError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
+    });
     setDbAvailable(true);
     logger.info('Database initialized');
   } catch (error) {
@@ -1226,6 +1238,9 @@ async function main(): Promise<void> {
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
     cleanupUploadDirs();
+    await durableRecoveryRuntime?.shutdown().catch((error) => {
+      console.warn('[shutdown] durable recovery runtime failed:', error);
+    });
     // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿
     try {
       const { getDevServerManager } = await import('../host/services/infra/devServerManager');

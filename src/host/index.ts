@@ -18,6 +18,7 @@ import {
   getPlanningServiceInstance,
   getTaskManagerInstance,
   getAppServiceInstance,
+  shutdownDurableRecovery,
 } from './app/bootstrap';
 import { createWindow, getMainWindow } from './app/window';
 import { setupAllIpcHandlers } from './ipc';
@@ -296,6 +297,13 @@ app.on('before-quit', async () => {
   }
 
   // Shutdown TaskManager first (cancel all running tasks)
+  try {
+    await shutdownDurableRecovery();
+    logger.info('Durable recovery runtime shut down');
+  } catch (error) {
+    logger.error('Error shutting down Durable recovery runtime', error);
+  }
+
   try {
     const { getTaskManager } = await import('./task');
     const taskManager = getTaskManager();

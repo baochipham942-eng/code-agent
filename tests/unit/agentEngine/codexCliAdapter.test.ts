@@ -69,6 +69,8 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
 }));
 
 import { CodexCliAdapter } from '../../../src/host/services/agentEngine/codexCliAdapter';
+import { createCodexResumeLaunch } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
+import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
 
 const ENV_KEYS = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'CODEX_HOME'] as const;
 const originalEnv: Partial<Record<typeof ENV_KEYS[number], string>> = {};
@@ -297,6 +299,33 @@ describe('CodexCliAdapter.run', () => {
     })).rejects.toThrow(/inside workspace/);
 
     expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('spawns audited resume argv once and fails closed when Codex reports a different thread id', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'message_delta', delta: 'wrong thread', thread_id: 'other-thread' }),
+    ], 0));
+    const cwd = await fs.realpath(workspaceRoot);
+    const lifecycle = {
+      runId: 'logical-run', attempt: 2, ownerEpoch: 4,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const resumeLaunch = createCodexResumeLaunch({
+      runId: 'logical-run', sessionId: 'session-1', attempt: 2, ownerEpoch: 4,
+      externalSessionId: 'target-thread', cwd, permissionProfile: 'read_only', lastMessagePath: path.join(tempDir, 'last.md'),
+    });
+    const result = await new CodexCliAdapter().run({
+      sessionId: 'session-1', prompt: '', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only', durableLifecycle: lifecycle, resumeLaunch,
+    });
+    expect(result).toMatchObject({ runId: 'logical-run', sessionId: 'session-1', status: 'failed' });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+    expect(mocks.spawn.mock.calls[0][1]).toEqual(resumeLaunch.args);
+    expect(lifecycle.terminateProcess).toHaveBeenCalled();
+    expect(lifecycle.persistExternalSessionId).not.toHaveBeenCalled();
   });
 });
 

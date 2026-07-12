@@ -79,6 +79,8 @@ import {
   ClaudeCodeAdapter,
   parseClaudeCodeJsonLine,
 } from '../../../src/host/services/agentEngine/claudeCodeAdapter';
+import { createClaudeResumeLaunch } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
+import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
 
 describe('Claude Code adapter helpers', () => {
   it('uses Claude Code print mode with plan permissions and read-only tools', () => {
@@ -579,6 +581,34 @@ describe('ClaudeCodeAdapter.run', () => {
     })).rejects.toThrow(/read-only/);
 
     expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('spawns Claude print resume without a new-session fallback and confirms the target session id', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'resumed', session_id: 'target-session' }),
+    ], 0));
+    const cwd = await fs.realpath(workspaceRoot);
+    const lifecycle = {
+      runId: 'logical-run', attempt: 3, ownerEpoch: 6,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const resumeLaunch = createClaudeResumeLaunch({
+      runId: 'logical-run', sessionId: 'session-1', attempt: 3, ownerEpoch: 6,
+      externalSessionId: 'target-session', cwd, permissionProfile: 'read_only',
+    });
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'session-1', prompt: '', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only', durableLifecycle: lifecycle, resumeLaunch,
+    });
+    expect(result).toMatchObject({ runId: 'logical-run', sessionId: 'session-1', status: 'completed' });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+    expect(mocks.spawn.mock.calls[0][1]).toEqual(resumeLaunch.args);
+    expect(resumeLaunch.args).toContain('--resume');
+    expect(resumeLaunch.args).not.toContain('--no-session-persistence');
+    expect(lifecycle.persistExternalSessionId).toHaveBeenCalledWith('target-session');
   });
 });
 

@@ -54,3 +54,19 @@ The recovery handler binds the newly claimed owner and attempt before creating
 the executor. Every Graph checkpoint write reuses `RunRegistry.checkpointDurable`,
 so the existing owner epoch fencing rejects a stale process. No Durable schema,
 repository, migration, or second logical Durable Run was added.
+
+## S9 rollout wiring and current gate
+
+Web and Host now call `initializeDurableRun()` and resolve the same three-mode
+policy from `CODE_AGENT_DURABLE_RUN_MODE`. Invalid configuration cannot produce
+a write-on/read-off hybrid. `durable_preferred` reads propagate repository
+errors and fall back to legacy only when `getLatestBySession()` proves that no
+Durable row exists.
+
+The target preference is not the default yet. `dual_write` remains the default
+because the production Native handler above is still review-only and the
+selector is not connected to migrated engine/session read consumers. The
+process acceptance command marks injected acceptance handlers separately from
+production executor recovery and keeps the release gate red until those gaps
+and the Auto Agent startup handler are closed. See
+[S9 acceptance and rollback](durable-run-s9-acceptance-and-rollback.md).

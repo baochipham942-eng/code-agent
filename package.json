@@ -41,6 +41,7 @@
     "acceptance:browser-computer-ui": "npx tsx scripts/acceptance/browser-computer-ui-smoke.tsx",
     "acceptance:browser-computer-app-host": "npx tsx scripts/acceptance/browser-computer-app-host-smoke.ts",
     "acceptance:agent-runtime-app-host": "npx tsx scripts/acceptance/agent-runtime-app-host-smoke.ts",
+    "acceptance:durable-run-s9": "tsx scripts/acceptance/durable-run-kill-restart.ts",
     "acceptance:agent-engine-selector": "npx tsx scripts/acceptance/agent-engine-selector-smoke.ts",
     "acceptance:claude-subscription-cli": "jiti scripts/acceptance/claude-subscription-cli-smoke.ts",
     "acceptance:codex-cli-engine": "jiti scripts/acceptance/codex-cli-engine-smoke.ts",

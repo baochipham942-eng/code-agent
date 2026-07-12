@@ -198,3 +198,16 @@ executor-internal lifecycle ports rather than competing Graph terminal sources.
 Roll back S8.6 by reverting its single commit or moving the branch back to
 `44e49bef447a177f1d98382efeba4c8dbda1c506`. Durable schema and historical user
 data require no rollback because neither was changed.
+
+## S9 kill/restart evidence
+
+The process harness exercises the production Dynamic Workflow recovery handler
+with newly reconstructed `ScriptRunHostDeps`, preserves completed nested-node
+evidence, and persists workspace/model/tool drift as `waiting` review state. It
+also sends repeated Agent Team/Auto terminal projections through the centralized
+`GraphEventCompatibilityAdapter` and observes one authoritative graph terminal.
+
+The latter compatibility test still enters through an acceptance recovery
+handler because Auto Agent has no production startup handler. It is valid sink
+evidence, but it is not yet production executor-recovery evidence; the S9
+release gate records that distinction and remains blocked.

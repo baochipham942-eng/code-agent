@@ -17,14 +17,14 @@ import type { AgentApplicationService } from '../../shared/contract/appService';
 import { AgentAppServiceImpl } from './agentAppService';
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../services/core/databaseService';
-import { DurableRunKernel } from '../runtime/durableRunKernel';
 import { RunRegistry } from '../runtime/runRegistry';
-import {
-  createDurableRecoveryRuntime,
-  type DurableRecoveryRuntime,
-} from '../runtime/durableRecoveryRuntime';
 import { getUserDataPath } from '../platform/appPaths';
 import { createApplicationDynamicWorkflowRecoveryHost } from './dynamicWorkflowRecoveryHost';
+import {
+  initializeDurableRun,
+  type DurableRunApplicationRuntime,
+} from './initializeDurableRun';
+import { resolveDurableRunRollout } from './durableRunRollout';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
 import { initializeBackgroundInfra } from './initBackgroundServices';
@@ -37,7 +37,7 @@ const logger = createLogger('Bootstrap');
 let configService: ConfigService | null = null;
 let planningService: PlanningService | null = null;
 let appService: AgentApplicationService | null = null;
-let durableRecoveryRuntime: DurableRecoveryRuntime | null = null;
+let durableRunRuntime: DurableRunApplicationRuntime | null = null;
 
 // ── Getters / Setters (preserve existing export signatures) ─────────────
 
@@ -143,34 +143,30 @@ export async function initializeBackgroundServices(): Promise<void> {
 
   // Phase 3b: Create AgentApplicationService (facade for IPC layer)
   const externalRunRegistry = new RunRegistry();
-  const durableRunLeaseDurationMs = 15_000;
-  const durableKernel = new DurableRunKernel({
-    stores: getDatabase().getDurableRunRepository(),
+  const rolloutPolicy = resolveDurableRunRollout();
+  if (rolloutPolicy.diagnostic) logger.error(rolloutPolicy.diagnostic);
+  durableRunRuntime = await initializeDurableRun({
+    registry: externalRunRegistry,
+    repository: rolloutPolicy.durableActivation ? getDatabase().getDurableRunRepository() : null,
+    dataDir: getUserDataPath(),
     ownerId: 'desktop-external-engine-host',
     processInstanceId: `desktop-${process.pid}-${randomUUID()}`,
-    leaseDurationMs: durableRunLeaseDurationMs,
-  });
-  externalRunRegistry.configureDurableKernel(durableKernel);
-  durableRecoveryRuntime = createDurableRecoveryRuntime({
-    registry: externalRunRegistry,
-    kernel: durableKernel,
-    dataDir: getUserDataPath(),
     dynamicWorkflowHost: createApplicationDynamicWorkflowRecoveryHost({
       registry: externalRunRegistry,
     }),
+    onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
+    onDelayedError: (error) => logger.error('Durable delayed recovery failed', error as Error),
   });
-  const recoveryResults = await durableRecoveryRuntime.recoverAndDispatch(Date.now());
-  logger.info('Durable startup recovery dispatched', { results: recoveryResults });
-  durableRecoveryRuntime.scheduleDelayedScan(durableRunLeaseDurationMs + 100, {
-    onResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
-    onError: (error) => logger.error('Durable delayed recovery failed', error as Error),
+  logger.info('Durable rollout initialized', {
+    mode: durableRunRuntime.policy.mode,
+    results: durableRunRuntime.recoveryResults,
   });
   appService = new AgentAppServiceImpl(
     () => getTaskManager(),
     () => configService,
     () => getTaskManager().getCurrentSessionId(),
     (id: string) => getTaskManager().setCurrentSessionId(id),
-    externalRunRegistry,
+    durableRunRuntime.policy.durableActivation ? externalRunRegistry : undefined,
   );
 
   // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)
@@ -191,7 +187,7 @@ export async function initializeBackgroundServices(): Promise<void> {
 }
 
 export async function shutdownDurableRecovery(): Promise<void> {
-  const runtime = durableRecoveryRuntime;
-  durableRecoveryRuntime = null;
+  const runtime = durableRunRuntime;
+  durableRunRuntime = null;
   await runtime?.shutdown();
 }

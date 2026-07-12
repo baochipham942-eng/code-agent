@@ -65,6 +65,7 @@ import {
   createBridgeToolDispatch,
   type PendingLocalToolCall,
 } from './agentBridgeToolDispatch';
+import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
 
 export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
 
@@ -74,6 +75,7 @@ interface AgentRouterDeps {
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
+  getDurableRunRollout?: () => { policy: DurableRunRolloutPolicy; ready: boolean };
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -289,6 +291,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
+    const durableRollout = deps.getDurableRunRollout?.();
+    if (durableRollout?.policy.durableActivation && !durableRollout.ready) {
+      res.status(503).json({
+        error: 'Durable Run persistence is unavailable',
+        code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE',
+        rolloutMode: durableRollout.policy.mode,
+      });
+      return;
+    }
+    const durableActivation = durableRollout?.policy.durableActivation ?? true;
     let preflightDisconnected = res.destroyed;
     const markPreflightDisconnected = (): void => {
       preflightDisconnected = true;
@@ -345,14 +357,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let runCorrelationId: string;
     if (isExternalAgentEngine(selectedEngine.kind)) {
       try {
-        externalDurableLifecycle = await ExternalEngineDurableLifecycle.start({
-          registry: runRegistry,
-          engine: selectedEngine.kind,
-          sessionId,
-          workspace: resolvedProject,
-          cwd: resolvedProject,
-        });
-        runHandle = externalDurableLifecycle.handle;
+        if (durableActivation) {
+          externalDurableLifecycle = await ExternalEngineDurableLifecycle.start({
+            registry: runRegistry,
+            engine: selectedEngine.kind,
+            sessionId,
+            workspace: resolvedProject,
+            cwd: resolvedProject,
+          });
+        }
+        runHandle = externalDurableLifecycle?.handle
+          ?? runRegistry.start({ sessionId, workspace: resolvedProject });
         runContext = runHandle.context;
         runCorrelationId = runHandle.context.runId;
       } catch (error) {
@@ -373,7 +388,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     } else {
       try {
-        runHandle = await runRegistry.startDurable({ sessionId, workspace: resolvedProject });
+        runHandle = durableActivation
+          ? await runRegistry.startDurable({ sessionId, workspace: resolvedProject })
+          : runRegistry.start({ sessionId, workspace: resolvedProject });
         runContext = runHandle.context;
         runCorrelationId = runContext.runId;
       } catch (error) {
@@ -398,12 +415,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     if (preflightDisconnected || res.destroyed) {
       if (runHandle) {
         await runHandle.cancel('user');
-        await runRegistry.terminalDurable(runHandle.context.runId, {
-          now: Date.now(),
-          status: 'cancelled',
-          reason: 'client_disconnected_before_stream',
-          event: { type: 'run_cancelled', payload: { sessionId }, recordedAt: Date.now() },
-        }, runHandle);
+        if (durableActivation) {
+          await runRegistry.terminalDurable(runHandle.context.runId, {
+            now: Date.now(),
+            status: 'cancelled',
+            reason: 'client_disconnected_before_stream',
+            event: { type: 'run_cancelled', payload: { sessionId }, recordedAt: Date.now() },
+          }, runHandle);
+        } else {
+          runRegistry.unregister(runHandle.context.runId, runHandle);
+        }
       }
       res.off('close', markPreflightDisconnected);
       releaseSseSlot();
@@ -1007,13 +1028,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           : 'completed';
       await runController.updateSessionStatus(finalStatus);
 
-      if (runHandle) {
+      if (runHandle && durableActivation) {
         await runRegistry.terminalDurable(runHandle.context.runId, {
           now: Date.now(),
           status: finalStatus === 'completed' ? 'completed' : finalStatus === 'interrupted' ? 'cancelled' : 'failed',
           reason: finalStatus,
           event: { type: `run_${finalStatus}`, payload: { sessionId }, recordedAt: Date.now() },
         }, runHandle);
+        nativeRunTerminal = true;
+      } else if (runHandle) {
         nativeRunTerminal = true;
       }
 
@@ -1045,7 +1068,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
       }
       await runController.updateSessionStatus('error');
-      if (runHandle && !nativeRunTerminal) {
+      if (runHandle && !nativeRunTerminal && durableActivation) {
         try {
           await runRegistry.terminalDurable(runHandle.context.runId, {
             now: Date.now(),
@@ -1070,7 +1093,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runController.markSettled();
       res.off('close', runController.cancelForDisconnect);
       if (runHandle) {
-        if (!nativeRunTerminal) {
+        if (!nativeRunTerminal && durableActivation) {
           await runRegistry.releaseDurable(runHandle.context.runId, runHandle);
         } else {
           runRegistry.unregister(runHandle.context.runId, runHandle);

@@ -77,21 +77,23 @@ export function createDynamicWorkflowGraphRecoveryHandler(input: {
       const state = readDynamicWorkflowDurableState(plan);
       if (!state) return { status: 'requires_review', reason: 'dynamic workflow checkpoint is missing, unsafe, or unsupported' };
       const identityError = validateRecoveryIdentity(state, plan);
-      if (identityError) return { status: 'requires_review', reason: identityError };
+      if (identityError) return persistDynamicRequiresReview(input.registry, plan, state, identityError);
       if (state.graphSpec.nodes.some((node) => node.sideEffect !== 'none' && node.sideEffect !== 'read_only')) {
-        return { status: 'requires_review', reason: 'dynamic workflow contains an uncertain or write-capable node' };
+        return persistDynamicRequiresReview(input.registry, plan, state, 'dynamic workflow contains an uncertain or write-capable node');
       }
       const controller = new AbortController();
       let resolved: DynamicWorkflowHostResolution;
       try {
         resolved = await input.host.resolve(state, plan, controller.signal);
       } catch (error) {
-        return {
-          status: 'requires_review',
-          reason: `dynamic workflow Host dependency reconstruction failed: ${error instanceof Error ? error.message : String(error)}`,
-        };
+        return persistDynamicRequiresReview(
+          input.registry,
+          plan,
+          state,
+          `dynamic workflow Host dependency reconstruction failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-      if (!resolved.ok) return { status: 'requires_review', reason: resolved.reason };
+      if (!resolved.ok) return persistDynamicRequiresReview(input.registry, plan, state, resolved.reason);
       let handle;
       try {
         handle = input.registry.bindRecoveredHandle(plan, resolved.workspace, resolved.cwd);
@@ -188,6 +190,28 @@ export function createDynamicWorkflowGraphRecoveryHandler(input: {
       active.clear();
     },
   };
+}
+
+async function persistDynamicRequiresReview(
+  registry: RunRegistry,
+  plan: RunRehydrationPlan,
+  state: DynamicWorkflowDurableState,
+  reason: string,
+): Promise<{ status: 'requires_review'; reason: string }> {
+  await registry.checkpointDurable(plan.envelope.runId, {
+    now: Date.now(),
+    status: 'waiting',
+    state,
+    engineCursor: plan.checkpoint?.cursor.engineCursor ?? plan.envelope.cursor.engineCursor,
+    pendingOperations: plan.pendingOperations,
+    childRuns: plan.childRuns,
+    events: [{
+      type: 'dynamic_graph_requires_review',
+      payload: { reason },
+      recordedAt: Date.now(),
+    }],
+  });
+  return { status: 'requires_review', reason };
 }
 
 export function assertDynamicWorkflowDurableState(value: unknown): asserts value is DynamicWorkflowDurableState {

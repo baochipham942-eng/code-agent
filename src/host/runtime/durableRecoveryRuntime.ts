@@ -5,6 +5,8 @@ import type { RunKernelAdapter } from './durableRunKernel';
 import {
   DurableRecoveryDispatcher,
   type DurableRecoveryDispatchResult,
+  type DurableEngineRecoveryHandler,
+  type DurableOperationRecoveryHandler,
 } from './durableRecoveryDispatcher';
 import {
   createAgentTeamRecoveryHandler,
@@ -16,6 +18,13 @@ import {
 } from './durableRecoveryHandlers';
 import type { RunRegistry } from './runRegistry';
 import type { DynamicWorkflowRecoveryHost } from './dynamicWorkflowRecovery';
+export interface DurableRecoveryHandlerOverrides {
+  native?: DurableEngineRecoveryHandler;
+  agentTeam?: DurableEngineRecoveryHandler;
+  externalEngine?: DurableEngineRecoveryHandler;
+  dynamicWorkflow?: DurableEngineRecoveryHandler;
+  mcpOperation?: DurableOperationRecoveryHandler;
+}
 
 export interface DurableRecoveryRuntime {
   readonly dispatcher: DurableRecoveryDispatcher;
@@ -35,19 +44,21 @@ export function createDurableRecoveryRuntime(input: {
   trustedMcpServerIdentities?: ReadonlySet<string>;
   externalRunners?: ExternalResumeRunners;
   dynamicWorkflowHost?: DynamicWorkflowRecoveryHost;
+  /** Acceptance-only injection boundary; production bootstraps never set it. */
+  handlerOverrides?: DurableRecoveryHandlerOverrides;
 }): DurableRecoveryRuntime {
   const dispatcher = new DurableRecoveryDispatcher();
-  dispatcher.registerEngineHandler(createNativeRecoveryHandler());
-  dispatcher.registerEngineHandler(createAgentTeamRecoveryHandler());
-  dispatcher.registerEngineHandler(createExternalEngineRecoveryHandler({
+  dispatcher.registerEngineHandler(input.handlerOverrides?.native ?? createNativeRecoveryHandler());
+  dispatcher.registerEngineHandler(input.handlerOverrides?.agentTeam ?? createAgentTeamRecoveryHandler({ registry: input.registry }));
+  dispatcher.registerEngineHandler(input.handlerOverrides?.externalEngine ?? createExternalEngineRecoveryHandler({
     registry: input.registry,
     runners: input.externalRunners,
   }));
-  dispatcher.registerEngineHandler(createDynamicWorkflowRecoveryHandler({
+  dispatcher.registerEngineHandler(input.handlerOverrides?.dynamicWorkflow ?? createDynamicWorkflowRecoveryHandler({
     registry: input.registry,
     host: input.dynamicWorkflowHost,
   }));
-  dispatcher.registerOperationHandler(createMcpOperationRecoveryHandler({
+  dispatcher.registerOperationHandler(input.handlerOverrides?.mcpOperation ?? createMcpOperationRecoveryHandler({
     kernel: input.kernel,
     resultStore: new McpTaskResultFileStore(path.join(input.dataDir, 'mcp-task-results')),
     getClient: input.getMcpClient ?? getMCPClient,

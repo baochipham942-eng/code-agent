@@ -329,11 +329,11 @@ import { createAgentRouter } from './routes/agent';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { PendingLocalToolCall } from './routes/agent';
 import { RunRegistry } from '../host/runtime/runRegistry';
-import { DurableRunKernel } from '../host/runtime/durableRunKernel';
 import {
-  createDurableRecoveryRuntime,
-  type DurableRecoveryRuntime,
-} from '../host/runtime/durableRecoveryRuntime';
+  initializeDurableRun,
+  type DurableRunApplicationRuntime,
+} from '../host/app/initializeDurableRun';
+import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
 import { createSessionsRouter } from './routes/sessions';
 import type { SupabaseSessionBinding } from './routes/sessions';
@@ -354,7 +354,9 @@ onRendererPush((channel, data) => {
 
 // Native run lifecycle ownership. Primary key is runId; sessionId is unique while active.
 const runRegistry = new RunRegistry();
-let durableRecoveryRuntime: DurableRecoveryRuntime | undefined;
+let durableRunRuntime: DurableRunApplicationRuntime | undefined;
+let durableRunRolloutPolicy = resolveDurableRunRollout({});
+let durableRunRolloutReady = false;
 let webMcpInitialized = false;
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
@@ -466,35 +468,36 @@ async function initializeServices(): Promise<void> {
   }
 
   // 4. 初始化 Database（main 模块的单例，SessionManager 等依赖）
+  durableRunRolloutPolicy = resolveDurableRunRollout();
+  durableRunRolloutReady = !durableRunRolloutPolicy.durableActivation;
+  if (durableRunRolloutPolicy.diagnostic) logger.error(durableRunRolloutPolicy.diagnostic);
   try {
     const { initDatabase, onDatabaseRecovered } = await import('../host/services/core/databaseService');
     onDatabaseRecovered(() => {
       setDbAvailable(true);
     });
     const database = await initDatabase();
-    const durableRunLeaseDurationMs = 15_000;
     await initializeWebMcpServices(configService);
-    const durableKernel = new DurableRunKernel({
-      stores: database.getDurableRunRepository(),
+    durableRunRuntime = await initializeDurableRun({
+      registry: runRegistry,
+      repository: durableRunRolloutPolicy.durableActivation
+        ? database.getDurableRunRepository()
+        : null,
+      dataDir,
       ownerId: 'web-native-host',
       processInstanceId: `web-${process.pid}-${randomUUID()}`,
-      leaseDurationMs: durableRunLeaseDurationMs,
+      onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
+      onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
     });
-    runRegistry.configureDurableKernel(durableKernel);
-    durableRecoveryRuntime = createDurableRecoveryRuntime({
-      registry: runRegistry,
-      kernel: durableKernel,
-      dataDir,
-    });
-    const recoveryResults = await durableRecoveryRuntime.recoverAndDispatch(Date.now());
-    logger.info('Durable startup recovery dispatched', { results: recoveryResults });
-    durableRecoveryRuntime.scheduleDelayedScan(durableRunLeaseDurationMs + 100, {
-      onResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
-      onError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
+    durableRunRolloutReady = true;
+    logger.info('Durable rollout initialized', {
+      mode: durableRunRuntime.policy.mode,
+      results: durableRunRuntime.recoveryResults,
     });
     setDbAvailable(true);
     logger.info('Database initialized');
   } catch (error) {
+    durableRunRolloutReady = false;
     setDbAvailable(false, error);
     if (error instanceof Error) {
       logger.warn('Database not available (using in-memory sessions):', error.message);
@@ -1108,6 +1111,10 @@ function createApp(): express.Express {
     logger,
     tryGetSessionManager,
     getSupabaseForSession,
+    getDurableRunRollout: () => ({
+      policy: durableRunRolloutPolicy,
+      ready: durableRunRolloutReady,
+    }),
   }));
 
   app.use('/api', createBackgroundRouter({ logger }));
@@ -1238,7 +1245,7 @@ async function main(): Promise<void> {
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
     cleanupUploadDirs();
-    await durableRecoveryRuntime?.shutdown().catch((error) => {
+    await durableRunRuntime?.shutdown().catch((error) => {
       console.warn('[shutdown] durable recovery runtime failed:', error);
     });
     // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿

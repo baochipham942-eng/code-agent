@@ -63,12 +63,12 @@ export function createDynamicWorkflowRecoveryHandler(input: {
   return createDynamicWorkflowGraphRecoveryHandler(input);
 }
 
-export function createAgentTeamRecoveryHandler(): DurableEngineRecoveryHandler {
+export function createAgentTeamRecoveryHandler(input?: { registry: RunRegistry }): DurableEngineRecoveryHandler {
   const recoveredCoordinators = new Set<ParallelAgentCoordinator>();
   return {
     name: 'agent_team',
     engineKind: 'agent_team',
-    async recover(plan) {
+    async recover(plan, now) {
       const decision = buildAgentTeamRecoveryDecision(plan);
       if (!canRecoverAgentTeam(plan)) {
         return { status: 'requires_review', reason: 'agent team checkpoint is missing or unsupported', detail: decision };
@@ -82,6 +82,21 @@ export function createAgentTeamRecoveryHandler(): DurableEngineRecoveryHandler {
         },
       });
       if (result.decision.classification === 'requires_review' || result.decision.classification === 'failed') {
+        if (input?.registry && result.decision.checkpoint) {
+          await input.registry.checkpointDurable(plan.envelope.runId, {
+            now,
+            status: 'waiting',
+            state: result.decision.checkpoint,
+            engineCursor: plan.checkpoint?.cursor.engineCursor ?? plan.envelope.cursor.engineCursor,
+            pendingOperations: plan.pendingOperations,
+            childRuns: plan.childRuns,
+            events: [{
+              type: 'agent_team_requires_review',
+              payload: { classification: result.decision.classification },
+              recordedAt: now,
+            }],
+          });
+        }
         return { status: 'requires_review', reason: result.decision.classification, detail: result.decision };
       }
       return {

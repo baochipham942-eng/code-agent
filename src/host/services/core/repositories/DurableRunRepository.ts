@@ -132,6 +132,12 @@ export class DurableRunRepository implements DurableRunStores {
     return row ? rowToEnvelope(row) : null;
   }
 
+  async getLatestBySession(sessionId: string): Promise<RunEnvelope | null> {
+    const row = this.db.prepare(`SELECT envelope_json FROM durable_runs
+      WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(sessionId) as Row | undefined;
+    return row ? rowToEnvelope(row) : null;
+  }
+
   async listRecoverable(now: number, limit: number): Promise<RunEnvelope[]> {
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
       WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?

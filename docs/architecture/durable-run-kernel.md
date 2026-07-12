@@ -238,3 +238,19 @@ hierarchy, exporter, or production telemetry call site.
 ## S0 completion boundary
 
 S0 supplies compile-time contracts, state-machine validation, narrow ports, an idempotent up/down migration draft, failure gold, and this rollout map. It does not claim process restart recovery. Production recovery requires S1 persistence wiring plus at least one engine adoption slice and S9 kill/restart evidence.
+
+## S9 evidence boundary
+
+The real-process harness now replaces the five legacy missing-column skeletons
+and adds Dynamic Workflow, Agent Team/Auto Agent, External Engine, and MCP
+variants. It proves epoch takeover, stale-owner rejection, monotonic event
+sequence, stable operation keys, terminal uniqueness, completed-node reuse, and
+runtime rollback without schema deletion.
+
+Evidence alone does not promote an injected recovery handler to product support.
+The machine gate includes `productionExecutorRecovery` and
+`productionReadPreferenceWiring`; Native model/tool/approval, Auto Agent startup
+continuation, and migrated read consumers keep those gates red. The rollout
+default remains `dual_write` until those rows execute through registered
+production handlers and Durable reads are wired. The operational contract is documented in
+[S9 acceptance and rollback](durable-run-s9-acceptance-and-rollback.md).

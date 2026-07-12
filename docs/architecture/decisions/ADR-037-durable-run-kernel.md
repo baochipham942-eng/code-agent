@@ -31,7 +31,12 @@ The normative details, failure gold, migration schema, and S1–S9 file ownershi
 - Every engine must preserve logical run identity even when its native process/session identifiers change.
 - Stores must support compare-and-swap ownership and transactional event/checkpoint writes; simple last-write-wins updates are invalid.
 - A valid checkpoint can still repeat the current node, so tool authors and engine adapters must design for at-least-once execution.
-- S0 adds no runtime recovery behavior. Until later slices pass kill/restart acceptance, product language must continue to say that crash resume is unsupported.
+- Crash resume support is engine-specific. Real process evidence now supports
+  Dynamic Workflow, Agent Team child reconciliation, resumable Codex/Claude
+  External Engine sessions, and trusted/queryable MCP Durable Tasks. Native
+  model/tool/approval continuation and Auto Agent startup recovery remain
+  unsupported in production, so the product-wide Durable rollout cannot yet be
+  advertised or defaulted to `durable_preferred`.
 
 ## Rejected alternatives
 

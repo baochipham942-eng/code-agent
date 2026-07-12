@@ -18,15 +18,34 @@ export function buildPollUrl(flavor: VideoFlavor, baseUrl: string, id: string): 
   return `${trimmed}/videos/${encodeURIComponent(id)}`;
 }
 
-function deepGet(obj: any, path: string): unknown {
-  return path.split('.').reduce((acc, k) => (acc == null ? acc : (acc as any)[k]), obj);
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** 按路径逐段下钻，兼容对象键与数组下标（如 'data.0.url'）；任一段访问不到即返回 undefined。 */
+function deepGet(obj: unknown, path: string): unknown {
+  let acc: unknown = obj;
+  for (const key of path.split('.')) {
+    if (Array.isArray(acc)) {
+      const idx = Number(key);
+      acc = Number.isInteger(idx) ? acc[idx] : undefined;
+    } else if (isRecord(acc)) {
+      acc = acc[key];
+    } else {
+      return undefined;
+    }
+  }
+  return acc;
 }
 
 /** 从完成响应抽取视频 URL；未完成或无字段返回 undefined。 */
-export function extractVideoUrl(flavor: VideoFlavor, body: any): string | undefined {
-  if (!body || typeof body !== 'object') return undefined;
+export function extractVideoUrl(flavor: VideoFlavor, body: unknown): string | undefined {
+  if (!isRecord(body)) return undefined;
   if (flavor === 'agnes') return typeof body.remixed_from_video_id === 'string' ? body.remixed_from_video_id : undefined;
-  if (flavor === 'openrouter') return Array.isArray(body.unsigned_urls) && typeof body.unsigned_urls[0] === 'string' ? body.unsigned_urls[0] : undefined;
+  if (flavor === 'openrouter') {
+    const urls = body.unsigned_urls;
+    return Array.isArray(urls) && typeof urls[0] === 'string' ? urls[0] : undefined;
+  }
   if (typeof body.url === 'string') return body.url;
   const dataUrl = deepGet(body, 'data.0.url');
   return typeof dataUrl === 'string' ? dataUrl : undefined;

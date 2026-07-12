@@ -451,7 +451,7 @@ export function extractVeoVideoUri(response: unknown): string | undefined {
   if (!isRecord(response)) return undefined;
   const gvr = isRecord(response.generateVideoResponse) ? response.generateVideoResponse : undefined;
   if (!gvr) return undefined;
-  const samples = Array.isArray(gvr.generatedSamples)
+  const samples: unknown[] | undefined = Array.isArray(gvr.generatedSamples)
     ? gvr.generatedSamples
     : Array.isArray(gvr.generatedVideos)
       ? gvr.generatedVideos

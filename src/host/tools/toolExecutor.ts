@@ -1025,10 +1025,11 @@ export class ToolExecutor {
         });
       } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
       const durableRegistry = effectiveRunId ? getConfiguredApplicationRunRegistry() : null;
-      const durableSourceMessageId = effectiveSessionId
+      const durableActive = Boolean(effectiveRunId && durableRegistry?.hasDurableOwner(effectiveRunId));
+      const durableSourceMessageId = durableActive && effectiveSessionId
         ? [...getDatabase().getMessages(effectiveSessionId)].reverse().find((message) => message.role === 'user')?.id
         : undefined;
-      if (effectiveRunId && durableRegistry?.hasDurableOwner(effectiveRunId)) {
+      if (effectiveRunId && durableRegistry && durableActive) {
         if (!durableSourceMessageId) throw new Error('Native Durable tool checkpoint requires a stable source message id');
         await durableRegistry.checkpointNativeToolOperation({
           runId: effectiveRunId,
@@ -1100,7 +1101,7 @@ export class ToolExecutor {
       }
 
       recordExecComplete(result.success ? 'success' : 'error', result.error);
-      if (effectiveRunId && durableRegistry?.hasDurableOwner(effectiveRunId) && durableSourceMessageId) {
+      if (effectiveRunId && durableRegistry && durableActive && durableSourceMessageId) {
         await durableRegistry.checkpointNativeToolOperation({
           runId: effectiveRunId,
           sourceMessageId: durableSourceMessageId,

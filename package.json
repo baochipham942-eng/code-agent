@@ -19,6 +19,7 @@
     "codegen:game-skills": "node scripts/generate-game-skill-content.mjs",
     "lint": "eslint src --ext .ts,.tsx",
     "debt:report": "node scripts/architecture-debt-report.mjs",
+    "check:repository-structure": "node scripts/ci/check-repository-structure.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

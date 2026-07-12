@@ -128,6 +128,7 @@ code-agent/
 - **[docs/architecture/source-map.md](docs/architecture/source-map.md)** — `src/host` 源码地图（按逻辑分组）
 - **[docs/architecture/](docs/architecture/)** — 各子系统深入文档（agent-core / tool-system / multiagent-system / data-storage / hot-update / windows-support 等）
 - **[docs/api-reference/](docs/api-reference/)** · **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — API 参考与部署
+- **[src/host/README.md](src/host/README.md)** · **[tests/README.md](tests/README.md)** · **[scripts/README.md](scripts/README.md)** · **[.github/README.md](.github/README.md)** — 高密度目录的就近边界与维护规则
 - `CLAUDE.md` — 工程规范、发版流程、常用命令
 
 > 架构决策（ADR）记录见 `docs/ARCHITECTURE.md` 的决策表；PRD / 产品策略类文档不进公开仓库。

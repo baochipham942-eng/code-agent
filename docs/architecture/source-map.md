@@ -3,6 +3,7 @@
 `src/host` 是后端/主进程，子域较多。本文按**逻辑分组**给每个目录一句话职责，作为「在哪改」的导航。深入设计见 [ARCHITECTURE.md](../ARCHITECTURE.md) 各分册。
 
 > 一级分层（`src/host` / `renderer` / `shared` / `web` / `cli` / `design` / `artifacts`）见仓库根 [README](../../README.md)。
+> 新增目录和容易混淆的职责边界见 [`src/host/README.md`](../../src/host/README.md)。
 
 ## 常见修改入口
 
@@ -15,7 +16,7 @@
 | 做插件安装、插件加载、内置插件工具 | `plugins/` |
 | 做技能发现、安装、执行、推荐 | `services/skills/`、`skills/marketplace/` |
 | 调模型、provider、执行引擎 | `model/`、`services/agentEngine/` |
-| 改后台任务、长任务恢复、多 Agent 编排 | `task/`、`scheduler/`、`handoff/` |
+| 改后台任务、长任务恢复、多 Agent 编排 | `task/`、`orchestration/`、`scheduler/`、`handoff/` |
 | 改定时任务、循环任务、心跳 | `cron/`、`loop/` |
 | 改回放、轨迹、遥测查询、实验适配 | `evaluation/`、`telemetry/` |
 | 改桌面能力、Computer Use、音频采集 | `src/host/desktop/`，Rust 侧再看 `src-tauri/src/` |
@@ -30,6 +31,7 @@
 | `model/` | 模型路由与 provider 适配（`modelRouter`、catalog、fallback 链） |
 | `protocol/` | 命令协议层 |
 | `planning/` | 自动规划（`autoPlanner`、`feasibilityChecker`、`executionMonitor`、`findingsManager`） |
+| `orchestration/` | 多执行单元之间的图编排、统一 runner 和协调协议；单次 Agent Loop 仍归 `agent/` |
 
 ## 任务 / 编排 / 会话
 | 目录 | 职责 |

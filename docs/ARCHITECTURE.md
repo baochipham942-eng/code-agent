@@ -1,6 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；详见 specs/2026-06-26-neo-tools-evidence-control-and-agent-pointer.md 与 ADR-029)
+> 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；当前合同已折入本文对应能力域与 ADR-029)
 > 版本: 9.27 (9.26 + 2026-06-22 设计 tab 4 媒介重规划 + 厚版演示稿全链路：引擎从 agent 工具抽 service、SlideData[] 单一真源、大纲编辑器/逐页预览/就地改字、4 增强〔品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型可选〕，PR #260；详见 design-mode.md §15)
 > 版本: 9.26 (9.25 + 2026-06-16~17 迭代治理与账本收口：permission/tool execution append-only ledger、Swarm ledger 真理源 + reconcile/backfill、console/a11y/stale-dist 静态门、设计系统契约 + ratchet gate、预算告警、工具失败 action、Bash 输出头尾预览、auto-compaction stuck guard)
 > 版本: 9.25 (9.24 + 2026-06-13~15 会话页、设置页与运行证据门收口：能力证据硬门 + judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织)
@@ -117,88 +117,25 @@
 
 ```
 code-agent/
-├── docs/
-│   ├── ARCHITECTURE.md          # 本文档（索引）
-│   ├── PRD.md                   # 产品需求文档
-│   ├── architecture/            # 详细架构文档
-│   │   ├── overview.md          # 系统概览
-│   │   ├── agent-core.md        # Agent 核心
-│   │   ├── tool-system.md       # 工具系统
-│   │   ├── frontend.md          # 前端架构
-│   │   ├── data-storage.md      # 数据存储
-│   │   └── cloud-architecture.md # 云端架构
-│   └── decisions/               # 架构决策记录
-│
 ├── src/
-│   ├── main/                    # 后端主进程 (Node.js, Tauri sidecar)
-│   │   │
-│   │   │── ── 工程层 core ─────────────────────────
-│   │   ├── app/                # 应用启动引导（bootstrap、窗口管理、生命周期）
-│   │   ├── agent/              # AgentOrchestrator, AgentLoop, 多 Agent 协作
-│   │   ├── context/            # 上下文投影系统（6 层压缩管线 + CompressionState + ProjectionEngine）
-│   │   ├── errors/             # 统一错误处理（分类、恢复引擎、自动学习）
-│   │   ├── events/             # 事件三通道（InternalEventStore 持久化 + ControlStream 实时 + Mailbox 协调）
-│   │   │                         # 注：EventBus / EventBridge 运行时已迁出 protocol/，归位到 services/eventing/
-│   │   ├── hooks/              # 用户可配置钩子系统（Agent Hook + 内置 Hook + trigger history）
-│   │   ├── ipc/                # IPC handler 层（前后端通信桥梁，含 provider.ipc.ts 连通性测试+诊断+健康状态）
-│   │   ├── model/              # ModelRouter, Provider, 自适应路由, 智能 Fallback, HealthMonitor, 请求规范化中间件
-│   │   ├── permissions/        # 权限矩阵（GuardFabric 多源竞争 + PolicyEngine + 拓扑感知）
-│   │   ├── platform/           # 平台抽象层（Tauri/Electron/Web 差异封装）
-│   │   ├── prompts/            # Prompt 矩阵（4 Profile × 5 层 Overlay + Prompt Registry/override + 缓存稳定性）
-│   │   ├── routing/            # Agent 路由系统（意图分类 + 路由决策）
-│   │   ├── security/           # 运行时安全（命令监控、敏感信息检测、审计日志）
-│   │   ├── services/           # 核心服务（Auth, Admin, AgentEngine, CapabilityCenter, Sync, Database, SecureStorage, cloud config/update/feature flag）
-│   │   ├── session/            # 会话管理（Worker Epoch 生成代围栏、快照重物化、导出、分叉、恢复）
-│   │   ├── tools/              # gen1-gen8 工具实现 + DocEdit
-│   │   │                         # 注：tool dispatch 已从 protocol/ 拆出，归位到 tools/dispatch/（M1.2）
-│   │   │
-│   │   │── ── 智能层 ──────────────────────────────
-│   │   ├── cron/               # 定时任务与心跳监控
-│   │   ├── evaluation/         # 回放/遥测/实验跟踪基础设施（v0.16.79 删评测双管道死代码）
-│   │   ├── desktop/            # 桌面活动服务（从旧 memory/ 搬迁）
-│   │   ├── lightMemory/        # Light Memory 系统（File-as-Memory, ~700 行，唯一记忆系统）
-│   │   ├── planning/           # 规划系统
-│   │   ├── research/           # 深度研究模式（多源路由、自适应搜索、报告生成）
-│   │   ├── scheduler/          # DAG 并行任务调度
-│   │   ├── task/               # 多任务并行管理（TaskManager + Semaphore 信号量）
-│   │   ├── telemetry/          # 遥测采集（意图分类统计、Prompt 缓存、存储）
-│   │   ├── testing/            # Agent 自动测试框架（YAML 用例 + 断言引擎 + CI）
-│   │   │
-│   │   │── ── 技能层 ──────────────────────────────
-│   │   ├── channels/           # 多渠道接入（飞书 Webhook 等）
-│   │   ├── connectors/         # Office 连接器（日历、邮件、提醒事项，macOS 原生）
-│   │   ├── mcp/                # MCP 服务端/客户端
-│   │   ├── plugins/            # 插件系统（PluginAPI v2 + 7 个 builtin plugins + 第三方加载）
-│   │   ├── skills/             # 技能 marketplace API 边界；发现、安装、执行主体见 services/skills/
-│   │   │
-│   │   │── ── 基础设施 ────────────────────────────
-│   │   ├── config/             # 统一配置（路径管理、规则加载）
-│   │   ├── cron/               # 定时任务与心跳监控（CronService + Heartbeat）
-│   │   ├── ide/                # IDE 桥接接口（未来 IDE 集成预留）
-│   │   ├── lsp/                # LSP 语言服务器协议（多语言 Server 管理）
-│   │   ├── scheduler/          # DAG 并行任务调度
-│   │   ├── types/              # 主进程内部类型定义
-│   │   └── utils/              # 工具函数（加密、图片处理、日志脱敏、性能计量）
-│   │
-│   ├── renderer/               # React 前端
-│   │   ├── components/         # UI 组件（Chat, Explorer, AgentTeam, Settings...）
-│   │   ├── stores/             # Zustand 状态
-│   │   └── hooks/              # 自定义 hooks
-│   │
-│   ├── shared/                 # 类型定义、常量、IPC 协议（含 contract/designBrief、contract/workspacePreview、prompt rewind DTO）
-│   ├── design/                 # Design Brief 工作流：direction-tokens、critique judge（5 维评分 + prompt）
-│   ├── artifacts/              # Session-level artifact 定义（question-form 等结构化采集产物）
-│   ├── shared/ipc/             # zod IPC schemas、typedInvoke / defineHandler 共享契约
-│   ├── cli/                    # CLI 接口（独立构建入口；含 `debug` 命令树）
-│   └── web/                    # Web Server（SSE API + 路由）
-│
-├── src-tauri/                   # Tauri Rust Shell
-├── packages/
-│   ├── bridge/                  # Local Bridge 服务 (localhost:9527)
-│   └── eval-harness/            # 评测 Harness
-├── vercel-api/                  # 云端 API (Vercel)
-└── supabase/                    # 数据库迁移
+│   ├── host/              # 后端主进程：Agent、工具、服务、权限、任务、运行时
+│   ├── renderer/          # React 前端
+│   ├── shared/            # 前后端共享类型、常量和契约
+│   ├── web/               # 本地 HTTP/SSE server
+│   ├── cli/               # CLI 入口与适配层
+│   ├── design/            # 设计工作区共享逻辑
+│   └── artifacts/         # 产物类型与处理
+├── src-tauri/             # Tauri Rust 桌面外壳
+├── admin-console/         # 独立管理后台
+├── packages/              # bridge、eval-harness 等复用包
+├── vercel-api/            # 官网、下载与控制面 API
+├── supabase/              # 数据库迁移与云函数
+├── tests/                 # unit、renderer、integration、e2e、smoke
+├── scripts/               # 构建、发布、治理、验收和运维脚本
+└── docs/                  # 架构、部署、API、计划、审计和发布记录
 ```
+
+完整根目录说明见 [仓库导览](./architecture/repo-map.md)，`src/host` 的领域归属见 [源码地图](./architecture/source-map.md) 和 [`src/host/README.md`](../src/host/README.md)。测试、脚本与 GitHub Actions 的维护约定分别见 [`tests/README.md`](../tests/README.md)、[`scripts/README.md`](../scripts/README.md) 和 [`.github/README.md`](../.github/README.md)。
 
 ### 工具体系（108+ 个 native ToolModule）
 
@@ -231,7 +168,7 @@ code-agent/
 | Swarm ledger 真理源 | `swarm_run_ledger` 只追加 `run_started / agent_snapshot / run_closed`；旧 rollup 表降级为读缓存，半套账本不当完成态 | `SwarmLedgerRepository.ts`、`swarmLedger.ts`、`swarm-trace-persistence.md` |
 | 对账与回填 | reconcile 默认只读扫描，从 ledger 重建值对比 rollup；`rebuildOnDrift` 才写回缓存；老 run backfill 默认不跑，只能 opt-in | `swarmReconcileService.ts`、`backfillSwarmLedger.ts` |
 | 静态治理门 | console/a11y/stale-dist 三个轻量静态门接入 CI，配合 lint 防新增漂移 | `scripts/console-scan.mjs`、`a11y-scan.mjs`、`stale-dist-scan.mjs` |
-| 设计系统契约 | UI 颜色、按钮和 Modal primitive 进入 machine-checkable 契约；hex 基线归零，handrolled modal/bare button 走 ratchet 收口 | `docs/designs/design-system.md`、`scripts/check-design-system.mjs`、`design-system-baseline.json` |
+| 设计系统契约 | UI 颜色、按钮和 Modal primitive 进入 machine-checkable 契约；hex 基线归零，handrolled modal/bare button 走 ratchet 收口 | `docs/architecture/frontend.md`、`scripts/check-design-system.mjs`、`design-system-baseline.json` |
 | 预算体验 | Settings 暴露预算上限/阈值/周期，运行时按 warning/blocked 边界去重弹 toast，StatusBar cost 跟随预算状态染色 | `BudgetService`、`BudgetSettings.tsx`、`BudgetAlertNotice.tsx`、`CostDisplay.tsx` |
 | 工具结果恢复 | 失败工具统一提供复制错误和“从此重试”；auto-loaded retry 与已恢复失败不污染会话状态 | `toolExecutionPresentation.ts`、`ToolCallDisplay` |
 | Bash 输出可信度 | 长输出完成后保留头尾，流式进度帧折叠成最终帧；Bash 非 0 退出码即使 result success 也显式标出“判定可能不可靠” | `bashOutputPreview.ts`、`statusLabels.ts` |
@@ -263,7 +200,7 @@ code-agent/
 | 项目/会话组织 | Project goal、workspace preview、sidebar project drawer、session metadata、session search jump 和 session asset navigation 把项目与会话分开但可互跳 | `projectService.ts`、`ProjectRepository.ts`、`WorkspacePreviewPanel.tsx`、`SidebarProjectDrawer.tsx`、`workspacePreview.ts` |
 
 **架构边界澄清**：
-- `docs/research/alma-*.md` 是竞品研究输入，不是当前产品合同；正式合同以本节和 2026-06-15 spec 为准。
+- 历史竞品研究输入不作为当前产品合同；正式口径以本节和对应架构分册为准。
 - Turn Quality 是诊断/复盘信息，不自动阻断普通用户运行。
 - Settings 的前端权限只负责入口可见性，管理动作仍以后端 IPC guard、Supabase RLS 和控制平面权限为硬边界。
 - 语音输入保持用户主动触发；打开设置页或会话页不会提前请求麦克风权限。
@@ -624,7 +561,7 @@ findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
 |---|---|---|
 | Workbench B+ 信息架构 | 低频动作收进 `+`；Code/Plan/Ask 收进 `+` 菜单；模型和 effort 合并成单胶囊；Routing 由 `InlineWorkbenchBar` 和 Settings “对话”tab 承载；Live Preview 在 `SessionActionsMenu`；Settings 分组导航与页面骨架落地；TitleBar 只保留核心入口，全局工具移入 Sidebar User Menu | `ChatInput/InputAddMenu.tsx`、`InlineWorkbenchBar.tsx`、`ConversationSettings.tsx`、`SettingsModal.tsx`、`SettingsLayout.tsx`、`settingsTabs.ts`、`SessionActionsMenu.tsx`、`Sidebar.tsx`、`WorkbenchTabs.tsx` |
 | Live Preview V2-A/B | `devServerManager` 能探测并启动本地 dev server，DevServerLauncher 作为模态入口；bridge protocol 升级到 0.3.0，选中元素带 `className` 与 `computedStyle`；TweakPanel 支持 spacing/color/fontSize/radius/align 5 类 Tailwind 原子改写；V2-C Next.js App Router 支持按 ADR-012 延期 | `devServerManager.ts`、`LivePreviewFrame.tsx`、`TweakPanel.tsx`、`tweakWriter.ts`、`tailwindCategories.ts` |
-| Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径；2026-06-26 起 Browser/Computer proof 持久化为 `EvidenceRef` 时间线并带 Neo virtual pointer | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`computerUse.ts`、`desktop.ts`、`browserComputerProofStore.ts`、`AgentPointerOverlay.tsx`、`docs/acceptance/browser-computer-workbench-smoke.md` |
+| Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径；2026-06-26 起 Browser/Computer proof 持久化为 `EvidenceRef` 时间线并带 Neo virtual pointer | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`computerUse.ts`、`desktop.ts`、`browserComputerProofStore.ts`、`AgentPointerOverlay.tsx`、`docs/architecture/native-app-integration.md` |
 | Activity Providers | OpenChronicle 与 Tauri Native Desktop 不再各自直塞 prompt；新增 provider-neutral `ActivityContextProvider`、`ActivityProvider` contract、prompt formatter 与 renderer preview。OpenChronicle 仍是外部 daemon provider，Tauri Native Desktop 是 bundled provider | `activityContextProvider.ts`、`activityProviderRegistry.ts`、`activityPromptFormatter.ts`、`activityContext.ts`、`activityProvider.ts` |
 | Semantic Tool UI | 工具 input schema 强制注入 `_meta.shortDescription`；provider parser 抽出 `_meta` 写到 ToolCall 顶层并剥离执行参数；SessionRepository 对无 `_meta` 的历史/弱模型工具调用生成 fallback shortDescription。前端用语义标题、target icon、memory citation 折叠卡、会话 diff 聚合卡和 URL favicon chip 改善可读性 | `prompts/builder.ts`、`model/providers/shared.ts`、`SessionRepository.ts`、`ToolHeader.tsx`、`MemoryCitationGroup.tsx`、`SessionDiffSummary.tsx`、`LinkPreviewCard.tsx` |
 | Eval / model 协议修复 | 评测实验支持 SSE 进度、行点击进详情、fatal inference error 熔断、DB 去重；multi-turn adapter 真保留 messages；recent memory 在评测中隔离；thinking-mode provider 补齐 `reasoning_content` history 字段；`max_tool_calls` 从 critical gate 降为 weighted score | `testRunner.ts`、`agentAdapter.ts`、`retryStrategy.ts`、`providers/shared.ts`、`docs/knowledge/eval-tracking.md`、`docs/knowledge/bug-fixes.md` |
@@ -1358,7 +1295,7 @@ agentLoop.executeTool(Read)
 - 评测系统指南 — 评测工程详细文档
 - ADR-005: Eval Engineering — 评测关键工程决策
 
-### 功能设计 spec（docs/designs/）
+### 历史功能设计摘要
 
 - /goal 模式设计 — Goal Mode 三层闸（as-built 校准）
 - Appshots 设计 — 窗口快照 → 多模态上下文（macOS）

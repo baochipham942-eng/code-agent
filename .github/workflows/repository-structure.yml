@@ -1,0 +1,52 @@
+name: Repository Structure Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/ARCHITECTURE.md'
+      - 'docs/architecture/**'
+      - 'src/host/README.md'
+      - 'tests/README.md'
+      - 'scripts/README.md'
+      - 'scripts/ci/check-repository-structure.mjs'
+      - 'package.json'
+      - '.github/**'
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/ARCHITECTURE.md'
+      - 'docs/architecture/**'
+      - 'src/host/README.md'
+      - 'tests/README.md'
+      - 'scripts/README.md'
+      - 'scripts/ci/check-repository-structure.mjs'
+      - 'package.json'
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-structure-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-structure:
+    name: Repository navigation and growth ratchets
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Check repository structure
+        run: node scripts/ci/check-repository-structure.mjs

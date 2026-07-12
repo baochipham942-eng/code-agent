@@ -18,6 +18,8 @@ export interface GraphExecutorContext {
   checkpoint?: GraphCheckpoint;
   trace?: GraphTraceContext;
   progress(data: Record<string, GraphJsonValue>): Promise<void>;
+  /** Embed an executor cursor in the existing Graph checkpoint while the node is running. */
+  saveCheckpoint?(checkpoint: GraphJsonValue): Promise<void>;
 }
 
 export interface GraphExecutorPort {

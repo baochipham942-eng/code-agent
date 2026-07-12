@@ -48,6 +48,9 @@ Code Agent 此前已有三层多 Agent 基建（详见 [multiagent-system.md](./
 ## 3. 架构分层
 
 ```
+Native Durable Run / Parent GraphRunner
+        │  one DynamicWorkflow GraphNode
+        ▼
 模型在 /workflow 触发时写 JS 脚本
         │  script 参数
         ▼
@@ -92,6 +95,25 @@ Code Agent 此前已有三层多 Agent 基建（详见 [multiagent-system.md](./
                                  │  review/merge handoff only     │
                                  └──────────────────────────────┘
 ```
+
+### S8.5 nested graph contract
+
+Parent GraphRunner 只拥有整个 workflow 的父节点生命周期、terminal、cancel
+和 Graph checkpoint。process sandbox 继续拥有 JS closure 的实际调度顺序；
+`parallel()` 仍一次启动所有 thunk、失败项归 null、按输入顺序聚合，`pipeline()`
+仍按 item 独立穿越 stage，不建立全局 stage barrier。
+
+process 与显式 legacy worker fallback 使用同一个 `nested-graph:v1` RPC metadata：
+`workflowRunId / parentGraphId / parentNodeId / nestedGraphId / groupId /
+groupKind / itemId / stageId / nodeId / dependencyNodeIds / callIndex /
+sideEffect / traceContext`。旧调用缺 metadata 时继续兼容执行，但不会被标记为
+可恢复 nested graph。metadata 在 Host 入口做 schema 校验，禁止 credential、env、
+authorization、token、password 等字段。
+
+父节点 checkpoint 保存 script hash、logical workflow run id、nested graph id、
+journal run id 和最新 nested checkpoint ref。恢复时 logical node id 不含 attempt；
+已有可靠 journal result 的 agent call 不重复 inference，未知写副作用转
+`requires_review`。
 
 facade：`src/host/agent/scriptRuntime/index.ts` 导出 `startRun / cancelRun / getRunState / ScriptRunHostDeps / ScriptRunJournal / ConcurrencyGate`。
 

@@ -12,22 +12,65 @@ import { getTelemetryService } from '../../telemetry/telemetryService';
 const LEGACY_SOURCE = String.raw`
 const { parentPort, workerData } = require('node:worker_threads');
 const crypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 let seq = 0;
 let spent = 0;
+let groupSeq = 0;
 const pending = new Map();
+const nestedContext = new AsyncLocalStorage();
+const nestedIdentity = workerData.nestedGraph;
 parentPort.on('message', (message) => {
   if (!message || !message.__rpcResponse) return;
   const waiter = pending.get(message.id);
   if (!waiter) return;
   pending.delete(message.id);
   if (typeof message.spent === 'number') spent = message.spent;
+  if (message.ok && waiter.scope && waiter.metadata) waiter.scope.dependencyNodeIds = [waiter.metadata.nodeId];
   if (message.ok) waiter.resolve(message.result);
   else waiter.reject(new Error(message.error || 'rpc failed'));
 });
+function stableId(prefix, parts) {
+  return prefix + ':' + crypto.createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24);
+}
+function newGroup(kind) {
+  const groupCallIndex = ++groupSeq;
+  if (!nestedIdentity) return { groupKind: kind, groupCallIndex, groupId: 'compat:' + groupCallIndex };
+  return {
+    groupKind: kind,
+    groupCallIndex,
+    groupId: stableId(nestedIdentity.nestedGraphId + ':group', [nestedIdentity.workflowRunId, nestedIdentity.scriptHash, String(groupCallIndex), kind]),
+  };
+}
+function metadataFor(kind, payload, traceContext) {
+  if (!nestedIdentity) return undefined;
+  let scope = nestedContext.getStore();
+  if (!scope) scope = { ...newGroup('single'), agentCallIndex: 0, dependencyNodeIds: [] };
+  const callIndex = ++scope.agentCallIndex;
+  const nodeId = stableId(nestedIdentity.nestedGraphId + ':node', [nestedIdentity.workflowRunId, nestedIdentity.scriptHash, String(scope.groupCallIndex), scope.itemId || '', scope.stageId || '', String(callIndex), kind]);
+  scope.lastNodeId = nodeId;
+  const tools = payload && payload.options && payload.options.tools;
+  return {
+    protocolVersion: nestedIdentity.protocolVersion,
+    workflowRunId: nestedIdentity.workflowRunId,
+    parentGraphId: nestedIdentity.parentGraphId,
+    parentNodeId: nestedIdentity.parentNodeId,
+    nestedGraphId: nestedIdentity.nestedGraphId,
+    groupId: scope.groupId,
+    groupKind: scope.groupKind,
+    ...(scope.itemId ? { itemId: scope.itemId } : {}),
+    ...(scope.stageId ? { stageId: scope.stageId } : {}),
+    nodeId,
+    dependencyNodeIds: [...(scope.dependencyNodeIds || [])],
+    callIndex,
+    sideEffect: kind !== 'agent' || payload.options && payload.options.schema
+      ? 'none'
+      : tools === 'edit' || tools === 'full' ? 'unknown' : 'read_only',
+    ...(traceContext ? { traceContext } : {}),
+  };
+}
 function rpc(kind, payload) {
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    pending.set(id, { resolve, reject });
     let traceContext;
     if (workerData.traceContext) {
       const spanId = crypto.randomBytes(8).toString('hex');
@@ -38,22 +81,37 @@ function rpc(kind, payload) {
         traceparent: '00-' + workerData.traceContext.traceId + '-' + spanId + '-' + flags,
       };
     }
-    parentPort.postMessage({ __rpcRequest: true, id, kind, payload, traceContext });
+    const metadata = metadataFor(kind, payload, traceContext);
+    pending.set(id, { resolve, reject, scope: nestedContext.getStore(), metadata });
+    parentPort.postMessage({ __rpcRequest: true, id, kind, payload, traceContext, metadata });
   });
 }
 const agent = (prompt, options) => rpc('agent', { prompt, options });
-const parallel = (thunks) => Promise.all(thunks.map((thunk) => {
-  try { return Promise.resolve(thunk()).catch(() => null); }
-  catch (_) { return Promise.resolve(null); }
-}));
-const pipeline = (items, ...stages) => Promise.all(items.map(async (item, index) => {
-  let value = item;
-  for (const stage of stages) {
-    try { value = await stage(value, item, index); }
-    catch (_) { return null; }
-  }
-  return value;
-}));
+const parallel = (thunks) => {
+  const group = newGroup('parallel');
+  return Promise.all(thunks.map((thunk, itemIndex) => {
+    const itemId = nestedIdentity ? stableId(group.groupId + ':item', [String(itemIndex)]) : 'compat-item:' + itemIndex;
+    const scope = { ...group, itemId, agentCallIndex: 0, dependencyNodeIds: [] };
+    try { return Promise.resolve(nestedContext.run(scope, thunk)).catch(() => null); }
+    catch (_) { return Promise.resolve(null); }
+  }));
+};
+const pipeline = (items, ...stages) => {
+  const group = newGroup('pipeline');
+  return Promise.all(items.map(async (item, index) => {
+    const itemId = nestedIdentity ? stableId(group.groupId + ':item', [String(index)]) : 'compat-item:' + index;
+    let value = item;
+    let dependencyNodeIds = [];
+    for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
+      const stageId = nestedIdentity ? stableId(group.groupId + ':stage', [String(stageIndex)]) : 'compat-stage:' + stageIndex;
+      const scope = { ...group, itemId, stageId, agentCallIndex: 0, dependencyNodeIds };
+      try { value = await nestedContext.run(scope, () => stages[stageIndex](value, item, index)); }
+      catch (_) { return null; }
+      dependencyNodeIds = scope.lastNodeId ? [scope.lastNodeId] : dependencyNodeIds;
+    }
+    return value;
+  }));
+};
 const phase = (title) => rpc('phase', { title: String(title) });
 const log = (message) => rpc('log', { message: String(message) });
 const budget = Object.freeze({
@@ -81,6 +139,7 @@ export interface LegacyWorkerOptions {
   onRpc: (request: RpcRequest) => Promise<RpcResponse>;
   timeoutMs?: number;
   traceContext?: SerializedRunTraceContext;
+  nestedGraph?: import('./types').NestedWorkflowIdentity;
 }
 
 export function runScriptInLegacyWorker(opts: LegacyWorkerOptions): Promise<{ ok: boolean; result?: unknown; error?: string }> {
@@ -92,6 +151,7 @@ export function runScriptInLegacyWorker(opts: LegacyWorkerOptions): Promise<{ ok
         goal: opts.goal,
         budgetTotal: opts.budgetTotal ?? null,
         traceContext: opts.traceContext,
+        nestedGraph: opts.nestedGraph,
       },
       resourceLimits: { maxOldGenerationSizeMb: SCRIPT_RUNTIME.WORKER_MAX_OLD_GEN_MB },
     });

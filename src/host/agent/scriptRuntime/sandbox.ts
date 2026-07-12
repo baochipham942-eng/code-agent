@@ -38,12 +38,16 @@ const hostProcess = process;
 const hostRequire = require;
 const v8 = hostRequire('node:v8');
 const hostCrypto = hostRequire('node:crypto');
+const { AsyncLocalStorage } = hostRequire('node:async_hooks');
 const readline = hostRequire('node:readline');
 const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructor;
 const pending = new Map();
 let rpcSeq = 0;
 let spent = 0;
 let activeTraceContext;
+let nestedIdentity;
+let groupSeq = 0;
+const nestedContext = new AsyncLocalStorage();
 
 function encode(value) { return v8.serialize(value).toString('base64'); }
 function decode(value) { return v8.deserialize(Buffer.from(value, 'base64')); }
@@ -56,6 +60,58 @@ function childTraceContext() {
     ...activeTraceContext,
     spanId,
     traceparent: '00-' + activeTraceContext.traceId + '-' + spanId + '-' + flags,
+  });
+}
+
+function stableId(prefix, parts) {
+  const hash = hostCrypto.createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24);
+  return prefix + ':' + hash;
+}
+function newGroup(kind) {
+  const callIndex = ++groupSeq;
+  if (!nestedIdentity) return { groupKind: kind, groupCallIndex: callIndex, groupId: 'compat:' + callIndex };
+  return {
+    groupKind: kind,
+    groupCallIndex: callIndex,
+    groupId: stableId(nestedIdentity.nestedGraphId + ':group', [nestedIdentity.workflowRunId, nestedIdentity.scriptHash, String(callIndex), kind]),
+  };
+}
+function sideEffectFor(options) {
+  if (options && options.schema) return 'none';
+  const tools = options && options.tools;
+  if (tools === 'edit' || tools === 'full') return 'unknown';
+  return 'read_only';
+}
+function metadataFor(kind, payload, traceContext) {
+  if (!nestedIdentity) return undefined;
+  let scope = nestedContext.getStore();
+  if (!scope) scope = { ...newGroup('single'), agentCallIndex: 0, dependencyNodeIds: [] };
+  const callIndex = ++scope.agentCallIndex;
+  const nodeId = stableId(nestedIdentity.nestedGraphId + ':node', [
+    nestedIdentity.workflowRunId,
+    nestedIdentity.scriptHash,
+    String(scope.groupCallIndex),
+    scope.itemId || '',
+    scope.stageId || '',
+    String(callIndex),
+    kind,
+  ]);
+  scope.lastNodeId = nodeId;
+  return Object.freeze({
+    protocolVersion: nestedIdentity.protocolVersion,
+    workflowRunId: nestedIdentity.workflowRunId,
+    parentGraphId: nestedIdentity.parentGraphId,
+    parentNodeId: nestedIdentity.parentNodeId,
+    nestedGraphId: nestedIdentity.nestedGraphId,
+    groupId: scope.groupId,
+    groupKind: scope.groupKind,
+    ...(scope.itemId ? { itemId: scope.itemId } : {}),
+    ...(scope.stageId ? { stageId: scope.stageId } : {}),
+    nodeId,
+    dependencyNodeIds: Object.freeze([...(scope.dependencyNodeIds || [])]),
+    callIndex,
+    sideEffect: kind === 'agent' ? sideEffectFor(payload && payload.options) : 'none',
+    ...(traceContext ? { traceContext } : {}),
   });
 }
 function hideAmbientAuthority() {
@@ -73,8 +129,10 @@ function hideAmbientAuthority() {
 function rpc(kind, payload) {
   return new Promise((resolve, reject) => {
     const id = ++rpcSeq;
-    pending.set(id, { resolve, reject });
-    send({ type: 'rpc', request: { id, kind, payload, traceContext: childTraceContext() } });
+    const traceContext = childTraceContext();
+    const metadata = metadataFor(kind, payload, traceContext);
+    pending.set(id, { resolve, reject, scope: nestedContext.getStore(), metadata });
+    send({ type: 'rpc', request: { id, kind, payload, traceContext, metadata } });
   });
 }
 
@@ -84,24 +142,38 @@ async function execute(init) {
   }
   const budgetTotal = init.budgetTotal;
   activeTraceContext = init.traceContext;
+  nestedIdentity = init.nestedGraph;
   const budget = Object.freeze({
     total: budgetTotal == null ? null : budgetTotal,
     spent: () => spent,
     remaining: () => budgetTotal == null ? Infinity : Math.max(0, budgetTotal - spent),
   });
   const agent = (prompt, options) => rpc('agent', { prompt, options });
-  const parallel = (thunks) => Promise.all(thunks.map((thunk) => {
-    try { return Promise.resolve(thunk()).catch(() => null); }
-    catch (_) { return Promise.resolve(null); }
-  }));
-  const pipeline = (items, ...stages) => Promise.all(items.map(async (item, index) => {
-    let value = item;
-    for (const stage of stages) {
-      try { value = await stage(value, item, index); }
-      catch (_) { return null; }
-    }
-    return value;
-  }));
+  const parallel = (thunks) => {
+    const group = newGroup('parallel');
+    return Promise.all(thunks.map((thunk, itemIndex) => {
+      const itemId = stableId(group.groupId + ':item', [String(itemIndex)]);
+      const scope = { ...group, itemId, agentCallIndex: 0, dependencyNodeIds: [] };
+      try { return Promise.resolve(nestedContext.run(scope, thunk)).catch(() => null); }
+      catch (_) { return Promise.resolve(null); }
+    }));
+  };
+  const pipeline = (items, ...stages) => {
+    const group = newGroup('pipeline');
+    return Promise.all(items.map(async (item, index) => {
+      const itemId = stableId(group.groupId + ':item', [String(index)]);
+      let value = item;
+      let dependencyNodeIds = [];
+      for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
+        const stageId = stableId(group.groupId + ':stage', [String(stageIndex)]);
+        const scope = { ...group, itemId, stageId, agentCallIndex: 0, dependencyNodeIds };
+        try { value = await nestedContext.run(scope, () => stages[stageIndex](value, item, index)); }
+        catch (_) { return null; }
+        dependencyNodeIds = scope.lastNodeId ? [scope.lastNodeId] : dependencyNodeIds;
+      }
+      return value;
+    }));
+  };
   const phase = (title) => rpc('phase', { title: String(title) });
   const log = (message) => rpc('log', { message: String(message) });
   hideAmbientAuthority();
@@ -134,6 +206,7 @@ rl.on('line', async (line) => {
     if (!waiter) return;
     pending.delete(response.id);
     if (typeof response.spent === 'number') spent = response.spent;
+    if (response.ok && waiter.scope && waiter.metadata) waiter.scope.dependencyNodeIds = [waiter.metadata.nodeId];
     if (response.ok) waiter.resolve(response.result);
     else waiter.reject(new Error(response.error || 'rpc failed'));
   }
@@ -154,6 +227,7 @@ export interface RunSandboxOptions {
   legacyWorkerFallback?: boolean;
   /** Allowlisted run trace metadata propagated in the init frame. */
   traceContext?: SerializedRunTraceContext;
+  nestedGraph?: import('./types').NestedWorkflowIdentity;
 }
 
 export interface WorkerOutcome {
@@ -372,6 +446,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
       budgetTotal: opts.budgetTotal ?? null,
       capabilities: ORCHESTRATION_CAPABILITIES,
       traceContext: opts.traceContext,
+      nestedGraph: opts.nestedGraph,
     })}\n`);
   });
 }

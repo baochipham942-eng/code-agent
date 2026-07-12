@@ -25,7 +25,7 @@ import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ConcurrencyGate } from './concurrencyGate';
 import type { BudgetTracker } from './budget';
 import { validateForcedSchema } from './scriptValidator';
-import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunCallRecord, ScriptRunEvent } from './types';
+import type { AgentCallPayload, JsonSchema, NestedGraphEvent, PrimitiveResult, ScriptRunCallRecord, ScriptRunEvent } from './types';
 import type { WriteGate } from './writeGate';
 import {
   capabilityManifestForToolProfile,
@@ -109,8 +109,13 @@ function computeCallHash(
   return createHash('sha256').update(`${call.prompt}\u0000${stableStringify(semantic)}`).digest('hex').slice(0, 16);
 }
 
-// 单例执行器：execute 是无状态 per-call（上下文全由参数传入），全 run 复用一个实例即可。
-const executor = new SubagentExecutor();
+// Lazy per-process executor: importing Graph adapter contracts must not eagerly
+// instantiate the model/tool loop or break narrow coordinator test doubles.
+let executor: SubagentExecutor | undefined;
+function getExecutor(): SubagentExecutor {
+  executor ??= new SubagentExecutor();
+  return executor;
+}
 
 /**
  * 一次 dynamic-workflow run 的主线程运行期上下文（非序列化，不进 worker）。
@@ -156,6 +161,8 @@ export interface ScriptRunContext {
   gate: ConcurrencyGate;
   /** 进度/可观测事件回调（scriptRuntime 自有事件流）。 */
   emit: (event: ScriptRunEvent) => void;
+  /** Versioned nested graph evidence. Missing metadata stays in compatibility mode. */
+  emitNestedGraph?: (event: NestedGraphEvent) => void;
   /** 跨 run 共享的 agent() 调用计数（失控脚本兜底）。 */
   callCounter: { count: number };
   /** resumable 命中缓存的次数（供 meta 观测 resume 是否生效）。 */
@@ -268,7 +275,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       if (writeCapable) ctx.writeGuard.inFlight++;
       let workspaceOutcome: 'completed' | 'failed' | 'cancelled' = 'failed';
       try {
-        const sub = await executor.execute({
+        const sub = await getExecutor().execute({
           prompt: call.prompt,
           config: {
             name: call.options?.agentType ?? 'workflow-agent',

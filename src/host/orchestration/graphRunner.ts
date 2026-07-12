@@ -43,6 +43,7 @@ interface ActiveNode {
   controller: AbortController;
   context: GraphExecutorContext;
   promise: Promise<void>;
+  recovering: boolean;
 }
 
 const TERMINAL_NODE_STATUSES = new Set<GraphNodeStatus>([
@@ -59,8 +60,11 @@ export class GraphRunner {
   private terminalEvent?: GraphCheckpoint['terminalEventType'];
   private readonly results = new Map<string, GraphNodeResult>();
   private readonly active = new Map<string, ActiveNode>();
+  private readonly waiting = new Map<string, ActiveNode>();
   private graphTrace?: GraphTraceContext;
   private checkpoint?: GraphCheckpoint;
+  private recoveryCheckpoint?: GraphCheckpoint;
+  private readonly recoveryCandidates = new Set<string>();
   private cancelRequested = false;
 
   constructor(private readonly deps: GraphRunnerDependencies) {
@@ -76,7 +80,13 @@ export class GraphRunner {
     this.terminalEvent = checkpoint?.terminalEventType;
     this.status = checkpoint && checkpoint.status !== 'created' ? checkpoint.status : 'running';
     this.cancelRequested = false;
+    this.recoveryCheckpoint = checkpoint;
+    this.recoveryCandidates.clear();
+    for (const state of checkpoint?.nodes ?? []) {
+      if (state.status === 'running') this.recoveryCandidates.add(state.nodeId);
+    }
     this.results.clear();
+    this.waiting.clear();
     for (const node of checkpoint?.nodes ?? []) {
       if (node.result) this.results.set(node.nodeId, node.result);
     }
@@ -127,7 +137,8 @@ export class GraphRunner {
     await this.assertCurrentAttempt();
     this.cancelRequested = true;
     const cancelled = this.deps.scheduler.cancel();
-    await Promise.allSettled([...this.active.values()].map(async (entry) => {
+    const cancellable = new Map([...this.active, ...this.waiting]);
+    await Promise.allSettled([...cancellable.values()].map(async (entry) => {
       entry.controller.abort(reason);
       await entry.executor.cancel(entry.node, entry.context);
     }));
@@ -173,7 +184,7 @@ export class GraphRunner {
         const result = this.results.get(id);
         return result ? [[id, result]] : [];
       })),
-      checkpoint: this.checkpoint,
+      checkpoint: this.recoveryCheckpoint ?? this.checkpoint,
       trace: nodeTrace,
       progress: async (data) => this.emit('node_progress', {
         nodeId: node.nodeId,
@@ -181,8 +192,18 @@ export class GraphRunner {
         data,
         trace: nodeTrace,
       }),
+      saveCheckpoint: async (executorCheckpoint) => {
+        await this.assertCurrentAttempt();
+        this.results.set(node.nodeId, {
+          status: 'waiting',
+          checkpoint: executorCheckpoint,
+          metadata: { inProgress: true },
+        });
+        await this.persist();
+      },
     };
-    const entry: ActiveNode = { node, executor, controller, context, promise: Promise.resolve() };
+    const recovering = this.recoveryCandidates.delete(node.nodeId);
+    const entry: ActiveNode = { node, executor, controller, context, promise: Promise.resolve(), recovering };
     this.active.set(node.nodeId, entry);
     entry.promise = this.executeNode(entry, nodeAttempt, startedAt, nodeTrace);
   }
@@ -200,7 +221,10 @@ export class GraphRunner {
 
     let result: GraphNodeResult;
     try {
-      result = await executor.execute(node, context);
+      const recoveryCheckpoint = context.checkpoint;
+      result = executor.recover && entry.recovering && recoveryCheckpoint
+        ? await executor.recover(node, recoveryCheckpoint, context)
+        : await executor.execute(node, context);
     } catch (error) {
       result = {
         status: 'failed',
@@ -217,6 +241,8 @@ export class GraphRunner {
       }
       result = this.normalizeUncertainResult(node, result);
       await this.applyNodeResult(node, nodeAttempt, startedAt, result, nodeTrace);
+      if (result.status === 'waiting') this.waiting.set(node.nodeId, entry);
+      else this.waiting.delete(node.nodeId);
     } finally {
       this.active.delete(node.nodeId);
       this.deps.trace?.endNode(nodeTrace, result);

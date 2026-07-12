@@ -6,6 +6,10 @@ import {
   serializeRunTraceContext,
 } from '../../../../src/host/telemetry/runTraceContext';
 import { getTelemetryService } from '../../../../src/host/telemetry/telemetryService';
+import {
+  createNestedWorkflowIdentity,
+  type NestedWorkflowMetadata,
+} from '../../../../src/host/agent/scriptRuntime';
 
 function run(script: string, signal = new AbortController().signal) {
   return runScriptInSandbox({
@@ -146,5 +150,71 @@ describe('process-level orchestration sandbox', () => {
       .filter((span) => span.traceId === parent.traceId && span.name.startsWith('workflow rpc:'));
     expect(rpcSpans).toHaveLength(2);
     expect(rpcSpans.every((span) => span.parentSpanId === parent.spanId)).toBe(true);
+  });
+
+  it.each([false, true])('carries stable credential-free nested graph metadata (legacy=%s)', async (legacyWorkerFallback) => {
+    const identity = createNestedWorkflowIdentity({
+      workflowRunId: 'workflow-logical-run',
+      parentGraphId: 'parent-graph',
+      parentNodeId: 'workflow-node',
+      scriptHash: '0123456789abcdef',
+    });
+    const execute = async () => {
+      const metadata: NestedWorkflowMetadata[] = [];
+      const outcome = await runScriptInSandbox({
+        script: `
+          const p = await parallel([
+            () => agent('a', { tools: 'readonly' }),
+            () => agent('b', { tools: 'edit' }),
+          ]);
+          const q = await pipeline([1, 2],
+            (value) => agent('s1:' + value),
+            (value) => agent('s2:' + value),
+          );
+          return { p, q };
+        `,
+        signal: new AbortController().signal,
+        useOsSandbox: false,
+        legacyWorkerFallback,
+        nestedGraph: identity,
+        onRpc: async (request) => {
+          if (request.metadata) metadata.push(request.metadata);
+          return { id: request.id, ok: true, result: request.kind === 'agent' ? request.payload.prompt : null };
+        },
+      });
+      expect(outcome).toMatchObject({ ok: true, result: { p: ['a', 'b'], q: ['s2:s1:1', 's2:s1:2'] } });
+      return metadata;
+    };
+
+    const first = await execute();
+    const recoveredAttempt = await execute();
+    expect(recoveredAttempt.map((entry) => entry.nodeId)).toEqual(first.map((entry) => entry.nodeId));
+    expect(first).toHaveLength(6);
+    expect(first.every((entry) => entry.protocolVersion === 'nested-graph:v1')).toBe(true);
+    expect(first[1].sideEffect).toBe('unknown');
+    expect(first.filter((entry) => entry.groupKind === 'pipeline' && entry.stageId).some((entry) => entry.dependencyNodeIds.length === 1)).toBe(true);
+    expect(JSON.stringify(first)).not.toMatch(/credential|authorization|apiKey|password|secret|"env"/i);
+  });
+
+  it('keeps pipeline item flow free of a global stage barrier', async () => {
+    const order: string[] = [];
+    const identity = createNestedWorkflowIdentity({
+      workflowRunId: 'workflow-pipeline', parentGraphId: 'g', parentNodeId: 'n', scriptHash: 'fedcba9876543210',
+    });
+    const outcome = await runScriptInSandbox({
+      script: `return pipeline([0, 1], (v) => agent('s1:' + v), (v) => agent('s2:' + v));`,
+      signal: new AbortController().signal,
+      useOsSandbox: false,
+      nestedGraph: identity,
+      onRpc: async (request) => {
+        const prompt = (request.payload as { prompt: string }).prompt;
+        order.push(`start:${prompt}`);
+        if (prompt === 's1:0') await new Promise((resolve) => setTimeout(resolve, 40));
+        order.push(`done:${prompt}`);
+        return { id: request.id, ok: true, result: prompt };
+      },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(order.indexOf('start:s2:s1:1')).toBeLessThan(order.indexOf('done:s1:0'));
   });
 });

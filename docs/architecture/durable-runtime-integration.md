@@ -17,7 +17,7 @@ Each non-terminal plan is processed in two phases:
 | `external_cli/claude_code` | S5 lifecycle + Claude resume builder | resumes only with stable session id and read-only launch context |
 | `external_cli/mimo_code` | S5 decision | `requires_review` (`non_resumable`) |
 | `external_cli/kimi_code` | S5 decision | `requires_review` (`unknown`) |
-| `dynamic_workflow` | Dynamic review handler | runtime continuation remains `requires_review` |
+| `dynamic_workflow` | Dynamic review handler + DynamicWorkflowExecutor port | live workflow nodes can replay the same logical sandbox graph through the existing journal; startup dispatcher remains review-only until the application supplies the ScriptRun host dependency factory |
 | explicit MCP `tool_call` | S6 MCP handler | queries only an integrity-bound `mcp-task:v1` handle on a currently trusted/queryable server |
 | unregistered pending operation | dispatcher | explicit `unsupported`; never silently ignored |
 
@@ -36,3 +36,11 @@ Web/Tauri webServer and Host bootstrap use the same order:
 7. cancel the delayed scan and await in-flight recovery work during shutdown.
 
 Database initialization failure remains fail-closed. MCP trust is an explicit local allowlist supplied through `CODE_AGENT_MCP_DURABLE_TRUSTED_SERVER_IDENTITIES`; an empty or stale allowlist produces review rather than a query. MCP results are stored as mode-0600 local files referenced by opaque SHA-256 ids, without changing Durable Run tables or ToolCache policy.
+
+Graph executor recovery ports are registered before execution. Graph checkpoints
+remain embedded engine state: Dynamic Workflow carries its nested/journal cursor,
+External Engine carries engine/session cursor, and MCP carries its integrity-bound
+task operation. Interrupted running Graph nodes call the executor `recover` port
+and completed nodes are not relaunched. Startup Dynamic recovery still fails
+closed to review because reconstructing model/tool/worktree host dependencies
+from persisted data has not yet been wired; the dispatcher does not invent them.

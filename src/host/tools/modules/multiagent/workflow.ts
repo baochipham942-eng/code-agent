@@ -28,8 +28,17 @@ import type {
 import type { ModelConfig } from '../../../../shared/contract';
 import type { ToolResolver } from '../../dispatch/toolResolver';
 import type { SubagentContext } from '../../../agent/subagentExecutorTypes';
-import { startRun, type ScriptRunHostDeps, type ScriptRunJournal } from '../../../agent/scriptRuntime';
-import type { ScriptRunEvent } from '../../../agent/scriptRuntime';
+import type { ScriptRunHostDeps, ScriptRunJournal } from '../../../agent/scriptRuntime';
+import type { ScriptRunEvent, ScriptRunState } from '../../../agent/scriptRuntime';
+import {
+  DAGGraphSchedulerAdapter,
+  DynamicWorkflowExecutor,
+  GraphEventCompatibilityAdapter,
+  GraphExecutorRegistry,
+  GraphRunner,
+  type GraphRunSpec,
+} from '../../../orchestration';
+import type { RunTraceContext } from '../../../telemetry/runTraceContext';
 import { getWorkflowJournalRepository } from '../../../services/core/repositories/WorkflowJournalRepository';
 import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
 import { extractScriptPreview } from '../../../agent/scriptRuntime/scriptPreview';
@@ -271,10 +280,57 @@ async function runWorkflow(
 
     safeProgress({ stage: 'starting', detail: 'workflow' });
 
-    const state = await startRun(
-      { runId, sessionId: ctx.sessionId, workingDir: legacyCtx.workingDirectory, script, goal, budgetTokens, resumeFromRunId, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
-      deps,
-    );
+    const parentRunId = ctx.runId ?? runId;
+    const parentNodeId = `dynamic-workflow:${ctx.currentToolCallId ?? runId}`;
+    const trace = ctx.traceContext as RunTraceContext | undefined;
+    const graphSpec: GraphRunSpec = {
+      graphId: `${parentRunId}:${parentNodeId}`,
+      runId: parentRunId,
+      sessionId: ctx.sessionId,
+      attempt: trace?.attempt ?? 1,
+      schedulerPolicy: { maxConcurrency: 1 },
+      trace: trace ? { traceId: trace.traceId, spanId: trace.spanId } : undefined,
+      nodes: [{
+        nodeId: parentNodeId,
+        kind: 'dynamic_workflow',
+        executorRef: 'dynamic_workflow',
+        dependencies: [],
+        sideEffect: preview.writeHint ? 'unknown' : 'read_only',
+        input: {
+          script,
+          goal: goal ?? null,
+          workingDir: legacyCtx.workingDirectory,
+          defaultProvider: baseModelConfig.provider,
+          defaultModel: baseModelConfig.model,
+          budgetTokens: budgetTokens ?? null,
+          workflowRunId: runId,
+          journalRunId: runId,
+          resumeFromRunId: resumeFromRunId ?? null,
+        },
+      }],
+    };
+    const compatibility = new GraphEventCompatibilityAdapter({
+      script: (event) => {
+        if (['agent:start', 'agent:done', 'agent:error'].includes(event.type) && event.data?.agentId === parentNodeId) return;
+        deps.emit?.({ ...event, runId });
+      },
+      diagnostic: (error, event, target) => ctx.logger.debug('graph event compatibility projection failed', {
+        error: error instanceof Error ? error.message : String(error),
+        graphId: event.graphId,
+        target,
+      }),
+    });
+    const dynamicExecutor = new DynamicWorkflowExecutor({ dependenciesFactory: () => deps });
+    const graphResult = await new GraphRunner({
+      scheduler: new DAGGraphSchedulerAdapter(),
+      executors: new GraphExecutorRegistry([dynamicExecutor]),
+      emit: (event) => compatibility.emit(event),
+      attemptGuard: ({ runId: candidateRunId, attempt }) =>
+        candidateRunId === parentRunId && attempt === (trace?.attempt ?? 1),
+    }).run(graphSpec);
+    const graphNodeResult = graphResult.results[parentNodeId];
+    const state = graphNodeResult?.output as unknown as ScriptRunState | undefined;
+    if (!state) throw new Error(graphNodeResult?.error ?? 'dynamic workflow Graph executor returned no ScriptRunState');
 
     if (state.status !== 'completed') {
       ctx.logger.debug('workflow run did not complete', { status: state.status, error: state.error });
@@ -299,6 +355,7 @@ async function runWorkflow(
           runId, status: state.status, agentCallCount: state.agentCallCount,
           tokensSpent: state.tokensSpent, cacheHits: state.cacheHits, phases: state.phases,
           handoffs: state.handoffs,
+          graphCheckpoint: graphResult.checkpoint,
           ...(resumeFromRunId ? { resumeFromRunId } : {}),
         },
       };
@@ -330,6 +387,7 @@ async function runWorkflow(
         runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent,
         cacheHits: state.cacheHits, phases: state.phases,
         handoffs: state.handoffs,
+        graphCheckpoint: graphResult.checkpoint,
         ...(resumeFromRunId ? { resumeFromRunId } : {}),
       },
     };

@@ -59,6 +59,48 @@ export interface AgentWorkspaceHandoff {
 
 export type RpcKind = 'agent' | 'phase' | 'log';
 
+export const NESTED_GRAPH_PROTOCOL_VERSION = 'nested-graph:v1' as const;
+export type NestedWorkflowGroupKind = 'single' | 'parallel' | 'pipeline';
+
+/**
+ * Versioned, credential-free identity projected by the sandbox for one nested
+ * workflow RPC. Logical ids deliberately exclude attempt, pid and wall clock.
+ */
+export interface NestedWorkflowMetadata {
+  protocolVersion: typeof NESTED_GRAPH_PROTOCOL_VERSION;
+  workflowRunId: string;
+  parentGraphId: string;
+  parentNodeId: string;
+  nestedGraphId: string;
+  groupId: string;
+  groupKind: NestedWorkflowGroupKind;
+  itemId?: string;
+  stageId?: string;
+  nodeId: string;
+  dependencyNodeIds: string[];
+  callIndex: number;
+  sideEffect: 'none' | 'read_only' | 'idempotent' | 'unknown';
+  traceContext?: import('../../telemetry/runTraceContext').SerializedRunTraceContext;
+}
+
+export interface NestedWorkflowIdentity {
+  protocolVersion: typeof NESTED_GRAPH_PROTOCOL_VERSION;
+  workflowRunId: string;
+  parentGraphId: string;
+  parentNodeId: string;
+  nestedGraphId: string;
+  scriptHash: string;
+}
+
+export interface NestedGraphEvent {
+  type: 'nested:node_started' | 'nested:node_completed' | 'nested:node_failed';
+  metadata: NestedWorkflowMetadata;
+  timestamp: number;
+  cached?: boolean;
+  resultRef?: string;
+  error?: string;
+}
+
 export interface RpcRequest {
   /** child 内自增调用 id，用于把响应配回对应的 pending promise。 */
   id: number;
@@ -66,6 +108,8 @@ export interface RpcRequest {
   payload: AgentCallPayload | { title: string } | { message: string };
   /** Child-created W3C context for this RPC node. Contains no prompt or credential values. */
   traceContext?: import('../../telemetry/runTraceContext').SerializedRunTraceContext;
+  /** Missing means legacy compatibility mode and must never be treated as recoverable. */
+  metadata?: NestedWorkflowMetadata;
 }
 
 export interface RpcResponse {
@@ -114,6 +158,8 @@ export interface ScriptRunSpec {
   budgetTokens?: number;
   /** resumable：从这个旧 run 的 journal 重放——重跑确定性脚本，命中缓存的 agent() 瞬时返回不再 inference。 */
   resumeFromRunId?: string;
+  /** Parent Graph identity used to derive the sandbox-owned nested graph. */
+  nestedGraph?: NestedWorkflowIdentity;
 }
 
 /** 一次成功 agent() 调用写入 journal 的记录（resumable 缓存的最小单元）。 */

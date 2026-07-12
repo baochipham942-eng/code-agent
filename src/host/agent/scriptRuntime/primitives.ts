@@ -7,15 +7,26 @@
 // ============================================================================
 
 import { runAgentCall, type ScriptRunContext } from './agentBridge';
+import { createHash } from 'node:crypto';
 import type { AgentCallPayload, RpcRequest, RpcResponse } from './types';
 import { redactSecrets } from '../../security/secretRedaction';
+import { assertNestedWorkflowMetadata } from './nestedGraphMetadata';
 
 /** 处理一条来自 child 的 RPC 请求，返回响应。永不抛出——错误打包进 RpcResponse.error。 */
 export async function handleRpc(req: RpcRequest, ctx: ScriptRunContext): Promise<RpcResponse> {
+  const metadata = req.metadata;
   try {
+    if (metadata) assertNestedWorkflowMetadata(metadata);
     switch (req.kind) {
       case 'agent': {
+        if (metadata) ctx.emitNestedGraph?.({ type: 'nested:node_started', metadata, timestamp: ctx.now() });
         const result = await runAgentCall(req.payload as AgentCallPayload, ctx);
+        if (metadata) ctx.emitNestedGraph?.({
+          type: 'nested:node_completed',
+          metadata,
+          timestamp: ctx.now(),
+          resultRef: `journal-result:${createHash('sha256').update(JSON.stringify(result)).digest('hex').slice(0, 24)}`,
+        });
         // 回传累计 spent，worker 侧 budget 镜像据此更新（脚本可 while(budget.remaining()>x) 收敛）。
         return { id: req.id, ok: true, result, spent: ctx.budget.spent() };
       }
@@ -33,6 +44,12 @@ export async function handleRpc(req: RpcRequest, ctx: ScriptRunContext): Promise
         return { id: req.id, ok: false, error: `unknown rpc kind: ${String((req as RpcRequest).kind)}` };
     }
   } catch (err) {
+    if (metadata) ctx.emitNestedGraph?.({
+      type: 'nested:node_failed',
+      metadata,
+      timestamp: ctx.now(),
+      error: redactSecrets(err instanceof Error ? err.message : String(err)),
+    });
     // 失败也回传当前 spent（agent 失败路径已记账）：否则 worker 侧 budget 镜像停在旧值，
     // 脚本 while(budget.remaining()>x) 会持续误判（Codex HIGH#2）。
     return {

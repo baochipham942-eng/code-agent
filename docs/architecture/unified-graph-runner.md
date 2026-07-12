@@ -1,10 +1,11 @@
-# Unified Graph Runner (S8, phases 1-4)
+# Unified Graph Runner (S8 + S8.5)
 
 ## Status
 
-S8 currently completes the Graph contract, GraphRunner, TaskDAG scheduler adapter,
-Agent Team migration, and Auto Agent migration. Dynamic Workflow is the next
-strangler boundary and is intentionally not marked migrated.
+S8 completes the Graph contract, GraphRunner, TaskDAG scheduler adapter, Agent
+Team migration, and Auto Agent migration. S8.5 adds the remaining executor
+adapters, migrates the live Dynamic Workflow entry point to a one-node parent
+Graph, and centralizes GraphEvent compatibility projection.
 
 The Durable Run Kernel remains authoritative for logical run identity, attempt,
 owner lease, fenced checkpoint transaction, recovery, and terminal lifecycle.
@@ -98,29 +99,46 @@ not write, delete, or dual-write it.
 singleton. Auto execution uses `SubagentExecutionContext` directly and does not
 reconstruct legacy `ToolContext`.
 
-## Deferred strangler boundary
+## S8.5 executor boundary
 
-Dynamic Workflow cannot yet be migrated without an explicit protocol decision.
-The sandbox child owns the current `parallel()` and `pipeline()` composition:
+Dynamic Workflow uses two non-overlapping graph layers:
+
+```text
+Parent GraphRunner
+  DynamicWorkflow GraphNode
+    process sandbox nested graph
+      agent node / parallel item / pipeline item-stage node
+```
+
+The sandbox child continues to own `parallel()` and `pipeline()` composition:
 
 - `parallel()` invokes thunks and maps each rejected item to `null`;
 - `pipeline()` lets every item traverse its stages independently, without a
   stage barrier, and maps a failed item to `null`;
-- Host receives only independent `agent` RPC calls and receives no stable
-  group/item/stage/dependency metadata.
+- Host receives versioned `nested-graph:v1` identity on RPC frames. Identity is
+  derived from logical workflow run id, script hash, group call index, item,
+  stage, and agent call index; attempt, pid, random values, credentials, and env
+  do not enter logical node ids.
 
-Consequently Host cannot build the real workflow graph or restore a stable
-pipeline node identity from the current RPC contract. Wrapping each RPC in an
-isolated one-node Graph would leave dependency scheduling in the sandbox and
-would create a false second authority.
+The Parent GraphRunner treats the workflow as one executor node and never claims
+to schedule sandbox closures. Nested metadata supplies progress and recovery
+evidence without moving closures into Host. The parent checkpoint stores the
+script/workflow/nested/journal identity and latest nested checkpoint ref;
+completed calls continue to reuse the existing journal result cache.
 
-The next phase must first add a backward-compatible, security-reviewed metadata
-contract to the process sandbox primitives (or an equivalent pre-execution graph
-plan) that carries stable workflow group, item, stage, node, and dependency
-identity. This touches the frozen process sandbox boundary and therefore needs
-explicit authorization before implementation. External Engine, MCP executor
-registration, NativeConversationExecutor, application checkpoint wiring, and
-GraphEvent public compatibility mapping remain after that gate.
+`NativeConversationExecutor` is lifecycle-only and delegates the sole model/tool
+loop to `ConversationRuntime`. `ExternalEngineExecutor` maps a node to the
+existing S5 lifecycle/resume builders and refuses unsafe MiMo/Kimi recovery.
+`McpTaskExecutor` admits only Durable Task tools and maps provider waiting/result
+handles onto node checkpoints; synchronous MCP tools remain on ToolExecutor.
+
+`GraphEventCompatibilityAdapter` is the centralized migration fan-out to
+AgentEvent, SwarmEvent, ScriptRunEvent, DAG visualization, and session replay
+evidence. The migrated Dynamic Workflow entry uses it as its public lifecycle
+source. Agent Team and Auto Agent retain their S8 facade projections until their
+call sites are switched to the same sink in the final S8.5 integration slice.
+The adapter fences duplicate Graph terminal projection per run attempt;
+projection failures are diagnostics and never replace the authoritative result.
 
 ## Debt delta at the phase-4 boundary
 

@@ -17,6 +17,13 @@ export {
 export type { ScriptRunContext } from './agentBridge';
 export { ConcurrencyGate } from './concurrencyGate';
 export {
+  createNestedWorkflowIdentity,
+  deriveNestedGraphId,
+  assertNestedWorkflowIdentity,
+  assertNestedWorkflowMetadata,
+} from './nestedGraphMetadata';
+export { NESTED_GRAPH_PROTOCOL_VERSION } from './types';
+export {
   ORCHESTRATION_CAPABILITIES,
   capabilityManifestForToolProfile,
   capabilityManifestForTools,
@@ -35,4 +42,8 @@ export type {
   JsonSchema,
   AgentWorkspaceLease,
   AgentWorkspaceHandoff,
+  NestedWorkflowIdentity,
+  NestedWorkflowMetadata,
+  NestedWorkflowGroupKind,
+  NestedGraphEvent,
 } from './types';

@@ -157,8 +157,9 @@ function spec(nodes: GraphNode[], overrides: Partial<GraphRunSpec> = {}): GraphR
 function executor(
   execute: GraphExecutorPort['execute'],
   cancel: GraphExecutorPort['cancel'] = vi.fn(),
+  recover?: GraphExecutorPort['recover'],
 ): GraphExecutorPort {
-  return { id: 'test', canExecute: () => true, execute, cancel };
+  return { id: 'test', canExecute: () => true, execute, cancel, recover };
 }
 
 function runner(input: {
@@ -168,10 +169,11 @@ function runner(input: {
   checkpoints?: GraphCheckpoint[];
   guard?: () => boolean;
   trace?: GraphTracePort;
+  recover?: GraphExecutorPort['recover'];
 }) {
   return new GraphRunner({
     scheduler: new TestScheduler(),
-    executors: new GraphExecutorRegistry([executor(input.execute, input.cancel)]),
+    executors: new GraphExecutorRegistry([executor(input.execute, input.cancel, input.recover)]),
     emit: (event) => { input.events?.push({ type: event.type, nodeId: event.nodeId }); },
     persistCheckpoint: (checkpoint) => { input.checkpoints?.push(structuredClone(checkpoint)); },
     attemptGuard: input.guard,
@@ -264,6 +266,16 @@ describe('GraphRunner', () => {
     expect(cancelA).toHaveBeenCalledTimes(1);
   });
 
+  it('routes cancellation of a waiting node back to its executor', async () => {
+    const cancel = vi.fn();
+    const run = runner({ execute: async () => ({ status: 'waiting' }), cancel });
+    const result = await run.run(spec([node('waiting')]));
+    expect(result.status).toBe('waiting');
+    await run.cancel('user');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(run.getCheckpoint()?.status).toBe('cancelled');
+  });
+
   it('retries with the same logical node id', async () => {
     const calls: Array<{ nodeId: string; nodeAttempt: number }> = [];
     const result = await runner({ execute: async (current, context) => {
@@ -298,6 +310,29 @@ describe('GraphRunner', () => {
     });
     expect(recovered.status).toBe('completed');
     expect(recoveredExecute).not.toHaveBeenCalled();
+  });
+
+  it('persists an in-flight executor cursor and uses recover for an interrupted node', async () => {
+    const initial = await runner({ execute: async () => ({ status: 'completed' }) }).run(spec([node('a')]));
+    const interrupted = structuredClone(initial.checkpoint);
+    interrupted.status = 'running';
+    interrupted.terminalEventType = undefined;
+    interrupted.nodes[0].status = 'running';
+    interrupted.nodes[0].result = { status: 'waiting', checkpoint: { cursor: 'engine-1' } };
+    const scheduler = interrupted.scheduler as unknown as { nodes: Array<{ status: string }> };
+    // Production DAG adapter normalizes interrupted running -> ready during restore.
+    // TestScheduler reaches the same launch state from queued while the original
+    // Graph checkpoint still records the interrupted running ownership.
+    scheduler.nodes[0].status = 'queued';
+    const execute = vi.fn(async (): Promise<GraphNodeResult> => ({ status: 'failed' }));
+    const recover = vi.fn(async (_node, _checkpoint, context): Promise<GraphNodeResult> => {
+      expect(context.checkpoint?.nodes[0].result?.checkpoint).toEqual({ cursor: 'engine-1' });
+      return { status: 'completed', output: 'resumed' };
+    });
+    const result = await runner({ execute, recover }).run(spec([node('a')]), interrupted);
+    expect(result.status).toBe('completed');
+    expect(recover).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('emits exactly one terminal graph event', async () => {

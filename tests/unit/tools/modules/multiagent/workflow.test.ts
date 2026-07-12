@@ -254,11 +254,13 @@ describe('workflow tool', () => {
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
     const event = { runId: 'wf-x', type: 'agent:start' as const, ts: 123, data: { agentId: 'a1', label: 'find' } };
     deps.emit?.(event);
-    const wfCall = publishMock.mock.calls.find((c) => c[0] === 'workflow');
+    await vi.waitFor(() => expect(publishMock.mock.calls.some((c) => c[0] === 'workflow' && c[1] === 'agent:start')).toBe(true));
+    const wfCall = publishMock.mock.calls.find((c) => c[0] === 'workflow' && c[1] === 'agent:start');
     expect(wfCall).toBeDefined();
     expect(wfCall![1]).toBe('agent:start'); // BusEvent.type = ScriptRunEvent.type
     // BusEvent.data = 完整 ScriptRunEvent + stamp 的 sessionId（会话隔离，Codex R1 HIGH#1）。
-    expect(wfCall![2]).toEqual({ ...event, sessionId: 'sess' });
+    const workflowRunId = (startRunMock.mock.calls[0][0] as ScriptRunSpec).runId;
+    expect(wfCall![2]).toEqual({ ...event, runId: workflowRunId, sessionId: 'sess' });
   });
 
   it('emit forwards non-progress events (agent:done/run:done) to the bus too', async () => {

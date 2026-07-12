@@ -16,9 +16,10 @@ import { handleRpc } from './primitives';
 import { runScriptInSandbox } from './sandbox';
 import { SerialWriteGate } from './writeGate';
 import type { ScriptRunContext } from './agentBridge';
-import type { RunStatus, ScriptRunCallRecord, ScriptRunSpec, ScriptRunState, ScriptRunEvent } from './types';
+import type { NestedGraphEvent, RunStatus, ScriptRunCallRecord, ScriptRunSpec, ScriptRunState, ScriptRunEvent } from './types';
 import { isSensitiveLogKey, redactSecrets } from '../../security/secretRedaction';
 import { getTelemetryService } from '../../telemetry/telemetryService';
+import { assertNestedWorkflowIdentity } from './nestedGraphMetadata';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -86,6 +87,8 @@ export interface ScriptRunHostDeps {
   useOsSandbox?: boolean;
   /** Explicit parent trace for non-ambient callers. */
   traceContext?: RunTraceContext;
+  /** Parent Graph adapter consumes these events; public ScriptRunEvent remains unchanged. */
+  emitNestedGraph?: (event: NestedGraphEvent) => void;
 }
 
 interface ActiveRun {
@@ -107,6 +110,12 @@ function computeRunInputHash(spec: Pick<ScriptRunSpec, 'goal'>): string {
 /** 启动一次 dynamic-workflow run，阻塞到脚本结束/失败/取消，返回终态 state。 */
 export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Promise<ScriptRunState> {
   const scriptHash = createHash('sha256').update(spec.script).digest('hex').slice(0, 16);
+  if (spec.nestedGraph) {
+    assertNestedWorkflowIdentity(spec.nestedGraph);
+    if (spec.nestedGraph.workflowRunId !== spec.runId || spec.nestedGraph.scriptHash !== scriptHash) {
+      throw new Error('nested graph identity does not match workflow run or script');
+    }
+  }
   const runInputHash = computeRunInputHash(spec);
   const controller = new AbortController();
   if (deps.signal) {
@@ -222,6 +231,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     signal: controller.signal,
     gate: new ConcurrencyGate(SCRIPT_RUNTIME.GLOBAL_MAX_CONCURRENCY),
     emit,
+    emitNestedGraph: deps.emitNestedGraph,
     callCounter,
     cacheHitCounter,
     budget,
@@ -278,6 +288,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       traceContext: workflowTraceContext
         ? serializeRunTraceContext(workflowTraceContext)
         : undefined,
+      nestedGraph: spec.nestedGraph,
     });
 
     state.finishedAt = Date.now();

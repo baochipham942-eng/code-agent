@@ -93,7 +93,15 @@ export class DAGGraphSchedulerAdapter implements GraphSchedulerPort {
     const changed: string[] = [];
     for (const id of targets) {
       const task = dag.getTask(id);
-      if (!task || TERMINAL.has(this.fromTaskStatus(task.status)) || this.extendedStatuses.has(id)) continue;
+      if (!task) continue;
+      const extended = this.extendedStatuses.get(id);
+      if (extended === 'requires_review') continue;
+      if (extended === 'waiting') {
+        this.extendedStatuses.delete(id);
+        changed.push(id);
+        continue;
+      }
+      if (TERMINAL.has(this.fromTaskStatus(task.status))) continue;
       dag.cancelTask(id);
       this.extendedStatuses.delete(id);
       changed.push(id);

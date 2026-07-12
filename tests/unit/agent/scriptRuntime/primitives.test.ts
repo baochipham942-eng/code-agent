@@ -53,4 +53,23 @@ describe('handleRpc credential redaction', () => {
     await handleRpc({ id: 3, kind: 'log', payload: { message: 'Bearer abcdefghijklmnop' } }, ctx);
     expect(JSON.stringify((ctx.emit as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('abcdefghijklmnop');
   });
+
+  it('rejects credential-bearing nested metadata without dispatching an agent', async () => {
+    runAgentCallMock.mockClear();
+    const res = await handleRpc({
+      id: 4,
+      kind: 'agent',
+      payload: { prompt: 'p' },
+      metadata: {
+        protocolVersion: 'nested-graph:v1',
+        workflowRunId: 'run', parentGraphId: 'graph', parentNodeId: 'parent', nestedGraphId: 'nested',
+        groupId: 'group', groupKind: 'single', nodeId: 'node', dependencyNodeIds: [], callIndex: 1,
+        sideEffect: 'none',
+        credential: 'must-not-cross',
+      } as never,
+    }, makeCtx(new BudgetTracker(1000)));
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('forbidden nested graph metadata key');
+    expect(runAgentCallMock).not.toHaveBeenCalled();
+  });
 });

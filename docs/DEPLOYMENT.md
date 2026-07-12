@@ -84,7 +84,6 @@ git push -u origin main
 | `ANTHROPIC_API_KEY` | Claude API 密钥 | `sk-ant-...` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth ID | 步骤 2 获取 |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth Secret | 步骤 2 获取 |
-| `CI_PUBLISH_TOKEN` | CI 发布密钥 | 随机 32 字符字符串 |
 
 生成随机密钥：
 ```bash
@@ -116,8 +115,6 @@ curl -X POST https://agentneo.vercel.app/api/init-db \
 
 | Secret 名称 | 说明 |
 |-------------|------|
-| `CLOUD_API_URL` | Vercel 部署的 URL，如 `https://agentneo.vercel.app` |
-| `CI_PUBLISH_TOKEN` | 与 Vercel 环境变量相同 |
 | `CSC_LINK` | (可选) macOS 代码签名证书 |
 | `CSC_KEY_PASSWORD` | (可选) 证书密码 |
 
@@ -167,7 +164,7 @@ git push origin v0.2.0
 ### 更新
 - `GET /api/update?action=health` - 更新服务健康检查
 - `GET /api/update?action=check&version=<version>&platform=<platform>&channel=<channel>` - 从 GitHub Releases 派生更新 metadata，并叠加可选 release policy env
-- `POST /api/update/publish` - CI 兼容入口，校验 `CI_PUBLISH_TOKEN` 后返回接受状态；发布真相仍来自 GitHub Releases
+- `GET /api/update?action=health|check|download` - 只读更新入口；版本与 release notes 以 GitHub Release 为准，stable 安装包与 updater manifest 由 OSS stable 提供
 
 ### 管理
 - `POST /api/init-db` - 初始化数据库

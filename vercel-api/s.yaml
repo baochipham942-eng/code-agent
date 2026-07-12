@@ -31,7 +31,6 @@ resources:
             methods:
               - GET
               - HEAD
-              - POST
       environmentVariables:
         PORT: "3000"
         NODE_ENV: "production"
@@ -40,7 +39,6 @@ resources:
         UPDATE_GITHUB_REPOSITORY: "baochipham942-eng/code-agent"
         GITHUB_REPOSITORY: "baochipham942-eng/code-agent"
         AUTH_SECRET: ${env(AUTH_SECRET)}
-        CI_PUBLISH_TOKEN: ${env(CI_PUBLISH_TOKEN)}
         DATABASE_URL: ${env(DATABASE_URL)}
         DEEPSEEK_API_KEY: ${env(DEEPSEEK_API_KEY)}
         GITHUB_CALLBACK_URL: "https://neo.llmxy.xyz/api/auth?action=callback"

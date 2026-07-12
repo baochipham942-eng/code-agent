@@ -325,7 +325,7 @@ npm run release:neo -- --version <version> --post-publish-verify
 | 检查面 | 合同 |
 |------|------|
 | App update | `/api/update?action=check&version=0.0.0&platform=darwin&channel=stable` 的 `latestVersion` 等于目标版本，且 release notes 非空 |
-| Update health | `/api/update?action=health` 必须返回明确 source；`github_releases` 作为 fallback 可用，但可用 `--require-cloud-api-metadata` 升级为失败 |
+| Update health | `/api/update?action=health` 必须返回 `source=github_releases`，表示版本权威源为 GitHub Release、分发 manifest 为 OSS stable；不存在独立 Cloud metadata 持久层 |
 | Download redirect | mac arm64 / x64 下载入口应能跳转到目标 release asset |
 | Landing version slot | `/code-agent/` 页面必须展示由 update API 驱动的版本位，避免静态下载页落后 |
 | Renderer rollout | control-plane `renderer_bundle_rollout` envelope、OSS `renderer-bundle/latest/manifest.json`、OSS `release-record.json` 和 app update version 必须对齐目标版本 |

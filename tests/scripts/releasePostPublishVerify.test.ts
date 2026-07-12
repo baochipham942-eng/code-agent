@@ -238,7 +238,7 @@ function writeFixtureDir() {
 }
 
 describe('release post-publish verifier', () => {
-  it('passes fixture-backed production checks while surfacing GitHub metadata fallback as a warning', async () => {
+  it('passes fixture-backed production checks with the authoritative release metadata source', async () => {
     const result = await verifyReleasePostPublish({
       version: '0.17.1',
       baseUrl,
@@ -249,11 +249,26 @@ describe('release post-publish verifier', () => {
 
     expect(result.failures).toEqual([]);
     expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'cloud_api_metadata_fallback' }),
       expect.objectContaining({ code: 'server_log_audit_skipped' }),
       expect.objectContaining({ code: 'distribution_page_version_is_dynamic' }),
     ]));
     expect(result.summary.renderer.controlPlane.version).toBe('0.17.1');
+  });
+
+  it('fails when update health reports a non-authoritative metadata source', async () => {
+    await expect(verifyReleasePostPublish({
+      version: '0.17.1',
+      baseUrl,
+      manifestUrl,
+      releaseRecordUrl,
+      fetchImpl: createFetch({
+        '/api/update?action=health': jsonResponse({ ok: true, source: 'cloud_database' }),
+      }),
+    })).rejects.toMatchObject({
+      failures: expect.arrayContaining([
+        expect.objectContaining({ code: 'unexpected_update_metadata_source', source: 'cloud_database' }),
+      ]),
+    } satisfies Partial<ReleasePostPublishVerificationError>);
   });
 
   it('accepts desktop shell diagnostics JSON as a post-publish evidence gate', async () => {
@@ -403,7 +418,6 @@ describe('release post-publish verifier', () => {
         desktopShell: expect.objectContaining({ status: 'ok' }),
       },
       warnings: expect.arrayContaining([
-        expect.objectContaining({ code: 'cloud_api_metadata_fallback' }),
         expect.objectContaining({ code: 'distribution_page_version_is_dynamic' }),
       ]),
     });

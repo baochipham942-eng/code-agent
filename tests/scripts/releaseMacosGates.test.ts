@@ -225,7 +225,9 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_URL');
     expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_SHA256');
     expect(workflow).toContain('--runtime-assets-manifest-url');
-    expect(workflow).toContain('payload.runtimeAssets');
+    expect(workflow).toContain('stable/release.json');
+    expect(workflow).not.toContain('Publish optional update metadata to Cloud API');
+    expect(workflow).not.toContain('payload.runtimeAssets');
     expect(workflow).toContain('release-assets/runtime-assets-manifest-*.sha256');
     expect(workflow).toContain('release-assets/*.tar.gz');
     expect(workflow).toContain('Verify renderer hot-update release gate');

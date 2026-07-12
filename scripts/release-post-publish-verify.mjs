@@ -158,7 +158,7 @@ function checkHttpOk(failures, label, response) {
   return true;
 }
 
-async function verifyAppUpdate({ fetchImpl, baseUrl, expectedVersion, requireCloudApiMetadata, timeoutMs }) {
+async function verifyAppUpdate({ fetchImpl, baseUrl, expectedVersion, timeoutMs }) {
   const failures = [];
   const warnings = [];
   const checkUrl = buildUrl(baseUrl, '/api/update', {
@@ -181,13 +181,11 @@ async function verifyAppUpdate({ fetchImpl, baseUrl, expectedVersion, requireClo
   if (checkHttpOk(failures, 'app update health', health) && isRecord(health.body)) {
     const source = typeof health.body.source === 'string' ? health.body.source : undefined;
     const metadataSource = source ?? health.body.updateSource ?? health.body.metadataSource;
-    if (metadataSource === 'github_releases') {
-      const message = 'Cloud API update metadata is falling back to GitHub Releases';
-      if (requireCloudApiMetadata) {
-        pushFailure(failures, 'cloud_api_metadata_fallback', message, { url: healthUrl, source: metadataSource });
-      } else {
-        pushWarning(warnings, 'cloud_api_metadata_fallback', message, { url: healthUrl, source: metadataSource });
-      }
+    if (metadataSource !== 'github_releases') {
+      pushFailure(failures, 'unexpected_update_metadata_source', 'Update health is not using the authoritative GitHub Releases + OSS stable metadata path', {
+        url: healthUrl,
+        source: metadataSource,
+      });
     }
   }
 
@@ -552,7 +550,6 @@ export async function verifyReleasePostPublish(options = {}) {
     fetchImpl,
     baseUrl,
     expectedVersion,
-    requireCloudApiMetadata: options.requireCloudApiMetadata === true,
     timeoutMs,
   }));
   mergeResult(result, 'downloads', await verifyDownloadRedirects({
@@ -680,7 +677,6 @@ function usage() {
     '  --require-server-log-audit       Fail if --server-log-file is missing',
     '  --require-desktop-shell-diagnostics',
     '                                  Fail if desktop shell diagnostics JSON is missing',
-    '  --require-cloud-api-metadata     Fail when update health is using github_releases fallback',
     '  --fixture-dir <dir>              Read responses from fixture files instead of network',
     '  --timeout-ms <n>                 Default: 15000',
     '  --json                          Print JSON summary',
@@ -720,7 +716,6 @@ function parseCliArgs(args) {
     desktopShellDiagnosticsFile: readArg(args, '--desktop-shell-diagnostics-file') ?? fixtureDesktopShellDiagnosticsFile,
     requireServerLogAudit: hasFlag(args, '--require-server-log-audit'),
     requireDesktopShellDiagnostics: hasFlag(args, '--require-desktop-shell-diagnostics'),
-    requireCloudApiMetadata: hasFlag(args, '--require-cloud-api-metadata'),
     fixtureDir,
     timeoutMs: Number(readArg(args, '--timeout-ms') ?? DEFAULT_TIMEOUT_MS),
     json: hasFlag(args, '--json'),

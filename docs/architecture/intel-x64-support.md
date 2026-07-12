@@ -174,7 +174,7 @@ arm64 构建（现状不动）          x64 构建（新增）
 ### 8.3 stable 提升（合并双架构）
 - 新增 `promote-stable` job `needs: release-mac`（等两 leg 都完），仅非预发布 tag。
 - in-app updater 的 `stable/release.json`：`build-stable-release-json.mjs --dmg-url <arm64 OSS url> --dmg-url-x64 <x64 OSS url>`（两 URL 按 `v<ver>/Agent-Neo-<ver>-<arch>.dmg` 约定构造），单 manifest 含双架构，`updateMetadata.ts` 已能按 `?arch=` 选。
-- Vercel cloud publish 步（§ Publish ... Cloud API）payload 加 `arch`，或依赖 release.json 双 dmg（已支持）。
+- Vercel `/api/update` 不接收 publish payload；它只读 OSS `stable/release.json`，由该 manifest 的双 dmg 资产按 `arch` 路由。
 
 ## 7. 交叉验证记录（艾克斯 / Codex，2026-06-09）
 

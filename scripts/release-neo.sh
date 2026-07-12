@@ -45,8 +45,6 @@ Options:
                  Fail post-publish verify when server logs are not provided.
   --require-desktop-shell-diagnostics
                  Fail post-publish verify when desktop shell diagnostics are not provided.
-  --require-cloud-api-metadata
-                 Fail post-publish verify when update health uses GitHub fallback.
   --repo <repo>  GitHub repo, owner/name. Defaults to origin or GITHUB_REPOSITORY.
   --remote <r>   Git remote to push. Defaults to origin.
   --yes          Do not prompt before --publish.
@@ -133,11 +131,6 @@ while (($# > 0)); do
     --require-desktop-shell-diagnostics)
       POST_PUBLISH_VERIFY=1
       POST_PUBLISH_ARGS+=("--require-desktop-shell-diagnostics")
-      shift
-      ;;
-    --require-cloud-api-metadata)
-      POST_PUBLISH_VERIFY=1
-      POST_PUBLISH_ARGS+=("--require-cloud-api-metadata")
       shift
       ;;
     --repo)

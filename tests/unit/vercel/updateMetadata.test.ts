@@ -35,7 +35,6 @@ function makeResponse(): ControlPlaneResponseLike & {
 describe('vercel update metadata', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.CI_PUBLISH_TOKEN;
     delete process.env.UPDATE_GITHUB_REPOSITORY;
     delete process.env.GITHUB_REPOSITORY;
     delete process.env.UPDATE_RELEASE_CHANNEL;
@@ -915,47 +914,16 @@ describe('vercel update metadata', () => {
     });
   });
 
-  it('requires a publish token for POST compatibility endpoint', async () => {
+  it('rejects POST because update metadata is derived from release manifests', async () => {
     const response = makeResponse();
 
     await handleUpdateRequest({ method: 'POST', headers: {} }, response);
 
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(405);
+    expect(response.headers.Allow).toBe('GET, HEAD');
     expect(response.body).toMatchObject({
       success: false,
-      error: 'publish_unconfigured',
-    });
-  });
-
-  it('rejects publish requests with an invalid token', async () => {
-    process.env.CI_PUBLISH_TOKEN = 'expected-token';
-    const response = makeResponse();
-
-    await handleUpdateRequest({
-      method: 'POST',
-      headers: { authorization: 'Bearer wrong-token' },
-    }, response);
-
-    expect(response.statusCode).toBe(401);
-    expect(response.body).toMatchObject({
-      success: false,
-      error: 'unauthorized',
-    });
-  });
-
-  it('accepts publish requests with the configured token without persisting metadata', async () => {
-    process.env.CI_PUBLISH_TOKEN = 'expected-token';
-    const response = makeResponse();
-
-    await handleUpdateRequest({
-      method: 'POST',
-      headers: { authorization: 'Bearer expected-token' },
-    }, response);
-
-    expect(response.statusCode).toBe(202);
-    expect(response.body).toMatchObject({
-      success: true,
-      persisted: false,
+      error: 'method_not_allowed',
     });
   });
 });

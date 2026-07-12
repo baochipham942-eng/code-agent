@@ -50,13 +50,6 @@ function firstQueryValue(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
-function getBearerToken(req: ControlPlaneRequestLike): string | null {
-  const raw = req.headers?.authorization ?? req.headers?.Authorization;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  const match = value?.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] ?? null;
-}
-
 export function compareVersions(left: string, right: string): number {
   const leftParts = left.replace(/^v/, '').split('.').map((part) => Number(part) || 0);
   const rightParts = right.replace(/^v/, '').split('.').map((part) => Number(part) || 0);
@@ -522,45 +515,14 @@ async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneRes
   sendRedirect(res, asset.browser_download_url);
 }
 
-function handlePublish(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): void {
-  const expectedToken = process.env.CI_PUBLISH_TOKEN;
-  if (!expectedToken) {
-    sendJson(res, 503, {
-      success: false,
-      error: 'publish_unconfigured',
-      message: 'CI_PUBLISH_TOKEN is not configured for update metadata publishing.',
-    });
-    return;
-  }
-
-  if (getBearerToken(req) !== expectedToken) {
-    sendJson(res, 401, {
-      success: false,
-      error: 'unauthorized',
-      message: 'Invalid publish token.',
-    });
-    return;
-  }
-
-  sendJson(res, 202, {
-    success: true,
-    persisted: false,
-    message: 'Update metadata is derived from GitHub Releases; publish payload accepted for CI compatibility.',
-  });
-}
-
 export async function handleUpdateRequest(
   req: ControlPlaneRequestLike,
   res: ControlPlaneResponseLike,
 ): Promise<void> {
   try {
     const method = req.method?.toUpperCase() ?? 'GET';
-    if (method === 'POST') {
-      handlePublish(req, res);
-      return;
-    }
     if (method !== 'GET' && method !== 'HEAD') {
-      res.setHeader('Allow', 'GET, HEAD, POST');
+      res.setHeader('Allow', 'GET, HEAD');
       sendJson(res, 405, {
         success: false,
         error: 'method_not_allowed',

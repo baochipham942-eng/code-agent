@@ -15,6 +15,7 @@ import {
   type ExternalResumeRunners,
 } from './durableRecoveryHandlers';
 import type { RunRegistry } from './runRegistry';
+import type { DynamicWorkflowRecoveryHost } from './dynamicWorkflowRecovery';
 
 export interface DurableRecoveryRuntime {
   readonly dispatcher: DurableRecoveryDispatcher;
@@ -33,6 +34,7 @@ export function createDurableRecoveryRuntime(input: {
   getMcpClient?: () => MCPClient;
   trustedMcpServerIdentities?: ReadonlySet<string>;
   externalRunners?: ExternalResumeRunners;
+  dynamicWorkflowHost?: DynamicWorkflowRecoveryHost;
 }): DurableRecoveryRuntime {
   const dispatcher = new DurableRecoveryDispatcher();
   dispatcher.registerEngineHandler(createNativeRecoveryHandler());
@@ -41,7 +43,10 @@ export function createDurableRecoveryRuntime(input: {
     registry: input.registry,
     runners: input.externalRunners,
   }));
-  dispatcher.registerEngineHandler(createDynamicWorkflowRecoveryHandler());
+  dispatcher.registerEngineHandler(createDynamicWorkflowRecoveryHandler({
+    registry: input.registry,
+    host: input.dynamicWorkflowHost,
+  }));
   dispatcher.registerOperationHandler(createMcpOperationRecoveryHandler({
     kernel: input.kernel,
     resultStore: new McpTaskResultFileStore(path.join(input.dataDir, 'mcp-task-results')),

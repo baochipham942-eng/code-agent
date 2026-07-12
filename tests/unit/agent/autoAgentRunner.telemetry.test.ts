@@ -145,4 +145,39 @@ describe('runAutoAgentMode observability wiring', () => {
       },
     });
   });
+
+  it('projects the legacy Auto Agent progress snapshot and one terminal through the shared sink', async () => {
+    coordinatorState.execute.mockImplementation(async (_agents, _requirements, context) => {
+      const base = {
+        graphId: 'auto-agent:session-auto-1', runId: 'auto:session-auto-1', sessionId: 'session-auto-1',
+        attempt: 1, timestamp: 10, trace: { traceId: 'a'.repeat(32), spanId: 'b'.repeat(16) },
+      };
+      await context.compatibilitySink.emit({ ...base, type: 'node_started', sequence: 1, nodeId: 'agent-reviewer', nodeStatus: 'running' });
+      await context.compatibilitySink.emit({ ...base, type: 'graph_completed', sequence: 2, graphStatus: 'completed' });
+      await context.compatibilitySink.emit({ ...base, type: 'graph_completed', sequence: 3, graphStatus: 'completed' });
+      return {
+        success: false, strategy: 'sequential', results: [], aggregatedOutput: '', totalDuration: 1,
+        totalIterations: 0, totalCost: 0, errors: [],
+      };
+    });
+    const onEvent = vi.fn();
+    const sendDAGStatusEvent = vi.fn();
+    await runAutoAgentMode(
+      'review this', 'review this with context',
+      { taskType: 'review', executionStrategy: 'sequential', confidence: 0.9 } as never,
+      onEvent,
+      { provider: 'mock', model: 'mock-model' } as never,
+      {
+        workingDirectory: '/tmp/project', sessionId: 'session-auto-1',
+        taskListManager: makeTaskListManager() as never, generateId: () => 'message-1', addMessage: vi.fn(),
+        sendDAGStatusEvent, runStandardAgentLoop: vi.fn(),
+      },
+      'session-auto-1',
+    );
+    expect(sendDAGStatusEvent).toHaveBeenCalledWith('auto-session-auto-1', 'agent-reviewer', 'running');
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'agent_thinking', data: { message: 'Agent agent-reviewer: running', agentId: 'agent-reviewer' },
+    });
+    expect(onEvent.mock.calls.filter(([value]) => value.type === 'agent_complete')).toHaveLength(1);
+  });
 });

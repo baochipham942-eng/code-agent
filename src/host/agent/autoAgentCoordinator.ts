@@ -10,6 +10,7 @@ import { createLogger } from '../services/infra/logger';
 import {
   DAGGraphSchedulerAdapter,
   GraphExecutorRegistry,
+  GraphEventCompatibilityAdapter,
   GraphRunner,
   SubagentExecutorAdapter,
   createSubagentGraphNodeInput,
@@ -53,6 +54,7 @@ export interface CoordinatorContext {
   graphCheckpoint?: GraphCheckpoint;
   onGraphCheckpoint?: (checkpoint: GraphCheckpoint) => void | Promise<void>;
   onProgress?: (agentId: string, status: AgentExecutionStatus, progress?: number) => void;
+  compatibilitySink?: GraphEventCompatibilityAdapter;
 }
 
 interface LegacyExecutionCheckpoint {
@@ -94,33 +96,9 @@ export class AutoAgentCoordinator {
       : loadLegacyCheckpoint(context.sessionId, agents.map((agent) => agent.id));
     const checkpoint = context.graphCheckpoint ?? this.projectLegacyCheckpoint(graph, legacy);
     const byId = new Map(agents.map((agent) => [agent.id, agent]));
-    const adapter = new SubagentExecutorAdapter(this.subagentExecutor, {
-      id: 'auto-subagent',
-      contextFactory: (node, graphContext) => ({
-        ...context.executionContext,
-        runId: graphContext.runId,
-        sessionId: graphContext.sessionId,
-        abortSignal: graphContext.signal,
-        traceContext: context.executionContext.traceContext,
-        agentId: node.nodeId,
-        executionAgentId: node.nodeId,
-        parentToolUseId: context.executionContext.currentToolCallId,
-      }),
-      requestFactory: (input, node, graphContext) => {
-        const previous = node.dependencies
-          .map((dependency) => graphContext.dependencyResults[dependency])
-          .map((result) => this.subagentOutput(result))
-          .filter((output): output is string => Boolean(output));
-        return previous.length === 0 ? input : {
-          ...input,
-          prompt: `${input.prompt}\n\n**前置任务输出**：\n${previous.join('\n\n---\n\n')}`,
-        };
-      },
-    });
-    const runner = new GraphRunner({
-      scheduler: new DAGGraphSchedulerAdapter(),
-      executors: new GraphExecutorRegistry([adapter]),
-      emit: async (event) => {
+    const compatibility = context.compatibilitySink ?? new GraphEventCompatibilityAdapter({});
+    const unsubscribe = compatibility.subscribe({
+      graph: (event) => {
         if (!event.nodeId) return;
         const agent = byId.get(event.nodeId);
         if (!agent) return;
@@ -148,6 +126,35 @@ export class AutoAgentCoordinator {
           context.onProgress?.(agent.id, 'failed');
         }
       },
+      diagnostic: (error) => logger.warn('Auto Agent Graph compatibility projection failed', error),
+    });
+    const adapter = new SubagentExecutorAdapter(this.subagentExecutor, {
+      id: 'auto-subagent',
+      contextFactory: (node, graphContext) => ({
+        ...context.executionContext,
+        runId: graphContext.runId,
+        sessionId: graphContext.sessionId,
+        abortSignal: graphContext.signal,
+        traceContext: context.executionContext.traceContext,
+        agentId: node.nodeId,
+        executionAgentId: node.nodeId,
+        parentToolUseId: context.executionContext.currentToolCallId,
+      }),
+      requestFactory: (input, node, graphContext) => {
+        const previous = node.dependencies
+          .map((dependency) => graphContext.dependencyResults[dependency])
+          .map((result) => this.subagentOutput(result))
+          .filter((output): output is string => Boolean(output));
+        return previous.length === 0 ? input : {
+          ...input,
+          prompt: `${input.prompt}\n\n**前置任务输出**：\n${previous.join('\n\n---\n\n')}`,
+        };
+      },
+    });
+    const runner = new GraphRunner({
+      scheduler: new DAGGraphSchedulerAdapter(),
+      executors: new GraphExecutorRegistry([adapter]),
+      emit: (event) => compatibility.emit(event),
       persistCheckpoint: context.onGraphCheckpoint,
     });
 
@@ -157,6 +164,7 @@ export class AutoAgentCoordinator {
       graphResult = await runner.run(graph, checkpoint);
     } finally {
       this.activeRunners.delete(graph.runId);
+      unsubscribe();
     }
 
     const results = agents.flatMap((agent) => {

@@ -55,6 +55,14 @@ describe('GraphEvent compatibility adapter', () => {
     expect(diagnostic).toHaveBeenCalledOnce();
   });
 
+  it('also contains a failing diagnostic reporter', async () => {
+    const adapter = new GraphEventCompatibilityAdapter({
+      agent: () => { throw new Error('projection failed'); },
+      diagnostic: () => { throw new Error('diagnostic failed'); },
+    });
+    await expect(adapter.emit(event('graph_completed'))).resolves.toBeUndefined();
+  });
+
   it('projects requires_review to the legacy workflow terminal surface once', async () => {
     const script = vi.fn();
     const adapter = new GraphEventCompatibilityAdapter({ script });
@@ -63,5 +71,22 @@ describe('GraphEvent compatibility adapter', () => {
       runId: 'run-1', sessionId: 'session-1', ts: 100, type: 'run:error',
       data: { error: 'Graph run requires review before it can continue' },
     });
+  });
+
+  it('shares one fan-out across migrated facades and flushes one deferred terminal', async () => {
+    const agentTeam = vi.fn();
+    const autoAgent = vi.fn();
+    const adapter = new GraphEventCompatibilityAdapter({ graph: agentTeam }, { deferTerminals: true });
+    adapter.subscribe({ graph: autoAgent });
+    await adapter.emit(event('node_started', { nodeId: 'node-1', nodeStatus: 'running' }));
+    await adapter.emit(event('graph_completed'));
+    await adapter.emit(event('graph_failed', { sequence: 5 }));
+    expect(agentTeam).toHaveBeenCalledTimes(1);
+    expect(autoAgent).toHaveBeenCalledTimes(1);
+    await adapter.flushTerminals();
+    await adapter.flushTerminals();
+    expect(agentTeam).toHaveBeenCalledTimes(2);
+    expect(autoAgent).toHaveBeenCalledTimes(2);
+    expect(agentTeam.mock.calls[1][0].type).toBe('graph_completed');
   });
 });

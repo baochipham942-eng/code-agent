@@ -17,7 +17,7 @@ Each non-terminal plan is processed in two phases:
 | `external_cli/claude_code` | S5 lifecycle + Claude resume builder | resumes only with stable session id and read-only launch context |
 | `external_cli/mimo_code` | S5 decision | `requires_review` (`non_resumable`) |
 | `external_cli/kimi_code` | S5 decision | `requires_review` (`unknown`) |
-| `dynamic_workflow` | Dynamic review handler + DynamicWorkflowExecutor port | live workflow nodes can replay the same logical sandbox graph through the existing journal; startup dispatcher remains review-only until the application supplies the ScriptRun host dependency factory |
+| `dynamic_workflow` | DynamicWorkflowExecutor recovery handler + application dependency resolver | rebuilds read-only model/tool/journal dependencies from current Host services, revalidates workspace/cwd, and resumes the same logical sandbox graph; any missing or drifted capability becomes `requires_review` |
 | explicit MCP `tool_call` | S6 MCP handler | queries only an integrity-bound `mcp-task:v1` handle on a currently trusted/queryable server |
 | unregistered pending operation | dispatcher | explicit `unsupported`; never silently ignored |
 
@@ -29,7 +29,7 @@ Web/Tauri webServer and Host bootstrap use the same order:
 
 1. initialize database and Durable kernel dependencies;
 2. initialize MCP/runtime dependencies;
-3. register all recovery handlers synchronously;
+3. construct the Dynamic Workflow Host resolver from the initialized session/model/tool/journal services and register all recovery handlers synchronously;
 4. call `recoverDurable()` once;
 5. dispatch returned plans;
 6. schedule one lease-boundary scan through the same runtime;
@@ -41,6 +41,16 @@ Graph executor recovery ports are registered before execution. Graph checkpoints
 remain embedded engine state: Dynamic Workflow carries its nested/journal cursor,
 External Engine carries engine/session cursor, and MCP carries its integrity-bound
 task operation. Interrupted running Graph nodes call the executor `recover` port
-and completed nodes are not relaunched. Startup Dynamic recovery still fails
-closed to review because reconstructing model/tool/worktree host dependencies
-from persisted data has not yet been wired; the dispatcher does not invent them.
+and completed nodes are not relaunched. Dynamic recovery persists only its
+versioned Graph descriptor, model identity, read-only tool profile, canonical
+workspace/cwd fingerprint, and nested/journal cursor. Functions, provider
+secrets, credentials, environment values, and tool implementations never enter
+the checkpoint. On startup the application resolves those capabilities from
+current Host services after database and runtime initialization. Model/tool
+absence, workspace drift, identity mismatch, stale owner/attempt, or any
+write/unknown side effect fails closed to `requires_review`.
+
+The recovery handler binds the newly claimed owner and attempt before creating
+the executor. Every Graph checkpoint write reuses `RunRegistry.checkpointDurable`,
+so the existing owner epoch fencing rejects a stale process. No Durable schema,
+repository, migration, or second logical Durable Run was added.

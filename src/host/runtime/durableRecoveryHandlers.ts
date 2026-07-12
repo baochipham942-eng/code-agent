@@ -38,6 +38,10 @@ import { getLogsPath } from '../platform/appPaths';
 import type { RunKernelAdapter } from './durableRunKernel';
 import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
+import {
+  createDynamicWorkflowGraphRecoveryHandler,
+  type DynamicWorkflowRecoveryHost,
+} from './dynamicWorkflowRecovery';
 import type {
   DurableEngineRecoveryHandler,
   DurableOperationRecoveryHandler,
@@ -52,8 +56,11 @@ export function createNativeRecoveryHandler(): DurableEngineRecoveryHandler {
   return reviewOnlyEngineHandler('native', 'native runtime continuation is not registered');
 }
 
-export function createDynamicWorkflowRecoveryHandler(): DurableEngineRecoveryHandler {
-  return reviewOnlyEngineHandler('dynamic_workflow', 'dynamic workflow continuation is not registered');
+export function createDynamicWorkflowRecoveryHandler(input: {
+  registry: RunRegistry;
+  host?: DynamicWorkflowRecoveryHost;
+}): DurableEngineRecoveryHandler {
+  return createDynamicWorkflowGraphRecoveryHandler(input);
 }
 
 export function createAgentTeamRecoveryHandler(): DurableEngineRecoveryHandler {

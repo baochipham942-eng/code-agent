@@ -1,4 +1,4 @@
-# Unified Graph Runner (S8 + S8.5)
+# Unified Graph Runner (S8 + S8.5 + S8.6)
 
 ## Status
 
@@ -134,11 +134,35 @@ handles onto node checkpoints; synchronous MCP tools remain on ToolExecutor.
 
 `GraphEventCompatibilityAdapter` is the centralized migration fan-out to
 AgentEvent, SwarmEvent, ScriptRunEvent, DAG visualization, and session replay
-evidence. The migrated Dynamic Workflow entry uses it as its public lifecycle
-source. Agent Team and Auto Agent retain their S8 facade projections until their
-call sites are switched to the same sink in the final S8.5 integration slice.
-The adapter fences duplicate Graph terminal projection per run attempt;
-projection failures are diagnostics and never replace the authoritative result.
+evidence. Dynamic Workflow, Agent Team, and Auto Agent now send GraphRunner
+events through this same sink. Agent Team's coordinator events and Auto Agent's
+TaskList/DAG/AgentEvent updates are compatibility subscribers; their former
+direct progress and terminal projections are disabled.
+
+The adapter supports multiple facade subscribers and a deferred terminal flush.
+GraphRunner remains the terminal source, while a facade may finish assembling
+the historical payload before delivery. The graphId/runId/sessionId/attempt
+fence admits one completed, failed, or cancelled terminal for each attempt,
+including recovery/replay. A subscriber failure records a diagnostic and cannot
+change the authoritative Graph or Durable result.
+
+## S8.6 startup blockers closed
+
+The application bootstrap registers Dynamic Workflow recovery only after the
+database, model/tool runtime, session service, MCP infrastructure, and workflow
+journal repository are available. Recovery reconstructs `ScriptRunHostDeps`
+from those live services, canonicalizes workspace and cwd again, verifies the
+persisted workspace fingerprint and model identity, and limits automatic resume
+to the current read-only tool registry. It preserves the Durable run/session,
+newly claimed attempt and owner epoch, trace, parent Graph checkpoint, logical
+workflow id, nested graph id, and journal run id.
+
+The persisted recovery descriptor contains serializable identity and cursor
+data only. It rejects credential/environment keys, secret-looking values,
+functions, symbols, bigint values, and cyclic objects. Missing model/tool/journal
+dependencies, workspace drift, stale ownership, identity mismatch, and unknown
+or write-capable nodes all remain `requires_review`. The process sandbox remains
+the owner of internal thunk, parallel-item, and pipeline-stage scheduling.
 
 ## Debt delta at the phase-4 boundary
 
@@ -164,13 +188,13 @@ For migrated live paths:
   count does not yet fall. They are projections for migrated paths rather than
   independent scheduling authorities.
 
-The remaining duplicate terminal/cancel/checkpoint owners are Dynamic Workflow,
-External Engine lifecycle, and MCP Durable Task. They were regression-tested in
-this slice but were not migrated.
+S8.6 removes the remaining Agent Team and Auto Agent progress/terminal projection
+owners. Dynamic Workflow startup recovery now uses the Graph checkpoint owner;
+the External Engine lifecycle and MCP Durable Task controller remain intentional
+executor-internal lifecycle ports rather than competing Graph terminal sources.
 
 ## Rollback
 
-The completed slice consists of four local commits after S7.5. Roll back by
-moving the S8 branch to `4430f4ecf30ba9722c42b02f7309bcb92a3c0082`, or revert
-the S8 commits in reverse order. Durable schema and historical user data require
-no rollback because neither was changed.
+Roll back S8.6 by reverting its single commit or moving the branch back to
+`44e49bef447a177f1d98382efeba4c8dbda1c506`. Durable schema and historical user
+data require no rollback because neither was changed.

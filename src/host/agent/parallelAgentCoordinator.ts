@@ -77,6 +77,7 @@ import type { AgentTeamDurableController, AgentTeamCheckpointState } from './age
 import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
 import {
   DAGGraphSchedulerAdapter,
+  GraphEventCompatibilityAdapter,
   GraphExecutorRegistry,
   GraphRunner,
   type GraphCheckpoint,
@@ -211,19 +212,25 @@ export class ParallelAgentCoordinator extends EventEmitter {
   /**
    * Execute multiple agent tasks in parallel with dependency resolution
    */
-  async executeParallel(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
+  async executeParallel(
+    tasks: AgentTask[],
+    compatibilitySink: GraphEventCompatibilityAdapter = new GraphEventCompatibilityAdapter({}),
+  ): Promise<ParallelExecutionResult> {
     if (this.executionActive) {
       throw new Error('ParallelAgentCoordinator is not reentrant; create a distinct run-scoped coordinator for nested parallel execution.');
     }
     this.executionActive = true;
     try {
-      return await this.executeParallelInternal(tasks);
+      return await this.executeParallelInternal(tasks, compatibilitySink);
     } finally {
       this.executionActive = false;
     }
   }
 
-  private async executeParallelInternal(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
+  private async executeParallelInternal(
+    tasks: AgentTask[],
+    compatibilitySink: GraphEventCompatibilityAdapter,
+  ): Promise<ParallelExecutionResult> {
     if (!this.executionContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
@@ -245,17 +252,70 @@ export class ParallelAgentCoordinator extends EventEmitter {
     }
     let currentConcurrent = 0;
     let maxConcurrent = 0;
+    const thrownFailures = new Set<string>();
+    const unsubscribeCompatibility = compatibilitySink.subscribe({
+      graph: (event) => {
+        if (!event.nodeId) return;
+        const task = this.taskDefinitions.get(event.nodeId);
+        if (!task) return;
+        if (event.type === 'node_progress' && event.data?.legacyEvent === 'task:start') {
+          this.emit('task:start', { taskId: task.id, role: task.role });
+        } else if (event.type === 'node_progress' && event.data?.legacyEvent === 'task:progress') {
+          this.emit('task:progress', {
+            taskId: task.id,
+            role: task.role,
+            snapshot: event.data.snapshot as unknown as TaskProgressEvent['snapshot'],
+          });
+        } else if (event.type === 'node_skipped' && !this.completedTasks.has(task.id)) {
+          const blocked = this.createSkippedResult(
+            task,
+            `Blocked by failed dependencies: ${(task.dependsOn ?? []).join(', ')}`,
+            'blocked',
+            AgentFailureCode.DependencyFailed,
+          );
+          this.completedTasks.set(task.id, blocked);
+          this.emit('task:complete', { taskId: task.id, result: blocked });
+        } else if (event.type === 'node_cancelled' && !this.completedTasks.has(task.id)) {
+          const cancelled = this.createSkippedResult(
+            task,
+            `Cancelled before start (${this.cancelReason})`,
+            'cancelled',
+            AgentFailureCode.CancelledByUser,
+          );
+          this.completedTasks.set(task.id, cancelled);
+          this.emit('task:complete', { taskId: task.id, result: cancelled });
+        } else if (event.type === 'node_completed' || event.type === 'node_failed' || event.type === 'node_cancelled') {
+          const result = this.completedTasks.get(task.id);
+          if (!result) return;
+          if (thrownFailures.delete(task.id)) this.emit('task:error', { taskId: task.id, error: result.error ?? 'Unknown error' });
+          else this.emit('task:complete', { taskId: task.id, result });
+        }
+      },
+      diagnostic: (error) => logger.warn('Agent Team Graph compatibility projection failed', error),
+    });
     const graphSpec = this.buildGraphSpec(tasks);
     const graphExecutor: GraphExecutorPort = {
       id: 'parallel-subagent',
       canExecute: (node) => node.kind === 'subagent',
-      execute: async (node): Promise<GraphNodeResult> => {
+      execute: async (node, graphContext): Promise<GraphNodeResult> => {
         const task = this.taskDefinitions.get(node.nodeId);
         if (!task) return { status: 'failed', error: `Task definition not found: ${node.nodeId}` };
         currentConcurrent++;
         maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
         try {
-          const taskResult = await this.executeTask(task);
+          let progressQueue = Promise.resolve();
+          const taskResult = await this.executeTask(
+            task,
+            (snapshot) => {
+              progressQueue = progressQueue.then(() => graphContext.progress({
+                legacyEvent: 'task:progress',
+                snapshot: snapshot as unknown as GraphJsonValue,
+              }));
+            },
+            () => thrownFailures.add(task.id),
+            () => graphContext.progress({ legacyEvent: 'task:start' }),
+          );
+          await progressQueue;
           return {
             status: taskResult.cancelled ? 'cancelled' : taskResult.success ? 'completed' : 'failed',
             output: this.serializeTaskResult(taskResult),
@@ -272,34 +332,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const runner = new GraphRunner({
       scheduler: new DAGGraphSchedulerAdapter(),
       executors: new GraphExecutorRegistry([graphExecutor]),
-      emit: async (event) => {
-        if (event.type === 'node_skipped' && event.nodeId) {
-          const task = this.taskDefinitions.get(event.nodeId);
-          if (task && !this.completedTasks.has(task.id)) {
-            const blocked = this.createSkippedResult(
-              task,
-              `Blocked by failed dependencies: ${(task.dependsOn ?? []).join(', ')}`,
-              'blocked',
-              AgentFailureCode.DependencyFailed,
-            );
-            this.completedTasks.set(task.id, blocked);
-            this.emit('task:complete', { taskId: task.id, result: blocked });
-          }
-        }
-        if (event.type === 'node_cancelled' && event.nodeId && !this.completedTasks.has(event.nodeId)) {
-          const task = this.taskDefinitions.get(event.nodeId);
-          if (task) {
-            const cancelled = this.createSkippedResult(
-              task,
-              `Cancelled before start (${this.cancelReason})`,
-              'cancelled',
-              AgentFailureCode.CancelledByUser,
-            );
-            this.completedTasks.set(task.id, cancelled);
-            this.emit('task:complete', { taskId: task.id, result: cancelled });
-          }
-        }
-      },
+      emit: (event) => compatibilitySink.emit(event),
       persistCheckpoint: async (checkpoint) => {
         this.graphCheckpoint = checkpoint;
         await this.durableController?.projectGraphCheckpoint?.(checkpoint);
@@ -316,6 +349,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       graphResult = await graphPromise;
     } finally {
       this.activeGraphRunner = undefined;
+      unsubscribeCompatibility();
     }
 
     const rawResults = tasks.flatMap((task) => {
@@ -351,7 +385,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
   /**
    * Execute a single task with timeout
    */
-  private async executeTask(task: AgentTask): Promise<AgentTaskResult> {
+  private async executeTask(
+    task: AgentTask,
+    onProgress?: (snapshot: TaskProgressEvent['snapshot']) => void | Promise<void>,
+    onThrownFailure?: () => void,
+    onStarted?: () => void | Promise<void>,
+  ): Promise<AgentTaskResult> {
     const executionContext = this.executionContext;
 
     if (!executionContext) {
@@ -362,8 +401,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const cached = this.completedTasks.get(task.id);
     if (cached?.success) {
       logger.info(`Checkpoint hit, skipping parallel task: ${task.id}`);
-      this.emit('task:start', { taskId: task.id, role: task.role });
-      this.emit('task:complete', { taskId: task.id, result: cached });
+      await onStarted?.();
       return cached;
     }
 
@@ -415,7 +453,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       const executor = await this.getSubagentExecutor();
       throwIfCancelledBeforeExecutor();
       await this.durableController?.markNodeDispatched(task);
-      this.emit('task:start', { taskId: task.id, role: task.role });
+      await onStarted?.();
 
       // Inject shared context into system prompt if available
       let enhancedPrompt = task.systemPrompt || '';
@@ -441,13 +479,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           spawnGuardId: task.id,
           abortSignal: taskAbortController.signal,
           messageDrain: () => this.drainMessages(task.id),
-          onContextSnapshot: (snapshot) => {
-            this.emit('task:progress', {
-              taskId: task.id,
-              role: task.role,
-              snapshot,
-            } satisfies TaskProgressEvent);
-          },
+          onContextSnapshot: (snapshot) => { void onProgress?.(snapshot); },
           hooks: executionContext.hooks,
         },
       });
@@ -496,7 +528,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
       await this.durableController?.markNodeTerminal(task, taskResult);
 
-      this.emit('task:complete', { taskId: task.id, result: taskResult });
       this.completedTasks.set(task.id, taskResult);
       this.abortControllers.delete(task.id);
       this.runningTasks.delete(task.id);
@@ -505,6 +536,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
       return taskResult;
     } catch (error) {
+      onThrownFailure?.();
       const endTime = Date.now();
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       if (!taskAbortController.signal.aborted) {
@@ -512,7 +544,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
       }
       guard.cancelDescendants(task.id, 'parent-cancel');
 
-      this.emit('task:error', { taskId: task.id, error: errorMessage });
       this.abortControllers.delete(task.id);
       this.runningTasks.delete(task.id);
 

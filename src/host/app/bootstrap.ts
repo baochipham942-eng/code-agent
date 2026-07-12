@@ -24,6 +24,7 @@ import {
   type DurableRecoveryRuntime,
 } from '../runtime/durableRecoveryRuntime';
 import { getUserDataPath } from '../platform/appPaths';
+import { createApplicationDynamicWorkflowRecoveryHost } from './dynamicWorkflowRecoveryHost';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
 import { initializeBackgroundInfra } from './initBackgroundServices';
@@ -154,6 +155,9 @@ export async function initializeBackgroundServices(): Promise<void> {
     registry: externalRunRegistry,
     kernel: durableKernel,
     dataDir: getUserDataPath(),
+    dynamicWorkflowHost: createApplicationDynamicWorkflowRecoveryHost({
+      registry: externalRunRegistry,
+    }),
   });
   const recoveryResults = await durableRecoveryRuntime.recoverAndDispatch(Date.now());
   logger.info('Durable startup recovery dispatched', { results: recoveryResults });

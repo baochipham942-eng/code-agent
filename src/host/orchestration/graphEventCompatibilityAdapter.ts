@@ -31,12 +31,18 @@ export interface GraphCompatibilityProjection {
 }
 
 export interface GraphEventCompatibilitySinks {
+  graph?(event: GraphEvent): void | Promise<void>;
   agent?(event: AgentEvent): void | Promise<void>;
   swarm?(event: SwarmEvent): void | Promise<void>;
   script?(event: ScriptRunEvent): void | Promise<void>;
   dag?(event: DAGVisualizationEvent): void | Promise<void>;
   session?(event: GraphSessionEvidence): void | Promise<void>;
-  diagnostic?(error: unknown, event: GraphEvent, target: keyof GraphCompatibilityProjection): void;
+  diagnostic?(error: unknown, event: GraphEvent, target: keyof GraphCompatibilityProjection | 'graph'): void;
+}
+
+export interface GraphEventCompatibilityOptions {
+  /** Hold Graph terminal until the facade has finished its legacy payload. */
+  deferTerminals?: boolean;
 }
 
 /**
@@ -45,25 +51,72 @@ export interface GraphEventCompatibilitySinks {
  */
 export class GraphEventCompatibilityAdapter {
   private readonly terminalAttempts = new Set<string>();
+  private readonly pendingTerminals = new Map<string, GraphEvent>();
+  private readonly sinkSets = new Set<GraphEventCompatibilitySinks>();
 
-  constructor(private readonly sinks: GraphEventCompatibilitySinks) {}
+  constructor(sinks: GraphEventCompatibilitySinks, private readonly options: GraphEventCompatibilityOptions = {}) {
+    this.sinkSets.add(sinks);
+  }
+
+  subscribe(sinks: GraphEventCompatibilitySinks): () => void {
+    this.sinkSets.add(sinks);
+    return () => this.sinkSets.delete(sinks);
+  }
 
   async emit(event: GraphEvent): Promise<void> {
     const terminalKey = `${event.graphId}:${event.runId}:${event.attempt}`;
     const terminal = isTerminalGraphEvent(event);
     if (terminal && this.terminalAttempts.has(terminalKey)) return;
+    if (terminal && this.options.deferTerminals) {
+      if (!this.pendingTerminals.has(terminalKey)) this.pendingTerminals.set(terminalKey, event);
+      return;
+    }
+    await this.deliver(event, terminalKey, terminal);
+  }
+
+  async flushTerminals(): Promise<void> {
+    const pending = [...this.pendingTerminals.entries()];
+    this.pendingTerminals.clear();
+    for (const [terminalKey, event] of pending) {
+      if (!this.terminalAttempts.has(terminalKey)) await this.deliver(event, terminalKey, true);
+    }
+  }
+
+  private async deliver(event: GraphEvent, terminalKey: string, terminal: boolean): Promise<void> {
     if (terminal) this.terminalAttempts.add(terminalKey);
     const projection = projectGraphEvent(event);
-    await Promise.all((Object.keys(projection) as Array<keyof GraphCompatibilityProjection>).flatMap((target) =>
-      projection[target].map(async (projected) => {
+    const sinks = [...this.sinkSets];
+    await Promise.all([
+      ...sinks.map(async (sinkSet) => {
         try {
-          const sink = this.sinks[target] as ((value: typeof projected) => void | Promise<void>) | undefined;
-          await sink?.(projected);
+          await sinkSet.graph?.(event);
         } catch (error) {
-          this.sinks.diagnostic?.(error, event, target);
+          this.reportDiagnostic(sinkSet, error, event, 'graph');
         }
       }),
-    ));
+      ...(Object.keys(projection) as Array<keyof GraphCompatibilityProjection>).flatMap((target) =>
+        projection[target].flatMap((projected) => sinks.map(async (sinkSet) => {
+          try {
+            const sink = sinkSet[target] as ((value: typeof projected) => void | Promise<void>) | undefined;
+            await sink?.(projected);
+          } catch (error) {
+            this.reportDiagnostic(sinkSet, error, event, target);
+          }
+        }))),
+    ]);
+  }
+
+  private reportDiagnostic(
+    sinks: GraphEventCompatibilitySinks,
+    error: unknown,
+    event: GraphEvent,
+    target: keyof GraphCompatibilityProjection | 'graph',
+  ): void {
+    try {
+      sinks.diagnostic?.(error, event, target);
+    } catch {
+      // Compatibility diagnostics cannot alter GraphRunner's authoritative result.
+    }
   }
 }
 
@@ -96,7 +149,7 @@ function projectAgent(event: GraphEvent): AgentEvent[] {
   if (event.type === 'graph_completed') return [{ type: 'agent_complete', data: null }];
   if (event.type === 'graph_cancelled') return [{ type: 'agent_cancelled', data: null }];
   if (event.type === 'graph_failed') return [{ type: 'error', data: { message: errorText(event, 'Graph run failed'), details: correlation(event) } }];
-  if (event.type === 'node_started' || event.type === 'node_progress' || event.type === 'node_waiting') {
+  if (event.nodeId && event.nodeStatus) {
     return [{ type: 'agent_thinking', data: { message: `${event.nodeId ?? 'graph node'}: ${event.nodeStatus ?? event.type}`, agentId: event.nodeId } }];
   }
   return [];

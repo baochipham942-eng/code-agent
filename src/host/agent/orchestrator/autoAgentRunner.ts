@@ -17,6 +17,7 @@ import { getToolResolver } from '../../tools/dispatch/toolResolver';
 import type { TaskListManager } from '../taskList';
 import { createLogger } from '../../services/infra/logger';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
+import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCompatibilityAdapter';
 
 const logger = createLogger('AutoAgentRunner');
 
@@ -143,6 +144,32 @@ export async function runAutoAgentMode(
   const coordinator = getAutoAgentCoordinator();
   const traceContext = getActiveRunTraceContext();
   const toolResolver = getToolResolver();
+  const compatibility = new GraphEventCompatibilityAdapter({
+    agent: (event) => { if (event.type !== 'agent_thinking') onEvent(event); },
+    graph: (event) => {
+      if (!event.nodeId || !event.nodeStatus) return;
+      const status = event.type === 'node_queued' ? 'pending'
+        : event.type === 'node_started' ? 'running'
+          : event.type === 'node_completed' ? 'completed'
+            : event.type === 'node_cancelled' ? 'cancelled'
+              : event.type === 'node_failed' || event.type === 'node_skipped' ? 'failed' : undefined;
+      if (!status) return;
+      deps.sendDAGStatusEvent(dagId, event.nodeId, status);
+      const matchingTask = taskItems.find(t => t.subject === event.nodeId || t.description?.includes(event.nodeId!));
+      if (matchingTask) {
+        if (status === 'running') taskListManager.startExecution(matchingTask.id);
+        else if (status === 'completed') taskListManager.completeExecution(matchingTask.id, `Agent ${event.nodeId} completed`);
+        else if (status === 'failed') taskListManager.failExecution(matchingTask.id, `Agent ${event.nodeId} failed`);
+      }
+      onEvent({
+        type: 'agent_thinking',
+        data: { message: `Agent ${event.nodeId}: ${status}`, agentId: event.nodeId },
+      });
+    },
+    diagnostic: (error, event, target) => logger.warn('Auto Agent compatibility projection failed', {
+      error: error instanceof Error ? error.message : String(error), graphId: event.graphId, target,
+    }),
+  }, { deferTerminals: true });
 
   const result = await coordinator.execute(agents, requirements, {
     sessionId: sessionId || 'unknown',
@@ -160,31 +187,7 @@ export async function runAutoAgentMode(
       toolScope: deps.toolScope,
       executionIntent: deps.executionIntent,
     },
-    onProgress: (agentId, status, progress) => {
-      // Sync DAG task status
-      deps.sendDAGStatusEvent(dagId, agentId, status);
-
-      // === TaskList Integration: 同步任务状态 ===
-      const matchingTask = taskItems.find(t => t.subject === agentId || t.description?.includes(agentId));
-      if (matchingTask) {
-        if (status === 'running') {
-          taskListManager.startExecution(matchingTask.id);
-        } else if (status === 'completed') {
-          taskListManager.completeExecution(matchingTask.id, `Agent ${agentId} completed`);
-        } else if (status === 'failed') {
-          taskListManager.failExecution(matchingTask.id, `Agent ${agentId} failed`);
-        }
-      }
-
-      onEvent({
-        type: 'agent_thinking',
-        data: {
-          message: `Agent ${agentId}: ${status}${progress !== undefined ? ` (${progress}%)` : ''}`,
-          agentId,
-          progress,
-        },
-      });
-    },
+    compatibilitySink: compatibility,
   });
 
   // Process result
@@ -224,6 +227,5 @@ export async function runAutoAgentMode(
     logger.warn('Errors:', result.errors);
   }
 
-  // Emit completion
-  onEvent({ type: 'agent_complete', data: null });
+  await compatibility.flushTerminals();
 }

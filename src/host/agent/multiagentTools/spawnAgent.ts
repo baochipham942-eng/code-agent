@@ -82,6 +82,7 @@ import { withRunTraceContext } from '../../telemetry/runTraceContext';
 import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
+import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCompatibilityAdapter';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -1005,11 +1006,46 @@ async function executeParallelAgents(
     }
   }
 
-  // Emit swarm:started
-  emitter.started(runScope, tasks.length);
-  for (const task of tasks) {
-    emitter.agentAdded(runScope, { id: task.id, name: task.role, role: task.role });
-  }
+  let terminalProjection: {
+    cancelled: boolean;
+    result: Awaited<ReturnType<typeof coordinator.executeParallel>>;
+    aggregation: ReturnType<typeof aggregateTeamResults>;
+  } | undefined;
+  const compatibility = new GraphEventCompatibilityAdapter({
+    graph: (event) => {
+      if (event.type === 'graph_started') emitter.started(runScope, tasks.length);
+      if (event.type === 'node_queued' && event.nodeId) {
+        const task = tasks.find((candidate) => candidate.id === event.nodeId);
+        if (task) emitter.agentAdded(runScope, { id: task.id, name: task.role, role: task.role });
+      }
+      if (event.type === 'graph_completed' || event.type === 'graph_failed' || event.type === 'graph_cancelled') {
+        if (!terminalProjection || terminalProjection.cancelled || event.type === 'graph_cancelled') {
+          emitter.cancelled(runScope);
+          return;
+        }
+        const { result, aggregation } = terminalProjection;
+        emitter.completedWithAggregation(runScope, {
+          total: tasks.length,
+          completed: result.results.filter(r => r.success).length,
+          failed: result.results.filter(r => !r.success).length,
+          parallelPeak: result.parallelism,
+          totalTime: result.totalDuration,
+        }, {
+          summary: aggregation.summary,
+          filesChanged: aggregation.filesChanged,
+          totalCost: aggregation.totalCost,
+          totalDuration: aggregation.totalDuration,
+          speedup: aggregation.speedup,
+          successRate: aggregation.successRate,
+          totalIterations: aggregation.totalIterations,
+        });
+      }
+    },
+    diagnostic: (error, event, target) => console.warn(
+      `[SpawnAgent] Graph compatibility projection failed (${target}, ${event.graphId})`,
+      error,
+    ),
+  }, { deferTerminals: true });
 
   // Bridge coordinator events to swarm events + coordinator session tracking
   const onTaskStart = (evt: { taskId: string; role: string }) => {
@@ -1104,8 +1140,8 @@ async function executeParallelAgents(
   let terminalStatus: ParallelCoordinatorTerminalStatus | undefined;
   try {
     const result = durableController.traceContext
-      ? await withRunTraceContext(durableController.traceContext, () => coordinator.executeParallel(tasks))
-      : await coordinator.executeParallel(tasks);
+      ? await withRunTraceContext(durableController.traceContext, () => coordinator.executeParallel(tasks, compatibility))
+      : await coordinator.executeParallel(tasks, compatibility);
 
     // Aggregate results
     const aggregation = aggregateTeamResults(result.results, result.totalDuration);
@@ -1114,22 +1150,11 @@ async function executeParallelAgents(
     const wasCancelled = Boolean(context.abortSignal?.aborted)
       || result.results.some((taskResult) => taskResult.cancelled || isCancelledTaskError(taskResult.error))
       || result.errors.some((error) => isCancelledTaskError(error.error));
-
-    // Emit per-agent completion with aggregation data (cost, files, preview)
-    for (const entry of aggregation.agentResults) {
-      const taskResult = resultByTaskId.get(entry.agentId);
-      emitter.agentUpdated(runScope, entry.agentId, {
-        status: entry.status === 'completed'
-          ? 'completed'
-          : taskResult?.cancelled || isCancelledTaskError(taskResult?.error)
-            ? 'cancelled'
-            : 'failed',
-      });
-    }
+    terminalProjection = { cancelled: wasCancelled, result, aggregation };
 
     if (wasCancelled) {
       terminalStatus = 'cancelled';
-      emitter.cancelled(runScope);
+      await compatibility.flushTerminals();
       return {
         success: false,
         error: `Parallel execution cancelled: ${result.errors.length} tasks did not complete.`,
@@ -1148,23 +1173,8 @@ async function executeParallelAgents(
       };
     }
 
-    // Emit swarm:completed with aggregation
-    emitter.completedWithAggregation(runScope, {
-      total: tasks.length,
-      completed: result.results.filter(r => r.success).length,
-      failed: result.results.filter(r => !r.success).length,
-      parallelPeak: result.parallelism,
-      totalTime: result.totalDuration,
-    }, {
-      summary: aggregation.summary,
-      filesChanged: aggregation.filesChanged,
-      totalCost: aggregation.totalCost,
-      totalDuration: aggregation.totalDuration,
-      speedup: aggregation.speedup,
-      successRate: aggregation.successRate,
-      totalIterations: aggregation.totalIterations,
-    });
     terminalStatus = result.success ? 'completed' : 'failed';
+    await compatibility.flushTerminals();
 
     // Format output for main agent (richer than before)
     const agentSummaries = aggregation.agentResults.map((entry) => {
@@ -1251,7 +1261,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     }
   } catch (error) {
     terminalStatus = context.abortSignal?.aborted ? 'cancelled' : 'failed';
-    emitter.cancelled(runScope);
+    await compatibility.flushTerminals();
     return {
       success: false,
       error: `Parallel execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

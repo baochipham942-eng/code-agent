@@ -93,6 +93,10 @@ export class CronService implements Disposable {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
+    // 中断可见性（maka 护栏自查 A5-④遗留）：上次运行中途被杀掉的执行记录会永远
+    // 停在 running，让用户误以为还在跑。启动时先把这些残留行标记为 interrupted。
+    await this.markInterruptedExecutions();
+
     // Load jobs from database
     await this.loadJobsFromDatabase();
 
@@ -413,6 +417,7 @@ export class CronService implements Disposable {
         failed: failedExecutions,
         cancelled: allExecutions.filter((e) => e.status === 'cancelled').length,
         paused: allJobs.filter((j) => !j.definition.enabled).length,
+        interrupted: allExecutions.filter((e) => e.status === 'interrupted').length,
       },
       totalExecutions: allExecutions.length,
       successfulExecutions,
@@ -546,6 +551,10 @@ export class CronService implements Disposable {
     if (history.length > 100) {
       this.executions.set(definition.id, history.slice(-100));
     }
+
+    // 先落一条 running 记录（maka 护栏自查 A5-④）：不这样做的话，进程在此次
+    // 执行期间被杀掉时数据库里不会留下任何痕迹，启动扫描也就无从标记 interrupted。
+    await this.saveExecutionToDatabase(execution);
 
     try {
       const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
@@ -853,6 +862,28 @@ export class CronService implements Disposable {
   // Database Operations
   // --------------------------------------------------------------------------
 
+  /**
+   * 启动时把残留的 running 执行记录标记为 interrupted（maka 护栏自查 A5-④）：
+   * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
+   * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
+   */
+  private async markInterruptedExecutions(): Promise<void> {
+    try {
+      const db = getDatabase().getDb();
+      if (!db) return;
+      const result = db.prepare(`
+        UPDATE cron_executions
+        SET status = 'interrupted', completed_at = COALESCE(completed_at, ?)
+        WHERE status = 'running'
+      `).run(Date.now());
+      if (result.changes > 0) {
+        console.error(`[CronService] Marked ${result.changes} stale running execution(s) as interrupted`);
+      }
+    } catch (error) {
+      console.error('[CronService] Failed to mark interrupted executions:', error);
+    }
+  }
+
   private async loadJobsFromDatabase(): Promise<void> {
     try {
       const db = getDatabase().getDb();
@@ -963,12 +994,17 @@ export class CronService implements Disposable {
     }
   }
 
+  /**
+   * 插入/覆写一条执行记录。用 INSERT OR REPLACE 而非纯 INSERT：executeJob 开头先落
+   * 一条 running 记录（供崩溃后的 interrupted 扫描识别），finally 里带最终状态
+   * 再写一次同 id 的行——必须是同一行被覆盖，不能变成两行或第二次写入失败。
+   */
   private async saveExecutionToDatabase(execution: CronJobExecution): Promise<void> {
     try {
       const db = getDatabase().getDb();
       if (!db) return;
       db.prepare(`
-        INSERT INTO cron_executions
+        INSERT OR REPLACE INTO cron_executions
         (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(

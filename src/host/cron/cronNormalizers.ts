@@ -41,6 +41,7 @@ const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
   'failed',
   'cancelled',
   'paused',
+  'interrupted',
 ];
 
 export const SUPPORTED_EVERY_TIME_UNITS = ['seconds', 'minutes', 'hours', 'days'] as const;

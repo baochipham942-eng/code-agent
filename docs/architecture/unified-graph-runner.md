@@ -1,5 +1,7 @@
 # Unified Graph Runner (S8 + S8.5 + S8.6)
 
+S9.5 production implementation SHA: `8a3083350a9cfb26fc964ddfcbcdbdb5aaec4ddc`.
+
 ## Status
 
 S8 completes the Graph contract, GraphRunner, TaskDAG scheduler adapter, Agent

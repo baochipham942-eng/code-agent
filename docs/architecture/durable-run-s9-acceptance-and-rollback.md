@@ -1,5 +1,7 @@
 # S9 Durable Run acceptance and rollback
 
+S9.5 production implementation SHA: `8a3083350a9cfb26fc964ddfcbcdbdb5aaec4ddc`.
+
 ## S9.5 production-path audit (baseline `2548c7b1c`)
 
 The pre-change audit found the following ownership and fact-source wiring. This

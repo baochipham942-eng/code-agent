@@ -1,5 +1,7 @@
 # ADR-037 — Durable Run Kernel identity, ownership, and recovery semantics
 
+S9.5 production implementation SHA: `8a3083350a9cfb26fc964ddfcbcdbdb5aaec4ddc`.
+
 - Status: accepted; S9.5 production cutover approved by the machine gate
 - Date: 2026-07-11
 - Related: `native-run-context.md`, `coordinator-checkpoint-symmetry.md`, ADR-022 execution ledgers, ADR-023 Swarm ledger

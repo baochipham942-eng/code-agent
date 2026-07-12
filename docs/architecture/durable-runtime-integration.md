@@ -1,5 +1,7 @@
 # Durable Runtime Integration
 
+S9.5 production implementation SHA: `8a3083350a9cfb26fc964ddfcbcdbdb5aaec4ddc`.
+
 ## Unified recovery boundary
 
 `RunRegistry.recoverDurable()` remains the only startup lease claimant. It reconstructs owner, attempt, envelope, checkpoint state, and logical trace context, then returns `RunRehydrationPlan[]`. `DurableRecoveryDispatcher` owns no Durable state transition; it invokes registered runtime handlers after the claim.

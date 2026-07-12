@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { chromium, type Browser, type Page } from 'playwright';
@@ -156,7 +156,7 @@ Last body: ${lastBody || 'N/A'}
 ${output()}`);
 }
 
-function startAppHost(port: number): { child: ChildProcessWithoutNullStreams; output: () => string } {
+function startAppHost(port: number, dataDir: string): { child: ChildProcessWithoutNullStreams; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -164,6 +164,7 @@ function startAppHost(port: number): { child: ChildProcessWithoutNullStreams; ou
       ...process.env,
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
+      CODE_AGENT_DATA_DIR: dataDir,
       CODE_AGENT_ENABLE_DEV_API: 'true',
       CODE_AGENT_E2E: '1',
       NODE_ENV: 'development',
@@ -557,7 +558,8 @@ async function main(): Promise<void> {
 
   const appPort = getNumberOption(args, 'port') || await getFreePort();
   const baseUrl = `http://127.0.0.1:${appPort}`;
-  const appHost = startAppHost(appPort);
+  const dataDir = mkdtempSync(join(tmpdir(), 'code-agent-agent-runtime-app-host-data-'));
+  const appHost = startAppHost(appPort, dataDir);
   let chromeSession: SmokeChromeSession | null = null;
   const failures: string[] = [];
   const consoleErrors: string[] = [];
@@ -729,6 +731,7 @@ async function main(): Promise<void> {
     }
     if (!hasFlag(args, 'keep-server')) {
       await stopProcess(appHost.child);
+      rmSync(dataDir, { recursive: true, force: true });
     }
   }
 }

@@ -67,6 +67,17 @@ describe('PermissionClassifier', () => {
     }
   });
 
+  it('keeps direct writes to the temporary directory auto-approved', async () => {
+    const result = await classifyPermission(
+      'Write',
+      { file_path: path.join(os.tmpdir(), 'code-agent-direct-temp-probe.txt'), content: 'probe' },
+      { workingDirectory: '/workspace/project', workspaceRoot: '/workspace/project', permissionLevel: 'write' },
+    );
+
+    expect(result.decision).toBe('approve');
+    expect(result.reason).toBe('写入临时目录');
+  });
+
   it('asks before reading Claude global memory files', async () => {
     const result = await classifyPermission(
       'Read',

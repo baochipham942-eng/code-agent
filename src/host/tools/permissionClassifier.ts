@@ -166,6 +166,11 @@ function resolveCandidatePath(rawPath: string, workingDirectory: string): string
     : path.resolve(workingDirectory, expanded);
 }
 
+function isPathInside(candidate: string, boundary: string): boolean {
+  const relative = path.relative(boundary, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 function isSensitiveMemoryPath(resolvedPath: string): boolean {
   if (resolvedPath === CLAUDE_MEMORY_DIR || resolvedPath.startsWith(`${CLAUDE_MEMORY_DIR}${path.sep}`)) {
     return true;
@@ -544,18 +549,34 @@ export class PermissionClassifier {
       };
     }
 
-    const resolved = resolveCanonicalRunPath(path.resolve(context.workingDirectory, filePath));
-    const workspace = resolveCanonicalRunPath(
-      path.resolve(context.workspaceRoot ?? context.workingDirectory),
-    );
+    const candidate = path.resolve(context.workingDirectory, filePath);
+    const workspaceBoundary = path.resolve(context.workspaceRoot ?? context.workingDirectory);
+    const resolved = resolveCanonicalRunPath(candidate);
+    const workspace = resolveCanonicalRunPath(workspaceBoundary);
+    const canonicalInsideWorkspace = isPathInside(resolved, workspace);
 
     // W1: 写入项目目录内 → approve (no traceStep)
-    if (resolved.startsWith(workspace + path.sep) || resolved === workspace) {
+    if (canonicalInsideWorkspace) {
       return {
         decision: 'approve',
         reason: '写入项目目录内',
         confidence: 0.95,
         cached: false,
+      };
+    }
+
+    // A path that appears to stay inside the workspace but resolves through a
+    // symlink to an external target is an authorization-boundary escape. Check
+    // it before the temporary-directory allowlist so a link into /tmp cannot
+    // turn an external write into an implicit approval.
+    if (isPathInside(candidate, workspaceBoundary)) {
+      const reason = `写入项目目录外: ${resolved}`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 0.9,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
       };
     }
 

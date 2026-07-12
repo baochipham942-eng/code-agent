@@ -3,7 +3,9 @@ import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { getActiveRunTraceContext } from '../telemetry/runTraceContext';
 import type {
+  SubagentConfig,
   SubagentExecutionContext,
+  SubagentExecutionRequest,
   SubagentHookPort,
 } from './subagentExecutorTypes';
 
@@ -75,4 +77,18 @@ export function projectLegacySubagentContext(input: LegacySubagentContextInput):
     onContextSnapshot: input.onContextSnapshot,
     isParentAlive: input.isParentAlive,
   };
+}
+
+export function normalizeSubagentExecutionRequest(
+  requestOrPrompt: SubagentExecutionRequest | string,
+  legacyConfig?: SubagentConfig,
+  legacyContext?: LegacySubagentContextInput,
+): SubagentExecutionRequest {
+  return typeof requestOrPrompt === 'string'
+    ? {
+        prompt: requestOrPrompt,
+        config: legacyConfig as SubagentConfig,
+        context: projectLegacySubagentContext(legacyContext as LegacySubagentContextInput),
+      }
+    : requestOrPrompt;
 }

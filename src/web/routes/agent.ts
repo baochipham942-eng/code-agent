@@ -30,7 +30,6 @@ import {
   CodexCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
-  ExternalEngineDurableLifecycle,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -40,7 +39,6 @@ import {
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
 import {
-  AgentCancelBodySchema,
   AgentRunBodySchema,
   AgentToolResultBodySchema,
 } from './agentBodySchemas';
@@ -65,19 +63,26 @@ import {
   createBridgeToolDispatch,
   type PendingLocalToolCall,
 } from './agentBridgeToolDispatch';
-import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
-import type { DurableRunReadService } from '../../host/app/durableRunReadService';
+import {
+  type AgentDurableRouteDeps,
+  cancelDisconnectedAgentRouteRun,
+  finishExternalAgentRouteRun,
+  releaseAgentRouteRun,
+  resolveAgentDurableActivation,
+  startAgentRouteRun,
+  terminalAgentRouteRunFailure,
+  terminalAgentRouteRunSuccess,
+} from './agentDurableRouteLifecycle';
+import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 
 export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
 
-interface AgentRouterDeps {
+interface AgentRouterDeps extends AgentDurableRouteDeps {
   runRegistry: RunRegistry;
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
-  getDurableRunRollout?: () => { policy: DurableRunRolloutPolicy; ready: boolean };
-  getDurableRunReadService?: () => DurableRunReadService | undefined;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -293,16 +298,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
-    const durableRollout = deps.getDurableRunRollout?.();
-    if (durableRollout?.policy.durableActivation && !durableRollout.ready) {
-      res.status(503).json({
-        error: 'Durable Run persistence is unavailable',
-        code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE',
-        rolloutMode: durableRollout.policy.mode,
-      });
-      return;
-    }
-    const durableActivation = durableRollout?.policy.durableActivation ?? true;
+    const durableActivation = resolveAgentDurableActivation(deps, res);
+    if (durableActivation === null) return;
     let preflightDisconnected = res.destroyed;
     const markPreflightDisconnected = (): void => {
       preflightDisconnected = true;
@@ -354,79 +351,42 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
-    let externalDurableLifecycle: ExternalEngineDurableLifecycle | undefined;
+    let externalDurableLifecycle: Awaited<ReturnType<typeof startAgentRouteRun>>['externalLifecycle'];
     let nativeRunTerminal = false;
     let runCorrelationId: string;
-    if (isExternalAgentEngine(selectedEngine.kind)) {
-      try {
-        if (durableActivation) {
-          externalDurableLifecycle = await ExternalEngineDurableLifecycle.start({
-            registry: runRegistry,
-            engine: selectedEngine.kind,
-            sessionId,
-            workspace: resolvedProject,
-            cwd: resolvedProject,
-          });
-        }
-        runHandle = externalDurableLifecycle?.handle
-          ?? runRegistry.start({ sessionId, workspace: resolvedProject });
-        runContext = runHandle.context;
-        runCorrelationId = runHandle.context.runId;
-      } catch (error) {
-        releaseSseSlot();
-        if (error instanceof RunSessionConflictError) {
-          res.status(409).json({
-            error: error.message,
-            code: error.code,
-            sessionId,
-            activeRunId: error.existingRunId,
-          });
-          return;
-        }
-        if (!preflightDisconnected && !res.destroyed) {
-          res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
-        }
+    try {
+      const started = await startAgentRouteRun({
+        runRegistry,
+        sessionId,
+        workspace: resolvedProject,
+        durableActivation,
+        externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
+      });
+      runHandle = started.runHandle;
+      externalDurableLifecycle = started.externalLifecycle;
+      runContext = runHandle.context;
+      runCorrelationId = runContext.runId;
+    } catch (error) {
+      releaseSseSlot();
+      if (error instanceof RunSessionConflictError) {
+        res.status(409).json({
+          error: error.message,
+          code: error.code,
+          sessionId,
+          activeRunId: error.existingRunId,
+        });
         return;
       }
-    } else {
-      try {
-        runHandle = durableActivation
-          ? await runRegistry.startDurable({ sessionId, workspace: resolvedProject })
-          : runRegistry.start({ sessionId, workspace: resolvedProject });
-        runContext = runHandle.context;
-        runCorrelationId = runContext.runId;
-      } catch (error) {
-        releaseSseSlot();
-        if (error instanceof RunSessionConflictError) {
-          res.status(409).json({
-            error: error.message,
-            code: error.code,
-            sessionId,
-            activeRunId: error.existingRunId,
-          });
-          return;
-        }
-        if (!preflightDisconnected && !res.destroyed) {
-          res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
-        }
-        return;
+      if (!preflightDisconnected && !res.destroyed) {
+        res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
       }
+      return;
     }
 
     res.once('close', releaseSseSlot);
     if (preflightDisconnected || res.destroyed) {
       if (runHandle) {
-        await runHandle.cancel('user');
-        if (durableActivation) {
-          await runRegistry.terminalDurable(runHandle.context.runId, {
-            now: Date.now(),
-            status: 'cancelled',
-            reason: 'client_disconnected_before_stream',
-            event: { type: 'run_cancelled', payload: { sessionId }, recordedAt: Date.now() },
-          }, runHandle);
-        } else {
-          runRegistry.unregister(runHandle.context.runId, runHandle);
-        }
+        await cancelDisconnectedAgentRouteRun({ runRegistry, runHandle, sessionId, durableActivation });
       }
       res.off('close', markPreflightDisconnected);
       releaseSseSlot();
@@ -587,11 +547,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           emitEvent: (event) => runController.emitAgentEvent(event),
           durableLifecycle: externalDurableLifecycle,
         });
-        await externalDurableLifecycle?.finish(
-          result,
-          result.status !== 'completed' || Boolean(result.outputText?.trim()),
-        );
-        nativeRunTerminal = true;
+        nativeRunTerminal = await finishExternalAgentRouteRun(externalDurableLifecycle, result);
         runController.flush();
         await runController.updateSessionStatus(result.status === 'failed' ? 'error' : 'completed');
         return;
@@ -1030,17 +986,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           : 'completed';
       await runController.updateSessionStatus(finalStatus);
 
-      if (runHandle && durableActivation) {
-        await runRegistry.terminalDurable(runHandle.context.runId, {
-          now: Date.now(),
-          status: finalStatus === 'completed' ? 'completed' : finalStatus === 'interrupted' ? 'cancelled' : 'failed',
-          reason: finalStatus,
-          event: { type: `run_${finalStatus}`, payload: { sessionId }, recordedAt: Date.now() },
-        }, runHandle);
-        nativeRunTerminal = true;
-      } else if (runHandle) {
-        nativeRunTerminal = true;
-      }
+      nativeRunTerminal = await terminalAgentRouteRunSuccess({
+        runRegistry, runHandle, sessionId, finalStatus, durableActivation,
+      });
 
       // session:updated 和 session:list-updated 已按运行状态广播
 
@@ -1055,34 +1003,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           context: externalEngineFailureContext,
         }, logger);
       }
-      if (externalDurableLifecycle && !nativeRunTerminal) {
-        try {
-          await externalDurableLifecycle.finish({
-            runId: externalDurableLifecycle.runId,
-            sessionId,
-            engine: externalDurableLifecycle.engine,
-            status: runController.disconnected ? 'cancelled' : 'failed',
-            error: message,
-          }, true);
-          nativeRunTerminal = true;
-        } catch (terminalError) {
-          logger.error('External Durable Run terminal commit failed:', terminalError);
-        }
-      }
       await runController.updateSessionStatus('error');
-      if (runHandle && !nativeRunTerminal && durableActivation) {
-        try {
-          await runRegistry.terminalDurable(runHandle.context.runId, {
-            now: Date.now(),
-            status: runController.disconnected ? 'cancelled' : 'failed',
-            reason: message,
-            event: { type: 'run_failed', payload: { message }, recordedAt: Date.now() },
-          }, runHandle);
-          nativeRunTerminal = true;
-        } catch (terminalError) {
-          logger.error('Durable Run terminal commit failed:', terminalError);
-        }
-      }
+      nativeRunTerminal = await terminalAgentRouteRunFailure({
+        runRegistry,
+        runHandle,
+        externalLifecycle: externalDurableLifecycle,
+        terminal: nativeRunTerminal,
+        durableActivation,
+        disconnected: runController.disconnected,
+        sessionId,
+        message,
+        logger,
+      });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
           type: 'error',
@@ -1094,13 +1026,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     } finally {
       runController.markSettled();
       res.off('close', runController.cancelForDisconnect);
-      if (runHandle) {
-        if (!nativeRunTerminal && durableActivation) {
-          await runRegistry.releaseDurable(runHandle.context.runId, runHandle);
-        } else {
-          runRegistry.unregister(runHandle.context.runId, runHandle);
-        }
-      }
+      await releaseAgentRouteRun({
+        runRegistry, runHandle, terminal: nativeRunTerminal, durableActivation,
+      });
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
@@ -1113,42 +1041,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
   });
 
-  // ── Cancel ─────────────────────────────────────────────────────────
-  router.post('/cancel', async (req: Request, res: Response) => {
-    const parsedBody = AgentCancelBodySchema.safeParse(req.body ?? {});
-    if (!parsedBody.success) {
-      res.status(400).json({ error: 'Invalid cancel target', code: 'INVALID_PAYLOAD' });
-      return;
-    }
-    const { runId, sessionId } = parsedBody.data;
-    if (sessionId) {
-      const view = await deps.getDurableRunReadService?.()?.readNativeControl(sessionId, () => {
-        const legacy = runRegistry.getBySessionId(sessionId);
-        return { runId: legacy?.context.runId, status: legacy ? 'running' : 'idle', engine: { kind: 'native' } };
-      });
-      if (view?.source === 'durable' && view.terminal) {
-        res.json({ message: 'No active agent to cancel' });
-        return;
-      }
-    }
-    const target = runRegistry.resolve({ runId, sessionId });
-    if (!target) {
-      const ambiguous = !runId && !sessionId && runRegistry.size > 1;
-      res.status(ambiguous ? 409 : 200).json({
-        message: ambiguous ? 'runId or sessionId is required when multiple runs are active' : 'No active agent to cancel',
-        ...(ambiguous ? { code: 'RUN_TARGET_REQUIRED' } : {}),
-      });
-      return;
-    }
-
-    await target.cancel('user');
-    // Registry ownership remains with /run finally until the loop has settled.
-    res.json({
-      message: 'Cancelled',
-      runId: target.context.runId,
-      sessionId: target.context.sessionId,
-    });
-  });
+  registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

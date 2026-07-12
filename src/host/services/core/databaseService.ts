@@ -12,7 +12,7 @@ import { loadBetterSqlite3 } from './database/nativeLoader';
 import { applySchema } from './database/schema';
 import { applyIndexes } from './database/indexes';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
-import { applyDurableRunMigrationDraft } from './database/migrations/durableRun';
+import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
 
 const logger = createLogger('DatabaseService');
 const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, DurableRunRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
@@ -75,9 +75,9 @@ function parseJsonValue(value: unknown): unknown {
   }
 }
 
-export class DatabaseService {
+export class DatabaseService extends DurableRunDatabaseSupport {
   private db: BetterSqlite3.Database | null = null;
-  private dbPath: string;
+  private dbPath = path.join(app?.getPath?.('userData') || process.cwd(), 'code-agent.db');
   private _initPromise: Promise<void> | null = null;
   private _initFailed = false;
   private _retryCount = 0;
@@ -96,15 +96,8 @@ export class DatabaseService {
   private permissionDecisionRepo!: PermissionDecisionRepository;
   private toolExecutionEventRepo!: ToolExecutionEventRepository;
   private swarmLedgerRepo!: SwarmLedgerRepository;
-  private durableRunRepo!: DurableRunRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
-
-  constructor() {
-    const userDataPath = app?.getPath?.('userData') || process.cwd();
-    this.dbPath = path.join(userDataPath, 'code-agent.db');
-  }
-
 
   // --------------------------------------------------------------------------
   // Initialization
@@ -198,7 +191,7 @@ export class DatabaseService {
       applySessionsMigrations(this.db, logger);
       applyTelemetryTurnsMigrations(this.db, logger);
       applyEvaluationCleanupMigration(this.db, logger);
-      applyDurableRunMigrationDraft(this.db);
+      this.applyDurableRunMigration(this.db);
       applyIndexes(this.db);
 
       // 初始化 Repositories
@@ -213,7 +206,7 @@ export class DatabaseService {
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
-      this.durableRunRepo = new DurableRunRepository(this.db);
+      this.initializeDurableRunRepository(this.db);
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
       if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
@@ -264,15 +257,6 @@ export class DatabaseService {
    */
   getDb(): BetterSqlite3.Database | null {
     return this.db;
-  }
-
-  /** Durable Run is fail-closed: callers never receive an in-memory fallback. */
-  getDurableRunRepository(): DurableRunRepository {
-    this.ensureDb();
-    if (!this.durableRunRepo) {
-      throw new Error('Durable Run persistence is unavailable');
-    }
-    return this.durableRunRepo;
   }
 
   // --------------------------------------------------------------------------
@@ -667,7 +651,7 @@ export class DatabaseService {
   // ==========================================================================
 
   private _ensureDbWarned = false;
-  private ensureDb(): void {
+  protected ensureDb(): void {
     if (!this.db) {
       if (!this._ensureDbWarned) {
         this._ensureDbWarned = true;

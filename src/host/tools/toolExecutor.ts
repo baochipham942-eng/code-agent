@@ -26,7 +26,6 @@ import {
   type PolicyCheckResult,
   type ValidationResult,
 } from '../security';
-import { redactSecrets } from '../security/secretRedaction';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { type ClassificationResult } from './permissionClassifier';
@@ -57,7 +56,6 @@ import {
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
-import { createHash, randomUUID } from 'node:crypto';
 import {
   isRunPathInsideWorkspace,
   resolveCanonicalRunPath,
@@ -69,8 +67,10 @@ import {
   toolMatchesPatternSet,
   truncateToolOutput,
 } from './toolExecutorHelpers';
-import { getTelemetryService } from '../telemetry/telemetryService';
-import { getConfiguredApplicationRunRegistry } from '../app/applicationRunRegistry';
+import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
+import { annotateToolExecution, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
+import { recordCachedToolReplay } from './cachedToolReplay';
+import { createToolExecutionLedger } from './toolExecutionLedger';
 
 const logger = createLogger('ToolExecutor');
 
@@ -346,25 +346,13 @@ export class ToolExecutor {
     const executionToolName = toolDef.name;
     const policyToolName = normalizeToolName(executionToolName);
 
-    try {
-      const toolSpan = options.currentToolCallId
-        ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
-        : undefined;
-      if (toolSpan) {
-        getTelemetryService().updateSpan(toolSpan.spanId, {
-          'tool.source': this.dispatchTool
-            ? 'bridge'
-            : /^mcp(__|_)/i.test(executionToolName) ? 'mcp' : 'protocol',
-          'tool.permission_class': toolDef.permissionLevel,
-          'tool.idempotency_key_digest': createHash('sha256')
-            .update(`${effectiveRunId ?? 'background'}:${options.currentToolCallId}`)
-            .digest('hex')
-            .slice(0, 24),
-        });
-      }
-    } catch {
-      // Trace annotation is best-effort and never changes tool execution.
-    }
+    annotateToolExecution({
+      toolCallId: options.currentToolCallId,
+      toolName: executionToolName,
+      permissionClass: toolDef.permissionLevel,
+      runId: effectiveRunId,
+      bridged: Boolean(this.dispatchTool),
+    });
 
     logger.debug('Tool found', { toolName: executionToolName, requestedToolName });
 
@@ -794,54 +782,11 @@ export class ToolExecutor {
         }
       }
 
-      let approvalSpanId: string | undefined;
-      try {
-        const toolSpan = options.currentToolCallId
-          ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
-          : undefined;
-        const approvalSpan = getTelemetryService().startSpan(
-          'approval:tool',
-          'approval',
-          {
-            'approval.kind': permissionRequest.type,
-            'approval.state': 'waiting',
-          },
-          toolSpan?.spanId,
-        );
-        approvalSpanId = approvalSpan.spanId;
-        getTelemetryService().addSpanEvent(approvalSpan.spanId, 'approval.waiting');
-      } catch {
-        // Approval tracing is diagnostic only.
-      }
-
-      let approved: boolean;
-      try {
-        approved = await this.requestPermission(permissionRequest);
-      } catch (error) {
-        try {
-          if (approvalSpanId) {
-            getTelemetryService().endSpan(approvalSpanId, 'error', {
-              'approval.state': 'failed',
-            });
-          }
-        } catch {
-          // Approval tracing must not replace the permission error.
-        }
-        throw error;
-      }
-      try {
-        if (approvalSpanId) {
-          getTelemetryService().addSpanEvent(
-            approvalSpanId,
-            approved ? 'approval.resolved' : 'approval.rejected',
-          );
-          getTelemetryService().endSpan(approvalSpanId, approved ? 'ok' : 'cancelled', {
-            'approval.state': approved ? 'resolved' : 'rejected',
-          });
-        }
-      } catch {
-        // Approval tracing is diagnostic only.
-      }
+      const approved = await requestPermissionWithTelemetry({
+        request: permissionRequest,
+        toolCallId: options.currentToolCallId,
+        requestPermission: this.requestPermission,
+      });
 
       if (approved) {
         recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime);
@@ -900,52 +845,14 @@ export class ToolExecutor {
       const cached = toolCache.get(executionToolName, params, toolCacheScope);
       if (cached) {
         logger.debug('Cache HIT', { toolName: executionToolName });
-        // A replay-safe cache hit skips the handler lifecycle, but it is still a tool
-        // execution fact. Keep the append-only ledger and active tool span complete.
-        const cacheExecutionId = randomUUID();
-        const cachedParams = sanitizeToolParams(params);
-        const cachedSummary = String(
-          cachedParams.command
-          || cachedParams.file_path
-          || cachedParams.path
-          || cachedParams.pattern
-          || executionToolName,
-        ).substring(0, 80);
-        try {
-          getDatabase().appendToolExecutionBegin({
-            executionId: cacheExecutionId,
-            sessionId: effectiveSessionId,
-            toolName: executionToolName,
-            summary: cachedSummary,
-            params: cachedParams,
-            recordedAt: Date.now(),
-          });
-          getDatabase().appendToolExecutionComplete({
-            executionId: cacheExecutionId,
-            sessionId: effectiveSessionId,
-            toolName: executionToolName,
-            status: 'cached',
-            recordedAt: Date.now(),
-          });
-        } catch { /* cache replay remains available when the audit DB is unavailable */ }
-        try {
-          const toolSpan = options.currentToolCallId
-            ? getTelemetryService().findActiveSpanByAttribute('tool.call_id', options.currentToolCallId)
-            : undefined;
-          if (toolSpan) getTelemetryService().updateSpan(toolSpan.spanId, { 'tool.cache_hit': true });
-        } catch { /* trace storage is best-effort */ }
-        if (this.auditEnabled) {
-          try {
-            getAuditLogger().logToolUsage({
-              sessionId: effectiveSessionId || 'unknown',
-              toolName: executionToolName,
-              input: cachedParams,
-              output: cached.output ? truncateToolOutput(cached.output) : undefined,
-              duration: 0,
-              success: true,
-            });
-          } catch { /* audit backend failure cannot turn a proven replay into execution */ }
-        }
+        recordCachedToolReplay({
+          cached,
+          params,
+          toolName: executionToolName,
+          sessionId: effectiveSessionId,
+          toolCallId: options.currentToolCallId,
+          auditEnabled: this.auditEnabled,
+        });
         return {
           success: true,
           result: cached,
@@ -968,30 +875,13 @@ export class ToolExecutor {
 
     // ADR-022 第二期 · 崩溃重放：工具放行后即将真正执行，落 begin 生命周期事件；
     // 执行返回/抛错时落 complete。崩溃发生在两者之间 → 留下未闭合 begin = 现场。全程 fail-safe。
-    const executionId = randomUUID();
-    const ledgerParams = sanitizeToolParams(params);
-    const execSummary = String(
-      ledgerParams.command
-      || ledgerParams.file_path
-      || ledgerParams.path
-      || ledgerParams.pattern
-      || executionToolName,
-    ).substring(0, 80);
-    let execCompleteRecorded = false;
-    const recordExecComplete = (status: string, error?: string): void => {
-      if (execCompleteRecorded) return;
-      execCompleteRecorded = true;
-      try {
-        getDatabase().appendToolExecutionComplete({
-          executionId,
-          toolName: executionToolName,
-          status,
-          error: error ? redactSecrets(error) : undefined,
-          sessionId: effectiveSessionId,
-          recordedAt: Date.now(),
-        });
-      } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
-    };
+    const executionLedger = createToolExecutionLedger({
+      toolName: executionToolName,
+      sessionId: effectiveSessionId,
+      params,
+      startedAt: startTime,
+    });
+    const { executionId } = executionLedger;
     try {
       if (writeIsolationScope) {
         const waitStart = Date.now();
@@ -1018,30 +908,16 @@ export class ToolExecutor {
         args: params,
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
-      try {
-        getDatabase().appendToolExecutionBegin({
-          executionId, sessionId: effectiveSessionId, toolName: executionToolName,
-          summary: execSummary, params: ledgerParams, recordedAt: startTime,
-        });
-      } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
-      const durableRegistry = effectiveRunId ? getConfiguredApplicationRunRegistry() : null;
-      const durableActive = Boolean(effectiveRunId && durableRegistry?.hasDurableOwner(effectiveRunId));
-      const durableSourceMessageId = durableActive && effectiveSessionId
-        ? [...getDatabase().getMessages(effectiveSessionId)].reverse().find((message) => message.role === 'user')?.id
-        : undefined;
-      if (effectiveRunId && durableRegistry && durableActive) {
-        if (!durableSourceMessageId) throw new Error('Native Durable tool checkpoint requires a stable source message id');
-        await durableRegistry.checkpointNativeToolOperation({
-          runId: effectiveRunId,
-          sourceMessageId: durableSourceMessageId,
-          toolName: executionToolName,
-          logicalOperationId: options.currentToolCallId ?? executionId,
-          providerOperationId: executionId,
-          sideEffect: toolDef.permissionLevel !== 'read' && !(toolDef.permissionLevel === 'network' && toolDef.readOnly === true),
-          status: 'dispatched',
-          now: startTime,
-        });
-      }
+      executionLedger.begin();
+      const durableCheckpoint = await prepareNativeToolCheckpoint({
+        runId: effectiveRunId,
+        sessionId: effectiveSessionId,
+        toolName: executionToolName,
+        toolDefinition: toolDef,
+        toolCallId: options.currentToolCallId,
+        executionId,
+        startedAt: startTime,
+      });
       const delegatedResult = this.dispatchTool
         ? await this.dispatchTool(executionToolName, params, context, options)
         : null;
@@ -1100,24 +976,13 @@ export class ToolExecutor {
         });
       }
 
-      recordExecComplete(result.success ? 'success' : 'error', result.error);
-      if (effectiveRunId && durableRegistry && durableActive && durableSourceMessageId) {
-        await durableRegistry.checkpointNativeToolOperation({
-          runId: effectiveRunId,
-          sourceMessageId: durableSourceMessageId,
-          toolName: executionToolName,
-          logicalOperationId: options.currentToolCallId ?? executionId,
-          providerOperationId: executionId,
-          sideEffect: toolDef.permissionLevel !== 'read' && !(toolDef.permissionLevel === 'network' && toolDef.readOnly === true),
-          status: result.success ? 'succeeded' : 'failed',
-          resultRef: `tool-ledger:${executionId}`,
-        });
-      }
+      executionLedger.complete(result.success ? 'success' : 'error', result.error);
+      await durableCheckpoint.complete(result.success);
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
-      recordExecComplete('error', error instanceof Error ? error.message : 'Unknown error');
+      executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');
 
       // Audit logging for errors
       if (this.auditEnabled) {

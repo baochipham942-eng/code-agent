@@ -17,10 +17,12 @@ describe('GraphEvent compatibility wiring', () => {
 
   it('routes Agent Team Graph events and its legacy facade through the same sink', () => {
     const facade = read('src/host/agent/multiagentTools/spawnAgent.ts');
+    const compatibility = read('src/host/agent/agentTeamGraphCompatibility.ts');
     const coordinator = read('src/host/agent/parallelAgentCoordinator.ts');
-    expect(facade).toContain('new GraphEventCompatibilityAdapter');
-    expect(facade).toMatch(/executeParallel\(tasks, compatibility\)/);
-    expect(facade).toContain('await compatibility.flushTerminals()');
+    expect(compatibility).toContain('new GraphEventCompatibilityAdapter');
+    expect(facade).toContain('createAgentTeamGraphCompatibility');
+    expect(facade).toMatch(/executeParallel\(tasks, compatibility\.adapter\)/);
+    expect(facade).toContain('await compatibility.adapter.flushTerminals()');
     expect(coordinator).toContain('emit: (event) => compatibilitySink.emit(event)');
     expect(coordinator).not.toContain("this.emit('task:start', { taskId: task.id, role: task.role });\n      // Inject shared context");
   });

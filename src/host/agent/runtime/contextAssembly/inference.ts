@@ -36,7 +36,6 @@ import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, typ
 import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../model/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
-import { getTelemetryService } from '../../../telemetry/telemetryService';
 import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
@@ -74,8 +73,8 @@ import {
   isArtifactRepairWritePriority,
   startArtifactModelWaitProgress,
 } from './inferenceArtifactRepair';
-import { getConfiguredApplicationRunRegistry } from '../../../app/applicationRunRegistry';
-import { createHash } from 'node:crypto';
+import { checkpointNativeModel } from './nativeModelCheckpoint';
+import { runInferenceWithTelemetry } from './inferenceTelemetry';
 // provider fallback 机制已抽到 inferenceProviderFallback.ts；以下两个为历史公开导出，
 // 测试从本模块取，保持 re-export 兼容。
 export { buildAiSdkAdaptiveFallbackInfo, runAiSdkInferenceWithProviderFallback };
@@ -140,31 +139,6 @@ function runEngineInference(
     return runAiSdkInferenceWithProviderFallback(messages, tools, effectiveConfig, onStream, signal, options);
   }
   return ctx.runtime.modelRouter.inference(messages, tools, effectiveConfig, onStream, signal, options);
-}
-
-async function checkpointNativeModel(
-  ctx: ContextAssemblyCtx,
-  config: ModelConfig,
-  phase: 'before_model_dispatch' | 'after_model_dispatch',
-  status: 'prepared' | 'dispatched' | 'succeeded',
-): Promise<void> {
-  const runId = ctx.runtime.runId;
-  const registry = getConfiguredApplicationRunRegistry();
-  if (!runId || !registry?.hasDurableOwner(runId)) return;
-  const sourceMessageId = [...ctx.runtime.messages].reverse().find((message) => message.role === 'user')?.id;
-  if (!sourceMessageId) throw new Error('Native Durable model checkpoint requires a stable source message id');
-  await registry.checkpointNativeModelOperation({
-    runId,
-    sourceMessageId,
-    provider: config.provider,
-    model: config.model,
-    logicalOperationId: ctx.runtime.currentTurnId,
-    phase,
-    status,
-    ...(status === 'succeeded' ? {
-      resultRef: `model-result:${createHash('sha256').update(`${runId}:${ctx.runtime.currentTurnId}:${config.provider}:${config.model}`).digest('hex')}`,
-    } : {}),
-  });
 }
 
 /**
@@ -398,59 +372,7 @@ async function runMaxModeInference(
 }
 
 export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse> {
-  const startedAt = Date.now();
-  let modelSpanId: string | undefined;
-  ctx.runtime.lastModelTraceSpanId = undefined;
-  try {
-    const turnSpan = getTelemetryService().findActiveSpanByAttribute('agent.id', ctx.runtime.currentTurnId);
-    const modelSpan = getTelemetryService().startModelSpan(
-      ctx.runtime.modelConfig.model,
-      ctx.runtime.modelConfig.provider,
-      turnSpan?.spanId,
-    );
-    modelSpanId = modelSpan.spanId;
-    ctx.runtime.lastModelTraceSpanId = modelSpanId;
-    getTelemetryService().updateSpan(modelSpanId, {
-      'model.request_protocol': 'agent-loop',
-      'model.retry_count': ctx.runtime._networkRetryCount ?? 0,
-    });
-  } catch {
-    // Model execution is independent from tracing availability.
-  }
-
-  try {
-    const response = await inferenceInternal(ctx);
-    if (modelSpanId) {
-      try {
-        getTelemetryService().endSpan(modelSpanId, 'ok', {
-          'model.provider': response.actualProvider ?? response.fallback?.to.provider ?? ctx.runtime.modelConfig.provider,
-          'model.name': response.actualModel ?? response.fallback?.to.model ?? ctx.runtime.modelConfig.model,
-          'model.input_tokens': response.usage?.inputTokens ?? 0,
-          'model.output_tokens': response.usage?.outputTokens ?? 0,
-          'model.latency_ms': Date.now() - startedAt,
-          'model.result_status': 'success',
-        });
-      } catch {
-        // Model execution is independent from tracing availability.
-      }
-    }
-    return response;
-  } catch (error) {
-    if (modelSpanId) {
-      const message = error instanceof Error ? error.message : String(error);
-      const cancelled = ctx.runtime.isCancelled || ctx.runtime.isInterrupted || /cancel|abort/i.test(message);
-      const timedOut = /timeout|timed out|超时/i.test(message);
-      try {
-        getTelemetryService().endSpan(modelSpanId, cancelled ? 'cancelled' : 'error', {
-          'model.latency_ms': Date.now() - startedAt,
-          'model.result_status': timedOut ? 'timeout' : cancelled ? 'cancelled' : 'error',
-        });
-      } catch {
-        // Model execution is independent from tracing availability.
-      }
-    }
-    throw error;
-  }
+  return runInferenceWithTelemetry(ctx, () => inferenceInternal(ctx));
 }
 
 async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse> {

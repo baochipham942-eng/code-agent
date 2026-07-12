@@ -12,7 +12,6 @@
 // ============================================================================
 
 import { randomUUID } from 'crypto';
-import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../subagentExecutor';
 import {
@@ -51,7 +50,6 @@ import {
   inferAgentFailureCode,
 } from '../../../shared/contract/agentFailure';
 import { isParentRunAlive } from '../orphanLiveness';
-import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
 import {
   createAgentWorktree,
   cleanupAgentWorktree,
@@ -73,16 +71,17 @@ import {
   createCoordinatorSession,
 } from '../coordinatorMode';
 import {
-  getAgentTeamDurableRuntime,
-  agentTeamTaskPermissionProfile,
-  stableAgentTeamApprovalId,
   stableAgentTeamRunId,
 } from '../agentTeamDurableAdapter';
 import { withRunTraceContext } from '../../telemetry/runTraceContext';
 import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
-import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCompatibilityAdapter';
+import { createAgentTeamGraphCompatibility } from '../agentTeamGraphCompatibility';
+import {
+  requestDurableAgentTeamLaunchApproval,
+  prepareAgentTeamDurableController,
+} from '../agentTeamDurableLaunch';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -857,26 +856,12 @@ async function executeParallelAgents(
     }
   }
 
-  let durableController: AgentTeamDurableController;
-  try {
-    durableController = await getAgentTeamDurableRuntime().start({
-      scope: runScope,
-      parentRunId: parentNativeRunId,
-      logicalOperationId,
-      sideEffect: tasks.some((task) => agentTeamTaskPermissionProfile(task) !== 'readonly'),
-      tasks,
-      model: {
-        provider: String((context.modelConfig as ModelConfig).provider),
-        model: String((context.modelConfig as ModelConfig).model),
-      },
-    });
-  } catch (error) {
-    return {
-      success: false,
-      error: `Agent Team durable preparation failed: ${error instanceof Error ? error.message : String(error)}`,
-      metadata: { failureCode: AgentFailureCode.ModelError },
-    };
-  }
+  const durablePreparation = await prepareAgentTeamDurableController({
+    scope: runScope, parentRunId: parentNativeRunId, logicalOperationId, tasks,
+    modelConfig: context.modelConfig,
+  });
+  if ('result' in durablePreparation) return durablePreparation.result;
+  const durableController: AgentTeamDurableController = durablePreparation.controller;
 
   // ========================================================================
   // Coordinator Mode: 3+ agent 时自动激活任务编排
@@ -899,7 +884,6 @@ async function executeParallelAgents(
     }
   }
 
-  const launchGate = getSwarmLaunchApprovalGate();
   const cancelledBeforeApproval = getParallelCancellationResult();
   if (cancelledBeforeApproval) {
     await durableController.cancel('parent-cancel');
@@ -927,38 +911,19 @@ async function executeParallelAgents(
     await durableController.terminal('failed', error instanceof Error ? error.message : String(error));
     throw error;
   }
-  const cancelPendingLaunch = () => {
-    const reason = normalizeCancellationReason(context.abortSignal?.reason, 'parent-cancel');
-    launchGate.cancelRun(runScope, reason);
-  };
-  context.abortSignal?.addEventListener('abort', cancelPendingLaunch, { once: true });
   let launchApproval;
-  const approvalId = stableAgentTeamApprovalId(runScope.runId);
   try {
-    await durableController.markApprovalWaiting(approvalId);
-    launchApproval = await launchGate.requestApproval({
+    launchApproval = await requestDurableAgentTeamLaunchApproval({
+      controller: durableController,
       scope: runScope,
-      requestId: approvalId,
-      summary: `准备并行启动 ${tasks.length} 个 agent`,
-      tasks: tasks.map((task) => ({
-        id: task.id,
-        role: task.role,
-        task: task.task.replace(/^\[工作目录:[^\]]+\]\s*所有文件路径基于此目录。\n\n/, ''),
-        dependsOn: task.dependsOn,
-        tools: [...task.tools],
-        writeAccess: !READONLY_ROLES.includes(task.role.toLowerCase()),
-      })),
+      tasks,
+      readonlyRoles: READONLY_ROLES,
+      abortSignal: context.abortSignal,
     });
-    await durableController.resolveApproval(
-      approvalId,
-      launchApproval.approved ? 'approved' : 'rejected',
-    );
   } catch (error) {
     coordinatorRegistry.finalize(runScope, 'failed');
     await durableController.terminal('failed', error instanceof Error ? error.message : String(error));
     throw error;
-  } finally {
-    context.abortSignal?.removeEventListener('abort', cancelPendingLaunch);
   }
 
   const cancelledAfterApproval = getParallelCancellationResult();
@@ -1006,46 +971,7 @@ async function executeParallelAgents(
     }
   }
 
-  let terminalProjection: {
-    cancelled: boolean;
-    result: Awaited<ReturnType<typeof coordinator.executeParallel>>;
-    aggregation: ReturnType<typeof aggregateTeamResults>;
-  } | undefined;
-  const compatibility = new GraphEventCompatibilityAdapter({
-    graph: (event) => {
-      if (event.type === 'graph_started') emitter.started(runScope, tasks.length);
-      if (event.type === 'node_queued' && event.nodeId) {
-        const task = tasks.find((candidate) => candidate.id === event.nodeId);
-        if (task) emitter.agentAdded(runScope, { id: task.id, name: task.role, role: task.role });
-      }
-      if (event.type === 'graph_completed' || event.type === 'graph_failed' || event.type === 'graph_cancelled') {
-        if (!terminalProjection || terminalProjection.cancelled || event.type === 'graph_cancelled') {
-          emitter.cancelled(runScope);
-          return;
-        }
-        const { result, aggregation } = terminalProjection;
-        emitter.completedWithAggregation(runScope, {
-          total: tasks.length,
-          completed: result.results.filter(r => r.success).length,
-          failed: result.results.filter(r => !r.success).length,
-          parallelPeak: result.parallelism,
-          totalTime: result.totalDuration,
-        }, {
-          summary: aggregation.summary,
-          filesChanged: aggregation.filesChanged,
-          totalCost: aggregation.totalCost,
-          totalDuration: aggregation.totalDuration,
-          speedup: aggregation.speedup,
-          successRate: aggregation.successRate,
-          totalIterations: aggregation.totalIterations,
-        });
-      }
-    },
-    diagnostic: (error, event, target) => console.warn(
-      `[SpawnAgent] Graph compatibility projection failed (${target}, ${event.graphId})`,
-      error,
-    ),
-  }, { deferTerminals: true });
+  const compatibility = createAgentTeamGraphCompatibility({ emitter, scope: runScope, tasks });
 
   // Bridge coordinator events to swarm events + coordinator session tracking
   const onTaskStart = (evt: { taskId: string; role: string }) => {
@@ -1140,8 +1066,8 @@ async function executeParallelAgents(
   let terminalStatus: ParallelCoordinatorTerminalStatus | undefined;
   try {
     const result = durableController.traceContext
-      ? await withRunTraceContext(durableController.traceContext, () => coordinator.executeParallel(tasks, compatibility))
-      : await coordinator.executeParallel(tasks, compatibility);
+      ? await withRunTraceContext(durableController.traceContext, () => coordinator.executeParallel(tasks, compatibility.adapter))
+      : await coordinator.executeParallel(tasks, compatibility.adapter);
 
     // Aggregate results
     const aggregation = aggregateTeamResults(result.results, result.totalDuration);
@@ -1150,11 +1076,11 @@ async function executeParallelAgents(
     const wasCancelled = Boolean(context.abortSignal?.aborted)
       || result.results.some((taskResult) => taskResult.cancelled || isCancelledTaskError(taskResult.error))
       || result.errors.some((error) => isCancelledTaskError(error.error));
-    terminalProjection = { cancelled: wasCancelled, result, aggregation };
+    compatibility.setTerminalProjection({ cancelled: wasCancelled, result, aggregation });
 
     if (wasCancelled) {
       terminalStatus = 'cancelled';
-      await compatibility.flushTerminals();
+      await compatibility.adapter.flushTerminals();
       return {
         success: false,
         error: `Parallel execution cancelled: ${result.errors.length} tasks did not complete.`,
@@ -1174,7 +1100,7 @@ async function executeParallelAgents(
     }
 
     terminalStatus = result.success ? 'completed' : 'failed';
-    await compatibility.flushTerminals();
+    await compatibility.adapter.flushTerminals();
 
     // Format output for main agent (richer than before)
     const agentSummaries = aggregation.agentResults.map((entry) => {
@@ -1261,7 +1187,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     }
   } catch (error) {
     terminalStatus = context.abortSignal?.aborted ? 'cancelled' : 'failed';
-    await compatibility.flushTerminals();
+    await compatibility.adapter.flushTerminals();
     return {
       success: false,
       error: `Parallel execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

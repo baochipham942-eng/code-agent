@@ -25,6 +25,10 @@ const SPAWN_AGENT_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/multiagentTools/spawnAgent.ts',
 );
+const DURABLE_LAUNCH_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/agentTeamDurableLaunch.ts',
+);
 const TOOL_TYPES_PATH = path.resolve(
   __dirname,
   '../../../src/host/tools/types.ts',
@@ -51,7 +55,8 @@ const EXECUTION_CONTEXT_PATH = path.resolve(
 );
 
 describe('executeSpawnAgent 深度截断接线', () => {
-  const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
+const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
+const durableLaunchSource = readFileSync(DURABLE_LAUNCH_PATH, 'utf8');
 
   it('ToolContext 暴露 spawnDepth 字段', () => {
     const types = readFileSync(TOOL_TYPES_PATH, 'utf8');
@@ -119,15 +124,15 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(checks.length).toBeGreaterThanOrEqual(2);
     expect(source).toMatch(/Spawn cancelled before agent registration/);
     expect(source).toMatch(
-      /cancelledBeforeApproval\s*=\s*getParallelCancellationResult\(\)[\s\S]*?launchGate\.requestApproval\(/,
+      /cancelledBeforeApproval\s*=\s*getParallelCancellationResult\(\)[\s\S]*?requestDurableAgentTeamLaunchApproval\(/,
     );
     expect(source).toMatch(
-      /launchGate\.requestApproval\([\s\S]*?cancelledAfterApproval\s*=\s*getParallelCancellationResult\(\)/,
+      /requestDurableAgentTeamLaunchApproval\([\s\S]*?cancelledAfterApproval\s*=\s*getParallelCancellationResult\(\)/,
     );
-    expect(source).toMatch(
+    expect(durableLaunchSource).toMatch(
       /addEventListener\(['"]abort['"],\s*cancelPendingLaunch[\s\S]*?launchGate\.requestApproval/,
     );
-    expect(source).toMatch(/launchGate\.cancelRun\(runScope,\s*reason\)/);
+    expect(durableLaunchSource).toMatch(/launchGate\.cancelRun\(input\.scope,\s*reason\)/);
   });
 
   it('同角色并发 spawn 使用 UUID identity，register 失败会终止已启动 executor', () => {

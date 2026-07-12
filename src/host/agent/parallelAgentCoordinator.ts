@@ -75,6 +75,7 @@ import {
 } from './parallelAgentCoordinatorResults';
 import type { AgentTeamDurableController, AgentTeamCheckpointState } from './agentTeamDurableTypes';
 import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
+import { restoreParallelAgentDurableState } from './parallelAgentDurableRecovery';
 import {
   DAGGraphSchedulerAdapter,
   GraphEventCompatibilityAdapter,
@@ -773,48 +774,15 @@ export class ParallelAgentCoordinator extends EventEmitter {
     decision: AgentTeamRecoveryDecision,
     ownerEpoch?: number,
   ): void {
-    const scope = this.scope;
-    if (!scope || !isSameRunScope(scope, state.scope)) {
-      throw new Error('Durable Agent Team checkpoint scope does not match coordinator scope');
-    }
-    this.taskDefinitions.clear();
-    this.completedTasks.clear();
-    this.messageQueues.clear();
-    for (const node of state.taskGraph) {
-      const task: AgentTask = {
-        id: node.id,
-        role: node.role,
-        task: node.task,
-        tools: [...node.tools],
-        dependsOn: [...node.dependsOn],
-      };
-      this.taskDefinitions.set(node.id, task);
-      const pendingMessages = state.mailbox.pending
-        .filter((message) => message.agentId === node.id && message.treeId === state.treeId)
-        .filter((message) => !state.mailbox.consumedMessageIds.includes(message.id))
-        .sort((left, right) => left.seq - right.seq);
-      this.messageQueues.set(node.id, pendingMessages.map((message) => ({
-        id: message.id,
-        seq: message.seq,
-        type: message.type as AgentMessage['type'],
-        from: message.from,
-        payload: message.body,
-        timestamp: message.createdAt,
-      })));
-      const nodeDecision = decision.nodes.find((candidate) => candidate.nodeId === node.id);
-      if (nodeDecision?.classification === 'reuse_completed' && node.result) {
-        this.completedTasks.set(node.id, { ...node.result, toolsUsed: [...node.result.toolsUsed] });
-      }
-    }
+    const restored = restoreParallelAgentDurableState({ scope: this.scope, state, decision });
+    this.taskDefinitions = restored.taskDefinitions;
+    this.completedTasks = restored.completedTasks;
+    this.messageQueues = restored.messageQueues;
     this.clearSharedContext();
-    this.importSharedContext({
-      findings: state.findings,
-      decisions: state.decisions,
-      errors: state.errors,
-    });
-    this.cancelled = state.cancelled;
-    this.cancelReason = state.cancelled ? 'parent-cancel' : 'cancelled';
-    this.graphCheckpoint = state.graphCheckpoint ? structuredClone(state.graphCheckpoint) : undefined;
+    this.importSharedContext(restored.sharedContext);
+    this.cancelled = restored.cancelled;
+    this.cancelReason = restored.cancelReason;
+    this.graphCheckpoint = restored.graphCheckpoint;
     if (ownerEpoch !== undefined) this.durableOwnerEpoch = ownerEpoch;
   }
 

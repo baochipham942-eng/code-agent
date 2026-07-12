@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.4] - 2026-07-12
+
+### Added
+
+- **本地能力首次使用按需安装**：arm64 首次开启语音输入时只下载 `onnxruntime-vad`，首次调用浏览器自动化时只下载 `playwright-browser-runtime`；普通用户可在更新设置中查看状态、下载进度并失败重试。
+
+### Fixed
+
+- **双架构 runtime-assets 正式分发**：macOS arm64 发布 VAD 与 Playwright，x64 发布 Playwright；两侧 manifest、sha256 和 archive 独立签名、上传、验证并写入 `stable/release.json`。
+- **Intel VAD 诊断语义**：darwin-x64 的 VAD 明确显示“不适用”，不再计入 missing 或阻断 renderer 热更新。
+- **发布门禁**：正式 tag 不再因缺失 `ENABLE_RUNTIME_ASSETS_PUBLISH` 仓库变量而静默跳过组件分发；发布后验证会分别检查 arm64/x64 `/api/update` 的可信 runtime-assets metadata。
+
 ## [0.26.3] - 2026-07-12
 
 ### Fixed

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-12
+
+### Added
+
+- **Durable Run Kernel 与进程级恢复**：核心运行状态、owner fencing、checkpoint 和恢复分发进入统一持久化内核；应用重启后可以按可证明的副作用状态继续、观察或转人工复核。
+- **统一多 Agent 执行协议**：Agent Team、Auto Agent、Multiagent 与动态工作流共享执行端口、身份关联和恢复语义，减少不同编排入口在崩溃恢复时的行为分叉。
+- **外部 CLI durable lifecycle**：Codex、Claude 等外部 CLI 运行记录可持久化 provider operation、恢复证据和 resume 参数；证据不足时保持人工复核边界，不盲目重放。
+- **MCP durable task 与可信工具缓存**：支持可查询的异步 MCP task、结果文件存储和 proven tool cache；只在结果身份、工具能力与允许范围可证明时复用。
+- **Unified Graph Runner**：任务 DAG、动态工作流、外部引擎和子 Agent 统一接入 Graph Runner，并通过集中的 GraphEvent compatibility sink 兼容既有消费者。
+- **OTel run trace**：run、operation、tool 与恢复链路传播统一 trace context，便于定位跨进程和跨执行器问题。
+
+### Changed
+
+- **启动恢复与生产读路径切换**：应用启动期会恢复可安全接管的 durable run，生产查询优先读取 durable 状态，并保留受控回退与 rollback round-trip 验证。
+- **恢复策略更保守**：未知写副作用、外部 CLI resume 证据缺失、工作区或模型工具漂移等场景会进入 `requires_review`，避免重复执行。
+
+### Fixed
+
+- **symlink 越界写入防护**：文件、目录及尚不存在目标经过 symlink 指向工作区外时统一要求确认，避免路径表象绕过权限边界。
+- **double ESC cancel 去重**：同步取消标记在请求传播前立即生效，连续 ESC 不会重复触发 cancel fan-out。
+
 ## [0.25.1] - 2026-07-11
 
 ### Changed

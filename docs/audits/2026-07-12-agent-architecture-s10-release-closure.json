@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "candidateSha": "4730310db17b701b7ec4dd1b3dcfb770e112b1c5",
+  "mainBeforeS10": "5039d37b9a883ddb22d727bacc0bbb16a7790022",
+  "mainAfterS10": "4730310db17b701b7ec4dd1b3dcfb770e112b1c5",
+  "status": "PASS",
+  "verification": {
+    "typecheck": { "exitCode": 0, "passed": true },
+    "build": { "exitCode": 0, "passed": true },
+    "productClosure": {
+      "exitCode": 0,
+      "passed": true,
+      "filesPassed": 15,
+      "testsPassed": 134
+    },
+    "fullVitest": {
+      "exitCode": 0,
+      "success": true,
+      "totalSuites": 4747,
+      "passedSuites": 4747,
+      "failedSuites": 0,
+      "pendingSuites": 0,
+      "totalTests": 13100,
+      "passedTests": 13042,
+      "failedTests": 0,
+      "pendingTests": 3,
+      "todoTests": 55
+    }
+  },
+  "durableAcceptance": {
+    "pass": true,
+    "testedSha": "4730310db17b701b7ec4dd1b3dcfb770e112b1c5",
+    "baselineSha": "2548c7b1cc457485c06303cd6a6e7ba4a7092b8c",
+    "scenarioCount": 14,
+    "scenarios": [
+      { "scenarioId": "before-model-dispatch", "pass": true },
+      { "scenarioId": "after-model-response-queryable", "pass": true },
+      { "scenarioId": "after-model-response-safe-retry", "pass": true },
+      { "scenarioId": "between-tool-begin-end-deduplicated", "pass": true },
+      { "scenarioId": "between-tool-begin-end-unknown-write", "pass": true },
+      { "scenarioId": "approval-waiting", "pass": true },
+      { "scenarioId": "child-agent-running", "pass": true },
+      { "scenarioId": "dynamic-workflow", "pass": true },
+      { "scenarioId": "dynamic-workflow-drift", "pass": true },
+      { "scenarioId": "agent-team-auto-agent", "pass": true },
+      { "scenarioId": "external-engine-resumable", "pass": true },
+      { "scenarioId": "external-engine-non-resumable", "pass": true },
+      { "scenarioId": "mcp-durable-task-queryable", "pass": true },
+      { "scenarioId": "mcp-durable-task-unknown", "pass": true }
+    ],
+    "gateCount": 9,
+    "gates": {
+      "allKillPointsPassed": true,
+      "noDuplicateSideEffects": true,
+      "staleOwnersFenced": true,
+      "terminalUnique": true,
+      "reviewBoundariesPreserved": true,
+      "rollbackRoundTripPassed": true,
+      "realProcessEvidence": true,
+      "productionExecutorRecovery": true,
+      "productionReadPreferenceWiring": true
+    }
+  },
+  "architectureDebt": {
+    "sourceFileCount": 2536,
+    "physicalOverLimit": 56,
+    "effectiveOverLimit": 1,
+    "effectiveOverLimitNotWhitelisted": 0,
+    "whitelistCount": 1,
+    "whitelistMissingFromSource": 0
+  },
+  "securityBoundaries": {
+    "seatbeltHost": { "success": true, "passedTests": 5, "failedTests": 0 },
+    "permissionClassifier": { "success": true, "passedTests": 20, "failedTests": 0 },
+    "permissionSymlinkBoundaries": {
+      "pass": true,
+      "testedSha": "4730310db17b701b7ec4dd1b3dcfb770e112b1c5",
+      "results": [
+        { "name": "symlink-file", "decision": "ask" },
+        { "name": "symlink-directory", "decision": "ask" },
+        { "name": "nonexistent-target-through-symlink", "decision": "ask" }
+      ]
+    }
+  },
+  "sourceArtifacts": [
+    { "file": "code-agent-s10-completion-evidence.json", "sha256": "994e95e74122be76b80caaba249754faa46bd0ea35ff471b2eccdc5733dfa3e8" },
+    { "file": "code-agent-s10-durable-acceptance.json", "sha256": "9a370bc55ab928e4dfb87520ea22c51b7981290f33af2952d2fd8a31ebd01e3e" },
+    { "file": "code-agent-s10-architecture-debt.json", "sha256": "c29566f6a5eced0a08744cc9b6bff5d6608a5456ceb6dac3a42d55703f90d3fb" },
+    { "file": "code-agent-s10-full-vitest.json", "sha256": "429790232227fba4ce1a506478b1cb09241446c53e49c0f24bf1995ca0692d4a" },
+    { "file": "code-agent-s10-seatbelt-host.json", "sha256": "ce9832b1727978d2a32daf659caa41b4b3b803c0816fde301bdfb21d909f00ab" },
+    { "file": "code-agent-s10-permission-classifier.json", "sha256": "caf7275ab5a133af3c3210d182fcbf2357a04b0b6a811a7184f2be9c45df3b70" },
+    { "file": "code-agent-s10-permission-symlink-boundaries.json", "sha256": "c4846e8e5e558fe3e250454617487ef3167666791932f75805c0a0c7c929ea39" }
+  ],
+  "generatedAt": "2026-07-12T06:32:56.431Z"
+}

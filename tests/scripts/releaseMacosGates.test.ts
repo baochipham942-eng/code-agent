@@ -342,6 +342,8 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('rollout_percent:');
     expect(workflow).toContain('dry_run:');
     expect(workflow).toContain('RENDERER_BUNDLE_DRY_RUN:');
+    expect(workflow).toContain("group: renderer-bundle-publish-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_channel || 'latest' }}");
+    expect(workflow).toContain('cancel-in-progress: false');
     expect(workflow).toContain('CONTROL_PLANE_SMOKE_TOKEN:');
     expect(workflow).toContain('TAG_VERSION="${GITHUB_REF_NAME#v}"');
     expect(workflow).toContain('Renderer bundle version ${VERSION} does not match tag ${GITHUB_REF_NAME}.');
@@ -372,6 +374,12 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('--retry-attempts 12');
     expect(workflow).toContain('--retry-delay-ms 30000');
     expect(workflow).toContain('npm run renderer:verify-production -- "${PROD_ARGS[@]}"');
+    const uploadStep = readWorkflow('.github/workflows/renderer-bundle.yml')
+      .jobs?.['publish-renderer-bundle']?.steps
+      ?.find((step) => step.name === 'Upload renderer bundle to Aliyun OSS');
+    const uploadRun = uploadStep?.run ?? '';
+    expect(uploadRun.lastIndexOf('"${CHANNEL_TARGET}/manifest.json"'))
+      .toBeGreaterThan(uploadRun.lastIndexOf('"${CHANNEL_TARGET}/release-record.json"'));
     expect(workflow).toContain('rollback_to_builtin');
     expect(workflow).toContain('--rollback-to-builtin');
     expect(workflow).toContain('--rollback-reason');

@@ -31,6 +31,66 @@ function fileSha256(filePath) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
+function compareArchiveEntryNames(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function collectRendererArchiveEntries(rendererDir, relativeDir = '') {
+  const absoluteDir = path.join(rendererDir, relativeDir);
+  const entries = [];
+  for (const name of fs.readdirSync(absoluteDir).sort(compareArchiveEntryNames)) {
+    const relativePath = relativeDir ? path.join(relativeDir, name) : name;
+    const absolutePath = path.join(rendererDir, relativePath);
+    const stat = fs.lstatSync(absolutePath);
+    if (stat.isDirectory()) {
+      entries.push(...collectRendererArchiveEntries(rendererDir, relativePath));
+    } else if (stat.isFile() || stat.isSymbolicLink()) {
+      entries.push(relativePath);
+    } else {
+      throw new Error(`createDeterministicRendererArchive: unsupported entry type: ${absolutePath}`);
+    }
+  }
+  return entries;
+}
+
+export function createDeterministicRendererArchive({ rendererDir, archivePath }) {
+  if (!archivePath.endsWith('.tar.gz')) {
+    throw new Error('createDeterministicRendererArchive: archivePath must end with .tar.gz');
+  }
+  const entries = collectRendererArchiveEntries(rendererDir);
+  if (entries.length === 0) {
+    throw new Error('createDeterministicRendererArchive: renderer directory is empty');
+  }
+
+  // Formal main + tag pushes can start two renderer workflows for the same SHA.
+  // Normalize archive metadata so both publishers produce the same contentHash.
+  const epoch = new Date(0);
+  for (const relativePath of entries) {
+    const absolutePath = path.join(rendererDir, relativePath);
+    const stat = fs.lstatSync(absolutePath);
+    if (stat.isSymbolicLink() && typeof fs.lutimesSync === 'function') {
+      fs.lutimesSync(absolutePath, epoch, epoch);
+    } else if (!stat.isSymbolicLink()) {
+      fs.utimesSync(absolutePath, epoch, epoch);
+    }
+  }
+
+  const tarPath = archivePath.slice(0, -3);
+  fs.rmSync(tarPath, { force: true });
+  fs.rmSync(archivePath, { force: true });
+  const tarArgs = ['--format=ustar'];
+  if (process.platform === 'linux') {
+    tarArgs.push('--owner=0', '--group=0', '--numeric-owner');
+  }
+  tarArgs.push('-cf', tarPath, '-C', rendererDir, ...entries);
+  execFileSync('tar', tarArgs, {
+    stdio: 'inherit',
+    env: { ...process.env, COPYFILE_DISABLE: '1' },
+  });
+  // `tar -z` embeds the current time on bsdtar. gzip -n fixes the gzip header.
+  execFileSync('gzip', ['-n', '-f', tarPath], { stdio: 'inherit' });
+}
+
 /**
  * 构建 renderer bundle manifest（RendererBundleManifest 形状）。
  * contentHash = bundle.tar.gz 的 sha256；minShellVersion 默认等于 bundle 版本
@@ -277,9 +337,9 @@ function main() {
     throw new Error(`renderer build output missing index.html: ${rendererDir}`);
   }
 
-  // 2. tar(dist/renderer 内容到根) → output/bundle.tar.gz
+  // 2. deterministic tar(dist/renderer 内容到根) → output/bundle.tar.gz
   const archivePath = path.join(outputDir, 'bundle.tar.gz');
-  execFileSync('tar', ['-czf', archivePath, '-C', rendererDir, '.'], { stdio: 'inherit' });
+  createDeterministicRendererArchive({ rendererDir, archivePath });
 
   // 3. manifest + sha256 + shell capability contract
   const detectedShellCapabilities = detectShellCapabilities

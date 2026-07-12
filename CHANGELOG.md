@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-07-12
+
+### Fixed
+
+- **正式发布的 renderer 热更新一致性**：相同源码现在生成确定性的 renderer bundle；同一发布通道的 OSS writer 串行执行，并以 manifest 作为最后写入的完成标志，避免 main 与 tag 两条 workflow 竞争时混合不同 bundle hash。
+- **v0.26.0 发布恢复**：此版本承接 `v0.26.0` 已推 tag 但未创建 GitHub Release 的失败现场，不覆盖或重发原 tag。
+
 ## [0.26.0] - 2026-07-12
 
 ### Added

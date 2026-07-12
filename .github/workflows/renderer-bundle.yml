@@ -197,6 +197,12 @@ jobs:
   publish-renderer-bundle:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
+    # release:neo pushes main and the formal tag back-to-back. Both events can
+    # target latest/, so keep one OSS writer per channel and never cancel a
+    # publisher after it may have started replacing the object set.
+    concurrency:
+      group: renderer-bundle-publish-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_channel || 'latest' }}
+      cancel-in-progress: false
     # 兜底：缺控制面签名 key 时整个 job 跳过（build-renderer-bundle 非 dry-run 会 fail closed）。
     # 与 release.yml runtime-assets 同样的「key 未配置即不发布」安全默认。
     env:
@@ -398,26 +404,26 @@ jobs:
           chmod 600 ~/.ossutilconfig
 
           # 先传版本快照（不可变归档），再覆盖 latest/（客户端入口）。
-          # 顺序保证 latest 指向的两个文件总是配套的（manifest 与 bundle 同时刷新）。
+          # manifest 最后写，作为配套 bundle/release-record 已就绪的 commit marker。
           SNAP="oss://${ALIYUN_OSS_BUCKET}/${SNAPSHOT_PATH}"
           CHANNEL_TARGET="oss://${ALIYUN_OSS_BUCKET}/${BUNDLE_PATH}"
           if [ "${ROLLBACK_TO_BUILTIN}" = "true" ]; then
-            ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
             ossutil cp -f dist/renderer-bundle/release-record.json "${SNAP}/release-record.json"
             ossutil cp -f dist/renderer-bundle/release-record.md "${SNAP}/release-record.md"
-            ossutil cp -f dist/renderer-bundle/manifest.json "${CHANNEL_TARGET}/manifest.json"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
             ossutil cp -f dist/renderer-bundle/release-record.json "${CHANNEL_TARGET}/release-record.json"
             ossutil cp -f dist/renderer-bundle/release-record.md "${CHANNEL_TARGET}/release-record.md"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${CHANNEL_TARGET}/manifest.json"
             echo "::notice::Published renderer rollback manifest v${VERSION} to ${CHANNEL_TARGET}"
           else
             ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${SNAP}/bundle.tar.gz"
-            ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
             ossutil cp -f dist/renderer-bundle/release-record.json "${SNAP}/release-record.json"
             ossutil cp -f dist/renderer-bundle/release-record.md "${SNAP}/release-record.md"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
             ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${CHANNEL_TARGET}/bundle.tar.gz"
-            ossutil cp -f dist/renderer-bundle/manifest.json "${CHANNEL_TARGET}/manifest.json"
             ossutil cp -f dist/renderer-bundle/release-record.json "${CHANNEL_TARGET}/release-record.json"
             ossutil cp -f dist/renderer-bundle/release-record.md "${CHANNEL_TARGET}/release-record.md"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${CHANNEL_TARGET}/manifest.json"
             echo "::notice::Published renderer bundle v${VERSION} to ${CHANNEL_TARGET}"
           fi
 

@@ -7,6 +7,7 @@ import {
   DEFAULT_RENDERER_BUNDLE_MANIFEST_TTL_SECONDS,
   buildRendererBundleManifest,
   buildRendererRollbackManifest,
+  createDeterministicRendererArchive,
   resolveRendererBundleSigningOptions,
 } from '../../../scripts/build-renderer-bundle.mjs';
 
@@ -160,6 +161,30 @@ describe('buildRendererBundleManifest', () => {
         minShellVersion: '0.16.92',
       }),
     ).toThrow(/rollbackToBuiltin needs minShellVersion >= 0\.16\.93/);
+  });
+});
+
+describe('createDeterministicRendererArchive', () => {
+  it('produces the same bundle hash across build directories and mtimes', () => {
+    const rendererA = path.join(tmp, 'renderer-a');
+    const rendererB = path.join(tmp, 'renderer-b');
+    fs.mkdirSync(path.join(rendererA, 'assets'), { recursive: true });
+    fs.mkdirSync(path.join(rendererB, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(rendererA, 'index.html'), '<main>Neo</main>');
+    fs.writeFileSync(path.join(rendererA, 'assets', 'app.js'), 'console.log("neo")');
+    // Reverse creation order and timestamps to model concurrent main/tag builds.
+    fs.writeFileSync(path.join(rendererB, 'assets', 'app.js'), 'console.log("neo")');
+    fs.writeFileSync(path.join(rendererB, 'index.html'), '<main>Neo</main>');
+    fs.utimesSync(path.join(rendererA, 'index.html'), new Date('2026-01-01'), new Date('2026-01-01'));
+    fs.utimesSync(path.join(rendererB, 'index.html'), new Date('2026-07-12'), new Date('2026-07-12'));
+
+    const archiveA = path.join(tmp, 'bundle-a.tar.gz');
+    const archiveB = path.join(tmp, 'bundle-b.tar.gz');
+    createDeterministicRendererArchive({ rendererDir: rendererA, archivePath: archiveA });
+    createDeterministicRendererArchive({ rendererDir: rendererB, archivePath: archiveB });
+
+    const hash = (filePath: string) => crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+    expect(hash(archiveA)).toBe(hash(archiveB));
   });
 });
 

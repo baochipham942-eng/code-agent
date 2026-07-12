@@ -1,6 +1,6 @@
 # ADR-037 — Durable Run Kernel identity, ownership, and recovery semantics
 
-S9.5 production implementation SHA: `8a3083350a9cfb26fc964ddfcbcdbdb5aaec4ddc`.
+S9.5 production implementation SHA: `a971fd8f5089a52263df202ef772f6b1218b0189`.
 
 - Status: accepted; S9.5 production cutover approved by the machine gate
 - Date: 2026-07-11

@@ -1,6 +1,6 @@
 # Durable Run Kernel contract
 
-S9.5 production implementation SHA: `8a3083350a9cfb26fc964ddfcbcdbdb5aaec4ddc`.
+S9.5 production implementation SHA: `a971fd8f5089a52263df202ef772f6b1218b0189`.
 
 > S0 scope: contract, schema draft, narrow persistence ports, and crash-failure gold. Production recovery wiring starts in S1.
 

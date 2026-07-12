@@ -8,9 +8,14 @@
 export type CronScheduleType = 'at' | 'every' | 'cron';
 
 /**
- * Cron job status
+ * Cron job status.
+ *
+ * `interrupted` marks an execution record whose process died mid-run (app crash/quit
+ * before its terminal status could be persisted) — detected and applied at startup.
+ * Distinct from `cancelled` (deliberate user action) and `failed` (the action itself
+ * errored while the app was alive to observe it).
  */
-export type CronJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+export type CronJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'interrupted';
 
 /**
  * Time unit for interval-based scheduling.

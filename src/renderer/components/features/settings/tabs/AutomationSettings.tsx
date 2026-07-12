@@ -89,6 +89,7 @@ function statusLabel(
   if (execution.status === 'pending') return labels.pending;
   if (execution.status === 'cancelled') return labels.cancelled;
   if (execution.status === 'paused') return labels.paused;
+  if (execution.status === 'interrupted') return labels.interrupted;
   return execution.status;
 }
 
@@ -97,6 +98,7 @@ function statusClass(execution: CronJobExecution | null | undefined): string {
   if (execution.status === 'completed') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
   if (execution.status === 'failed') return 'border-red-500/30 bg-red-500/10 text-red-300';
   if (execution.status === 'running') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  if (execution.status === 'interrupted') return 'border-orange-500/30 bg-orange-500/10 text-orange-300';
   return 'border-zinc-700 bg-zinc-800 text-zinc-400';
 }
 

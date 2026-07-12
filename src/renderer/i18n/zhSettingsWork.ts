@@ -167,6 +167,7 @@ export const zhSettingsWork = {
         pending: '等待',
         cancelled: '取消',
         paused: '暂停',
+        interrupted: '已中断',
       },
       overview: {
         title: '任务总览',

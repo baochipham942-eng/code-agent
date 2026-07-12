@@ -167,6 +167,7 @@ export const enSettingsWork = {
         pending: 'Waiting',
         cancelled: 'Cancelled',
         paused: 'Paused',
+        interrupted: 'Interrupted',
       },
       overview: {
         title: 'Task overview',

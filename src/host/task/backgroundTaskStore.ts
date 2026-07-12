@@ -24,7 +24,7 @@ interface CronTerminalRow {
   id: string;
   job_id: string;
   session_id?: string | null;
-  status: 'completed' | 'failed' | 'cancelled';
+  status: 'completed' | 'failed' | 'cancelled' | 'interrupted';
   scheduled_at: number;
   started_at?: number | null;
   completed_at?: number | null;
@@ -269,7 +269,7 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
         ${joinJobs ? ', j.name AS job_name, j.schedule_type, j.action AS job_action' : ''}
       FROM cron_executions e
       ${joinJobs ? 'LEFT JOIN cron_jobs j ON j.id = e.job_id' : ''}
-      WHERE e.status IN ('completed', 'failed', 'cancelled')
+      WHERE e.status IN ('completed', 'failed', 'cancelled', 'interrupted')
       ORDER BY e.scheduled_at DESC
     `).all() as CronTerminalRow[];
 
@@ -455,6 +455,9 @@ function mapCronExecutionToTask(row: CronTerminalRow): Task {
 function mapCronStatus(status: CronTerminalRow['status']): TaskStatus {
   if (status === 'failed') return 'failed';
   if (status === 'cancelled') return 'cancelled';
+  // interrupted 复用既有的 orphaned 语义（进程重启后没能追认完成的任务）——
+  // 与 shell/pty 任务重启恢复共用同一个终态分类，不新造平行状态。
+  if (status === 'interrupted') return 'orphaned';
   return 'completed';
 }
 

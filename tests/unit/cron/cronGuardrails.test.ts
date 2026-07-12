@@ -9,6 +9,7 @@ import { vi } from 'vitest';
 const dbState = vi.hoisted(() => ({
   cronRows: [] as unknown[],
   savedRows: [] as unknown[][],
+  executionRows: [] as Array<Record<string, unknown>>,
 }));
 
 const automationState = vi.hoisted(() => ({
@@ -18,13 +19,39 @@ const automationState = vi.hoisted(() => ({
   upsert: vi.fn(() => undefined),
 }));
 
+// cron_executions 的 run() 需要真的维护一份可变行集：markInterruptedExecutions 靠
+// `UPDATE ... WHERE status = 'running'` 的返回值(changes)+行内容验证，光记参数不够。
+const CRON_EXECUTION_COLUMNS = [
+  'id', 'job_id', 'session_id', 'status', 'scheduled_at', 'started_at',
+  'completed_at', 'duration', 'result', 'error', 'retry_attempt', 'exit_code',
+] as const;
+
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getDb: () => ({
       prepare: (sql: string) => ({
         all: () => (sql.includes('FROM cron_jobs') ? dbState.cronRows : []),
         run: (...args: unknown[]) => {
+          if (sql.includes('UPDATE cron_executions') && sql.includes("'interrupted'")) {
+            const now = args[0] as number;
+            let changes = 0;
+            dbState.executionRows = dbState.executionRows.map((row) => {
+              if (row.status !== 'running') return row;
+              changes += 1;
+              return { ...row, status: 'interrupted', completed_at: row.completed_at ?? now };
+            });
+            return { changes, lastInsertRowid: 0 };
+          }
+          if (sql.includes('INSERT OR REPLACE INTO cron_executions')) {
+            const row: Record<string, unknown> = {};
+            CRON_EXECUTION_COLUMNS.forEach((col, i) => { row[col] = args[i]; });
+            const idx = dbState.executionRows.findIndex((r) => r.id === row.id);
+            if (idx >= 0) dbState.executionRows[idx] = row; else dbState.executionRows.push(row);
+            dbState.savedRows.push(args);
+            return { changes: 1, lastInsertRowid: 0 };
+          }
           dbState.savedRows.push(args);
+          return { changes: 1, lastInsertRowid: 0 };
         },
       }),
     }),
@@ -42,6 +69,7 @@ import type { Cron } from 'croner';
 afterEach(() => {
   dbState.cronRows = [];
   dbState.savedRows = [];
+  dbState.executionRows = [];
   automationState.recordCreated.mockClear();
   automationState.recordEvent.mockClear();
   automationState.getBySourceRef.mockClear();
@@ -240,6 +268,73 @@ describe('连续失败自动停用', () => {
 
     // at 任务执行后按原有语义停用，且不因"连续失败"路径抛错
     expect(service.getJob(job.id)!.enabled).toBe(false);
+    await service.shutdown();
+  });
+});
+
+describe('中断可见性：启动时残留 running 执行记录标记为 interrupted（A5-④遗留）', () => {
+  it('残留 running 记录启动后变为 interrupted，正常记录不受影响', async () => {
+    dbState.executionRows = [
+      {
+        id: 'exec-stale', job_id: 'job-x', session_id: null, status: 'running',
+        scheduled_at: Date.now() - 60_000, started_at: Date.now() - 60_000,
+        completed_at: null, duration: null, result: null, error: null,
+        retry_attempt: 0, exit_code: null,
+      },
+      {
+        id: 'exec-done', job_id: 'job-x', session_id: null, status: 'completed',
+        scheduled_at: Date.now() - 120_000, started_at: Date.now() - 120_000,
+        completed_at: Date.now() - 100_000, duration: 20_000, result: null, error: null,
+        retry_attempt: 0, exit_code: 0,
+      },
+    ];
+    const service = new CronService();
+
+    await service.initialize();
+
+    const stale = dbState.executionRows.find((row) => row.id === 'exec-stale');
+    const done = dbState.executionRows.find((row) => row.id === 'exec-done');
+    expect(stale?.status).toBe('interrupted');
+    expect(stale?.completed_at).not.toBeNull();
+    expect(done?.status).toBe('completed');
+    expect(done?.completed_at).toBe(dbState.executionRows[1].completed_at);
+    await service.shutdown();
+  });
+
+  it('没有残留 running 记录时是 no-op', async () => {
+    dbState.executionRows = [
+      {
+        id: 'exec-done', job_id: 'job-x', session_id: null, status: 'completed',
+        scheduled_at: Date.now() - 120_000, started_at: Date.now() - 120_000,
+        completed_at: Date.now() - 100_000, duration: 20_000, result: null, error: null,
+        retry_attempt: 0, exit_code: 0,
+      },
+    ];
+    const service = new CronService();
+
+    await service.initialize();
+
+    expect(dbState.executionRows.find((row) => row.id === 'exec-done')?.status).toBe('completed');
+    await service.shutdown();
+  });
+});
+
+describe('执行开始即落库 running 记录（供崩溃后 interrupted 扫描识别）', () => {
+  it('triggerJob 完成后同一条执行只落一行，终态覆盖了启动时写入的 running', async () => {
+    const service = new CronService();
+    const job = await service.createJob({
+      name: '验证 upsert 的任务',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 12, unit: 'hours' },
+      action: { type: 'shell', command: 'echo ok' },
+      enabled: true,
+    });
+
+    await service.triggerJob(job.id);
+
+    const rowsForJob = dbState.executionRows.filter((row) => row.job_id === job.id);
+    expect(rowsForJob).toHaveLength(1);
+    expect(rowsForJob[0].status).toBe('completed');
     await service.shutdown();
   });
 });

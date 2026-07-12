@@ -36,8 +36,7 @@ export function resolveDurableRunRollout(
   env: NodeJS.ProcessEnv = process.env,
 ): DurableRunRolloutPolicy {
   const configuredValue = env[DURABLE_RUN_ROLLOUT_ENV]?.trim() || null;
-  // Keep the pre-S9 posture until every core kill point uses a production handler.
-  const requested = configuredValue ?? 'dual_write';
+  const requested = configuredValue ?? 'durable_preferred';
   if (!VALID_MODES.has(requested as DurableRunRolloutMode)) {
     return {
       mode: 'legacy',

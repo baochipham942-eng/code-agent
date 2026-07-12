@@ -74,6 +74,8 @@ import {
   isArtifactRepairWritePriority,
   startArtifactModelWaitProgress,
 } from './inferenceArtifactRepair';
+import { getConfiguredApplicationRunRegistry } from '../../../app/applicationRunRegistry';
+import { createHash } from 'node:crypto';
 // provider fallback 机制已抽到 inferenceProviderFallback.ts；以下两个为历史公开导出，
 // 测试从本模块取，保持 re-export 兼容。
 export { buildAiSdkAdaptiveFallbackInfo, runAiSdkInferenceWithProviderFallback };
@@ -138,6 +140,31 @@ function runEngineInference(
     return runAiSdkInferenceWithProviderFallback(messages, tools, effectiveConfig, onStream, signal, options);
   }
   return ctx.runtime.modelRouter.inference(messages, tools, effectiveConfig, onStream, signal, options);
+}
+
+async function checkpointNativeModel(
+  ctx: ContextAssemblyCtx,
+  config: ModelConfig,
+  phase: 'before_model_dispatch' | 'after_model_dispatch',
+  status: 'prepared' | 'dispatched' | 'succeeded',
+): Promise<void> {
+  const runId = ctx.runtime.runId;
+  const registry = getConfiguredApplicationRunRegistry();
+  if (!runId || !registry?.hasDurableOwner(runId)) return;
+  const sourceMessageId = [...ctx.runtime.messages].reverse().find((message) => message.role === 'user')?.id;
+  if (!sourceMessageId) throw new Error('Native Durable model checkpoint requires a stable source message id');
+  await registry.checkpointNativeModelOperation({
+    runId,
+    sourceMessageId,
+    provider: config.provider,
+    model: config.model,
+    logicalOperationId: ctx.runtime.currentTurnId,
+    phase,
+    status,
+    ...(status === 'succeeded' ? {
+      resultRef: `model-result:${createHash('sha256').update(`${runId}:${ctx.runtime.currentTurnId}:${config.provider}:${config.model}`).digest('hex')}`,
+    } : {}),
+  });
 }
 
 /**
@@ -870,6 +897,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
+      await checkpointNativeModel(ctx, requestConfig, 'before_model_dispatch', 'prepared');
+      await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'dispatched');
       if (ctx.runtime.maxMode && maxModeBudgetHeadroomOk()) {
         response = await runMaxModeInference(
           ctx,
@@ -890,6 +919,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           engineOptions,
         );
       }
+      await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'succeeded');
     } finally {
       stopArtifactProgress();
     }

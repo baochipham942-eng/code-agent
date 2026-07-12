@@ -70,6 +70,7 @@ import {
   truncateToolOutput,
 } from './toolExecutorHelpers';
 import { getTelemetryService } from '../telemetry/telemetryService';
+import { getConfiguredApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 const logger = createLogger('ToolExecutor');
 
@@ -1023,6 +1024,23 @@ export class ToolExecutor {
           summary: execSummary, params: ledgerParams, recordedAt: startTime,
         });
       } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
+      const durableRegistry = effectiveRunId ? getConfiguredApplicationRunRegistry() : null;
+      const durableSourceMessageId = effectiveSessionId
+        ? [...getDatabase().getMessages(effectiveSessionId)].reverse().find((message) => message.role === 'user')?.id
+        : undefined;
+      if (effectiveRunId && durableRegistry?.hasDurableOwner(effectiveRunId)) {
+        if (!durableSourceMessageId) throw new Error('Native Durable tool checkpoint requires a stable source message id');
+        await durableRegistry.checkpointNativeToolOperation({
+          runId: effectiveRunId,
+          sourceMessageId: durableSourceMessageId,
+          toolName: executionToolName,
+          logicalOperationId: options.currentToolCallId ?? executionId,
+          providerOperationId: executionId,
+          sideEffect: toolDef.permissionLevel !== 'read' && !(toolDef.permissionLevel === 'network' && toolDef.readOnly === true),
+          status: 'dispatched',
+          now: startTime,
+        });
+      }
       const delegatedResult = this.dispatchTool
         ? await this.dispatchTool(executionToolName, params, context, options)
         : null;
@@ -1082,6 +1100,18 @@ export class ToolExecutor {
       }
 
       recordExecComplete(result.success ? 'success' : 'error', result.error);
+      if (effectiveRunId && durableRegistry?.hasDurableOwner(effectiveRunId) && durableSourceMessageId) {
+        await durableRegistry.checkpointNativeToolOperation({
+          runId: effectiveRunId,
+          sourceMessageId: durableSourceMessageId,
+          toolName: executionToolName,
+          logicalOperationId: options.currentToolCallId ?? executionId,
+          providerOperationId: executionId,
+          sideEffect: toolDef.permissionLevel !== 'read' && !(toolDef.permissionLevel === 'network' && toolDef.readOnly === true),
+          status: result.success ? 'succeeded' : 'failed',
+          resultRef: `tool-ledger:${executionId}`,
+        });
+      }
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;

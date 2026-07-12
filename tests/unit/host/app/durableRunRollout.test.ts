@@ -21,12 +21,12 @@ function repository(): { db: Database.Database; repo: DurableRunRepository } {
 }
 
 describe('Durable Run rollout policy', () => {
-  it('keeps the pre-release default at dual_write and accepts explicit durable_preferred', () => {
+  it('defaults to durable_preferred after the S9.5 production gate', () => {
     expect(resolveDurableRunRollout({})).toMatchObject({
-      mode: 'dual_write',
+      mode: 'durable_preferred',
       valid: true,
       durableActivation: true,
-      durableReadPreference: false,
+      durableReadPreference: true,
     });
     expect(resolveDurableRunRollout({ [DURABLE_RUN_ROLLOUT_ENV]: 'durable_preferred' })).toMatchObject({
       mode: 'durable_preferred',

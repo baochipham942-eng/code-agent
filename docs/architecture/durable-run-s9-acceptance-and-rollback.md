@@ -1,18 +1,68 @@
 # S9 Durable Run acceptance and rollback
 
+## S9.5 production-path audit (baseline `2548c7b1c`)
+
+The pre-change audit found the following ownership and fact-source wiring. This
+inventory is the boundary for the S9.5 cutover; it does not authorize a schema,
+engine-kind, or public event-contract change.
+
+| Product path | Runtime owner on the baseline | Durable registry on the baseline | Audit conclusion |
+| --- | --- | --- | --- |
+| Web Native run | `src/web/webServer.ts` module-level `runRegistry` | the same registry is passed to the Web `initializeDurableRun()` call | creation and startup claim share an owner |
+| Desktop Native run | `TaskManager` / per-session `AgentOrchestrator` | desktop bootstrap creates a separate `externalRunRegistry` | Native execution never creates its run in the registry scanned at startup |
+| Agent Team | `AgentTeamDurableRuntime`, globally configured by `RunRegistry.configureDurableKernel()` | whichever registry was configured last | Web shares the Native registry; desktop inherits the otherwise External-only registry |
+| Auto Agent | `AutoAgentCoordinator` and a process-local `GraphRunner` | none | it uses no Durable envelope and has no startup discriminator |
+| Dynamic Workflow | `scriptRuntime/runService` plus the Dynamic recovery host | handler receives the bootstrap registry | Web does not pass an application host; desktop passes a host backed by the External-only registry |
+| External Engine | `ExternalEngineDurableLifecycle` | desktop `externalRunRegistry`; Web Native registry is not its facade registry | desktop creation and recovery share the dedicated registry |
+| MCP Durable Task | `McpDurableTaskController` and the shared Durable kernel | operation handler is registered on the bootstrap registry | operation facts live in the six Durable tables plus the integrity-bound result file store |
+
+The desktop bootstrap therefore scans an independent registry which has no
+Desktop Native run records and is also used to configure the process-global
+Agent Team runtime. S9.5 must correct that owner wiring directly. Copying live
+maps between registries is forbidden.
+
+Native checkpoints on this baseline persist the envelope identity, attempt and
+owner lease, monotonic checkpoint/event cursor, opaque engine cursor, pending
+operation identity/idempotency/status/effect classification, child projections,
+and trace identity reconstructed from the envelope. They do not yet persist a
+versioned Native recovery descriptor for provider/model, canonical workspace,
+model result handle, tool result evidence, or approval identity.
+
+The operation fact sources are:
+
+- approval identity and answer state: the pending approval repositories/gates;
+- model operation identity: the Durable pending-operation row, with provider
+  query evidence only when a trusted provider result handle is present;
+- tool operation identity and result evidence: the Durable pending-operation
+  row plus the Tool execution ledger/provider operation id;
+- terminal/run ownership: the Durable envelope, attempt, checkpoint, event and
+  owner lease rows; compatibility session state is only a projection.
+
+Auto Agent is required to remain under the existing `agent_team` engine kind.
+Its production cursor discriminator is versioned independently from the
+existing Agent Team cursor and references a stable session message identity;
+prompt text, provider clients, functions, credentials, and complete environment
+data are not recovery descriptors.
+
+The real read consumers audited for cutover are Native status and lifecycle
+control targeting, Agent Team/Auto Agent current and terminal projection,
+Dynamic Workflow `getRunState`, External Engine lifecycle lookup, and session
+restore/replay decisions. A Durable row is authoritative for every migrated
+consumer in `durable_preferred`; legacy is allowed only after
+`getLatestBySession()` returns no row. Historical sessions with no Durable row
+remain readable from legacy state. Repository errors are observable failures
+and never trigger legacy fallback.
+
 ## Release status
 
-S9 is not release-approved yet. The process-level matrix proves the storage,
-lease, fencing, checkpoint, Dynamic Workflow, Agent Team reconciliation,
-External Engine, MCP Durable Task, and Graph compatibility contracts. The
-release gate intentionally remains red because the production Native recovery
-handler is still review-only, Auto Agent recovery has no production startup
-handler, and the new Durable read selector is not yet connected to the migrated
-engine read consumers.
+S9.5 is release-gate approved when the checked-in machine report has `pass:true`
+and both production gates are true. Native model/tool/approval recovery now
+dispatches through `NativeRecoveryHost`; Auto Agent uses the existing
+`agent_team` engine kind with an `auto_agent` cursor discriminator. Web and
+Tauri use one application registry owner and one Durable read service.
 
-The safe default therefore remains `dual_write`. Do not change the default to
-`durable_preferred` until `productionExecutorRecovery` and
-`productionReadPreferenceWiring` are true in the generated report.
+The default is `durable_preferred`. `CODE_AGENT_DURABLE_RUN_MODE=legacy`
+remains the restart-time kill switch and preserves all Durable history.
 
 ## Acceptance command and evidence
 
@@ -40,12 +90,10 @@ for lease expiry, then starts a fresh process through the shared application
 rollout initializer. The new process claims the lease, dispatches recovery, and
 proves that the previous owner cannot append a checkpoint.
 
-The matrix contains 14 variants across nine core kill points. Production
-handlers are exercised for Dynamic Workflow, Agent Team child reconciliation,
-External Engine, and MCP Durable Task. Native model/tool/approval and the
-Agent Team/Auto Agent compatibility-only case still use the acceptance handler;
-the report marks those rows with `productionRecoveryPath: false` and fails the
-release gate.
+The matrix contains 14 variants across nine core kill points. All release rows
+use handlers registered by `initializeDurableRun()` and
+`createDurableRecoveryRuntime()`; none supplies `recoveryHandlerOverrides`.
+Deterministic fakes replace provider, CLI, MCP, and Graph executor ports only.
 
 ## Runtime modes
 
@@ -55,17 +103,15 @@ wiring:
 | Value | New Durable runs | Read preference | Intended use |
 | --- | --- | --- | --- |
 | `legacy` | off | legacy | runtime kill switch |
-| `dual_write` | on | legacy projection | current safe default |
-| `durable_preferred` | on | Durable, legacy only when no Durable row exists | target after the S9 gate is green |
+| `dual_write` | on | legacy projection | compatibility override |
+| `durable_preferred` | on | Durable, legacy only when no Durable row exists | default after the S9.5 gate |
 
 An invalid value disables Durable activation and read preference together and
 emits a diagnostic. When Durable preference is enabled, repository errors are
 returned to the caller; only a confirmed missing Durable row may use historical
 legacy data. Repository or migration initialization failure is fail-closed for
-Durable activation. The selector and repository query are implemented and
-tested, but production engine/session read consumers are not connected yet;
-`durable_preferred` must remain an explicit test-only target until that wiring
-lands.
+Durable activation. Native status/control, Agent Team/Auto Agent, Dynamic
+Workflow, External Engine, and session replay use the same centralized mapper.
 
 ## Runtime rollback
 
@@ -90,11 +136,15 @@ and no release automation should call `rollbackDurableRunMigrationDraft()`.
 ## Remaining review boundaries
 
 - uncertain write/tool dispatch without trusted dedupe or query evidence;
-- unanswered approval identity;
+- missing, conflicting, or orphaned approval identity;
 - running child without reconcilable terminal evidence;
 - Dynamic workspace, model, tool, journal, or identity drift;
 - MiMo/Kimi or another external engine without an audited resume contract;
 - MCP handle loss, checksum/binding failure, server identity drift, or lost
   query capability;
-- Native model/tool/approval startup continuation until a production Native
-  recovery host persists and consumes the required checkpoint descriptor.
+- provider model result handles that cannot be queried and model retry contracts
+  that cannot prove side-effect-free compute;
+- Auto Agent source-message, graph-definition, cursor-version, or workspace drift.
+
+Schema rollback remains a manual stopped-system operation. Runtime rollback
+never invokes `rollbackDurableRunMigrationDraft()`.

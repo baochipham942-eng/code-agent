@@ -18,6 +18,9 @@ import type { TaskListManager } from '../taskList';
 import { createLogger } from '../../services/infra/logger';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCompatibilityAdapter';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { getAutoAgentDurableRuntime } from '../autoAgentDurableRuntime';
 
 const logger = createLogger('AutoAgentRunner');
 
@@ -39,6 +42,7 @@ export interface AutoAgentRunnerDeps {
   ) => Promise<void>;
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
+  sourceMessageId?: string;
 }
 
 /**
@@ -143,6 +147,22 @@ export async function runAutoAgentMode(
   // Execute agents through coordinator
   const coordinator = getAutoAgentCoordinator();
   const traceContext = getActiveRunTraceContext();
+  const durableRuntime = getAutoAgentDurableRuntime();
+  const canonicalWorkspace = path.resolve(deps.workingDirectory);
+  const durableController = durableRuntime && traceContext && deps.sourceMessageId
+    ? await durableRuntime.start({
+        parentRunId: traceContext.runId,
+        sessionId: sessionId || 'unknown',
+        sourceMessageId: deps.sourceMessageId,
+        workspace: {
+          root: canonicalWorkspace,
+          cwd: canonicalWorkspace,
+          fingerprint: createHash('sha256').update(canonicalWorkspace).digest('hex'),
+        },
+        graphId: `auto-agent:${sessionId || 'unknown'}`,
+        sideEffect: agents.some((agent) => agent.tools.some((tool) => /(write|edit|bash|shell|browser|computer)/i.test(tool))),
+      })
+    : null;
   const toolResolver = getToolResolver();
   const compatibility = new GraphEventCompatibilityAdapter({
     agent: (event) => { if (event.type !== 'agent_thinking') onEvent(event); },
@@ -171,10 +191,12 @@ export async function runAutoAgentMode(
     }),
   }, { deferTerminals: true });
 
-  const result = await coordinator.execute(agents, requirements, {
-    sessionId: sessionId || 'unknown',
-    executionContext: {
-      runId: traceContext?.runId ?? `auto:${sessionId || 'unknown'}`,
+  let result;
+  try {
+    result = await coordinator.execute(agents, requirements, {
+      sessionId: sessionId || 'unknown',
+      executionContext: {
+      runId: durableController?.runId ?? traceContext?.runId ?? `auto:${sessionId || 'unknown'}`,
       sessionId: sessionId || 'unknown',
       workspace: deps.workingDirectory,
       cwd: deps.workingDirectory,
@@ -187,8 +209,14 @@ export async function runAutoAgentMode(
       toolScope: deps.toolScope,
       executionIntent: deps.executionIntent,
     },
-    compatibilitySink: compatibility,
-  });
+      compatibilitySink: compatibility,
+      onGraphCheckpoint: (checkpoint) => durableController?.persist(checkpoint),
+    });
+    await durableController?.terminal(result.success ? 'completed' : 'failed', result.success ? undefined : 'auto_agent_failed');
+  } catch (error) {
+    await durableController?.terminal('failed', error instanceof Error ? error.message : 'auto_agent_failed').catch(() => undefined);
+    throw error;
+  }
 
   // Process result
   if (result.success && result.aggregatedOutput) {

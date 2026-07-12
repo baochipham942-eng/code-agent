@@ -207,7 +207,8 @@ evidence, and persists workspace/model/tool drift as `waiting` review state. It
 also sends repeated Agent Team/Auto terminal projections through the centralized
 `GraphEventCompatibilityAdapter` and observes one authoritative graph terminal.
 
-The latter compatibility test still enters through an acceptance recovery
-handler because Auto Agent has no production startup handler. It is valid sink
-evidence, but it is not yet production executor-recovery evidence; the S9
-release gate records that distinction and remains blocked.
+S9.5 routes the Auto Agent row through `AutoAgentRecoveryHost`, using the
+existing `agent_team` engine kind and a versioned `auto_agent` cursor. Completed
+nodes remain completed, uncertain write nodes stop in review, the compatibility
+adapter emits one terminal per attempt, and subscriber failures cannot change
+the Durable terminal.

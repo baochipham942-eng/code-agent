@@ -12,6 +12,10 @@ import {
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
+import {
+  mapDurableRunToSessionStatus,
+  type DurableRunReadService,
+} from '../../host/app/durableRunReadService';
 
 interface SessionManagerLike {
   listSessions(options: { includeArchived?: boolean }): Promise<unknown[]>;
@@ -68,6 +72,7 @@ interface SessionsRouterDeps {
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<SessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseSessionBinding | null>;
+  getDurableRunReadService?: () => DurableRunReadService | undefined;
 }
 
 function mapSupabaseMessage(row: SupabaseMessageRow): Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'toolCalls' | 'artifacts'> {
@@ -194,6 +199,14 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       if (sm) {
         const session = await sm.restoreSession(sessionId);
         if (session) {
+          const readService = deps.getDurableRunReadService?.();
+          if (readService) {
+            const run = await readService.readSessionReplay(sessionId, () => ({
+              status: session.status === 'running' || session.status === 'paused' ? session.status : 'idle',
+              updatedAt: session.updatedAt,
+            }));
+            session.status = mapDurableRunToSessionStatus(run.status);
+          }
           // DB 路径找到了会话但消息可能为空 — 用内存缓存补充
           if (session.messages.length === 0 && sessionMessages.has(sessionId)) {
             const memMessages = (sessionMessages.get(sessionId) || []).map(m => ({

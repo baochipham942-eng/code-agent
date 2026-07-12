@@ -17,7 +17,9 @@ import type { AgentApplicationService } from '../../shared/contract/appService';
 import { AgentAppServiceImpl } from './agentAppService';
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../services/core/databaseService';
-import { RunRegistry } from '../runtime/runRegistry';
+import { getApplicationRunRegistry } from './applicationRunRegistry';
+import { createApplicationAutoAgentRecoveryHost } from './autoAgentRecoveryHost';
+import { createApplicationNativeRecoveryPorts } from './nativeRecoveryHost';
 import { getUserDataPath } from '../platform/appPaths';
 import { createApplicationDynamicWorkflowRecoveryHost } from './dynamicWorkflowRecoveryHost';
 import {
@@ -142,18 +144,20 @@ export async function initializeBackgroundServices(): Promise<void> {
   createAgentRuntime(configService);
 
   // Phase 3b: Create AgentApplicationService (facade for IPC layer)
-  const externalRunRegistry = new RunRegistry();
+  const applicationRunRegistry = getApplicationRunRegistry();
   const rolloutPolicy = resolveDurableRunRollout();
   if (rolloutPolicy.diagnostic) logger.error(rolloutPolicy.diagnostic);
   durableRunRuntime = await initializeDurableRun({
-    registry: externalRunRegistry,
+    registry: applicationRunRegistry,
     repository: rolloutPolicy.durableActivation ? getDatabase().getDurableRunRepository() : null,
     dataDir: getUserDataPath(),
     ownerId: 'desktop-external-engine-host',
     processInstanceId: `desktop-${process.pid}-${randomUUID()}`,
     dynamicWorkflowHost: createApplicationDynamicWorkflowRecoveryHost({
-      registry: externalRunRegistry,
+      registry: applicationRunRegistry,
     }),
+    autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(applicationRunRegistry),
+    nativeRecoveryPorts: createApplicationNativeRecoveryPorts(),
     onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
     onDelayedError: (error) => logger.error('Durable delayed recovery failed', error as Error),
   });
@@ -166,7 +170,8 @@ export async function initializeBackgroundServices(): Promise<void> {
     () => configService,
     () => getTaskManager().getCurrentSessionId(),
     (id: string) => getTaskManager().setCurrentSessionId(id),
-    durableRunRuntime.policy.durableActivation ? externalRunRegistry : undefined,
+    durableRunRuntime.policy.durableActivation ? applicationRunRegistry : undefined,
+    durableRunRuntime.readService,
   );
 
   // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)

@@ -73,6 +73,7 @@ import {
 import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
+import type { DurableRunReadService } from './durableRunReadService';
 import { listTasks } from '../services/planning/taskStore';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
@@ -106,6 +107,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     private _getCurrentSessionId: () => string | null,
     private _setCurrentSessionId: (id: string) => void,
     private readonly externalRunRegistry?: RunRegistry,
+    private readonly durableRunReadService?: DurableRunReadService,
   ) {}
 
   private async startExternalLifecycle(input: {
@@ -477,7 +479,17 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const promise = (async () => {
       try {
-        const externalHandle = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
+        const externalView = await this.durableRunReadService?.readExternalEngine(resolvedSessionId, () => {
+          const legacy = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
+          return {
+            runId: legacy?.context.runId,
+            status: legacy ? 'running' : 'idle',
+            engine: legacy ? { kind: 'external_cli' as const, engine: 'codex_cli' as const } : null,
+          };
+        });
+        const externalHandle = externalView?.terminal
+          ? undefined
+          : this.externalRunRegistry?.getBySessionId(resolvedSessionId);
         if (externalHandle) {
           await externalHandle.cancel(normalizedReason === 'session-switch' ? 'session-switch' : 'user');
           return;

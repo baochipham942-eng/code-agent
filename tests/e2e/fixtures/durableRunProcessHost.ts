@@ -5,10 +5,7 @@ import path from 'node:path';
 
 import type { GraphEvent } from '../../../src/host/orchestration/graphEvents';
 import type { PendingOperation, RunOwnerLease } from '../../../src/shared/contract/durableRun';
-import type { DurableRecoveryHandlerOverrides } from '../../../src/host/runtime/durableRecoveryRuntime';
-import type { DurableEngineRecoveryHandler } from '../../../src/host/runtime/durableRecoveryDispatcher';
 import type { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
-import type { RunRehydrationPlan } from '../../../src/host/runtime/durableRunStores';
 import type { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import type { DurableRunKillRestartScenario } from '../../fixtures/durableRunKillRestart';
 
@@ -101,7 +98,12 @@ async function prepareAndWait(selected: DurableRunKillRestartScenario): Promise<
       ]
     : [];
   const externalEngine = selected.engine.kind === 'external_cli' ? selected.engine : null;
-  const engineCursor = externalEngine
+  const engineCursor = selected.coreId === 'agent-team-auto-agent'
+    ? {
+        schemaVersion: 1, runtime: 'auto_agent', sourceMessageId: 'message-auto-agent-stable',
+        graphId: `graph-${selected.coreId}`, workspaceFingerprint: 'workspace-fingerprint-v1',
+      }
+    : externalEngine
     ? { schemaVersion: 1, engine: externalEngine.engine, externalSessionId: externalEngine.externalSessionId }
     : { graphId: `graph-${selected.coreId}`, traceId: `trace-${selected.coreId}` };
   const created = await kernel.createRun({
@@ -140,6 +142,21 @@ async function prepareAndWait(selected: DurableRunKillRestartScenario): Promise<
       model: 'deterministic-model',
     } : {}),
   };
+  if (selected.engine.kind === 'native') {
+    state = {
+      ...state,
+      kind: 'native',
+      sourceMessageId: `message-${selected.coreId}`,
+      provider: 'deterministic',
+      model: 'deterministic-model',
+      workspace: { root: dataDir, cwd: dataDir, fingerprint: state.workspaceFingerprint },
+      logicalOperationId: operation.operationId,
+      phase: selected.coreId === 'approval-waiting' ? 'approval_waiting'
+        : selected.coreId === 'between-tool-begin-end' || selected.coreId === 'mcp-durable-task' ? 'tool_dispatched'
+          : operation.status === 'prepared' ? 'before_model_dispatch' : 'after_model_dispatch',
+      checkpointSequence: 1,
+    };
+  }
   if (selected.coreId === 'dynamic-workflow') {
     const graphSpec = {
       graphId: state.graphId, runId, sessionId, attempt: 1,
@@ -194,6 +211,28 @@ async function prepareAndWait(selected: DurableRunKillRestartScenario): Promise<
       completedNodeResultRefs: { 'child-completed': 'result:child-completed' },
       runningChildRefs: ['child-running'], pendingApprovalRefs: [], worktreeRefs: {}, artifactRefs: {},
       cancelled: false, updatedAt: now,
+    };
+  }
+  if (selected.coreId === 'agent-team-auto-agent') {
+    state = {
+      ...state,
+      kind: 'auto_agent',
+      sourceMessageId: 'message-auto-agent-stable',
+      workspace: { root: dataDir, cwd: dataDir, fingerprint: state.workspaceFingerprint },
+      graphCheckpoint: {
+        version: 1, graphId: state.graphId, runId, sessionId, attempt: 1,
+        status: 'running', eventSequence: 1,
+        scheduler: { version: 1, nodes: [
+          { nodeId: 'nested-completed', status: 'completed', attempts: 1 },
+          { nodeId: 'nested-recover', status: 'ready', attempts: 0 },
+        ], cancelled: false },
+        nodes: [
+          { nodeId: 'nested-completed', status: 'completed', attempts: 1, result: { status: 'completed', sideEffectState: 'confirmed' } },
+          { nodeId: 'nested-recover', status: 'ready', attempts: 0 },
+        ],
+        createdAt: now, updatedAt: now,
+      },
+      cancelled: false,
     };
   }
   await kernel.checkpoint({
@@ -303,6 +342,85 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
       };
     },
   };
+  const nativeRecoveryPorts = {
+    resolveWorkspace: async (descriptor: { workspace: { root: string; cwd: string; fingerprint: string } }) => ({
+      ok: true as const,
+      ...descriptor.workspace,
+    }),
+    model: {
+      dispatchPrepared: async () => {
+        const counters = await loadCounters();
+        counters.modelDispatches += 1;
+        await saveCounters(counters);
+        return { resultRef: 'model-result:prepared' };
+      },
+      queryResult: async () => {
+        const result = JSON.parse(await readFile(providerResultPath, 'utf8')) as { result: string };
+        if (result.result !== 'original-result') throw new Error('provider result identity changed');
+        const counters = await loadCounters();
+        counters.providerQueries += 1;
+        await saveCounters(counters);
+        return { resultRef: 'model-result:queried' };
+      },
+      canRetrySafely: async () => selected.id === 'after-model-response-safe-retry',
+      retrySafe: async () => {
+        const counters = await loadCounters();
+        counters.modelDispatches += 1;
+        await saveCounters(counters);
+        return { resultRef: 'model-result:safe-retry' };
+      },
+    },
+    tool: {
+      queryResult: async () => {
+        const counters = await loadCounters();
+        counters.providerQueries += 1;
+        await saveCounters(counters);
+        return { resultRef: 'tool-result:deduplicated' };
+      },
+    },
+    approval: {
+      read: async (approvalId: string) => approvalId === 'approval-stable-1' ? 'pending' as const : 'missing' as const,
+    },
+    compatibilitySink: {
+      commitResult: async () => {
+        const counters = await loadCounters();
+        counters.outputCommits += 1;
+        await saveCounters(counters);
+      },
+    },
+  };
+  const { AutoAgentRecoveryHost } = await import('../../../src/host/runtime/autoAgentRecoveryHost');
+  const autoAgentRecoveryHost = new AutoAgentRecoveryHost(registry, {
+    async resume({ plan, state, emit, persist }) {
+      const counters = await loadCounters();
+      counters.recoveredNodeExecutions += 1;
+      await saveCounters(counters);
+      const checkpoint = {
+        ...state.graphCheckpoint,
+        attempt: plan.envelope.attempt,
+        status: 'completed' as const,
+        eventSequence: state.graphCheckpoint.eventSequence + 1,
+        nodes: state.graphCheckpoint.nodes.map((node) => node.nodeId === 'nested-recover'
+          ? { ...node, status: 'completed' as const, attempts: node.attempts + 1, result: { status: 'completed' as const, sideEffectState: 'confirmed' as const } }
+          : node),
+        updatedAt: Date.now(),
+        terminalEventType: 'graph_completed' as const,
+      };
+      await persist(checkpoint);
+      const terminal: GraphEvent = {
+        type: 'graph_completed', graphId: checkpoint.graphId, runId: checkpoint.runId,
+        sessionId: checkpoint.sessionId, attempt: plan.envelope.attempt,
+        sequence: checkpoint.eventSequence, timestamp: checkpoint.updatedAt, graphStatus: 'completed',
+      };
+      await emit(terminal);
+      await emit(terminal);
+      return { status: 'completed' as const, checkpoint, results: {} };
+    },
+  }, {
+    graph: () => { graphTerminalCount += 1; },
+    agent: () => undefined,
+    diagnostic: () => undefined,
+  });
   const runtime = await initializeDurableRun({
     registry,
     repository,
@@ -316,179 +434,36 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
     getMcpClient: () => fakeMcpClient as never,
     trustedMcpServerIdentities: new Set(['trusted-server']),
     dynamicWorkflowHost,
-    recoveryHandlerOverrides: (kernel) => buildHandlers(kernel),
+    nativeRecoveryPorts,
+    autoAgentRecoveryHost,
   });
 
-  function buildHandlers(kernel: DurableRunKernel): DurableRecoveryHandlerOverrides {
-    const handler = (engineKind: DurableEngineRecoveryHandler['engineKind']): DurableEngineRecoveryHandler => ({
-      name: `acceptance_${engineKind}`,
-      engineKind,
-      async recover(plan, now) {
-        const state = plan.checkpoint?.state as PersistedAcceptanceState;
-        const engineCursor = plan.checkpoint?.cursor.engineCursor as { graphId?: string; traceId?: string } | undefined;
-        logicalIdentityLinked = state.runId === plan.envelope.runId
-          && state.sessionId === plan.envelope.sessionId
-          && (plan.envelope.engine.kind === 'external_cli'
-            ? state.externalSessionId === plan.envelope.engine.externalSessionId
-            : state.graphId === engineCursor?.graphId && state.traceId === engineCursor?.traceId);
-        try {
-          await kernel.checkpoint({
-            runId: plan.envelope.runId,
-            attempt: 1,
-            owner: state.oldOwner,
-            now,
-            status: 'running',
-            state,
-            pendingOperations: plan.pendingOperations,
-            childRuns: plan.childRuns,
-            events: [{ type: 'stale_write', payload: null, recordedAt: now }],
-          });
-        } catch {
-          staleWriteRejected = true;
-        }
-
-        if (selected.coreId === 'mcp-durable-task') {
-          return { status: 'observing', reason: 'native run waits for MCP Durable Task reconciliation' };
-        }
-
-        const counters = await loadCounters();
-        if (selected.id === 'before-model-dispatch' || selected.id === 'after-model-response-safe-retry') {
-          counters.modelDispatches += 1;
-        } else if (selected.id === 'after-model-response-queryable') {
-          const result = JSON.parse(await readFile(providerResultPath, 'utf8')) as { result: string };
-          if (result.result !== 'original-result') throw new Error('provider result identity changed');
-          counters.providerQueries += 1;
-        } else if (selected.id === 'between-tool-begin-end-deduplicated') {
-          counters.providerQueries += 1;
-        } else if (selected.id === 'dynamic-workflow') {
-          counters.recoveredNodeExecutions += 1;
-        } else if (selected.id === 'agent-team-auto-agent') {
-          counters.recoveredNodeExecutions += 1;
-          const { GraphEventCompatibilityAdapter } = await import('../../../src/host/orchestration/graphEventCompatibilityAdapter');
-          const compatibility = new GraphEventCompatibilityAdapter({
-            graph: () => { graphTerminalCount += 1; },
-          });
-          compatibility.subscribe({ agent: () => undefined, swarm: () => undefined });
-          const terminal: GraphEvent = {
-            type: 'graph_completed', graphId: state.graphId, runId: state.runId,
-            sessionId: state.sessionId, attempt: plan.envelope.attempt, sequence: 1, timestamp: now,
-            graphStatus: 'completed',
-          };
-          await compatibility.emit(terminal);
-          await compatibility.emit(terminal);
-        }
-
-        if (selected.expectedOutcome === 'waiting_review') {
-          requiresReviewReason = selected.requiresReviewReason ?? 'requires_review';
-          await checkpointWaiting(kernel, plan, state, now, requiresReviewReason);
-          await saveCounters(counters);
-          return { status: 'requires_review', reason: requiresReviewReason };
-        }
-        if (selected.expectedOutcome === 'waiting_approval') {
-          await checkpointWaiting(kernel, plan, state, now, 'approval_waiting');
-          await saveCounters(counters);
-          return { status: 'observing', reason: recoveryAction };
-        }
-
-        counters.outputCommits += 1;
-        const pendingOperations = plan.pendingOperations.map((operation) => ({
-          ...operation,
-          status: 'succeeded' as const,
-          resultRef: `result:${operation.operationId}`,
-          updatedAt: now,
-        }));
-        await kernel.checkpoint({
-          runId: plan.envelope.runId, attempt: plan.envelope.attempt, owner: plan.envelope.owner!, now,
-          status: 'running', state: { ...state, recoveredByPid: process.pid },
-          engineCursor: plan.checkpoint?.cursor.engineCursor, pendingOperations,
-          childRuns: plan.childRuns,
-          events: [{ type: 'recovery_output_committed', payload: { scenarioId: selected.id }, recordedAt: now }],
-        });
-        await kernel.terminal({
-          runId: plan.envelope.runId, attempt: plan.envelope.attempt, owner: plan.envelope.owner!, now: now + 1,
-          status: 'completed', reason: recoveryAction,
-          event: { type: 'run_completed', payload: { scenarioId: selected.id }, recordedAt: now + 1 },
-        });
-        await saveCounters(counters);
-        return { status: 'recovered', reason: recoveryAction };
-      },
-    });
-    return {
-      native: handler('native'),
-      ...(selected.id === 'child-agent-running' ? {} : { agentTeam: handler('agent_team') }),
-      ...(selected.coreId === 'dynamic-workflow' ? {} : { dynamicWorkflow: handler('dynamic_workflow') }),
-      ...(selected.coreId === 'external-engine' ? {} : { externalEngine: handler('external_cli') }),
-      ...(selected.coreId === 'mcp-durable-task' ? {} : { mcpOperation: {
-        name: 'acceptance_operation_projection',
-        matches: () => true,
-        async recover(_plan, operation) {
-          return { status: 'observing', reason: `operation projected: ${operation.operationId}` };
-        },
-      } }),
-    };
-  }
-
-  if (selected.coreId === 'external-engine') {
-    const latest = await repository.get(`acceptance-${selected.id}`);
-    const originalState = JSON.parse(String((db.prepare(`SELECT state_json FROM durable_run_checkpoints
-      WHERE run_id = ? AND checkpoint_seq = 1`).get(`acceptance-${selected.id}`) as { state_json: string }).state_json)) as PersistedAcceptanceState;
-    logicalIdentityLinked = latest?.runId === originalState.runId
-      && latest.sessionId === originalState.sessionId
-      && (latest.engine.kind !== 'external_cli' || latest.engine.externalSessionId === originalState.externalSessionId);
-    recoveryAction = runtime.recoveryResults.find((result) => result.phase === 'engine')?.reason ?? recoveryAction;
-    if (selected.expectedOutcome === 'waiting_review') requiresReviewReason = recoveryAction;
-    if (!staleWriteRejected && runtime.kernel && latest?.owner) {
-      try {
-        await runtime.kernel.checkpoint({
-          runId: latest.runId, attempt: 1, owner: latestState.oldOwner, now: Date.now(), status: 'running',
-          state: latestState, pendingOperations: latest.pendingOperations, childRuns: latest.childRuns, events: [],
-        });
-      } catch {
-        staleWriteRejected = true;
-      }
-    }
-  }
-  if (selected.coreId === 'mcp-durable-task') {
-    const operationResult = runtime.recoveryResults.find((result) => result.phase === 'operation');
-    recoveryAction = operationResult?.reason ?? recoveryAction;
-    if (selected.expectedOutcome === 'waiting_review') requiresReviewReason = recoveryAction;
-  }
-  if (selected.coreId === 'dynamic-workflow') {
-    const engineResult = runtime.recoveryResults.find((result) => result.phase === 'engine');
-    recoveryAction = engineResult?.reason ?? recoveryAction;
-    if (selected.expectedOutcome === 'waiting_review') requiresReviewReason = recoveryAction;
-    const latest = await repository.get(`acceptance-${selected.id}`);
-    const originalState = JSON.parse(String((db.prepare(`SELECT state_json FROM durable_run_checkpoints
-      WHERE run_id = ? AND checkpoint_seq = 1`).get(`acceptance-${selected.id}`) as { state_json: string }).state_json)) as PersistedAcceptanceState;
-    logicalIdentityLinked = latest?.runId === originalState.runId && latest.sessionId === originalState.sessionId;
-    if (!staleWriteRejected && runtime.kernel && latest) {
-      try {
-        await runtime.kernel.checkpoint({
-          runId: latest.runId, attempt: 1, owner: originalState.oldOwner, now: Date.now(), status: 'running',
-          state: originalState, pendingOperations: latest.pendingOperations, childRuns: latest.childRuns, events: [],
-        });
-      } catch {
-        staleWriteRejected = true;
-      }
-    }
-  }
-  if (selected.id === 'child-agent-running') {
-    const engineResult = runtime.recoveryResults.find((result) => result.phase === 'engine');
-    recoveryAction = engineResult?.reason ?? recoveryAction;
-    requiresReviewReason = recoveryAction;
-    const latest = await repository.get(`acceptance-${selected.id}`);
-    const originalState = JSON.parse(String((db.prepare(`SELECT state_json FROM durable_run_checkpoints
-      WHERE run_id = ? AND checkpoint_seq = 1`).get(`acceptance-${selected.id}`) as { state_json: string }).state_json)) as PersistedAcceptanceState;
-    logicalIdentityLinked = latest?.runId === originalState.runId && latest.sessionId === originalState.sessionId;
-    if (!staleWriteRejected && runtime.kernel && latest) {
-      try {
-        await runtime.kernel.checkpoint({
-          runId: latest.runId, attempt: 1, owner: originalState.oldOwner, now: Date.now(), status: 'running',
-          state: originalState, pendingOperations: latest.pendingOperations, childRuns: latest.childRuns, events: [],
-        });
-      } catch {
-        staleWriteRejected = true;
-      }
+  const latestAfterRecovery = await repository.get(`acceptance-${selected.id}`);
+  const originalState = JSON.parse(String((db.prepare(`SELECT state_json FROM durable_run_checkpoints
+    WHERE run_id = ? AND checkpoint_seq = 1`).get(`acceptance-${selected.id}`) as { state_json: string }).state_json)) as PersistedAcceptanceState;
+  logicalIdentityLinked = latestAfterRecovery?.runId === originalState.runId
+    && latestAfterRecovery.sessionId === originalState.sessionId
+    && (latestAfterRecovery.engine.kind !== 'external_cli'
+      || latestAfterRecovery.engine.externalSessionId === originalState.externalSessionId);
+  const engineResult = runtime.recoveryResults.find((result) => result.phase === 'engine');
+  const operationResult = runtime.recoveryResults.find((result) => result.phase === 'operation');
+  recoveryAction = (selected.coreId === 'mcp-durable-task' ? operationResult?.reason : engineResult?.reason) ?? recoveryAction;
+  if (selected.expectedOutcome === 'waiting_review') requiresReviewReason = recoveryAction;
+  if (runtime.kernel && latestAfterRecovery) {
+    try {
+      await runtime.kernel.checkpoint({
+        runId: latestAfterRecovery.runId,
+        attempt: 1,
+        owner: originalState.oldOwner,
+        now: Date.now(),
+        status: 'running',
+        state: originalState,
+        pendingOperations: latestAfterRecovery.pendingOperations,
+        childRuns: latestAfterRecovery.childRuns,
+        events: [{ type: 'stale_write', payload: null, recordedAt: Date.now() }],
+      });
+    } catch {
+      staleWriteRejected = true;
     }
   }
 
@@ -532,8 +507,8 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
     && (selected.id === 'mcp-durable-task-queryable' ? operation?.status === 'succeeded' && counters.providerQueries === 1 : true)
     && attempts[1]!.process_instance_id !== attempts[0]!.process_instance_id
     ;
-  const engineDispatch = runtime.recoveryResults.find((result) => result.phase === 'engine');
-  const operationDispatch = runtime.recoveryResults.find((result) => result.phase === 'operation');
+  const engineDispatch = engineResult;
+  const operationDispatch = operationResult;
   const productionRecoveryPath = selected.coreId === 'mcp-durable-task'
     ? operationDispatch?.handler === 'mcp_tool_call'
     : Boolean(engineDispatch && !engineDispatch.handler.startsWith('acceptance_'));
@@ -550,22 +525,6 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
   });
   await runtime.shutdown();
   db.close();
-}
-
-async function checkpointWaiting(
-  kernel: DurableRunKernel,
-  plan: RunRehydrationPlan,
-  state: PersistedAcceptanceState,
-  now: number,
-  reason: string,
-): Promise<void> {
-  await kernel.checkpoint({
-    runId: plan.envelope.runId, attempt: plan.envelope.attempt, owner: plan.envelope.owner!, now,
-    status: 'waiting', state: { ...state, recoveredByPid: process.pid, requiresReviewReason: reason },
-    engineCursor: plan.checkpoint?.cursor.engineCursor, pendingOperations: plan.pendingOperations,
-    childRuns: plan.childRuns,
-    events: [{ type: 'recovery_waiting', payload: { reason }, recordedAt: now }],
-  });
 }
 
 function createKernel(ownerId: string, processInstanceId: string, leaseDurationMs: number): DurableRunKernel {

@@ -18,6 +18,8 @@ import {
 } from './durableRecoveryHandlers';
 import type { RunRegistry } from './runRegistry';
 import type { DynamicWorkflowRecoveryHost } from './dynamicWorkflowRecovery';
+import type { NativeRecoveryHostPorts } from './nativeRecoveryHost';
+import type { AutoAgentRecoveryHost } from './autoAgentRecoveryHost';
 export interface DurableRecoveryHandlerOverrides {
   native?: DurableEngineRecoveryHandler;
   agentTeam?: DurableEngineRecoveryHandler;
@@ -44,12 +46,20 @@ export function createDurableRecoveryRuntime(input: {
   trustedMcpServerIdentities?: ReadonlySet<string>;
   externalRunners?: ExternalResumeRunners;
   dynamicWorkflowHost?: DynamicWorkflowRecoveryHost;
+  nativeRecoveryPorts?: NativeRecoveryHostPorts;
+  autoAgentRecoveryHost?: AutoAgentRecoveryHost;
   /** Acceptance-only injection boundary; production bootstraps never set it. */
   handlerOverrides?: DurableRecoveryHandlerOverrides;
 }): DurableRecoveryRuntime {
   const dispatcher = new DurableRecoveryDispatcher();
-  dispatcher.registerEngineHandler(input.handlerOverrides?.native ?? createNativeRecoveryHandler());
-  dispatcher.registerEngineHandler(input.handlerOverrides?.agentTeam ?? createAgentTeamRecoveryHandler({ registry: input.registry }));
+  dispatcher.registerEngineHandler(input.handlerOverrides?.native ?? createNativeRecoveryHandler({
+    registry: input.registry,
+    ports: input.nativeRecoveryPorts,
+  }));
+  dispatcher.registerEngineHandler(input.handlerOverrides?.agentTeam ?? createAgentTeamRecoveryHandler({
+    registry: input.registry,
+    autoAgentHost: input.autoAgentRecoveryHost,
+  }));
   dispatcher.registerEngineHandler(input.handlerOverrides?.externalEngine ?? createExternalEngineRecoveryHandler({
     registry: input.registry,
     runners: input.externalRunners,

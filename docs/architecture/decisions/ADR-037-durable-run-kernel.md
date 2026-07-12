@@ -1,6 +1,6 @@
 # ADR-037 — Durable Run Kernel identity, ownership, and recovery semantics
 
-- Status: accepted; S3.5 shared constructor and projection boundary frozen
+- Status: accepted; S9.5 production cutover approved by the machine gate
 - Date: 2026-07-11
 - Related: `native-run-context.md`, `coordinator-checkpoint-symmetry.md`, ADR-022 execution ledgers, ADR-023 Swarm ledger
 
@@ -31,12 +31,12 @@ The normative details, failure gold, migration schema, and S1–S9 file ownershi
 - Every engine must preserve logical run identity even when its native process/session identifiers change.
 - Stores must support compare-and-swap ownership and transactional event/checkpoint writes; simple last-write-wins updates are invalid.
 - A valid checkpoint can still repeat the current node, so tool authors and engine adapters must design for at-least-once execution.
-- Crash resume support is engine-specific. Real process evidence now supports
-  Dynamic Workflow, Agent Team child reconciliation, resumable Codex/Claude
-  External Engine sessions, and trusted/queryable MCP Durable Tasks. Native
-  model/tool/approval continuation and Auto Agent startup recovery remain
-  unsupported in production, so the product-wide Durable rollout cannot yet be
-  advertised or defaulted to `durable_preferred`.
+- Crash resume support remains engine-specific. Real process evidence supports
+  Native model/tool/approval evidence-based continuation, Agent Team and Auto
+  Agent startup recovery, Dynamic Workflow, resumable Codex/Claude External
+  Engine sessions, and trusted/queryable MCP Durable Tasks. The default is
+  `durable_preferred`; unqueryable model results, unproven safe retry, unknown
+  writes, drift, and missing approval identity still require review.
 
 ## Rejected alternatives
 

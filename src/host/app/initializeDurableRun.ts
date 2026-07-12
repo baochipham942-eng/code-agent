@@ -9,10 +9,13 @@ import {
 } from '../runtime/durableRecoveryRuntime';
 import { DurableRunKernel } from '../runtime/durableRunKernel';
 import type { RunRegistry } from '../runtime/runRegistry';
+import type { NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
+import type { AutoAgentRecoveryHost } from '../runtime/autoAgentRecoveryHost';
 import {
   resolveDurableRunRollout,
   type DurableRunRolloutPolicy,
 } from './durableRunRollout';
+import { DurableRunReadService } from './durableRunReadService';
 
 export class DurableRunRolloutInitializationError extends Error {
   readonly code = 'DURABLE_RUN_ROLLOUT_INITIALIZATION_FAILED';
@@ -27,6 +30,7 @@ export interface DurableRunApplicationRuntime {
   policy: DurableRunRolloutPolicy;
   kernel: DurableRunKernel | null;
   recoveryRuntime: DurableRecoveryRuntime | null;
+  readService: DurableRunReadService;
   recoveryResults: Awaited<ReturnType<DurableRecoveryRuntime['recoverAndDispatch']>>;
   shutdown(): Promise<void>;
 }
@@ -42,6 +46,8 @@ export async function initializeDurableRun(input: {
   leaseDurationMs?: number;
   now?: number;
   dynamicWorkflowHost?: DynamicWorkflowRecoveryHost;
+  nativeRecoveryPorts?: NativeRecoveryHostPorts;
+  autoAgentRecoveryHost?: AutoAgentRecoveryHost;
   externalRunners?: ExternalResumeRunners;
   getMcpClient?: () => MCPClient;
   trustedMcpServerIdentities?: ReadonlySet<string>;
@@ -52,11 +58,13 @@ export async function initializeDurableRun(input: {
   onDelayedError?: (error: unknown) => void;
 }): Promise<DurableRunApplicationRuntime> {
   const policy = resolveDurableRunRollout(input.env);
+  const readService = new DurableRunReadService(policy, input.repository);
   if (!policy.durableActivation) {
     return {
       policy,
       kernel: null,
       recoveryRuntime: null,
+      readService,
       recoveryResults: [],
       shutdown: async () => undefined,
     };
@@ -84,6 +92,8 @@ export async function initializeDurableRun(input: {
       kernel,
       dataDir: input.dataDir,
       dynamicWorkflowHost: input.dynamicWorkflowHost,
+      nativeRecoveryPorts: input.nativeRecoveryPorts,
+      autoAgentRecoveryHost: input.autoAgentRecoveryHost,
       externalRunners: input.externalRunners,
       getMcpClient: input.getMcpClient,
       trustedMcpServerIdentities: input.trustedMcpServerIdentities,
@@ -98,6 +108,7 @@ export async function initializeDurableRun(input: {
       policy,
       kernel,
       recoveryRuntime,
+      readService,
       recoveryResults,
       shutdown: () => recoveryRuntime.shutdown(),
     };

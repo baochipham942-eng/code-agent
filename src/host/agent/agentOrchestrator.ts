@@ -724,6 +724,7 @@ export class AgentOrchestrator {
             this.runStandardAgentLoop(c, e, m, s, executionPrompt, toolScope, executionIntent, options),
           toolScope: options?.toolScope,
           executionIntent: options?.executionIntent,
+          sourceMessageId: this.messages.filter((message) => message.role === 'user').at(-1)?.id,
         }, sessionId);
       } else {
         await this.runStandardAgentLoop(

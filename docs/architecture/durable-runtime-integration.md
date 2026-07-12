@@ -63,10 +63,11 @@ a write-on/read-off hybrid. `durable_preferred` reads propagate repository
 errors and fall back to legacy only when `getLatestBySession()` proves that no
 Durable row exists.
 
-The target preference is not the default yet. `dual_write` remains the default
-because the production Native handler above is still review-only and the
-selector is not connected to migrated engine/session read consumers. The
-process acceptance command marks injected acceptance handlers separately from
-production executor recovery and keeps the release gate red until those gaps
-and the Auto Agent startup handler are closed. See
+S9.5 makes `durable_preferred` the default after the process gate proves the
+Native production Host, Auto Agent startup handler, and all migrated read
+consumers. Native model/tool/approval descriptors contain stable identities and
+cursors only. Auto Agent stays under `agent_team` and dispatches by its
+versioned cursor. Provider contracts that cannot prove query or safe retry,
+unknown writes, dependency drift, and missing approval identity remain review
+boundaries. See
 [S9 acceptance and rollback](durable-run-s9-acceptance-and-rollback.md).

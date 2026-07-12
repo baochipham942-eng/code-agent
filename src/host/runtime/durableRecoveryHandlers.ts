@@ -46,14 +46,26 @@ import type {
   DurableEngineRecoveryHandler,
   DurableOperationRecoveryHandler,
 } from './durableRecoveryDispatcher';
+import {
+  NativeRecoveryHost,
+  createUnavailableNativeRecoveryPorts,
+  type NativeRecoveryHostPorts,
+} from './nativeRecoveryHost';
+import { AutoAgentRecoveryHost } from './autoAgentRecoveryHost';
 
 export interface ExternalResumeRunners {
   codex(input: Parameters<CodexCliAdapter['run']>[0]): Promise<AgentEngineRunResult>;
   claude(input: Parameters<ClaudeCodeAdapter['run']>[0]): Promise<AgentEngineRunResult>;
 }
 
-export function createNativeRecoveryHandler(): DurableEngineRecoveryHandler {
-  return reviewOnlyEngineHandler('native', 'native runtime continuation is not registered');
+export function createNativeRecoveryHandler(input: {
+  registry: RunRegistry;
+  ports?: NativeRecoveryHostPorts;
+}): DurableEngineRecoveryHandler {
+  return new NativeRecoveryHost(
+    input.registry,
+    input.ports ?? createUnavailableNativeRecoveryPorts(),
+  ).createHandler();
 }
 
 export function createDynamicWorkflowRecoveryHandler(input: {
@@ -63,12 +75,18 @@ export function createDynamicWorkflowRecoveryHandler(input: {
   return createDynamicWorkflowGraphRecoveryHandler(input);
 }
 
-export function createAgentTeamRecoveryHandler(input?: { registry: RunRegistry }): DurableEngineRecoveryHandler {
+export function createAgentTeamRecoveryHandler(input: {
+  registry: RunRegistry;
+  autoAgentHost?: AutoAgentRecoveryHost;
+}): DurableEngineRecoveryHandler {
   const recoveredCoordinators = new Set<ParallelAgentCoordinator>();
   return {
-    name: 'agent_team',
+    name: 'agent_team_production',
     engineKind: 'agent_team',
     async recover(plan, now) {
+      if (input.autoAgentHost?.handles(plan)) {
+        return input.autoAgentHost.createHandler().recover(plan, now);
+      }
       const decision = buildAgentTeamRecoveryDecision(plan);
       if (!canRecoverAgentTeam(plan)) {
         return { status: 'requires_review', reason: 'agent team checkpoint is missing or unsupported', detail: decision };
@@ -82,7 +100,7 @@ export function createAgentTeamRecoveryHandler(input?: { registry: RunRegistry }
         },
       });
       if (result.decision.classification === 'requires_review' || result.decision.classification === 'failed') {
-        if (input?.registry && result.decision.checkpoint) {
+        if (result.decision.checkpoint) {
           await input.registry.checkpointDurable(plan.envelope.runId, {
             now,
             status: 'waiting',
@@ -108,6 +126,7 @@ export function createAgentTeamRecoveryHandler(input?: { registry: RunRegistry }
     shutdown() {
       for (const coordinator of recoveredCoordinators) coordinator.abortAllRunning('coordinator_shutdown');
       recoveredCoordinators.clear();
+      return input.autoAgentHost?.createHandler().shutdown?.();
     },
   };
 }
@@ -308,17 +327,4 @@ function requireMcpProtocol(
     if (protocol) return protocol;
   }
   throw new Error('MCP recovery protocol is unavailable');
-}
-
-function reviewOnlyEngineHandler(
-  engineKind: 'native' | 'dynamic_workflow',
-  reason: string,
-): DurableEngineRecoveryHandler {
-  return {
-    name: engineKind,
-    engineKind,
-    async recover() {
-      return { status: 'requires_review', reason };
-    },
-  };
 }

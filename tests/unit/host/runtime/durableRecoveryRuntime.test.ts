@@ -25,8 +25,9 @@ afterEach(() => {
 describe('DurableRecoveryRuntime startup ordering', () => {
   it('has handlers registered before the first recovery plan is consumed', async () => {
     const recoverDurable = vi.fn(async () => [nativePlan()]);
+    const checkpointDurable = vi.fn(async () => undefined);
     const runtime = createDurableRecoveryRuntime({
-      registry: { recoverDurable } as unknown as RunRegistry,
+      registry: { recoverDurable, checkpointDurable } as unknown as RunRegistry,
       kernel: {} as RunKernelAdapter,
       dataDir: '/tmp/durable-runtime-test',
       getMcpClient: () => { throw new Error('MCP is not needed for this plan'); },
@@ -34,7 +35,7 @@ describe('DurableRecoveryRuntime startup ordering', () => {
     });
     const results = await runtime.recoverAndDispatch(100);
     expect(recoverDurable).toHaveBeenCalledWith(100);
-    expect(results[0]).toMatchObject({ handler: 'native', status: 'requires_review' });
+    expect(results[0]).toMatchObject({ handler: 'native_production', status: 'requires_review' });
     await runtime.shutdown();
   });
 

@@ -66,6 +66,7 @@ import {
   type PendingLocalToolCall,
 } from './agentBridgeToolDispatch';
 import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
+import type { DurableRunReadService } from '../../host/app/durableRunReadService';
 
 export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
 
@@ -76,6 +77,7 @@ interface AgentRouterDeps {
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
   getDurableRunRollout?: () => { policy: DurableRunRolloutPolicy; ready: boolean };
+  getDurableRunReadService?: () => DurableRunReadService | undefined;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -1119,6 +1121,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return;
     }
     const { runId, sessionId } = parsedBody.data;
+    if (sessionId) {
+      const view = await deps.getDurableRunReadService?.()?.readNativeControl(sessionId, () => {
+        const legacy = runRegistry.getBySessionId(sessionId);
+        return { runId: legacy?.context.runId, status: legacy ? 'running' : 'idle', engine: { kind: 'native' } };
+      });
+      if (view?.source === 'durable' && view.terminal) {
+        res.json({ message: 'No active agent to cancel' });
+        return;
+      }
+    }
     const target = runRegistry.resolve({ runId, sessionId });
     if (!target) {
       const ambiguous = !runId && !sessionId && runRegistry.size > 1;
@@ -1138,7 +1150,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     });
   });
 
-  registerAgentLifecycleControlRoutes(router, runRegistry);
+  registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 
   router.post('/interrupt', async (req: Request, res: Response) => {
     const rawBody: unknown = req.body;

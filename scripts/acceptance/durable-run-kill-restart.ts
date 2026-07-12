@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DURABLE_RUN_SCHEMA_VERSION } from '../../src/shared/contract/durableRun';
 import { DURABLE_RUN_KILL_RESTART_SCENARIOS } from '../../tests/fixtures/durableRunKillRestart';
 
-const BASELINE_SHA = 'b7f2e2ca9ca59967c07072845cfac05bd6d57624';
+const BASELINE_SHA = '2548c7b1cc457485c06303cd6a6e7ba4a7092b8c';
 const root = path.resolve(import.meta.dirname, '../..');
 const childEntry = path.join(root, 'tests/e2e/fixtures/durableRunProcessHost.ts');
 const rolloutEntry = path.join(root, 'tests/e2e/fixtures/durableRunRolloutProcess.ts');
@@ -59,6 +59,7 @@ try {
   }
 
   const rollbackRoundTrip = await runRollbackRoundTrip(path.join(tempRoot, 'rollout-roundtrip'));
+  const readPreferenceRoundTrip = await runReadPreferenceRoundTrip(path.join(tempRoot, 'read-preference'));
   const testedSha = git(['rev-parse', 'HEAD']);
   const report = {
     schemaVersion: 1,
@@ -71,6 +72,7 @@ try {
     killSwitch: 'CODE_AGENT_DURABLE_RUN_MODE=legacy',
     scenarios: results,
     rollbackRoundTrip,
+    readPreferenceRoundTrip,
     gates: {
       allKillPointsPassed: results.every((result) => result.pass),
       noDuplicateSideEffects: results.every((result) => result.duplicateSideEffectCount === 0),
@@ -84,7 +86,7 @@ try {
       rollbackRoundTripPassed: rollbackRoundTrip.pass,
       realProcessEvidence: results.every((result) => result.oldProcessInstanceId !== result.newProcessInstanceId),
       productionExecutorRecovery: results.every((result) => result.productionRecoveryPath),
-      productionReadPreferenceWiring: false,
+      productionReadPreferenceWiring: readPreferenceRoundTrip.pass,
     },
     startedAt: new Date(startedAt).toISOString(),
     finishedAt: new Date().toISOString(),
@@ -173,6 +175,94 @@ async function runRollbackRoundTrip(dataDir: string): Promise<Record<string, unk
     return JSON.parse(jsonLine) as { phase: string; mode: string; rowCount: number; tableCount: number; pass: boolean };
   });
   return { pass: outputs.every((output) => output.pass), phases: outputs };
+}
+
+async function runReadPreferenceRoundTrip(dataDir: string): Promise<Record<string, unknown> & { pass: boolean }> {
+  await mkdir(dataDir, { recursive: true });
+  process.env.HOME = dataDir;
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
+  process.env.CODE_AGENT_CLI_MODE = 'true';
+  const [{ default: Database }, { applyDurableRunMigrationDraft }, { DurableRunRepository },
+    { DurableRunKernel }, { RunRegistry }, { initializeDurableRun },
+    { DurableRunReadService }, { resolveDurableRunRollout }] = await Promise.all([
+    import('better-sqlite3'),
+    import('../../src/host/services/core/database/migrations/durableRun'),
+    import('../../src/host/services/core/repositories/DurableRunRepository'),
+    import('../../src/host/runtime/durableRunKernel'),
+    import('../../src/host/runtime/runRegistry'),
+    import('../../src/host/app/initializeDurableRun'),
+    import('../../src/host/app/durableRunReadService'),
+    import('../../src/host/app/durableRunRollout'),
+  ]);
+  const db = new Database(path.join(dataDir, 'read-preference.sqlite'));
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  applyDurableRunMigrationDraft(db);
+  const repository = new DurableRunRepository(db);
+  const kernel = new DurableRunKernel({
+    stores: repository,
+    ownerId: 'read-fixture-owner',
+    processInstanceId: 'read-fixture-process',
+    leaseDurationMs: 1_000,
+  });
+  const now = Date.now();
+  const created = await kernel.createNativeRun({ runId: 'read-run', sessionId: 'read-session', now });
+  await kernel.terminal({
+    runId: 'read-run', attempt: 1, owner: created.owner, now: now + 1,
+    status: 'completed', reason: 'read_fixture',
+    event: { type: 'run_completed', payload: null, recordedAt: now + 1 },
+  });
+
+  const start = (mode: 'legacy' | 'dual_write' | 'durable_preferred', surface: string) => initializeDurableRun({
+    registry: new RunRegistry(),
+    repository: mode === 'legacy' ? null : repository,
+    dataDir,
+    ownerId: `${surface}-owner`,
+    processInstanceId: `${surface}-process`,
+    env: { CODE_AGENT_DURABLE_RUN_MODE: mode },
+    now: now + 2,
+  });
+  const web = await start('durable_preferred', 'web');
+  const tauri = await start('durable_preferred', 'tauri');
+  const legacyProjection = () => ({ runId: 'legacy-stale', status: 'running' as const, engine: { kind: 'native' as const } });
+  const consumers = [
+    web.readService.readNativeStatus('read-session', legacyProjection),
+    web.readService.readNativeControl('read-session', legacyProjection),
+    web.readService.readAgentTeamOrAutoAgent('read-session', legacyProjection),
+    web.readService.readDynamicWorkflow('read-session', legacyProjection),
+    web.readService.readExternalEngine('read-session', legacyProjection),
+    web.readService.readSessionReplay('read-session', legacyProjection),
+  ];
+  const durableViews = await Promise.all(consumers);
+  const tauriView = await tauri.readService.readSessionReplay('read-session', legacyProjection);
+  const dual = await start('dual_write', 'dual');
+  const dualView = await dual.readService.readNativeStatus('read-session', legacyProjection);
+  const legacy = await start('legacy', 'legacy');
+  const legacyView = await legacy.readService.readNativeStatus('read-session', legacyProjection);
+  const missingView = await web.readService.readNativeStatus('historical-session', () => ({
+    runId: 'historical-legacy', status: 'idle', engine: { kind: 'native' }, terminal: true,
+  }));
+  let repositoryErrorPropagated = false;
+  const failing = new DurableRunReadService(
+    resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+    { getLatestBySession: async () => { throw new Error('injected repository failure'); } },
+  );
+  try {
+    await failing.readNativeStatus('read-session', legacyProjection);
+  } catch (error) {
+    repositoryErrorPropagated = error instanceof Error && error.message === 'injected repository failure';
+  }
+  const checks = {
+    allConsumersDurable: durableViews.every((view) => view.source === 'durable' && view.status === 'completed' && view.terminal),
+    dualWriteUsesLegacy: dualView.source === 'legacy' && dualView.status === 'running',
+    legacyDoesNotActivate: legacy.kernel === null && legacy.recoveryRuntime === null && legacyView.source === 'legacy',
+    repositoryErrorPropagated,
+    missingRowFallsBack: missingView.source === 'legacy' && missingView.runId === 'historical-legacy',
+    webTauriConsistent: tauriView.source === durableViews[5]!.source && tauriView.status === durableViews[5]!.status,
+  };
+  await Promise.all([web.shutdown(), tauri.shutdown(), dual.shutdown(), legacy.shutdown()]);
+  db.close();
+  return { pass: Object.values(checks).every(Boolean), checks };
 }
 
 function git(args: string[]): string {

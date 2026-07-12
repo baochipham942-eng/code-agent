@@ -328,7 +328,9 @@ import { getAppVersion } from '../host/platform';
 import { createAgentRouter } from './routes/agent';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { PendingLocalToolCall } from './routes/agent';
-import { RunRegistry } from '../host/runtime/runRegistry';
+import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
+import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
+import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import {
   initializeDurableRun,
   type DurableRunApplicationRuntime,
@@ -353,7 +355,7 @@ onRendererPush((channel, data) => {
 });
 
 // Native run lifecycle ownership. Primary key is runId; sessionId is unique while active.
-const runRegistry = new RunRegistry();
+const runRegistry = getApplicationRunRegistry();
 let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
@@ -486,6 +488,8 @@ async function initializeServices(): Promise<void> {
       dataDir,
       ownerId: 'web-native-host',
       processInstanceId: `web-${process.pid}-${randomUUID()}`,
+      autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
+      nativeRecoveryPorts: createApplicationNativeRecoveryPorts(),
       onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
       onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
     });
@@ -1115,6 +1119,7 @@ function createApp(): express.Express {
       policy: durableRunRolloutPolicy,
       ready: durableRunRolloutReady,
     }),
+    getDurableRunReadService: () => durableRunRuntime?.readService,
   }));
 
   app.use('/api', createBackgroundRouter({ logger }));
@@ -1125,6 +1130,7 @@ function createApp(): express.Express {
     logger,
     tryGetSessionManager,
     getSupabaseForSession,
+    getDurableRunReadService: () => durableRunRuntime?.readService,
   }));
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────

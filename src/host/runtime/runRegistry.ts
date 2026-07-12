@@ -33,6 +33,13 @@ import type {
   AgentTeamParentProjectionInput,
   AgentTeamParentTerminalInput,
 } from '../agent/agentTeamDurableTypes';
+import {
+  AutoAgentDurableRuntime,
+  configureAutoAgentDurableRuntime,
+} from '../agent/autoAgentDurableRuntime';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import type { NativeRecoveryDescriptor } from './nativeRecoveryHost';
 
 export class RunSessionConflictError extends Error {
   readonly code = 'RUN_SESSION_CONFLICT';
@@ -69,6 +76,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   configureDurableKernel(kernel: RunKernelAdapter): void {
     this.kernel = kernel;
     configureAgentTeamDurableRuntime(new AgentTeamDurableRuntime(kernel, this));
+    configureAutoAgentDurableRuntime(new AutoAgentDurableRuntime(kernel, this));
   }
 
   start(input: CreateRunContextInput): RunHandle {
@@ -206,6 +214,141 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     }
     this.durableCheckpointStates.set(runId, input.state);
     return checkpoint;
+  }
+
+  async checkpointNativeModelOperation(input: {
+    runId: string;
+    sourceMessageId: string;
+    provider: string;
+    model: string;
+    logicalOperationId: string;
+    phase: NativeRecoveryDescriptor['phase'];
+    status: PendingOperation['status'];
+    resultRef?: string;
+    now?: number;
+  }): Promise<void> {
+    const now = input.now ?? Date.now();
+    const live = this.requireDurableOwner(input.runId);
+    const envelope = this.durableEnvelopes.get(input.runId);
+    const handle = this.handlesByRunId.get(input.runId);
+    if (!envelope || !handle) throw new Error(`Native Durable Run ${input.runId} is not active`);
+    const operationId = `model:${input.logicalOperationId}`;
+    const existing = envelope.pendingOperations?.find((operation) => operation.operationId === operationId);
+    const prepared = existing ?? this.requireKernel().prepareOperation({
+      runId: input.runId,
+      operationId,
+      logicalOperationId: input.logicalOperationId,
+      attempt: live.attempt,
+      kind: 'model_call',
+      sideEffect: false,
+      canDeduplicate: false,
+      now,
+    });
+    const operation: PendingOperation = {
+      ...prepared,
+      status: input.status,
+      ...(input.resultRef ? { resultRef: input.resultRef } : {}),
+      updatedAt: now,
+    };
+    const pendingOperations = [
+      ...(envelope.pendingOperations ?? []).filter((candidate) => candidate.operationId !== operationId),
+      operation,
+    ];
+    const workspace = path.resolve(handle.context.workspace);
+    const cwd = path.resolve(handle.context.cwd);
+    const descriptor: NativeRecoveryDescriptor = {
+      schemaVersion: 1,
+      kind: 'native',
+      sourceMessageId: input.sourceMessageId,
+      provider: input.provider,
+      model: input.model,
+      workspace: {
+        root: workspace,
+        cwd,
+        fingerprint: createHash('sha256').update(workspace).digest('hex'),
+      },
+      logicalOperationId: input.logicalOperationId,
+      operationId,
+      phase: input.phase,
+      checkpointSequence: envelope.cursor.checkpointSeq + 1,
+    };
+    await this.checkpointDurable(input.runId, {
+      now,
+      status: 'running',
+      state: descriptor,
+      engineCursor: { schemaVersion: 1, runtime: 'native', operationId, phase: input.phase },
+      pendingOperations,
+      childRuns: envelope.childRuns,
+      events: [{ type: 'native_model_operation', payload: { operationId, phase: input.phase, status: input.status }, recordedAt: now }],
+    });
+  }
+
+  async checkpointNativeToolOperation(input: {
+    runId: string;
+    sourceMessageId: string;
+    toolName: string;
+    logicalOperationId: string;
+    providerOperationId: string;
+    sideEffect: boolean;
+    status: PendingOperation['status'];
+    resultRef?: string;
+    now?: number;
+  }): Promise<void> {
+    const now = input.now ?? Date.now();
+    const live = this.requireDurableOwner(input.runId);
+    const envelope = this.durableEnvelopes.get(input.runId);
+    const handle = this.handlesByRunId.get(input.runId);
+    if (!envelope || !handle) throw new Error(`Native Durable Run ${input.runId} is not active`);
+    const operationId = `tool:${input.logicalOperationId}`;
+    const existing = envelope.pendingOperations?.find((operation) => operation.operationId === operationId);
+    const prepared = existing ?? this.requireKernel().prepareOperation({
+      runId: input.runId,
+      operationId,
+      logicalOperationId: input.logicalOperationId,
+      attempt: live.attempt,
+      kind: 'tool_call',
+      sideEffect: input.sideEffect,
+      canDeduplicate: true,
+      providerOperationId: input.providerOperationId,
+      now,
+    });
+    const operation: PendingOperation = {
+      ...prepared,
+      status: input.status,
+      providerOperationId: input.providerOperationId,
+      ...(input.resultRef ? { resultRef: input.resultRef } : {}),
+      updatedAt: now,
+    };
+    const pendingOperations = [
+      ...(envelope.pendingOperations ?? []).filter((candidate) => candidate.operationId !== operationId),
+      operation,
+    ];
+    const workspace = path.resolve(handle.context.workspace);
+    const descriptor: NativeRecoveryDescriptor = {
+      schemaVersion: 1,
+      kind: 'native',
+      sourceMessageId: input.sourceMessageId,
+      provider: 'tool',
+      model: input.toolName,
+      workspace: {
+        root: workspace,
+        cwd: path.resolve(handle.context.cwd),
+        fingerprint: createHash('sha256').update(workspace).digest('hex'),
+      },
+      logicalOperationId: input.logicalOperationId,
+      operationId,
+      phase: 'tool_dispatched',
+      checkpointSequence: envelope.cursor.checkpointSeq + 1,
+    };
+    await this.checkpointDurable(input.runId, {
+      now,
+      status: 'running',
+      state: descriptor,
+      engineCursor: { schemaVersion: 1, runtime: 'native', operationId, phase: 'tool_dispatched' },
+      pendingOperations,
+      childRuns: envelope.childRuns,
+      events: [{ type: 'native_tool_operation', payload: { operationId, status: input.status }, recordedAt: now }],
+    });
   }
 
   async prepareAgentTeamChild(input: AgentTeamParentProjectionInput): Promise<void> {
@@ -442,6 +585,10 @@ export class RunRegistry implements AgentTeamDurableParentHost {
 
   hasSession(sessionId: string): boolean {
     return this.runIdBySessionId.has(sessionId);
+  }
+
+  hasDurableOwner(runId: string): boolean {
+    return this.durableOwners.has(runId);
   }
 
   last(): RunHandle | undefined {

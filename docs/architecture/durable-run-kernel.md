@@ -247,10 +247,10 @@ variants. It proves epoch takeover, stale-owner rejection, monotonic event
 sequence, stable operation keys, terminal uniqueness, completed-node reuse, and
 runtime rollback without schema deletion.
 
-Evidence alone does not promote an injected recovery handler to product support.
-The machine gate includes `productionExecutorRecovery` and
-`productionReadPreferenceWiring`; Native model/tool/approval, Auto Agent startup
-continuation, and migrated read consumers keep those gates red. The rollout
-default remains `dual_write` until those rows execute through registered
-production handlers and Durable reads are wired. The operational contract is documented in
+Evidence does not promote an injected handler to product support. S9.5 removes
+release-row overrides: Native model/tool/approval and Auto Agent startup run
+through registered production Hosts, while deterministic fakes replace only
+external ports. The real consumer round-trip proves
+`productionReadPreferenceWiring`, so the rollout default is
+`durable_preferred`. The operational contract is documented in
 [S9 acceptance and rollback](durable-run-s9-acceptance-and-rollback.md).

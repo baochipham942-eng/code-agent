@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.3] - 2026-07-12
+
+### Fixed
+
+- **v0.26.2 发布恢复**：补齐 fresh Stability Stop/Recovery smoke，并让 app-host smoke 使用隔离数据目录，避免读取真实用户 MCP 配置造成资源竞争；本版本承接 `v0.26.2` 已推 tag 但被 evidence freshness gate 阻断的发布现场。
+- **fresh-profile 首次启动超时**：远程 plugin、skill 和 MCP capability 初始化移出 HTTP listener 与首窗导航关键路径；Durable recovery 在 capability 就绪后继续并保持 fail-closed。
+
+### Changed
+
+- **更新 metadata 权威源收敛**：`/api/update` 只读 GitHub Release 与 OSS stable manifests，不再保留无持久化效果的 Cloud publish 兼容入口。
+- **仓库结构与设计契约**：补齐代码、脚本、测试和 workflow 导航边界，增加 repository-structure gate 与根目录 `DESIGN.md`。
+
 ## [0.26.2] - 2026-07-12
 
 ### Changed

@@ -4,3 +4,4 @@ export * from './graphExecutorPort';
 export * from './graphSchedulerPort';
 export * from './graphCheckpointProjection';
 export * from './graphRunner';
+export * from './adapters';

@@ -77,13 +77,13 @@ export type WebCapabilityBootstrapOptions = {
 export function startWebCapabilityBootstrap(
   configService: ConfigServiceForBootstrap,
   options: WebCapabilityBootstrapOptions = {},
-): void {
+): Promise<void> {
   const initializeSkills = options.initializeSkills ?? (async () => undefined);
   const initializeMcp = options.initializeMcp ?? (async () => undefined);
   const initializePlugins = options.initializePlugins ?? (() => initializeWebPluginSystem());
   const logger = options.logger ?? noopLogger;
 
-  void (async () => {
+  return (async () => {
     logger.info('Starting web capability bootstrap in background');
     await initializePlugins();
     await initializeSkills(configService);

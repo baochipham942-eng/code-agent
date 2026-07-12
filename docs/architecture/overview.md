@@ -147,7 +147,7 @@
 | Renderer 与 shell 版本合同 | `/api/health.rendererServe` 暴露 active/builtin/static 来源和 `active-healthy`、`hot-update-disabled`、`no-active-meta`、`active-index-missing`、`active-older-than-shell` 等原因，避免热更覆盖旧前端 | [desktop-shell.md](./desktop-shell.md)、[hot-update.md](./hot-update.md) |
 | Runtime asset registry | `system-audio-capture`、`vision-ocr`、`vision-tagger`、Computer Use app、`uv`、`rtk`、sharp runtime 和可选 browser/audio runtime 都进入统一 registry/status，带平台、版本、最小壳版本和 hash 摘要 | [desktop-shell.md](./desktop-shell.md)、[native-app-integration.md](./native-app-integration.md) |
 | Native command facade | 前端组件通过 `nativeDesktop`、`nativeCommandFacade`、`tauriPluginFacade` 调 native domain API / Tauri command / plugin，不把 invoke 和插件细节散在 UI 组件里 | [desktop-shell.md](./desktop-shell.md)、[native-app-integration.md](./native-app-integration.md) |
-| Release acceptance | `desktop-shell:packaged-smoke` 生成可交给 `release:post-publish` 的 JSON 证据；当前 0.20.0 本机包 smoke 已通过，生产 post-publish 仍卡在 control-plane renderer rollout 版本未追齐 | [desktop-shell.md](./desktop-shell.md)、[hot-update.md](./hot-update.md) |
+| Release acceptance | `desktop-shell:packaged-smoke` 生成可交给 `release:post-publish` 的 JSON 证据；v0.26.1 已完成签名分发与隔离 smoke，fresh-profile 远程 capability 初始化从 HTTP/首窗关键路径移到后台 | [desktop-shell.md](./desktop-shell.md)、[hot-update.md](./hot-update.md)、[release checklist](../releases/RELEASE_CHECKLIST.md) |
 
 ## 2026-06-18 架构增量（Web Data / Release Verification / Input Surface）
 

@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 const root = path.resolve(import.meta.dirname, '../../../..');
 
 describe('durable recovery production startup ordering', () => {
-  it('webServer initializes MCP and handlers before recovery and reuses the runtime for delayed scan', () => {
+  it('webServer initializes durable recovery without waiting for remote MCP startup', () => {
     const source = readFileSync(path.join(root, 'src/web/webServer.ts'), 'utf8');
-    const mcp = source.indexOf('await initializeWebMcpServices(configService)');
-    const runtime = source.indexOf('await initializeDurableRun({', mcp);
-    expect(mcp).toBeGreaterThan(0);
-    expect(runtime).toBeGreaterThan(mcp);
+    const backgroundCapabilities = source.indexOf('startWebCapabilityBootstrap(configService)');
+    const runtime = source.indexOf('await initializeDurableRun({', backgroundCapabilities);
+    expect(backgroundCapabilities).toBeGreaterThan(0);
+    expect(runtime).toBeGreaterThan(backgroundCapabilities);
+    expect(source).not.toContain('await startWebCapabilityBootstrap(configService)');
+    expect(source).not.toContain('await initializeWebMcpServices(configService)');
     expect(source).toContain('durableRunRuntime?.shutdown()');
   });
 

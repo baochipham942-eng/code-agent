@@ -283,8 +283,8 @@ export async function initializeWebPluginSystem(): Promise<void> {
 export function startWebCapabilityBootstrap(
   configService: ConfigServiceForBootstrap,
   options: WebCapabilityBootstrapOptions = {},
-): void {
-  startWebCapabilityBootstrapCore(configService, {
+): Promise<void> {
+  return startWebCapabilityBootstrapCore(configService, {
     initializeSkills: initializeWebSkillServices,
     initializeMcp: initializeWebMcpServices,
     initializePlugins: initializeWebPluginSystem,
@@ -384,6 +384,7 @@ async function initializeServices(): Promise<void> {
   // 加载 .env 文件（确保 API Key、HTTPS_PROXY 等环境变量可用）
   // 优先级：显式数据目录 .env → ~/.code-agent/.env（用户态，打包态主路径）→ 脚本所在目录 → 上级目录（开发态）
   // 不再搜 process.cwd()：launchd 启的 app cwd 是 /，永远 miss，且会让 dev/prod 行为发散
+  let databaseForDurableRun: Awaited<ReturnType<(typeof import('../host/services/core/databaseService'))['initDatabase']>> | undefined;
   try {
     const dotenv = await import("dotenv");
     const candidates = uniquePathList([
@@ -478,26 +479,7 @@ async function initializeServices(): Promise<void> {
     onDatabaseRecovered(() => {
       setDbAvailable(true);
     });
-    const database = await initDatabase();
-    await initializeWebMcpServices(configService);
-    durableRunRuntime = await initializeDurableRun({
-      registry: runRegistry,
-      repository: durableRunRolloutPolicy.durableActivation
-        ? database.getDurableRunRepository()
-        : null,
-      dataDir,
-      ownerId: 'web-native-host',
-      processInstanceId: `web-${process.pid}-${randomUUID()}`,
-      autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
-      nativeRecoveryPorts: createApplicationNativeRecoveryPorts(),
-      onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
-      onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
-    });
-    durableRunRolloutReady = true;
-    logger.info('Durable rollout initialized', {
-      mode: durableRunRuntime.policy.mode,
-      results: durableRunRuntime.recoveryResults,
-    });
+    databaseForDurableRun = await initDatabase();
     setDbAvailable(true);
     logger.info('Database initialized');
   } catch (error) {
@@ -559,7 +541,32 @@ async function initializeServices(): Promise<void> {
 
   // Skills and MCP are useful immediately after launch, but remote connections
   // must not sit in front of /api/health or Tauri's first window navigation.
-  startWebCapabilityBootstrap(configService);
+  const capabilityBootstrap = startWebCapabilityBootstrap(configService);
+  if (databaseForDurableRun) {
+    void capabilityBootstrap.then(async () => {
+      durableRunRuntime = await initializeDurableRun({
+        registry: runRegistry,
+        repository: durableRunRolloutPolicy.durableActivation
+          ? databaseForDurableRun?.getDurableRunRepository() ?? null
+          : null,
+        dataDir,
+        ownerId: 'web-native-host',
+        processInstanceId: `web-${process.pid}-${randomUUID()}`,
+        autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
+        nativeRecoveryPorts: createApplicationNativeRecoveryPorts(),
+        onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
+        onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
+      });
+      durableRunRolloutReady = true;
+      logger.info('Durable rollout initialized', {
+        mode: durableRunRuntime.policy.mode,
+        results: durableRunRuntime.recoveryResults,
+      });
+    }).catch((error) => {
+      durableRunRolloutReady = false;
+      logger.warn('Durable rollout initialization failed (non-blocking):', error instanceof Error ? error.message : String(error));
+    });
+  }
 
   // 启动时探测本地 CLI 能力（fire-and-forget，不阻塞初始化）
   // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块

@@ -1,7 +1,7 @@
 # Desktop Shell Operability Architecture
 
 > Scope: Tauri shell, bundled Node webServer, renderer bundle selection, native runtime assets, and release diagnostics.
-> Related spec: [2026-06-24 Desktop Shell Operability Spec](../specs/2026-06-24-desktop-shell-operability.md)
+> Release contract: [Agent Neo Release Checklist](../releases/RELEASE_CHECKLIST.md)
 
 Agent Neo keeps a split desktop runtime: the Tauri Rust process owns the native shell, permissions, bundled resources, and updater boundary; the spawned Node webServer owns application services and serves the React renderer. This architecture page documents how the shell explains startup and how release/debug tooling proves the package is usable.
 
@@ -14,12 +14,17 @@ Tauri Rust shell
   -> resolve dist/web/webServer.cjs
   -> resolve bundled Node
   -> spawn webServer child process
+  -> initialize local config and persistence
+  -> start remote plugins / skills / MCP capability bootstrap in background
   -> healthcheck /api/health with boot token match
   -> navigate main window to webServer
+  -> finish remote capabilities and durable recovery behind a fail-closed readiness flag
   -> expose diagnostics through diagnostics.desktopShell
 ```
 
 The Rust shell writes `desktop-shell-boot-latest.json` under the app log directory. The write is best-effort. If the file cannot be written, the app continues booting and the diagnostics IPC falls back to live checks where possible.
+
+`/api/health` is shell readiness, not proof that every remote capability is connected. Fresh-profile startup must not wait for Cloud config, remote skill repositories, or MCP handshakes before the HTTP listener and first window navigation. Those capabilities initialize in the background; connection failures are warnings and leave the affected capability unavailable without taking down the builtin renderer. Durable recovery waits for capability bootstrap and remains fail-closed until its handlers are ready.
 
 Boot stages are intentionally coarse and stable:
 
@@ -67,6 +72,8 @@ Startup preflight is deliberately small. It checks only resources that determine
 | `control-plane-public-keys` | `dist/web/control-plane-public-keys.json` | No | Control-plane verification can warn, but shell startup continues. |
 
 Runtime assets are tracked separately through `RUNTIME_ASSET_DEFINITIONS`. Bundled assets include `sharp-image-runtime`, `system-audio-capture`, `vision-ocr`, `vision-tagger`, `computer-use-app`, `uv`, and `rtk`. Optional assets include `onnxruntime-vad` and `playwright-browser-runtime`.
+
+Missing `onnxruntime-vad` or `playwright-browser-runtime` remains a warning and first-use delivery concern. Neither asset is allowed to become a required shell-start resource.
 
 ## Renderer Serve Decision
 
@@ -136,6 +143,8 @@ The release path has three relevant checks:
 
 Formal release still runs from tag-triggered GitHub Actions. Local package commands prove the build on this machine; they do not replace CI release.
 
+macOS release DMGs embed the stapled app ticket, are rebuilt and re-signed, then notarized and stapled again. This final-byte sequence makes a fresh DMG install launchable when Gatekeeper cannot perform a network ticket lookup; changing that order requires a notarization and offline-launch smoke, not only a local codesign check.
+
 ## Current Production Note
 
-The latest local acceptance for version `0.20.0` proved the packaged shell healthy. Production post-publish verification still fails until the control-plane renderer rollout reports `0.20.0`; the app update endpoint, OSS renderer manifest, and `release-record.json` are already on `0.20.0`, while the control-plane rollout still reports `0.17.2`.
+The v0.26.1 arm64 isolated smoke reached `window-navigated`, returned `webHealth=ok`, and reported zero missing required resources. Its first fresh-profile run exceeded the 120-second gate while 13 remote MCP servers initialized; a 300-second retry passed. The source contract above removes remote MCP/skill initialization from the listener critical path. `onnxruntime-vad` and `playwright-browser-runtime` remain optional warnings. This source-side correction does not alter or invalidate the already usable v0.26.1 distribution.

@@ -27,15 +27,17 @@ Engine and operation handlers have separate dispatch keys. One handler failure b
 
 ## Startup and shutdown
 
-Web/Tauri webServer and Host bootstrap use the same order:
+Host bootstrap keeps the synchronous recovery order. Web/Tauri splits readiness from remote capability recovery so a fresh profile can expose `/api/health` without waiting for remote MCP servers:
 
 1. initialize database and Durable kernel dependencies;
-2. initialize MCP/runtime dependencies;
-3. construct the Dynamic Workflow Host resolver from the initialized session/model/tool/journal services and register all recovery handlers synchronously;
-4. call `recoverDurable()` once;
-5. dispatch returned plans;
+2. start plugin, skill, and MCP initialization as a background capability bootstrap;
+3. let the webServer finish handler registration and HTTP listen while remote capabilities connect;
+4. after capability bootstrap settles, construct the Dynamic Workflow Host resolver and register recovery handlers;
+5. call `recoverDurable()` once and dispatch returned plans;
 6. schedule one lease-boundary scan through the same runtime;
 7. cancel the delayed scan and await in-flight recovery work during shutdown.
+
+Until step 4 finishes, durable activation remains fail-closed (`ready=false`); HTTP health and the builtin renderer remain available, while agent routes cannot claim durable readiness early. The non-web Host path still awaits background infrastructure before recovery because it has no Tauri first-window health deadline.
 
 Database initialization failure remains fail-closed. MCP trust is an explicit local allowlist supplied through `CODE_AGENT_MCP_DURABLE_TRUSTED_SERVER_IDENTITIES`; an empty or stale allowlist produces review rather than a query. MCP results are stored as mode-0600 local files referenced by opaque SHA-256 ids, without changing Durable Run tables or ToolCache policy.
 

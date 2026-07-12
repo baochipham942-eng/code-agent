@@ -2,6 +2,7 @@ import type { RunStatus } from '../../shared/contract/durableRun';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import type { AgentTask, AgentTaskResult } from './parallelAgentCoordinatorTypes';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
+import type { GraphCheckpoint } from '../orchestration';
 
 export const AGENT_TEAM_CHECKPOINT_SCHEMA_VERSION = 1 as const;
 
@@ -73,6 +74,8 @@ export interface AgentTeamCheckpointState {
   worktreeRefs: Record<string, string>;
   artifactRefs: Record<string, string[]>;
   cancelled: boolean;
+  /** Graph Runner node-state projection; Durable Run remains the storage/lease authority. */
+  graphCheckpoint?: GraphCheckpoint;
   updatedAt: number;
 }
 
@@ -82,6 +85,7 @@ export interface AgentTeamDurableController {
   readonly traceContext?: RunTraceContext;
   getState(): AgentTeamCheckpointState;
   checkpoint(status?: Exclude<RunStatus, 'created' | 'completed' | 'failed' | 'cancelled'>): Promise<void>;
+  projectGraphCheckpoint?(checkpoint: GraphCheckpoint): Promise<void>;
   markApprovalWaiting(approvalId: string, now?: number): Promise<void>;
   resolveApproval(approvalId: string, status: 'approved' | 'rejected' | 'cancelled', now?: number): Promise<void>;
   markNodeDispatched(task: AgentTask, now?: number): Promise<void>;

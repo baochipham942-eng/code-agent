@@ -339,6 +339,39 @@ describe('Agent Team durable adapter', () => {
     expect(controller.getState().taskGraph[0].status).toBe('prepared');
   });
 
+  it('stores the GraphRunner projection inside the existing Team durable checkpoint', async () => {
+    const kernel = fakeKernel();
+    const runtime = new AgentTeamDurableRuntime(kernel, parentHost);
+    const controller = await runtime.start({
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      tasks: [{ id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] }],
+      now: 10,
+    });
+    await controller.projectGraphCheckpoint?.({
+      version: 1,
+      graphId: `agent-team:${scope.treeId}`,
+      runId: scope.runId,
+      sessionId: scope.sessionId,
+      attempt: 1,
+      status: 'running',
+      eventSequence: 2,
+      scheduler: { version: 1, nodes: [{ nodeId: 'node-a', status: 'ready', attempts: 0 }], cancelled: false },
+      nodes: [{ nodeId: 'node-a', status: 'ready', attempts: 0 }],
+      createdAt: 10,
+      updatedAt: 11,
+    });
+    expect(controller.getState().graphCheckpoint).toMatchObject({
+      runId: scope.runId,
+      nodes: [{ nodeId: 'node-a', status: 'ready' }],
+    });
+    expect(vi.mocked(kernel.checkpoint).mock.calls.at(-1)?.[0].state).toMatchObject({
+      graphCheckpoint: { runId: scope.runId },
+    });
+  });
+
   it('projects the stable Team child and terminal result onto the Native parent', async () => {
     const kernel = fakeKernel();
     const nativeOwner: RunOwnerLease = { ownerId: 'native-owner', processInstanceId: 'native-process', epoch: 1, leaseExpiresAt: 1000 };

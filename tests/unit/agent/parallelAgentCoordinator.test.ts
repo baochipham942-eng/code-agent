@@ -433,7 +433,7 @@ describe('ParallelAgentCoordinator', () => {
       }));
 
       const first = coordinator.executeParallel([makeTask('same-role-a')]);
-      await vi.waitFor(() => expect(coordinator.isExecuting()).toBe(true));
+      await vi.waitFor(() => expect(resolveFirst).toBeTypeOf('function'));
       await expect(
         coordinator.executeParallel([makeTask('same-role-b')]),
       ).rejects.toThrow(/not reentrant/i);
@@ -1011,25 +1011,7 @@ describe('ParallelAgentCoordinator', () => {
       );
     });
 
-    it('交给 scheduler 执行并转换结果', async () => {
-      schedulerState.executeMock.mockResolvedValueOnce({
-        success: true,
-        totalDuration: 1234,
-        maxParallelism: 2,
-        dag: {
-          getAllTasks: () => [
-            {
-              id: 'a',
-              status: 'completed',
-              name: 'coder',
-              config: { type: 'agent', role: 'coder' },
-              output: { text: 'done', toolsUsed: ['Read'], iterations: 3 },
-              metadata: { startedAt: 1, completedAt: 2, duration: 1 },
-            },
-          ],
-        },
-      });
-
+    it('作为兼容 facade 委托统一 GraphRunner 路径', async () => {
       const result = await coordinator.executeWithDAG([
         makeTask('a', { role: 'coder' }),
       ]);
@@ -1037,27 +1019,17 @@ describe('ParallelAgentCoordinator', () => {
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(1);
       expect(result.results[0].taskId).toBe('a');
-      expect(result.totalDuration).toBe(1234);
-      expect(schedulerState.capturedDAG).not.toBeNull();
+      expect(executorState.executeMock).toHaveBeenCalledTimes(1);
+      expect(schedulerState.executeMock).not.toHaveBeenCalled();
     });
 
-    it('scheduler 返回失败节点时收集 errors', async () => {
-      schedulerState.executeMock.mockResolvedValueOnce({
+    it('Graph executor 返回失败节点时收集 errors', async () => {
+      executorState.executeMock.mockResolvedValueOnce({
         success: false,
-        totalDuration: 50,
-        maxParallelism: 1,
-        dag: {
-          getAllTasks: () => [
-            {
-              id: 'a',
-              status: 'failed',
-              name: 'coder',
-              config: { type: 'agent', role: 'coder' },
-              failure: { message: 'nope' },
-              metadata: {},
-            },
-          ],
-        },
+        output: '',
+        error: 'nope',
+        iterations: 1,
+        toolsUsed: [],
       });
 
       const result = await coordinator.executeWithDAG([

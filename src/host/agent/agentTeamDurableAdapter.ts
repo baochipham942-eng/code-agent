@@ -7,6 +7,7 @@ import {
   type RunTraceContext,
 } from '../telemetry/runTraceContext';
 import type { AgentTask, AgentTaskResult } from './parallelAgentCoordinatorTypes';
+import type { GraphCheckpoint } from '../orchestration';
 import {
   AGENT_TEAM_CHECKPOINT_SCHEMA_VERSION,
   type AgentTeamCheckpointNode,
@@ -114,6 +115,17 @@ class Controller implements AgentTeamDurableController {
         }],
       });
     });
+  }
+
+  async projectGraphCheckpoint(checkpoint: GraphCheckpoint): Promise<void> {
+    if (checkpoint.runId !== this.scope.runId || checkpoint.sessionId !== this.scope.sessionId) {
+      throw new Error('Agent Team graph checkpoint identity mismatch');
+    }
+    this.state.graphCheckpoint = structuredClone(checkpoint);
+    this.state.updatedAt = checkpoint.updatedAt;
+    await this.checkpoint(checkpoint.status === 'waiting' || checkpoint.status === 'requires_review'
+      ? 'waiting'
+      : 'running');
   }
 
   async markApprovalWaiting(approvalId: string, now = Date.now()): Promise<void> {

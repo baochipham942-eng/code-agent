@@ -627,25 +627,19 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
         makeTask('t2', { dependsOn: ['t1'] }),
       ]);
 
-      // 只有成功的 t1 被预喂进 DAG，失败的 t2 留给 scheduler 重跑
-      expect(dagState.completedCalls).toHaveLength(1);
-      expect(dagState.completedCalls[0].id).toBe('t1');
-      expect(dagState.completedCalls[0].output).toEqual({
-        text: 'restored-dag-t1',
-        toolsUsed: ['Read', 'Grep'],
-        iterations: 3,
+      // GraphRunner 复用成功的 t1 facade cache，只把失败的 t2 重新交给 executor。
+      expect(executorState.executeMock).toHaveBeenCalledTimes(1);
+      expect(coordinator.getCompletedTasks().find((result) => result.taskId === 't1')).toMatchObject({
+        output: 'restored-dag-t1',
+        startTime: 1000,
+        endTime: 1500,
+        duration: 500,
       });
-
-      // metadata 用 cached 的原始时间戳覆盖了 completeTask 默认写的 now
-      const t1Meta = dagState.taskMetadata.get('t1');
-      expect(t1Meta?.startedAt).toBe(1000);
-      expect(t1Meta?.completedAt).toBe(1500);
-      expect(t1Meta?.duration).toBe(500);
     });
 
     it('completedTasks 为空时不预喂任何节点', async () => {
       await coordinator.executeWithDAG([makeTask('t1'), makeTask('t2')]);
-      expect(dagState.completedCalls).toHaveLength(0);
+      expect(executorState.executeMock).toHaveBeenCalledTimes(2);
     });
   });
 });

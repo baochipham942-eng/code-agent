@@ -45,13 +45,11 @@ import type { SubagentExecutorPort } from './subagentExecutorPort';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import {
   AgentFailureCode,
-  agentFailureCodeFromCancellationReason,
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
 import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
-import { TaskDAG, createRunDAGScheduler, type SchedulerResult } from '../scheduler';
 import { COORDINATION_CHECKPOINTS } from '../../shared/constants';
 import {
   DEFAULT_COORDINATOR_CONFIG,
@@ -77,6 +75,17 @@ import {
 } from './parallelAgentCoordinatorResults';
 import type { AgentTeamDurableController, AgentTeamCheckpointState } from './agentTeamDurableTypes';
 import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
+import {
+  DAGGraphSchedulerAdapter,
+  GraphExecutorRegistry,
+  GraphRunner,
+  type GraphCheckpoint,
+  type GraphExecutorPort,
+  type GraphJsonValue,
+  type GraphNode,
+  type GraphNodeResult,
+  type GraphRunSpec,
+} from '../orchestration';
 
 export type {
   AgentTask,
@@ -126,6 +135,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private readonly legacyLifecycle: boolean;
   /** Fire-and-forget persist 的串行链，保证 delete/drain 能排干所有 in-flight save */
   private pendingPersist: Promise<void> = Promise.resolve();
+  private activeGraphRunner?: GraphRunner;
+  private graphCheckpoint?: GraphCheckpoint;
+  private skipNextGraphCheckpoint = false;
 
   constructor(config: Partial<CoordinatorConfig> = {}, scope?: SwarmRunScope) {
     super();
@@ -215,15 +227,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
     if (!this.executionContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
-
+    const executionContext = this.executionContext;
     const startTime = Date.now();
-    const results: AgentTaskResult[] = [];
-    const errors: Array<{ taskId: string; error: string }> = [];
-    let maxConcurrent = 0;
-    const successful = new Set<string>();
-    const failedOrBlocked = new Set<string>();
-    const remaining = new Map<string, AgentTask>();
-
     if (this.executionContext.abortSignal.aborted) {
       this.cancelled = true;
       this.cancelReason = typeof this.executionContext.abortSignal.reason === 'string'
@@ -237,123 +242,94 @@ export class ParallelAgentCoordinator extends EventEmitter {
     for (const task of tasks) {
       this.taskDefinitions.set(task.id, { ...task });
       this.messageQueues.set(task.id, []);
-      remaining.set(task.id, { ...task });
+    }
+    let currentConcurrent = 0;
+    let maxConcurrent = 0;
+    const graphSpec = this.buildGraphSpec(tasks);
+    const graphExecutor: GraphExecutorPort = {
+      id: 'parallel-subagent',
+      canExecute: (node) => node.kind === 'subagent',
+      execute: async (node): Promise<GraphNodeResult> => {
+        const task = this.taskDefinitions.get(node.nodeId);
+        if (!task) return { status: 'failed', error: `Task definition not found: ${node.nodeId}` };
+        currentConcurrent++;
+        maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+        try {
+          const taskResult = await this.executeTask(task);
+          return {
+            status: taskResult.cancelled ? 'cancelled' : taskResult.success ? 'completed' : 'failed',
+            output: this.serializeTaskResult(taskResult),
+            error: taskResult.error,
+            retryable: false,
+            sideEffectState: 'confirmed',
+          };
+        } finally {
+          currentConcurrent--;
+        }
+      },
+      cancel: (node) => { this.abortTask(node.nodeId, this.cancelReason); },
+    };
+    const runner = new GraphRunner({
+      scheduler: new DAGGraphSchedulerAdapter(),
+      executors: new GraphExecutorRegistry([graphExecutor]),
+      emit: async (event) => {
+        if (event.type === 'node_skipped' && event.nodeId) {
+          const task = this.taskDefinitions.get(event.nodeId);
+          if (task && !this.completedTasks.has(task.id)) {
+            const blocked = this.createSkippedResult(
+              task,
+              `Blocked by failed dependencies: ${(task.dependsOn ?? []).join(', ')}`,
+              'blocked',
+              AgentFailureCode.DependencyFailed,
+            );
+            this.completedTasks.set(task.id, blocked);
+            this.emit('task:complete', { taskId: task.id, result: blocked });
+          }
+        }
+        if (event.type === 'node_cancelled' && event.nodeId && !this.completedTasks.has(event.nodeId)) {
+          const task = this.taskDefinitions.get(event.nodeId);
+          if (task) {
+            const cancelled = this.createSkippedResult(
+              task,
+              `Cancelled before start (${this.cancelReason})`,
+              'cancelled',
+              AgentFailureCode.CancelledByUser,
+            );
+            this.completedTasks.set(task.id, cancelled);
+            this.emit('task:complete', { taskId: task.id, result: cancelled });
+          }
+        }
+      },
+      persistCheckpoint: async (checkpoint) => {
+        this.graphCheckpoint = checkpoint;
+        await this.durableController?.projectGraphCheckpoint?.(checkpoint);
+      },
+      attemptGuard: () => this.durableOwnerEpoch === undefined
+        || this.durableController === undefined
+        || this.acceptsDurableOwnerEpoch(this.durableController.ownerEpoch),
+    });
+    this.activeGraphRunner = runner;
+    const graphPromise = runner.run(graphSpec, this.compatibleGraphCheckpoint(graphSpec));
+    let graphResult;
+    try {
+      if (this.cancelled) await runner.cancel(this.cancelReason);
+      graphResult = await graphPromise;
+    } finally {
+      this.activeGraphRunner = undefined;
     }
 
-    while (remaining.size > 0) {
-      if (this.cancelled) {
-        for (const task of Array.from(remaining.values())) {
-          const cancelled = this.createSkippedResult(
-            task,
-            `Cancelled before start (${this.cancelReason})`,
-            'cancelled',
-            agentFailureCodeFromCancellationReason(this.cancelReason) ?? AgentFailureCode.CancelledByUser,
-          );
-          remaining.delete(task.id);
-          results.push(cancelled);
-          errors.push({ taskId: cancelled.taskId, error: cancelled.error || 'Cancelled' });
-          failedOrBlocked.add(task.id);
-          this.completedTasks.set(task.id, cancelled);
-          this.emit('task:complete', { taskId: task.id, result: cancelled });
-        }
-        break;
-      }
-
-      const blocked = Array.from(remaining.values()).filter((task) => {
-        const deps = task.dependsOn || [];
-        return deps.some((dep) => failedOrBlocked.has(dep))
-          || deps.some((dep) => !this.taskDefinitions.has(dep) && !successful.has(dep));
-      });
-
-      for (const task of blocked) {
-        const deps = task.dependsOn || [];
-        const missing = deps.filter((dep) => !this.taskDefinitions.has(dep) && !successful.has(dep));
-        const failed = deps.filter((dep) => failedOrBlocked.has(dep));
-        const reason = missing.length > 0
-          ? `Blocked by missing dependencies: ${missing.join(', ')}`
-          : `Blocked by failed dependencies: ${failed.join(', ')}`;
-        const blockedResult = this.createSkippedResult(
-          task,
-          reason,
-          'blocked',
-          missing.length > 0 ? AgentFailureCode.DependencyMissing : AgentFailureCode.DependencyFailed,
-        );
-        remaining.delete(task.id);
-        results.push(blockedResult);
-        errors.push({ taskId: blockedResult.taskId, error: blockedResult.error || reason });
-        failedOrBlocked.add(task.id);
-        this.completedTasks.set(task.id, blockedResult);
-        if (this.config.enableSharedContext) {
-          this.updateSharedContext(blockedResult);
-        }
-        this.emit('task:complete', { taskId: task.id, result: blockedResult });
-      }
-
-      if (remaining.size === 0) break;
-
-      const ready = Array.from(remaining.values())
-        .filter((task) => (task.dependsOn || []).every((dep) => successful.has(dep)))
-        .sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-      if (ready.length === 0) {
-        logger.warn('Circular or unsatisfied dependency detected');
-        for (const task of Array.from(remaining.values())) {
-          const reason = `Blocked by unsatisfied dependencies: ${(task.dependsOn || []).join(', ') || 'unknown'}`;
-          const blockedResult = this.createSkippedResult(
-            task,
-            reason,
-            'blocked',
-            AgentFailureCode.DependencyFailed,
-          );
-          remaining.delete(task.id);
-          results.push(blockedResult);
-          errors.push({ taskId: blockedResult.taskId, error: blockedResult.error || reason });
-          failedOrBlocked.add(task.id);
-          this.completedTasks.set(task.id, blockedResult);
-          if (this.config.enableSharedContext) {
-            this.updateSharedContext(blockedResult);
-          }
-          this.emit('task:complete', { taskId: task.id, result: blockedResult });
-        }
-        break;
-      }
-
-      const taskGroup = ready.slice(0, this.config.maxParallelTasks);
-      for (const task of taskGroup) {
-        remaining.delete(task.id);
-      }
-      maxConcurrent = Math.max(maxConcurrent, taskGroup.length);
-
-      const groupResults = await this.executeTaskGroup(taskGroup);
-
-      for (const result of groupResults) {
-        results.push(result);
-        this.completedTasks.set(result.taskId, result);
-
-        if (result.success) {
-          successful.add(result.taskId);
-          if (this.config.enableSharedContext) {
-            this.updateSharedContext(result);
-          }
-        } else {
-          errors.push({ taskId: result.taskId, error: result.error || 'Unknown error' });
-          failedOrBlocked.add(result.taskId);
-          if (this.config.enableSharedContext) {
-            this.updateSharedContext(result);
-          }
-        }
-      }
+    const rawResults = tasks.flatMap((task) => {
+      const result = this.completedTasks.get(task.id);
+      return result ? [result] : [];
+    });
+    for (const result of rawResults) {
+      if (this.config.enableSharedContext) this.updateSharedContext(result);
     }
+    const errors = rawResults
+      .filter((result) => !result.success)
+      .map((result) => ({ taskId: result.taskId, error: result.error || 'Unknown error' }));
+    const aggregatedResults = this.config.aggregateResults ? aggregateAgentTaskResults(rawResults) : rawResults;
 
-    const totalDuration = Date.now() - startTime;
-
-    // Aggregate results if enabled
-    const aggregatedResults = this.config.aggregateResults
-      ? aggregateAgentTaskResults(results)
-      : results;
-
-    // 全部成功则清掉 checkpoint（对称 autoAgentCoordinator 的 deleteCheckpoint），
-    // 失败则排干 in-flight save，保证快照确实落到盘上再返回
     if (errors.length === 0) {
       await this.deleteCheckpointIfPresent();
     } else {
@@ -364,20 +340,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.emit('all:complete', { results: aggregatedResults, errors });
 
     return {
-      success: errors.length === 0,
+      success: graphResult.status === 'completed' && errors.length === 0,
       results: aggregatedResults,
-      totalDuration,
+      totalDuration: Date.now() - startTime,
       parallelism: maxConcurrent,
       errors,
     };
-  }
-
-  /**
-   * Execute a group of tasks in parallel
-   */
-  private async executeTaskGroup(tasks: AgentTask[]): Promise<AgentTaskResult[]> {
-    const promises = tasks.map(task => this.executeTask(task));
-    return Promise.all(promises);
   }
 
   /**
@@ -815,6 +783,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     });
     this.cancelled = state.cancelled;
     this.cancelReason = state.cancelled ? 'parent-cancel' : 'cancelled';
+    this.graphCheckpoint = state.graphCheckpoint ? structuredClone(state.graphCheckpoint) : undefined;
     if (ownerEpoch !== undefined) this.durableOwnerEpoch = ownerEpoch;
   }
 
@@ -908,6 +877,79 @@ export class ParallelAgentCoordinator extends EventEmitter {
     };
   }
 
+  private buildGraphSpec(tasks: AgentTask[]): GraphRunSpec {
+    const executionContext = this.executionContext!;
+    const runId = this.scope?.runId ?? executionContext.runId ?? `parallel:${executionContext.sessionId}`;
+    const sessionId = this.scope?.sessionId ?? executionContext.sessionId;
+    const treeId = this.scope?.treeId ?? executionContext.spawnTreeId ?? sessionId;
+    const attempt = this.durableController?.traceContext?.attempt ?? executionContext.traceContext?.attempt ?? 1;
+    const durableNodes = new Map(this.durableController?.getState().taskGraph.map((node) => [node.id, node]) ?? []);
+    const nodes: GraphNode[] = tasks.map((task) => {
+      const durable = durableNodes.get(task.id);
+      const sideEffect = durable?.sideEffect ?? task.tools.some((tool) => /(write|edit|bash|shell|browser|computer)/i.test(tool));
+      return {
+        nodeId: task.id,
+        kind: 'subagent',
+        executorRef: 'parallel-subagent',
+        input: {
+          role: task.role,
+          task: task.task,
+          tools: [...task.tools],
+          ...(task.systemPrompt ? { systemPrompt: task.systemPrompt } : {}),
+        },
+        dependencies: [...(task.dependsOn ?? [])],
+        permissionProfile: durable?.permissionProfile ?? 'readonly',
+        capabilityProfile: { tools: [...task.tools] },
+        sideEffect: sideEffect ? 'unknown' : 'read_only',
+        idempotencyIdentity: `${runId}:node:${task.id}`,
+        timeoutMs: this.config.taskTimeout,
+        retryPolicy: { maxAttempts: 1 },
+        required: true,
+        priority: task.priority,
+        metadata: { role: task.role, treeId },
+      };
+    });
+    const trace = this.durableController?.traceContext ?? executionContext.traceContext;
+    return {
+      graphId: `agent-team:${treeId}`,
+      runId,
+      sessionId,
+      attempt,
+      nodes,
+      schedulerPolicy: {
+        maxConcurrency: this.config.maxParallelTasks,
+        failureStrategy: 'continue',
+        priority: 'priority',
+      },
+      metadata: { engine: 'agent_team', treeId },
+      ...(trace ? { trace: { traceId: trace.traceId, spanId: trace.spanId } } : {}),
+    };
+  }
+
+  private serializeTaskResult(result: AgentTaskResult): GraphJsonValue {
+    return structuredClone(result) as unknown as GraphJsonValue;
+  }
+
+  private compatibleGraphCheckpoint(spec: GraphRunSpec): GraphCheckpoint | undefined {
+    if (this.skipNextGraphCheckpoint) {
+      this.skipNextGraphCheckpoint = false;
+      return undefined;
+    }
+    const checkpoint = this.graphCheckpoint ?? this.durableController?.getState().graphCheckpoint;
+    if (!checkpoint) return undefined;
+    const expected = new Set(spec.nodes.map((node) => node.nodeId));
+    const actual = new Set(checkpoint.nodes.map((node) => node.nodeId));
+    if (
+      checkpoint.graphId !== spec.graphId
+      || checkpoint.runId !== spec.runId
+      || checkpoint.sessionId !== spec.sessionId
+      || checkpoint.attempt !== spec.attempt
+      || expected.size !== actual.size
+      || [...expected].some((nodeId) => !actual.has(nodeId))
+    ) return undefined;
+    return checkpoint;
+  }
+
   abortTask(taskId: string, reason = 'user_cancelled'): boolean {
     const controller = this.abortControllers.get(taskId);
     if (!controller || controller.signal.aborted) {
@@ -931,8 +973,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     // 显式重试必须绕过 checkpoint cache-skip，否则上一轮的成功结果会短路
     this.completedTasks.delete(taskId);
+    this.skipNextGraphCheckpoint = true;
 
-    return this.executeTask({ ...task });
+    const result = await this.executeParallel([{ ...task }]);
+    const retried = result.results.find((candidate) => candidate.taskId === taskId);
+    if (!retried) throw new Error(`Retry did not produce a task result: ${taskId}`);
+    return retried;
   }
 
   /**
@@ -955,6 +1001,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   abortAllRunning(reason = 'coordinator_shutdown'): void {
     this.cancelled = true;
     this.cancelReason = reason;
+    void this.activeGraphRunner?.cancel(reason);
     for (const [taskId, controller] of this.abortControllers) {
       if (!controller.signal.aborted) {
         logger.info(`Aborting task ${taskId}: ${reason}`);
@@ -978,6 +1025,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.clearSharedContext();
     this.removeAllListeners();
     this.executionActive = false;
+    this.activeGraphRunner = undefined;
+    this.graphCheckpoint = undefined;
     if (this.legacyLifecycle) {
       this.executionContext = undefined;
       this.subagentExecutor = undefined;
@@ -985,164 +1034,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
     }
   }
 
-  // ============================================================================
-  // DAG-based Execution (New in Session 4)
-  // ============================================================================
-
-  /**
-   * Execute tasks using the new DAG scheduler
-   * Provides better dependency handling and parallel scheduling
-   */
+  /** Compatibility facade: all DAG execution now shares the GraphRunner path. */
   async executeWithDAG(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
-    if (!this.executionContext) {
-      throw new Error('Coordinator not initialized. Call initialize() first.');
-    }
-
-    // Create DAG from tasks
-    const dag = new TaskDAG(
-      `parallel_${Date.now()}`,
-      'Parallel Agent Execution',
-      {
-        maxParallelism: this.config.maxParallelTasks,
-        defaultTimeout: this.config.taskTimeout,
-        enableOutputPassing: this.config.enableSharedContext,
-        enableSharedContext: this.config.enableSharedContext,
-        failureStrategy: 'continue',
-      }
-    );
-
-    // Add tasks to DAG
-    for (const task of tasks) {
-      dag.addAgentTask(
-        task.id,
-        {
-          role: task.role,
-          prompt: task.task,
-          systemPrompt: task.systemPrompt,
-          tools: task.tools,
-          maxIterations: task.maxIterations,
-        },
-        {
-          name: task.role,
-          dependencies: task.dependsOn,
-          priority: task.priority === undefined ? 'normal' :
-            task.priority >= 3 ? 'critical' :
-            task.priority >= 2 ? 'high' :
-            task.priority >= 1 ? 'normal' : 'low',
-        }
-      );
-    }
-
-    // Validate DAG
-    const validation = dag.validate();
-    if (!validation.valid) {
-      logger.error('DAG validation failed', { errors: validation.errors });
-      throw new Error(`Invalid DAG: ${validation.errors.join(', ')}`);
-    }
-
-    // Checkpoint restore: 把已完成节点预喂给 DAG，scheduler 主循环走 getReadyTasks
-    // 自然跳过 terminal 节点。事件转发在 scheduler.execute 内 forwardDAGEvents 之后
-    // 才接管，预喂阶段触发的 task:completed 事件不会外泄
-    for (const task of tasks) {
-      const cached = this.completedTasks.get(task.id);
-      if (!cached?.success) continue;
-      dag.completeTask(task.id, {
-        text: cached.output,
-        toolsUsed: cached.toolsUsed,
-        iterations: cached.iterations,
-      });
-      // completeTask 把 metadata.completedAt 写成 now、duration 留空。
-      // 用 cached 的原始时间戳覆盖回去，让 convertSchedulerResult 还原历史值
-      const dagTask = dag.getTask(task.id);
-      if (dagTask) {
-        dagTask.metadata.startedAt = cached.startTime;
-        dagTask.metadata.completedAt = cached.endTime;
-        dagTask.metadata.duration = cached.duration;
-      }
-    }
-
-    // Get scheduler and execute
-    const scheduler = createRunDAGScheduler({
-      maxParallelism: this.config.maxParallelTasks,
-      defaultTimeout: this.config.taskTimeout,
-      enableOutputPassing: this.config.enableSharedContext,
-    });
-    if (this.subagentExecutor && 'setSubagentExecutor' in scheduler) {
-      scheduler.setSubagentExecutor(this.subagentExecutor);
-    }
-    const result = await scheduler.execute(dag, {
-      executionContext: this.executionContext,
-    });
-
-    // Convert scheduler result to coordinator result format
-    const converted = await this.convertSchedulerResult(result);
-    await this.drainPersist();
-    return converted;
-  }
-
-  /**
-   * Convert DAG scheduler result to coordinator result format
-   */
-  private async convertSchedulerResult(result: SchedulerResult): Promise<ParallelExecutionResult> {
-    const dagTasks = result.dag.getAllTasks();
-    const results: AgentTaskResult[] = [];
-    const errors: Array<{ taskId: string; error: string }> = [];
-
-    for (const task of dagTasks) {
-      const taskResult: AgentTaskResult = {
-        success: task.status === 'completed',
-        output: task.output?.text || '',
-        error: task.failure?.message,
-        toolsUsed: task.output?.toolsUsed || [],
-        iterations: task.output?.iterations || 0,
-        taskId: task.id,
-        role: task.config.type === 'agent' ? (task.config as { role: string }).role : task.name,
-        startTime: task.metadata.startedAt || 0,
-        endTime: task.metadata.completedAt || 0,
-        duration: task.metadata.duration || 0,
-        failureCode: task.status === 'completed'
-          ? undefined
-          : inferAgentFailureCode({
-              failureCode: (task.failure as { failureCode?: unknown } | undefined)?.failureCode,
-              error: task.failure?.message,
-              defaultCode: AgentFailureCode.ModelError,
-            }),
-      };
-
-      if (taskResult.success) {
-        results.push(taskResult);
-        this.completedTasks.set(task.id, taskResult);
-
-        // Update shared context
-        if (this.config.enableSharedContext) {
-          this.updateSharedContext(taskResult);
-        }
-      } else if (task.failure) {
-        results.push(taskResult);
-        this.completedTasks.set(task.id, taskResult);
-        errors.push({ taskId: task.id, error: task.failure.message });
-      }
-    }
-
-    // DAG 路径在 scheduler 内部完成后批量 save 一次（scheduler 不直接调 save）
-    if (errors.length === 0) {
-      await this.deleteCheckpointIfPresent();
-    } else {
-      this.schedulePersist();
-    }
-
-    // Aggregate results
-    const aggregatedResults = this.config.aggregateResults
-      ? aggregateAgentTaskResults(results)
-      : results;
-
-    return {
-      success: result.success,
-      results: aggregatedResults,
-      totalDuration: result.totalDuration,
-      parallelism: result.maxParallelism,
-      errors,
-    };
+    return this.executeParallel(tasks);
   }
 
   // ============================================================================

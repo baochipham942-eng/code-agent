@@ -298,7 +298,12 @@ export class GraphRunner {
     if (result.sideEffectState === 'unknown') {
       return { ...result, status: 'requires_review', retryable: false };
     }
-    if (result.status === 'failed' && node.sideEffect === 'unknown') {
+    if (
+      result.status === 'failed'
+      && node.sideEffect === 'unknown'
+      && result.sideEffectState !== 'confirmed'
+      && result.sideEffectState !== 'not_dispatched'
+    ) {
       return { ...result, status: 'requires_review', retryable: false, sideEffectState: 'unknown' };
     }
     return result;

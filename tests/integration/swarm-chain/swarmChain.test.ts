@@ -226,11 +226,17 @@ function setupChain(): ChainHarness {
       aggregateResults: false,
     });
     coordinator.initialize({
-      modelConfig: { provider: 'mock', model: 'mock' } as never,
-      toolResolver: {} as never,
-      toolContext: {
+      executionContext: {
+        runId: runScope.runId,
         currentToolCallId: `cc-${runScope.runId}`,
         sessionId: runScope.sessionId,
+        workspace: '/tmp',
+        cwd: '/tmp',
+        modelConfig: { provider: 'mock', model: 'mock' },
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: vi.fn(async () => true) },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
         spawnTreeId: runScope.treeId,
         swarmRunScope: runScope,
       } as never,
@@ -358,9 +364,9 @@ describe('Swarm Chain Integration', () => {
 
     // Default executor: success with role-based output
     executorState.executeMock.mockImplementation(
-      async (_task: string, spec: { name: string }) => ({
+      async (request: { config: { name: string } }) => ({
         success: true,
-        output: `result for ${spec.name}`,
+        output: `result for ${request.config.name}`,
         iterations: 1,
         toolsUsed: [],
         cost: 0,
@@ -570,9 +576,9 @@ describe('Swarm Chain Integration', () => {
         'agent_coder_0',
       );
       executorState.executeMock.mockImplementation(
-        async (task: string) => ({
+        async (request: { prompt: string }) => ({
           success: true,
-          output: `result:${task}`,
+          output: `result:${request.prompt}`,
           iterations: 1,
           toolsUsed: [],
           cost: 0,

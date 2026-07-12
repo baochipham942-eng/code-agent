@@ -1,79 +1,30 @@
-// ============================================================================
-// Auto Agent Coordinator - 协调自动生成的多 Agent 执行
-// ============================================================================
-//
-// 职责边界（ADR-009 固化）：
-// - 服务 **动态生成** 入口：orchestrator/autoAgentRunner.ts 从需求分析
-//   生成 DynamicAgentDefinition 后自动执行
-// - 输入形态：DynamicAgentDefinition[]（带 canRunParallel/role/systemPrompt
-//   等高层元数据，由 agentRequirementsAnalyzer 从需求推导）
-// - 核心能力：sequential/parallel/hybrid 执行策略、节点级 checkpoint 持久化、
-//   L0-L3 通信层级、progressAggregator、parallelErrorHandler、resourceLockManager
-// - 不包含：DAG 依赖图调度（没有 dependsOn 语义）
-//
-// 与 ParallelAgentCoordinator 的关系：见 parallelAgentCoordinator.ts 顶部
-// 注释和 ADR-009。两者 **零调用交集**，不会合并。
-//
-// ============================================================================
-//
-// ## 通信级别 (Communication Levels)
-//
-// 借鉴 Hermes Agent L0-L3 模型，显式定义 agent 间通信层级：
-//
-// | Level | Name            | 机制                           | 本项目实现                              |
-// |-------|-----------------|-------------------------------|-----------------------------------------|
-// | L0    | Isolated        | 完全隔离，父 agent 手动中继    | executeAgent() 无 previousOutput         |
-// | L1    | Result Passing  | 上游输出自动注入下游 context   | executeSequential() 的 previousOutput    |
-// | L2    | Shared Context  | 共享读写存储（coordinator 中转）| ParallelAgentCoordinator.SharedContext   |
-// | L3    | Live Dialogue   | Agent 间 turn-based 对话       | 未实现（P2 交叉验证是简化版）            |
-//
-// 当前默认：sequential → L1, parallel → L0 + L2(可选)
-//
-// ## 节点级 Checkpoint（断点恢复）
-//
-// 长程多 agent 执行中，网络中断/token 耗尽会导致已完成节点工作白费。
-// 每个节点完成后持久化结果，重新执行时自动跳过已完成节点。
-//
-// - 存储: ~/.code-agent/coordination-checkpoints/<sessionId>.json
-// - 粒度: Agent 节点级（仅 completed 状态持久化，failed 不缓存以支持重试）
-// - 清理: 全部成功后自动删除 checkpoint 文件
-// ============================================================================
-
 import * as fs from 'fs';
 import * as path from 'path';
-import { createLogger } from '../services/infra/logger';
-import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
+import type { SubagentResult, SubagentExecutionContext } from './subagentExecutorTypes';
+import { getSubagentExecutor } from './subagentExecutor';
 import { getSessionStateManager } from '../session/sessionStateManager';
-import { getResourceLockManager } from '../services/infra/resourceLockManager';
-import { createProgressAggregator, type ProgressAggregator } from './progressAggregator';
-import { createParallelErrorHandler, type ParallelErrorHandler } from './parallelErrorHandler';
 import type { DynamicAgentDefinition } from './dynamicAgentFactory';
 import type { AgentRequirements, ExecutionStrategy } from './agentRequirementsAnalyzer';
-import type { ModelConfig } from '../../shared/contract';
-import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { getUserConfigDir } from '../config/configPaths';
-import { projectLegacySubagentContext } from './subagentExecutorLegacyAdapter';
+import { createLogger } from '../services/infra/logger';
+import {
+  DAGGraphSchedulerAdapter,
+  GraphExecutorRegistry,
+  GraphRunner,
+  SubagentExecutorAdapter,
+  createSubagentGraphNodeInput,
+  type GraphCheckpoint,
+  type GraphJsonValue,
+  type GraphNode,
+  type GraphNodeResult,
+  type GraphRunSpec,
+} from '../orchestration';
 
 const logger = createLogger('AutoAgentCoordinator');
+const LEGACY_CHECKPOINT_DIR = 'coordination-checkpoints';
 
-// ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
+export type AgentExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-/**
- * Agent 执行状态
- */
-export type AgentExecutionStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
-
-/**
- * 单个 Agent 的执行结果
- */
 export interface AgentExecutionResult {
   agentId: string;
   agentName: string;
@@ -85,9 +36,6 @@ export interface AgentExecutionResult {
   duration?: number;
 }
 
-/**
- * 协调执行的总体结果
- */
 export interface CoordinationResult {
   success: boolean;
   strategy: ExecutionStrategy;
@@ -99,24 +47,15 @@ export interface CoordinationResult {
   errors: string[];
 }
 
-/**
- * 协调器上下文
- */
 export interface CoordinatorContext {
   sessionId: string;
-  modelConfig: ModelConfig;
-  toolResolver: ToolResolver;
-  toolContext: ToolContext;
+  executionContext: SubagentExecutionContext;
+  graphCheckpoint?: GraphCheckpoint;
+  onGraphCheckpoint?: (checkpoint: GraphCheckpoint) => void | Promise<void>;
   onProgress?: (agentId: string, status: AgentExecutionStatus, progress?: number) => void;
 }
 
-// ----------------------------------------------------------------------------
-// Node Checkpoint
-// ----------------------------------------------------------------------------
-
-const CHECKPOINT_DIR = 'coordination-checkpoints';
-
-interface ExecutionCheckpoint {
+interface LegacyExecutionCheckpoint {
   sessionId: string;
   agentIds: string[];
   completedNodes: Record<string, AgentExecutionResult>;
@@ -124,443 +63,277 @@ interface ExecutionCheckpoint {
   updatedAt: number;
 }
 
-function getCheckpointPath(sessionId: string): string {
-  return path.join(getUserConfigDir(), CHECKPOINT_DIR, `${sessionId}.json`);
-}
-
-function loadCheckpoint(sessionId: string, expectedAgentIds: string[]): ExecutionCheckpoint | null {
-  const filePath = getCheckpointPath(sessionId);
+function loadLegacyCheckpoint(sessionId: string, expectedAgentIds: string[]): LegacyExecutionCheckpoint | null {
+  const filePath = path.join(getUserConfigDir(), LEGACY_CHECKPOINT_DIR, `${sessionId}.json`);
   try {
     if (!fs.existsSync(filePath)) return null;
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ExecutionCheckpoint;
-    // Verify agent IDs match (same execution plan)
-    const match = data.agentIds.length === expectedAgentIds.length
-      && data.agentIds.every((id, i) => id === expectedAgentIds[i]);
-    if (!match) {
-      logger.info('Checkpoint agent IDs mismatch, starting fresh');
-      deleteCheckpoint(sessionId);
-      return null;
-    }
-    logger.info(`Loaded checkpoint: ${Object.keys(data.completedNodes).length}/${expectedAgentIds.length} nodes completed`);
-    return data;
+    const checkpoint = JSON.parse(fs.readFileSync(filePath, 'utf8')) as LegacyExecutionCheckpoint;
+    const matches = checkpoint.sessionId === sessionId
+      && checkpoint.agentIds.length === expectedAgentIds.length
+      && checkpoint.agentIds.every((id, index) => id === expectedAgentIds[index]);
+    return matches ? checkpoint : null;
   } catch {
     return null;
   }
 }
 
-function saveCheckpoint(checkpoint: ExecutionCheckpoint): void {
-  const filePath = getCheckpointPath(checkpoint.sessionId);
-  const dir = path.dirname(filePath);
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(checkpoint, null, 2));
-  } catch (error) {
-    logger.warn('Failed to save checkpoint', { error });
-  }
-}
-
-function deleteCheckpoint(sessionId: string): void {
-  try {
-    const filePath = getCheckpointPath(sessionId);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch { /* ignore cleanup errors */ }
-}
-
-function createCheckpoint(sessionId: string, agentIds: string[]): ExecutionCheckpoint {
-  return {
-    sessionId,
-    agentIds,
-    completedNodes: {},
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-}
-
-// ----------------------------------------------------------------------------
-// Auto Agent Coordinator
-// ----------------------------------------------------------------------------
-
-/**
- * 自动 Agent 协调器
- *
- * 负责执行自动生成的 Agent，支持：
- * - 顺序执行（L1 Result Passing）
- * - 并行执行（L0 Isolated + L2 Shared Context）
- * - 节点级 Checkpoint 断点恢复
- * - 进度跟踪
- * - 结果聚合
- */
 export class AutoAgentCoordinator {
-  private subagentExecutor = getSubagentExecutor();
-  private sessionStateManager = getSessionStateManager();
+  private readonly subagentExecutor = getSubagentExecutor();
+  private readonly sessionStateManager = getSessionStateManager();
+  private readonly activeRunners = new Map<string, GraphRunner>();
 
-  /**
-   * 执行自动生成的 Agent
-   */
   async execute(
     agents: DynamicAgentDefinition[],
     requirements: AgentRequirements,
-    context: CoordinatorContext
+    context: CoordinatorContext,
   ): Promise<CoordinationResult> {
     const startTime = Date.now();
-    const agentIds = agents.map(a => a.id);
-
-    // 加载或创建 checkpoint
-    const checkpoint = loadCheckpoint(context.sessionId, agentIds)
-      ?? createCheckpoint(context.sessionId, agentIds);
-
-    const resumedCount = Object.keys(checkpoint.completedNodes).length;
-
-    logger.info('Starting auto agent coordination', {
-      agentCount: agents.length,
-      strategy: requirements.executionStrategy,
-      sessionId: context.sessionId,
-      resumedFromCheckpoint: resumedCount,
+    const graph = this.buildGraphSpec(agents, requirements.executionStrategy, context);
+    const legacy = context.graphCheckpoint
+      ? undefined
+      : loadLegacyCheckpoint(context.sessionId, agents.map((agent) => agent.id));
+    const checkpoint = context.graphCheckpoint ?? this.projectLegacyCheckpoint(graph, legacy);
+    const byId = new Map(agents.map((agent) => [agent.id, agent]));
+    const adapter = new SubagentExecutorAdapter(this.subagentExecutor, {
+      id: 'auto-subagent',
+      contextFactory: (node, graphContext) => ({
+        ...context.executionContext,
+        runId: graphContext.runId,
+        sessionId: graphContext.sessionId,
+        abortSignal: graphContext.signal,
+        traceContext: context.executionContext.traceContext,
+        agentId: node.nodeId,
+        executionAgentId: node.nodeId,
+        parentToolUseId: context.executionContext.currentToolCallId,
+      }),
+      requestFactory: (input, node, graphContext) => {
+        const previous = node.dependencies
+          .map((dependency) => graphContext.dependencyResults[dependency])
+          .map((result) => this.subagentOutput(result))
+          .filter((output): output is string => Boolean(output));
+        return previous.length === 0 ? input : {
+          ...input,
+          prompt: `${input.prompt}\n\n**前置任务输出**：\n${previous.join('\n\n---\n\n')}`,
+        };
+      },
+    });
+    const runner = new GraphRunner({
+      scheduler: new DAGGraphSchedulerAdapter(),
+      executors: new GraphExecutorRegistry([adapter]),
+      emit: async (event) => {
+        if (!event.nodeId) return;
+        const agent = byId.get(event.nodeId);
+        if (!agent) return;
+        if (event.type === 'node_queued') {
+          this.sessionStateManager.addSubagent(context.sessionId, {
+            id: agent.id, name: agent.name, status: 'pending', startedAt: event.timestamp,
+          });
+          context.onProgress?.(agent.id, 'pending');
+        } else if (event.type === 'node_started') {
+          this.sessionStateManager.updateSubagent(context.sessionId, agent.id, { status: 'running' });
+          context.onProgress?.(agent.id, 'running');
+        } else if (event.type === 'node_completed') {
+          this.sessionStateManager.updateSubagent(context.sessionId, agent.id, { status: 'completed', completedAt: event.timestamp });
+          context.onProgress?.(agent.id, 'completed');
+        } else if (event.type === 'node_cancelled') {
+          this.sessionStateManager.updateSubagent(context.sessionId, agent.id, {
+            status: 'failed', error: 'Cancelled by user', completedAt: event.timestamp,
+          });
+          context.onProgress?.(agent.id, 'cancelled');
+        } else if (event.type === 'node_failed' || event.type === 'node_skipped') {
+          const error = typeof event.data?.error === 'string' ? event.data.error : 'Agent failed';
+          this.sessionStateManager.updateSubagent(context.sessionId, agent.id, {
+            status: 'failed', error, completedAt: event.timestamp,
+          });
+          context.onProgress?.(agent.id, 'failed');
+        }
+      },
+      persistCheckpoint: context.onGraphCheckpoint,
     });
 
-    // 根据策略选择执行方式
-    let results: AgentExecutionResult[];
-
+    this.activeRunners.set(graph.runId, runner);
+    let graphResult;
     try {
-      switch (requirements.executionStrategy) {
-        case 'direct':
-          results = await this.executeSequential(agents, context, checkpoint);
-          break;
-
-        case 'sequential':
-          results = await this.executeSequential(agents, context, checkpoint);
-          break;
-
-        case 'parallel':
-          results = await this.executeParallel(agents, context, checkpoint);
-          break;
-
-        default:
-          results = await this.executeSequential(agents, context, checkpoint);
-      }
-    } catch (error) {
-      logger.error('Coordination failed', error);
-      return {
-        success: false,
-        strategy: requirements.executionStrategy,
-        results: [],
-        aggregatedOutput: '',
-        totalDuration: Date.now() - startTime,
-        totalIterations: 0,
-        totalCost: 0,
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
-      };
+      graphResult = await runner.run(graph, checkpoint);
+    } finally {
+      this.activeRunners.delete(graph.runId);
     }
 
-    // 聚合结果
-    const aggregated = this.aggregateResults(results, requirements);
-    const totalDuration = Date.now() - startTime;
-
-    // 全部成功时清理 checkpoint
-    if (aggregated.success) {
-      deleteCheckpoint(context.sessionId);
-    }
-
-    logger.info('Auto agent coordination completed', {
-      success: aggregated.success,
-      agentCount: results.length,
-      totalDuration,
-      checkpointCleaned: aggregated.success,
+    const results = agents.flatMap((agent) => {
+      const nodeCheckpoint = graphResult.checkpoint.nodes.find((node) => node.nodeId === agent.id);
+      return nodeCheckpoint?.status === 'skipped' ? [] : [this.toExecutionResult(
+        agent,
+        graphResult.results[agent.id],
+        nodeCheckpoint,
+      )];
     });
-
+    const aggregated = this.aggregateResults(results);
     return {
       ...aggregated,
       strategy: requirements.executionStrategy,
-      totalDuration,
+      totalDuration: Date.now() - startTime,
     };
   }
 
-  /**
-   * 顺序执行 Agent (L1 Result Passing)
-   */
-  private async executeSequential(
-    agents: DynamicAgentDefinition[],
-    context: CoordinatorContext,
-    checkpoint: ExecutionCheckpoint
-  ): Promise<AgentExecutionResult[]> {
-    const results: AgentExecutionResult[] = [];
-    let previousOutput = '';
-
-    for (const agent of agents) {
-      // Checkpoint: 跳过已完成节点
-      const cached = checkpoint.completedNodes[agent.id];
-      if (cached?.status === 'completed') {
-        logger.info(`Checkpoint hit, skipping agent: ${agent.name} (${agent.id})`);
-        results.push(cached);
-        if (cached.result?.output) {
-          previousOutput = cached.result.output;
-        }
-        context.onProgress?.(agent.id, 'completed');
-        continue;
-      }
-
-      // 更新会话状态
-      this.sessionStateManager.addSubagent(context.sessionId, {
-        id: agent.id,
-        name: agent.name,
-        status: 'running',
-        startedAt: Date.now(),
-      });
-
-      context.onProgress?.(agent.id, 'running');
-
-      const result = await this.executeAgent(agent, context, previousOutput);
-      results.push(result);
-
-      // 更新子代理状态
-      this.sessionStateManager.updateSubagent(context.sessionId, agent.id, {
-        status: result.status === 'completed' ? 'completed' : 'failed',
-        completedAt: Date.now(),
-        error: result.error,
-      });
-
-      context.onProgress?.(agent.id, result.status);
-
-      // Checkpoint: 成功节点持久化（failed 不缓存，支持重试）
-      if (result.status === 'completed') {
-        checkpoint.completedNodes[agent.id] = result;
-        checkpoint.updatedAt = Date.now();
-        saveCheckpoint(checkpoint);
-      }
-
-      // 如果失败且是关键 agent，可以选择停止
-      if (result.status === 'failed' && agent.priority === 1) {
-        logger.warn('Primary agent failed, stopping sequential execution');
-        break;
-      }
-
-      // 传递输出给下一个 agent (L1 Result Passing)
-      if (result.result?.output) {
-        previousOutput = result.result.output;
-      }
+  cancelAgents(sessionId: string): void {
+    for (const [runId, runner] of this.activeRunners) {
+      if (runId === sessionId || runId.endsWith(`:${sessionId}`)) void runner.cancel('user_cancelled');
     }
-
-    return results;
-  }
-
-  /**
-   * 并行执行 Agent (L0 Isolated + L2 Shared Context 可选)
-   */
-  private async executeParallel(
-    agents: DynamicAgentDefinition[],
-    context: CoordinatorContext,
-    checkpoint: ExecutionCheckpoint
-  ): Promise<AgentExecutionResult[]> {
-    // 分离主 agent 和可并行的辅助 agent
-    const primaryAgents = agents.filter(a => !a.canRunParallel);
-    const parallelAgents = agents.filter(a => a.canRunParallel);
-
-    const results: AgentExecutionResult[] = [];
-
-    // 先执行主 agent（顺序）
-    for (const agent of primaryAgents) {
-      // Checkpoint: 跳过已完成节点
-      const cached = checkpoint.completedNodes[agent.id];
-      if (cached?.status === 'completed') {
-        logger.info(`Checkpoint hit, skipping primary agent: ${agent.name}`);
-        results.push(cached);
-        context.onProgress?.(agent.id, 'completed');
-        continue;
-      }
-
-      this.sessionStateManager.addSubagent(context.sessionId, {
-        id: agent.id,
-        name: agent.name,
-        status: 'running',
-        startedAt: Date.now(),
-      });
-
-      context.onProgress?.(agent.id, 'running');
-
-      const result = await this.executeAgent(agent, context);
-      results.push(result);
-
-      this.sessionStateManager.updateSubagent(context.sessionId, agent.id, {
-        status: result.status === 'completed' ? 'completed' : 'failed',
-        completedAt: Date.now(),
-      });
-
-      context.onProgress?.(agent.id, result.status);
-
-      // Checkpoint: 成功节点持久化
-      if (result.status === 'completed') {
-        checkpoint.completedNodes[agent.id] = result;
-        checkpoint.updatedAt = Date.now();
-        saveCheckpoint(checkpoint);
-      }
-    }
-
-    // 如果主 agent 成功，并行执行辅助 agent
-    const primarySuccess = results.every(r => r.status === 'completed');
-
-    if (primarySuccess && parallelAgents.length > 0) {
-      // 过滤掉已 checkpoint 的并行 agent
-      const pendingParallel = parallelAgents.filter(a => {
-        const cached = checkpoint.completedNodes[a.id];
-        if (cached?.status === 'completed') {
-          logger.info(`Checkpoint hit, skipping parallel agent: ${a.name}`);
-          results.push(cached);
-          context.onProgress?.(a.id, 'completed');
-          return false;
-        }
-        return true;
-      });
-
-      if (pendingParallel.length > 0) {
-        // 注册待执行的并行 agent 为 pending
-        for (const agent of pendingParallel) {
-          this.sessionStateManager.addSubagent(context.sessionId, {
-            id: agent.id,
-            name: agent.name,
-            status: 'pending',
-            startedAt: Date.now(),
-          });
-        }
-
-        // 并行执行
-        const parallelPromises = pendingParallel.map(async (agent) => {
-          this.sessionStateManager.updateSubagent(context.sessionId, agent.id, {
-            status: 'running',
-          });
-          context.onProgress?.(agent.id, 'running');
-
-          const result = await this.executeAgent(agent, context);
-
-          this.sessionStateManager.updateSubagent(context.sessionId, agent.id, {
-            status: result.status === 'completed' ? 'completed' : 'failed',
-            completedAt: Date.now(),
-          });
-          context.onProgress?.(agent.id, result.status);
-
-          // Checkpoint: 成功节点持久化
-          if (result.status === 'completed') {
-            checkpoint.completedNodes[agent.id] = result;
-            checkpoint.updatedAt = Date.now();
-            saveCheckpoint(checkpoint);
-          }
-
-          return result;
+    const state = this.sessionStateManager.get(sessionId);
+    if (state) {
+      for (const [agentId] of state.activeSubagents) {
+        this.sessionStateManager.updateSubagent(sessionId, agentId, {
+          status: 'failed', error: 'Cancelled by user', completedAt: Date.now(),
         });
-
-        const parallelResults = await Promise.all(parallelPromises);
-        results.push(...parallelResults);
       }
-    }
-
-    return results;
-  }
-
-  /**
-   * 执行单个 Agent
-   */
-  private async executeAgent(
-    agent: DynamicAgentDefinition,
-    context: CoordinatorContext,
-    previousOutput?: string
-  ): Promise<AgentExecutionResult> {
-    const startedAt = Date.now();
-
-    logger.debug(`Executing agent: ${agent.id}`, {
-      name: agent.name,
-      tools: agent.tools,
-      maxIterations: agent.maxIterations,
-    });
-
-    try {
-      // 构建执行 prompt
-      let prompt = agent.taskDescription;
-      if (previousOutput) {
-        prompt = `${prompt}\n\n**前置任务输出**：\n${previousOutput}`;
-      }
-
-      // 执行
-      const result = await this.subagentExecutor.execute({
-        prompt,
-        config: {
-          name: agent.name,
-          systemPrompt: agent.systemPrompt,
-          availableTools: agent.tools,
-          maxIterations: agent.maxIterations,
-          maxBudget: agent.maxBudget,
-        },
-        context: projectLegacySubagentContext({
-          modelConfig: context.modelConfig,
-          toolResolver: context.toolResolver,
-          // 注入 agent.id 到 toolContext，让 BrowserPool / ComputerSurface 按 agentId 隔离。
-          // 共享 toolContext 不能直接 mutate（其他 agent 也用），clone 后注入。
-          toolContext: { ...context.toolContext, agentId: agent.id },
-          executionAgentId: agent.id,
-        }),
-      });
-
-      const completedAt = Date.now();
-
-      return {
-        agentId: agent.id,
-        agentName: agent.name,
-        status: result.success ? 'completed' : 'failed',
-        result,
-        error: result.error,
-        startedAt,
-        completedAt,
-        duration: completedAt - startedAt,
-      };
-    } catch (error) {
-      const completedAt = Date.now();
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      logger.error(`Agent ${agent.id} execution failed`, error);
-
-      return {
-        agentId: agent.id,
-        agentName: agent.name,
-        status: 'failed',
-        error: errorMessage,
-        startedAt,
-        completedAt,
-        duration: completedAt - startedAt,
-      };
     }
   }
 
-  /**
-   * 聚合执行结果
-   */
-  private aggregateResults(
-    results: AgentExecutionResult[],
-    requirements: AgentRequirements
-  ): Omit<CoordinationResult, 'strategy' | 'totalDuration'> {
-    const errors: string[] = [];
-    let totalIterations = 0;
-    let totalCost = 0;
-    const outputs: string[] = [];
-
-    for (const result of results) {
-      if (result.error) {
-        errors.push(`[${result.agentName}] ${result.error}`);
-      }
-      if (result.result) {
-        totalIterations += result.result.iterations;
-        totalCost += result.result.cost || 0;
-        if (result.result.output) {
-          outputs.push(`## ${result.agentName}\n\n${result.result.output}`);
-        }
-      }
-    }
-
-    // 判断整体成功
-    const success = results.some(r => r.status === 'completed');
-
-    // 聚合输出
-    const aggregatedOutput = outputs.join('\n\n---\n\n');
-
+  getProgress(sessionId: string): { total: number; completed: number; running: number; failed: number; pending: number } {
+    const state = this.sessionStateManager.get(sessionId);
+    if (!state) return { total: 0, completed: 0, running: 0, failed: 0, pending: 0 };
+    const values = [...state.activeSubagents.values()];
     return {
-      success,
+      total: values.length,
+      completed: values.filter((agent) => agent.status === 'completed').length,
+      running: values.filter((agent) => agent.status === 'running').length,
+      failed: values.filter((agent) => agent.status === 'failed').length,
+      pending: values.filter((agent) => agent.status === 'pending').length,
+    };
+  }
+
+  private buildGraphSpec(
+    agents: DynamicAgentDefinition[],
+    strategy: ExecutionStrategy,
+    context: CoordinatorContext,
+  ): GraphRunSpec {
+    const runId = context.executionContext.runId ?? `auto:${context.sessionId}`;
+    const attempt = context.executionContext.traceContext?.attempt ?? 1;
+    const primary = agents.filter((agent) => !agent.canRunParallel);
+    const lastPrimaryId = primary.at(-1)?.id;
+    const nodes: GraphNode[] = agents.map((agent, index) => {
+      const declared = [...agent.dependencies];
+      let dependencies = declared;
+      if (strategy === 'direct' || strategy === 'sequential') {
+        dependencies = index > 0 ? [...new Set([...declared, agents[index - 1].id])] : declared;
+      } else if (!agent.canRunParallel) {
+        const previousPrimary = primary[primary.indexOf(agent) - 1];
+        dependencies = previousPrimary ? [...new Set([...declared, previousPrimary.id])] : declared;
+      } else if (lastPrimaryId) {
+        dependencies = [...new Set([...declared, lastPrimaryId])];
+      }
+      const required = strategy === 'parallel' ? !agent.canRunParallel : agent.priority === 1;
+      return {
+        nodeId: agent.id,
+        kind: 'subagent',
+        executorRef: 'auto-subagent',
+        input: createSubagentGraphNodeInput({
+          prompt: agent.taskDescription,
+          config: {
+            name: agent.name,
+            roleId: agent.baseAgentId,
+            systemPrompt: agent.systemPrompt,
+            availableTools: [...agent.tools],
+            maxIterations: agent.maxIterations,
+            maxBudget: agent.maxBudget,
+          },
+        }),
+        dependencies,
+        capabilityProfile: { tools: [...agent.tools] },
+        permissionProfile: { inherited: true },
+        sideEffect: agent.tools.some((tool) => /(write|edit|bash|shell|browser|computer)/i.test(tool)) ? 'unknown' : 'read_only',
+        idempotencyIdentity: `${runId}:node:${agent.id}`,
+        timeoutMs: agent.timeout,
+        retryPolicy: { maxAttempts: 1 },
+        required,
+        optional: !required,
+        priority: agent.priority,
+        metadata: { agentName: agent.name, strategy },
+      };
+    });
+    const trace = context.executionContext.traceContext;
+    return {
+      graphId: `auto-agent:${context.sessionId}`,
+      runId,
+      sessionId: context.sessionId,
+      attempt,
+      nodes,
+      schedulerPolicy: { maxConcurrency: strategy === 'parallel' ? Math.max(1, agents.length) : 1, failureStrategy: 'continue' },
+      metadata: { engine: 'auto_agent', strategy },
+      ...(trace ? { trace: { traceId: trace.traceId, spanId: trace.spanId } } : {}),
+    };
+  }
+
+  private projectLegacyCheckpoint(
+    spec: GraphRunSpec,
+    legacy: LegacyExecutionCheckpoint | null | undefined,
+  ): GraphCheckpoint | undefined {
+    if (!legacy || Object.keys(legacy.completedNodes).length === 0) return undefined;
+    const scheduler = new DAGGraphSchedulerAdapter();
+    scheduler.initialize(spec);
+    const results = new Map<string, GraphNodeResult>();
+    for (const [nodeId, cached] of Object.entries(legacy.completedNodes)) {
+      if (cached.status !== 'completed') continue;
+      scheduler.applyResult({
+        nodeId,
+        status: 'completed',
+        attempts: 1,
+        startedAt: cached.startedAt,
+        completedAt: cached.completedAt,
+      });
+      results.set(nodeId, {
+        status: 'completed',
+        output: this.serializeSubagentResult(cached.result),
+        sideEffectState: 'confirmed',
+      });
+    }
+    const snapshot = scheduler.snapshot();
+    return {
+      version: 1,
+      graphId: spec.graphId,
+      runId: spec.runId,
+      sessionId: spec.sessionId,
+      attempt: spec.attempt,
+      status: 'running',
+      eventSequence: 0,
+      scheduler: snapshot as unknown as GraphJsonValue,
+      nodes: snapshot.nodes.map((node) => ({ ...node, result: results.get(node.nodeId) })),
+      createdAt: legacy.createdAt,
+      updatedAt: legacy.updatedAt,
+    };
+  }
+
+  private toExecutionResult(
+    agent: DynamicAgentDefinition,
+    graphResult: GraphNodeResult | undefined,
+    checkpoint: GraphCheckpoint['nodes'][number] | undefined,
+  ): AgentExecutionResult {
+    const result = this.parseSubagentResult(graphResult?.output);
+    const status: AgentExecutionStatus = graphResult?.status === 'completed'
+      ? 'completed'
+      : graphResult?.status === 'cancelled' ? 'cancelled' : 'failed';
+    const startedAt = checkpoint?.startedAt ?? Date.now();
+    const completedAt = checkpoint?.completedAt;
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      status,
+      ...(result ? { result } : {}),
+      ...(graphResult?.error ? { error: graphResult.error } : {}),
+      startedAt,
+      ...(completedAt !== undefined ? { completedAt, duration: completedAt - startedAt } : {}),
+    };
+  }
+
+  private aggregateResults(results: AgentExecutionResult[]): Omit<CoordinationResult, 'strategy' | 'totalDuration'> {
+    const errors = results.flatMap((result) => result.error ? [`[${result.agentName}] ${result.error}`] : []);
+    const totalIterations = results.reduce((sum, result) => sum + (result.result?.iterations ?? 0), 0);
+    const totalCost = results.reduce((sum, result) => sum + (result.result?.cost ?? 0), 0);
+    const aggregatedOutput = results.flatMap((result) => result.result?.output
+      ? [`## ${result.agentName}\n\n${result.result.output}`]
+      : []).join('\n\n---\n\n');
+    return {
+      success: results.some((result) => result.status === 'completed'),
       results,
       aggregatedOutput,
       totalIterations,
@@ -569,83 +342,34 @@ export class AutoAgentCoordinator {
     };
   }
 
-  /**
-   * 取消正在执行的 Agent
-   */
-  cancelAgents(sessionId: string): void {
-    const state = this.sessionStateManager.get(sessionId);
-    if (!state) return;
-
-    for (const [agentId] of state.activeSubagents) {
-      this.sessionStateManager.updateSubagent(sessionId, agentId, {
-        status: 'failed',
-        error: 'Cancelled by user',
-        completedAt: Date.now(),
-      });
-    }
-
-    logger.info(`Cancelled all agents for session: ${sessionId}`);
+  private subagentOutput(result?: GraphNodeResult): string | undefined {
+    const parsed = this.parseSubagentResult(result?.output);
+    return parsed?.output;
   }
 
-  /**
-   * 获取执行进度
-   */
-  getProgress(sessionId: string): {
-    total: number;
-    completed: number;
-    running: number;
-    failed: number;
-    pending: number;
-  } {
-    const state = this.sessionStateManager.get(sessionId);
-    if (!state) {
-      return { total: 0, completed: 0, running: 0, failed: 0, pending: 0 };
-    }
+  private serializeSubagentResult(result?: SubagentResult): GraphJsonValue | undefined {
+    return result ? structuredClone(result) as unknown as GraphJsonValue : undefined;
+  }
 
-    let completed = 0;
-    let running = 0;
-    let failed = 0;
-    let pending = 0;
-
-    for (const subagent of state.activeSubagents.values()) {
-      switch (subagent.status) {
-        case 'completed':
-          completed++;
-          break;
-        case 'running':
-          running++;
-          break;
-        case 'failed':
-          failed++;
-          break;
-        case 'pending':
-          pending++;
-          break;
-      }
-    }
-
+  private parseSubagentResult(value: GraphJsonValue | undefined): SubagentResult | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const result = value as unknown as Partial<SubagentResult>;
+    if (typeof result.success !== 'boolean' || typeof result.output !== 'string') return undefined;
     return {
-      total: state.activeSubagents.size,
-      completed,
-      running,
-      failed,
-      pending,
+      success: result.success,
+      output: result.output,
+      toolsUsed: Array.isArray(result.toolsUsed) ? [...result.toolsUsed] : [],
+      iterations: typeof result.iterations === 'number' ? result.iterations : 0,
+      ...(result.error ? { error: result.error } : {}),
+      ...(typeof result.cost === 'number' ? { cost: result.cost } : {}),
+      ...(typeof result.tokensUsed === 'number' ? { tokensUsed: result.tokensUsed } : {}),
+      ...(result.cancellationReason ? { cancellationReason: result.cancellationReason } : {}),
+      ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     };
   }
 }
 
-// ----------------------------------------------------------------------------
-// Singleton Instance
-// ----------------------------------------------------------------------------
-
-let coordinatorInstance: AutoAgentCoordinator | null = null;
-
-/**
- * 获取 AutoAgentCoordinator 单例
- */
+/** Compatibility factory. It deliberately returns a run-local facade, not a singleton. */
 export function getAutoAgentCoordinator(): AutoAgentCoordinator {
-  if (!coordinatorInstance) {
-    coordinatorInstance = new AutoAgentCoordinator();
-  }
-  return coordinatorInstance;
+  return new AutoAgentCoordinator();
 }

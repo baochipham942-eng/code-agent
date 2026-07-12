@@ -15,6 +15,11 @@ export interface SubagentGraphNodeInput {
 export interface SubagentExecutorAdapterOptions {
   id?: string;
   contextFactory(node: GraphNode, context: GraphExecutorContext): SubagentExecutionContext;
+  requestFactory?(
+    input: SubagentGraphNodeInput,
+    node: GraphNode,
+    context: GraphExecutorContext,
+  ): SubagentGraphNodeInput;
   cancelTarget?(node: GraphNode, context: GraphExecutorContext): void | Promise<void>;
 }
 
@@ -34,7 +39,8 @@ export class SubagentExecutorAdapter implements GraphExecutorPort {
   }
 
   async execute(node: GraphNode, context: GraphExecutorContext): Promise<GraphNodeResult> {
-    const input = parseSubagentInput(node.input);
+    const parsed = parseSubagentInput(node.input);
+    const input = this.options.requestFactory?.(parsed, node, context) ?? parsed;
     const executionContext = this.options.contextFactory(node, context);
     if (executionContext.sessionId !== context.sessionId) {
       throw new Error(`Subagent session identity mismatch for node ${node.nodeId}`);

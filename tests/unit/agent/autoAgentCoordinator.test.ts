@@ -98,13 +98,14 @@ vi.mock('../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => configDirState.dir,
 }));
 
-import { AutoAgentCoordinator } from '../../../src/host/agent/autoAgentCoordinator';
+import { AutoAgentCoordinator, getAutoAgentCoordinator } from '../../../src/host/agent/autoAgentCoordinator';
 import type { DynamicAgentDefinition } from '../../../src/host/agent/dynamicAgentFactory';
 import type {
   AgentRequirements,
   ExecutionStrategy,
 } from '../../../src/host/agent/agentRequirementsAnalyzer';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
+import type { GraphCheckpoint } from '../../../src/host/orchestration';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,8 +124,11 @@ function makeAgent(
     tools: ['Read'],
     maxIterations: 5,
     maxBudget: 1,
+    timeout: 5_000,
     priority: 2,
     canRunParallel: false,
+    dependencies: [],
+    taskType: 'code',
     ...overrides,
   } as DynamicAgentDefinition;
 }
@@ -132,9 +136,17 @@ function makeAgent(
 function makeContext(sessionId = 'sess-1') {
   return {
     sessionId,
-    modelConfig: { provider: 'mock', model: 'mock' } as never,
-    toolResolver: {} as never,
-    toolContext: {} as never,
+    executionContext: {
+      runId: `auto:${sessionId}`,
+      sessionId,
+      workspace: '/tmp',
+      cwd: '/tmp',
+      modelConfig: { provider: 'mock', model: 'mock' },
+      resolver: { getDefinition: vi.fn() },
+      permission: { request: vi.fn(async () => true) },
+      events: { emit: vi.fn() },
+      abortSignal: new AbortController().signal,
+    } as never,
   };
 }
 
@@ -181,6 +193,10 @@ describe('AutoAgentCoordinator', () => {
       async (_prompt: string, spec: { name: string }) =>
         makeResult({ output: `ok:${spec.name}` })
     );
+  });
+
+  it('compatibility factory returns run-local facades instead of a process singleton', () => {
+    expect(getAutoAgentCoordinator()).not.toBe(getAutoAgentCoordinator());
   });
 
   afterEach(() => {
@@ -388,61 +404,53 @@ describe('AutoAgentCoordinator', () => {
       expect(fs.existsSync(checkpointPath('sess-cp-1'))).toBe(false);
     });
 
-    it('中途进程崩溃后 checkpoint 仍保留已完成节点', async () => {
+    it('中途进程崩溃时 Graph checkpoint 保留已完成节点', async () => {
       executorState.executeMock.mockImplementation(
         async (_p: string, spec: { name: string }) =>
           makeResult({ output: `out-${spec.name}` })
       );
 
-      // 模拟进程在 a2 开始前崩溃：onProgress(a2, running) 抛错 →
-      // 穿过 executeSequential 被 execute() 的 try/catch 捕获，跳过
-      // deleteCheckpoint 的清理路径
+      let captured: GraphCheckpoint | undefined;
       const ctx = {
         ...makeContext('sess-cp-2'),
-        onProgress: (id: string, status: string) => {
-          if (id === 'a2' && status === 'running') {
+        onGraphCheckpoint: (checkpoint: GraphCheckpoint) => {
+          captured = structuredClone(checkpoint);
+          if (checkpoint.nodes.find((node) => node.nodeId === 'a2')?.status === 'running') {
             throw new Error('simulated crash');
           }
         },
       };
 
-      const result = await coordinator.execute(
+      await expect(coordinator.execute(
         [makeAgent('a1'), makeAgent('a2')],
         makeRequirements('sequential'),
         ctx
-      );
-
-      // execute() 的 catch 返回 success=false
-      expect(result.success).toBe(false);
-
-      // a1 已完成 → 应留在 checkpoint 里
-      const cpPath = checkpointPath('sess-cp-2');
-      expect(fs.existsSync(cpPath)).toBe(true);
-      const cp = JSON.parse(fs.readFileSync(cpPath, 'utf-8'));
-      expect(cp.sessionId).toBe('sess-cp-2');
-      expect(Object.keys(cp.completedNodes)).toEqual(['a1']);
+      )).rejects.toThrow('simulated crash');
+      expect(captured?.nodes.find((node) => node.nodeId === 'a1')?.status).toBe('completed');
+      expect(fs.existsSync(checkpointPath('sess-cp-2'))).toBe(false);
     });
 
-    it('重启时跳过已完成节点', async () => {
+    it('从 Graph checkpoint 重启时跳过已完成节点', async () => {
       executorState.executeMock.mockImplementation(
         async (_p: string, spec: { name: string }) =>
           makeResult({ output: `first-${spec.name}` })
       );
 
-      // 第一次：a1 执行完毕后 a2 开始前崩溃
+      let captured: GraphCheckpoint | undefined;
       const firstCtx = {
         ...makeContext('sess-resume'),
-        onProgress: (id: string, status: string) => {
-          if (id === 'a2' && status === 'running') {
+        onGraphCheckpoint: (checkpoint: GraphCheckpoint) => {
+          captured = structuredClone(checkpoint);
+          if (checkpoint.nodes.find((node) => node.nodeId === 'a2')?.status === 'running') {
             throw new Error('crash');
           }
         },
       };
-      await coordinator.execute(
+      await expect(coordinator.execute(
         [makeAgent('a1'), makeAgent('a2')],
         makeRequirements('sequential'),
         firstCtx
-      );
+      )).rejects.toThrow('crash');
       expect(executorState.executeMock).toHaveBeenCalledTimes(1);
 
       // 第二次：重启，只应执行 a2
@@ -454,7 +462,7 @@ describe('AutoAgentCoordinator', () => {
       const secondResult = await coordinator.execute(
         [makeAgent('a1'), makeAgent('a2')],
         makeRequirements('sequential'),
-        makeContext('sess-resume')
+        { ...makeContext('sess-resume'), graphCheckpoint: captured }
       );
 
       // 仅 a2 被调用

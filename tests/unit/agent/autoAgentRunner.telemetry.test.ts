@@ -137,9 +137,11 @@ describe('runAutoAgentMode observability wiring', () => {
 
     expect(coordinatorState.capturedContext).toMatchObject({
       sessionId: 'session-auto-1',
-      toolContext: {
+      executionContext: {
+        runId: 'auto:session-auto-1',
         sessionId: 'session-auto-1',
-        workingDirectory: '/tmp/project',
+        workspace: '/tmp/project',
+        cwd: '/tmp/project',
       },
     });
   });

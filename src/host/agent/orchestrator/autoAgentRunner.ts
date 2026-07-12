@@ -16,6 +16,7 @@ import { sendDAGInitEvent } from '../../scheduler/dagEventBridge';
 import { getToolResolver } from '../../tools/dispatch/toolResolver';
 import type { TaskListManager } from '../taskList';
 import { createLogger } from '../../services/infra/logger';
+import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 
 const logger = createLogger('AutoAgentRunner');
 
@@ -140,15 +141,22 @@ export async function runAutoAgentMode(
 
   // Execute agents through coordinator
   const coordinator = getAutoAgentCoordinator();
+  const traceContext = getActiveRunTraceContext();
+  const toolResolver = getToolResolver();
 
   const result = await coordinator.execute(agents, requirements, {
     sessionId: sessionId || 'unknown',
-    modelConfig,
-    toolResolver: getToolResolver(),
-    toolContext: {
-      workingDirectory: deps.workingDirectory,
-      requestPermission: async () => true,
-      sessionId: sessionId || deps.sessionId || undefined,
+    executionContext: {
+      runId: traceContext?.runId ?? `auto:${sessionId || 'unknown'}`,
+      sessionId: sessionId || 'unknown',
+      workspace: deps.workingDirectory,
+      cwd: deps.workingDirectory,
+      modelConfig,
+      resolver: toolResolver,
+      permission: { request: async () => true },
+      events: { emit: (type, data) => onEvent({ type, data } as AgentEvent) },
+      abortSignal: new AbortController().signal,
+      traceContext,
       toolScope: deps.toolScope,
       executionIntent: deps.executionIntent,
     },

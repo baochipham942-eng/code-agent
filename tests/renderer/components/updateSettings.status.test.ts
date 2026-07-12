@@ -165,7 +165,7 @@ describe('UpdateSettings status visibility', () => {
         state: 'bundledFallback',
         nodeModules: [],
       }],
-      summary: { installed: 0, bundledFallback: 1, missing: 0 },
+      summary: { installed: 0, bundledFallback: 1, missing: 0, unsupported: 0 },
     }, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.summary.imageReady);
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
@@ -177,7 +177,7 @@ describe('UpdateSettings status visibility', () => {
         state: 'installed',
         nodeModules: [],
       }],
-      summary: { installed: 1, bundledFallback: 0, missing: 0 },
+      summary: { installed: 1, bundledFallback: 0, missing: 0, unsupported: 0 },
     }, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.summary.allReady);
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
@@ -195,7 +195,7 @@ describe('UpdateSettings status visibility', () => {
         state: 'missing',
         nodeModules: [],
       }],
-      summary: { installed: 0, bundledFallback: 1, missing: 1 },
+      summary: { installed: 0, bundledFallback: 1, missing: 1, unsupported: 0 },
     }, updateText.runtimeAssets)).toBe(updateText.runtimeAssets.summary.optionalWithBundled);
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
@@ -207,7 +207,7 @@ describe('UpdateSettings status visibility', () => {
         state: 'missing',
         nodeModules: [],
       }],
-      summary: { installed: 0, bundledFallback: 0, missing: 1 },
+      summary: { installed: 0, bundledFallback: 0, missing: 1, unsupported: 0 },
     }, updateText.runtimeAssets)).toBe(
       `${updateText.runtimeAssets.displayNames.imageUnderstanding}${updateText.runtimeAssets.summary.unavailableSuffix}`,
     );
@@ -228,6 +228,13 @@ describe('UpdateSettings status visibility', () => {
       state: 'missing',
       nodeModules: [],
     }, updateText.runtimeAssets.status)).toBe(updateText.runtimeAssets.status.firstUseDownload);
+    expect(getRuntimeAssetStatusText({
+      id: 'onnxruntime-vad',
+      label: 'Local audio capability components',
+      delivery: 'optional',
+      state: 'unsupported',
+      nodeModules: [],
+    }, updateText.runtimeAssets.status)).toBe(updateText.runtimeAssets.status.unsupported);
   });
 
   it('uses user-facing runtime capability names instead of package labels', () => {
@@ -549,7 +556,7 @@ describe('UpdateSettings status visibility', () => {
             required: true,
           },
         }],
-        summary: { installed: 1, bundledFallback: 1, missing: 0 },
+        summary: { installed: 1, bundledFallback: 1, missing: 0, unsupported: 0 },
       },
       boot: {
         previousFailure: {

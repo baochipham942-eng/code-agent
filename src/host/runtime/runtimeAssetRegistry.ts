@@ -59,6 +59,7 @@ export const RUNTIME_ASSET_DEFINITIONS: RuntimeAssetDefinition[] = [
     kind: 'node-modules',
     delivery: 'optional',
     nodeModules: ['onnxruntime-node', 'avr-vad'],
+    platforms: ['darwin-arm64'],
   },
   {
     id: 'playwright-browser-runtime',
@@ -66,6 +67,7 @@ export const RUNTIME_ASSET_DEFINITIONS: RuntimeAssetDefinition[] = [
     kind: 'node-modules',
     delivery: 'optional',
     nodeModules: ['playwright', 'playwright-core'],
+    platforms: DARWIN_PLATFORMS,
   },
   {
     id: 'sharp-image-runtime',

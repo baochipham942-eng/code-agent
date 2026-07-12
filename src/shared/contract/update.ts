@@ -61,7 +61,7 @@ export interface PrepareRuntimeAssetsResult {
   }>;
 }
 
-export type RuntimeAssetStatusState = 'installed' | 'bundledFallback' | 'missing';
+export type RuntimeAssetStatusState = 'installed' | 'bundledFallback' | 'missing' | 'unsupported';
 export type RuntimeAssetDelivery = 'optional' | 'bundled';
 export type RuntimeAssetRegistryKind = 'node-modules' | 'helper-binary' | 'tool-binary' | 'app-bundle';
 export type RuntimeAssetRegistrySource = 'managed' | 'bundled' | 'dev' | 'missing';
@@ -150,7 +150,18 @@ export interface RuntimeAssetsStatus {
     installed: number;
     bundledFallback: number;
     missing: number;
+    unsupported: number;
   };
+  preparation?: RuntimeAssetPreparationStatus | null;
+}
+
+export interface RuntimeAssetPreparationStatus {
+  assetId: string;
+  phase: 'checking' | 'manifest' | 'downloading' | 'installing' | 'completed' | 'failed';
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  error?: string;
 }
 
 export type RendererBundleAttemptOutcome = 'applied' | 'rolled-back' | 'skipped' | 'failed';

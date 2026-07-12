@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
     runtimeBaseDir: '/runtime',
     activeManifestPath: '/runtime/active.json',
     assets: [],
-    summary: { installed: 1, bundledFallback: 1, missing: 0 },
+    summary: { installed: 1, bundledFallback: 1, missing: 0, unsupported: 0 },
   } as RuntimeAssetsStatus,
 }));
 

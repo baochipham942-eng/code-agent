@@ -198,6 +198,8 @@ describe('UpdateService runtime assets', () => {
       cachedUpdateInfo: UpdateInfo;
       isDownloading: boolean;
       downloadFile: (url: string, destPath: string) => Promise<string>;
+      runtimeAssetPreparations: Map<string, Promise<unknown>>;
+      runtimeAssetQueue: Promise<void>;
     };
     service.cachedUpdateInfo = {
       hasUpdate: false,
@@ -209,6 +211,8 @@ describe('UpdateService runtime assets', () => {
       },
     };
     service.isDownloading = false;
+    service.runtimeAssetPreparations = new Map();
+    service.runtimeAssetQueue = Promise.resolve();
     service.downloadFile = vi.fn(async (url: string, destPath: string) => {
       const source = url.endsWith('/manifest.json') ? remote.manifestPath : remote.archivePath;
       mkdirp(path.dirname(destPath));
@@ -216,12 +220,17 @@ describe('UpdateService runtime assets', () => {
       return sha256File(destPath);
     });
 
-    const result = await service.prepareRuntimeAssets(runtimeBaseDir);
+    const result = await service.prepareRuntimeAsset('onnxruntime-vad', runtimeBaseDir);
 
     expect(result.installed).toHaveLength(1);
     expect(result.installed[0]?.assetId).toBe('onnxruntime-vad');
     expect(fs.existsSync(path.join(result.installed[0]!.root, 'node_modules', 'onnxruntime-node'))).toBe(true);
     expect(service.cachedUpdateInfo.runtimeAssets?.hasUpdate).toBe(false);
     expect(service.cachedUpdateInfo.runtimeAssets?.assets?.[0]?.installed).toBe(true);
+    expect(service.getRuntimeAssetPreparationStatus()).toMatchObject({
+      assetId: 'onnxruntime-vad',
+      phase: 'completed',
+      percent: 100,
+    });
   });
 });

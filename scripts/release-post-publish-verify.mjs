@@ -167,6 +167,13 @@ async function verifyAppUpdate({ fetchImpl, baseUrl, expectedVersion, timeoutMs 
     platform: 'darwin',
     channel: 'stable',
   });
+  const checkUrlX64 = buildUrl(baseUrl, '/api/update', {
+    action: 'check',
+    version: '0.0.0',
+    platform: 'darwin',
+    arch: 'x64',
+    channel: 'stable',
+  });
   const healthUrl = buildUrl(baseUrl, '/api/update', { action: 'health' });
 
   const update = await fetchJson(fetchImpl, checkUrl, {}, timeoutMs);
@@ -174,6 +181,21 @@ async function verifyAppUpdate({ fetchImpl, baseUrl, expectedVersion, timeoutMs 
     checkExpectedVersion(failures, 'app update latestVersion', update.body.latestVersion, expectedVersion);
     if (releaseNotesLength(update.body) === 0) {
       pushFailure(failures, 'missing_release_notes', 'app update check returned empty release notes', { url: checkUrl });
+    }
+    if (!isRecord(update.body.runtimeAssets)
+      || typeof update.body.runtimeAssets.manifestUrl !== 'string'
+      || typeof update.body.runtimeAssets.manifestSha256 !== 'string') {
+      pushFailure(failures, 'runtime_assets_metadata_missing', 'arm64 update metadata has no trusted runtime-assets manifest', { url: checkUrl });
+    }
+  }
+
+  const updateX64 = await fetchJson(fetchImpl, checkUrlX64, {}, timeoutMs);
+  if (checkHttpOk(failures, 'app update check x64', updateX64) && isRecord(updateX64.body)) {
+    checkExpectedVersion(failures, 'app update latestVersion x64', updateX64.body.latestVersion, expectedVersion);
+    if (!isRecord(updateX64.body.runtimeAssets)
+      || typeof updateX64.body.runtimeAssets.manifestUrl !== 'string'
+      || typeof updateX64.body.runtimeAssets.manifestSha256 !== 'string') {
+      pushFailure(failures, 'runtime_assets_metadata_missing', 'x64 update metadata has no trusted runtime-assets manifest', { url: checkUrlX64 });
     }
   }
 
@@ -197,6 +219,12 @@ async function verifyAppUpdate({ fetchImpl, baseUrl, expectedVersion, timeoutMs 
         latestVersion: normalizeVersion(update.body?.latestVersion),
         releaseNotesLength: releaseNotesLength(update.body),
         source: update.body?.source,
+      },
+      updateX64: {
+        url: checkUrlX64,
+        status: updateX64.status,
+        latestVersion: normalizeVersion(updateX64.body?.latestVersion),
+        runtimeAssets: updateX64.body?.runtimeAssets,
       },
       health: {
         url: healthUrl,

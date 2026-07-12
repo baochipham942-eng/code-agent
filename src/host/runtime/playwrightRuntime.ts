@@ -5,6 +5,7 @@ type PlaywrightModule = typeof import('playwright');
 
 export interface PlaywrightLoadOptions extends RuntimeAssetResolverOptions {
   allowBareModule?: boolean;
+  prepareRuntimeAsset?: (assetId: 'playwright-browser-runtime') => Promise<void>;
 }
 
 export interface PlaywrightLoadResult {
@@ -26,7 +27,27 @@ function isPlaywrightModule(value: unknown): value is PlaywrightModule {
 }
 
 export async function loadPlaywright(options: PlaywrightLoadOptions = {}): Promise<PlaywrightLoadResult> {
-  const loaded = requireOptionalNodeModule<unknown>('playwright', options);
+  let loaded = requireOptionalNodeModule<unknown>('playwright', options);
+  if (!loaded.ok && loaded.missingPackage) {
+    try {
+      if (options.prepareRuntimeAsset) {
+        await options.prepareRuntimeAsset('playwright-browser-runtime');
+        loaded = requireOptionalNodeModule<unknown>('playwright', options);
+      } else {
+        const { isUpdateServiceInitialized, prepareRuntimeAssetOnDemand } = await import('../services/cloud/updateService');
+        if (isUpdateServiceInitialized()) {
+          await prepareRuntimeAssetOnDemand('playwright-browser-runtime');
+          loaded = requireOptionalNodeModule<unknown>('playwright', options);
+        }
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Browser automation components could not be installed: ${error instanceof Error ? error.message : String(error)}`,
+        missingPackage: true,
+      };
+    }
+  }
   if (!loaded.ok) {
     return {
       ok: false,

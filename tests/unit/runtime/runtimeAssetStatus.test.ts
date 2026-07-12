@@ -191,8 +191,29 @@ describe('runtimeAssetStatus', () => {
       },
     });
 
-    expect(status.summary).toEqual({ installed: 0, bundledFallback: 0, missing: status.assets.length });
+    expect(status.summary).toEqual({ installed: 0, bundledFallback: 0, missing: status.assets.length, unsupported: 0 });
     expect(status.assets.every((asset) => asset.state === 'missing')).toBe(true);
     expect(status.assets.every((asset) => asset.nodeModules.every((moduleStatus) => !moduleStatus.exists))).toBe(true);
+  });
+
+  it('reports arm64-only VAD as unsupported rather than missing on darwin-x64', async () => {
+    const root = makeTempRoot();
+    const status = await getRuntimeAssetsStatus({
+      runtimeBaseDir: path.join(root, 'runtime'),
+      platform: 'darwin-x64',
+      resolverOptions: {
+        env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: makeTempRoot() },
+        cwd: makeTempRoot(),
+        dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      },
+    });
+
+    expect(status.assets.find((asset) => asset.id === 'onnxruntime-vad')).toMatchObject({
+      state: 'unsupported',
+      platform: 'darwin-x64',
+      registry: expect.objectContaining({ required: false }),
+    });
+    expect(status.summary.unsupported).toBe(1);
+    expect(status.summary.missing).toBe(status.assets.length - 1);
   });
 });

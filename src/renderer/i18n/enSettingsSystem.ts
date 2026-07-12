@@ -156,6 +156,8 @@ export const enSettingsSystem = {
         optionalPrepareFailed: 'Optional capability download failed. Built-in capabilities are still available.',
         prepareIdle: 'Prepare voice input and browser control in advance',
         prepareBusy: 'Preparing voice input and browser control...',
+        installAsset: 'Download',
+        retryAsset: 'Retry',
         listSeparator: ', ',
         displayNames: {
           computerUse: 'Computer Use',
@@ -176,6 +178,7 @@ export const enSettingsSystem = {
         status: {
           available: 'Ready',
           firstUseDownload: 'Downloads on first use',
+          unsupported: 'Not supported',
           missing: 'Missing',
         },
       },

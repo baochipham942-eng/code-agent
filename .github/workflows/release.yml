@@ -30,9 +30,9 @@ jobs:
             swift_arch: x86_64
     runs-on: ${{ matrix.runner }}
     env:
-      # Gate for the runtime-assets publishing steps. Empty (no secret) => those steps
-      # skip, which matches the safe default that managed runtime-asset publishing is not
-      # enabled until a control-plane signing key is provisioned (see C1 audit gate).
+      # Runtime-assets manifests use the same control-plane signing trust root as renderer
+      # bundles. Formal tags must publish them for both macOS architectures; a missing key
+      # fails closed in build-runtime-assets.mjs instead of silently shipping null metadata.
       CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY }}
       CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
     steps:
@@ -310,16 +310,9 @@ jobs:
             "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/${DMG_NAME}"
 
       - name: Build and upload runtime assets
-        # Managed runtime-asset publishing is OFF by default and must be opted into
-        # EXPLICITLY via the repo variable ENABLE_RUNTIME_ASSETS_PUBLISH=true — it is
-        # NOT auto-enabled by the presence of the control-plane signing key (that key
-        # is shared with renderer-bundle hot-update signing, so coupling the two would
-        # silently flip on a publish chain clients have never exercised). When the var
-        # is true, build-runtime-assets.mjs signs the manifest (C1) and fails closed
-        # without CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY.
-        # 仅 arm64：VAD onnxruntime 等 runtime assets x64 不适配（intel-x64-support.md 决策），
-        # x64 端依赖既有 missing-runtime 优雅降级。
-        if: ${{ matrix.arch == 'arm64' && vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
+        # 双架构都发布：arm64 包含 VAD + Playwright；x64 由构建脚本显式跳过
+        # arm64-only 的 VAD，但仍发布 Playwright。manifest/sha/archive 按架构命名，
+        # 不共享对象名，也不会覆盖另一侧制品。
         env:
           ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
           ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
@@ -327,14 +320,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           ARTIFACT_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${GITHUB_REF_NAME}"
           RUNTIME_ASSETS_DIR="src-tauri/target/release/runtime-assets"
-          MANIFEST_NAME="runtime-assets-manifest-darwin-arm64.json"
+          RUNTIME_PLATFORM="darwin-${{ matrix.arch }}"
+          MANIFEST_NAME="runtime-assets-manifest-${RUNTIME_PLATFORM}.json"
           MANIFEST_PATH="${RUNTIME_ASSETS_DIR}/${MANIFEST_NAME}"
-          SHA_PATH="${RUNTIME_ASSETS_DIR}/runtime-assets-manifest-darwin-arm64.sha256"
+          SHA_PATH="${RUNTIME_ASSETS_DIR}/runtime-assets-manifest-${RUNTIME_PLATFORM}.sha256"
 
           rm -rf "${RUNTIME_ASSETS_DIR}"
           npm run release:runtime-assets -- \
             --output-dir "${RUNTIME_ASSETS_DIR}" \
             --flat-output \
+            --platform "${RUNTIME_PLATFORM}" \
             --manifest-name "${MANIFEST_NAME}" \
             --archive-base-url "${ARTIFACT_BASE_URL}/runtime-assets/"
 
@@ -358,19 +353,23 @@ jobs:
           echo "RUNTIME_ASSETS_MANIFEST_SHA256=${RUNTIME_ASSETS_MANIFEST_SHA256}" >> "${GITHUB_ENV}"
 
       - name: Verify published runtime assets
-        if: ${{ matrix.arch == 'arm64' && vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
         env:
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          EXPECTED_RUNTIME_ASSETS="playwright-browser-runtime"
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            EXPECTED_RUNTIME_ASSETS="onnxruntime-vad,playwright-browser-runtime"
+          fi
           npx tsx scripts/verify-runtime-assets-publish.mjs \
             --manifest-url "${RUNTIME_ASSETS_MANIFEST_URL}" \
             --manifest-sha256-url "${RUNTIME_ASSETS_MANIFEST_SHA_URL}" \
             --expected-version "${VERSION}" \
-            --expected-platform darwin-arm64 \
-            --min-assets 1
+            --expected-platform "darwin-${{ matrix.arch }}" \
+            --min-assets 1 \
+            --expected-assets "${EXPECTED_RUNTIME_ASSETS}"
 
       - name: Stage release assets for publish job
         run: |
@@ -381,7 +380,7 @@ jobs:
           cp "src-tauri/target/release/bundle/macos/${ARCHIVE_NAME}.sig" "${STAGE}/"
           cp "src-tauri/target/release/bundle/latest-${{ matrix.arch }}.json" "${STAGE}/"
           cp "${RUNNER_TEMP}/Agent-Neo-${VERSION}-${{ matrix.arch }}.dmg" "${STAGE}/"
-          # runtime assets（仅 arm64 且开启发布时存在）
+          # runtime assets（双架构均必须存在）
           if [[ -d "src-tauri/target/release/runtime-assets" ]]; then
             cp src-tauri/target/release/runtime-assets/*.json "${STAGE}/" 2>/dev/null || true
             cp src-tauri/target/release/runtime-assets/*.sha256 "${STAGE}/" 2>/dev/null || true
@@ -647,7 +646,6 @@ jobs:
           ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
           ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
           ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
-          ENABLE_RUNTIME_ASSETS_PUBLISH: ${{ vars.ENABLE_RUNTIME_ASSETS_PUBLISH }}
         run: |
           cat > ~/.ossutilconfig <<EOF
           [default]
@@ -669,11 +667,11 @@ jobs:
           DMG_URL="${BASE_URL}/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
           DMG_URL_X64="${BASE_URL}/v${VERSION}/Agent-Neo-${VERSION}-x64.dmg"
           RUNTIME_ARGS=()
-          if [[ "${ENABLE_RUNTIME_ASSETS_PUBLISH:-}" == "true" ]]; then
-            # URL 形状确定（arm64 build job 已上传并 verify 过），按约定重建，免跨 job 传输出
-            RUNTIME_ARGS+=("--runtime-assets-manifest-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.json")
-            RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256")
-          fi
+          # 两侧 build job 都已上传并 verify，stable metadata 必须同时绑定对应架构。
+          RUNTIME_ARGS+=("--runtime-assets-manifest-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.json")
+          RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256")
+          RUNTIME_ARGS+=("--runtime-assets-manifest-url-x64" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-x64.json")
+          RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url-x64" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-x64.sha256")
           # Windows exe：制品在场才写入 stable/release.json（windows leg 失败时 mac-only 降级）
           EXE_ARGS=()
           if ls release-assets/*-setup.exe >/dev/null 2>&1; then

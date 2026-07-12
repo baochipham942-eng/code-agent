@@ -216,7 +216,7 @@ async function defaultResolveDependencyContext(
 }
 
 async function defaultPrepareRuntimeAssets(
-  _missingAssets?: readonly string[],
+  missingAssets?: readonly string[],
   _manifest?: RendererBundleManifest,
 ): Promise<PrepareRuntimeAssetsResult> {
   const updateService = await import('../cloud/updateService');
@@ -226,7 +226,15 @@ async function defaultPrepareRuntimeAssets(
       skipped: [{ assetId: '*', reason: 'update service not initialized' }],
     };
   }
-  return updateService.getUpdateService().prepareRuntimeAssets();
+  if (!missingAssets?.length) return { installed: [], skipped: [] };
+  const installed: PrepareRuntimeAssetsResult['installed'] = [];
+  const skipped: PrepareRuntimeAssetsResult['skipped'] = [];
+  for (const assetId of missingAssets) {
+    const result = await updateService.getUpdateService().prepareRuntimeAsset(assetId);
+    installed.push(...result.installed);
+    skipped.push(...result.skipped);
+  }
+  return { installed, skipped };
 }
 
 async function defaultFetchJson(url: string): Promise<unknown> {

@@ -156,6 +156,8 @@ export const zhSettingsSystem = {
         optionalPrepareFailed: '可选能力下载失败，已继续使用内置能力',
         prepareIdle: '提前准备语音输入和网页操作',
         prepareBusy: '正在准备语音输入和网页操作…',
+        installAsset: '下载',
+        retryAsset: '重试',
         listSeparator: '、',
         displayNames: {
           computerUse: 'Computer Use',
@@ -176,6 +178,7 @@ export const zhSettingsSystem = {
         status: {
           available: '已可用',
           firstUseDownload: '首次使用时下载',
+          unsupported: '不适用',
           missing: '缺失',
         },
       },

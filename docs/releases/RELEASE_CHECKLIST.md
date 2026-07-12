@@ -14,12 +14,14 @@ This checklist defines the current formal release contract. Architecture details
 
 1. Prepare the version files, `CHANGELOG.md`, and `docs/releases/v<version>.md` on a clean branch based on fresh `origin/main`.
 2. Run `npm run release:neo -- --version <version>` and resolve every source gate without bypassing signing, runtime asset, renderer, or security invariants.
-3. Commit release preparation on `main`. Only with explicit release authorization, run the publish mode that pushes `main` and the annotated tag.
-4. The tag workflow builds macOS arm64, macOS x64, and the optional Windows x64 leg; verifies signing/notarization/updater/runtime resources; and creates the GitHub Release.
-5. For a stable tag, upload versioned OSS assets, then promote `stable/latest.json` and `stable/release.json`. Pre-release tags must not change stable.
-6. Publish renderer bundle and release record before switching the renderer manifest. Serialize publishers per channel and never cancel a publisher after it starts replacing the object set.
-7. Run the read-only post-publish verifier against update check/health, arm64+x64 redirects, distribution page, renderer control-plane, OSS manifest, release record, rollback state, and production logs.
-8. Run packaged desktop smoke with an isolated app/data/HOME. The default 120-second gate must reach `window-navigated`, `webHealth=ok`, boot-token match, and zero missing required resources. Remote plugins, skills, and MCP initialize in the background; `onnxruntime-vad` and `playwright-browser-runtime` remain optional warnings.
+3. Confirm the macOS matrix publishes and verifies `runtime-assets-manifest-darwin-arm64` and `runtime-assets-manifest-darwin-x64`; arm64 must contain VAD + Playwright, x64 must contain Playwright and omit VAD.
+4. Confirm `stable/release.json` includes both architecture-specific runtime manifest and sha256 sidecars, then probe `/api/update?action=check` with default arm64 and `arch=x64`.
+5. Commit release preparation on `main`. Only with explicit release authorization, run the publish mode that pushes `main` and the annotated tag.
+6. The tag workflow builds macOS arm64, macOS x64, and the optional Windows x64 leg; verifies signing/notarization/updater/runtime resources; and creates the GitHub Release.
+7. For a stable tag, upload versioned OSS assets, then promote `stable/latest.json` and `stable/release.json`. Pre-release tags must not change stable.
+8. Publish renderer bundle and release record before switching the renderer manifest. Serialize publishers per channel and never cancel a publisher after it starts replacing the object set.
+9. Run the read-only post-publish verifier against update check/health, arm64+x64 redirects, distribution page, renderer control-plane, OSS manifest, release record, rollback state, and production logs.
+10. Run packaged desktop smoke with an isolated app/data/HOME. The default 120-second gate must reach `window-navigated`, `webHealth=ok`, boot-token match, and zero missing required resources. Remote plugins, skills, and MCP initialize in the background; `onnxruntime-vad` and `playwright-browser-runtime` remain optional warnings.
 
 ## Completion evidence
 

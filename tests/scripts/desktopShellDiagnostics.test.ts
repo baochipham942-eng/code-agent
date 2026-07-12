@@ -77,7 +77,7 @@ function desktopShellDiagnostics(overrides: Record<string, unknown> = {}) {
       runtimeBaseDir: '/runtime',
       activeManifestPath: '/runtime/active.json',
       assets: [],
-      summary: { installed: 0, bundledFallback: 1, missing: 0 },
+      summary: { installed: 0, bundledFallback: 1, missing: 0, unsupported: 0 },
     },
     rendererBundle: null,
     issues: [],
@@ -184,7 +184,7 @@ describe('desktop shell diagnostics classification', () => {
             nodeModules: [],
           },
         ],
-        summary: { installed: 0, bundledFallback: 0, missing: 2 },
+        summary: { installed: 0, bundledFallback: 0, missing: 2, unsupported: 0 },
       },
       issues: [
         {

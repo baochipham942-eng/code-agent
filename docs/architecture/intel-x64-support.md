@@ -162,7 +162,7 @@ arm64 构建（现状不动）          x64 构建（新增）
 - x64 bundle：`node scripts/tauri-arch-config.mjs x64 --out "$RUNNER_TEMP/tauri.x64.json"` → `bash scripts/tauri-release-bundle.sh --config "$RUNNER_TEMP/tauri.x64.json"`。
 - ossutil 安装：`mac-arm64.zip` → `mac-${{ matrix.ossutil }}`（按 leg）。
 - OSS dmg 名：`Agent-Neo-${VERSION}-${{ matrix.arch }}.dmg`（已与 build-stable-release-json 命名对齐）。
-- runtime-assets 步加 `if: matrix.arch == 'arm64'`（x64 无 onnxruntime，跳过；manifest 仍 `darwin-arm64`）。
+- runtime-assets 双架构发布：arm64 manifest 含 VAD + Playwright，x64 manifest 由构建脚本跳过 VAD 但保留 Playwright；两侧分别上传、验证并写入 stable metadata。
 - GitHub Release 各 leg 追加自己 arch 的 dmg/app.tar.gz；`latest.json` 按 arch 命名上传避免覆盖。
 
 ### 8.2 updater 端点 arch 化（含老客户端迁移）

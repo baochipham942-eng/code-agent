@@ -221,6 +221,14 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('win-x64-setup.exe');
     expect(workflow).toContain('npm run release:runtime-assets');
     expect(workflow).toContain('runtime-assets-manifest-darwin-arm64.json');
+    expect(workflow).toContain('runtime-assets-manifest-${RUNTIME_PLATFORM}.json');
+    expect(workflow).toContain('RUNTIME_PLATFORM="darwin-${{ matrix.arch }}"');
+    expect(workflow).toContain('--expected-platform "darwin-${{ matrix.arch }}"');
+    expect(workflow).toContain('--expected-assets "${EXPECTED_RUNTIME_ASSETS}"');
+    expect(workflow).toContain('--runtime-assets-manifest-url-x64');
+    expect(workflow).toContain('runtime-assets-manifest-darwin-x64.json');
+    expect(workflow).not.toContain('ENABLE_RUNTIME_ASSETS_PUBLISH');
+    expect(workflow).not.toContain("vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true'");
     expect(workflow).toContain('scripts/verify-runtime-assets-publish.mjs');
     expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_URL');
     expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_SHA256');
@@ -350,6 +358,9 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('TAG_VERSION="${GITHUB_REF_NAME#v}"');
     expect(workflow).toContain('Renderer bundle version ${VERSION} does not match tag ${GITHUB_REF_NAME}.');
     expect(workflow).toContain('ARGS+=(--dry-run)');
+    expect(workflow).toContain('REQUIRED_RUNTIME_ASSETS="onnxruntime-vad,playwright-browser-runtime"');
+    expect(workflow).toContain('[ "${GITHUB_REF_TYPE}" = "tag" ]');
+    expect(workflow).toContain('ARGS+=(--required-runtime-assets "${REQUIRED_RUNTIME_ASSETS}")');
     expect(workflow).toContain('Renderer bundle dry-run: generated candidate artifacts only');
     expect(workflow).toContain('renderer-bundle/channels/${RELEASE_CHANNEL}');
     expect(workflow).toContain('--channel "${RELEASE_CHANNEL}"');
@@ -753,6 +764,32 @@ describe('macOS release fail-closed gates', () => {
         name: 'runtime-assets-manifest-darwin-arm64.sha256',
         browser_download_url: 'https://oss.example/v0.16.93/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256',
       },
+    ]));
+  });
+
+  it('writes both architecture runtime manifests into stable release JSON', () => {
+    const output = resolve(mkdtempSync(`${tmpdir()}/stable-release-json-dual-runtime-`), 'release.json');
+    const result = spawnSync('node', [
+      'scripts/build-stable-release-json.mjs',
+      '--version', '0.26.4',
+      '--tag', 'v0.26.4',
+      '--dmg-url', 'https://oss.example/v0.26.4/Agent-Neo-0.26.4-arm64.dmg',
+      '--dmg-url-x64', 'https://oss.example/v0.26.4/Agent-Neo-0.26.4-x64.dmg',
+      '--runtime-assets-manifest-url', 'https://oss.example/v0.26.4/runtime-assets/runtime-assets-manifest-darwin-arm64.json',
+      '--runtime-assets-manifest-sha-url', 'https://oss.example/v0.26.4/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256',
+      '--runtime-assets-manifest-url-x64', 'https://oss.example/v0.26.4/runtime-assets/runtime-assets-manifest-darwin-x64.json',
+      '--runtime-assets-manifest-sha-url-x64', 'https://oss.example/v0.26.4/runtime-assets/runtime-assets-manifest-darwin-x64.sha256',
+      '--output', output,
+    ], { cwd: repoRoot, encoding: 'utf8' });
+
+    expect(result.status).toBe(0);
+    const names = (JSON.parse(readFileSync(output, 'utf8')) as { assets: Array<{ name: string }> })
+      .assets.map((asset) => asset.name);
+    expect(names).toEqual(expect.arrayContaining([
+      'runtime-assets-manifest-darwin-arm64.json',
+      'runtime-assets-manifest-darwin-arm64.sha256',
+      'runtime-assets-manifest-darwin-x64.json',
+      'runtime-assets-manifest-darwin-x64.sha256',
     ]));
   });
 

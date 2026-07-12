@@ -23,6 +23,8 @@ import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import { createLogger } from '../services/infra/logger';
 import { shell } from '../platform';
+import { prepareRuntimeAssetOnDemand } from '../services/cloud/updateService';
+import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
 
 // 音频采集完全走手动触发（录制按钮），不再自动检测会议 app。
 // 自动检测会让 ScreenCaptureKit 在用户未知情时拉起，macOS 统一标注为"屏幕共享"，体验错位。
@@ -398,10 +400,17 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           if (manualAudioActive) {
             return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
           }
-          manualAudioActive = true;
           const payload = request.payload as { fifoPath?: string; mode?: 'microphone' | 'system-audio' } | undefined;
           const fifoPath = payload?.fifoPath;
           const mode = payload?.mode || 'microphone';
+          if (process.platform === 'darwin' && process.arch === 'arm64') {
+            const runtimeStatus = await getRuntimeAssetsStatus();
+            const vadStatus = runtimeStatus.assets.find((asset) => asset.id === 'onnxruntime-vad');
+            if (vadStatus?.state === 'missing') {
+              await prepareRuntimeAssetOnDemand('onnxruntime-vad');
+            }
+          }
+          manualAudioActive = true;
           await startDesktopAudioCapture(fifoPath, mode);
           const audioSt = getAudioCaptureStatus();
           if (!audioSt.capturing) {

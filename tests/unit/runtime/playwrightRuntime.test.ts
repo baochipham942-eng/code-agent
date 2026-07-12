@@ -82,4 +82,45 @@ describe('playwrightRuntime', () => {
     expect(result.ok).toBe(false);
     expect(result.missingPackage).toBe(true);
   });
+
+  it('installs only the browser runtime on first Playwright use and retries loading', async () => {
+    const root = makeTempRoot();
+    const userDataPath = path.join(root, 'user-data');
+    const managedRoot = path.join(userDataPath, 'runtime', 'playwright-browser-runtime', 'hash');
+    const requested: string[] = [];
+    const result = await loadPlaywright({
+      env: {},
+      cwd: makeTempRoot(),
+      dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      userDataPath,
+      allowBareModule: false,
+      prepareRuntimeAsset: async (assetId) => {
+        requested.push(assetId);
+        writeFile(path.join(managedRoot, 'node_modules', 'playwright', 'index.js'), "module.exports = require('playwright-core');\n");
+        writeFile(path.join(managedRoot, 'node_modules', 'playwright', 'package.json'), JSON.stringify({ main: 'index.js' }));
+        writeFile(path.join(managedRoot, 'node_modules', 'playwright-core', 'index.js'), 'module.exports = { chromium: { source: "first-use" } };\n');
+        writeFile(path.join(managedRoot, 'node_modules', 'playwright-core', 'package.json'), JSON.stringify({ main: 'index.js' }));
+        writeFile(path.join(userDataPath, 'runtime', 'active.json'), JSON.stringify({
+          schemaVersion: 1,
+          kind: 'agent_neo_runtime_assets_active',
+          updatedAt: '2026-07-12T00:00:00.000Z',
+          assets: {
+            'playwright-browser-runtime': {
+              assetId,
+              root: managedRoot,
+              expandedSha256: 'hash',
+              archiveSha256: 'a'.repeat(64),
+              archiveFile: '/tmp/playwright.tar.gz',
+              groups: [],
+              nodeModules: ['playwright', 'playwright-core'],
+              installedAt: '2026-07-12T00:00:00.000Z',
+            },
+          },
+        }));
+      },
+    });
+
+    expect(requested).toEqual(['playwright-browser-runtime']);
+    expect(result).toMatchObject({ ok: true, module: { chromium: { source: 'first-use' } } });
+  });
 });

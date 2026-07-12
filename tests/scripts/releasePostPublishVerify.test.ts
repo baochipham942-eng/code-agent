@@ -118,7 +118,7 @@ function desktopShellDiagnostics(overrides: Record<string, unknown> = {}) {
       runtimeBaseDir: '/runtime',
       activeManifestPath: '/runtime/active.json',
       assets: [],
-      summary: { installed: 0, bundledFallback: 1, missing: 0 },
+      summary: { installed: 0, bundledFallback: 1, missing: 0, unsupported: 0 },
     },
     rendererBundle: null,
     issues: [],
@@ -141,6 +141,10 @@ function createFetch(overrides: Record<string, Response> = {}) {
         latestVersion: '0.17.1',
         releaseNotes: 'Release notes',
         source: 'github_releases',
+        runtimeAssets: {
+          manifestUrl: `https://oss.test/v0.17.1/runtime-assets/runtime-assets-manifest-darwin-${parsed.searchParams.get('arch') === 'x64' ? 'x64' : 'arm64'}.json`,
+          manifestSha256: 'a'.repeat(64),
+        },
       });
     }
     if (parsed.pathname === '/api/update' && parsed.searchParams.get('action') === 'health') {
@@ -188,6 +192,10 @@ function writeFixtureDir() {
     hasUpdate: true,
     latestVersion: '0.17.1',
     releaseNotes: 'Release notes',
+    runtimeAssets: {
+      manifestUrl: 'https://oss.test/v0.17.1/runtime-assets/runtime-assets-manifest-darwin-arm64.json',
+      manifestSha256: 'a'.repeat(64),
+    },
   }));
   writeFileSync(join(dir, 'update-health.json'), JSON.stringify({ ok: true, source: 'github_releases' }));
   writeFileSync(join(dir, 'download-darwin-arm64.json'), JSON.stringify({
@@ -332,7 +340,7 @@ describe('release post-publish verifier', () => {
               state: 'missing',
               nodeModules: [],
             }],
-            summary: { installed: 0, bundledFallback: 0, missing: 1 },
+            summary: { installed: 0, bundledFallback: 0, missing: 1, unsupported: 0 },
           },
         }),
       },

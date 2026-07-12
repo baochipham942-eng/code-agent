@@ -159,6 +159,16 @@ function assertRuntimeAssetManifest(payload, options = {}) {
       });
     }
   }
+  if (options.expectedAssetIds?.length) {
+    const expected = [...options.expectedAssetIds].sort();
+    const actual = [...assetIds].sort();
+    if (expected.length !== actual.length || expected.some((id, index) => id !== actual[index])) {
+      throw new RuntimeAssetsPublishVerificationError(
+        `runtime assets manifest ids mismatch: expected ${expected.join(',')}, got ${actual.join(',')}`,
+        { code: 'asset_ids_mismatch', details: { expected, actual } },
+      );
+    }
+  }
   return payload;
 }
 
@@ -169,6 +179,7 @@ export async function verifyRuntimeAssetsPublish({
   publicKeys = getControlPlanePublicKeysFromEnv(),
   expectedVersion,
   expectedPlatform,
+  expectedAssetIds,
   minAssets = 1,
   now,
 } = {}) {
@@ -232,6 +243,7 @@ export async function verifyRuntimeAssetsPublish({
   const manifest = assertRuntimeAssetManifest(trust.payload, {
     expectedVersion,
     expectedPlatform,
+    expectedAssetIds,
     minAssets,
   });
   const assets = [];
@@ -281,6 +293,7 @@ function usage() {
     'Options:',
     '  --expected-platform <platform>  Require manifest.platform to match, e.g. darwin-arm64',
     '  --min-assets <n>               Require manifest.assets.length >= n (default: 1)',
+    '  --expected-assets <ids>         Require exact comma-separated asset ids',
   ].join('\n');
 }
 
@@ -296,6 +309,7 @@ async function main() {
     expectedVersion: readArg(args, '--expected-version'),
     expectedPlatform: readArg(args, '--expected-platform'),
     minAssets: Number(readArg(args, '--min-assets') ?? 1),
+    expectedAssetIds: (readArg(args, '--expected-assets') ?? '').split(',').map((value) => value.trim()).filter(Boolean),
   });
   console.log('[verify-runtime-assets-publish] passed');
   console.log(JSON.stringify(summary, null, 2));

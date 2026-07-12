@@ -69,6 +69,15 @@ export interface PrepareRuntimeAssetsResult {
   }>;
 }
 
+export interface RuntimeAssetPreparationStatus {
+  assetId: string;
+  phase: 'checking' | 'manifest' | 'downloading' | 'installing' | 'completed' | 'failed';
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  error?: string;
+}
+
 export interface DownloadProgress {
   percent: number;
   transferred: number;
@@ -435,6 +444,9 @@ export class UpdateService implements Disposable {
   private isDownloading = false;
   private lastCheck: Date | null = null;
   private cachedUpdateInfo: UpdateInfo | null = null;
+  private runtimeAssetPreparation: RuntimeAssetPreparationStatus | null = null;
+  private runtimeAssetPreparations = new Map<string, Promise<PrepareRuntimeAssetsResult>>();
+  private runtimeAssetQueue: Promise<void> = Promise.resolve();
 
   // Callbacks
   private onProgress: ProgressCallback | null = null;
@@ -687,10 +699,46 @@ export class UpdateService implements Disposable {
     return this.cachedUpdateInfo;
   }
 
-  async prepareRuntimeAssets(runtimeBaseDir = getRuntimeAssetsBaseDir()): Promise<PrepareRuntimeAssetsResult> {
+  getRuntimeAssetPreparationStatus(): RuntimeAssetPreparationStatus | null {
+    return this.runtimeAssetPreparation;
+  }
+
+  async prepareRuntimeAsset(
+    assetId: string,
+    runtimeBaseDir = getRuntimeAssetsBaseDir(),
+  ): Promise<PrepareRuntimeAssetsResult> {
+    const normalizedAssetId = assetId.trim();
+    if (!normalizedAssetId) throw new Error('Runtime asset id is required');
+    const activePreparation = this.runtimeAssetPreparations.get(normalizedAssetId);
+    if (activePreparation) return activePreparation;
+
+    const preparation = this.runtimeAssetQueue
+      .then(() => this.prepareRuntimeAssets(runtimeBaseDir, [normalizedAssetId]))
+      .finally(() => this.runtimeAssetPreparations.delete(normalizedAssetId));
+    this.runtimeAssetQueue = preparation.then(() => undefined, () => undefined);
+    this.runtimeAssetPreparations.set(normalizedAssetId, preparation);
+    return preparation;
+  }
+
+  async prepareRuntimeAssets(
+    runtimeBaseDir = getRuntimeAssetsBaseDir(),
+    assetIds?: readonly string[],
+  ): Promise<PrepareRuntimeAssetsResult> {
+    const requestedAssetIds = assetIds?.length ? new Set(assetIds) : null;
+    const displayAssetId = assetIds?.length === 1 ? assetIds[0] : '*';
+    this.runtimeAssetPreparation = { assetId: displayAssetId, phase: 'checking' };
+
+    if (!this.cachedUpdateInfo?.runtimeAssets?.manifestUrl) {
+      await this.checkForUpdates();
+    }
     const runtimeAssets = this.cachedUpdateInfo?.runtimeAssets;
     if (!runtimeAssets?.manifestUrl || !runtimeAssets.manifestSha256) {
-      return { installed: [], skipped: [{ assetId: '*', reason: 'runtime assets metadata unavailable' }] };
+      this.runtimeAssetPreparation = {
+        assetId: displayAssetId,
+        phase: 'failed',
+        error: 'runtime assets metadata unavailable',
+      };
+      throw new Error('runtime assets metadata unavailable');
     }
 
     const downloadDir = path.join(runtimeBaseDir, 'downloads');
@@ -698,52 +746,89 @@ export class UpdateService implements Disposable {
 
     const manifestEnvelopePath = path.join(downloadDir, 'manifest.envelope.json');
     const manifestPath = path.join(downloadDir, 'manifest.json');
-    await this.downloadVerifiedFile(
-      runtimeAssets.manifestUrl,
-      manifestEnvelopePath,
-      runtimeAssets.manifestSha256,
-      'Runtime assets manifest envelope',
-    );
+    try {
+      this.runtimeAssetPreparation = { assetId: displayAssetId, phase: 'manifest' };
+      await this.downloadVerifiedFile(
+        runtimeAssets.manifestUrl,
+        manifestEnvelopePath,
+        runtimeAssets.manifestSha256,
+        'Runtime assets manifest envelope',
+      );
 
-    const manifest = parseTrustedRuntimeAssetsManifestEnvelope(fs.readFileSync(manifestEnvelopePath, 'utf8'));
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    const installed: PrepareRuntimeAssetsResult['installed'] = [];
-    const skipped: PrepareRuntimeAssetsResult['skipped'] = [];
-
-    for (const asset of manifest.assets) {
-      const active = await readActiveRuntimeAssets(runtimeBaseDir);
-      if (active?.assets[asset.id]?.expandedSha256 === asset.expandedSha256) {
-        skipped.push({ assetId: asset.id, reason: 'already installed' });
-        continue;
+      const manifest = parseTrustedRuntimeAssetsManifestEnvelope(fs.readFileSync(manifestEnvelopePath, 'utf8'));
+      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      const installed: PrepareRuntimeAssetsResult['installed'] = [];
+      const skipped: PrepareRuntimeAssetsResult['skipped'] = [];
+      const selectedAssets = requestedAssetIds
+        ? manifest.assets.filter((asset) => requestedAssetIds.has(asset.id))
+        : manifest.assets;
+      if (requestedAssetIds) {
+        for (const requestedId of requestedAssetIds) {
+          if (!selectedAssets.some((asset) => asset.id === requestedId)) {
+            throw new Error(`Runtime asset ${requestedId} is not distributed for ${manifest.platform ?? 'this platform'}`);
+          }
+        }
       }
 
-      if (!asset.archiveSha256) {
-        throw new Error(`Runtime asset ${asset.id} is missing archiveSha256`);
+      for (const asset of selectedAssets) {
+        const active = await readActiveRuntimeAssets(runtimeBaseDir);
+        if (active?.assets[asset.id]?.expandedSha256 === asset.expandedSha256) {
+          skipped.push({ assetId: asset.id, reason: 'already installed' });
+          continue;
+        }
+
+        if (!asset.archiveSha256) {
+          throw new Error(`Runtime asset ${asset.id} is missing archiveSha256`);
+        }
+
+        const archiveUrl = new URL(asset.archiveFile, runtimeAssets.manifestUrl).toString();
+        const archivePath = path.join(downloadDir, path.basename(asset.archiveFile));
+        this.runtimeAssetPreparation = { assetId: asset.id, phase: 'downloading', percent: 0 };
+        await this.downloadVerifiedFile(
+          archiveUrl,
+          archivePath,
+          asset.archiveSha256,
+          `Runtime asset ${asset.id}`,
+          (progress) => {
+            this.runtimeAssetPreparation = {
+              assetId: asset.id,
+              phase: 'downloading',
+              percent: progress.percent,
+              transferred: progress.transferred,
+              total: progress.total,
+            };
+          },
+        );
+        this.runtimeAssetPreparation = { assetId: asset.id, phase: 'installing', percent: 100 };
+        const result = await installRuntimeAssetFromManifest({
+          manifestPath,
+          assetId: asset.id,
+          archivePath,
+          runtimeBaseDir,
+        });
+        installed.push({
+          assetId: result.assetId,
+          root: result.root,
+          reusedExistingInstall: result.reusedExistingInstall,
+        });
       }
 
-      const archiveUrl = new URL(asset.archiveFile, runtimeAssets.manifestUrl).toString();
-      const archivePath = path.join(downloadDir, path.basename(asset.archiveFile));
-      await this.downloadVerifiedFile(archiveUrl, archivePath, asset.archiveSha256, `Runtime asset ${asset.id}`);
-      const result = await installRuntimeAssetFromManifest({
-        manifestPath,
-        assetId: asset.id,
-        archivePath,
-        runtimeBaseDir,
-      });
-      installed.push({
-        assetId: result.assetId,
-        root: result.root,
-        reusedExistingInstall: result.reusedExistingInstall,
-      });
+      const refreshedActive = await readActiveRuntimeAssets(runtimeBaseDir);
+      this.cachedUpdateInfo = {
+        ...this.cachedUpdateInfo,
+        runtimeAssets: getRuntimeAssetUpdateInfoFromManifest(manifest, refreshedActive, runtimeAssets),
+      } as UpdateInfo;
+
+      this.runtimeAssetPreparation = { assetId: displayAssetId, phase: 'completed', percent: 100 };
+      return { installed, skipped };
+    } catch (error) {
+      this.runtimeAssetPreparation = {
+        assetId: displayAssetId,
+        phase: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      };
+      throw error;
     }
-
-    const refreshedActive = await readActiveRuntimeAssets(runtimeBaseDir);
-    this.cachedUpdateInfo = {
-      ...this.cachedUpdateInfo,
-      runtimeAssets: getRuntimeAssetUpdateInfoFromManifest(manifest, refreshedActive, runtimeAssets),
-    } as UpdateInfo;
-
-    return { installed, skipped };
   }
 
   /**
@@ -958,7 +1043,7 @@ export class UpdateService implements Disposable {
    * Download a URL to destPath, streaming through a sha256 hasher.
    * Returns the hex digest of the downloaded bytes for caller-side verification.
    */
-  private downloadFile(url: string, destPath: string): Promise<string> {
+  private downloadFile(url: string, destPath: string, onProgress?: ProgressCallback): Promise<string> {
     // URL 解析提到 executor 外；createWriteStream 留在 executor 内但用 try-catch
     // 兜底（早期失败可立即 reject，无需先创建空文件）
     let parsedUrl: URL;
@@ -1010,7 +1095,7 @@ export class UpdateService implements Disposable {
               reject(e instanceof Error ? e : new Error(String(e)));
               return;
             }
-            this.downloadFile(nextUrl, destPath).then(resolve).catch(reject);
+            this.downloadFile(nextUrl, destPath, onProgress).then(resolve).catch(reject);
             return;
           }
         }
@@ -1029,11 +1114,11 @@ export class UpdateService implements Disposable {
           downloadedBytes += chunk.length;
           hasher.update(chunk);
 
-          if (this.onProgress && totalBytes > 0) {
+          if ((onProgress || this.onProgress) && totalBytes > 0) {
             const elapsed = (Date.now() - startTime) / 1000;
             const bytesPerSecond = elapsed > 0 ? downloadedBytes / elapsed : 0;
 
-            this.onProgress({
+            (onProgress ?? this.onProgress)?.({
               percent: (downloadedBytes / totalBytes) * 100,
               transferred: downloadedBytes,
               total: totalBytes,
@@ -1082,13 +1167,14 @@ export class UpdateService implements Disposable {
     destPath: string,
     expectedSha256: string,
     label: string,
+    onProgress?: ProgressCallback,
   ): Promise<string> {
     const expected = normalizeUpdateSha256(expectedSha256);
     if (!expected) {
       throw new Error(`${label} is missing a valid sha256`);
     }
 
-    const actual = await this.downloadFile(url, destPath);
+    const actual = await this.downloadFile(url, destPath, onProgress);
     const verdict = verifyDigestMatch(actual, expected);
     if (!verdict.ok) {
       try { fs.unlinkSync(destPath); } catch { /* best effort cleanup */ }
@@ -1118,6 +1204,13 @@ export function getUpdateService(): UpdateService {
 
 export function isUpdateServiceInitialized(): boolean {
   return updateServiceInstance !== null;
+}
+
+export async function prepareRuntimeAssetOnDemand(assetId: string): Promise<PrepareRuntimeAssetsResult> {
+  if (!updateServiceInstance) {
+    throw new Error('Runtime asset installer is unavailable before update service initialization');
+  }
+  return updateServiceInstance.prepareRuntimeAsset(assetId);
 }
 
 

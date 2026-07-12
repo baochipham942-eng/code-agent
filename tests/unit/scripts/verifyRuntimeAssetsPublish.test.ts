@@ -103,6 +103,7 @@ describe('verifyRuntimeAssetsPublish', () => {
       expectedVersion: '0.16.93',
       expectedPlatform: 'darwin-arm64',
       minAssets: 1,
+      expectedAssetIds: ['playwright-browser-runtime'],
     })).resolves.toMatchObject({
       appVersion: '0.16.93',
       platform: 'darwin-arm64',
@@ -110,6 +111,21 @@ describe('verifyRuntimeAssetsPublish', () => {
       assetCount: 1,
       keyId: 'runtime-assets-key',
     });
+  });
+
+  it('rejects a manifest with the wrong architecture asset set', async () => {
+    const fixture = buildRuntimeAssetsPublishFixture();
+    await expect(verifyRuntimeAssetsPublish({
+      manifestUrl: 'https://oss.example/runtime-assets/runtime-assets-manifest-darwin-arm64.json',
+      manifestSha256Url: 'https://oss.example/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256',
+      publicKeys: fixture.publicKeys,
+      fetchImpl: async (url: string) => url.endsWith('.sha256')
+        ? textResponse(fixture.manifestSha256)
+        : url.endsWith('.json')
+          ? textResponse(fixture.manifestText)
+          : bytesResponse(fixture.archiveBytes),
+      expectedAssetIds: ['onnxruntime-vad', 'playwright-browser-runtime'],
+    })).rejects.toMatchObject({ code: 'asset_ids_mismatch' });
   });
 
   it('rejects when the sha sidecar is not reachable', async () => {

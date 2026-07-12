@@ -186,6 +186,7 @@ export function getRuntimeAssetStatusText(
 ): string {
   if (asset.state === 'installed') return text.available;
   if (asset.state === 'bundledFallback') return text.available;
+  if (asset.state === 'unsupported') return text.unsupported;
   if (asset.delivery === 'optional') return text.firstUseDownload;
   return text.missing;
 }
@@ -476,7 +477,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const [runtimeAssetsStatus, setRuntimeAssetsStatus] = useState<RuntimeAssetsStatus | null>(null);
   const [rendererBundleStatus, setRendererBundleStatus] = useState<RendererBundleStatus | null>(null);
   const [desktopShellDiagnostics, setDesktopShellDiagnostics] = useState<DesktopShellDiagnostics | null>(null);
-  const [isPreparingRuntimeAssets, setIsPreparingRuntimeAssets] = useState(false);
+  const [preparingRuntimeAssetId, setPreparingRuntimeAssetId] = useState<string | null>(null);
   const [runtimeAssetsError, setRuntimeAssetsError] = useState<string | null>(null);
 
   const runningInTauri = isTauriMode();
@@ -643,11 +644,11 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     }
   };
 
-  const handlePrepareRuntimeAssets = async () => {
-    setIsPreparingRuntimeAssets(true);
+  const handlePrepareRuntimeAssets = async (assetId: string) => {
+    setPreparingRuntimeAssetId(assetId);
     setRuntimeAssetsError(null);
     try {
-      await ipcService.invokeDomain<PrepareRuntimeAssetsResult>(IPC_DOMAINS.UPDATE, 'prepareRuntimeAssets');
+      await ipcService.invokeDomain<PrepareRuntimeAssetsResult>(IPC_DOMAINS.UPDATE, 'prepareRuntimeAssets', { assetId });
       await refreshRuntimeAssetsStatus();
       await refreshDesktopShellDiagnostics();
       const info = await ipcService.invokeDomain<UpdateInfo | null>(IPC_DOMAINS.UPDATE, 'getInfo');
@@ -661,9 +662,15 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       setRuntimeAssetsError(updateText.runtimeAssets.optionalPrepareFailed);
       logger.error('Runtime assets prepare failed', err);
     } finally {
-      setIsPreparingRuntimeAssets(false);
+      setPreparingRuntimeAssetId(null);
     }
   };
+
+  useEffect(() => {
+    if (!preparingRuntimeAssetId) return;
+    const timer = window.setInterval(() => { void refreshRuntimeAssetsStatus(); }, 250);
+    return () => window.clearInterval(timer);
+  }, [preparingRuntimeAssetId]);
 
   const handleTauriInstall = async () => {
     setIsInstalling(true);
@@ -718,6 +725,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const rendererBundleReloadBlockedReason = rendererBundlePendingActivation
     ? getRendererBundleReloadBlockedReason({ runningSessionCount, processingSessionCount, isProcessing })
     : null;
+  const visibleRuntimeAssets = runtimeAssetsStatus?.assets.filter(
+    (asset) => isDeveloperMode || asset.delivery === 'optional',
+  ) ?? [];
 
   return (
     <SettingsPage
@@ -746,7 +756,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         </div>
       </div>
 
-      {isDeveloperMode && runtimeAssetsStatus && (
+      {runtimeAssetsStatus && (
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -756,7 +766,12 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               </div>
             </div>
             <div className="space-y-2 text-right">
-              {runtimeAssetsStatus.assets.map((asset) => (
+              {visibleRuntimeAssets.map((asset) => {
+                const isPreparing = preparingRuntimeAssetId === asset.id;
+                const preparation = runtimeAssetsStatus.preparation?.assetId === asset.id
+                  ? runtimeAssetsStatus.preparation
+                  : null;
+                return (
                 <div key={asset.id} className="flex items-center justify-end gap-2">
                   <span className="text-xs text-zinc-400">
                     {getRuntimeAssetDisplayName(asset, updateText.runtimeAssets.displayNames)}
@@ -764,22 +779,24 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                   <span className={`text-xs px-2 py-1 rounded border ${getRuntimeAssetTone(asset)}`}>
                     {getRuntimeAssetStatusText(asset, updateText.runtimeAssets.status)}
                   </span>
+                  {asset.delivery === 'optional' && asset.state === 'missing' && (
+                    <Button
+                      disabled={isDisabled || Boolean(preparingRuntimeAssetId)}
+                      onClick={() => handlePrepareRuntimeAssets(asset.id)}
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={isPreparing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    >
+                      {isPreparing && preparation?.phase === 'downloading' && preparation.percent !== undefined
+                        ? `${Math.round(preparation.percent)}%`
+                        : runtimeAssetsError ? updateText.runtimeAssets.retryAsset : updateText.runtimeAssets.installAsset}
+                    </Button>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
-          {shouldShowRuntimeAssetsPrepare(updateInfo) && (
-            <Button
-              disabled={isDisabled || isPreparingRuntimeAssets}
-              onClick={handlePrepareRuntimeAssets}
-              variant="secondary"
-              size="sm"
-              leftIcon={isPreparingRuntimeAssets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              className="mt-4"
-            >
-              {getRuntimeAssetsPrepareText(isPreparingRuntimeAssets, updateText.runtimeAssets)}
-            </Button>
-          )}
           {runtimeAssetsError && (
             <div className="mt-3 flex items-center gap-2 text-xs text-amber-300">
               <AlertCircle className="w-4 h-4" />

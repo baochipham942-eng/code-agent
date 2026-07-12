@@ -67,16 +67,24 @@ async function handleStopAutoCheck(): Promise<void> {
 }
 
 async function handleRuntimeAssetsStatus(): Promise<RuntimeAssetsStatus> {
-  return getRuntimeAssetsStatus({ shellVersion: app.getVersion() });
+  const status = await getRuntimeAssetsStatus({ shellVersion: app.getVersion() });
+  return {
+    ...status,
+    preparation: isUpdateServiceInitialized()
+      ? getUpdateService().getRuntimeAssetPreparationStatus()
+      : null,
+  };
 }
 
 async function handleRendererBundleStatus(): Promise<RendererBundleStatus> {
   return readRendererBundleStatus(app.getPath('userData'));
 }
 
-async function handlePrepareRuntimeAssets(): Promise<PrepareRuntimeAssetsResult> {
+async function handlePrepareRuntimeAssets(payload?: { assetId?: string }): Promise<PrepareRuntimeAssetsResult> {
   if (!isUpdateServiceInitialized()) throw new Error('Update service not initialized');
-  return getUpdateService().prepareRuntimeAssets();
+  return payload?.assetId
+    ? getUpdateService().prepareRuntimeAsset(payload.assetId)
+    : getUpdateService().prepareRuntimeAssets();
 }
 
 // ----------------------------------------------------------------------------
@@ -127,7 +135,7 @@ export function registerUpdateHandlers(ipcMain: IpcMain): void {
           data = await handleRendererBundleStatus();
           break;
         case 'prepareRuntimeAssets':
-          data = await handlePrepareRuntimeAssets();
+          data = await handlePrepareRuntimeAssets(payload as { assetId?: string } | undefined);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

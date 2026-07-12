@@ -301,6 +301,9 @@ jobs:
           MIN_SHELL_VERSION="${{ github.event.inputs.min_shell_version }}"
           REQUIRED_SHELL_CAPABILITIES="${{ github.event.inputs.required_shell_capabilities }}"
           REQUIRED_RUNTIME_ASSETS="${{ github.event.inputs.required_runtime_assets }}"
+          if [ -z "${REQUIRED_RUNTIME_ASSETS}" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            REQUIRED_RUNTIME_ASSETS="onnxruntime-vad,playwright-browser-runtime"
+          fi
           REQUIRED_RESOURCES="${{ github.event.inputs.required_resources }}"
           ROLLBACK_TO_BUILTIN="${{ github.event.inputs.rollback_to_builtin }}"
           ROLLBACK_REASON="${{ github.event.inputs.rollback_reason }}"

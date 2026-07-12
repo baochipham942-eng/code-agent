@@ -27,6 +27,7 @@ export interface RuntimeAssetsStatusOptions {
   runtimeBaseDir?: string;
   resolverOptions?: RuntimeAssetResolverOptions;
   shellVersion?: string;
+  platform?: string;
 }
 
 function isInside(baseDir: string, targetPath: string): boolean {
@@ -39,6 +40,7 @@ function summarize(assets: RuntimeAssetStatusEntry[]): RuntimeAssetsStatus['summ
     installed: assets.filter((asset) => asset.state === 'installed').length,
     bundledFallback: assets.filter((asset) => asset.state === 'bundledFallback').length,
     missing: assets.filter((asset) => asset.state === 'missing').length,
+    unsupported: assets.filter((asset) => asset.state === 'unsupported').length,
   };
 }
 
@@ -90,8 +92,8 @@ function assetMinShellVersion(
   return activeMinShellVersion ?? definition.minShellVersion ?? activeVersion ?? (definition.delivery === 'bundled' ? shellVersion : undefined);
 }
 
-function pinnedHash(definition: RuntimeAssetDefinition): { hash?: string; hashKind?: RuntimeAssetHashKind } {
-  const pinned = definition.pinnedHashes?.[CURRENT_RUNTIME_ASSET_PLATFORM];
+function pinnedHash(definition: RuntimeAssetDefinition, platform: string): { hash?: string; hashKind?: RuntimeAssetHashKind } {
+  const pinned = definition.pinnedHashes?.[platform];
   return pinned ? { hash: pinned.hash, hashKind: pinned.hashKind } : {};
 }
 
@@ -99,6 +101,7 @@ export async function getRuntimeAssetsStatus(
   options: RuntimeAssetsStatusOptions = {},
 ): Promise<RuntimeAssetsStatus> {
   const runtimeBaseDir = path.resolve(options.runtimeBaseDir ?? getRuntimeAssetsBaseDir());
+  const platform = options.platform ?? CURRENT_RUNTIME_ASSET_PLATFORM;
   const activeManifestPath = path.join(runtimeBaseDir, 'active.json');
   const active = await readActiveRuntimeAssets(runtimeBaseDir);
 
@@ -112,10 +115,9 @@ export async function getRuntimeAssetsStatus(
   };
   const runtimeRoot = resolveRuntimeRoot(resolverOptions);
 
-  const definitions = RUNTIME_ASSET_DEFINITIONS.filter((definition) =>
-    !definition.platforms || definition.platforms.includes(CURRENT_RUNTIME_ASSET_PLATFORM)
-  );
+  const definitions = RUNTIME_ASSET_DEFINITIONS;
   const assets = definitions.map((definition): RuntimeAssetStatusEntry => {
+    const supported = !definition.platforms || definition.platforms.includes(platform);
     const activeRecord = active?.assets[definition.id];
     const nodeModules = (definition.nodeModules ?? []).map((name): RuntimeAssetModuleStatus => {
       const modulePath = resolveNodeModule(name, resolverOptions);
@@ -147,7 +149,7 @@ export async function getRuntimeAssetsStatus(
       && nodeModules.every((moduleStatus) => moduleStatus.exists && moduleStatus.source === 'managed');
     const fallbackReady = nodeModules.every((moduleStatus) => moduleStatus.exists)
       && files.every((fileStatus) => fileStatus.exists && fileStatus.source !== 'missing' && fileStatus.executable !== false);
-    const state = managedReady ? 'installed' : fallbackReady ? 'bundledFallback' : 'missing';
+    const state = !supported ? 'unsupported' : managedReady ? 'installed' : fallbackReady ? 'bundledFallback' : 'missing';
     const source: RuntimeAssetRegistrySource = managedReady
       ? 'managed'
       : files[0]?.source ?? (fallbackReady ? 'bundled' : 'missing');
@@ -159,7 +161,7 @@ export async function getRuntimeAssetsStatus(
       activeRecord?.appVersion,
       options.shellVersion,
     );
-    const pinned = pinnedHash(definition);
+    const pinned = pinnedHash(definition, platform);
     const hash = activeRecord?.archiveSha256
       ?? activeRecord?.expandedSha256
       ?? pinned.hash
@@ -180,10 +182,10 @@ export async function getRuntimeAssetsStatus(
       ...(firstPath ? { path: firstPath } : {}),
       ...(version ? { version } : {}),
       ...(minShellVersion ? { minShellVersion } : {}),
-      platform: activeRecord?.platform ?? CURRENT_RUNTIME_ASSET_PLATFORM,
+      platform: activeRecord?.platform ?? platform,
       ...(hash ? { hash } : {}),
       ...(hashKind ? { hashKind } : {}),
-      required: definition.delivery === 'bundled',
+      required: supported && definition.delivery === 'bundled',
     };
 
     return {

@@ -26,6 +26,10 @@ const SUBAGENT_EXECUTOR_TYPES_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/subagentExecutorTypes.ts',
 );
+const SUBAGENT_PROTOCOL_CONTEXT_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/subagentProtocolContext.ts',
+);
 
 describe('subagentExecutor abort signal propagation (D.1)', () => {
   it('every modelRouter.inference call must pass effectiveSignal as 5th arg', () => {
@@ -69,7 +73,7 @@ describe('subagentExecutor abort signal propagation (D.1)', () => {
 
 describe('subagentExecutor adaptive leak defense (ADR-019)', () => {
   it('execute() must normalize modelConfig via resolveModelDecision with subagent context', () => {
-    const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+    const source = readFileSync(SUBAGENT_PROTOCOL_CONTEXT_PATH, 'utf8');
 
     // 必须 import 单一决策入口
     expect(source).toMatch(/import\s*\{[^}]*resolveModelDecision[^}]*\}\s*from\s*'\.\.\/model\/modelDecision'/);
@@ -79,14 +83,16 @@ describe('subagentExecutor adaptive leak defense (ADR-019)', () => {
 
   it('execute() must reassign context.modelConfig to the normalized config at entry', () => {
     const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+    const protocolContextSource = readFileSync(SUBAGENT_PROTOCOL_CONTEXT_PATH, 'utf8');
 
     // 入口归一化后必须重新赋值 context，让所有下游 context.modelConfig 引用
     // 自动使用剥离 adaptive 后的配置（最小 diff，不强迫全文件改名）
-    expect(source).toMatch(/context\s*=\s*\{\s*\.\.\.context,\s*modelConfig:/);
+    expect(source).toMatch(/context\s*=\s*normalizeSubagentModelContext\(context,\s*config\.name\)/);
+    expect(protocolContextSource).toMatch(/return\s*\{\s*\.\.\.context,\s*modelConfig:\s*config\s*\}/);
 
     // 归一化必须发生在 execute() 函数体内、E2E 早退分支之前
     const executeBody = source.slice(source.indexOf('async execute('));
-    const normalizeIdx = executeBody.indexOf('resolveModelDecision');
+    const normalizeIdx = executeBody.indexOf('normalizeSubagentModelContext');
     const e2eIdx = executeBody.indexOf('shouldUseE2ELocalSubagentExecutor');
     expect(normalizeIdx).toBeGreaterThan(-1);
     expect(e2eIdx).toBeGreaterThan(-1);

@@ -9,9 +9,14 @@ const SUBAGENT_EXECUTOR_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/subagentExecutor.ts',
 );
+const SUBAGENT_TOOL_RUNTIME_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/subagentToolRuntime.ts',
+);
 
 describe('SubagentExecutor Agent Team scope propagation', () => {
   const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+  const toolRuntimeSource = readFileSync(SUBAGENT_TOOL_RUNTIME_PATH, 'utf8');
 
   it('uses the caller composite execution identity for child tool context', () => {
     expect(source).toMatch(
@@ -23,8 +28,8 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
     expect(source).toMatch(
       /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.runId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
-    expect(source).toMatch(
-      /const \{ runId: nativeRunId, workspace, cwd \} = context;[\s\S]*?createRunContext\(\{ runId: nativeRunId, sessionId, workspace, cwd \}\)/,
+    expect(toolRuntimeSource).toMatch(
+      /createRunContext\(\{[\s\S]*?runId:\s*context\.runId,[\s\S]*?sessionId:\s*input\.sessionId,[\s\S]*?workspace:\s*context\.workspace,[\s\S]*?cwd:\s*context\.cwd/,
     );
   });
 

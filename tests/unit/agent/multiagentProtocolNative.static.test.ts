@@ -32,7 +32,7 @@ describe('multiagent protocol-native production paths', () => {
 
   it('SubagentExecutor uses the injected trace context instead of process-global trace identity', () => {
     const source = readFileSync(
-      resolve(ROOT, 'src/host/agent/subagentExecutor.ts'),
+      resolve(ROOT, 'src/host/agent/subagentExecutionTracing.ts'),
       'utf8',
     );
 

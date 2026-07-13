@@ -110,9 +110,18 @@ export interface InferenceRecoveryState {
   currentModelDecision?: ModelDecisionEventData;
 }
 
+/** 2c: compression 恢复/断路状态（原 RuntimeContext 字段，ADR-038 批2c 下沉） */
+export interface CompressionRecoveryState {
+  _consecutiveCompacts: number;
+  _autoCompactPaused: boolean;
+  _summaryFailureStreak: number;
+  _summaryCooldownUntil: number;
+}
+
 export interface ContextAssemblyCtx {
   runtime: RuntimeContext;
   inferenceRecovery: InferenceRecoveryState;
+  compressionRecovery: CompressionRecoveryState;
   taskProgress: TaskProgressPort;
   recordTokenUsage(
     inputTokens: number,

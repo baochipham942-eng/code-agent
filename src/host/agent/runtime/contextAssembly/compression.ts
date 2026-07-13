@@ -344,7 +344,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
   try {
     // Item2 卡死护栏：已判定窗口太小而暂停，则不再尝试压缩（避免每轮烧 token 摘要）。
     // 消费 pipeline one-shot 信号，避免 stale true 残留。
-    if (ctx.runtime._autoCompactPaused) {
+    if (ctx.compressionRecovery._autoCompactPaused) {
       ctx.runtime.pipelineAutocompactNeeded = false;
       return;
     }
@@ -398,7 +398,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       const prunedTokens = estimatePrunedTranscriptTokens(ctx.runtime.messages);
       if (!ctx.runtime.autoCompressor.shouldTriggerByTokens(prunedTokens)) {
         // 无损预算化即可化解，不算卡死 → 清零计数器，跳过付费摘要。
-        ctx.runtime._consecutiveCompacts = 0;
+        ctx.compressionRecovery._consecutiveCompacts = 0;
         logger.info(
           `[AgentLoop] Lossless tool-result budgeting suffices (${currentTokens}→${prunedTokens} tokens) — skipping paid summary`,
         );
@@ -464,9 +464,9 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
 
     // WP2-3 摘要失败冷却：冷却期内跳过付费 AI 摘要（确定性压缩层不受影响，
     // 溢出恢复有独立路径兜底），避免连续失败反复烧 token。
-    if (Date.now() < ctx.runtime._summaryCooldownUntil) {
+    if (Date.now() < ctx.compressionRecovery._summaryCooldownUntil) {
       logger.warn(
-        `[AgentLoop] Summary compaction in failure cooldown until ${new Date(ctx.runtime._summaryCooldownUntil).toISOString()} — skipping paid summary`,
+        `[AgentLoop] Summary compaction in failure cooldown until ${new Date(ctx.compressionRecovery._summaryCooldownUntil).toISOString()} — skipping paid summary`,
       );
       return;
     }
@@ -487,12 +487,12 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     // WP2-3 失败冷却记账：校验不过算失败（质量问题），净节省闸拒绝不算（经济学决策）。
     const summaryFailed = compactionResult.validation?.ok === false;
     const failureState = nextSummaryFailureState({
-      streak: ctx.runtime._summaryFailureStreak,
+      streak: ctx.compressionRecovery._summaryFailureStreak,
       failed: summaryFailed,
       now: Date.now(),
     });
-    ctx.runtime._summaryFailureStreak = failureState.streak;
-    ctx.runtime._summaryCooldownUntil = failureState.cooldownUntil;
+    ctx.compressionRecovery._summaryFailureStreak = failureState.streak;
+    ctx.compressionRecovery._summaryCooldownUntil = failureState.cooldownUntil;
     if (failureState.cooldownUntil > 0) {
       logger.warn(
         `[AgentLoop] ${failureState.streak} consecutive summary validation failures — entering cooldown for ${COMPACTION_ECONOMICS.FAILURE_COOLDOWN_MS / 60000} min`,
@@ -521,13 +521,13 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       const stillOver = ctx.runtime.autoCompressor.shouldTriggerByTokens(postTokens)
         || postRatio >= compressorConfig.warningThreshold;
       const guard = nextCompactionGuardState(
-        ctx.runtime._consecutiveCompacts,
+        ctx.compressionRecovery._consecutiveCompacts,
         ctx.runtime.MAX_CONSECUTIVE_COMPACTS,
         stillOver,
       );
-      ctx.runtime._consecutiveCompacts = guard.consecutive;
+      ctx.compressionRecovery._consecutiveCompacts = guard.consecutive;
       if (guard.shouldPause) {
-        ctx.runtime._autoCompactPaused = true;
+        ctx.compressionRecovery._autoCompactPaused = true;
         logger.warn(
           `[AgentLoop] Compaction stuck: ${guard.consecutive} consecutive compactions still over threshold — pausing auto-compaction`,
         );
@@ -556,11 +556,11 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     logger.error('[AgentLoop] Auto compression failed:', error);
     // WP2-3：摘要调用异常同样计入失败冷却
     const failureState = nextSummaryFailureState({
-      streak: ctx.runtime._summaryFailureStreak,
+      streak: ctx.compressionRecovery._summaryFailureStreak,
       failed: true,
       now: Date.now(),
     });
-    ctx.runtime._summaryFailureStreak = failureState.streak;
-    ctx.runtime._summaryCooldownUntil = failureState.cooldownUntil;
+    ctx.compressionRecovery._summaryFailureStreak = failureState.streak;
+    ctx.compressionRecovery._summaryCooldownUntil = failureState.cooldownUntil;
   }
 }

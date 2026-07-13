@@ -27,9 +27,13 @@ export function createSubagentToolRuntime(input: {
     permissionModeOverride: input.effectiveMode as PermissionMode,
     executionTopology: 'main',
     requestPermission: async (request) => {
+      const forceConfirm = request.forceConfirm === true;
       if (
-        input.effectiveMode === 'bypassPermissions'
-        || permissionModeAutoApproves(input.effectiveMode, getPermissionLevel(request.type))
+        !forceConfirm
+        && (
+          input.effectiveMode === 'bypassPermissions'
+          || permissionModeAutoApproves(input.effectiveMode, getPermissionLevel(request.type))
+        )
       ) return true;
       return context.permission.request(request);
     },

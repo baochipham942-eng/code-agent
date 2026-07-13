@@ -144,6 +144,10 @@ export interface InstalledPluginRecord {
   projectPath?: string;
   /** Installation timestamp */
   installedAt: string;
+  /** Immutable Git commit selected when a remote repository was installed */
+  pinnedCommit?: string;
+  /** SHA-256 of the downloaded repository archive (TOFU drift guard) */
+  contentHash?: string;
   /** Plugin root directory (for plugin-pack type) */
   pluginRoot?: string;
   /** Marketplace plugin type(s): skill, command, ui, theme, provider... */

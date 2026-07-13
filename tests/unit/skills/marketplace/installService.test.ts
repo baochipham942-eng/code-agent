@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import os from 'os';
 import path from 'path';
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -102,8 +103,47 @@ describe('marketplace install service trust defaults', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
+
+  async function makeRemoteZip(content: string, unsafeEntry?: string): Promise<Buffer> {
+    const zip = new JSZip();
+    zip.file('remote-repo/plugins/remote-demo/SKILL.md', content);
+    if (unsafeEntry) zip.file(unsafeEntry, 'owned');
+    return zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  function useRemotePlugin(): void {
+    mocks.getMarketplaceInfo.mockResolvedValue({
+      rootDir: mocks.marketplaceRoot,
+      manifest: {
+        name: 'trusted-test',
+        plugins: [{
+          name: 'remote-demo',
+          source: 'plugins/remote-demo',
+          repository: 'owner/remote-repo',
+          skills: ['.'],
+        }],
+      },
+    });
+  }
+
+  function mockGitHubInstall(commit: string, zip: Buffer): void {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.startsWith('https://api.github.com/')) {
+        return new Response(JSON.stringify({ sha: commit }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(zip, {
+        status: 200,
+        headers: { 'content-length': String(zip.byteLength) },
+      });
+    }));
+  }
 
   it('installs marketplace plugins as disabled until explicitly enabled', async () => {
     await installPlugin('demo@trusted-test');
@@ -150,6 +190,107 @@ describe('marketplace install service trust defaults', () => {
     await expect(getEnabledSkillDirs()).resolves.toEqual([]);
     expect(fsSync.existsSync(commandPath)).toBe(false);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('pins a GitHub commit and preserves the same content hash across reinstall', async () => {
+    useRemotePlugin();
+    const commit = 'a'.repeat(40);
+    const zip = await makeRemoteZip('---\nname: remote-demo\n---\nfixed\n');
+    mockGitHubInstall(commit, zip);
+
+    await installPlugin('remote-demo@trusted-test');
+    const first = (await listInstalledPlugins())['remote-demo@trusted-test']!;
+    await installPlugin('remote-demo@trusted-test', { force: true });
+    const second = (await listInstalledPlugins())['remote-demo@trusted-test']!;
+
+    expect(first.pinnedCommit).toBe(commit);
+    expect(first.contentHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.contentHash).toBe(first.contentHash);
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      `https://codeload.github.com/owner/remote-repo/zip/${commit}`,
+    );
+  });
+
+  it('detects upstream branch drift during reinstall and preserves the installed record', async () => {
+    useRemotePlugin();
+    const firstCommit = 'a'.repeat(40);
+    mockGitHubInstall(firstCommit, await makeRemoteZip('first'));
+    await installPlugin('remote-demo@trusted-test');
+    const first = (await listInstalledPlugins())['remote-demo@trusted-test']!;
+
+    const secondCommit = 'b'.repeat(40);
+    mockGitHubInstall(secondCommit, await makeRemoteZip('changed'));
+    await expect(
+      installPlugin('remote-demo@trusted-test', { force: true }),
+    ).rejects.toThrow('Plugin content drift detected');
+
+    const retained = (await listInstalledPlugins())['remote-demo@trusted-test']!;
+    expect(retained.pinnedCommit).toBe(firstCommit);
+    expect(retained.contentHash).toBe(first.contentHash);
+    expect(fsSync.existsSync(retained.pluginRoot!)).toBe(true);
+  });
+
+  it('rejects a GitHub archive over the 50 MB limit with a clear error', async () => {
+    useRemotePlugin();
+    const commit = 'c'.repeat(40);
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      if (String(input).startsWith('https://api.github.com/')) {
+        return new Response(JSON.stringify({ sha: commit }), { status: 200 });
+      }
+      return new Response('small-body', {
+        status: 200,
+        headers: { 'content-length': String(50 * 1024 * 1024 + 1) },
+      });
+    }));
+
+    await expect(installPlugin('remote-demo@trusted-test')).rejects.toThrow(
+      'exceeds the 50 MB download limit',
+    );
+  });
+
+  it.each(['../evil', '/absolute/evil'])('rejects zip-slip entry %s', async (entry) => {
+    useRemotePlugin();
+    mockGitHubInstall('d'.repeat(40), await makeRemoteZip('safe', entry));
+
+    await expect(installPlugin('remote-demo@trusted-test')).rejects.toThrow(
+      'Unsafe zip entry path rejected:',
+    );
+  });
+
+  it('fails closed with a retryable error when GitHub branch resolution fails', async () => {
+    useRemotePlugin();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('unavailable', { status: 503 })));
+
+    await expect(installPlugin('remote-demo@trusted-test')).rejects.toThrow(
+      'Unable to resolve an immutable GitHub commit for owner/remote-repo; retry the installation',
+    );
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetch).mock.calls.every(([url]) => String(url).startsWith('https://api.github.com/'))).toBe(true);
+  });
+
+  it('reads and rewrites legacy installed records without pin or hash fields', async () => {
+    await fs.mkdir(mocks.userConfigDir, { recursive: true });
+    const legacyRecord = {
+      plugin: 'legacy',
+      marketplace: 'old-market',
+      scope: 'user',
+      isEnabled: false,
+      installedAt: '2025-01-01T00:00:00.000Z',
+      skills: [],
+      sourceMarketplacePath: '/legacy/path',
+    };
+    await fs.writeFile(
+      path.join(mocks.userConfigDir, 'installed-plugins.json'),
+      JSON.stringify({ 'legacy@old-market': legacyRecord }),
+      'utf8',
+    );
+
+    expect((await listInstalledPlugins())['legacy@old-market']).toEqual(legacyRecord);
+    await installPlugin('demo@trusted-test');
+    const rewritten = JSON.parse(
+      await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(rewritten['legacy@old-market']).toEqual(legacyRecord);
   });
 
   it('does not overwrite an existing prompt command when enabling a plugin', async () => {

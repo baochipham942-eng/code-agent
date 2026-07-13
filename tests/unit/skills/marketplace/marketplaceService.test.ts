@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -35,7 +36,27 @@ describe('marketplace service registry normalization', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it('downloads an explicitly pinned commit with the raw-SHA codeload URL', async () => {
+    const commit = 'e'.repeat(40);
+    const zip = new JSZip();
+    zip.file(
+      'repo-pinned/.code-agent-plugin/marketplace.json',
+      JSON.stringify({ name: 'pinned-market', plugins: [] }),
+    );
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+    const fetchMock = vi.fn(async () => new Response(archive, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(addMarketplace(`github:owner/repo@${commit}`)).resolves.toEqual({
+      name: 'pinned-market',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://codeload.github.com/owner/repo/zip/${commit}`,
+    );
   });
 
   it('normalizes Alma plugin registry shape into installable marketplace entries', async () => {

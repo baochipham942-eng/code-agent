@@ -33,6 +33,7 @@ const KNOWN_FRONTMATTER_FIELDS = new Set([
   'disable-model-invocation',
   'user-invocable',
   'strict-toolset',
+  // 已废弃，仅容忍不解析（第三方 skill 仍可声明该键，避免 unknown-key 告警）
   'model',
   'context',
   'agent',
@@ -199,7 +200,6 @@ export async function parseSkillMd(
     disableModelInvocation: frontmatter['disable-model-invocation'] ?? false,
     userInvocable: frontmatter['user-invocable'] ?? true,
     strictToolset: frontmatter['strict-toolset'] ?? false,
-    model: frontmatter.model,
     executionContext: frontmatter.context ?? 'inline',
     agent: frontmatter.agent,
     argumentHint: frontmatter['argument-hint'],
@@ -414,7 +414,6 @@ export async function parseSkillMetadataOnly(
     disableModelInvocation: frontmatter['disable-model-invocation'] ?? false,
     userInvocable: frontmatter['user-invocable'] ?? true,
     strictToolset: frontmatter['strict-toolset'] ?? false,
-    model: frontmatter.model,
     executionContext: frontmatter.context ?? 'inline',
     agent: frontmatter.agent,
     argumentHint: frontmatter['argument-hint'],

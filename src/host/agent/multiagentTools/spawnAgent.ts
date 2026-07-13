@@ -541,7 +541,11 @@ Stats:
         const promise = executor.execute({
           prompt: enrichedTask,
           config: executorConfig,
-          context: executorContext,
+          context: {
+            ...executorContext,
+            // 后台 detached 子 agent 标 async_agent（2026-07-13 拍板）；调用方已显式标注时尊重之
+            executionTopology: executorContext.executionTopology ?? 'async_agent',
+          },
         });
         startedExecution = promise;
 

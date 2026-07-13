@@ -232,4 +232,34 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     parent.abort('parent-finished');
     expect(childSignal?.aborted).toBe(false);
   });
+
+  it('run_in_background 标 executionTopology=async_agent（2026-07-13 拓扑激活批）', async () => {
+    let topology: string | undefined = 'unset';
+    executeSpawnAgentMock.mockImplementation(async (_args, executionContext) => {
+      topology = executionContext.executionTopology;
+      return { success: true, output: 'background done' };
+    });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'background', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => expect(topology).toBe('async_agent'));
+  });
+
+  it('前台 spawn 不标拓扑（缺省 main，行为不变）', async () => {
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'done' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'foreground' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(executeSpawnAgentMock.mock.calls[0][1].executionTopology).toBeUndefined();
+  });
 });

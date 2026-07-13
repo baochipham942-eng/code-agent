@@ -210,10 +210,11 @@ export class ModelRouter {
    * 优先使用包年/包月模型，节省按量付费成本
    */
   private fallbackModels: Partial<Record<ModelCapability, { provider: string; model: string }>> = {
-    // 视觉 - 智谱 GLM-4.6V (旗舰视觉)
-    vision: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
-    // 推理 - 智谱 GLM-4.6V (带推理能力)
-    reasoning: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
+    // 视觉 - 智谱 GLM-4.6V Flash（免费视觉，全套餐可用；旗舰 4.6v 很多套餐不含会 403。
+    // 存量债修复：原值 DEFAULT_MODELS.vision=mimo-v2-omni 与 provider 'zhipu' 错配，发给智谱端点必 400）
+    vision: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
+    // 推理 - 智谱 GLM-5（registry 带 reasoning 能力，包年档）
+    reasoning: { provider: 'zhipu', model: 'glm-5' },
     // 代码 - 默认主力包月
     code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
     // 快速 - 智谱 GLM-4.7 Flash (免费)

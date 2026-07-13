@@ -257,24 +257,24 @@ export async function buildCompletionSummaryRecord(input: BuildCompletionSummary
   const changedFiles = collectChangedFiles(ctx);
   const visibleFinalAnswer = getVisibleFinalAnswer(ctx.messages);
   const dirtyState = await readGitDirtyState(ctx.workingDirectory);
-  const idSeed = `${ctx.sessionId}:${ctx.traceId}:${endedAt}:${input.status}`;
+  const idSeed = `${ctx.sessionId}:${ctx.stats.traceId}:${endedAt}:${input.status}`;
 
   return {
     schemaVersion: 1,
     id: `completion_${endedAt}_${sha256(idSeed).slice(0, 8)}`,
     sessionId: ctx.sessionId,
-    traceId: ctx.traceId,
+    traceId: ctx.stats.traceId,
     agentId: ctx.agentId,
     objective: compactText(input.userMessage, MAX_OBJECTIVE_LENGTH) ?? '',
     status: input.status,
-    startedAt: ctx.runStartTime,
+    startedAt: ctx.stats.runStartTime,
     endedAt,
-    durationMs: Math.max(0, endedAt - ctx.runStartTime),
+    durationMs: Math.max(0, endedAt - ctx.stats.runStartTime),
     iterations: input.iterations,
     tokenUsage: {
-      input: ctx.totalInputTokens,
-      output: ctx.totalOutputTokens,
-      total: ctx.totalInputTokens + ctx.totalOutputTokens,
+      input: ctx.stats.totalInputTokens,
+      output: ctx.stats.totalOutputTokens,
+      total: ctx.stats.totalInputTokens + ctx.stats.totalOutputTokens,
     },
     toolCallCount: collectToolCalls(ctx.messages).length,
     changedFiles,

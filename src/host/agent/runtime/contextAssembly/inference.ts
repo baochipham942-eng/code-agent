@@ -220,7 +220,7 @@ export function resolveMainChatModelDecision(
       type: 'model_decision',
       data: decisionEventData,
     });
-    ctx.runtime.turnModelDecision = emittedDecision;
+    ctx.runtime.stats.setTurnModelDecision(emittedDecision);
   }
   logger.info('[AgentLoop] Model decision resolved', {
     requestedProvider: emittedDecision.requestedProvider,
@@ -282,7 +282,7 @@ function assertInputTokenBudget(
  *
  * 成本约束（roadmap 3.3.d）：落选候选 + judge 的 usage 作为 overhead 记入成本统计
  * （ctx.recordTokenUsage → budgetService），但不进上下文长度估算——上下文路径
- * （streamHandler 累计 ctx.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
+ * （streamHandler 累计 ctx.stats.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
  * 只见到赢家的 response.usage。
  */
 /**
@@ -460,7 +460,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   });
 
   const langfuse = getLangfuseService();
-  const llmCallId = `llm-${ctx.runtime.traceId}-${Date.now()}`;
+  const llmCallId = `llm-${ctx.runtime.stats.traceId}-${Date.now()}`;
   const startTime = new Date();
 
   const inputSummary = modelMessages.map(m => ({

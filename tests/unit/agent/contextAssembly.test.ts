@@ -25,6 +25,7 @@ import {
 import { getContextInterventionState } from '../../../src/host/context/contextInterventionState';
 import { getContextHealthService } from '../../../src/host/context/contextHealthService';
 import { PROVIDER_VARIANT_MARKER } from '../../../src/host/prompts/providerVariants';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
@@ -479,19 +480,13 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
     enableToolDeferredLoading: false,
     maxStructuredOutputRetries: 2,
     stepByStepMode: false,
-    traceId: 'trace-budget',
     turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) } as any,
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
-    pendingRuntimeDiagnostics: [],
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
     consecutiveErrors: 0,
-    runStartTime: Date.now(),
-    totalTokensUsed: 0,
-    totalToolCallCount: 0,
+    stats: RunStatsState.forTest({ traceId: 'trace-budget', pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     contextHealth: ContextHealthState.forTest({
       contextHealth: ContextHealthState.forTest({ compressionState: new CompressionState(), persistentSystemContext: [] } as never),
@@ -715,20 +710,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
       enableToolDeferredLoading: false,
       maxStructuredOutputRetries: 2,
       stepByStepMode: false,
-      traceId: 'trace-1',
       turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) } as any,
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
       turn: TurnState.forTest({ currentIterationSpanId: 'span-1', currentTurnId: 'turn-1', turnStartTime: Date.now(), isSimpleTaskMode: true, effortLevel: 'medium' } as never),
-      pendingRuntimeDiagnostics: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
       consecutiveErrors: 0,
-      runStartTime: Date.now(),
-      totalTokensUsed: 0,
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ traceId: 'trace-1', pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
     };
 
@@ -1122,8 +1111,8 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].content).toContain('window.__GAME_META__');
     expect(modelMessages[0].content).toContain('start()');
     expect(modelMessages[0].content).toContain('ENV_MARKER');
-    expect(ctx.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('跳过 artifact task brief'));
-    expect(ctx.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('保留必需 game artifact contract'));
+    expect(ctx.stats.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('跳过 artifact task brief'));
+    expect(ctx.stats.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('保留必需 game artifact contract'));
     expect(estimateTokens(modelMessages[0].content)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
   });
 
@@ -1771,20 +1760,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
       enableToolDeferredLoading: false,
       maxStructuredOutputRetries: 2,
       stepByStepMode: false,
-      traceId: 'trace-cache',
       turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) } as any,
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
       turn: TurnState.forTest({ currentIterationSpanId: 'span-cache', currentTurnId: 'turn-cache', turnStartTime: Date.now(), effortLevel: 'medium' } as never),
-      pendingRuntimeDiagnostics: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
       consecutiveErrors: 0,
-      runStartTime: Date.now(),
-      totalTokensUsed: 0,
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ traceId: 'trace-cache', pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
     };
 

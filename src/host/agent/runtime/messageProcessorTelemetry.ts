@@ -65,7 +65,7 @@ export function recordMessageProcessorModelCallTelemetry(
     requestProtocol: 'agent-loop',
     retryCount: Math.max(0, iterations - 1),
     resultStatus: 'success',
-    traceSpanId: ctx.lastModelTraceSpanId,
+    traceSpanId: ctx.stats.lastModelTraceSpanId,
     prompt: promptSummary.substring(0, maxPromptLength),
     completion: completionText.substring(0, maxCompletionLength),
   });

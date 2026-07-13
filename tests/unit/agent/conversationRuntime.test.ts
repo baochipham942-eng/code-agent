@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHookManager } from '../../../src/host/hooks';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 const activityMocks = vi.hoisted(() => ({
   getCurrentActivityContext: vi.fn(),
@@ -412,7 +413,7 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     stepByStepMode: false,
 
-    traceId: '',
+    stats: RunStatsState.forTest({ traceId: '' } as never),
     turnTrace: {
       setTurn: () => {},
       record: () => {},
@@ -422,18 +423,13 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
     turn: TurnState.forTest({ isSimpleTaskMode: true, effortLevel: 'normal' as never }),
-    pendingRuntimeDiagnostics: [],
 
 
 
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
     consecutiveErrors: 0,
 
 
-    runStartTime: 0,
-    totalTokensUsed: 0,
-    totalToolCallCount: 0,
+    stats: RunStatsState.forTest({ pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: 0, totalTokensUsed: 0, totalToolCallCount: 0 } as never),
 
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
 
@@ -1285,7 +1281,7 @@ describe('ConversationRuntime', () => {
 
     it('keeps compact loop decisions advisory under context pressure', async () => {
       activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
-      ctx.totalInputTokens = 120_000;
+      ctx.stats.addTokenUsage(120_000, 0);
       modules.contextAssembly.inference.mockResolvedValue({
         type: 'text',
         content: 'Done!',

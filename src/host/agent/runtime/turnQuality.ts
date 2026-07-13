@@ -257,10 +257,10 @@ export function buildTurnQualitySummary(
     ...(ctx.contextHealth.droppedPromptBlocks?.length
       ? [`Prompt blocks dropped: ${ctx.contextHealth.droppedPromptBlocks.join(', ')}`]
       : []),
-    ...(ctx.pendingRuntimeDiagnostics || []),
+    ...(ctx.stats.pendingRuntimeDiagnostics || []),
   ]);
   const toolsUsed = uniqueStrings(ctx.turn.toolsUsedInTurn || []);
-  const decision = ctx.turnModelDecision;
+  const decision = ctx.stats.turnModelDecision;
   const score = buildScoreBreakdown({
     memory,
     strategyDecisionReason: decision?.reason,

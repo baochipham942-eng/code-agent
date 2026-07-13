@@ -487,7 +487,7 @@ export class MessageProcessor {
     const desktopClaimGate = applyDesktopActionClaimGate({
       latestUserMessage: typeof latestUserContent === 'string' ? latestUserContent : undefined,
       assistantContent: strippedContent,
-      toolCallCount: this.ctx.totalToolCallCount,
+      toolCallCount: this.ctx.stats.totalToolCallCount,
       iterations,
       hasDesktopEvidence: hasAppshotEvidence,
     });
@@ -693,7 +693,7 @@ export class MessageProcessor {
       this.ctx.artifactRepairGuard.repairTurnsWithoutProgress = 0;
     }
 
-    this.ctx.totalToolCallCount += toolCalls.length;
+    this.ctx.stats.addToolCalls(toolCalls.length);
     this.runFinalizer.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
       toolTotal: toolCalls.length,
     });

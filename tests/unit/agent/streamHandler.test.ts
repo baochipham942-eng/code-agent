@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { StreamHandler } from '../../../src/host/agent/runtime/streamHandler';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -16,9 +17,7 @@ describe('StreamHandler', () => {
     const ctx = {
       modelConfig: { provider: 'test-provider', model: 'test-model' },
       onEvent: vi.fn(),
-      totalTokensUsed: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
+      stats: RunStatsState.forTest({ totalTokensUsed: 0, totalInputTokens: 0, totalOutputTokens: 0 } as never),
     };
     const handler = new StreamHandler(ctx as any, {} as any, {} as any);
 
@@ -28,9 +27,9 @@ describe('StreamHandler', () => {
       usage: { inputTokens: 120, outputTokens: 7 },
     } as any, 42);
 
-    expect(ctx.totalInputTokens).toBe(120);
-    expect(ctx.totalOutputTokens).toBe(7);
-    expect(ctx.totalTokensUsed).toBe(127);
+    expect(ctx.stats.totalInputTokens).toBe(120);
+    expect(ctx.stats.totalOutputTokens).toBe(7);
+    expect(ctx.stats.totalTokensUsed).toBe(127);
     expect(ctx.onEvent).toHaveBeenCalledWith({
       type: 'model_response',
       data: expect.objectContaining({
@@ -44,9 +43,8 @@ describe('StreamHandler', () => {
     const ctx = {
       modelConfig: { provider: 'test-provider', model: 'test-model' },
       onEvent: vi.fn(),
-      pendingRuntimeDiagnostics: ['diagnostic detail'],
       historyVisibility: 'meta',
-      traceId: 'trace-1',
+      stats: RunStatsState.forTest({ pendingRuntimeDiagnostics: ['diagnostic detail'], traceId: 'trace-1' } as never),
       turn: TurnState.forTest({ messageDeltaSeq: 99, toolsUsedInTurn: ['old-tool'] }),
       goalTracker: { getGoalCheckpoint: vi.fn().mockReturnValue(null) },
     };

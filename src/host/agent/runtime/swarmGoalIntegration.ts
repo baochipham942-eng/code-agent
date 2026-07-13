@@ -19,8 +19,7 @@ const WORKFLOW_TOOL_NAME = 'workflow';
 /** 本模块只依赖 RuntimeContext 的这三个字段，窄化类型便于单测构造 */
 export interface SwarmGoalRuntimeView {
   goalMode?: GoalModeController;
-  totalInputTokens: number;
-  totalOutputTokens: number;
+  stats: Pick<import('./runStatsState').RunStatsState, 'totalInputTokens' | 'totalOutputTokens'>;
 }
 
 /**
@@ -33,7 +32,7 @@ export function applySwarmBudgetClamp(ctx: SwarmGoalRuntimeView, toolCalls: Tool
   if (!goalMode?.isPending() || !goalMode.allowsSwarm()) {
     return;
   }
-  const mainTokensUsed = ctx.totalInputTokens + ctx.totalOutputTokens;
+  const mainTokensUsed = ctx.stats.totalInputTokens + ctx.stats.totalOutputTokens;
   for (const call of toolCalls) {
     if (call.name !== WORKFLOW_TOOL_NAME) {
       continue;
@@ -87,5 +86,5 @@ export function maybeInjectSwarmGuidance(
 
 /** goal 观测事件展示用：主 agent 消耗 + swarm 记账消耗（闸3 内部自己加总，这里只服务展示） */
 export function goalTokensUsedWithSwarm(ctx: SwarmGoalRuntimeView): number {
-  return ctx.totalInputTokens + ctx.totalOutputTokens + (ctx.goalMode?.getSwarmTokensUsed() ?? 0);
+  return ctx.stats.totalInputTokens + ctx.stats.totalOutputTokens + (ctx.goalMode?.getSwarmTokensUsed() ?? 0);
 }

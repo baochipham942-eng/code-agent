@@ -33,6 +33,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 
 import { handleGoalCompletionGate } from '../../../src/host/agent/runtime/goalCompletionGate';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 function failedEvidence(): VerificationEvidence {
   return {
@@ -88,6 +89,7 @@ function harness(opts?: { reviewCondition?: string }): TestHarness {
   const ctx: TestHarness['ctx'] = {
     goalMode,
     control: ControlState.forTest(),
+    stats: RunStatsState.forTest(),
     workingDirectory: '/tmp/w',
     // 闸0（证据自证）打回预算标记为已耗尽 → 直通闸1/闸2，本文件只测三分支裁决
     goalEvidenceState: { bounces: 99 },

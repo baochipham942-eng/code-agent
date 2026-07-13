@@ -14,6 +14,7 @@ import {
 } from '../../../src/host/agent/runtime/swarmGoalIntegration';
 import { SWARM_GOAL } from '../../../src/shared/constants';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 function makeController(opts?: { tokenBudget?: number; allowSwarm?: boolean }): GoalModeController {
   return new GoalModeController(
@@ -109,7 +110,7 @@ describe('evaluateFallback 计入 swarm 消耗（闸3）', () => {
 
 describe('applySwarmBudgetClamp（集成胶水：dispatch 前 clamp）', () => {
   function view(c: GoalModeController, main = 0): SwarmGoalRuntimeView {
-    return { goalMode: c, totalInputTokens: main, totalOutputTokens: 0 };
+    return { goalMode: c, stats: RunStatsState.forTest({ totalInputTokens: main }) };
   }
 
   it('goal mode + allowSwarm → workflow 调用的 budgetTokens 被钳制', () => {
@@ -132,7 +133,7 @@ describe('applySwarmBudgetClamp（集成胶水：dispatch 前 clamp）', () => {
   });
   it('无 goalMode → no-op', () => {
     const call = workflowCall(900_000);
-    applySwarmBudgetClamp({ totalInputTokens: 0, totalOutputTokens: 0 }, [call]);
+    applySwarmBudgetClamp({ stats: RunStatsState.forTest() }, [call]);
     expect(call.arguments.budgetTokens).toBe(900_000);
   });
 });
@@ -164,10 +165,10 @@ describe('goalTokensUsedWithSwarm（展示用加总）', () => {
   it('= 主 input + 主 output + swarm 记账', () => {
     const c = makeController();
     c.recordSwarmTokens(5000);
-    expect(goalTokensUsedWithSwarm({ goalMode: c, totalInputTokens: 1000, totalOutputTokens: 2000 })).toBe(8000);
+    expect(goalTokensUsedWithSwarm({ goalMode: c, stats: RunStatsState.forTest({ totalInputTokens: 1000, totalOutputTokens: 2000 }) })).toBe(8000);
   });
   it('无 goalMode → 仅主消耗', () => {
-    expect(goalTokensUsedWithSwarm({ totalInputTokens: 1000, totalOutputTokens: 2000 })).toBe(3000);
+    expect(goalTokensUsedWithSwarm({ stats: RunStatsState.forTest({ totalInputTokens: 1000, totalOutputTokens: 2000 }) })).toBe(3000);
   });
 });
 

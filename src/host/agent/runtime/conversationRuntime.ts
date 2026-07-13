@@ -365,11 +365,11 @@ export class ConversationRuntime {
             this.ctx.goalMode.recordTurnProgress(madeProgress);
           }
           // 主 agent 消耗；swarm 消耗在 evaluateFallback 内部统一加总，观测事件用加总值展示
-          const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
+          const tokensUsed = this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens;
           const tokensUsedWithSwarm = goalTokensUsedWithSwarm(this.ctx);
           // 观测事件：每轮 goal 进度态（UI 用）
           // 墙钟已用时间（①）：以 run 起点为基准；闸3 与 UI 剩余时间共用。
-          const elapsedMs = Date.now() - this.ctx.runStartTime;
+          const elapsedMs = Date.now() - this.ctx.stats.runStartTime;
           this.ctx.onEvent({
             type: 'goal_iteration',
             data: {
@@ -477,7 +477,7 @@ export class ConversationRuntime {
         // Emit model_response and accumulate tokens
         this.streamHandler.emitModelResponse(response, inferenceDuration);
 
-        langfuse.logEvent(this.ctx.traceId, 'inference_complete', {
+        langfuse.logEvent(this.ctx.stats.traceId, 'inference_complete', {
           iteration: iterations,
           responseType: response.type,
           duration: inferenceDuration,
@@ -518,8 +518,8 @@ export class ConversationRuntime {
           const loopState: LoopState = {
             stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
             tokenUsage: {
-              input: this.ctx.totalInputTokens,
-              output: this.ctx.totalOutputTokens,
+              input: this.ctx.stats.totalInputTokens,
+              output: this.ctx.stats.totalOutputTokens,
             },
             maxTokens: getContextWindow(this.ctx.modelConfig.model),
             errorType: null,
@@ -689,9 +689,9 @@ export class ConversationRuntime {
     // Langfuse: Start trace
     const langfuse = getLangfuseService();
     const runTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
-    this.ctx.traceId = runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`;
+    this.ctx.stats.setTraceId(runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`);
     this.ctx.turn.beginRun();
-    langfuse.startTrace(this.ctx.traceId, {
+    langfuse.startTrace(this.ctx.stats.traceId, {
       sessionId: this.ctx.sessionId,
       userId: this.ctx.userId,
       modelProvider: this.ctx.modelConfig.provider,
@@ -776,9 +776,7 @@ export class ConversationRuntime {
 
 
     this.ctx.control.resetExternalDataCalls();
-    this.ctx.runStartTime = Date.now();
-    this.ctx.totalTokensUsed = 0;
-    this.ctx.totalToolCallCount = 0;
+    this.ctx.stats.beginRun();
 
 
 

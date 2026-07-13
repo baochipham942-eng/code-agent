@@ -5,6 +5,7 @@ import path from 'path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { Message } from '../../../src/shared/contract';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 const mockConfig = vi.hoisted(() => ({
   userConfigDir: '',
@@ -43,12 +44,14 @@ async function makeGitWorkdir(): Promise<string> {
 function makeRuntimeContext(workingDirectory: string, messages: Message[], sessionId = 'session-1'): RuntimeContext {
   return {
     sessionId,
-    traceId: 'trace-1',
+    stats: RunStatsState.forTest({
+      traceId: 'trace-1',
+      runStartTime: Date.now() - 1000,
+      totalInputTokens: 10,
+      totalOutputTokens: 20,
+    }),
     agentId: 'main',
     workingDirectory,
-    runStartTime: Date.now() - 1000,
-    totalInputTokens: 10,
-    totalOutputTokens: 20,
     messages,
     nudgeManager: {
       getModifiedFiles: () => new Set(['src/a.ts']),

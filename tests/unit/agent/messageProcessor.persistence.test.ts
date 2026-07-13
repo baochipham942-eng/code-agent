@@ -58,6 +58,7 @@ import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcess
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -95,6 +96,7 @@ describe('MessageProcessor persistence', () => {
 
   it('persists injected steer messages to the runtime session instead of the global current session', () => {
     const ctx = {
+      stats: RunStatsState.forTest(),
       contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
@@ -115,6 +117,7 @@ describe('MessageProcessor persistence', () => {
 
   it('reuses the renderer optimistic message id when provided', () => {
     const ctx = {
+      stats: RunStatsState.forTest(),
       contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
@@ -135,6 +138,7 @@ describe('MessageProcessor persistence', () => {
   it('marks denied-tool stop messages as meta when the run history is hidden', async () => {
     const persistedMessages: unknown[] = [];
     const ctx = {
+      stats: RunStatsState.forTest(),
       deniedToolNames: ['AskUserQuestion'],
       maxToolCallRetries: 0,
       historyVisibility: 'meta',
@@ -183,7 +187,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { maxTokens: 4096 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false } as never),
@@ -245,6 +249,7 @@ describe('MessageProcessor persistence', () => {
 
   it('persists truncated text before asking the next iteration to continue', async () => {
     const ctx = {
+      stats: RunStatsState.forTest(),
       contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
@@ -312,6 +317,7 @@ describe('MessageProcessor persistence', () => {
 
   it('continues when a provider reports stop on an obviously unfinished sentence', async () => {
     const ctx = {
+      stats: RunStatsState.forTest(),
       contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
@@ -375,7 +381,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -442,7 +448,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } }, forceFinalResponseReason: 'artifact repair target already passes validation after blocked Read read', forceFinalResponsePrompt: '<force-final-response>done</force-final-response>' } as never),
@@ -516,7 +522,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -621,7 +627,7 @@ describe('MessageProcessor persistence', () => {
       planningService: undefined,
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: ['Glob', 'Bash', 'Bash'], isSimpleTaskMode: false } as never),
       control: ControlState.forTest({ forceFinalResponseReason: '连续只读操作达到硬阈值，最后一次工具为 Bash', forceFinalResponsePrompt: '<force-final-response reason="read-loop-hard-limit">Produce final answer.</force-final-response>' } as never),
-      totalToolCallCount: 3,
+      stats: RunStatsState.forTest({ totalToolCallCount: 3 } as never),
       nudgeManager: {
         runNudgeChecks: vi.fn(() => true),
         runOutputValidation: vi.fn(() => true),
@@ -699,7 +705,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -795,7 +801,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -875,7 +881,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -941,7 +947,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -1058,7 +1064,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -1153,7 +1159,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -1225,7 +1231,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
@@ -1316,7 +1322,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-stop',
       messages: [] as never[],
-      totalToolCallCount: 0,
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } }, forceFinalResponseReason: undefined as string | undefined, forceFinalResponsePrompt: undefined as string | undefined } as never),

@@ -8,7 +8,6 @@ import type {
   ToolResult,
 } from '../../../shared/contract';
 import type { ModelConfig } from '../../../shared/contract/model';
-import type { ModelDecision } from '../../../shared/contract/modelDecision';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import type { ModelRouter } from '../../model/modelRouter';
 import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
@@ -32,6 +31,7 @@ import type { TurnTraceRecorder } from './turnTrace';
 import type { TurnState } from './turnState';
 import type { ControlState } from './controlState';
 import type { ContextHealthState } from './contextHealthState';
+import type { RunStatsState } from './runStatsState';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
@@ -117,15 +117,13 @@ export interface RuntimeContext {
   // --- Step-by-step ---
   readonly stepByStepMode: boolean;
 
-  // --- Tracing ---
-  traceId: string;
-  lastModelTraceSpanId?: string;
+  // --- RunStats+Tracing（ADR-038 批3d，写操作走 RunStatsState 方法）---
+  readonly stats: RunStatsState;
+
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   readonly turnTrace: TurnTraceRecorder;
   /** 2d: turn quality run 级记忆（owner=turnQuality） */
   readonly turnQualityState: TurnQualityRunState;
-  turnModelDecision?: ModelDecision;
-  pendingRuntimeDiagnostics: string[];
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   artifactValidationPassedTargetFile?: string;
   /**
@@ -160,8 +158,6 @@ export interface RuntimeContext {
   };
 
   // --- Budget ---
-  totalInputTokens: number;
-  totalOutputTokens: number;
   readonly consecutiveErrors: number;
 
   // --- Thinking ---
@@ -169,9 +165,6 @@ export interface RuntimeContext {
   readonly scaffoldProfile?: ScaffoldProfile;
 
   // --- Task stats ---
-  runStartTime: number;
-  totalTokensUsed: number;
-  totalToolCallCount: number;
 
   // --- Context recovery ---
   readonly MAX_CONSECUTIVE_TRUNCATIONS: number;

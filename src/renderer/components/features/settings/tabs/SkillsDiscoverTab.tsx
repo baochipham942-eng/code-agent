@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, CheckCircle2, CircleDashed, Info, Plus, Search, ShieldAlert, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleDashed, Info, Plus, Search, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -12,6 +12,7 @@ import type {
   SkillRoleBundle,
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
+import type { SkillRegistryListItem, SkillRegistryRiskTier } from '@shared/contract/skillRegistry';
 import {
   ALMA_BUNDLED_SKILL_MAPPINGS,
   type AlmaBundledSkillMapping,
@@ -36,6 +37,10 @@ import {
 } from './SkillsSettingsCards';
 
 export interface SkillsDiscoverTabProps {
+  /** 官方市场货架（签名 registry；离线/校验失败时为空） */
+  registryItems: SkillRegistryListItem[];
+  registryError: string | null;
+  onInstallRegistryEntry: (item: SkillRegistryListItem) => void;
   /** 推荐目录（云端下发优先，内置兜底） */
   catalog: SkillCatalogPayload;
   recommendedRepos: SkillRepository[];
@@ -114,6 +119,76 @@ function getAlmaMappingIcon(recommendation: AlmaBundledSkillRecommendation): Rea
   }
 }
 
+const REGISTRY_RISK_CLASSES: Record<SkillRegistryRiskTier, string> = {
+  low: 'border-zinc-700 bg-zinc-800 text-zinc-400',
+  medium: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  high: 'border-red-500/20 bg-red-500/10 text-red-300',
+};
+
+const RegistryEntryCard: React.FC<{
+  item: SkillRegistryListItem;
+  labels: SkillsDiscoverLabels;
+  onInstall: (item: SkillRegistryListItem) => void;
+  isInstalling: boolean;
+}> = ({ item, labels, onInstall, isInstalling }) => {
+  const { entry, installed, hasUpdate } = item;
+  const showAction = !installed || hasUpdate;
+  return (
+    <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h5 className="truncate text-sm font-medium text-zinc-200">
+              {entry.displayName || entry.name}
+            </h5>
+            <span className="shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+              <ShieldCheck className="mr-0.5 inline h-3 w-3 align-[-2px]" />
+              {entry.publisher}
+            </span>
+            {entry.risk && (
+              <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${REGISTRY_RISK_CLASSES[entry.risk.tier]}`}>
+                {labels.registryRiskLabels[entry.risk.tier]}
+              </span>
+            )}
+            {hasUpdate && (
+              <span className="shrink-0 rounded border border-blue-500/20 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-300">
+                {labels.registryHasUpdate}
+              </span>
+            )}
+          </div>
+          {entry.description && (
+            <p className="mt-1 text-xs leading-relaxed text-zinc-400">{entry.description}</p>
+          )}
+          <div className="mt-1 text-[11px] text-zinc-500">
+            {labels.registryReviewedPrefix}
+            {entry.reviewedAt}
+            <span className="mx-1.5">·</span>
+            <span className="font-mono">{entry.pinnedCommit.slice(0, 7)}</span>
+          </div>
+        </div>
+        <div className="shrink-0">
+          {showAction ? (
+            <Button
+              size="sm"
+              variant={hasUpdate ? 'secondary' : 'primary'}
+              disabled={isWebMode()}
+              loading={isInstalling}
+              onClick={() => onInstall(item)}
+            >
+              {hasUpdate ? labels.registryUpdate : labels.registryInstall}
+            </Button>
+          ) : (
+            <span className="flex items-center gap-1 text-xs text-zinc-500">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              {labels.registryInstalled}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AlmaBundledSkillCard: React.FC<{
   mapping: AlmaBundledSkillMapping;
   labels: SkillsDiscoverLabels;
@@ -143,6 +218,9 @@ const AlmaBundledSkillCard: React.FC<{
 };
 
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
+  registryItems,
+  registryError,
+  onInstallRegistryEntry,
   catalog,
   recommendedRepos,
   installedRepoIds,
@@ -177,6 +255,34 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* 官方市场（签名 registry） */}
+      <div className="space-y-3">
+        <div>
+          <h4 className="text-sm font-medium text-zinc-200">{discoverText.registryTitle}</h4>
+          <p className="text-xs text-zinc-500 mt-0.5">{discoverText.registryDescription}</p>
+        </div>
+        {registryItems.length > 0 ? (
+          <div className="space-y-2">
+            {registryItems.map((item) => (
+              <RegistryEntryCard
+                key={item.entry.name}
+                item={item}
+                labels={discoverText}
+                onInstall={onInstallRegistryEntry}
+                isInstalling={actionLoading === `registry-${item.entry.name}`}
+              />
+            ))}
+          </div>
+        ) : (
+          registryError && (
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 p-3 text-xs text-zinc-500">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {discoverText.registryEmpty}
+            </div>
+          )
+        )}
+      </div>
+
       {/* Alma bundled skills 对标 */}
       <div className="space-y-3">
         <div>

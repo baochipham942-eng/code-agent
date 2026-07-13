@@ -163,20 +163,43 @@ describe('WebSessionStore', () => {
     expect(getDatabase).not.toHaveBeenCalled();
   });
 
-  it('commitTurn preserves the final-loop dedup guard and per-segment dependency calls', async () => {
+  it('commitTurn replaces the DB-mode cache with the persisted message projection', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();
     db.getSession.mockReturnValue({ id: 'session-db', title: 'Existing' });
     const addMessageToSession = vi.fn(async () => undefined);
-    const getMessages = vi.fn(async () => [{
-      id: 'loop-final',
-      role: 'assistant',
-      content: 'loop 已落库',
-      timestamp: 30,
-    }] as Message[]);
+    const persistedMessages = [
+      {
+        id: 'user-db',
+        role: 'user',
+        content: '数据库中的用户消息',
+        timestamp: 30,
+      },
+      {
+        id: 'tool-db',
+        role: 'tool',
+        content: '工具结果',
+        timestamp: 31,
+      },
+      {
+        id: 'loop-final',
+        role: 'assistant',
+        content: '数据库中的最终回答',
+        timestamp: 32,
+        thinking: '数据库中的思考',
+        metadata: { source: 'loop' },
+      },
+    ] as Message[];
+    const getMessages = vi.fn(async () => persistedMessages);
     const tryGetSessionManager = vi.fn(async () => ({ addMessageToSession, getMessages }));
     const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
     const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+    sessionMessages.set('session-db', [{
+      id: 'stale-cache-message',
+      role: 'assistant',
+      content: '旧缓存内容',
+      timestamp: 1,
+    }]);
 
     await store.commitTurn({
       sessionId: 'session-db',
@@ -204,9 +227,150 @@ describe('WebSessionStore', () => {
     });
 
     expect(tryGetSessionManager).toHaveBeenCalledTimes(1);
-    expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledTimes(2);
     expect(addMessageToSession).not.toHaveBeenCalled();
     expect(getDatabase).toHaveBeenCalledTimes(2);
     expect(db.updateSession).toHaveBeenCalledWith('session-db', { updatedAt: expect.any(Number) });
+    expect(sessionMessages.get('session-db')).toEqual([
+      {
+        id: 'user-db',
+        role: 'user',
+        content: '数据库中的用户消息',
+        timestamp: 30,
+        toolCalls: undefined,
+        thinking: undefined,
+        contentParts: undefined,
+        artifacts: undefined,
+        attachments: undefined,
+        metadata: undefined,
+      },
+      {
+        id: 'loop-final',
+        role: 'assistant',
+        content: '数据库中的最终回答',
+        timestamp: 32,
+        toolCalls: undefined,
+        thinking: '数据库中的思考',
+        contentParts: undefined,
+        artifacts: undefined,
+        attachments: undefined,
+        metadata: { source: 'loop' },
+      },
+    ]);
+  });
+
+  it('commitTurn falls back to the collector projection when the DB read-back fails', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-readback-failure', title: 'Existing' });
+    const addMessageToSession = vi.fn(async () => undefined);
+    const readbackError = new Error('read-back unavailable');
+    const getMessages = vi.fn(async () => {
+      throw readbackError;
+    });
+    const tryGetSessionManager = vi.fn(async () => ({ addMessageToSession, getMessages }));
+    const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
+    const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+    sessionMessages.set('session-readback-failure', [{
+      id: 'existing-user',
+      role: 'user',
+      content: '上一轮',
+      timestamp: 1,
+    }]);
+
+    const result = await store.commitTurn({
+      sessionId: 'session-readback-failure',
+      title: '读回失败',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 1,
+      userMessagePrePersistedDb: false,
+      userMessage: {
+        id: 'fallback-user',
+        role: 'user',
+        content: '本轮问题',
+        timestamp: 40,
+      },
+      turn: {
+        assistantText: 'collector 回答',
+        assistantThinking: 'collector 思考',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [{ type: 'text', text: 'collector 回答' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(addMessageToSession).toHaveBeenCalledTimes(2);
+    expect(getMessages).toHaveBeenCalledWith('session-readback-failure');
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[AgentRouter] Failed to refresh session cache from persisted messages for session-readback-failure:',
+      readbackError,
+    );
+    expect(sessionMessages.get('session-readback-failure')).toEqual([
+      expect.objectContaining({ id: 'existing-user', role: 'user', content: '上一轮' }),
+      expect.objectContaining({ id: 'fallback-user', role: 'user', content: '本轮问题' }),
+      expect.objectContaining({
+        id: result.assistantMsgId,
+        role: 'assistant',
+        content: 'collector 回答',
+        thinking: 'collector 思考',
+      }),
+    ]);
+  });
+
+  it('commitTurn keeps the user message in the DB-mode cache for a tool-only turn', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-db-tool-only', title: 'Existing' });
+    const persistedMessages = [{
+      id: 'tool-only-user',
+      role: 'user',
+      content: '只调用工具',
+      timestamp: 50,
+    }] as Message[];
+    const getMessages = vi.fn(async () => persistedMessages);
+    const tryGetSessionManager = vi.fn(async () => ({
+      addMessageToSession: vi.fn(async () => undefined),
+      getMessages,
+    }));
+    const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
+    const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+
+    await store.commitTurn({
+      sessionId: 'session-db-tool-only',
+      title: '只调用工具',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 0,
+      userMessagePrePersistedDb: true,
+      userMessage: {
+        id: 'tool-only-user',
+        role: 'user',
+        content: '只调用工具',
+        timestamp: 50,
+      },
+      turn: {
+        assistantText: '',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [{ id: 'tool-only-call', name: 'Read' }],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [{ type: 'tool_call', toolCallId: 'tool-only-call' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(getMessages).toHaveBeenCalledWith('session-db-tool-only');
+    expect(sessionMessages.get('session-db-tool-only')).toEqual([
+      expect.objectContaining({
+        id: 'tool-only-user',
+        role: 'user',
+        content: '只调用工具',
+      }),
+    ]);
   });
 });

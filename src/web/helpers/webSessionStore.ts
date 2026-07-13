@@ -107,6 +107,37 @@ async function persistMessageToDb(
   }
 }
 
+function fallbackToCollectorSessionProjection(
+  sessionId: string,
+  userMessage: CachedMessage & { role: 'user' },
+  turn: CommitTurnInput['turn'],
+  assistantMsgId: string,
+  assistantArtifacts: ReturnType<typeof extractArtifacts>,
+): void {
+  // !dbAvailable 时内存仍是主存储；DB 读回失败时也用批 2 前的 collector
+  // 投影兜底，避免缓存停在半旧状态并丢掉本轮消息。
+  const cached = [...(sessionMessages.get(sessionId) || []), userMessage];
+  if (!turn.runCancelled && turn.hasAssistantOutput()) {
+    cached.push({
+      id: assistantMsgId,
+      role: 'assistant',
+      content: turn.assistantText,
+      timestamp: Date.now(),
+      toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
+      thinking: turn.assistantThinking || undefined,
+      contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
+      artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+      metadata: turn.assistantMetadata,
+    });
+  }
+  sessionMessages.set(sessionId, cached);
+
+  if (sessionMessages.size > SESSION_CACHE_MAX) {
+    const oldestKey = sessionMessages.keys().next().value;
+    if (oldestKey) sessionMessages.delete(oldestKey);
+  }
+}
+
 export function createWebSessionStore(deps: WebSessionStoreDeps) {
   return {
     async loadSessionHistoryForRun(sessionId: string): Promise<CachedMessage[]> {
@@ -172,30 +203,16 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         turn,
       } = input;
 
-      // ── 缓存会话消息（维持多轮上下文）──
-      // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
       const assistantMsgId = `msg-${Date.now()}-a`;
-      const cached = [...(sessionMessages.get(sessionId) || []), userMessage];
       const assistantArtifacts = turn.assistantText ? extractArtifacts(turn.assistantText) : [];
-      if (!turn.runCancelled && turn.hasAssistantOutput()) {
-        cached.push({
-          id: assistantMsgId,
-          role: 'assistant',
-          content: turn.assistantText,
-          timestamp: Date.now(),
-          toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
-          thinking: turn.assistantThinking || undefined,
-          contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
-          artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-          metadata: turn.assistantMetadata,
-        });
-      }
-      sessionMessages.set(sessionId, cached);
-
-      // LRU 清理：超过上限时移除最旧的会话
-      if (sessionMessages.size > SESSION_CACHE_MAX) {
-        const oldestKey = sessionMessages.keys().next().value;
-        if (oldestKey) sessionMessages.delete(oldestKey);
+      if (!dbAvailable) {
+        fallbackToCollectorSessionProjection(
+          sessionId,
+          userMessage,
+          turn,
+          assistantMsgId,
+          assistantArtifacts,
+        );
       }
 
       // ── 更新内存会话元数据 ──
@@ -218,6 +235,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
 
       // ── 持久化到数据库（优先走 SM 保持缓存一致）──
       if (dbAvailable) {
+        let sm: AgentSessionManagerLike | null = null;
         try {
           // 确保 session 在 DB 中存在（SM 和直写都需要）
           const dbForSession = await deps.getDatabase();
@@ -228,7 +246,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             });
           }
 
-          const sm = await deps.tryGetSessionManager();
+          sm = await deps.tryGetSessionManager();
           const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
             sessionId,
             turn.lastLoopAssistantMessageId,
@@ -293,6 +311,29 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           }
         } catch (dbErr) {
           deps.logger.warn('Failed to persist messages to DB:', (dbErr as Error).message);
+        }
+
+        try {
+          const projectionManager = sm ?? await deps.tryGetSessionManager();
+          if (!projectionManager?.getMessages) {
+            throw new Error('SessionManager.getMessages is unavailable');
+          }
+
+          const persisted = await projectionManager.getMessages(sessionId);
+          sessionMessages.delete(sessionId);
+          seedSessionMessagesFromPersisted(sessionId, persisted);
+        } catch (error) {
+          deps.logger.warn(
+            `[AgentRouter] Failed to refresh session cache from persisted messages for ${sessionId}:`,
+            error,
+          );
+          fallbackToCollectorSessionProjection(
+            sessionId,
+            userMessage,
+            turn,
+            assistantMsgId,
+            assistantArtifacts,
+          );
         }
       }
 

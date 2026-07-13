@@ -962,12 +962,15 @@ describe('createAgentRouter', () => {
   it('uses clientMessageId as the persisted user message id for /api/run', async () => {
     mockRun.mockResolvedValueOnce(undefined);
 
-    const addMessageToSession = vi.fn(async () => undefined);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
     await closeServer();
     await startAgentApi({
       tryGetSessionManager: async () => ({
         addMessageToSession,
-        getMessages: vi.fn(async () => []),
+        getMessages: vi.fn(async () => persistedMessages),
         getSession: vi.fn(async () => ({ id: 'session-client-id', title: 'Client id' })),
       }),
     });
@@ -1068,16 +1071,26 @@ describe('createAgentRouter', () => {
     ]);
   });
 
-  // 工单行为不变清单 #2：取消前 user 已 pre-persist，取消后不缓存或兜底写 assistant。
-  it('pre-persists the user but skips cached and fallback assistant writes for a cancelled run', async () => {
+  // 工单行为不变清单 #2：user 仍 pre-persist，取消后仍不兜底写 assistant。
+  // 批 2 拍板变化：统一 DB 真相，loop 已落库的 partial assistant 在当前会话缓存内可见。
+  it('projects a persisted partial assistant for a cancelled run without a fallback assistant write', async () => {
     await closeServer();
     setDbAvailable(true);
 
-    const addMessageToSession = vi.fn(async () => undefined);
-    const getMessages = vi.fn(async () => []);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => persistedMessages);
     mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
       run: vi.fn(async () => {
         onEvent({ type: 'stream_chunk', data: { content: '取消前的 partial' } });
+        persistedMessages.push({
+          id: 'cancelled-partial-1',
+          role: 'assistant',
+          content: '取消前的 partial',
+          timestamp: 2,
+        } as Message);
         onEvent({ type: 'agent_cancelled', data: null });
       }),
       cancel: mockCancel,
@@ -1110,6 +1123,11 @@ describe('createAgentRouter', () => {
     );
     expect(sessionMessages.get('session-cancelled-write')).toEqual([
       expect.objectContaining({ id: 'cancelled-user-1', role: 'user' }),
+      expect.objectContaining({
+        id: 'cancelled-partial-1',
+        role: 'assistant',
+        content: '取消前的 partial',
+      }),
     ]);
   });
 
@@ -1397,12 +1415,15 @@ describe('createAgentRouter', () => {
 
   it('keeps rich file attachments out of persisted message content', async () => {
     mockRun.mockResolvedValueOnce(undefined);
-    const addMessageToSession = vi.fn(async () => undefined);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
     await closeServer();
     await startAgentApi({
       tryGetSessionManager: async () => ({
         addMessageToSession,
-        getMessages: vi.fn(async () => []),
+        getMessages: vi.fn(async () => persistedMessages),
         getSession: vi.fn(async () => ({ id: 'session-rich-attachments', title: 'Attachments' })),
       }),
     });
@@ -2679,8 +2700,11 @@ describe('createAgentRouter', () => {
       },
     };
 
-    const addMessageToSession = vi.fn(async () => undefined);
-    const getMessages = vi.fn(async () => []);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => persistedMessages);
     const getSession = vi.fn(async () => ({
       workingDirectory: '/tmp/persisted-project',
     }));

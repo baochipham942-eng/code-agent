@@ -513,6 +513,7 @@ export const zhSettingsSystem = {
         capability_registry: '能力注册表',
         agent_engine_model_catalog: 'Agent Engine 模型目录',
         prompt_registry: '提示词注册表',
+        skill_registry: 'Skill 官方市场',
         update_manifest: '更新清单',
         runtime_assets_manifest: '运行时资产清单',
         renderer_bundle: '前端热更包',

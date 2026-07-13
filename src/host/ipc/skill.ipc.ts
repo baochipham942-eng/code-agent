@@ -16,6 +16,8 @@ import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../services/skills/skillDraftQueue';
+import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkillRegistryService';
+import { installFromRegistryEntry } from '../skills/marketplace/installService';
 
 const logger = createLogger('SkillIPC');
 
@@ -106,6 +108,33 @@ async function handleRepoAddCustom(url: string, name?: string) {
   }
 
   return result;
+}
+
+// ----------------------------------------------------------------------------
+// Official Skill Registry（远程 marketplace）
+// ----------------------------------------------------------------------------
+
+/**
+ * 拉取官方 registry 货架（签名信封校验，失败即空货架 + 原因码）
+ */
+async function handleRegistryList() {
+  return getRemoteSkillRegistryService().listItems();
+}
+
+/**
+ * 从 registry 条目安装/升级。
+ * 只认 host 侧新鲜拉取的条目（renderer 只传 name）；下载按收录钉点 + hash 强校验。
+ */
+async function handleRegistryInstall(name: string): Promise<{ success: boolean; error?: string }> {
+  const entry = await getRemoteSkillRegistryService().getEntry(name);
+  if (!entry) {
+    return { success: false, error: `Registry entry not found: ${name}` };
+  }
+  // force: 升级=按新钉点重装；首装时目标不存在，force 无副作用
+  await installFromRegistryEntry(entry, { force: true, enableAfterInstall: true });
+  // 全量 reload：marketplace plugin 来源的 skill 不在 refreshLibraries 覆盖面内
+  await getSkillDiscoveryService().reload();
+  return { success: true };
 }
 
 // ----------------------------------------------------------------------------
@@ -470,6 +499,31 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       }
     }
   );
+
+  // ------------------------------------------------------------------------
+  // Official Skill Registry
+  // ------------------------------------------------------------------------
+
+  ipcMain.handle(SKILL_CHANNELS.REGISTRY_LIST, async () => {
+    try {
+      return await handleRegistryList();
+    } catch (error) {
+      logger.error('Failed to list skill registry', { error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.REGISTRY_INSTALL, async (_, name: string) => {
+    try {
+      return await handleRegistryInstall(name);
+    } catch (error) {
+      logger.error('Failed to install from skill registry', { name, error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
 
   // ------------------------------------------------------------------------
   // Skill Management

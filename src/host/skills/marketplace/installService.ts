@@ -20,6 +20,8 @@ import type {
   PluginScope,
   PluginEntry,
 } from './types';
+import type { SkillRegistryEntry } from '../../../shared/contract/skillRegistry';
+import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../shared/contract/skillRegistry';
 import {
   assertTrustedArchiveHash,
   downloadArchive,
@@ -330,11 +332,18 @@ async function downloadGitHubRepository(
   owner: string,
   repo: string,
   destDir: string,
+  expected?: { pinnedCommit?: string; contentHash?: string },
 ): Promise<{ pinnedCommit: string; contentHash: string }> {
-  const pinnedCommit = await resolveGitHubBranchCommit(owner, repo);
+  const pinnedCommit = expected?.pinnedCommit ?? await resolveGitHubBranchCommit(owner, repo);
   const url = `https://codeload.github.com/${owner}/${repo}/zip/${pinnedCommit}`;
   const archive = await downloadArchive(url);
   const contentHash = getArchiveSha256(archive);
+  // Registry 可验证分发：收录时算好的 hash 不符即 fail-closed，先于解压
+  if (expected?.contentHash && contentHash.toLowerCase() !== expected.contentHash.toLowerCase()) {
+    throw new Error(
+      `Registry content hash mismatch for ${owner}/${repo}@${pinnedCommit}: expected sha256 ${expected.contentHash}, received ${contentHash}`,
+    );
+  }
   await ensureDir(destDir);
   try {
     await extractZipSafely(archive, destDir);
@@ -610,13 +619,109 @@ export async function installPlugin(
     pluginSpec,
   });
 
-  let installedAssetRoot: string | undefined;
   try {
     assertTrustedArchiveHash(
       existing?.contentHash,
       entrySource.contentHash ?? existing?.contentHash ?? '',
     );
+    return await performInstall({
+      plugin,
+      marketplace,
+      pluginSpec,
+      entry,
+      entrySource,
+      scope,
+      projectPath,
+      state,
+      existing,
+      force: options.force,
+      enableAfterInstall: options.enableAfterInstall,
+    });
+  } finally {
+    await entrySource.cleanup?.();
+  }
+}
 
+/**
+ * Install/upgrade from an official registry entry.
+ * 信任模型：控制面签名 registry + 收录时钉死的 pinnedCommit/contentHash 强校验
+ * （替代 TOFU 漂移断言——升级换钉点时 hash 变化是预期的，等值校验在下载层做）。
+ */
+export async function installFromRegistryEntry(
+  registryEntry: SkillRegistryEntry,
+  options: { force?: boolean; enableAfterInstall?: boolean } = {}
+): Promise<InstallResult> {
+  const pluginSpec = `${registryEntry.name}@${SKILL_REGISTRY_MARKETPLACE_ID}`;
+  const github = parseGitHubRepository(registryEntry.repository);
+  if (!github) {
+    throw new Error(`Invalid registry repository: ${registryEntry.repository}`);
+  }
+
+  const state = await loadInstalledPlugins();
+  const existing = state[pluginSpec];
+  if (existing && !options.force) {
+    throw new Error(
+      `Plugin '${pluginSpec}' is already installed. Use --force to reinstall.`
+    );
+  }
+
+  const tempDir = path.join(
+    getUserConfigDir(),
+    'marketplace-plugin-cache',
+    `tmp-${getPluginAssetDirName(pluginSpec)}-${randomUUID()}`,
+  );
+  try {
+    const artifact = await downloadGitHubRepository(github.owner, github.repo, tempDir, {
+      pinnedCommit: registryEntry.pinnedCommit,
+      contentHash: registryEntry.contentHash,
+    });
+    const sourceBase = path.resolve(tempDir, registryEntry.path || './');
+    if (!fsSync.existsSync(sourceBase)) {
+      throw new Error(`Plugin path not found in repository: ${registryEntry.path || './'}`);
+    }
+    const entry: PluginEntry = {
+      name: registryEntry.name,
+      ...(registryEntry.description ? { description: registryEntry.description } : {}),
+      repository: registryEntry.repository,
+      ...(registryEntry.path ? { path: registryEntry.path } : {}),
+      skills: registryEntry.skills,
+      ...(registryEntry.commands?.length ? { commands: registryEntry.commands } : {}),
+    };
+    return await performInstall({
+      plugin: registryEntry.name,
+      marketplace: SKILL_REGISTRY_MARKETPLACE_ID,
+      pluginSpec,
+      entry,
+      entrySource: { sourceBase, ...artifact },
+      scope: 'user',
+      state,
+      existing,
+      force: options.force,
+      enableAfterInstall: options.enableAfterInstall,
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function performInstall(args: {
+  plugin: string;
+  marketplace: string;
+  pluginSpec: string;
+  entry: PluginEntry;
+  entrySource: { sourceBase: string; pinnedCommit?: string; contentHash?: string };
+  scope: PluginScope;
+  projectPath?: string;
+  state: InstalledPluginsFile;
+  existing?: InstalledPluginRecord;
+  force?: boolean;
+  enableAfterInstall?: boolean;
+}): Promise<InstallResult> {
+  const { plugin, marketplace, pluginSpec, entry, entrySource, scope, projectPath, state, existing } = args;
+  const options = { force: args.force, enableAfterInstall: args.enableAfterInstall };
+
+  let installedAssetRoot: string | undefined;
+  try {
     if (existing && options.force) {
       await deactivatePluginCommands({
         scope: existing.scope,
@@ -695,8 +800,6 @@ export async function installPlugin(
       await fs.rm(installedAssetRoot, { recursive: true, force: true }).catch(() => {});
     }
     throw error;
-  } finally {
-    await entrySource.cleanup?.();
   }
 }
 

@@ -276,7 +276,7 @@ export class AgentOrchestrator {
         try {
           const modelRouter = new ModelRouter();
           const intent = await classifyIntent(content, modelRouter);
-          if (intent === 'research') {
+          if (intent.intent === 'research') {
             logger.info('Auto-detected research task (LLM classification), routing to deep research pipeline');
             await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
           } else {

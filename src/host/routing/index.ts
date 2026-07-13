@@ -24,5 +24,6 @@ export {
   IntentClassifier,
   type IntentClassifierConfig,
   type TaskIntent,
+  type TaskIntentClassification,
   classifyIntent,
 } from './intentClassifier';

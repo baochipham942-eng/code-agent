@@ -32,9 +32,14 @@ const CLASSIFY_TIMEOUT_MS = 3000;
 
 export type TaskIntent = 'research' | 'code' | 'search' | 'data' | 'general';
 
+export interface TaskIntentClassification {
+  intent: TaskIntent;
+  references_past_context: boolean;
+}
+
 const VALID_INTENTS: readonly TaskIntent[] = ['research', 'code', 'search', 'data', 'general'];
 
-const CLASSIFY_PROMPT = `你是一个任务意图分类器。根据用户消息判断任务类型，只返回一个分类标签。
+const CLASSIFY_PROMPT = `你是一个任务意图分类器。根据用户消息判断任务类型，并识别用户是否在指代过去会话中的上下文。
 
 分类规则：
 - **research**: 需要多角度深入调查、分析报告、市场调研、趋势分析、对比研究等（例：调查市场情况、分析行业趋势、帮我研究一下、帮我调查一下）
@@ -43,22 +48,36 @@ const CLASSIFY_PROMPT = `你是一个任务意图分类器。根据用户消息�
 - **search**: 简单信息查找、查一个具体事实（例：查一下某个API的用法）
 - **general**: 闲聊、问答、其他
 
-只返回分类标签（research/code/search/data/general），不要返回任何其他内容。`;
+返回严格 JSON，不要返回其他内容：
+{"intent":"research|code|search|data|general","references_past_context":true|false}
+
+references_past_context 只在用户需要过去会话才能理解或执行当前消息时为 true。例如“把那个方案往下做”、“那个东西咱们再推进一版”。`;
 
 /**
  * Quick keyword-based intent check (0ms, 100% reliable).
- * Returns a TaskIntent if keywords match, or null to fall through to LLM.
+ * Returns a complete classification if keywords settle both outputs, or null to fall through to LLM.
  */
-function quickIntentCheck(message: string): TaskIntent | null {
+function quickIntentCheck(message: string): TaskIntentClassification | null {
   const trimmed = message.trim();
+
+  // 空输入没有可分类的语义，不值得打 LLM。
+  if (!trimmed) return { intent: 'general', references_past_context: false };
+
+  // 指代性短句必须交给模型判断是否依赖过去上下文，不能被“短输入 = general”截断。
+  const ambiguousPastContextReference = /那个|那件|那份|当时的|原来的|\bthat\s+(?:thing|plan|idea|proposal)\b/i;
+  if (ambiguousPastContextReference.test(trimmed)) return null;
 
   // Research 关键词优先。中文短句如“全面分析竞品”长度很短，但意图很明确。
   const researchKeywords = /深入调研|深度搜索|深度调研|全面分析|深入分析|深入搜索|研究报告|详细调研|comprehensive\s*research|in-depth|deep\s*research|thorough\s*research/i;
-  if (researchKeywords.test(trimmed)) return 'research';
+  if (researchKeywords.test(trimmed)) {
+    return { intent: 'research', references_past_context: false };
+  }
 
-  // 极短输入直接判 general，不浪费 LLM 调用
-  // "hi"/"好的"/"继续"/"ok"/"是"/emoji 这类短确认/招呼不可能是 research/code/data/search
-  if (trimmed.length <= 10) return 'general';
+  // 只对语义确定的短确认/招呼走 general 快路径；其余短句可能包含跨会话省略指代。
+  const trivialGeneral = /^(?:hi|hello|hey|好的?|可以|ok(?:ay)?|是|嗯+|收到|谢谢|thanks?|👋|👍)$/i;
+  if (trivialGeneral.test(trimmed)) {
+    return { intent: 'general', references_past_context: false };
+  }
 
   return null; // No quick match, need LLM
 }
@@ -72,51 +91,96 @@ function quickIntentCheck(message: string): TaskIntent | null {
  * - Returns 'general' on any failure (safe fallback)
  * - Enforced 3s timeout to never block the main flow
  */
+// 同一回合里路由（conversationRuntime/agentOrchestrator）和记忆门（messageBuild）会对
+// 同一条消息各调一次分类器；LLM 结果按消息文本 memo，一回合只打一次 quickModel。
+// ponytail: 32 条 LRU 足够覆盖单进程会话，失败结果不缓存以便下次重试。
+const llmClassificationCache = new Map<string, TaskIntentClassification>();
+const LLM_CLASSIFICATION_CACHE_MAX = 32;
+
+/** 仅供测试隔离缓存状态。 */
+export function clearIntentClassificationCache(): void {
+  llmClassificationCache.clear();
+}
+
+function rememberClassification(message: string, result: TaskIntentClassification): void {
+  if (llmClassificationCache.size >= LLM_CLASSIFICATION_CACHE_MAX) {
+    const oldest = llmClassificationCache.keys().next().value;
+    if (oldest !== undefined) llmClassificationCache.delete(oldest);
+  }
+  llmClassificationCache.set(message, result);
+}
+
 export async function classifyIntent(
   message: string,
   _modelRouter: ModelRouter,
-): Promise<TaskIntent> {
+): Promise<TaskIntentClassification> {
   // Step 1: Quick keyword check (0ms, 100% reliable)
   const quickResult = quickIntentCheck(message);
   if (quickResult) {
     logger.info('Intent classified via keywords', {
-      intent: quickResult,
+      intent: quickResult.intent,
       message: message.substring(0, 80),
     });
     return quickResult;
   }
+
+  const cached = llmClassificationCache.get(message);
+  if (cached) return cached;
 
   // Step 2: LLM classification — 走 quickModel 直连官方 bigmodel.cn，
   // 避免 modelRouter 经 0ki 中转时 quick model 被 403
   try {
     const prompt = `${CLASSIFY_PROMPT}\n\n用户消息：${message}`;
     const result = await withTimeout(
-      quickTask(prompt, 10),
+      quickTask(prompt, 60),
       CLASSIFY_TIMEOUT_MS,
       'Intent classification timed out',
     );
 
     if (!result.success || !result.content) {
       logger.warn('Intent classification failed, defaulting to general', { error: result.error });
-      return 'general';
+      return { intent: 'general', references_past_context: false };
     }
 
-    const label = result.content.trim().toLowerCase() as TaskIntent;
-    if (VALID_INTENTS.includes(label)) {
+    const content = result.content.trim();
+    let classification: TaskIntentClassification | null = null;
+    try {
+      const parsed = JSON.parse(content) as Partial<TaskIntentClassification>;
+      if (
+        typeof parsed.intent === 'string'
+        && VALID_INTENTS.includes(parsed.intent as TaskIntent)
+        && typeof parsed.references_past_context === 'boolean'
+      ) {
+        classification = {
+          intent: parsed.intent as TaskIntent,
+          references_past_context: parsed.references_past_context,
+        };
+      }
+    } catch {
+      // 兼容旧 quick model 只返回分类标签的响应，新位按 fail-closed 处理。
+      const legacyLabel = content.toLowerCase() as TaskIntent;
+      if (VALID_INTENTS.includes(legacyLabel)) {
+        classification = { intent: legacyLabel, references_past_context: false };
+      }
+    }
+
+    if (classification) {
       logger.info('Intent classified via LLM', {
         message: message.substring(0, 50),
-        intent: label,
+        intent: classification.intent,
+        referencesPastContext: classification.references_past_context,
       });
-      return label;
+      rememberClassification(message, classification);
+      return classification;
     }
 
-    logger.warn('Unexpected classification result, defaulting to general', { result: label });
-    return 'general';
+    logger.warn('Unexpected classification result, defaulting to general', { result: content });
+    return { intent: 'general', references_past_context: false };
   } catch (error) {
     logger.warn('Intent classification failed, defaulting to general', {
       error: String(error),
     });
-    return 'general';
+    return { intent: 'general', references_past_context: false };
   }
 }
 

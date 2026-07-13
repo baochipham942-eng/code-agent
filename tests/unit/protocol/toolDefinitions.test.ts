@@ -184,6 +184,11 @@ describe('toolDefinitions deferred loading', () => {
     }
   });
 
+  it('keeps EpisodicRecall in the always-visible core tool table', () => {
+    expect(CORE_TOOLS).toContain('EpisodicRecall');
+    expect(getCoreToolDefinitions().map((definition) => definition.name)).toContain('EpisodicRecall');
+  });
+
   it('keeps design canvas tools out of the normal-session base table (zero pollution invariant)', () => {
     // 硬不变量：DEFERRED ≠ 进基础表。普通会话工具表 = core + 已加载 deferred；
     // 未搜索/未激活设计会话时，基础表绝不含画布工具。

@@ -890,7 +890,7 @@ export class ConversationRuntime {
         const intent = await classifyIntent(userMessage, this.ctx.modelRouter);
         logger.info('Intent classified', { intent, message: userMessage.substring(0, 50) });
 
-        if (intent === 'research') {
+        if (intent.intent === 'research') {
           // 研究模式 prompt 持久化到 system context
           this.contextAssembly.injectResearchModePrompt(userMessage);
         }

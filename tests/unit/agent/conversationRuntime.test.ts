@@ -67,7 +67,10 @@ vi.mock('../../../src/host/planning/taskComplexityAnalyzer', () => ({
 }));
 
 vi.mock('../../../src/host/routing/intentClassifier', () => ({
-  classifyIntent: vi.fn().mockResolvedValue('general'),
+  classifyIntent: vi.fn().mockResolvedValue({
+    intent: 'general',
+    references_past_context: false,
+  }),
 }));
 
 vi.mock('../../../src/host/planning/taskOrchestrator', () => ({

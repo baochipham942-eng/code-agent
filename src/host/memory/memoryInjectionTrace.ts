@@ -12,6 +12,7 @@ export interface MemoryInjectionTrace {
   chars: number;
   injected: boolean;
   source: string;
+  decisionSource?: 'regex-fast-path' | 'intent-classifier';
   count: number;
   timestamp: number;
   sessionId: string;
@@ -23,6 +24,7 @@ export interface RecordMemoryInjectionTraceInput {
   chars?: number;
   injected: boolean;
   source: string;
+  decisionSource?: 'regex-fast-path' | 'intent-classifier';
   count?: number;
   sessionId: string;
   timestamp?: number;
@@ -51,6 +53,7 @@ export function recordMemoryInjectionTrace(input: RecordMemoryInjectionTraceInpu
     chars: Math.max(0, input.chars ?? 0),
     injected: input.injected,
     source: input.source,
+    decisionSource: input.decisionSource,
     count: Math.max(0, input.count ?? 0),
     timestamp,
     sessionId: input.sessionId,

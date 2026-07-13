@@ -34,6 +34,7 @@ export const CORE_TOOLS: string[] = [
   // Light Memory (File-as-Memory)
   'MemoryWrite',
   'MemoryRead',
+  'EpisodicRecall',
 
   // 工具发现
   'ToolSearch',

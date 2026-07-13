@@ -16,6 +16,7 @@ import { broadcastSSE } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
 import {
+  dbAvailable,
   type CachedMessage,
 } from '../helpers/sessionCache';
 import { createWebSessionStore } from '../helpers/webSessionStore';
@@ -76,6 +77,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
+  tryGetCLISessionManager?: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
 }
 
@@ -94,6 +96,16 @@ async function ensureDefaultWebWorkingDirectory(): Promise<string> {
   const workDir = path.join(dataDir, 'work');
   await fs.mkdir(workDir, { recursive: true });
   return workDir;
+}
+
+async function tryGetSharedCLISessionManager(): Promise<AgentSessionManagerLike | null> {
+  if (!dbAvailable) return null;
+  try {
+    const { getSessionManager } = await import('../../cli/bootstrap');
+    return getSessionManager();
+  } catch {
+    return null;
+  }
 }
 
 function buildSessionTitle(prompt: string): string {
@@ -145,10 +157,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     pendingLocalToolCalls,
     logger,
     tryGetSessionManager,
+    tryGetCLISessionManager: tryGetCLISessionManagerOverride,
     getSupabaseForSession,
   } = deps;
   const sessionStore = createWebSessionStore({
-    tryGetSessionManager,
+    tryGetSessionManager: tryGetCLISessionManagerOverride ?? tryGetSharedCLISessionManager,
+    tryGetInfraSessionManager: tryGetSessionManager,
     logger,
     getDatabase: async () => {
       const { getDatabase } = await import('../../host/services/core/databaseService');

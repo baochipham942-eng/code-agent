@@ -287,11 +287,16 @@ export class CLISessionManager {
 
     // 数据库可用时持久化
     if (this.isDatabaseAvailable()) {
-      try {
-        this.getDb()!.addMessage(sessionId, message);
-      } catch (error) {
-        if (!this.isDuplicateMessageError(error)) {
-          console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
+      const db = this.getDb();
+      if (db) {
+        try {
+          db.addMessage(sessionId, message);
+        } catch (error) {
+          if (this.isDuplicateMessageError(error)) {
+            db.updateMessage(message.id, message);
+          } else {
+            console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
+          }
         }
       }
     }

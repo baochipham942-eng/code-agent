@@ -5,6 +5,7 @@ export interface AgentSessionManagerLike {
   updateSession?(sessionId: string, updates: Partial<Session>): Promise<void> | void;
   getSession?(sessionId: string, limit?: number): Promise<Session | null>;
   addMessageToSession?(sessionId: string, message: Message): Promise<void>;
+  invalidateSessionCache?(sessionId: string): void;
 }
 
 interface SupabaseQueryResult<T = unknown> {

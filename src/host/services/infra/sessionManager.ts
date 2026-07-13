@@ -1193,6 +1193,13 @@ export class SessionManager implements Disposable {
   }
 
   /**
+   * 失效单个会话缓存，供同库的外部写入方在提交后通知。
+   */
+  invalidateSessionCache(sessionId: string): void {
+    this.sessionCache.delete(sessionId);
+  }
+
+  /**
    * 清除会话缓存
    */
   clearCache(): void {

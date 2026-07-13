@@ -588,6 +588,49 @@ export class CLIDatabaseService {
     }
   }
 
+  updateMessage(messageId: string, updates: Partial<Message>): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+    const addJsonUpdate = (column: string, value: unknown): void => {
+      setClauses.push(`${column} = ?`);
+      values.push(value == null ? null : JSON.stringify(value));
+    };
+
+    if (updates.content !== undefined) {
+      setClauses.push('content = ?');
+      values.push(updates.content);
+    }
+    if (updates.role !== undefined) {
+      setClauses.push('role = ?');
+      values.push(updates.role);
+    }
+    if (updates.timestamp !== undefined) {
+      setClauses.push('timestamp = ?');
+      values.push(updates.timestamp);
+    }
+    if (updates.toolCalls !== undefined) addJsonUpdate('tool_calls', updates.toolCalls);
+    if (updates.toolResults !== undefined) addJsonUpdate('tool_results', updates.toolResults);
+    if (updates.attachments !== undefined) {
+      addJsonUpdate('attachments', sanitizeAttachmentsForPersistence(updates.attachments));
+    }
+    if (updates.contentParts !== undefined) addJsonUpdate('content_parts', updates.contentParts);
+    if (updates.isMeta !== undefined) {
+      setClauses.push('is_meta = ?');
+      values.push(updates.isMeta ? 1 : 0);
+    }
+    if (updates.thinking !== undefined || updates.reasoning !== undefined) {
+      setClauses.push('thinking = ?');
+      values.push(updates.thinking || updates.reasoning || null);
+    }
+    if (updates.metadata !== undefined) addJsonUpdate('metadata', updates.metadata);
+
+    if (setClauses.length === 0) return;
+    values.push(messageId);
+    this.db.prepare(`UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
+  }
+
   getMessages(sessionId: string, limit?: number): Message[] {
     if (!this.db) throw new Error('Database not initialized');
 

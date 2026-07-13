@@ -215,6 +215,7 @@ const logger = {
 
 async function startAgentApi(deps: {
   tryGetSessionManager?: () => Promise<unknown>;
+  tryGetCLISessionManager?: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
 } = {}) {
   const app = express();
@@ -224,6 +225,9 @@ async function startAgentApi(deps: {
     pendingLocalToolCalls: new Map(),
     logger,
     tryGetSessionManager: deps.tryGetSessionManager ?? (async () => null),
+    tryGetCLISessionManager: deps.tryGetCLISessionManager
+      ?? deps.tryGetSessionManager
+      ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
   }));
 

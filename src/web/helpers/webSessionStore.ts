@@ -1,7 +1,7 @@
-import type { Message, ModelConfig } from '../../shared/contract';
+import type { Message, ModelConfig, Session } from '../../shared/contract';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
-import type { AgentSessionManagerLike } from '../routes/agentRouteTypes';
+import type { SessionCreateOptions } from '../../cli/session';
 import type { WebRouteLogger } from '../routes/routeTypes';
 import {
   type CachedContentPart,
@@ -113,9 +113,27 @@ export const inMemorySessionsProjection = {
   },
 };
 
+interface WebCLISessionManagerLike {
+  getMessages?(sessionId: string, limit?: number): Promise<Message[]>;
+  getSession?(sessionId: string, messageLimit?: number): Promise<{ title?: string } | null>;
+  updateSession?(sessionId: string, updates: Partial<Session>): Promise<void> | void;
+  addMessageToSession?(
+    sessionId: string,
+    message: Message,
+    options?: SessionCreateOptions & { setCurrent?: boolean },
+  ): Promise<void>;
+}
+
+interface InfraSessionCacheInvalidator {
+  invalidateSessionCache?(sessionId: string): void;
+}
+
 interface WebSessionStoreDeps {
-  tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
+  // webServer 生产注入的是 src/cli/bootstrap.getSessionManager() 返回的共享单例。
+  tryGetSessionManager: () => Promise<WebCLISessionManagerLike | null>;
+  tryGetInfraSessionManager?: () => Promise<InfraSessionCacheInvalidator | null>;
   logger: WebRouteLogger;
+  // 仅保留给 CLI SM 不可用时的既有兼容降级；生产正常路径不经过 core writer。
   getDatabase: () => DatabaseService | Promise<DatabaseService>;
 }
 
@@ -186,14 +204,23 @@ async function ensureDbSession(
 }
 
 async function persistMessageToDb(
-  sessionManager: AgentSessionManagerLike | null,
-  db: DatabaseService,
+  sessionManager: WebCLISessionManagerLike | null,
+  db: DatabaseService | null,
   sessionId: string,
   message: Message,
+  createOptions?: SessionCreateOptions,
 ): Promise<void> {
   if (sessionManager?.addMessageToSession) {
-    await sessionManager.addMessageToSession(sessionId, message);
+    if (createOptions) {
+      await sessionManager.addMessageToSession(sessionId, message, createOptions);
+    } else {
+      await sessionManager.addMessageToSession(sessionId, message);
+    }
     return;
+  }
+
+  if (!db) {
+    throw new Error('No session persistence backend available');
   }
 
   try {
@@ -204,6 +231,45 @@ async function persistMessageToDb(
     }
     db.updateMessage(message.id, message);
   }
+}
+
+function hasCliSessionLifecycle(
+  sessionManager: WebCLISessionManagerLike | null,
+): sessionManager is Required<Pick<
+  WebCLISessionManagerLike,
+  'addMessageToSession' | 'getSession' | 'updateSession'
+>> & WebCLISessionManagerLike {
+  return Boolean(
+    sessionManager?.addMessageToSession
+    && sessionManager.getSession
+    && sessionManager.updateSession,
+  );
+}
+
+function isDefaultSessionTitle(title: string | undefined): boolean {
+  return !title
+    || title === '新对话'
+    || title === 'New Chat'
+    || title === 'New Session'
+    || title.startsWith('Session ');
+}
+
+async function prepareCliSessionForWrite(
+  sessionManager: Required<Pick<WebCLISessionManagerLike, 'getSession' | 'updateSession'>>,
+  sessionId: string,
+  title: string,
+): Promise<boolean> {
+  const existing = await sessionManager.getSession(sessionId, 1);
+  if (!existing) return false;
+
+  if (isDefaultSessionTitle(existing.title) && title && title !== existing.title) {
+    try {
+      await sessionManager.updateSession(sessionId, { title, updatedAt: Date.now() });
+    } catch {
+      // 标题升级失败不阻塞主流程，commitTurn 的元数据更新还会再试。
+    }
+  }
+  return true;
 }
 
 function fallbackToCollectorSessionProjection(
@@ -263,8 +329,8 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
   async function hasPersistedFinalLoopAssistantMessage(
     sessionId: string,
     finalMessageId: string | undefined,
-    sessionManager: AgentSessionManagerLike | null,
-    db: DatabaseService,
+    sessionManager: WebCLISessionManagerLike | null,
+    db: DatabaseService | null,
   ): Promise<boolean> {
     if (!finalMessageId) {
       return false;
@@ -273,7 +339,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
     try {
       const persisted = sessionManager?.getMessages
         ? await sessionManager.getMessages(sessionId)
-        : db.getMessages(sessionId);
+        : db?.getMessages(sessionId);
 
       return Array.isArray(persisted) && persisted.some((message) => (
         message.role === 'assistant' && message.id === finalMessageId
@@ -284,6 +350,26 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         error,
       );
       return false;
+    }
+  }
+
+  async function invalidateInfraSessionCache(sessionId: string): Promise<void> {
+    if (!deps.tryGetInfraSessionManager) return;
+
+    try {
+      const infraSessionManager = await deps.tryGetInfraSessionManager();
+      if (!infraSessionManager?.invalidateSessionCache) {
+        deps.logger.debug?.(
+          `[AgentRouter] Infra SessionManager unavailable; skipped cache invalidation for ${sessionId}`,
+        );
+        return;
+      }
+      infraSessionManager.invalidateSessionCache(sessionId);
+    } catch (error) {
+      deps.logger.debug?.(
+        `[AgentRouter] Failed to invalidate infra SessionManager cache for ${sessionId}`,
+        error,
+      );
     }
   }
 
@@ -326,13 +412,27 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
 
       try {
         const sm = await deps.tryGetSessionManager();
-        const db = await ensureDbSession(
-          deps.getDatabase,
+        const cliSessionManager = hasCliSessionLifecycle(sm) ? sm : null;
+        const sessionExists = cliSessionManager
+          ? await prepareCliSessionForWrite(cliSessionManager, input.sessionId, input.title)
+          : false;
+        const db = cliSessionManager
+          ? null
+          : await ensureDbSession(
+            deps.getDatabase,
+            input.sessionId,
+            input.title,
+            input.modelConfig,
+          );
+        await persistMessageToDb(
+          sm,
+          db,
           input.sessionId,
-          input.title,
-          input.modelConfig,
+          input.message,
+          cliSessionManager && !sessionExists
+            ? { title: input.title, modelConfig: input.modelConfig }
+            : undefined,
         );
-        await persistMessageToDb(sm, db, input.sessionId, input.message);
         return true;
       } catch (err) {
         deps.logger.warn('Pre-persist user message to DB failed (continuing run):', (err as Error).message);
@@ -367,10 +467,17 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
 
       // ── 持久化到数据库（优先走 SM 保持缓存一致）──
       if (dbAvailable) {
-        let sm: AgentSessionManagerLike | null = null;
+        let sm: WebCLISessionManagerLike | null = null;
+        let persistenceSucceeded = false;
         try {
-          const db = await ensureDbSession(deps.getDatabase, sessionId, title, modelConfig);
           sm = await deps.tryGetSessionManager();
+          const cliSessionManager = hasCliSessionLifecycle(sm) ? sm : null;
+          const sessionExists = cliSessionManager
+            ? await prepareCliSessionForWrite(cliSessionManager, sessionId, title)
+            : false;
+          const db = cliSessionManager
+            ? null
+            : await ensureDbSession(deps.getDatabase, sessionId, title, modelConfig);
           const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
             sessionId,
             turn.lastLoopAssistantMessageId,
@@ -385,7 +492,9 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               content: userMessage.content,
               timestamp: userMessage.timestamp,
               attachments: userMessage.attachments,
-            } as Message);
+            } as Message, cliSessionManager && !sessionExists
+              ? { title, modelConfig }
+              : undefined);
           }
 
           if (!turn.runCancelled && turn.hasAssistantOutput() && !loopPersistedAssistant) {
@@ -398,17 +507,28 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               thinking: turn.assistantThinking || undefined,
               artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
               metadata: turn.assistantMetadata,
+              contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
             } as Message);
           }
 
           // 更新会话标题/时间戳
-          if (historyLength === 0) {
-            db.updateSession(sessionId, { title, updatedAt: Date.now() });
+          const sessionUpdates = historyLength === 0
+            ? { title, updatedAt: Date.now() }
+            : { updatedAt: Date.now() };
+          if (cliSessionManager) {
+            await cliSessionManager.updateSession(sessionId, sessionUpdates);
+          } else if (db) {
+            db.updateSession(sessionId, sessionUpdates);
           } else {
-            db.updateSession(sessionId, { updatedAt: Date.now() });
+            throw new Error('No session metadata backend available');
           }
+          persistenceSucceeded = true;
         } catch (dbErr) {
           deps.logger.warn('Failed to persist messages to DB:', (dbErr as Error).message);
+        }
+
+        if (persistenceSucceeded) {
+          await invalidateInfraSessionCache(sessionId);
         }
 
         try {

@@ -90,11 +90,11 @@ describe('GuardFabric', () => {
   // Topology overrides
   // --------------------------------------------------------------------------
   describe('Topology overrides', () => {
-    it('async_agent + bash → deny', () => {
+    it('async_agent + bash → ask (2026-07-13 拍板：用户在场可批，无人应答链路自然超时 deny)', () => {
       // Even with an allow source, topology wins
       fabric.registerSource(makeSource('s1', { verdict: 'allow', confidence: 1, source: 's1', reason: 'ok' }));
       const decision = fabric.evaluate(makeRequest({ tool: 'bash', topology: 'async_agent' }));
-      expect(decision.verdict).toBe('deny');
+      expect(decision.verdict).toBe('ask');
       expect(decision.source).toBe('topology');
     });
 

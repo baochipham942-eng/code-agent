@@ -25,7 +25,9 @@ export function createSubagentToolRuntime(input: {
     workingDirectory: nativeRunContext?.cwd ?? context.cwd,
     runContext: nativeRunContext,
     permissionModeOverride: input.effectiveMode as PermissionMode,
-    executionTopology: 'main',
+    // 拓扑由构造点显式标注（SubagentExecutionContext.executionTopology），缺省 main：
+    // 未标注的子 agent 路径不受 TOPOLOGY_RULES 约束（Option A 保守默认）。
+    executionTopology: context.executionTopology ?? 'main',
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;
       if (

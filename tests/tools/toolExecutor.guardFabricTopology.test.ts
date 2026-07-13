@@ -148,10 +148,10 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     });
   }
 
-  it('denies PascalCase Bash in async_agent topology before requestPermission', async () => {
+  it('forces confirmation for PascalCase Bash in async_agent topology (ask rule + alias normalization)', async () => {
     defineBash();
-    const requestPermission = vi.fn(async () => true);
-    const executor = makeExecutor(requestPermission);
+    const requestPermission = vi.fn(async (request: { forceConfirm?: boolean }) => request.forceConfirm === true);
+    const executor = makeExecutor(requestPermission as any);
 
     const result = await executor.execute(
       'Bash',
@@ -159,27 +159,12 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
       { sessionId: 's1', executionTopology: 'async_agent' } as any,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('topology rule');
-    expect(requestPermission).not.toHaveBeenCalled();
-    expect(resolverState.execute).not.toHaveBeenCalled();
-
-    const [entry] = getDecisionHistory().getRecent(1);
-    expect(entry).toMatchObject({
-      toolName: 'Bash',
-      outcome: 'policy-deny',
-      reason: expect.stringContaining('async_agent'),
-    });
-    expect(entry.decisionTrace).toMatchObject({
-      finalOutcome: 'deny',
-      steps: [
-        expect.objectContaining({
-          layer: 'guard_fabric',
-          rule: 'topology: bash/async_agent',
-          result: 'deny',
-        }),
-      ],
-    });
+    // ask 规则命中（经 PascalCase 归一化）→ forceConfirm 强确认，用户批准后正常执行
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      forceConfirm: true,
+    }));
+    expect(result.success).toBe(true);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
   it('denies AgentSpawn in teammate topology before requestPermission', async () => {
@@ -245,25 +230,25 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('forces explicit confirmation for GuardFabric ask in teammate topology', async () => {
+  it('does not force confirmation for non-topology verdicts (sources 与主权限链重复评估，gate 只认 topology 规则)', async () => {
     defineWrite();
-    getGuardFabric().removeSource('rules');
-    const requestPermission = vi.fn(async (request) => request.forceConfirm !== true);
+    const requestPermission = vi.fn(async () => true);
     const executor = makeExecutor(requestPermission);
 
+    // write/teammate 没有 topology 规则；sources 的 default-ask/'rules' ask 不得穿透为 forceConfirm，
+    // 否则任何非 main 拓扑的每次工具调用都会被强制弹确认（2026-07-13 激活批收窄）。
     const result = await executor.execute(
       'Write',
       { file_path: '/tmp/workbench/a.txt', content: 'hello' },
       { sessionId: 's1', executionTopology: 'teammate' } as any,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Permission denied by user');
-    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
-      tool: 'Write',
-      forceConfirm: true,
-    }));
-    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    const permissionCalls = requestPermission.mock.calls as Array<[{ forceConfirm?: boolean }]>;
+    for (const [request] of permissionCalls) {
+      expect(request.forceConfirm).not.toBe(true);
+    }
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
   it('skips GuardFabric evaluation and keeps the existing chain in main topology', async () => {

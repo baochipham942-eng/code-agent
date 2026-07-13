@@ -42,6 +42,14 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
       agentId: input.agentId,
     });
 
+    // 只消费 topology 规则的裁决（2026-07-13 激活批收窄）：其余 sources（policyEngine/
+    // userConfig/hook）与主权限链在错误的 level（硬编码 execute）上重复评估，若放行其
+    // deny/ask，任何非 main 拓扑的每一次工具调用都会被强制弹确认/误杀。user deny 由主链
+    // 的 policyEngine user rules 兜底，不经此 gate。
+    if (guardDecision.source !== 'topology') {
+      return {};
+    }
+
     if (guardDecision.verdict === 'deny') {
       logger.warn('Denied by GuardFabric', {
         toolName: input.executionToolName,

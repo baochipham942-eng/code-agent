@@ -3,6 +3,7 @@ import type { SwarmAgentContextSnapshot, SwarmRunScope } from '../../shared/cont
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
+import type { ExecutionTopology } from '../permissions/guardFabric';
 import type { AgentMessage } from './spawnGuard';
 import type { ParentContext } from './childContext';
 import type { CapabilityManifest } from '../../shared/contract/agentCapabilities';
@@ -124,6 +125,12 @@ export interface SubagentAttachment {
 export interface SubagentExecutionContext {
   /** Native run identity; never inferred from a process singleton. */
   runId?: string;
+  /**
+   * GuardFabric 拓扑标注（2026-07-13 激活批）：构造点显式声明该子 agent 的执行拓扑，
+   * subagentToolRuntime 透传给 ToolExecutor。缺省 = 'main'（无 TOPOLOGY_RULES 约束，
+   * 与激活前行为一致）。
+   */
+  executionTopology?: ExecutionTopology;
   sessionId: string;
   workspace?: string;
   cwd: string;

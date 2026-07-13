@@ -830,6 +830,21 @@ export const en: Translations = {
     collapseThinking: 'Collapse thinking',
   },
 
+  // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
+  mermaid: {
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomReset: 'Fit to view',
+    zoomHint: '⌘/Ctrl + scroll to zoom, drag to pan',
+    copyCode: 'Code',
+    copied: 'Copied!',
+    selectedLabel: 'Selected: ',
+    editPlaceholder: 'Describe the change, e.g. "split into two steps"',
+    send: 'Send',
+    cancel: 'Cancel',
+    editPrompt: 'Please update "{label}" in this Mermaid diagram: {instruction}\n\nCurrent diagram source:\n{codeBlock}\nReply with the complete updated mermaid code block, keeping everything else unchanged.',
+  },
+
   // In-session permission tier switcher (ChatInput)
   permissionTier: {
     buttonTitle: 'Current session permission tier',

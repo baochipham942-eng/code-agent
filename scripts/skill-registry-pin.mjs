@@ -103,13 +103,14 @@ function scan(entries, args) {
   }
   // 每个 skill 目录必须有 SKILL.md（zip 根含 repo-sha/ 前缀）
   const base = args.path ? `${args.path.replace(/\/+$/, '')}/` : '';
+  const normalize = (rel) => rel.split('/').filter((seg) => seg && seg !== '.').join('/');
   for (const skill of args.skills) {
-    const want = `${base}${skill.replace(/\/+$/, '')}/SKILL.md`;
+    const want = normalize(`${base}${skill.replace(/\/+$/, '')}/SKILL.md`);
     const hit = entries.some((e) => e.split('/').slice(1).join('/') === want);
     if (!hit) problems.push(`missing SKILL.md for skill '${skill}' (expected <root>/${want})`);
   }
   for (const cmd of args.commands) {
-    const want = `${base}${cmd}`;
+    const want = normalize(`${base}${cmd}`);
     if (!cmd.endsWith('.md')) problems.push(`command must be .md: ${cmd}`);
     else if (!entries.some((e) => e.split('/').slice(1).join('/') === want)) {
       problems.push(`missing command file '${cmd}' (expected <root>/${want})`);

@@ -17,13 +17,13 @@ import {
   findRecommendedRepository,
   getBuiltinSkillCatalogPayload,
 } from '@shared/constants/skillCatalog';
-import type { ParsedSkill } from '@shared/contract/agentSkill';
 import { createLogger } from '../../../../utils/logger';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
+import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
 
@@ -81,7 +81,7 @@ export const SkillsSettings: React.FC = () => {
 
   // 数据状态
   const [libraries, setLibraries] = useState<LocalSkillLibrary[]>([]);
-  const [discoveredSkills, setDiscoveredSkills] = useState<ParsedSkill[]>([]);
+  const [discoveredSkills, setDiscoveredSkills] = useState<InstalledSkill[]>([]);
   const [recommendedRepos, setRecommendedRepos] = useState<SkillRepository[]>([]);
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖（web 模式 IPC 不可用时保持内置）
   const [catalog, setCatalog] = useState<SkillCatalogPayload>(getBuiltinSkillCatalogPayload);
@@ -108,7 +108,7 @@ export const SkillsSettings: React.FC = () => {
     try {
       setLoading(true);
       const libs = await invokeSkillIPC<LocalSkillLibrary[]>(SKILL_CHANNELS.REPO_LIST);
-      const skills = await invokeSkillIPC<ParsedSkill[]>(SKILL_CHANNELS.SKILL_LIST);
+      const skills = await invokeSkillIPC<InstalledSkill[]>(SKILL_CHANNELS.SKILL_LIST);
       const repos = await invokeSkillIPC<SkillRepository[]>(SKILL_CHANNELS.RECOMMENDED_REPOS);
       const remoteCatalog = await invokeSkillIPC<SkillCatalogPayload>(SKILL_CHANNELS.CATALOG);
       setLibraries(libs || []);
@@ -139,11 +139,15 @@ export const SkillsSettings: React.FC = () => {
     }
   }, [message]);
 
-  // 启停 skill（乐观更新，失败回滚）
+  // 全局启停 skill（乐观更新，失败回滚）。项目覆盖存在时不改变生效态。
   const handleToggleSkill = async (skillName: string, enabled: boolean) => {
     const previous = discoveredSkills;
     setDiscoveredSkills((current) =>
-      current.map((skill) => (skill.name === skillName ? { ...skill, enabled } : skill))
+      current.map((skill) =>
+        skill.name === skillName
+          ? { ...skill, globalEnabled: enabled, enabled: skill.projectOverride ?? enabled }
+          : skill,
+      )
     );
     try {
       await invokeSkillIPC(
@@ -152,6 +156,34 @@ export const SkillsSettings: React.FC = () => {
       );
     } catch (err) {
       logger.error('Failed to toggle skill', err);
+      setDiscoveredSkills(previous);
+      setMessage({ type: 'error', text: skillsText.actionFailed });
+    }
+  };
+
+  // 项目级覆盖：follow=清除覆盖回落全局；on/off=设置本项目强制启停（乐观更新，失败回滚）
+  const handleProjectOverrideChange = async (skillName: string, value: ProjectOverrideValue) => {
+    const previous = discoveredSkills;
+    const nextOverride: boolean | null = value === 'follow' ? null : value === 'on';
+    setDiscoveredSkills((current) =>
+      current.map((skill) =>
+        skill.name === skillName
+          ? {
+              ...skill,
+              projectOverride: nextOverride,
+              enabled: nextOverride ?? skill.globalEnabled ?? skill.enabled !== false,
+            }
+          : skill,
+      )
+    );
+    try {
+      if (nextOverride === null) {
+        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
+      } else {
+        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
+      }
+    } catch (err) {
+      logger.error('Failed to change project skill override', err);
       setDiscoveredSkills(previous);
       setMessage({ type: 'error', text: skillsText.actionFailed });
     }
@@ -474,6 +506,7 @@ export const SkillsSettings: React.FC = () => {
           libraries={libraries}
           actionLoading={actionLoading}
           onToggleSkill={handleToggleSkill}
+          onProjectOverrideChange={handleProjectOverrideChange}
           onUpdateLibrary={handleUpdateLibrary}
           onRemoveLibrary={handleRemoveLibrary}
         />

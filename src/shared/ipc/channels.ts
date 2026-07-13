@@ -32,6 +32,10 @@ export const SKILL_CHANNELS = {
   SKILL_ENABLE: 'skill:enable',
   /** 全局禁用 skill */
   SKILL_DISABLE: 'skill:disable',
+  /** 设置当前项目内的 skill 启停覆盖（项目级 > 全局） */
+  SKILL_PROJECT_SET: 'skill:project:set',
+  /** 清除当前项目内的 skill 覆盖，回落全局 */
+  SKILL_PROJECT_CLEAR: 'skill:project:clear',
 
   // ------------------------------------------------------------------------
   // 会话挂载

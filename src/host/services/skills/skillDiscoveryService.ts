@@ -9,6 +9,7 @@ import { parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';
 import { getSkillRepositoryService } from './skillRepositoryService';
+import { getProjectSkillPreferenceStore } from './projectSkillPreferenceService';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../toolSearch';
@@ -199,11 +200,16 @@ class SkillDiscoveryService {
   }
 
   /**
-   * 检查 skill 是否被全局启用（disabledSkills 黑名单语义）
-   * 仓库服务异常时 fail-open，不阻断 skill 可用性
+   * 检查 skill 是否启用。生效优先级：项目级覆盖 > 用户全局黑名单。
+   * 当前工作目录若有项目级覆盖，直接采用；否则回落全局语义。
+   * 任一层异常时 fail-open，不阻断 skill 可用性。
    */
   isSkillEnabled(skillName: string): boolean {
     try {
+      if (this.workingDirectory) {
+        const override = getProjectSkillPreferenceStore(this.workingDirectory).getOverride(skillName);
+        if (override !== undefined) return override;
+      }
       return getSkillRepositoryService().isSkillEnabled(skillName);
     } catch {
       return true;

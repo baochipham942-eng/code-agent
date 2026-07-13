@@ -12,6 +12,7 @@ import {
   buildArtifactRepairRecoveryPrompt,
   isArtifactRepairEditAnchorFailure,
 } from './toolArtifactRepairPolicy';
+import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission';
 
 const logger = createLogger('AgentLoop');
 
@@ -136,9 +137,9 @@ export function handleToolResultBookkeeping({
 }: HandleToolResultBookkeepingArgs): void {
   if (isArtifactRepairEditAnchorFailure(ctx, toolCall, toolResult)) {
     const guard = ctx.artifact.repairGuard;
-    if (guard) {
-      ctx.artifact.recordBlockedTool(toolCall.name);
-    }
+    // BC2: 连续锚定失败也是无进展动作——此前只记工具名不计数（无界循环），现喂统一
+    // noProgressTurns 计数器；中途任一次成功改动会清零，正常"锚定失败→重试成功"不受影响。
+    const repairForceStopped = registerArtifactRepairBlockedToolTurn(ctx, guard, toolCall.name);
     toolResult.metadata = {
       ...toolResult.metadata,
       artifactRepairGuard: {
@@ -150,15 +151,18 @@ export function handleToolResultBookkeeping({
         editAnchorFailure: true,
       },
     };
-    if (guard?.targetFile) {
-      contextAssembly.injectSystemMessage(
-        buildArtifactRepairEditAnchorFailurePrompt(guard.targetFile, toolResult.error, guard.activeIssueCodes),
-      );
-      contextAssembly.pushPersistentSystemContext(
-        buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
-      );
+    // 硬停时不再注入恢复提示/重推理——forceFinalResponse 已让本轮收尾。
+    if (!repairForceStopped) {
+      if (guard?.targetFile) {
+        contextAssembly.injectSystemMessage(
+          buildArtifactRepairEditAnchorFailurePrompt(guard.targetFile, toolResult.error, guard.activeIssueCodes),
+        );
+        contextAssembly.pushPersistentSystemContext(
+          buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
+        );
+      }
+      ctx.turn.requestReinference();
     }
-    ctx.turn.requestReinference();
   }
 
   const canonicalName = canonicalToolName(toolCall.name);

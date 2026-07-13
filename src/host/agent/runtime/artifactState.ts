@@ -136,11 +136,6 @@ export class ArtifactState {
     this._repairGuard.noProgressTurns = 0;
   }
 
-  recordBlockedTool(toolName: string): void {
-    if (!this._repairGuard) return;
-    this._repairGuard.lastBlockedTool = toolName;
-  }
-
   // --- validation passed（B 字段，含与 guard 的成对点）---
 
   /** 置 validationPassedTargetFile + 清 repairGuard（一步完成成对写） */

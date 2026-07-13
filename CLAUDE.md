@@ -149,7 +149,20 @@ git tag -a v<version> -m "Release v<version>" && git push origin v<version>   # 
 - 工程细节（PR、模块、价表、审计证据）写进 `CHANGELOG.md`（面向开发者），**两者分开**：CHANGELOG 可技术，release 说明必须用户向。
 - 反例（不要这样）："设计 tab 按交付媒介分 4 类（`DesignOutputType` UI 聚合零破坏）…引擎抽成 slidesGenerator（SlideData[] 单一真源）"；正例："设计入口更清晰：按你想做什么分成 网页/图/演示稿/视频，进来直接选。"
 
-### 本地 dogfood 打包（仅自测，非发版）
+### 本地 dogfood 打包（仅自测，非发版）——默认走 Dev 测试包
+
+**桌面行为验证一律默认 Dev 测试包**（`Agent Neo Dev.app`，8181 + `~/.code-agent-dev`）：与生产包同一构建链同一份代码（只差 identifier/端口/数据目录），Tauri 壳/launchd 空 env/bundle resources 全部真实，且与生产 app 并存同跑、生产 DB 零接触。生产包覆盖安装只在需要验**生产 identifier 的签名/LaunchServices/更新链路**时才用。
+
+```bash
+# 默认：Dev 测试包（打包+安装 Agent Neo Dev.app，绝不碰生产 Agent Neo.app）
+HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
+rm -rf ~/.code-agent-dev/renderer-cache/active   # dev 侧热更新缓存同样会盖住新包
+# 启动后判定跑在新包上：curl -s http://127.0.0.1:8181/ | grep -oE 'assets/index-[^"]*\.js'
+#   与 app 内 dist/renderer/index.html 引用一致才算；API key 自动回退读生产 ~/.code-agent/.env
+```
+
+<details><summary>生产包覆盖安装（仅验签名/更新链路时用，会覆盖 /Applications 里的生产 app）</summary>
+
 ```bash
 bash scripts/build-audio-capture.sh   # 编译 Swift 音频采集工具（首次 clone 必跑）
 bash scripts/fetch-rtk.sh             # 拉取 rtk sidecar binary（首次 clone 必跑，需要 HTTPS_PROXY）
@@ -162,10 +175,12 @@ npm run build && npm run build:web && HTTPS_PROXY=http://127.0.0.1:7897 cargo ta
 bash scripts/tauri-install.sh   # 安装到 /Applications（必须用脚本，禁止手动 cp）
 ```
 
+</details>
+
 **前置条件**: Rust 工具链（`source ~/.cargo/env`）、代理（`HTTPS_PROXY=http://127.0.0.1:7897`）、Xcode Command Line Tools（swiftc）。
 **首次 clone**: 必须先跑 `bash scripts/build-audio-capture.sh` 生成 `scripts/system-audio-capture`，以及 `bash scripts/fetch-rtk.sh` 拉取 `scripts/rtk`、`bash scripts/fetch-uv.sh` 拉取 `scripts/uv`，否则 `tauri.conf.json` 的 bundle resources 会找不到文件导致打包失败。
 **安装**: 必须用 `scripts/tauri-install.sh`，它会 rm→cp→清理 DMG 残留卷。手动 `cp -r` 会导致旧文件残留 + Finder 反复弹出 DMG。
-**⚠️ renderer 热更新缓存会盖住本地打包**: webServer 优先 serve `~/.code-agent/renderer-cache/active`（云端热更新下载的 bundle），而非 app 内置 renderer。**改 renderer 代码重新打包后，若不清缓存，看到的还是旧版**（实测踩坑 2026-06-07：改 SlashCommandPopover 重装后 E2E 仍旧行为，因 active 缓存盖住）。验证本地改动前先 `rm -rf ~/.code-agent/renderer-cache/active`，再重启 app。判定方法：`curl -s http://127.0.0.1:8180/ | grep -oE 'assets/index-[^"]*\.js'` 对比 app 内 `dist/renderer/index.html` 引用的文件名，不一致即缓存盖住。
+**⚠️ renderer 热更新缓存会盖住本地打包**: webServer 优先 serve `<数据目录>/renderer-cache/active`（云端热更新下载的 bundle，生产=`~/.code-agent`、Dev 包=`~/.code-agent-dev`），而非 app 内置 renderer。**改 renderer 代码重新打包后，若不清缓存，看到的还是旧版**（实测踩坑 2026-06-07：改 SlashCommandPopover 重装后 E2E 仍旧行为，因 active 缓存盖住）。验证本地改动前先删对应通道的 `renderer-cache/active`，再重启 app。判定方法：`curl -s http://127.0.0.1:<8180|8181>/ | grep -oE 'assets/index-[^"]*\.js'` 对比 app 内 `dist/renderer/index.html` 引用的文件名，不一致即缓存盖住。
 **⚠️ renderer 端可观测性变量（`VITE_*`）必须放 `src/renderer/.env.local`**: Sentry/PostHog 的 renderer 侧读 `import.meta.env.VITE_SENTRY_DSN`/`VITE_POSTHOG_KEY`，由 Vite **构建期**注入。`vite.config.ts` 设了 `root: 'src/renderer'` 且未设 `envDir`，故 Vite 的 envDir = `src/renderer`——**变量放项目根 `.env` 不生效，必须放 `src/renderer/.env.local`**（实测踩坑 2026-06-07：值随 worktree 删除丢失后，renderer 端 Sentry/PostHog 静默 no-op，前端崩溃收不到，但 node 端正常因其运行时读 `~/.code-agent/.env`）。这三个是 public write-only 值（非 secret），但因 `.env.local` 被 gitignore，换机/重新 clone 后会丢，打包前务必确认：`grep -c '^VITE_SENTRY_DSN' src/renderer/.env.local`（应为 1），并构建后 `grep -rl 'ingest.*sentry.io' dist/renderer/assets/` 确认注入。
 **API Key**: 打包后靠应用内设置管理（SecureStorage），不依赖 `.env`。`.env` 不进 app bundle（避免泄露密钥）。
 **代理 / 环境变量**: webServer 启动时按序读 `~/.code-agent/.env` → 脚本同级 `.env` → 上级 `.env`。打包态走 `~/.code-agent/.env`，开发态走项目根 `.env`。Tauri 由 launchd 启动 env 是空的，海外端点（如 mimo sgp）必须在 `.env` 里写 `HTTPS_PROXY=http://127.0.0.1:7897` 才能走代理。

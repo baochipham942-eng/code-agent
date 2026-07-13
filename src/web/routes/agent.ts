@@ -1,29 +1,24 @@
-/* eslint-disable max-lines */
+ 
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
-import type { Message, MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
+import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
-import type { DatabaseService } from '../../host/services/core/databaseService';
 import { broadcastSSE } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
-  sessionMessages,
-  SESSION_CACHE_MAX,
-  inMemorySessions,
-  dbAvailable,
-  seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
+import { createWebSessionStore } from '../helpers/webSessionStore';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
   ClaudeCodeAdapter,
@@ -49,7 +44,6 @@ import type {
 } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
-import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -144,129 +138,6 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   return Object.keys(workbench).length > 0 ? { workbench } : undefined;
 }
 
-function isDuplicateMessageError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('UNIQUE constraint failed') || message.includes('SQLITE_CONSTRAINT');
-}
-
-async function ensureDbSession(
-  sessionId: string,
-  title: string,
-  modelConfig: { provider: ModelProvider; model: string },
-): Promise<DatabaseService> {
-  const { getDatabase } = await import('../../host/services/core/databaseService');
-  const db = getDatabase();
-  const existing = db.getSession(sessionId);
-  if (!existing) {
-    db.createSessionWithId(sessionId, {
-      title,
-      modelConfig,
-    });
-  } else {
-    // renderer 端常用 '新对话' 占位 title 先创建 session 行，再发 user message。
-    // 这里在 session 已存在但 title 还是默认值时，用 prompt 派生的 title 升级一次，
-    // 避免 sidebar 永远停在 '新对话'。
-    const isDefaultTitle =
-      !existing.title ||
-      existing.title === '新对话' ||
-      existing.title === 'New Chat' ||
-      existing.title === 'New Session' ||
-      (typeof existing.title === 'string' && existing.title.startsWith('Session '));
-    if (isDefaultTitle && title && title !== existing.title) {
-      try {
-        db.updateSession(sessionId, { title, updatedAt: Date.now() });
-      } catch {
-        // 升级失败不阻塞主流程，下一轮 maybeUpdateTitleForSession 还会再试
-      }
-    }
-  }
-  return db;
-}
-
-async function persistMessageToDb(
-  sessionManager: AgentSessionManagerLike | null,
-  db: DatabaseService,
-  sessionId: string,
-  message: Message,
-): Promise<void> {
-  if (sessionManager?.addMessageToSession) {
-    await sessionManager.addMessageToSession(sessionId, message);
-    return;
-  }
-
-  try {
-    db.addMessage(sessionId, message);
-  } catch (error) {
-    if (!isDuplicateMessageError(error)) {
-      throw error;
-    }
-    db.updateMessage(message.id, message);
-  }
-}
-
-async function loadSessionHistoryForRun(
-  sessionId: string,
-  tryGetSessionManager: AgentRouterDeps['tryGetSessionManager'],
-  logger: AgentRouterDeps['logger'],
-): Promise<CachedMessage[]> {
-  const cached = sessionMessages.get(sessionId);
-  if (cached?.length) {
-    return cached;
-  }
-
-  try {
-    const sm = await tryGetSessionManager();
-    if (!sm?.getMessages) {
-      return [];
-    }
-
-    const persisted = await sm.getMessages(sessionId);
-    if (!Array.isArray(persisted) || persisted.length === 0) {
-      return [];
-    }
-
-    const restored = seedSessionMessagesFromPersisted(sessionId, persisted);
-    if (restored.length === 0) {
-      logger.warn('[AgentRouter] Persisted session history had no user/assistant messages for run', {
-        sessionId,
-        persistedCount: persisted.length,
-      });
-    }
-    return restored;
-  } catch (error) {
-    logger.warn(`[AgentRouter] Failed to hydrate persisted history for ${sessionId}:`, error);
-    return [];
-  }
-}
-
-// 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
-// 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
-// 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
-async function hasPersistedFinalLoopAssistantMessage(
-  sessionId: string,
-  finalMessageId: string | undefined,
-  sessionManager: AgentSessionManagerLike | null,
-  db: DatabaseService,
-  logger: AgentRouterDeps['logger'],
-): Promise<boolean> {
-  if (!finalMessageId) {
-    return false;
-  }
-
-  try {
-    const persisted = sessionManager?.getMessages
-      ? await sessionManager.getMessages(sessionId)
-      : db.getMessages(sessionId);
-
-    return Array.isArray(persisted) && persisted.some((message) => (
-      message.role === 'assistant' && message.id === finalMessageId
-    ));
-  } catch (error) {
-    logger.warn(`[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`, error);
-    return false;
-  }
-}
-
 export function createAgentRouter(deps: AgentRouterDeps): Router {
   const router = Router();
   const {
@@ -276,6 +147,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     tryGetSessionManager,
     getSupabaseForSession,
   } = deps;
+  const sessionStore = createWebSessionStore({
+    tryGetSessionManager,
+    logger,
+    getDatabase: async () => {
+      const { getDatabase } = await import('../../host/services/core/databaseService');
+      return getDatabase();
+    },
+  });
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   router.post('/run', async (req: Request, res: Response) => {
@@ -674,7 +553,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       const msgId = clientMessageId || `msg-${Date.now()}`;
-      const userMsg: CachedMessage = {
+      const userMsg: CachedMessage & { role: 'user' } = {
         id: msgId,
         role: 'user' as const,
         content: visiblePrompt,
@@ -683,7 +562,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       };
 
       // 加载历史消息 + 当前用户消息
-      const cachedHistory = await loadSessionHistoryForRun(sessionId, tryGetSessionManager, logger);
+      const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
       const history = cachedHistory.map(({ id, role, content, timestamp, attachments }) => ({
         id,
         role: role as 'user' | 'assistant',
@@ -736,26 +615,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       let userMsgPrePersistedDb = false;
       let userMsgPrePersistedSupabase = false;
 
-      if (dbAvailable) {
-        try {
-          const sm = await tryGetSessionManager();
-          const db = await ensureDbSession(
-            sessionId,
-            buildSessionTitle(visiblePrompt),
-            { provider: runModelConfig.provider as ModelProvider, model: runModelConfig.model },
-          );
-          await persistMessageToDb(sm, db, sessionId, {
-            id: msgId,
-            role: 'user',
-            content: visiblePrompt,
-            timestamp: userMsg.timestamp,
-            attachments: userMsg.attachments,
-          } as Message);
-          userMsgPrePersistedDb = true;
-        } catch (err) {
-          logger.warn('Pre-persist user message to DB failed (continuing run):', (err as Error).message);
-        }
-      }
+      userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
+        sessionId,
+        title: buildSessionTitle(visiblePrompt),
+        modelConfig: { provider: runModelConfig.provider as ModelProvider, model: runModelConfig.model },
+        message: {
+          id: msgId,
+          role: 'user',
+          content: visiblePrompt,
+          timestamp: userMsg.timestamp,
+          attachments: userMsg.attachments,
+        },
+      });
 
       try {
         const sb = await getSupabaseForSession();
@@ -797,134 +668,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         await agentLoop.run(visiblePrompt);
       }
 
-      // ── 缓存会话消息（维持多轮上下文）──
-      // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
-      const assistantMsgId = `msg-${Date.now()}-a`;
-      const cached = [...(sessionMessages.get(sessionId) || []), userMsg];
-      const assistantArtifacts = runEventCollector.assistantText ? extractArtifacts(runEventCollector.assistantText) : [];
-      if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput()) {
-        cached.push({
-          id: assistantMsgId,
-          role: 'assistant',
-          content: runEventCollector.assistantText,
-          timestamp: Date.now(),
-          toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
-          thinking: runEventCollector.assistantThinking || undefined,
-          contentParts: runEventCollector.hasInterleaving() ? runEventCollector.contentParts : undefined,
-          artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-          metadata: runEventCollector.assistantMetadata,
-        });
-      }
-      sessionMessages.set(sessionId, cached);
-
-      // LRU 清理：超过上限时移除最旧的会话
-      if (sessionMessages.size > SESSION_CACHE_MAX) {
-        const oldestKey = sessionMessages.keys().next().value;
-        if (oldestKey) sessionMessages.delete(oldestKey);
-      }
-
-      // ── 更新内存会话元数据 ──
-      {
-        const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
-        const existing = inMemorySessions.get(sessionId);
-        if (existing) {
-          existing.updatedAt = Date.now();
-          existing.messageCount = (sessionMessages.get(sessionId) || []).length;
-          if (history.length === 0) existing.title = title;
-        } else {
-          inMemorySessions.set(sessionId, {
-            id: sessionId,
-            title,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            messageCount: (sessionMessages.get(sessionId) || []).length,
-          });
-        }
-      }
-
-      // ── 持久化到数据库（优先走 SM 保持缓存一致）──
-      if (dbAvailable) {
-        try {
-          // 确保 session 在 DB 中存在（SM 和直写都需要）
-          const { getDatabase: ensureDb } = await import('../../host/services/core/databaseService');
-          const dbForSession = ensureDb();
-          if (!dbForSession.getSession(sessionId)) {
-            dbForSession.createSessionWithId(sessionId, {
-              title: visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt,
-              modelConfig: runModelConfig,
-            });
-          }
-
-          const sm = await tryGetSessionManager();
-          const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
-            sessionId,
-            runEventCollector.lastLoopAssistantMessageId,
-            sm,
-            dbForSession,
-            logger,
-          );
-          if (sm?.addMessageToSession) {
-            // 通过 SM 写入，同时更新 DB 和 sessionCache
-            if (!userMsgPrePersistedDb) {
-              await sm.addMessageToSession(sessionId, {
-                id: msgId,
-                role: 'user',
-                content: visiblePrompt,
-                timestamp: userMsg.timestamp,
-                attachments: userMsg.attachments,
-              } as import('../../shared/contract').Message);
-            }
-            if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput() && !loopPersistedAssistant) {
-              await sm.addMessageToSession(sessionId, {
-                id: assistantMsgId,
-                role: 'assistant',
-                content: runEventCollector.assistantText,
-                timestamp: Date.now(),
-                toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
-                thinking: runEventCollector.assistantThinking || undefined,
-                artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-                metadata: runEventCollector.assistantMetadata,
-              } as import('../../shared/contract').Message);
-            }
-          } else {
-            // SM 不可用时降级为直写 DB（session 已在上面 ensure 创建）
-            const { getDatabase } = await import('../../host/services/core/databaseService');
-            const db = getDatabase();
-            if (!userMsgPrePersistedDb) {
-              db.addMessage(sessionId, {
-                id: msgId,
-                role: 'user',
-                content: visiblePrompt,
-                timestamp: userMsg.timestamp,
-                attachments: userMsg.attachments,
-              } as import('../../shared/contract').Message);
-            }
-            if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput() && !loopPersistedAssistant) {
-              db.addMessage(sessionId, {
-                id: assistantMsgId,
-                role: 'assistant',
-                content: runEventCollector.assistantText,
-                timestamp: Date.now(),
-                toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
-                thinking: runEventCollector.assistantThinking || undefined,
-                artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-                metadata: runEventCollector.assistantMetadata,
-              } as import('../../shared/contract').Message);
-            }
-          }
-          // 更新会话标题/时间戳
-          const { getDatabase: getDb } = await import('../../host/services/core/databaseService');
-          const db = getDb();
-          if (history.length === 0) {
-            const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
-            db.updateSession(sessionId, { title, updatedAt: Date.now() });
-          } else {
-            db.updateSession(sessionId, { updatedAt: Date.now() });
-          }
-        } catch (dbErr) {
-          logger.warn('Failed to persist messages to DB:', (dbErr as Error).message);
-        }
-      }
+      const { assistantMsgId } = await sessionStore.commitTurn({
+        sessionId,
+        title: buildSessionTitle(visiblePrompt),
+        modelConfig: runModelConfig,
+        historyLength: history.length,
+        userMessagePrePersistedDb: userMsgPrePersistedDb,
+        userMessage: userMsg,
+        turn: runEventCollector,
+      });
 
       // ── 持久化到 Supabase（Web 模式云端同步）──
       try {

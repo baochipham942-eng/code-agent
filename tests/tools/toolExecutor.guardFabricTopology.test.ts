@@ -251,6 +251,24 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('setExecutionTopology 事后标注生效（cron 路径：orchestrator 先建 executor 后知拓扑）', async () => {
+    defineBash();
+    const requestPermission = vi.fn(async (request: { forceConfirm?: boolean }) => request.forceConfirm === true);
+    const executor = makeExecutor(requestPermission as any);
+
+    executor.setExecutionTopology('async_agent');
+    const result = await executor.execute(
+      'Bash',
+      { command: 'git status' },
+      { sessionId: 's1' },
+    );
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      forceConfirm: true,
+    }));
+    expect(result.success).toBe(true);
+  });
+
   it('skips GuardFabric evaluation and keeps the existing chain in main topology', async () => {
     defineBash();
     const evaluate = vi.spyOn(getGuardFabric(), 'evaluate').mockImplementation(() => {

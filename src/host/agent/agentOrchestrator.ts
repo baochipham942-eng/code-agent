@@ -18,6 +18,7 @@ import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
 import { applyProviderVariant } from '../prompts/providerVariants';
 import { ToolExecutor } from '../tools/toolExecutor';
+import type { ExecutionTopology } from '../permissions';
 import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
@@ -146,6 +147,14 @@ export class AgentOrchestrator {
   // --------------------------------------------------------------------------
   // Public Methods
   // --------------------------------------------------------------------------
+
+  /**
+   * 标注本 orchestrator 的执行拓扑（2026-07-13 拓扑激活批）。cron/heartbeat 等
+   * 无人值守路径在 sendMessage 前标 async_agent，让 TOPOLOGY_RULES 生效。
+   */
+  setExecutionTopology(topology: ExecutionTopology): void {
+    this.toolExecutor.setExecutionTopology(topology);
+  }
 
   async sendMessage(
     content: string,

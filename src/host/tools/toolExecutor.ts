@@ -40,6 +40,7 @@ import { annotateToolExecution, requestPermissionWithTelemetry } from './toolExe
 import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
+import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 
 const logger = createLogger('ToolExecutor');
@@ -174,7 +175,7 @@ export class ToolExecutor {
   private workingDirectory: string;
   private readonly runContext?: RunContext;
   private readonly dispatchTool?: ToolExecutionDelegate;
-  private readonly executionTopology: ExecutionTopology;
+  private executionTopology: ExecutionTopology;
   private auditEnabled = true;
   private permissionModeOverride?: PermissionMode;
 
@@ -190,6 +191,11 @@ export class ToolExecutor {
         `Run-scoped ToolExecutor cwd mismatch for ${this.runContext.runId}: ${this.workingDirectory}`,
       );
     }
+  }
+
+  /** 事后标注拓扑（cron 等构造时不知拓扑的路径用）；须在首次执行/forRun 派生前调用。 */
+  setExecutionTopology(topology: ExecutionTopology): void {
+    this.executionTopology = topology;
   }
 
   /** Create an executor whose workspace/cwd cannot be changed after construction. */
@@ -1143,7 +1149,7 @@ export class ToolExecutor {
           details: { ...params },
           reasonCode: PermissionRequestReason.Unknown,
           boundary: {
-            id: this.getBoundaryIdForRequestType(requestType),
+            id: boundaryIdForRequestType(requestType),
             reason: '根据工具权限级别推断的数据边界。',
           },
         };
@@ -1211,22 +1217,6 @@ export class ToolExecutor {
         working_directory: candidate,
       },
     };
-  }
-
-  private getBoundaryIdForRequestType(type: PermissionRequestData['type']): PermissionBoundaryId {
-    switch (type) {
-      case 'file_write':
-      case 'file_edit':
-        return 'file.project_write';
-      case 'command':
-      case 'dangerous_command':
-        return 'command.shell';
-      case 'network':
-        return 'network.web_request';
-      case 'file_read':
-      default:
-        return 'file.project_read';
-    }
   }
 
   /**

@@ -684,6 +684,10 @@ export class CronService implements Disposable {
         if (!orchestrator) {
           throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
         }
+        // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
+        // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
+        // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
+        orchestrator.setExecutionTopology('async_agent');
         if (cronSession.workingDirectory) {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }

@@ -115,7 +115,7 @@ export type AgentFactory = (context: {
   workingDirectory: string;
 }) => AgentInterface | Promise<AgentInterface>;
 
-export interface WorkerDirectory {
+interface WorkerDirectory {
   workingDirectory: string;
   cleanup(): void | Promise<void>;
 }

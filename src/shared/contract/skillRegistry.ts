@@ -7,7 +7,7 @@
 
 export type SkillRegistryRiskTier = 'low' | 'medium' | 'high';
 
-export interface SkillRegistryRisk {
+interface SkillRegistryRisk {
   tier: SkillRegistryRiskTier;
   /** 风险提示（面向用户的中文短句） */
   reasons?: string[];
@@ -40,11 +40,8 @@ export interface SkillRegistryEntry {
   risk?: SkillRegistryRisk;
 }
 
-export interface SkillRegistryPayload {
-  schemaVersion: 1;
-  updatedAt?: string;
-  entries: SkillRegistryEntry[];
-}
+// payload 形状（{schemaVersion:1, updatedAt?, entries[]}）的运行时真源是
+// remoteSkillRegistryService 的 zod schema；服务端另有 vercel-api 侧定义，这里不重复导出。
 
 /** registry 来源安装在 InstalledPluginRecord.marketplace 里的固定标识 */
 export const SKILL_REGISTRY_MARKETPLACE_ID = 'official-registry';

@@ -252,6 +252,7 @@ export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        thinking: { kind: 'toggle', defaultEnabled: true },
         costType: 'quota',
       },
     ],

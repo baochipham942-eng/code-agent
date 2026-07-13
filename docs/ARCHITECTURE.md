@@ -91,6 +91,9 @@
 | 032 | 请求前缀稳定与主动工具结果裁剪（cache 经济学下半场） | accepted |
 | 034 | Neo Tag 轻量化重设计（@neo 直接开干 + 内联清单 + topic 目录） | accepted |
 | 035 | Neo Tag 跨会话 Topic（@neo 续接不被发起会话困住） | accepted |
+| 036 | 评测判分可信度收口 + 红线 case 执行闸 | accepted |
+| 037 | Durable Run Kernel（run 身份/所有权/恢复语义） | accepted |
+| 038 | RuntimeContext 拆袋（共享可变袋分批收敛为切片状态） | proposed |
 
 ---
 

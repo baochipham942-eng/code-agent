@@ -3,12 +3,16 @@ import type { Request, Response } from 'express';
 import type { Message, ModelConfig, Session, ToolCall } from '../../shared/contract';
 import { formatError } from '../helpers/utils';
 import {
-  type CachedMessage,
-  type CachedToolCall,
   type InMemorySession,
-  sessionMessages,
-  inMemorySessions,
 } from '../helpers/sessionCache';
+import {
+  deleteSessionProjection,
+  getSessionMessagesProjection,
+  getSessionProjection,
+  listSessionProjections,
+  setSessionArchivedProjection,
+  upsertSessionProjection,
+} from '../helpers/webSessionStore';
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
@@ -115,9 +119,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       }
       // 内存降级（最后兜底）：返回内存中的会话列表
       const includeArchived = _req.query.includeArchived === 'true';
-      const sessions = [...inMemorySessions.values()]
-        .filter(s => includeArchived || !s.isArchived)
-        .sort((a, b) => b.updatedAt - a.updatedAt);
+      const sessions = listSessionProjections(includeArchived);
       res.json({ success: true, data: sessions });
     } catch (error) {
       logger.error('GET /api/sessions failed:', error);
@@ -184,7 +186,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         messageCount: 0,
         workingDirectory,
       };
-      inMemorySessions.set(session.id, session);
+      upsertSessionProjection(session);
       res.json({ success: true, data: session });
     } catch (error) {
       logger.error('POST /api/sessions failed:', error);
@@ -208,10 +210,11 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
             session.status = mapDurableRunToSessionStatus(run.status);
           }
           // DB 路径找到了会话但消息可能为空 — 用内存缓存补充
-          if (session.messages.length === 0 && sessionMessages.has(sessionId)) {
-            const memMessages = (sessionMessages.get(sessionId) || []).map(m => ({
+          const cachedMessages = getSessionMessagesProjection(sessionId);
+          if (session.messages.length === 0 && cachedMessages) {
+            const memMessages = cachedMessages.map(m => ({
               ...m,
-              toolCalls: (m as CachedMessage & { toolCalls?: CachedToolCall[] }).toolCalls || [],
+              toolCalls: m.toolCalls || [],
             }));
             if (memMessages.length > 0) {
               logger.info('GET /api/sessions/:id — DB messages empty, falling back to in-memory cache', { sessionId, memCount: memMessages.length });
@@ -249,15 +252,15 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         return;
       }
       // 内存降级（最后兜底）：返回内存会话 + 缓存的消息
-      const session = inMemorySessions.get(sessionId);
+      const session = getSessionProjection(sessionId);
       if (!session) {
         res.json({ success: false, error: { code: 'NOT_FOUND', message: `Session ${sessionId} not found` } });
         return;
       }
-      const messages = (sessionMessages.get(sessionId) || []).map(m => ({
+      const messages = (getSessionMessagesProjection(sessionId) || []).map(m => ({
         ...m,
         // 保留已缓存的 toolCalls，不覆盖为空数组（否则 tool-only 助手消息会被前端过滤掉）
-        toolCalls: (m as CachedMessage & { toolCalls?: CachedToolCall[] }).toolCalls || [],
+        toolCalls: m.toolCalls || [],
       }));
       res.json({ success: true, data: { ...session, messages, todos: [] } });
     } catch (error) {
@@ -294,9 +297,9 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         return;
       }
       // 内存降级（最后兜底）
-      const messages = (sessionMessages.get(sessionId) || []).map(m => ({
+      const messages = (getSessionMessagesProjection(sessionId) || []).map(m => ({
         ...m,
-        toolCalls: (m as CachedMessage & { toolCalls?: CachedToolCall[] }).toolCalls || [],
+        toolCalls: m.toolCalls || [],
       }));
       res.json({ success: true, data: messages });
     } catch (error) {
@@ -331,8 +334,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
           if (messageDeleteError) throw messageDeleteError;
         }
       }
-      inMemorySessions.delete(sessionId);
-      sessionMessages.delete(sessionId);
+      deleteSessionProjection(sessionId);
       res.json({ success: true, data: null });
     } catch (error) {
       logger.error('DELETE /api/sessions/:id failed:', error);
@@ -356,11 +358,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         return;
       }
       // 内存降级（最后兜底）
-      const session = inMemorySessions.get(sessionId);
-      if (session) {
-        session.isArchived = true;
-        session.archivedAt = Date.now();
-      }
+      const session = setSessionArchivedProjection(sessionId, true);
       res.json({ success: true, data: session || null });
     } catch (error) {
       logger.error('POST /api/sessions/:id/archive failed:', error);
@@ -384,11 +382,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         return;
       }
       // 内存降级（最后兜底）
-      const session = inMemorySessions.get(sessionId);
-      if (session) {
-        session.isArchived = false;
-        session.archivedAt = undefined;
-      }
+      const session = setSessionArchivedProjection(sessionId, false);
       res.json({ success: true, data: session || null });
     } catch (error) {
       logger.error('POST /api/sessions/:id/unarchive failed:', error);

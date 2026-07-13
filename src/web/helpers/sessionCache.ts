@@ -45,17 +45,6 @@ export interface InMemorySession {
   workingDirectory?: string;
 }
 
-// ── 缓存实例 ──
-
-/** 每个会话的消息缓存 */
-export const sessionMessages = new Map<string, CachedMessage[]>();
-
-/** 最多缓存的会话数量 */
-export const SESSION_CACHE_MAX = 50;
-
-/** 内存会话存储（better-sqlite3 不可用时的降级方案） */
-export const inMemorySessions = new Map<string, InMemorySession>();
-
 /** DB 是否可用 — 在 initializeServices 中设置 */
 export let dbAvailable = false;
 
@@ -102,12 +91,6 @@ export function getPersistenceHealth(): PersistenceHealth {
   return { ...persistenceHealth };
 }
 
-function enforceSessionCacheLimit(): void {
-  if (sessionMessages.size <= SESSION_CACHE_MAX) return;
-  const oldestKey = sessionMessages.keys().next().value;
-  if (oldestKey) sessionMessages.delete(oldestKey);
-}
-
 export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
   return messages
     .map((message): CachedMessage | null => {
@@ -129,13 +112,4 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
       };
     })
     .filter((message): message is CachedMessage => Boolean(message));
-}
-
-export function seedSessionMessagesFromPersisted(sessionId: string, messages: Message[]): CachedMessage[] {
-  const cached = toCachedSessionMessages(messages);
-  if (cached.length > 0) {
-    sessionMessages.set(sessionId, cached);
-    enforceSessionCacheLimit();
-  }
-  return cached;
 }

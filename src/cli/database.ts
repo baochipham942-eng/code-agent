@@ -21,6 +21,11 @@ import {
   type TranscriptKind,
 } from '../shared/transcriptFts.sql';
 import { MEMORY } from '../shared/constants';
+import {
+  sanitizeAttachmentsForPersistence,
+  stripInlineAttachmentBlocks,
+} from '../shared/utils/messageAttachments';
+import { extractArtifacts } from '../host/agent/artifactExtractor';
 import { migrateCliSessionsTable, createCliTables, createCliIndexes } from './cliDatabaseSchema';
 import { visibleHistoryMessageWhere } from './cliDatabaseSql';
 
@@ -57,6 +62,37 @@ function parseMessageMetadata(value: unknown): Message['metadata'] {
   } catch {
     return undefined;
   }
+}
+
+function parseStoredMessageJson<T>(value: unknown): T | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function rowToMessage(row: SQLiteRow): Message {
+  const content = stripInlineAttachmentBlocks((row.content as string) || '');
+  const artifacts = row.role === 'assistant' ? extractArtifacts(content) : [];
+
+  return {
+    id: row.id as string,
+    role: row.role as Message['role'],
+    content,
+    timestamp: row.timestamp as number,
+    toolCalls: parseStoredMessageJson<Message['toolCalls']>(row.tool_calls),
+    toolResults: parseStoredMessageJson<Message['toolResults']>(row.tool_results),
+    attachments: sanitizeAttachmentsForPersistence(
+      parseStoredMessageJson<Message['attachments']>(row.attachments),
+    ),
+    contentParts: parseStoredMessageJson<Message['contentParts']>(row.content_parts),
+    thinking: (row.thinking as string) || undefined,
+    metadata: parseMessageMetadata(row.metadata),
+    ...(row.is_meta ? { isMeta: true } : {}),
+    ...(artifacts.length > 0 ? { artifacts } : {}),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -529,15 +565,7 @@ export class CLIDatabaseService {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const attachmentsMeta = message.attachments?.map(a => ({
-      id: a.id,
-      type: a.type,
-      category: a.category,
-      name: a.name,
-      size: a.size,
-      mimeType: a.mimeType,
-      path: a.path,
-    }));
+    const attachmentsMeta = sanitizeAttachmentsForPersistence(message.attachments);
 
     stmt.run(
       message.id,
@@ -560,6 +588,49 @@ export class CLIDatabaseService {
     }
   }
 
+  updateMessage(messageId: string, updates: Partial<Message>): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+    const addJsonUpdate = (column: string, value: unknown): void => {
+      setClauses.push(`${column} = ?`);
+      values.push(value == null ? null : JSON.stringify(value));
+    };
+
+    if (updates.content !== undefined) {
+      setClauses.push('content = ?');
+      values.push(updates.content);
+    }
+    if (updates.role !== undefined) {
+      setClauses.push('role = ?');
+      values.push(updates.role);
+    }
+    if (updates.timestamp !== undefined) {
+      setClauses.push('timestamp = ?');
+      values.push(updates.timestamp);
+    }
+    if (updates.toolCalls !== undefined) addJsonUpdate('tool_calls', updates.toolCalls);
+    if (updates.toolResults !== undefined) addJsonUpdate('tool_results', updates.toolResults);
+    if (updates.attachments !== undefined) {
+      addJsonUpdate('attachments', sanitizeAttachmentsForPersistence(updates.attachments));
+    }
+    if (updates.contentParts !== undefined) addJsonUpdate('content_parts', updates.contentParts);
+    if (updates.isMeta !== undefined) {
+      setClauses.push('is_meta = ?');
+      values.push(updates.isMeta ? 1 : 0);
+    }
+    if (updates.thinking !== undefined || updates.reasoning !== undefined) {
+      setClauses.push('thinking = ?');
+      values.push(updates.thinking || updates.reasoning || null);
+    }
+    if (updates.metadata !== undefined) addJsonUpdate('metadata', updates.metadata);
+
+    if (setClauses.length === 0) return;
+    values.push(messageId);
+    this.db.prepare(`UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
+  }
+
   getMessages(sessionId: string, limit?: number): Message[] {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -576,19 +647,7 @@ export class CLIDatabaseService {
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(sessionId) as SQLiteRow[];
 
-    return rows.map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
-      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
-      attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
-      contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      metadata: parseMessageMetadata(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-    }));
+    return rows.map(rowToMessage);
   }
 
   getRecentMessages(sessionId: string, count: number): Message[] {
@@ -603,18 +662,7 @@ export class CLIDatabaseService {
 
     const rows = stmt.all(sessionId, count) as SQLiteRow[];
 
-    return rows.reverse().map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
-      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
-      contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      metadata: parseMessageMetadata(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-    }));
+    return rows.reverse().map(rowToMessage);
   }
 
   // --------------------------------------------------------------------------
@@ -930,23 +978,11 @@ export class CLIDatabaseService {
       )
       .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, after) as SQLiteRow[];
 
-    const toMessage = (row: SQLiteRow): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: (row.content as string) || '',
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
-      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      metadata: parseMessageMetadata(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-    });
-
     const ordered = [...beforeRows.reverse(), ...afterRows];
     return {
       sessionId: anchor.session_id,
       messages: ordered.map((row) => ({
-        message: toMessage(row),
+        message: rowToMessage(row),
         matched: String(row.id) === messageId,
       })),
     };

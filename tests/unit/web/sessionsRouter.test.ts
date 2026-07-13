@@ -2,7 +2,10 @@ import express from 'express';
 import http from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionsRouter } from '../../../src/web/routes/sessions';
-import { inMemorySessions, sessionMessages } from '../../../src/web/helpers/sessionCache';
+import {
+  inMemorySessionsProjection as inMemorySessions,
+  sessionMessagesProjection as sessionMessages,
+} from '../../../src/web/helpers/webSessionStore';
 
 interface SessionApiBody {
   success: boolean;
@@ -388,6 +391,72 @@ describe('createSessionsRouter', () => {
           name: 'shell',
           result: { success: true, output: 'done' },
         }],
+      }],
+    });
+  });
+
+  // 工单行为不变清单 #4/#10：内存降级的列表和 messages endpoint 保持现有返回形状与富字段。
+  it('returns the current in-memory session list and rich message response shapes', async () => {
+    inMemorySessions.set('session-shape', {
+      id: 'session-shape',
+      title: 'Shape baseline',
+      createdAt: 10,
+      updatedAt: 20,
+      messageCount: 1,
+    });
+    sessionMessages.set('session-shape', [{
+      id: 'message-shape',
+      role: 'assistant',
+      content: 'shape answer',
+      timestamp: 30,
+      thinking: 'shape thinking',
+      contentParts: [{ type: 'text', text: 'shape answer' }],
+      artifacts: [{
+        id: 'artifact-shape',
+        type: 'chart',
+        content: '{"title":"Shape"}',
+        title: 'Shape',
+        version: 1,
+      }],
+      attachments: [{
+        id: 'attachment-shape',
+        type: 'file',
+        category: 'text',
+        name: 'shape.txt',
+        size: 5,
+        mimeType: 'text/plain',
+        data: 'shape',
+      }],
+      metadata: {
+        turnQuality: {
+          capabilities: { agentId: 'explore', agentName: 'Explorer' },
+        },
+      },
+    }]);
+
+    await startSessionsApi({
+      tryGetSessionManager: async () => null,
+      getSupabaseForSession: async () => null,
+    });
+
+    const list = await fetchJson('/api/sessions');
+    const messages = await fetchJson('/api/sessions/session-shape/messages');
+
+    expect(list.body).toEqual({
+      success: true,
+      data: [{
+        id: 'session-shape',
+        title: 'Shape baseline',
+        createdAt: 10,
+        updatedAt: 20,
+        messageCount: 1,
+      }],
+    });
+    expect(messages.body).toEqual({
+      success: true,
+      data: [{
+        ...sessionMessages.get('session-shape')![0],
+        toolCalls: [],
       }],
     });
   });

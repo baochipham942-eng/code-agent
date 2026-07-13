@@ -6,13 +6,21 @@ import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { createAgentRouter } from '../../../src/web/routes/agent';
-import { inMemorySessions, sessionMessages, setDbAvailable } from '../../../src/web/helpers/sessionCache';
+import {
+  setDbAvailable,
+} from '../../../src/web/helpers/sessionCache';
+import {
+  inMemorySessionsProjection as inMemorySessions,
+  seedSessionMessagesFromPersisted,
+  sessionMessagesProjection as sessionMessages,
+} from '../../../src/web/helpers/webSessionStore';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
 const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
+const mockBroadcastSSE = vi.hoisted(() => vi.fn());
 const agentEngineMocks = vi.hoisted(() => ({
   codexRun: vi.fn(),
   claudeRun: vi.fn(),
@@ -54,6 +62,16 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   createRunToolExecutor: vi.fn(() => ({ execute: vi.fn() })),
   getToolExecutor: vi.fn(() => undefined),
 }));
+
+vi.mock('../../../src/web/helpers/sse', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/web/helpers/sse')>(
+    '../../../src/web/helpers/sse',
+  );
+  return {
+    ...actual,
+    broadcastSSE: mockBroadcastSSE,
+  };
+});
 
 const mockGetOverride = vi.hoisted(() => vi.fn<() => unknown>(() => null));
 vi.mock('../../../src/host/session/modelSessionState', () => ({
@@ -197,6 +215,8 @@ const logger = {
 
 async function startAgentApi(deps: {
   tryGetSessionManager?: () => Promise<unknown>;
+  tryGetCLISessionManager?: () => Promise<unknown>;
+  getSupabaseForSession?: () => Promise<unknown>;
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -205,7 +225,10 @@ async function startAgentApi(deps: {
     pendingLocalToolCalls: new Map(),
     logger,
     tryGetSessionManager: deps.tryGetSessionManager ?? (async () => null),
-    getSupabaseForSession: async () => null,
+    tryGetCLISessionManager: deps.tryGetCLISessionManager
+      ?? deps.tryGetSessionManager
+      ?? (async () => null),
+    getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
   }));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -945,12 +968,15 @@ describe('createAgentRouter', () => {
   it('uses clientMessageId as the persisted user message id for /api/run', async () => {
     mockRun.mockResolvedValueOnce(undefined);
 
-    const addMessageToSession = vi.fn(async () => undefined);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
     await closeServer();
     await startAgentApi({
       tryGetSessionManager: async () => ({
         addMessageToSession,
-        getMessages: vi.fn(async () => []),
+        getMessages: vi.fn(async () => persistedMessages),
         getSession: vi.fn(async () => ({ id: 'session-client-id', title: 'Client id' })),
       }),
     });
@@ -982,6 +1008,377 @@ describe('createAgentRouter', () => {
       role: 'user',
       content: '第二轮消息',
     });
+  });
+
+  // 工单行为不变清单 #1：工具-only 轮也要把 user 留在多轮上下文。
+  it('keeps a tool-only turn user message in cache and includes it in the next run history', async () => {
+    mockCreateAgentLoop
+      .mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+        run: vi.fn(async () => {
+          onEvent({ type: 'tool_call_start', data: { id: 'tool-only-1', name: 'Read' } });
+          onEvent({
+            type: 'tool_call_end',
+            data: { toolCallId: 'tool-only-1', success: true, output: 'done' },
+          });
+        }),
+        cancel: mockCancel,
+      }))
+      .mockImplementationOnce(() => ({
+        run: vi.fn(async () => undefined),
+        cancel: mockCancel,
+      }));
+
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '第一轮只调用工具',
+        sessionId: 'session-tool-only-history',
+        clientMessageId: 'tool-only-user-1',
+      }),
+    });
+    expect(first.ok).toBe(true);
+    await first.text();
+
+    expect(sessionMessages.get('session-tool-only-history')).toEqual([
+      expect.objectContaining({
+        id: 'tool-only-user-1',
+        role: 'user',
+        content: '第一轮只调用工具',
+      }),
+      expect.objectContaining({
+        role: 'assistant',
+        content: '',
+        toolCalls: [expect.objectContaining({ id: 'tool-only-1', name: 'Read' })],
+      }),
+    ]);
+
+    const second = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '第二轮继续',
+        sessionId: 'session-tool-only-history',
+        clientMessageId: 'tool-only-user-2',
+      }),
+    });
+    expect(second.ok).toBe(true);
+    await second.text();
+
+    const secondRunHistory = mockCreateAgentLoop.mock.calls[1]?.[2] as Array<{
+      id: string;
+      role: string;
+      content: string;
+    }>;
+    expect(secondRunHistory).toEqual([
+      expect.objectContaining({ id: 'tool-only-user-1', role: 'user', content: '第一轮只调用工具' }),
+      expect.objectContaining({ role: 'assistant', content: '' }),
+      expect.objectContaining({ id: 'tool-only-user-2', role: 'user', content: '第二轮继续' }),
+    ]);
+  });
+
+  // 工单行为不变清单 #2：user 仍 pre-persist，取消后仍不兜底写 assistant。
+  // 批 2 拍板变化：统一 DB 真相，loop 已落库的 partial assistant 在当前会话缓存内可见。
+  it('projects a persisted partial assistant for a cancelled run without a fallback assistant write', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => persistedMessages);
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'stream_chunk', data: { content: '取消前的 partial' } });
+        persistedMessages.push({
+          id: 'cancelled-partial-1',
+          role: 'assistant',
+          content: '取消前的 partial',
+          timestamp: 2,
+        } as Message);
+        onEvent({ type: 'agent_cancelled', data: null });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession: vi.fn(async () => ({ id: 'session-cancelled-write', title: 'Existing' })),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '请执行后取消',
+        sessionId: 'session-cancelled-write',
+        clientMessageId: 'cancelled-user-1',
+      }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledTimes(1);
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-cancelled-write',
+      expect.objectContaining({ id: 'cancelled-user-1', role: 'user', content: '请执行后取消' }),
+    );
+    expect(sessionMessages.get('session-cancelled-write')).toEqual([
+      expect.objectContaining({ id: 'cancelled-user-1', role: 'user' }),
+      expect.objectContaining({
+        id: 'cancelled-partial-1',
+        role: 'assistant',
+        content: '取消前的 partial',
+      }),
+    ]);
+  });
+
+  // 工单行为不变清单 #6：直写 DB 碰到重复 msgId 时转 updateMessage，run 不报错。
+  it('updates an existing message idempotently when direct DB persistence hits a duplicate msgId', async () => {
+    setDbAvailable(true);
+    mockDb.addMessage.mockImplementationOnce(() => {
+      throw new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed: messages.id');
+    });
+    mockRun.mockResolvedValueOnce(undefined);
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '重复消息仍应成功',
+        sessionId: 'session-duplicate-message',
+        clientMessageId: 'duplicate-message-id',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(mockDb.updateMessage).toHaveBeenCalledWith(
+      'duplicate-message-id',
+      expect.objectContaining({
+        id: 'duplicate-message-id',
+        role: 'user',
+        content: '重复消息仍应成功',
+      }),
+    );
+  });
+
+  // 工单行为不变清单 #4：!dbAvailable 时消息和会话元数据全部由内存路径维护。
+  it('updates in-memory title, messageCount and updatedAt across memory-only turns', async () => {
+    const longPrompt = '内'.repeat(31);
+    mockCreateAgentLoop
+      .mockImplementationOnce(() => ({ run: vi.fn(async () => undefined), cancel: mockCancel }))
+      .mockImplementationOnce(() => ({ run: vi.fn(async () => undefined), cancel: mockCancel }));
+
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: longPrompt, sessionId: 'session-memory-metadata' }),
+    });
+    await first.text();
+    const firstMetadata = { ...inMemorySessions.get('session-memory-metadata')! };
+
+    const second = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮', sessionId: 'session-memory-metadata' }),
+    });
+    await second.text();
+    const finalMetadata = inMemorySessions.get('session-memory-metadata');
+
+    expect(firstMetadata).toMatchObject({
+      title: `${'内'.repeat(30)}...`,
+      messageCount: 1,
+    });
+    expect(finalMetadata).toMatchObject({
+      title: `${'内'.repeat(30)}...`,
+      messageCount: 2,
+    });
+    expect(finalMetadata!.updatedAt).toBeGreaterThanOrEqual(firstMetadata.updatedAt);
+    expect(mockDb.addMessage).not.toHaveBeenCalled();
+    expect(mockDb.updateSession).not.toHaveBeenCalled();
+  });
+
+  // 工单行为不变清单 #8：空 history 视为新会话，标题截断后按固定顺序广播两类 SSE。
+  it('truncates a new-session title to 30 characters and broadcasts both session update events in order', async () => {
+    mockRun.mockResolvedValueOnce(undefined);
+    const prompt = '题'.repeat(31);
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, sessionId: 'session-new-title-events' }),
+    });
+    await response.text();
+
+    expect(mockBroadcastSSE.mock.calls).toEqual([
+      ['session:updated', {
+        sessionId: 'session-new-title-events',
+        updates: { status: 'running', updatedAt: expect.any(Number) },
+      }],
+      ['session:list-updated', undefined],
+      ['session:updated', {
+        sessionId: 'session-new-title-events',
+        updates: { title: `${'题'.repeat(30)}...` },
+      }],
+      ['session:list-updated', undefined],
+      ['session:updated', {
+        sessionId: 'session-new-title-events',
+        updates: { status: 'completed', updatedAt: expect.any(Number) },
+      }],
+      ['session:list-updated', undefined],
+    ]);
+  });
+
+  // 工单行为不变清单 #5：路由缓存 push 保留 thinking/contentParts/artifacts/metadata，user attachments 也保留。
+  it('keeps rich assistant fields and user attachments in the SSE-backed cache push', async () => {
+    const attachment = {
+      id: 'characterization-file',
+      type: 'file',
+      category: 'text',
+      name: 'baseline.txt',
+      size: 8,
+      mimeType: 'text/plain',
+      data: 'baseline',
+    };
+    const metadata = { turnQuality: { capabilities: { agentId: 'explore', agentName: 'Explorer' } } };
+    const chart = '```chart\n{"title":"Baseline","data":[]}\n```';
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message',
+          data: { id: 'rich-loop-final', role: 'assistant', content: chart, timestamp: 2, metadata },
+        });
+        onEvent({ type: 'stream_chunk', data: { content: '先看图表：' } });
+        onEvent({ type: 'stream_reasoning', data: { content: '内部思考' } });
+        onEvent({ type: 'tool_call_start', data: { id: 'rich-tool', name: 'Read' } });
+        onEvent({ type: 'tool_call_end', data: { toolCallId: 'rich-tool', success: true, output: 'ok' } });
+        onEvent({ type: 'stream_chunk', data: { content: chart } });
+      }),
+      cancel: mockCancel,
+    }));
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '保留富字段',
+        sessionId: 'session-rich-cache-characterization',
+        attachments: [attachment],
+      }),
+    });
+    await response.text();
+
+    const cached = sessionMessages.get('session-rich-cache-characterization')!;
+    expect(cached[0]).toMatchObject({ role: 'user', attachments: [attachment] });
+    expect(cached[1]).toMatchObject({
+      role: 'assistant',
+      thinking: '内部思考',
+      metadata,
+      contentParts: [
+        { type: 'text', text: '先看图表：' },
+        { type: 'tool_call', toolCallId: 'rich-tool' },
+        { type: 'text', text: chart },
+      ],
+      artifacts: [expect.objectContaining({ type: 'chart', title: 'Baseline' })],
+    });
+  });
+
+  // 工单行为不变清单 #7：LRU 逐出后的会话由 loadSessionHistoryForRun 从 SM 水合回缓存。
+  it('rehydrates an LRU-evicted session from SessionManager before building the next run history', async () => {
+    for (let index = 0; index < 51; index += 1) {
+      seedSessionMessagesFromPersisted(`lru-session-${index}`, [{
+        id: `lru-message-${index}`,
+        role: 'user',
+        content: `cached-${index}`,
+        timestamp: index,
+      }]);
+    }
+    expect(sessionMessages.has('lru-session-0')).toBe(false);
+
+    await closeServer();
+    const getMessages = vi.fn(async () => [{
+      id: 'lru-message-restored',
+      role: 'user',
+      content: '从数据库恢复',
+      timestamp: 100,
+    }]);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages,
+        getSession: vi.fn(async () => ({ workingDirectory: '/tmp/lru-session' })),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '恢复后继续', sessionId: 'lru-session-0' }),
+    });
+    await response.text();
+
+    expect(getMessages).toHaveBeenCalledWith('lru-session-0');
+    expect(mockCreateAgentLoop.mock.calls[0]?.[2]).toEqual([
+      expect.objectContaining({ id: 'lru-message-restored', content: '从数据库恢复' }),
+      expect.objectContaining({ role: 'user', content: '恢复后继续' }),
+    ]);
+    expect(sessionMessages.get('lru-session-0')?.[0]).toMatchObject({
+      id: 'lru-message-restored',
+      content: '从数据库恢复',
+    });
+    expect(sessionMessages.size).toBe(50);
+  });
+
+  // 工单行为不变清单 #9：Supabase W5 保持 pre-persist user + run 后 assistant 的现状写序。
+  it('keeps the Supabase sync path writing the user once before the run and the assistant after it', async () => {
+    await closeServer();
+    const sessionEq = vi.fn(async () => ({ error: null }));
+    const sessionsTable = {
+      upsert: vi.fn(async () => ({ error: null })),
+      update: vi.fn(() => ({ eq: sessionEq })),
+    };
+    const messagesTable = {
+      insert: vi.fn(async () => ({ error: null })),
+    };
+    const from = vi.fn((table: string) => table === 'sessions' ? sessionsTable : messagesTable);
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'stream_chunk', data: { content: '云同步回答' } });
+      }),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      getSupabaseForSession: async () => ({ supabase: { from }, userId: 'user-characterization' }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '云同步问题',
+        sessionId: 'session-supabase-characterization',
+        clientMessageId: 'supabase-user-message',
+      }),
+    });
+    await response.text();
+
+    expect(messagesTable.insert).toHaveBeenCalledTimes(2);
+    expect(messagesTable.insert.mock.calls.map(([message]) => message)).toEqual([
+      expect.objectContaining({ id: 'supabase-user-message', role: 'user', content: '云同步问题' }),
+      expect.objectContaining({ role: 'assistant', content: '云同步回答' }),
+    ]);
+    expect(sessionsTable.upsert).toHaveBeenCalledTimes(2);
+    expect(sessionsTable.update).toHaveBeenCalledWith(expect.objectContaining({
+      title: '云同步问题',
+    }));
   });
 
   it('passes image attachments from /api/run into the agent loop message history', async () => {
@@ -1024,12 +1421,15 @@ describe('createAgentRouter', () => {
 
   it('keeps rich file attachments out of persisted message content', async () => {
     mockRun.mockResolvedValueOnce(undefined);
-    const addMessageToSession = vi.fn(async () => undefined);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
     await closeServer();
     await startAgentApi({
       tryGetSessionManager: async () => ({
         addMessageToSession,
-        getMessages: vi.fn(async () => []),
+        getMessages: vi.fn(async () => persistedMessages),
         getSession: vi.fn(async () => ({ id: 'session-rich-attachments', title: 'Attachments' })),
       }),
     });
@@ -2209,7 +2609,7 @@ describe('createAgentRouter', () => {
     );
   });
 
-  // 兜底判定必须认「终轮」assistant 是否落库（Codex audit HIGH1）：
+  // 工单行为不变清单 #3：兜底判定必须认「终轮」assistant 是否落库（Codex audit HIGH1）：
   // 多迭代 run 早轮已落库 + 终轮落库失败时，旧 .some() 匹配任一 id 会误跳兜底，
   // 终轮内容+metadata 静默丢失。
   it('fires assistant fallback when an earlier loop message persisted but the final one did not', async () => {
@@ -2250,6 +2650,7 @@ describe('createAgentRouter', () => {
     );
   });
 
+  // 工单行为不变清单 #3：终轮已由 loop 落库时，路由不得双插 assistant。
   it('keeps skipping assistant fallback when the final loop message did persist', async () => {
     await closeServer();
     setDbAvailable(true);
@@ -2305,8 +2706,11 @@ describe('createAgentRouter', () => {
       },
     };
 
-    const addMessageToSession = vi.fn(async () => undefined);
-    const getMessages = vi.fn(async () => []);
+    const persistedMessages: Message[] = [];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => persistedMessages);
     const getSession = vi.fn(async () => ({
       workingDirectory: '/tmp/persisted-project',
     }));

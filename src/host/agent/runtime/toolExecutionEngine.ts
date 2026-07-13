@@ -125,7 +125,7 @@ export class ToolExecutionEngine {
   }
 
   private isRunCancelled(): boolean {
-    return this.ctx.isCancelled || Boolean(this.ctx.runAbortController?.signal.aborted);
+    return this.ctx.control.isCancelled || Boolean(this.ctx.control.runAbortController?.signal.aborted);
   }
 
   private buildSuppressedCancelledResult(toolCall: ToolCall, startTime: number): ToolResult {
@@ -148,8 +148,8 @@ export class ToolExecutionEngine {
   private shouldSkipToolBecauseForceFinalWasSetInBatch(): boolean {
     return (
       this.forceFinalResponseBatchActive &&
-      Boolean(this.ctx.forceFinalResponseReason) &&
-      this.ctx.forceFinalResponseReason !== this.forceFinalResponseReasonAtBatchStart
+      Boolean(this.ctx.control.forceFinalResponseReason) &&
+      this.ctx.control.forceFinalResponseReason !== this.forceFinalResponseReasonAtBatchStart
     );
   }
 
@@ -181,7 +181,7 @@ export class ToolExecutionEngine {
   async executeToolsWithHooks(toolCalls: ToolCall[]): Promise<ToolResult[]> {
     logger.debug(` executeToolsWithHooks called with ${toolCalls.length} tool calls`);
     this.forceFinalResponseBatchActive = true;
-    this.forceFinalResponseReasonAtBatchStart = this.ctx.forceFinalResponseReason;
+    this.forceFinalResponseReasonAtBatchStart = this.ctx.control.forceFinalResponseReason;
     seedArtifactRepairGuardFromContext(this.ctx);
     // Swarm goal（P4）预算下行 clamp：workflow 扇出预算压到 goal 剩余预算以内（模型自报不可信）
     applySwarmBudgetClamp(this.ctx, toolCalls);
@@ -263,7 +263,7 @@ export class ToolExecutionEngine {
 
     // Execute sequential tools one by one
     for (const { index, toolCall } of sequentialGroup) {
-      if (this.ctx.isCancelled || this.ctx.turn.needsReinference) {
+      if (this.ctx.control.isCancelled || this.ctx.turn.needsReinference) {
         logger.debug('[AgentLoop] Cancelled/steered, breaking out of sequential tool execution');
         break;
       }
@@ -339,12 +339,12 @@ export class ToolExecutionEngine {
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: false,
-        error: `Tool skipped because final response is already forced: ${this.ctx.forceFinalResponseReason}`,
+        error: `Tool skipped because final response is already forced: ${this.ctx.control.forceFinalResponseReason}`,
         duration: 0,
         metadata: {
           skipped: true,
           blocked: true,
-          forceFinalResponseReason: this.ctx.forceFinalResponseReason,
+          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
         },
       };
       return emitBlockedToolResult(toolResult);
@@ -647,12 +647,12 @@ export class ToolExecutionEngine {
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: false,
-        error: `Tool skipped because final response is already forced: ${this.ctx.forceFinalResponseReason}`,
+        error: `Tool skipped because final response is already forced: ${this.ctx.control.forceFinalResponseReason}`,
         duration: Date.now() - startTime,
         metadata: {
           skipped: true,
           blocked: true,
-          forceFinalResponseReason: this.ctx.forceFinalResponseReason,
+          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
         },
       };
       return emitBlockedToolResult(toolResult);
@@ -670,7 +670,7 @@ export class ToolExecutionEngine {
           blocked: true,
           skipped: true,
           hardLimitPreflight: true,
-          forceFinalResponseReason: this.ctx.forceFinalResponseReason,
+          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
         },
       };
       return emitBlockedToolResult(hardLimitResult);
@@ -739,7 +739,7 @@ export class ToolExecutionEngine {
           // 透传到 ToolContext。子 agent 通过 subagent pipeline 派活时填入此字段，工具
           // 实现层（BrowserTool/browserAction/computerUse）按 agentId 取自己的 BrowserContext。
           agentId: this.ctx.agentId,
-          preApprovedTools: this.ctx.preApprovedTools,
+          preApprovedTools: this.ctx.control.preApprovedTools,
           // GAP-001: skill allowed-tools 限权边界透传
           skillToolBoundary: this.ctx.turn.skillToolBoundary,
           currentAttachments,
@@ -752,7 +752,7 @@ export class ToolExecutionEngine {
           toolScope: this.ctx.toolScope,
           executionIntent: this.ctx.executionIntent,
           neoTag: this.ctx.neoTag,
-          abortSignal: this.ctx.runAbortController?.signal,
+          abortSignal: this.ctx.control.runAbortController?.signal,
         }
       );
       clearInterval(progressInterval);
@@ -967,12 +967,13 @@ export class ToolExecutionEngine {
       if (
         (toolCall.name === 'exit_plan_mode' || (toolCall.name === 'PlanMode' && (toolCall.arguments as Record<string, unknown>)?.action === 'exit')) &&
         normalizedResult.success &&
-        this.ctx.savedMessages
+        this.ctx.control.savedMessages
       ) {
+        const savedMessages = this.ctx.control.savedMessages;
         const planText = normalizedResult.metadata?.plan as string || '';
         // Restore saved messages
         this.ctx.messages.length = 0;
-        for (const msg of this.ctx.savedMessages) {
+        for (const msg of savedMessages) {
           this.ctx.messages.push(msg);
         }
         // Inject approved plan as system message
@@ -984,7 +985,7 @@ export class ToolExecutionEngine {
             timestamp: Date.now(),
           });
         }
-        this.ctx.savedMessages = null;
+        this.ctx.control.clearSavedMessages();
         logger.info('[AgentLoop] Plan mode exited: context restored, plan injected');
         this.ctx.onEvent({
           type: 'plan_mode_exited',

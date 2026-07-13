@@ -25,6 +25,7 @@ vi.mock('../../../../src/host/services/core/databaseService', () => ({
 import { handleGoalCompletionGate } from '../../../../src/host/agent/runtime/goalCompletionGate';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
+import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 
 function makeCtx() {
   const goalMode = {
@@ -47,7 +48,7 @@ function makeCtx() {
     goalMode,
     workingDirectory: '/tmp/test',
     sessionId: 's1',
-    runAbortController: null,
+    control: ControlState.forTest(),
     hookManager: undefined,
     modelConfig: { provider: 'zhipu', model: 'glm-5' },
     totalInputTokens: 100,

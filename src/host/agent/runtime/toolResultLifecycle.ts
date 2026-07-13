@@ -192,11 +192,11 @@ export function handleToolResultBookkeeping({
   }
 
   if (isExternalData && normalizedResult.success) {
-    ctx.externalDataCallCount++;
-    if (ctx.externalDataCallCount % 2 === 0) {
+    const externalDataCallCount = ctx.control.incrementExternalDataCalls();
+    if (externalDataCallCount % 2 === 0) {
       contextAssembly.injectSystemMessage(
         `<data-persistence-nudge>\n` +
-        `你已执行了 ${ctx.externalDataCallCount} 次外部数据查询。\n` +
+        `你已执行了 ${externalDataCallCount} 次外部数据查询。\n` +
         `在继续下一步之前，请先用 1-3 句话总结到目前为止的关键发现。\n` +
         `这可以防止重要信息在上下文压缩时丢失。\n` +
         `</data-persistence-nudge>`

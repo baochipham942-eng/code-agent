@@ -10,6 +10,7 @@ import { resetCitationService } from '../../src/host/services/citation/citationS
 import { extractCitations } from '../../src/host/services/citation/citationExtractor';
 import type { AgentEvent, ToolCall, ToolResult } from '../../src/shared/contract';
 import type { ToolExecutionResult } from '../../src/host/tools/types';
+import { ControlState } from '../../src/host/agent/runtime/controlState';
 
 type WebSearchEvalCase = {
   id: string;
@@ -22,7 +23,7 @@ type WebSearchEvalCase = {
 
 type LifecycleProbe = {
   blocked: boolean;
-  externalDataCallCount: number;
+  control: ControlState;
   injectedMessages: string[];
   citationsUpdatedEvents: number;
   results: ToolResult[];
@@ -54,7 +55,7 @@ function makeRuntimeHarness() {
 
   const ctx = {
     sessionId: 'session-websearch-p0-baseline',
-    externalDataCallCount: 0,
+    control: ControlState.forTest(),
     needsReinference: false,
     onEvent: (event: AgentEvent) => events.push(event),
     circuitBreaker: {
@@ -125,7 +126,7 @@ function runLifecycleProbe(toolName: string, output: string, repeats = 1): Lifec
 
   return {
     blocked: results.some((result) => result.success === false && result.output?.startsWith('[BLOCKED]')),
-    externalDataCallCount: harness.ctx.externalDataCallCount,
+    externalDataCallCount: harness.ctx.control.externalDataCallCount,
     injectedMessages: harness.injectedMessages,
     citationsUpdatedEvents: harness.events.filter((event) => event.type === 'citations_updated').length,
     results,

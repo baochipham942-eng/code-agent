@@ -46,7 +46,7 @@ export async function runInferenceWithTelemetry(
   } catch (error) {
     if (modelSpanId) {
       const message = error instanceof Error ? error.message : String(error);
-      const cancelled = ctx.runtime.isCancelled || ctx.runtime.isInterrupted || /cancel|abort/i.test(message);
+      const cancelled = ctx.runtime.control.isCancelled || ctx.runtime.control.isInterrupted || /cancel|abort/i.test(message);
       const timedOut = /timeout|timed out|超时/i.test(message);
       try {
         getTelemetryService().endSpan(modelSpanId, cancelled ? 'cancelled' : 'error', {

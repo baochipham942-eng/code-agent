@@ -7,6 +7,7 @@ import { resetInputSanitizer } from '../../../../src/host/security/inputSanitize
 import { resetCitationService } from '../../../../src/host/services/citation/citationService';
 import type { AgentEvent, ToolCall, ToolResult } from '../../../../src/shared/contract';
 import type { ToolExecutionResult } from '../../../../src/host/tools/types';
+import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 
 function makeHarness() {
   const injectedMessages: string[] = [];
@@ -14,7 +15,7 @@ function makeHarness() {
 
   const ctx = {
     sessionId: 'session-external-data-aliases',
-    externalDataCallCount: 0,
+    control: ControlState.forTest(),
     needsReinference: false,
     onEvent: (event: AgentEvent) => events.push(event),
     circuitBreaker: {
@@ -107,7 +108,7 @@ describe('toolResultLifecycle external data aliases', () => {
     harness.runTool('WebSearch', '1. Safe search https://example.com/search');
     harness.runTool('WebFetch', 'Safe fetched page');
 
-    expect(harness.ctx.externalDataCallCount).toBe(2);
+    expect(harness.ctx.control.externalDataCallCount).toBe(2);
     expect(harness.injectedMessages.filter((message) =>
       message.includes('<data-persistence-nudge>')
     )).toHaveLength(1);

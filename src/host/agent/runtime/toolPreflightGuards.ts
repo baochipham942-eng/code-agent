@@ -152,9 +152,8 @@ export function getSearchToReadPreflightBlock(
 }
 
 export function activateForceFinalResponse(ctx: RuntimeContext, reason: string): void {
-  if (ctx.forceFinalResponseReason) return;
-  ctx.forceFinalResponseReason = reason;
-  ctx.forceFinalResponsePrompt = [
+  if (ctx.control.forceFinalResponseReason) return;
+  ctx.control.forceFinalResponse(reason, [
     '<force-final-response reason="read-loop-hard-limit">',
     'The runtime has stopped further tool use because the session entered a repeated read loop.',
     'Use only the file evidence already present in tool results and persistent context.',
@@ -162,7 +161,7 @@ export function activateForceFinalResponse(ctx: RuntimeContext, reason: string):
     'If exact evidence is missing, say which evidence is missing instead of inventing it.',
     'Produce the final answer now.',
     '</force-final-response>',
-  ].join('\n');
+  ].join('\n'));
 }
 
 function isBashToolCallName(name: string): boolean {

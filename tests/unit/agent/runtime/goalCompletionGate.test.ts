@@ -13,6 +13,7 @@ vi.mock('../../../../src/host/agent/goalReviewGate', () => ({
 import { handleGoalCompletionGate } from '../../../../src/host/agent/runtime/goalCompletionGate';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
+import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 
 function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
   const goalMode = {
@@ -37,7 +38,7 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     goalMode,
     workingDirectory: '/tmp/test',
     sessionId: 's1',
-    runAbortController: null,
+    control: ControlState.forTest(),
     hookManager: undefined,
     modelConfig: { provider: 'zhipu', model: 'glm-5' },
     totalInputTokens: 1200,
@@ -73,8 +74,8 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
 
     // 返回 continue：让下一轮走 forceFinalResponse 无工具推理，向用户解释不可达原因
     expect(result).toBe('continue');
-    expect(ctx.forceFinalResponseReason).toBeTruthy();
-    expect(ctx.forceFinalResponsePrompt).toContain('不可达成');
+    expect(ctx.control.forceFinalResponseReason).toBeTruthy();
+    expect(ctx.control.forceFinalResponsePrompt).toContain('不可达成');
     expect(goalMode.markAborted).toHaveBeenCalledWith(expect.stringContaining('不可达成'));
     expect(goalMode.markMet).not.toHaveBeenCalled();
     expect(ctx.onEvent).toHaveBeenCalledWith(
@@ -295,8 +296,8 @@ describe('handleGoalCompletionGate — 闸2 评审基础设施故障（unverifia
     const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
 
     expect(result).toBe('continue');
-    expect(ctx.forceFinalResponseReason).toBeTruthy();
-    expect(ctx.forceFinalResponsePrompt).toContain('Invalid API Key');
+    expect(ctx.control.forceFinalResponseReason).toBeTruthy();
+    expect(ctx.control.forceFinalResponsePrompt).toContain('Invalid API Key');
   });
 
   it('普通评审 FAIL（非 unverifiable）仍走修复预算路径（行为不回退）', async () => {
@@ -422,8 +423,8 @@ describe('handleGoalCompletionGate — 闸1 验证基础设施故障（infraFail
     const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 5);
 
     expect(result).toBe('continue');
-    expect(ctx.forceFinalResponseReason).toBeTruthy();
-    expect(ctx.forceFinalResponsePrompt).toContain('ENOENT');
+    expect(ctx.control.forceFinalResponseReason).toBeTruthy();
+    expect(ctx.control.forceFinalResponsePrompt).toContain('ENOENT');
   });
 
   it('普通验证 FAIL（非 infraFailure，退出码非 0）仍走修复预算路径（行为不回退）', async () => {

@@ -36,7 +36,6 @@ export function buildMaxStepsPrompt(): string {
 
 /** 进入最后一轮时激活 max-steps 兜底；已有其他 forceFinal 原因时不覆盖 */
 export function activateMaxStepsFinalResponse(ctx: RuntimeContext): void {
-  if (ctx.forceFinalResponseReason) return;
-  ctx.forceFinalResponseReason = MAX_STEPS_REASON;
-  ctx.forceFinalResponsePrompt = buildMaxStepsPrompt();
+  if (ctx.control.forceFinalResponseReason) return;
+  ctx.control.forceFinalResponse(MAX_STEPS_REASON, buildMaxStepsPrompt());
 }

@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHookManager } from '../../../src/host/hooks';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 const activityMocks = vi.hoisted(() => ({
   getCurrentActivityContext: vi.fn(),
@@ -397,20 +398,14 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     messageHistoryCompressor: { compress: vi.fn() } as any,
     autoCompressor: { compress: vi.fn() } as any,
 
-    isCancelled: false,
-    isInterrupted: false,
-    abortController: null,
-    runAbortController: null,
+    control: ControlState.forTest(),
 
-    savedMessages: null,
     autoApprovePlan: false,
 
     enableHooks: false,
     maxStopHookRetries: 3,
 
     maxToolCallRetries: 3,
-    externalDataCallCount: 0,
-    preApprovedTools: new Set(),
     enableToolDeferredLoading: false,
 
     maxStructuredOutputRetries: 3,
@@ -428,8 +423,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     goalEvidenceState: { bounces: 0 },
     turn: TurnState.forTest({ isSimpleTaskMode: true, effortLevel: 'normal' as never }),
     pendingRuntimeDiagnostics: [],
-    forceFinalResponseReason: undefined,
-    forceFinalResponsePrompt: undefined,
 
 
 
@@ -538,7 +531,7 @@ describe('ConversationRuntime', () => {
 
       expect(runtime.isPlanMode()).toBe(true);
       expect(runtime.flowStateForTest.isPlanModeActive).toBe(true);
-      expect(ctx.savedMessages).toHaveLength(1);
+      expect(ctx.control.savedMessages).toHaveLength(1);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('PLAN MODE')
       );
@@ -619,12 +612,12 @@ describe('ConversationRuntime', () => {
   describe('cancel', () => {
     it('should set isCancelled flag', () => {
       runtime.cancel();
-      expect(ctx.isCancelled).toBe(true);
+      expect(ctx.control.isCancelled).toBe(true);
     });
 
     it('should abort the abort controller', () => {
       const controller = new AbortController();
-      ctx.abortController = controller;
+      ctx.control.setInferenceAbortController(controller);
 
       runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
@@ -632,7 +625,7 @@ describe('ConversationRuntime', () => {
 
     it('should abort the run-level controller', () => {
       const controller = new AbortController();
-      ctx.runAbortController = controller;
+      ctx.control.setRunAbortController(controller);
 
       runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
@@ -657,11 +650,11 @@ describe('ConversationRuntime', () => {
   describe('interrupt', () => {
     it('should set interrupt state and abort controller', () => {
       const controller = new AbortController();
-      ctx.abortController = controller;
+      ctx.control.setInferenceAbortController(controller);
 
       runtime.interrupt('新的指令');
 
-      expect(ctx.isInterrupted).toBe(true);
+      expect(ctx.control.isInterrupted).toBe(true);
       expect(runtime.flowStateForTest.interruptMessage).toBe('新的指令');
       expect(controller.signal.aborted).toBe(true);
     });
@@ -682,7 +675,7 @@ describe('ConversationRuntime', () => {
   describe('steer', () => {
     it('should abort controller and set needsReinference', () => {
       const controller = new AbortController();
-      ctx.abortController = controller;
+      ctx.control.setInferenceAbortController(controller);
 
       runtime.steer('new direction');
 
@@ -1030,7 +1023,7 @@ describe('ConversationRuntime', () => {
         allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
         strict: true,
       });
-      expect([...ctx.preApprovedTools]).toEqual(['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep']);
+      expect([...ctx.control.preApprovedTools]).toEqual(['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep']);
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: edit-role');
     });
 
@@ -1106,8 +1099,8 @@ describe('ConversationRuntime', () => {
         })
         .mockImplementationOnce(async () => {
           // 最后一轮：max-steps 兜底应已激活（禁用工具走 forceFinalResponseReason 通道）
-          expect(ctx.forceFinalResponseReason).toBeTruthy();
-          expect(ctx.forceFinalResponsePrompt).toContain('MAXIMUM STEPS REACHED');
+          expect(ctx.control.forceFinalResponseReason).toBeTruthy();
+          expect(ctx.control.forceFinalResponsePrompt).toContain('MAXIMUM STEPS REACHED');
           return { type: 'text', content: 'Maximum steps reached. Summary of work done.' };
         });
 
@@ -1116,7 +1109,7 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
       // run 退出时 finally 兜底清理 forced-final 标志（codex audit R2），
       // 激活本身已在第二次 inference 的 mock 内断言
-      expect(ctx.forceFinalResponseReason).toBeUndefined();
+      expect(ctx.control.forceFinalResponseReason).toBeUndefined();
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
         'long task',
@@ -1146,8 +1139,8 @@ describe('ConversationRuntime', () => {
 
       await runtime.run('long task');
 
-      expect(ctx.forceFinalResponseReason).toBeUndefined();
-      expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+      expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+      expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     });
 
     it('does not force a summary when the run completes before max iterations', async () => {
@@ -1156,8 +1149,8 @@ describe('ConversationRuntime', () => {
 
       await runtime.run('quick task');
 
-      expect(ctx.forceFinalResponsePrompt).toBeUndefined();
-      expect(ctx.forceFinalResponseReason).toBeUndefined();
+      expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
+      expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     });
 
     it('aborts the run when the model keeps repeating the same tool call (doom loop, roadmap 1.2)', async () => {
@@ -1328,7 +1321,7 @@ describe('ConversationRuntime', () => {
     });
 
     it('should stop on cancel during loop', async () => {
-      ctx.isCancelled = true;
+      ctx.control.markCancelled();
       await runtime.run('test');
       // Should not call inference because isCancelled is true from the start
       // (initializeRun runs, but the while loop exits immediately)
@@ -1394,7 +1387,7 @@ describe('ConversationRuntime', () => {
           content: expect.stringContaining('失败错误：model exploded'),
         }),
       );
-      expect(ctx.runAbortController).toBeNull();
+      expect(ctx.control.runAbortController).toBeNull();
     });
   });
 });

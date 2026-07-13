@@ -55,6 +55,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -78,17 +79,15 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     sessionId: 'runtime-session-1',
     workingDirectory: '/tmp/project',
     messages: [{ id: 'user-1', role: 'user', content: '帮我重构这个模块', timestamp: Date.now() }],
-    isCancelled: false,
+    control: ControlState.forTest({ isCancelled: false } as never),
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
     currentSystemPromptHash: 'hash-1',
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     hookManager: undefined,
     planningService: undefined,
-    runAbortController: { signal: { aborted: false } },
     turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
     turnQualityState: {},
-    forceFinalResponseReason: undefined,
-    forceFinalResponsePrompt: undefined,
+    control: ControlState.forTest({ runAbortController: { signal: { aborted: false } } } as never),
     totalToolCallCount: 5,
     enableDeliveryCritic: true,
     nudgeManager: {

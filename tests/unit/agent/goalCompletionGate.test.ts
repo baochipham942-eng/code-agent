@@ -32,6 +32,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { handleGoalCompletionGate } from '../../../src/host/agent/runtime/goalCompletionGate';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 function failedEvidence(): VerificationEvidence {
   return {
@@ -67,8 +68,7 @@ function passedEvidence(): VerificationEvidence {
 interface TestHarness {
   ctx: Record<string, unknown> & {
     goalMode: GoalModeController;
-    forceFinalResponseReason?: string;
-    forceFinalResponsePrompt?: string;
+    control: ControlState;
   };
   contextAssembly: { injectSystemMessage: ReturnType<typeof vi.fn> };
   events: Array<{ type: string; data: Record<string, unknown> }>;
@@ -87,6 +87,7 @@ function harness(opts?: { reviewCondition?: string }): TestHarness {
   const contextAssembly = { injectSystemMessage: vi.fn() };
   const ctx: TestHarness['ctx'] = {
     goalMode,
+    control: ControlState.forTest(),
     workingDirectory: '/tmp/w',
     // 闸0（证据自证）打回预算标记为已耗尽 → 直通闸1/闸2，本文件只测三分支裁决
     goalEvidenceState: { bounces: 99 },
@@ -146,8 +147,8 @@ describe('分支3 exhausted_release — 到限放行，绝不无限阻塞', () =
     }
     expect(h.ctx.goalMode.getStatus()).toBe('met');
     expect(h.ctx.goalMode.isVerificationDegraded()).toBe(true);
-    expect(h.ctx.forceFinalResponseReason).toBe('goal-verify-exhausted');
-    expect(h.ctx.forceFinalResponsePrompt).toContain('goal-verify-exhausted');
+    expect(h.ctx.control.forceFinalResponseReason).toBe('goal-verify-exhausted');
+    expect(h.ctx.control.forceFinalResponsePrompt).toContain('goal-verify-exhausted');
     const verdicts = appendToolExecutionCompleteMock.mock.calls.map((c) => c[0] as Record<string, unknown>);
     expect(verdicts.some((v) => String(v.summary).includes('exhausted_release'))).toBe(true);
     const gateEvents = h.events.filter((e) => e.type === 'goal_gate');

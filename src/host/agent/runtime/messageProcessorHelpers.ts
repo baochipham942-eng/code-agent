@@ -43,8 +43,8 @@ export function buildForcedFinalAssistantContent(reason: string): string {
 }
 
 export function shouldDeferForcedFinalToInference(ctx: RuntimeContext): boolean {
-  const reason = ctx.forceFinalResponseReason ?? '';
-  const prompt = ctx.forceFinalResponsePrompt ?? '';
+  const reason = ctx.control.forceFinalResponseReason ?? '';
+  const prompt = ctx.control.forceFinalResponsePrompt ?? '';
   return reason.startsWith('连续只读操作达到硬阈值')
     || prompt.includes('reason="read-loop-hard-limit"');
 }

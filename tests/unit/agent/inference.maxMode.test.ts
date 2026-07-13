@@ -129,15 +129,17 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     messages: [],
     maxMode: false,
     maxModeCandidates: 3,
-    _contextOverflowRetried: false,
-    _artifactNonStreamingRetried: false,
-    _artifactRepairCompactWriteRetried: false,
-    _networkRetried: false,
     ...overrides,
   } as any;
 
   return {
     runtime,
+    inferenceRecovery: {
+      _contextOverflowRetried: false,
+      _artifactNonStreamingRetried: false,
+      _artifactRepairCompactWriteRetried: false,
+      _networkRetried: false,
+    },
     taskProgress: {
       emitTaskProgress: vi.fn(),
     } as any,

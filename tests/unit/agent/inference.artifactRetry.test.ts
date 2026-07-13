@@ -123,15 +123,17 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     isCancelled: false,
     effortLevel: 'medium',
     messages: [],
-    _contextOverflowRetried: false,
-    _artifactNonStreamingRetried: false,
-    _artifactRepairCompactWriteRetried: false,
-    _networkRetried: false,
     ...overrides,
   } as any;
 
   return {
     runtime,
+    inferenceRecovery: {
+      _contextOverflowRetried: false,
+      _artifactNonStreamingRetried: false,
+      _artifactRepairCompactWriteRetried: false,
+      _networkRetried: false,
+    },
     taskProgress: {
       emitTaskProgress: vi.fn(),
     } as any,
@@ -545,7 +547,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     expect(ctx.inference).not.toHaveBeenCalled();
-    expect(ctx.runtime._networkRetried).toBe(false);
+    expect(ctx.inferenceRecovery._networkRetried).toBe(false);
   });
 
   it('emits repair-specific progress while waiting for artifact repair output', async () => {
@@ -591,7 +593,7 @@ describe('contextAssembly inference artifact retry', () => {
       'generating',
       '模型流中断，正在用非流式方式重试 artifact 生成...',
     );
-    expect(ctx.runtime._artifactNonStreamingRetried).toBe(false);
+    expect(ctx.inferenceRecovery._artifactNonStreamingRetried).toBe(false);
   });
 
   it('uses same-provider vision fallback as preflight, then keeps the main model for answering', async () => {
@@ -980,7 +982,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(result).toMatchObject({ type: 'text', content: 'recovered', finishReason: 'stop' });
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(2);
     expect(ctx.inference).toHaveBeenCalledTimes(1);
-    expect(ctx.runtime._networkRetried).toBe(false);
+    expect(ctx.inferenceRecovery._networkRetried).toBe(false);
     expect(ctx.runtime._networkRetryCount).toBe(0);
   });
 
@@ -1049,7 +1051,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(retryMessages[0].content).toContain('direct plain object literal');
     expect(retryMessages[0].content).toContain('390px mobile viewport');
     expect(retryMessages.map((message: any) => message.content).join('\n')).toContain('window.__GAME_TEST__');
-    expect(ctx.runtime._artifactRepairCompactWriteRetried).toBe(false);
+    expect(ctx.inferenceRecovery._artifactRepairCompactWriteRetried).toBe(false);
   });
 
   it('allows a second artifact repair retry for fast TLS connection failures', async () => {
@@ -1071,7 +1073,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(result).toMatchObject({ type: 'text', content: 'recovered', finishReason: 'stop' });
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(3);
     expect(ctx.inference).toHaveBeenCalledTimes(2);
-    expect(ctx.runtime._networkRetried).toBe(false);
+    expect(ctx.inferenceRecovery._networkRetried).toBe(false);
     expect(ctx.runtime._networkRetryCount).toBe(0);
   });
 });

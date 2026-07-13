@@ -454,9 +454,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     totalTokensUsed: 0,
     totalToolCallCount: 0,
 
-    _contextOverflowRetried: false,
-    _artifactNonStreamingRetried: false,
-    _networkRetried: false,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
 
     persistentSystemContext: [],

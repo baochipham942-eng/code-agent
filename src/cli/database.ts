@@ -21,6 +21,11 @@ import {
   type TranscriptKind,
 } from '../shared/transcriptFts.sql';
 import { MEMORY } from '../shared/constants';
+import {
+  sanitizeAttachmentsForPersistence,
+  stripInlineAttachmentBlocks,
+} from '../shared/utils/messageAttachments';
+import { extractArtifacts } from '../host/agent/artifactExtractor';
 import { migrateCliSessionsTable, createCliTables, createCliIndexes } from './cliDatabaseSchema';
 import { visibleHistoryMessageWhere } from './cliDatabaseSql';
 
@@ -57,6 +62,37 @@ function parseMessageMetadata(value: unknown): Message['metadata'] {
   } catch {
     return undefined;
   }
+}
+
+function parseStoredMessageJson<T>(value: unknown): T | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function rowToMessage(row: SQLiteRow): Message {
+  const content = stripInlineAttachmentBlocks((row.content as string) || '');
+  const artifacts = row.role === 'assistant' ? extractArtifacts(content) : [];
+
+  return {
+    id: row.id as string,
+    role: row.role as Message['role'],
+    content,
+    timestamp: row.timestamp as number,
+    toolCalls: parseStoredMessageJson<Message['toolCalls']>(row.tool_calls),
+    toolResults: parseStoredMessageJson<Message['toolResults']>(row.tool_results),
+    attachments: sanitizeAttachmentsForPersistence(
+      parseStoredMessageJson<Message['attachments']>(row.attachments),
+    ),
+    contentParts: parseStoredMessageJson<Message['contentParts']>(row.content_parts),
+    thinking: (row.thinking as string) || undefined,
+    metadata: parseMessageMetadata(row.metadata),
+    ...(row.is_meta ? { isMeta: true } : {}),
+    ...(artifacts.length > 0 ? { artifacts } : {}),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -529,15 +565,7 @@ export class CLIDatabaseService {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const attachmentsMeta = message.attachments?.map(a => ({
-      id: a.id,
-      type: a.type,
-      category: a.category,
-      name: a.name,
-      size: a.size,
-      mimeType: a.mimeType,
-      path: a.path,
-    }));
+    const attachmentsMeta = sanitizeAttachmentsForPersistence(message.attachments);
 
     stmt.run(
       message.id,
@@ -576,19 +604,7 @@ export class CLIDatabaseService {
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(sessionId) as SQLiteRow[];
 
-    return rows.map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
-      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
-      attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
-      contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      metadata: parseMessageMetadata(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-    }));
+    return rows.map(rowToMessage);
   }
 
   getRecentMessages(sessionId: string, count: number): Message[] {
@@ -603,18 +619,7 @@ export class CLIDatabaseService {
 
     const rows = stmt.all(sessionId, count) as SQLiteRow[];
 
-    return rows.reverse().map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
-      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
-      contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      metadata: parseMessageMetadata(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-    }));
+    return rows.reverse().map(rowToMessage);
   }
 
   // --------------------------------------------------------------------------
@@ -930,23 +935,11 @@ export class CLIDatabaseService {
       )
       .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, after) as SQLiteRow[];
 
-    const toMessage = (row: SQLiteRow): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: (row.content as string) || '',
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
-      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      metadata: parseMessageMetadata(row.metadata),
-      ...(row.is_meta ? { isMeta: true } : {}),
-    });
-
     const ordered = [...beforeRows.reverse(), ...afterRows];
     return {
       sessionId: anchor.session_id,
       messages: ordered.map((row) => ({
-        message: toMessage(row),
+        message: rowToMessage(row),
         matched: String(row.id) === messageId,
       })),
     };

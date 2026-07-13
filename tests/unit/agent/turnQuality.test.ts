@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import {
   buildTurnQualitySummary,
   recordTurnMemoryBlock,
@@ -16,7 +17,7 @@ function runtime(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
       model: 'gpt-4.1',
     },
     turn: TurnState.forTest({ effortLevel: 'high' }),
-    droppedPromptBlocks: [],
+    contextHealth: ContextHealthState.forTest({ droppedPromptBlocks: [] } as never),
     pendingRuntimeDiagnostics: [],
     turnQualityState: {},
     ...overrides,

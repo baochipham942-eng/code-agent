@@ -154,7 +154,7 @@ export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
   }
 
   const textBlocks = [...messageTextBlocks];
-  const persistentSystemContext = ctx.persistentSystemContext || [];
+  const persistentSystemContext = ctx.contextHealth.persistentSystemContext || [];
   for (let index = persistentSystemContext.length - 1; index >= 0 && textBlocks.length < 16; index -= 1) {
     const block = persistentSystemContext[index];
     if (typeof block !== 'string' || !isRuntimeArtifactRepairContext(block)) continue;

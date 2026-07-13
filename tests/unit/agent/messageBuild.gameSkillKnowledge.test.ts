@@ -3,6 +3,7 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import type { Message } from '../../../src/shared/contract';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../../../src/host/agent/runtime/contextAssembly/shared';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -186,15 +187,14 @@ function makeCtx(userMessage: string): ContextAssemblyCtx {
         maxTokens: 4096,
       },
       messages,
-      droppedPromptBlocks: [],
       pendingRuntimeDiagnostics: [],
-      compressionState: new CompressionState(),
+      contextHealth: ContextHealthState.forTest({ droppedPromptBlocks: [], compressionState: new CompressionState() } as never),
       compressionPipeline: {
         evaluate: vi.fn(async (entries: ContextTranscriptEntry[], state: CompressionState) => ({
           apiView: entries,
           totalTokens: 0,
           layersTriggered: [],
-          compressionState: state,
+          contextHealth: ContextHealthState.forTest({ compressionState: state } as never),
         })),
       },
       messageHistoryCompressor: {

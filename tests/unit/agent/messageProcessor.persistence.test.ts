@@ -57,6 +57,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -94,6 +95,7 @@ describe('MessageProcessor persistence', () => {
 
   it('persists injected steer messages to the runtime session instead of the global current session', () => {
     const ctx = {
+      contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
     };
@@ -113,6 +115,7 @@ describe('MessageProcessor persistence', () => {
 
   it('reuses the renderer optimistic message id when provided', () => {
     const ctx = {
+      contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
     };
@@ -136,7 +139,7 @@ describe('MessageProcessor persistence', () => {
       maxToolCallRetries: 0,
       historyVisibility: 'meta',
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1' } as never),
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -182,7 +185,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { maxTokens: 4096 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -242,6 +245,7 @@ describe('MessageProcessor persistence', () => {
 
   it('persists truncated text before asking the next iteration to continue', async () => {
     const ctx = {
+      contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       control: ControlState.forTest({ isCancelled: false } as never),
@@ -308,6 +312,7 @@ describe('MessageProcessor persistence', () => {
 
   it('continues when a provider reports stop on an obviously unfinished sentence', async () => {
     const ctx = {
+      contextHealth: ContextHealthState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       control: ControlState.forTest({ isCancelled: false } as never),
@@ -372,7 +377,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -439,7 +444,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } }, forceFinalResponseReason: 'artifact repair target already passes validation after blocked Read read', forceFinalResponsePrompt: '<force-final-response>done</force-final-response>' } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -513,7 +518,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -610,7 +615,7 @@ describe('MessageProcessor persistence', () => {
       messages: [{ id: 'user-1', role: 'user', content: '分析一下 Alma 的流式输出', timestamp: Date.now() }],
       control: ControlState.forTest({ isCancelled: false } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       hookManager: undefined,
       planningService: undefined,
@@ -696,7 +701,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -792,7 +797,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -872,7 +877,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -938,7 +943,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -1055,7 +1060,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -1150,7 +1155,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -1222,7 +1227,7 @@ describe('MessageProcessor persistence', () => {
       messages: [],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
@@ -1313,7 +1318,7 @@ describe('MessageProcessor persistence', () => {
       messages: [] as never[],
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
-      currentSystemPromptHash: 'hash-1',
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } }, forceFinalResponseReason: undefined as string | undefined, forceFinalResponsePrompt: undefined as string | undefined } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),

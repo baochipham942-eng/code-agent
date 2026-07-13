@@ -40,7 +40,7 @@ export async function bootstrapDesktopDerivedContext(
 
   const existingSystemContextTokens =
     estimateTokens(ctx.systemPrompt)
-    + estimateTokens(ctx.persistentSystemContext.join('\n\n'))
+    + estimateTokens(ctx.contextHealth.persistentSystemContext.join('\n\n'))
     + ctx.messages
       .filter((message) => message.role === 'system')
       .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);

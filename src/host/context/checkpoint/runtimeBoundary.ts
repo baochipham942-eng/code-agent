@@ -1,6 +1,7 @@
 import type { AgentEvent, Message } from '../../../shared/contract';
 import { generateMessageId } from '../../../shared/utils/id';
 import { CompressionState } from '../compressionState';
+import type { ContextHealthState } from '../../agent/runtime/contextHealthState';
 import { getContextEventLedger } from '../contextEventLedger';
 import { estimateTokens } from '../tokenOptimizer';
 import {
@@ -20,8 +21,7 @@ export interface CheckpointBoundaryRuntime {
   messages: Message[];
   onEvent: (event: AgentEvent) => void;
   persistMessage?: (message: Message) => Promise<void>;
-  compressionState: CompressionState;
-  checkpointRebuildLastWatermarkId?: string;
+  contextHealth: ContextHealthState;
   checkpointRootDir?: string;
 }
 
@@ -68,7 +68,7 @@ export async function tryInsertCheckpointRebuildBoundary(
   if (!watermark) {
     return { inserted: false, reason: 'no-watermark' };
   }
-  if (runtime.checkpointRebuildLastWatermarkId === watermark) {
+  if (runtime.contextHealth.checkpointRebuildLastWatermarkId === watermark) {
     return { inserted: false, reason: 'same-watermark' };
   }
 
@@ -106,9 +106,9 @@ export async function tryInsertCheckpointRebuildBoundary(
   };
 
   runtime.messages.splice(0, tail.compactedMessageCount, marker);
-  runtime.checkpointRebuildLastWatermarkId = watermark;
-  runtime.compressionState = new CompressionState();
-  runtime.compressionState.applyCommit({
+  runtime.contextHealth.setCheckpointWatermark(watermark);
+  runtime.contextHealth.replaceCompressionState(new CompressionState());
+  runtime.contextHealth.compressionState.applyCommit({
     layer: 'system',
     operation: 'reset',
     targetMessageIds: [marker.id],

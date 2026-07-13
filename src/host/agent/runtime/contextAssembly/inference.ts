@@ -1106,7 +1106,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       errCode,
       Boolean(ctx.runtime.artifactRepairGuard),
     );
-    const networkRetryCount = ctx.runtime._networkRetryCount ?? (ctx.inferenceRecovery._networkRetried ? 1 : 0);
+    const networkRetryCount = ctx.runtime.contextHealth.networkRetryCount ?? (ctx.inferenceRecovery._networkRetried ? 1 : 0);
     const shouldRetryNetworkError =
       isNetworkError
       && networkRetryCount < maxNetworkRetries
@@ -1114,18 +1114,18 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       && !(ctx.runtime.artifactRepairGuard && isSlowProviderTimeout);
     if (shouldRetryNetworkError) {
       ctx.inferenceRecovery._networkRetried = true;
-      ctx.runtime._networkRetryCount = networkRetryCount + 1;
-      logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime._networkRetryCount}/${maxNetworkRetries})...`);
+      ctx.runtime.contextHealth.setNetworkRetryCount(networkRetryCount + 1);
+      logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime.contextHealth.networkRetryCount}/${maxNetworkRetries})...`);
       await new Promise(r => setTimeout(r, 2000));
       try {
         const retryResult = await ctx.inference();
         ctx.inferenceRecovery._networkRetried = false;
-        ctx.runtime._networkRetryCount = 0;
+        ctx.runtime.contextHealth.setNetworkRetryCount(0);
         return retryResult;
       } catch (retryErr) {
-        if ((ctx.runtime._networkRetryCount ?? 0) >= maxNetworkRetries) {
+        if ((ctx.runtime.contextHealth.networkRetryCount ?? 0) >= maxNetworkRetries) {
           ctx.inferenceRecovery._networkRetried = false;
-          ctx.runtime._networkRetryCount = 0;
+          ctx.runtime.contextHealth.setNetworkRetryCount(0);
         }
         logger.error('[AgentLoop] Network retry also failed:', retryErr);
       }

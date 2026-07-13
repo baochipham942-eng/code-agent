@@ -211,7 +211,7 @@ async function commitCompactionBlock(
       kind: 'compaction_block',
     },
   });
-  ctx.runtime.compressionState = nextCompressionState;
+  ctx.runtime.contextHealth.replaceCompressionState(nextCompressionState);
   persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
   getContextEventLedger().upsertCompressionEvents(
     ctx.runtime.sessionId,
@@ -274,7 +274,7 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       undefined,
       estimateActiveToolDefinitionsTokens(),
       // GAP-023: 被预算丢弃的 prompt 块可见化到 context health 面板
-      ctx.runtime.droppedPromptBlocks ? [...ctx.runtime.droppedPromptBlocks] : undefined,
+      ctx.runtime.contextHealth.droppedPromptBlocks ? [...ctx.runtime.contextHealth.droppedPromptBlocks] : undefined,
     );
 
     // 更新压缩统计到健康状态
@@ -345,7 +345,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     // Item2 卡死护栏：已判定窗口太小而暂停，则不再尝试压缩（避免每轮烧 token 摘要）。
     // 消费 pipeline one-shot 信号，避免 stale true 残留。
     if (ctx.compressionRecovery._autoCompactPaused) {
-      ctx.runtime.pipelineAutocompactNeeded = false;
+      ctx.runtime.contextHealth.setPipelineAutocompactNeeded(false);
       return;
     }
 
@@ -378,15 +378,15 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       tokenThresholdHit: ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens),
       usageRatio: health ? health.usagePercent / 100 : undefined,
       warningThreshold: compressorConfig.warningThreshold,
-      pipelineAutocompactNeeded: ctx.runtime.pipelineAutocompactNeeded,
+      pipelineAutocompactNeeded: ctx.runtime.contextHealth.pipelineAutocompactNeeded,
       checkpointRebuildAvailable,
       checkpointRebuildAlreadyInserted: checkpointWatermark !== undefined
-        && ctx.runtime.checkpointRebuildLastWatermarkId === checkpointWatermark,
+        && ctx.runtime.contextHealth.checkpointRebuildLastWatermarkId === checkpointWatermark,
       isMainAgent: !ctx.runtime.agentId,
       compressionEnabled: compressorConfig.enabled,
     });
     // one-shot 信号：评估后立即清零，避免跨 turn 残留
-    ctx.runtime.pipelineAutocompactNeeded = false;
+    ctx.runtime.contextHealth.setPipelineAutocompactNeeded(false);
 
     if (decision.action === 'none') return;
 
@@ -481,7 +481,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       modelConfig: ctx.runtime.modelConfig,
       hookManager: ctx.runtime.hookManager,
       usagePercent: health?.usagePercent,
-      archivedToolResults: getArchivedToolResults(ctx.runtime.compressionState),
+      archivedToolResults: getArchivedToolResults(ctx.runtime.contextHealth.compressionState),
     });
 
     // WP2-3 失败冷却记账：校验不过算失败（质量问题），净节省闸拒绝不算（经济学决策）。

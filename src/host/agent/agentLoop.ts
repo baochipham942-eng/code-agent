@@ -125,6 +125,7 @@ import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
 import { TurnTraceRecorder } from './runtime/turnTrace';
 import { TurnState } from './runtime/turnState';
 import { ControlState } from './runtime/controlState';
+import { ContextHealthState } from './runtime/contextHealthState';
 import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
@@ -210,7 +211,6 @@ export class AgentLoop {
         preserveUserMessages: true,
       }),
       autoCompressor: getAutoCompressor(),
-      compressionState,
       compressionPipeline: new CompressionPipeline(),
       telemetryAdapter: config.telemetryAdapter
         ? composeTelemetryAdapters(config.telemetryAdapter, createTelemetryAdapter())
@@ -249,7 +249,6 @@ export class AgentLoop {
       goalEvidenceState: { bounces: 0 },
       lastModelTraceSpanId: undefined,
       pendingRuntimeDiagnostics: [],
-      droppedPromptBlocks: [],
 
       // Budget
       totalInputTokens: 0,
@@ -259,21 +258,20 @@ export class AgentLoop {
       // Thinking
       scaffoldProfile,
 
-      // Persistent system context
-      persistentSystemContext: persistedRuntimeState?.persistentSystemContext ?? [],
-
       // Task stats
       runStartTime: 0,
       totalTokensUsed: 0,
       totalToolCallCount: 0,
 
       // Context recovery
-      _networkRetryCount: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       MAX_CONSECUTIVE_COMPACTS: 2,
 
-      // Context health
-      pipelineAutocompactNeeded: false,
+      // Context health（ADR-038 批3c）
+      contextHealth: new ContextHealthState({
+        compressionState,
+        persistentSystemContext: persistedRuntimeState?.persistentSystemContext ?? [],
+      }),
     };
 
     // Create modules
@@ -391,6 +389,6 @@ export class AgentLoop {
   }
 
   getSerializedCompressionState(): string {
-    return this.ctx.compressionState.serialize();
+    return this.ctx.contextHealth.compressionState.serialize();
   }
 }

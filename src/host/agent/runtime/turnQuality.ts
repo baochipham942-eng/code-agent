@@ -254,8 +254,8 @@ export function buildTurnQualitySummary(
   const provider = (response?.actualProvider || ctx.modelConfig.provider) as ModelProvider;
   const model = response?.actualModel || ctx.modelConfig.model;
   const warnings = uniqueStrings([
-    ...(ctx.droppedPromptBlocks?.length
-      ? [`Prompt blocks dropped: ${ctx.droppedPromptBlocks.join(', ')}`]
+    ...(ctx.contextHealth.droppedPromptBlocks?.length
+      ? [`Prompt blocks dropped: ${ctx.contextHealth.droppedPromptBlocks.join(', ')}`]
       : []),
     ...(ctx.pendingRuntimeDiagnostics || []),
   ]);

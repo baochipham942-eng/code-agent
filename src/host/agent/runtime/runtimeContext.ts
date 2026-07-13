@@ -21,7 +21,6 @@ import type { HookManager } from '../../hooks/hookManager';
 import type { PlanningService } from '../../planning/planningService';
 import type { HookMessageBuffer, MessageHistoryCompressor } from '../../context/tokenOptimizer';
 import type { AutoContextCompressor } from '../../context/autoCompressor';
-import type { CompressionState } from '../../context/compressionState';
 import type { CompressionPipeline } from '../../context/compressionPipeline';
 import type { TelemetryAdapter } from '../../../shared/contract/telemetry';
 import type { InferenceOptions } from '../../model/types';
@@ -32,6 +31,7 @@ import type {
 import type { TurnTraceRecorder } from './turnTrace';
 import type { TurnState } from './turnState';
 import type { ControlState } from './controlState';
+import type { ContextHealthState } from './contextHealthState';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
@@ -80,7 +80,6 @@ export interface RuntimeContext {
   readonly hookMessageBuffer: HookMessageBuffer;
   readonly messageHistoryCompressor: MessageHistoryCompressor;
   readonly autoCompressor: AutoContextCompressor;
-  compressionState: CompressionState;
   readonly compressionPipeline: CompressionPipeline;
   readonly telemetryAdapter?: TelemetryAdapter;
   readonly inferenceOptions?: InferenceOptions;
@@ -121,15 +120,12 @@ export interface RuntimeContext {
   // --- Tracing ---
   traceId: string;
   lastModelTraceSpanId?: string;
-  currentSystemPromptHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   readonly turnTrace: TurnTraceRecorder;
   /** 2d: turn quality run 级记忆（owner=turnQuality） */
   readonly turnQualityState: TurnQualityRunState;
   turnModelDecision?: ModelDecision;
   pendingRuntimeDiagnostics: string[];
-  /** GAP-023: 当前生效 system prompt 构建时被预算丢弃/裁剪的块（可见化到 context health） */
-  droppedPromptBlocks?: string[];
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   artifactValidationPassedTargetFile?: string;
   /**
@@ -178,21 +174,12 @@ export interface RuntimeContext {
   totalToolCallCount: number;
 
   // --- Context recovery ---
-  _networkRetryCount?: number;
   readonly MAX_CONSECUTIVE_TRUNCATIONS: number;
   readonly MAX_CONSECUTIVE_COMPACTS: number;
 
-  // --- Persistent system context ---
-  // 任务指导类信息（复杂度提示、并行建议、任务模式 reminder 等）
-  // 存在此处而非 ctx.messages，确保每轮推理都作为 system prompt 的一部分可见
-  persistentSystemContext: string[];
 
-  // --- Context health ---
-  /** G12/P2-full: 本 turn CompressionPipeline 是否报了 autocompact-needed。
-   *  由 messageBuild 写入，checkAndAutoCompress 经 ContextPressureController 消费后清零。 */
-  pipelineAutocompactNeeded: boolean;
-  /** Roadmap 3.4: last message watermark that already received a checkpoint rebuild boundary. */
-  checkpointRebuildLastWatermarkId?: string;
+  // --- Context health（ADR-038 批3c，写操作走 ContextHealthState 方法）---
+  readonly contextHealth: ContextHealthState;
   /** Test/host override for checkpoint artifact storage. Defaults to app user data. */
   readonly checkpointRootDir?: string;
 }

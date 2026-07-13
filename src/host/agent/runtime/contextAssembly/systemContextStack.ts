@@ -70,17 +70,17 @@ export function pushPersistentSystemContext(ctx: ContextAssemblyCtx, content: st
   if (!normalized) return;
   const trimmed = content.trim();
 
-  const existingIndex = ctx.runtime.persistentSystemContext.findIndex(
+  const existingIndex = ctx.runtime.contextHealth.persistentSystemContext.findIndex(
     (item) => normalizePersistentSystemContextKey(item) === normalized,
   );
   if (existingIndex >= 0) {
-    const [existing] = ctx.runtime.persistentSystemContext.splice(existingIndex, 1);
-    ctx.runtime.persistentSystemContext.push(existing);
+    const [existing] = ctx.runtime.contextHealth.persistentSystemContext.splice(existingIndex, 1);
+    ctx.runtime.contextHealth.persistentSystemContext.push(existing);
     persistRuntimeState(ctx.runtime, { compressionState: false, persistentSystemContext: true });
     return;
   }
 
-  ctx.runtime.persistentSystemContext.push(trimmed);
+  ctx.runtime.contextHealth.persistentSystemContext.push(trimmed);
   ctx.trimPersistentSystemContext();
 }
 
@@ -88,8 +88,8 @@ export function getBudgetedPersistentSystemContext(ctx: ContextAssemblyCtx): str
   const selected: string[] = [];
   let usedTokens = 0;
 
-  for (let i = ctx.runtime.persistentSystemContext.length - 1; i >= 0; i--) {
-    const normalized = ctx.runtime.persistentSystemContext[i].trim();
+  for (let i = ctx.runtime.contextHealth.persistentSystemContext.length - 1; i >= 0; i--) {
+    const normalized = ctx.runtime.contextHealth.persistentSystemContext[i].trim();
     if (!normalized) continue;
 
     const trimmed = ctx.truncatePersistentSystemContext(normalized, MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS);
@@ -106,7 +106,7 @@ export function getBudgetedPersistentSystemContext(ctx: ContextAssemblyCtx): str
 
 export function trimPersistentSystemContext(ctx: ContextAssemblyCtx): void {
   const selected = ctx.getBudgetedPersistentSystemContext();
-  ctx.runtime.persistentSystemContext.splice(0, ctx.runtime.persistentSystemContext.length, ...selected);
+  ctx.runtime.contextHealth.persistentSystemContext.splice(0, ctx.runtime.contextHealth.persistentSystemContext.length, ...selected);
   persistRuntimeState(ctx.runtime, { compressionState: false, persistentSystemContext: true });
 }
 

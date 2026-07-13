@@ -22,9 +22,9 @@ export function promptBudget(ctx?: ContextAssemblyCtx): number {
  */
 export function recordDroppedPromptBlock(ctx: ContextAssemblyCtx | undefined, label: string): void {
   if (!ctx) return;
-  const dropped = (ctx.runtime.droppedPromptBlocks ??= []);
-  if (!dropped.includes(label)) {
-    dropped.push(label);
+  const dropped = ctx.runtime.contextHealth.droppedPromptBlocks;
+  if (!dropped || !dropped.includes(label)) {
+    ctx.runtime.contextHealth.recordDroppedPromptBlock(label);
   }
 }
 

@@ -145,13 +145,14 @@ export class GuardFabric {
     tool: string,
     topology: ExecutionTopology,
   ): { verdict: GuardVerdict; reason: string } | null {
-    const toolRules = TOPOLOGY_RULES[tool];
+    const normalizedTool = tool.trim().toLowerCase();
+    const toolRules = TOPOLOGY_RULES[normalizedTool];
     if (!toolRules) return null;
 
     const verdict = toolRules[topology];
     if (!verdict) return null;
 
-    return { verdict, reason: `topology rule: ${tool} not allowed in ${topology} context` };
+    return { verdict, reason: `topology rule: ${normalizedTool} not allowed in ${topology} context` };
   }
 
   /**

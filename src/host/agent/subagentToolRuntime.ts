@@ -25,6 +25,7 @@ export function createSubagentToolRuntime(input: {
     workingDirectory: nativeRunContext?.cwd ?? context.cwd,
     runContext: nativeRunContext,
     permissionModeOverride: input.effectiveMode as PermissionMode,
+    executionTopology: 'main',
     requestPermission: async (request) => {
       if (
         input.effectiveMode === 'bypassPermissions'

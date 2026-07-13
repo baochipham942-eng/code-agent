@@ -1,31 +1,15 @@
- 
 // ============================================================================
 // Tool Executor - Executes tools with permission handling
 // ============================================================================
 
-import type {
-  ToolContext,
-  ToolExecutionResult,
-  PermissionRequestData,
-} from './types';
+import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import * as nodePath from 'path';
 import type { ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import { PermissionRequestReason } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
-import {
-  getAuditLogger,
-  maskSensitiveData,
-  isKnownSafeCommand,
-  validateCommand,
-  getShellSafetyMode,
-  getExecPolicyStore,
-  getPolicyEnforcer,
-  type PolicyEnforcer,
-  type PolicyCheckResult,
-  type ValidationResult,
-} from '../security';
+import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { type ClassificationResult } from './permissionClassifier';
@@ -33,17 +17,10 @@ import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
-import {
-  getWriteIsolationManager,
-  getWriteIsolationScope,
-  type WriteIsolationMetadata,
-} from '../security/writeIsolation';
+import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
-import type {
-  ConversationExecutionIntent,
-  WorkbenchToolScope,
-} from '../../shared/contract/conversationEnvelope';
+import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
@@ -56,21 +33,14 @@ import {
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
-import {
-  isRunPathInsideWorkspace,
-  resolveCanonicalRunPath,
-  type RunContext,
-} from '../runtime/runContext';
-import {
-  isDangerousCommand,
-  sanitizeToolParams,
-  toolMatchesPatternSet,
-  truncateToolOutput,
-} from './toolExecutorHelpers';
+import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
 import { annotateToolExecution, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
+import { type ExecutionTopology } from '../permissions';
+import { evaluateGuardFabricGate } from './guardFabricGate';
 
 const logger = createLogger('ToolExecutor');
 
@@ -86,6 +56,8 @@ const logger = createLogger('ToolExecutor');
 export interface ToolExecutorConfig {
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
+  /** Topology used by GuardFabric. Defaults to main for zero behavior change. */
+  executionTopology?: ExecutionTopology;
   /**
    * 权限档覆盖：subagent 传父子收缩后的 effectiveMode，禁止回读父会话档
    * （否则父会话开 bypass 时被收缩的子 agent 会借会话档扩权）。主 agent 不传。
@@ -97,12 +69,7 @@ export interface ToolExecutorConfig {
   dispatchTool?: ToolExecutionDelegate;
 }
 
-export type ToolExecutionDelegate = (
-  toolName: string,
-  params: Record<string, unknown>,
-  context: ToolContext,
-  options: ExecuteOptions,
-) => Promise<ToolExecutionResult | null>;
+export type ToolExecutionDelegate = (toolName: string, params: Record<string, unknown>, context: ToolContext, options: ExecuteOptions) => Promise<ToolExecutionResult | null>;
 
 /**
  * 工具执行选项
@@ -122,6 +89,8 @@ export interface ExecuteOptions {
   // Agent ID for per-agent BrowserPool / ComputerSurface isolation。子 agent 派活
   // 时由 subagent pipeline 灌入；主 agent 留 undefined → default agent。
   agentId?: string;
+  /** Per-call GuardFabric topology. Defaults to the executor topology, then main. */
+  executionTopology?: ExecutionTopology;
   // 当前 agent 在 spawn 链路中的嵌套深度（主 agent = 0）。
   spawnDepth?: number;
   // 会话级 spawn 深度覆盖，执行层会 clamp 到硬上限。
@@ -149,14 +118,7 @@ export interface ExecuteOptions {
   //（不能被预授权/安全白名单/classifier 自动放行）。
   skillToolBoundary?: SkillToolBoundary;
   // Current message attachments for multi-agent workflows
-  currentAttachments?: Array<{
-    type: string;
-    category?: string;
-    name?: string;
-    path?: string;
-    data?: string;
-    mimeType?: string;
-  }>;
+  currentAttachments?: Array<{ type: string; category?: string; name?: string; path?: string; data?: string; mimeType?: string }>;
   // 当前工具调用 ID（用于 subagent 追踪）
   currentToolCallId?: string;
   // 模型回调（工具内二次调用模型，如 PPT 内容生成）
@@ -176,10 +138,7 @@ export interface ExecuteOptions {
   // 策略只能收紧（deny），不能放宽：'deny' 直接拒，'ask' 继续走常规管道
   // （validateCommand / classifyPermission / exec policy / 审计 / cache）。
   // 这保证 subagent 与主 agent 走同一条 ToolExecutor 管道，而非绕过权限的旁路。
-  subagentPolicy?: {
-    allowedTools: Set<string>;
-    check: (toolName: string, params: Record<string, unknown>) => 'deny' | 'ask';
-  };
+  subagentPolicy?: { allowedTools: Set<string>; check: (toolName: string, params: Record<string, unknown>) => 'deny' | 'ask' };
 }
 
 // ----------------------------------------------------------------------------
@@ -215,6 +174,7 @@ export class ToolExecutor {
   private workingDirectory: string;
   private readonly runContext?: RunContext;
   private readonly dispatchTool?: ToolExecutionDelegate;
+  private readonly executionTopology: ExecutionTopology;
   private auditEnabled = true;
   private permissionModeOverride?: PermissionMode;
 
@@ -224,6 +184,7 @@ export class ToolExecutor {
     this.permissionModeOverride = config.permissionModeOverride;
     this.runContext = config.runContext;
     this.dispatchTool = config.dispatchTool;
+    this.executionTopology = config.executionTopology ?? 'main';
     if (this.runContext && this.workingDirectory !== this.runContext.cwd) {
       throw new Error(
         `Run-scoped ToolExecutor cwd mismatch for ${this.runContext.runId}: ${this.workingDirectory}`,
@@ -238,6 +199,7 @@ export class ToolExecutor {
       workingDirectory: runContext.cwd,
       // run-scoped 派生必须继承收缩档，否则子 agent 的 effectiveMode 在此丢失、扩权洞重开
       permissionModeOverride: this.permissionModeOverride,
+      executionTopology: this.executionTopology,
       runContext,
       dispatchTool: dispatchTool ?? this.dispatchTool,
     });
@@ -392,6 +354,35 @@ export class ToolExecutor {
     }
 
     const permStartTime = Date.now();
+    const executionTopology = options.executionTopology ?? this.executionTopology;
+    let guardFabricForcesApproval = false;
+    let guardFabricTraceStep: import('../../shared/contract/decisionTrace').DecisionStep | undefined;
+    const guardFabricGate = evaluateGuardFabricGate({
+      executionToolName,
+      policyToolName,
+      params,
+      topology: executionTopology,
+      sessionId: effectiveSessionId,
+      agentId: options.agentId,
+    });
+    if (guardFabricGate.deny) {
+      recordDecision(
+        executionToolName,
+        params,
+        'policy-deny',
+        guardFabricGate.deny.reason,
+        permStartTime,
+        guardFabricGate.deny.trace,
+      );
+      return {
+        success: false,
+        error: guardFabricGate.deny.error,
+      };
+    }
+    if (guardFabricGate.forceApproval) {
+      guardFabricForcesApproval = true;
+      guardFabricTraceStep = guardFabricGate.traceStep;
+    }
 
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
@@ -571,6 +562,7 @@ export class ToolExecutor {
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
+      && !guardFabricForcesApproval
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
       && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
@@ -581,7 +573,7 @@ export class ToolExecutor {
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !isPreApproved) {
+    if (isBashToolName(policyToolName) && params.command && !isPreApproved && !guardFabricForcesApproval) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -622,82 +614,92 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
-      try {
-        // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
-        const classification: ClassificationResult = await resolveToolPermissionClassification({
-          executionToolName,
-          policyToolName,
-          params,
-          policyForcesConfirmation,
-          boundaryViolation,
-          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
-          workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
-          permissionLevel: toolDef.permissionLevel,
-          permStartTime,
-          readOnlyForcesConfirmation,
-          sessionPermissionMode,
-        });
-        if (classification.decision === 'approve') {
-          logger.info('Auto-approved by classifier', {
-            tool: executionToolName,
-            reason: classification.reason,
-            confidence: classification.confidence,
-            cached: classification.cached,
+      if (guardFabricTraceStep) {
+        traceBuilder.addStep(
+          guardFabricTraceStep.layer,
+          guardFabricTraceStep.rule,
+          guardFabricTraceStep.result,
+          guardFabricTraceStep.reason,
+        );
+      }
+      if (!guardFabricForcesApproval) {
+        try {
+          // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
+          const classification: ClassificationResult = await resolveToolPermissionClassification({
+            executionToolName,
+            policyToolName,
+            params,
+            policyForcesConfirmation,
+            boundaryViolation,
+            workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+            workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
+            permissionLevel: toolDef.permissionLevel,
+            permStartTime,
+            readOnlyForcesConfirmation,
+            sessionPermissionMode,
           });
-          needsUserApproval = false;
-          const trace = classification.traceStep
-            ? createTraceBuilder(executionToolName)
-              .addStep(
+          if (classification.decision === 'approve') {
+            logger.info('Auto-approved by classifier', {
+              tool: executionToolName,
+              reason: classification.reason,
+              confidence: classification.confidence,
+              cached: classification.cached,
+            });
+            needsUserApproval = false;
+            const trace = classification.traceStep
+              ? createTraceBuilder(executionToolName)
+                .addStep(
+                  classification.traceStep.layer,
+                  classification.traceStep.rule,
+                  classification.traceStep.result,
+                  classification.traceStep.reason,
+                )
+                .build('allow')
+              : undefined;
+            recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace);
+          } else if (classification.decision === 'deny') {
+            // Collect trace step from classifier
+            if (classification.traceStep) {
+              traceBuilder.addStep(
                 classification.traceStep.layer,
                 classification.traceStep.rule,
                 classification.traceStep.result,
                 classification.traceStep.reason,
-              )
-              .build('allow')
-            : undefined;
-          recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace);
-        } else if (classification.decision === 'deny') {
-          // Collect trace step from classifier
-          if (classification.traceStep) {
-            traceBuilder.addStep(
-              classification.traceStep.layer,
-              classification.traceStep.rule,
-              classification.traceStep.result,
-              classification.traceStep.reason,
-            );
+              );
+            }
+            logger.warn('Denied by classifier', {
+              tool: executionToolName,
+              reason: classification.reason,
+            });
+            // Fire-and-forget: emit PermissionDenied hook
+            options.hookManager?.triggerPermissionDenied(
+              executionToolName, classification.reason || 'classifier deny', 'classifier',
+              effectiveSessionId || 'unknown',
+            ).catch(() => {});
+            recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime, traceBuilder.build('deny'));
+            return {
+              success: false,
+              error: `Denied: ${classification.reason}`,
+            };
+          } else {
+            // 'ask' — collect trace step for permission request
+            if (classification.traceStep) {
+              traceBuilder.addStep(
+                classification.traceStep.layer,
+                classification.traceStep.rule,
+                classification.traceStep.result,
+                classification.traceStep.reason,
+              );
+            }
           }
-          logger.warn('Denied by classifier', {
-            tool: executionToolName,
-            reason: classification.reason,
-          });
-          // Fire-and-forget: emit PermissionDenied hook
-          options.hookManager?.triggerPermissionDenied(
-            executionToolName, classification.reason || 'classifier deny', 'classifier',
-            effectiveSessionId || 'unknown',
-          ).catch(() => {});
-          recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime, traceBuilder.build('deny'));
-          return {
-            success: false,
-            error: `Denied: ${classification.reason}`,
-          };
-        } else {
-          // 'ask' — collect trace step for permission request
-          if (classification.traceStep) {
-            traceBuilder.addStep(
-              classification.traceStep.layer,
-              classification.traceStep.rule,
-              classification.traceStep.result,
-              classification.traceStep.reason,
-            );
-          }
+        } catch (classifierError) {
+          logger.debug('Permission classifier error, falling back to user approval', classifierError);
         }
-      } catch (classifierError) {
-        logger.debug('Permission classifier error, falling back to user approval', classifierError);
       }
 
       if (needsUserApproval) {

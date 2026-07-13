@@ -8,7 +8,7 @@
 // - strict-inherit（默认）：子 = 父真子集；tools ∩、deny ∪、mode 取更严，永不扩张
 // - child-narrow：子可在父集合内声明更窄能力；仅父 mode ∈ {default, acceptEdits}
 //   时允许子在父 allow 内自行扩 allow
-// - independent：子完全独立，仍受 GuardFabric topology + 用户 deny 约束
+// - independent：子上下文独立；GuardFabric 在 ToolExecutor 默认 main 拓扑执行，非 main 标注待产品决策
 // ============================================================================
 
 import { buildProfilePrompt } from '../prompts/builder';
@@ -27,7 +27,7 @@ export interface ParentContext {
   /** 'default' | 'bypassPermissions' | 'acceptEdits' | 'plan' | 'delegate' | 'dontAsk' */
   permissionMode: string;
   availableTools: string[];
-  /** 父级 deny 规则（来自 settings.permissions.deny + topology + preset blockedCommands 合集） */
+  /** 父级 deny 规则（来自 settings.permissions.deny + preset blockedCommands 合集；topology 由 ToolExecutor/GuardFabric 处理） */
   deny?: string[];
   /** 父级 ask 规则 */
   ask?: string[];
@@ -221,7 +221,7 @@ export function buildChildContext(
   });
 
   // 2. tools 交集（永不扩张）
-  //    independent 模式下子工具仍受父工具集约束（topology + user deny 走 GuardFabric）
+  //    independent 模式下子工具仍受父工具集约束；GuardFabric 在 ToolExecutor 默认 main 拓扑执行
   const toolPool = uniqIntersect(parent.availableTools, config.allowedTools);
 
   // 3. deny 并集（永远叠加，三档模式都遵守）
@@ -251,7 +251,7 @@ export function buildChildContext(
       effectiveAllow = config.allow ? uniqIntersect(parent.allow ?? [], config.allow) : [...(parent.allow ?? [])];
     }
   } else {
-    // independent：子自己决定 ask/allow（仍受 GuardFabric topology + user deny）
+    // independent：子自己决定 ask/allow；非 main topology annotation 待产品决策
     effectiveAsk = [...(config.ask ?? [])];
     effectiveAllow = [...(config.allow ?? [])];
   }

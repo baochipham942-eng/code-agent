@@ -238,6 +238,13 @@ export class TestRunner {
    * Run all tests
    */
   async runAll(): Promise<TestRunSummary> {
+    if (this.config.parallel && this.config.maxParallel > 1) {
+      throw new Error(
+        'serial-only: runner shares a single agent instance and working directory; '
+        + 'drop --concurrency or use maxParallel=1'
+      );
+    }
+
     const runId = this.config.runId || uuidv4();
     const startTime = Date.now();
     const results: TestResult[] = [];

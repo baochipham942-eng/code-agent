@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
-import type { TestRunSummary } from '../../../src/host/testing/types';
+import type { TestEvent, TestRunSummary, TestRunnerConfig } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
@@ -25,11 +25,16 @@ function makeAgent(): AgentInterface {
   };
 }
 
-async function runSuite(suiteYaml: string): Promise<TestRunSummary> {
+async function createRunner(
+  suiteYaml: string,
+  configOverrides: Partial<TestRunnerConfig> = {},
+): Promise<{ runner: TestRunner; agent: AgentInterface; events: TestEvent[] }> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-report-fields-'));
   const casesDir = path.join(root, 'cases');
   await mkdir(casesDir, { recursive: true });
   await writeFile(path.join(casesDir, 'suite.yaml'), suiteYaml);
+  const agent = makeAgent();
+  const events: TestEvent[] = [];
 
   const runner = new TestRunner({
     testCaseDir: casesDir,
@@ -41,8 +46,21 @@ async function runSuite(suiteYaml: string): Promise<TestRunSummary> {
     parallel: false,
     maxParallel: 1,
     enableEvalCritic: false,
-  }, makeAgent());
+    ...configOverrides,
+  }, agent);
 
+  runner.addEventListener((event) => {
+    events.push(event);
+  });
+
+  return { runner, agent, events };
+}
+
+async function runSuite(
+  suiteYaml: string,
+  configOverrides: Partial<TestRunnerConfig> = {},
+): Promise<TestRunSummary> {
+  const { runner } = await createRunner(suiteYaml, configOverrides);
   return runner.runAll();
 }
 
@@ -86,5 +104,55 @@ describe('testRunner report fields', () => {
     expect(summary.results[0].status).toBe('skipped');
     expect(summary.results[0].prompt).toBe('blocked prompt');
     expect(summary.results[0].followUpPrompts).toEqual(['blocked follow up']);
+  });
+
+  it('rejects parallel maxParallel greater than 1 before any cases execute', async () => {
+    const { runner, agent, events } = await createRunner([
+      'name: serial-only',
+      'cases:',
+      '  - id: should-not-run',
+      '    type: task',
+      '    description: should not run',
+      '    prompt: do not execute',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'), {
+      parallel: true,
+      maxParallel: 3,
+    });
+
+    await expect(runner.runAll()).rejects.toThrow(
+      /serial-only: runner shares a single agent instance and working directory/i,
+    );
+    expect(agent.sendMessage).not.toHaveBeenCalled();
+    expect(agent.reset).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'case_start')).toBe(false);
+    expect(events.some((event) => event.type === 'case_end')).toBe(false);
+  });
+
+  it('allows parallel true when maxParallel is 1', async () => {
+    const { runner, agent, events } = await createRunner([
+      'name: serial-fallback',
+      'cases:',
+      '  - id: runs-serially',
+      '    type: task',
+      '    description: runs with maxParallel one',
+      '    prompt: execute normally',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'), {
+      parallel: true,
+      maxParallel: 1,
+    });
+
+    const summary = await runner.runAll();
+
+    expect(summary.total).toBe(1);
+    expect(summary.passed).toBe(1);
+    expect(agent.sendMessage).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.type === 'case_start')).toBe(true);
+    expect(events.some((event) => event.type === 'case_end')).toBe(true);
   });
 });

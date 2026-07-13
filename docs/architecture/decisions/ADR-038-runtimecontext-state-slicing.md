@@ -1,6 +1,6 @@
 # ADR-038: RuntimeContext 拆袋 — 共享可变袋分批收敛为切片状态
 
-- **状态**: Proposed（待产品负责人拍板；施工另立项，不在本 ADR 会话）
+- **状态**: Accepted（产品负责人 2026-07-13 拍板；施工另立项）
 - **日期**: 2026-07-13
 - **来源**: 2026-07-13 架构擂台两选手共识 P0（审计报告见私档 audits/2026-07-13-arena-arch-findings.md）
 - **证据基线**: 字段×模块读写矩阵（私档 research/2026-07-13-runtimecontext-field-matrix.md，基线 commit `ac5957ed9`，Codex dry-run 盘点 + 监工盲区补扫/抽验）

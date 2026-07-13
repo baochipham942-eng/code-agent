@@ -11,6 +11,7 @@ import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/context
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 
 const { mockGetApiKey, mockRecordUsage, mockCheckBudget } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -120,6 +121,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     modelRouter,
     onEvent: vi.fn(),
     control: ControlState.forTest(),
+    contextHealth: ContextHealthState.forTest(),
     messages: [],
     maxMode: false,
     maxModeCandidates: 3,

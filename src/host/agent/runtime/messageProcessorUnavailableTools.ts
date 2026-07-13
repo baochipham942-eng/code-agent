@@ -243,7 +243,7 @@ export async function handleUnavailableToolCalls(
     emitArtifactRepairStopError(ctx.control.forceFinalResponseReason);
 
     ctx.control.clearForceFinalResponse();
-    ctx.telemetryAdapter?.onTurnEnd(ctx.turn.currentTurnId, '', undefined, ctx.currentSystemPromptHash);
+    ctx.telemetryAdapter?.onTurnEnd(ctx.turn.currentTurnId, '', undefined, ctx.contextHealth.currentSystemPromptHash);
     ctx.onEvent({ type: 'turn_end', data: { turnId: ctx.turn.currentTurnId } });
     return 'break';
   }

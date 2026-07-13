@@ -56,6 +56,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -81,7 +82,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     messages: [{ id: 'user-1', role: 'user', content: '帮我重构这个模块', timestamp: Date.now() }],
     control: ControlState.forTest({ isCancelled: false } as never),
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
-    currentSystemPromptHash: 'hash-1',
+    contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     hookManager: undefined,
     planningService: undefined,

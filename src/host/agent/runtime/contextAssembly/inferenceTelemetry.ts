@@ -20,7 +20,7 @@ export async function runInferenceWithTelemetry(
     ctx.runtime.lastModelTraceSpanId = modelSpanId;
     getTelemetryService().updateSpan(modelSpanId, {
       'model.request_protocol': 'agent-loop',
-      'model.retry_count': ctx.runtime._networkRetryCount ?? 0,
+      'model.retry_count': ctx.runtime.contextHealth.networkRetryCount ?? 0,
     });
   } catch {
     // Model execution is independent from tracing availability.

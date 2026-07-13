@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import {
   getArtifactRepairToolPolicy,
   seedArtifactRepairGuardFromContext,
@@ -15,7 +16,7 @@ function makeRuntimeContext(content: string): any {
         timestamp: Date.now(),
       },
     ],
-    persistentSystemContext: [],
+    contextHealth: ContextHealthState.forTest({ persistentSystemContext: [] } as never),
   };
 }
 

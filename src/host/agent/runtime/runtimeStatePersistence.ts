@@ -33,7 +33,7 @@ export function loadPersistedRuntimeState(sessionId: string): PersistedRuntimeSt
 }
 
 export function persistRuntimeState(
-  runtime: Pick<RuntimeContext, 'sessionId' | 'compressionState' | 'persistentSystemContext'>,
+  runtime: Pick<RuntimeContext, 'sessionId' | 'contextHealth'>,
   include: { compressionState?: boolean; persistentSystemContext?: boolean } = {
     compressionState: true,
     persistentSystemContext: true,
@@ -45,10 +45,10 @@ export function persistRuntimeState(
   try {
     db.saveSessionRuntimeState(runtime.sessionId, {
       ...(include.compressionState
-        ? { compressionStateJson: runtime.compressionState.serialize() }
+        ? { compressionStateJson: runtime.contextHealth.compressionState.serialize() }
         : {}),
       ...(include.persistentSystemContext
-        ? { persistentSystemContext: [...runtime.persistentSystemContext] }
+        ? { persistentSystemContext: [...runtime.contextHealth.persistentSystemContext] }
         : {}),
     });
   } catch {

@@ -576,7 +576,7 @@ export class MessageProcessor {
     this.runFinalizer.emitTaskComplete();
 
     // Telemetry: record turn end (text response)
-    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, response.content || '', response.thinking, this.ctx.currentSystemPromptHash);
+    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, response.content || '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
 
     this.ctx.onEvent({
       type: 'turn_end',
@@ -637,7 +637,7 @@ export class MessageProcessor {
         };
         await this.contextAssembly.addAndPersistMessage(finalMessage);
         this.ctx.onEvent({ type: 'message', data: finalMessage });
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
         this.ctx.onEvent({
           type: 'turn_end',
           data: { turnId: this.ctx.turn.currentTurnId },
@@ -951,7 +951,7 @@ export class MessageProcessor {
           forcedFinalResponseDeferred: true,
         });
         // Close this tool turn before the deferred no-tool inference starts a fresh turn.
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
         this.ctx.onEvent({
           type: 'turn_end',
           data: { turnId: this.ctx.turn.currentTurnId },
@@ -982,7 +982,7 @@ export class MessageProcessor {
         successCount: toolResults.filter((r: ToolResult) => r.success).length,
         forcedFinalResponse: true,
       });
-      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
       this.ctx.onEvent({
         type: 'turn_end',
         data: { turnId: this.ctx.turn.currentTurnId },
@@ -1083,7 +1083,7 @@ export class MessageProcessor {
     });
 
     // Telemetry: record turn end (tool execution)
-    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
 
     this.ctx.onEvent({
       type: 'turn_end',

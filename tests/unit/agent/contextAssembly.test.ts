@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
@@ -393,11 +394,19 @@ function buildMessage(id: string, role: Message['role'], content: string): Messa
   };
 }
 
+const CONTEXT_HEALTH_OVERRIDE_KEYS = ['compressionState','persistentSystemContext','pipelineAutocompactNeeded','droppedPromptBlocks','currentSystemPromptHash','checkpointRebuildLastWatermarkId','_networkRetryCount'] as const;
 const TURN_OVERRIDE_KEYS = ['currentTurnId','messageDeltaSeq','currentIterationSpanId','turnStartTime','toolsUsedInTurn','lastStreamedContent','needsReinference','isSimpleTaskMode','effortLevel','thinkingEnabled','thinkingStepCount','_researchModeActive','_researchIterationCount','activeSkillInvocation','activeSkillContextBlock','skillToolBoundary'] as const;
 
 function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
   const rest: Record<string, unknown> = { ...overrides };
   const turnSeed: Record<string, unknown> = {};
+  const chSeed: Record<string, unknown> = {};
+  for (const key of CONTEXT_HEALTH_OVERRIDE_KEYS) {
+    if (key in rest) {
+      chSeed[key.replace(/^_network/, 'network')] = rest[key];
+      delete rest[key];
+    }
+  }
   for (const key of TURN_OVERRIDE_KEYS) {
     if (key in rest) {
       turnSeed[key.replace(/^_research/, 'research')] = rest[key];
@@ -447,7 +456,6 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
     autoCompressor: {
       getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 10 }),
     },
-    compressionState: new CompressionState(),
     compressionPipeline: {
       evaluate: vi.fn(async (transcript: unknown[], state: CompressionState) => ({
         apiView: transcript,
@@ -485,7 +493,10 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
     totalTokensUsed: 0,
     totalToolCallCount: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
-    persistentSystemContext: [],
+    contextHealth: ContextHealthState.forTest({
+      contextHealth: ContextHealthState.forTest({ compressionState: new CompressionState(), persistentSystemContext: [] } as never),
+      ...chSeed,
+    } as never),
     turn: TurnState.forTest({
       currentIterationSpanId: 'span-budget',
       currentTurnId: 'turn-budget',
@@ -687,7 +698,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       autoCompressor: {
         getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 10 }),
       },
-      compressionState: new CompressionState(),
+      contextHealth: ContextHealthState.forTest({ compressionState: new CompressionState(), persistentSystemContext: [] } as never),
       compressionPipeline: new CompressionPipeline(),
       telemetryAdapter: undefined,
       isCancelled: false,
@@ -719,7 +730,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
       totalTokensUsed: 0,
       totalToolCallCount: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
-      persistentSystemContext: [],
     };
 
     getContextInterventionState().applyIntervention(sessionId, agentId, 'pinned-message', 'pin', true);
@@ -962,7 +972,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(systemPrompt).not.toContain('<session_metadata>');
     expect(estimateTokens(systemPrompt)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
     // GAP-023 丢弃可见化：被丢弃的块记录到 runtime ctx（流向 context health 面板）
-    const droppedBlocks = (ctx as { droppedPromptBlocks?: string[] }).droppedPromptBlocks ?? [];
+    const droppedBlocks = ctx.contextHealth.droppedPromptBlocks ?? [];
     expect(droppedBlocks).toContain('session metadata');
     expect(droppedBlocks).not.toContain('deferred tools');
   });
@@ -984,7 +994,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       const modelMessages = await assembly.buildModelMessages();
 
       expect(modelMessages[0].content).toContain('<deferred-tools>');
-      const droppedBlocks = (ctx as { droppedPromptBlocks?: string[] }).droppedPromptBlocks ?? [];
+      const droppedBlocks = ctx.contextHealth.droppedPromptBlocks ?? [];
       expect(droppedBlocks).not.toContain('deferred tools');
     } finally {
       process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS = '6000';
@@ -1744,7 +1754,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       autoCompressor: {
         getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 10 }),
       },
-      compressionState: restoredCompressionState,
+      contextHealth: ContextHealthState.forTest({ compressionState: restoredCompressionState, persistentSystemContext: [] } as never),
       compressionPipeline: { evaluate },
       telemetryAdapter: undefined,
       isCancelled: false,
@@ -1776,7 +1786,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
       totalTokensUsed: 0,
       totalToolCallCount: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
-      persistentSystemContext: [],
     };
 
     const assembly = new ContextAssembly(ctx as never);
@@ -1799,7 +1808,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
         }),
       ]),
     );
-    expect(ctx.compressionState.getCommitLog()).toEqual(
+    expect(ctx.contextHealth.compressionState.getCommitLog()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           layer: 'autocompact',
@@ -1902,10 +1911,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(true),
         compactToBlock: vi.fn().mockResolvedValue({
@@ -1930,9 +1938,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();
 
-    expect(ctx.compressionState.getCommitLog()).toHaveLength(1);
-    expect(ctx.compressionState.getCommitLog()[0].layer).toBe('autocompact');
-    expect(ctx.compressionState.getCommitLog()[0].targetMessageIds).toHaveLength(1);
+    expect(ctx.contextHealth.compressionState.getCommitLog()).toHaveLength(1);
+    expect(ctx.contextHealth.compressionState.getCommitLog()[0].layer).toBe('autocompact');
+    expect(ctx.contextHealth.compressionState.getCommitLog()[0].targetMessageIds).toHaveLength(1);
     expect(ctx.messages.some((message: Message) => message.compaction)).toBe(true);
     expect(serviceMocks.sessionManager.addMessageToSession).toHaveBeenCalledWith(
       sessionId,
@@ -2020,12 +2028,10 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
       checkpointRootDir,
-      pipelineAutocompactNeeded: true,
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: true } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(false),
         getConfig: vi.fn().mockReturnValue({
@@ -2111,12 +2117,10 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
         workingDirectory: process.cwd(),
         isDefaultWorkingDirectory: true,
-        persistentSystemContext: [],
         turn: TurnState.forTest({ isSimpleTaskMode: false }),
         compressionPipeline: new CompressionPipeline(),
-        compressionState: new CompressionState(),
         checkpointRootDir,
-        pipelineAutocompactNeeded: true,
+        contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: true } as never),
         autoCompressor: {
           shouldTriggerByTokens: vi.fn().mockReturnValue(false),
           getConfig: vi.fn().mockReturnValue({
@@ -2188,12 +2192,10 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
         workingDirectory: process.cwd(),
         isDefaultWorkingDirectory: true,
-        persistentSystemContext: [],
         turn: TurnState.forTest({ isSimpleTaskMode: false }),
         compressionPipeline: new CompressionPipeline(),
-        compressionState: new CompressionState(),
         checkpointRootDir,
-        pipelineAutocompactNeeded: true,
+        contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: true } as never),
         autoCompressor: {
           shouldTriggerByTokens: vi.fn().mockReturnValue(false),
           getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
@@ -2246,10 +2248,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(false),
         checkAndCompress,
@@ -2271,7 +2272,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
 
     expect(checkAndCompress).not.toHaveBeenCalled();
     expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalledWith(expect.any(Number), 'ai_summary');
-    expect(ctx.compressionState.getCommitLog()).toEqual(
+    expect(ctx.contextHealth.compressionState.getCommitLog()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           layer: 'autocompact',
@@ -2337,10 +2338,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(false),
         checkAndCompress,
@@ -2387,11 +2387,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
-      pipelineAutocompactNeeded: true,
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: true } as never),
       MAX_CONSECUTIVE_COMPACTS: 2,
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(true),
@@ -2413,7 +2411,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
     expect(ctx.messages.some((m: Message) => m.compaction)).toBe(false);
     // one-shot pipeline 信号被消费，避免 stale true 残留
-    expect(ctx.pipelineAutocompactNeeded).toBe(false);
+    expect(ctx.contextHealth.pipelineAutocompactNeeded).toBe(false);
   });
 
   it('short-circuits paid summary when lossless tool-result budgeting suffices (Item2 剪枝短路)', async () => {
@@ -2438,11 +2436,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
-      pipelineAutocompactNeeded: false,
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: false } as never),
       MAX_CONSECUTIVE_COMPACTS: 2,
       autoCompressor: {
         // 绝对阈值 50k：raw（巨大）命中，pruned（~2k）不命中
@@ -2486,11 +2482,9 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
-      persistentSystemContext: [],
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
-      compressionState: new CompressionState(),
-      pipelineAutocompactNeeded: false,
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: false } as never),
       MAX_CONSECUTIVE_COMPACTS: 2,
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(true), // 始终 over → stillOver 恒真
@@ -2562,7 +2556,7 @@ describe('ContextAssembly 前缀稳定（request shape）', () => {
         toolCallId: 'tc-prefix-1',
       } as unknown as Message,
     );
-    (ctx as { persistentSystemContext: string[] }).persistentSystemContext.push('<mode-reminder>stay focused</mode-reminder>');
+    ctx.contextHealth.persistentSystemContext.push('<mode-reminder>stay focused</mode-reminder>');
     vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (5 file(s) changed)</git_status>');
     const second = await assembly.buildModelMessages();
 

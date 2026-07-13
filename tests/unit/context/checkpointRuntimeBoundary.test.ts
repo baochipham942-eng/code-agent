@@ -4,6 +4,7 @@ import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { CompressionState } from '../../../src/host/context/compressionState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import {
   createCheckpointTemplate,
   ensureCheckpointStore,
@@ -52,7 +53,7 @@ describe('checkpoint runtime boundary', () => {
       persistMessage: vi.fn(async (message: Message) => {
         persisted.push(message);
       }),
-      compressionState: new CompressionState(),
+      contextHealth: ContextHealthState.forTest({ compressionState: new CompressionState() } as never),
       checkpointRootDir: rootDir,
     };
 

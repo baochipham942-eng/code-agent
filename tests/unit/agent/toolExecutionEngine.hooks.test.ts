@@ -11,6 +11,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import type { Message } from '../../../src/shared/contract';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -273,7 +274,7 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     hookMessageBuffer: {} as never,
     messageHistoryCompressor: {} as never,
     autoCompressor: {} as never,
-    compressionState: {} as never,
+    contextHealth: ContextHealthState.forTest({ compressionState: {} as never } as never),
     compressionPipeline: {} as never,
     telemetryAdapter,
     turnTrace: {
@@ -307,7 +308,7 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     totalTokensUsed: 0,
     totalToolCallCount: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
-    persistentSystemContext: [],
+    contextHealth: ContextHealthState.forTest({ persistentSystemContext: [] } as never),
     ...overrides,
   };
 }

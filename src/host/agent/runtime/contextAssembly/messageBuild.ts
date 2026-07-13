@@ -189,12 +189,12 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   if (cached?.key === cacheKey && now - cached.createdAt < DYNAMIC_PROMPT_CACHE_TTL_MS) {
     logger.debug('[ContextAssembly] dynamic system prompt cache hit', { tokens: cached.tokens });
     // GAP-023: 缓存命中时恢复该 prompt 构建时的丢弃记录，保持可见化与实际 prompt 一致
-    ctx.runtime.droppedPromptBlocks = [...(cached.droppedBlocks ?? [])];
+    ctx.runtime.contextHealth.restoreDroppedPromptBlocks([...(cached.droppedBlocks ?? [])]);
     return { systemPrompt: cached.prompt, turnContext: cached.turnContext };
   }
 
   // GAP-023: 实际重建 prompt，重置丢弃记录
-  ctx.runtime.droppedPromptBlocks = [];
+  ctx.runtime.contextHealth.resetDroppedPromptBlocks();
 
   // FULL_SYSTEM.md 短路:用户要完全接管 system prompt 时直接 return,
   // 跳过所有默认层(identity / workdir / runtime mode / session metadata / memory /
@@ -705,7 +705,7 @@ ${deferredToolsSummary}
       turnContext,
       tokens,
       // GAP-023: 缓存丢弃记录，命中时恢复
-      droppedBlocks: [...(ctx.runtime.droppedPromptBlocks ?? [])],
+      droppedBlocks: [...(ctx.runtime.contextHealth.droppedPromptBlocks ?? [])],
     };
   } else {
     cache.dynamicPrompt = undefined;
@@ -887,7 +887,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // Cache system prompt for eval center review + telemetry
   try {
     const hash = createHash('sha256').update(systemPrompt).digest('hex');
-    ctx.runtime.currentSystemPromptHash = hash;
+    ctx.runtime.contextHealth.setSystemPromptHash(hash);
     getSystemPromptCache().store(hash, systemPrompt, estimateTokens(systemPrompt));
   } catch {
     // Non-critical: don't break agent loop if cache fails
@@ -930,14 +930,14 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       cachedCompression?.key === compressionCacheKey &&
       now - cachedCompression.createdAt < COMPRESSION_CACHE_TTL_MS
     ) {
-      ctx.runtime.compressionState = CompressionState.deserialize(cachedCompression.state);
+      ctx.runtime.contextHealth.replaceCompressionState(CompressionState.deserialize(cachedCompression.state));
       persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
       contextApiView = cloneTranscriptEntries(cachedCompression.apiView);
       logger.debug('[ContextAssembly] compression projection cache hit', {
         apiViewMessages: contextApiView.length,
       });
     } else {
-      const nextCompressionState = cloneCompressionState(ctx.runtime.compressionState);
+      const nextCompressionState = cloneCompressionState(ctx.runtime.contextHealth.compressionState);
       const lastActivityAt = interventionAdjustedEntries.at(-1)?.timestamp ?? Date.now();
       const idleMinutes = Math.max(0, (Date.now() - lastActivityAt) / 60_000);
       const currentTurnIndex = interventionAdjustedEntries.reduce(
@@ -974,7 +974,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         },
       );
 
-      ctx.runtime.compressionState = nextCompressionState;
+      ctx.runtime.contextHealth.replaceCompressionState(nextCompressionState);
       persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
       contextApiView = pipelineResult.apiView as ContextTranscriptEntry[];
       cache.compression = {
@@ -998,7 +998,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       // P2-full/G12: 把 Pipeline 的压力信号交给 ContextPressureController（经
       // checkAndAutoCompress 消费），不再让它只停留在 log/trace。无条件写入，
       // false 也写，避免上一 turn 的 stale true 残留。
-      ctx.runtime.pipelineAutocompactNeeded = autocompactNeeded;
+      ctx.runtime.contextHealth.setPipelineAutocompactNeeded(autocompactNeeded);
       const commitCount = nextCompressionState.getCommitLog().length;
       if (commitCount > 0 || autocompactNeeded) {
         // G12/G20: 真正消费 pipeline 的报告 —— 此前 layersTriggered 只 logger.debug 就丢了，
@@ -1024,9 +1024,9 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     }
   } catch (error) {
     logger.error('[ContextAssembly] Compression pipeline evaluation failed, falling back to uncompressed transcript:', error);
-    ctx.runtime.compressionState = new CompressionState();
+    ctx.runtime.contextHealth.replaceCompressionState(new CompressionState());
   }
-  contextApiView = applyArchiveHydration(contextApiView, ctx.runtime.compressionState, ctx.runtime.sessionId);
+  contextApiView = applyArchiveHydration(contextApiView, ctx.runtime.contextHealth.compressionState, ctx.runtime.sessionId);
 
   if (!ctx.runtime.agentId) {
     try {

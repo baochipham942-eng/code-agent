@@ -3,6 +3,7 @@ import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/context
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -116,6 +117,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     modelRouter,
     onEvent,
     control: ControlState.forTest(),
+    contextHealth: ContextHealthState.forTest(),
     messages: [],
     ...overrides,
   } as any;
@@ -790,9 +792,9 @@ describe('contextAssembly inference artifact retry', () => {
           timestamp: Date.now(),
         },
       ],
-      persistentSystemContext: [
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [
         '修复 /private/tmp/code-agent-hard-fail-game.html 这个已经存在的单文件 HTML 互动游戏。当前 validator 失败摘要：runSmokeTest 把对象存在、机制注册或覆盖声明当成通过证据。',
-      ],
+      ] } as never),
     } as any);
     ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
       type: 'text',
@@ -977,7 +979,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(2);
     expect(ctx.inference).toHaveBeenCalledTimes(1);
     expect(ctx.inferenceRecovery._networkRetried).toBe(false);
-    expect(ctx.runtime._networkRetryCount).toBe(0);
+    expect(ctx.runtime.contextHealth.networkRetryCount).toBe(0);
   });
 
   it('retries artifact repair write-priority timeout once with compact repair context', async () => {
@@ -1068,6 +1070,6 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(3);
     expect(ctx.inference).toHaveBeenCalledTimes(2);
     expect(ctx.inferenceRecovery._networkRetried).toBe(false);
-    expect(ctx.runtime._networkRetryCount).toBe(0);
+    expect(ctx.runtime.contextHealth.networkRetryCount).toBe(0);
   });
 });

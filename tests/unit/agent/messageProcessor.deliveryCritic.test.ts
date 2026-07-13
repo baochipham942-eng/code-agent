@@ -2,6 +2,7 @@
 // MessageProcessor Delivery Critic Tests — GAP-013: 交付前 critic 集成
 // ============================================================================
 
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
@@ -80,6 +81,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'runtime-session-1',
     workingDirectory: '/tmp/project',
+    artifact: ArtifactState.forTest(),
     messages: [{ id: 'user-1', role: 'user', content: '帮我重构这个模块', timestamp: Date.now() }],
     control: ControlState.forTest({ isCancelled: false } as never),
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },

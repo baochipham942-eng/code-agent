@@ -3,6 +3,7 @@ import { handleDeclareDeliverablesGate } from '../../../../src/host/agent/runtim
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
 import type { ToolCall } from '../../../../src/shared/contract';
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 
 function makeCtx(overrides: Partial<RuntimeContext> = {}) {
   const turnTrace = { record: vi.fn() };
@@ -10,6 +11,7 @@ function makeCtx(overrides: Partial<RuntimeContext> = {}) {
     workingDirectory: '/tmp/workspace',
     sessionId: 's1',
     turnTrace,
+    artifact: ArtifactState.forTest(),
     ...overrides,
   } as unknown as RuntimeContext;
 }
@@ -36,7 +38,7 @@ describe('handleDeclareDeliverablesGate', () => {
     ]);
 
     expect(result).toBeNull();
-    expect(ctx.declaredDeliverables).toBeUndefined();
+    expect(ctx.artifact.declaredDeliverables).toBeUndefined();
     expect(injectSystemMessage).not.toHaveBeenCalled();
   });
 
@@ -54,10 +56,10 @@ describe('handleDeclareDeliverablesGate', () => {
     const after = Date.now();
 
     expect(result).toBe('continue');
-    expect(ctx.declaredDeliverables?.finalArtifacts).toEqual(['dist/index.html', '/tmp/workspace/report.md']);
-    expect(ctx.declaredDeliverables?.scratchDir).toBe('draft');
-    expect(ctx.declaredDeliverables?.declaredAtMs).toBeGreaterThanOrEqual(before);
-    expect(ctx.declaredDeliverables?.declaredAtMs).toBeLessThanOrEqual(after);
+    expect(ctx.artifact.declaredDeliverables?.finalArtifacts).toEqual(['dist/index.html', '/tmp/workspace/report.md']);
+    expect(ctx.artifact.declaredDeliverables?.scratchDir).toBe('draft');
+    expect(ctx.artifact.declaredDeliverables?.declaredAtMs).toBeGreaterThanOrEqual(before);
+    expect(ctx.artifact.declaredDeliverables?.declaredAtMs).toBeLessThanOrEqual(after);
     expect(injectSystemMessage).toHaveBeenCalledTimes(1);
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('<deliverables-declared>'));
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('dist/index.html'));
@@ -66,11 +68,13 @@ describe('handleDeclareDeliverablesGate', () => {
 
   it('second valid call overrides the previous declaration and says so', () => {
     const ctx = makeCtx({
-      declaredDeliverables: {
+      artifact: ArtifactState.forTest({
+        declaredDeliverables: {
         finalArtifacts: ['old/game.html'],
         scratchDir: 'old-draft',
         declaredAtMs: 1,
       },
+      }),
     });
     const { contextAssembly, injectSystemMessage } = makeContextAssembly();
 
@@ -82,8 +86,8 @@ describe('handleDeclareDeliverablesGate', () => {
     ]);
 
     expect(result).toBe('continue');
-    expect(ctx.declaredDeliverables?.finalArtifacts).toEqual(['new/index.html']);
-    expect(ctx.declaredDeliverables?.scratchDir).toBe('new-draft');
+    expect(ctx.artifact.declaredDeliverables?.finalArtifacts).toEqual(['new/index.html']);
+    expect(ctx.artifact.declaredDeliverables?.scratchDir).toBe('new-draft');
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('已覆盖之前的声明'));
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('old/game.html'));
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('new/index.html'));
@@ -98,7 +102,9 @@ describe('handleDeclareDeliverablesGate', () => {
       scratchDir: 'scratch',
       declaredAtMs: 123,
     };
-    const ctx = makeCtx({ declaredDeliverables: previous });
+    const ctx = makeCtx({ artifact: ArtifactState.forTest({
+  declaredDeliverables: previous,
+}) });
     const { contextAssembly, injectSystemMessage } = makeContextAssembly();
 
     const result = handleDeclareDeliverablesGate(ctx, contextAssembly, [
@@ -106,7 +112,7 @@ describe('handleDeclareDeliverablesGate', () => {
     ]);
 
     expect(result).toBe('continue');
-    expect(ctx.declaredDeliverables).toBe(previous);
+    expect(ctx.artifact.declaredDeliverables).toBe(previous);
     expect(injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<deliverables-declaration-rejected>'),
     );

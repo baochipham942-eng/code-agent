@@ -6,6 +6,7 @@
 // 未设置 = falsy = 走原路径），本文件补一个显式 off 用例兜底。
 // ============================================================================
 
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
@@ -126,6 +127,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     messages: [],
     maxMode: false,
     maxModeCandidates: 3,
+    artifact: ArtifactState.forTest(),
     ...overrides,
   } as any;
 

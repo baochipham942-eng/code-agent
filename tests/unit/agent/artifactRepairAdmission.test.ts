@@ -6,9 +6,10 @@ import {
 } from '../../../src/host/agent/runtime/artifactRepairAdmission';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../src/shared/constants/repair';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 function makeCtx(): any {
-  return { control: ControlState.forTest() };
+  return { control: ControlState.forTest(), artifact: ArtifactState.forTest() };
 }
 
 describe('activateArtifactRepairAdmissionStop — Route A 硬停闸', () => {
@@ -52,28 +53,30 @@ describe('registerArtifactRepairBlockedToolTurn — block 路径循环断路器'
   function makeGuardCtx(blockedToolTurnsWithoutProgress?: number): any {
     return {
       control: ControlState.forTest(),
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/code-agent/games/game.html',
         attempts: 0,
         phase: 'initial_repair',
         ...(blockedToolTurnsWithoutProgress != null ? { blockedToolTurnsWithoutProgress } : {}),
       },
+      }),
     };
   }
 
   it('累加 blockedToolTurnsWithoutProgress，未到上限不停闸', () => {
     const ctx = makeGuardCtx(0);
-    const stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifactRepairGuard, 'Read');
+    const stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifact.repairGuard, 'Read');
     expect(stopped).toBe(false);
-    expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(1);
+    expect(ctx.artifact.repairGuard.blockedToolTurnsWithoutProgress).toBe(1);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
   it('连续 block 到 ARTIFACT_REPAIR_MAX_ATTEMPTS 触发 attempts-exhausted 硬停（修复 block 路径不喂计数器的死锁缺口）', () => {
     const ctx = makeGuardCtx(ARTIFACT_REPAIR_MAX_ATTEMPTS - 1);
-    const stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifactRepairGuard, 'List');
+    const stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifact.repairGuard, 'List');
     expect(stopped).toBe(true);
-    expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(ARTIFACT_REPAIR_MAX_ATTEMPTS);
+    expect(ctx.artifact.repairGuard.blockedToolTurnsWithoutProgress).toBe(ARTIFACT_REPAIR_MAX_ATTEMPTS);
     expect(ctx.control.forceFinalResponseReason).toBe(
       `${ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted']} ${ARTIFACT_REPAIR_MAX_ATTEMPTS}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} blocked tool calls`,
     );
@@ -87,11 +90,11 @@ describe('registerArtifactRepairBlockedToolTurn — block 路径循环断路器'
     let stopped = false;
     for (let turn = 0; turn < ARTIFACT_REPAIR_MAX_ATTEMPTS; turn += 1) {
       // 模拟 messageProcessor.ts:650 每回合无条件清零 repairTurnsWithoutProgress
-      ctx.artifactRepairGuard.repairTurnsWithoutProgress = 0;
-      stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifactRepairGuard, 'Write');
+      ctx.artifact.repairGuard.repairTurnsWithoutProgress = 0;
+      stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifact.repairGuard, 'Write');
     }
     expect(stopped).toBe(true);
-    expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(ARTIFACT_REPAIR_MAX_ATTEMPTS);
+    expect(ctx.artifact.repairGuard.blockedToolTurnsWithoutProgress).toBe(ARTIFACT_REPAIR_MAX_ATTEMPTS);
     expect(ctx.control.forceFinalResponseReason?.startsWith(ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted'])).toBe(true);
   });
 

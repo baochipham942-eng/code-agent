@@ -4,6 +4,7 @@
 // 降级标记（完成但验证未全过），绝不无限阻塞；每次裁决落 turnTrace + 执行账本。
 // ============================================================================
 
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import { GOAL_MODE } from '../../../src/shared/constants';
@@ -87,6 +88,7 @@ function harness(opts?: { reviewCondition?: string }): TestHarness {
   const events: TestHarness['events'] = [];
   const contextAssembly = { injectSystemMessage: vi.fn() };
   const ctx: TestHarness['ctx'] = {
+    artifact: ArtifactState.forTest(),
     goalMode,
     control: ControlState.forTest(),
     stats: RunStatsState.forTest(),

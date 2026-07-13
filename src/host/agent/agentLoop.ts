@@ -127,6 +127,7 @@ import { TurnState } from './runtime/turnState';
 import { ControlState } from './runtime/controlState';
 import { ContextHealthState } from './runtime/contextHealthState';
 import { RunStatsState } from './runtime/runStatsState';
+import { ArtifactState } from './runtime/artifactState';
 import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
@@ -223,6 +224,8 @@ export class AgentLoop {
       control: new ControlState(),
       // RunStats+Tracing 切片（ADR-038 批3d）
       stats: new RunStatsState(),
+      // Artifact 状态切片（ADR-038 批3e）
+      artifact: new ArtifactState(),
 
       // Plan mode
       autoApprovePlan: config.autoApprovePlan ?? false,

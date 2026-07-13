@@ -84,13 +84,13 @@ export function resolveArtifactRepairPath(ctx: ContextAssemblyCtx, filePath: str
 }
 
 export function getArtifactRepairTargetFile(ctx: ContextAssemblyCtx): string | null {
-  return typeof ctx.runtime.artifactRepairGuard?.targetFile === 'string'
-    ? ctx.runtime.artifactRepairGuard.targetFile
+  return typeof ctx.runtime.artifact.repairGuard?.targetFile === 'string'
+    ? ctx.runtime.artifact.repairGuard.targetFile
     : null;
 }
 
 export function getArtifactRepairHistoryToolAllowlist(ctx: ContextAssemblyCtx): Set<string> | null {
-  const guard = ctx.runtime.artifactRepairGuard;
+  const guard = ctx.runtime.artifact.repairGuard;
   if (!guard) return null;
   // Route A: the history tool allowlist no longer narrows by read/block counters.
   // Pre-patch keeps Read + mutation history so the model always sees the full target
@@ -258,7 +258,7 @@ function extractArtifactRepairFailureSummary(ctx: ContextAssemblyCtx, blocks: st
     }
   }
 
-  const guardIssueCodes = ctx.runtime.artifactRepairGuard?.activeIssueCodes || [];
+  const guardIssueCodes = ctx.runtime.artifact.repairGuard?.activeIssueCodes || [];
   if (guardIssueCodes.length > 0) {
     pushUniqueLimited(failures, `Active issue codes: ${guardIssueCodes.join(', ')}`);
   }
@@ -330,7 +330,7 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
 }
 
 export function buildArtifactRepairFocusBlock(ctx: ContextAssemblyCtx, repairContextBlocks: string[]): string | null {
-  const guard = ctx.runtime.artifactRepairGuard;
+  const guard = ctx.runtime.artifact.repairGuard;
   const targetFile = getArtifactRepairTargetFile(ctx) || extractArtifactRepairTargetFromContext(repairContextBlocks);
   if (!targetFile && repairContextBlocks.length === 0) return null;
 
@@ -436,7 +436,7 @@ export function hasGameArtifactRepairSignals(ctx: ContextAssemblyCtx, userQuery:
     targetFile,
     repairContext,
     recentFailures,
-    ...(ctx.runtime.artifactRepairGuard?.activeIssueCodes ?? []),
+    ...(ctx.runtime.artifact.repairGuard?.activeIssueCodes ?? []),
   ].join('\n');
 
   return /__GAME_(?:META|TEST)__|game_artifact|\.game\.html\b|game\.html\b|\bgame\b|游戏|关卡|level|stage|platformer|runner|tower[_\s-]?defense|puzzle|mario|超级玛丽/i.test(signalText);

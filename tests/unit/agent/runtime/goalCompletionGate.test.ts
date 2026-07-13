@@ -1,3 +1,4 @@
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockRunVerifyGate = vi.fn();
@@ -36,6 +37,7 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     ...goalModeOverrides,
   };
   const ctx = {
+    artifact: ArtifactState.forTest(),
     goalMode,
     workingDirectory: '/tmp/test',
     sessionId: 's1',

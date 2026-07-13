@@ -49,7 +49,7 @@ export function activateArtifactRepairAdmissionStop(
  */
 export function registerArtifactRepairBlockedToolTurn(
   ctx: RuntimeContext,
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']> | undefined,
+  guard: NonNullable<RuntimeContext['artifact']['repairGuard']> | undefined,
   blockedTool: string,
 ): boolean {
   if (!guard?.targetFile) return false;
@@ -57,8 +57,7 @@ export function registerArtifactRepairBlockedToolTurn(
   // 会把这里的累加抹掉（审计 HIGH-1）。blockedToolTurnsWithoutProgress 只在目标文件被
   // 成功改动(patched, toolFileMutationTracking)时清零，故能真正跨回合累积到硬停。
   const turns = (guard.blockedToolTurnsWithoutProgress ?? 0) + 1;
-  guard.blockedToolTurnsWithoutProgress = turns;
-  guard.lastBlockedTool = blockedTool;
+  ctx.artifact.registerBlockedToolTurn(turns, blockedTool);
   if (turns >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
     activateArtifactRepairAdmissionStop(
       ctx,
@@ -74,7 +73,7 @@ export function registerArtifactRepairBlockedToolTurn(
 export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']> | undefined,
+  guard: NonNullable<RuntimeContext['artifact']['repairGuard']> | undefined,
   requestedNames: string,
 ): Promise<boolean> {
   if (!guard?.targetFile) return false;
@@ -126,8 +125,7 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
         '</artifact-validation-passed>',
       ].join('\n'),
     );
-    ctx.artifactValidationPassedTargetFile = guard.targetFile;
-    ctx.artifactRepairGuard = undefined;
+    ctx.artifact.markValidationPassed(guard.targetFile);
     ctx.control.clearForceFinalResponse();
     return true;
   } catch {

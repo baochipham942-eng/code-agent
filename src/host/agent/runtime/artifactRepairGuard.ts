@@ -1,7 +1,10 @@
 import { isAbsolute, resolve, join } from 'path';
 import type { RuntimeContext } from './runtimeContext';
+import type { ArtifactRepairGuard } from './artifactState';
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 import { getUserConfigDir } from '../../config/configPaths';
+
+export type { ArtifactRepairGuard };
 
 // 设计草稿（Kun 借鉴：设计 tab）会话的工作目录在 app 托管的 .code-agent/design 下。
 // 设计原型定义上不是游戏 artifact——这类会话整体豁免 artifact repair：既不进入、也
@@ -47,8 +50,6 @@ const ARTIFACT_REPAIR_POST_PATCH_ALLOWLIST = new Set([
 
 const CANONICAL_TOOL_ORDER = ['Read', 'Edit', 'Write', 'Append', 'Bash'] as const;
 const CANONICAL_MUTATION_TOOL_ORDER = ['Edit', 'Write', 'Append'] as const;
-
-type ArtifactRepairGuard = NonNullable<RuntimeContext['artifactRepairGuard']>;
 
 export interface ArtifactRepairToolPolicy {
   allowlist: ReadonlySet<string>;
@@ -139,10 +140,10 @@ export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
   // 设计草稿会话整体豁免：清除任何已存 guard，且不从历史文本里重新种上——
   // 防止持久化进 DB 的旧 repair 状态跨会话死锁拦截设计写入。
   if (isDesignDraftWorkingDir(ctx.workingDirectory)) {
-    ctx.artifactRepairGuard = undefined;
+    ctx.artifact.clearRepairGuard();
     return;
   }
-  if (ctx.artifactRepairGuard) return;
+  if (ctx.artifact.repairGuard) return;
 
   const messageTextBlocks: string[] = [];
   const messages = ctx.messages || [];
@@ -172,19 +173,19 @@ export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
     // 否则验收通过后的下一轮会进入幻影修复模式（无修复发生却显示"正在写入修复补丁"，
     // 且 write-priority 会白白抬高 maxTokens）。
     if (
-      ctx.artifactValidationPassedTargetFile
-      && isSameArtifactRepairPath(ctx, targetFile, ctx.artifactValidationPassedTargetFile)
+      ctx.artifact.validationPassedTargetFile
+      && isSameArtifactRepairPath(ctx, targetFile, ctx.artifact.validationPassedTargetFile)
     ) {
       continue;
     }
     const issueCodes = inferArtifactRepairIssueCodesFromText(text);
-    ctx.artifactRepairGuard = {
+    ctx.artifact.setRepairGuard({
       targetFile,
       attempts: 0,
       phase: issueCodes.length > 0 ? 'initial_repair' : inferArtifactRepairPhase(text),
       patched: false,
       ...(activeIssueCodes.length > 0 ? { activeIssueCodes } : {}),
-    };
+    });
     return;
   }
 }

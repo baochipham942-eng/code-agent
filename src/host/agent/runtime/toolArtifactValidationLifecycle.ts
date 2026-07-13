@@ -82,8 +82,8 @@ export async function handleModifiedArtifactValidation({
       contractLevel: fullContract ? 'full' : 'light',
     });
     const repairTargetLostValidation =
-      ctx.artifactRepairGuard?.targetFile &&
-      isSameArtifactRepairPath(ctx, absolutePath, ctx.artifactRepairGuard.targetFile) &&
+      ctx.artifact.repairGuard?.targetFile &&
+      isSameArtifactRepairPath(ctx, absolutePath, ctx.artifact.repairGuard.targetFile) &&
       !probe.shouldValidate;
     const effectiveProbe = repairTargetLostValidation
       ? buildRepairTargetLostValidationFailure(probe)
@@ -98,8 +98,8 @@ export async function handleModifiedArtifactValidation({
       // 标记为已通过,关闭 Xiaomi text-first 的重复触发闸(inference.ts: !artifactValidationPassed),
       // 否则普通网页会被每轮当作新 artifact 反复生成(interactive-artifact-N),run 永不收敛。
       // 仅对"确实无需验证"(非 append 中途、非 repair)的产物生效,不影响游戏 artifact 的分阶段验收。
-      if (!effectiveProbe.shouldValidate && !isAppendTool(toolCall.name) && !ctx.artifactRepairGuard) {
-        ctx.artifactValidationPassedTargetFile = absolutePath;
+      if (!effectiveProbe.shouldValidate && !isAppendTool(toolCall.name) && !ctx.artifact.repairGuard) {
+        ctx.artifact.setValidationPassed(absolutePath);
       }
       return;
     }
@@ -140,7 +140,7 @@ export async function handleModifiedArtifactValidation({
         'tool_running',
         `artifact 验收失败，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} 次修复...`,
       );
-      ctx.artifactValidationPassedTargetFile = undefined;
+      ctx.artifact.clearValidationPassed();
       const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
         ? readFileSync(absolutePath, 'utf-8')
         : null;
@@ -176,8 +176,8 @@ export async function handleModifiedArtifactValidation({
         await fileReadTracker.recordReadWithStats(absolutePath);
       }
       const repairSpecBlock = formatArtifactRepairSpecForPrompt(repairSpec);
-      const previousGuard = ctx.artifactRepairGuard?.targetFile === absolutePath
-        ? ctx.artifactRepairGuard
+      const previousGuard = ctx.artifact.repairGuard?.targetFile === absolutePath
+        ? ctx.artifact.repairGuard
         : undefined;
       // 策略裁决（patience + 修复/重写双信号）：先在既有状态上刷新 patience/streak，
       // 再决定本轮走补丁、切干净重写、还是（goal）降级放行。
@@ -205,7 +205,7 @@ export async function handleModifiedArtifactValidation({
       }
       failureState.phase = phase;
       failureMap.set(absolutePath, failureState);
-      ctx.artifactRepairGuard = {
+      ctx.artifact.setRepairGuard({
         targetFile: absolutePath,
         attempts,
         phase,
@@ -233,7 +233,7 @@ export async function handleModifiedArtifactValidation({
             ...(previousGuard?.activeIssueCodes || []),
           ]),
         ],
-      };
+      });
       // Route A hard stop: bound the failing-patch loop. After
       // ARTIFACT_REPAIR_MAX_ATTEMPTS failed validation passes, force-stop
       // this turn instead of spending another model request on a patch
@@ -315,10 +315,11 @@ export async function handleModifiedArtifactValidation({
     } else if (validation.shouldValidate && (validation.checks.length > 0 || appendFinalHint)) {
       runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
       getArtifactValidationFailureMap(ctx).delete(absolutePath);
-      if (ctx.artifactRepairGuard?.targetFile === absolutePath) {
-        ctx.artifactRepairGuard = undefined;
+      if (ctx.artifact.repairGuard?.targetFile === absolutePath) {
+        ctx.artifact.markValidationPassed(absolutePath);
+      } else {
+        ctx.artifact.setValidationPassed(absolutePath);
       }
-      ctx.artifactValidationPassedTargetFile = absolutePath;
       contextAssembly.injectSystemMessage(
         [
           '<artifact-validation-passed kind="interactive_artifact">',
@@ -381,7 +382,7 @@ async function completePendingGoalAfterArtifactValidation({
       data: { gate: 1, pass: gate.pass, exitCode: gate.exitCode, timedOut: gate.timedOut },
     });
     if (!gate.pass) {
-      ctx.artifactValidationPassedTargetFile = undefined;
+      ctx.artifact.clearValidationPassed();
       goalMode.clearCompletionRequest();
       contextAssembly.injectSystemMessage(
         [
@@ -410,7 +411,7 @@ async function completePendingGoalAfterArtifactValidation({
       data: { gate: 2, pass: review.pass, reason: review.reason },
     });
     if (!review.pass) {
-      ctx.artifactValidationPassedTargetFile = undefined;
+      ctx.artifact.clearValidationPassed();
       goalMode.clearCompletionRequest();
       contextAssembly.injectSystemMessage(
         [

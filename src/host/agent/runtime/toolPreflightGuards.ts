@@ -211,7 +211,7 @@ export function getReadOnlyPreflightWarning(
   ctx: RuntimeContext,
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): { reserved: boolean; warning: string | null } {
-  if (ctx.artifactRepairGuard) {
+  if (ctx.artifact.repairGuard) {
     // Artifact repair has its own target-file read budgets. Reserving the
     // generic read-loop counter here would consume those budgets before the
     // repair guard can make its narrower allow/block decision.
@@ -244,7 +244,7 @@ export function getReadOnlyPreflightWarning(
 export async function maybeFinishArtifactRepairIfAlreadyValid(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']> | undefined,
+  guard: NonNullable<RuntimeContext['artifact']['repairGuard']> | undefined,
 ): Promise<boolean> {
   if (!guard?.targetFile) return false;
   if (guard.phase === 'playability_repair') {
@@ -287,8 +287,7 @@ export async function maybeFinishArtifactRepairIfAlreadyValid(
         '</artifact-validation-passed>',
       ].join('\n'),
     );
-    ctx.artifactValidationPassedTargetFile = guard.targetFile;
-    ctx.artifactRepairGuard = undefined;
+    ctx.artifact.markValidationPassed(guard.targetFile);
     activateForceFinalResponse(ctx, `artifact repair target already passes validation after blocked ${guard.lastBlockedTool || 'source'} read`);
     return true;
   } catch {

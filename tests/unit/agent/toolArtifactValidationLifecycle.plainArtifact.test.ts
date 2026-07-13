@@ -3,6 +3,7 @@ import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
 import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const gameValidatorState = vi.hoisted(() => ({
   validateGameArtifact: vi.fn(),
@@ -31,8 +32,10 @@ function makePlainArtifactProbe() {
 function makeCtx(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
   return {
     workingDirectory: '/tmp',
-    artifactRepairGuard: undefined,
-    artifactValidationPassedTargetFile: undefined,
+    artifact: ArtifactState.forTest({
+      repairGuard: undefined,
+      validationPassedTargetFile: undefined,
+    }),
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
     onEvent: vi.fn(),
@@ -81,16 +84,18 @@ describe('toolArtifactValidationLifecycle plain (non-game) artifact completion',
     // 修复前:普通网页在 shouldRunValidation=false 处直接 return,此标记保持 undefined,
     // 导致 inference.ts 的 !artifactValidationPassed 恒为真 → 每轮重新触发 text-first
     // → 无限新建 interactive-artifact-N(5/6/7/8…),run 永不收敛。
-    expect(ctx.artifactValidationPassedTargetFile).toBe(TARGET_FILE);
+    expect(ctx.artifact.validationPassedTargetFile).toBe(TARGET_FILE);
   });
 
   it('does not mark completion when an artifact repair guard is active for a different target', async () => {
     const ctx = makeCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/other-artifact.html',
         attempts: 1,
         phase: 'baseline_repair',
-      } as never,
+      },
+      }),
     });
     const { contextAssembly, runFinalizer, toolResult } = makeHarness();
 
@@ -105,6 +110,6 @@ describe('toolArtifactValidationLifecycle plain (non-game) artifact completion',
     });
 
     // repair 进行中不应被普通完成标记顺手关闸。
-    expect(ctx.artifactValidationPassedTargetFile).toBeUndefined();
+    expect(ctx.artifact.validationPassedTargetFile).toBeUndefined();
   });
 });

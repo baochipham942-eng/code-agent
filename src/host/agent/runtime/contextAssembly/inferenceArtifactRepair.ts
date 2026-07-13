@@ -78,7 +78,7 @@ export function getNetworkRetryBudget(errMsg: string, errCode: string | undefine
 }
 
 export function isArtifactRepairMode(ctx: ContextAssemblyCtx): boolean {
-  return Boolean(ctx.runtime.artifactRepairGuard?.targetFile);
+  return Boolean(ctx.runtime.artifact.repairGuard?.targetFile);
 }
 
 export function emitAssistantMessageDelta(
@@ -141,18 +141,18 @@ export function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefin
 }
 
 export function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
-  return isArtifactRepairWritePriorityForGuard(ctx.runtime.artifactRepairGuard);
+  return isArtifactRepairWritePriorityForGuard(ctx.runtime.artifact.repairGuard);
 }
 
 export function isArtifactRepairFullRewritePriority(ctx: ContextAssemblyCtx): boolean {
-  return getArtifactRepairToolPolicy(ctx.runtime.artifactRepairGuard)?.fullRewritePriority ?? false;
+  return getArtifactRepairToolPolicy(ctx.runtime.artifact.repairGuard)?.fullRewritePriority ?? false;
 }
 
 export function filterToolsForArtifactRepair<T extends { name: string }>(
   tools: T[],
   ctx: ContextAssemblyCtx,
 ): T[] {
-  const policy = getArtifactRepairToolPolicy(ctx.runtime.artifactRepairGuard);
+  const policy = getArtifactRepairToolPolicy(ctx.runtime.artifact.repairGuard);
   if (!policy) return tools;
   return tools.filter((tool) => policy.allowlist.has(tool.name));
 }
@@ -186,7 +186,7 @@ export function capArtifactRepairMaxTokens(
   ctx: ContextAssemblyCtx,
   config: typeof ctx.runtime.modelConfig,
 ): typeof ctx.runtime.modelConfig {
-  if (!ctx.runtime.artifactRepairGuard) return config;
+  if (!ctx.runtime.artifact.repairGuard) return config;
   const currentMaxTokens = config.maxTokens;
   if (typeof currentMaxTokens !== 'number') return config;
 

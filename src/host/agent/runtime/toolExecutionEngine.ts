@@ -425,7 +425,7 @@ export class ToolExecutionEngine {
 
     const artifactRepairBlock = enforceArtifactRepairGuard(this.ctx, toolCall);
     if (artifactRepairBlock) {
-      const guard = this.ctx.artifactRepairGuard;
+      const guard = this.ctx.artifact.repairGuard;
       // Block 路径也喂 repairTurnsWithoutProgress 计数器：可用但被闸拦的工具此前不计数，
       // 当目标不可达时会无限死锁（2026-06-25 dogfood）。连续 N 次无进展即硬停。
       const repairForceStopped = registerArtifactRepairBlockedToolTurn(this.ctx, guard, toolCall.name);
@@ -471,9 +471,9 @@ export class ToolExecutionEngine {
 
     const repeatedArtifactRepairPatchBlock = enforceArtifactRepairRepeatedPatchGuard(this.ctx, toolCall);
     if (repeatedArtifactRepairPatchBlock) {
-      const guard = this.ctx.artifactRepairGuard;
+      const guard = this.ctx.artifact.repairGuard;
       if (guard) {
-        guard.lastBlockedTool = toolCall.name;
+        this.ctx.artifact.recordBlockedTool(toolCall.name);
       }
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
@@ -819,13 +819,13 @@ export class ToolExecutionEngine {
         toolResult,
       });
 
-      if (normalizedResult.success && this.ctx.artifactRepairGuard?.targetFile) {
+      if (normalizedResult.success && this.ctx.artifact.repairGuard?.targetFile) {
         const readFilePath = extractReadFilePath(toolCall);
         if (
           readFilePath &&
-          isSameArtifactRepairPath(this.ctx, readFilePath, this.ctx.artifactRepairGuard.targetFile)
+          isSameArtifactRepairPath(this.ctx, readFilePath, this.ctx.artifact.repairGuard.targetFile)
         ) {
-          await maybeFinishArtifactRepairIfAlreadyValid(this.ctx, this.contextAssembly, this.ctx.artifactRepairGuard);
+          await maybeFinishArtifactRepairIfAlreadyValid(this.ctx, this.contextAssembly, this.ctx.artifact.repairGuard);
         }
       }
 

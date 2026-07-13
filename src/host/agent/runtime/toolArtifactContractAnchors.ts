@@ -215,7 +215,7 @@ export function maybeRepairArtifactContractEditAnchors(
   ctx: RuntimeContext,
   toolCall: ToolCall,
 ): ToolCall {
-  const guard = ctx.artifactRepairGuard;
+  const guard = ctx.artifact.repairGuard;
   if (!guard || (toolCall.name !== 'Edit' && toolCall.name !== 'edit_file')) return toolCall;
 
   const modifiedPath = getModifiedFilePath(toolCall);

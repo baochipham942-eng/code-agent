@@ -50,7 +50,7 @@ function validateArguments(args: Record<string, unknown> | undefined): {
 }
 
 /**
- * 拦截 declare_deliverables，写入 RuntimeContext.declaredDeliverables。
+ * 拦截 declare_deliverables，写入 RuntimeContext.artifact.declaredDeliverables。
  *
  * @returns
  *  - `'continue'` —— 已处理声明/拒绝，并注入系统消息让模型下一轮继续
@@ -74,12 +74,11 @@ export function handleDeclareDeliverablesGate(
     return 'continue';
   }
 
-  const previous = ctx.declaredDeliverables;
-  ctx.declaredDeliverables = {
+  const previous = ctx.artifact.declareDeliverables({
     finalArtifacts: validation.finalArtifacts,
     scratchDir: validation.scratchDir,
     declaredAtMs: Date.now(),
-  };
+  });
 
   ctx.turnTrace?.record('deliverables_declaration', {
     status: previous ? 'overridden' : 'declared',

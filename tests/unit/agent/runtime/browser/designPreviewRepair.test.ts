@@ -19,6 +19,7 @@ import {
   type DesignPreviewRepairAgent,
   type DesignPreviewVisionRunner,
 } from '../../../../../src/host/agent/runtime/browser/designPreviewRepair';
+import { ArtifactState } from '../../../../../src/host/agent/runtime/artifactState';
 
 function healthSummary(overrides: Partial<ArtifactPreviewHealthSummary> = {}): ArtifactPreviewHealthSummary {
   return {
@@ -233,12 +234,14 @@ describe('designPreviewRepair', () => {
 
     const ctx = {
       workingDirectory: designWorkingDir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/stale-game.html',
         attempts: 3,
         phase: 'targeted_repair',
         patched: false,
       },
+      }),
       messages: [
         {
           role: 'system',
@@ -252,6 +255,6 @@ describe('designPreviewRepair', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 });

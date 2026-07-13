@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { trackFileMutationSideEffects } from '../../../src/host/agent/runtime/toolFileMutationTracking';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 vi.mock('../../../src/host/services/diff/diffTracker', () => ({
   getDiffTracker: () => ({
@@ -15,12 +16,14 @@ describe('trackFileMutationSideEffects', () => {
       nudgeManager: {
         trackModifiedFile: (filePath: string) => trackedFiles.push(filePath),
       },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/repo/app/game.html',
         attempts: 1,
         phase: 'targeted_repair',
         blockedToolTurnsWithoutProgress: 3,
       },
+      }),
       onEvent: vi.fn(),
     };
 
@@ -43,7 +46,7 @@ describe('trackFileMutationSideEffects', () => {
     });
 
     expect(trackedFiles).toEqual(['/repo/app/game.html']);
-    expect(ctx.artifactRepairGuard.patched).toBe(true);
-    expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(0);
+    expect(ctx.artifact.repairGuard.patched).toBe(true);
+    expect(ctx.artifact.repairGuard.blockedToolTurnsWithoutProgress).toBe(0);
   });
 });

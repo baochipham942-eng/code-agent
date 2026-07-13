@@ -4,6 +4,7 @@ import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeCont
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
 import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
 import type { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessage: vi.fn(),
@@ -185,6 +186,7 @@ describe('MessageProcessor persistence', () => {
 
   it('does not persist tool results when the run is cancelled after execution returns', async () => {
     const ctx = {
+      artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
@@ -388,12 +390,14 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -446,6 +450,7 @@ describe('MessageProcessor persistence', () => {
 
   it('persists a final assistant message and stops when artifact repair is already validated', async () => {
     const ctx = {
+      artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
@@ -520,6 +525,7 @@ describe('MessageProcessor persistence', () => {
 
   it('defers read-loop hard limit final content to a no-tool inference pass', async () => {
     const ctx = {
+      artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
@@ -617,6 +623,7 @@ describe('MessageProcessor persistence', () => {
 
   it('persists the deferred read-loop final text and clears force-final state without another nudge', async () => {
     const ctx = {
+      artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [{ id: 'user-1', role: 'user', content: '分析一下 Alma 的流式输出', timestamp: Date.now() }],
       control: ControlState.forTest({ isCancelled: false } as never),
@@ -712,12 +719,14 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'playability_repair',
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -799,6 +808,7 @@ describe('MessageProcessor persistence', () => {
       'filler '.repeat(2000),
     ].join('\n');
     const ctx = {
+      artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
@@ -879,6 +889,7 @@ describe('MessageProcessor persistence', () => {
       ...Array.from({ length: 60 }, (_, i) => `第${i + 1}行：屏幕上可以看到一个深色主题的代码编辑器窗口，顶部有标签栏与菜单。`),
     ].join('\n');
     const ctx = {
+      artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [],
       stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
@@ -954,12 +965,14 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -1017,8 +1030,8 @@ describe('MessageProcessor persistence', () => {
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('Your previous tool call requested unavailable tools: Read.'),
     );
-    expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(1);
-    expect(ctx.artifactRepairGuard.lastBlockedTool).toBe('Read');
+    expect(ctx.artifact.repairGuard.repairTurnsWithoutProgress).toBe(1);
+    expect(ctx.artifact.repairGuard.lastBlockedTool).toBe('Read');
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toHaveLength(2);
     expect(ctx.messages[0]).toMatchObject({
@@ -1071,12 +1084,14 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -1133,7 +1148,7 @@ describe('MessageProcessor persistence', () => {
       allowBrowserVisualComputerFallback: false,
       runLightPlayabilitySmoke: true,
     }));
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
@@ -1166,12 +1181,14 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -1218,7 +1235,7 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('continue');
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('requested tools: Edit'),
     );
@@ -1238,13 +1255,15 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         repairTurnsWithoutProgress: 1,
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -1295,7 +1314,7 @@ describe('MessageProcessor persistence', () => {
     // Route A: an unavailable-tool turn bumps repairTurnsWithoutProgress, but the
     // hard stop only fires once it reaches ARTIFACT_REPAIR_MAX_ATTEMPTS (4).
     expect(action).toBe('continue');
-    expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(2);
+    expect(ctx.artifact.repairGuard.repairTurnsWithoutProgress).toBe(2);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
@@ -1329,13 +1348,15 @@ describe('MessageProcessor persistence', () => {
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         repairTurnsWithoutProgress: 3,
         patched: false,
       },
+      }),
       nudgeManager: {
         getModifiedFiles: vi.fn(() => new Set()),
         checkProgressState: vi.fn(),
@@ -1385,7 +1406,7 @@ describe('MessageProcessor persistence', () => {
     // repairTurnsWithoutProgress 3 -> 4 reaches ARTIFACT_REPAIR_MAX_ATTEMPTS, so the
     // turn is force-stopped instead of re-inferred.
     expect(action).toBe('break');
-    expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(4);
+    expect(ctx.artifact.repairGuard.repairTurnsWithoutProgress).toBe(4);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({

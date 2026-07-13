@@ -5,6 +5,7 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -88,7 +89,7 @@ vi.mock('../../../src/host/prompts/builder', () => ({
 
 function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): ContextAssemblyCtx {
   const onEvent = vi.fn();
-  const inferenceMock = overrides.artifactRepairGuard
+  const inferenceMock = overrides.artifact?.repairGuard
     ? vi.fn().mockResolvedValue({ type: 'text', content: 'recovered', finishReason: 'stop' })
     : vi.fn()
       .mockRejectedValueOnce(new Error('[Xiaomi] stream ended before [DONE] with tool calls; refusing to execute incomplete tool arguments'))
@@ -120,6 +121,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     control: ControlState.forTest(),
     contextHealth: ContextHealthState.forTest(),
     messages: [],
+    artifact: ArtifactState.forTest(),
     ...overrides,
   } as any;
 
@@ -529,11 +531,13 @@ describe('contextAssembly inference artifact retry', () => {
       inferenceOptions: {
         disableRuntimeNetworkRetry: true,
       },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
     } as any);
     ctx.runtime.modelRouter.inference = vi.fn()
       .mockRejectedValueOnce(new Error('Network request failed: socket hang up'))
@@ -549,11 +553,13 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('emits repair-specific progress while waiting for artifact repair output', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'targeted_repair',
       },
+      }),
     });
 
     await inference(ctx);
@@ -684,11 +690,13 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('narrows visible tools during artifact repair mode before a patch exists', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
     });
 
     await inference(ctx);
@@ -703,12 +711,14 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('allows validation Bash during artifact repair after a patch exists', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
         patched: true,
       },
+      }),
     });
 
     await inference(ctx);
@@ -739,7 +749,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runtime.artifactRepairGuard).toMatchObject({
+    expect(ctx.runtime.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/game.html',
       phase: 'initial_repair',
       patched: false,
@@ -768,7 +778,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runtime.artifactRepairGuard).toBeUndefined();
+    expect(ctx.runtime.artifact.repairGuard).toBeUndefined();
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
     expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write']);
@@ -805,7 +815,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runtime.artifactRepairGuard).toBeUndefined();
+    expect(ctx.runtime.artifact.repairGuard).toBeUndefined();
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write']);
     expect(options).toMatchObject({ artifactRepairActive: false });
@@ -834,7 +844,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runtime.artifactRepairGuard).toMatchObject({
+    expect(ctx.runtime.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/game.html',
       phase: 'initial_repair',
       activeIssueCodes: ['coverage_without_runtime_evidence'],
@@ -866,7 +876,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runtime.artifactRepairGuard).toMatchObject({
+    expect(ctx.runtime.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/game.html',
       phase: 'playability_repair',
       patched: false,
@@ -875,11 +885,13 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('removes Bash after the first repair-guard block', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
     });
 
     await inference(ctx);
@@ -892,11 +904,13 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('keeps the full repair tool set available regardless of attempt count (Route A)', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 3,
         phase: 'targeted_repair',
       },
+      }),
     });
 
     await inference(ctx);
@@ -921,11 +935,13 @@ describe('contextAssembly inference artifact retry', () => {
         temperature: 0,
         maxTokens: 131072,
       },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'playability_repair',
       },
+      }),
     } as any);
 
     await inference(ctx);
@@ -940,12 +956,14 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('keeps Read visible after soft-blocks when the target file has not been read successfully', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'initial_repair',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
     });
 
     await inference(ctx);
@@ -963,11 +981,13 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('allows one network retry during artifact repair before giving up', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
     });
     ctx.runtime.modelRouter.inference = vi.fn()
       .mockRejectedValueOnce(new Error('Network request failed: socket hang up'))
@@ -992,12 +1012,14 @@ describe('contextAssembly inference artifact retry', () => {
         temperature: 0,
         maxTokens: 131072,
       },
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'initial_repair',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
     } as any);
     ctx.buildModelMessages = vi.fn().mockResolvedValue([
       { role: 'system', content: '<artifact-validation-failed>coverage_without_runtime_evidence</artifact-validation-failed>' },
@@ -1053,11 +1075,13 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('allows a second artifact repair retry for fast TLS connection failures', async () => {
     const ctx = buildCtx({
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'initial_repair',
       },
+      }),
     });
     ctx.runtime.modelRouter.inference = vi.fn()
       .mockRejectedValueOnce(new Error('Network request failed: Client network socket disconnected before secure TLS connection was established'))

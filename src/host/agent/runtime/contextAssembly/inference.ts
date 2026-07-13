@@ -420,7 +420,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   tools = filterToolsByRunPolicy(tools, ctx.runtime);
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
-    const phase = ctx.runtime.artifactRepairGuard?.phase ?? 'initial_repair';
+    const phase = ctx.runtime.artifact.repairGuard?.phase ?? 'initial_repair';
     tools = filterToolsForArtifactRepair(tools, ctx);
     logger.info(
       `[AgentLoop] Artifact repair mode: tool list narrowed ${before} -> ${tools.length} (phase=${phase})`,
@@ -713,10 +713,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
     logger.debug('[AgentLoop] Effective tools count:', effectiveTools.length);
 
-    const artifactValidationPassed = Boolean(ctx.runtime.artifactValidationPassedTargetFile);
+    const artifactValidationPassed = Boolean(ctx.runtime.artifact.validationPassedTargetFile);
     if (artifactValidationPassed && ctx.runtime.goalMode?.isPending()) {
-      const targetFile = ctx.runtime.artifactValidationPassedTargetFile || 'interactive artifact';
-      ctx.runtime.artifactValidationPassedTargetFile = undefined;
+      const targetFile = ctx.runtime.artifact.validationPassedTargetFile || 'interactive artifact';
+      ctx.runtime.artifact.clearValidationPassed();
       const response = buildArtifactValidationAttemptCompletionResponse(targetFile);
       logger.info('[AgentLoop] Artifact validation passed; requesting goal completion without another model call', {
         targetFile,
@@ -803,7 +803,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     requestConfigForRetry = requestConfig;
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
-      artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+      artifactRepairActive: Boolean(ctx.runtime.artifact.repairGuard),
       artifactRepairWritePriority,
     });
     let response: ModelResponse;
@@ -816,7 +816,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           turnId: ctx.runtime.turn.currentTurnId,
           workingDir: ctx.runtime.workingDirectory,
         }),
-        artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+        artifactRepairActive: Boolean(ctx.runtime.artifact.repairGuard),
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
@@ -859,14 +859,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       visibleToolNames: effectiveTools.map((tool) => tool.name),
       toolStrategy,
       ...(modelDecision ? { modelDecision } : {}),
-      artifactRepairGuard: ctx.runtime.artifactRepairGuard
+      artifactRepairGuard: ctx.runtime.artifact.repairGuard
         ? {
-            targetFile: ctx.runtime.artifactRepairGuard.targetFile,
-            attempts: ctx.runtime.artifactRepairGuard.attempts,
-            phase: ctx.runtime.artifactRepairGuard.phase,
-            patched: ctx.runtime.artifactRepairGuard.patched,
-            repairTurnsWithoutProgress: ctx.runtime.artifactRepairGuard.repairTurnsWithoutProgress,
-            activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
+            targetFile: ctx.runtime.artifact.repairGuard.targetFile,
+            attempts: ctx.runtime.artifact.repairGuard.attempts,
+            phase: ctx.runtime.artifact.repairGuard.phase,
+            patched: ctx.runtime.artifact.repairGuard.patched,
+            repairTurnsWithoutProgress: ctx.runtime.artifact.repairGuard.repairTurnsWithoutProgress,
+            activeIssueCodes: ctx.runtime.artifact.repairGuard.activeIssueCodes,
         }
         : undefined,
     };
@@ -1028,7 +1028,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       /request timeout|timeout after \d+ms|timed out/i.test(errMsg)
       || /ETIMEDOUT/i.test(errCode || '');
     const shouldCompactRetryArtifactRepairWrite =
-      Boolean(ctx.runtime.artifactRepairGuard)
+      Boolean(ctx.runtime.artifact.repairGuard)
       && artifactRepairWritePriority
       && isSlowProviderTimeout
       && !ctx.inferenceRecovery._artifactRepairCompactWriteRetried;
@@ -1081,14 +1081,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           toolStrategy: retryToolStrategy,
           ...(retryModelDecision ? { modelDecision: retryModelDecision } : {}),
           artifactRepairCompactWriteRetry: true,
-          artifactRepairGuard: ctx.runtime.artifactRepairGuard
+          artifactRepairGuard: ctx.runtime.artifact.repairGuard
             ? {
-                targetFile: ctx.runtime.artifactRepairGuard.targetFile,
-                attempts: ctx.runtime.artifactRepairGuard.attempts,
-                phase: ctx.runtime.artifactRepairGuard.phase,
-                patched: ctx.runtime.artifactRepairGuard.patched,
-                repairTurnsWithoutProgress: ctx.runtime.artifactRepairGuard.repairTurnsWithoutProgress,
-                activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
+                targetFile: ctx.runtime.artifact.repairGuard.targetFile,
+                attempts: ctx.runtime.artifact.repairGuard.attempts,
+                phase: ctx.runtime.artifact.repairGuard.phase,
+                patched: ctx.runtime.artifact.repairGuard.patched,
+                repairTurnsWithoutProgress: ctx.runtime.artifact.repairGuard.repairTurnsWithoutProgress,
+                activeIssueCodes: ctx.runtime.artifact.repairGuard.activeIssueCodes,
               }
             : undefined,
         };
@@ -1104,14 +1104,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     const maxNetworkRetries = getNetworkRetryBudget(
       errMsg,
       errCode,
-      Boolean(ctx.runtime.artifactRepairGuard),
+      Boolean(ctx.runtime.artifact.repairGuard),
     );
     const networkRetryCount = ctx.runtime.contextHealth.networkRetryCount ?? (ctx.inferenceRecovery._networkRetried ? 1 : 0);
     const shouldRetryNetworkError =
       isNetworkError
       && networkRetryCount < maxNetworkRetries
       && ctx.runtime.inferenceOptions?.disableRuntimeNetworkRetry !== true
-      && !(ctx.runtime.artifactRepairGuard && isSlowProviderTimeout);
+      && !(ctx.runtime.artifact.repairGuard && isSlowProviderTimeout);
     if (shouldRetryNetworkError) {
       ctx.inferenceRecovery._networkRetried = true;
       ctx.runtime.contextHealth.setNetworkRetryCount(networkRetryCount + 1);

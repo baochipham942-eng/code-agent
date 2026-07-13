@@ -1,5 +1,5 @@
 // ============================================================================
-// RuntimeContext — Shared mutable state for all runtime modules
+// RuntimeContext — 运行时组合根（ADR-038 拆袋后）
 // ============================================================================
 
 import type {
@@ -32,14 +32,21 @@ import type { TurnState } from './turnState';
 import type { ControlState } from './controlState';
 import type { ContextHealthState } from './contextHealthState';
 import type { RunStatsState } from './runStatsState';
+import type { ArtifactState } from './artifactState';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
 import type { TurnQualityRunState } from './turnQuality';
 
 /**
- * Mutable shared state. Single object, all modules share the same reference.
- * All service types are strongly typed via `import type` (no runtime circular deps).
+ * 运行时组合根：单对象，所有 runtime 模块共享同一引用（ADR-038）。
+ * 可变状态已按域收敛为方法驱动的切片，写操作走切片方法、不再平铺散字段：
+ * - turn: TurnState（批3a）— turn/iteration 生命周期、推理流转、thinking/effort、激活 skill
+ * - control: ControlState（批3b）— 取消/中断/abort/plan 快照/强制收尾
+ * - contextHealth: ContextHealthState（批3c）— 压缩态/持久上下文/丢块/水位线
+ * - stats: RunStatsState（批3d）— token/工具计数与 tracing
+ * - artifact: ArtifactState（批3e）— repair guard/验收通过标记/declared deliverables
+ * 其余为 readonly 配置与服务句柄；service 类型一律 `import type`（无运行时环依赖）。
  */
 export interface RuntimeContext {
   // --- Configuration ---
@@ -124,38 +131,10 @@ export interface RuntimeContext {
   readonly turnTrace: TurnTraceRecorder;
   /** 2d: turn quality run 级记忆（owner=turnQuality） */
   readonly turnQualityState: TurnQualityRunState;
-  /** Last interactive artifact path that passed runtime/browser validation in this run. */
-  artifactValidationPassedTargetFile?: string;
-  /**
-   * Final artifact contract（maka 借鉴）：模型开工前声明的最终产物与草稿区。
-   * 声明后产物校验/修复锁定/goal 证据闸/工作区卫生检查都以此为锚。
-   */
-  declaredDeliverables?: {
-    /** 最终交付产物路径（相对 workingDirectory 或绝对路径） */
-    finalArtifacts: string[];
-    /** 草稿/中间产物目录（卫生检查豁免区） */
-    scratchDir?: string;
-    declaredAtMs: number;
-  };
+  // --- Artifact 状态切片（ADR-038 批3e，写操作走 ArtifactState 方法）---
+  readonly artifact: ArtifactState;
   /** 2d: goal 证据闸打回计数（owner=goalEvidenceGate） */
   readonly goalEvidenceState: GoalEvidenceGateState;
-  artifactRepairGuard?: {
-    targetFile: string;
-    attempts: number;
-    phase: string;
-    // Route A loop guard: repair turns since the last successful target-file
-    // mutation. Reaching ARTIFACT_REPAIR_MAX_ATTEMPTS force-stops the repair turn.
-    repairTurnsWithoutProgress?: number;
-    // Route A block-path loop guard：可用但被 repair 闸 block 的工具连续无进展次数。
-    // 独立于 repairTurnsWithoutProgress（后者每回合被 messageProcessor 无条件清零，
-    // 无法兜住"目标不可达→每个工具都被 block"的死锁）。仅 block 路径累加、目标文件被
-    // 成功改动(patched)时清零，到 ARTIFACT_REPAIR_MAX_ATTEMPTS 硬停。
-    blockedToolTurnsWithoutProgress?: number;
-    lastBlockedTool?: string;
-    patched?: boolean;
-    lastFailedPatchFingerprint?: string;
-    activeIssueCodes?: string[];
-  };
 
   // --- Budget ---
   readonly consecutiveErrors: number;

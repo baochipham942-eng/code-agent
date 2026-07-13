@@ -43,7 +43,7 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     totalInputTokens: 1200,
     totalOutputTokens: 300,
     // 闸0（证据自证）打回预算标记为已耗尽 → 直通闸1/闸2，本文件只测后两闸语义
-    goalEvidenceGateBounces: 99,
+    goalEvidenceState: { bounces: 99 },
     onEvent: vi.fn(),
   } as unknown as RuntimeContext;
   const contextAssembly = {

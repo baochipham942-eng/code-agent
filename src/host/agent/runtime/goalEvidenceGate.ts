@@ -15,6 +15,9 @@ import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evid
 import { evaluateWorkspaceHygiene } from './workspaceHygiene';
 import type { RuntimeContext } from './runtimeContext';
 
+/** 2d: goal evidence gate 打回计数（ADR-038 批2d，owner=goalEvidenceGate） */
+export interface GoalEvidenceGateState { bounces: number; }
+
 export interface GoalEvidenceGateResult {
   verdict: 'pass' | 'bounce' | 'exhausted_release';
   reason: string;
@@ -172,7 +175,7 @@ export function runGoalEvidenceGate(
     };
   }
 
-  const bounces = (ctx.goalEvidenceGateBounces ?? 0) + 1;
+  const bounces = ctx.goalEvidenceState.bounces + 1;
   if (bounces > GOAL_MODE.EVIDENCE_GATE_MAX_BOUNCES) {
     // 打回预算用尽：放行进闸1/闸2（系统侧验证仍在），但把缺口记录在案。
     return {
@@ -181,7 +184,7 @@ export function runGoalEvidenceGate(
       evidenceRefs,
     };
   }
-  ctx.goalEvidenceGateBounces = bounces;
+  ctx.goalEvidenceState.bounces = bounces;
 
   const feedback = [
     '<goal-evidence-gate-failed>',

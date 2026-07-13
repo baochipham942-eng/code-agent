@@ -12,6 +12,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): RuntimeContext {
     workingDirectory: '/tmp/evidence-gate-test',
     messages: [],
     goalMode: { getVerifyCommand: () => undefined },
+    goalEvidenceState: { bounces: 0 },
     ...overrides,
   } as unknown as RuntimeContext;
 }
@@ -31,7 +32,7 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
 
     expect(result.verdict).toBe('bounce');
     expect(result.feedback).toContain('goal-evidence-gate-failed');
-    expect(ctx.goalEvidenceGateBounces).toBe(1);
+    expect(ctx.goalEvidenceState.bounces).toBe(1);
   });
 
   it('有确定性 verifyCommand + 零证据 → 直接放行给闸1（不多烧打回轮次）', () => {
@@ -40,7 +41,7 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
 
     expect(result.verdict).toBe('pass');
     expect(result.reason).toContain('deferring to deterministic gate 1');
-    expect(ctx.goalEvidenceGateBounces).toBeUndefined();
+    expect(ctx.goalEvidenceState.bounces).toBe(0);
   });
 
   it('自报产物真实存在 → pass 并产出 file EvidenceRef', async () => {
@@ -132,7 +133,7 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
   });
 
   it('打回预算用尽 → exhausted_release 放行进闸1/闸2', () => {
-    const ctx = makeCtx({ goalEvidenceGateBounces: GOAL_MODE.EVIDENCE_GATE_MAX_BOUNCES });
+    const ctx = makeCtx({ goalEvidenceState: { bounces: GOAL_MODE.EVIDENCE_GATE_MAX_BOUNCES } });
     const result = runGoalEvidenceGate(ctx, makeCall());
 
     expect(result.verdict).toBe('exhausted_release');

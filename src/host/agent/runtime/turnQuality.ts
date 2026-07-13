@@ -14,6 +14,9 @@ import type { MessageMetadata } from '../../../shared/contract/message';
 import type { ModelResponse } from '../loopTypes';
 import type { RuntimeContext } from './runtimeContext';
 
+/** 2d: turn quality run 级记忆（ADR-038 批2d，owner=turnQuality） */
+export interface TurnQualityRunState { memory?: TurnQualityMemorySummary; }
+
 const MAX_VISIBLE_MEMORY_ITEMS = 6;
 const MAX_PREVIEW_CHARS = 220;
 const MAX_SCORE_REASONS = 4;
@@ -28,8 +31,8 @@ function previewText(value: string | undefined): string | undefined {
 }
 
 function ensureTurnMemory(ctx: RuntimeContext): TurnQualityMemorySummary {
-  if (!ctx.turnQualityMemory) {
-    ctx.turnQualityMemory = {
+  if (!ctx.turnQualityState.memory) {
+    ctx.turnQualityState.memory = {
       mode: ctx.memoryMode ?? 'auto',
       blocks: [],
       suppressedEntryIds: ctx.suppressedMemoryEntryIds?.length
@@ -37,7 +40,7 @@ function ensureTurnMemory(ctx: RuntimeContext): TurnQualityMemorySummary {
         : undefined,
     };
   }
-  return ctx.turnQualityMemory;
+  return ctx.turnQualityState.memory;
 }
 
 function mapPackedMemoryItem(item: PackedMemoryItem) {
@@ -57,7 +60,7 @@ function mapPackedMemoryItem(item: PackedMemoryItem) {
 }
 
 export function recordTurnMemoryDisabled(ctx: RuntimeContext, offReason: string): void {
-  ctx.turnQualityMemory = {
+  ctx.turnQualityState.memory = {
     mode: 'off',
     blocks: [],
     suppressedEntryIds: ctx.suppressedMemoryEntryIds?.length

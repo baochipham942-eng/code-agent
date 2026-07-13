@@ -19,6 +19,10 @@ import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
 import { recordStreamingPerformanceCounter } from '../../../../utils/streamingPerformanceMetrics';
 import {
+  deferredTurnContentStyle,
+  shouldDeferTurnContentLayout,
+} from '../../../../utils/turnContentVisibility';
+import {
   MermaidDiagram,
   CodeBlock,
   InlineCode,
@@ -47,6 +51,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
+  const deferCompletedLayout = shouldDeferTurnContentLayout({
+    content,
+    isStreaming,
+    isUser: Boolean(isUser),
+  });
 
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.message_content.render');
@@ -460,7 +469,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
   const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
   return (
-    <div className={`text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}>
+    <div
+      className={`text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
+      data-turn-heavy-content={deferCompletedLayout ? 'true' : undefined}
+      style={deferCompletedLayout ? deferredTurnContentStyle : undefined}
+    >
       <MarkdownRenderer content={filteredContent} components={components} />
     </div>
   );

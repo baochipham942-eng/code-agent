@@ -24,6 +24,10 @@ import {
   MarketplaceSourceSchema,
   KnownMarketplacesSchema,
 } from './types';
+import {
+  downloadArchive,
+  extractZipSafely,
+} from './githubArchiveSecurity';
 
 const logger = createLogger('MarketplaceService');
 
@@ -250,18 +254,18 @@ async function downloadGitHubZip(repo: string, ref: string): Promise<Buffer> {
   const [owner, name] = repo.split('/');
   if (!owner || !name) throw new Error(`Invalid GitHub repo: ${repo}`);
 
-  const refs = ref.startsWith('refs/') ? [ref] : [`refs/heads/${ref}`, `refs/tags/${ref}`];
+  const refs = ref.startsWith('refs/')
+    ? [ref]
+    : /^[0-9a-f]{40}$/i.test(ref)
+      ? [ref]
+      : [`refs/heads/${ref}`, `refs/tags/${ref}`];
 
   let lastError: Error | null = null;
 
   for (const candidate of refs) {
     const url = `https://codeload.github.com/${owner}/${name}/zip/${candidate}`;
     try {
-      const response = await fetch(url);
-      if (response.ok) {
-        const buffer = await response.arrayBuffer();
-        return Buffer.from(buffer);
-      }
+      return await downloadArchive(url);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
     }
@@ -297,32 +301,24 @@ async function cacheMarketplaceToDir(
   if (source.source === 'github') {
     const refsToTry = source.ref ? [source.ref] : ['main', 'master'];
     let zip: Buffer | null = null;
+    let lastDownloadError: Error | null = null;
 
     for (const ref of refsToTry) {
       try {
         zip = await downloadGitHubZip(source.repo, ref);
         break;
-      } catch {
+      } catch (error) {
+        lastDownloadError = error instanceof Error ? error : new Error(String(error));
         // Try next ref
       }
     }
 
     if (!zip) {
-      throw new Error(`Failed to download GitHub repo ${source.repo}`);
+      throw lastDownloadError ?? new Error(`Failed to download GitHub repo ${source.repo}`);
     }
 
-    // Extract zip using native unzip or node-based extraction
-    // For simplicity, we'll use a temporary file and shell command
-    const tempZip = path.join(destDir, '..', `temp-${randomUUID()}.zip`);
-    await fs.writeFile(tempZip, zip);
-
+    await extractZipSafely(zip, destDir);
     try {
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
-
-      await execAsync(`unzip -q "${tempZip}" -d "${destDir}"`);
-
       // Move contents from nested directory to root
       const entries = await fs.readdir(destDir);
       if (entries.length === 1) {
@@ -349,8 +345,9 @@ async function cacheMarketplaceToDir(
           await fs.rm(nested, { recursive: true });
         }
       }
-    } finally {
-      await fs.unlink(tempZip).catch(() => {});
+    } catch (error) {
+      await fs.rm(destDir, { recursive: true, force: true });
+      throw error;
     }
 
     return;

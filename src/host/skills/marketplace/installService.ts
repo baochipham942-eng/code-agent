@@ -7,9 +7,7 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
 import { randomUUID } from 'crypto';
-import { promisify } from 'util';
 import { getUserConfigDir as getBaseConfigDir, getProjectConfigDir as getBaseProjectConfigDir } from '../../config/configPaths';
 import { createLogger } from '../../services/infra/logger';
 import { getMarketplaceInfo, listMarketplaces } from './marketplaceService';
@@ -22,6 +20,12 @@ import type {
   PluginScope,
   PluginEntry,
 } from './types';
+import {
+  assertTrustedArchiveHash,
+  downloadArchive,
+  extractZipSafely,
+  getArchiveSha256,
+} from './githubArchiveSecurity';
 
 const logger = createLogger('PluginInstallService');
 
@@ -30,7 +34,6 @@ const logger = createLogger('PluginInstallService');
 // ----------------------------------------------------------------------------
 
 const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
-const execAsync = promisify(exec);
 
 // ----------------------------------------------------------------------------
 // Path Utilities
@@ -289,33 +292,52 @@ function parseGitHubRepository(repository?: string): { owner: string; repo: stri
   return { owner: match[1]!, repo: match[2]! };
 }
 
-async function downloadGitHubRepository(owner: string, repo: string, destDir: string): Promise<void> {
+async function resolveGitHubBranchCommit(
+  owner: string,
+  repo: string,
+): Promise<string> {
   const refs = ['main', 'master'];
-  let archive: Buffer | null = null;
   let lastError: Error | null = null;
 
   for (const ref of refs) {
-    const url = `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${ref}`;
     try {
-      const response = await fetch(url);
+      const url = `https://api.github.com/repos/${owner}/${repo}/commits/${ref}`;
+      const response = await fetch(url, {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
       if (response.ok) {
-        archive = Buffer.from(await response.arrayBuffer());
-        break;
+        const body = await response.json() as { sha?: unknown };
+        if (typeof body.sha === 'string' && /^[0-9a-f]{40}$/i.test(body.sha)) {
+          return body.sha;
+        }
+        lastError = new Error(`GitHub returned an invalid commit SHA for ${owner}/${repo}@${ref}`);
+      } else {
+        lastError = new Error(`GitHub API returned ${response.status} for ${owner}/${repo}@${ref}`);
       }
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  if (!archive) {
-    throw lastError ?? new Error(`Failed to download GitHub repository ${owner}/${repo}`);
-  }
+  // Fail closed: following a moving branch would defeat pinning. A transient API
+  // failure is safe to retry and must never silently fall back to refs/heads.
+  throw new Error(
+    `Unable to resolve an immutable GitHub commit for ${owner}/${repo}; retry the installation. ${lastError?.message ?? ''}`.trim(),
+  );
+}
 
+async function downloadGitHubRepository(
+  owner: string,
+  repo: string,
+  destDir: string,
+): Promise<{ pinnedCommit: string; contentHash: string }> {
+  const pinnedCommit = await resolveGitHubBranchCommit(owner, repo);
+  const url = `https://codeload.github.com/${owner}/${repo}/zip/${pinnedCommit}`;
+  const archive = await downloadArchive(url);
+  const contentHash = getArchiveSha256(archive);
   await ensureDir(destDir);
-  const tempZip = path.join(path.dirname(destDir), `repo-${randomUUID()}.zip`);
-  await fs.writeFile(tempZip, archive);
   try {
-    await execAsync(`unzip -q "${tempZip}" -d "${destDir}"`);
+    await extractZipSafely(archive, destDir);
     const entries = await fs.readdir(destDir);
     if (entries.length === 1) {
       const nested = path.join(destDir, entries[0]!);
@@ -328,16 +350,23 @@ async function downloadGitHubRepository(owner: string, repo: string, destDir: st
         await fs.rm(nested, { recursive: true, force: true });
       }
     }
-  } finally {
-    await fs.unlink(tempZip).catch(() => {});
+  } catch (error) {
+    await fs.rm(destDir, { recursive: true, force: true });
+    throw error;
   }
+  return { pinnedCommit, contentHash };
 }
 
 async function resolveEntrySourceBase(args: {
   rootDir: string;
   entry: PluginEntry;
   pluginSpec: string;
-}): Promise<{ sourceBase: string; cleanup?: () => Promise<void> }> {
+}): Promise<{
+  sourceBase: string;
+  cleanup?: () => Promise<void>;
+  pinnedCommit?: string;
+  contentHash?: string;
+}> {
   const sourcePath = args.entry.source || args.entry.path || './';
   const localSourceBase = path.resolve(args.rootDir, sourcePath);
   if (fsSync.existsSync(localSourceBase)) {
@@ -350,7 +379,7 @@ async function resolveEntrySourceBase(args: {
   }
 
   const tempDir = path.join(getUserConfigDir(), 'marketplace-plugin-cache', `tmp-${getPluginAssetDirName(args.pluginSpec)}-${randomUUID()}`);
-  await downloadGitHubRepository(github.owner, github.repo, tempDir);
+  const artifact = await downloadGitHubRepository(github.owner, github.repo, tempDir);
   const remoteSourceBase = path.resolve(tempDir, args.entry.path || args.entry.source || './');
   if (!fsSync.existsSync(remoteSourceBase)) {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -358,6 +387,7 @@ async function resolveEntrySourceBase(args: {
   }
   return {
     sourceBase: remoteSourceBase,
+    ...artifact,
     cleanup: async () => {
       await fs.rm(tempDir, { recursive: true, force: true });
     },
@@ -574,17 +604,6 @@ export async function installPlugin(
       `Plugin '${pluginSpec}' is already installed. Use --force to reinstall.`
     );
   }
-  if (existing && options.force) {
-    await deactivatePluginCommands({
-      scope: existing.scope,
-      projectPath: existing.projectPath,
-      commandNames: existing.commands || [],
-    });
-    if (existing.pluginRoot && fsSync.existsSync(existing.pluginRoot)) {
-      await fs.rm(existing.pluginRoot, { recursive: true, force: true });
-    }
-  }
-
   const entrySource = await resolveEntrySourceBase({
     rootDir,
     entry,
@@ -593,6 +612,22 @@ export async function installPlugin(
 
   let installedAssetRoot: string | undefined;
   try {
+    assertTrustedArchiveHash(
+      existing?.contentHash,
+      entrySource.contentHash ?? existing?.contentHash ?? '',
+    );
+
+    if (existing && options.force) {
+      await deactivatePluginCommands({
+        scope: existing.scope,
+        projectPath: existing.projectPath,
+        commandNames: existing.commands || [],
+      });
+      if (existing.pluginRoot && fsSync.existsSync(existing.pluginRoot)) {
+        await fs.rm(existing.pluginRoot, { recursive: true, force: true });
+      }
+    }
+
     const pluginRoot = await installPluginAssets({
       entrySourceBase: entrySource.sourceBase,
       scope,
@@ -633,6 +668,8 @@ export async function installPlugin(
       isEnabled: options.enableAfterInstall === true,
       projectPath,
       installedAt: new Date().toISOString(),
+      pinnedCommit: entrySource.pinnedCommit,
+      contentHash: entrySource.contentHash,
       pluginRoot,
       types: pluginTypes,
       skills: installedSkills,

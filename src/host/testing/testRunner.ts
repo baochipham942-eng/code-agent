@@ -111,19 +111,48 @@ export interface AgentInterface {
   getGoalRunRecord?(): GoalRunRecord | undefined;
 }
 
+export type AgentFactory = (context: {
+  workingDirectory: string;
+}) => AgentInterface | Promise<AgentInterface>;
+
+export interface WorkerDirectory {
+  workingDirectory: string;
+  cleanup(): void | Promise<void>;
+}
+
+export type WorkerDirectoryFactory = () => WorkerDirectory | Promise<WorkerDirectory>;
+
+interface TestExecutionContext {
+  agent: AgentInterface;
+  workingDirectory: string;
+}
+
+interface ParallelWorker extends TestExecutionContext {
+  cleanup(): void | Promise<void>;
+}
+
 /**
  * Test Runner - Executes test cases and collects results
  */
 export class TestRunner {
   private config: TestRunnerConfig;
   private agent: AgentInterface;
+  private agentFactory?: AgentFactory;
+  private workerDirectoryFactory?: WorkerDirectoryFactory;
   private listeners: TestEventListener[] = [];
   private aborted = false;
   private abortReason?: string;
 
-  constructor(config: TestRunnerConfig, agent: AgentInterface) {
+  constructor(
+    config: TestRunnerConfig,
+    agent: AgentInterface,
+    agentFactory?: AgentFactory,
+    workerDirectoryFactory?: WorkerDirectoryFactory,
+  ) {
     this.config = config;
     this.agent = agent;
+    this.agentFactory = agentFactory;
+    this.workerDirectoryFactory = workerDirectoryFactory;
   }
 
   /**
@@ -172,13 +201,17 @@ export class TestRunner {
     return gate.exportReady ? [] : gate.failures;
   }
 
-  private async attachTelemetryReplay(testCase: TestCase, result: TestResult): Promise<void> {
+  private async attachTelemetryReplay(
+    testCase: TestCase,
+    result: TestResult,
+    agent: AgentInterface,
+  ): Promise<void> {
     const requiresRealAgentRun = this.isRealAgentRunCase(testCase);
     if (result.sessionId) {
       result.replayKey = buildSessionTraceIdentity(result.sessionId).replayKey;
     }
 
-    await this.agent.finalizeSession?.();
+    await agent.finalizeSession?.();
 
     let replay: StructuredReplay | null = null;
     if (result.sessionId) {
@@ -238,10 +271,10 @@ export class TestRunner {
    * Run all tests
    */
   async runAll(): Promise<TestRunSummary> {
-    if (this.config.parallel && this.config.maxParallel > 1) {
+    const useParallelWorkers = this.config.parallel && this.config.maxParallel > 1;
+    if (useParallelWorkers && !this.agentFactory) {
       throw new Error(
-        'serial-only: runner shares a single agent instance and working directory; '
-        + 'drop --concurrency or use maxParallel=1'
+        'parallel execution requires agentFactory so each worker has an isolated agent instance'
       );
     }
 
@@ -271,13 +304,16 @@ export class TestRunner {
       totalCases: sortedCases.length,
     });
 
-    // Track passed tests for dependency checking
-    const passedTests = new Set<string>();
-
     const trialsPerCase = this.config.trialsPerCase ?? 1;
 
-    // Run each test case
-    for (const testCase of sortedCases) {
+    if (useParallelWorkers) {
+      results.push(...await this.runParallelCases(sortedCases, trialsPerCase));
+    } else {
+      // Track passed tests for dependency checking
+      const passedTests = new Set<string>();
+
+      // Run each test case
+      for (const testCase of sortedCases) {
       if (this.aborted) {
         logger.info('Test run aborted');
         break;
@@ -351,11 +387,12 @@ export class TestRunner {
         }
       }
 
-      // Stop on first failure if configured
-      const lastResult = results[results.length - 1];
-      if (this.config.stopOnFailure && lastResult?.status === 'failed') {
-        logger.info('Stopping on first failure');
-        break;
+        // Stop on first failure if configured
+        const lastResult = results[results.length - 1];
+        if (this.config.stopOnFailure && lastResult?.status === 'failed') {
+          logger.info('Stopping on first failure');
+          break;
+        }
       }
     }
 
@@ -427,10 +464,191 @@ export class TestRunner {
     return summary;
   }
 
+  private async createParallelWorkers(count: number): Promise<ParallelWorker[]> {
+    const workers: ParallelWorker[] = [];
+    try {
+      for (let index = 0; index < count; index++) {
+        let directory: WorkerDirectory;
+        if (this.workerDirectoryFactory) {
+          directory = await this.workerDirectoryFactory();
+        } else {
+          const root = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-eval-worker-'));
+          const workingDirectory = path.join(root, 'work');
+          await fs.cp(this.config.workingDirectory, workingDirectory, { recursive: true });
+          directory = {
+            workingDirectory,
+            cleanup: () => fs.rm(root, { recursive: true, force: true }),
+          };
+        }
+
+        try {
+          const agent = await this.agentFactory!({
+            workingDirectory: directory.workingDirectory,
+          });
+          workers.push({
+            agent,
+            workingDirectory: directory.workingDirectory,
+            cleanup: directory.cleanup,
+          });
+        } catch (error) {
+          await directory.cleanup();
+          throw error;
+        }
+      }
+      return workers;
+    } catch (error) {
+      await Promise.allSettled(workers.map((worker) => worker.cleanup()));
+      throw error;
+    }
+  }
+
+  private async runParallelCases(
+    sortedCases: TestCase[],
+    trialsPerCase: number,
+  ): Promise<TestResult[]> {
+    if (sortedCases.length === 0) return [];
+
+    const workerCount = Math.min(this.config.maxParallel, sortedCases.length);
+    const workers = await this.createParallelWorkers(workerCount);
+    const availableWorkers = [...workers];
+    const pending = new Set(sortedCases.map((_, index) => index));
+    const caseIndexes = new Map(sortedCases.map((testCase, index) => [testCase.id, index]));
+    const completed = new Set<string>();
+    const passed = new Set<string>();
+    const resultsByIndex: Array<TestResult | undefined> = new Array(sortedCases.length);
+    const running = new Map<number, Promise<{
+      index: number;
+      result: TestResult;
+      worker: ParallelWorker;
+    }>>();
+    let stopScheduling = false;
+
+    try {
+      while (pending.size > 0 || running.size > 0) {
+        let madeProgress = false;
+
+        if (!stopScheduling && !this.aborted) {
+          for (const index of [...pending]) {
+            const testCase = sortedCases[index];
+            const dependencies = testCase.depends_on ?? [];
+            const dependenciesComplete = dependencies.every((dependency) =>
+              !caseIndexes.has(dependency) || completed.has(dependency)
+            );
+            if (!dependenciesComplete) continue;
+
+            const unmetDependencies = dependencies.filter((dependency) => !passed.has(dependency));
+            if (unmetDependencies.length > 0) {
+              const result = this.createSkippedResult(
+                testCase,
+                `Dependencies not met: ${unmetDependencies.join(', ')}`,
+              );
+              pending.delete(index);
+              resultsByIndex[index] = result;
+              completed.add(testCase.id);
+              this.emit({ type: 'case_end', result });
+              madeProgress = true;
+              continue;
+            }
+
+            const worker = availableWorkers.shift();
+            if (!worker) break;
+
+            pending.delete(index);
+            const task = this.runParallelCaseTrials(testCase, trialsPerCase, worker)
+              .then((result) => ({ index, result, worker }));
+            running.set(index, task);
+            madeProgress = true;
+          }
+        }
+
+        if (running.size > 0) {
+          const completedTask = await Promise.race(running.values());
+          running.delete(completedTask.index);
+          availableWorkers.push(completedTask.worker);
+          resultsByIndex[completedTask.index] = completedTask.result;
+          const completedCase = sortedCases[completedTask.index];
+          completed.add(completedCase.id);
+          if (
+            completedTask.result.status === 'passed'
+            || completedTask.result.status === 'partial'
+          ) {
+            passed.add(completedCase.id);
+          }
+          if (this.config.stopOnFailure && completedTask.result.status === 'failed') {
+            logger.info('Stopping on first failure');
+            stopScheduling = true;
+          }
+          continue;
+        }
+
+        if (this.aborted || stopScheduling) break;
+        if (!madeProgress && pending.size > 0) {
+          throw new Error('Parallel dependency scheduler made no progress');
+        }
+      }
+    } finally {
+      await Promise.allSettled(workers.map((worker) => worker.cleanup()));
+    }
+
+    return resultsByIndex.filter((result): result is TestResult => result !== undefined);
+  }
+
+  private async runParallelCaseTrials(
+    testCase: TestCase,
+    trialsPerCase: number,
+    context: TestExecutionContext,
+  ): Promise<TestResult> {
+    if (trialsPerCase <= 1) {
+      return this.runSingleTest(testCase, context);
+    }
+
+    const trialResults: NonNullable<TestResult['trials']> = [];
+    let bestResult: TestResult | null = null;
+    let telemetryGateFailureResult: TestResult | null = null;
+
+    for (let trial = 0; trial < trialsPerCase; trial++) {
+      if (this.aborted) break;
+      logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
+      const result = await this.runSingleTest(testCase, context);
+      trialResults.push(this.toTrialSummary(result));
+
+      if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
+        telemetryGateFailureResult ??= result;
+      }
+      if (!bestResult || result.score > bestResult.score) {
+        bestResult = result;
+      }
+    }
+
+    if (!bestResult) {
+      return this.createSkippedResult(testCase, 'Test run aborted before trial execution');
+    }
+    if (telemetryGateFailureResult) {
+      bestResult = telemetryGateFailureResult;
+    }
+
+    bestResult.trials = trialResults;
+    const scores = trialResults.map((trial) => trial.score);
+    const mean = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    const variance = scores.reduce((sum, score) => sum + (score - mean) ** 2, 0) / scores.length;
+    const stdDev = Math.sqrt(variance);
+    bestResult.variance = variance;
+    bestResult.stdDev = stdDev;
+    bestResult.unstable = stdDev > UNSTABLE_STDDEV_THRESHOLD;
+    return bestResult;
+  }
+
   /**
    * Run a single test case
    */
-  async runSingleTest(testCase: TestCase): Promise<TestResult> {
+  async runSingleTest(
+    testCase: TestCase,
+    context: TestExecutionContext = {
+      agent: this.agent,
+      workingDirectory: this.config.workingDirectory,
+    },
+  ): Promise<TestResult> {
+    const { agent, workingDirectory } = context;
     const startTime = Date.now();
     const result: TestResult = {
       testId: testCase.id,
@@ -498,22 +716,22 @@ export class TestRunner {
 
       // Run setup commands
       if (testCase.setup && testCase.setup.length > 0) {
-        await this.runCommands(testCase.setup, 'setup');
+        await this.runCommands(testCase.setup, 'setup', workingDirectory);
       }
 
       // GAIA 等外部基准的附件：跑前拷进工作目录（缺失/越界都 fail loud）
       if (testCase.files && testCase.files.length > 0) {
-        injectedFiles.push(...await this.injectCaseFiles(testCase.files));
+        injectedFiles.push(...await this.injectCaseFiles(testCase.files, workingDirectory));
       }
 
       // Reset agent state
-      await this.agent.reset();
+      await agent.reset();
 
       // 批 6：审批门策略注入（无模拟的 case 传 undefined，清掉上个 case 的配置）
-      this.agent.configureUserSimulation?.(testCase.user_simulation);
+      agent.configureUserSimulation?.(testCase.user_simulation);
 
       // B6b-①：goal 契约注入（无契约的 case 传 undefined，清掉上个 case 的配置）
-      this.agent.configureGoalContract?.(testCase.goal_contract);
+      agent.configureGoalContract?.(testCase.goal_contract);
 
       // Set up timeout — CODE_AGENT_FORCE_TIMEOUT overrides per-case timeout (for slow local models)
       const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
@@ -530,7 +748,7 @@ export class TestRunner {
 
       // Send the test prompt (withTimeout 自动清理 timer)
       const agentResult = await withTimeout(
-        this.agent.sendMessage(testCase.prompt),
+        agent.sendMessage(testCase.prompt),
         timeout,
         `Test timeout after ${timeout}ms`,
       );
@@ -539,13 +757,13 @@ export class TestRunner {
       result.toolExecutions = agentResult.toolExecutions;
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
-      result.sessionId = this.agent.getSessionId?.();
+      result.sessionId = agent.getSessionId?.();
 
       // B6b-①：goal run 行为落账必须在断言求值之前就位（runAssertions/runExpectations
       // 都在本 try 内），否则 goal_status/goal_evidence_gate 会 fail-loud 把真达成判红。
       // 超时/异常路径的兜底捕获见 finally（审计 R1-M2）。
       if (testCase.goal_contract) {
-        result.goalRun = this.agent.getGoalRunRecord?.();
+        result.goalRun = agent.getGoalRunRecord?.();
       }
 
       // 批 6：条件应答多轮（follow_up_prompts 的升级形态，两者互斥已在入口校验）。
@@ -580,7 +798,7 @@ export class TestRunner {
             throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
           }
           const simResult = await withTimeout(
-            this.agent.sendMessage(match.message!),
+            agent.sendMessage(match.message!),
             remainingTime,
             `Simulated user turn timeout after ${timeout}ms`,
           );
@@ -615,7 +833,7 @@ export class TestRunner {
           if (remainingTime <= 0) break;
 
           const followUpResult = await withTimeout(
-            this.agent.sendMessage(followUp),
+            agent.sendMessage(followUp),
             remainingTime,
             `Follow-up timeout after ${timeout}ms`,
           );
@@ -653,7 +871,7 @@ export class TestRunner {
         responses: result.responses,
         errors: result.errors,
         turnCount: result.turnCount,
-        workingDirectory: this.config.workingDirectory,
+        workingDirectory,
       });
 
       result.score = assertionResult.score;
@@ -696,7 +914,7 @@ export class TestRunner {
           responses: result.responses,
           errors: result.errors,
           turnCount: result.turnCount,
-          workingDirectory: this.config.workingDirectory,
+          workingDirectory,
           simTurns: result.simTurns,
           goalRun: result.goalRun,
         });
@@ -735,7 +953,7 @@ export class TestRunner {
         result.failureStage = 'infra';
       }
 
-      await this.attachTelemetryReplay(testCase, result);
+      await this.attachTelemetryReplay(testCase, result, agent);
 
       // P3: Trajectory analysis (when enabled)
       if (this.config.enableTrajectoryAnalysis) {
@@ -772,7 +990,7 @@ export class TestRunner {
       // 已发生的 goal_gate 观测事件（对称于 simTurns 的增量落账），供 infra 排查。
       // 只在未捕获时补——不许覆盖断言时刻的定格快照（审计 R2-M1 幽灵事件面）。
       if (testCase.goal_contract && result.goalRun === undefined) {
-        result.goalRun = this.agent.getGoalRunRecord?.();
+        result.goalRun = agent.getGoalRunRecord?.();
       }
 
       // 清理注入的附件（best-effort）
@@ -787,7 +1005,7 @@ export class TestRunner {
       // Run cleanup commands
       if (testCase.cleanup && testCase.cleanup.length > 0) {
         try {
-          await this.runCommands(testCase.cleanup, 'cleanup');
+          await this.runCommands(testCase.cleanup, 'cleanup', workingDirectory);
         } catch (error) {
           logger.warn('Cleanup failed', { testId: testCase.id, error });
         }
@@ -813,8 +1031,11 @@ export class TestRunner {
    * dest 必须落在工作目录内（防路径逃逸）；source 缺失直接抛错（不静默跳过，
    * 否则附件题会退化成"没有附件也硬答"的假阴性）。
    */
-  private async injectCaseFiles(files: NonNullable<TestCase['files']>): Promise<string[]> {
-    const workDir = path.resolve(this.config.workingDirectory);
+  private async injectCaseFiles(
+    files: NonNullable<TestCase['files']>,
+    workingDirectory: string,
+  ): Promise<string[]> {
+    const workDir = path.resolve(workingDirectory);
     const injected: string[] = [];
     for (const file of files) {
       const source = file.source.startsWith('~')
@@ -841,10 +1062,14 @@ export class TestRunner {
   /**
    * Run shell commands (setup/cleanup)
    */
-  private async runCommands(commands: string[], phase: string): Promise<void> {
+  private async runCommands(
+    commands: string[],
+    phase: string,
+    workingDirectory: string,
+  ): Promise<void> {
     for (const cmd of commands) {
       try {
-        await execAsync(cmd, { cwd: this.config.workingDirectory });
+        await execAsync(cmd, { cwd: workingDirectory });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger.warn(`${phase} command failed`, { cmd, error: message });

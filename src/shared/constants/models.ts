@@ -16,8 +16,8 @@ export const MODEL = {
 
 /** 默认模型配置 */
 export const DEFAULT_MODELS = {
-  /** 主要对话模型 - 小米 MiMo v2.5 Pro 包月旗舰 */
-  chat: 'mimo-v2.5-pro',
+  /** 主要对话模型 - LongCat 2.0（开放平台免费额度；2026-07-13 起替代 mimo：Token Plan key 失效） */
+  chat: 'LongCat-2.0',
   /** 推理模型 - DeepSeek V4 Pro (按需付费，替代 R1) */
   reasoning: 'deepseek-v4-pro',
   /** 视觉理解模型 - 小米 MiMo Omni 包月（多模态，与 chat 同 provider，免费额度内）。
@@ -26,8 +26,8 @@ export const DEFAULT_MODELS = {
   vision: 'mimo-v2-omni',
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4.6v-flash',
-  /** 代码模型 - 小米 MiMo v2.5 Pro 包月旗舰（thinking + tool call） */
-  code: 'mimo-v2.5-pro',
+  /** 代码模型 - LongCat 2.0（thinking + tool call，与 DEFAULT_PROVIDER 配对） */
+  code: 'LongCat-2.0',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /**
@@ -36,10 +36,10 @@ export const DEFAULT_MODELS = {
    * 不可用 glm-4.7-flash（thinking 档，实测关思考也要 27-40s，短输出额度被 reasoning 吃光返回空）。
    */
   quick: 'glm-4-flash',
-  /** 超长上下文模型（1M） - 小米 MiMo v2.5 Pro */
-  longContext: 'mimo-v2.5-pro',
-  /** 包月无限制模型 - 小米 MiMo Token Plan */
-  unlimited: 'mimo-v2.5-pro',
+  /** 长上下文模型（128k，与 DEFAULT_PROVIDER 配对；mimo 1M 档因 key 失效退役） */
+  longContext: 'LongCat-2.0',
+  /** 配额内免费模型 - LongCat 开放平台 */
+  unlimited: 'LongCat-2.0',
 } as const;
 
 /** Agent 子任务默认模型（包月无限制，适合高频调用） */
@@ -204,6 +204,7 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'mimo-v2-pro': ['tool', 'reasoning'],
   'mimo-v2-omni': ['tool', 'vision', 'reasoning'],
   // LongCat
+  'LongCat-2.0': ['tool', 'reasoning'],
   'LongCat-2.0-Preview': ['tool', 'reasoning'],
   // local
   'qwen2.5-coder:7b': ['tool'],
@@ -246,6 +247,7 @@ export const MODEL_ABBREV: Record<string, string> = {
   'kimi-k2.5': 'kimi-2.5',
   'kimi-k2.6': 'kimi-2.6',
   // LongCat
+  'LongCat-2.0': 'LongCat',
   'LongCat-2.0-Preview': 'LongCat',
   // zhipu
   'glm-5.1': 'glm-5.1',

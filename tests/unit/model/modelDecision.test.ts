@@ -57,7 +57,7 @@ const taskStrategy: TaskModelStrategySettings = {
   defaultProfile: 'main',
   profiles: {
     fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick, reasoningEffort: 'low', maxTokens: 4096 },
-    main: { provider: 'xiaomi', model: DEFAULT_MODELS.chat, reasoningEffort: 'medium', maxTokens: 16384 },
+    main: { provider: 'longcat', model: DEFAULT_MODELS.chat, reasoningEffort: 'medium', maxTokens: 16384 },
     deep: { provider: 'deepseek', model: DEFAULT_MODELS.reasoning, reasoningEffort: 'high', maxTokens: 32768 },
     vision: { provider: 'xiaomi', model: DEFAULT_MODELS.vision, reasoningEffort: 'medium', maxTokens: 4096 },
   },
@@ -136,7 +136,7 @@ describe('resolveModelDecision — 主聊天 adaptive 关闭', () => {
 
   it('labels the app DEFAULT model as default-model, not user-selected (chip noise fix)', () => {
     const { decision } = resolveModelDecision(makeInput({
-      requestedConfig: makeConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro', adaptive: false }),
+      requestedConfig: makeConfig({ provider: 'longcat', model: 'LongCat-2.0', adaptive: false }),
       messages: SIMPLE_MESSAGE,
     }));
 
@@ -155,7 +155,7 @@ describe('resolveModelDecision — 主聊天 adaptive 关闭', () => {
 
   it('keeps default-model label for the default model on the adaptive complex-task keep path', () => {
     const { decision } = resolveModelDecision(makeInput({
-      requestedConfig: makeConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro', adaptive: true }),
+      requestedConfig: makeConfig({ provider: 'longcat', model: 'LongCat-2.0', adaptive: true }),
       messages: COMPLEX_MESSAGE,
     }));
 

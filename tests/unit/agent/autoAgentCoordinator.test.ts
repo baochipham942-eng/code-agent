@@ -235,6 +235,24 @@ describe('AutoAgentCoordinator', () => {
       expect(result.totalIterations).toBe(4);
     });
 
+    it('子 agent 标 teammate 拓扑（2026-07-13 拓扑激活批：auto 平面任务图禁递归 spawn）', async () => {
+      const topologies: Array<string | undefined> = [];
+      executorState.executeMock.mockImplementation(
+        async (_prompt: string, _spec: unknown, context: { executionTopology?: string }) => {
+          topologies.push(context.executionTopology);
+          return makeResult({ output: 'ok' });
+        }
+      );
+
+      await coordinator.execute(
+        [makeAgent('a1', { name: 'first' })],
+        makeRequirements('sequential'),
+        makeContext()
+      );
+
+      expect(topologies).toEqual(['teammate']);
+    });
+
     it('前置任务 output 注入后置 prompt（L1 Result Passing）', async () => {
       const prompts: string[] = [];
       executorState.executeMock.mockImplementation(

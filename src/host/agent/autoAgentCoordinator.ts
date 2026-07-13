@@ -139,6 +139,8 @@ export class AutoAgentCoordinator {
         agentId: node.nodeId,
         executionAgentId: node.nodeId,
         parentToolUseId: context.executionContext.currentToolCallId,
+        // auto 平面任务图的子 agent 标 teammate（2026-07-13 拍板）：禁递归 spawn_agent
+        executionTopology: 'teammate' as const,
       }),
       requestFactory: (input, node, graphContext) => {
         const previous = node.dependencies

@@ -191,6 +191,26 @@ describe('ParallelAgentCoordinator', () => {
       expect(executorState.executeMock).not.toHaveBeenCalled();
     });
 
+    it('子 agent 不标拓扑（parallel 是 swarm 宿主，递归 spawn 是现役特性——2026-07-13 拍板留 main）', async () => {
+      const topologies: Array<string | undefined> = [];
+      executorState.executeMock.mockImplementation(
+        async (request: { config: { name: string }; context?: { executionTopology?: string } }) => {
+          topologies.push(request.context?.executionTopology);
+          return {
+            success: true,
+            output: `ok:${request.config.name}`,
+            iterations: 1,
+            toolsUsed: ['Read'],
+            cost: 0,
+          };
+        }
+      );
+
+      await coordinator.executeParallel([makeTask('topo-task')]);
+
+      expect(topologies).toEqual([undefined]);
+    });
+
     it('locks scoped dependencies after first initialization', () => {
       const scope: SwarmRunScope = {
         sessionId: 'session-scoped',

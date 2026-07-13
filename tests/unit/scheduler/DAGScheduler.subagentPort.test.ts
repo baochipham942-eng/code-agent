@@ -66,6 +66,33 @@ describe('DAGScheduler subagent executor port', () => {
     });
   });
 
+  it('marks DAG agent tasks as teammate topology（2026-07-13 拓扑激活批：平面任务图禁递归 spawn）', async () => {
+    const scheduler = new DAGScheduler({
+      maxParallelism: 1,
+      scheduleInterval: 1,
+      defaultTimeout: 5000,
+    });
+    const execute = vi.fn(async () => ({
+      success: true,
+      output: 'agent output',
+      toolsUsed: [],
+      iterations: 1,
+    }));
+    scheduler.setSubagentExecutor({ execute });
+    scheduler.setAgentResolver({
+      resolve: () => ({ systemPrompt: 'sp', tools: ['Read'], maxIterations: 3 }),
+    });
+
+    const dag = new TaskDAG('dag-topo', 'Topology DAG');
+    dag.addAgentTask('agent-a', { role: 'coder', prompt: 'do the task' });
+
+    await scheduler.execute(dag, {
+      executionContext: executionContext('session-topo') as never,
+    });
+
+    expect(execute.mock.calls[0][0].context.executionTopology).toBe('teammate');
+  });
+
   it('forks independent mutable state for concurrent runs with the same task id', async () => {
     const template = new DAGScheduler({
       maxParallelism: 1,

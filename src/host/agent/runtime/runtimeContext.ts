@@ -102,7 +102,6 @@ export interface RuntimeContext {
 
   // --- Plan mode ---
   isPlanModeActive: boolean;
-  planModeActive: boolean;
   savedMessages: Message[] | null;
   currentAgentMode: string;
   autoApprovePlan: boolean;

@@ -226,7 +226,6 @@ export class AgentLoop {
 
       // Plan mode
       isPlanModeActive: false,
-      planModeActive: false,
       savedMessages: null,
       currentAgentMode: 'normal',
       autoApprovePlan: config.autoApprovePlan ?? false,

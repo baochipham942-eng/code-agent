@@ -289,7 +289,6 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     abortController: null,
     runAbortController: null,
     isPlanModeActive: false,
-    planModeActive: false,
     savedMessages: null,
     currentAgentMode: 'agent',
     autoApprovePlan: false,

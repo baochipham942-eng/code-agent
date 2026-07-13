@@ -402,7 +402,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     runAbortController: null,
 
     isPlanModeActive: false,
-    planModeActive: false,
     savedMessages: null,
     currentAgentMode: 'code',
     autoApprovePlan: false,

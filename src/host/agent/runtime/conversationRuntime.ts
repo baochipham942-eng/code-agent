@@ -183,7 +183,6 @@ export class ConversationRuntime {
 
   setPlanMode(active: boolean): void {
     this.ctx.isPlanModeActive = active;
-    this.ctx.planModeActive = active;
 
     if (active) {
       this.ctx.savedMessages = [...this.ctx.messages];

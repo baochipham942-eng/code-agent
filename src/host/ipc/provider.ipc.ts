@@ -11,12 +11,19 @@ import {
   MCP,
   getModelMaxOutputTokens,
 } from '../../shared/constants';
-import type { ModelCapability, ModelProviderProtocol } from '../../shared/contract';
+import type {
+  ModelCapability,
+  ModelProvider,
+  ModelProviderProtocol,
+  ModelThinkingCapabilityCatalog,
+} from '../../shared/contract';
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
 import { runDiagnostics } from './doctor.ipc';
 import { runDoctor } from '../diagnostics/doctorRunner';
 import type { RunDoctorOptions } from '../diagnostics/types';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
+import { PROVIDER_REGISTRY } from '../model/providerRegistry';
+import { resolveModelThinkingCapability } from '../model/providerRuntimeCapabilities';
 import {
   handleTestConnection,
   mapProviderHttpError as mapHttpError,
@@ -56,6 +63,20 @@ export interface DiscoverModelsResult {
   models: DiscoveredProviderModel[];
   latencyMs: number;
   error?: TestConnectionResult['error'];
+}
+
+export function getModelThinkingCapabilityCatalog(providerId: string): ModelThinkingCapabilityCatalog {
+  const provider = normalizeProviderId(providerId) ?? providerId as ModelProvider;
+  const registryProvider = PROVIDER_REGISTRY[provider];
+  return {
+    fallback: resolveModelThinkingCapability(provider),
+    models: Object.fromEntries(
+      (registryProvider?.models ?? []).map((model) => [
+        model.id,
+        resolveModelThinkingCapability(provider, model.thinking),
+      ]),
+    ),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -423,6 +444,16 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
         case 'discover_models': {
           const data = await handleDiscoverModels(payload as DiscoverModelsPayload);
           return { success: true, data };
+        }
+        case 'get_thinking_capabilities': {
+          const provider = (payload as { provider?: unknown } | undefined)?.provider;
+          if (typeof provider !== 'string' || !provider.trim()) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ARGUMENT', message: 'Provider is required.' },
+            };
+          }
+          return { success: true, data: getModelThinkingCapabilityCatalog(provider) };
         }
         case 'run_diagnostics': {
           const data = await runDiagnostics();

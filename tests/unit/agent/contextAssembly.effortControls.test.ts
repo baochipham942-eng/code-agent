@@ -32,4 +32,14 @@ describe('applyEffortControls', () => {
       reasoningEffort: undefined,
     });
   });
+
+  it('keeps per-model config when the session EffortSelector requests another level', () => {
+    const modelConfigured: ModelConfig = {
+      ...baseConfig,
+      thinkingBudget: 32768,
+      reasoningEffort: 'high',
+    };
+
+    expect(applyEffortControls(modelConfigured, 'low')).toEqual(modelConfigured);
+  });
 });

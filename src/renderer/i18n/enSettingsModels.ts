@@ -148,6 +148,16 @@ export const enSettingsModels = {
         searchPlaceholder: 'Search models...',
         selectionHint: 'Models checked "In picker" appear in the chat model picker. "Set default" controls which model Neo uses by default.',
         noMatch: 'No matching models',
+        thinking: {
+          budgetLabel: 'Thinking budget',
+          budgetAriaLabel: 'Thinking budget tokens',
+          tokensUnit: 'tokens',
+          effortLabel: 'Reasoning depth',
+          effortAriaLabel: 'Reasoning depth',
+          effortLevels: { low: 'Low', medium: 'Medium', high: 'High' },
+          toggleLabel: 'Thinking',
+          toggleAriaLabel: 'Enable thinking for this model',
+        },
       },
       advanced: {
         title: 'Advanced',

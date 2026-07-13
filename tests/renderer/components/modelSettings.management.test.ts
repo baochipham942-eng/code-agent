@@ -394,6 +394,33 @@ describe('ModelSettings management helpers', () => {
     });
   });
 
+  it('preserves per-model thinking preferences through the provider save payload', () => {
+    const models: NonNullable<ModelProviderSettings['models']> = {
+      'gpt-5.5': {
+        enabled: true,
+        thinking: { enabled: true, effort: 'high' },
+      },
+    };
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: { enabled: true, models },
+      baseUrl: 'https://api.openai.com/v1',
+      protocol: 'openai',
+      model: 'gpt-5.5',
+      models,
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+
+    expect(providerConfig.models?.['gpt-5.5']?.thinking).toEqual({
+      enabled: true,
+      effort: 'high',
+    });
+    expect(buildProviderSettingsUpdate('openai', providerConfig).models?.providers?.openai.models?.['gpt-5.5']?.thinking)
+      .toEqual({ enabled: true, effort: 'high' });
+  });
+
   it('creates stable unique ids for custom providers', () => {
     expect(createCustomProviderId('LongCat API', [])).toBe('custom-longcat-api');
     expect(createCustomProviderId('LongCat API', ['custom-longcat-api'])).toBe('custom-longcat-api-2');

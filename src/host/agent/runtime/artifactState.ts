@@ -30,14 +30,11 @@ export interface ArtifactRepairGuard {
   targetFile: string;
   attempts: number;
   phase: ArtifactRepairGuardPhase;
-  // Route A loop guard: repair turns since the last successful target-file
-  // mutation. Reaching ARTIFACT_REPAIR_MAX_ATTEMPTS force-stops the repair turn.
-  repairTurnsWithoutProgress?: number;
-  // Route A block-path loop guard：可用但被 repair 闸 block 的工具连续无进展次数。
-  // 独立于 repairTurnsWithoutProgress（后者每回合被 messageProcessor 无条件清零，
-  // 无法兜住"目标不可达→每个工具都被 block"的死锁）。仅 block 路径累加、目标文件被
-  // 成功改动(patched)时清零，到 ARTIFACT_REPAIR_MAX_ATTEMPTS 硬停。
-  blockedToolTurnsWithoutProgress?: number;
+  // 统一无进展计数器（原 repairTurnsWithoutProgress + blockedToolTurnsWithoutProgress 合并）：
+  // 修复期内所有"没推进目标文件"的动作都累加——unavailable-tool 回合、repair 闸 block。
+  // 唯一清零点 = 目标文件被成功改动（markTargetPatched）；不再有每回合无条件清零（审计
+  // HIGH-1 根治），故 phantom 目标死锁能跨回合累积到 ARTIFACT_REPAIR_MAX_ATTEMPTS 硬停。
+  noProgressTurns?: number;
   lastBlockedTool?: string;
   patched?: boolean;
   lastFailedPatchFingerprint?: string;
@@ -110,8 +107,7 @@ export class ArtifactState {
       attempts: next.attempts,
       phase: next.phase,
       patched: false,
-      repairTurnsWithoutProgress: previous?.repairTurnsWithoutProgress,
-      blockedToolTurnsWithoutProgress: previous?.blockedToolTurnsWithoutProgress,
+      noProgressTurns: previous?.noProgressTurns,
       lastBlockedTool: previous?.lastBlockedTool,
       lastFailedPatchFingerprint: next.lastFailedPatchFingerprint ?? previous?.lastFailedPatchFingerprint,
       activeIssueCodes: [...new Set([...next.freshIssueCodes, ...(previous?.activeIssueCodes || [])])],
@@ -124,27 +120,20 @@ export class ArtifactState {
 
   // --- repair guard 嵌套写（W-mut，方法内部 if (!this._repairGuard) return; 兜底）---
 
-  registerBlockedToolTurn(turns: number, blockedTool: string): void {
-    if (!this._repairGuard) return;
-    this._repairGuard.blockedToolTurnsWithoutProgress = turns;
+  /** 记一次无进展动作：计数 +1 并记录被拦工具名，返回累计值（无 guard 时不计，返回 0） */
+  recordNoProgressTurn(blockedTool: string): number {
+    if (!this._repairGuard) return 0;
+    const turns = (this._repairGuard.noProgressTurns ?? 0) + 1;
+    this._repairGuard.noProgressTurns = turns;
     this._repairGuard.lastBlockedTool = blockedTool;
+    return turns;
   }
 
-  resetRepairTurnsWithoutProgress(): void {
-    if (!this._repairGuard) return;
-    this._repairGuard.repairTurnsWithoutProgress = 0;
-  }
-
+  /** 目标文件被成功改动 = 唯一的"有进展"信号，无进展计数就地清零 */
   markTargetPatched(): void {
     if (!this._repairGuard) return;
     this._repairGuard.patched = true;
-    this._repairGuard.blockedToolTurnsWithoutProgress = 0;
-  }
-
-  recordUnavailableToolTurn(repairTurnsWithoutProgress: number, lastBlockedTool: string): void {
-    if (!this._repairGuard) return;
-    this._repairGuard.repairTurnsWithoutProgress = repairTurnsWithoutProgress;
-    this._repairGuard.lastBlockedTool = lastBlockedTool;
+    this._repairGuard.noProgressTurns = 0;
   }
 
   recordBlockedTool(toolName: string): void {

@@ -399,7 +399,7 @@ export type AgentEvent =
           attempts?: number;
           phase?: string;
           patched?: boolean;
-          repairTurnsWithoutProgress?: number;
+          noProgressTurns?: number;
           activeIssueCodes?: string[];
         };
         /** Max Mode（best-of-N）本步诊断（Codex R1-LOW：补齐事件契约类型） */

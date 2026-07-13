@@ -94,7 +94,7 @@ export interface ModelResponse {
       attempts?: number;
       phase?: string;
       patched?: boolean;
-      repairTurnsWithoutProgress?: number;
+      noProgressTurns?: number;
       activeIssueCodes?: string[];
     };
     artifactValidationAttemptCompletion?: {

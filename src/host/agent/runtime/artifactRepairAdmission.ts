@@ -41,12 +41,11 @@ export function activateArtifactRepairAdmissionStop(
 
 /**
  * Block 路径循环断路器：可用但被 repair 闸拦下的工具（区别于 messageProcessorUnavailableTools
- * 的"工具不可用"路径）此前**不喂** repairTurnsWithoutProgress 计数器，导致逃生门永不触发——
- * 当 guard 锁了一个不可达 phantom 目标时，每个工具被 block 但计数器不动，无限死锁
- * (2026-06-25 dogfood：CSDN URL 被错种成目标)。此函数让 block 路径累加独立的
- * blockedToolTurnsWithoutProgress 计数器（非 repairTurnsWithoutProgress——那个每回合被清零），
- * 连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 次无进展即复用既有 attempts-exhausted 硬停。
- * 返回是否已触发硬停。
+ * 的"工具不可用"路径）历史上不喂无进展计数器，导致 guard 锁死不可达 phantom 目标时
+ * 每个工具被 block 但计数不动、无限死锁 (2026-06-25 dogfood：CSDN URL 被错种成目标)。
+ * 现与 unavailable-tool 路径共用统一 noProgressTurns 计数器（仅目标被成功改动时清零，
+ * 见 artifactState.markTargetPatched），连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 次无进展即
+ * 复用既有 attempts-exhausted 硬停。返回是否已触发硬停。
  */
 export function registerArtifactRepairBlockedToolTurn(
   ctx: RuntimeContext,
@@ -54,11 +53,7 @@ export function registerArtifactRepairBlockedToolTurn(
   blockedTool: string,
 ): boolean {
   if (!guard?.targetFile) return false;
-  // 用独立计数器：repairTurnsWithoutProgress 每回合被 messageProcessor 无条件清零，
-  // 会把这里的累加抹掉（审计 HIGH-1）。blockedToolTurnsWithoutProgress 只在目标文件被
-  // 成功改动(patched, toolFileMutationTracking)时清零，故能真正跨回合累积到硬停。
-  const turns = (guard.blockedToolTurnsWithoutProgress ?? 0) + 1;
-  ctx.artifact.registerBlockedToolTurn(turns, blockedTool);
+  const turns = ctx.artifact.recordNoProgressTurn(blockedTool);
   if (turns >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
     activateArtifactRepairAdmissionStop(
       ctx,

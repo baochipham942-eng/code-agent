@@ -21,7 +21,7 @@ describe('trackFileMutationSideEffects', () => {
         targetFile: '/repo/app/game.html',
         attempts: 1,
         phase: 'targeted_repair',
-        blockedToolTurnsWithoutProgress: 3,
+        noProgressTurns: 3,
       },
       }),
       onEvent: vi.fn(),
@@ -47,6 +47,6 @@ describe('trackFileMutationSideEffects', () => {
 
     expect(trackedFiles).toEqual(['/repo/app/game.html']);
     expect(ctx.artifact.repairGuard.patched).toBe(true);
-    expect(ctx.artifact.repairGuard.blockedToolTurnsWithoutProgress).toBe(0);
+    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(0);
   });
 });

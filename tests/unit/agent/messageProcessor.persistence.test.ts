@@ -1030,7 +1030,7 @@ describe('MessageProcessor persistence', () => {
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('Your previous tool call requested unavailable tools: Read.'),
     );
-    expect(ctx.artifact.repairGuard.repairTurnsWithoutProgress).toBe(1);
+    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(1);
     expect(ctx.artifact.repairGuard.lastBlockedTool).toBe('Read');
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toHaveLength(2);
@@ -1048,7 +1048,7 @@ describe('MessageProcessor persistence', () => {
             blocked: true,
             unavailableTool: true,
             targetFile: '/tmp/game.html',
-            repairTurnsWithoutProgress: 1,
+            noProgressTurns: 1,
           }),
         },
       }],
@@ -1260,7 +1260,7 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        repairTurnsWithoutProgress: 1,
+        noProgressTurns: 1,
         patched: false,
       },
       }),
@@ -1311,10 +1311,10 @@ describe('MessageProcessor persistence', () => {
       { endSpan: vi.fn() },
     );
 
-    // Route A: an unavailable-tool turn bumps repairTurnsWithoutProgress, but the
+    // Route A: an unavailable-tool turn bumps noProgressTurns, but the
     // hard stop only fires once it reaches ARTIFACT_REPAIR_MAX_ATTEMPTS (4).
     expect(action).toBe('continue');
-    expect(ctx.artifact.repairGuard.repairTurnsWithoutProgress).toBe(2);
+    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(2);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
@@ -1329,7 +1329,7 @@ describe('MessageProcessor persistence', () => {
             blocked: true,
             unavailableTool: true,
             targetFile: '/tmp/game.html',
-            repairTurnsWithoutProgress: 2,
+            noProgressTurns: 2,
           }),
         },
       }],
@@ -1353,7 +1353,7 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        repairTurnsWithoutProgress: 3,
+        noProgressTurns: 3,
         patched: false,
       },
       }),
@@ -1403,10 +1403,10 @@ describe('MessageProcessor persistence', () => {
       { endSpan: vi.fn() },
     );
 
-    // repairTurnsWithoutProgress 3 -> 4 reaches ARTIFACT_REPAIR_MAX_ATTEMPTS, so the
+    // noProgressTurns 3 -> 4 reaches ARTIFACT_REPAIR_MAX_ATTEMPTS, so the
     // turn is force-stopped instead of re-inferred.
     expect(action).toBe('break');
-    expect(ctx.artifact.repairGuard.repairTurnsWithoutProgress).toBe(4);
+    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(4);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({

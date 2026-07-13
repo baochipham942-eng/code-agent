@@ -865,7 +865,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             attempts: ctx.runtime.artifact.repairGuard.attempts,
             phase: ctx.runtime.artifact.repairGuard.phase,
             patched: ctx.runtime.artifact.repairGuard.patched,
-            repairTurnsWithoutProgress: ctx.runtime.artifact.repairGuard.repairTurnsWithoutProgress,
+            noProgressTurns: ctx.runtime.artifact.repairGuard.noProgressTurns,
             activeIssueCodes: ctx.runtime.artifact.repairGuard.activeIssueCodes,
         }
         : undefined,
@@ -1087,7 +1087,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
                 attempts: ctx.runtime.artifact.repairGuard.attempts,
                 phase: ctx.runtime.artifact.repairGuard.phase,
                 patched: ctx.runtime.artifact.repairGuard.patched,
-                repairTurnsWithoutProgress: ctx.runtime.artifact.repairGuard.repairTurnsWithoutProgress,
+                noProgressTurns: ctx.runtime.artifact.repairGuard.noProgressTurns,
                 activeIssueCodes: ctx.runtime.artifact.repairGuard.activeIssueCodes,
               }
             : undefined,

@@ -132,14 +132,11 @@ export async function handleUnavailableToolCalls(
   const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
   const allowedNames = [...visibleToolNames].join(', ') || 'none';
   const guard = ctx.artifact.repairGuard;
-  const repairTurnsWithoutProgress = (guard?.repairTurnsWithoutProgress ?? 0) + 1;
-  if (guard) {
-    ctx.artifact.recordUnavailableToolTurn(repairTurnsWithoutProgress, requestedNames);
-  }
+  const noProgressTurns = guard ? ctx.artifact.recordNoProgressTurn(requestedNames) : 0;
   const repairPolicy = getArtifactRepairToolPolicy(guard);
-  // Route A 死循环逃生门：连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 个修复回合没有任何
-  // 成功的目标文件改动（反复请求不可用工具），强制收尾，避免无限重试。
-  if (guard?.targetFile && repairTurnsWithoutProgress >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
+  // Route A 死循环逃生门：连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 次无进展动作（反复请求
+  // 不可用工具 / 被 repair 闸拦）且没有任何成功的目标文件改动，强制收尾，避免无限重试。
+  if (guard?.targetFile && noProgressTurns >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
     activateArtifactRepairAdmissionStop(ctx, guard.targetFile, requestedNames);
   }
   const recoveryPrompt = guard?.targetFile
@@ -198,7 +195,7 @@ export async function handleUnavailableToolCalls(
           targetFile: guard?.targetFile,
           phase: guard?.phase,
           attempts: guard?.attempts,
-          repairTurnsWithoutProgress: guard?.repairTurnsWithoutProgress,
+          noProgressTurns: guard?.noProgressTurns,
           lastBlockedTool: requestedNames,
         },
       },

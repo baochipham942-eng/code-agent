@@ -426,7 +426,7 @@ export class ToolExecutionEngine {
     const artifactRepairBlock = enforceArtifactRepairGuard(this.ctx, toolCall);
     if (artifactRepairBlock) {
       const guard = this.ctx.artifact.repairGuard;
-      // Block 路径也喂 repairTurnsWithoutProgress 计数器：可用但被闸拦的工具此前不计数，
+      // Block 路径喂统一 noProgressTurns 计数器：可用但被闸拦的工具此前不计数，
       // 当目标不可达时会无限死锁（2026-06-25 dogfood）。连续 N 次无进展即硬停。
       const repairForceStopped = registerArtifactRepairBlockedToolTurn(this.ctx, guard, toolCall.name);
       const toolResult: ToolResult = {

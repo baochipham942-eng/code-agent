@@ -80,6 +80,23 @@ function toAgentEventFromNudge(event: { type: string; data: unknown }): AgentEve
 }
 
 export class MessageProcessor {
+  /** 2a: 防呆/重试计数自持状态（原 RuntimeContext 字段，ADR-038 批2a 下沉） */
+  private readonly guardState = {
+    recentToolFingerprints: [] as string[],
+    recentToolNames: [] as string[],
+    stagnationWarningEmitted: false,
+    searchSpamWarningEmitted: false,
+    antiScrapingHitsInRun: 0,
+    stopHookRetryCount: 0,
+    userStopHookBlockCount: 0,
+    toolCallRetryCount: 0,
+    deliveryCriticBlockCount: 0,
+    _consecutiveTruncations: 0,
+  };
+
+  /** @internal 测试专用入口，生产代码禁止调用 */
+  get guardStateForTest() { return this.guardState; }
+
   constructor(
     private ctx: RuntimeContext,
     private contextAssembly: ContextAssembly,
@@ -109,14 +126,14 @@ export class MessageProcessor {
             toolCalls: [forceExecuteResult],
           };
           wasForceExecuted = true;
-        } else if (this.ctx.toolCallRetryCount < this.ctx.maxToolCallRetries) {
-          this.ctx.toolCallRetryCount++;
+        } else if (this.guardState.toolCallRetryCount < this.ctx.maxToolCallRetries) {
+          this.guardState.toolCallRetryCount++;
           logger.warn(`[AgentLoop] Detected text description of tool call: "${failedToolCallMatch.toolName}"`);
           logCollector.agent('WARN', `Model described tool call as text: ${failedToolCallMatch.toolName}`);
           this.contextAssembly.injectSystemMessage(
             this.ctx.antiPatternDetector.generateToolCallFormatError(failedToolCallMatch.toolName, response.content)
           );
-          logger.debug(`[AgentLoop] Tool call retry ${this.ctx.toolCallRetryCount}/${this.ctx.maxToolCallRetries}`);
+          logger.debug(`[AgentLoop] Tool call retry ${this.guardState.toolCallRetryCount}/${this.ctx.maxToolCallRetries}`);
           return { response, wasForceExecuted, shouldContinue: true };
         }
       }
@@ -224,14 +241,14 @@ export class MessageProcessor {
         const userStopResult = await this.ctx.hookManager.triggerStop(
           response.content,
           this.ctx.sessionId,
-          this.ctx.userStopHookBlockCount > 0,
+          this.guardState.userStopHookBlockCount > 0,
         );
         if (!userStopResult.shouldProceed) {
-          this.ctx.userStopHookBlockCount++;
-          if (this.ctx.userStopHookBlockCount <= STOP_HOOK.USER_MAX_RETRIES) {
+          this.guardState.userStopHookBlockCount++;
+          if (this.guardState.userStopHookBlockCount <= STOP_HOOK.USER_MAX_RETRIES) {
             logger.info('[AgentLoop] Stop prevented by user hook', {
               message: userStopResult.message,
-              retry: this.ctx.userStopHookBlockCount,
+              retry: this.guardState.userStopHookBlockCount,
             });
             if (userStopResult.message) {
               this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
@@ -240,7 +257,7 @@ export class MessageProcessor {
           }
           // 安全阀：用户 stop hook 持续 block 达到上限，放行停止防死循环
           logger.warn('[AgentLoop] User stop hook block limit reached, allowing stop', {
-            blockCount: this.ctx.userStopHookBlockCount,
+            blockCount: this.guardState.userStopHookBlockCount,
             limit: STOP_HOOK.USER_MAX_RETRIES,
           });
           logCollector.agent('WARN', `User stop hook max retries (${STOP_HOOK.USER_MAX_RETRIES}) reached, allowing stop`);
@@ -265,7 +282,7 @@ export class MessageProcessor {
       !isForcedFinalTextPass &&
       !isSimpleTask &&
       this.ctx.enableDeliveryCritic &&
-      this.ctx.deliveryCriticBlockCount < DELIVERY_CRITIC.MAX_BLOCKS
+      this.guardState.deliveryCriticBlockCount < DELIVERY_CRITIC.MAX_BLOCKS
     ) {
       const modifiedFiles = Array.from(this.ctx.nudgeManager.getModifiedFiles());
       if (modifiedFiles.length >= DELIVERY_CRITIC.FILE_THRESHOLD) {
@@ -287,12 +304,12 @@ export class MessageProcessor {
             verificationOutcome,
           );
           if (!criticResult.pass) {
-            this.ctx.deliveryCriticBlockCount++;
+            this.guardState.deliveryCriticBlockCount++;
             logger.info('[AgentLoop] Delivery blocked by critic', {
               reason: criticResult.reason.slice(0, 200),
               fileCount: modifiedFiles.length,
               verification: verificationOutcome,
-              blockCount: this.ctx.deliveryCriticBlockCount,
+              blockCount: this.guardState.deliveryCriticBlockCount,
             });
             logCollector.agent('WARN', 'Delivery critic found critical issues, blocking delivery');
             const verifyHint = verificationOutcome === 'none'
@@ -303,7 +320,7 @@ export class MessageProcessor {
             this.contextAssembly.injectSystemMessage(
               [
                 '<delivery-critic>',
-                `交付前自动审查发现 Critical 问题（第 ${this.ctx.deliveryCriticBlockCount}/${DELIVERY_CRITIC.MAX_BLOCKS} 次打回），请先修复再交付：`,
+                `交付前自动审查发现 Critical 问题（第 ${this.guardState.deliveryCriticBlockCount}/${DELIVERY_CRITIC.MAX_BLOCKS} 次打回），请先修复再交付：`,
                 criticResult.reason,
                 verifyHint,
                 '</delivery-critic>',
@@ -323,11 +340,11 @@ export class MessageProcessor {
       !isForcedFinalTextPass &&
       !isSimpleTask &&
       this.ctx.enableDeliveryCritic &&
-      this.ctx.deliveryCriticBlockCount >= DELIVERY_CRITIC.MAX_BLOCKS
+      this.guardState.deliveryCriticBlockCount >= DELIVERY_CRITIC.MAX_BLOCKS
     ) {
       // 已打回满 MAX_BLOCKS 次仍未过 critic —— 强制放行避免无限循环（有界打回）
       logger.warn('[AgentLoop] Delivery critic block limit reached, force-passing delivery', {
-        blockCount: this.ctx.deliveryCriticBlockCount,
+        blockCount: this.guardState.deliveryCriticBlockCount,
       });
     }
 
@@ -337,9 +354,9 @@ export class MessageProcessor {
         const stopResult = await this.ctx.planningService.hooks.onStop();
 
         if (!stopResult.shouldContinue && stopResult.injectContext) {
-          this.ctx.stopHookRetryCount++;
+          this.guardState.stopHookRetryCount++;
 
-          if (this.ctx.stopHookRetryCount <= this.ctx.maxStopHookRetries) {
+          if (this.guardState.stopHookRetryCount <= this.ctx.maxStopHookRetries) {
             this.contextAssembly.injectSystemMessage(stopResult.injectContext);
             if (stopResult.notification) {
               this.ctx.onEvent({
@@ -347,7 +364,7 @@ export class MessageProcessor {
                 data: { message: stopResult.notification },
               });
             }
-            logger.debug(` Stop hook retry ${this.ctx.stopHookRetryCount}/${this.ctx.maxStopHookRetries}`);
+            logger.debug(` Stop hook retry ${this.guardState.stopHookRetryCount}/${this.ctx.maxStopHookRetries}`);
             return 'continue';
           } else {
             logger.debug('[AgentLoop] Stop hook max retries reached, allowing stop');
@@ -382,7 +399,7 @@ export class MessageProcessor {
         logger.warn('[AgentLoop] Provider reported stop but text ended mid-sentence; continuing generation');
         logCollector.agent('WARN', 'Text response ended mid-sentence despite stop finish reason');
       }
-      this.ctx._consecutiveTruncations++;
+      this.guardState._consecutiveTruncations++;
 
       const strippedPartialContent = this.contextAssembly.stripInternalFormatMimicry(response.content);
       const partialAssistantMessage = this.buildAssistantMessageFromResponse(response, strippedPartialContent);
@@ -398,10 +415,10 @@ export class MessageProcessor {
         logCollector.agent('INFO', `Text truncation recovery: maxTokens ${currentMaxTokens} → ${recoveryMaxTokens}`);
       }
 
-      if (this.ctx._consecutiveTruncations >= this.ctx.MAX_CONSECUTIVE_TRUNCATIONS) {
-        logger.warn(`[AgentLoop] Consecutive truncation circuit breaker: ${this.ctx._consecutiveTruncations} consecutive truncations`);
-        logCollector.agent('WARN', `Consecutive truncation breaker triggered (${this.ctx._consecutiveTruncations}x)`);
-        this.ctx._consecutiveTruncations = 0;
+      if (this.guardState._consecutiveTruncations >= this.ctx.MAX_CONSECUTIVE_TRUNCATIONS) {
+        logger.warn(`[AgentLoop] Consecutive truncation circuit breaker: ${this.guardState._consecutiveTruncations} consecutive truncations`);
+        logCollector.agent('WARN', `Consecutive truncation breaker triggered (${this.guardState._consecutiveTruncations}x)`);
+        this.guardState._consecutiveTruncations = 0;
         this.contextAssembly.injectSystemMessage(
           [
             'Your previous responses keep hitting the output token limit.',
@@ -422,7 +439,7 @@ export class MessageProcessor {
       return 'continue';
     }
 
-    this.ctx._consecutiveTruncations = 0;
+    this.guardState._consecutiveTruncations = 0;
 
     // P1-P5 Nudge checks (delegated to NudgeManager)
     const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
@@ -489,15 +506,15 @@ export class MessageProcessor {
     const userFirstMessage = this.ctx.messages.find((m) => m.role === 'user')?.content;
     const gated = applyGroundTruthGate(
       typeof userFirstMessage === 'string' ? userFirstMessage : undefined,
-      this.ctx.antiScrapingHitsInRun,
+      this.guardState.antiScrapingHitsInRun,
       desktopClaimGate.content,
     );
     if (gated.applied) {
       logger.warn(
-        `[GroundTruthGate] disclaimer prepended (anti-scraping hits=${this.ctx.antiScrapingHitsInRun}) — flagging potential fabrication`,
+        `[GroundTruthGate] disclaimer prepended (anti-scraping hits=${this.guardState.antiScrapingHitsInRun}) — flagging potential fabrication`,
       );
       logCollector.agent('WARN', 'Ground-truth gate prepended disclaimer to assistant response', {
-        antiScrapingHits: this.ctx.antiScrapingHitsInRun,
+        antiScrapingHits: this.guardState.antiScrapingHitsInRun,
       });
     }
 
@@ -599,7 +616,7 @@ export class MessageProcessor {
 
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
     if (deniedToolCalls.length > 0) {
-      this.ctx.toolCallRetryCount++;
+      this.guardState.toolCallRetryCount++;
       const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
       this.contextAssembly.injectSystemMessage(
         [
@@ -609,7 +626,7 @@ export class MessageProcessor {
           '</tool-run-policy>',
         ].join('\n'),
       );
-      if (this.ctx.toolCallRetryCount > this.ctx.maxToolCallRetries) {
+      if (this.guardState.toolCallRetryCount > this.ctx.maxToolCallRetries) {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
@@ -976,11 +993,6 @@ export class MessageProcessor {
     }
 
     // === Stagnation detection ===
-    this.ctx.recentToolFingerprints ??= [];
-    this.ctx.recentToolNames ??= [];
-    this.ctx.stagnationWarningEmitted ??= false;
-    this.ctx.searchSpamWarningEmitted ??= false;
-
     // 计算本轮每个 tool call 的 fingerprint，push 到滑动窗口，连续 N 次相同
     // → 注入提示让模型换路径。不强制 break loop（给模型自我纠正机会），但
     // 已经发出过提示后再次命中就升级（这里用 stagnationWarningEmitted 标记 + 后续可在 finalizer break）
@@ -990,8 +1002,8 @@ export class MessageProcessor {
     }).filter((fp: string) => fp.length > 0);
 
     if (fingerprints.length > 0) {
-      const detection = pushAndDetectStagnation(this.ctx.recentToolFingerprints, fingerprints);
-      if (detection.detected && !this.ctx.stagnationWarningEmitted) {
+      const detection = pushAndDetectStagnation(this.guardState.recentToolFingerprints, fingerprints);
+      if (detection.detected && !this.guardState.stagnationWarningEmitted) {
         logger.warn(
           `[Stagnation] detected ${detection.matchCount}× repeat of fingerprint ${detection.sameFingerprint} — injecting hint to model`,
         );
@@ -1000,7 +1012,7 @@ export class MessageProcessor {
           matchCount: detection.matchCount,
         });
         this.contextAssembly.injectSystemMessage(buildStagnationHint(detection.matchCount));
-        this.ctx.stagnationWarningEmitted = true;
+        this.guardState.stagnationWarningEmitted = true;
       }
       // Hint 注入后仍重复 → 真止损,避免无谓烧 token。
       // 实战 case:龙虾 rate limit 重复 ToolSearch,日志 app-2026-05-03.log:1126。
@@ -1033,8 +1045,8 @@ export class MessageProcessor {
     // 引导模型用现有结果作答或如实说明限制，避免弱模型反复重搜转圈。
     if (toolCalls.length > 0) {
       const toolNames = toolCalls.map((tc: ToolCall) => tc.name);
-      const spam = pushAndDetectToolSpam(this.ctx.recentToolNames, toolNames);
-      if (spam.detected && !this.ctx.searchSpamWarningEmitted) {
+      const spam = pushAndDetectToolSpam(this.guardState.recentToolNames, toolNames);
+      if (spam.detected && !this.guardState.searchSpamWarningEmitted) {
         logger.warn(
           `[ToolSpam] ${spam.toolName} called ${spam.count}× within last ${TOOL_SPAM_WINDOW} tool calls — injecting hint to model`,
         );
@@ -1043,7 +1055,7 @@ export class MessageProcessor {
           count: spam.count,
         });
         this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count));
-        this.ctx.searchSpamWarningEmitted = true;
+        this.guardState.searchSpamWarningEmitted = true;
       }
     }
 
@@ -1053,7 +1065,7 @@ export class MessageProcessor {
     for (const r of toolResults) {
       const text = typeof r.output === 'string' ? r.output : (typeof r.error === 'string' ? r.error : '');
       if (text.includes(ANTI_SCRAPING_HINT_MARKER)) {
-        this.ctx.antiScrapingHitsInRun++;
+        this.guardState.antiScrapingHitsInRun++;
       }
     }
 

@@ -107,18 +107,11 @@ export interface RuntimeContext {
   // --- Hooks ---
   readonly enableHooks: boolean;
   userHooksInitialized: boolean;
-  stopHookRetryCount: number;
   readonly maxStopHookRetries: number;
-  /** GAP-006: 用户 Stop hook block 触发的重试计数（独立于 planning stop hook 计数） */
-  userStopHookBlockCount: number;
   /** GAP-013: Generator-Critic 交付前自动验证开关 */
   readonly enableDeliveryCritic: boolean;
-  /** GAP-013: 本 run 已被交付前 critic 拦下打回的次数；达 DELIVERY_CRITIC.MAX_BLOCKS 后强制放行
-   * （防无限循环）。原 deliveryCriticRan(boolean) 升级而来。 */
-  deliveryCriticBlockCount: number;
 
   // --- Tool execution ---
-  toolCallRetryCount: number;
   readonly maxToolCallRetries: number;
   externalDataCallCount: number;
   preApprovedTools: Set<string>;
@@ -215,23 +208,6 @@ export interface RuntimeContext {
   totalOutputTokens: number;
   readonly consecutiveErrors: number;
 
-  // --- Stagnation detection ---
-  // 最近 N 次工具调用的 fingerprint (name + args_hash + result_hash)。
-  // 连续 STAGNATION_THRESHOLD 个相同 → 注入 system 提示并 break，避免死循环。
-  recentToolFingerprints: string[];
-  stagnationWarningEmitted: boolean;
-
-  // 最近 N 次工具调用的工具名（与 recentToolFingerprints 平行）。
-  // 用于检测"语义重复搜索"：同一检索类工具高频出现（换词重搜同一意图）。
-  recentToolNames: string[];
-  searchSpamWarningEmitted: boolean;
-
-  // --- Ground-truth gate ---
-  // 本次 run 中 tool result 命中反爬指纹的次数。finalize 时如果用户消息含 URL
-  // 且此计数 >= 阈值，给最终 assistant_response 加一个 disclaimer，避免幻觉伪造
-  // 内容被当成"成功获取"上交。
-  antiScrapingHitsInRun: number;
-
   // --- Thinking ---
   effortLevel: EffortLevel;
   thinkingEnabled: boolean;
@@ -250,7 +226,6 @@ export interface RuntimeContext {
   _artifactRepairCompactWriteRetried: boolean;
   _networkRetried: boolean;
   _networkRetryCount?: number;
-  _consecutiveTruncations: number;
   readonly MAX_CONSECUTIVE_TRUNCATIONS: number;
   /** Item2 卡死护栏：连续付费摘要后仍未降到阈值下的次数。降下去清零。 */
   _consecutiveCompacts: number;

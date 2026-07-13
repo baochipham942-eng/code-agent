@@ -53,7 +53,6 @@ import { getContextInterventionState } from '../../../context/contextInterventio
 import { applyInterventionsToMessages } from '../../../context/contextInterventionHelpers';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
-import { computeRequestPrefixShapeHash } from '../../../context/requestShapeHash';
 import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
@@ -1134,14 +1133,6 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       transient: true,
     });
     modelMessageSourceIds.push('__dynamic_tail__');
-  }
-
-  // WP2-2b：完整请求前缀 shape hash（systemPromptHash 只盖 system prompt，这里盖
-  // system + 全部消息结构），仅存 runtime 供 telemetry/压缩归因，不参与运行时决策
-  try {
-    ctx.runtime.currentRequestShapeHash = computeRequestPrefixShapeHash({ messages: modelMessages });
-  } catch {
-    // 诊断字段，失败不阻塞主链路
   }
 
   // Proactive compression check: trigger at 75% capacity to prevent hitting hard limits

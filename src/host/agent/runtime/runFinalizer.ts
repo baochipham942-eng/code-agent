@@ -618,7 +618,6 @@ export class RunFinalizer {
       const healthService = getContextHealthService();
       const health = healthService.get(this.ctx.sessionId);
       const contextWindow = getContextWindow(this.ctx.modelConfig.model);
-      this.ctx.totalIterations = iterations;
       this.ctx.onEvent({
         type: 'task_stats',
         data: {

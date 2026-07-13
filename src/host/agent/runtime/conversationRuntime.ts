@@ -765,7 +765,6 @@ export class ConversationRuntime {
 
     this.ctx.externalDataCallCount = 0;
     this.ctx.runStartTime = Date.now();
-    this.ctx.totalIterations = 0;
     this.ctx.totalTokensUsed = 0;
     this.ctx.totalToolCallCount = 0;
 
@@ -912,8 +911,6 @@ export class ConversationRuntime {
           maxReminderTokens: 1200,
           includeFewShot: genNum >= 4,
         });
-        this.ctx.currentAgentMode = dynamicResult.mode;
-
         logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
           features: dynamicResult.features,
           readOnly: dynamicResult.modeConfig.readOnly,
@@ -1116,7 +1113,6 @@ export class ConversationRuntime {
   }
 
   setInteractionMode(mode: import('../../../shared/contract/agent').InteractionMode): void {
-    this.ctx.interactionMode = mode;
     logger.debug(`[AgentLoop] Interaction mode set to: ${mode}`);
   }
 
